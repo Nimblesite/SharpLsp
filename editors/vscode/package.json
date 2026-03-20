@@ -1,0 +1,168 @@
+{
+  "name": "forge",
+  "displayName": "Forge",
+  "description": "The open-source .NET Language Server — C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in.",
+  "version": "0.1.0",
+  "publisher": "forge-lsp",
+  "license": "MIT",
+  "icon": "icons/forge.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "C#",
+    "F#",
+    "csharp",
+    "fsharp",
+    ".NET",
+    "dotnet",
+    "Roslyn",
+    "LSP",
+    "language server"
+  ],
+  "galleryBanner": {
+    "color": "#0a0e17",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/forge-lsp/forge"
+  },
+  "activationEvents": [
+    "workspaceContains:**/*.sln",
+    "workspaceContains:**/*.csproj",
+    "workspaceContains:**/*.fsproj"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "csharp",
+        "aliases": [
+          "C#",
+          "CSharp"
+        ],
+        "extensions": [
+          ".cs",
+          ".csx"
+        ],
+        "configuration": "./language-configuration/csharp.json"
+      },
+      {
+        "id": "fsharp",
+        "aliases": [
+          "F#",
+          "FSharp"
+        ],
+        "extensions": [
+          ".fs",
+          ".fsx",
+          ".fsi"
+        ],
+        "configuration": "./language-configuration/fsharp.json"
+      }
+    ],
+    "configuration": {
+      "title": "Forge",
+      "properties": {
+        "forge.server.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Absolute path to the `forge-lsp` binary. Leave empty to use the bundled server or `$PATH`.",
+          "scope": "machine-overridable",
+          "order": 0
+        },
+        "forge.server.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Extra arguments passed to the `forge-lsp` process.",
+          "scope": "machine-overridable",
+          "order": 1
+        },
+        "forge.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace LSP communication between VS Code and the Forge server.",
+          "scope": "window",
+          "order": 2
+        },
+        "forge.logging.level": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "default": "info",
+          "markdownDescription": "Log level for the Forge server (maps to `RUST_LOG`).",
+          "scope": "window",
+          "order": 3
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "forge.restartServer",
+        "title": "Restart Language Server",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.showOutput",
+        "title": "Show Output Channel",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.showTraceOutput",
+        "title": "Show Trace Output",
+        "category": "Forge"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ && tsc --noEmit",
+    "lint:eslint": "eslint src/",
+    "compile-tests": "tsc -p ./",
+    "pretest": "npm run compile-tests",
+    "test": "vscode-test",
+    "test:coverage": "vscode-test --coverage",
+    "test:run": "node out/test/runTest.js",
+    "package": "vsce package --no-dependencies",
+    "vscode:prepublish": "node esbuild.mjs --production"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^8.57.1",
+    "@typescript-eslint/parser": "^8.57.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.21.0",
+    "eslint": "^10.0.3",
+    "glob": "^11.0.0",
+    "mocha": "^10.7.0",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.57.1"
+  }
+}

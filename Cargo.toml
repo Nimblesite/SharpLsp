@@ -1,0 +1,93 @@
+[package]
+name = "forge-lsp"
+version = "0.1.0"
+edition = "2021"
+description = "Forge: The .NET Language Server Platform"
+license = "MIT"
+
+[dependencies]
+# LSP
+lsp-server = "0.7"
+lsp-types = "0.97"
+
+# Tree-sitter
+tree-sitter = "0.24"
+tree-sitter-c-sharp = "0.23"
+
+# Async runtime
+crossbeam-channel = "0.5"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "io-util", "time", "process", "sync", "macros", "fs"] }
+
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+rmp-serde = "1"
+serde_bytes = "0.11"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# Error handling
+anyhow = "1"
+
+# Utilities
+dashmap = "6"
+
+[dev-dependencies]
+tempfile = "3"
+wait-timeout = "0.2"
+serde_json = "1"
+
+[lints]
+workspace = true
+
+[workspace.lints.clippy]
+# all + pedantic at maximum — restriction & nursery cherry-picked (contain contradictions)
+all                  = { level = "deny", priority = -1 }
+pedantic             = { level = "deny", priority = -1 }
+unwrap_used          = "deny"
+expect_used          = "deny"
+panic                = "deny"
+todo                 = "deny"
+unimplemented        = "deny"
+# Implicit panics from out-of-bounds indexing — use .get() instead
+indexing_slicing     = "deny"
+# Silent lossy type conversions via `as` — use .into()/.try_into() instead
+as_conversions       = "deny"
+# Forgotten debug macros leaking info to stderr
+dbg_macro            = "deny"
+# Resource leaks from skipped destructors — use ManuallyDrop if needed
+mem_forget           = "deny"
+# From impls that can panic should be TryFrom instead
+fallible_impl_from   = "deny"
+# Catch needless implicit clones — use .clone() for explicit intent
+implicit_clone       = "deny"
+# Require SAFETY comments on any unsafe block — defense in depth for allowed exceptions
+undocumented_unsafe_blocks = "deny"
+# Prevent silent precision loss in float literals — critical for numeric type correctness
+lossy_float_literal  = "deny"
+# Prevent stack overflow from oversized local variables — critical for recursive AST walking
+large_stack_frames   = "deny"
+# Force #[expect] over #[allow] so stale lint suppressions don't hide new violations
+allow_attributes     = "deny"
+too_many_lines       = "deny"
+too_many_arguments   = "deny"
+cast_possible_truncation = "deny"
+# Catch accidental infinite loops — require `-> !` return type for intentional ones
+infinite_loop        = "deny"
+# Prevent silent error cause discarding in .map_err(|_| ...) — preserve error provenance
+map_err_ignore       = "deny"
+# Prevent process::exit() — use proper error propagation, exit only via main() return
+exit                 = "deny"
+# Catch struct destructures that silently ignore new fields — critical during refactoring
+rest_pat_in_fully_bound_structs = "deny"
+# Require Arc::clone(&x) syntax — make ref-counted pointer cloning visually distinct
+clone_on_ref_ptr     = "deny"
+
+[workspace.lints.rust]
+# Dead code must be removed, not left to rot
+dead_code            = "deny"

@@ -1,0 +1,8 @@
+**/*
+!dist/extension.js
+!language-configuration/*.json
+!icons/forge.png
+!icons/forge.svg
+!bin/**
+!package.json
+!LICENSE

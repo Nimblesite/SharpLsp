@@ -1,0 +1,25 @@
+# Forge LSP Configuration
+# Copy this file to `forge.toml` in your project root and customize as needed.
+# All settings are optional — defaults are shown below.
+
+[server]
+# Log level: "error", "warn", "info", "debug", "trace"
+log_level = "info"
+# Debounce window (ms) for semantic requests after keystroke
+debounce_ms = 150
+
+[csharp]
+# Enable C# language support
+enabled = true
+# Path to .sln file (auto-detected if empty)
+solution_path = ""
+
+[fsharp]
+# Enable F# language support
+enabled = true
+
+[diagnostics]
+# Run Roslyn/FSharpLint analyzers alongside compiler diagnostics
+analyzers_enabled = true
+# Run solution-wide error analysis (more expensive, richer diagnostics)
+solution_wide_analysis = false

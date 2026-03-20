@@ -1,0 +1,27 @@
+{
+  "name": "Forge LSP Development",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "serayuzgur.crates"
+      ],
+      "settings": {
+        "rust-analyzer.check.command": "clippy",
+        "rust-analyzer.check.allTargets": true,
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "postCreateCommand": "rustup component add clippy rustfmt && cd editors/vscode && npm install",
+  "remoteUser": "vscode"
+}

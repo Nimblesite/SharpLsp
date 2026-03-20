@@ -1,0 +1,30 @@
+# Rust
+/target
+
+# VS Code extension
+editors/vscode/node_modules/
+editors/vscode/out/
+editors/vscode/dist/
+editors/vscode/bin/
+editors/vscode/*.vsix
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Forge runtime
+forge.toml
+
+# .NET
+bin/
+obj/
+
+.commandtree/
+forge.vsix
