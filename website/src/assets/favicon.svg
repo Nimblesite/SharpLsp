@@ -13,29 +13,19 @@
       <stop offset="100%" stop-color="#d4734e"/>
     </linearGradient>
   </defs>
-  <!-- Background -->
   <rect width="128" height="128" rx="28" fill="url(#bg)"/>
-  <!-- Anvil — bold geometric silhouette -->
-  <!-- Horn (left beak) -->
   <path d="M18 68 C18 62 24 58 30 58 L44 58 L44 78 L28 78 C22 78 18 74 18 68Z" fill="url(#metal)"/>
-  <!-- Face (top surface) -->
   <rect x="44" y="56" width="50" height="22" rx="3" fill="url(#metal)"/>
-  <!-- Step (right notch) -->
   <rect x="88" y="62" width="16" height="16" rx="2" fill="url(#metal)" opacity="0.8"/>
-  <!-- Waist -->
   <path d="M50 78 L53 94 L85 94 L88 78Z" fill="url(#metal)" opacity="0.6"/>
-  <!-- Base -->
   <rect x="44" y="94" width="50" height="12" rx="4" fill="url(#metal)" opacity="0.45"/>
-  <!-- Hammer — bold diagonal strike -->
   <g transform="rotate(-40, 64, 44)">
     <rect x="61" y="30" width="6" height="38" rx="3" fill="#d0e0d6"/>
     <rect x="50" y="20" width="28" height="14" rx="4" fill="#e0ece4"/>
   </g>
-  <!-- Impact sparks — hot metal -->
   <circle cx="48" cy="50" r="4" fill="url(#heat)" opacity="0.95"/>
   <circle cx="38" cy="42" r="2.5" fill="#f5a86c" opacity="0.8"/>
   <circle cx="56" cy="40" r="2" fill="#d4734e" opacity="0.7"/>
   <circle cx="34" cy="50" r="1.5" fill="#f5a86c" opacity="0.5"/>
-  <!-- Surface highlight -->
   <rect x="46" y="57" width="46" height="3" rx="1.5" fill="#fff" opacity="0.1"/>
 </svg>

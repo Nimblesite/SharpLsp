@@ -15,3 +15,7 @@ export const CONFIG_LOGGING_LEVEL = "logging.level";
 export const CMD_RESTART_SERVER = "forge.restartServer";
 export const CMD_SHOW_OUTPUT = "forge.showOutput";
 export const CMD_SHOW_TRACE = "forge.showTraceOutput";
+export const CMD_SELECT_SOLUTION = "forge.selectSolution";
+export const CMD_REFRESH_EXPLORER = "forge.refreshExplorer";
+
+export const VIEW_SOLUTION_EXPLORER = "forge.solutionExplorer";

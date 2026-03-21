@@ -1,0 +1,3 @@
+[submodule "website/eleventy-plugin-techdoc"]
+	path = website/eleventy-plugin-techdoc
+	url = https://github.com/MelbourneDeveloper/eleventy-plugin-techdoc

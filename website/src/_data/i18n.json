@@ -1,0 +1,20 @@
+{
+  "en": {
+    "blog": {
+      "back": "Back to Blog",
+      "title": "Blog",
+      "subtitle": "Latest posts and updates",
+      "tags": "Tags",
+      "categories": "Categories",
+      "empty": "No blog posts yet. Check back soon!"
+    },
+    "nav": {
+      "docs": "Documentation",
+      "blog": "Blog"
+    },
+    "docs": {
+      "title": "Documentation",
+      "gettingStarted": "Getting Started"
+    }
+  }
+}

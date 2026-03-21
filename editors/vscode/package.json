@@ -24,7 +24,7 @@
     "language server"
   ],
   "galleryBanner": {
-    "color": "#0a0e17",
+    "color": "#0a1a12",
     "theme": "dark"
   },
   "repository": {
@@ -113,6 +113,24 @@
         }
       }
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "forge-explorer",
+          "title": "Forge",
+          "icon": "icons/forge.svg"
+        }
+      ]
+    },
+    "views": {
+      "forge-explorer": [
+        {
+          "id": "forge.solutionExplorer",
+          "name": "Solution Explorer",
+          "icon": "icons/forge.svg"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "forge.restartServer",
@@ -128,8 +146,34 @@
         "command": "forge.showTraceOutput",
         "title": "Show Trace Output",
         "category": "Forge"
+      },
+      {
+        "command": "forge.selectSolution",
+        "title": "Select Solution",
+        "category": "Forge",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "forge.refreshExplorer",
+        "title": "Refresh Explorer",
+        "category": "Forge",
+        "icon": "$(refresh)"
       }
-    ]
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "forge.selectSolution",
+          "when": "view == forge.solutionExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "forge.refreshExplorer",
+          "when": "view == forge.solutionExplorer",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "node esbuild.mjs",

@@ -1,0 +1,16 @@
+{
+  "title": "Forge",
+  "name": "Forge",
+  "description": "Open-source .NET LSP for C# and F#. One server, every editor.",
+  "url": "https://forge-lsp.dev",
+  "author": "Forge Contributors",
+  "stylesheet": "/assets/css/styles.css",
+  "favicon": "/assets/favicon.svg",
+  "themeColor": "#19d078",
+  "organization": {
+    "name": "Forge",
+    "sameAs": [
+      "https://github.com/MelbourneDeveloper/forge"
+    ]
+  }
+}

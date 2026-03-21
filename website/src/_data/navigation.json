@@ -1,0 +1,31 @@
+{
+  "main": [
+    { "text": "Docs", "url": "/docs/" },
+    { "text": "Blog", "url": "/blog/" },
+    { "text": "GitHub", "url": "https://github.com/MelbourneDeveloper/forge", "external": true }
+  ],
+  "footer": [
+    {
+      "title": "Documentation",
+      "items": [
+        { "text": "Getting Started", "url": "/docs/" },
+        { "text": "Architecture", "url": "/docs/architecture/" },
+        { "text": "Editor Setup", "url": "/docs/editors/" }
+      ]
+    },
+    {
+      "title": "Community",
+      "items": [
+        { "text": "GitHub", "url": "https://github.com/MelbourneDeveloper/forge" },
+        { "text": "Issues", "url": "https://github.com/MelbourneDeveloper/forge/issues" }
+      ]
+    },
+    {
+      "title": "More",
+      "items": [
+        { "text": "Blog", "url": "/blog/" },
+        { "text": "LSP Specification", "url": "https://microsoft.github.io/language-server-protocol/" }
+      ]
+    }
+  ]
+}

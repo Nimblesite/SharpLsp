@@ -17,7 +17,12 @@ impl LangId {
     /// Detect language from a file URI string.
     pub fn from_uri(uri: &Uri) -> Option<Self> {
         let s = uri.as_str();
-        let ext = Path::new(s).extension()?.to_str()?;
+        Self::from_path(Path::new(s))
+    }
+
+    /// Detect language from a file path.
+    pub fn from_path(path: &Path) -> Option<Self> {
+        let ext = path.extension()?.to_str()?;
         match ext.to_ascii_lowercase().as_str() {
             "cs" => Some(Self::CSharp),
             "fs" | "fsx" | "fsi" => Some(Self::FSharp),

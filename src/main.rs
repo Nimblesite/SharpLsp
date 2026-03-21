@@ -8,6 +8,7 @@ mod sidecar;
 mod syntax;
 mod tree_sitter_parse;
 mod vfs;
+mod workspace_symbols;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -122,6 +123,7 @@ fn run_server() -> Result<()> {
     };
 
     // Eagerly open the workspace in the sidecar and start health monitoring.
+    // All sidecar operations must run inside the tokio runtime context.
     if let (Some(ref sidecar), Some(ref root)) = (&csharp_sidecar, &workspace_root) {
         let sidecar_clone = Arc::clone(sidecar);
         let root_str = root.to_string_lossy().to_string();
@@ -130,7 +132,10 @@ fn run_server() -> Result<()> {
                 error!("Failed to open workspace in sidecar: {err:#}");
             }
         });
-        sidecar.start_health_monitor();
+        let health_sidecar = Arc::clone(sidecar);
+        runtime.spawn(async move {
+            health_sidecar.start_health_monitor().await;
+        });
     }
 
     main_loop(&connection, &runtime, csharp_sidecar.as_ref())?;
@@ -255,6 +260,8 @@ fn handle_request(
         Completion::METHOD => semantic::handle_completion(req, runtime, csharp_sidecar),
         HoverRequest::METHOD => semantic::handle_hover(req, runtime, csharp_sidecar),
         GotoDefinition::METHOD => semantic::handle_definition(req, runtime, csharp_sidecar),
+        // Custom requests
+        "forge/workspaceSymbols" => handle_workspace_symbols(req, parsers),
         _ => {
             warn!("Unhandled request: {}", req.method);
             Err(anyhow::anyhow!("method not found"))
@@ -354,6 +361,18 @@ fn get_or_parse_tree(
     let lang = LangId::from_uri(uri).context("unsupported file type")?;
     let old_tree = trees.get(uri);
     parsers.parse(lang, source, old_tree)
+}
+
+// ── Custom Request Handling ───────────────────────────────────────
+
+fn handle_workspace_symbols(
+    req: Request,
+    parsers: &TsParsers,
+) -> Result<serde_json::Value> {
+    let params: workspace_symbols::WorkspaceSymbolsParams =
+        serde_json::from_value(req.params)?;
+    let response = workspace_symbols::handle(&params, parsers)?;
+    Ok(serde_json::to_value(response)?)
 }
 
 // ── Notification Handling ─────────────────────────────────────────

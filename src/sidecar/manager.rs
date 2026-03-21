@@ -240,11 +240,11 @@ impl SidecarManager {
         tokio::time::sleep(delay).await;
     }
 
-    /// Spawn a background task that pings the sidecar periodically.
+    /// Run the health monitoring loop — pings the sidecar periodically.
     /// On failure, triggers crash recovery with exponential backoff.
-    pub fn start_health_monitor(self: &Arc<Self>) {
-        let sidecar = Arc::clone(self);
-        tokio::spawn(health_loop(sidecar));
+    /// Must be called from within a tokio runtime (e.g. via `runtime.spawn`).
+    pub async fn start_health_monitor(self: Arc<Self>) -> ! {
+        health_loop(self).await
     }
 
     /// Gracefully shut down the sidecar.
