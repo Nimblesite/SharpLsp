@@ -32,6 +32,10 @@ jobs:
           cache: npm
           cache-dependency-path: website/package-lock.json
 
+      - name: Install plugin deps
+        working-directory: website/eleventy-plugin-techdoc
+        run: npm install --omit=dev
+
       - run: npm ci
 
       - name: Build site
