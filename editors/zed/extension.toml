@@ -1,0 +1,16 @@
+id = "forge"
+name = "Forge"
+description = "The open-source .NET Language Server — C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in."
+version = "0.1.0"
+schema_version = 1
+authors = ["Forge LSP <forge-lsp@users.noreply.github.com>"]
+repository = "https://github.com/forge-lsp/forge"
+
+[language_servers.forge-lsp]
+name = "Forge"
+languages = ["C#", "F#"]
+
+[slash_commands.forge-tree]
+description = "Display the .NET solution tree: projects, dependencies, and references"
+tooltip_text = "Parse a .sln file and show its project structure"
+requires_argument = true

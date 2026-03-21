@@ -1,8 +1,16 @@
 using Forge.Sidecar.CSharp;
 using Microsoft.Build.Locator;
 
-// MSBuildLocator must be called before any Roslyn workspace types are loaded.
-MSBuildLocator.RegisterDefaults();
+try
+{
+    _ = MSBuildLocator.RegisterDefaults();
+}
+catch (Exception ex)
+{
+    await Console.Error.WriteLineAsync(
+        $"MSBuild locator failed: {ex.Message}").ConfigureAwait(false);
+    Environment.Exit(1);
+}
 
 await RunSidecarAsync(args).ConfigureAwait(false);
 
@@ -10,11 +18,25 @@ static async Task RunSidecarAsync(string[] args)
 {
     if (args.Length < 1)
     {
-        Console.Error.WriteLine("Usage: Forge.Sidecar.CSharp <socket-path>");
+        await Console.Error.WriteLineAsync(
+            "Usage: Forge.Sidecar.CSharp <socket-path>")
+            .ConfigureAwait(false);
         Environment.Exit(1);
     }
 
-    var socketPath = args[0];
-    await using var sidecar = new CSharpSidecar();
-    await sidecar.RunAsync(socketPath).ConfigureAwait(false);
+    try
+    {
+        var socketPath = args[0];
+        var sidecar = new CSharpSidecar();
+        await using (sidecar.ConfigureAwait(false))
+        {
+            await sidecar.RunAsync(socketPath).ConfigureAwait(false);
+        }
+    }
+    catch (Exception ex)
+    {
+        await Console.Error.WriteLineAsync(
+            $"Sidecar failed: {ex.Message}").ConfigureAwait(false);
+        Environment.Exit(1);
+    }
 }

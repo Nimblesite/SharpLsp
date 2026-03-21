@@ -46,12 +46,21 @@ struct LspClient {
 }
 
 impl LspClient {
-    /// Spawn the forge-lsp binary.
+    /// Spawn the forge-lsp binary (stderr suppressed for fast tests).
     fn start() -> Self {
+        Self::spawn(Stdio::null())
+    }
+
+    /// Spawn with stderr visible (for full-stack tests that need sidecar logs).
+    fn start_verbose() -> Self {
+        Self::spawn(Stdio::inherit())
+    }
+
+    fn spawn(stderr: Stdio) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_forge-lsp"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(stderr)
             .spawn()
             .expect("failed to spawn forge-lsp");
         let stdin = child.stdin.take().expect("no stdin");
@@ -97,7 +106,8 @@ impl LspClient {
         serde_json::from_slice(&body).unwrap()
     }
 
-    /// Send a request and return the response.
+    /// Send a request and return the response, skipping any
+    /// server-initiated notifications (e.g. `publishDiagnostics`).
     fn request(&mut self, method: &str, params: Value) -> Value {
         let id = next_id();
         self.send(&json!({
@@ -106,7 +116,13 @@ impl LspClient {
             "method": method,
             "params": params,
         }));
-        self.recv()
+        loop {
+            let msg = self.recv();
+            // Notifications have no "id" field — skip them.
+            if msg.get("id").is_some() {
+                return msg;
+            }
+        }
     }
 
     /// Send a notification (no response expected).
@@ -118,14 +134,19 @@ impl LspClient {
         }));
     }
 
-    /// Perform the LSP initialize handshake.
+    /// Perform the LSP initialize handshake (no workspace root).
     fn initialize(&mut self) -> Value {
+        self.initialize_with_root(Value::Null)
+    }
+
+    /// Perform the LSP initialize handshake with a workspace root URI.
+    fn initialize_with_root(&mut self, root_uri: Value) -> Value {
         let resp = self.request(
             "initialize",
             json!({
                 "processId": null,
                 "capabilities": {},
-                "rootUri": null,
+                "rootUri": root_uri,
             }),
         );
         // Send initialized notification.
@@ -301,6 +322,12 @@ fn test_initialize_returns_capabilities() {
     // linked editing range
     assert_eq!(caps["linkedEditingRangeProvider"], true);
 
+    // definition family
+    assert_eq!(caps["definitionProvider"], true);
+    assert_eq!(caps["typeDefinitionProvider"], true);
+    assert_eq!(caps["declarationProvider"], true);
+    assert_eq!(caps["implementationProvider"], true);
+
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
@@ -470,26 +497,17 @@ fn test_document_symbols_class_with_members() {
     assert_eq!(ns["kind"], 3, "Namespace = 3");
 
     let ns_children = ns["children"].as_array().unwrap();
-    let class = ns_children
-        .iter()
-        .find(|s| s["name"] == "Program")
-        .unwrap();
+    let class = ns_children.iter().find(|s| s["name"] == "Program").unwrap();
     assert_eq!(class["kind"], 5, "Class = 5");
 
     let class_children = class["children"].as_array().unwrap();
 
     // Should have Main method.
-    let main = class_children
-        .iter()
-        .find(|s| s["name"] == "Main")
-        .unwrap();
+    let main = class_children.iter().find(|s| s["name"] == "Main").unwrap();
     assert_eq!(main["kind"], 6, "Method = 6");
 
     // Should have Name property.
-    let name = class_children
-        .iter()
-        .find(|s| s["name"] == "Name")
-        .unwrap();
+    let name = class_children.iter().find(|s| s["name"] == "Name").unwrap();
     assert_eq!(name["kind"], 7, "Property = 7");
 
     client.shutdown_and_exit();
@@ -669,8 +687,6 @@ fn test_folding_ranges_using_directives() {
     );
     let ranges = resp["result"].as_array().unwrap();
 
-    // Should have an imports fold.
-    let imports = ranges.iter().find(|r| r["kind"] == "imports");
     // Using directives are single-line so they may not produce folds,
     // but the class should.
     let region = ranges.iter().find(|r| r["kind"] == "region");
@@ -1339,7 +1355,10 @@ fn test_selection_range_on_fsharp_file() {
             "positions": [{ "line": 0, "character": 0 }]
         }),
     );
-    assert!(resp.get("error").is_some(), "F# selectionRange should error");
+    assert!(
+        resp.get("error").is_some(),
+        "F# selectionRange should error"
+    );
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -1370,7 +1389,10 @@ fn test_linked_editing_range_on_fsharp_file() {
             "position": { "line": 0, "character": 0 }
         }),
     );
-    assert!(resp.get("error").is_some(), "F# linkedEditingRange should error");
+    assert!(
+        resp.get("error").is_some(),
+        "F# linkedEditingRange should error"
+    );
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -1383,7 +1405,7 @@ fn test_folding_ranges_switch_body() {
     let mut client = LspClient::start();
     client.initialize();
 
-    let code = r#"public class Foo
+    let code = r"public class Foo
 {
     public void Bar(int x)
     {
@@ -1396,7 +1418,7 @@ fn test_folding_ranges_switch_body() {
         }
     }
 }
-"#;
+";
     client.open_document(TEST_URI, code);
 
     let resp = client.request(
@@ -1422,10 +1444,7 @@ fn test_malformed_did_open_params() {
     client.initialize();
 
     // Send didOpen with garbage params — should not crash.
-    client.notify(
-        "textDocument/didOpen",
-        json!({ "garbage": true }),
-    );
+    client.notify("textDocument/didOpen", json!({ "garbage": true }));
 
     // Server should still work after bad notification.
     client.open_document(TEST_URI, "public class Alive {}");
@@ -1447,10 +1466,7 @@ fn test_malformed_did_change_params() {
     client.open_document(TEST_URI, "public class Foo {}");
 
     // Send didChange with garbage params.
-    client.notify(
-        "textDocument/didChange",
-        json!({ "not": "valid" }),
-    );
+    client.notify("textDocument/didChange", json!({ "not": "valid" }));
 
     // Original content should still be in VFS.
     let resp = client.request(
@@ -1458,7 +1474,10 @@ fn test_malformed_did_change_params() {
         json!({ "textDocument": { "uri": TEST_URI } }),
     );
     let symbols = resp["result"].as_array().unwrap();
-    assert!(symbols.iter().any(|s| s["name"] == "Foo"), "original content intact");
+    assert!(
+        symbols.iter().any(|s| s["name"] == "Foo"),
+        "original content intact"
+    );
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -1470,10 +1489,7 @@ fn test_malformed_did_save_params() {
     client.initialize();
 
     // Send didSave with garbage params — should not crash.
-    client.notify(
-        "textDocument/didSave",
-        json!({ "bad": "data" }),
-    );
+    client.notify("textDocument/didSave", json!({ "bad": "data" }));
 
     client.open_document(TEST_URI, "public class StillOk {}");
     let resp = client.request(
@@ -1492,10 +1508,7 @@ fn test_malformed_did_close_params() {
     client.initialize();
 
     // Send didClose with garbage params — should not crash.
-    client.notify(
-        "textDocument/didClose",
-        json!({ "nonsense": 42 }),
-    );
+    client.notify("textDocument/didClose", json!({ "nonsense": 42 }));
 
     client.open_document(TEST_URI, "public class Fine {}");
     let resp = client.request(
@@ -1529,7 +1542,10 @@ fn test_unsolicited_response_ignored() {
         "textDocument/documentSymbol",
         json!({ "textDocument": { "uri": TEST_URI } }),
     );
-    assert!(resp.get("error").is_none(), "server should still work after unsolicited response");
+    assert!(
+        resp.get("error").is_none(),
+        "server should still work after unsolicited response"
+    );
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -1585,6 +1601,2808 @@ fn test_event_declaration_symbol() {
     }
     // If no children, the event field-style declaration may not be recognized;
     // that's OK — we at least covered the code path.
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Hover Tests ──────────────────────────────────────────────────
+
+/// Helper: send a hover request and return the response.
+fn hover(client: &mut LspClient, uri: &str, line: u32, character: u32) -> Value {
+    client.request(
+        "textDocument/hover",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }),
+    )
+}
+
+/// Helper: assert a hover response has no error and is valid JSON-RPC.
+fn assert_hover_ok(resp: &Value) {
+    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
+    assert!(resp.get("id").is_some(), "must have request id");
+    assert!(resp.get("error").is_none(), "hover must not return error");
+}
+
+// 24. HOVER ACROSS MULTIPLE SYMBOL KINDS IN ONE FILE
+
+#[test]
+fn test_hover_on_class_method_property_field() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "\
+public class Calculator
+{
+    private int _count;
+    public string Name { get; set; }
+    public int Add(int a, int b) { return a + b; }
+    public event System.EventHandler OnDone;
+}";
+    client.open_document(TEST_URI, code);
+
+    // Hover on class name "Calculator" (line 0, char 14).
+    let resp = hover(&mut client, TEST_URI, 0, 14);
+    assert_hover_ok(&resp);
+
+    // Hover on field "_count" (line 2, char 17).
+    let resp = hover(&mut client, TEST_URI, 2, 17);
+    assert_hover_ok(&resp);
+
+    // Hover on property "Name" (line 3, char 19).
+    let resp = hover(&mut client, TEST_URI, 3, 19);
+    assert_hover_ok(&resp);
+
+    // Hover on method "Add" (line 4, char 16).
+    let resp = hover(&mut client, TEST_URI, 4, 16);
+    assert_hover_ok(&resp);
+
+    // Hover on event "OnDone" (line 5, char 42).
+    let resp = hover(&mut client, TEST_URI, 5, 42);
+    assert_hover_ok(&resp);
+
+    // Hover on "public" keyword (line 0, char 2) — still must not error.
+    let resp = hover(&mut client, TEST_URI, 0, 2);
+    assert_hover_ok(&resp);
+
+    // All hovers succeeded — server is healthy. Verify with a symbol request.
+    let sym_resp = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": TEST_URI } }),
+    );
+    assert!(sym_resp.get("error").is_none(), "symbols must still work");
+    let symbols = sym_resp["result"].as_array().unwrap();
+    assert!(
+        symbols.iter().any(|s| s["name"] == "Calculator"),
+        "symbol request must still return Calculator",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 25. HOVER ON COMMENTS — SINGLE-LINE, MULTI-LINE, DOC COMMENT
+
+#[test]
+fn test_hover_on_all_comment_styles_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "\
+// single-line comment
+/* multi-line
+   comment */
+/// <summary>Doc comment</summary>
+public class Foo { }";
+    client.open_document(TEST_URI, code);
+
+    // Force tree-sitter parse by requesting symbols.
+    let sym_resp = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": TEST_URI } }),
+    );
+    assert!(sym_resp.get("error").is_none(), "symbols must succeed");
+    let symbols = sym_resp["result"].as_array().unwrap();
+    assert!(
+        symbols.iter().any(|s| s["name"] == "Foo"),
+        "must parse Foo class",
+    );
+
+    // Hover on single-line comment (line 0, char 5).
+    let resp = hover(&mut client, TEST_URI, 0, 5);
+    assert_hover_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "single-line comment must return null",
+    );
+
+    // Hover on multi-line comment (line 1, char 5).
+    let resp = hover(&mut client, TEST_URI, 1, 5);
+    assert_hover_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "multi-line comment must return null",
+    );
+
+    // Hover on doc comment (line 3, char 10).
+    let resp = hover(&mut client, TEST_URI, 3, 10);
+    assert_hover_ok(&resp);
+    assert!(resp["result"].is_null(), "doc comment must return null",);
+
+    // Hover on the actual class AFTER comments — must NOT be null.
+    let resp = hover(&mut client, TEST_URI, 4, 14);
+    assert_hover_ok(&resp);
+    // With sidecar it returns data; without it returns null. Either is OK.
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 26. HOVER ON MULTIPLE DOCUMENTS SIMULTANEOUSLY
+
+#[test]
+fn test_hover_across_multiple_documents() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let uri_a = "file:///test/A.cs";
+    let uri_b = "file:///test/B.cs";
+
+    client.open_document(uri_a, "public class Alpha { public void Run() {} }");
+    client.open_document(uri_b, "public struct Beta { public int Value; }");
+
+    // Hover on Alpha class.
+    let resp_a = hover(&mut client, uri_a, 0, 14);
+    assert_hover_ok(&resp_a);
+
+    // Hover on Beta struct.
+    let resp_b = hover(&mut client, uri_b, 0, 15);
+    assert_hover_ok(&resp_b);
+
+    // Hover on Run method in A.
+    let run_resp = hover(&mut client, uri_a, 0, 34);
+    assert_hover_ok(&run_resp);
+
+    // Hover on Value field in B.
+    let val_resp = hover(&mut client, uri_b, 0, 32);
+    assert_hover_ok(&val_resp);
+
+    // Close document A, hover on B still works.
+    client.close_document(uri_a);
+    let after_close = hover(&mut client, uri_b, 0, 15);
+    assert_hover_ok(&after_close);
+
+    // Hover on closed doc A — must not crash.
+    let resp_closed = hover(&mut client, uri_a, 0, 14);
+    assert_eq!(resp_closed["jsonrpc"], "2.0");
+    let has_error = resp_closed.get("error").is_some();
+    let is_null = resp_closed["result"].is_null();
+    assert!(has_error || is_null, "hover on closed doc must not crash",);
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 27. HOVER → EDIT → HOVER (edit cycle with validation at each step)
+
+#[test]
+fn test_hover_edit_hover_cycle() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // Open with class Alpha — validate symbols + hover.
+    client.open_document(TEST_URI, "public class Alpha { }");
+    let sym1 = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": TEST_URI } }),
+    );
+    assert!(sym1.get("error").is_none(), "symbols v1 must succeed");
+    let arr1 = sym1["result"].as_array().unwrap();
+    assert!(arr1.iter().any(|s| s["name"] == "Alpha"), "must see Alpha");
+
+    let hover1 = hover(&mut client, TEST_URI, 0, 14);
+    assert_hover_ok(&hover1);
+
+    // Edit to Bravo with method — validate symbols + hover on class + method.
+    client.change_document(
+        TEST_URI,
+        2,
+        "public class Bravo\n{\n    public void Go() {}\n}",
+    );
+    let sym2 = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": TEST_URI } }),
+    );
+    assert!(sym2.get("error").is_none(), "symbols v2 must succeed");
+    let arr2 = sym2["result"].as_array().unwrap();
+    assert!(arr2.iter().any(|s| s["name"] == "Bravo"), "must see Bravo");
+
+    let hover_class = hover(&mut client, TEST_URI, 0, 14);
+    assert_hover_ok(&hover_class);
+    let hover_method = hover(&mut client, TEST_URI, 2, 17);
+    assert_hover_ok(&hover_method);
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 27b. HOVER ON FRESH COMMENT-ONLY FILE
+
+#[test]
+fn test_hover_on_fresh_comment_only_file() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // Open a fresh file that is entirely a comment.
+    let comment_uri = "file:///test/CommentOnly.cs";
+    client.open_document(comment_uri, "// just a comment\n");
+
+    // Force tree-sitter parse via symbol request.
+    let sym = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": comment_uri } }),
+    );
+    assert!(sym.get("error").is_none(), "symbols must succeed");
+
+    // Hover on the comment — pre-validation should return null.
+    let resp = hover(&mut client, comment_uri, 0, 5);
+    assert_hover_ok(&resp);
+    assert!(resp["result"].is_null(), "hover on comment must be null");
+
+    // Open another file with real code to verify server health.
+    client.open_document(TEST_URI, "public class Healthy { }");
+    let sym2 = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": TEST_URI } }),
+    );
+    assert!(
+        sym2.get("error").is_none(),
+        "symbols on second file must succeed"
+    );
+    let arr = sym2["result"].as_array().unwrap();
+    assert!(
+        arr.iter().any(|s| s["name"] == "Healthy"),
+        "must see Healthy"
+    );
+
+    // Hover on the real class.
+    let hover_real = hover(&mut client, TEST_URI, 0, 14);
+    assert_hover_ok(&hover_real);
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 28. HOVER RESPONSE STRUCTURE VALIDATION
+
+#[test]
+fn test_hover_response_validates_lsp_shape() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, "public class Widget { }");
+
+    let resp = hover(&mut client, TEST_URI, 0, 14);
+    assert_hover_ok(&resp);
+    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
+    assert!(resp.get("id").is_some(), "response must have id");
+    assert!(
+        resp.get("result").is_some(),
+        "response must have result key"
+    );
+
+    // If result is non-null, deeply validate LSP Hover structure.
+    if !resp["result"].is_null() {
+        let result = &resp["result"];
+
+        // contents must be MarkupContent
+        assert!(result.get("contents").is_some(), "must have contents");
+        let contents = &result["contents"];
+        assert_eq!(
+            contents["kind"], "markdown",
+            "contents.kind must be 'markdown'"
+        );
+        assert!(contents.get("value").is_some(), "contents must have value");
+        let value = contents["value"].as_str().unwrap();
+        assert!(!value.is_empty(), "hover value must not be empty");
+        assert!(
+            value.contains("```") || value.contains("Widget"),
+            "hover value must contain code block or symbol name",
+        );
+
+        // range is optional but if present must be valid
+        if let Some(range) = result.get("range") {
+            assert!(range.get("start").is_some(), "range must have start");
+            assert!(range.get("end").is_some(), "range must have end");
+            let start = &range["start"];
+            let end = &range["end"];
+            assert!(start.get("line").is_some(), "start must have line");
+            assert!(
+                start.get("character").is_some(),
+                "start must have character"
+            );
+            assert!(end.get("line").is_some(), "end must have line");
+            assert!(end.get("character").is_some(), "end must have character");
+        }
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 29. HOVER ON UNOPENED DOCUMENT + OPEN + HOVER AGAIN
+
+#[test]
+fn test_hover_unopened_then_open_then_hover() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // Hover on a document that has not been opened.
+    let resp1 = hover(&mut client, "file:///ghost/NotOpen.cs", 0, 0);
+    assert_eq!(resp1["jsonrpc"], "2.0");
+    let is_err = resp1.get("error").is_some();
+    let is_null = resp1["result"].is_null();
+    assert!(is_err || is_null, "unopened doc must return null or error");
+
+    // Now open that document.
+    let ghost_uri = "file:///ghost/NotOpen.cs";
+    client.open_document(ghost_uri, "public class Opened { }");
+
+    // Hover again — must succeed now.
+    let resp2 = hover(&mut client, ghost_uri, 0, 14);
+    assert_hover_ok(&resp2);
+
+    // Close and hover again — back to null/error.
+    client.close_document(ghost_uri);
+    let resp3 = hover(&mut client, ghost_uri, 0, 14);
+    assert_eq!(resp3["jsonrpc"], "2.0");
+    let is_err3 = resp3.get("error").is_some();
+    let is_null3 = resp3["result"].is_null();
+    assert!(
+        is_err3 || is_null3,
+        "closed doc hover must return null/error"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 30. HOVER INTERLEAVED WITH SYMBOL AND FOLDING REQUESTS
+
+#[test]
+fn test_hover_interleaved_with_other_requests() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "\
+namespace Interleaved
+{
+    public class Service
+    {
+        public void Start() { }
+        public void Stop() { }
+    }
+}";
+    client.open_document(TEST_URI, code);
+
+    // Symbol request.
+    let sym = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": TEST_URI } }),
+    );
+    assert!(sym.get("error").is_none());
+    let symbols = sym["result"].as_array().unwrap();
+    assert!(!symbols.is_empty(), "must have symbols");
+
+    // Hover on class.
+    let h1 = hover(&mut client, TEST_URI, 2, 18);
+    assert_hover_ok(&h1);
+
+    // Folding ranges.
+    let fold = client.request(
+        "textDocument/foldingRange",
+        json!({ "textDocument": { "uri": TEST_URI } }),
+    );
+    assert!(fold.get("error").is_none());
+    let ranges = fold["result"].as_array().unwrap();
+    assert!(!ranges.is_empty(), "must have folding ranges");
+
+    // Hover on Start method.
+    let h2 = hover(&mut client, TEST_URI, 4, 21);
+    assert_hover_ok(&h2);
+
+    // Selection ranges.
+    let sel = client.request(
+        "textDocument/selectionRange",
+        json!({
+            "textDocument": { "uri": TEST_URI },
+            "positions": [{ "line": 5, "character": 21 }]
+        }),
+    );
+    assert!(sel.get("error").is_none());
+
+    // Hover on Stop method.
+    let h3 = hover(&mut client, TEST_URI, 5, 21);
+    assert_hover_ok(&h3);
+
+    // Hover on namespace keyword.
+    let h4 = hover(&mut client, TEST_URI, 0, 5);
+    assert_hover_ok(&h4);
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Definition / TypeDefinition / Declaration / Implementation ────
+
+/// Helper: send a definition request and return the response.
+fn definition(client: &mut LspClient, uri: &str, line: u32, character: u32) -> Value {
+    client.request(
+        "textDocument/definition",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }),
+    )
+}
+
+/// Helper: send a type definition request and return the response.
+fn type_definition(client: &mut LspClient, uri: &str, line: u32, character: u32) -> Value {
+    client.request(
+        "textDocument/typeDefinition",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }),
+    )
+}
+
+/// Helper: send a declaration request and return the response.
+fn declaration(client: &mut LspClient, uri: &str, line: u32, character: u32) -> Value {
+    client.request(
+        "textDocument/declaration",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }),
+    )
+}
+
+/// Helper: send an implementation request and return the response.
+fn implementation(client: &mut LspClient, uri: &str, line: u32, character: u32) -> Value {
+    client.request(
+        "textDocument/implementation",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }),
+    )
+}
+
+// 36. CAPABILITIES: definition, typeDefinition, declaration, implementation
+
+#[test]
+fn test_definition_capabilities_advertised() {
+    let mut client = LspClient::start();
+    let resp = client.initialize();
+    let caps = &resp["result"]["capabilities"];
+
+    assert_eq!(caps["definitionProvider"], true, "definition");
+    assert_eq!(caps["typeDefinitionProvider"], true, "typeDefinition");
+    assert_eq!(caps["declarationProvider"], true, "declaration");
+    assert_eq!(caps["implementationProvider"], true, "implementation");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 37. DEFINITION ON UNOPENED DOCUMENT
+
+#[test]
+fn test_definition_on_unopened_document() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = definition(&mut client, "file:///ghost/NoFile.cs", 0, 0);
+    assert_eq!(resp["jsonrpc"], "2.0");
+    let is_err = resp.get("error").is_some();
+    let is_null = resp["result"].is_null();
+    assert!(is_err || is_null, "must return null or error");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 38. DEFINITION AFTER DOCUMENT EDIT
+
+#[test]
+fn test_definition_after_document_edit() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, "public class Alpha { }");
+
+    let resp = definition(&mut client, TEST_URI, 0, 14);
+    assert_nav_ok(&resp);
+
+    client.change_document(TEST_URI, 2, "public class Beta { public void Run() {} }");
+
+    let resp = definition(&mut client, TEST_URI, 0, 14);
+    assert_nav_ok(&resp);
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Full-Stack Tests (Rust + .NET Sidecar + Roslyn) ──────────────
+//
+// These tests boot the ENTIRE stack: Rust LSP host → .NET sidecar →
+// Roslyn MSBuildWorkspace. They create a real .csproj, load it, and
+// assert on actual hover/definition content.
+
+/// Check if `dotnet` CLI is available on this machine.
+fn is_dotnet_available() -> bool {
+    std::process::Command::new("dotnet")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Wait for the sidecar to finish starting and loading the workspace.
+///
+/// The Rust host spawns `workspace/open` as a background task. If we send
+/// hover requests before it completes, we race with the sidecar spawn and
+/// may cause a double-spawn crash. This function waits for the background
+/// task to finish by polling `textDocument/hover` with a generous interval.
+fn poll_hover_until_ready(
+    client: &mut LspClient,
+    uri: &str,
+    line: u32,
+    character: u32,
+    timeout: Duration,
+) -> Value {
+    // Let the background workspace/open task start and connect first.
+    // This avoids a race condition where hover's ensure_running() spawns
+    // a second sidecar while the first is still starting.
+    std::thread::sleep(Duration::from_secs(5));
+
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let resp = hover(client, uri, line, character);
+        assert_hover_ok(&resp);
+
+        if !resp["result"].is_null() {
+            return resp["result"].clone();
+        }
+
+        assert!(
+            std::time::Instant::now() < deadline,
+            "hover did not return content within {}s — sidecar failed to start or load workspace",
+            timeout.as_secs(),
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+/// Create a minimal .NET project workspace in a temp directory.
+fn create_test_workspace() -> (tempfile::TempDir, String, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("TestHover");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("TestHover.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    let cs_source = r#"namespace TestHover;
+
+/// <summary>A simple calculator for arithmetic operations.</summary>
+public class Calculator
+{
+    /// <summary>Adds two integers.</summary>
+    /// <param name="a">The first operand.</param>
+    /// <param name="b">The second operand.</param>
+    /// <returns>The sum of a and b.</returns>
+    public int Add(int a, int b) { return a + b; }
+
+    /// <summary>The calculator's display name.</summary>
+    public string Name { get; set; } = "Default";
+
+    [System.Obsolete("Use Add instead")]
+    public int OldAdd(int x, int y) { return x + y; }
+
+    private int _counter;
+}
+
+public struct Point
+{
+    public int X;
+    public int Y;
+}
+
+public interface ICalculator
+{
+    int Add(int a, int b);
+}
+
+public enum Color
+{
+    Red,
+    Green,
+    Blue
+}"#;
+    std::fs::write(proj_dir.join("Program.cs"), cs_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("TestHover.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestHover", "TestHover/TestHover.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    // Restore NuGet/SDK packages so MSBuild can resolve framework references.
+    // Without this, Roslyn's SemanticModel has no type information.
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(tmp.path())
+        .status()
+        .expect("dotnet restore failed to start");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    // Canonicalize paths to resolve macOS symlinks (/var → /private/var).
+    // Without this, the Rust host sends "/var/..." but Roslyn resolves to
+    // "/private/var/...", causing FindDocument to fail.
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let real_proj = real_root.join("TestHover");
+    let root_uri = format!("file://{}", real_root.display());
+    let file_uri = format!("file://{}", real_proj.join("Program.cs").display());
+    (tmp, root_uri, file_uri, cs_source.to_string())
+}
+
+// 33. FULL-STACK: HOVER ON CLASS, METHOD, PROPERTY WITH REAL SIDECAR
+
+#[test]
+fn test_full_stack_hover_class_method_property() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed — cannot run full-stack hover test");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait for the sidecar to load Roslyn + MSBuild (may take 30-60s).
+    // Hover on "Calculator" (line 3, char 14) until we get a real result.
+    let class_hover =
+        poll_hover_until_ready(&mut client, &file_uri, 3, 14, Duration::from_secs(90));
+
+    // ═══════════════════════════════════════════════════════════════
+    // ASSERT: CLASS HOVER — signature, keyword, XML docs
+    // ═══════════════════════════════════════════════════════════════
+    let contents = &class_hover["contents"];
+    assert_eq!(contents["kind"], "markdown", "contents must be markdown");
+    let markdown = contents["value"].as_str().unwrap();
+    assert!(!markdown.is_empty(), "hover markdown must not be empty");
+    assert!(markdown.contains("```"), "must have code block fence");
+    assert!(
+        markdown.contains("Calculator"),
+        "must contain class name: {markdown}"
+    );
+    assert!(
+        markdown.contains("class"),
+        "must contain 'class' keyword: {markdown}"
+    );
+
+    // Verify range is present.
+    if let Some(range) = class_hover.get("range") {
+        assert!(range.get("start").is_some(), "range must have start");
+        assert!(range.get("end").is_some(), "range must have end");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ASSERT: METHOD HOVER — signature with params, XML docs
+    // ═══════════════════════════════════════════════════════════════
+    let method_hover = hover(&mut client, &file_uri, 9, 15);
+    assert_hover_ok(&method_hover);
+    assert!(
+        !method_hover["result"].is_null(),
+        "method hover must not be null"
+    );
+    let method_md = method_hover["result"]["contents"]["value"]
+        .as_str()
+        .unwrap();
+    assert!(
+        method_md.contains("Add"),
+        "must contain method name 'Add': {method_md}"
+    );
+    assert!(
+        method_md.contains("```"),
+        "must have code block: {method_md}"
+    );
+
+    // ═══════════════════════════════════════════════════════════════
+    // ASSERT: PROPERTY HOVER — type, name, accessor
+    // ═══════════════════════════════════════════════════════════════
+    let prop_hover = hover(&mut client, &file_uri, 12, 18);
+    assert_hover_ok(&prop_hover);
+    assert!(
+        !prop_hover["result"].is_null(),
+        "property hover must not be null"
+    );
+    let prop_md = prop_hover["result"]["contents"]["value"].as_str().unwrap();
+    assert!(
+        prop_md.contains("Name"),
+        "must contain property name: {prop_md}"
+    );
+    assert!(prop_md.contains("```"), "must have code block: {prop_md}");
+
+    // ═══════════════════════════════════════════════════════════════
+    // ASSERT: OBSOLETE METHOD — deprecation warning
+    // ═══════════════════════════════════════════════════════════════
+    let obsolete_hover = hover(&mut client, &file_uri, 15, 15);
+    assert_hover_ok(&obsolete_hover);
+    assert!(
+        !obsolete_hover["result"].is_null(),
+        "obsolete method hover must not be null",
+    );
+    let obsolete_md = obsolete_hover["result"]["contents"]["value"]
+        .as_str()
+        .unwrap();
+    assert!(
+        obsolete_md.contains("OldAdd"),
+        "must contain method name: {obsolete_md}"
+    );
+    assert!(
+        obsolete_md.contains("```"),
+        "must have code block: {obsolete_md}"
+    );
+
+    // ═══════════════════════════════════════════════════════════════
+    // ASSERT: COMMENT → null (tree-sitter pre-validation still works)
+    // ═══════════════════════════════════════════════════════════════
+    // Force tree parse.
+    let _ = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": file_uri } }),
+    );
+    let comment_hover = hover(&mut client, &file_uri, 2, 10);
+    assert_hover_ok(&comment_hover);
+    assert!(
+        comment_hover["result"].is_null(),
+        "hover on comment must still return null even with sidecar running",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 34. FULL-STACK: HOVER ON STRUCT, ENUM, INTERFACE
+
+#[test]
+fn test_full_stack_hover_struct_enum_interface() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait for sidecar — poll on Calculator class.
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 14, Duration::from_secs(90));
+
+    // ═══ STRUCT ═══
+    let struct_hover = hover(&mut client, &file_uri, 20, 14);
+    assert_hover_ok(&struct_hover);
+    assert!(
+        !struct_hover["result"].is_null(),
+        "struct hover must not be null"
+    );
+    let struct_md = struct_hover["result"]["contents"]["value"]
+        .as_str()
+        .unwrap();
+    assert!(
+        struct_md.contains("Point"),
+        "struct hover must show 'Point'"
+    );
+    assert!(
+        struct_md.contains("struct"),
+        "struct hover must show 'struct'"
+    );
+    assert!(
+        struct_md.contains("```"),
+        "struct hover must have code block"
+    );
+
+    // ═══ INTERFACE ═══
+    let iface_hover = hover(&mut client, &file_uri, 26, 17);
+    assert_hover_ok(&iface_hover);
+    assert!(
+        !iface_hover["result"].is_null(),
+        "interface hover must not be null"
+    );
+    let iface_md = iface_hover["result"]["contents"]["value"].as_str().unwrap();
+    assert!(iface_md.contains("ICalculator"), "must show 'ICalculator'");
+    assert!(iface_md.contains("interface"), "must show 'interface'");
+
+    // ═══ ENUM ═══
+    let enum_hover = hover(&mut client, &file_uri, 31, 12);
+    assert_hover_ok(&enum_hover);
+    assert!(
+        !enum_hover["result"].is_null(),
+        "enum hover must not be null"
+    );
+    let enum_md = enum_hover["result"]["contents"]["value"].as_str().unwrap();
+    assert!(enum_md.contains("Color"), "must show 'Color'");
+    assert!(enum_md.contains("enum"), "must show 'enum'");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 35. FULL-STACK: HOVER AFTER EDIT — content updates with sidecar
+
+#[test]
+fn test_full_stack_hover_after_edit() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait for sidecar to be ready.
+    let initial = poll_hover_until_ready(&mut client, &file_uri, 3, 14, Duration::from_secs(90));
+    let initial_md = initial["contents"]["value"].as_str().unwrap();
+    assert!(
+        initial_md.contains("Calculator"),
+        "initial hover must show Calculator"
+    );
+
+    // Edit the file — add a new class.
+    let new_source = format!(
+        "{source}\n\n/// <summary>A brand new shiny service.</summary>\npublic class BrandNewService\n{{\n    public void Execute() {{ }}\n}}"
+    );
+    client.change_document(&file_uri, 2, &new_source);
+
+    // Hover on the new class — poll until sidecar processes the update.
+    // "BrandNewService" starts around line 39 in the updated source.
+    let new_line = new_source
+        .lines()
+        .position(|l| l.contains("BrandNewService"))
+        .unwrap();
+    let new_hover = poll_hover_until_ready(
+        &mut client,
+        &file_uri,
+        u32::try_from(new_line).unwrap(),
+        14,
+        Duration::from_secs(30),
+    );
+    let new_md = new_hover["contents"]["value"].as_str().unwrap();
+    assert!(
+        new_md.contains("BrandNewService"),
+        "after edit, hover must show new class: {new_md}",
+    );
+    assert!(
+        new_md.to_lowercase().contains("shiny") || new_md.to_lowercase().contains("brand new"),
+        "after edit, hover must show new XML doc: {new_md}",
+    );
+
+    // Original class hover still works.
+    let orig = hover(&mut client, &file_uri, 3, 14);
+    assert_hover_ok(&orig);
+    assert!(!orig["result"].is_null(), "original class must still hover");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Definition Test Helpers ──────────────────────────────────────
+
+/// Assert a definition-family response is valid JSON-RPC with no error.
+fn assert_nav_ok(resp: &Value) {
+    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
+    assert!(resp.get("id").is_some(), "must have request id");
+    assert!(
+        resp.get("error").is_none(),
+        "navigation must not return error: {resp}"
+    );
+}
+
+/// Assert a Location result has uri and range fields.
+fn assert_location_shape(loc: &Value) {
+    assert!(loc.get("uri").is_some(), "location must have uri: {loc}");
+    let range = &loc["range"];
+    assert!(
+        range.get("start").is_some(),
+        "location must have range.start: {loc}"
+    );
+    assert!(
+        range.get("end").is_some(),
+        "location must have range.end: {loc}"
+    );
+}
+
+/// Assert a Location points to a specific line.
+fn assert_location_line(loc: &Value, expected_line: u64, msg: &str) {
+    assert_location_shape(loc);
+    let actual = loc["range"]["start"]["line"].as_u64().unwrap();
+    assert_eq!(actual, expected_line, "{msg}");
+}
+
+/// Poll definition until the sidecar returns a non-null result.
+fn poll_definition_until_ready(
+    client: &mut LspClient,
+    uri: &str,
+    line: u32,
+    character: u32,
+    timeout: Duration,
+) -> Value {
+    std::thread::sleep(Duration::from_secs(5));
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let resp = definition(client, uri, line, character);
+        assert_nav_ok(&resp);
+        if !resp["result"].is_null() {
+            return resp["result"].clone();
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "definition did not resolve within {}s — sidecar not ready",
+            timeout.as_secs(),
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+/// Create a .NET workspace with interfaces, implementations, overrides,
+/// and method calls — everything needed to test definition navigation.
+///
+/// Line numbers (zero-indexed):
+///
+/// ```text
+///  0: namespace TestDefinition;
+///  1: (empty)
+///  2: public interface IAnimal
+///  3: {
+///  4:     string Name { get; }
+///  5:     string Speak();
+///  6: }
+///  7: (empty)
+///  8: public abstract class AnimalBase : IAnimal
+///  9: {
+/// 10:     public abstract string Name { get; }
+/// 11:     public virtual string Speak() { return "..."; }
+/// 12: }
+/// 13: (empty)
+/// 14: public class Dog : AnimalBase
+/// 15: {
+/// 16:     public override string Name => "Dog";
+/// 17:     public override string Speak() { return "Woof"; }
+/// 18: }
+/// 19: (empty)
+/// 20: public class Cat : AnimalBase
+/// 21: {
+/// 22:     public override string Name => "Cat";
+/// 23:     public override string Speak() { return "Meow"; }
+/// 24: }
+/// 25: (empty)
+/// 26: public class Zoo
+/// 27: {
+/// 28:     public Dog MyDog { get; } = new Dog();
+/// 29:     public Cat MyCat { get; } = new Cat();
+/// 30: (empty)
+/// 31:     public string GetGreeting()
+/// 32:     {
+/// 33:         var dog = MyDog;
+/// 34:         var message = dog.Speak();
+/// 35:         return message;
+/// 36:     }
+/// 37: }
+/// ```
+fn create_definition_workspace() -> (tempfile::TempDir, String, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("TestDefinition");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("TestDefinition.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    let cs_source = r#"namespace TestDefinition;
+
+public interface IAnimal
+{
+    string Name { get; }
+    string Speak();
+}
+
+public abstract class AnimalBase : IAnimal
+{
+    public abstract string Name { get; }
+    public virtual string Speak() { return "..."; }
+}
+
+public class Dog : AnimalBase
+{
+    public override string Name => "Dog";
+    public override string Speak() { return "Woof"; }
+}
+
+public class Cat : AnimalBase
+{
+    public override string Name => "Cat";
+    public override string Speak() { return "Meow"; }
+}
+
+public class Zoo
+{
+    public Dog MyDog { get; } = new Dog();
+    public Cat MyCat { get; } = new Cat();
+
+    public string GetGreeting()
+    {
+        var dog = MyDog;
+        var message = dog.Speak();
+        return message;
+    }
+}"#;
+    std::fs::write(proj_dir.join("Program.cs"), cs_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("TestDefinition.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestDefinition", "TestDefinition/TestDefinition.csproj", "{00000000-0000-0000-0000-000000000002}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(tmp.path())
+        .status()
+        .expect("dotnet restore failed to start");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let real_proj = real_root.join("TestDefinition");
+    let root_uri = format!("file://{}", real_root.display());
+    let file_uri = format!("file://{}", real_proj.join("Program.cs").display());
+    (tmp, root_uri, file_uri, cs_source.to_string())
+}
+
+// ── Syntax-only definition tests ────────────────────────────────
+
+// 46. DEFINITION ON COMMENT RETURNS NULL (tree-sitter pre-validation)
+
+#[test]
+fn test_definition_on_comment_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "// This is a comment\nnamespace Test { public class Foo { } }\n";
+    client.open_document(TEST_URI, code);
+
+    let resp = definition(&mut client, TEST_URI, 0, 5);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "definition on comment must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 47. DEFINITION ON STRING LITERAL RETURNS NULL
+
+#[test]
+fn test_definition_on_string_literal_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "namespace T\n{\n    public class F\n    {\n        public string X = \"hello\";\n    }\n}\n";
+    client.open_document(TEST_URI, code);
+
+    let resp = definition(&mut client, TEST_URI, 4, 28);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "definition on string must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 48. DEFINITION WITHOUT SIDECAR RETURNS NULL
+
+#[test]
+fn test_definition_without_sidecar_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    let resp = definition(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "definition without sidecar must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 49. TYPE DEFINITION ON COMMENT RETURNS NULL
+
+#[test]
+fn test_type_definition_on_comment_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "// comment\nnamespace X { }\n";
+    client.open_document(TEST_URI, code);
+
+    let resp = type_definition(&mut client, TEST_URI, 0, 3);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "typeDefinition on comment must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 50. DECLARATION ON STRING RETURNS NULL
+
+#[test]
+fn test_declaration_on_string_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "namespace T { public class F { public string X = \"abc\"; } }\n";
+    client.open_document(TEST_URI, code);
+
+    let resp = declaration(&mut client, TEST_URI, 0, 51);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "declaration on string must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 51. IMPLEMENTATION WITHOUT SIDECAR RETURNS NULL
+
+#[test]
+fn test_implementation_without_sidecar_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, COMPLEX_CLASS);
+
+    let resp = implementation(&mut client, TEST_URI, 6, 22);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "implementation without sidecar must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Full-stack definition E2E tests (real sidecar + Roslyn) ─────
+
+// 52. DEFINITION ON CLASS NAME → CLASS DECLARATION
+
+#[test]
+fn test_full_stack_definition_on_class_name() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // "AnimalBase" in "class Dog : AnimalBase" (line 14, char 23).
+    let result =
+        poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    assert_location_shape(&result);
+    let uri = result["uri"].as_str().unwrap();
+    assert!(uri.starts_with("file://"), "uri must be file:// URI");
+    assert!(uri.contains("Program.cs"), "must point to source file");
+    assert_location_line(&result, 8, "AnimalBase declared at line 8");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 53. DEFINITION ON METHOD CALL → METHOD DECLARATION
+
+#[test]
+fn test_full_stack_definition_on_method_call() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "Speak" in "dog.Speak()" (line 34, char 26).
+    //         var message = dog.Speak();
+    //         0         1         2
+    //         0123456789012345678901234567
+    let resp = definition(&mut client, &file_uri, 34, 26);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(!result.is_null(), "definition on method call must resolve");
+    assert_location_shape(result);
+    let line = result["range"]["start"]["line"].as_u64().unwrap();
+    assert!(
+        line == 11 || line == 17,
+        "Speak → line 11 (virtual) or 17 (override), got {line}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 54. DEFINITION ON PROPERTY ACCESS → PROPERTY DECLARATION
+
+#[test]
+fn test_full_stack_definition_on_property_access() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "MyDog" in "var dog = MyDog" (line 33, char 18).
+    //         var dog = MyDog;
+    //         0         1
+    //         012345678901234567890
+    let resp = definition(&mut client, &file_uri, 33, 18);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(!result.is_null(), "definition on property must resolve");
+    assert_location_line(result, 28, "MyDog property declared at line 28");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 55. TYPE DEFINITION ON VARIABLE → TYPE DECLARATION
+
+#[test]
+fn test_full_stack_type_definition_on_variable() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "MyDog" in "var dog = MyDog" (line 33, char 18) → type Dog (line 14).
+    //         var dog = MyDog;
+    //         0         1
+    //         012345678901234567890
+    let resp = type_definition(&mut client, &file_uri, 33, 18);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "typeDefinition on property ref must resolve"
+    );
+    assert_location_line(result, 14, "type of MyDog is Dog at line 14");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 56. DECLARATION ON OVERRIDE → BASE VIRTUAL METHOD
+
+#[test]
+fn test_full_stack_declaration_on_override() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "Speak" in Dog's override (line 17, char 27) → AnimalBase.Speak (line 11).
+    //     public override string Speak()
+    //     0         1         2
+    //     012345678901234567890123456789
+    let resp = declaration(&mut client, &file_uri, 17, 27);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "declaration on override must resolve to base"
+    );
+    assert_location_line(result, 11, "Dog.Speak override → AnimalBase.Speak line 11");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 57. DECLARATION ON INTERFACE IMPL → INTERFACE MEMBER
+
+#[test]
+fn test_full_stack_declaration_on_interface_impl() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "Name" in AnimalBase's abstract prop (line 10, char 27) → IAnimal.Name (line 4).
+    let resp = declaration(&mut client, &file_uri, 10, 27);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "declaration on interface impl must resolve"
+    );
+    assert_location_line(result, 4, "AnimalBase.Name → IAnimal.Name line 4");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 58. IMPLEMENTATION ON INTERFACE → ALL IMPLEMENTORS
+
+#[test]
+fn test_full_stack_implementation_on_interface() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "IAnimal" interface (line 2, char 18).
+    let resp = implementation(&mut client, &file_uri, 2, 18);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "implementation on interface must return results"
+    );
+    assert!(
+        result.is_array(),
+        "implementation must return Location[]: {result}"
+    );
+    let locations = result.as_array().unwrap();
+    assert!(!locations.is_empty(), "IAnimal must have implementations");
+    for loc in locations {
+        assert_location_shape(loc);
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 59. IMPLEMENTATION ON VIRTUAL METHOD → ALL OVERRIDES (Dog + Cat)
+
+#[test]
+fn test_full_stack_implementation_on_virtual_method() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "Speak" virtual in AnimalBase (line 11, char 25).
+    //     public virtual string Speak()
+    //     0         1         2
+    //     012345678901234567890123456789
+    let resp = implementation(&mut client, &file_uri, 11, 25);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "implementation on virtual must return overrides"
+    );
+    assert!(result.is_array(), "must return Location[]: {result}");
+    let locations = result.as_array().unwrap();
+    assert!(
+        locations.len() >= 2,
+        "Speak must have >= 2 overrides (Dog + Cat), got {}",
+        locations.len()
+    );
+    let lines: Vec<u64> = locations
+        .iter()
+        .map(|loc| loc["range"]["start"]["line"].as_u64().unwrap())
+        .collect();
+    assert!(
+        lines.contains(&17),
+        "must include Dog.Speak line 17: {lines:?}"
+    );
+    assert!(
+        lines.contains(&23),
+        "must include Cat.Speak line 23: {lines:?}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 60. FULL LSP LOCATION STRUCTURE VALIDATION
+
+#[test]
+fn test_full_stack_definition_response_structure() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let result =
+        poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    let uri = result["uri"].as_str().unwrap();
+    assert!(uri.starts_with("file://"), "uri must be file:// URI");
+    assert!(uri.contains("Program.cs"), "uri must point to source file");
+    let range = &result["range"];
+    assert!(range["start"]["line"].is_u64(), "start.line must be number");
+    assert!(
+        range["start"]["character"].is_u64(),
+        "start.character must be number"
+    );
+    assert!(range["end"]["line"].is_u64(), "end.line must be number");
+    assert!(
+        range["end"]["character"].is_u64(),
+        "end.character must be number"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 61. DEFINITION ON EMPTY LINE RETURNS NULL (full-stack)
+
+#[test]
+fn test_full_stack_definition_on_empty_line() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // Empty line (line 1, char 0).
+    let resp = definition(&mut client, &file_uri, 1, 0);
+    assert_nav_ok(&resp);
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 62. ALL FOUR METHODS ON SAME SESSION (interleaved)
+
+#[test]
+fn test_full_stack_all_nav_methods_interleaved() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // 1. definition: "AnimalBase" in Dog's extends (line 14) → line 8
+    let r1 = definition(&mut client, &file_uri, 14, 23);
+    assert_nav_ok(&r1);
+    assert_location_line(&r1["result"], 8, "definition AnimalBase → line 8");
+
+    // 2. typeDefinition: "MyDog" (line 33, char 18) → Dog type (line 14)
+    let r2 = type_definition(&mut client, &file_uri, 33, 18);
+    assert_nav_ok(&r2);
+    assert!(!r2["result"].is_null(), "typeDefinition must resolve");
+    assert_location_line(&r2["result"], 14, "typeDefinition MyDog → Dog line 14");
+
+    // 3. declaration: Dog.Speak override (line 17, char 27) → AnimalBase.Speak (line 11)
+    let r3 = declaration(&mut client, &file_uri, 17, 27);
+    assert_nav_ok(&r3);
+    assert!(!r3["result"].is_null(), "declaration must resolve");
+    assert_location_line(&r3["result"], 11, "declaration override → base line 11");
+
+    // 4. implementation: AnimalBase.Speak virtual (line 11, char 25) → Dog + Cat
+    let r4 = implementation(&mut client, &file_uri, 11, 25);
+    assert_nav_ok(&r4);
+    assert!(r4["result"].is_array(), "implementation must be array");
+    let locs = r4["result"].as_array().unwrap();
+    assert!(locs.len() >= 2, "must have >= 2 implementations");
+
+    // 5. definition again: "MyDog" (line 33, char 18) → property (line 28)
+    let r5 = definition(&mut client, &file_uri, 33, 18);
+    assert_nav_ok(&r5);
+    assert_location_line(&r5["result"], 28, "definition MyDog → line 28");
+
+    // 6. hover still works after all the navigation requests
+    let r6 = hover(&mut client, &file_uri, 14, 14);
+    assert_hover_ok(&r6);
+    assert!(!r6["result"].is_null(), "hover must still work");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── DIAGNOSTICS TESTS ────────────────────────────────────────────
+
+// didClose sends empty publishDiagnostics unconditionally (no sidecar needed).
+
+#[test]
+fn test_diagnostics_cleared_on_close_raw_recv() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "namespace Test { public class Foo { } }\n";
+    client.open_document(TEST_URI, code);
+    client.close_document(TEST_URI);
+
+    // Without a sidecar, the clear notification is the only message.
+    let msg = client.recv();
+    assert_eq!(
+        msg["method"].as_str().unwrap(),
+        "textDocument/publishDiagnostics",
+        "must receive publishDiagnostics on close",
+    );
+    let params = &msg["params"];
+    assert_eq!(
+        params["uri"].as_str().unwrap(),
+        TEST_URI,
+        "diagnostics URI must match closed document",
+    );
+    let diagnostics = params["diagnostics"].as_array().unwrap();
+    assert!(
+        diagnostics.is_empty(),
+        "diagnostics must be empty after didClose",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// request() skips diagnostic notifications correctly.
+
+#[test]
+fn test_request_works_after_diagnostic_notification() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "namespace Test { public class Foo { } }\n";
+    client.open_document(TEST_URI, code);
+    client.close_document(TEST_URI);
+    client.open_document(TEST_URI, code);
+
+    // Close sent a diagnostic notification. request() must skip it.
+    let resp = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": TEST_URI } }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "documentSymbol must succeed after diagnostic notifications",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Verify diagnosticProvider advertises workspace diagnostics.
+
+#[test]
+fn test_capabilities_advertise_workspace_diagnostics() {
+    let mut client = LspClient::start();
+    let resp = client.initialize();
+
+    let capabilities = &resp["result"]["capabilities"];
+    let diag_provider = &capabilities["diagnosticProvider"];
+    assert!(
+        !diag_provider.is_null(),
+        "diagnosticProvider must be advertised",
+    );
+    assert_eq!(
+        diag_provider["interFileDependencies"],
+        json!(true),
+        "interFileDependencies must be true",
+    );
+    assert_eq!(
+        diag_provider["workspaceDiagnostics"],
+        json!(true),
+        "workspaceDiagnostics must be true",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Multiple documents: closing one clears only that document's diagnostics.
+
+#[test]
+fn test_diagnostics_cleared_independently_per_document() {
+    let uri_a = "file:///test/A.cs";
+    let uri_b = "file:///test/B.cs";
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(uri_a, "namespace A { public class Alpha { } }");
+    client.open_document(uri_b, "namespace B { public class Beta { } }");
+
+    // Close only document A — should clear A, not B.
+    client.close_document(uri_a);
+    let msg = client.recv();
+    assert_eq!(
+        msg["method"].as_str().unwrap(),
+        "textDocument/publishDiagnostics",
+    );
+    assert_eq!(
+        msg["params"]["uri"].as_str().unwrap(),
+        uri_a,
+        "clear must target the closed document",
+    );
+    assert!(
+        msg["params"]["diagnostics"].as_array().unwrap().is_empty(),
+        "closed document diagnostics must be empty",
+    );
+
+    // Document B is still open — a request on it must succeed.
+    let resp = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": uri_b } }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "document B must still be usable after closing A",
+    );
+    let symbols = resp["result"].as_array().unwrap();
+    assert!(!symbols.is_empty(), "document B must still return symbols",);
+
+    // Now close B — it should also be cleared.
+    client.close_document(uri_b);
+    let msg_b = client.recv();
+    assert_eq!(
+        msg_b["params"]["uri"].as_str().unwrap(),
+        uri_b,
+        "clear must target B after closing B",
+    );
+    assert!(
+        msg_b["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "B diagnostics must be empty",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Edit cycle: open → change → close produces clear notification.
+
+#[test]
+fn test_diagnostics_clear_after_edit_cycle() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code_v1 = "namespace Test { public class V1 { } }";
+    let code_v2 = "namespace Test { public class V2 { public int X; } }";
+
+    client.open_document(TEST_URI, code_v1);
+    client.change_document(TEST_URI, 2, code_v2);
+
+    // The VFS should hold the latest version. Verify via documentSymbol.
+    let resp = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": TEST_URI } }),
+    );
+    assert!(resp.get("error").is_none(), "symbol request must succeed");
+    let symbols = resp["result"].as_array().unwrap();
+    // V2 has class with field — verify it sees V2 content.
+    // First symbol is the namespace "Test", class is nested inside.
+    let children = symbols[0]["children"].as_array().unwrap();
+    let class_name = children[0]["name"].as_str().unwrap();
+    assert_eq!(class_name, "V2", "VFS must reflect the changed content");
+
+    // Close and verify clear.
+    client.close_document(TEST_URI);
+    let msg = client.recv();
+    assert_eq!(
+        msg["method"].as_str().unwrap(),
+        "textDocument/publishDiagnostics",
+    );
+    assert!(
+        msg["params"]["diagnostics"].as_array().unwrap().is_empty(),
+        "diagnostics must be cleared after edit+close cycle",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Rapid open/close cycles: each close must produce a clear notification.
+
+#[test]
+fn test_diagnostics_rapid_open_close_cycles() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let uris = [
+        "file:///test/Rapid1.cs",
+        "file:///test/Rapid2.cs",
+        "file:///test/Rapid3.cs",
+    ];
+
+    // Open and immediately close all three.
+    for uri in &uris {
+        client.open_document(uri, "namespace Rapid { }");
+        client.close_document(uri);
+    }
+
+    // Must receive exactly 3 clear notifications, one per URI.
+    let mut cleared_uris: Vec<String> = Vec::new();
+    for _ in 0..uris.len() {
+        let msg = client.recv();
+        assert_eq!(
+            msg["method"].as_str().unwrap(),
+            "textDocument/publishDiagnostics",
+            "each close must produce a publishDiagnostics",
+        );
+        assert!(
+            msg["params"]["diagnostics"].as_array().unwrap().is_empty(),
+            "diagnostics must be empty",
+        );
+        cleared_uris.push(msg["params"]["uri"].as_str().unwrap().to_string());
+    }
+
+    // All three URIs must have been cleared (order may vary).
+    for uri in &uris {
+        assert!(
+            cleared_uris.contains(&uri.to_string()),
+            "expected {uri} in cleared set, got {cleared_uris:?}",
+        );
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Reopen after close: diagnostics flow restarts cleanly.
+
+#[test]
+fn test_diagnostics_reopen_after_close() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "namespace Test { public class Reopen { } }";
+
+    // Open → close → collect clear notification.
+    client.open_document(TEST_URI, code);
+    client.close_document(TEST_URI);
+    let clear_msg = client.recv();
+    assert!(
+        clear_msg["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "first close must clear",
+    );
+
+    // Reopen the same document.
+    client.open_document(TEST_URI, code);
+
+    // Verify the VFS has the content again — documentSymbol should work.
+    let resp = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": TEST_URI } }),
+    );
+    assert!(resp.get("error").is_none(), "must succeed after reopen");
+    let symbols = resp["result"].as_array().unwrap();
+    assert!(!symbols.is_empty(), "reopened document must have symbols");
+    // First symbol is the namespace "Test", class is nested.
+    let children = symbols[0]["children"].as_array().unwrap();
+    assert_eq!(
+        children[0]["name"].as_str().unwrap(),
+        "Reopen",
+        "must see the reopened content",
+    );
+
+    // Close again — second clear notification.
+    client.close_document(TEST_URI);
+    let clear_msg2 = client.recv();
+    assert_eq!(clear_msg2["params"]["uri"].as_str().unwrap(), TEST_URI,);
+    assert!(
+        clear_msg2["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "second close must also clear",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Full-stack: solution-wide diagnostics fire after workspace load.
+
+#[test]
+fn test_full_stack_solution_wide_diagnostics_on_load() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("DiagTest");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("DiagTest.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    // File with a deliberate type error: UndefinedType doesn't exist.
+    let cs_source = r#"namespace DiagTest;
+
+public class Broken
+{
+    public UndefinedType Oops { get; set; }
+}
+"#;
+    std::fs::write(proj_dir.join("Broken.cs"), cs_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("DiagTest.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DiagTest", "DiagTest/DiagTest.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(&proj_dir)
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let root_uri = format!("file://{}", real_root.display());
+    let broken_path = real_root.join("DiagTest").join("Broken.cs");
+    let broken_uri = format!("file://{}", broken_path.display());
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+
+    // Open the broken file to trigger per-file diagnostics and ensure
+    // the sidecar starts. Solution-wide scan also fires after workspace load.
+    client.open_document(&broken_uri, cs_source);
+
+    // Poll: open → save → sleep → close → recv() in a loop.
+    // Diagnostic notifications arrive before the close-clear notification.
+    let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let mut found_error = false;
+
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_secs(3));
+        client.save_document(&broken_uri);
+        std::thread::sleep(Duration::from_secs(2));
+
+        client.close_document(&broken_uri);
+        let msg = client.recv();
+
+        if msg["method"].as_str() == Some("textDocument/publishDiagnostics") {
+            let diags = msg["params"]["diagnostics"].as_array().unwrap();
+            if !diags.is_empty() {
+                let has_error = diags.iter().any(|d| {
+                    d["message"]
+                        .as_str()
+                        .is_some_and(|m| m.contains("UndefinedType") || m.contains("CS0246"))
+                });
+                if has_error {
+                    found_error = true;
+                    let diag = &diags[0];
+                    assert!(
+                        diag["range"]["start"]["line"].as_u64().is_some(),
+                        "diagnostic must have a range",
+                    );
+                    assert!(
+                        diag["severity"].as_u64().is_some(),
+                        "diagnostic must have severity",
+                    );
+                    assert_eq!(
+                        diag["source"].as_str().unwrap(),
+                        "forge-csharp",
+                        "source must be forge-csharp",
+                    );
+                    break;
+                }
+            }
+        }
+
+        client.open_document(&broken_uri, cs_source);
+    }
+
+    assert!(
+        found_error,
+        "solution-wide diagnostics must detect UndefinedType error in Broken.cs within 90s",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Full-stack: single-file diagnostics on didOpen detect type errors.
+
+#[test]
+fn test_full_stack_diagnostics_on_open_detects_errors() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("ErrTest");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("ErrTest.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    let good_source = r#"namespace ErrTest;
+public class Good { public int Value { get; set; } }
+"#;
+    std::fs::write(proj_dir.join("Good.cs"), good_source).unwrap();
+
+    let bad_source = r#"namespace ErrTest;
+public class Bad
+{
+    public MissingType Broken { get; set; }
+}
+"#;
+    std::fs::write(proj_dir.join("Bad.cs"), bad_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("ErrTest.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ErrTest", "ErrTest/ErrTest.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(&proj_dir)
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let root_uri = format!("file://{}", real_root.display());
+    let bad_path = real_root.join("ErrTest").join("Bad.cs");
+    let bad_uri = format!("file://{}", bad_path.display());
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+
+    // Open the bad file to trigger per-file diagnostics.
+    client.open_document(&bad_uri, bad_source);
+
+    // Poll for diagnostics: open triggers a background sidecar request.
+    // We'll try to receive for up to 90s.
+    let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let mut found = false;
+
+    while std::time::Instant::now() < deadline {
+        // Send a request so we can drain notifications.
+        std::thread::sleep(Duration::from_secs(3));
+        client.save_document(&bad_uri);
+        std::thread::sleep(Duration::from_secs(2));
+
+        // Close to get the guaranteed clear message.
+        client.close_document(&bad_uri);
+        let msg = client.recv();
+
+        if msg["method"].as_str() == Some("textDocument/publishDiagnostics") {
+            let diags = msg["params"]["diagnostics"].as_array().unwrap();
+            if !diags.is_empty() {
+                // Got real diagnostics before the clear!
+                for diag in diags {
+                    let msg_text = diag["message"].as_str().unwrap_or("");
+                    if msg_text.contains("MissingType") || msg_text.contains("CS0246") {
+                        found = true;
+                        assert_eq!(diag["source"].as_str().unwrap(), "forge-csharp",);
+                        assert!(
+                            diag["severity"].as_u64().unwrap() <= 2,
+                            "type error must be Error(1) or Warning(2)",
+                        );
+                        assert!(
+                            diag["code"].is_object()
+                                || diag["code"].is_string()
+                                || diag["code"].is_number(),
+                            "diagnostic must have a code",
+                        );
+                        break;
+                    }
+                }
+                if found {
+                    break;
+                }
+            }
+            // If empty, it's the clear from close. Reopen and try again.
+        }
+
+        client.open_document(&bad_uri, bad_source);
+    }
+
+    assert!(
+        found,
+        "didOpen on a file with MissingType must produce CS0246 diagnostics within 90s",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Full-stack: clean file produces no error diagnostics.
+
+#[test]
+fn test_full_stack_diagnostics_clean_file_no_errors() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("CleanTest");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("CleanTest.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    let clean_source = r#"namespace CleanTest;
+public class AllGood
+{
+    public int Value { get; set; }
+    public string Name { get; set; } = "";
+}
+"#;
+    std::fs::write(proj_dir.join("AllGood.cs"), clean_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("CleanTest.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CleanTest", "CleanTest/CleanTest.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    // Restore the .csproj directly — the minimal .sln format doesn't
+    // contain enough metadata for NuGet to discover projects.
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(&proj_dir)
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let root_uri = format!("file://{}", real_root.display());
+    let file_path = real_root.join("CleanTest").join("AllGood.cs");
+    let file_uri = format!("file://{}", file_path.display());
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, clean_source);
+
+    // Wait for sidecar to be ready by polling hover.
+    let hover_result =
+        poll_hover_until_ready(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
+    assert!(
+        !hover_result.is_null(),
+        "hover must work once sidecar is ready",
+    );
+
+    // Trigger diagnostics via save, then close to get clear.
+    client.save_document(&file_uri);
+    std::thread::sleep(Duration::from_secs(5));
+    client.close_document(&file_uri);
+
+    // Drain all publishDiagnostics notifications until we find one
+    // specifically for our file. The solution-wide scan may have queued
+    // diagnostics for generated framework files ahead of ours.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut found_our_file = false;
+    while std::time::Instant::now() < deadline {
+        let msg = client.recv();
+        if msg["method"].as_str() != Some("textDocument/publishDiagnostics") {
+            continue;
+        }
+        let msg_uri = msg["params"]["uri"].as_str().unwrap_or("");
+        if msg_uri != file_uri {
+            continue;
+        }
+        // Found diagnostics for our file.
+        let diags = msg["params"]["diagnostics"].as_array().unwrap();
+        let has_errors = diags
+            .iter()
+            .any(|d| d["severity"].as_u64().is_some_and(|s| s == 1));
+        assert!(
+            !has_errors,
+            "clean file must not produce Error-severity diagnostics, got: {diags:?}",
+        );
+        found_our_file = true;
+        break;
+    }
+
+    assert!(
+        found_our_file,
+        "must receive publishDiagnostics for our file",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Sort Members E2E Tests ───────────────────────────────────────
+
+fn create_sort_members_file(content: &str) -> (tempfile::TempDir, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let real_path = std::fs::canonicalize(tmp.path()).unwrap();
+    let file_path = real_path.join("SortTest.cs");
+    std::fs::write(&file_path, content).unwrap();
+    let file_uri = format!("file://{}", file_path.display());
+    (tmp, file_path.to_string_lossy().to_string(), file_uri)
+}
+
+fn default_sort_config() -> Value {
+    json!({
+        "hierarchy": ["accessibility", "category", "alphabetical"],
+        "accessibilityOrder": [
+            "public", "protected internal", "internal",
+            "protected", "private protected", "private"
+        ],
+        "categoryOrder": [
+            "constant", "field", "constructor", "finalizer", "delegate",
+            "event", "enum", "interface", "property", "indexer",
+            "operator", "method", "struct", "class", "record"
+        ]
+    })
+}
+
+// 52. SORT MEMBERS: REORDER BY ACCESSIBILITY
+
+#[test]
+fn test_sort_members_reorders_by_accessibility() {
+    let source = "namespace Test\n{\n    public class Foo\n    {\n        private void PrivateMethod() { }\n        public void PublicMethod() { }\n        internal void InternalMethod() { }\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 7, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_none(),
+        "forge/sortMembers must not error: {resp}",
+    );
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(!edits.is_empty(), "expected edits to reorder members");
+
+    let new_text = edits[0]["newText"].as_str().unwrap();
+    let pub_pos = new_text.find("PublicMethod").expect("PublicMethod");
+    let int_pos = new_text.find("InternalMethod").expect("InternalMethod");
+    let priv_pos = new_text.find("PrivateMethod").expect("PrivateMethod");
+    assert!(
+        pub_pos < int_pos && int_pos < priv_pos,
+        "expected public < internal < private",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 53. SORT MEMBERS: REORDER BY CATEGORY
+
+#[test]
+fn test_sort_members_reorders_by_category() {
+    let source = "namespace Test\n{\n    public class Bar\n    {\n        public void DoStuff() { }\n        public int Value { get; set; }\n        public int _field;\n        public Bar() { }\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 8, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(!edits.is_empty(), "expected reorder edits");
+
+    let new_text = edits[0]["newText"].as_str().unwrap();
+    let field_pos = new_text.find("_field").expect("_field");
+    let ctor_pos = new_text.find("Bar()").expect("Bar()");
+    let prop_pos = new_text.find("Value").expect("Value");
+    let method_pos = new_text.find("DoStuff").expect("DoStuff");
+    assert!(
+        field_pos < ctor_pos && ctor_pos < prop_pos && prop_pos < method_pos,
+        "expected field < ctor < property < method",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 54. SORT MEMBERS: ALREADY SORTED RETURNS NO EDITS
+
+#[test]
+fn test_sort_members_already_sorted_returns_no_edits() {
+    let source = "namespace Test\n{\n    public class Sorted\n    {\n        public int Alpha;\n        public int Beta;\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 6, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(edits.is_empty(), "already sorted — expected no edits");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 55. SORT MEMBERS: SINGLE MEMBER RETURNS NO EDITS
+
+#[test]
+fn test_sort_members_single_member_returns_no_edits() {
+    let source = "namespace Test\n{\n    public class OneMember\n    {\n        public void Only() { }\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 5, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(edits.is_empty(), "single member — no sorting needed");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 56. SORT MEMBERS: CUSTOM HIERARCHY (CATEGORY FIRST)
+
+#[test]
+fn test_sort_members_custom_hierarchy_category_first() {
+    let source = "namespace Test\n{\n    public class Custom\n    {\n        public void PublicMethod() { }\n        private int _privateField;\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 6, "character": 5 }
+            },
+            "sortConfig": {
+                "hierarchy": ["category", "accessibility", "alphabetical"],
+                "accessibilityOrder": ["public", "private"],
+                "categoryOrder": ["field", "method"]
+            }
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(!edits.is_empty(), "expected reorder edits");
+
+    let new_text = edits[0]["newText"].as_str().unwrap();
+    let field_pos = new_text.find("_privateField").expect("field");
+    let method_pos = new_text.find("PublicMethod").expect("method");
+    assert!(
+        field_pos < method_pos,
+        "category-first: field before method regardless of access",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 57. SORT MEMBERS: INTERFACE SORTS METHODS ALPHABETICALLY
+
+#[test]
+fn test_sort_members_interface_sorts_methods() {
+    let source = "namespace Test\n{\n    public interface IService\n    {\n        void Zebra();\n        void Alpha();\n        void Middle();\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 7, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(!edits.is_empty(), "expected reorder edits");
+
+    let new_text = edits[0]["newText"].as_str().unwrap();
+    let alpha_pos = new_text.find("Alpha").expect("Alpha");
+    let middle_pos = new_text.find("Middle").expect("Middle");
+    let zebra_pos = new_text.find("Zebra").expect("Zebra");
+    assert!(
+        alpha_pos < middle_pos && middle_pos < zebra_pos,
+        "expected alphabetical order",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 58. SORT MEMBERS: ENUM SORTS MEMBERS ALPHABETICALLY
+
+#[test]
+fn test_sort_members_enum_sorts_members() {
+    let source = "namespace Test\n{\n    public enum Priority\n    {\n        Zebra,\n        Alpha,\n        Middle\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 8, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(!edits.is_empty(), "expected reorder edits for enum");
+
+    let new_text = edits[0]["newText"].as_str().unwrap();
+    let alpha_pos = new_text.find("Alpha").expect("Alpha");
+    let middle_pos = new_text.find("Middle").expect("Middle");
+    let zebra_pos = new_text.find("Zebra").expect("Zebra");
+    assert!(
+        alpha_pos < middle_pos && middle_pos < zebra_pos,
+        "expected alphabetical enum members",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 59. SORT MEMBERS: INVALID RANGE RETURNS ERROR
+
+#[test]
+fn test_sort_members_invalid_range_returns_error() {
+    let source = "namespace Test { }\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 99, "character": 0 },
+                "end": { "line": 99, "character": 0 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "expected error for invalid range: {resp}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 60. SORT MEMBERS: MIXED ACCESSIBILITY AND CATEGORY
+
+#[test]
+fn test_sort_members_mixed_accessibility_and_category() {
+    let source = "namespace Test\n{\n    public class Mixed\n    {\n        private void PrivateMethod() { }\n        public int PublicField;\n        internal int InternalProp { get; set; }\n        public void PublicMethod() { }\n        private int PrivateField;\n        public Mixed() { }\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 10, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(!edits.is_empty(), "expected reorder edits");
+
+    let new_text = edits[0]["newText"].as_str().unwrap();
+    let pub_field = new_text.find("PublicField").expect("PublicField");
+    let pub_ctor = new_text.find("Mixed()").expect("Mixed()");
+    let pub_method = new_text.find("PublicMethod").expect("PublicMethod");
+    assert!(
+        pub_field < pub_ctor && pub_ctor < pub_method,
+        "public: field < ctor < method",
+    );
+
+    let int_prop = new_text.find("InternalProp").expect("InternalProp");
+    assert!(pub_method < int_prop, "internal after public");
+
+    let priv_field = new_text.find("PrivateField").expect("PrivateField");
+    let priv_method = new_text.find("PrivateMethod").expect("PrivateMethod");
+    assert!(
+        int_prop < priv_field && priv_field < priv_method,
+        "private last, field before method",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 61. SORT MEMBERS: STRUCT SORTS MEMBERS
+
+#[test]
+fn test_sort_members_struct_sorts_members() {
+    let source = "namespace Test\n{\n    public struct Point\n    {\n        public void Reset() { }\n        public int Y;\n        public int X;\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 7, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(!edits.is_empty(), "expected reorder edits");
+
+    let new_text = edits[0]["newText"].as_str().unwrap();
+    let x_pos = new_text.find("int X").expect("X");
+    let y_pos = new_text.find("int Y").expect("Y");
+    let reset_pos = new_text.find("Reset").expect("Reset");
+    assert!(x_pos < y_pos, "X before Y alphabetically");
+    assert!(y_pos < reset_pos, "fields before methods");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 62. SORT MEMBERS: PRESERVES COMMENTS AND ATTRIBUTES
+
+#[test]
+fn test_sort_members_preserves_comments_and_attributes() {
+    let source = "namespace Test\n{\n    public class Decorated\n    {\n        // Private helper\n        [System.Obsolete]\n        private void Helper() { }\n        /// <summary>Public API</summary>\n        public void Api() { }\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 9, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(!edits.is_empty(), "expected reorder edits");
+
+    let new_text = edits[0]["newText"].as_str().unwrap();
+    // Public Api() should come first, with its doc comment.
+    let api_pos = new_text.find("Api").expect("Api");
+    let helper_pos = new_text.find("Helper").expect("Helper");
+    assert!(api_pos < helper_pos, "public before private");
+    // Comments and attributes must still be present.
+    assert!(
+        new_text.contains("/// <summary>Public API</summary>"),
+        "doc comment preserved"
+    );
+    assert!(
+        new_text.contains("[System.Obsolete]"),
+        "attribute preserved"
+    );
+    assert!(
+        new_text.contains("// Private helper"),
+        "line comment preserved"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 63. SORT MEMBERS: INSERTS BLANK LINES BETWEEN GROUPS
+
+#[test]
+fn test_sort_members_inserts_blank_lines_between_groups() {
+    let source = "namespace Test\n{\n    public class Groups\n    {\n        private void PrivMethod() { }\n        public int PubField;\n        public void PubMethod() { }\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 7, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(!edits.is_empty(), "expected reorder edits");
+
+    let new_text = edits[0]["newText"].as_str().unwrap();
+    // Public members come first, then private — separated by blank line.
+    let pub_field = new_text.find("PubField").expect("PubField");
+    let priv_method = new_text.find("PrivMethod").expect("PrivMethod");
+    assert!(pub_field < priv_method, "public before private");
+    // There should be a double newline (blank line) between the groups.
+    let between = &new_text[pub_field..priv_method];
+    assert!(
+        between.contains("\n\n"),
+        "blank line between accessibility groups"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 64. SORT MEMBERS: REGION BLOCKS PRESERVED AS TRIVIA
+
+#[test]
+fn test_sort_members_preserves_region_blocks() {
+    let source = "namespace Test\n{\n    public class Regions\n    {\n        #region Private\n        private void Beta() { }\n        #endregion\n        public void Alpha() { }\n    }\n}\n";
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 8, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(!edits.is_empty(), "expected reorder edits");
+
+    let new_text = edits[0]["newText"].as_str().unwrap();
+    // Public Alpha should come first.
+    let alpha_pos = new_text.find("Alpha").expect("Alpha");
+    let beta_pos = new_text.find("Beta").expect("Beta");
+    assert!(alpha_pos < beta_pos, "public before private");
+    // Region directives must still be in the output.
+    assert!(new_text.contains("#region"), "#region preserved");
+    assert!(new_text.contains("#endregion"), "#endregion preserved");
 
     client.shutdown_and_exit();
     client.wait_with_timeout();

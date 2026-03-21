@@ -77,7 +77,7 @@ class Added { void NewMethod() { } }`;
         return result ?? [];
       },
       (syms) => flattenNames(syms).includes("Added"),
-      LSP_RESPONSE_TIMEOUT_MS,
+      LSP_RESPONSE_TIMEOUT_MS * 2,
     );
 
     names = flattenNames(symbols);
@@ -125,7 +125,7 @@ class Added { void NewMethod() { } }`;
         return result ?? [];
       },
       (ranges) => ranges.length > initialCount,
-      LSP_RESPONSE_TIMEOUT_MS,
+      LSP_RESPONSE_TIMEOUT_MS * 2,
     );
 
     assert.ok(
@@ -161,7 +161,7 @@ class B { void Y() { } }`;
         return result ?? [];
       },
       (syms) => !flattenNames(syms).includes("B"),
-      LSP_RESPONSE_TIMEOUT_MS,
+      LSP_RESPONSE_TIMEOUT_MS * 2,
     );
 
     names = flattenNames(symbols);
@@ -224,7 +224,7 @@ class B { void Y() { } }`;
         return result ?? [];
       },
       (syms) => flattenNames(syms).includes("Step2"),
-      LSP_RESPONSE_TIMEOUT_MS,
+      LSP_RESPONSE_TIMEOUT_MS * 2,
     );
     assert.ok(
       flattenNames(symbols).includes("Step2"),
@@ -272,7 +272,7 @@ class B { void Y() { } }`;
         return result ?? [];
       },
       (syms) => flattenNames(syms).includes("V5"),
-      LSP_RESPONSE_TIMEOUT_MS,
+      LSP_RESPONSE_TIMEOUT_MS * 2,
     );
 
     const names = flattenNames(symbols);

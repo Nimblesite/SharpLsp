@@ -1,49 +1,125 @@
-name: CI
+name: PR
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  check:
-    name: Check & Clippy
+  rust:
+    name: Rust
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
 
-      - name: Cache cargo registry & build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+      - uses: Swatinem/rust-cache@v2
 
-      - name: cargo check
-        run: cargo check --all-targets
+      - name: Format
+        run: cargo fmt --all -- --check
 
-      - name: cargo clippy
+      - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: cargo fmt
-        run: cargo fmt --all -- --check
+  dotnet:
+    name: .NET
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Restore tools
+        run: dotnet tool restore
+
+      - name: Format
+        run: dotnet csharpier check sidecars/
+
+      - name: Build
+        run: dotnet build sidecars/Forge.Sidecars.sln
+
+  vscode:
+    name: VS Code
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+
+      - run: npm ci
+
+      - name: Format
+        run: npx prettier@3 --check 'src/**/*.ts'
+
+      - name: Lint
+        run: npm run lint
+
+  screenshots:
+    name: Screenshots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+
+      - name: Install extension deps
+        working-directory: editors/vscode
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: editors/vscode
+        run: npx playwright install --with-deps chromium
+
+      - name: Install VS Code CLI
+        run: |
+          curl -fsSL "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64" -o /tmp/vscode-cli.tar.gz
+          tar -xzf /tmp/vscode-cli.tar.gz -C /usr/local/bin
+
+      - name: Capture screenshots
+        working-directory: editors/vscode
+        run: npm run screenshots
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-screenshots
+          path: website/src/assets/screenshots/
+          if-no-files-found: warn
 
   test:
     name: Test (${{ matrix.os }})
-    needs: check
+    needs: [rust]
     strategy:
       fail-fast: false
       matrix:
@@ -52,91 +128,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry & build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+      - uses: Swatinem/rust-cache@v2
 
-      - name: cargo test
-        run: cargo test --all-targets
-
-  build:
-    name: Build (${{ matrix.target }})
-    needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            binary: forge-lsp
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            binary: forge-lsp
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            binary: forge-lsp
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            binary: forge-lsp.exe
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Cache cargo registry & build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
-
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: forge-lsp-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/${{ matrix.binary }}
-
-  vscode-extension:
-    name: VS Code Extension
-    needs: check
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: editors/vscode
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: editors/vscode/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Compile
-        run: npm run compile
+      - run: cargo test --all-targets

@@ -3,8 +3,13 @@
 //! Implements LSP 3.17 lifecycle over stdio using `lsp-server`.
 
 mod config;
+mod diagnostics;
+mod handlers;
+mod hover_cache;
+mod profiler;
 mod semantic;
 mod sidecar;
+mod sort_members;
 mod syntax;
 mod tree_sitter_parse;
 mod vfs;
@@ -23,15 +28,17 @@ use lsp_types::{
         Notification as _,
     },
     request::{
-        Completion, DocumentSymbolRequest, FoldingRangeRequest, GotoDefinition, HoverRequest,
-        LinkedEditingRange, Request as _, SelectionRangeRequest, Shutdown,
+        Completion, DocumentSymbolRequest, FoldingRangeRequest, GotoDeclaration, GotoDefinition,
+        GotoImplementation, GotoTypeDefinition, HoverRequest, LinkedEditingRange, Request as _,
+        SelectionRangeRequest, Shutdown,
     },
-    DocumentSymbolParams, DocumentSymbolResponse, FoldingRangeParams,
-    FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams,
-    LinkedEditingRangeParams, OneOf, SelectionRangeParams, SelectionRangeProviderCapability,
-    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
+    FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams, OneOf,
+    SelectionRangeProviderCapability, ServerCapabilities, TextDocumentSyncCapability,
+    TextDocumentSyncKind, Uri,
 };
 use tracing::{error, info, warn};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use tree_sitter::Tree;
 
 use crate::sidecar::manager::SidecarManager;
@@ -51,15 +58,28 @@ fn error_code_i32(code: lsp_server::ErrorCode) -> i32 {
 }
 
 fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+    let log_dir = std::env::temp_dir().join("forge-lsp-logs");
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "forge-lsp.log");
+    let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
+
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_ansi(true),
         )
-        .with_writer(std::io::stderr)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(file_writer)
+                .json(),
+        )
         .init();
 
-    info!("Forge LSP starting");
+    info!(log_path = %log_dir.display(), "Forge LSP starting");
 
     match run_server() {
         Ok(()) => ExitCode::SUCCESS,
@@ -93,7 +113,10 @@ fn run_server() -> Result<()> {
                 .map(PathBuf::from)
         })
         .or_else(|| {
-            #[expect(deprecated, reason = "root_uri is the LSP 3.16 fallback when workspace_folders is absent")]
+            #[expect(
+                deprecated,
+                reason = "root_uri is the LSP 3.16 fallback when workspace_folders is absent"
+            )]
             let root = init_params.root_uri.as_ref();
             root.and_then(|uri| uri.as_str().strip_prefix("file://").map(PathBuf::from))
         });
@@ -110,6 +133,9 @@ fn run_server() -> Result<()> {
         forge_config.server.log_level, forge_config.server.debounce_ms
     );
 
+    // Apply profiler config.
+    profiler::session::set_max_sessions(forge_config.profiler.max_concurrent_sessions);
+
     // Create tokio runtime for async sidecar IPC.
     let runtime = tokio::runtime::Runtime::new().context("create tokio runtime")?;
 
@@ -122,23 +148,44 @@ fn run_server() -> Result<()> {
         None
     };
 
-    // Eagerly open the workspace in the sidecar and start health monitoring.
-    // All sidecar operations must run inside the tokio runtime context.
+    // Eagerly open the workspace in the sidecar, then start health monitoring.
+    // Health monitoring must wait until workspace/open completes — otherwise the
+    // health check can time out on the transport lock (held by workspace/open),
+    // declare a false crash, and kill the sidecar before the solution is loaded.
+    //
+    // After workspace load, trigger solution-wide diagnostics if enabled.
     if let (Some(ref sidecar), Some(ref root)) = (&csharp_sidecar, &workspace_root) {
         let sidecar_clone = Arc::clone(sidecar);
         let root_str = root.to_string_lossy().to_string();
+        let solution_wide = forge_config.diagnostics.solution_wide_analysis;
+        let project_filter = forge_config.diagnostics.project_filter.clone();
+        let sender = connection.sender.clone();
         runtime.spawn(async move {
             if let Err(err) = open_workspace(&sidecar_clone, &root_str).await {
                 error!("Failed to open workspace in sidecar: {err:#}");
+                return;
             }
-        });
-        let health_sidecar = Arc::clone(sidecar);
-        runtime.spawn(async move {
-            health_sidecar.start_health_monitor().await;
+            if solution_wide {
+                info!("Starting solution-wide diagnostics scan");
+                diagnostics::request_solution_in_background(
+                    Arc::clone(&sidecar_clone),
+                    sender,
+                    project_filter,
+                );
+            }
+            sidecar_clone.start_health_monitor().await;
         });
     }
 
-    main_loop(&connection, &runtime, csharp_sidecar.as_ref())?;
+    main_loop(
+        &connection,
+        &runtime,
+        &forge_config,
+        csharp_sidecar.as_ref(),
+    )?;
+
+    // Shut down profiler sessions.
+    runtime.block_on(profiler::session::store().shutdown());
 
     // Shut down sidecar gracefully.
     if let Some(ref sidecar) = csharp_sidecar {
@@ -166,6 +213,16 @@ fn build_capabilities() -> ServerCapabilities {
         completion_provider: Some(lsp_types::CompletionOptions::default()),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
+        type_definition_provider: Some(lsp_types::TypeDefinitionProviderCapability::Simple(true)),
+        declaration_provider: Some(lsp_types::DeclarationCapability::Simple(true)),
+        implementation_provider: Some(lsp_types::ImplementationProviderCapability::Simple(true)),
+        diagnostic_provider: Some(lsp_types::DiagnosticServerCapabilities::Options(
+            lsp_types::DiagnosticOptions {
+                inter_file_dependencies: true,
+                workspace_diagnostics: true,
+                ..lsp_types::DiagnosticOptions::default()
+            },
+        )),
         ..ServerCapabilities::default()
     }
 }
@@ -187,6 +244,7 @@ async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
 fn main_loop(
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
+    _forge_config: &config::ForgeConfig,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<()> {
     let vfs = Vfs::new();
@@ -216,8 +274,13 @@ fn main_loop(
                 }
 
                 handle_request(
-                    req, &vfs, &parsers, &trees, connection,
-                    runtime, csharp_sidecar,
+                    req,
+                    &vfs,
+                    &parsers,
+                    &trees,
+                    connection,
+                    runtime,
+                    csharp_sidecar,
                 )?;
             }
             Message::Notification(notif) => {
@@ -225,7 +288,15 @@ fn main_loop(
                     info!("Exit notification received");
                     return Ok(());
                 }
-                handle_notification(notif, &vfs, &parsers, &mut trees);
+                handle_notification(
+                    notif,
+                    &vfs,
+                    &parsers,
+                    &mut trees,
+                    connection,
+                    runtime,
+                    csharp_sidecar,
+                );
             }
             Message::Response(_) => {
                 // We don't send requests to the client yet.
@@ -252,16 +323,67 @@ fn handle_request(
 
     let result = match req.method.as_str() {
         // Syntax-only (tree-sitter, Rust)
-        DocumentSymbolRequest::METHOD => handle_document_symbols(req, vfs, parsers, trees),
-        FoldingRangeRequest::METHOD => handle_folding_ranges(req, vfs, parsers, trees),
-        SelectionRangeRequest::METHOD => handle_selection_ranges(req, vfs, parsers, trees),
-        LinkedEditingRange::METHOD => handle_linked_editing_range(req, vfs, parsers, trees),
+        DocumentSymbolRequest::METHOD => {
+            handlers::handle_document_symbols(req, vfs, parsers, trees)
+        }
+        FoldingRangeRequest::METHOD => handlers::handle_folding_ranges(req, vfs, parsers, trees),
+        SelectionRangeRequest::METHOD => {
+            handlers::handle_selection_ranges(req, vfs, parsers, trees)
+        }
+        LinkedEditingRange::METHOD => {
+            handlers::handle_linked_editing_range(req, vfs, parsers, trees)
+        }
         // Semantic (sidecar)
         Completion::METHOD => semantic::handle_completion(req, runtime, csharp_sidecar),
-        HoverRequest::METHOD => semantic::handle_hover(req, runtime, csharp_sidecar),
-        GotoDefinition::METHOD => semantic::handle_definition(req, runtime, csharp_sidecar),
+        HoverRequest::METHOD => {
+            if handlers::is_hover_on_comment(&req, trees) {
+                Ok(serde_json::Value::Null)
+            } else {
+                semantic::handle_hover(req, runtime, csharp_sidecar)
+            }
+        }
+        GotoDefinition::METHOD => {
+            if handlers::is_non_symbol_position(&req, trees) {
+                Ok(serde_json::Value::Null)
+            } else {
+                semantic::handle_definition(req, runtime, csharp_sidecar)
+            }
+        }
+        GotoTypeDefinition::METHOD => {
+            if handlers::is_non_symbol_position(&req, trees) {
+                Ok(serde_json::Value::Null)
+            } else {
+                semantic::handle_type_definition(req, runtime, csharp_sidecar)
+            }
+        }
+        GotoDeclaration::METHOD => {
+            if handlers::is_non_symbol_position(&req, trees) {
+                Ok(serde_json::Value::Null)
+            } else {
+                semantic::handle_declaration(req, runtime, csharp_sidecar)
+            }
+        }
+        GotoImplementation::METHOD => {
+            if handlers::is_non_symbol_position(&req, trees) {
+                Ok(serde_json::Value::Null)
+            } else {
+                semantic::handle_implementation(req, runtime, csharp_sidecar)
+            }
+        }
         // Custom requests
         "forge/workspaceSymbols" => handle_workspace_symbols(req, parsers),
+        "forge/sortMembers" => handle_sort_members(req, parsers),
+        // Profiler requests
+        "forge/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
+        "forge/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
+        "forge/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req, runtime),
+        "forge/profiler/startCounters" => {
+            profiler::handlers::handle_start_counters(req, connection.sender.clone())
+        }
+        "forge/profiler/stopCounters" => profiler::handlers::handle_stop_counters(req, runtime),
+        "forge/profiler/collectDump" => profiler::handlers::handle_collect_dump(req, runtime),
+        "forge/profiler/analyzeHeap" => profiler::handlers::handle_analyze_heap(req, runtime),
+        "forge/profiler/findGCRoots" => profiler::handlers::handle_find_gc_roots(req, runtime),
         _ => {
             warn!("Unhandled request: {}", req.method);
             Err(anyhow::anyhow!("method not found"))
@@ -280,98 +402,17 @@ fn handle_request(
     Ok(())
 }
 
-#[expect(clippy::mutable_key_type, reason = "see main_loop")]
-fn handle_document_symbols(
-    req: Request,
-    vfs: &Vfs,
-    parsers: &TsParsers,
-    trees: &HashMap<Uri, Tree>,
-) -> Result<serde_json::Value> {
-    let params: DocumentSymbolParams = serde_json::from_value(req.params)?;
-    let uri = &params.text_document.uri;
+// ── Custom Request Handling ───────────────────────────────────────
 
-    let source = vfs.get_content(uri).context("document not found in VFS")?;
-
-    let tree = get_or_parse_tree(uri, &source, parsers, trees)?;
-    let symbols = syntax::document_symbols(&tree, &source);
-    let response = DocumentSymbolResponse::Nested(symbols);
+fn handle_workspace_symbols(req: Request, parsers: &TsParsers) -> Result<serde_json::Value> {
+    let params: workspace_symbols::WorkspaceSymbolsParams = serde_json::from_value(req.params)?;
+    let response = workspace_symbols::handle(&params, parsers)?;
     Ok(serde_json::to_value(response)?)
 }
 
-#[expect(clippy::mutable_key_type, reason = "see main_loop")]
-fn handle_folding_ranges(
-    req: Request,
-    vfs: &Vfs,
-    parsers: &TsParsers,
-    trees: &HashMap<Uri, Tree>,
-) -> Result<serde_json::Value> {
-    let params: FoldingRangeParams = serde_json::from_value(req.params)?;
-    let uri = &params.text_document.uri;
-
-    let source = vfs.get_content(uri).context("document not found in VFS")?;
-
-    let tree = get_or_parse_tree(uri, &source, parsers, trees)?;
-    let ranges = syntax::folding_ranges(&tree, &source);
-    Ok(serde_json::to_value(ranges)?)
-}
-
-#[expect(clippy::mutable_key_type, reason = "see main_loop")]
-fn handle_selection_ranges(
-    req: Request,
-    vfs: &Vfs,
-    parsers: &TsParsers,
-    trees: &HashMap<Uri, Tree>,
-) -> Result<serde_json::Value> {
-    let params: SelectionRangeParams = serde_json::from_value(req.params)?;
-    let uri = &params.text_document.uri;
-
-    let source = vfs.get_content(uri).context("document not found in VFS")?;
-
-    let tree = get_or_parse_tree(uri, &source, parsers, trees)?;
-    let ranges = syntax::selection_ranges(&tree, &source, &params.positions);
-    Ok(serde_json::to_value(ranges)?)
-}
-
-#[expect(clippy::mutable_key_type, reason = "see main_loop")]
-fn handle_linked_editing_range(
-    req: Request,
-    vfs: &Vfs,
-    parsers: &TsParsers,
-    trees: &HashMap<Uri, Tree>,
-) -> Result<serde_json::Value> {
-    let params: LinkedEditingRangeParams = serde_json::from_value(req.params)?;
-    let uri = &params.text_document_position_params.text_document.uri;
-
-    let source = vfs.get_content(uri).context("document not found in VFS")?;
-
-    let tree = get_or_parse_tree(uri, &source, parsers, trees)?;
-    let position = params.text_document_position_params.position;
-    let result = syntax::linked_editing_ranges(&tree, &source, position);
-    Ok(serde_json::to_value(result)?)
-}
-
-/// Get a cached tree or parse fresh.
-#[expect(clippy::mutable_key_type, reason = "see main_loop")]
-fn get_or_parse_tree(
-    uri: &Uri,
-    source: &str,
-    parsers: &TsParsers,
-    trees: &HashMap<Uri, Tree>,
-) -> Result<Tree> {
-    let lang = LangId::from_uri(uri).context("unsupported file type")?;
-    let old_tree = trees.get(uri);
-    parsers.parse(lang, source, old_tree)
-}
-
-// ── Custom Request Handling ───────────────────────────────────────
-
-fn handle_workspace_symbols(
-    req: Request,
-    parsers: &TsParsers,
-) -> Result<serde_json::Value> {
-    let params: workspace_symbols::WorkspaceSymbolsParams =
-        serde_json::from_value(req.params)?;
-    let response = workspace_symbols::handle(&params, parsers)?;
+fn handle_sort_members(req: Request, parsers: &TsParsers) -> Result<serde_json::Value> {
+    let params: sort_members::SortMembersParams = serde_json::from_value(req.params)?;
+    let response = sort_members::handle(&params, parsers)?;
     Ok(serde_json::to_value(response)?)
 }
 
@@ -383,6 +424,9 @@ fn handle_notification(
     vfs: &Vfs,
     parsers: &TsParsers,
     trees: &mut HashMap<Uri, Tree>,
+    connection: &Connection,
+    runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
 ) {
     match notif.method.as_str() {
         DidOpenTextDocument::METHOD => {
@@ -393,6 +437,7 @@ fn handle_notification(
                 info!("Opened: {}", doc.uri.as_str());
                 vfs.open(doc.uri.clone(), doc.version, doc.text.clone());
                 reparse(parsers, trees, &doc.uri, &doc.text);
+                trigger_diagnostics(&doc.uri, runtime, csharp_sidecar, connection);
             }
         }
         DidChangeTextDocument::METHOD => {
@@ -400,10 +445,17 @@ fn handle_notification(
                 serde_json::from_value::<lsp_types::DidChangeTextDocumentParams>(notif.params)
             {
                 let uri = &params.text_document.uri;
+                info!(
+                    "Changed: {} (v{})",
+                    uri.as_str(),
+                    params.text_document.version
+                );
                 // Full sync — last content change is the full text.
                 if let Some(change) = params.content_changes.into_iter().next_back() {
                     vfs.change(uri, params.text_document.version, change.text.clone());
                     reparse(parsers, trees, uri, &change.text);
+
+                    trigger_diagnostics(uri, runtime, csharp_sidecar, connection);
                 }
             }
         }
@@ -412,6 +464,12 @@ fn handle_notification(
                 serde_json::from_value::<lsp_types::DidSaveTextDocumentParams>(notif.params)
             {
                 info!("Saved: {}", params.text_document.uri.as_str());
+                trigger_diagnostics(
+                    &params.text_document.uri,
+                    runtime,
+                    csharp_sidecar,
+                    connection,
+                );
             }
         }
         DidCloseTextDocument::METHOD => {
@@ -421,6 +479,9 @@ fn handle_notification(
                 info!("Closed: {}", params.text_document.uri.as_str());
                 vfs.close(&params.text_document.uri);
                 trees.remove(&params.text_document.uri);
+                if let Err(err) = diagnostics::clear(&connection.sender, params.text_document.uri) {
+                    warn!("Failed to clear diagnostics: {err:#}");
+                }
             }
         }
         _ => {
@@ -429,18 +490,48 @@ fn handle_notification(
     }
 }
 
+/// Spawn a background diagnostic request for the given URI.
+fn trigger_diagnostics(
+    uri: &Uri,
+    runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    connection: &Connection,
+) {
+    let Some(sidecar) = csharp_sidecar else {
+        return;
+    };
+    let Ok(file_path) = semantic::uri_to_path(uri) else {
+        return;
+    };
+    diagnostics::request_in_background(
+        runtime,
+        Arc::clone(sidecar),
+        connection.sender.clone(),
+        uri.clone(),
+        file_path,
+    );
+}
+
 /// Re-parse a document with tree-sitter and cache the result.
+///
+/// We always do a fresh parse (no old tree) because `textDocument/didChange`
+/// with full sync replaces the entire document text. Passing a stale old tree
+/// without calling `tree.edit()` causes tree-sitter to reuse invalid byte
+/// ranges — producing wrong results for longer content and panicking
+/// (index out of bounds) for shorter content.
 #[expect(clippy::mutable_key_type, reason = "see main_loop")]
 fn reparse(parsers: &TsParsers, trees: &mut HashMap<Uri, Tree>, uri: &Uri, source: &str) {
     let Some(lang) = LangId::from_uri(uri) else {
         return;
     };
-    let old_tree = trees.get(uri);
-    match parsers.parse(lang, source, old_tree) {
+    match parsers.parse(lang, source, None) {
         Ok(tree) => {
             trees.insert(uri.clone(), tree);
         }
         Err(e) => {
+            // Remove stale tree so request handlers don't use a mismatched
+            // old tree with the updated VFS content.
+            trees.remove(uri);
             warn!("tree-sitter parse failed for {}: {e:#}", uri.as_str());
         }
     }

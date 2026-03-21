@@ -10,5 +10,8 @@ RUN wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh \
 ENV DOTNET_ROOT=/usr/share/dotnet
 ENV PATH="${DOTNET_ROOT}:${PATH}"
 
+# GitHub Actions local runner (keep version in sync with .github/workflows/ci.yml)
+RUN curl -fsSL https://raw.githubusercontent.com/nektos/act/master/install.sh | bash -s -- -b /usr/local/bin
+
 # Rust components
 RUN rustup component add clippy rustfmt

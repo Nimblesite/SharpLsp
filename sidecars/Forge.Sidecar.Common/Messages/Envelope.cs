@@ -10,18 +10,19 @@ namespace Forge.Sidecar.Common.Messages;
 public sealed class Envelope
 {
     /// <summary>Request/response correlation ID. Null for notifications.</summary>
-    [Key(0)]
+    [Key("id")]
     public uint? Id { get; init; }
 
     /// <summary>Method name for requests. Null for responses.</summary>
-    [Key(1)]
+    [Key("method")]
     public string? Method { get; init; }
 
-    /// <summary>MessagePack-encoded payload bytes.</summary>
-    [Key(2)]
+    /// <summary>MessagePack-encoded payload bytes. Array required by MessagePack serialization.</summary>
+    [Key("payload")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "MessagePack serialization requires byte[]")]
     public byte[] Payload { get; set; } = [];
 
     /// <summary>Error message, if this is an error response.</summary>
-    [Key(3)]
+    [Key("error")]
     public string? Error { get; init; }
 }

@@ -1,27 +1,44 @@
+using Outcome;
+
 namespace Forge.Sidecar.CSharp.Workspace;
 
 /// <summary>
 /// Discovers .sln or .csproj files from a workspace root.
 /// </summary>
-public static class SolutionLoader
+internal static class SolutionLoader
 {
     /// <summary>
     /// Find a solution or project file to open.
-    /// Priority: explicit path > .sln in root > .csproj in root > recursive search.
+    /// Priority: explicit path > .sln in root > .csproj in root > recursive.
     /// </summary>
-    public static string? FindSolutionOrProject(string workspacePath)
+    public static Result<string?, string> FindSolutionOrProject(
+        string workspacePath)
     {
-        if (File.Exists(workspacePath))
+        try
         {
-            return workspacePath;
+            var result = FindExplicitOrRootMatch(workspacePath)
+                ?? FindRecursiveMatch(workspacePath);
+            return new Result<string?, string>.Ok<string?, string>(result);
         }
-
-        if (!Directory.Exists(workspacePath))
+        catch (Exception ex)
         {
-            return null;
+            return Result<string?, string>.Failure(ex.Message);
         }
+    }
 
-        var slnFiles = Directory.GetFiles(workspacePath, "*.sln", SearchOption.TopDirectoryOnly);
+    private static string? FindExplicitOrRootMatch(string workspacePath)
+    {
+        return File.Exists(workspacePath)
+            ? workspacePath
+            : Directory.Exists(workspacePath)
+                ? FindInRootDirectory(workspacePath)
+                : null;
+    }
+
+    private static string? FindInRootDirectory(string workspacePath)
+    {
+        var slnFiles = Directory.GetFiles(
+            workspacePath, "*.sln", SearchOption.TopDirectoryOnly);
         if (slnFiles.Length is 1)
         {
             return slnFiles[0];
@@ -29,30 +46,43 @@ public static class SolutionLoader
 
         if (slnFiles.Length > 1)
         {
-            // Multiple .sln files — pick the one matching the directory name, or first.
-            var dirName = Path.GetFileName(workspacePath);
-            var match = Array.Find(slnFiles, s =>
-                string.Equals(
-                    Path.GetFileNameWithoutExtension(s),
-                    dirName,
-                    StringComparison.OrdinalIgnoreCase));
-            return match ?? slnFiles[0];
+            return PickBestSolution(slnFiles, workspacePath);
         }
 
-        var csprojFiles = Directory.GetFiles(workspacePath, "*.csproj", SearchOption.TopDirectoryOnly);
-        if (csprojFiles.Length > 0)
+        var csprojFiles = Directory.GetFiles(
+            workspacePath, "*.csproj", SearchOption.TopDirectoryOnly);
+        return csprojFiles.Length > 0 ? csprojFiles[0] : null;
+    }
+
+    private static string PickBestSolution(
+        string[] slnFiles,
+        string workspacePath)
+    {
+        var dirName = Path.GetFileName(workspacePath);
+        var match = Array.Find(slnFiles, s =>
+            string.Equals(
+                Path.GetFileNameWithoutExtension(s),
+                dirName,
+                StringComparison.OrdinalIgnoreCase));
+        return match ?? slnFiles[0];
+    }
+
+    private static string? FindRecursiveMatch(string workspacePath)
+    {
+        if (!Directory.Exists(workspacePath))
         {
-            return csprojFiles[0];
+            return null;
         }
 
-        // Recursive fallback.
-        var recursiveSln = Directory.GetFiles(workspacePath, "*.sln", SearchOption.AllDirectories);
-        if (recursiveSln.Length > 0)
+        var slnFiles = Directory.GetFiles(
+            workspacePath, "*.sln", SearchOption.AllDirectories);
+        if (slnFiles.Length > 0)
         {
-            return recursiveSln[0];
+            return slnFiles[0];
         }
 
-        var recursiveCsproj = Directory.GetFiles(workspacePath, "*.csproj", SearchOption.AllDirectories);
-        return recursiveCsproj.Length > 0 ? recursiveCsproj[0] : null;
+        var csprojFiles = Directory.GetFiles(
+            workspacePath, "*.csproj", SearchOption.AllDirectories);
+        return csprojFiles.Length > 0 ? csprojFiles[0] : null;
     }
 }

@@ -1,66 +1,54 @@
 # CLAUDE.md
 
-DO NOT USE GIT!!!!
-
-WE TREAT THIS CODEBASE WITH RESPECT. THIS CODE WOULD PASS REVIEW AT Google, Meta AND Microsoft. WE DON'T ALLOW BAD CODE. NOT EVEN FOR ONE LINE. THIS CODEBASE RECEIVES A GRADE OF A+. ANYTHING LESS IS ILLEGAL AND YOU MUST FIX IT IMMEDIATELY.
-
 Forge is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
 
 **Overall aim: FIX THE .NET DEVELOPER EXPERIENCE.**
 Crush Visual Studio, Rider, and C# Dev Kit. Not approximate parity — full feature-for-feature superiority. Zero proprietary dependencies. Zero licenses. Zero vendor lock-in.
 
-# Too Many Cooks - MANDATORY
+# Multi-Agent Coordination (too-many-cooks)
 
-REGISTER IMMEDIATELY!!!
+When multiple agents work on this repo simultaneously, **all agents MUST use tmc to coordinate**. No exceptions.
 
-COORDINATOR: dictate orders through plans and messages. DELEGATE!!!
-OTHERS: do exactly as the coordinator says. CONSTANTLY CHECK MESSAGES AND COMPLY!!!
+## Rules
 
-- Lock files before editing. Don't edit locked files.
-- Respond to messages quickly. Others are waiting.
+1. **Register immediately** — first thing on startup, call `mcp__too-many-cooks__register` with a descriptive name. Store your key.
+2. **Broadcast intent** — before starting work, send a broadcast message (`to_agent: "*"`) stating what you plan to do and which files you'll touch.
+3. **Lock before editing** — call `mcp__too-many-cooks__lock` (action: `acquire`) on every file before modifying it. If locked by another agent, message them to coordinate.
+4. **Update your plan** — call `mcp__too-many-cooks__plan` (action: `update`) with your current goal and task so other agents can see what you're doing.
+5. **Check messages frequently** — call `mcp__too-many-cooks__message` (action: `get`) regularly. Respond to other agents promptly.
+6. **Release locks immediately** — release file locks as soon as you're done editing. Don't hoard locks.
+7. **Signal completion** — broadcast when you finish a task so other agents can proceed with dependent work.
 
-# Documentation Structure
+## Workflow
 
-- `docs/INDEX.md` — Full index of all docs
-- `docs/specs/` — Specifications (naming: `[COMPONENT]-[FEATURE]-SPEC.md`)
-- `docs/plans/` — Implementation plans (naming: `[COMPONENT]-[FEATURE]-PLAN.md`)
+```
+register -> broadcast intent -> acquire locks -> update plan -> do work -> release locks -> broadcast completion
+```
 
-`docs/specs/LSP-ARCHITECTURE-SPEC.md` is the **single source of truth** for all shared LSP/DAP/config/commands. Editor-specific specs point back to it.
+Failing to coordinate = merge conflicts, duplicated work, and wasted time. **Use tmc or don't touch the repo.**
 
-# Critical Docs
+# Code
 
-- [LSP Specification 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
-- [DAP Specification](https://microsoft.github.io/debug-adapter-protocol/specification)
-- [Roslyn API Docs](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis)
-- [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/)
-- [tree-sitter](https://tree-sitter.github.io/tree-sitter/)
-- [salsa (incremental computation)](https://salsa-rs.github.io/salsa/)
+## Principles
 
-# Architecture
+We treat this codebase with respect. This code would pass a review at Google, Meta, or Microsoft. We don't allow bad or duplicate code. Not even one line. This codebase receives a grade A+. Anything lesser in quality is illegal and must be fixed immediately.
 
-Three-tier architecture:
+- Logging is critical. Can't see what's happening? Add more logging immediately (use `tracing` crate, `ILogger` in .NET)
+- 100% test coverage is only the start
+- No unit tests. Only COARSE e2e tests
 
-- **Tier 1 — Rust LSP Host**: LSP connection (JSON-RPC over stdio), VFS, tree-sitter incremental parsing (C# + F#), salsa cache, request routing, sidecar lifecycle
-- **Tier 2 — C# Sidecar (Roslyn)**: Long-running .NET process, MSBuildWorkspace, full Roslyn API (completions, diagnostics, refactorings, formatting)
-- **Tier 3 — F# Sidecar (FCS)**: Long-running .NET process, FSharpChecker, Ionide.ProjInfo, Fantomas, FSharpLint
+## Hard Rules
 
-IPC: MessagePack over named pipes (Windows) / Unix domain sockets (Linux, macOS). 4-byte LE length prefix framing. Target <500us round-trip overhead.
-
-C# and F# are equal first-class citizens. F# is NOT a second-class bolt-on.
-
-See `forge-spec.docx` for the full technical specification.
-
-# Rules
-
+- Do not use Git.
+- Zero duplication. DRY AF!!! Check for existing code before writing new code <- Highest priority
+- Any function that can throw/panic must be wrapped in try/catch and return Result<T,E> (outcome package in .NET)
+- Avoid RegEx and string matching. Always use ACTUAL parsers and traverse the AST/CST
 - `allow(clippy::` = ILLEGAL. If you must, add a damn good reason. **Aggressively remove** existing allows.
-- Zero duplication. DRY AF!!! Check for existing code before writing new code
-- All code files < 500 LOC
+- All code files < 500 LOC. Break up larger files
 - Functions < 20 LOC
 - Aggressively move shared code to shared crates/modules
 - Keep dependencies and versions in sync across: `.github/workflows/ci.yml`, `.devcontainer/Dockerfile`
-- Do not use Git unless asked
 - There is NO SUCH THING AS LEGACY CODE. Legacy = DELETED
-- Keep files under 500 LOC. Break up larger files
 - Copying files is illegal. MOVE them instead
 - Never copy from C# Dev Kit, Rider, or Visual Studio proprietary code. Reimplement from public APIs and protocols only
 
@@ -73,19 +61,13 @@ Testing is absolutely critical. We aim for 100% test coverage and a high mutatio
 - ADD more failing tests for broken/missing functionality — NEVER remove them
 - REDUCING TEST ASSERTIVENESS = DATA CENTER DISMANTLED
 - Ignoring tests = ILLEGAL
-
-## Core Principles
-
-- Logging is critical. Can't see what's happening? Add more logging immediately (use `tracing` crate)
-- 100% test coverage is only the start
-- No unit tests. Only COARSE e2e tests
 - Test against real .sln/.csproj/.fsproj files, not mocks
 
-## Typescript Quality Standards
+## TypeScript Quality Standards
 
 - Lints up to error on every rule
 - Any function that may throw must be wrapped in try/catch and return Result<T,E>
-- Regaularly run the linters and check for errors
+- Regularly run the linters and check for errors
 
 ## Rust Quality Standards
 
@@ -111,6 +93,38 @@ Testing is absolutely critical. We aim for 100% test coverage and a high mutatio
 - Pure functions, minimize side effects
 - Pattern matching over casting or unwrapping
 - Early returns with `?` for clean error propagation
+
+# Documentation Structure
+
+All documentation lives in `docs/`.
+
+- `docs/specs/` — **Specifications**: describe **how functionality works**. Source of truth for feature behavior, protocols, and architecture. Naming: `[COMPONENT]-[FEATURE]-SPEC.md`
+- `docs/plans/` — **Implementation plans**: describe **how we are going to build it**. Each plan includes TODO checklists tracking progress toward the corresponding spec. Naming: `[COMPONENT]-[FEATURE]-PLAN.md`
+
+`docs/specs/FORGE-SPEC.md` is the **full technical specification** for the project. Always read the relevant spec before working on a feature, and update the corresponding plan's TODOs as work progresses.
+
+# Critical Docs
+
+- [LSP Specification 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
+- [DAP Specification](https://microsoft.github.io/debug-adapter-protocol/specification)
+- [Roslyn API Docs](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis)
+- [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/)
+- [tree-sitter](https://tree-sitter.github.io/tree-sitter/)
+- [salsa (incremental computation)](https://salsa-rs.netlify.app/)
+
+# Architecture
+
+Three-tier architecture:
+
+- **Tier 1 — Rust LSP Host**: LSP connection (JSON-RPC over stdio), VFS, tree-sitter incremental parsing (C# + F#), salsa cache, request routing, sidecar lifecycle
+- **Tier 2 — C# Sidecar (Roslyn)**: Long-running .NET process, MSBuildWorkspace, full Roslyn API (completions, diagnostics, refactorings, formatting)
+- **Tier 3 — F# Sidecar (FCS)**: Long-running .NET process, FSharpChecker, Ionide.ProjInfo, Fantomas, FSharpLint
+
+IPC: MessagePack over named pipes (Windows) / Unix domain sockets (Linux, macOS). 4-byte LE length prefix framing. Target <500us round-trip overhead.
+
+C# and F# are equal first-class citizens. F# is NOT a second-class bolt-on.
+
+See `docs/specs/FORGE-SPEC.md` for the full technical specification.
 
 ## Code Structure
 

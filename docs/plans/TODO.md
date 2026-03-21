@@ -68,8 +68,9 @@
 - [ ] Document highlights (`textDocument/documentHighlight`)
 - [ ] Workspace symbol search (`workspace/symbol`)
 
-### Diagnostics (C# + F#)
+### Diagnostics (C# + F#) — see [DIAGNOSTICS-PLAN](DIAGNOSTICS-PLAN.md)
 - [ ] Compiler diagnostics — real-time error squiggles (`textDocument/publishDiagnostics`)
+- [ ] Solution-wide error analysis (SWEA) — default enabled
 - [ ] Roslyn analyzer diagnostics
 - [ ] Unused using/open detection
 - [ ] Full semantic tokens (`textDocument/semanticTokens/full`)
@@ -157,8 +158,8 @@
 
 ## Phase 4: Advanced Features & Ecosystem (Months 15–20)
 
-### Solution-Wide Analysis
-- [ ] Solution-wide error analysis (SWEA equivalent)
+### Advanced Analysis — see [DIAGNOSTICS-PLAN](DIAGNOSTICS-PLAN.md)
+- [x] Solution-wide error analysis — **moved to Phase 2 (P0, default enabled)**
 - [ ] Third-party NuGet analyzer support
 - [ ] FSharp.Analyzers.SDK support
 - [ ] Code metrics (cyclomatic complexity)

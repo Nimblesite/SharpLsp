@@ -9,11 +9,11 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use lsp_server::Request;
 use lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse,
-    GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents, HoverParams, Location,
-    MarkupContent, MarkupKind, Position, Range, Uri,
+    CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, GotoDefinitionParams,
+    GotoDefinitionResponse, Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind,
+    Position, Range, Uri,
 };
-
+use tracing::{debug, warn};
 
 use crate::sidecar::manager::SidecarManager;
 
@@ -37,9 +37,14 @@ pub fn handle_completion(
         character,
     };
     let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = runtime.block_on(
-        sidecar.request("textDocument/completion", payload),
-    )?;
+    let response_bytes = match runtime.block_on(sidecar.request("textDocument/completion", payload))
+    {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!("Sidecar completion unavailable: {err:#}");
+            return Ok(serde_json::Value::Null);
+        }
+    };
 
     let items: Vec<SidecarCompletionItem> = rmp_serde::from_slice(&response_bytes)?;
     let lsp_items: Vec<CompletionItem> = items
@@ -63,35 +68,49 @@ pub fn handle_hover(
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     let Some(sidecar) = sidecar else {
+        debug!("Hover: no sidecar available");
         return Ok(serde_json::Value::Null);
     };
     let params: HoverParams = serde_json::from_value(req.params)?;
-    let file_path = uri_to_path(
-        &params.text_document_position_params.text_document.uri,
-    )?;
-    let line = params.text_document_position_params.position.line;
-    let character = params.text_document_position_params.position.character;
+    let uri = &params.text_document_position_params.text_document.uri;
+    let position = params.text_document_position_params.position;
+
+    let file_path = uri_to_path(uri)?;
+    debug!(
+        file = %file_path,
+        line = position.line,
+        character = position.character,
+        "Hover request dispatching to sidecar"
+    );
 
     let request = SidecarPositionReq {
         file_path,
-        line,
-        character,
+        line: position.line,
+        character: position.character,
     };
     let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = runtime.block_on(
-        sidecar.request("textDocument/hover", payload),
-    )?;
+    let response_bytes = match runtime.block_on(sidecar.request("textDocument/hover", payload)) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!("Sidecar hover unavailable: {err:#}");
+            return Ok(serde_json::Value::Null);
+        }
+    };
 
     let result: Option<SidecarHoverResult> = rmp_serde::from_slice(&response_bytes)?;
-    let hover = result.map(|r| Hover {
-        contents: HoverContents::Markup(MarkupContent {
-            kind: MarkupKind::Markdown,
-            value: format!("```csharp\n{}\n```", r.contents),
-        }),
-        range: None,
+    let hover = result.map(|r| {
+        let range = build_hover_range(&r);
+        Hover {
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: r.contents,
+            }),
+            range,
+        }
     });
 
-    Ok(serde_json::to_value(hover)?)
+    let value = serde_json::to_value(hover)?;
+    Ok(value)
 }
 
 /// Handle `textDocument/definition` via the C# sidecar.
@@ -100,15 +119,50 @@ pub fn handle_definition(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
+    handle_single_location_nav(req, runtime, sidecar, "textDocument/definition")
+}
+
+/// Handle `textDocument/typeDefinition` via the C# sidecar.
+pub fn handle_type_definition(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    handle_single_location_nav(req, runtime, sidecar, "textDocument/typeDefinition")
+}
+
+/// Handle `textDocument/declaration` via the C# sidecar.
+pub fn handle_declaration(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    handle_single_location_nav(req, runtime, sidecar, "textDocument/declaration")
+}
+
+/// Handle `textDocument/implementation` via the C# sidecar.
+///
+/// Returns `Location[]` because a symbol may have multiple implementations.
+pub fn handle_implementation(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
     let Some(sidecar) = sidecar else {
+        debug!("Implementation: no sidecar available");
         return Ok(serde_json::Value::Null);
     };
     let params: GotoDefinitionParams = serde_json::from_value(req.params)?;
-    let file_path = uri_to_path(
-        &params.text_document_position_params.text_document.uri,
-    )?;
+    let file_path = uri_to_path(&params.text_document_position_params.text_document.uri)?;
     let line = params.text_document_position_params.position.line;
     let character = params.text_document_position_params.position.character;
+
+    debug!(
+        file = %file_path,
+        line = line,
+        character = character,
+        "Implementation request dispatching to sidecar"
+    );
 
     let request = SidecarPositionReq {
         file_path,
@@ -116,30 +170,105 @@ pub fn handle_definition(
         character,
     };
     let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = runtime.block_on(
-        sidecar.request("textDocument/definition", payload),
-    )?;
+    let response_bytes =
+        match runtime.block_on(sidecar.request("textDocument/implementation", payload)) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                warn!("Sidecar implementation unavailable: {err:#}");
+                return Ok(serde_json::Value::Null);
+            }
+        };
 
-    let result: Option<SidecarLocationResult> =
-        rmp_serde::from_slice(&response_bytes)?;
+    let result: SidecarLocationListResult = rmp_serde::from_slice(&response_bytes)?;
+    let locations: Vec<Location> = result
+        .locations
+        .into_iter()
+        .filter_map(|loc| sidecar_location_to_lsp(&loc))
+        .collect();
 
+    let response = GotoDefinitionResponse::Array(locations);
+    Ok(serde_json::to_value(response)?)
+}
+
+// ── Shared Helpers ────────────────────────────────────────────────
+
+/// Shared handler for single-location navigation requests
+/// (definition, typeDefinition, declaration).
+fn handle_single_location_nav(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    method: &str,
+) -> Result<serde_json::Value> {
+    let Some(sidecar) = sidecar else {
+        debug!("{method}: no sidecar available");
+        return Ok(serde_json::Value::Null);
+    };
+    let params: GotoDefinitionParams = serde_json::from_value(req.params)?;
+    let file_path = uri_to_path(&params.text_document_position_params.text_document.uri)?;
+    let line = params.text_document_position_params.position.line;
+    let character = params.text_document_position_params.position.character;
+
+    debug!(
+        file = %file_path,
+        line = line,
+        character = character,
+        "{method} request dispatching to sidecar"
+    );
+
+    let request = SidecarPositionReq {
+        file_path,
+        line,
+        character,
+    };
+    let payload = rmp_serde::to_vec(&request)?;
+    let response_bytes = match runtime.block_on(sidecar.request(method, payload)) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!("Sidecar {method} unavailable: {err:#}");
+            return Ok(serde_json::Value::Null);
+        }
+    };
+
+    let result: Option<SidecarLocationResult> = rmp_serde::from_slice(&response_bytes)?;
     let response = result.and_then(|loc| {
-        let path = format!("file://{}", loc.file_path);
-        let uri: Uri = path.parse().ok()?;
-        Some(GotoDefinitionResponse::Scalar(Location {
-            uri,
-            range: Range::new(
-                Position::new(loc.line, loc.character),
-                Position::new(loc.line, loc.character),
-            ),
-        }))
+        let location = sidecar_location_to_lsp(&loc)?;
+        Some(GotoDefinitionResponse::Scalar(location))
     });
 
     Ok(serde_json::to_value(response)?)
 }
 
+/// Convert a sidecar `LocationResult` to an LSP `Location`.
+fn sidecar_location_to_lsp(loc: &SidecarLocationResult) -> Option<Location> {
+    let path = format!("file://{}", loc.file_path);
+    let uri: Uri = path.parse().ok()?;
+    Some(Location {
+        uri,
+        range: Range::new(
+            Position::new(loc.line, loc.character),
+            Position::new(loc.line, loc.character),
+        ),
+    })
+}
+
+/// Build an LSP `Range` from optional sidecar hover coordinates.
+fn build_hover_range(result: &SidecarHoverResult) -> Option<Range> {
+    match (
+        result.start_line,
+        result.start_character,
+        result.end_line,
+        result.end_character,
+    ) {
+        (Some(sl), Some(sc), Some(el), Some(ec)) => {
+            Some(Range::new(Position::new(sl, sc), Position::new(el, ec)))
+        }
+        _ => None,
+    }
+}
+
 /// Convert a file URI to a filesystem path string.
-fn uri_to_path(uri: &Uri) -> Result<String> {
+pub(crate) fn uri_to_path(uri: &Uri) -> Result<String> {
     let s = uri.as_str();
     s.strip_prefix("file://")
         .map(String::from)
@@ -192,9 +321,14 @@ struct SidecarCompletionItem {
     insert_text: Option<String>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Default, serde::Deserialize)]
+#[serde(default)]
 struct SidecarHoverResult {
     contents: String,
+    start_line: Option<u32>,
+    start_character: Option<u32>,
+    end_line: Option<u32>,
+    end_character: Option<u32>,
 }
 
 #[derive(serde::Deserialize)]
@@ -202,4 +336,9 @@ struct SidecarLocationResult {
     file_path: String,
     line: u32,
     character: u32,
+}
+
+#[derive(serde::Deserialize)]
+struct SidecarLocationListResult {
+    locations: Vec<SidecarLocationResult>,
 }

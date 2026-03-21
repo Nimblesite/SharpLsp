@@ -28,3 +28,9 @@ obj/
 
 .commandtree/
 forge.vsix
+.vscode-test/
+node_modules/
+
+editors/zed/target/
+
+.too_many_cooks/

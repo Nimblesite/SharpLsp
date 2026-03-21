@@ -110,6 +110,68 @@
           "markdownDescription": "Log level for the Forge server (maps to `RUST_LOG`).",
           "scope": "window",
           "order": 3
+        },
+        "forge.memberSortOrder.hierarchy": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "accessibility",
+              "category",
+              "alphabetical"
+            ]
+          },
+          "default": [
+            "accessibility",
+            "category",
+            "alphabetical"
+          ],
+          "markdownDescription": "Sort tiebreaker order for **Sort Members**. Members are grouped by the first criterion, then sub-sorted by the second, then the third.",
+          "scope": "resource",
+          "order": 10
+        },
+        "forge.memberSortOrder.accessibilityOrder": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "public",
+            "protected internal",
+            "internal",
+            "protected",
+            "private protected",
+            "private"
+          ],
+          "markdownDescription": "Access modifier priority for **Sort Members** (first = highest priority).",
+          "scope": "resource",
+          "order": 11
+        },
+        "forge.memberSortOrder.categoryOrder": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "constant",
+            "field",
+            "constructor",
+            "finalizer",
+            "delegate",
+            "event",
+            "enum",
+            "interface",
+            "property",
+            "indexer",
+            "operator",
+            "method",
+            "struct",
+            "class",
+            "record"
+          ],
+          "markdownDescription": "Member kind priority for **Sort Members** (first = highest priority).",
+          "scope": "resource",
+          "order": 12
         }
       }
     },
@@ -128,6 +190,11 @@
           "id": "forge.solutionExplorer",
           "name": "Solution Explorer",
           "icon": "icons/forge.svg"
+        },
+        {
+          "id": "forge.profiler",
+          "name": "Profiler",
+          "icon": "$(pulse)"
         }
       ]
     },
@@ -158,6 +225,105 @@
         "title": "Refresh Explorer",
         "category": "Forge",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "forge.sortNatural",
+        "title": "Sort: Source Order",
+        "category": "Forge",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "forge.sortAlphabetical",
+        "title": "Sort: Alphabetical",
+        "category": "Forge",
+        "icon": "$(case-sensitive)"
+      },
+      {
+        "command": "forge.sortAccessibility",
+        "title": "Sort: Accessibility",
+        "category": "Forge",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "forge.removeNuGetPackage",
+        "title": "Remove Package",
+        "category": "Forge",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "forge.removeProjectReference",
+        "title": "Remove Project Reference",
+        "category": "Forge",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "forge.sortMembers",
+        "title": "Sort Members",
+        "category": "Forge",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "forge.copyQualifiedName",
+        "title": "Copy Qualified Name",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.copyName",
+        "title": "Copy Name",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.revealInExplorer",
+        "title": "Reveal in File Explorer",
+        "category": "Forge",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "forge.profiler.listProcesses",
+        "title": "List .NET Processes",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.profiler.startTrace",
+        "title": "Start Performance Trace",
+        "category": "Forge",
+        "icon": "$(record)"
+      },
+      {
+        "command": "forge.profiler.stopTrace",
+        "title": "Stop Performance Trace",
+        "category": "Forge",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "forge.profiler.startCounters",
+        "title": "Start Counter Monitoring",
+        "category": "Forge",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "forge.profiler.stopCounters",
+        "title": "Stop Counter Monitoring",
+        "category": "Forge",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "forge.profiler.collectDump",
+        "title": "Collect Memory Dump",
+        "category": "Forge",
+        "icon": "$(database)"
+      },
+      {
+        "command": "forge.profiler.analyzeHeap",
+        "title": "Analyze Heap Dump",
+        "category": "Forge",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "forge.profiler.refresh",
+        "title": "Refresh Profiler",
+        "category": "Forge",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -171,6 +337,73 @@
           "command": "forge.refreshExplorer",
           "when": "view == forge.solutionExplorer",
           "group": "navigation"
+        },
+        {
+          "command": "forge.sortNatural",
+          "when": "view == forge.solutionExplorer && forge.sortOrder == natural",
+          "group": "navigation"
+        },
+        {
+          "command": "forge.sortAlphabetical",
+          "when": "view == forge.solutionExplorer && forge.sortOrder == alphabetical",
+          "group": "navigation"
+        },
+        {
+          "command": "forge.sortAccessibility",
+          "when": "view == forge.solutionExplorer && forge.sortOrder == accessibility",
+          "group": "navigation"
+        },
+        {
+          "command": "forge.profiler.refresh",
+          "when": "view == forge.profiler",
+          "group": "navigation"
+        },
+        {
+          "command": "forge.profiler.startTrace",
+          "when": "view == forge.profiler",
+          "group": "navigation"
+        },
+        {
+          "command": "forge.profiler.startCounters",
+          "when": "view == forge.profiler",
+          "group": "navigation"
+        },
+        {
+          "command": "forge.profiler.collectDump",
+          "when": "view == forge.profiler",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "forge.sortMembers",
+          "when": "view == forge.solutionExplorer && viewItem =~ /^symbol\\.(class|struct|interface|enum|record)$/",
+          "group": "1_modification"
+        },
+        {
+          "command": "forge.revealInExplorer",
+          "when": "view == forge.solutionExplorer && viewItem =~ /^symbol\\./",
+          "group": "3_open"
+        },
+        {
+          "command": "forge.removeNuGetPackage",
+          "when": "view == forge.solutionExplorer && viewItem == nugetPackage",
+          "group": "7_modification"
+        },
+        {
+          "command": "forge.removeProjectReference",
+          "when": "view == forge.solutionExplorer && viewItem == projectReference",
+          "group": "7_modification"
+        },
+        {
+          "command": "forge.copyQualifiedName",
+          "when": "view == forge.solutionExplorer && viewItem =~ /^symbol\\./",
+          "group": "9_cutcopypaste"
+        },
+        {
+          "command": "forge.copyName",
+          "when": "view == forge.solutionExplorer && viewItem =~ /^(symbol\\.|solution|project)/",
+          "group": "9_cutcopypaste"
         }
       ]
     }
@@ -183,9 +416,9 @@
     "lint:eslint": "eslint src/",
     "compile-tests": "tsc -p ./",
     "pretest": "npm run compile-tests",
-    "test": "vscode-test",
-    "test:coverage": "vscode-test --coverage",
+    "test": "vscode-test --coverage",
     "test:run": "node out/test/runTest.js",
+    "screenshots": "node screenshots/capture.mjs",
     "package": "vsce package --no-dependencies",
     "vscode:prepublish": "node esbuild.mjs --production"
   },
@@ -206,6 +439,7 @@
     "eslint": "^10.0.3",
     "glob": "^11.0.0",
     "mocha": "^10.7.0",
+    "playwright": "^1.58.2",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.57.1"
   }

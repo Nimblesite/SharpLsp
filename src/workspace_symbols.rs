@@ -46,6 +46,7 @@ pub struct SymbolNode {
     pub name: String,
     pub kind: String,
     pub detail: Option<String>,
+    pub access: Option<String>,
     pub range: SymbolRange,
     pub children: Vec<SymbolNode>,
 }
@@ -138,10 +139,7 @@ struct ProjectInfo {
 }
 
 /// Build a `ProjectNode` by finding and parsing all source files.
-fn build_project_node(
-    project: &ProjectInfo,
-    parsers: &TsParsers,
-) -> Result<ProjectNode> {
+fn build_project_node(project: &ProjectInfo, parsers: &TsParsers) -> Result<ProjectNode> {
     let proj_dir = Path::new(&project.path)
         .parent()
         .context("project has no parent")?;
@@ -178,7 +176,10 @@ fn collect_source_files(dir: &Path, files: &mut Vec<String>) {
         if path.is_dir() {
             let name = path.file_name().map(|n| n.to_string_lossy().to_string());
             // Skip build output and hidden directories.
-            if matches!(name.as_deref(), Some("bin" | "obj" | ".git" | "node_modules")) {
+            if matches!(
+                name.as_deref(),
+                Some("bin" | "obj" | ".git" | "node_modules")
+            ) {
                 continue;
             }
             collect_source_files(&path, files);
@@ -189,30 +190,57 @@ fn collect_source_files(dir: &Path, files: &mut Vec<String>) {
 }
 
 fn is_source_file(path: &Path) -> bool {
-    matches!(
-        path.extension().and_then(|e| e.to_str()),
-        Some("cs" | "fs")
-    )
+    matches!(path.extension().and_then(|e| e.to_str()), Some("cs" | "fs"))
 }
 
 /// Parse a single source file and extract symbols.
-fn parse_file_symbols(
-    file_path: &str,
-    parsers: &TsParsers,
-) -> Result<FileSymbol> {
-    let source = std::fs::read_to_string(file_path)
-        .with_context(|| format!("read {file_path}"))?;
+fn parse_file_symbols(file_path: &str, parsers: &TsParsers) -> Result<FileSymbol> {
+    let source = std::fs::read_to_string(file_path).with_context(|| format!("read {file_path}"))?;
 
     let path = Path::new(file_path);
     let lang = LangId::from_path(path).context("unsupported file type")?;
     let tree = parsers.parse(lang, &source, None)?;
 
     let symbols = collect_symbols(tree.root_node(), source.as_bytes());
+    let symbols = reparent_file_scoped_members(symbols);
 
     Ok(FileSymbol {
         file: file_path.to_string(),
         symbols,
     })
+}
+
+/// Fix file-scoped namespace hierarchy.
+///
+/// `tree-sitter-c-sharp` 0.23 emits `file_scoped_namespace_declaration`
+/// without nesting subsequent type declarations as children — they appear
+/// as siblings at the root level. Detect this and move them inside.
+fn reparent_file_scoped_members(symbols: Vec<SymbolNode>) -> Vec<SymbolNode> {
+    let ns_count = symbols.iter().filter(|s| s.kind == "Namespace").count();
+    let has_root_types = symbols.iter().any(|s| s.kind != "Namespace");
+
+    if ns_count != 1 || !has_root_types {
+        return symbols;
+    }
+
+    // Only reparent if the namespace has no type children already.
+    let ns_has_types = symbols
+        .iter()
+        .find(|s| s.kind == "Namespace")
+        .is_some_and(|ns| ns.children.iter().any(|c| c.kind != "Namespace"));
+
+    if ns_has_types {
+        return symbols;
+    }
+
+    let (mut namespaces, types): (Vec<_>, Vec<_>) =
+        symbols.into_iter().partition(|s| s.kind == "Namespace");
+
+    if let Some(ns) = namespaces.first_mut() {
+        ns.children.extend(types);
+    }
+
+    namespaces
 }
 
 fn collect_symbols(node: Node, source: &[u8]) -> Vec<SymbolNode> {
@@ -232,9 +260,7 @@ fn collect_symbols(node: Node, source: &[u8]) -> Vec<SymbolNode> {
 
 fn node_to_symbol(node: Node, source: &[u8]) -> Option<SymbolNode> {
     let (kind, name_field) = match node.kind() {
-        "namespace_declaration" | "file_scoped_namespace_declaration" => {
-            ("Namespace", "name")
-        }
+        "namespace_declaration" | "file_scoped_namespace_declaration" => ("Namespace", "name"),
         "class_declaration" | "record_declaration" => ("Class", "name"),
         "struct_declaration" => ("Struct", "name"),
         "interface_declaration" => ("Interface", "name"),
@@ -253,6 +279,7 @@ fn node_to_symbol(node: Node, source: &[u8]) -> Option<SymbolNode> {
     let name = name_node.utf8_text(source).ok()?.to_string();
 
     let detail = extract_type_detail(node, source);
+    let access = extract_access(node, source);
 
     let range = SymbolRange {
         start: SymbolPosition {
@@ -271,29 +298,47 @@ fn node_to_symbol(node: Node, source: &[u8]) -> Option<SymbolNode> {
         name,
         kind: kind.to_string(),
         detail,
+        access,
         range,
         children,
     })
 }
 
+/// Extract access modifier (public, private, protected, internal).
+fn extract_access(node: Node, source: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    let mut parts: Vec<&str> = Vec::new();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "modifier" {
+            if let Ok(text) = child.utf8_text(source) {
+                if matches!(text, "public" | "private" | "protected" | "internal") {
+                    parts.push(text);
+                }
+            }
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
+}
+
 /// Extract type info (base class, return type) for display.
 fn extract_type_detail(node: Node, source: &[u8]) -> Option<String> {
     match node.kind() {
-        "class_declaration" | "struct_declaration" | "record_declaration" => {
-            node.child_by_field_name("bases")
-                .and_then(|b| b.utf8_text(source).ok())
-                .map(|s| s.trim_start_matches(": ").to_string())
-        }
-        "property_declaration" | "field_declaration" => {
-            node.child_by_field_name("type")
-                .and_then(|t| t.utf8_text(source).ok())
-                .map(String::from)
-        }
-        "method_declaration" => {
-            node.child_by_field_name("type")
-                .and_then(|t| t.utf8_text(source).ok())
-                .map(|ret| format!("() : {ret}"))
-        }
+        "class_declaration" | "struct_declaration" | "record_declaration" => node
+            .child_by_field_name("bases")
+            .and_then(|b| b.utf8_text(source).ok())
+            .map(|s| s.trim_start_matches(": ").to_string()),
+        "property_declaration" | "field_declaration" => node
+            .child_by_field_name("type")
+            .and_then(|t| t.utf8_text(source).ok())
+            .map(String::from),
+        "method_declaration" => node
+            .child_by_field_name("type")
+            .and_then(|t| t.utf8_text(source).ok())
+            .map(|ret| format!("() : {ret}")),
         _ => None,
     }
 }

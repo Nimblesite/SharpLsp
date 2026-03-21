@@ -23,9 +23,11 @@ export async function selectSolution(): Promise<SolutionSelection | undefined> {
   }
 
   if (solutions.length === 1) {
-    const selected = solutions[0] as SolutionSelection;
-    log.info(`Auto-selected solution: ${selected.path}`);
-    return selected;
+    const [selected] = solutions;
+    if (selected !== undefined) {
+      log.info(`Auto-selected solution: ${selected.path}`);
+      return selected;
+    }
   }
 
   return promptUserSelection(solutions);

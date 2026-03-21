@@ -12,6 +12,7 @@ public sealed class FramedTransport : IAsyncDisposable
     private readonly byte[] _lengthBuffer = new byte[4];
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
+    /// <summary>Initializes a new instance wrapping the given stream.</summary>
     public FramedTransport(Stream stream)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
@@ -34,12 +35,7 @@ public sealed class FramedTransport : IAsyncDisposable
 
         var payload = new byte[length];
         var payloadRead = await ReadExactAsync(payload, ct).ConfigureAwait(false);
-        if (!payloadRead)
-        {
-            return null;
-        }
-
-        return payload;
+        return payloadRead ? payload : null;
     }
 
     /// <summary>Write one length-prefixed frame.</summary>
@@ -57,10 +53,11 @@ public sealed class FramedTransport : IAsyncDisposable
         }
         finally
         {
-            _writeLock.Release();
+            _ = _writeLock.Release();
         }
     }
 
+    /// <summary>Disposes the underlying stream and write lock.</summary>
     public async ValueTask DisposeAsync()
     {
         await _stream.DisposeAsync().ConfigureAwait(false);

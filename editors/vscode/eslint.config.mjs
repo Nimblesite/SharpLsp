@@ -74,6 +74,32 @@ export default tseslint.config(
       // ── 10. No require — ESM only ─────────────────────────────────
       '@typescript-eslint/no-require-imports': 'error',
 
+      // ── 11. Immutable fields — never-reassigned privates must be readonly ─
+      '@typescript-eslint/prefer-readonly': 'error',
+
+      // ── 12. Safe sort — Array.sort() without comparator is a bug ────────
+      '@typescript-eslint/require-array-sort-compare': 'error',
+
+      // ── 13. Async consistency — promise-returning functions must be async ─
+      '@typescript-eslint/promise-function-async': 'error',
+
+      // ── 14. Explicit visibility — no implicit public on class members ────
+      '@typescript-eslint/explicit-member-accessibility': ['error', {
+        accessibility: 'explicit',
+        overrides: { constructors: 'no-public' },
+      }],
+
+      // ── 15. No deprecated — flag usage of deprecated APIs immediately ────
+      '@typescript-eslint/no-deprecated': 'error',
+
+      // ── 16. No type assertions — casting is illegal ─────────────────
+      '@typescript-eslint/consistent-type-assertions': ['error', {
+        assertionStyle: 'never',
+      }],
+
+      // Conflicts with no-non-null-assertion — disable the weaker rule.
+      '@typescript-eslint/non-nullable-type-assertion-style': 'off',
+
       // ── Bonus rules ────────────────────────────────────────────────
       'eqeqeq': ['error', 'always'],
       'no-param-reassign': 'error',

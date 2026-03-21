@@ -17,7 +17,8 @@ use tree_sitter::{Node, Point, Tree};
 /// Extract document symbols from a tree-sitter parse tree.
 pub fn document_symbols(tree: &Tree, source: &str) -> Vec<DocumentSymbol> {
     let root = tree.root_node();
-    collect_symbols(root, source.as_bytes())
+    let symbols = collect_symbols(root, source.as_bytes());
+    reparent_file_scoped_members(symbols)
 }
 
 fn collect_symbols(node: Node, source: &[u8]) -> Vec<DocumentSymbol> {
@@ -85,6 +86,47 @@ fn node_to_symbol(node: Node, source: &[u8]) -> Option<DocumentSymbol> {
         selection_range,
         children: children_opt,
     })
+}
+
+/// Fix file-scoped namespace hierarchy.
+///
+/// `tree-sitter-c-sharp` 0.23 emits `file_scoped_namespace_declaration`
+/// without nesting subsequent type declarations as children — they appear
+/// as siblings at the root level. Detect this and move them inside.
+fn reparent_file_scoped_members(symbols: Vec<DocumentSymbol>) -> Vec<DocumentSymbol> {
+    let ns_count = symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::NAMESPACE)
+        .count();
+    let has_root_types = symbols.iter().any(|s| s.kind != SymbolKind::NAMESPACE);
+
+    if ns_count != 1 || !has_root_types {
+        return symbols;
+    }
+
+    let ns_has_types = symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::NAMESPACE)
+        .is_some_and(|ns| {
+            ns.children
+                .as_ref()
+                .is_some_and(|c| c.iter().any(|child| child.kind != SymbolKind::NAMESPACE))
+        });
+
+    if ns_has_types {
+        return symbols;
+    }
+
+    let (mut namespaces, types): (Vec<_>, Vec<_>) = symbols
+        .into_iter()
+        .partition(|s| s.kind == SymbolKind::NAMESPACE);
+
+    if let Some(ns) = namespaces.first_mut() {
+        let children = ns.children.get_or_insert_with(Vec::new);
+        children.extend(types);
+    }
+
+    namespaces
 }
 
 // ── Folding Ranges ────────────────────────────────────────────────
@@ -158,21 +200,27 @@ fn build_selection_range(tree: &Tree, position: Position) -> SelectionRange {
         .descendant_for_point_range(point, point)
         .unwrap_or_else(|| tree.root_node());
 
-    // Build the chain from innermost to outermost
-    let mut current = SelectionRange {
-        range: ts_range_to_lsp(node),
+    // Collect nodes from innermost to root.
+    let mut nodes = vec![node];
+    while let Some(parent) = node.parent() {
+        nodes.push(parent);
+        node = parent;
+    }
+
+    // Build chain from root inward: each inner range has `parent` pointing
+    // to its enclosing (larger) range, as required by LSP spec.
+    let mut result = SelectionRange {
+        range: ts_range_to_lsp(tree.root_node()),
         parent: None,
     };
-
-    while let Some(parent) = node.parent() {
-        node = parent;
-        current = SelectionRange {
-            range: ts_range_to_lsp(node),
-            parent: Some(Box::new(current)),
+    for &inner in nodes.iter().rev().skip(1) {
+        result = SelectionRange {
+            range: ts_range_to_lsp(inner),
+            parent: Some(Box::new(result)),
         };
     }
 
-    current
+    result
 }
 
 // ── Linked Editing Ranges ─────────────────────────────────────────
@@ -191,6 +239,42 @@ pub fn linked_editing_ranges(
     // tree-sitter-c-sharp v0.23.1 parses `///` as a flat `comment` node
     // without internal XML structure. Nothing to link.
     None
+}
+
+// ── Hover Pre-validation ──────────────────────────────────────
+
+/// Check if a position is on a comment node (tree-sitter pre-validation).
+///
+/// Returns `true` when the position falls inside a comment, allowing the
+/// caller to short-circuit hover requests with `null` before dispatching
+/// to the sidecar.
+pub fn is_comment_at_position(tree: &Tree, position: Position) -> bool {
+    let point = lsp_pos_to_ts_point(position);
+    tree.root_node()
+        .descendant_for_point_range(point, point)
+        .is_some_and(|node| node.kind() == "comment")
+}
+
+/// Check if a position is on a string literal node (tree-sitter pre-validation).
+///
+/// Returns `true` when the position falls inside a string literal, allowing
+/// the caller to short-circuit definition requests with `null`.
+pub fn is_string_at_position(tree: &Tree, position: Position) -> bool {
+    let point = lsp_pos_to_ts_point(position);
+    tree.root_node()
+        .descendant_for_point_range(point, point)
+        .is_some_and(|node| {
+            matches!(
+                node.kind(),
+                "string_literal"
+                    | "verbatim_string_literal"
+                    | "raw_string_literal"
+                    | "interpolated_string_expression"
+                    | "interpolated_string_text"
+                    | "string_content"
+                    | "character_literal"
+            )
+        })
 }
 
 // ── Helpers ───────────────────────────────────────────────────────

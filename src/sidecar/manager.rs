@@ -89,31 +89,31 @@ impl SidecarManager {
     }
 
     /// Ensure the sidecar is running and connected.
+    ///
+    /// Holds the transport lock during the entire spawn to prevent
+    /// concurrent callers from spawning duplicate sidecar processes.
     pub async fn ensure_running(&self) -> Result<()> {
-        let transport_guard = self.transport.lock().await;
+        let mut transport_guard = self.transport.lock().await;
         if transport_guard.is_some() {
             return Ok(());
         }
-        drop(transport_guard);
 
-        self.spawn_and_connect().await
+        let (child, transport) = self.spawn_process().await?;
+        *self.child.lock().await = Some(child);
+        *transport_guard = Some(transport);
+        info!(sidecar = %self.name, "Sidecar connected");
+        Ok(())
     }
 
     /// Send a request to the sidecar and wait for the response.
-    pub async fn request(
-        &self,
-        method: &str,
-        payload: Vec<u8>,
-    ) -> Result<Vec<u8>> {
+    pub async fn request(&self, method: &str, payload: Vec<u8>) -> Result<Vec<u8>> {
         self.ensure_running().await?;
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let envelope = Envelope::request(id, method, payload);
 
         let mut transport_guard = self.transport.lock().await;
-        let transport = transport_guard
-            .as_mut()
-            .context("sidecar not connected")?;
+        let transport = transport_guard.as_mut().context("sidecar not connected")?;
 
         transport.write_envelope(&envelope).await?;
 
@@ -133,7 +133,8 @@ impl SidecarManager {
     }
 
     /// Spawn the sidecar process and connect via Unix socket.
-    async fn spawn_and_connect(&self) -> Result<()> {
+    /// Returns the child process and transport for the caller to store.
+    async fn spawn_process(&self) -> Result<(Child, FramedTransport)> {
         info!(sidecar = %self.name, "Spawning sidecar");
 
         // Clean up stale socket.
@@ -146,7 +147,19 @@ impl SidecarManager {
             .spawn()
             .with_context(|| format!("failed to spawn {} sidecar", self.name))?;
 
-        // Wait for the READY signal on stdout.
+        let socket_path = self.wait_for_ready(&mut child).await?;
+
+        // Connect to the sidecar's Unix socket.
+        let stream = UnixStream::connect(&socket_path)
+            .await
+            .with_context(|| format!("connect to sidecar socket: {socket_path}"))?;
+
+        let transport = FramedTransport::new(stream);
+        Ok((child, transport))
+    }
+
+    /// Wait for the READY signal on the sidecar's stdout.
+    async fn wait_for_ready(&self, child: &mut Child) -> Result<String> {
         let stdout = child.stdout.take().context("no stdout")?;
         let mut reader = tokio::io::BufReader::new(stdout);
         let mut line = String::new();
@@ -154,10 +167,7 @@ impl SidecarManager {
         let ready = tokio::time::timeout(READY_TIMEOUT, async {
             loop {
                 line.clear();
-                let bytes = reader
-                    .read_line(&mut line)
-                    .await
-                    .context("read stdout")?;
+                let bytes = reader.read_line(&mut line).await.context("read stdout")?;
                 if bytes == 0 {
                     bail!("sidecar exited before READY");
                 }
@@ -174,32 +184,13 @@ impl SidecarManager {
         .await
         .context("timeout waiting for sidecar READY")?;
 
-        let socket_path = ready?;
-
-        // Connect to the sidecar's Unix socket.
-        let stream = UnixStream::connect(&socket_path)
-            .await
-            .with_context(|| {
-                format!("connect to sidecar socket: {socket_path}")
-            })?;
-
-        let transport = FramedTransport::new(stream);
-
-        *self.child.lock().await = Some(child);
-        *self.transport.lock().await = Some(transport);
-
-        info!(sidecar = %self.name, "Sidecar connected");
-        Ok(())
+        ready
     }
 
     /// Send a ping and verify the response.
     pub async fn health_check(&self) -> Result<()> {
         let ping_payload = rmp_serde::to_vec("ping")?;
-        let result = tokio::time::timeout(
-            PING_TIMEOUT,
-            self.request("ping", ping_payload),
-        )
-        .await;
+        let result = tokio::time::timeout(PING_TIMEOUT, self.request("ping", ping_payload)).await;
 
         match result {
             Ok(Ok(_)) => Ok(()),
@@ -252,8 +243,7 @@ impl SidecarManager {
         info!(sidecar = %self.name, "Shutting down sidecar");
 
         // Try graceful shutdown via IPC.
-        let shutdown_payload = rmp_serde::to_vec("shutdown")
-            .unwrap_or_default();
+        let shutdown_payload = rmp_serde::to_vec("shutdown").unwrap_or_default();
         let _ = tokio::time::timeout(
             Duration::from_secs(5),
             self.request("shutdown", shutdown_payload),
@@ -270,14 +260,27 @@ impl SidecarManager {
 }
 
 /// Background health monitoring loop — pings the sidecar periodically.
+///
+/// Skips health checks when the transport lock is held by an in-flight
+/// request. A busy lock proves the sidecar is alive (we are actively
+/// communicating with it). Waiting for the lock would cause false
+/// timeouts that kill the sidecar during slow operations like
+/// workspace/open.
 async fn health_loop(sidecar: Arc<SidecarManager>) -> ! {
     loop {
         tokio::time::sleep(PING_INTERVAL).await;
 
-        // Only check health if we have a connection.
-        if sidecar.transport.lock().await.is_none() {
+        // If the transport lock is held, a request is in-flight — skip.
+        let Ok(guard) = sidecar.transport.try_lock() else {
+            continue;
+        };
+
+        // No connection yet — nothing to check.
+        if guard.is_none() {
+            drop(guard);
             continue;
         }
+        drop(guard);
 
         if sidecar.health_check().await.is_err() {
             sidecar.handle_crash().await;

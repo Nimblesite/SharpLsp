@@ -6,6 +6,8 @@ import {
   EXTENSION_ID,
   closeAllEditors,
   openCSharpFile,
+  pollUntilResult,
+  replaceDocumentContent,
   setupLspTestSuite,
   teardownLspTestSuite,
   waitForDocumentSymbols,
@@ -46,6 +48,20 @@ suite("Solution Explorer & Workspace Symbols", () => {
       "forge.refreshExplorer should be registered",
     );
   });
+
+  for (const cmd of [
+    "forge.sortNatural",
+    "forge.sortAlphabetical",
+    "forge.sortAccessibility",
+  ]) {
+    test(`${cmd} command is registered`, async () => {
+      const allCommands = await vscode.commands.getCommands(true);
+      assert.ok(
+        allCommands.includes(cmd),
+        `${cmd} should be registered`,
+      );
+    });
+  }
 
   // ── Package Contributions ────────────────────────────────────
 
@@ -325,13 +341,111 @@ public class ApiController
     assert.strictEqual(ns.kind, vscode.SymbolKind.Namespace);
 
     const controller = ns.children?.find((s) => s.name === "ApiController");
-    assert.ok(controller, "Should find ApiController class");
+    assert.ok(controller, "Should find ApiController class INSIDE the namespace");
+    assert.strictEqual(controller.kind, vscode.SymbolKind.Class);
+
+    // Types must NOT appear at root level — only inside the namespace.
+    const rootClass = symbols.find((s) => s.name === "ApiController");
+    assert.ok(
+      rootClass === undefined || rootClass.kind === vscode.SymbolKind.Namespace,
+      "ApiController must NOT be a root-level symbol — it belongs inside the Api namespace",
+    );
 
     const get = controller.children?.find((s) => s.name === "Get");
     assert.ok(get, "Should find Get method");
 
     const post = controller.children?.find((s) => s.name === "Post");
     assert.ok(post, "Should find Post method");
+  });
+
+  test("file-scoped namespace: multiple types all nested inside namespace", async function () {
+    this.timeout(15_000);
+    const content = `namespace Common.Messages;
+
+public sealed class Envelope
+{
+    public uint? Id { get; init; }
+    public string? Method { get; init; }
+}
+
+public abstract class SidecarHost
+{
+    public void Run() { }
+}
+
+public interface ITransport
+{
+    void Send();
+}`;
+
+    const { uri } = await openCSharpFile(tmpDir, "Messages.cs", content);
+    const symbols = await waitForDocumentSymbols(uri);
+
+    // Only one root symbol: the namespace.
+    assert.strictEqual(
+      symbols.length,
+      1,
+      `Expected exactly 1 root symbol (namespace), got ${String(symbols.length)}: ${symbols.map((s) => s.name).join(", ")}`,
+    );
+
+    const ns = symbols[0];
+    assert.ok(ns, "Root symbol must exist");
+    assert.strictEqual(ns.name, "Common.Messages");
+    assert.strictEqual(ns.kind, vscode.SymbolKind.Namespace);
+
+    // All three types must be children of the namespace.
+    const envelope = ns.children?.find((s) => s.name === "Envelope");
+    assert.ok(envelope, "Envelope must be INSIDE Common.Messages namespace");
+    assert.strictEqual(envelope.kind, vscode.SymbolKind.Class);
+
+    const host = ns.children?.find((s) => s.name === "SidecarHost");
+    assert.ok(host, "SidecarHost must be INSIDE Common.Messages namespace");
+
+    const transport = ns.children?.find((s) => s.name === "ITransport");
+    assert.ok(transport, "ITransport must be INSIDE Common.Messages namespace");
+    assert.strictEqual(transport.kind, vscode.SymbolKind.Interface);
+
+    // Verify members are nested inside their types.
+    const idProp = envelope.children?.find((s) => s.name === "Id");
+    assert.ok(idProp, "Id property must be inside Envelope");
+
+    const runMethod = host.children?.find((s) => s.name === "Run");
+    assert.ok(runMethod, "Run method must be inside SidecarHost");
+
+    const sendMethod = transport.children?.find((s) => s.name === "Send");
+    assert.ok(sendMethod, "Send method must be inside ITransport");
+  });
+
+  test("file-scoped namespace: class with base type nested inside namespace", async function () {
+    this.timeout(15_000);
+    const content = `namespace MyApp.Controllers;
+
+public class HomeController : ControllerBase
+{
+    public string Index() { return "Hello"; }
+    public string About { get; set; }
+}
+
+public record UserDto(string Name, int Age);`;
+
+    const { uri } = await openCSharpFile(tmpDir, "Controllers.cs", content);
+    const symbols = await waitForDocumentSymbols(uri);
+
+    assert.strictEqual(
+      symbols.length,
+      1,
+      `Expected 1 root symbol (namespace), got ${String(symbols.length)}`,
+    );
+
+    const ns = symbols[0];
+    assert.ok(ns);
+    assert.strictEqual(ns.name, "MyApp.Controllers");
+
+    const controller = ns.children?.find((s) => s.name === "HomeController");
+    assert.ok(controller, "HomeController must be INSIDE namespace");
+
+    const dto = ns.children?.find((s) => s.name === "UserDto");
+    assert.ok(dto, "UserDto must be INSIDE namespace");
   });
 
   // ── forge.refreshExplorer command ────────────────────────────
@@ -430,5 +544,416 @@ public class EventSource
     const counter = source.children?.find((s) => s.name === "_counter");
     assert.ok(counter, "Should find _counter field");
     assert.strictEqual(counter.kind, vscode.SymbolKind.Field);
+  });
+
+  // ── Reactive Tree Auto-Refresh ──────────────────────────────
+
+  test("tree auto-refreshes when C# document content changes", async function () {
+    this.timeout(15_000);
+
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext?.isActive, "Extension must be active");
+
+    // Extension must export its API for reactive tree testing.
+    const api = ext.exports as
+      | { explorerProvider?: { onDidChangeTreeData: vscode.Event<unknown> } }
+      | undefined;
+    assert.ok(
+      api?.explorerProvider,
+      "Extension must export explorerProvider — tree nodes must be reactive",
+    );
+
+    // Subscribe to tree data change events.
+    let treeChangeCount = 0;
+    const disposable = api.explorerProvider.onDidChangeTreeData(() => {
+      treeChangeCount++;
+    });
+
+    try {
+      // Open a C# file.
+      const { doc } = await openCSharpFile(
+        tmpDir,
+        "reactive-test.cs",
+        "class Before { void OldMethod() {} }",
+      );
+
+      // Wait for initial events to settle, then reset counter.
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      treeChangeCount = 0;
+
+      // Modify the document — rename a symbol.
+      await replaceDocumentContent(
+        doc,
+        "class Before { void NewMethod() {} }",
+      );
+
+      // Wait for the debounced auto-refresh to fire.
+      const fired = await pollUntilResult(
+        async () => treeChangeCount,
+        (count) => count > 0,
+        5_000,
+        100,
+      );
+
+      assert.ok(
+        fired > 0,
+        "Tree must auto-refresh when C# document content changes — " +
+          "renaming a symbol should update the solution explorer",
+      );
+    } finally {
+      disposable.dispose();
+    }
+  });
+
+  // ── VFS vs Disk Stale Data Bug ───────────────────────────────
+
+  test("documentSymbol reflects unsaved edits (VFS-based, should pass)", async function () {
+    this.timeout(15_000);
+
+    // Write initial content to disk and open it.
+    const content = "namespace Vfs;\n\npublic class Original\n{\n    public void Foo() { }\n}";
+    const { doc, uri } = await openCSharpFile(tmpDir, "VfsTest.cs", content);
+    const before = await waitForDocumentSymbols(uri);
+    const nsBefore = before.find((s) => s.name === "Vfs");
+    assert.ok(nsBefore, "Should find Vfs namespace");
+    const origClass = nsBefore.children?.find((s) => s.name === "Original");
+    assert.ok(origClass, "Should find Original class via documentSymbol");
+
+    // Edit the buffer WITHOUT saving — rename class.
+    await replaceDocumentContent(
+      doc,
+      "namespace Vfs;\n\npublic class Renamed\n{\n    public void Foo() { }\n}",
+    );
+
+    // documentSymbol uses tree-sitter + VFS → should reflect the unsaved edit.
+    const after = await pollUntilResult(
+      async () => {
+        const syms = await vscode.commands.executeCommand<
+          vscode.DocumentSymbol[]
+        >("vscode.executeDocumentSymbolProvider", uri);
+        return syms ?? [];
+      },
+      (syms) => {
+        const ns = syms.find((s) => s.name === "Vfs");
+        return ns?.children?.some((s) => s.name === "Renamed") ?? false;
+      },
+      5_000,
+    );
+    const nsAfter = after.find((s) => s.name === "Vfs");
+    assert.ok(nsAfter, "Vfs namespace must exist after rename");
+    const renamedClass = nsAfter.children?.find((s) => s.name === "Renamed");
+    assert.ok(
+      renamedClass,
+      "documentSymbol must show 'Renamed' for unsaved edit — " +
+        "this proves the VFS/tree-sitter path works correctly",
+    );
+  });
+
+  test("workspace symbols show unsaved edits, not stale disk content", async function () {
+    this.timeout(30_000);
+
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext?.isActive, "Extension must be active");
+
+    interface TreeNode {
+      readonly label?: string | { label: string };
+      readonly children?: TreeNode[];
+    }
+    interface ExplorerApi {
+      explorerProvider: {
+        loadSolution(slnPath: string): Promise<void>;
+        refresh(): Promise<void>;
+        clear(): void;
+        getChildren(element?: unknown): TreeNode[] | undefined;
+      };
+    }
+    const api = ext.exports as ExplorerApi | undefined;
+    assert.ok(api?.explorerProvider, "Extension must export explorerProvider");
+
+    // Build a mini solution.
+    const projDir = path.join(tmpDir, "VfsStaleTest");
+    fs.mkdirSync(projDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(projDir, "VfsStaleTest.csproj"),
+      `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
+</Project>`,
+    );
+
+    const slnPath = path.join(tmpDir, "VfsStaleTest.sln");
+    fs.writeFileSync(
+      slnPath,
+      [
+        "Microsoft Visual Studio Solution File, Format Version 12.00",
+        'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VfsStaleTest", ' +
+          '"VfsStaleTest/VfsStaleTest.csproj", "{00000000-0000-0000-0000-000000000099}"',
+        "EndProject",
+        "Global",
+        "EndGlobal",
+      ].join("\n"),
+    );
+
+    // Write initial content to disk: class "DiskVersion".
+    const csPath = path.join(projDir, "Stale.cs");
+    fs.writeFileSync(
+      csPath,
+      "namespace VfsStaleTest;\n\npublic class DiskVersion\n{\n    public void Work() { }\n}",
+    );
+
+    const { doc } = await openCSharpFile(
+      projDir, "Stale.cs",
+      "namespace VfsStaleTest;\n\npublic class DiskVersion\n{\n    public void Work() { }\n}",
+    );
+    await waitForDocumentSymbols(doc.uri);
+
+    // Load solution — tree should show "DiskVersion".
+    await api.explorerProvider.loadSolution(slnPath);
+
+    const provider = api.explorerProvider;
+
+    function searchNodes(nodes: TreeNode[] | undefined, target: string): boolean {
+      if (nodes === undefined) return false;
+      for (const node of nodes) {
+        const text =
+          typeof node.label === "string"
+            ? node.label
+            : node.label?.label ?? "";
+        if (text.includes(target)) return true;
+        if (searchNodes(node.children, target)) return true;
+      }
+      return false;
+    }
+
+    const hasDisk = await pollUntilResult(
+      async () => searchNodes(provider.getChildren(), "DiskVersion"),
+      (found) => found,
+      5_000,
+    );
+    assert.ok(hasDisk, "Tree must show 'DiskVersion' initially");
+
+    // Edit the buffer WITHOUT saving — rename to "BufferVersion".
+    // Disk still says "DiskVersion", VFS should say "BufferVersion".
+    await replaceDocumentContent(
+      doc,
+      "namespace VfsStaleTest;\n\npublic class BufferVersion\n{\n    public void Work() { }\n}",
+    );
+
+    // Explicitly trigger refresh (bypass debounce entirely).
+    await api.explorerProvider.refresh();
+
+    // Give a moment for the tree to rebuild from the signal.
+    const hasBuffer = await pollUntilResult(
+      async () => searchNodes(provider.getChildren(), "BufferVersion"),
+      (found) => found,
+      5_000,
+    );
+
+    api.explorerProvider.clear();
+
+    assert.ok(
+      hasBuffer,
+      "After unsaved rename 'DiskVersion' → 'BufferVersion', tree must show " +
+        "'BufferVersion' — BUG: forge/workspaceSymbols reads from disk " +
+        "instead of VFS, so it shows stale disk content",
+    );
+  });
+
+  test("tree tracks rapid successive renames without lagging behind", async function () {
+    this.timeout(30_000);
+
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext?.isActive, "Extension must be active");
+
+    interface TreeNode {
+      readonly label?: string | { label: string };
+      readonly children?: TreeNode[];
+    }
+    interface ExplorerApi {
+      explorerProvider: {
+        loadSolution(slnPath: string): Promise<void>;
+        refresh(): Promise<void>;
+        clear(): void;
+        getChildren(element?: unknown): TreeNode[] | undefined;
+      };
+    }
+    const api = ext.exports as ExplorerApi | undefined;
+    assert.ok(api?.explorerProvider, "Extension must export explorerProvider");
+
+    const projDir = path.join(tmpDir, "RapidRenameTest");
+    fs.mkdirSync(projDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(projDir, "RapidRenameTest.csproj"),
+      `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
+</Project>`,
+    );
+
+    const slnPath = path.join(tmpDir, "RapidRenameTest.sln");
+    fs.writeFileSync(
+      slnPath,
+      [
+        "Microsoft Visual Studio Solution File, Format Version 12.00",
+        'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RapidRenameTest", ' +
+          '"RapidRenameTest/RapidRenameTest.csproj", "{00000000-0000-0000-0000-000000000077}"',
+        "EndProject",
+        "Global",
+        "EndGlobal",
+      ].join("\n"),
+    );
+
+    const initial =
+      "namespace RapidRenameTest;\n\npublic class Step0\n{\n    public void Go() { }\n}";
+    const { doc } = await openCSharpFile(projDir, "Rapid.cs", initial);
+    await waitForDocumentSymbols(doc.uri);
+
+    await api.explorerProvider.loadSolution(slnPath);
+    const provider = api.explorerProvider;
+
+    function treeContains(target: string): boolean {
+      return searchTreeNodes(provider.getChildren(), target);
+    }
+
+    function searchTreeNodes(nodes: TreeNode[] | undefined, target: string): boolean {
+      if (nodes === undefined) return false;
+      for (const node of nodes) {
+        const text =
+          typeof node.label === "string"
+            ? node.label
+            : node.label?.label ?? "";
+        if (text.includes(target)) return true;
+        if (searchTreeNodes(node.children, target)) return true;
+      }
+      return false;
+    }
+
+    // Rapid successive renames: Step0 → Step1 → Step2 → Step3
+    for (let step = 1; step <= 3; step++) {
+      const className = `Step${String(step)}`;
+      await replaceDocumentContent(
+        doc,
+        `namespace RapidRenameTest;\n\npublic class ${className}\n{\n    public void Go() { }\n}`,
+      );
+      // Small delay between edits to simulate rapid typing.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+
+    // After all edits, explicitly refresh and check the FINAL state.
+    await api.explorerProvider.refresh();
+
+    const hasFinal = await pollUntilResult(
+      async () => treeContains("Step3"),
+      (found) => found,
+      5_000,
+    );
+
+    api.explorerProvider.clear();
+
+    assert.ok(
+      hasFinal,
+      "After rapid renames Step0 → Step1 → Step2 → Step3, tree must show 'Step3' — " +
+        "BUG: tree is always one step behind, showing stale data from disk",
+    );
+  });
+
+  test("tree shows updated class name after rename, not stale data", async function () {
+    this.timeout(30_000);
+
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext?.isActive, "Extension must be active");
+
+    interface TreeNode {
+      readonly label?: string | { label: string };
+      readonly children?: TreeNode[];
+    }
+    interface ExplorerApi {
+      explorerProvider: {
+        loadSolution(slnPath: string): Promise<void>;
+        clear(): void;
+        getChildren(element?: unknown): TreeNode[] | undefined;
+      };
+    }
+    const api = ext.exports as ExplorerApi | undefined;
+    assert.ok(api?.explorerProvider, "Extension must export explorerProvider");
+
+    // Build a mini solution with class "Alpha".
+    const projDir = path.join(tmpDir, "StaleDataTest");
+    fs.mkdirSync(projDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(projDir, "StaleDataTest.csproj"),
+      `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
+</Project>`,
+    );
+
+    const slnPath = path.join(tmpDir, "StaleDataTest.sln");
+    fs.writeFileSync(
+      slnPath,
+      [
+        "Microsoft Visual Studio Solution File, Format Version 12.00",
+        'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StaleDataTest", ' +
+          '"StaleDataTest/StaleDataTest.csproj", "{00000000-0000-0000-0000-000000000042}"',
+        "EndProject",
+        "Global",
+        "EndGlobal",
+      ].join("\n"),
+    );
+
+    const initial =
+      "namespace StaleDataTest;\n\npublic sealed class Alpha\n{\n    public string Name { get; set; }\n}";
+    const { doc } = await openCSharpFile(projDir, "Thing.cs", initial);
+    await waitForDocumentSymbols(doc.uri);
+
+    // Load solution into tree and verify "Alpha" appears.
+    await api.explorerProvider.loadSolution(slnPath);
+
+    const provider = api.explorerProvider;
+
+    function treeContains(target: string): boolean {
+      return searchNodes(provider.getChildren(), target);
+    }
+
+    function searchNodes(nodes: TreeNode[] | undefined, target: string): boolean {
+      if (nodes === undefined) return false;
+      for (const node of nodes) {
+        const text =
+          typeof node.label === "string"
+            ? node.label
+            : node.label?.label ?? "";
+        if (text.includes(target)) return true;
+        if (searchNodes(node.children, target)) return true;
+      }
+      return false;
+    }
+
+    const hasAlpha = await pollUntilResult(
+      async () => treeContains("Alpha"),
+      (found) => found,
+      5_000,
+    );
+    assert.ok(hasAlpha, "Tree must show 'Alpha' before rename");
+
+    // Rename class: Alpha → Bravo
+    const renamed =
+      "namespace StaleDataTest;\n\npublic sealed class Bravo\n{\n    public string Name { get; set; }\n}";
+    await replaceDocumentContent(doc, renamed);
+
+    // Wait for debounced auto-refresh — tree must show "Bravo".
+    const hasBravo = await pollUntilResult(
+      async () => treeContains("Bravo"),
+      (found) => found,
+      5_000,
+    );
+
+    // Clean up tree state for other tests.
+    api.explorerProvider.clear();
+
+    assert.ok(
+      hasBravo,
+      "After renaming 'Alpha' to 'Bravo', tree must show 'Bravo' — " +
+        "stale data bug: tree still displays the previous class name",
+    );
   });
 });

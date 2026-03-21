@@ -45,13 +45,13 @@ export class ForgeStatusBar implements Disposable {
     this.item.show();
   }
 
-  setState(state: ServerState): void {
+  public setState(state: ServerState): void {
     this.item.text = `${ICONS[state]} ${EXTENSION_NAME}`;
     this.item.tooltip = TOOLTIPS[state];
     this.item.color = COLORS[state];
   }
 
-  dispose(): void {
+  public dispose(): void {
     this.item.dispose();
   }
 }

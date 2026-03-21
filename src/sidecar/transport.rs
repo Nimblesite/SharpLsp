@@ -38,8 +38,7 @@ impl FramedTransport {
 
         trace!(bytes = len, "received frame");
 
-        let envelope: Envelope =
-            rmp_serde::from_slice(&payload).context("deserialize envelope")?;
+        let envelope: Envelope = rmp_serde::from_slice(&payload).context("deserialize envelope")?;
         Ok(Some(envelope))
     }
 

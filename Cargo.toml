@@ -91,3 +91,4 @@ clone_on_ref_ptr     = "deny"
 [workspace.lints.rust]
 # Dead code must be removed, not left to rot
 dead_code            = "deny"
+unused_variables     = "deny"

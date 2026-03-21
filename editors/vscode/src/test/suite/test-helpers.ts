@@ -120,6 +120,50 @@ export async function waitForSelectionRanges(
   );
 }
 
+/** Wait for hover result at a position. Returns the Hover or undefined. */
+export async function waitForHoverResult(
+  uri: vscode.Uri,
+  position: vscode.Position,
+  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+): Promise<vscode.Hover[]> {
+  return pollUntilResult(
+    async () => {
+      const result = await vscode.commands.executeCommand<vscode.Hover[]>(
+        "vscode.executeHoverProvider",
+        uri,
+        position,
+      );
+      return result ?? [];
+    },
+    (hovers) => hovers.length > 0,
+    timeoutMs,
+  );
+}
+
+/** Wait for diagnostics to appear on a document. */
+export async function waitForDiagnostics(
+  uri: vscode.Uri,
+  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+): Promise<vscode.Diagnostic[]> {
+  return pollUntilResult(
+    async () => vscode.languages.getDiagnostics(uri),
+    (diagnostics) => diagnostics.length > 0,
+    timeoutMs,
+  );
+}
+
+/** Wait for diagnostics to be cleared (empty) on a document. */
+export async function waitForDiagnosticsCleared(
+  uri: vscode.Uri,
+  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+): Promise<vscode.Diagnostic[]> {
+  return pollUntilResult(
+    async () => vscode.languages.getDiagnostics(uri),
+    (diagnostics) => diagnostics.length === 0,
+    timeoutMs,
+  );
+}
+
 // ── File Management ──────────────────────────────────────────────
 
 /** Create a temporary C# file, open it in the editor, return doc + uri. */
