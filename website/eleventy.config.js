@@ -1,3 +1,4 @@
+import { HtmlBasePlugin } from "@11ty/eleventy";
 import techdoc from "eleventy-plugin-techdoc";
 
 export default function (eleventyConfig) {
@@ -16,10 +17,12 @@ export default function (eleventyConfig) {
     },
   });
 
+  eleventyConfig.addPlugin(HtmlBasePlugin);
   eleventyConfig.addPassthroughCopy("src/assets");
 
   return {
     dir: { input: "src", output: "_site" },
     markdownTemplateEngine: "njk",
+    pathPrefix: "/forge/",
   };
 }
