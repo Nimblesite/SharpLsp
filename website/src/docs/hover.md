@@ -6,6 +6,10 @@ eleventyNavigation:
   order: 6
 ---
 
+![Hover shows full XML documentation, type signatures, and nullability annotations](/assets/screenshots/hover-page.png)
+
+*Hover shows full XML documentation, type signatures, and nullability annotations.*
+
 # Hover and Quick Info
 
 Hover over any symbol to see its full type signature, XML documentation, parameter descriptions, nullability annotations, and deprecation notices. Forge implements `textDocument/hover` (LSP 3.17) for C# via the Roslyn sidecar.
@@ -92,8 +96,3 @@ Hover never returns errors or blocks the editor. On any failure — sidecar not 
 | Nullable annotation display | ✓ | ✓ | ✓ | ✓ |
 | Deprecation warnings | ✓ | ✓ | ✓ | ✓ |
 
-## Screenshot
-
-![Hover and Quick Info documentation page]({{ "/assets/screenshots/hover-page.png" | url }})
-
-*Hover shows full XML documentation, type signatures, and nullability annotations.*

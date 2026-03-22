@@ -6,6 +6,10 @@ eleventyNavigation:
   order: 4
 ---
 
+![Code completions powered by Roslyn](/assets/screenshots/completions-page.png)
+
+*Full IntelliSense completions powered by Roslyn — same engine as Visual Studio.*
+
 # Code Completions
 
 Forge provides IntelliSense-quality code completions for C#, powered by the full Roslyn API. Completions are routed through the C# sidecar, keeping the Rust host free for fast syntax operations.
@@ -87,8 +91,3 @@ Forge advertises:
 
 `completionItem/resolve` is supported — full documentation and additional edits (e.g., import insertion) are added on resolve, keeping the initial list fast.
 
-## Screenshot
-
-![Code completions documentation page]({{ "/assets/screenshots/completions-page.png" | url }})
-
-*Full IntelliSense completions powered by Roslyn — same engine as Visual Studio.*

@@ -6,6 +6,10 @@ eleventyNavigation:
   order: 7
 ---
 
+![Navigate to any symbol definition, type, declaration, or implementation](/assets/screenshots/go-to-definition-page.png)
+
+*Navigate to any symbol definition, type definition, declaration, or implementation — all four LSP navigation methods fully implemented.*
+
 # Go to Definition
 
 Forge implements the full family of definition navigation requests from LSP 3.17, covering every C# navigation scenario via the Roslyn sidecar.
@@ -81,8 +85,3 @@ All definition results are cached via salsa with the key `(document_uri, version
 | Decompiled source | ✓ | ✓ | ✓ | ✓ |
 | Peek definition | ✓ | ✓ | ✓ | ✓ |
 
-## Screenshots
-
-![Go to Definition documentation page]({{ "/assets/screenshots/go-to-definition-page.png" | url }})
-
-*Navigate to any symbol definition, type definition, declaration, or implementation — all four LSP navigation methods fully implemented.*
