@@ -260,17 +260,9 @@ This is where Forge must match Rider's 2,200+ inspections and 60+ refactorings. 
 
 ### 4.8 Debugging (DAP Integration)
 
-Forge bridges the [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/specification) for integrated debugging without depending on any proprietary debug extensions:
-
-| Feature | Protocol | Implementation | Priority |
-|---|---|---|---|
-| Launch/attach .NET process | DAP launch/attach | [netcoredbg](https://github.com/Samsung/netcoredbg) or debugpy bridge | P1 |
-| Breakpoints | DAP setBreakpoints | Managed via DAP to netcoredbg | P1 |
-| Step in/out/over | DAP next/stepIn/stepOut | Standard DAP flow | P1 |
-| Variable inspection | DAP variables/evaluate | Expression evaluation | P1 |
-| Watch expressions | DAP evaluate | Roslyn scripting or debugger eval | P2 |
-| Conditional breakpoints | DAP setBreakpoints (condition) | Condition expression support | P2 |
-| Hot reload | Custom: `forge/hotReload` | [dotnet watch](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-watch) integration | P2 |
+> **Full specification:** [DEBUGGING-SPEC.md](./DEBUGGING-SPEC.md)
+>
+> Forge delivers a fully open-source .NET debugging experience via [DAP](https://microsoft.github.io/debug-adapter-protocol/specification). Phase 4 uses [netcoredbg](https://github.com/Samsung/netcoredbg) (MIT) with a `DapRouter` layer in the Rust host for capability augmentation (logpoints, async call stack reconstruction, Hot Reload). Phase 5 replaces netcoredbg with a Forge-native C# Debug Sidecar (Tier 4) built on [ClrDebug](https://github.com/lordmilko/ClrDebug) + ICorDebug, achieving full feature parity with Microsoft's proprietary vsdbg.
 
 ### 4.9 Test Discovery & Execution
 
@@ -392,7 +384,7 @@ F# has unique language features that require dedicated support beyond what the s
 
 - Solution-wide error analysis (SWEA equivalent)
 - Test discovery and execution ([xUnit](https://xunit.net/), [NUnit](https://nunit.org/), [MSTest](https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-mstest-intro), [Expecto](https://github.com/haf/expecto), [FsCheck](https://github.com/fscheck/FsCheck))
-- [DAP](https://microsoft.github.io/debug-adapter-protocol/specification) integration for debugging (launch, attach, breakpoints, stepping)
+- [DAP](https://microsoft.github.io/debug-adapter-protocol/specification) integration for debugging — see [DEBUGGING-SPEC.md](./DEBUGGING-SPEC.md) (Phase 4: netcoredbg + DapRouter; Phase 5: Forge Debug Sidecar with full vsdbg parity)
 - Workspace management (solution opening, project graph, NuGet management)
 - F#-specific features: signature files, pipeline hints, FSI integration, file ordering
 - Source generator output viewing
@@ -564,6 +556,8 @@ See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) § Competitive Analysis for the f
 
 ### 9.7 Debugging & Testing
 
+> Full debugging feature parity details: [DEBUGGING-SPEC.md](./DEBUGGING-SPEC.md)
+
 | Feature | VS | CDK | R | Priority | Phase |
 |---|---|---|---|---|---|
 | Launch/attach .NET process | ✓ | ✓ | ✓ | P1 | 4 |
@@ -572,8 +566,14 @@ See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) § Competitive Analysis for the f
 | Variable inspection | ✓ | ✓ | ✓ | P1 | 4 |
 | Watch expressions | ✓ | ✓ | ✓ | P2 | 4 |
 | Call stack navigation | ✓ | ✓ | ✓ | P1 | 4 |
+| Async logical call stack | ✓ | ✓ | ✓ | P1 | 4 |
 | Exception breakpoints | ✓ | ✓ | ✓ | P2 | 4 |
-| Hot reload | ✓ | ✓ | ✓ | P2 | 4 |
+| Data breakpoints | ✓ | ✗ | ✓ | P2 | 5 |
+| Return value display | ✓ | ✗ | ✓ | P2 | 5 |
+| Hot reload (method body edits) | ✓ | ✓ | ✓ | P2 | 4 |
+| Full expression eval (LINQ, lambdas) | ✓ | ✓ | ✓ | P1 | 5 |
+| Remote debugging (SSH) | ✓ | ✓ | ✓ | P2 | 5 |
+| Multi-process / compound launch | ✓ | ✗ | ✓ | P2 | 4 |
 | Test discovery (xUnit/NUnit/MSTest) | ✓ | ✓ | ✓ | P1 | 4 |
 | Test discovery (Expecto/FsCheck) | ✗ | ✗ | ✗ | P1 | 4 |
 | Run/debug individual test | ✓ | ✓ | ✓ | P1 | 4 |
