@@ -401,17 +401,21 @@ fn handle_request(
         | GotoDeclaration::METHOD
         | GotoImplementation::METHOD
         | References::METHOD
-        | DocumentHighlightRequest::METHOD => {
-            handle_nav_request(req, vfs, trees, nav_cache, runtime, csharp_sidecar, fsharp_sidecar)
-        }
+        | DocumentHighlightRequest::METHOD => handle_nav_request(
+            req,
+            vfs,
+            trees,
+            nav_cache,
+            runtime,
+            csharp_sidecar,
+            fsharp_sidecar,
+        ),
         // Pull diagnostics (LSP 3.17)
         DocumentDiagnosticRequest::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             pull_diagnostics::handle_document_diagnostic(req, runtime, sidecar)
         }
-        WorkspaceDiagnosticRequest::METHOD => {
-            pull_diagnostics::handle_workspace_diagnostic(req)
-        }
+        WorkspaceDiagnosticRequest::METHOD => pull_diagnostics::handle_workspace_diagnostic(req),
         _ => handle_custom_request(req, parsers, connection, runtime),
     };
 
@@ -445,8 +449,7 @@ fn handle_nav_request(
     if handlers::is_non_symbol_position(&req, trees) {
         return Ok(serde_json::Value::Null);
     }
-    let (primary, fallback) =
-        pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+    let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
     match req.method.as_str() {
         GotoDefinition::METHOD => {
             semantic::handle_definition(req, vfs, nav_cache, runtime, primary, fallback)
@@ -460,9 +463,7 @@ fn handle_nav_request(
         GotoImplementation::METHOD => {
             semantic::handle_implementation(req, runtime, primary, fallback)
         }
-        References::METHOD => {
-            semantic::handle_references(req, runtime, primary, fallback)
-        }
+        References::METHOD => semantic::handle_references(req, runtime, primary, fallback),
         DocumentHighlightRequest::METHOD => {
             semantic::handle_document_highlight(req, runtime, primary)
         }

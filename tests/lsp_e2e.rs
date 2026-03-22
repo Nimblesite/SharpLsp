@@ -7293,12 +7293,7 @@ fn references(
 }
 
 /// Helper: send a document highlight request and return the response.
-fn document_highlight(
-    client: &mut LspClient,
-    uri: &str,
-    line: u32,
-    character: u32,
-) -> Value {
+fn document_highlight(client: &mut LspClient, uri: &str, line: u32, character: u32) -> Value {
     client.request(
         "textDocument/documentHighlight",
         json!({
@@ -7343,10 +7338,7 @@ fn test_references_capabilities_advertised() {
     let caps = &resp["result"]["capabilities"];
 
     assert_eq!(caps["referencesProvider"], true, "references");
-    assert_eq!(
-        caps["documentHighlightProvider"], true,
-        "documentHighlight"
-    );
+    assert_eq!(caps["documentHighlightProvider"], true, "documentHighlight");
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -7451,7 +7443,10 @@ fn test_full_stack_references_on_method_returns_call_sites() {
     let resp = references(&mut client, &file_uri, 5, 11, true);
     assert_nav_ok(&resp);
     let result = &resp["result"];
-    assert!(result.is_array(), "references must return Location[]: {result}");
+    assert!(
+        result.is_array(),
+        "references must return Location[]: {result}"
+    );
     let locations = result.as_array().unwrap();
     // Speak appears at: line 5 (interface), 11 (virtual), 17 (Dog override),
     // 23 (Cat override), 34 (call site dog.Speak()).
@@ -7613,7 +7608,10 @@ fn test_full_stack_document_highlight_read_write() {
     // Verify highlight structure: each must have range and kind.
     for hl in highlights {
         let range = &hl["range"];
-        assert!(range.get("start").is_some(), "highlight must have range.start");
+        assert!(
+            range.get("start").is_some(),
+            "highlight must have range.start"
+        );
         assert!(range.get("end").is_some(), "highlight must have range.end");
         assert!(hl.get("kind").is_some(), "highlight must have kind: {hl}");
     }

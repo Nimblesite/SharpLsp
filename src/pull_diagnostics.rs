@@ -10,8 +10,8 @@ use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
     DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
-    FullDocumentDiagnosticReport, RelatedFullDocumentDiagnosticReport,
-    WorkspaceDiagnosticReport, WorkspaceDiagnosticReportResult,
+    FullDocumentDiagnosticReport, RelatedFullDocumentDiagnosticReport, WorkspaceDiagnosticReport,
+    WorkspaceDiagnosticReportResult,
 };
 use tracing::{debug, warn};
 
@@ -57,17 +57,14 @@ pub fn handle_document_diagnostic(
 }
 
 /// Handle `workspace/diagnostic` — return diagnostics for the workspace.
-pub fn handle_workspace_diagnostic(
-    req: Request,
-) -> Result<serde_json::Value> {
+pub fn handle_workspace_diagnostic(req: Request) -> Result<serde_json::Value> {
     // Parse params to validate the request shape, but we don't use them yet.
     let _params: lsp_types::WorkspaceDiagnosticParams = serde_json::from_value(req.params)?;
 
     debug!("Pull diagnostics for workspace (returning empty for now)");
 
-    let report = WorkspaceDiagnosticReportResult::Report(WorkspaceDiagnosticReport {
-        items: vec![],
-    });
+    let report =
+        WorkspaceDiagnosticReportResult::Report(WorkspaceDiagnosticReport { items: vec![] });
 
     Ok(serde_json::to_value(report)?)
 }

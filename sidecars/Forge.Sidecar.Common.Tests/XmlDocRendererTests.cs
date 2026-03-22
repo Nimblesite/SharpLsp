@@ -27,7 +27,7 @@ public sealed class XmlDocRendererTests
     {
         const string xml = "<doc><summary>Adds two numbers.</summary></doc>";
         var result = XmlDocRenderer.Render(xml);
-        Assert.Contains("Adds two numbers.", result);
+        Assert.Contains("Adds two numbers.", result, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -41,9 +41,9 @@ public sealed class XmlDocRendererTests
             </doc>
             """;
         var result = XmlDocRenderer.Render(xml);
-        Assert.Contains("**Parameters:**", result);
-        Assert.Contains("`a`", result);
-        Assert.Contains("`b`", result);
+        Assert.Contains("**Parameters:**", result, StringComparison.Ordinal);
+        Assert.Contains("`a`", result, StringComparison.Ordinal);
+        Assert.Contains("`b`", result, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public sealed class XmlDocRendererTests
     {
         const string xml = "<doc><returns>The sum.</returns></doc>";
         var result = XmlDocRenderer.Render(xml);
-        Assert.Contains("**Returns:** The sum.", result);
+        Assert.Contains("**Returns:** The sum.", result, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class XmlDocRendererTests
     {
         const string xml = "<doc><remarks>Thread-safe.</remarks></doc>";
         var result = XmlDocRenderer.Render(xml);
-        Assert.Contains("*Thread-safe.*", result);
+        Assert.Contains("*Thread-safe.*", result, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -71,8 +71,8 @@ public sealed class XmlDocRendererTests
             </doc>
             """;
         var result = XmlDocRenderer.Render(xml);
-        Assert.Contains("**Exceptions:**", result);
-        Assert.Contains("`ArgumentNullException`", result);
+        Assert.Contains("**Exceptions:**", result, StringComparison.Ordinal);
+        Assert.Contains("`ArgumentNullException`", result, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -84,8 +84,8 @@ public sealed class XmlDocRendererTests
             </doc>
             """;
         var result = XmlDocRenderer.Render(xml);
-        Assert.Contains("```csharp", result);
-        Assert.Contains("var x = 1;", result);
+        Assert.Contains("```csharp", result, StringComparison.Ordinal);
+        Assert.Contains("var x = 1;", result, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public sealed class XmlDocRendererTests
             <doc><summary>See <see cref="T:System.String"/>.</summary></doc>
             """;
         var result = XmlDocRenderer.Render(xml);
-        Assert.Contains("`String`", result);
+        Assert.Contains("`String`", result, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -105,8 +105,8 @@ public sealed class XmlDocRendererTests
             <doc><typeparam name="T">The element type.</typeparam></doc>
             """;
         var result = XmlDocRenderer.Render(xml);
-        Assert.Contains("`T`", result);
-        Assert.Contains("The element type.", result);
+        Assert.Contains("`T`", result, StringComparison.Ordinal);
+        Assert.Contains("The element type.", result, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -116,6 +116,6 @@ public sealed class XmlDocRendererTests
             <doc><summary>Uses <paramref name="x"/>.</summary></doc>
             """;
         var result = XmlDocRenderer.Render(xml);
-        Assert.Contains("`x`", result);
+        Assert.Contains("`x`", result, StringComparison.Ordinal);
     }
 }

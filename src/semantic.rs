@@ -232,8 +232,7 @@ pub fn handle_document_highlight(
         return Ok(serde_json::Value::Null);
     };
     let params: DocumentHighlightParams = serde_json::from_value(req.params)?;
-    let file_path =
-        uri_to_path(&params.text_document_position_params.text_document.uri)?;
+    let file_path = uri_to_path(&params.text_document_position_params.text_document.uri)?;
     let line = params.text_document_position_params.position.line;
     let character = params.text_document_position_params.position.character;
 
@@ -290,8 +289,7 @@ fn handle_references_nav(
         return Ok(serde_json::Value::Null);
     };
     let params: ReferenceParams = serde_json::from_value(req.params)?;
-    let file_path =
-        uri_to_path(&params.text_document_position.text_document.uri)?;
+    let file_path = uri_to_path(&params.text_document_position.text_document.uri)?;
     let line = params.text_document_position.position.line;
     let character = params.text_document_position.position.character;
     let include_declaration = params.context.include_declaration;
@@ -311,14 +309,14 @@ fn handle_references_nav(
         include_declaration,
     };
     let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("textDocument/references", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar references unavailable: {err:#}");
-                return Ok(serde_json::Value::Null);
-            }
-        };
+    let response_bytes = match runtime.block_on(sidecar.request("textDocument/references", payload))
+    {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!("Sidecar references unavailable: {err:#}");
+            return Ok(serde_json::Value::Null);
+        }
+    };
 
     let result: SidecarLocationListResult = rmp_serde::from_slice(&response_bytes)?;
     let locations: Vec<Location> = result

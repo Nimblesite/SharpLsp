@@ -31,21 +31,21 @@ public sealed class IpcConnectionTests
     public void GenerateSocketPath_contains_forge_prefix()
     {
         var path = IpcConnection.GenerateSocketPath("/workspace");
-        Assert.Contains("forge-", path);
+        Assert.Contains("forge-", path, StringComparison.Ordinal);
     }
 
     [Fact]
     public void GenerateSocketPath_ends_with_sock()
     {
         var path = IpcConnection.GenerateSocketPath("/workspace");
-        Assert.EndsWith(".sock", path);
+        Assert.EndsWith(".sock", path, StringComparison.Ordinal);
     }
 
     [Fact]
     public void CreateListener_valid_path_returns_ok()
     {
         var socketPath = Path.Combine(
-            Path.GetTempPath(), $"forge-test-{Guid.NewGuid():N}.sock");
+            AppContext.BaseDirectory, $"forge-test-{Guid.NewGuid():N}.sock");
         try
         {
             var result = IpcConnection.CreateListener(socketPath);
@@ -56,9 +56,10 @@ public sealed class IpcConnectionTests
         }
         finally
         {
-            if (File.Exists(socketPath))
+            var info = new FileInfo(socketPath);
+            if (info.Exists)
             {
-                File.Delete(socketPath);
+                info.Delete();
             }
         }
     }
@@ -67,7 +68,7 @@ public sealed class IpcConnectionTests
     public async Task ConnectAsync_no_listener_returns_failure()
     {
         var socketPath = Path.Combine(
-            Path.GetTempPath(), $"forge-noexist-{Guid.NewGuid():N}.sock");
+            AppContext.BaseDirectory, $"forge-noexist-{Guid.NewGuid():N}.sock");
         var result = await IpcConnection.ConnectAsync(socketPath);
         Assert.True(
             result is Outcome.Result<System.Net.Sockets.Socket, string>
