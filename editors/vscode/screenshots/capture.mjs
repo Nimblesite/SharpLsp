@@ -181,27 +181,27 @@ async function captureHover(page) {
   await dismissNotifications(page);
 
   // Go to line 17: "public int Add(int a, int b)"
+  // Position cursor precisely on "Add" using Go to Line then arrow keys
   await page.keyboard.press("Meta+g");
   await sleep(500);
   await page.keyboard.type("17", { delay: 50 });
   await page.keyboard.press("Enter");
   await sleep(1000);
 
-  // Position cursor on "Add" — use Cmd+F to find it precisely
-  await page.keyboard.press("Meta+f");
-  await sleep(500);
-  await page.keyboard.type("Add", { delay: 50 });
-  await sleep(500);
-  await page.keyboard.press("Escape"); // Close find, cursor stays on match
+  // Move to "Add": Home, then right arrow to reach column 20 (where "Add" starts)
+  await page.keyboard.press("Home");
+  await sleep(200);
+  // "        public int Add" — Add starts at column 20
+  for (let i = 0; i < 20; i++) {
+    await page.keyboard.press("ArrowRight");
+  }
   await sleep(500);
 
-  // Trigger "Show Hover" via command palette — no mouse needed
-  await page.keyboard.press("Meta+Shift+p");
-  await sleep(800);
-  await page.keyboard.type("Show Hover", { delay: 30 });
-  await sleep(800);
-  await page.keyboard.press("Enter");
-  await sleep(3000); // Wait for hover tooltip from LSP
+  // Trigger Show Hover with keyboard shortcut (Cmd+K, Cmd+I)
+  await page.keyboard.press("Meta+k");
+  await sleep(200);
+  await page.keyboard.press("Meta+i");
+  await sleep(5000); // Wait for hover tooltip from LSP
 
   await saveScreenshot(page, "hover-page", "Hover tooltip with type info visible");
 }
@@ -400,12 +400,20 @@ async function main() {
 
     // Check if Forge is active by looking for its activity bar icon
     const forgeIcon = page.locator("[id='workbench.view.extension.forge-explorer']");
-    const forgeActive = await forgeIcon.isVisible({ timeout: 3000 }).catch(() => false);
-    console.log(`  Forge extension active: ${String(forgeActive)}`);
+    const forgeActive = await forgeIcon.isVisible({ timeout: 5000 }).catch(() => false);
+    console.log(`  Forge activity bar icon visible: ${String(forgeActive)}`);
 
-    // Wait for LSP to load (Roslyn sidecar needs time to load the project)
-    console.log("  Waiting for LSP sidecar to initialize...");
-    await sleep(15000);
+    // Also check by looking for any element with "forge" in it
+    const forgeElements = await page.locator("[class*='forge'], [id*='forge'], [aria-label*='Forge']").count().catch(() => 0);
+    console.log(`  Elements matching 'forge': ${String(forgeElements)}`);
+
+    // Check the status bar for Forge
+    const statusItems = await page.locator(".statusbar-item").allTextContents().catch(() => []);
+    console.log(`  Status bar items: ${statusItems.filter((s) => s.trim()).join(", ")}`);
+
+    // Wait for LSP to load (Roslyn sidecar needs time to restore + load the project)
+    console.log("  Waiting for LSP sidecar to initialize (30s)...");
+    await sleep(30000);
     await dismissNotifications(page);
 
     console.log("Capturing screenshots...\n");
