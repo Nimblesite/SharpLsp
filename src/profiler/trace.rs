@@ -128,7 +128,19 @@ pub fn stop(session_id: &str) -> Result<StopTraceResult> {
 
     store.mark_stopped(session_id, None);
 
-    // Convert to speedscope format if requested.
+    if file_size_bytes == 0 {
+        warn!(
+            session_id = %session_id,
+            output = %output_path,
+            "Trace file is empty or missing — no data was captured"
+        );
+        anyhow::bail!(
+            "trace captured no data (0 bytes). \
+             The target process may have exited before collection started."
+        );
+    }
+
+    // Convert to speedscope format only when we have actual data.
     if let Err(err) = convert_trace(&output_path) {
         warn!("Trace conversion failed: {err:#}");
     }
