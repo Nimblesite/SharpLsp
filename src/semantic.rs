@@ -368,9 +368,9 @@ fn handle_single_location_nav(
         }
     };
 
-    let result: Option<SidecarLocationResult> = rmp_serde::from_slice(&response_bytes)?;
-    let response = result.and_then(|loc| {
-        let location = sidecar_location_to_lsp(&loc)?;
+    let result: SidecarLocationListResult = rmp_serde::from_slice(&response_bytes)?;
+    let response = result.locations.first().and_then(|loc| {
+        let location = sidecar_location_to_lsp(loc)?;
         Some(GotoDefinitionResponse::Scalar(location))
     });
 
