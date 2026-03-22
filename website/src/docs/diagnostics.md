@@ -1,9 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Diagnostics
-eleventyNavigation:
-  key: Diagnostics
-  order: 5
+eleventyExcludeFromCollections: true
 ---
 
 **VS Code**

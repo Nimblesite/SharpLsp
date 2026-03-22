@@ -95,3 +95,79 @@ The implementation is phased: get process discovery and basic tracing working fi
 - [x] Benchmark counter update delivery latency — target <100ms from tool output to editor
 - [x] Benchmark heap analysis on dump with 50k+ types — target <5s
 - [x] Benchmark GC root traversal — target <10s
+
+### Phase G — Automated Leak Detection (Heap Snapshot Diffing)
+
+- [ ] Create `src/profiler/heap_diff.rs` — diff two `dumpheap -stat` results
+- [ ] Implement `HeapTypeDiff` calculation (count delta, size delta, growth percent)
+- [ ] Implement leak suspect classification (high/medium/low severity heuristics)
+- [ ] Flag known leak-prone patterns (event handlers, delegates, `CancellationTokenSource`, timers, growing collections)
+- [ ] Register `forge/profiler/diffHeapSnapshots` custom LSP request handler
+- [ ] E2E test: diff two dumps from ProfileTarget — one before allocations, one after — detect growth
+- [ ] E2E test: verify leak suspects include types with >100% growth
+- [ ] E2E test: verify `growingOnly` filter excludes shrinking types
+- [ ] E2E test: verify `minGrowthPercent` threshold filtering
+
+### Phase H — Object Inspection
+
+- [ ] Create `src/profiler/object_inspection.rs` — parse `dumpobj <addr>` output into `ObjectInspection`
+- [ ] Parse field names, types, values, and reference addresses from `dumpobj` output
+- [ ] Detect object generation (Gen 0/1/2, LOH, POH) and pinned status
+- [ ] Register `forge/profiler/inspectObject` custom LSP request handler
+- [ ] E2E test: inspect a known object address from a dump — verify fields are populated
+- [ ] Unit test: parse `dumpobj` output with primitive fields, reference fields, and array elements
+
+### Phase I — Object Retention Graph
+
+- [ ] Create `src/profiler/object_graph.rs` — build graph from `dumpobj` + `gcroot` + `objsize`
+- [ ] Implement breadth-first traversal from root address with depth limit
+- [ ] Parse `dumpobj` output to extract field references for edge construction
+- [ ] Use `objsize` to calculate retained size per node
+- [ ] Use `gcroot` to annotate root nodes (Static, ThreadLocal, Pinned, Finalizer, Stack)
+- [ ] Implement `maxNodes` truncation with `truncated` flag in stats
+- [ ] Implement `typeFilter` to prune graph to paths containing specific type
+- [ ] Register `forge/profiler/getObjectGraph` custom LSP request handler
+- [ ] E2E test: build graph from ProfileTarget dump — verify nodes and edges are returned
+- [ ] E2E test: verify depth limiting works (depth=1 returns fewer nodes than depth=3)
+- [ ] E2E test: verify type filter reduces node count
+- [ ] Unit test: parse `dumpobj` output into graph nodes with correct field-name edges
+- [ ] Unit test: parse `objsize` output for retained size
+
+### Phase J — Object Graph Webview (VSCode Extension)
+
+- [ ] Create `editors/vscode/src/profiler-graph.ts` — webview panel for object graph
+- [ ] Implement D3.js force-directed graph layout with physics simulation
+- [ ] Color coding: red (leak suspect), orange (large retained), blue (GC root), gray (normal)
+- [ ] Node sizing proportional to retained size
+- [ ] Click-to-expand: lazy load children via `getObjectGraph` with deeper depth
+- [ ] Right-click to inspect: show `inspectObject` result in panel
+- [ ] Hover tooltip: type name, size, instance count, retained size
+- [ ] Type filter text input to show/hide nodes
+- [ ] Double-click to collapse/expand subtrees
+- [ ] Highlight shortest GC root path when clicking a leaf node
+- [ ] Search by type name or address
+- [ ] Export graph as SVG or PNG
+- [ ] Depth slider control (1–10)
+- [ ] Register `forge.profiler.showObjectGraph` command
+- [ ] Content Security Policy for webview (only allow D3 from bundled script)
+
+### Phase K — Heap Diff Webview and Leak Detection UI (VSCode Extension)
+
+- [ ] Create `editors/vscode/src/profiler-diff.ts` — webview panel for heap diff table
+- [ ] Sortable table columns (type, count delta, size delta, growth %, severity)
+- [ ] Color-coded severity indicators (red/orange/yellow badges)
+- [ ] Click a row to show object graph for that type's instances
+- [ ] "Detect Leaks" command: guided workflow (collect baseline → prompt user → collect comparison → diff → show results)
+- [ ] Register `forge.profiler.diffSnapshots` and `forge.profiler.detectLeaks` commands
+- [ ] In graph view, annotate nodes from diff with growth indicators (pulsing border, size deltas)
+- [ ] Register `forge.profiler.inspectObject` command — opens inspection panel from graph context menu
+
+### Performance Validation (Phase G–K)
+
+- [ ] Benchmark heap diff (two 50k-type dumps) — target <10s
+- [ ] Benchmark object graph (depth 3, 200 nodes) — target <3s
+- [ ] Benchmark object graph (depth 5, 200 nodes) — target <8s
+- [ ] Benchmark object inspection — target <500ms
+- [ ] Benchmark retained size calculation — target <5s per node
+- [ ] Benchmark graph webview initial render — target <500ms
+- [ ] Benchmark graph webview node expansion — target <1s

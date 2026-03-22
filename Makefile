@@ -10,6 +10,9 @@
 #   make test                run all tests
 #   make lint                build + lint ALL languages (Rust, TypeScript, .NET)
 #   make fmt                 format ALL languages (Rust, TypeScript, .NET)
+#   make coverage             run coverage for all projects, enforce + ratchet thresholds
+#   make coverage-rust       coverage for forge-lsp only
+#   make coverage-vsix       coverage for VS Code extension only
 #   make clean               remove build artifacts
 
 # Fail fast: any error in any command or pipeline = immediate abort.
@@ -18,6 +21,7 @@ SHELL := /bin/bash
 
 .PHONY: build build-rust build-dotnet build-vsix build-zed \
        test test-rust test-zed test-vsix \
+       coverage coverage-rust coverage-vsix \
        lint lint-rust lint-zed lint-vsix lint-dotnet \
        fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet clean
 
@@ -96,19 +100,37 @@ build-zed:
 
 # ── Tests ────────────────────────────────────────────────────────
 
-test: test-rust test-zed
+test: build test-rust test-zed
 
-test-rust:
+test-rust: build-rust build-dotnet
 	@echo "==> Running forge-lsp tests..."
 	cargo test
 
-test-zed:
+test-zed: build-zed
 	@echo "==> Running Zed extension tests..."
 	cargo test --manifest-path $(ZED_DIR)/Cargo.toml
 
-test-vsix:
+test-vsix: build-vsix
 	@echo "==> Running VS Code extension tests..."
 	npm test --prefix $(VSCODE_DIR)
+
+# ── Coverage (enforce + ratchet thresholds) ─────────────────────
+
+CHECK_COV = scripts/check-coverage.sh
+
+coverage: build coverage-rust coverage-vsix
+	@echo ""
+	@echo "==> All coverage checks passed."
+
+coverage-rust: build-rust build-dotnet
+	@echo "==> [Rust] Running coverage for forge-lsp..."
+	cargo llvm-cov --json --output-path target/coverage-rust.json
+	@$(CHECK_COV) forge-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
+
+coverage-vsix: build-vsix
+	@echo "==> [TypeScript] Running coverage for VS Code extension..."
+	cd $(VSCODE_DIR) && npm test -- --coverage
+	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
 
 # ── Lint (all languages — includes build) ────────────────────────
 

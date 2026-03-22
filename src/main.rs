@@ -458,6 +458,9 @@ fn handle_request(
         }
         "forge/profiler/analyzeHeap" => profiler::handlers::handle_analyze_heap(req, runtime),
         "forge/profiler/findGCRoots" => profiler::handlers::handle_find_gc_roots(req, runtime),
+        "forge/profiler/inspectObject" => {
+            profiler::handlers::handle_inspect_object(req, runtime)
+        }
         _ => {
             warn!("Unhandled request: {}", req.method);
             Err(anyhow::anyhow!("method not found"))

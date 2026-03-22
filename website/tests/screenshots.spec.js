@@ -2,35 +2,20 @@ import { test, expect } from '@playwright/test';
 
 const BASE = '/forge';
 
-const IDES = ['vscode', 'zed'];
+// Feature doc pages are currently excluded from the website (eleventyExcludeFromCollections: true)
+// because their screenshots don't demonstrate the actual features — they just show plain code.
+// See docs/plans/SCREENSHOT-FIX-PLAN.md for what needs to be fixed to re-enable them.
+//
+// When screenshots are fixed, re-add pages here:
+// { path: `${BASE}/docs/completions/`, name: 'completions-page', description: 'completions page screenshot' },
+// { path: `${BASE}/docs/diagnostics/`, name: 'diagnostics-page', description: 'diagnostics page screenshot' },
+// { path: `${BASE}/docs/hover/`, name: 'hover-page', description: 'hover page screenshot' },
+// { path: `${BASE}/docs/go-to-definition/`, name: 'go-to-definition-page', description: 'go-to-definition page screenshot' },
+// { path: `${BASE}/docs/profiler/`, name: 'profiler-page', description: 'profiler page screenshot' },
 
-const SCREENSHOT_PAGES = [
-  {
-    path: `${BASE}/docs/completions/`,
-    name: 'completions-page',
-    description: 'completions page screenshot',
-  },
-  {
-    path: `${BASE}/docs/diagnostics/`,
-    name: 'diagnostics-page',
-    description: 'diagnostics page screenshot',
-  },
-  {
-    path: `${BASE}/docs/hover/`,
-    name: 'hover-page',
-    description: 'hover page screenshot',
-  },
-  {
-    path: `${BASE}/docs/go-to-definition/`,
-    name: 'go-to-definition-page',
-    description: 'go-to-definition page screenshot',
-  },
-  {
-    path: `${BASE}/docs/profiler/`,
-    name: 'profiler-page',
-    description: 'profiler page screenshot',
-  },
-];
+const SCREENSHOT_PAGES = [];
+
+const IDES = ['vscode', 'zed'];
 
 test.describe('Screenshots load correctly', () => {
   for (const { path, name, description } of SCREENSHOT_PAGES) {
@@ -65,18 +50,4 @@ test.describe('Screenshots load correctly', () => {
       });
     }
   }
-
-  test('screenshot images return HTTP 200 when fetched directly', async ({ page }) => {
-    const screenshotPaths = [];
-    for (const { name } of SCREENSHOT_PAGES) {
-      for (const ide of IDES) {
-        screenshotPaths.push(`${BASE}/assets/screenshots/${ide}-${name}.png`);
-      }
-    }
-
-    for (const screenshotPath of screenshotPaths) {
-      const response = await page.goto(`http://localhost:8081${screenshotPath}`);
-      expect(response?.status(), `${screenshotPath} should return 200`).toBe(200);
-    }
-  });
 });

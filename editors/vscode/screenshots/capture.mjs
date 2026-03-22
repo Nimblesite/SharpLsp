@@ -16,21 +16,24 @@
 // Prerequisites: playwright installed (npm i playwright)
 
 import { chromium } from "playwright";
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const extensionPath = path.resolve(__dirname, "..");
+const repoRoot = path.resolve(extensionPath, "../..");
 const workspacePath = path.resolve(extensionPath, "test-fixtures/workspace");
 const outputDir = path.resolve(
   __dirname,
   "../../../website/src/assets/screenshots",
 );
+const vsixPath = path.resolve(extensionPath, "forge-0.1.0.vsix");
+const forgeBinary = path.resolve(repoRoot, "target/release/forge-lsp");
 
 const PORT = 9876;
-const LAUNCH_TIMEOUT_MS = 30_000;
+const LAUNCH_TIMEOUT_MS = 60_000;
 
 fs.mkdirSync(outputDir, { recursive: true });
 
@@ -177,39 +180,28 @@ async function captureHover(page) {
   await openFile(page, "Calculator.cs");
   await dismissNotifications(page);
 
-  // Hover over a symbol — the Calculator class name or a method
-  // Find "public int Add" and hover over "Add"
+  // Go to line 17: "public int Add(int a, int b)"
   await page.keyboard.press("Meta+g");
   await sleep(500);
   await page.keyboard.type("17", { delay: 50 });
   await page.keyboard.press("Enter");
+  await sleep(1000);
+
+  // Position cursor on "Add" — use Cmd+F to find it precisely
+  await page.keyboard.press("Meta+f");
+  await sleep(500);
+  await page.keyboard.type("Add", { delay: 50 });
+  await sleep(500);
+  await page.keyboard.press("Escape"); // Close find, cursor stays on match
   await sleep(500);
 
-  // Use the editor to find the method name and hover it
-  // Position cursor on "Add" in "public int Add(int a, int b)"
-  await page.keyboard.press("Home");
-  await sleep(200);
-
-  // Find the "Add" text on this line and hover over it
-  // Use Ctrl+D or manual positioning to select "Add"
-  await page.keyboard.press("Meta+d"); // Select word at cursor
-  await sleep(300);
-
-  // Get the editor area and hover over the selection
-  const editor = page.locator(".monaco-editor .view-lines");
-  const editorBox = await editor.boundingBox();
-  if (editorBox) {
-    // Hover near line 17 — approximate position
-    const lineHeight = editorBox.height / 30; // rough estimate
-    const hoverY = editorBox.y + (17 * lineHeight);
-    const hoverX = editorBox.x + 250; // roughly where "Add" would be
-
-    // First click to deselect, then hover
-    await page.keyboard.press("Escape");
-    await sleep(200);
-    await page.mouse.move(hoverX, hoverY);
-    await sleep(3000); // Wait for hover tooltip to appear
-  }
+  // Trigger "Show Hover" via command palette — no mouse needed
+  await page.keyboard.press("Meta+Shift+p");
+  await sleep(800);
+  await page.keyboard.type("Show Hover", { delay: 30 });
+  await sleep(800);
+  await page.keyboard.press("Enter");
+  await sleep(3000); // Wait for hover tooltip from LSP
 
   await saveScreenshot(page, "hover-page", "Hover tooltip with type info visible");
 }
@@ -219,32 +211,28 @@ async function captureGoToDefinition(page) {
   await openFile(page, "Calculator.cs");
   await dismissNotifications(page);
 
-  // Go to a symbol usage and trigger peek definition
-  // Go to line with "throw new System.DivideByZeroException()"
+  // Go to line 31: "throw new System.DivideByZeroException()"
   await page.keyboard.press("Meta+g");
   await sleep(500);
   await page.keyboard.type("31", { delay: 50 });
   await page.keyboard.press("Enter");
+  await sleep(1000);
+
+  // Find "DivideByZeroException" and position cursor on it
+  await page.keyboard.press("Meta+f");
+  await sleep(500);
+  await page.keyboard.type("DivideByZeroException", { delay: 20 });
+  await sleep(500);
+  await page.keyboard.press("Escape"); // Close find, cursor on match
   await sleep(500);
 
-  // Position cursor on "DivideByZeroException"
-  await page.keyboard.press("Home");
-  await sleep(200);
-
-  // Find and click on the exception name
-  const editor = page.locator(".monaco-editor .view-lines");
-  const editorBox = await editor.boundingBox();
-  if (editorBox) {
-    const lineHeight = editorBox.height / 30;
-    const clickY = editorBox.y + (31 * lineHeight);
-    const clickX = editorBox.x + 350;
-    await page.mouse.click(clickX, clickY);
-    await sleep(500);
-  }
-
-  // Trigger Peek Definition (Alt+F12)
-  await page.keyboard.press("Alt+F12");
-  await sleep(3000);
+  // Trigger Peek Definition via command palette
+  await page.keyboard.press("Meta+Shift+p");
+  await sleep(800);
+  await page.keyboard.type("Peek Definition", { delay: 30 });
+  await sleep(800);
+  await page.keyboard.press("Enter");
+  await sleep(5000); // Wait for LSP to resolve and render peek
 
   await saveScreenshot(page, "go-to-definition-page", "Peek definition overlay visible");
 
@@ -298,7 +286,33 @@ async function main() {
   console.log(`Extension:  ${extensionPath}`);
   console.log(`Workspace:  ${workspacePath}`);
   console.log(`Output:     ${outputDir}`);
+  console.log(`VSIX:       ${vsixPath}`);
+  console.log(`Forge LSP:  ${forgeBinary}`);
   console.log("");
+
+  // Install the Forge VSIX so the LSP is available for feature screenshots
+  if (fs.existsSync(vsixPath)) {
+    console.log("Installing Forge VSIX extension...");
+    try {
+      execSync(`code --install-extension "${vsixPath}" --force 2>&1`, { encoding: "utf8" });
+      console.log("  Extension installed.");
+    } catch (err) {
+      console.warn(`  Extension install warning: ${err.message}`);
+    }
+  } else {
+    console.warn("  VSIX not found — feature screenshots may not show LSP features.");
+  }
+
+  // Write workspace settings to point to the forge-lsp binary
+  const settingsDir = path.join(workspacePath, ".vscode");
+  fs.mkdirSync(settingsDir, { recursive: true });
+  const settingsPath = path.join(settingsDir, "settings.json");
+  const settings = {
+    "forge.server.path": forgeBinary,
+    "forge.trace.server": "off",
+  };
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  console.log(`  Workspace settings written: forge.server.path = ${forgeBinary}`);
 
   console.log("Starting VS Code web server...");
   const serverProcess = spawn("code", [
@@ -326,8 +340,9 @@ async function main() {
     const wsUrl = `http://127.0.0.1:${String(PORT)}/?folder=${encodeURIComponent(workspacePath)}`;
     console.log("Opening workspace...");
     await page.goto(wsUrl);
-    await page.waitForSelector(".monaco-editor", { timeout: 30_000 });
-    await sleep(5000);
+    // Wait for the workbench to fully load (not just chat widget monaco-editor)
+    await page.waitForSelector(".monaco-workbench", { timeout: 60_000 });
+    await sleep(10000); // Extra time for Forge LSP to initialize
 
     // Trust the workspace if prompted
     const trustBtn = page.getByRole("button", { name: "Yes, I trust the authors" });

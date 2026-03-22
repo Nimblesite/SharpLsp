@@ -15,14 +15,11 @@
       ]
     },
     {
-      "title": "Features",
+      "title": "Resources",
       "items": [
-        { "text": "Code Completions", "url": "/docs/completions/" },
-        { "text": "Diagnostics", "url": "/docs/diagnostics/" },
-        { "text": "Hover / Quick Info", "url": "/docs/hover/" },
-        { "text": "Go to Definition", "url": "/docs/go-to-definition/" },
-        { "text": "Profiler", "url": "/docs/profiler/" },
-        { "text": "F# Support", "url": "/docs/fsharp/" }
+        { "text": "Architecture", "url": "/docs/architecture/" },
+        { "text": "Configuration", "url": "/docs/configuration/" },
+        { "text": "Editor Setup", "url": "/docs/editors/" }
       ]
     },
     {

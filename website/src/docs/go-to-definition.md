@@ -1,9 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Go to Definition
-eleventyNavigation:
-  key: Go to Definition
-  order: 7
+eleventyExcludeFromCollections: true
 ---
 
 **VS Code**

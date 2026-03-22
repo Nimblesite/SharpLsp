@@ -27,11 +27,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Format
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+      - name: Lint
+        run: make lint-rust PROFILE=debug
 
   dotnet:
     name: .NET
@@ -55,15 +52,12 @@ jobs:
       - name: Format
         run: dotnet csharpier check sidecars/
 
-      - name: Build
-        run: dotnet build sidecars/Forge.Sidecars.sln
+      - name: Lint
+        run: make lint-dotnet
 
   vscode:
     name: VS Code
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: editors/vscode
     steps:
       - uses: actions/checkout@v4
 
@@ -73,13 +67,13 @@ jobs:
           cache: npm
           cache-dependency-path: editors/vscode/package-lock.json
 
-      - run: npm ci
+      - run: npm ci --prefix editors/vscode
 
       - name: Format
-        run: npx prettier@3 --check 'src/**/*.ts'
+        run: cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'
 
       - name: Lint
-        run: npm run lint
+        run: make lint-vsix
 
   screenshots:
     name: Screenshots
@@ -142,14 +136,19 @@ jobs:
           dotnet tool install -g dotnet-counters
           dotnet tool install -g dotnet-dump
 
-      - run: cargo test --all-targets
+      - name: Test
+        run: make test
 
   coverage:
     name: Coverage
     needs: [rust]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -163,11 +162,29 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+
       - name: Install diagnostic tools
         run: |
           dotnet tool install -g dotnet-trace
           dotnet tool install -g dotnet-counters
           dotnet tool install -g dotnet-dump
 
-      - name: Coverage (enforce 90% line minimum)
-        run: cargo llvm-cov --fail-under-lines 90 --summary-only
+      - name: Install VS Code extension deps
+        run: npm ci --prefix editors/vscode
+
+      - name: Enforce and ratchet coverage thresholds
+        run: make coverage
+
+      - name: Commit updated thresholds
+        run: |
+          git diff --quiet coverage-thresholds.json && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add coverage-thresholds.json
+          git commit -m "ci: ratchet coverage threshold"
+          git push

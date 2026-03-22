@@ -1,9 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Code Completions
-eleventyNavigation:
-  key: Code Completions
-  order: 4
+eleventyExcludeFromCollections: true
 ---
 
 **VS Code**

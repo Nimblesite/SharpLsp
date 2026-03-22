@@ -1,9 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Hover and Quick Info
-eleventyNavigation:
-  key: Hover and Quick Info
-  order: 6
+eleventyExcludeFromCollections: true
 ---
 
 **VS Code**

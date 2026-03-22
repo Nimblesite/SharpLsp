@@ -1,9 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Profiler
-eleventyNavigation:
-  key: Profiler
-  order: 8
+eleventyExcludeFromCollections: true
 ---
 
 **VS Code**

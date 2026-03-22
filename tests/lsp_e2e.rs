@@ -6695,3 +6695,407 @@ fn test_full_stack_nav_methods_with_range_assertions() {
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
+
+// ── Additional Diagnostics & Sidecar Coverage Tests ──────────────
+
+// Full-stack: diagnostics refreshed on didChange — edit introduces error.
+
+#[test]
+fn test_full_stack_diagnostics_refreshed_on_did_change() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("ChangeTest");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("ChangeTest.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    // Start with a clean file — no errors.
+    let clean_source = r#"namespace ChangeTest;
+public class Widget
+{
+    public int Count { get; set; }
+}
+"#;
+    std::fs::write(proj_dir.join("Widget.cs"), clean_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("ChangeTest.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChangeTest", "ChangeTest/ChangeTest.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(&proj_dir)
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let root_uri = format!("file://{}", real_root.display());
+    let file_path = real_root.join("ChangeTest").join("Widget.cs");
+    let file_uri = format!("file://{}", file_path.display());
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, clean_source);
+
+    // Wait for sidecar readiness via hover polling.
+    let hover_result =
+        poll_hover_until_ready(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
+    assert!(
+        !hover_result.is_null(),
+        "hover must work once sidecar is ready",
+    );
+
+    // Now edit the file to introduce a type error.
+    let broken_source = r#"namespace ChangeTest;
+public class Widget
+{
+    public NonExistentType Count { get; set; }
+}
+"#;
+    client.change_document(&file_uri, 2, broken_source);
+    // Also update the file on disk for the sidecar to pick up.
+    std::fs::write(&file_path, broken_source).unwrap();
+
+    // Poll for error diagnostics after the change.
+    let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let mut found_error = false;
+
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_secs(3));
+        client.save_document(&file_uri);
+        std::thread::sleep(Duration::from_secs(2));
+
+        client.close_document(&file_uri);
+        let msg = client.recv();
+
+        if msg["method"].as_str() == Some("textDocument/publishDiagnostics") {
+            let diags = msg["params"]["diagnostics"].as_array().unwrap();
+            if !diags.is_empty() {
+                let has_error = diags.iter().any(|d| {
+                    d["message"]
+                        .as_str()
+                        .is_some_and(|m| m.contains("NonExistentType") || m.contains("CS0246"))
+                });
+                if has_error {
+                    found_error = true;
+                    // Verify diagnostic structure.
+                    let diag = diags
+                        .iter()
+                        .find(|d| {
+                            d["message"]
+                                .as_str()
+                                .is_some_and(|m| {
+                                    m.contains("NonExistentType") || m.contains("CS0246")
+                                })
+                        })
+                        .unwrap();
+                    assert_eq!(
+                        diag["source"].as_str().unwrap(),
+                        "forge-csharp",
+                        "source must be forge-csharp",
+                    );
+                    assert_eq!(
+                        diag["severity"].as_u64().unwrap(),
+                        1,
+                        "type error must be Error severity (1)",
+                    );
+                    assert!(
+                        diag["range"]["start"]["line"].as_u64().is_some(),
+                        "diagnostic must have a valid range start line",
+                    );
+                    assert!(
+                        diag["code"].is_string()
+                            || diag["code"].is_number()
+                            || diag["code"].is_object(),
+                        "diagnostic must have a code",
+                    );
+                    break;
+                }
+            }
+        }
+
+        client.open_document(&file_uri, broken_source);
+    }
+
+    assert!(
+        found_error,
+        "didChange introducing NonExistentType must produce diagnostics within 90s",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Full-stack: diagnostics on file with syntax error (not just type error).
+
+#[test]
+fn test_full_stack_diagnostics_syntax_error() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("SyntaxErr");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("SyntaxErr.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    // File with a deliberate syntax error: missing closing brace.
+    let syntax_error_source = r#"namespace SyntaxErr;
+public class Oops
+{
+    public void Broken(
+"#;
+    std::fs::write(proj_dir.join("Oops.cs"), syntax_error_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("SyntaxErr.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SyntaxErr", "SyntaxErr/SyntaxErr.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(&proj_dir)
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let root_uri = format!("file://{}", real_root.display());
+    let file_path = real_root.join("SyntaxErr").join("Oops.cs");
+    let file_uri = format!("file://{}", file_path.display());
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, syntax_error_source);
+
+    // Poll for syntax error diagnostics (CS1002, CS1513, CS1514 etc).
+    let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let mut found_syntax_error = false;
+
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_secs(3));
+        client.save_document(&file_uri);
+        std::thread::sleep(Duration::from_secs(2));
+
+        client.close_document(&file_uri);
+        let msg = client.recv();
+
+        if msg["method"].as_str() == Some("textDocument/publishDiagnostics") {
+            let diags = msg["params"]["diagnostics"].as_array().unwrap();
+            if !diags.is_empty() {
+                // Look for any error-severity diagnostic.
+                let has_error = diags
+                    .iter()
+                    .any(|d| d["severity"].as_u64().is_some_and(|s| s == 1));
+                if has_error {
+                    found_syntax_error = true;
+                    // Verify the diagnostics have proper structure.
+                    for diag in diags.iter().filter(|d| d["severity"].as_u64() == Some(1)) {
+                        assert_eq!(
+                            diag["source"].as_str().unwrap(),
+                            "forge-csharp",
+                            "source must be forge-csharp",
+                        );
+                        assert!(
+                            diag["message"].as_str().is_some_and(|m| !m.is_empty()),
+                            "diagnostic must have a non-empty message",
+                        );
+                        assert!(
+                            diag["range"]["start"]["line"].as_u64().is_some(),
+                            "diagnostic must have range start",
+                        );
+                        assert!(
+                            diag["range"]["end"]["line"].as_u64().is_some(),
+                            "diagnostic must have range end",
+                        );
+                    }
+                    break;
+                }
+            }
+        }
+
+        client.open_document(&file_uri, syntax_error_source);
+    }
+
+    assert!(
+        found_syntax_error,
+        "file with syntax error must produce Error-severity diagnostics within 90s",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Hover returns null gracefully when no sidecar is connected (no workspace root).
+
+#[test]
+fn test_hover_without_sidecar_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    // Hover on the class name "Program" (line 5, char 18).
+    let resp = hover(&mut client, TEST_URI, 5, 18);
+    assert_hover_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "hover without sidecar must return null, got: {}",
+        resp["result"],
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Completion returns null/empty when no sidecar is connected.
+
+#[test]
+fn test_completion_without_sidecar_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    let resp = client.request(
+        "textDocument/completion",
+        json!({
+            "textDocument": { "uri": TEST_URI },
+            "position": { "line": 5, "character": 18 }
+        }),
+    );
+    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
+    assert!(resp.get("id").is_some(), "must have request id");
+    assert!(
+        resp.get("error").is_none(),
+        "completion without sidecar must not error: {resp}",
+    );
+    // Without sidecar, result should be null (no completions available).
+    assert!(
+        resp["result"].is_null(),
+        "completion without sidecar must return null, got: {}",
+        resp["result"],
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// All four navigation methods return null without sidecar in a single session.
+
+#[test]
+fn test_all_nav_methods_without_sidecar_return_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    // Definition on class name.
+    let resp = definition(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "definition without sidecar must be null",
+    );
+
+    // Type definition on class name.
+    let resp = type_definition(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "typeDefinition without sidecar must be null",
+    );
+
+    // Declaration on class name.
+    let resp = declaration(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "declaration without sidecar must be null",
+    );
+
+    // Implementation on class name.
+    let resp = implementation(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "implementation without sidecar must be null",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Completion and hover both return null in a single session without sidecar.
+
+#[test]
+fn test_completion_and_hover_without_sidecar_both_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    // Hover first.
+    let resp = hover(&mut client, TEST_URI, 5, 18);
+    assert_hover_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "hover without sidecar must be null",
+    );
+
+    // Then completion.
+    let resp = client.request(
+        "textDocument/completion",
+        json!({
+            "textDocument": { "uri": TEST_URI },
+            "position": { "line": 5, "character": 18 }
+        }),
+    );
+    assert_eq!(resp["jsonrpc"], "2.0");
+    assert!(resp.get("error").is_none(), "completion must not error");
+    assert!(
+        resp["result"].is_null(),
+        "completion without sidecar must be null",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}

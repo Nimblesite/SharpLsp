@@ -1,4 +1,16 @@
-cnamespace TestFixtures
+31
+
+
+
+
+
+            int x = undefinedVariable + notAMethod();
+
+this.
+
+            int x = undefinedVariable + notAMethod();
+ TestFixtures
+ this.
 {
     /// <summary>
     /// A simple calculator for testing document symbols, folding, and selection ranges.

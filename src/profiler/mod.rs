@@ -7,6 +7,7 @@ pub mod counters;
 pub mod dump;
 pub mod handlers;
 pub mod heap_analysis;
+pub mod object_inspection;
 pub mod process_list;
 pub mod session;
 pub mod tool_discovery;
