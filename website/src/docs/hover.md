@@ -6,7 +6,10 @@ eleventyNavigation:
   order: 6
 ---
 
+**VS Code**
 ![Hover in VS Code](/assets/screenshots/vscode-hover-page.png)
+
+**Zed**
 ![Hover in Zed](/assets/screenshots/zed-hover-page.png)
 
 *Hover shows full XML documentation, type signatures, and nullability annotations.*

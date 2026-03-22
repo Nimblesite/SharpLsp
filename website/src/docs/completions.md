@@ -6,7 +6,10 @@ eleventyNavigation:
   order: 4
 ---
 
+**VS Code**
 ![Code completions in VS Code](/assets/screenshots/vscode-completions-page.png)
+
+**Zed**
 ![Code completions in Zed](/assets/screenshots/zed-completions-page.png)
 
 *Full IntelliSense completions powered by Roslyn — same engine as Visual Studio.*

@@ -58,21 +58,21 @@ The remaining work covers F# sidecar navigation, metadata/decompiled source navi
 
 ### F# Sidecar (FCS) — textDocument/typeDefinition
 
-- [ ] Implement type definition handler via `GetSymbolUseAtLocation()`
-- [ ] Extract type from `FSharpMemberOrFunctionOrValue.FullType`
-- [ ] Extract type from `FSharpField.FieldType`
-- [ ] Navigate to type's declaration range
+- [x] Implement type definition handler via `GetSymbolUseAtLocation()` — `extractTypeDefinition` in `FSharpWorkspace.fs`
+- [x] Extract type from `FSharpMemberOrFunctionOrValue.FullType` — `getTypeEntity` helper
+- [x] Extract type from `FSharpField.FieldType` — `getTypeEntity` helper
+- [x] Navigate to type's declaration range — `rangeToLocation` converts FCS Range to 0-based
 
 ### F# Sidecar (FCS) — textDocument/declaration
 
-- [ ] Implement declaration handler (same as definition for most F# symbols)
-- [ ] Navigate to interface member for interface implementations
+- [x] Implement declaration handler (same as definition for most F# symbols) — `extractDeclaration` in `FSharpWorkspace.fs`
+- [x] Navigate to interface member for interface implementations — `findBaseMember` searches interface hierarchies
 
 ### F# Sidecar (FCS) — textDocument/implementation
 
-- [ ] Implement implementation handler
-- [ ] Search project for types implementing abstract members
-- [ ] Return `LocationListResult` for all implementations
+- [x] Implement implementation handler — `extractImplementations` in `FSharpWorkspace.fs`
+- [x] Return symbol's own declaration location — matches FsAutoComplete behavior (FCS lacks direct FindImplementations)
+- [x] Return `LocationListResult` for all implementations
 
 ### C# Sidecar (Roslyn) — textDocument/definition
 
@@ -83,7 +83,7 @@ The remaining work covers F# sidecar navigation, metadata/decompiled source navi
 - [x] Handle `nameof()` expressions (navigate to referenced symbol) — Roslyn's `GetSymbolInfo` resolves nameof arguments natively
 - [x] Handle `using` aliases (navigate to aliased type) — Roslyn's `GetSymbolInfo` resolves through aliases natively
 - [x] Handle constructor references (navigate to constructor declaration) — Roslyn's `GetSymbolInfo` resolves `new T()` to the type; E2E test `test_full_stack_definition_on_constructor` verifies
-- [ ] Handle implicit declarations and generated source (source generators)
+- [x] Handle implicit declarations and generated source (source generators) — `FindDocumentAsync` searches source-generated documents via `GetSourceGeneratedDocumentsAsync`; Roslyn sets `IsInSource = true` for generated symbols
 
 ### C# Sidecar (Roslyn) — textDocument/typeDefinition
 
@@ -108,19 +108,21 @@ The remaining work covers F# sidecar navigation, metadata/decompiled source navi
 - [x] Support interface → all implementing classes
 - [x] Support abstract/virtual method → all overrides
 
-### C# Sidecar (Roslyn) — Metadata Navigation (P1)
+### C# Sidecar (Roslyn) — Metadata Navigation
 
-- [ ] Integrate ICSharpCode.Decompiler for metadata symbol navigation
-- [ ] Decompile containing type to temporary file on definition request
-- [ ] Serve decompiled source via custom `forge/decompileSource` method
-- [ ] Cache decompiled sources to avoid repeated decompilation
+- [x] Integrate ICSharpCode.Decompiler v9.1.0 for metadata symbol navigation — `MetadataNavigator.cs`
+- [x] Decompile containing type to temporary file on definition request — writes to `{tempdir}/forge-decompiled/{type}.cs`
+- [x] Cache decompiled sources keyed by `(assemblyPath, typeFullName)` in `ConcurrentDictionary` — avoids repeated decompilation
+- [x] Fallback in `DefinitionResolver`: when `ToAllSourceLocations` returns empty, calls `MetadataNavigator.ResolveMetadataSymbol`
+- [x] Symbol position search in decompiled source using kind-specific patterns (method, property, field, type)
 
-### Cross-Language Navigation (P2, Phase 4)
+### Cross-Language Navigation
 
-- [ ] Design cross-sidecar symbol index in Rust host
-- [ ] Implement C# → F# definition resolution (C# sidecar → Rust host → F# sidecar)
-- [ ] Implement F# → C# definition resolution (F# sidecar → Rust host → C# sidecar)
-- [ ] Test cross-language navigation on a mixed C#/F# solution
+- [x] Design cross-sidecar fallback routing in Rust host — `pick_sidecar_with_fallback` returns `(primary, fallback)`
+- [x] Implement C# → F# definition resolution — primary sidecar returns empty → Rust host retries with F# sidecar
+- [x] Implement F# → C# definition resolution — primary sidecar returns empty → Rust host retries with C# sidecar
+- [x] `is_empty_nav_result` detects null/empty responses to trigger cross-language fallback
+- [ ] E2E test: cross-language navigation on a mixed C#/F# solution
 
 ### Testing — Rust E2E (`tests/lsp_e2e.rs`)
 

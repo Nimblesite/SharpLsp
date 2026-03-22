@@ -411,7 +411,8 @@ fn handle_request(
             if handlers::is_non_symbol_position(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+                let (primary, fallback) =
+                    pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
                 semantic::handle_definition(req, vfs, nav_cache, runtime, primary, fallback)
             }
         }
@@ -419,7 +420,8 @@ fn handle_request(
             if handlers::is_non_symbol_position(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+                let (primary, fallback) =
+                    pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
                 semantic::handle_type_definition(req, vfs, nav_cache, runtime, primary, fallback)
             }
         }
@@ -427,7 +429,8 @@ fn handle_request(
             if handlers::is_non_symbol_position(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+                let (primary, fallback) =
+                    pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
                 semantic::handle_declaration(req, vfs, nav_cache, runtime, primary, fallback)
             }
         }
@@ -435,7 +438,8 @@ fn handle_request(
             if handlers::is_non_symbol_position(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+                let (primary, fallback) =
+                    pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
                 semantic::handle_implementation(req, runtime, primary, fallback)
             }
         }
@@ -485,6 +489,25 @@ fn pick_sidecar<'a>(
     match uri.and_then(|u| LangId::from_uri(&u)) {
         Some(LangId::FSharp) => fsharp,
         _ => csharp,
+    }
+}
+
+/// Pick primary + fallback sidecar for cross-language navigation.
+///
+/// Primary is chosen by document language. Fallback is the other sidecar,
+/// used when the primary can't resolve the symbol (cross-language reference).
+fn pick_sidecar_with_fallback<'a>(
+    req: &Request,
+    csharp: Option<&'a Arc<SidecarManager>>,
+    fsharp: Option<&'a Arc<SidecarManager>>,
+) -> (
+    Option<&'a Arc<SidecarManager>>,
+    Option<&'a Arc<SidecarManager>>,
+) {
+    let uri = extract_document_uri(req);
+    match uri.and_then(|u| LangId::from_uri(&u)) {
+        Some(LangId::FSharp) => (fsharp, csharp),
+        _ => (csharp, fsharp),
     }
 }
 

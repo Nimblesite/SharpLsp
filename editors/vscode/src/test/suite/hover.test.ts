@@ -232,6 +232,109 @@ namespace HoverReject
     assert.ok(ifaceMd.includes("interface"), "Interface hover must contain 'interface'");
   });
 
+  // ── var keyword hover ──────────────────────────────────────────
+
+  test("hover on var keyword shows inferred type", async function () {
+    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+    const content = `namespace HoverVar
+{
+    public class Gadget { public int Size { get; set; } }
+    public class Runner
+    {
+        public void Go()
+        {
+            var g = new Gadget();
+            var s = g.Size;
+        }
+    }
+}`;
+
+    const { uri } = await openCSharpFile(tmpDir, "HoverVar.cs", content);
+    await waitForDocumentSymbols(uri);
+
+    // Hover on `var` at line 7 char 12 ("var g = new Gadget()").
+    const varHover = await waitForHoverResult(uri, new vscode.Position(7, 12));
+    assert.ok(varHover.length > 0, "var hover must return results");
+    const md = hoverToString(varHover);
+    assert.ok(md.includes("```"), "var hover must have code block");
+    assert.ok(
+      md.includes("Gadget") || md.toLowerCase().includes("inferred"),
+      `var hover must show inferred type Gadget: ${md}`,
+    );
+  });
+
+  // ── XML documentation rendering ──────────────────────────────
+
+  test("hover renders XML doc summary, param, and returns tags", async function () {
+    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+    const content = `namespace HoverXmlDoc
+{
+    public class MathHelper
+    {
+        /// <summary>Computes the factorial of n.</summary>
+        /// <param name="n">The input value, must be non-negative.</param>
+        /// <returns>The factorial result.</returns>
+        public long Factorial(int n) { return n <= 1 ? 1 : n * Factorial(n - 1); }
+    }
+}`;
+
+    const { uri } = await openCSharpFile(tmpDir, "HoverXmlDoc.cs", content);
+    await waitForDocumentSymbols(uri);
+
+    // Hover on Factorial method (line 7, char 21).
+    const hovers = await waitForHoverResult(uri, new vscode.Position(7, 21));
+    assert.ok(hovers.length > 0, "Method with XML doc must return hover");
+    const md = hoverToString(hovers);
+    assert.ok(md.includes("Factorial"), "Must contain method name");
+    assert.ok(md.includes("```"), "Must have code block");
+    // XML doc sections.
+    assert.ok(
+      md.toLowerCase().includes("factorial") && md.toLowerCase().includes("computes"),
+      `Must render <summary>: ${md}`,
+    );
+    assert.ok(
+      md.toLowerCase().includes("non-negative") || md.toLowerCase().includes("input"),
+      `Must render <param>: ${md}`,
+    );
+    assert.ok(
+      md.toLowerCase().includes("result") || md.toLowerCase().includes("return"),
+      `Must render <returns>: ${md}`,
+    );
+  });
+
+  // ── [Obsolete] deprecation ────────────────────────────────────
+
+  test("hover on [Obsolete] method shows deprecation warning", async function () {
+    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+    const content = `namespace HoverObsolete
+{
+    public class Legacy
+    {
+        [System.Obsolete("Use NewMethod instead")]
+        public void OldMethod() { }
+        public void NewMethod() { }
+    }
+}`;
+
+    const { uri } = await openCSharpFile(tmpDir, "HoverObsolete.cs", content);
+    await waitForDocumentSymbols(uri);
+
+    // Hover on OldMethod (line 5, char 21).
+    const hovers = await waitForHoverResult(uri, new vscode.Position(5, 21));
+    assert.ok(hovers.length > 0, "Obsolete method must return hover");
+    const md = hoverToString(hovers);
+    assert.ok(md.includes("OldMethod"), "Must contain method name");
+    assert.ok(md.includes("```"), "Must have code block");
+    assert.ok(
+      md.includes("Deprecated") || md.includes("Obsolete"),
+      `Must show deprecation: ${md}`,
+    );
+    assert.ok(
+      md.includes("Use NewMethod instead"),
+      `Must include obsolete message: ${md}`,
+    );
+  });
+
   // ── Solution Explorer Integration ───────────────────────────────
 
   test("ExplorerNode carries symbolUri and symbolPosition on symbol nodes", async function () {

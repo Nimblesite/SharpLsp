@@ -43,7 +43,7 @@ The capture script rebuilds the Zed extension, opens the file in a new Zed windo
 ```bash
 REPO_ROOT="/Users/christianfindlay/Documents/Code/forge"
 FILE_TO_OPEN="$REPO_ROOT/<file-from-table>"
-OUTPUT_PATH="$REPO_ROOT/website/src/assets/screenshots/$ARGUMENTS.png"
+OUTPUT_PATH="$REPO_ROOT/website/src/assets/screenshots/zed-$ARGUMENTS.png"
 
 bash "$REPO_ROOT/.claude/skills/take-screenshot/capture.sh" "$FILE_TO_OPEN" "$OUTPUT_PATH"
 ```
@@ -52,7 +52,7 @@ bash "$REPO_ROOT/.claude/skills/take-screenshot/capture.sh" "$FILE_TO_OPEN" "$OU
 
 This step is CRITICAL. You MUST verify the screenshot. Do NOT skip this step.
 
-1. Check the file size using `ls -la website/src/assets/screenshots/$ARGUMENTS.png`
+1. Check the file size using `ls -la website/src/assets/screenshots/zed-$ARGUMENTS.png`
    - A valid Zed screenshot is **> 50 KB** (typically 80-350 KB)
    - A broken screenshot (404 error page) is approximately **~20 KB**
    - If the file is < 50 KB, the screenshot is **BROKEN** — retry from Step 1
@@ -60,7 +60,24 @@ This step is CRITICAL. You MUST verify the screenshot. Do NOT skip this step.
 2. Use the `Read` tool to visually inspect the saved screenshot file
    - The image MUST show the Zed editor with a **dark theme** and C# code with syntax highlighting
    - If the image shows "Error response", "404", a white/blank page, or a dialog covering the code, the screenshot is **BROKEN**
-   - Report clearly to the user whether the screenshot is CORRECT or BROKEN
+
+3. **FEATURE-SPECIFIC VALIDATION** — the screenshot MUST visually demonstrate the feature it represents. A screenshot of plain code in an editor is NOT sufficient. Verify against this table:
+
+   | Screenshot Name | MUST Show |
+   |----------------|-----------|
+   | `completions-page` | An **active completion/autocomplete dropdown** with suggestions visible |
+   | `diagnostics-page` | **Red/yellow squiggly underlines** on code indicating errors or warnings |
+   | `hover-page` | A **hover tooltip/popup** displaying type info or documentation |
+   | `go-to-definition-page` | Evidence of **navigation** (e.g., cursor on a symbol, definition highlighted, or peek view) |
+   | `homepage-page` | General editor view with C# code (no specific feature required) |
+   | `profiler-page` | **Profiler panel or sidebar** visible with profiling-related UI |
+
+   If the screenshot does NOT show the required feature UI element, it is **BROKEN** — do NOT save it. Report to the user:
+   - What feature element is missing
+   - That automated capture cannot produce this screenshot (features like completion dropdowns, hover tooltips, and diagnostics squiggles require manual interaction or LSP to be running)
+   - Ask the user to capture it manually with the feature visible
+
+4. Report clearly to the user whether the screenshot is CORRECT or BROKEN
 
 ## Step 3: Handle Failures
 
@@ -72,6 +89,8 @@ If the screenshot is broken:
 ## Rules
 
 - NEVER save a screenshot that shows a 404 error page, blank page, or dialog
+- NEVER save a screenshot that doesn't show the feature it's supposed to demonstrate (e.g., a "completions" screenshot without a visible completion dropdown is BROKEN)
 - ALWAYS verify the screenshot visually by reading it back with the Read tool
+- ALWAYS check for the feature-specific UI element (see Feature-Specific Validation table)
 - The screenshot viewport MUST be 1280x720 for consistency
-- Report the final result: screenshot path, file size, and whether it passed verification
+- Report the final result: screenshot path, file size, whether it passed verification, and whether the correct feature is visible

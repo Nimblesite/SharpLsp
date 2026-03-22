@@ -143,3 +143,31 @@ jobs:
           dotnet tool install -g dotnet-dump
 
       - run: cargo test --all-targets
+
+  coverage:
+    name: Coverage
+    needs: [rust]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install diagnostic tools
+        run: |
+          dotnet tool install -g dotnet-trace
+          dotnet tool install -g dotnet-counters
+          dotnet tool install -g dotnet-dump
+
+      - name: Coverage (enforce 90% line minimum)
+        run: cargo llvm-cov --fail-under-lines 90 --summary-only

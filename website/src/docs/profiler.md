@@ -6,7 +6,10 @@ eleventyNavigation:
   order: 8
 ---
 
+**VS Code**
 ![Profiler in VS Code](/assets/screenshots/vscode-profiler-page.png)
+
+**Zed**
 ![Profiler in Zed](/assets/screenshots/zed-profiler-page.png)
 
 *Built-in profiler wrapping dotnet-trace, dotnet-counters, and dotnet-dump — zero context switching.*

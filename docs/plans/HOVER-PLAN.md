@@ -84,13 +84,13 @@ The hover infrastructure is shared across all Forge surfaces — the editor hove
 - [x] E2E test: C# hover with XML documentation renders all tags correctly — `test_full_stack_hover_xml_documentation`
 - [x] E2E test: C# hover on NuGet package symbol returns package XML docs — covered by XML doc test (Roslyn resolves NuGet docs via same API)
 - [x] E2E test: C# hover on `[Obsolete]` symbol includes deprecation message — `test_full_stack_hover_obsolete_deprecation`
-- [ ] E2E test: F# hover on function/type/module returns correct Markdown
-- [ ] E2E test: F# hover on discriminated union case returns case fields
-- [ ] E2E test: F# hover on pipeline operator returns inferred types
-- [ ] E2E test: F# hover with XML documentation renders correctly
-- [ ] E2E test: hover after sidecar crash recovery works correctly
+- [x] E2E test: F# hover on function/type/module returns correct Markdown — `test_full_stack_fsharp_hover_function_type_module`
+- [x] E2E test: F# hover on discriminated union case returns case fields — `test_full_stack_fsharp_hover_du_case`
+- [x] E2E test: F# hover on pipeline operator returns inferred types — `test_full_stack_fsharp_hover_pipeline`
+- [x] E2E test: F# hover with XML documentation renders correctly — `test_full_stack_fsharp_hover_xml_docs`
+- [x] E2E test: hover after sidecar crash recovery works correctly — `test_full_stack_hover_crash_recovery`
 - [x] E2E test: hover cache hit returns result in <1ms — `test_full_stack_hover_cache_hit_latency`
-- [ ] E2E test: hover latency p50 <150ms, p95 <300ms on medium solution
+- [x] E2E test: hover latency p50 <150ms, p95 <300ms on medium solution — `test_full_stack_hover_latency_benchmark`
 
 ### Testing — VSCode Extension (`src/test/suite/hover.test.ts`)
 

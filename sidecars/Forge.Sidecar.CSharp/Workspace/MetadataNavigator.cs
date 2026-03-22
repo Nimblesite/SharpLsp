@@ -1,9 +1,6 @@
 using System.Collections.Concurrent;
-using System.Reflection.Metadata;
 using ICSharpCode.Decompiler;
 using ICSharpCode.Decompiler.CSharp;
-using ICSharpCode.Decompiler.CSharp.ProjectDecompiler;
-using ICSharpCode.Decompiler.TypeSystem;
 using Microsoft.CodeAnalysis;
 
 namespace Forge.Sidecar.CSharp.Workspace;
@@ -21,11 +18,13 @@ internal static class MetadataNavigator
     /// Try to resolve a metadata symbol to a decompiled source location.
     /// Returns null if decompilation fails or the symbol cannot be found.
     /// </summary>
-    public static LocationResult? ResolveMetadataSymbol(ISymbol symbol)
+    public static LocationResult? ResolveMetadataSymbol(
+        ISymbol symbol,
+        Compilation compilation)
     {
         try
         {
-            return ResolveMetadataSymbolCore(symbol);
+            return ResolveMetadataSymbolCore(symbol, compilation);
         }
         catch (Exception ex)
         {
@@ -35,9 +34,11 @@ internal static class MetadataNavigator
         }
     }
 
-    private static LocationResult? ResolveMetadataSymbolCore(ISymbol symbol)
+    private static LocationResult? ResolveMetadataSymbolCore(
+        ISymbol symbol,
+        Compilation compilation)
     {
-        var assemblyPath = GetAssemblyPath(symbol);
+        var assemblyPath = GetAssemblyPath(symbol, compilation);
         if (assemblyPath is null)
         {
             return null;
@@ -56,22 +57,47 @@ internal static class MetadataNavigator
         var filePath = Cache.GetOrAdd(
             cacheKey, _ => DecompileType(assemblyPath, containingType));
 
-        if (string.IsNullOrEmpty(filePath))
-        {
-            return null;
-        }
-
-        return FindSymbolInDecompiledSource(filePath, symbol);
+        return string.IsNullOrEmpty(filePath)
+            ? null
+            : FindSymbolInDecompiledSource(filePath, symbol);
     }
 
-    /// <summary>Get the assembly file path for a metadata symbol.</summary>
-    private static string? GetAssemblyPath(ISymbol symbol)
+    /// <summary>
+    /// Get the assembly file path for a metadata symbol by matching its
+    /// containing assembly identity against the compilation's references.
+    /// </summary>
+    private static string? GetAssemblyPath(
+        ISymbol symbol,
+        Compilation compilation)
     {
-        var metadataRef = symbol.ContainingAssembly?.MetadataReferences()
-            .OfType<PortableExecutableReference>()
-            .FirstOrDefault();
+        var assemblyIdentity = symbol.ContainingAssembly?.Identity;
+        return assemblyIdentity is null
+            ? null
+            : FindMatchingReference(compilation, assemblyIdentity);
+    }
 
-        return metadataRef?.FilePath;
+    private static string? FindMatchingReference(
+        Compilation compilation,
+        AssemblyIdentity target)
+    {
+        foreach (var reference in compilation.References)
+        {
+            if (reference is not PortableExecutableReference peRef)
+            {
+                continue;
+            }
+
+            var refSymbol = compilation.GetAssemblyOrModuleSymbol(reference);
+            if (refSymbol is IAssemblySymbol asm
+                && string.Equals(
+                    asm.Identity.Name, target.Name,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return peRef.FilePath;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -126,7 +152,8 @@ internal static class MetadataNavigator
             });
 
         var typeName = BuildDecompilerTypeName(containingType);
-        var fullTypeName = new FullTypeName(typeName);
+        var fullTypeName =
+            new ICSharpCode.Decompiler.TypeSystem.FullTypeName(typeName);
 
         Console.Error.WriteLine(
             $"[MetadataNav] Decompiling {fullTypeName} from {assemblyPath}");
@@ -157,15 +184,9 @@ internal static class MetadataNavigator
     {
         var dir = Path.Combine(
             Path.GetTempPath(), "forge-decompiled");
-        Directory.CreateDirectory(dir);
+        _ = Directory.CreateDirectory(dir);
 
-        var safeName = type.ToDisplayString()
-            .Replace('<', '_')
-            .Replace('>', '_')
-            .Replace(',', '_')
-            .Replace(' ', '_')
-            .Replace(':', '_');
-
+        var safeName = SanitizeFileName(type.ToDisplayString());
         var filePath = Path.Combine(dir, $"{safeName}.cs");
         File.WriteAllText(filePath, source);
 
@@ -175,11 +196,22 @@ internal static class MetadataNavigator
         return filePath;
     }
 
+    /// <summary>Replace characters not allowed in file names.</summary>
+    private static string SanitizeFileName(string name)
+    {
+        return name
+            .Replace('<', '_')
+            .Replace('>', '_')
+            .Replace(',', '_')
+            .Replace(' ', '_')
+            .Replace(':', '_');
+    }
+
     /// <summary>
     /// Find a symbol's position within decompiled source.
     /// Uses the symbol name to locate the declaration line.
     /// </summary>
-    private static LocationResult? FindSymbolInDecompiledSource(
+    private static LocationResult FindSymbolInDecompiledSource(
         string filePath,
         ISymbol symbol)
     {
@@ -195,43 +227,40 @@ internal static class MetadataNavigator
         }
     }
 
-    private static LocationResult? FindSymbolInDecompiledSourceCore(
+    private static LocationResult FindSymbolInDecompiledSourceCore(
         string filePath,
         ISymbol symbol)
     {
         var lines = File.ReadAllLines(filePath);
         var name = symbol.MetadataName;
-
         var pattern = BuildSearchPattern(symbol, name);
         var position = SearchLines(lines, pattern, name);
 
-        if (position is not null)
-        {
-            return new LocationResult
+        return position is not null
+            ? new LocationResult
             {
                 FilePath = filePath,
                 Line = position.Value.line,
                 Character = position.Value.column,
                 EndLine = position.Value.line,
                 EndCharacter = position.Value.column + name.Length,
-            };
-        }
-
-        return FallbackLocation(filePath);
+            }
+            : FallbackLocation(filePath);
     }
 
     /// <summary>Build a search pattern based on the symbol kind.</summary>
     private static string? BuildSearchPattern(ISymbol symbol, string name)
     {
+        var plainName = name.Split('`')[0];
         return symbol switch
         {
-            IMethodSymbol method when method.MethodKind
-                is MethodKind.Constructor => "(" + name.Split('`')[0] + "(",
-            IMethodSymbol => " " + name.Split('`')[0] + "(",
-            IPropertySymbol => " " + name + " ",
-            IFieldSymbol => " " + name + ";",
-            IEventSymbol => " " + name + ";",
-            INamedTypeSymbol => " " + name.Split('`')[0] + " ",
+            IMethodSymbol { MethodKind: MethodKind.Constructor }
+                => $"{plainName}(",
+            IMethodSymbol => $" {plainName}(",
+            IPropertySymbol => $" {plainName} ",
+            IFieldSymbol => $" {plainName}",
+            IEventSymbol => $" {plainName}",
+            INamedTypeSymbol => $" {plainName}",
             _ => null,
         };
     }
@@ -245,9 +274,6 @@ internal static class MetadataNavigator
         string? pattern,
         string name)
     {
-        var plainName = name.Split('`')[0];
-
-        // First pass: try the specific pattern.
         if (pattern is not null)
         {
             var result = SearchLinesForPattern(lines, pattern);
@@ -257,8 +283,7 @@ internal static class MetadataNavigator
             }
         }
 
-        // Second pass: fall back to plain name.
-        return SearchLinesForName(lines, plainName);
+        return SearchLinesForName(lines, name.Split('`')[0]);
     }
 
     private static (int line, int column)? SearchLinesForPattern(
@@ -284,7 +309,8 @@ internal static class MetadataNavigator
     {
         for (var i = 0; i < lines.Length; i++)
         {
-            var col = lines[i].IndexOf(name, StringComparison.Ordinal);
+            var col = lines[i].IndexOf(
+                name, StringComparison.Ordinal);
             if (col >= 0)
             {
                 return (i, col);

@@ -1,4 +1,4 @@
-namespace TestFixtures
+cnamespace TestFixtures
 {
     /// <summary>
     /// A simple calculator for testing document symbols, folding, and selection ranges.

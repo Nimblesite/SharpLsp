@@ -252,7 +252,8 @@ internal sealed class WorkspaceManager
     {
         try
         {
-            var document = FindDocument(filePath);
+            var document = await FindDocumentAsync(filePath, ct)
+                .ConfigureAwait(false);
             if (document is null)
             {
                 return new DefinitionResult.Ok<LocationResult?, string>(null);
@@ -278,7 +279,8 @@ internal sealed class WorkspaceManager
     {
         try
         {
-            var document = FindDocument(filePath);
+            var document = await FindDocumentAsync(filePath, ct)
+                .ConfigureAwait(false);
             if (document is null || _solution is null)
             {
                 return new ImplementationsResult.Ok<LocationListResult, string>(
@@ -397,7 +399,8 @@ internal sealed class WorkspaceManager
         int character,
         CancellationToken ct)
     {
-        var document = FindDocument(filePath);
+        var document = await FindDocumentAsync(filePath, ct)
+            .ConfigureAwait(false);
         if (document is null)
         {
             return [];
@@ -476,7 +479,13 @@ internal sealed class WorkspaceManager
         }
     }
 
-    private Document? FindDocument(string filePath)
+    /// <summary>
+    /// Find a document by file path, searching regular documents first,
+    /// then falling back to source-generated documents.
+    /// </summary>
+    private async Task<Document?> FindDocumentAsync(
+        string filePath,
+        CancellationToken ct)
     {
         if (_solution is null)
         {
@@ -486,7 +495,9 @@ internal sealed class WorkspaceManager
         try
         {
             var normalizedPath = Path.GetFullPath(filePath);
-            return FindDocumentByPath(normalizedPath);
+            return FindRegularDocumentByPath(normalizedPath)
+                ?? await FindSourceGeneratedDocumentByPathAsync(
+                    normalizedPath, ct).ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -494,21 +505,13 @@ internal sealed class WorkspaceManager
         }
     }
 
-    private Document? FindDocumentByPath(string normalizedPath)
+    private Document? FindRegularDocumentByPath(string normalizedPath)
     {
         foreach (var project in _solution!.Projects)
         {
             foreach (var document in project.Documents)
             {
-                if (document.FilePath is null)
-                {
-                    continue;
-                }
-
-                if (string.Equals(
-                        Path.GetFullPath(document.FilePath),
-                        normalizedPath,
-                        StringComparison.OrdinalIgnoreCase))
+                if (IsPathMatch(document.FilePath, normalizedPath))
                 {
                     return document;
                 }
@@ -516,5 +519,41 @@ internal sealed class WorkspaceManager
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Search source-generated documents across all projects.
+    /// Source generators produce documents that are not in the regular
+    /// Documents collection but are accessible via the compilation.
+    /// </summary>
+    private async Task<Document?> FindSourceGeneratedDocumentByPathAsync(
+        string normalizedPath,
+        CancellationToken ct)
+    {
+        foreach (var project in _solution!.Projects)
+        {
+            var generatedDocs = await project
+                .GetSourceGeneratedDocumentsAsync(ct)
+                .ConfigureAwait(false);
+
+            foreach (var document in generatedDocs)
+            {
+                if (IsPathMatch(document.FilePath, normalizedPath))
+                {
+                    return document;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsPathMatch(string? documentPath, string normalizedPath)
+    {
+        return documentPath is not null
+            && string.Equals(
+                Path.GetFullPath(documentPath),
+                normalizedPath,
+                StringComparison.OrdinalIgnoreCase);
     }
 }

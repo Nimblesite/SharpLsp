@@ -124,8 +124,14 @@ pub fn handle_definition(
     fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     handle_cached_nav_with_fallback(
-        req, vfs, nav_cache, runtime, sidecar, fallback,
-        "textDocument/definition", true,
+        req,
+        vfs,
+        nav_cache,
+        runtime,
+        sidecar,
+        fallback,
+        "textDocument/definition",
+        true,
     )
 }
 
@@ -139,8 +145,14 @@ pub fn handle_type_definition(
     fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     handle_cached_nav_with_fallback(
-        req, vfs, nav_cache, runtime, sidecar, fallback,
-        "textDocument/typeDefinition", false,
+        req,
+        vfs,
+        nav_cache,
+        runtime,
+        sidecar,
+        fallback,
+        "textDocument/typeDefinition",
+        false,
     )
 }
 
@@ -154,8 +166,14 @@ pub fn handle_declaration(
     fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     handle_cached_nav_with_fallback(
-        req, vfs, nav_cache, runtime, sidecar, fallback,
-        "textDocument/declaration", false,
+        req,
+        vfs,
+        nav_cache,
+        runtime,
+        sidecar,
+        fallback,
+        "textDocument/declaration",
+        false,
     )
 }
 
@@ -166,11 +184,16 @@ pub fn handle_implementation(
     sidecar: Option<&Arc<SidecarManager>>,
     fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let value = handle_multi_location_nav(req.clone(), runtime, sidecar, "textDocument/implementation")?;
+    let value =
+        handle_multi_location_nav(req.clone(), runtime, sidecar, "textDocument/implementation")?;
     if is_empty_nav_result(&value) {
         if let Some(fb) = fallback {
             debug!("Cross-language fallback for textDocument/implementation");
-            return handle_multi_location_nav(req, runtime, Some(fb), "textDocument/implementation");
+            match handle_multi_location_nav(req, runtime, Some(fb), "textDocument/implementation") {
+                Ok(fb_value) if !is_empty_nav_result(&fb_value) => return Ok(fb_value),
+                Ok(_) => debug!("Cross-language fallback returned empty for implementation"),
+                Err(err) => debug!("Cross-language fallback failed for implementation: {err:#}"),
+            }
         }
     }
     Ok(value)
@@ -229,14 +252,19 @@ fn handle_multi_location_nav(
 
 /// Check if a navigation result is empty (null or empty array).
 fn is_empty_nav_result(value: &serde_json::Value) -> bool {
-    value.is_null()
-        || value.as_array().is_some_and(|a| a.is_empty())
+    value.is_null() || value.as_array().is_some_and(Vec::is_empty)
 }
 
 /// Cached navigation with cross-language fallback.
 ///
 /// Tries the primary sidecar first. If it returns empty/null,
 /// retries with the fallback sidecar (cross-language C# ↔ F#).
+/// If the fallback also fails (e.g. sidecar not running), returns
+/// the original result without blocking.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "cross-language fallback requires both sidecars plus cached-nav params"
+)]
 fn handle_cached_nav_with_fallback(
     req: Request,
     vfs: &crate::vfs::Vfs,
@@ -247,15 +275,15 @@ fn handle_cached_nav_with_fallback(
     method: &str,
     multi: bool,
 ) -> Result<serde_json::Value> {
-    let value = handle_cached_nav(
-        req.clone(), vfs, nav_cache, runtime, sidecar, method, multi,
-    )?;
+    let value = handle_cached_nav(req.clone(), vfs, nav_cache, runtime, sidecar, method, multi)?;
     if is_empty_nav_result(&value) {
         if let Some(fb) = fallback {
             debug!("Cross-language fallback for {method}");
-            return handle_cached_nav(
-                req, vfs, nav_cache, runtime, Some(fb), method, multi,
-            );
+            match handle_cached_nav(req, vfs, nav_cache, runtime, Some(fb), method, multi) {
+                Ok(fb_value) if !is_empty_nav_result(&fb_value) => return Ok(fb_value),
+                Ok(_) => debug!("Cross-language fallback returned empty for {method}"),
+                Err(err) => debug!("Cross-language fallback failed for {method}: {err:#}"),
+            }
         }
     }
     Ok(value)

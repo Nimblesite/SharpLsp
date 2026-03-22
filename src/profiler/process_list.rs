@@ -46,17 +46,20 @@ fn parse_ps_output(output: &str) -> Vec<DotNetProcess> {
 }
 
 /// Parse a single line from `dotnet-trace ps` output.
+///
+/// Lines look like: `  1234  ProcessName  /path/to/binary args`
+/// with variable whitespace between columns.
 fn parse_ps_line(line: &str) -> Option<DotNetProcess> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return None;
     }
 
-    let mut parts = trimmed.splitn(3, char::is_whitespace);
-    let pid_str = parts.next()?.trim();
-    let pid: u32 = pid_str.parse().ok()?;
-    let name = parts.next()?.trim().to_string();
-    let command_line = parts.next().map(str::trim).unwrap_or_default().to_string();
+    // Split on whitespace runs, collecting at most 3 tokens.
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    let pid: u32 = tokens.first()?.parse().ok()?;
+    let name = (*tokens.get(1)?).to_string();
+    let command_line = tokens.get(2..).unwrap_or_default().join(" ");
 
     Some(DotNetProcess {
         pid,

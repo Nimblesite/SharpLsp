@@ -19,7 +19,58 @@ internal static class DefinitionResolver
     {
         var symbol = await ResolveSymbolAsync(document, line, character, ct)
             .ConfigureAwait(false);
-        return symbol is null ? new LocationListResult() : ToAllSourceLocations(symbol);
+        if (symbol is null)
+        {
+            return new LocationListResult();
+        }
+
+        var sourceLocations = ToAllSourceLocations(symbol);
+        return sourceLocations.Locations.Count > 0
+            ? sourceLocations
+            : await ResolveMetadataFallbackAsync(
+                document, symbol, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Fall back to decompiled metadata when no in-source locations exist.
+    /// </summary>
+    private static async Task<LocationListResult> ResolveMetadataFallbackAsync(
+        Document document,
+        ISymbol symbol,
+        CancellationToken ct)
+    {
+        var compilation = await document.Project
+            .GetCompilationAsync(ct).ConfigureAwait(false);
+        if (compilation is null)
+        {
+            return new LocationListResult();
+        }
+
+        var metadataLocation = MetadataNavigator
+            .ResolveMetadataSymbol(symbol, compilation);
+
+        return metadataLocation is null
+            ? new LocationListResult()
+            : new LocationListResult
+            {
+                Locations = [metadataLocation],
+            };
+    }
+
+    /// <summary>
+    /// Single-location metadata fallback for type-definition and declaration.
+    /// </summary>
+    private static async Task<LocationResult?> ResolveMetadataFallbackSingleAsync(
+        Document document,
+        ISymbol symbol,
+        CancellationToken ct)
+    {
+        var compilation = await document.Project
+            .GetCompilationAsync(ct).ConfigureAwait(false);
+
+        return compilation is null
+            ? null
+            : MetadataNavigator.ResolveMetadataSymbol(symbol, compilation);
     }
 
     /// <summary>Find the type definition of the symbol at a position.</summary>
@@ -45,7 +96,12 @@ internal static class DefinitionResolver
             ct);
 
         var typeSymbol = typeInfo.Type ?? typeInfo.ConvertedType;
-        return typeSymbol is null ? null : ToFirstSourceLocation(typeSymbol);
+
+        return typeSymbol is null
+            ? null
+            : ToFirstSourceLocation(typeSymbol)
+                ?? await ResolveMetadataFallbackSingleAsync(
+                    document, typeSymbol, ct).ConfigureAwait(false);
     }
 
     /// <summary>Find the declaration (interface/base member) of the symbol.</summary>
@@ -63,7 +119,9 @@ internal static class DefinitionResolver
         }
 
         var declSymbol = FindDeclarationSymbol(symbol);
-        return ToFirstSourceLocation(declSymbol);
+        return ToFirstSourceLocation(declSymbol)
+            ?? await ResolveMetadataFallbackSingleAsync(
+                document, declSymbol, ct).ConfigureAwait(false);
     }
 
     /// <summary>Find all implementations of the symbol at a position.</summary>
@@ -313,7 +371,13 @@ internal static class DefinitionResolver
         }
     }
 
-    /// <summary>Map a symbol to all of its in-source locations.</summary>
+    /// <summary>
+    /// Map a symbol to all of its in-source locations.
+    /// Source-generated symbols (e.g. from ISourceGenerator / IIncrementalGenerator)
+    /// have IsInSource = true with a valid SourceTree, so this filter captures them.
+    /// Navigation FROM generated files requires WorkspaceManager.FindDocumentAsync
+    /// to resolve source-generated documents via Project.GetSourceGeneratedDocumentsAsync.
+    /// </summary>
     private static LocationListResult ToAllSourceLocations(ISymbol symbol)
     {
         var locations = new List<LocationResult>();
@@ -333,7 +397,11 @@ internal static class DefinitionResolver
         return new LocationListResult { Locations = locations };
     }
 
-    /// <summary>Map a symbol to its first in-source location.</summary>
+    /// <summary>
+    /// Map a symbol to its first in-source location.
+    /// Roslyn marks source-generated locations as IsInSource = true,
+    /// so no special handling is needed for source generator output.
+    /// </summary>
     private static LocationResult? ToFirstSourceLocation(ISymbol symbol)
     {
         var location = symbol.Locations
