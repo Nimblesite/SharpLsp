@@ -158,8 +158,8 @@ internal sealed class WorkspaceManager
         }
     }
 
-    /// <summary>Go to definition at a position.</summary>
-    public async Task<DefinitionResult> GetDefinitionAsync(
+    /// <summary>Go to definition at a position (returns all locations for partial types).</summary>
+    public async Task<ImplementationsResult> GetDefinitionAsync(
         string filePath,
         int line,
         int character,
@@ -170,17 +170,19 @@ internal sealed class WorkspaceManager
             var document = FindDocument(filePath);
             if (document is null)
             {
-                return new DefinitionResult.Ok<LocationResult?, string>(null);
+                return new ImplementationsResult.Ok<LocationListResult, string>(
+                    new LocationListResult());
             }
 
-            var location = await DefinitionResolver
-                .ResolveDefinitionAsync(document, line, character, ct)
+            var result = await DefinitionResolver
+                .ResolveDefinitionLocationsAsync(document, line, character, ct)
                 .ConfigureAwait(false);
-            return new DefinitionResult.Ok<LocationResult?, string>(location);
+            return new ImplementationsResult.Ok<LocationListResult, string>(
+                result);
         }
         catch (Exception ex)
         {
-            return DefinitionResult.Failure(ex.Message);
+            return ImplementationsResult.Failure(ex.Message);
         }
     }
 

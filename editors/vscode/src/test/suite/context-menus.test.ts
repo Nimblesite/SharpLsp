@@ -15,7 +15,6 @@ import * as vscode from "vscode";
 import {
   EXTENSION_ID,
   closeAllEditors,
-  openCSharpFile,
   pollUntilResult,
   setupLspTestSuite,
   teardownLspTestSuite,
@@ -165,11 +164,11 @@ const ALL_TYPES_CS = `namespace AllTypesNS
 // ── Suite 1: Package.json Contributions ──────────────────────────
 
 suite("Context Menu — Package.json Contributions", () => {
-  function menuEntries(): Array<{ command: string; when: string; group: string }> {
+  function menuEntries(): { command: string; when: string; group: string }[] {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, "Extension must be found");
     const menus = ext.packageJSON.contributes?.menus?.["view/item/context"] ?? [];
-    return menus as Array<{ command: string; when: string; group: string }>;
+    return menus as { command: string; when: string; group: string }[];
   }
 
   // ── Command registration ──────────────────────────────────────
@@ -539,7 +538,7 @@ suite("Context Menu — Context Values on Tree Nodes", () => {
 
   test("all symbol nodes have a contextValue starting with 'symbol.'", () => {
     let symbolCount = 0;
-    let badNodes: string[] = [];
+    const badNodes: string[] = [];
 
     function walkNodes(nodes: TreeNode[] | undefined): void {
       if (nodes === undefined) return;

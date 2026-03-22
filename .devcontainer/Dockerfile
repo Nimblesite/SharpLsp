@@ -13,5 +13,11 @@ ENV PATH="${DOTNET_ROOT}:${PATH}"
 # GitHub Actions local runner (keep version in sync with .github/workflows/ci.yml)
 RUN curl -fsSL https://raw.githubusercontent.com/nektos/act/master/install.sh | bash -s -- -b /usr/local/bin
 
+# .NET diagnostic tools for profiler integration
+RUN dotnet tool install -g dotnet-trace \
+    && dotnet tool install -g dotnet-counters \
+    && dotnet tool install -g dotnet-dump
+ENV PATH="${PATH}:/root/.dotnet/tools"
+
 # Rust components
 RUN rustup component add clippy rustfmt

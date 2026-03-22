@@ -6,6 +6,7 @@ mod config;
 mod diagnostics;
 mod handlers;
 mod hover_cache;
+mod nav_cache;
 mod profiler;
 mod semantic;
 mod sidecar;
@@ -148,34 +149,27 @@ fn run_server() -> Result<()> {
         None
     };
 
-    // Eagerly open the workspace in the sidecar, then start health monitoring.
+    // Initialize F# sidecar manager if enabled and workspace root is available.
+    let fsharp_sidecar = if forge_config.fsharp.enabled {
+        workspace_root
+            .as_ref()
+            .map(|root| Arc::new(SidecarManager::fsharp(root)))
+    } else {
+        None
+    };
+
+    // Eagerly open workspaces in sidecars, then start health monitoring.
     // Health monitoring must wait until workspace/open completes — otherwise the
     // health check can time out on the transport lock (held by workspace/open),
     // declare a false crash, and kill the sidecar before the solution is loaded.
-    //
-    // After workspace load, trigger solution-wide diagnostics if enabled.
-    if let (Some(ref sidecar), Some(ref root)) = (&csharp_sidecar, &workspace_root) {
-        let sidecar_clone = Arc::clone(sidecar);
-        let root_str = root.to_string_lossy().to_string();
-        let solution_wide = forge_config.diagnostics.solution_wide_analysis;
-        let project_filter = forge_config.diagnostics.project_filter.clone();
-        let sender = connection.sender.clone();
-        runtime.spawn(async move {
-            if let Err(err) = open_workspace(&sidecar_clone, &root_str).await {
-                error!("Failed to open workspace in sidecar: {err:#}");
-                return;
-            }
-            if solution_wide {
-                info!("Starting solution-wide diagnostics scan");
-                diagnostics::request_solution_in_background(
-                    Arc::clone(&sidecar_clone),
-                    sender,
-                    project_filter,
-                );
-            }
-            sidecar_clone.start_health_monitor().await;
-        });
-    }
+    start_csharp_sidecar(
+        csharp_sidecar.as_ref(),
+        workspace_root.as_ref(),
+        &forge_config,
+        &connection,
+        &runtime,
+    );
+    start_sidecar(fsharp_sidecar.as_ref(), workspace_root.as_ref(), &runtime);
 
     main_loop(
         &connection,
@@ -187,8 +181,12 @@ fn run_server() -> Result<()> {
     // Shut down profiler sessions.
     runtime.block_on(profiler::session::store().shutdown());
 
-    // Shut down sidecar gracefully.
+    // Shut down sidecars gracefully.
     if let Some(ref sidecar) = csharp_sidecar {
+        let sidecar_clone = Arc::clone(sidecar);
+        runtime.block_on(async move { sidecar_clone.shutdown().await });
+    }
+    if let Some(ref sidecar) = fsharp_sidecar {
         let sidecar_clone = Arc::clone(sidecar);
         runtime.block_on(async move { sidecar_clone.shutdown().await });
     }
@@ -227,12 +225,63 @@ fn build_capabilities() -> ServerCapabilities {
     }
 }
 
-/// Open the workspace in the sidecar.
+/// Open the workspace in a sidecar.
 async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
     let payload = rmp_serde::to_vec(root).context("serialize workspace path")?;
     sidecar.request("workspace/open", payload).await?;
-    info!("Workspace opened in C# sidecar");
+    info!("Workspace opened in {} sidecar", sidecar.name());
     Ok(())
+}
+
+/// Start the C# sidecar: open workspace, trigger solution diagnostics, begin health monitoring.
+fn start_csharp_sidecar(
+    sidecar: Option<&Arc<SidecarManager>>,
+    workspace_root: Option<&PathBuf>,
+    forge_config: &config::ForgeConfig,
+    connection: &Connection,
+    runtime: &tokio::runtime::Runtime,
+) {
+    if let (Some(sidecar), Some(root)) = (sidecar, workspace_root) {
+        let sc = Arc::clone(sidecar);
+        let root_str = root.to_string_lossy().to_string();
+        let solution_wide = forge_config.diagnostics.solution_wide_analysis;
+        let project_filter = forge_config.diagnostics.project_filter.clone();
+        let sender = connection.sender.clone();
+        runtime.spawn(async move {
+            if let Err(err) = open_workspace(&sc, &root_str).await {
+                error!("Failed to open workspace in C# sidecar: {err:#}");
+                return;
+            }
+            if solution_wide {
+                info!("Starting solution-wide diagnostics scan");
+                diagnostics::request_solution_in_background(
+                    Arc::clone(&sc),
+                    sender,
+                    project_filter,
+                );
+            }
+            sc.start_health_monitor().await;
+        });
+    }
+}
+
+/// Start a sidecar: open workspace and begin health monitoring.
+fn start_sidecar(
+    sidecar: Option<&Arc<SidecarManager>>,
+    workspace_root: Option<&PathBuf>,
+    runtime: &tokio::runtime::Runtime,
+) {
+    if let (Some(sidecar), Some(root)) = (sidecar, workspace_root) {
+        let sc = Arc::clone(sidecar);
+        let root_str = root.to_string_lossy().to_string();
+        runtime.spawn(async move {
+            if let Err(err) = open_workspace(&sc, &root_str).await {
+                error!("Failed to open workspace in sidecar: {err:#}");
+                return;
+            }
+            sc.start_health_monitor().await;
+        });
+    }
 }
 
 // ── Main Loop ─────────────────────────────────────────────────────
@@ -250,6 +299,7 @@ fn main_loop(
     let vfs = Vfs::new();
     let parsers = TsParsers::new();
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
+    let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
 
     for msg in &connection.receiver {
@@ -278,6 +328,7 @@ fn main_loop(
                     &vfs,
                     &parsers,
                     &trees,
+                    &mut nav_cache,
                     connection,
                     runtime,
                     csharp_sidecar,
@@ -293,6 +344,7 @@ fn main_loop(
                     &vfs,
                     &parsers,
                     &mut trees,
+                    &mut nav_cache,
                     connection,
                     runtime,
                     csharp_sidecar,
@@ -310,11 +362,16 @@ fn main_loop(
 // ── Request Handling ──────────────────────────────────────────────
 
 #[expect(clippy::mutable_key_type, reason = "see main_loop")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "dispatcher passes per-request context; extracting a struct adds indirection for no benefit"
+)]
 fn handle_request(
     req: Request,
     vfs: &Vfs,
     parsers: &TsParsers,
     trees: &HashMap<Uri, Tree>,
+    nav_cache: &mut nav_cache::NavCache,
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
@@ -346,21 +403,21 @@ fn handle_request(
             if handlers::is_non_symbol_position(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                semantic::handle_definition(req, runtime, csharp_sidecar)
+                semantic::handle_definition(req, vfs, nav_cache, runtime, csharp_sidecar)
             }
         }
         GotoTypeDefinition::METHOD => {
             if handlers::is_non_symbol_position(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                semantic::handle_type_definition(req, runtime, csharp_sidecar)
+                semantic::handle_type_definition(req, vfs, nav_cache, runtime, csharp_sidecar)
             }
         }
         GotoDeclaration::METHOD => {
             if handlers::is_non_symbol_position(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                semantic::handle_declaration(req, runtime, csharp_sidecar)
+                semantic::handle_declaration(req, vfs, nav_cache, runtime, csharp_sidecar)
             }
         }
         GotoImplementation::METHOD => {
@@ -421,11 +478,16 @@ fn handle_sort_members(req: Request, parsers: &TsParsers) -> Result<serde_json::
 // ── Notification Handling ─────────────────────────────────────────
 
 #[expect(clippy::mutable_key_type, reason = "see main_loop")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "dispatcher passes per-notification context; extracting a struct adds indirection for no benefit"
+)]
 fn handle_notification(
     notif: Notification,
     vfs: &Vfs,
     parsers: &TsParsers,
     trees: &mut HashMap<Uri, Tree>,
+    nav_cache: &mut nav_cache::NavCache,
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
@@ -456,7 +518,7 @@ fn handle_notification(
                 if let Some(change) = params.content_changes.into_iter().next_back() {
                     vfs.change(uri, params.text_document.version, change.text.clone());
                     reparse(parsers, trees, uri, &change.text);
-
+                    nav_cache.invalidate(uri);
                     trigger_diagnostics(uri, runtime, csharp_sidecar, connection);
                 }
             }
@@ -481,6 +543,7 @@ fn handle_notification(
                 info!("Closed: {}", params.text_document.uri.as_str());
                 vfs.close(&params.text_document.uri);
                 trees.remove(&params.text_document.uri);
+                nav_cache.invalidate(&params.text_document.uri);
                 if let Err(err) = diagnostics::clear(&connection.sender, params.text_document.uri) {
                     warn!("Failed to clear diagnostics: {err:#}");
                 }

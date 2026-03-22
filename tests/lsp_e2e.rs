@@ -2557,6 +2557,7 @@ fn assert_location_line(loc: &Value, expected_line: u64, msg: &str) {
 }
 
 /// Poll definition until the sidecar returns a non-null result.
+/// Returns the first location from the result (definition now returns Location[]).
 fn poll_definition_until_ready(
     client: &mut LspClient,
     uri: &str,
@@ -2569,8 +2570,9 @@ fn poll_definition_until_ready(
     loop {
         let resp = definition(client, uri, line, character);
         assert_nav_ok(&resp);
-        if !resp["result"].is_null() {
-            return resp["result"].clone();
+        let result = &resp["result"];
+        if !result.is_null() {
+            return first_location(result);
         }
         assert!(
             std::time::Instant::now() < deadline,
@@ -2578,6 +2580,20 @@ fn poll_definition_until_ready(
             timeout.as_secs(),
         );
         std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+/// Extract the first location from a definition result.
+/// Definition returns Location[] (array) for partial class support.
+fn first_location(result: &Value) -> Value {
+    if result.is_array() {
+        result
+            .as_array()
+            .and_then(|a| a.first())
+            .cloned()
+            .unwrap_or(Value::Null)
+    } else {
+        result.clone()
     }
 }
 
@@ -2888,9 +2904,9 @@ fn test_full_stack_definition_on_method_call() {
     //         0123456789012345678901234567
     let resp = definition(&mut client, &file_uri, 34, 26);
     assert_nav_ok(&resp);
-    let result = &resp["result"];
+    let result = first_location(&resp["result"]);
     assert!(!result.is_null(), "definition on method call must resolve");
-    assert_location_shape(result);
+    assert_location_shape(&result);
     let line = result["range"]["start"]["line"].as_u64().unwrap();
     assert!(
         line == 11 || line == 17,
@@ -2924,9 +2940,9 @@ fn test_full_stack_definition_on_property_access() {
     //         012345678901234567890
     let resp = definition(&mut client, &file_uri, 33, 18);
     assert_nav_ok(&resp);
-    let result = &resp["result"];
+    let result = first_location(&resp["result"]);
     assert!(!result.is_null(), "definition on property must resolve");
-    assert_location_line(result, 28, "MyDog property declared at line 28");
+    assert_location_line(&result, 28, "MyDog property declared at line 28");
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -3204,7 +3220,11 @@ fn test_full_stack_all_nav_methods_interleaved() {
     // 1. definition: "AnimalBase" in Dog's extends (line 14) → line 8
     let r1 = definition(&mut client, &file_uri, 14, 23);
     assert_nav_ok(&r1);
-    assert_location_line(&r1["result"], 8, "definition AnimalBase → line 8");
+    assert_location_line(
+        &first_location(&r1["result"]),
+        8,
+        "definition AnimalBase → line 8",
+    );
 
     // 2. typeDefinition: "MyDog" (line 33, char 18) → Dog type (line 14)
     let r2 = type_definition(&mut client, &file_uri, 33, 18);
@@ -3228,12 +3248,50 @@ fn test_full_stack_all_nav_methods_interleaved() {
     // 5. definition again: "MyDog" (line 33, char 18) → property (line 28)
     let r5 = definition(&mut client, &file_uri, 33, 18);
     assert_nav_ok(&r5);
-    assert_location_line(&r5["result"], 28, "definition MyDog → line 28");
+    assert_location_line(
+        &first_location(&r5["result"]),
+        28,
+        "definition MyDog → line 28",
+    );
 
     // 6. hover still works after all the navigation requests
     let r6 = hover(&mut client, &file_uri, 14, 14);
     assert_hover_ok(&r6);
     assert!(!r6["result"].is_null(), "hover must still work");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 63. DEFINITION ON CONSTRUCTOR CALL → CLASS DECLARATION
+
+#[test]
+fn test_full_stack_definition_on_constructor() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "Dog" in "new Dog()" at line 28, char 36.
+    //         public Dog MyDog { get; } = new Dog();
+    //         0         1         2         3
+    //         0123456789012345678901234567890123456789
+    let resp = definition(&mut client, &file_uri, 28, 36);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "definition on constructor call must resolve"
+    );
+    assert_location_line(result, 14, "new Dog() → Dog class at line 14");
 
     client.shutdown_and_exit();
     client.wait_with_timeout();

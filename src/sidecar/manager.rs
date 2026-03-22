@@ -66,6 +66,11 @@ impl SidecarManager {
         }
     }
 
+    /// Returns the display name of this sidecar.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// Create a manager for the C# sidecar.
     pub fn csharp(workspace_root: &Path) -> Self {
         let socket_path = format!(

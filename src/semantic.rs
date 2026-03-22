@@ -114,30 +114,63 @@ pub fn handle_hover(
 }
 
 /// Handle `textDocument/definition` via the C# sidecar.
+///
+/// Returns `Location[]` because a symbol may have multiple definitions
+/// (e.g. partial classes split across files).
 pub fn handle_definition(
     req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    handle_single_location_nav(req, runtime, sidecar, "textDocument/definition")
+    handle_cached_nav(
+        req,
+        vfs,
+        nav_cache,
+        runtime,
+        sidecar,
+        "textDocument/definition",
+        true,
+    )
 }
 
 /// Handle `textDocument/typeDefinition` via the C# sidecar.
 pub fn handle_type_definition(
     req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    handle_single_location_nav(req, runtime, sidecar, "textDocument/typeDefinition")
+    handle_cached_nav(
+        req,
+        vfs,
+        nav_cache,
+        runtime,
+        sidecar,
+        "textDocument/typeDefinition",
+        false,
+    )
 }
 
 /// Handle `textDocument/declaration` via the C# sidecar.
 pub fn handle_declaration(
     req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    handle_single_location_nav(req, runtime, sidecar, "textDocument/declaration")
+    handle_cached_nav(
+        req,
+        vfs,
+        nav_cache,
+        runtime,
+        sidecar,
+        "textDocument/declaration",
+        false,
+    )
 }
 
 /// Handle `textDocument/implementation` via the C# sidecar.
@@ -148,8 +181,21 @@ pub fn handle_implementation(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
+    handle_multi_location_nav(req, runtime, sidecar, "textDocument/implementation")
+}
+
+// ── Shared Helpers ────────────────────────────────────────────────
+
+/// Shared handler for multi-location navigation requests
+/// (definition, implementation).
+fn handle_multi_location_nav(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    method: &str,
+) -> Result<serde_json::Value> {
     let Some(sidecar) = sidecar else {
-        debug!("Implementation: no sidecar available");
+        debug!("{method}: no sidecar available");
         return Ok(serde_json::Value::Null);
     };
     let params: GotoDefinitionParams = serde_json::from_value(req.params)?;
@@ -161,7 +207,7 @@ pub fn handle_implementation(
         file = %file_path,
         line = line,
         character = character,
-        "Implementation request dispatching to sidecar"
+        "{method} request dispatching to sidecar"
     );
 
     let request = SidecarPositionReq {
@@ -170,14 +216,13 @@ pub fn handle_implementation(
         character,
     };
     let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("textDocument/implementation", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar implementation unavailable: {err:#}");
-                return Ok(serde_json::Value::Null);
-            }
-        };
+    let response_bytes = match runtime.block_on(sidecar.request(method, payload)) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!("Sidecar {method} unavailable: {err:#}");
+            return Ok(serde_json::Value::Null);
+        }
+    };
 
     let result: SidecarLocationListResult = rmp_serde::from_slice(&response_bytes)?;
     let locations: Vec<Location> = result
@@ -190,10 +235,49 @@ pub fn handle_implementation(
     Ok(serde_json::to_value(response)?)
 }
 
-// ── Shared Helpers ────────────────────────────────────────────────
+/// Cached navigation handler — checks cache before dispatching to sidecar.
+///
+/// `multi` controls whether to use multi-location (definition) or
+/// single-location (typeDefinition, declaration) response format.
+fn handle_cached_nav(
+    req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    method: &str,
+    multi: bool,
+) -> Result<serde_json::Value> {
+    let params: GotoDefinitionParams = serde_json::from_value(req.params.clone())?;
+    let uri = &params.text_document_position_params.text_document.uri;
+    let line = params.text_document_position_params.position.line;
+    let character = params.text_document_position_params.position.character;
+    let version = vfs.get_version(uri).unwrap_or(0);
+
+    if let Some(cached) = nav_cache.get(uri.as_str(), version, line, character, method) {
+        debug!("{method} cache hit");
+        return Ok(cached.clone());
+    }
+
+    let value = if multi {
+        handle_multi_location_nav(req, runtime, sidecar, method)?
+    } else {
+        handle_single_location_nav(req, runtime, sidecar, method)?
+    };
+
+    nav_cache.insert(
+        uri.as_str(),
+        version,
+        line,
+        character,
+        method,
+        value.clone(),
+    );
+    Ok(value)
+}
 
 /// Shared handler for single-location navigation requests
-/// (definition, typeDefinition, declaration).
+/// (typeDefinition, declaration).
 fn handle_single_location_nav(
     req: Request,
     runtime: &tokio::runtime::Runtime,
@@ -247,7 +331,7 @@ fn sidecar_location_to_lsp(loc: &SidecarLocationResult) -> Option<Location> {
         uri,
         range: Range::new(
             Position::new(loc.line, loc.character),
-            Position::new(loc.line, loc.character),
+            Position::new(loc.end_line, loc.end_character),
         ),
     })
 }
@@ -336,6 +420,8 @@ struct SidecarLocationResult {
     file_path: String,
     line: u32,
     character: u32,
+    end_line: u32,
+    end_character: u32,
 }
 
 #[derive(serde::Deserialize)]

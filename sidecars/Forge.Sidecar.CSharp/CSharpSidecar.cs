@@ -13,7 +13,6 @@ namespace Forge.Sidecar.CSharp;
 /// </summary>
 internal sealed class CSharpSidecar : SidecarHost
 {
-    private readonly WorkspaceManager _workspace = new();
 
     public CSharpSidecar()
     {
@@ -28,6 +27,195 @@ internal sealed class CSharpSidecar : SidecarHost
         Register("textDocument/declaration", HandleDeclarationAsync);
         Register("textDocument/implementation", HandleImplementationAsync);
     }
+
+
+
+
+
+
+    private readonly WorkspaceManager _workspace = new();
+
+
+
+
+
+
+    private async Task<ByteResult> HandleAllDiagnosticsAsync(
+        byte[] payload,
+        CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer
+                .Deserialize<SolutionDiagnosticsRequest>(
+                    payload, cancellationToken: ct);
+            var result = await _workspace
+                .GetAllDiagnosticsAsync(request.ProjectFilter, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+
+
+
+
+    private async Task<ByteResult> HandleCompletionAsync(
+        byte[] payload,
+        CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<CompletionRequest>(
+                payload, cancellationToken: ct);
+            var result = await _workspace.GetCompletionsAsync(
+                request.FilePath, request.Line, request.Character, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+
+
+
+    private async Task<ByteResult> HandleDeclarationAsync(
+        byte[] payload,
+        CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<PositionRequest>(
+                payload, cancellationToken: ct);
+            var result = await _workspace.GetDeclarationAsync(
+                request.FilePath, request.Line, request.Character, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+
+
+
+    private async Task<ByteResult> HandleDefinitionAsync(
+        byte[] payload,
+        CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<PositionRequest>(
+                payload, cancellationToken: ct);
+            var result = await _workspace.GetDefinitionAsync(
+                request.FilePath, request.Line, request.Character, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+
+
+
+    private async Task<ByteResult> HandleDiagnosticsAsync(
+        byte[] payload,
+        CancellationToken ct)
+    {
+        try
+        {
+            var filePath = MessagePackSerializer.Deserialize<string>(
+                payload, cancellationToken: ct);
+            var result = await _workspace.GetDiagnosticsAsync(filePath, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+
+
+
+    private async Task<ByteResult> HandleHoverAsync(
+        byte[] payload,
+        CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<PositionRequest>(
+                payload, cancellationToken: ct);
+            var result = await _workspace.GetHoverAsync(
+                request.FilePath, request.Line, request.Character, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+
+
+
+    private async Task<ByteResult> HandleImplementationAsync(
+        byte[] payload,
+        CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<PositionRequest>(
+                payload, cancellationToken: ct);
+            var result = await _workspace.GetImplementationsAsync(
+                request.FilePath, request.Line, request.Character, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+
+
+
+    private async Task<ByteResult> HandleTypeDefinitionAsync(
+        byte[] payload,
+        CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<PositionRequest>(
+                payload, cancellationToken: ct);
+            var result = await _workspace.GetTypeDefinitionAsync(
+                request.FilePath, request.Line, request.Character, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+
+
 
     private async Task<ByteResult> HandleWorkspaceOpenAsync(
         byte[] payload,
@@ -53,6 +241,9 @@ internal sealed class CSharpSidecar : SidecarHost
         }
     }
 
+
+
+
     private Task<ByteResult> HandleWorkspaceStatusAsync(
         byte[] payload,
         CancellationToken ct)
@@ -72,157 +263,8 @@ internal sealed class CSharpSidecar : SidecarHost
         }
     }
 
-    private async Task<ByteResult> HandleDiagnosticsAsync(
-        byte[] payload,
-        CancellationToken ct)
-    {
-        try
-        {
-            var filePath = MessagePackSerializer.Deserialize<string>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetDiagnosticsAsync(filePath, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
-    }
 
-    private async Task<ByteResult> HandleAllDiagnosticsAsync(
-        byte[] payload,
-        CancellationToken ct)
-    {
-        try
-        {
-            var request = MessagePackSerializer
-                .Deserialize<SolutionDiagnosticsRequest>(
-                    payload, cancellationToken: ct);
-            var result = await _workspace
-                .GetAllDiagnosticsAsync(request.ProjectFilter, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
-    }
 
-    private async Task<ByteResult> HandleCompletionAsync(
-        byte[] payload,
-        CancellationToken ct)
-    {
-        try
-        {
-            var request = MessagePackSerializer.Deserialize<CompletionRequest>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetCompletionsAsync(
-                request.FilePath, request.Line, request.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
-    }
-
-    private async Task<ByteResult> HandleHoverAsync(
-        byte[] payload,
-        CancellationToken ct)
-    {
-        try
-        {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetHoverAsync(
-                request.FilePath, request.Line, request.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
-    }
-
-    private async Task<ByteResult> HandleDefinitionAsync(
-        byte[] payload,
-        CancellationToken ct)
-    {
-        try
-        {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetDefinitionAsync(
-                request.FilePath, request.Line, request.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
-    }
-
-    private async Task<ByteResult> HandleTypeDefinitionAsync(
-        byte[] payload,
-        CancellationToken ct)
-    {
-        try
-        {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetTypeDefinitionAsync(
-                request.FilePath, request.Line, request.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
-    }
-
-    private async Task<ByteResult> HandleDeclarationAsync(
-        byte[] payload,
-        CancellationToken ct)
-    {
-        try
-        {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetDeclarationAsync(
-                request.FilePath, request.Line, request.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
-    }
-
-    private async Task<ByteResult> HandleImplementationAsync(
-        byte[] payload,
-        CancellationToken ct)
-    {
-        try
-        {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetImplementationsAsync(
-                request.FilePath, request.Line, request.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
-    }
 
     private static ByteResult SerializeResult<T>(
         Result<T, string> result,
@@ -288,6 +330,8 @@ internal sealed class LocationResult
     [Key(0)] public string FilePath { get; set; } = "";
     [Key(1)] public int Line { get; init; }
     [Key(2)] public int Character { get; init; }
+    [Key(3)] public int EndLine { get; init; }
+    [Key(4)] public int EndCharacter { get; init; }
 }
 
 [MessagePackObject(AllowPrivate = true)]

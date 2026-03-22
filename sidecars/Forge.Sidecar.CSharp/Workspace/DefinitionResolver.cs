@@ -10,8 +10,8 @@ namespace Forge.Sidecar.CSharp.Workspace;
 /// </summary>
 internal static class DefinitionResolver
 {
-    /// <summary>Find the definition location(s) of the symbol at a position.</summary>
-    public static async Task<LocationResult?> ResolveDefinitionAsync(
+    /// <summary>Find all definition locations of the symbol at a position.</summary>
+    public static async Task<LocationListResult> ResolveDefinitionLocationsAsync(
         Document document,
         int line,
         int character,
@@ -19,7 +19,7 @@ internal static class DefinitionResolver
     {
         var symbol = await ResolveSymbolAsync(document, line, character, ct)
             .ConfigureAwait(false);
-        return symbol is null ? null : ToFirstSourceLocation(symbol);
+        return symbol is null ? new LocationListResult() : ToAllSourceLocations(symbol);
     }
 
     /// <summary>Find the type definition of the symbol at a position.</summary>
@@ -313,6 +313,26 @@ internal static class DefinitionResolver
         }
     }
 
+    /// <summary>Map a symbol to all of its in-source locations.</summary>
+    private static LocationListResult ToAllSourceLocations(ISymbol symbol)
+    {
+        var locations = new List<LocationResult>();
+        foreach (var location in symbol.Locations.Where(l => l.IsInSource))
+        {
+            var span = location.GetMappedLineSpan();
+            locations.Add(new LocationResult
+            {
+                FilePath = span.Path,
+                Line = span.StartLinePosition.Line,
+                Character = span.StartLinePosition.Character,
+                EndLine = span.EndLinePosition.Line,
+                EndCharacter = span.EndLinePosition.Character,
+            });
+        }
+
+        return new LocationListResult { Locations = locations };
+    }
+
     /// <summary>Map a symbol to its first in-source location.</summary>
     private static LocationResult? ToFirstSourceLocation(ISymbol symbol)
     {
@@ -329,6 +349,8 @@ internal static class DefinitionResolver
             FilePath = span.Path,
             Line = span.StartLinePosition.Line,
             Character = span.StartLinePosition.Character,
+            EndLine = span.EndLinePosition.Line,
+            EndCharacter = span.EndLinePosition.Character,
         };
     }
 }

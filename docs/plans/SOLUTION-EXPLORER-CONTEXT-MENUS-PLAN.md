@@ -67,11 +67,11 @@ Implement the `forge/sortMembers` custom request in the Rust host.
 - [x] E2E test: Sort Members on an enum, interface, and record
 - [x] E2E test: Sort Members inserts blank lines between groups
 - [x] E2E test: Sort Members preserves `#region` / `#endregion` blocks
-- [ ] E2E test: Context menu only appears on correct node types
-- [ ] E2E test: Verify `contextValue` is set correctly for all node types
-- [ ] E2E test: Copy Qualified Name produces correct output for nested types
-- [ ] E2E test: Copy Name copies unqualified name
-- [ ] E2E test: Reveal in File Explorer opens correct file
+- [x] E2E test: Context menu only appears on correct node types
+- [x] E2E test: Verify `contextValue` is set correctly for all node types
+- [x] E2E test: Copy Qualified Name produces correct output for nested types
+- [x] E2E test: Copy Name copies unqualified name
+- [x] E2E test: Reveal in File Explorer opens correct file
 
 ## Future Context Menu Items
 

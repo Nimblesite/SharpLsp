@@ -56,6 +56,7 @@ pub struct GcRootChain {
 /// Analyze heap statistics from a dump file.
 pub async fn analyze_heap(params: AnalyzeHeapParams) -> Result<HeapStats> {
     let tool = tool_discovery::require_dump()?;
+    validate_dump_path(&params.dump_path)?;
 
     info!(dump = %params.dump_path, "Analyzing heap statistics");
 
@@ -99,6 +100,7 @@ pub async fn analyze_heap(params: AnalyzeHeapParams) -> Result<HeapStats> {
 /// Find GC roots for a specific object address.
 pub async fn find_gc_roots(params: FindGcRootsParams) -> Result<Vec<GcRootChain>> {
     let tool = tool_discovery::require_dump()?;
+    validate_dump_path(&params.dump_path)?;
 
     info!(
         dump = %params.dump_path,
@@ -258,6 +260,14 @@ fn parse_gcroot_output(output: &str) -> Vec<GcRootChain> {
 
 fn default_limit() -> usize {
     50
+}
+
+/// Verify the dump file exists before invoking `dotnet-dump analyze`.
+fn validate_dump_path(path: &str) -> Result<()> {
+    if !std::path::Path::new(path).exists() {
+        anyhow::bail!("dump file not found: {path}");
+    }
+    Ok(())
 }
 
 #[cfg(test)]

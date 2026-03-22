@@ -57,7 +57,7 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
         "Starting dotnet-trace collect"
     );
 
-    let mut cmd = tokio::process::Command::new(tool);
+    let mut cmd = std::process::Command::new(tool);
     cmd.args(["collect", "-p"])
         .arg(params.pid.to_string())
         .args(["--profile", &params.profile])
@@ -71,7 +71,8 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let child = cmd.spawn().context("failed to spawn dotnet-trace")?;
+    let std_child = cmd.spawn().context("failed to spawn dotnet-trace")?;
+    let child = tokio::process::Child::from(std_child);
 
     let session_id = session::store().create(
         SessionKind::Trace,

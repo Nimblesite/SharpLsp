@@ -4,10 +4,13 @@ module Forge.Sidecar.FSharp.FSharpWorkspace
 open System
 open System.IO
 open FSharp.Compiler.CodeAnalysis
+open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Text
+open FSharp.Compiler.Tokenization
 open Forge.Sidecar.FSharp.Hover
 
 /// Workspace state holding the FSharpChecker and loaded project options.
+[<NoComparison; NoEquality>]
 type FSharpWorkspaceState =
     { Checker: FSharpChecker
       mutable ProjectOptions: FSharpProjectOptions option
@@ -20,23 +23,58 @@ let create () : FSharpWorkspaceState =
       ProjectOptions = None
       IsLoaded = false }
 
-/// Load a project from a .fsproj path.
-let loadProject (state: FSharpWorkspaceState) (projectPath: string) =
+/// Load a project from a path (finds .fsproj or .fsx).
+let loadProject (state: FSharpWorkspaceState) (path: string) =
     task {
         try
-            let! options, diagnostics =
+            // For now, create script-based options.
+            // Full .fsproj support requires Ionide.ProjInfo (Phase 3).
+            let dummyScript = Path.Combine(path, "script.fsx")
+            let! options, _diagnostics =
                 state.Checker.GetProjectOptionsFromScript(
-                    projectPath,
+                    dummyScript,
                     SourceText.ofString "",
                     assumeDotNetFramework = false)
             state.ProjectOptions <- Some options
             state.IsLoaded <- true
-            eprintfn $"F# workspace loaded: {projectPath}"
+            eprintfn $"F# workspace loaded from {path}"
             return Ok()
         with ex ->
             eprintfn $"F# workspace load failed: {ex.Message}"
             return Error ex.Message
     }
+
+/// Extract hover from FSharpCheckFileResults.
+let private extractToolTip
+    (checkResults: FSharpCheckFileResults)
+    (source: string)
+    (line: int)
+    (character: int)
+    : (string * int * int * int * int) option =
+    let lines = source.Split('\n')
+    if line >= lines.Length then
+        None
+    else
+        let lineText = lines[line]
+        // FCS uses 1-based lines.
+        let fcsLine = line + 1
+
+        // Find the identifier at the position.
+        let island =
+            QuickParse.GetCompleteIdentifierIsland true lineText character
+
+        match island with
+        | None -> None
+        | Some(name, _, _) ->
+            let names = [ name ]
+            let tip =
+                checkResults.GetToolTip(
+                    fcsLine, character, lineText, names, FSharpTokenTag.Identifier)
+
+            match FSharpHoverBuilder.renderToolTip tip with
+            | Some markdown ->
+                Some(markdown, line, character, line, character + name.Length)
+            | None -> None
 
 /// Get hover information at a position in an F# file.
 let getHover
@@ -53,7 +91,7 @@ let getHover
                 let source = File.ReadAllText(filePath)
                 let sourceText = SourceText.ofString source
 
-                let! parseResults, checkAnswer =
+                let! _parseResults, checkAnswer =
                     state.Checker.ParseAndCheckFileInProject(
                         filePath,
                         0,
@@ -62,7 +100,7 @@ let getHover
 
                 match checkAnswer with
                 | FSharpCheckFileAnswer.Succeeded checkResults ->
-                    return getToolTip checkResults source line character
+                    return extractToolTip checkResults source line character
                 | FSharpCheckFileAnswer.Aborted ->
                     eprintfn "[F# Hover] Check aborted"
                     return None
@@ -70,37 +108,3 @@ let getHover
             eprintfn $"[F# Hover] Exception: {ex.Message}"
             return None
     }
-
-/// Extract hover from FSharpCheckFileResults.
-let private getToolTip
-    (checkResults: FSharpCheckFileResults)
-    (source: string)
-    (line: int)
-    (character: int)
-    : (string * int * int * int * int) option =
-    let lines = source.Split('\n')
-    if line >= lines.Length then
-        None
-    else
-        let lineText = lines[line]
-        // FCS uses 1-based lines.
-        let fcsLine = line + 1
-
-        // Find the identifier at the position.
-        let names =
-            match QuickParse.GetCompleteIdentifierIsland true lineText character with
-            | Some(island, _) -> [ island ]
-            | None -> []
-
-        if names.IsEmpty then
-            None
-        else
-            let tip =
-                checkResults.GetToolTip(
-                    fcsLine, character, lineText, names, FSharpTokenTag.Identifier)
-
-            match FSharpHoverBuilder.renderToolTip tip with
-            | Some markdown ->
-                // Return markdown + token range.
-                Some(markdown, line, character, line, character + names.Head.Length)
-            | None -> None
