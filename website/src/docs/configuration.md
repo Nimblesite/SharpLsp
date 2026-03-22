@@ -17,7 +17,7 @@ Forge is configured via a `forge.toml` file placed at the root of your workspace
 
 # ─── Diagnostics ───────────────────────────────────────────────────────────────
 [diagnostics]
-# Run Roslyn/FCS analyzers (not just compiler errors)
+# Run Roslyn analyzers (not just compiler errors)
 analyzers_enabled = true
 
 # Analyze all files in the solution, not just open ones
@@ -43,30 +43,6 @@ import_completions = true
 
 # Maximum results per request
 max_results = 200
-
-# ─── Formatting ────────────────────────────────────────────────────────────────
-[format]
-# Format on save (requires editor support)
-on_save = false
-
-[format.csharp]
-# Use .editorconfig for C# formatting options (default: true)
-use_editorconfig = true
-
-[format.fsharp]
-# Fantomas version (default: latest bundled)
-fantomas_version = "latest"
-
-# ─── F# ────────────────────────────────────────────────────────────────────────
-[fsharp]
-# Enable Fantomas formatting
-formatting = true
-
-# Enable FSharpLint diagnostics
-lint = true
-
-# Enable FSharp.Analyzers.SDK
-analyzers = true
 
 # ─── Sidecar ───────────────────────────────────────────────────────────────────
 [sidecar]
