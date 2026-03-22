@@ -5,7 +5,9 @@
   "private": true,
   "scripts": {
     "dev": "npx @11ty/eleventy --serve",
-    "build": "npx @11ty/eleventy"
+    "build": "npx @11ty/eleventy",
+    "test": "npx playwright test",
+    "test:mobile": "npx playwright test tests/mobile-nav.spec.js"
   },
   "dependencies": {
     "@11ty/eleventy": "^3.1.2",
