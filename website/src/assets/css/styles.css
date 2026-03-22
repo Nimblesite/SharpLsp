@@ -443,6 +443,69 @@ a:hover {
 }
 
 /* =============================================
+   Performance section
+   ============================================= */
+
+.perf-section {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.perf-section h2 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0 0 0.75rem;
+}
+
+.perf-section > p {
+  color: var(--color-muted);
+  font-size: 1.1rem;
+  margin: 0 0 3rem;
+}
+
+.perf-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+.perf-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 1.75rem 1.5rem;
+  text-align: left;
+}
+
+.perf-stat {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: var(--color-primary);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+
+.perf-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-muted);
+  margin-bottom: 0.75rem;
+}
+
+.perf-desc {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* =============================================
    Install block
    ============================================= */
 
@@ -917,6 +980,14 @@ tr:hover td {
   }
 
   .features {
+    padding: 3rem 1.5rem;
+  }
+
+  .perf-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .perf-section {
     padding: 3rem 1.5rem;
   }
 

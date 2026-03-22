@@ -8,7 +8,7 @@ eleventyNavigation:
 
 # Code Completions
 
-Forge provides IntelliSense-quality code completions for both C# and F#, powered by the full Roslyn and FSharp.Compiler.Service APIs. Completions are routed through the C# or F# sidecar depending on the document language, keeping the Rust host free for fast syntax operations.
+Forge provides IntelliSense-quality code completions for C#, powered by the full Roslyn API. Completions are routed through the C# sidecar, keeping the Rust host free for fast syntax operations.
 
 ## Performance Targets
 
@@ -57,29 +57,6 @@ var json = JsonSerializer.Serialize(obj);
 //         ↑ completion adds: using System.Text.Json;
 ```
 
-## F# Completions (FSharp.Compiler.Service)
-
-The F# sidecar uses `FSharpChecker` to provide completions with the same depth as Ionide, plus additional features from `FSharpLint`.
-
-### What Gets Completed
-
-- **Bindings** — `let`, `use`, `and` bindings in scope
-- **Module members** — functions, values, types from opened modules
-- **Record fields** — field names after `{`, `with`
-- **Discriminated union cases** — case names in match expressions
-- **Computation expression keywords** — `let!`, `do!`, `return!`, `yield!`
-- **Type annotations** — type names in `:` positions
-- **Attribute names** — `[<Attribute>]` positions
-
-### F#-Specific Trigger Characters
-
-| Character | Context |
-|-----------|---------|
-| `.` | Module/type member access |
-| ` ` | Keyword and binding completions |
-| `<` | Generic type arguments |
-| `[<` | Attribute names |
-
 ## Configuration
 
 ```toml
@@ -112,6 +89,6 @@ Forge advertises:
 
 ## Screenshot
 
-![Code completions in VS Code with Forge]({{ "/assets/screenshots/editor-overview.png" | url }})
+![Code completions documentation page]({{ "/assets/screenshots/completions-page.png" | url }})
 
 *Full IntelliSense completions powered by Roslyn — same engine as Visual Studio.*

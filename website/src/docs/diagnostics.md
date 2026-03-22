@@ -8,15 +8,15 @@ eleventyNavigation:
 
 # Diagnostics
 
-Forge delivers real-time compiler errors, warnings, and analyzer diagnostics for your entire solution — not just open files. Solution-wide analysis is **on by default**, which is the #1 feature C# Dev Kit lacks and the primary reason developers choose Visual Studio or Rider for large solutions.
+Forge delivers real-time C# compiler errors, warnings, and Roslyn analyzer diagnostics for your entire solution — not just open files. Solution-wide analysis is **on by default**, which is the #1 feature C# Dev Kit lacks and the primary reason developers choose Visual Studio or Rider for large solutions.
 
 ## How It Works
 
 ```
-Editor ←→ Rust LSP Host ←→ C#/F# Sidecar
-  ↑            ↑                  ↑
-Problems   publishDiagnostics   Roslyn / FCS
-window     notifications        GetDiagnostics()
+Editor ←→ Rust LSP Host ←→ C# Sidecar
+  ↑            ↑                ↑
+Problems   publishDiagnostics  Roslyn
+window     notifications       GetDiagnostics()
 ```
 
 1. **Document change** — editor sends `textDocument/didChange`, Rust host updates VFS and tree-sitter
@@ -42,14 +42,12 @@ Solution-wide analysis catches errors in files you haven't opened — build brea
 | Language | Examples |
 |----------|----------|
 | C# (Roslyn) | `CS0029` (type conversion), `CS0246` (type not found), `CS8600`–`CS8798` (nullable) |
-| F# (FCS) | `FS0001` (type mismatch), `FS0039` (undefined name) |
 
 ### Analyzer Diagnostics
 
 - **Built-in Roslyn analyzers** — IDE0001–IDE0090, CA1000–CA2000 code quality rules
 - **.editorconfig rules** — code style enforcement mapped from `.editorconfig` severity
 - **Third-party NuGet analyzers** — StyleCop, SonarAnalyzer, and any `<Analyzer>` reference
-- **FSharp.Analyzers.SDK** — community F# analyzer plugins (Forge exclusive — no other editor supports these)
 
 ### Live Squiggles
 
@@ -116,9 +114,14 @@ Changes to `solution_wide_analysis` and `project_filter` take effect immediately
 | Compiler errors and warnings | ✓ | ✓ | ✓ | ✓ |
 | Roslyn analyzer diagnostics | ✓ | ✓ | ✓ | ✓ |
 | Solution-wide analysis (default on) | ✓ | ✗ | ✓ | **✓** |
-| Unused using / open detection | ✓ | ✓ | ✓ | ✓ |
-| FSharp.Analyzers.SDK support | ✗ | ✗ | ✗ | **✓** |
+| Unused using detection | ✓ | ✓ | ✓ | ✓ |
 | Nullable reference analysis | ✓ | ✓ | ✓ | ✓ |
 | Third-party NuGet analyzers | ✓ | ✓ | ✓ | ✓ |
 
 Solution-wide analysis is default-on in Forge. C# Dev Kit doesn't support it at all. This single difference makes Forge the correct choice for any multi-project solution.
+
+## Screenshot
+
+![Diagnostics documentation page]({{ "/assets/screenshots/diagnostics-page.png" | url }})
+
+*Real-time Roslyn diagnostics across your entire solution — not just open files.*

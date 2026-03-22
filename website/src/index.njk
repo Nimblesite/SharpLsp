@@ -7,12 +7,12 @@ title: "Forge — Open-Source .NET LSP"
   <div class="hero-badge">Open Source &middot; MIT Licensed</div>
   <h1>The .NET LSP<br/>Visual Studio killed.</h1>
   <p class="tagline">
-    One language server. Every editor. Full C# and F# intelligence
-    powered by Roslyn and FSharp.Compiler.Service — built in Rust
-    for speed that makes proprietary tools feel broken.
+    One language server. Every editor. Full C# intelligence
+    powered by Roslyn — built in Rust for speed that makes
+    proprietary tools feel broken.
   </p>
   <div class="hero-actions">
-    <a href="/docs/" class="btn btn-primary">Get Started</a>
+    <a href="/forge/docs/" class="btn btn-primary">Get Started</a>
     <a href="https://github.com/MelbourneDeveloper/forge" class="btn btn-secondary">GitHub</a>
   </div>
 </section>
@@ -20,12 +20,17 @@ title: "Forge — Open-Source .NET LSP"
 <section class="value-props">
   <div class="value-props-inner">
     <div class="value-item">
-      <div class="value-number">&#60;100ms</div>
+      <div class="value-number">&lt;3s</div>
+      <div class="value-label">Cold start to first response</div>
+    </div>
+    <div class="value-divider"></div>
+    <div class="value-item">
+      <div class="value-number">&lt;100ms</div>
       <div class="value-label">Completions p50</div>
     </div>
     <div class="value-divider"></div>
     <div class="value-item">
-      <div class="value-number">&#60;1ms</div>
+      <div class="value-number">&lt;1ms</div>
       <div class="value-label">Tree-sitter reparse</div>
     </div>
     <div class="value-divider"></div>
@@ -33,52 +38,77 @@ title: "Forge — Open-Source .NET LSP"
       <div class="value-number">0</div>
       <div class="value-label">Proprietary dependencies</div>
     </div>
-    <div class="value-divider"></div>
-    <div class="value-item">
-      <div class="value-number">2</div>
-      <div class="value-label">First-class languages</div>
-    </div>
   </div>
 </section>
 
 <section class="showcase">
   <h2>See it in action.</h2>
-  <p>Real screenshots from the VS Code extension. Not mockups — captured automatically from the running VSIX.</p>
+  <p>Real screenshots from the VS Code extension. Not mockups.</p>
   <div class="showcase-grid">
     <div class="showcase-item showcase-wide">
-      <img src="/assets/screenshots/split-editor.png" alt="C# and F# side by side in VS Code with Forge" loading="lazy" />
+      <img src="{{ "/assets/screenshots/split-editor.png" | url }}" alt="Forge Solution Explorer tree view in VS Code" loading="lazy" />
       <div class="showcase-caption">
-        <h3>C# and F# side by side</h3>
-        <p>Both languages are equal first-class citizens. Edit C# and F# simultaneously with full syntax highlighting and code folding.</p>
+        <h3>Solution Explorer that works</h3>
+        <p>Browse your entire .NET solution — projects, files, and dependencies — in a tree view that C# Dev Kit can't match. Right-click to remove packages, copy qualified names, and navigate instantly.</p>
       </div>
     </div>
     <div class="showcase-item">
-      <img src="/assets/screenshots/editor-overview.png" alt="C# editing in VS Code with Forge LSP" loading="lazy" />
+      <img src="{{ "/assets/screenshots/editor-overview.png" | url }}" alt="C# editing in VS Code with Forge LSP" loading="lazy" />
       <div class="showcase-caption">
         <h3>Full C# intelligence</h3>
-        <p>Classes, interfaces, enums, regions, XML doc comments — all parsed by tree-sitter in the Rust host.</p>
+        <p>Classes, interfaces, enums, regions, XML doc comments — all parsed by tree-sitter in the Rust host at sub-millisecond speeds.</p>
       </div>
     </div>
     <div class="showcase-item">
-      <img src="/assets/screenshots/fsharp-editing.png" alt="F# editing in VS Code with Forge LSP" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>First-class F#</h3>
-        <p>Discriminated unions, pattern matching, modules, and members — F# is not a bolt-on.</p>
-      </div>
-    </div>
-    <div class="showcase-item">
-      <img src="/assets/screenshots/code-folding.png" alt="Code folding with regions in VS Code" loading="lazy" />
+      <img src="{{ "/assets/screenshots/code-folding.png" | url }}" alt="Code folding with regions in VS Code" loading="lazy" />
       <div class="showcase-caption">
         <h3>Code folding</h3>
-        <p>Fold namespaces, classes, methods, and #region blocks. Collapse the noise, focus on what matters.</p>
+        <p>Fold namespaces, classes, methods, and #region blocks. Collapse the noise, focus on what matters. Under 1ms.</p>
       </div>
     </div>
     <div class="showcase-item">
-      <img src="/assets/screenshots/nested-classes.png" alt="Nested class hierarchy in VS Code" loading="lazy" />
+      <img src="{{ "/assets/screenshots/nested-classes.png" | url }}" alt="Nested class hierarchy in VS Code" loading="lazy" />
       <div class="showcase-caption">
         <h3>Nested type hierarchies</h3>
-        <p>Inner classes, nested types, and complex hierarchies — parsed and navigable in real time.</p>
+        <p>Inner classes, nested types, and complex hierarchies — parsed and navigable in real time without waiting on the compiler.</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<section class="perf-section">
+  <h2>Performance is the feature.</h2>
+  <p>Forge is built Rust-first. The hot path never touches .NET.</p>
+  <div class="perf-grid">
+    <div class="perf-card">
+      <div class="perf-stat">&lt;3s</div>
+      <div class="perf-label">Cold start</div>
+      <div class="perf-desc">First LSP response in under 3 seconds, including sidecar spawn and workspace load.</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-stat">&lt;1ms</div>
+      <div class="perf-label">Keystrokes</div>
+      <div class="perf-desc">Tree-sitter re-parses the document incrementally on every keystroke. No lag. No stutter.</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-stat">&lt;100ms</div>
+      <div class="perf-label">Completions p50</div>
+      <div class="perf-desc">Roslyn completions via the sidecar. Same engine as Visual Studio — faster round-trip.</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-stat">&lt;500ms</div>
+      <div class="perf-label">Diagnostics refresh</div>
+      <div class="perf-desc">File-level diagnostic re-analysis after a keystroke, debounced at 150ms.</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-stat">&lt;3s</div>
+      <div class="perf-label">Crash recovery</div>
+      <div class="perf-desc">If the Roslyn sidecar crashes, Forge respawns it automatically. Your editor never freezes.</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-stat">&lt;1ms</div>
+      <div class="perf-label">Cache hits</div>
+      <div class="perf-desc">salsa incremental cache returns repeated hover and definition results in under a millisecond.</div>
     </div>
   </div>
 </section>
@@ -92,16 +122,16 @@ title: "Forge — Open-Source .NET LSP"
       <p>VS Code, Neovim, Emacs, Helix, Zed — Forge speaks LSP 3.17, so it works everywhere. Stop letting Microsoft decide where you write code.</p>
     </div>
     <div class="feature-card">
-      <h3>F# is not an afterthought.</h3>
-      <p>Full FSharp.Compiler.Service integration with Fantomas formatting. C# and F# are equal first-class citizens. Always.</p>
+      <h3>Solution Explorer that slaps.</h3>
+      <p>A tree view that shows your whole solution — projects, files, NuGet packages, references — with right-click actions C# Dev Kit doesn't have. Remove packages. Copy qualified names. Navigate instantly.</p>
     </div>
     <div class="feature-card">
       <h3>Rust host. Sub-millisecond parsing.</h3>
-      <p>Tree-sitter incremental parsing in the Rust host. Salsa-powered caching. Your keystrokes never wait on the compiler.</p>
+      <p>Tree-sitter incremental parsing in the Rust host. salsa-powered caching. Document symbols, folding, and selection ranges without waiting on Roslyn.</p>
     </div>
     <div class="feature-card">
       <h3>Full Roslyn. No compromises.</h3>
-      <p>Completions, diagnostics, hover, go-to-definition, references, rename, code actions, formatting — the complete Roslyn API, not a subset.</p>
+      <p>Completions, diagnostics, hover, go-to-definition — the complete Roslyn API. Same engine as Visual Studio, none of the lock-in.</p>
     </div>
     <div class="feature-card">
       <h3>Crash-proof architecture.</h3>

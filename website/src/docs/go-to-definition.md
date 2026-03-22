@@ -8,7 +8,7 @@ eleventyNavigation:
 
 # Go to Definition
 
-Forge implements the full family of definition navigation requests from LSP 3.17, covering every navigation scenario in both C# and F#.
+Forge implements the full family of definition navigation requests from LSP 3.17, covering every C# navigation scenario via the Roslyn sidecar.
 
 ## Navigation Methods
 
@@ -19,7 +19,7 @@ Forge implements the full family of definition navigation requests from LSP 3.17
 | `textDocument/declaration` | — | Navigate to the interface / abstract declaration |
 | `textDocument/implementation` | `Ctrl+Shift+F12` | Navigate to all concrete implementations |
 
-All four are **P0** (launch blockers) and fully implemented in both C# and F#.
+All four are **P0** (launch blockers) and fully implemented for C#.
 
 ## C# Navigation (Roslyn)
 
@@ -55,35 +55,6 @@ When a symbol is defined in a referenced assembly (NuGet package, BCL), Forge us
 // }
 ```
 
-## F# Navigation (FCS)
-
-The F# sidecar uses `FSharpChecker.GetDeclarationLocation()` for definition and `GetSymbolUseAtLocation()` for the full navigation family.
-
-### F#-Specific Cases
-
-| Symbol | Behavior |
-|--------|---------|
-| Discriminated union case | Navigates to the case declaration in the DU |
-| Record field | Navigates to the field in the record type |
-| Active pattern | Navigates to the active pattern function |
-| `let!` / `do!` | Navigates to the CE builder method |
-| Module function | Navigates to the `let` binding |
-| Pattern binding | Navigates to the binding site |
-
-## Cross-Language Navigation
-
-When a C# project references an F# project (or vice versa), Forge coordinates both sidecars to resolve the definition across the language boundary. The Rust host maintains a cross-sidecar symbol index to make this possible.
-
-```fsharp
-// F# library
-type Point = { X: float; Y: float }
-```
-
-```csharp
-// C# consumer — F12 on Point navigates into the F# source
-var p = new Point(1.0, 2.0);
-```
-
 ## Caching
 
 All definition results are cached via salsa with the key `(document_uri, version, position, method)`. Cache hits return in under 1ms. The `method` component distinguishes between `definition`, `typeDefinition`, `declaration`, and `implementation` for the same position.
@@ -107,12 +78,11 @@ All definition results are cached via salsa with the key `(document_uri, version
 | Go to declaration | ✓ | ✓ | ✓ | ✓ |
 | Go to implementation | ✓ | ✓ | ✓ | ✓ |
 | Partial class navigation | ✓ | ✓ | ✓ | ✓ |
-| Cross-language (C# ↔ F#) | ✗ | ✗ | partial | **✓** |
 | Decompiled source | ✓ | ✓ | ✓ | ✓ |
 | Peek definition | ✓ | ✓ | ✓ | ✓ |
 
 ## Screenshots
 
-![Go to definition in VS Code with Forge]({{ "/assets/screenshots/split-editor.png" | url }})
+![Go to Definition documentation page]({{ "/assets/screenshots/go-to-definition-page.png" | url }})
 
-*Split-editor view after navigating to a definition.*
+*Navigate to any symbol definition, type definition, declaration, or implementation — all four LSP navigation methods fully implemented.*
