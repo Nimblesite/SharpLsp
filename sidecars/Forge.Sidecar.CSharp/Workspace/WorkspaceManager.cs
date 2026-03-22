@@ -12,6 +12,8 @@ using CompletionsResult = Outcome.Result<System.Collections.Generic.List<Forge.S
 using HoverQueryResult = Outcome.Result<Forge.Sidecar.CSharp.HoverResult?, string>;
 using DefinitionResult = Outcome.Result<Forge.Sidecar.CSharp.LocationResult?, string>;
 using ImplementationsResult = Outcome.Result<Forge.Sidecar.CSharp.LocationListResult, string>;
+using ReferencesResult = Outcome.Result<Forge.Sidecar.CSharp.LocationListResult, string>;
+using HighlightsResult = Outcome.Result<Forge.Sidecar.CSharp.DocumentHighlightListResult, string>;
 
 namespace Forge.Sidecar.CSharp.Workspace;
 
@@ -297,6 +299,66 @@ internal sealed class WorkspaceManager
         catch (Exception ex)
         {
             return ImplementationsResult.Failure(ex.Message);
+        }
+    }
+
+    public async Task<ReferencesResult> GetReferencesAsync(
+        string filePath,
+        int line,
+        int character,
+        bool includeDeclaration,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var document = await FindDocumentAsync(filePath, ct)
+                .ConfigureAwait(false);
+            if (document is null || _solution is null)
+            {
+                return new ReferencesResult.Ok<LocationListResult, string>(
+                    new LocationListResult());
+            }
+
+            var result = await DefinitionResolver
+                .ResolveReferencesAsync(
+                    document, _solution, line, character,
+                    includeDeclaration, ct)
+                .ConfigureAwait(false);
+            return new ReferencesResult.Ok<LocationListResult, string>(
+                result);
+        }
+        catch (Exception ex)
+        {
+            return ReferencesResult.Failure(ex.Message);
+        }
+    }
+
+    public async Task<HighlightsResult> GetDocumentHighlightsAsync(
+        string filePath,
+        int line,
+        int character,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var document = await FindDocumentAsync(filePath, ct)
+                .ConfigureAwait(false);
+            if (document is null || _solution is null)
+            {
+                return new HighlightsResult.Ok<DocumentHighlightListResult, string>(
+                    new DocumentHighlightListResult());
+            }
+
+            var highlights = await DefinitionResolver
+                .ResolveDocumentHighlightsAsync(
+                    document, _solution, line, character, ct)
+                .ConfigureAwait(false);
+            return new HighlightsResult.Ok<DocumentHighlightListResult, string>(
+                new DocumentHighlightListResult { Highlights = highlights });
+        }
+        catch (Exception ex)
+        {
+            return HighlightsResult.Failure(ex.Message);
         }
     }
 

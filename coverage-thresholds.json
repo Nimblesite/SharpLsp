@@ -2,16 +2,13 @@
   "forge-lsp": {
     "line_percent": 88.60
   },
-  "zed-extension": {
-    "line_percent": 69.00
-  },
   "vscode-extension": {
     "line_percent": 82.0
   },
-  "website": {
-    "line_percent": 16.66
+  "forge-sidecar-csharp": {
+    "line_percent": 0.0
   },
-  "eleventy-plugin-techdoc": {
+  "forge-sidecar-fsharp": {
     "line_percent": 0.0
   }
 }

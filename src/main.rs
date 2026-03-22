@@ -7,6 +7,7 @@ mod diagnostics;
 mod handlers;
 mod nav_cache;
 mod profiler;
+mod pull_diagnostics;
 mod semantic;
 mod sidecar;
 mod sort_members;
@@ -29,9 +30,10 @@ use lsp_types::{
         Notification as _,
     },
     request::{
-        Completion, DocumentSymbolRequest, FoldingRangeRequest, GotoDeclaration, GotoDefinition,
-        GotoImplementation, GotoTypeDefinition, HoverRequest, LinkedEditingRange, Request as _,
-        SelectionRangeRequest, Shutdown,
+        Completion, DocumentDiagnosticRequest, DocumentHighlightRequest, DocumentSymbolRequest,
+        FoldingRangeRequest, GotoDeclaration, GotoDefinition, GotoImplementation,
+        GotoTypeDefinition, HoverRequest, LinkedEditingRange, References, Request as _,
+        SelectionRangeRequest, Shutdown, WorkspaceDiagnosticRequest,
     },
     FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams, OneOf,
     SelectionRangeProviderCapability, ServerCapabilities, TextDocumentSyncCapability,
@@ -219,6 +221,8 @@ fn build_capabilities() -> ServerCapabilities {
         type_definition_provider: Some(lsp_types::TypeDefinitionProviderCapability::Simple(true)),
         declaration_provider: Some(lsp_types::DeclarationCapability::Simple(true)),
         implementation_provider: Some(lsp_types::ImplementationProviderCapability::Simple(true)),
+        references_provider: Some(OneOf::Left(true)),
+        document_highlight_provider: Some(OneOf::Left(true)),
         diagnostic_provider: Some(lsp_types::DiagnosticServerCapabilities::Options(
             lsp_types::DiagnosticOptions {
                 inter_file_dependencies: true,
@@ -392,46 +396,90 @@ fn handle_request(
                 semantic::handle_hover(req, runtime, sidecar)
             }
         }
+        GotoDefinition::METHOD
+        | GotoTypeDefinition::METHOD
+        | GotoDeclaration::METHOD
+        | GotoImplementation::METHOD
+        | References::METHOD
+        | DocumentHighlightRequest::METHOD => {
+            handle_nav_request(req, vfs, trees, nav_cache, runtime, csharp_sidecar, fsharp_sidecar)
+        }
+        // Pull diagnostics (LSP 3.17)
+        DocumentDiagnosticRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            pull_diagnostics::handle_document_diagnostic(req, runtime, sidecar)
+        }
+        WorkspaceDiagnosticRequest::METHOD => {
+            pull_diagnostics::handle_workspace_diagnostic(req)
+        }
+        _ => handle_custom_request(req, parsers, connection, runtime),
+    };
+
+    let resp = match result {
+        Ok(value) => Response::new_ok(id, value),
+        Err(e) => Response::new_err(
+            id,
+            error_code_i32(lsp_server::ErrorCode::InternalError),
+            format!("{e:#}"),
+        ),
+    };
+    connection.sender.send(Message::Response(resp))?;
+    Ok(())
+}
+
+// ── Navigation Request Dispatch ───────────────────────────────────
+
+/// Route navigation requests (definition, typeDefinition, declaration,
+/// implementation, references, documentHighlight) with tree-sitter
+/// pre-validation and cross-language fallback.
+#[expect(clippy::mutable_key_type, reason = "see main_loop")]
+fn handle_nav_request(
+    req: Request,
+    vfs: &Vfs,
+    trees: &HashMap<Uri, Tree>,
+    nav_cache: &mut nav_cache::NavCache,
+    runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    if handlers::is_non_symbol_position(&req, trees) {
+        return Ok(serde_json::Value::Null);
+    }
+    let (primary, fallback) =
+        pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+    match req.method.as_str() {
         GotoDefinition::METHOD => {
-            if handlers::is_non_symbol_position(&req, trees) {
-                Ok(serde_json::Value::Null)
-            } else {
-                let (primary, fallback) =
-                    pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
-                semantic::handle_definition(req, vfs, nav_cache, runtime, primary, fallback)
-            }
+            semantic::handle_definition(req, vfs, nav_cache, runtime, primary, fallback)
         }
         GotoTypeDefinition::METHOD => {
-            if handlers::is_non_symbol_position(&req, trees) {
-                Ok(serde_json::Value::Null)
-            } else {
-                let (primary, fallback) =
-                    pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
-                semantic::handle_type_definition(req, vfs, nav_cache, runtime, primary, fallback)
-            }
+            semantic::handle_type_definition(req, vfs, nav_cache, runtime, primary, fallback)
         }
         GotoDeclaration::METHOD => {
-            if handlers::is_non_symbol_position(&req, trees) {
-                Ok(serde_json::Value::Null)
-            } else {
-                let (primary, fallback) =
-                    pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
-                semantic::handle_declaration(req, vfs, nav_cache, runtime, primary, fallback)
-            }
+            semantic::handle_declaration(req, vfs, nav_cache, runtime, primary, fallback)
         }
         GotoImplementation::METHOD => {
-            if handlers::is_non_symbol_position(&req, trees) {
-                Ok(serde_json::Value::Null)
-            } else {
-                let (primary, fallback) =
-                    pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
-                semantic::handle_implementation(req, runtime, primary, fallback)
-            }
+            semantic::handle_implementation(req, runtime, primary, fallback)
         }
-        // Custom requests
+        References::METHOD => {
+            semantic::handle_references(req, runtime, primary, fallback)
+        }
+        DocumentHighlightRequest::METHOD => {
+            semantic::handle_document_highlight(req, runtime, primary)
+        }
+        _ => Err(anyhow::anyhow!("unexpected nav method: {}", req.method)),
+    }
+}
+
+/// Route custom and profiler requests.
+fn handle_custom_request(
+    req: Request,
+    parsers: &TsParsers,
+    connection: &Connection,
+    runtime: &tokio::runtime::Runtime,
+) -> Result<serde_json::Value> {
+    match req.method.as_str() {
         "forge/workspaceSymbols" => handle_workspace_symbols(req, parsers),
         "forge/sortMembers" => handle_sort_members(req, parsers),
-        // Profiler requests
         "forge/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
         "forge/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
         "forge/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req),
@@ -449,18 +497,7 @@ fn handle_request(
             warn!("Unhandled request: {}", req.method);
             Err(anyhow::anyhow!("method not found"))
         }
-    };
-
-    let resp = match result {
-        Ok(value) => Response::new_ok(id, value),
-        Err(e) => Response::new_err(
-            id,
-            error_code_i32(lsp_server::ErrorCode::InternalError),
-            format!("{e:#}"),
-        ),
-    };
-    connection.sender.send(Message::Response(resp))?;
-    Ok(())
+    }
 }
 
 // ── Language-Based Sidecar Routing ────────────────────────────────

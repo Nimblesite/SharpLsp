@@ -26,6 +26,8 @@ internal sealed class CSharpSidecar : SidecarHost
         Register("textDocument/typeDefinition", HandleTypeDefinitionAsync);
         Register("textDocument/declaration", HandleDeclarationAsync);
         Register("textDocument/implementation", HandleImplementationAsync);
+        Register("textDocument/references", HandleReferencesAsync);
+        Register("textDocument/documentHighlight", HandleDocumentHighlightAsync);
     }
 
     private readonly WorkspaceManager _workspace = new();
@@ -127,6 +129,43 @@ internal sealed class CSharpSidecar : SidecarHost
     {
         return HandlePositionRequestAsync(
             payload, _workspace.GetImplementationsAsync, ct);
+    }
+
+    private async Task<ByteResult> HandleReferencesAsync(
+        byte[] payload, CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<ReferencesRequest>(
+                payload, cancellationToken: ct);
+            var result = await _workspace.GetReferencesAsync(
+                request.FilePath, request.Line, request.Character,
+                request.IncludeDeclaration, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+    private async Task<ByteResult> HandleDocumentHighlightAsync(
+        byte[] payload, CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<PositionRequest>(
+                payload, cancellationToken: ct);
+            var result = await _workspace.GetDocumentHighlightsAsync(
+                request.FilePath, request.Line, request.Character, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
     }
 
     private async Task<ByteResult> HandleTypeDefinitionAsync(
@@ -343,6 +382,31 @@ internal sealed class LocationResult
 internal sealed class LocationListResult
 {
     [Key(0)] public List<LocationResult> Locations { get; set; } = [];
+}
+
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class ReferencesRequest
+{
+    [Key(0)] public string FilePath { get; set; } = "";
+    [Key(1)] public int Line { get; init; }
+    [Key(2)] public int Character { get; init; }
+    [Key(3)] public bool IncludeDeclaration { get; init; }
+}
+
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class DocumentHighlightResult
+{
+    [Key(0)] public int StartLine { get; init; }
+    [Key(1)] public int StartCharacter { get; init; }
+    [Key(2)] public int EndLine { get; init; }
+    [Key(3)] public int EndCharacter { get; init; }
+    [Key(4)] public int Kind { get; init; }
+}
+
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class DocumentHighlightListResult
+{
+    [Key(0)] public List<DocumentHighlightResult> Highlights { get; set; } = [];
 }
 
 [MessagePackObject(AllowPrivate = true)]

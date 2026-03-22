@@ -171,6 +171,133 @@ internal static class DefinitionResolver
         return new LocationListResult { Locations = locations };
     }
 
+    /// <summary>Find all references to the symbol at a position across the solution.</summary>
+    public static async Task<LocationListResult> ResolveReferencesAsync(
+        Document document,
+        Solution solution,
+        int line,
+        int character,
+        bool includeDeclaration,
+        CancellationToken ct)
+    {
+        var symbol = await ResolveSymbolAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        if (symbol is null)
+        {
+            return new LocationListResult();
+        }
+
+        var locations = new List<LocationResult>();
+        var referencedSymbols = await SymbolFinder
+            .FindReferencesAsync(symbol, solution, cancellationToken: ct)
+            .ConfigureAwait(false);
+
+        foreach (var refSymbol in referencedSymbols)
+        {
+            if (includeDeclaration)
+            {
+                AddSourceLocation(locations, refSymbol.Definition);
+            }
+
+            foreach (var refLoc in refSymbol.Locations)
+            {
+                var span = refLoc.Location.GetMappedLineSpan();
+                if (span.IsValid && refLoc.Location.IsInSource)
+                {
+                    locations.Add(new LocationResult
+                    {
+                        FilePath = span.Path,
+                        Line = span.StartLinePosition.Line,
+                        Character = span.StartLinePosition.Character,
+                        EndLine = span.EndLinePosition.Line,
+                        EndCharacter = span.EndLinePosition.Character,
+                    });
+                }
+            }
+        }
+
+        return new LocationListResult { Locations = locations };
+    }
+
+    /// <summary>Find document highlights for the symbol at a position (current doc only).</summary>
+    public static async Task<List<DocumentHighlightResult>> ResolveDocumentHighlightsAsync(
+        Document document,
+        Solution solution,
+        int line,
+        int character,
+        CancellationToken ct)
+    {
+        var symbol = await ResolveSymbolAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        if (symbol is null)
+        {
+            return [];
+        }
+
+        var highlights = new List<DocumentHighlightResult>();
+        var referencedSymbols = await SymbolFinder
+            .FindReferencesAsync(symbol, solution, cancellationToken: ct)
+            .ConfigureAwait(false);
+
+        foreach (var refSymbol in referencedSymbols)
+        {
+            // Include declaration as Write.
+            foreach (var loc in refSymbol.Definition.Locations)
+            {
+                if (!loc.IsInSource || loc.SourceTree?.FilePath != document.FilePath)
+                {
+                    continue;
+                }
+
+                var declSpan = loc.GetMappedLineSpan();
+                if (declSpan.IsValid)
+                {
+                    highlights.Add(new DocumentHighlightResult
+                    {
+                        StartLine = declSpan.StartLinePosition.Line,
+                        StartCharacter = declSpan.StartLinePosition.Character,
+                        EndLine = declSpan.EndLinePosition.Line,
+                        EndCharacter = declSpan.EndLinePosition.Character,
+                        Kind = 3, // Write
+                    });
+                }
+            }
+
+            // Include references, classifying as Read vs Write.
+            foreach (var refLoc in refSymbol.Locations)
+            {
+                if (refLoc.Document.Id != document.Id)
+                {
+                    continue;
+                }
+
+                var span = refLoc.Location.GetMappedLineSpan();
+                if (!span.IsValid)
+                {
+                    continue;
+                }
+
+                var kind = IsWriteReference(refLoc) ? 3 : 2;
+                highlights.Add(new DocumentHighlightResult
+                {
+                    StartLine = span.StartLinePosition.Line,
+                    StartCharacter = span.StartLinePosition.Character,
+                    EndLine = span.EndLinePosition.Line,
+                    EndCharacter = span.EndLinePosition.Character,
+                    Kind = kind,
+                });
+            }
+        }
+
+        return highlights;
+    }
+
+    /// <summary>Check if a reference location is a write (implicit references are typically assignments).</summary>
+    private static bool IsWriteReference(ReferenceLocation refLoc)
+    {
+        return refLoc.IsImplicit;
+    }
+
     /// <summary>Resolve the symbol at a given document position.</summary>
     private static async Task<ISymbol?> ResolveSymbolAsync(
         Document document,

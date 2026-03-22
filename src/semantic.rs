@@ -9,9 +9,10 @@ use std::sync::Arc;
 use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind,
-    Position, Range, Uri,
+    CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentHighlight,
+    DocumentHighlightKind, DocumentHighlightParams, GotoDefinitionParams, GotoDefinitionResponse,
+    Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, Position, Range,
+    ReferenceParams, Uri,
 };
 use tracing::{debug, warn};
 
@@ -197,6 +198,136 @@ pub fn handle_implementation(
         }
     }
     Ok(value)
+}
+
+/// Handle `textDocument/references` with cross-language fallback.
+pub fn handle_references(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    let value = handle_references_nav(req.clone(), runtime, sidecar)?;
+    if is_empty_nav_result(&value) {
+        if let Some(fb) = fallback {
+            debug!("Cross-language fallback for textDocument/references");
+            match handle_references_nav(req, runtime, Some(fb)) {
+                Ok(fb_value) if !is_empty_nav_result(&fb_value) => return Ok(fb_value),
+                Ok(_) => debug!("Cross-language fallback returned empty for references"),
+                Err(err) => debug!("Cross-language fallback failed for references: {err:#}"),
+            }
+        }
+    }
+    Ok(value)
+}
+
+/// Handle `textDocument/documentHighlight` via the sidecar.
+pub fn handle_document_highlight(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    let Some(sidecar) = sidecar else {
+        debug!("DocumentHighlight: no sidecar available");
+        return Ok(serde_json::Value::Null);
+    };
+    let params: DocumentHighlightParams = serde_json::from_value(req.params)?;
+    let file_path =
+        uri_to_path(&params.text_document_position_params.text_document.uri)?;
+    let line = params.text_document_position_params.position.line;
+    let character = params.text_document_position_params.position.character;
+
+    debug!(
+        file = %file_path,
+        line = line,
+        character = character,
+        "DocumentHighlight request dispatching to sidecar"
+    );
+
+    let request = SidecarPositionReq {
+        file_path,
+        line,
+        character,
+    };
+    let payload = rmp_serde::to_vec(&request)?;
+    let response_bytes =
+        match runtime.block_on(sidecar.request("textDocument/documentHighlight", payload)) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                warn!("Sidecar documentHighlight unavailable: {err:#}");
+                return Ok(serde_json::Value::Null);
+            }
+        };
+
+    let result: SidecarDocumentHighlightListResult = rmp_serde::from_slice(&response_bytes)?;
+    let highlights: Vec<DocumentHighlight> = result
+        .highlights
+        .into_iter()
+        .map(|h| DocumentHighlight {
+            range: Range::new(
+                Position::new(h.start_line, h.start_character),
+                Position::new(h.end_line, h.end_character),
+            ),
+            kind: Some(match h.kind {
+                3 => DocumentHighlightKind::WRITE,
+                2 => DocumentHighlightKind::READ,
+                _ => DocumentHighlightKind::TEXT,
+            }),
+        })
+        .collect();
+
+    Ok(serde_json::to_value(highlights)?)
+}
+
+/// Inner handler for references (serializes `ReferencesRequest` with `include_declaration`).
+fn handle_references_nav(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    let Some(sidecar) = sidecar else {
+        debug!("References: no sidecar available");
+        return Ok(serde_json::Value::Null);
+    };
+    let params: ReferenceParams = serde_json::from_value(req.params)?;
+    let file_path =
+        uri_to_path(&params.text_document_position.text_document.uri)?;
+    let line = params.text_document_position.position.line;
+    let character = params.text_document_position.position.character;
+    let include_declaration = params.context.include_declaration;
+
+    debug!(
+        file = %file_path,
+        line = line,
+        character = character,
+        include_declaration = include_declaration,
+        "References request dispatching to sidecar"
+    );
+
+    let request = SidecarReferencesReq {
+        file_path,
+        line,
+        character,
+        include_declaration,
+    };
+    let payload = rmp_serde::to_vec(&request)?;
+    let response_bytes =
+        match runtime.block_on(sidecar.request("textDocument/references", payload)) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                warn!("Sidecar references unavailable: {err:#}");
+                return Ok(serde_json::Value::Null);
+            }
+        };
+
+    let result: SidecarLocationListResult = rmp_serde::from_slice(&response_bytes)?;
+    let locations: Vec<Location> = result
+        .locations
+        .into_iter()
+        .filter_map(|loc| sidecar_location_to_lsp(&loc))
+        .collect();
+
+    Ok(serde_json::to_value(locations)?)
 }
 
 // ── Shared Helpers ────────────────────────────────────────────────
@@ -508,4 +639,26 @@ struct SidecarLocationResult {
 #[derive(serde::Deserialize)]
 struct SidecarLocationListResult {
     locations: Vec<SidecarLocationResult>,
+}
+
+#[derive(serde::Serialize)]
+struct SidecarReferencesReq {
+    file_path: String,
+    line: u32,
+    character: u32,
+    include_declaration: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct SidecarDocumentHighlightResult {
+    start_line: u32,
+    start_character: u32,
+    end_line: u32,
+    end_character: u32,
+    kind: u32,
+}
+
+#[derive(serde::Deserialize)]
+struct SidecarDocumentHighlightListResult {
+    highlights: Vec<SidecarDocumentHighlightResult>,
 }

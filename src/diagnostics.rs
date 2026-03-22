@@ -102,6 +102,11 @@ pub fn clear(sender: &crossbeam_channel::Sender<Message>, uri: Uri) -> Result<()
     publish(sender, uri, vec![])
 }
 
+/// Fetch diagnostics from the sidecar for a single file (public for pull diagnostics).
+pub async fn fetch_from_sidecar(sidecar: &SidecarManager, file_path: &str) -> Result<Vec<Diagnostic>> {
+    fetch(sidecar, file_path).await
+}
+
 /// Fetch diagnostics from the sidecar for a single file.
 async fn fetch(sidecar: &SidecarManager, file_path: &str) -> Result<Vec<Diagnostic>> {
     let payload = rmp_serde::to_vec(file_path).context("serialize file path")?;

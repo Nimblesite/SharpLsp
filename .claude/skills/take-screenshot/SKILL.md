@@ -1,137 +1,175 @@
 ---
 name: take-screenshot
 description: Take a screenshot for the website. Use when the user wants to capture or update a website screenshot showing editor features. Works for both VS Code and Zed.
-argument-hint: "[screenshot-name, e.g. completions-page]"
+argument-hint: "[screenshot-name, e.g. completions, split-editor, code-folding]"
 disable-model-invocation: true
 ---
 
 # Take Editor Screenshot
 
-Captures screenshots of VS Code and/or Zed showing Forge features and saves them to `website/src/assets/screenshots/`.
+Captures screenshots of VS Code and/or Zed showing **Forge features** and saves them to `website/src/assets/screenshots/`.
 
-## SAFETY RULES — READ FIRST
+## CRITICAL: BUILD AND INSTALL BEFORE CAPTURING
+
+**You MUST build and install the latest VSIX before capturing ANY screenshot.**
+The capture script uses `code serve-web` which runs a SEPARATE VS Code instance. If you don't install the latest VSIX, the screenshots will show stale or missing Forge features.
+
+### Step 1: Build the VSIX
+
+```bash
+cd /Users/christianfindlay/Documents/Code/forge
+
+# Full build (Rust binary + .NET sidecar + VSIX):
+make build
+
+# OR if binaries are already built, just package the VSIX:
+make build-vsix
+```
+
+This produces `forge.vsix` in the repo root (or `editors/vscode/forge-0.1.0.vsix`).
+
+### Step 2: Install to BOTH desktop and serve-web
+
+The capture script (`capture.mjs`) handles installation automatically — it runs:
+```bash
+code --install-extension <vsix> --force
+code --install-extension <vsix> --force --extensions-dir ~/.vscode-server/extensions
+```
+
+**If you skip the build, you get stale screenshots that don't show Forge features.**
+
+## SAFETY RULES
 
 - **NEVER** send keystrokes via AppleScript — they hit the FRONTMOST app, not the target process
 - **NEVER** call `tell application "X" to activate` on ANY app
 - **NEVER** steal focus from the user's current app
-- Zed captures use **window ID** only (`screencapture -l`) — no region capture, no focus needed
+- Zed captures use **window ID** only (`screencapture -l`) — no focus needed
 - VS Code captures use **Playwright** in a headless browser — no focus needed
 
 ## Arguments
 
-- `$ARGUMENTS` — the screenshot name without extension and without IDE prefix (e.g., `completions-page`, `hover-page`, `homepage-page`)
+- `$ARGUMENTS` — the screenshot name (e.g., `completions`, `split-editor`, `code-folding`, `nested-classes`, `homepage`)
+
+## What Are Forge Features?
+
+Screenshots MUST show **Forge-specific functionality**, not generic VS Code features. Forge provides:
+
+- **Solution Explorer tree view** — the `forge-explorer` activity bar icon with `forge.solutionExplorer` tree showing .NET solution structure (projects, files, dependencies)
+- **Profiler panel** — `forge.profiler` tree view showing .NET process profiling
+- **Code completions** — Roslyn-powered IntelliSense via the C# sidecar
+- **Diagnostics** — error squiggles from Roslyn analysis
+- **Hover info** — type/doc tooltips from Roslyn
+- **Go to Definition** — symbol navigation via Roslyn
+- **Document symbols / code folding / selection ranges** — tree-sitter powered, served by Forge's Rust host
+
+The Solution Explorer tree is the most visible Forge-specific feature. If it doesn't appear, the extension isn't activated or the VSIX is stale.
 
 ## VS Code Screenshots (Playwright)
 
-VS Code screenshots are captured by `editors/vscode/screenshots/capture.mjs`. This script has **per-screenshot capture functions** that trigger the actual feature:
-
-| Screenshot | Capture Function | What It Triggers |
-|-----------|-----------------|-----------------|
-| `completions` | `captureCompletions()` | Types `this.` to trigger IntelliSense dropdown |
-| `diagnostics` | `captureDiagnostics()` | Introduces a type error for red squiggles |
-| `hover` | `captureHover()` | Hovers over a method name for tooltip |
-| `go-to-definition` | `captureGoToDefinition()` | Triggers Peek Definition overlay |
-| `homepage` | `captureHomepage()` | Opens Calculator.cs with code visible |
-| `profiler` | `captureProfiler()` | Opens Forge sidebar Profiler panel |
+Captured by `editors/vscode/screenshots/capture.mjs`.
 
 ### Run VS Code Capture
 
 ```bash
 REPO_ROOT="/Users/christianfindlay/Documents/Code/forge"
 
+# ALWAYS build first:
+make -C "$REPO_ROOT" build-vsix
+
 # Capture a single screenshot:
-node "$REPO_ROOT/editors/vscode/screenshots/capture.mjs" completions
+cd "$REPO_ROOT/editors/vscode"
+node screenshots/capture.mjs completions
 
 # Capture all screenshots:
-node "$REPO_ROOT/editors/vscode/screenshots/capture.mjs"
+node screenshots/capture.mjs
 ```
 
-### Tweaking VS Code Capture Scripts
+### Tweaking Capture Functions
 
-If a VS Code screenshot doesn't show the correct feature:
+If a screenshot doesn't show the correct Forge feature:
 
 1. **Read** `editors/vscode/screenshots/capture.mjs`
-2. Find the capture function for that screenshot (e.g., `captureCompletions`)
-3. **Edit** the function to fix the issue — adjust line numbers, CSS selectors, timing, or interaction steps
-4. **Re-run** the capture for just that screenshot: `node capture.mjs completions`
-5. **Verify** the output with the Read tool
-6. **Repeat** until the screenshot shows the correct feature
+2. Find the capture function (e.g., `captureCompletions`)
+3. **Edit** the function — adjust selectors, timing, interactions
+4. **Re-run**: `node screenshots/capture.mjs <name>`
+5. **Verify** with the Read tool (view the PNG)
+6. **Repeat** until the screenshot shows the actual Forge feature
 
 ## Zed Screenshots (screencapture)
 
-Zed screenshots use the shell script at `.claude/skills/take-screenshot/capture.sh`.
+Shell script at `.claude/skills/take-screenshot/capture.sh`.
 
-### Screenshot-to-File Mapping
-
-| Screenshot Name | File to Open |
-|----------------|-------------|
-| `completions-page` | `sidecars/Forge.Sidecar.CSharp/CSharpSidecar.cs` |
-| `diagnostics-page` | `sidecars/Forge.Sidecar.CSharp/Workspace/DefinitionResolver.cs` |
-| `hover-page` | `sidecars/Forge.Sidecar.CSharp/Hover/CSharpHoverBuilder.cs` |
-| `go-to-definition-page` | `sidecars/Forge.Sidecar.CSharp/Workspace/SolutionLoader.cs` |
-| `homepage-page` | `editors/vscode/test-fixtures/workspace/Calculator.cs` |
-| `profiler-page` | `sidecars/Forge.Sidecar.CSharp/Workspace/WorkspaceManager.cs` |
+**NOTE**: Zed captures can only show static code views. Forge features (completions, hover, diagnostics) cannot be triggered programmatically in Zed. If the screenshot doesn't show a Forge feature, report to the user.
 
 ### Run Zed Capture
 
 ```bash
 REPO_ROOT="/Users/christianfindlay/Documents/Code/forge"
-FILE_TO_OPEN="$REPO_ROOT/<file-from-table>"
+FILE_TO_OPEN="$REPO_ROOT/<file-path>"
 OUTPUT_PATH="$REPO_ROOT/website/src/assets/screenshots/zed-$ARGUMENTS.png"
 
 bash "$REPO_ROOT/.claude/skills/take-screenshot/capture.sh" "$FILE_TO_OPEN" "$OUTPUT_PATH"
 ```
 
-**NOTE**: Zed captures can only show static code views. Features like completion dropdowns, hover tooltips, and diagnostics squiggles require Forge's LSP to be running in Zed. If the Zed screenshot doesn't show the feature, report this to the user — it may need manual capture.
-
 ## Verification (CRITICAL — DO NOT SKIP)
 
-After capturing, you MUST verify every screenshot:
+After capturing, you MUST verify the screenshot. **Do not trust the capture script output.** The script can report success even when the screenshot is garbage.
 
-### 1. File Size Check
+### 1. Read the image with the Read tool
 
-```bash
-ls -la website/src/assets/screenshots/*-$ARGUMENTS.png
+```
+Read the PNG file with the Read tool to visually inspect it.
 ```
 
-- Valid screenshot: **> 50 KB** (typically 80-350 KB)
-- Broken screenshot: **< 50 KB** (likely 404 or blank)
+This is the ONLY way to verify. File size means nothing — a 93KB screenshot can still be completely wrong.
 
-### 2. Visual Inspection
+### 2. Check for the SPECIFIC Forge feature
 
-Use the `Read` tool to view the screenshot image. Check:
-- Dark theme with C# code and syntax highlighting
-- No "Error response", "404", white/blank pages, or dialogs covering code
+Look at the actual image content. Ask yourself: **"Does this screenshot show the feature it claims to show?"**
 
-### 3. Feature-Specific Validation
+For each screenshot, here is EXACTLY what you must see. If ANY of these checks fail, the screenshot is **BROKEN** and you must NOT use it.
 
-The screenshot **MUST** visually demonstrate the feature. Plain code is NOT enough.
+| Screenshot | PASS criteria (what you MUST see in the image) | FAIL criteria (screenshot is BROKEN if you see this) |
+|-----------|-----------------------------------------------|-----------------------------------------------------|
+| `solution-explorer` | Tree nodes with project names, file names, and expand/collapse arrows UNDER the "Solution Explorer" heading. Multiple tree items visible (e.g. project node, .cs files, .fs files, dependencies). | Empty panel with just the "SOLUTION EXPLORER" heading and no tree nodes. No items listed. |
+| `completions` | A **dropdown overlay** with multiple completion suggestion rows (method names, property names, type names). The dropdown must be floating OVER the code. | Just code with no dropdown. An empty or single-item dropdown. |
+| `diagnostics` | **Red or yellow wavy underlines** beneath code tokens. The squiggles must be clearly visible on at least one line. | Clean code with no underlines. Straight underlines (those are find/replace highlights, not diagnostics). |
+| `hover` | A **floating tooltip/popup box** above or below code showing type signature, documentation, or parameter info. | Just code with no popup. A command palette or notification instead of a hover tooltip. |
+| `go-to-definition` | A **peek definition inline overlay** showing source code in a bordered sub-editor, OR evidence of navigation to a different file. | Just code with no overlay or navigation evidence. |
+| `profiler` | The **Profiler tree view** with actual .NET process entries (PIDs, names, memory). | "No .NET processes found" or an empty profiler panel. |
+| `homepage` | Code editor with C# syntax highlighting AND "Forge" visible in the status bar. | No Forge branding visible. Error dialogs covering the editor. |
+| `editor-overview` | **Outline panel** with hierarchical symbol nodes (namespaces, classes, methods) populated by Forge. | Empty outline panel or just "No symbols found". |
 
-| Screenshot Name | MUST Show |
-|----------------|-----------|
-| `completions-page` | An **active completion/autocomplete dropdown** with suggestions visible |
-| `diagnostics-page` | **Red/yellow squiggly underlines** on code indicating errors or warnings |
-| `hover-page` | A **hover tooltip/popup** displaying type info or documentation |
-| `go-to-definition-page` | **Peek definition overlay** or navigation evidence |
-| `homepage-page` | General editor view with C# code (no specific feature required) |
-| `profiler-page` | **Profiler panel or sidebar** visible with profiling-related UI |
+### 3. If the screenshot FAILS verification
 
-### 4. Fix and Retry
+**Do NOT save it. Do NOT move on.**
 
-If the screenshot is BROKEN or doesn't show the feature:
+1. Diagnose WHY the feature isn't showing. Common causes:
+   - **Empty Solution Explorer**: No `.sln` file in the workspace, or sidecar hasn't loaded
+   - **No completions dropdown**: Sidecar not running, or `this.` typed too early before LSP ready
+   - **No diagnostics squiggles**: Pull diagnostics not implemented (known broken — see `docs/plans/BROKEN-FEATURES.md`)
+   - **No hover tooltip**: Sidecar can't load the workspace project
+   - **No profiler entries**: No .NET processes running
+2. Fix the root cause (workspace files, capture timing, capture function logic)
+3. Re-run the capture
+4. Re-verify with the Read tool
+5. **Repeat until the screenshot genuinely shows the feature, or report to the user that the feature is broken and cannot be captured**
 
-1. **Read** the capture script (`capture.mjs` for VS Code, `capture.sh` for Zed)
-2. **Edit** the relevant capture function to fix the issue
-3. **Re-run** the capture
-4. **Verify** again
-5. **Repeat** until correct — do NOT give up after one attempt
+### 4. NEVER do this
+
+- NEVER say "the screenshot looks good" without reading the actual PNG
+- NEVER assume a screenshot is correct because the script said `[ok]`
+- NEVER pass a screenshot that shows an empty panel, missing overlay, or absent UI element
+- NEVER confuse a panel HEADER (e.g. "SOLUTION EXPLORER") with actual CONTENT (tree nodes with files)
+- NEVER save a screenshot showing "No .NET processes found" as a valid profiler screenshot
 
 ## Rules
 
-- NEVER save a screenshot that shows a 404 error page, blank page, or dialog
-- NEVER save a screenshot that doesn't show the feature it's supposed to demonstrate
-- ALWAYS verify the screenshot visually by reading it back with the Read tool
-- ALWAYS check for the feature-specific UI element (see table above)
-- ALWAYS tweak the capture script and retry if the screenshot is wrong
-- The screenshot viewport MUST be 1280x800 (VS Code) or 1280x720 (Zed) for consistency
-- Report the final result: screenshot path, file size, whether it passed verification, and whether the correct feature is visible
+- **ALWAYS** build the VSIX before capturing (`make build-vsix`)
+- NEVER save a screenshot that shows a 404, blank page, or error dialog
+- NEVER save a screenshot that doesn't show the actual Forge feature with real content
+- ALWAYS verify visually by reading the PNG back with the Read tool
+- ALWAYS use dark theme
+- Viewport: 1280x800 (VS Code) or 1280x720 (Zed)
+- If a feature is genuinely broken (LSP doesn't support it yet), **tell the user** — do not silently save a broken screenshot
+- Report: screenshot path, file size, PASS or FAIL, what is actually visible in the image
