@@ -5,7 +5,6 @@
 mod config;
 mod diagnostics;
 mod handlers;
-mod hover_cache;
 mod nav_cache;
 mod profiler;
 mod semantic;

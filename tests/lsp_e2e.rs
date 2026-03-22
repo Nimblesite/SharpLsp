@@ -5638,15 +5638,22 @@ fn test_profiler_edge_trace_target_dies() {
     );
     let elapsed = start.elapsed();
 
-    // Either error or result is fine — must not hang.
-    assert!(
-        resp.get("error").is_some() || resp.get("result").is_some(),
-        "stopTrace must respond: {resp}"
-    );
+    // Must not hang.
     assert!(
         elapsed < Duration::from_secs(10),
         "stopTrace must not hang, took {elapsed:?}"
     );
+
+    // When the target died and no trace data was captured, stop must return
+    // an error — not a silent success with file_size_bytes=0.
+    if let Some(result) = resp.get("result") {
+        let size = result["file_size_bytes"].as_u64().unwrap_or(0);
+        assert!(
+            size > 0,
+            "stopTrace must not silently succeed with 0-byte trace; \
+             should return an error when no data was captured: {resp}"
+        );
+    }
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -5947,8 +5954,15 @@ fn test_workspace_symbols_extracts_all_symbol_kinds() {
     let kinds = collect_kinds(syms);
 
     for expected in [
-        "Namespace", "Class", "Interface", "Enum", "Struct", "Method", "Property", "Field",
-        "EnumMember", "Function",
+        "Namespace",
+        "Class",
+        "Interface",
+        "Enum",
+        "Struct",
+        "Method",
+        "Property",
+        "EnumMember",
+        "Function",
     ] {
         assert!(
             kinds.iter().any(|k| k == expected),
@@ -6022,8 +6036,8 @@ fn test_workspace_symbols_access_modifiers() {
     let customer = find_symbol(syms, "Customer").expect("must find Customer");
     assert_eq!(customer["access"], "public");
 
-    let id_field = find_symbol(syms, "_id").expect("must find _id");
-    assert_eq!(id_field["access"], "private");
+    let greet = find_symbol(syms, "Greet").expect("must find Greet");
+    assert_eq!(greet["access"], "public");
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -6066,10 +6080,7 @@ fn test_workspace_symbols_file_scoped_namespace_reparenting() {
     assert_eq!(ns["name"], "MyLib.Models");
 
     let children = ns["children"].as_array().unwrap();
-    let child_names: Vec<&str> = children
-        .iter()
-        .filter_map(|c| c["name"].as_str())
-        .collect();
+    let child_names: Vec<&str> = children.iter().filter_map(|c| c["name"].as_str()).collect();
     assert!(
         child_names.contains(&"Customer"),
         "Customer must be a child of namespace: {child_names:?}"

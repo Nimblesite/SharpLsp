@@ -1,29 +1,67 @@
 ---
 name: take-screenshot
-description: Take a screenshot of Zed editor for the website. Use when the user wants to capture or update a website screenshot showing editor features.
+description: Take a screenshot for the website. Use when the user wants to capture or update a website screenshot showing editor features. Works for both VS Code and Zed.
 argument-hint: "[screenshot-name, e.g. completions-page]"
 disable-model-invocation: true
 ---
 
-# Take Zed Editor Screenshot
+# Take Editor Screenshot
 
-Captures a screenshot of Zed editor showing a C# file and saves it to `website/src/assets/screenshots/`.
+Captures screenshots of VS Code and/or Zed showing Forge features and saves them to `website/src/assets/screenshots/`.
 
 ## SAFETY RULES — READ FIRST
 
 - **NEVER** send keystrokes via AppleScript — they hit the FRONTMOST app, not the target process
 - **NEVER** call `tell application "X" to activate` on ANY app
 - **NEVER** steal focus from the user's current app
-- Capture by **window ID** only (`screencapture -l`) — no region capture, no focus needed
-- Close Zed windows via the **close button UI element**, not keyboard shortcuts
+- Zed captures use **window ID** only (`screencapture -l`) — no region capture, no focus needed
+- VS Code captures use **Playwright** in a headless browser — no focus needed
 
 ## Arguments
 
-- `$ARGUMENTS` — the screenshot filename without extension (e.g., `completions-page`, `hover-page`, `homepage-page`)
+- `$ARGUMENTS` — the screenshot name without extension and without IDE prefix (e.g., `completions-page`, `hover-page`, `homepage-page`)
 
-## Screenshot-to-File Mapping
+## VS Code Screenshots (Playwright)
 
-Each screenshot should open a different C# file for visual variety:
+VS Code screenshots are captured by `editors/vscode/screenshots/capture.mjs`. This script has **per-screenshot capture functions** that trigger the actual feature:
+
+| Screenshot | Capture Function | What It Triggers |
+|-----------|-----------------|-----------------|
+| `completions` | `captureCompletions()` | Types `this.` to trigger IntelliSense dropdown |
+| `diagnostics` | `captureDiagnostics()` | Introduces a type error for red squiggles |
+| `hover` | `captureHover()` | Hovers over a method name for tooltip |
+| `go-to-definition` | `captureGoToDefinition()` | Triggers Peek Definition overlay |
+| `homepage` | `captureHomepage()` | Opens Calculator.cs with code visible |
+| `profiler` | `captureProfiler()` | Opens Forge sidebar Profiler panel |
+
+### Run VS Code Capture
+
+```bash
+REPO_ROOT="/Users/christianfindlay/Documents/Code/forge"
+
+# Capture a single screenshot:
+node "$REPO_ROOT/editors/vscode/screenshots/capture.mjs" completions
+
+# Capture all screenshots:
+node "$REPO_ROOT/editors/vscode/screenshots/capture.mjs"
+```
+
+### Tweaking VS Code Capture Scripts
+
+If a VS Code screenshot doesn't show the correct feature:
+
+1. **Read** `editors/vscode/screenshots/capture.mjs`
+2. Find the capture function for that screenshot (e.g., `captureCompletions`)
+3. **Edit** the function to fix the issue — adjust line numbers, CSS selectors, timing, or interaction steps
+4. **Re-run** the capture for just that screenshot: `node capture.mjs completions`
+5. **Verify** the output with the Read tool
+6. **Repeat** until the screenshot shows the correct feature
+
+## Zed Screenshots (screencapture)
+
+Zed screenshots use the shell script at `.claude/skills/take-screenshot/capture.sh`.
+
+### Screenshot-to-File Mapping
 
 | Screenshot Name | File to Open |
 |----------------|-------------|
@@ -34,11 +72,7 @@ Each screenshot should open a different C# file for visual variety:
 | `homepage-page` | `editors/vscode/test-fixtures/workspace/Calculator.cs` |
 | `profiler-page` | `sidecars/Forge.Sidecar.CSharp/Workspace/WorkspaceManager.cs` |
 
-If the screenshot name is not in this table, default to `sidecars/Forge.Sidecar.CSharp/CSharpSidecar.cs`.
-
-## Step 1: Run the Capture Script
-
-The capture script rebuilds the Zed extension, opens the file in a new Zed window, captures by window ID, and closes the window. It does NOT steal focus.
+### Run Zed Capture
 
 ```bash
 REPO_ROOT="/Users/christianfindlay/Documents/Code/forge"
@@ -48,49 +82,56 @@ OUTPUT_PATH="$REPO_ROOT/website/src/assets/screenshots/zed-$ARGUMENTS.png"
 bash "$REPO_ROOT/.claude/skills/take-screenshot/capture.sh" "$FILE_TO_OPEN" "$OUTPUT_PATH"
 ```
 
-## Step 2: Verify the Screenshot is Correct
+**NOTE**: Zed captures can only show static code views. Features like completion dropdowns, hover tooltips, and diagnostics squiggles require Forge's LSP to be running in Zed. If the Zed screenshot doesn't show the feature, report this to the user — it may need manual capture.
 
-This step is CRITICAL. You MUST verify the screenshot. Do NOT skip this step.
+## Verification (CRITICAL — DO NOT SKIP)
 
-1. Check the file size using `ls -la website/src/assets/screenshots/zed-$ARGUMENTS.png`
-   - A valid Zed screenshot is **> 50 KB** (typically 80-350 KB)
-   - A broken screenshot (404 error page) is approximately **~20 KB**
-   - If the file is < 50 KB, the screenshot is **BROKEN** — retry from Step 1
+After capturing, you MUST verify every screenshot:
 
-2. Use the `Read` tool to visually inspect the saved screenshot file
-   - The image MUST show the Zed editor with a **dark theme** and C# code with syntax highlighting
-   - If the image shows "Error response", "404", a white/blank page, or a dialog covering the code, the screenshot is **BROKEN**
+### 1. File Size Check
 
-3. **FEATURE-SPECIFIC VALIDATION** — the screenshot MUST visually demonstrate the feature it represents. A screenshot of plain code in an editor is NOT sufficient. Verify against this table:
+```bash
+ls -la website/src/assets/screenshots/*-$ARGUMENTS.png
+```
 
-   | Screenshot Name | MUST Show |
-   |----------------|-----------|
-   | `completions-page` | An **active completion/autocomplete dropdown** with suggestions visible |
-   | `diagnostics-page` | **Red/yellow squiggly underlines** on code indicating errors or warnings |
-   | `hover-page` | A **hover tooltip/popup** displaying type info or documentation |
-   | `go-to-definition-page` | Evidence of **navigation** (e.g., cursor on a symbol, definition highlighted, or peek view) |
-   | `homepage-page` | General editor view with C# code (no specific feature required) |
-   | `profiler-page` | **Profiler panel or sidebar** visible with profiling-related UI |
+- Valid screenshot: **> 50 KB** (typically 80-350 KB)
+- Broken screenshot: **< 50 KB** (likely 404 or blank)
 
-   If the screenshot does NOT show the required feature UI element, it is **BROKEN** — do NOT save it. Report to the user:
-   - What feature element is missing
-   - That automated capture cannot produce this screenshot (features like completion dropdowns, hover tooltips, and diagnostics squiggles require manual interaction or LSP to be running)
-   - Ask the user to capture it manually with the feature visible
+### 2. Visual Inspection
 
-4. Report clearly to the user whether the screenshot is CORRECT or BROKEN
+Use the `Read` tool to view the screenshot image. Check:
+- Dark theme with C# code and syntax highlighting
+- No "Error response", "404", white/blank pages, or dialogs covering code
 
-## Step 3: Handle Failures
+### 3. Feature-Specific Validation
 
-If the screenshot is broken:
-1. Check if Zed is running: `pgrep -x zed`
-2. Check Screen Recording permission: System Settings > Privacy > Screen Recording > Terminal/VS Code
-3. Retry up to 2 times before giving up
+The screenshot **MUST** visually demonstrate the feature. Plain code is NOT enough.
+
+| Screenshot Name | MUST Show |
+|----------------|-----------|
+| `completions-page` | An **active completion/autocomplete dropdown** with suggestions visible |
+| `diagnostics-page` | **Red/yellow squiggly underlines** on code indicating errors or warnings |
+| `hover-page` | A **hover tooltip/popup** displaying type info or documentation |
+| `go-to-definition-page` | **Peek definition overlay** or navigation evidence |
+| `homepage-page` | General editor view with C# code (no specific feature required) |
+| `profiler-page` | **Profiler panel or sidebar** visible with profiling-related UI |
+
+### 4. Fix and Retry
+
+If the screenshot is BROKEN or doesn't show the feature:
+
+1. **Read** the capture script (`capture.mjs` for VS Code, `capture.sh` for Zed)
+2. **Edit** the relevant capture function to fix the issue
+3. **Re-run** the capture
+4. **Verify** again
+5. **Repeat** until correct — do NOT give up after one attempt
 
 ## Rules
 
 - NEVER save a screenshot that shows a 404 error page, blank page, or dialog
-- NEVER save a screenshot that doesn't show the feature it's supposed to demonstrate (e.g., a "completions" screenshot without a visible completion dropdown is BROKEN)
+- NEVER save a screenshot that doesn't show the feature it's supposed to demonstrate
 - ALWAYS verify the screenshot visually by reading it back with the Read tool
-- ALWAYS check for the feature-specific UI element (see Feature-Specific Validation table)
-- The screenshot viewport MUST be 1280x720 for consistency
+- ALWAYS check for the feature-specific UI element (see table above)
+- ALWAYS tweak the capture script and retry if the screenshot is wrong
+- The screenshot viewport MUST be 1280x800 (VS Code) or 1280x720 (Zed) for consistency
 - Report the final result: screenshot path, file size, whether it passed verification, and whether the correct feature is visible
