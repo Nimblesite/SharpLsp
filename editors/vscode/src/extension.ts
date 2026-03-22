@@ -34,6 +34,7 @@ import {
 /** Public API exported from activate() for tests and other extensions. */
 export interface ForgeExtensionApi {
   readonly explorerProvider: SolutionExplorerProvider;
+  readonly profilerProvider: profiler.ProfilerTreeProvider;
 }
 
 let lspClient: LanguageClient | undefined;
@@ -65,9 +66,11 @@ export async function activate(
     }),
   );
 
+  const profilerStatusBar = new profiler.ProfilerStatusBar(context);
+
   explorerProvider.initSortContext();
   registerCommands(context);
-  profiler.registerCommands(context, profilerProvider, () => lspClient);
+  profiler.registerCommands(context, profilerProvider, profilerStatusBar, () => lspClient);
   wireDocumentChangeRefresh(context);
 
   try {
@@ -76,7 +79,7 @@ export async function activate(
     const msg = err instanceof Error ? err.message : String(err);
     log.info(`Failed to start server: ${msg}`);
     statusBar.setState(ServerState.Error);
-    return { explorerProvider };
+    return { explorerProvider, profilerProvider };
   }
 
   if (lspClient !== undefined) {
@@ -89,7 +92,7 @@ export async function activate(
     });
   }
 
-  return { explorerProvider };
+  return { explorerProvider, profilerProvider };
 }
 
 export async function deactivate(): Promise<void> {

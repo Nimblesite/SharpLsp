@@ -1,0 +1,7 @@
+[TMC] [2026-03-22T03:58:36.722Z] [INFO] Server starting...
+[TMC] [2026-03-22T03:58:36.722Z] [INFO] Creating server...
+[TMC] [2026-03-22T03:58:36.730Z] [INFO] Database created.
+[TMC] [2026-03-22T03:58:36.780Z] [INFO] Server listening {"port":4040}
+[TMC] [2026-03-22T03:59:12.945Z] [DEBUG] MCP server created
+[TMC] [2026-03-22T03:59:12.946Z] [INFO] Server initialized with all tools registered
+[TMC] [2026-03-22T03:59:12.949Z] [INFO] Session init {"sessionId":"0594225e-8bd6-4e81-8f8d-d39c62f5d98f"}

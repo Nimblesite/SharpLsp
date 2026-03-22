@@ -52,6 +52,19 @@ interface HeapStats {
   readonly types: HeapTypeInfo[];
 }
 
+interface CounterValue {
+  readonly provider: string;
+  readonly name: string;
+  readonly display_name: string;
+  readonly value: number;
+  readonly unit: string;
+}
+
+interface CounterUpdateParams {
+  readonly session_id: string;
+  readonly counters: CounterValue[];
+}
+
 // ── Tree View ─────────────────────────────────────────────────────
 
 interface SessionInfo {
@@ -190,6 +203,185 @@ export class ProfilerTreeProvider
   public getActiveSessions(kind: string): SessionInfo[] {
     return this.activeSessions.filter((s) => s.kind === kind);
   }
+
+  /** Total active session count. */
+  public get sessionCount(): number {
+    return this.activeSessions.length;
+  }
+}
+
+// ── Counter Webview ───────────────────────────────────────────────
+
+/** Manages a webview panel that displays live counter values. */
+class CounterWebviewPanel {
+  private static readonly panels = new Map<string, CounterWebviewPanel>();
+
+  private readonly panel: vscode.WebviewPanel;
+  private readonly counters = new Map<string, CounterValue>();
+  private disposed = false;
+
+  private constructor(
+    private readonly sessionId: string,
+    pid: number,
+    context: vscode.ExtensionContext,
+  ) {
+    this.panel = vscode.window.createWebviewPanel(
+      "forgeCounters",
+      `Counters: PID ${String(pid)}`,
+      vscode.ViewColumn.Beside,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+
+    this.panel.onDidDispose(() => {
+      this.disposed = true;
+      CounterWebviewPanel.panels.delete(sessionId);
+    }, undefined, context.subscriptions);
+
+    this.panel.webview.html = buildCounterHtml([]);
+  }
+
+  /** Open or reveal the webview for a session. */
+  public static open(
+    sessionId: string,
+    pid: number,
+    context: vscode.ExtensionContext,
+  ): CounterWebviewPanel {
+    const existing = CounterWebviewPanel.panels.get(sessionId);
+    if (existing !== undefined) {
+      existing.panel.reveal(vscode.ViewColumn.Beside);
+      return existing;
+    }
+    const pane = new CounterWebviewPanel(sessionId, pid, context);
+    CounterWebviewPanel.panels.set(sessionId, pane);
+    return pane;
+  }
+
+  /** Push new counter values to the webview. */
+  public pushUpdate(counters: CounterValue[]): void {
+    if (this.disposed) return;
+    for (const c of counters) {
+      const key = `${c.provider}/${c.name}`;
+      this.counters.set(key, c);
+    }
+    this.panel.webview.html = buildCounterHtml(
+      Array.from(this.counters.values()),
+    );
+  }
+
+  /** Close the webview. */
+  public dispose(): void {
+    if (!this.disposed) {
+      this.panel.dispose();
+    }
+    CounterWebviewPanel.panels.delete(this.sessionId);
+  }
+
+  /** Check if a webview exists for the given session. */
+  public static has(sessionId: string): boolean {
+    return CounterWebviewPanel.panels.has(sessionId);
+  }
+}
+
+/** Build the HTML content for the counter webview. */
+function buildCounterHtml(counters: CounterValue[]): string {
+  const rows = counters
+    .sort((a, b) => `${a.provider}/${a.name}`.localeCompare(`${b.provider}/${b.name}`))
+    .map((c) => {
+      const displayName = c.display_name.length > 0 ? c.display_name : c.name;
+      const formattedValue = formatCounterValue(c.value, c.unit);
+      return `<tr>
+        <td class="provider">${escapeHtml(c.provider)}</td>
+        <td class="name">${escapeHtml(displayName)}</td>
+        <td class="value">${escapeHtml(formattedValue)}</td>
+        <td class="unit">${escapeHtml(c.unit)}</td>
+      </tr>`;
+    })
+    .join("\n");
+
+  const timestamp = new Date().toLocaleTimeString();
+  const placeholder = counters.length === 0
+    ? `<tr><td colspan="4" class="empty">Waiting for counter data…</td></tr>`
+    : rows;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
+<title>Live Counters</title>
+<style>
+  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); margin: 0; padding: 12px; }
+  h2 { font-size: 1.1em; margin: 0 0 8px 0; color: var(--vscode-titleBar-activeForeground, inherit); }
+  .updated { font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--vscode-panel-border); font-weight: 600; font-size: 0.85em; color: var(--vscode-descriptionForeground); }
+  td { padding: 4px 8px; border-bottom: 1px solid var(--vscode-list-inactiveSelectionBackground, #2a2a2a); font-size: 0.9em; }
+  td.provider { color: var(--vscode-descriptionForeground); font-size: 0.8em; }
+  td.value { font-variant-numeric: tabular-nums; font-weight: 600; }
+  td.unit { color: var(--vscode-descriptionForeground); font-size: 0.8em; }
+  td.empty { text-align: center; padding: 20px; color: var(--vscode-descriptionForeground); }
+  tr:hover td { background: var(--vscode-list-hoverBackground); }
+</style>
+</head>
+<body>
+<h2>Live .NET Performance Counters</h2>
+<p class="updated">Last updated: ${timestamp}</p>
+<table>
+  <thead>
+    <tr><th>Provider</th><th>Counter</th><th>Value</th><th>Unit</th></tr>
+  </thead>
+  <tbody>
+    ${placeholder}
+  </tbody>
+</table>
+</body>
+</html>`;
+}
+
+function formatCounterValue(value: number, unit: string): string {
+  const u = unit.toLowerCase();
+  if (u === "bytes" || u.includes("byte")) {
+    return formatBytes(value);
+  }
+  if (Number.isInteger(value)) return value.toLocaleString();
+  return value.toFixed(2);
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// ── Status Bar ────────────────────────────────────────────────────
+
+/** Status bar item showing active profiling sessions. */
+export class ProfilerStatusBar {
+  private readonly item: vscode.StatusBarItem;
+
+  constructor(context: vscode.ExtensionContext) {
+    this.item = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Right,
+      90,
+    );
+    this.item.tooltip = "Active profiling sessions — click to list processes";
+    this.item.command = CMD_PROFILER_LIST_PROCESSES;
+    context.subscriptions.push(this.item);
+    this.update(0);
+  }
+
+  /** Update the status bar to reflect the current session count. */
+  public update(count: number): void {
+    if (count === 0) {
+      this.item.hide();
+    } else {
+      this.item.text = `$(pulse) ${String(count)} profiling`;
+      this.item.show();
+    }
+  }
 }
 
 // ── Process Picker ────────────────────────────────────────────────
@@ -225,8 +417,30 @@ async function pickProcess(
 export function registerCommands(
   context: vscode.ExtensionContext,
   provider: ProfilerTreeProvider,
+  statusBar: ProfilerStatusBar,
   getClient: () => LanguageClient | undefined,
 ): void {
+  /** Map from session ID to its counter webview (if open). */
+  const counterPanels = new Map<string, CounterWebviewPanel>();
+
+  /** Wire up the counterUpdate notification handler once a client exists. */
+  function wireCounterNotifications(client: LanguageClient): void {
+    client.onNotification(
+      "forge/profiler/counterUpdate",
+      (params: CounterUpdateParams) => {
+        const panel = counterPanels.get(params.session_id);
+        if (panel !== undefined) {
+          panel.pushUpdate(params.counters);
+        }
+      },
+    );
+  }
+
+  const client = getClient();
+  if (client !== undefined) {
+    wireCounterNotifications(client);
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_REFRESH, async () => {
       await provider.refresh();
@@ -235,27 +449,28 @@ export function registerCommands(
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_LIST_PROCESSES, async () => {
-      const client = getClient();
-      if (client === undefined) return;
+      const lsp = getClient();
+      if (lsp === undefined) return;
       await provider.refresh();
     }),
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_START_TRACE, async () => {
-      const client = getClient();
-      if (client === undefined) return;
+      const lsp = getClient();
+      if (lsp === undefined) return;
 
       try {
-        const proc = await pickProcess(client);
+        const proc = await pickProcess(lsp);
         if (proc === undefined) return;
 
-        const result = await client.sendRequest<StartTraceResult>(
+        const result = await lsp.sendRequest<StartTraceResult>(
           "forge/profiler/startTrace",
           { pid: proc.pid },
         );
 
         provider.addSession(result.session_id, "Trace", proc.pid);
+        statusBar.update(provider.sessionCount);
         void vscode.window.showInformationMessage(
           `Trace started: ${result.output_path}`,
         );
@@ -268,24 +483,30 @@ export function registerCommands(
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_STOP_TRACE, async () => {
-      const client = getClient();
-      if (client === undefined) return;
+      const lsp = getClient();
+      if (lsp === undefined) return;
 
       const sessionId = await pickActiveSession(provider, "Trace");
       if (sessionId === undefined) return;
 
       try {
-        const result = await client.sendRequest<StopTraceResult>(
+        const result = await lsp.sendRequest<StopTraceResult>(
           "forge/profiler/stopTrace",
           { session_id: sessionId },
         );
 
         provider.removeSession(sessionId);
+        statusBar.update(provider.sessionCount);
         const size = formatBytes(result.file_size_bytes);
         const dur = formatDuration(result.duration_ms);
         void vscode.window.showInformationMessage(
           `Trace saved: ${result.output_path} (${size}, ${dur})`,
         );
+
+        // Open SpeedScope JSON in browser if the output is a speedscope file.
+        if (result.output_path.endsWith(".speedscope.json")) {
+          await openSpeedScope(result.output_path);
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         void vscode.window.showErrorMessage(`Stop trace failed: ${msg}`);
@@ -295,19 +516,35 @@ export function registerCommands(
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_START_COUNTERS, async () => {
-      const client = getClient();
-      if (client === undefined) return;
+      const lsp = getClient();
+      if (lsp === undefined) return;
 
       try {
-        const proc = await pickProcess(client);
+        const proc = await pickProcess(lsp);
         if (proc === undefined) return;
 
-        const result = await client.sendRequest<StartCountersResult>(
+        const result = await lsp.sendRequest<StartCountersResult>(
           "forge/profiler/startCounters",
           { pid: proc.pid },
         );
 
         provider.addSession(result.session_id, "Counters", proc.pid);
+        statusBar.update(provider.sessionCount);
+
+        // Open the live counter webview.
+        const panel = CounterWebviewPanel.open(
+          result.session_id,
+          proc.pid,
+          context,
+        );
+        counterPanels.set(result.session_id, panel);
+
+        // Wire notifications now if the client was unavailable at startup.
+        const currentClient = getClient();
+        if (currentClient !== undefined && !CounterWebviewPanel.has("__wired__")) {
+          wireCounterNotifications(currentClient);
+        }
+
         void vscode.window.showInformationMessage(
           `Counter monitoring started for PID ${String(proc.pid)}`,
         );
@@ -320,17 +557,26 @@ export function registerCommands(
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_STOP_COUNTERS, async () => {
-      const client = getClient();
-      if (client === undefined) return;
+      const lsp = getClient();
+      if (lsp === undefined) return;
 
       const sessionId = await pickActiveSession(provider, "Counters");
       if (sessionId === undefined) return;
 
       try {
-        await client.sendRequest("forge/profiler/stopCounters", {
+        await lsp.sendRequest("forge/profiler/stopCounters", {
           session_id: sessionId,
         });
         provider.removeSession(sessionId);
+        statusBar.update(provider.sessionCount);
+
+        // Close the counter webview if open.
+        const panel = counterPanels.get(sessionId);
+        if (panel !== undefined) {
+          panel.dispose();
+          counterPanels.delete(sessionId);
+        }
+
         void vscode.window.showInformationMessage("Counter monitoring stopped.");
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -341,11 +587,11 @@ export function registerCommands(
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_COLLECT_DUMP, async () => {
-      const client = getClient();
-      if (client === undefined) return;
+      const lsp = getClient();
+      if (lsp === undefined) return;
 
       try {
-        const proc = await pickProcess(client);
+        const proc = await pickProcess(lsp);
         if (proc === undefined) return;
 
         const dumpType = await vscode.window.showQuickPick(
@@ -354,7 +600,7 @@ export function registerCommands(
         );
         if (dumpType === undefined) return;
 
-        const result = await client.sendRequest<CollectDumpResult>(
+        const result = await lsp.sendRequest<CollectDumpResult>(
           "forge/profiler/collectDump",
           { pid: proc.pid, dump_type: dumpType },
         );
@@ -372,8 +618,8 @@ export function registerCommands(
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_ANALYZE_HEAP, async () => {
-      const client = getClient();
-      if (client === undefined) return;
+      const lsp = getClient();
+      if (lsp === undefined) return;
 
       try {
         const dumpFiles = await vscode.window.showOpenDialog({
@@ -385,7 +631,7 @@ export function registerCommands(
         if (selectedFile === undefined) return;
 
         const dumpPath = selectedFile.fsPath;
-        const result = await client.sendRequest<HeapStats>(
+        const result = await lsp.sendRequest<HeapStats>(
           "forge/profiler/analyzeHeap",
           { dump_path: dumpPath },
         );
@@ -397,6 +643,18 @@ export function registerCommands(
       }
     }),
   );
+}
+
+// ── SpeedScope Integration ────────────────────────────────────────
+
+/** Open a SpeedScope JSON trace file in the browser. */
+async function openSpeedScope(filePath: string): Promise<void> {
+  const uri = vscode.Uri.file(filePath);
+  const fileUri = uri.toString();
+  // SpeedScope online viewer accepts a local file URL via the #localProfilePath
+  // parameter — no data is uploaded; the file is read by the browser directly.
+  const speedscopeUrl = `https://www.speedscope.app/#localProfilePath=${encodeURIComponent(fileUri)}`;
+  await vscode.env.openExternal(vscode.Uri.parse(speedscopeUrl));
 }
 
 // ── Helpers ───────────────────────────────────────────────────────

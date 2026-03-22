@@ -88,6 +88,28 @@ impl SidecarManager {
         )
     }
 
+    /// Create a manager for the F# sidecar.
+    pub fn fsharp(workspace_root: &Path) -> Self {
+        let socket_path = format!(
+            "{}/forge-fsharp-{:x}.sock",
+            std::env::temp_dir().display(),
+            fxhash(workspace_root.to_string_lossy().as_bytes())
+        );
+
+        Self::new(
+            "F# (FCS)",
+            "dotnet",
+            vec![
+                "run".to_string(),
+                "--project".to_string(),
+                "sidecars/Forge.Sidecar.FSharp".to_string(),
+                "--".to_string(),
+                socket_path.clone(),
+            ],
+            &socket_path,
+        )
+    }
+
     /// Ensure the sidecar is running and connected.
     ///
     /// Holds the transport lock during the entire spawn to prevent

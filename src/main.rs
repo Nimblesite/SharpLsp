@@ -381,7 +381,9 @@ fn handle_request(
             profiler::handlers::handle_start_counters(req, connection.sender.clone())
         }
         "forge/profiler/stopCounters" => profiler::handlers::handle_stop_counters(req, runtime),
-        "forge/profiler/collectDump" => profiler::handlers::handle_collect_dump(req, runtime),
+        "forge/profiler/collectDump" => {
+            profiler::handlers::handle_collect_dump(req, runtime, connection.sender.clone())
+        }
         "forge/profiler/analyzeHeap" => profiler::handlers::handle_analyze_heap(req, runtime),
         "forge/profiler/findGCRoots" => profiler::handlers::handle_find_gc_roots(req, runtime),
         _ => {

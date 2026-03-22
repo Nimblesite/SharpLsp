@@ -61,10 +61,11 @@ pub fn handle_stop_counters(
 pub fn handle_collect_dump(
     req: Request,
     runtime: &tokio::runtime::Runtime,
+    sender: crossbeam_channel::Sender<Message>,
 ) -> Result<serde_json::Value> {
     info!("Handling forge/profiler/collectDump");
     let params: dump::CollectDumpParams = serde_json::from_value(req.params)?;
-    let result = runtime.block_on(dump::collect(params))?;
+    let result = runtime.block_on(dump::collect(params, sender))?;
     Ok(serde_json::to_value(result)?)
 }
 

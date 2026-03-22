@@ -2,30 +2,11 @@
 
 Forge is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
 
-**Overall aim: FIX THE .NET DEVELOPER EXPERIENCE.**
+**Overall aim #1: FIX THE .NET DEVELOPER EXPERIENCE.**
 Crush Visual Studio, Rider, and C# Dev Kit. Not approximate parity — full feature-for-feature superiority. Zero proprietary dependencies. Zero licenses. Zero vendor lock-in.
 
-# Multi-Agent Coordination (too-many-cooks)
-
-When multiple agents work on this repo simultaneously, **all agents MUST use tmc to coordinate**. No exceptions.
-
-## Rules
-
-1. **Register immediately** — first thing on startup, call `mcp__too-many-cooks__register` with a descriptive name. Store your key.
-2. **Broadcast intent** — before starting work, send a broadcast message (`to_agent: "*"`) stating what you plan to do and which files you'll touch.
-3. **Lock before editing** — call `mcp__too-many-cooks__lock` (action: `acquire`) on every file before modifying it. If locked by another agent, message them to coordinate.
-4. **Update your plan** — call `mcp__too-many-cooks__plan` (action: `update`) with your current goal and task so other agents can see what you're doing.
-5. **Check messages frequently** — call `mcp__too-many-cooks__message` (action: `get`) regularly. Respond to other agents promptly.
-6. **Release locks immediately** — release file locks as soon as you're done editing. Don't hoard locks.
-7. **Signal completion** — broadcast when you finish a task so other agents can proceed with dependent work.
-
-## Workflow
-
-```
-register -> broadcast intent -> acquire locks -> update plan -> do work -> release locks -> broadcast completion
-```
-
-Failing to coordinate = merge conflicts, duplicated work, and wasted time. **Use tmc or don't touch the repo.**
+**Overall aim #2: TREAT F# AS A FIRST CLASS CITIZEN.**
+F# deserves a top notch development experience. We will put F# ahead of C# when building new features so that F# never takes the backseat.
 
 # Code
 
@@ -93,6 +74,28 @@ Testing is absolutely critical. We aim for 100% test coverage and a high mutatio
 - Pure functions, minimize side effects
 - Pattern matching over casting or unwrapping
 - Early returns with `?` for clean error propagation
+
+# Multi-Agent Coordination (too-many-cooks)
+
+When multiple agents work on this repo simultaneously, **all agents MUST use tmc to coordinate**. No exceptions.
+
+## Rules
+
+1. **Register immediately** — first thing on startup, call `mcp__too-many-cooks__register` with a descriptive name. Store your key.
+2. **Broadcast intent** — before starting work, send a broadcast message (`to_agent: "*"`) stating what you plan to do and which files you'll touch.
+3. **Lock before editing** — call `mcp__too-many-cooks__lock` (action: `acquire`) on every file before modifying it. If locked by another agent, message them to coordinate.
+4. **Update your plan** — call `mcp__too-many-cooks__plan` (action: `update`) with your current goal and task so other agents can see what you're doing.
+5. **Check messages frequently** — call `mcp__too-many-cooks__message` (action: `get`) regularly. Respond to other agents promptly.
+6. **Release locks immediately** — release file locks as soon as you're done editing. Don't hoard locks.
+7. **Signal completion** — broadcast when you finish a task so other agents can proceed with dependent work.
+
+## Workflow
+
+```
+register -> broadcast intent -> acquire locks -> update plan -> do work -> release locks -> broadcast completion
+```
+
+Failing to coordinate = merge conflicts, duplicated work, and wasted time. **Use tmc or don't touch the repo.**
 
 # Documentation Structure
 

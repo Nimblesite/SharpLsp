@@ -4407,3 +4407,139 @@ fn test_sort_members_preserves_region_blocks() {
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
+
+// ── Profiler Tests ────────────────────────────────────────────────
+
+/// `forge/profiler/listProcesses` returns a JSON array or tool-not-found error.
+#[test]
+fn test_profiler_list_processes() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/profiler/listProcesses", json!({}));
+
+    if let Some(error) = resp.get("error") {
+        // Tool not installed — acceptable in CI / dev without dotnet tools.
+        let msg = error["message"].as_str().unwrap_or("");
+        assert!(
+            msg.contains("not found"),
+            "error must be tool-not-found, got: {msg}"
+        );
+    } else {
+        let result = &resp["result"];
+        assert!(result.is_array(), "result must be a JSON array: {result}");
+
+        if let Some(processes) = result.as_array() {
+            for proc in processes {
+                assert!(proc["pid"].is_u64(), "pid must be a number");
+                assert!(proc["name"].is_string(), "name must be a string");
+                assert!(proc.get("command_line").is_some(), "command_line field");
+            }
+        }
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `forge/profiler/startTrace` returns an error for a non-existent PID
+/// (tool not found or attach failure — both acceptable, server must not crash).
+#[test]
+fn test_profiler_start_trace_invalid_pid() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/profiler/startTrace", json!({ "pid": 999_999_999 }));
+
+    // Either error or result is fine — just must not crash.
+    assert!(
+        resp.get("error").is_some() || resp.get("result").is_some(),
+        "must return a response: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `forge/profiler/stopTrace` errors for a non-existent session.
+#[test]
+fn test_profiler_stop_trace_unknown_session() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/stopTrace",
+        json!({ "session_id": "nonexistent-session-id" }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for unknown session: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `forge/profiler/stopCounters` errors for a non-existent session.
+#[test]
+fn test_profiler_stop_counters_unknown_session() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/stopCounters",
+        json!({ "session_id": "nonexistent-session-id" }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for unknown session: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `forge/profiler/analyzeHeap` errors for a nonexistent dump file.
+#[test]
+fn test_profiler_analyze_heap_missing_file() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/analyzeHeap",
+        json!({ "dump_path": "/nonexistent/path/to/dump.dmp" }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing dump: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `forge/profiler/findGCRoots` errors for a nonexistent dump file.
+#[test]
+fn test_profiler_find_gc_roots_missing_file() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/findGCRoots",
+        json!({
+            "dump_path": "/nonexistent/path/to/dump.dmp",
+            "object_address": "0x00007ff800001111"
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing dump: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
