@@ -12,6 +12,7 @@ use tracing::info;
 use tree_sitter::Node;
 
 use crate::tree_sitter_parse::{LangId, TsParsers};
+use crate::utils::{uri_to_path, usize_to_u32};
 
 /// Request params for `forge/sortMembers`.
 #[derive(Debug, Deserialize)]
@@ -494,17 +495,6 @@ fn byte_to_position(source: &[u8], byte_offset: usize) -> (u32, u32) {
         }
     }
     (line, col)
-}
-
-/// Convert a file:// URI to a filesystem path.
-fn uri_to_path(uri: &str) -> Result<String> {
-    uri.strip_prefix("file://")
-        .map(String::from)
-        .context("URI is not a file:// URI")
-}
-
-fn usize_to_u32(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]

@@ -12,6 +12,7 @@ mod sidecar;
 mod sort_members;
 mod syntax;
 mod tree_sitter_parse;
+mod utils;
 mod vfs;
 mod workspace_symbols;
 
@@ -161,14 +162,18 @@ fn run_server() -> Result<()> {
     // Health monitoring must wait until workspace/open completes — otherwise the
     // health check can time out on the transport lock (held by workspace/open),
     // declare a false crash, and kill the sidecar before the solution is loaded.
-    start_csharp_sidecar(
+    start_sidecar(
         csharp_sidecar.as_ref(),
         workspace_root.as_ref(),
-        &forge_config,
-        &connection,
+        Some((&forge_config.diagnostics, &connection)),
         &runtime,
     );
-    start_sidecar(fsharp_sidecar.as_ref(), workspace_root.as_ref(), &runtime);
+    start_sidecar(
+        fsharp_sidecar.as_ref(),
+        workspace_root.as_ref(),
+        None,
+        &runtime,
+    );
 
     main_loop(
         &connection,
@@ -233,51 +238,32 @@ async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
     Ok(())
 }
 
-/// Start the C# sidecar: open workspace, trigger solution diagnostics, begin health monitoring.
-fn start_csharp_sidecar(
+/// Start a sidecar: open workspace, optionally trigger solution diagnostics, begin health monitoring.
+fn start_sidecar(
     sidecar: Option<&Arc<SidecarManager>>,
     workspace_root: Option<&PathBuf>,
-    forge_config: &config::ForgeConfig,
-    connection: &Connection,
+    diagnostics_cfg: Option<(&config::DiagnosticsConfig, &Connection)>,
     runtime: &tokio::runtime::Runtime,
 ) {
     if let (Some(sidecar), Some(root)) = (sidecar, workspace_root) {
         let sc = Arc::clone(sidecar);
         let root_str = root.to_string_lossy().to_string();
-        let solution_wide = forge_config.diagnostics.solution_wide_analysis;
-        let project_filter = forge_config.diagnostics.project_filter.clone();
-        let sender = connection.sender.clone();
+        let diag = diagnostics_cfg.and_then(|(cfg, conn)| {
+            cfg.solution_wide_analysis
+                .then(|| (conn.sender.clone(), cfg.project_filter.clone()))
+        });
         runtime.spawn(async move {
             if let Err(err) = open_workspace(&sc, &root_str).await {
-                error!("Failed to open workspace in C# sidecar: {err:#}");
+                error!("Failed to open workspace in sidecar: {err:#}");
                 return;
             }
-            if solution_wide {
+            if let Some((sender, project_filter)) = diag {
                 info!("Starting solution-wide diagnostics scan");
                 diagnostics::request_solution_in_background(
                     Arc::clone(&sc),
                     sender,
                     project_filter,
                 );
-            }
-            sc.start_health_monitor().await;
-        });
-    }
-}
-
-/// Start a sidecar: open workspace and begin health monitoring.
-fn start_sidecar(
-    sidecar: Option<&Arc<SidecarManager>>,
-    workspace_root: Option<&PathBuf>,
-    runtime: &tokio::runtime::Runtime,
-) {
-    if let (Some(sidecar), Some(root)) = (sidecar, workspace_root) {
-        let sc = Arc::clone(sidecar);
-        let root_str = root.to_string_lossy().to_string();
-        runtime.spawn(async move {
-            if let Err(err) = open_workspace(&sc, &root_str).await {
-                error!("Failed to open workspace in sidecar: {err:#}");
-                return;
             }
             sc.start_health_monitor().await;
         });
@@ -458,9 +444,7 @@ fn handle_request(
         }
         "forge/profiler/analyzeHeap" => profiler::handlers::handle_analyze_heap(req, runtime),
         "forge/profiler/findGCRoots" => profiler::handlers::handle_find_gc_roots(req, runtime),
-        "forge/profiler/inspectObject" => {
-            profiler::handlers::handle_inspect_object(req, runtime)
-        }
+        "forge/profiler/inspectObject" => profiler::handlers::handle_inspect_object(req, runtime),
         _ => {
             warn!("Unhandled request: {}", req.method);
             Err(anyhow::anyhow!("method not found"))

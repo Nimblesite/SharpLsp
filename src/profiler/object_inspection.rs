@@ -222,9 +222,7 @@ fn parse_field_line(line: &str) -> Option<ObjectField> {
     };
 
     let is_reference = vt == "0";
-    let is_attr_instance = tokens
-        .get(attr_idx)
-        .is_some_and(|a| *a == "instance");
+    let is_attr_instance = tokens.get(attr_idx).is_some_and(|a| *a == "instance");
 
     // For reference types, the value is a hex address (or "null"/0000000000000000).
     let reference_address = if is_reference && is_attr_instance {
@@ -249,24 +247,22 @@ fn parse_field_line(line: &str) -> Option<ObjectField> {
 
 /// Parse the Size field: `Size: 52(0x34) bytes` → 52.
 fn parse_size_field(line: &str) -> u64 {
-    let after_colon = line
-        .strip_prefix("Size:")
-        .unwrap_or(line)
-        .trim();
+    let after_colon = line.strip_prefix("Size:").unwrap_or(line).trim();
 
     // Take digits before the first non-digit character.
-    let digits: String = after_colon.chars().take_while(char::is_ascii_digit).collect();
+    let digits: String = after_colon
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
     digits.parse().unwrap_or(0)
 }
 
 /// Detect if the object is pinned from `gcroot` output.
 fn detect_pinned(gcroot_output: &str) -> bool {
-    gcroot_output
-        .lines()
-        .any(|l| {
-            let lower = l.to_lowercase();
-            lower.contains("pinned") || lower.contains("pin")
-        })
+    gcroot_output.lines().any(|l| {
+        let lower = l.to_lowercase();
+        lower.contains("pinned") || lower.contains("pin")
+    })
 }
 
 /// Detect the GC generation from `gcroot` output or surrounding context.
@@ -420,10 +416,7 @@ Fields:
     fn test_detect_generation() {
         assert_eq!(detect_generation("  Gen 0 heap segment"), "Gen0");
         assert_eq!(detect_generation("  Gen 2 region"), "Gen2");
-        assert_eq!(
-            detect_generation("  Large Object Heap segment"),
-            "LOH"
-        );
+        assert_eq!(detect_generation("  Large Object Heap segment"), "LOH");
         assert_eq!(detect_generation("  nothing relevant"), "unknown");
     }
 

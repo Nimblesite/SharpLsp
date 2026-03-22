@@ -290,30 +290,28 @@ internal static class MetadataNavigator
         string[] lines,
         string pattern)
     {
-        for (var i = 0; i < lines.Length; i++)
-        {
-            var col = lines[i].IndexOf(
-                pattern, StringComparison.Ordinal);
-            if (col >= 0)
-            {
-                return (i, col + 1);
-            }
-        }
-
-        return null;
+        return SearchLines(lines, pattern, columnOffset: 1);
     }
 
     private static (int line, int column)? SearchLinesForName(
         string[] lines,
         string name)
     {
+        return SearchLines(lines, name, columnOffset: 0);
+    }
+
+    private static (int line, int column)? SearchLines(
+        string[] lines,
+        string term,
+        int columnOffset)
+    {
         for (var i = 0; i < lines.Length; i++)
         {
             var col = lines[i].IndexOf(
-                name, StringComparison.Ordinal);
+                term, StringComparison.Ordinal);
             if (col >= 0)
             {
-                return (i, col);
+                return (i, col + columnOffset);
             }
         }
 

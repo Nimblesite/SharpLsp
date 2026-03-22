@@ -13,9 +13,16 @@ const BASE = '/forge';
 // { path: `${BASE}/docs/go-to-definition/`, name: 'go-to-definition-page', description: 'go-to-definition page screenshot' },
 // { path: `${BASE}/docs/profiler/`, name: 'profiler-page', description: 'profiler page screenshot' },
 
-const SCREENSHOT_PAGES = [];
+const SCREENSHOT_PAGES = [
+  {
+    path: `${BASE}/docs/completions/`,
+    name: 'completions-page',
+    description: 'completions page screenshot',
+  },
+];
 
-const IDES = ['vscode', 'zed'];
+// Zed screenshots removed — can't trigger features programmatically in Zed
+const IDES = ['vscode'];
 
 test.describe('Screenshots load correctly', () => {
   for (const { path, name, description } of SCREENSHOT_PAGES) {

@@ -1,4 +1,7 @@
-17
+19
+
+            int x = undefinedVariable + notAMethod();
+
 
 
 

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { type ExtensionContext, commands, window, workspace } from "vscode";
 import { type LanguageClient } from "vscode-languageclient/node";
+import { getErrorMessage } from "./utils.js";
 import {
   CMD_RESTART_SERVER,
   CMD_SHOW_OUTPUT,
@@ -76,7 +77,7 @@ export async function activate(
   try {
     lspClient = await client.start(context, statusBar);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     log.info(`Failed to start server: ${msg}`);
     statusBar.setState(ServerState.Error);
     return { explorerProvider, profilerProvider };
@@ -86,8 +87,8 @@ export async function activate(
     explorerProvider.setClient(lspClient);
     profilerProvider.setClient(lspClient);
     // Fire-and-forget — don't block activation on solution loading.
-    void autoSelectSolution().catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
+    void selectAndLoadSolution().catch((err: unknown) => {
+      const msg = getErrorMessage(err);
       log.info(`Auto-select solution failed: ${msg}`);
     });
   }
@@ -113,7 +114,7 @@ function registerCommands(context: ExtensionContext): void {
         await lspClient?.restart();
         log.info("Server restarted.");
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getErrorMessage(err);
         log.info(`Restart failed: ${msg}`);
         statusBar.setState(ServerState.Error);
       }
@@ -134,7 +135,7 @@ function registerCommands(context: ExtensionContext): void {
 
   context.subscriptions.push(
     commands.registerCommand(CMD_SELECT_SOLUTION, async () => {
-      await pickAndLoadSolution();
+      await selectAndLoadSolution();
     }),
   );
 
@@ -263,7 +264,7 @@ async function sortMembers(node: ExplorerNode): Promise<void> {
     await workspace.applyEdit(edit);
     log.info("Sort Members applied successfully");
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     log.info(`Sort Members failed: ${msg}`);
     void window.showErrorMessage(`Sort Members failed: ${msg}`);
   }
@@ -326,19 +327,11 @@ function wireDocumentChangeRefresh(context: ExtensionContext): void {
   );
 }
 
-/** Auto-select if exactly one .sln, otherwise wait for user. */
-async function autoSelectSolution(): Promise<void> {
+/** Select a solution (auto or user-picked) and load it into the explorer. */
+async function selectAndLoadSolution(): Promise<void> {
   const selected = await solution.selectSolution();
   if (selected !== undefined) {
     await loadSolution(selected);
-  }
-}
-
-/** Show the QuickPick and load the chosen solution. */
-async function pickAndLoadSolution(): Promise<void> {
-  const solutions = await solution.selectSolution();
-  if (solutions !== undefined) {
-    await loadSolution(solutions);
   }
 }
 

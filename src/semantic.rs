@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, GotoDefinitionParams,
@@ -407,10 +407,7 @@ fn build_hover_range(result: &SidecarHoverResult) -> Option<Range> {
 
 /// Convert a file URI to a filesystem path string.
 pub(crate) fn uri_to_path(uri: &Uri) -> Result<String> {
-    let s = uri.as_str();
-    s.strip_prefix("file://")
-        .map(String::from)
-        .context("expected file:// URI")
+    crate::utils::uri_to_path(uri.as_str())
 }
 
 /// Map a Roslyn completion tag to an LSP `CompletionItemKind`.

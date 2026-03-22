@@ -27,7 +27,7 @@ pub fn handle_start_trace(req: Request) -> Result<serde_json::Value> {
 /// Handle `forge/profiler/stopTrace`.
 pub fn handle_stop_trace(req: Request) -> Result<serde_json::Value> {
     info!("Handling forge/profiler/stopTrace");
-    let params: StopTraceParams = serde_json::from_value(req.params)?;
+    let params: StopSessionParams = serde_json::from_value(req.params)?;
     let result = trace::stop(&params.session_id)?;
     Ok(serde_json::to_value(result)?)
 }
@@ -46,7 +46,7 @@ pub fn handle_start_counters(
 /// Handle `forge/profiler/stopCounters`.
 pub fn handle_stop_counters(req: Request) -> Result<serde_json::Value> {
     info!("Handling forge/profiler/stopCounters");
-    let params: StopCountersParams = serde_json::from_value(req.params)?;
+    let params: StopSessionParams = serde_json::from_value(req.params)?;
     counters::stop(&params.session_id)?;
     Ok(serde_json::Value::Null)
 }
@@ -96,14 +96,8 @@ pub fn handle_inspect_object(
     Ok(serde_json::to_value(result)?)
 }
 
-/// Wire type for stop trace params.
+/// Wire type for stopping a profiler session (trace or counters).
 #[derive(serde::Deserialize)]
-struct StopTraceParams {
-    session_id: String,
-}
-
-/// Wire type for stop counters params.
-#[derive(serde::Deserialize)]
-struct StopCountersParams {
+struct StopSessionParams {
     session_id: String,
 }

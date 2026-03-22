@@ -13,7 +13,6 @@ namespace Forge.Sidecar.CSharp;
 /// </summary>
 internal sealed class CSharpSidecar : SidecarHost
 {
-
     public CSharpSidecar()
     {
         Register("workspace/open", HandleWorkspaceOpenAsync);
@@ -29,17 +28,7 @@ internal sealed class CSharpSidecar : SidecarHost
         Register("textDocument/implementation", HandleImplementationAsync);
     }
 
-
-
-
-
-
     private readonly WorkspaceManager _workspace = new();
-
-
-
-
-
 
     private async Task<ByteResult> HandleDidChangeAsync(
         byte[] payload,
@@ -85,75 +74,27 @@ internal sealed class CSharpSidecar : SidecarHost
         }
     }
 
-
-
-
-
-    private async Task<ByteResult> HandleCompletionAsync(
-        byte[] payload,
-        CancellationToken ct)
+    private Task<ByteResult> HandleCompletionAsync(
+        byte[] payload, CancellationToken ct)
     {
-        try
-        {
-            var request = MessagePackSerializer.Deserialize<CompletionRequest>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetCompletionsAsync(
-                request.FilePath, request.Line, request.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return HandlePositionRequestAsync(
+            payload, _workspace.GetCompletionsAsync, ct);
     }
-
-
-
 
     private async Task<ByteResult> HandleDeclarationAsync(
-        byte[] payload,
-        CancellationToken ct)
+        byte[] payload, CancellationToken ct)
     {
-        try
-        {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetDeclarationAsync(
-                request.FilePath, request.Line, request.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return await HandleSingleLocationRequestAsync(
+            payload, _workspace.GetDeclarationAsync, ct)
+            .ConfigureAwait(false);
     }
 
-
-
-
-    private async Task<ByteResult> HandleDefinitionAsync(
-        byte[] payload,
-        CancellationToken ct)
+    private Task<ByteResult> HandleDefinitionAsync(
+        byte[] payload, CancellationToken ct)
     {
-        try
-        {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetDefinitionAsync(
-                request.FilePath, request.Line, request.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return HandlePositionRequestAsync(
+            payload, _workspace.GetDefinitionAsync, ct);
     }
-
-
-
 
     private async Task<ByteResult> HandleDiagnosticsAsync(
         byte[] payload,
@@ -173,62 +114,43 @@ internal sealed class CSharpSidecar : SidecarHost
         }
     }
 
-
-
-
     private async Task<ByteResult> HandleHoverAsync(
-        byte[] payload,
-        CancellationToken ct)
+        byte[] payload, CancellationToken ct)
     {
-        try
-        {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetHoverAsync(
-                request.FilePath, request.Line, request.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return await HandleNullableRequestAsync(
+            payload, _workspace.GetHoverAsync, ct)
+            .ConfigureAwait(false);
     }
 
-
-
-
-    private async Task<ByteResult> HandleImplementationAsync(
-        byte[] payload,
-        CancellationToken ct)
+    private Task<ByteResult> HandleImplementationAsync(
+        byte[] payload, CancellationToken ct)
     {
-        try
-        {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload, cancellationToken: ct);
-            var result = await _workspace.GetImplementationsAsync(
-                request.FilePath, request.Line, request.Character, ct)
-                .ConfigureAwait(false);
-            return SerializeResult(result, ct);
-        }
-        catch (Exception ex)
-        {
-            return ByteResult.Failure(ex.Message);
-        }
+        return HandlePositionRequestAsync(
+            payload, _workspace.GetImplementationsAsync, ct);
     }
-
-
-
 
     private async Task<ByteResult> HandleTypeDefinitionAsync(
+        byte[] payload, CancellationToken ct)
+    {
+        return await HandleSingleLocationRequestAsync(
+            payload, _workspace.GetTypeDefinitionAsync, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Generic handler for requests that deserialize a <see cref="PositionRequest"/>
+    /// and delegate to a workspace method taking (filePath, line, character, ct).
+    /// </summary>
+    private static async Task<ByteResult> HandlePositionRequestAsync<T>(
         byte[] payload,
+        Func<string, int, int, CancellationToken, Task<Result<T, string>>> workspaceMethod,
         CancellationToken ct)
     {
         try
         {
             var request = MessagePackSerializer.Deserialize<PositionRequest>(
                 payload, cancellationToken: ct);
-            var result = await _workspace.GetTypeDefinitionAsync(
+            var result = await workspaceMethod(
                 request.FilePath, request.Line, request.Character, ct)
                 .ConfigureAwait(false);
             return SerializeResult(result, ct);
@@ -239,8 +161,73 @@ internal sealed class CSharpSidecar : SidecarHost
         }
     }
 
+    /// <summary>
+    /// Handler for requests returning a nullable result (e.g. HoverResult?).
+    /// Serializes null as a successful empty response.
+    /// </summary>
+    private static async Task<ByteResult> HandleNullableRequestAsync<T>(
+        byte[] payload,
+        Func<string, int, int, CancellationToken, Task<Result<T?, string>>> workspaceMethod,
+        CancellationToken ct)
+        where T : class
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<PositionRequest>(
+                payload, cancellationToken: ct);
+            var result = await workspaceMethod(
+                request.FilePath, request.Line, request.Character, ct)
+                .ConfigureAwait(false);
+            if (result is not Result<T?, string>.Ok<T?, string> { Value: var value })
+            {
+                return ByteResult.Failure(!result ?? "Unknown error");
+            }
 
+            var bytes = MessagePackSerializer.Serialize(
+                value, cancellationToken: ct);
+            return new ByteResult.Ok<byte[], string>(bytes);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
 
+    /// <summary>
+    /// Handler for requests returning a single nullable <see cref="LocationResult"/>,
+    /// wrapping it into a <see cref="LocationListResult"/> for the client.
+    /// </summary>
+    private static async Task<ByteResult> HandleSingleLocationRequestAsync(
+        byte[] payload,
+        Func<string, int, int, CancellationToken, Task<Result<LocationResult?, string>>> workspaceMethod,
+        CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<PositionRequest>(
+                payload, cancellationToken: ct);
+            var result = await workspaceMethod(
+                request.FilePath, request.Line, request.Character, ct)
+                .ConfigureAwait(false);
+            if (result is not Result<LocationResult?, string>.Ok<LocationResult?, string> { Value: var location })
+            {
+                return ByteResult.Failure(!result ?? "Unknown error");
+            }
+
+            var list = new LocationListResult();
+            if (location is not null)
+            {
+                list.Locations.Add(location);
+            }
+
+            var bytes = MessagePackSerializer.Serialize(list, cancellationToken: ct);
+            return new ByteResult.Ok<byte[], string>(bytes);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
 
     private async Task<ByteResult> HandleWorkspaceOpenAsync(
         byte[] payload,
@@ -266,9 +253,6 @@ internal sealed class CSharpSidecar : SidecarHost
         }
     }
 
-
-
-
     private Task<ByteResult> HandleWorkspaceStatusAsync(
         byte[] payload,
         CancellationToken ct)
@@ -287,9 +271,6 @@ internal sealed class CSharpSidecar : SidecarHost
                 ByteResult.Failure(ex.Message));
         }
     }
-
-
-
 
     private static ByteResult SerializeResult<T>(
         Result<T, string> result,
@@ -319,14 +300,6 @@ internal sealed class DidChangeRequest
 {
     [Key(0)] public string FilePath { get; set; } = "";
     [Key(1)] public string NewText { get; set; } = "";
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class CompletionRequest
-{
-    [Key(0)] public string FilePath { get; set; } = "";
-    [Key(1)] public int Line { get; init; }
-    [Key(2)] public int Character { get; init; }
 }
 
 [MessagePackObject(AllowPrivate = true)]

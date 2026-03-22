@@ -6732,7 +6732,10 @@ fn test_full_stack_nav_methods_with_range_assertions() {
     let loc1 = first_location(&r1["result"]);
     assert_location_shape(&loc1);
     let uri1 = loc1["uri"].as_str().unwrap();
-    assert!(uri1.starts_with("file://"), "definition uri must be file://");
+    assert!(
+        uri1.starts_with("file://"),
+        "definition uri must be file://"
+    );
     assert_eq!(
         loc1["range"]["start"]["line"].as_u64().unwrap(),
         8,
@@ -6903,11 +6906,9 @@ public class Widget
                     let diag = diags
                         .iter()
                         .find(|d| {
-                            d["message"]
-                                .as_str()
-                                .is_some_and(|m| {
-                                    m.contains("NonExistentType") || m.contains("CS0246")
-                                })
+                            d["message"].as_str().is_some_and(|m| {
+                                m.contains("NonExistentType") || m.contains("CS0246")
+                            })
                         })
                         .unwrap();
                     assert_eq!(

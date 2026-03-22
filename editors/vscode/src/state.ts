@@ -1,6 +1,7 @@
 import { State, type LanguageClient } from "vscode-languageclient/node";
 import { Signal } from "./signals.js";
 import * as log from "./log.js";
+import { getErrorMessage } from "./utils.js";
 
 // ── Sort order ──────────────────────────────────────────────────
 
@@ -153,7 +154,7 @@ async function tryFetch(
 }
 
 function handleFetchError(err: unknown, attempt: number): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = getErrorMessage(err);
   if (isTransient(msg) && attempt < MAX_RETRIES) {
     log.traceInfo(
       `Transient failure (${String(attempt + 1)}/${String(MAX_RETRIES)}): ${msg}`,

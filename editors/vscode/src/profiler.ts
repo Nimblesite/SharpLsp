@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { type LanguageClient } from "vscode-languageclient/node";
 import * as log from "./log.js";
+import { getErrorMessage } from "./utils.js";
 import {
   CMD_PROFILER_LIST_PROCESSES,
   CMD_PROFILER_START_TRACE,
@@ -117,7 +118,7 @@ export class ProfilerTreeProvider
       );
       this.processes = result;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getErrorMessage(err);
       log.info(`Failed to list .NET processes: ${msg}`);
       this.processes = [];
     }
@@ -475,7 +476,7 @@ export function registerCommands(
           `Trace started: ${result.output_path}`,
         );
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getErrorMessage(err);
         void vscode.window.showErrorMessage(`Start trace failed: ${msg}`);
       }
     }),
@@ -508,7 +509,7 @@ export function registerCommands(
           await openSpeedScope(result.output_path);
         }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getErrorMessage(err);
         void vscode.window.showErrorMessage(`Stop trace failed: ${msg}`);
       }
     }),
@@ -549,7 +550,7 @@ export function registerCommands(
           `Counter monitoring started for PID ${String(proc.pid)}`,
         );
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getErrorMessage(err);
         void vscode.window.showErrorMessage(`Start counters failed: ${msg}`);
       }
     }),
@@ -579,7 +580,7 @@ export function registerCommands(
 
         void vscode.window.showInformationMessage("Counter monitoring stopped.");
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getErrorMessage(err);
         void vscode.window.showErrorMessage(`Stop counters failed: ${msg}`);
       }
     }),
@@ -610,7 +611,7 @@ export function registerCommands(
           `Dump saved: ${result.output_path} (${size})`,
         );
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getErrorMessage(err);
         void vscode.window.showErrorMessage(`Collect dump failed: ${msg}`);
       }
     }),
@@ -638,7 +639,7 @@ export function registerCommands(
 
         await showHeapStats(result);
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = getErrorMessage(err);
         void vscode.window.showErrorMessage(`Heap analysis failed: ${msg}`);
       }
     }),

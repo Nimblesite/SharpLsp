@@ -12,6 +12,7 @@ use tracing::info;
 use tree_sitter::Node;
 
 use crate::tree_sitter_parse::{LangId, TsParsers};
+use crate::utils::usize_to_u32;
 
 /// Request params for `forge/workspaceSymbols`.
 #[derive(Debug, Deserialize)]
@@ -341,8 +342,4 @@ fn extract_type_detail(node: Node, source: &[u8]) -> Option<String> {
             .map(|ret| format!("() : {ret}")),
         _ => None,
     }
-}
-
-fn usize_to_u32(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
 }

@@ -15,6 +15,12 @@
       ]
     },
     {
+      "title": "Features",
+      "items": [
+        { "text": "Code Completions", "url": "/docs/completions/" }
+      ]
+    },
+    {
       "title": "Resources",
       "items": [
         { "text": "Architecture", "url": "/docs/architecture/" },

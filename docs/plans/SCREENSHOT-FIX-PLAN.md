@@ -1,91 +1,82 @@
 # Screenshot Fix Plan
 
-All feature doc pages have been **excluded from the website** (`eleventyExcludeFromCollections: true`) because their screenshots don't actually show the features they claim to demonstrate. Every screenshot is just plain code in an editor — no completion dropdowns, no error squiggles, no hover tooltips, no peek definition overlays, no profiler panels.
+Feature doc pages with broken screenshots have been **excluded from the website** (`eleventyExcludeFromCollections: true`). Only pages with verified working screenshots are live.
 
-## Status: ALL FEATURE SCREENSHOTS BROKEN
+## Current Status
 
-| Page | Screenshot | What It Should Show | What It Actually Shows |
-|------|-----------|---------------------|----------------------|
-| Code Completions | `vscode-completions-page.png` | IntelliSense dropdown with suggestions | Plain code (CSharpSidecar.cs) |
-| Diagnostics | `vscode-diagnostics-page.png` | Red/yellow squiggly underlines | Plain code (DefinitionResolver.cs) |
-| Hover | `vscode-hover-page.png` | Hover tooltip with type info | Plain code (CSharpHoverBuilder.cs) |
-| Go to Definition | `vscode-go-to-definition-page.png` | Peek definition overlay | Plain code (SolutionLoader.cs) |
-| Profiler | `vscode-profiler-page.png` | Profiler panel/sidebar | Plain code (WorkspaceManager.cs) |
-| Code Completions | `zed-completions-page.png` | IntelliSense dropdown | Plain code (CSharpSidecar.cs) |
-| Diagnostics | `zed-diagnostics-page.png` | Error squiggles | Plain code (DefinitionResolver.cs) |
-| Hover | `zed-hover-page.png` | Hover tooltip | Unknown (likely plain code) |
-| Go to Definition | `zed-go-to-definition-page.png` | Peek definition | Unknown (likely plain code) |
-| Profiler | `zed-profiler-page.png` | Profiler panel | Unknown (likely plain code) |
+| Page | VS Code Screenshot | Status | Issue |
+|------|-------------------|--------|-------|
+| Homepage | `vscode-homepage-page.png` | LIVE | Shows Calculator.cs with syntax highlighting |
+| Code Completions | `vscode-completions-page.png` | LIVE | Shows IntelliSense dropdown with suggestions |
+| Diagnostics | `vscode-diagnostics-page.png` | EXCLUDED | No red squiggly underlines visible |
+| Hover | `vscode-hover-page.png` | EXCLUDED | No hover tooltip visible |
+| Go to Definition | `vscode-go-to-definition-page.png` | EXCLUDED | No peek definition overlay visible |
+| Profiler | `vscode-profiler-page.png` | EXCLUDED | No profiler sidebar panel visible |
 
-## What Was Excluded
+All Zed screenshots show plain code only — Zed cannot trigger features programmatically.
 
-These files had `eleventyNavigation` removed and `eleventyExcludeFromCollections: true` added:
-- `website/src/docs/completions.md`
-- `website/src/docs/diagnostics.md`
-- `website/src/docs/hover.md`
-- `website/src/docs/go-to-definition.md`
-- `website/src/docs/profiler.md`
+## Root Cause Analysis
 
-Footer links to these pages were also removed from `website/src/_data/navigation.json`.
+The capture script (`editors/vscode/screenshots/capture.mjs`) uses `code serve-web` with Playwright. The Forge VSIX is installed to `~/.vscode-server/extensions/` and the extension DOES activate (status bar shows "Forge" and "C#"). The LSP sidecar IS running.
 
-Screenshot tests in `website/tests/screenshots.spec.js` were updated — the `SCREENSHOT_PAGES` array is empty until screenshots are fixed.
+However:
 
-## What's Still Live
+### Diagnostics — `workspace/diagnostic` not implemented
+The Forge LSP output shows:
+```
+Message: method not found  Code: -32603
+Workspace diagnostic pull failed.
+Unhandled request: workspace/diagnostic
+Request textDocument/diagnostic failed.
+```
+VS Code's web client uses **pull diagnostics** (`textDocument/diagnostic` and `workspace/diagnostic`) which Forge has NOT implemented. Forge only supports **push diagnostics** (`textDocument/publishDiagnostics`), but VS Code web may not render push diagnostics the same way, or the sidecar isn't publishing them for the test workspace.
 
-- Getting Started (`website/src/docs/index.md`)
-- Architecture (`website/src/docs/architecture.md`)
-- Editor Setup (`website/src/docs/editors.md`)
-- Configuration (`website/src/docs/configuration.md`)
-- Homepage (`website/src/index.njk`) — uses separate screenshots (split-editor, editor-overview, code-folding, nested-classes) that are NOT feature-specific
+**Fix**: Implement `textDocument/diagnostic` (pull model) in the Forge LSP, OR ensure push diagnostics work in `code serve-web`. See LSP 3.17 spec section on [Pull Diagnostics](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_pullDiagnostics).
 
-## How to Fix
+### Hover — `textDocument/hover` returns empty or fails silently
+Mouse hover over code tokens (verified correct element targeting via Playwright `boundingBox()`) and keyboard commands (`Cmd+K Cmd+I`, command palette "Show Hover") both fail to produce a visible `.monaco-hover` widget. The LSP sidecar may:
+1. Return an empty hover result for tokens in the test workspace
+2. Fail to resolve the symbol because MSBuildWorkspace hasn't fully loaded the project
+3. Time out before the hover response arrives
 
-### VS Code Screenshots
+**Fix**: Debug the LSP hover handler with the test workspace. Check if `textDocument/hover` returns data for symbols in `Calculator.cs`. A `.csproj` was added (`TestFixtures.csproj`) but the sidecar may need a `.sln` or may fail to locate the project.
 
-The capture script exists at `editors/vscode/screenshots/capture.mjs` with per-feature capture functions. The functions attempt to trigger features (type `this.` for completions, introduce errors for diagnostics, hover for tooltips, Alt+F12 for peek definition, click Forge sidebar for profiler) but they produce wrong results.
+### Go to Definition — Peek Definition doesn't render
+`Alt+F12` and command palette "Peek Definition" don't produce a visible peek widget. Similar to hover — the LSP may return empty results or the sidecar hasn't loaded the workspace.
 
-To fix:
-1. Run `node editors/vscode/screenshots/capture.mjs completions` (or whichever screenshot)
-2. Inspect the output screenshot with the Read tool
-3. If the feature isn't visible, edit the capture function in `capture.mjs`
-4. Re-run and re-inspect
-5. Repeat until the screenshot shows the actual feature
+**Fix**: Same as hover — verify the sidecar loads the test workspace and returns definition locations.
 
-Key issues to investigate:
-- **Completions**: Does Forge's LSP actually respond to completion requests in `code serve-web`? The capture function types `this.` and waits for `.suggest-widget` — maybe the LSP isn't loaded/connected in headless mode
-- **Diagnostics**: Same question — does Forge publish diagnostics in `code serve-web`? The function introduces an undefined variable and waits 5s
-- **Hover**: The hover coordinates are estimated from line numbers — may be hitting the wrong pixel position
-- **Go to Definition**: Alt+F12 triggers peek definition — requires the LSP to resolve definitions
-- **Profiler**: Clicks the Forge sidebar tab — requires the extension to be installed and loaded in `code serve-web`
+### Profiler — Forge sidebar not accessible
+The Forge activity bar icon (`forge-explorer`) is not visible in `code serve-web`. The extension contributes views but they may not render in the web UI. The capture function tries to click the "Forge" tab and "Profiler" tree item but neither is found.
 
-**Critical question**: Does `code serve-web` load the Forge extension? If not, none of the feature captures can work because there's no LSP providing completions, diagnostics, hover, or definitions. The script may need `--install-extension` or `--extensions-dir` flags.
+**Fix**: Check if VS Code web supports `viewsContainers` and `views` contributed by extensions. May need a different approach for the profiler screenshot.
 
-### Zed Screenshots
+## Test Workspace
 
-The Zed capture script (`.claude/skills/take-screenshot/capture.sh`) can only take static window screenshots via `screencapture -l`. It cannot trigger features like completion dropdowns or hover tooltips without sending keystrokes to Zed (which is forbidden by safety rules — keystrokes hit the frontmost app, not the target).
+The test workspace at `editors/vscode/test-fixtures/workspace/` now contains:
+- `Calculator.cs` — main test file for screenshots
+- `TestFixtures.csproj` — .NET 9.0 project file (added to enable Roslyn sidecar)
+- `Empty.cs`, `Nested.cs`, `Greeter.fs` — additional test files
 
-Options:
-1. **Manual capture**: Have a human trigger the feature in Zed and run the capture script at the right moment
-2. **Zed extension API**: If Zed exposes an extension API for triggering completions/hover programmatically, use that
-3. **AppleScript with accessibility APIs**: Use System Events to target Zed by process ID (risky, may not work)
-4. **Skip Zed screenshots**: Only show VS Code screenshots on the website
+## Capture Script
 
-## Re-enabling Pages
+`editors/vscode/screenshots/capture.mjs` handles:
+1. Installing the Forge VSIX to both desktop and serve-web extensions directories
+2. Writing workspace settings with `forge.server.path` pointing to `target/release/forge-lsp`
+3. Launching `code serve-web` and connecting via Playwright
+4. Per-screenshot capture functions that trigger features
+5. 30-second wait for LSP sidecar initialization
 
-When screenshots are fixed:
-1. Replace `eleventyExcludeFromCollections: true` with `eleventyNavigation` frontmatter in each doc file
-2. Add feature links back to the footer in `website/src/_data/navigation.json`
-3. Add pages back to `SCREENSHOT_PAGES` array in `website/tests/screenshots.spec.js`
-4. Verify the website builds and tests pass
+## Re-enabling Excluded Pages
 
-### Frontmatter to restore (per page)
+When a feature's screenshot is fixed:
+1. Replace `eleventyExcludeFromCollections: true` with the original `eleventyNavigation` frontmatter
+2. Add the page to the footer in `website/src/_data/navigation.json`
+3. Add the page to `SCREENSHOT_PAGES` in `website/tests/screenshots.spec.js`
+
+### Frontmatter to restore
 
 ```yaml
-# completions.md
-eleventyNavigation:
-  key: Code Completions
-  order: 4
-
 # diagnostics.md
 eleventyNavigation:
   key: Diagnostics

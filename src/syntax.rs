@@ -12,6 +12,8 @@ use lsp_types::{
 };
 use tree_sitter::{Node, Point, Tree};
 
+use crate::utils::usize_to_u32;
+
 // ── Document Symbols ──────────────────────────────────────────────
 
 /// Extract document symbols from a tree-sitter parse tree.
@@ -278,11 +280,6 @@ pub fn is_string_at_position(tree: &Tree, position: Position) -> bool {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
-
-/// Convert a `usize` to `u32`, saturating at `u32::MAX`.
-fn usize_to_u32(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
-}
 
 /// Convert a tree-sitter `Point` to an LSP `Position`.
 fn ts_point_to_lsp_pos(point: Point) -> Position {

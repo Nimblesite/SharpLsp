@@ -160,6 +160,14 @@ internal static class DefinitionResolver
                 symbol, solution, locations, ct).ConfigureAwait(false);
         }
 
+        // If no implementations found, include the symbol's own location.
+        // Matches VS/Rider: "Go to Implementation" on a concrete type navigates
+        // to itself when nothing derives from or implements it.
+        if (locations.Count == 0)
+        {
+            AddSourceLocation(locations, symbol);
+        }
+
         return new LocationListResult { Locations = locations };
     }
 

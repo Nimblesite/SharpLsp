@@ -180,28 +180,54 @@ async function captureHover(page) {
   await openFile(page, "Calculator.cs");
   await dismissNotifications(page);
 
-  // Go to line 17: "public int Add(int a, int b)"
-  // Position cursor precisely on "Add" using Go to Line then arrow keys
-  await page.keyboard.press("Meta+g");
-  await sleep(500);
-  await page.keyboard.type("17", { delay: 50 });
-  await page.keyboard.press("Enter");
-  await sleep(1000);
+  // Find the text "Calculator" in the editor view and hover over it
+  // Try multiple approaches to trigger hover tooltip
 
-  // Move to "Add": Home, then right arrow to reach column 20 (where "Add" starts)
-  await page.keyboard.press("Home");
-  await sleep(200);
-  // "        public int Add" — Add starts at column 20
-  for (let i = 0; i < 20; i++) {
-    await page.keyboard.press("ArrowRight");
+  // Approach 1: Find a visible code token and mouse hover over it
+  const viewLines = page.locator(".view-lines");
+  const lineElements = viewLines.locator(".view-line");
+  const lineCount = await lineElements.count();
+  console.log(`    Found ${String(lineCount)} visible lines`);
+
+  // Find line containing "public class Calculator"
+  let targetLine = null;
+  for (let i = 0; i < lineCount; i++) {
+    const text = await lineElements.nth(i).textContent().catch(() => "");
+    if (text.includes("Calculator") && text.includes("class")) {
+      targetLine = lineElements.nth(i);
+      console.log(`    Found "class Calculator" at visible line ${String(i)}`);
+      break;
+    }
   }
-  await sleep(500);
 
-  // Trigger Show Hover with keyboard shortcut (Cmd+K, Cmd+I)
-  await page.keyboard.press("Meta+k");
-  await sleep(200);
-  await page.keyboard.press("Meta+i");
-  await sleep(5000); // Wait for hover tooltip from LSP
+  if (targetLine) {
+    // Find the "Calculator" span within this line
+    const calcSpan = targetLine.locator("span", { hasText: "Calculator" }).first();
+    if (await calcSpan.isVisible({ timeout: 2000 }).catch(() => false)) {
+      const box = await calcSpan.boundingBox();
+      if (box) {
+        console.log(`    Hovering over Calculator at (${String(Math.round(box.x + box.width / 2))}, ${String(Math.round(box.y + box.height / 2))})`);
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await sleep(5000);
+      }
+    }
+  }
+
+  // Check if hover widget appeared
+  const hoverWidget = page.locator(".monaco-hover");
+  const hoverVisible = await hoverWidget.isVisible({ timeout: 2000 }).catch(() => false);
+  console.log(`    Hover widget visible: ${String(hoverVisible)}`);
+
+  if (!hoverVisible) {
+    // Fallback: try command palette "Show or Focus Hover"
+    console.log("    Trying command palette fallback...");
+    await page.keyboard.press("Meta+Shift+p");
+    await sleep(500);
+    await page.keyboard.type("Show or Focus Hover", { delay: 30 });
+    await sleep(500);
+    await page.keyboard.press("Enter");
+    await sleep(3000);
+  }
 
   await saveScreenshot(page, "hover-page", "Hover tooltip with type info visible");
 }
@@ -398,20 +424,12 @@ async function main() {
     await sleep(3000);
     await dismissNotifications(page);
 
-    // Check if Forge is active by looking for its activity bar icon
-    const forgeIcon = page.locator("[id='workbench.view.extension.forge-explorer']");
-    const forgeActive = await forgeIcon.isVisible({ timeout: 5000 }).catch(() => false);
-    console.log(`  Forge activity bar icon visible: ${String(forgeActive)}`);
+    // Check if Forge extension loaded by looking for status bar item
+    const forgeStatus = page.locator(".statusbar-item", { hasText: "Forge" });
+    const forgeActive = await forgeStatus.isVisible({ timeout: 5000 }).catch(() => false);
+    console.log(`  Forge extension active: ${String(forgeActive)}`);
 
-    // Also check by looking for any element with "forge" in it
-    const forgeElements = await page.locator("[class*='forge'], [id*='forge'], [aria-label*='Forge']").count().catch(() => 0);
-    console.log(`  Elements matching 'forge': ${String(forgeElements)}`);
-
-    // Check the status bar for Forge
-    const statusItems = await page.locator(".statusbar-item").allTextContents().catch(() => []);
-    console.log(`  Status bar items: ${statusItems.filter((s) => s.trim()).join(", ")}`);
-
-    // Wait for LSP to load (Roslyn sidecar needs time to restore + load the project)
+    // Wait for Forge LSP sidecar to load the workspace
     console.log("  Waiting for LSP sidecar to initialize (30s)...");
     await sleep(30000);
     await dismissNotifications(page);

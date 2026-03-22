@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import * as log from "./log.js";
+import { getErrorMessage } from "./utils.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,7 +37,7 @@ export function parseProjectDependencies(
       projectReferences: parseProjectReferences(content),
     };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     log.traceInfo(`Failed to parse deps for ${projectPath}: ${msg}`);
     return { nugetPackages: [], projectReferences: [] };
   }
@@ -91,7 +92,7 @@ export async function removeNuGetPackage(
     ]);
     return undefined;
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     log.info(`Failed to remove NuGet package: ${msg}`);
     return msg;
   }
@@ -109,7 +110,7 @@ export async function removeProjectReference(
     ]);
     return undefined;
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = getErrorMessage(err);
     log.info(`Failed to remove project reference: ${msg}`);
     return msg;
   }
