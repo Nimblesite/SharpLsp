@@ -290,12 +290,24 @@ async function main() {
   console.log(`Forge LSP:  ${forgeBinary}`);
   console.log("");
 
-  // Install the Forge VSIX so the LSP is available for feature screenshots
+  // Install the Forge VSIX into the serve-web extensions directory
+  const serverExtDir = path.join(
+    process.env.HOME ?? "",
+    ".vscode-server",
+    "extensions",
+  );
   if (fs.existsSync(vsixPath)) {
     console.log("Installing Forge VSIX extension...");
     try {
+      // Install to desktop VS Code (shared extensions)
       execSync(`code --install-extension "${vsixPath}" --force 2>&1`, { encoding: "utf8" });
-      console.log("  Extension installed.");
+      console.log("  Installed to desktop VS Code.");
+      // Also install to the serve-web extensions directory
+      execSync(
+        `code --install-extension "${vsixPath}" --force --extensions-dir "${serverExtDir}" 2>&1`,
+        { encoding: "utf8" },
+      );
+      console.log(`  Installed to serve-web: ${serverExtDir}`);
     } catch (err) {
       console.warn(`  Extension install warning: ${err.message}`);
     }
@@ -342,7 +354,7 @@ async function main() {
     await page.goto(wsUrl);
     // Wait for the workbench to fully load (not just chat widget monaco-editor)
     await page.waitForSelector(".monaco-workbench", { timeout: 60_000 });
-    await sleep(10000); // Extra time for Forge LSP to initialize
+    await sleep(5000);
 
     // Trust the workspace if prompted
     const trustBtn = page.getByRole("button", { name: "Yes, I trust the authors" });
@@ -378,6 +390,23 @@ async function main() {
         await sleep(500);
       }
     }
+
+    // Open a C# file first to trigger Forge extension activation,
+    // then wait for the LSP sidecar to load the workspace
+    console.log("Activating Forge extension...");
+    await openFile(page, "Calculator.cs");
+    await sleep(3000);
+    await dismissNotifications(page);
+
+    // Check if Forge is active by looking for its activity bar icon
+    const forgeIcon = page.locator("[id='workbench.view.extension.forge-explorer']");
+    const forgeActive = await forgeIcon.isVisible({ timeout: 3000 }).catch(() => false);
+    console.log(`  Forge extension active: ${String(forgeActive)}`);
+
+    // Wait for LSP to load (Roslyn sidecar needs time to load the project)
+    console.log("  Waiting for LSP sidecar to initialize...");
+    await sleep(15000);
+    await dismissNotifications(page);
 
     console.log("Capturing screenshots...\n");
 

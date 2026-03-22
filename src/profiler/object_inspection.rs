@@ -187,7 +187,7 @@ fn parse_dumpobj_output(output: &str, address: &str) -> Result<ObjectInspection>
 ///
 /// The columns are whitespace-separated with variable widths. The last
 /// two tokens are always Value and Name. The Type column can contain spaces
-/// (e.g. `System.Collections.Generic.List`1`).
+/// (e.g. `System.Collections.Generic.List'1`).
 fn parse_field_line(line: &str) -> Option<ObjectField> {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.starts_with("---") {
@@ -216,7 +216,7 @@ fn parse_field_line(line: &str) -> Option<ObjectField> {
 
     // Type spans from index 3 to vt_idx (exclusive).
     let type_name = if vt_idx > 3 {
-        tokens[3..vt_idx].join(" ")
+        tokens.get(3..vt_idx).unwrap_or_default().join(" ")
     } else {
         (*tokens.get(3)?).to_string()
     };
@@ -255,7 +255,7 @@ fn parse_size_field(line: &str) -> u64 {
         .trim();
 
     // Take digits before the first non-digit character.
-    let digits: String = after_colon.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let digits: String = after_colon.chars().take_while(char::is_ascii_digit).collect();
     digits.parse().unwrap_or(0)
 }
 

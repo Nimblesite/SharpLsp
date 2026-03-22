@@ -114,37 +114,13 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     needs: [rust]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Install diagnostic tools
-        run: |
-          dotnet tool install -g dotnet-trace
-          dotnet tool install -g dotnet-counters
-          dotnet tool install -g dotnet-dump
-
-      - name: Test
-        run: make test
-
-  coverage:
-    name: Coverage
-    needs: [rust]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -177,10 +153,11 @@ jobs:
       - name: Install VS Code extension deps
         run: npm ci --prefix editors/vscode
 
-      - name: Enforce and ratchet coverage thresholds
-        run: make coverage
+      - name: Test (build + coverage + threshold enforcement)
+        run: make test
 
-      - name: Commit updated thresholds
+      - name: Commit ratcheted thresholds
+        if: matrix.os == 'ubuntu-latest'
         run: |
           git diff --quiet coverage-thresholds.json && exit 0
           git config user.name "github-actions[bot]"

@@ -202,7 +202,7 @@ internal static class CSharpHoverBuilder
 
         var message = obsolete.ConstructorArguments.Length > 0
             ? obsolete.ConstructorArguments[0].Value?.ToString()
-            : null;
+            : ExtractObsoleteMessageFromSyntax(obsolete);
 
         _ = sb.AppendLine();
         _ = sb.Append("**Deprecated**");
@@ -279,6 +279,17 @@ internal static class CSharpHoverBuilder
     private static bool IsNumericLiteral(SyntaxToken token)
     {
         return token.IsKind(SyntaxKind.NumericLiteralToken);
+    }
+
+    /// Fallback: extract the obsolete message from the attribute syntax tree
+    /// when ConstructorArguments is empty (unresolved reference to System.ObsoleteAttribute).
+    private static string? ExtractObsoleteMessageFromSyntax(AttributeData attr)
+    {
+        return attr.ApplicationSyntaxReference?.GetSyntax()
+            is Microsoft.CodeAnalysis.CSharp.Syntax.AttributeSyntax { ArgumentList.Arguments: { Count: > 0 } args }
+            && args[0].Expression is Microsoft.CodeAnalysis.CSharp.Syntax.LiteralExpressionSyntax literal
+                ? literal.Token.ValueText
+                : null;
     }
 
     private static bool IsObsoleteAttribute(AttributeData attr)

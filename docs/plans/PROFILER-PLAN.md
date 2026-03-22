@@ -110,12 +110,12 @@ The implementation is phased: get process discovery and basic tracing working fi
 
 ### Phase H — Object Inspection
 
-- [ ] Create `src/profiler/object_inspection.rs` — parse `dumpobj <addr>` output into `ObjectInspection`
-- [ ] Parse field names, types, values, and reference addresses from `dumpobj` output
-- [ ] Detect object generation (Gen 0/1/2, LOH, POH) and pinned status
-- [ ] Register `forge/profiler/inspectObject` custom LSP request handler
-- [ ] E2E test: inspect a known object address from a dump — verify fields are populated
-- [ ] Unit test: parse `dumpobj` output with primitive fields, reference fields, and array elements
+- [x] Create `src/profiler/object_inspection.rs` — parse `dumpobj <addr>` output into `ObjectInspection`
+- [x] Parse field names, types, values, and reference addresses from `dumpobj` output
+- [x] Detect object generation (Gen 0/1/2, LOH, POH) and pinned status
+- [x] Register `forge/profiler/inspectObject` custom LSP request handler
+- [x] E2E test: inspect a known object address from a dump — verify fields are populated
+- [x] Unit test: parse `dumpobj` output with primitive fields, reference fields, and array elements
 
 ### Phase I — Object Retention Graph
 

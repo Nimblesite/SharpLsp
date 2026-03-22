@@ -3,25 +3,24 @@
 # Usage:
 #   make                     build everything (release)
 #   make PROFILE=debug       build everything (debug)
+#   make ci                  build → lint → test (with coverage thresholds) — the full pipeline
 #   make build-rust          forge-lsp binary only
 #   make build-dotnet        C# sidecar only
 #   make build-vsix          VS Code extension (pulls in build-rust + build-dotnet)
 #   make build-zed           Zed extension WASM only
-#   make test                run all tests
+#   make test                run all tests (with coverage + threshold enforcement)
+#   make test-rust           test forge-lsp + coverage threshold
+#   make test-vsix           test VS Code extension + coverage threshold
 #   make lint                build + lint ALL languages (Rust, TypeScript, .NET)
 #   make fmt                 format ALL languages (Rust, TypeScript, .NET)
-#   make coverage             run coverage for all projects, enforce + ratchet thresholds
-#   make coverage-rust       coverage for forge-lsp only
-#   make coverage-vsix       coverage for VS Code extension only
 #   make clean               remove build artifacts
 
 # Fail fast: any error in any command or pipeline = immediate abort.
 SHELL := /bin/bash
 .SHELLFLAGS := -eo pipefail -c
 
-.PHONY: build build-rust build-dotnet build-vsix build-zed \
+.PHONY: ci build build-rust build-dotnet build-vsix build-zed \
        test test-rust test-zed test-vsix \
-       coverage coverage-rust coverage-vsix \
        lint lint-rust lint-zed lint-vsix lint-dotnet \
        fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet clean
 
@@ -98,37 +97,31 @@ build-zed:
 	@test -f $(ZED_WASM) || { echo "ERROR: $(ZED_WASM) not found" >&2; exit 1; }
 	@echo "==> Zed WASM: $(ZED_WASM)"
 
-# ── Tests ────────────────────────────────────────────────────────
+# ── CI (full pipeline: build → lint → test) ────────────────────
 
-test: build test-rust test-zed
+ci: build lint test
+	@echo ""
+	@echo "==> CI pipeline passed."
+
+# ── Tests (with coverage + threshold enforcement) ──────────────
+
+CHECK_COV = scripts/check-coverage.sh
+
+test: build test-rust test-zed test-vsix
+	@echo ""
+	@echo "==> All tests passed. All coverage thresholds met."
 
 test-rust: build-rust build-dotnet
-	@echo "==> Running forge-lsp tests..."
-	cargo test
+	@echo "==> Running forge-lsp tests with coverage..."
+	cargo llvm-cov --json --output-path target/coverage-rust.json
+	@$(CHECK_COV) forge-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
 test-zed: build-zed
 	@echo "==> Running Zed extension tests..."
 	cargo test --manifest-path $(ZED_DIR)/Cargo.toml
 
 test-vsix: build-vsix
-	@echo "==> Running VS Code extension tests..."
-	npm test --prefix $(VSCODE_DIR)
-
-# ── Coverage (enforce + ratchet thresholds) ─────────────────────
-
-CHECK_COV = scripts/check-coverage.sh
-
-coverage: build coverage-rust coverage-vsix
-	@echo ""
-	@echo "==> All coverage checks passed."
-
-coverage-rust: build-rust build-dotnet
-	@echo "==> [Rust] Running coverage for forge-lsp..."
-	cargo llvm-cov --json --output-path target/coverage-rust.json
-	@$(CHECK_COV) forge-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
-
-coverage-vsix: build-vsix
-	@echo "==> [TypeScript] Running coverage for VS Code extension..."
+	@echo "==> Running VS Code extension tests with coverage..."
 	cd $(VSCODE_DIR) && npm test -- --coverage
 	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
 
