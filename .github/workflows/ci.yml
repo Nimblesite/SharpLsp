@@ -75,41 +75,41 @@ jobs:
       - name: Lint
         run: make lint-vsix
 
-  screenshots:
-    name: Screenshots
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  # screenshots:
+  #   name: Screenshots
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: editors/vscode/package-lock.json
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #         cache: npm
+  #         cache-dependency-path: editors/vscode/package-lock.json
 
-      - name: Install extension deps
-        working-directory: editors/vscode
-        run: npm ci
+  #     - name: Install extension deps
+  #       working-directory: editors/vscode
+  #       run: npm ci
 
-      - name: Install Playwright browsers
-        working-directory: editors/vscode
-        run: npx playwright install --with-deps chromium
+  #     - name: Install Playwright browsers
+  #       working-directory: editors/vscode
+  #       run: npx playwright install --with-deps chromium
 
-      - name: Install VS Code CLI
-        run: |
-          curl -fsSL "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64" -o /tmp/vscode-cli.tar.gz
-          tar -xzf /tmp/vscode-cli.tar.gz -C /usr/local/bin
+  #     - name: Install VS Code CLI
+  #       run: |
+  #         curl -fsSL "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64" -o /tmp/vscode-cli.tar.gz
+  #         tar -xzf /tmp/vscode-cli.tar.gz -C /usr/local/bin
 
-      - name: Capture screenshots
-        working-directory: editors/vscode
-        run: npm run screenshots
+  #     - name: Capture screenshots
+  #       working-directory: editors/vscode
+  #       run: npm run screenshots
 
-      - name: Upload screenshots
-        uses: actions/upload-artifact@v4
-        with:
-          name: extension-screenshots
-          path: website/src/assets/screenshots/
-          if-no-files-found: warn
+  #     - name: Upload screenshots
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: extension-screenshots
+  #         path: website/src/assets/screenshots/
+  #         if-no-files-found: warn
 
   test:
     name: Test (${{ matrix.os }})

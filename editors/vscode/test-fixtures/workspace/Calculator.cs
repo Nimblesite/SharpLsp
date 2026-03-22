@@ -1,22 +1,4 @@
-19
-
-            int x = undefinedVariable + notAMethod();
-
-
-
-
-
-
-
-
-
-            int x = undefinedVariable + notAMethod();
-
-this.
-
-            int x = undefinedVariable + notAMethod();
- TestFixtures
- this.
+namespace TestFixtures
 {
     /// <summary>
     /// A simple calculator for testing document symbols, folding, and selection ranges.

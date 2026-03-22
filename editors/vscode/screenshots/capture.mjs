@@ -55,11 +55,12 @@ async function waitForServer(timeoutMs) {
   throw new Error("VS Code web server did not start");
 }
 
-async function saveScreenshot(page, name, description) {
-  const filePath = path.join(outputDir, `vscode-${name}.png`);
+async function saveScreenshot(page, name, description, rawName = false) {
+  const filename = rawName ? `${name}.png` : `vscode-${name}.png`;
+  const filePath = path.join(outputDir, filename);
   await page.screenshot({ path: filePath, type: "png" });
   const stat = fs.statSync(filePath);
-  console.log(`  [ok] vscode-${name}.png (${String(Math.round(stat.size / 1024))}KB) - ${description}`);
+  console.log(`  [ok] ${filename} (${String(Math.round(stat.size / 1024))}KB) - ${description}`);
 }
 
 async function openFile(page, filename) {
@@ -288,6 +289,85 @@ async function captureProfiler(page) {
 }
 
 // ---------------------------------------------------------------------------
+// Homepage showcase capture functions
+// These produce the images for the main website homepage grid.
+// ---------------------------------------------------------------------------
+
+async function captureSplitEditor(page) {
+  console.log("  Capturing split-editor (Solution Explorer tree)...");
+  await openFile(page, "Calculator.cs");
+  await dismissNotifications(page);
+
+  // Ensure Explorer sidebar is visible and expanded
+  await page.keyboard.press("Meta+Shift+e");
+  await sleep(1000);
+
+  // Open a second file in a split editor to show multi-file editing
+  await page.keyboard.press("Meta+\\");
+  await sleep(500);
+  await openFile(page, "Greeter.fs");
+  await sleep(1000);
+
+  await saveScreenshot(page, "split-editor", "Solution Explorer with split editor", true);
+
+  // Close the split
+  await page.keyboard.press("Meta+w");
+  await sleep(300);
+}
+
+async function captureEditorOverview(page) {
+  console.log("  Capturing editor-overview (outline + symbols)...");
+  await openFile(page, "Calculator.cs");
+  await dismissNotifications(page);
+
+  // Open the Outline panel in the sidebar to show document symbols
+  await page.keyboard.press("Meta+Shift+p");
+  await sleep(500);
+  await page.keyboard.type("Focus on Outline View", { delay: 30 });
+  await sleep(500);
+  await page.keyboard.press("Enter");
+  await sleep(2000);
+
+  await saveScreenshot(page, "editor-overview", "Editor with Outline showing symbols", true);
+}
+
+async function captureCodeFolding(page) {
+  console.log("  Capturing code-folding (regions folded)...");
+  await openFile(page, "Calculator.cs");
+  await dismissNotifications(page);
+
+  // Use Ctrl+K Ctrl+8 to fold all regions (keyboard shortcut, not palette)
+  await page.keyboard.press("Meta+k");
+  await sleep(200);
+  await page.keyboard.press("Meta+8");
+  await sleep(1500);
+
+  await saveScreenshot(page, "code-folding", "Code with regions folded", true);
+
+  // Unfold all: Ctrl+K Ctrl+J
+  await page.keyboard.press("Meta+k");
+  await sleep(200);
+  await page.keyboard.press("Meta+j");
+  await sleep(500);
+}
+
+async function captureNestedClasses(page) {
+  console.log("  Capturing nested-classes (nested type hierarchy)...");
+  await openFile(page, "Nested.cs");
+  await dismissNotifications(page);
+
+  // Open the Outline panel to show the nested hierarchy
+  await page.keyboard.press("Meta+Shift+p");
+  await sleep(500);
+  await page.keyboard.type("Focus on Outline View", { delay: 30 });
+  await sleep(500);
+  await page.keyboard.press("Enter");
+  await sleep(2000);
+
+  await saveScreenshot(page, "nested-classes", "Nested class hierarchy with outline", true);
+}
+
+// ---------------------------------------------------------------------------
 // Screenshot registry — maps names to capture functions
 // ---------------------------------------------------------------------------
 
@@ -298,6 +378,10 @@ const SCREENSHOTS = {
   "hover":           captureHover,
   "go-to-definition": captureGoToDefinition,
   "profiler":        captureProfiler,
+  "split-editor":    captureSplitEditor,
+  "editor-overview": captureEditorOverview,
+  "code-folding":    captureCodeFolding,
+  "nested-classes":  captureNestedClasses,
 };
 
 async function main() {

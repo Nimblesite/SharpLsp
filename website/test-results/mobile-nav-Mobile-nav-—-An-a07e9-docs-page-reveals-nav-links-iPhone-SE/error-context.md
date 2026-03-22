@@ -1,0 +1,154 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2]:
+    - /url: "#main-content"
+  - banner [ref=e3]:
+    - navigation [ref=e4]:
+      - link "Forge" [ref=e5]:
+        - /url: /forge/
+      - generic [ref=e6]:
+        - button "Toggle dark mode" [ref=e7] [cursor=pointer]: ☀ ☾
+        - button "Toggle menu" [expanded] [ref=e8] [cursor=pointer]
+  - main [ref=e12]:
+    - generic [ref=e13]:
+      - complementary [ref=e14]:
+        - navigation [ref=e15]:
+          - list [ref=e16]:
+            - listitem [ref=e17]:
+              - link "Getting Started" [ref=e18]:
+                - /url: /forge/docs/
+            - listitem [ref=e19]:
+              - link "Architecture" [ref=e20]:
+                - /url: /forge/docs/architecture/
+            - listitem [ref=e21]:
+              - link "Editor Setup" [ref=e22]:
+                - /url: /forge/docs/editors/
+            - listitem [ref=e23]:
+              - link "Code Completions" [ref=e24]:
+                - /url: /forge/docs/completions/
+            - listitem [ref=e25]:
+              - link "Configuration" [ref=e26]:
+                - /url: /forge/docs/configuration/
+      - article [ref=e27]:
+        - heading "Getting Started" [level=1] [ref=e28]:
+          - link "Getting Started" [ref=e29]:
+            - /url: "#getting-started"
+        - paragraph [ref=e30]: Forge is an open-source .NET Language Server Protocol (LSP) implementation built in Rust. It provides full C# and F# language support across any editor that supports LSP.
+        - heading "Prerequisites" [level=2] [ref=e31]:
+          - link "Prerequisites" [ref=e32]:
+            - /url: "#prerequisites"
+        - list [ref=e33]:
+          - listitem [ref=e34]:
+            - link "Rust" [ref=e35]:
+              - /url: https://rustup.rs/
+            - text: (latest stable)
+          - listitem [ref=e36]:
+            - link ".NET 9.0 SDK" [ref=e37]:
+              - /url: https://dotnet.microsoft.com/download/dotnet/9.0
+            - text: or later
+          - listitem [ref=e38]: An LSP-compatible editor (VS Code, Neovim, Emacs, Helix, Zed, etc.)
+        - heading "Installation" [level=2] [ref=e39]:
+          - link "Installation" [ref=e40]:
+            - /url: "#installation"
+        - heading "From Source" [level=3] [ref=e41]:
+          - link "From Source" [ref=e42]:
+            - /url: "#from-source"
+        - code [ref=e44]: git clone https://github.com/MelbourneDeveloper/forge.git cd forge cargo build --release
+        - heading "VS Code Extension" [level=3] [ref=e45]:
+          - link "VS Code Extension" [ref=e46]:
+            - /url: "#vs-code-extension"
+        - paragraph [ref=e47]:
+          - text: Install the Forge extension from the VS Code marketplace, or install the
+          - code [ref=e48]: .vsix
+          - text: file directly.
+        - heading "Architecture Overview" [level=2] [ref=e49]:
+          - link "Architecture Overview" [ref=e50]:
+            - /url: "#architecture-overview"
+        - paragraph [ref=e51]: "Forge uses a three-tier architecture:"
+        - table [ref=e52]:
+          - rowgroup [ref=e53]:
+            - row "Tier Component Role" [ref=e54]:
+              - columnheader "Tier" [ref=e55]
+              - columnheader "Component" [ref=e56]
+              - columnheader "Role" [ref=e57]
+          - rowgroup [ref=e58]:
+            - row "1 Rust LSP Host LSP connection, VFS, tree-sitter parsing, salsa cache" [ref=e59]:
+              - cell "1" [ref=e60]:
+                - strong [ref=e61]: "1"
+              - cell "Rust LSP Host" [ref=e62]
+              - cell "LSP connection, VFS, tree-sitter parsing, salsa cache" [ref=e63]
+            - row "2 C# Sidecar Roslyn-powered completions, diagnostics, refactoring" [ref=e64]:
+              - cell "2" [ref=e65]:
+                - strong [ref=e66]: "2"
+              - cell "C# Sidecar" [ref=e67]
+              - cell "Roslyn-powered completions, diagnostics, refactoring" [ref=e68]
+            - row "3 F# Sidecar FSharp.Compiler.Service, Fantomas formatting" [ref=e69]:
+              - cell "3" [ref=e70]:
+                - strong [ref=e71]: "3"
+              - cell "F# Sidecar" [ref=e72]
+              - cell "FSharp.Compiler.Service, Fantomas formatting" [ref=e73]
+        - paragraph [ref=e74]: The Rust host handles all LSP communication and syntax-level operations. Semantic operations are delegated to the appropriate .NET sidecar process over IPC.
+        - heading "Next Steps" [level=2] [ref=e75]:
+          - link "Next Steps" [ref=e76]:
+            - /url: "#next-steps"
+        - list [ref=e77]:
+          - listitem [ref=e78]:
+            - link "Architecture" [ref=e79]:
+              - /url: /forge/docs/architecture/
+            - text: — deep dive into the three-tier design
+          - listitem [ref=e80]:
+            - link "Editor Setup" [ref=e81]:
+              - /url: /forge/docs/editors/
+            - text: — configure your editor to use Forge
+  - contentinfo [ref=e82]:
+    - generic [ref=e83]:
+      - generic [ref=e84]:
+        - generic [ref=e85]:
+          - heading "Documentation" [level=3] [ref=e86]
+          - list [ref=e87]:
+            - listitem [ref=e88]:
+              - link "Getting Started" [ref=e89]:
+                - /url: /forge/docs/
+            - listitem [ref=e90]:
+              - link "Architecture" [ref=e91]:
+                - /url: /forge/docs/architecture/
+            - listitem [ref=e92]:
+              - link "Editor Setup" [ref=e93]:
+                - /url: /forge/docs/editors/
+            - listitem [ref=e94]:
+              - link "Configuration" [ref=e95]:
+                - /url: /forge/docs/configuration/
+        - generic [ref=e96]:
+          - heading "Features" [level=3] [ref=e97]
+          - list [ref=e98]:
+            - listitem [ref=e99]:
+              - link "Code Completions" [ref=e100]:
+                - /url: /forge/docs/completions/
+        - generic [ref=e101]:
+          - heading "Resources" [level=3] [ref=e102]
+          - list [ref=e103]:
+            - listitem [ref=e104]:
+              - link "Architecture" [ref=e105]:
+                - /url: /forge/docs/architecture/
+            - listitem [ref=e106]:
+              - link "Configuration" [ref=e107]:
+                - /url: /forge/docs/configuration/
+            - listitem [ref=e108]:
+              - link "Editor Setup" [ref=e109]:
+                - /url: /forge/docs/editors/
+        - generic [ref=e110]:
+          - heading "Community" [level=3] [ref=e111]
+          - list [ref=e112]:
+            - listitem [ref=e113]:
+              - link "GitHub" [ref=e114]:
+                - /url: https://github.com/MelbourneDeveloper/forge
+            - listitem [ref=e115]:
+              - link "Issues" [ref=e116]:
+                - /url: https://github.com/MelbourneDeveloper/forge/issues
+            - listitem [ref=e117]:
+              - link "Blog" [ref=e118]:
+                - /url: /forge/blog/
+      - paragraph [ref=e120]: © 2026 Forge
+```

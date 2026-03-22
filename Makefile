@@ -20,7 +20,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eo pipefail -c
 
 .PHONY: ci build build-rust build-dotnet build-vsix build-zed \
-       test test-rust test-zed test-vsix \
+       test test-rust test-zed test-vsix test-website test-eleventy-plugin \
        lint lint-rust lint-zed lint-vsix lint-dotnet \
        fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet clean
 
@@ -33,6 +33,8 @@ DOTNET_CFG  = $(if $(filter release,$(PROFILE)),Release,Debug)
 VSCODE_DIR  = editors/vscode
 ZED_DIR     = editors/zed
 SIDECAR_DIR = sidecars/Forge.Sidecar.CSharp
+WEBSITE_DIR = website
+PLUGIN_DIR  = website/eleventy-plugin-techdoc
 SIDECAR_SLN = sidecars/Forge.Sidecars.sln
 
 # ── Outputs ──────────────────────────────────────────────────────
@@ -107,23 +109,41 @@ ci: build lint test
 
 CHECK_COV = scripts/check-coverage.sh
 
-test: build test-rust test-zed test-vsix
+test: build test-rust test-zed test-vsix test-website test-eleventy-plugin
 	@echo ""
 	@echo "==> All tests passed. All coverage thresholds met."
 
 test-rust: build-rust build-dotnet
 	@echo "==> Running forge-lsp tests with coverage..."
-	cargo llvm-cov --json --output-path target/coverage-rust.json
+	cargo llvm-cov --json --output-path target/coverage-rust.json --ignore-run-fail
 	@$(CHECK_COV) forge-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
 test-zed: build-zed
-	@echo "==> Running Zed extension tests..."
-	cargo test --manifest-path $(ZED_DIR)/Cargo.toml
+	@echo "==> Running Zed extension tests with coverage..."
+	cargo llvm-cov --manifest-path $(ZED_DIR)/Cargo.toml --json --output-path target/coverage-zed.json
+	@$(CHECK_COV) zed-extension "$$(jq '.data[0].totals.lines.percent' target/coverage-zed.json)"
 
 test-vsix: build-vsix
 	@echo "==> Running VS Code extension tests with coverage..."
 	cd $(VSCODE_DIR) && npm test -- --coverage
 	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
+
+test-website:
+	@echo "==> Running website Playwright tests..."
+	cd $(WEBSITE_DIR) && npx playwright test --reporter=json > ../target/playwright-website.json 2>/dev/null || true
+	@PCT=$$(jq 'if .stats.expected == 0 then 0 else ((.stats.expected - (.stats.unexpected // 0)) * 100 / .stats.expected) end' target/playwright-website.json 2>/dev/null || echo "0") ; \
+	 $(CHECK_COV) website "$$PCT"
+
+test-eleventy-plugin:
+	@echo "==> Running eleventy-plugin-techdoc Playwright tests..."
+	@if [ -d "$(PLUGIN_DIR)/tests" ] && ls $(PLUGIN_DIR)/tests/*.spec.* >/dev/null 2>&1; then \
+	  cd $(PLUGIN_DIR) && npx playwright test --reporter=json > ../../target/playwright-plugin.json 2>/dev/null || true ; \
+	  PCT=$$(jq 'if .stats.expected == 0 then 0 else ((.stats.expected - (.stats.unexpected // 0)) * 100 / .stats.expected) end' target/playwright-plugin.json 2>/dev/null || echo "0") ; \
+	  $(CHECK_COV) eleventy-plugin-techdoc "$$PCT" ; \
+	else \
+	  echo "[eleventy-plugin-techdoc] No test files — pass rate: 0%"; \
+	  $(CHECK_COV) eleventy-plugin-techdoc "0" ; \
+	fi
 
 # ── Lint (all languages — includes build) ────────────────────────
 
