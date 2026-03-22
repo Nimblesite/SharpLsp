@@ -1,25 +1,7 @@
 import { MarkdownString } from "vscode";
-import { type ExplorerNode, buildQualifiedName } from "./tree.js";
+import { type ExplorerNode } from "./tree.js";
 
 // ── Tooltip ──────────────────────────────────────────────────────
-
-/** Map symbol kind to a C# keyword for the tooltip signature line. */
-const KIND_KEYWORD: Record<string, string> = {
-  Class: "class",
-  Struct: "struct",
-  Interface: "interface",
-  Enum: "enum",
-  Record: "record",
-  Method: "method",
-  Constructor: "constructor",
-  Property: "property",
-  Field: "field",
-  Event: "event",
-  Namespace: "namespace",
-  Function: "delegate",
-  Constant: "const",
-  EnumMember: "enum member",
-};
 
 /** Context values for tree item menus, keyed by symbol kind. */
 export const SYMBOL_CONTEXT_VALUES: Record<string, string> = {
@@ -39,11 +21,11 @@ export const SYMBOL_CONTEXT_VALUES: Record<string, string> = {
   Function: "symbol.delegate",
 };
 
-/** Node types that get symbol-style code block tooltips. */
-const SYMBOL_NODE_TYPES = new Set(["symbol", "namespace"]);
-
-/** Build a rich Markdown tooltip from cached node metadata — instant. */
-export function buildTooltip(
+/**
+ * Build a tooltip for non-symbol nodes (NuGet packages, project refs).
+ * Symbol nodes use the LSP hover provider (same as code editor hover).
+ */
+export function buildNonSymbolTooltip(
   node: ExplorerNode,
 ): MarkdownString | undefined {
   const nodeType: string = node.nodeType;
@@ -63,18 +45,5 @@ export function buildTooltip(
     );
   }
 
-  if (!SYMBOL_NODE_TYPES.has(nodeType)) {
-    return undefined;
-  }
-
-  const kind = KIND_KEYWORD[node.symbolKind ?? ""] ?? node.symbolKind ?? "";
-  const access = node.access ?? "";
-  const qualified = buildQualifiedName(node);
-  const signature = access.length > 0
-    ? `${access} ${kind} ${qualified}`
-    : `${kind} ${qualified}`;
-
-  const md = new MarkdownString();
-  md.appendCodeblock(signature, "csharp");
-  return md;
+  return undefined;
 }

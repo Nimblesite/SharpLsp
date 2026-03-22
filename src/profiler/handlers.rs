@@ -25,13 +25,10 @@ pub fn handle_start_trace(req: Request) -> Result<serde_json::Value> {
 }
 
 /// Handle `forge/profiler/stopTrace`.
-pub fn handle_stop_trace(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<serde_json::Value> {
+pub fn handle_stop_trace(req: Request) -> Result<serde_json::Value> {
     info!("Handling forge/profiler/stopTrace");
     let params: StopTraceParams = serde_json::from_value(req.params)?;
-    let result = runtime.block_on(trace::stop(&params.session_id))?;
+    let result = trace::stop(&params.session_id)?;
     Ok(serde_json::to_value(result)?)
 }
 
@@ -47,13 +44,10 @@ pub fn handle_start_counters(
 }
 
 /// Handle `forge/profiler/stopCounters`.
-pub fn handle_stop_counters(
-    req: Request,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<serde_json::Value> {
+pub fn handle_stop_counters(req: Request) -> Result<serde_json::Value> {
     info!("Handling forge/profiler/stopCounters");
     let params: StopCountersParams = serde_json::from_value(req.params)?;
-    runtime.block_on(counters::stop(&params.session_id))?;
+    counters::stop(&params.session_id)?;
     Ok(serde_json::Value::Null)
 }
 

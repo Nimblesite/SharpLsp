@@ -4,6 +4,8 @@ import {
   commands,
   type Event,
   EventEmitter,
+  type Hover,
+  MarkdownString,
   Position,
   type ProviderResult,
   Range,
@@ -17,7 +19,7 @@ import {
 import { type LanguageClient } from "vscode-languageclient/node";
 import * as log from "./log.js";
 import * as deps from "./dependencies.js";
-import { buildTooltip, SYMBOL_CONTEXT_VALUES } from "./tree-tooltip.js";
+import { buildNonSymbolTooltip, SYMBOL_CONTEXT_VALUES } from "./tree-tooltip.js";
 import * as state from "./state.js";
 import {
   SortOrder,
@@ -155,13 +157,14 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
     return element.children;
   }
 
-  /** Build instant tooltips from cached symbol metadata — no LSP call. */
-  public resolveTreeItem(
+  /** Resolve tooltip via LSP hover for symbols, instant for non-symbols. */
+  public async resolveTreeItem(
     item: TreeItem,
     element: ExplorerNode,
     _token: CancellationToken,
-  ): TreeItem {
-    item.tooltip = buildTooltip(element);
+  ): Promise<TreeItem> {
+    const lspTooltip = await resolveSymbolTooltip(element);
+    item.tooltip = lspTooltip ?? buildNonSymbolTooltip(element);
     return item;
   }
 
@@ -441,6 +444,58 @@ function buildSymbolChildren(
   filePath: string,
 ): ExplorerNode[] {
   return children.map((child) => buildSymbolNode(child, filePath));
+}
+
+// ── LSP hover for tree items ─────────────────────────────────────
+
+const SYMBOL_NODE_TYPES = new Set<string>([
+  NodeType.Symbol,
+  NodeType.Namespace,
+]);
+
+/** Resolve a tree node's tooltip via the same LSP hover used in the editor. */
+async function resolveSymbolTooltip(
+  node: ExplorerNode,
+): Promise<MarkdownString | undefined> {
+  if (!SYMBOL_NODE_TYPES.has(node.nodeType)) return undefined;
+  if (node.symbolUri === undefined || node.symbolPosition === undefined) {
+    return undefined;
+  }
+
+  try {
+    const uri = Uri.parse(node.symbolUri);
+    const pos = new Position(
+      node.symbolPosition.line,
+      node.symbolPosition.character,
+    );
+    const hovers = await commands.executeCommand<Hover[]>(
+      "vscode.executeHoverProvider",
+      uri,
+      pos,
+    );
+    if (hovers.length === 0) return undefined;
+
+    return hoverToMarkdown(hovers);
+  } catch (err) {
+    log.traceInfo(`Tree hover failed: ${String(err)}`);
+    return undefined;
+  }
+}
+
+/** Merge all hover contents into a single MarkdownString. */
+function hoverToMarkdown(hovers: Hover[]): MarkdownString | undefined {
+  const parts: string[] = [];
+  for (const hover of hovers) {
+    for (const content of hover.contents) {
+      if (typeof content === "string") {
+        parts.push(content);
+      } else if (content instanceof MarkdownString) {
+        parts.push(content.value);
+      }
+    }
+  }
+  if (parts.length === 0) return undefined;
+  return new MarkdownString(parts.join("\n\n---\n\n"));
 }
 
 // ── Qualified name ───────────────────────────────────────────────

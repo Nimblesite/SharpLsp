@@ -26,6 +26,20 @@ type HoverResult =
       [<Key(3)>] EndLine: Nullable<int>
       [<Key(4)>] EndCharacter: Nullable<int> }
 
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type LocationResult =
+    { [<Key(0)>] FilePath: string
+      [<Key(1)>] Line: int
+      [<Key(2)>] Character: int
+      [<Key(3)>] EndLine: int
+      [<Key(4)>] EndCharacter: int }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type LocationListResult =
+    { [<Key(0)>] Locations: LocationResult list }
+
 type FSharpSidecar() =
     inherit SidecarHost()
 
@@ -74,6 +88,98 @@ type FSharpSidecar() =
                         // Return nil (no hover)
                         let bytes = MessagePackSerializer.Serialize<HoverResult option>(None, cancellationToken = ct)
                         return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        base.Register("textDocument/definition", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
+                    let! defn = FSharpWorkspace.getDefinition workspace request.FilePath request.Line request.Character
+                    match defn with
+                    | Some loc ->
+                        let result =
+                            { Locations =
+                                [ { FilePath = loc.FilePath
+                                    Line = loc.Line
+                                    Character = loc.Character
+                                    EndLine = loc.EndLine
+                                    EndCharacter = loc.EndCharacter } ] }
+                        let bytes = MessagePackSerializer.Serialize(result, cancellationToken = ct)
+                        return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                    | None ->
+                        let result = { Locations = [] }
+                        let bytes = MessagePackSerializer.Serialize(result, cancellationToken = ct)
+                        return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        base.Register("textDocument/typeDefinition", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
+                    let! defn = FSharpWorkspace.getTypeDefinition workspace request.FilePath request.Line request.Character
+                    match defn with
+                    | Some loc ->
+                        let result =
+                            { Locations =
+                                [ { FilePath = loc.FilePath
+                                    Line = loc.Line
+                                    Character = loc.Character
+                                    EndLine = loc.EndLine
+                                    EndCharacter = loc.EndCharacter } ] }
+                        let bytes = MessagePackSerializer.Serialize(result, cancellationToken = ct)
+                        return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                    | None ->
+                        let result = { Locations = [] }
+                        let bytes = MessagePackSerializer.Serialize(result, cancellationToken = ct)
+                        return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        base.Register("textDocument/declaration", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
+                    let! decl = FSharpWorkspace.getDeclaration workspace request.FilePath request.Line request.Character
+                    match decl with
+                    | Some loc ->
+                        let result =
+                            { Locations =
+                                [ { FilePath = loc.FilePath
+                                    Line = loc.Line
+                                    Character = loc.Character
+                                    EndLine = loc.EndLine
+                                    EndCharacter = loc.EndCharacter } ] }
+                        let bytes = MessagePackSerializer.Serialize(result, cancellationToken = ct)
+                        return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                    | None ->
+                        let result = { Locations = [] }
+                        let bytes = MessagePackSerializer.Serialize(result, cancellationToken = ct)
+                        return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        base.Register("textDocument/implementation", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
+                    let! impls = FSharpWorkspace.getImplementations workspace request.FilePath request.Line request.Character
+                    let locations =
+                        impls
+                        |> List.map (fun loc ->
+                            { FilePath = loc.FilePath
+                              Line = loc.Line
+                              Character = loc.Character
+                              EndLine = loc.EndLine
+                              EndCharacter = loc.EndCharacter })
+                    let result = { Locations = locations }
+                    let bytes = MessagePackSerializer.Serialize(result, cancellationToken = ct)
+                    return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
                 with ex ->
                     return ByteResult.Failure(ex.Message)
             }))

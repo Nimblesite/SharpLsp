@@ -56,6 +56,7 @@ C# and F# are equal first-class citizens.
 forge/
 ├── src/                  # Rust LSP host
 ├── sidecars/
+│   ├── Forge.Sidecar.FSharp/   # F# sidecar (FSharp.Compiler.Service)
 │   ├── Forge.Sidecar.CSharp/   # C# sidecar (Roslyn)
 │   ├── Forge.Sidecar.Common/   # Shared sidecar code
 │   └── Forge.Sidecars.sln

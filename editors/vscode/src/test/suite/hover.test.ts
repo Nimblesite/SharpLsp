@@ -281,8 +281,8 @@ namespace HoverReject
 
   // ── Tree Tooltip (resolveTreeItem) ──────────────────────────────
 
-  test("resolveTreeItem builds instant tooltip from cached metadata", async function () {
-    this.timeout(30_000);
+  test("resolveTreeItem uses LSP hover — same content as code hover", async function () {
+    this.timeout(60_000);
 
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, "Extension must be active");
@@ -308,7 +308,7 @@ namespace HoverReject
           item: vscode.TreeItem,
           element: unknown,
           token: vscode.CancellationToken,
-        ): vscode.TreeItem;
+        ): Promise<vscode.TreeItem>;
       };
     }
     const api = ext.exports as ExplorerApi | undefined;
@@ -324,10 +324,9 @@ namespace HoverReject
   <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
 </Project>`,
     );
-    fs.writeFileSync(
-      path.join(projDir, "Code.cs"),
-      "namespace TooltipTest\n{\n    public class Widget\n    {\n        public string Name { get; set; }\n        private int _count;\n    }\n}",
-    );
+    const codeContent =
+      "namespace TooltipTest\n{\n    public class Widget\n    {\n        public string Name { get; set; }\n        private int _count;\n    }\n}";
+    fs.writeFileSync(path.join(projDir, "Code.cs"), codeContent);
     const slnPath = path.join(tmpDir, "TooltipTest.sln");
     fs.writeFileSync(
       slnPath,
@@ -342,11 +341,7 @@ namespace HoverReject
     );
 
     // Open the file so LSP parses it, then load the solution.
-    const { uri } = await openCSharpFile(
-      projDir,
-      "Code.cs",
-      "namespace TooltipTest\n{\n    public class Widget\n    {\n        public string Name { get; set; }\n        private int _count;\n    }\n}",
-    );
+    const { uri } = await openCSharpFile(projDir, "Code.cs", codeContent);
     await waitForDocumentSymbols(uri);
     await api.explorerProvider.loadSolution(slnPath);
 
@@ -365,13 +360,13 @@ namespace HoverReject
       `Tree must have symbol nodes, found ${String(symbolNodes.length)}`,
     );
 
-    // Resolve each symbol node and verify tooltip.
+    // Resolve each symbol node and verify tooltip matches LSP hover.
     const provider = api.explorerProvider;
     const tokenSource = new vscode.CancellationTokenSource();
 
     for (const node of symbolNodes) {
       const treeItem = provider.getTreeItem(node);
-      const resolved = provider.resolveTreeItem(
+      const resolved = await provider.resolveTreeItem(
         treeItem,
         node,
         tokenSource.token,
@@ -388,32 +383,36 @@ namespace HoverReject
         resolved.tooltip instanceof vscode.MarkdownString,
         `Tooltip for '${node.sortName ?? "?"}' must be MarkdownString`,
       );
-
-      // After the assert, we know tooltip is MarkdownString, but
-      // TypeScript needs an explicit narrowing guard.
       if (!(resolved.tooltip instanceof vscode.MarkdownString)) continue;
 
-      const md = resolved.tooltip.value;
-      assert.ok(md.length > 0, `Tooltip for '${node.sortName ?? "?"}' must not be empty`);
+      const treeMd = resolved.tooltip.value;
+      assert.ok(treeMd.length > 0, `Tooltip for '${node.sortName ?? "?"}' must not be empty`);
       assert.ok(
-        md.includes("```"),
-        `Tooltip for '${node.sortName ?? "?"}' must have code block: ${md}`,
+        treeMd.includes("```"),
+        `Tooltip for '${node.sortName ?? "?"}' must have code block: ${treeMd}`,
       );
 
       // Must contain the symbol name.
       if (node.sortName !== undefined && node.sortName.length > 0) {
         assert.ok(
-          md.includes(node.sortName),
-          `Tooltip must contain symbol name '${node.sortName}': ${md}`,
+          treeMd.includes(node.sortName),
+          `Tooltip must contain symbol name '${node.sortName}': ${treeMd}`,
         );
       }
 
-      // Must contain the kind keyword (class, property, field, etc.).
-      if (node.symbolKind !== undefined) {
-        const kindLower = node.symbolKind.toLowerCase();
-        assert.ok(
-          md.toLowerCase().includes(kindLower),
-          `Tooltip must contain kind '${kindLower}': ${md}`,
+      // Tree tooltip must match the code editor hover at the same position.
+      if (node.symbolUri !== undefined && node.symbolPosition !== undefined) {
+        const nodeUri = vscode.Uri.parse(node.symbolUri);
+        const pos = new vscode.Position(
+          node.symbolPosition.line,
+          node.symbolPosition.character,
+        );
+        const codeHover = await waitForHoverResult(nodeUri, pos);
+        const codeMd = hoverToString(codeHover);
+        assert.strictEqual(
+          treeMd,
+          codeMd,
+          `Tree tooltip must match code hover for '${node.sortName ?? "?"}'`,
         );
       }
     }
@@ -436,7 +435,7 @@ namespace HoverReject
           item: vscode.TreeItem,
           element: unknown,
           token: vscode.CancellationToken,
-        ): vscode.TreeItem;
+        ): Promise<vscode.TreeItem>;
       };
     }
     const api = ext.exports as NodeApi | undefined;
@@ -450,7 +449,7 @@ namespace HoverReject
     for (const node of roots) {
       if (node.nodeType !== "symbol" && node.nodeType !== "namespace") {
         const treeItem = api.explorerProvider.getTreeItem(node);
-        const resolved = api.explorerProvider.resolveTreeItem(
+        const resolved = await api.explorerProvider.resolveTreeItem(
           treeItem,
           node,
           tokenSource.token,
@@ -494,6 +493,8 @@ interface TreeNode {
 interface SymbolTreeNode {
   readonly sortName?: string;
   readonly symbolKind?: string;
+  readonly symbolUri?: string;
+  readonly symbolPosition?: { line: number; character: number };
   readonly nodeType?: string;
   readonly children?: SymbolTreeNode[];
 }

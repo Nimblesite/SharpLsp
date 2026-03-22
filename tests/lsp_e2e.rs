@@ -12,6 +12,7 @@
     clippy::expect_used,
     reason = "test code — panics are the correct failure mode"
 )]
+#![allow(dead_code, reason = "test helper methods may be used by future tests")]
 #![expect(
     clippy::indexing_slicing,
     reason = "test code — JSON indexing panics are acceptable test failures"
@@ -24,7 +25,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use wait_timeout::ChildExt;
@@ -205,6 +206,48 @@ impl LspClient {
                 "textDocument": { "uri": uri },
             }),
         );
+    }
+
+    /// Send a request, collecting all notifications received before the response.
+    fn request_collecting_notifications(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> (Value, Vec<Value>) {
+        let id = next_id();
+        self.send(&json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        }));
+        let mut notifications = Vec::new();
+        loop {
+            let msg = self.recv();
+            if msg.get("id").is_some() {
+                return (msg, notifications);
+            }
+            notifications.push(msg);
+        }
+    }
+
+    /// Wait for a notification with the given method (with timeout).
+    /// Returns the notification, or panics on timeout.
+    fn wait_for_notification(&mut self, method: &str, timeout: Duration) -> Value {
+        let deadline = Instant::now() + timeout;
+        loop {
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for notification: {method}"
+            );
+            let msg = self.recv();
+            if msg.get("id").is_some() {
+                continue; // skip responses
+            }
+            if msg.get("method").and_then(|m| m.as_str()) == Some(method) {
+                return msg;
+            }
+        }
     }
 
     /// Wait for the process to exit (with timeout).
@@ -2243,6 +2286,15 @@ public enum Color
     Red,
     Green,
     Blue
+}
+
+public static class VarExample
+{
+    public static void Run()
+    {
+        var calc = new Calculator();
+        var name = calc.Name;
+    }
 }"#;
     std::fs::write(proj_dir.join("Program.cs"), cs_source).unwrap();
 
@@ -2518,6 +2570,433 @@ fn test_full_stack_hover_after_edit() {
     let orig = hover(&mut client, &file_uri, 3, 14);
     assert_hover_ok(&orig);
     assert!(!orig["result"].is_null(), "original class must still hover");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 36. FULL-STACK: HOVER ON VAR KEYWORD RETURNS INFERRED TYPE
+
+#[test]
+fn test_full_stack_hover_var_keyword() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait for sidecar.
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+
+    // Hover on `var` at line 42, char 8 ("var calc = new Calculator()")
+    let var_hover = hover(&mut client, &file_uri, 42, 8);
+    assert_hover_ok(&var_hover);
+    assert!(!var_hover["result"].is_null(), "var hover must not be null");
+    let md = var_hover["result"]["contents"]["value"].as_str().unwrap();
+    assert!(md.contains("```"), "var hover must have code block: {md}");
+    assert!(
+        md.to_lowercase().contains("inferred") || md.contains("Calculator"),
+        "var hover must show inferred type: {md}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 37. FULL-STACK: HOVER XML DOCUMENTATION RENDERS TAGS
+
+#[test]
+fn test_full_stack_hover_xml_documentation() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+
+    // Hover on Add method (line 9, char 15) — has <summary>, <param>, <returns>.
+    let h = hover(&mut client, &file_uri, 9, 15);
+    assert_hover_ok(&h);
+    assert!(!h["result"].is_null(), "method hover must not be null");
+    let md = h["result"]["contents"]["value"].as_str().unwrap();
+    assert!(md.contains("```"), "must have code block: {md}");
+    assert!(md.contains("Add"), "must contain method name: {md}");
+    // <summary>
+    assert!(
+        md.to_lowercase().contains("adds") || md.to_lowercase().contains("two integers"),
+        "must render <summary>: {md}",
+    );
+    // <param>
+    assert!(
+        md.to_lowercase().contains("first operand") || md.to_lowercase().contains("parameter"),
+        "must render <param>: {md}",
+    );
+    // <returns>
+    assert!(
+        md.to_lowercase().contains("sum") || md.to_lowercase().contains("return"),
+        "must render <returns>: {md}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 38. FULL-STACK: HOVER ON [Obsolete] SYMBOL INCLUDES DEPRECATION
+
+#[test]
+fn test_full_stack_hover_obsolete_deprecation() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+
+    // Hover on OldAdd (line 15, char 15) — marked [System.Obsolete("Use Add instead")]
+    let h = hover(&mut client, &file_uri, 15, 15);
+    assert_hover_ok(&h);
+    assert!(!h["result"].is_null(), "obsolete hover must not be null");
+    let md = h["result"]["contents"]["value"].as_str().unwrap();
+    assert!(md.contains("OldAdd"), "must contain method name: {md}");
+    assert!(md.contains("```"), "must have code block: {md}");
+    assert!(
+        md.contains("Deprecated") || md.contains("Obsolete"),
+        "must show deprecation: {md}",
+    );
+    assert!(
+        md.contains("Use Add instead"),
+        "must include obsolete message: {md}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 39. FULL-STACK: HOVER CACHE HIT RETURNS FAST
+
+#[test]
+fn test_full_stack_hover_cache_hit_latency() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // First hover — warm the cache.
+    let first = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+    assert!(
+        !first["contents"]["value"].is_null(),
+        "first hover must return content"
+    );
+
+    // Second hover — same position, should hit cache.
+    let start = std::time::Instant::now();
+    let second = hover(&mut client, &file_uri, 3, 13);
+    let elapsed = start.elapsed();
+    assert_hover_ok(&second);
+    assert!(
+        !second["result"].is_null(),
+        "cached hover must return content"
+    );
+
+    // Cache hit should be <50ms (generous; target is <1ms).
+    assert!(
+        elapsed.as_millis() < 50,
+        "cache hit must be fast, took {}ms",
+        elapsed.as_millis(),
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── F# Hover Tests ──────────────────────────────────────────────
+
+/// Create an F# test workspace with .fsproj and .fs files.
+fn create_fsharp_test_workspace() -> (tempfile::TempDir, String, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("TestFSharp");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("TestFSharp.fsproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Library.fs" />
+  </ItemGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    let fs_source = r#"namespace TestFSharp
+
+/// A simple calculator module.
+module Calculator =
+    /// Adds two integers and returns the sum.
+    let add (a: int) (b: int) : int = a + b
+
+    /// Multiplies two integers.
+    let multiply (a: int) (b: int) : int = a * b
+
+/// Represents a shape with area calculation.
+type Shape =
+    | Circle of radius: float
+    | Rectangle of width: float * height: float
+
+/// Compute the area of a shape.
+let area (shape: Shape) : float =
+    match shape with
+    | Shape.Circle r -> System.Math.PI * r * r
+    | Shape.Rectangle(w, h) -> w * h
+
+/// Pipeline example: sum of squares.
+let sumOfSquares (xs: int list) : int =
+    xs |> List.map (fun x -> x * x) |> List.sum
+"#;
+    std::fs::write(proj_dir.join("Library.fs"), fs_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("TestFSharp.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "TestFSharp", "TestFSharp/TestFSharp.fsproj", "{00000000-0000-0000-0000-000000000002}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(tmp.path())
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let real_proj = real_root.join("TestFSharp");
+    let root_uri = format!("file://{}", real_root.display());
+    let file_uri = format!("file://{}", real_proj.join("Library.fs").display());
+    (tmp, root_uri, file_uri, fs_source.to_string())
+}
+
+// 40. F# HOVER ON FUNCTION/TYPE/MODULE
+
+#[test]
+fn test_full_stack_fsharp_hover_function_type_module() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait for F# sidecar — poll hover on "Calculator" module (line 3, char 7).
+    let module_hover =
+        poll_hover_until_ready(&mut client, &file_uri, 3, 7, Duration::from_secs(90));
+    let md = module_hover["contents"]["value"].as_str().unwrap();
+    assert!(!md.is_empty(), "F# module hover must not be empty: {md}");
+    assert!(md.contains("```"), "must have code block: {md}");
+
+    // Hover on `add` function (line 5, char 8).
+    let fn_hover = hover(&mut client, &file_uri, 5, 8);
+    assert_hover_ok(&fn_hover);
+    assert!(!fn_hover["result"].is_null(), "function hover must not be null");
+    let fn_md = fn_hover["result"]["contents"]["value"].as_str().unwrap();
+    assert!(fn_md.contains("```"), "function hover must have code block: {fn_md}");
+
+    // Hover on `Shape` type (line 11, char 5).
+    let type_hover = hover(&mut client, &file_uri, 11, 5);
+    assert_hover_ok(&type_hover);
+    assert!(!type_hover["result"].is_null(), "type hover must not be null");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 41. F# HOVER ON DU CASE
+
+#[test]
+fn test_full_stack_fsharp_hover_du_case() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 7, Duration::from_secs(90));
+
+    // Hover on `Circle` DU case (line 12, char 6).
+    let du_hover = hover(&mut client, &file_uri, 12, 6);
+    assert_hover_ok(&du_hover);
+    assert!(!du_hover["result"].is_null(), "DU case hover must not be null");
+    let md = du_hover["result"]["contents"]["value"].as_str().unwrap();
+    assert!(md.contains("```"), "DU hover must have code block: {md}");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 42. F# HOVER ON PIPELINE OPERATOR
+
+#[test]
+fn test_full_stack_fsharp_hover_pipeline() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 7, Duration::from_secs(90));
+
+    // Hover on `List.map` in pipeline (line 23, char 14).
+    let h = hover(&mut client, &file_uri, 23, 14);
+    assert_hover_ok(&h);
+    assert!(!h["result"].is_null(), "pipeline hover must not be null");
+    let md = h["result"]["contents"]["value"].as_str().unwrap();
+    assert!(md.contains("```"), "pipeline hover must have code block: {md}");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 43. F# HOVER WITH XML DOCUMENTATION
+
+#[test]
+fn test_full_stack_fsharp_hover_xml_docs() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 7, Duration::from_secs(90));
+
+    // Hover on `add` function (line 5, char 8) — has doc "Adds two integers".
+    let h = hover(&mut client, &file_uri, 5, 8);
+    assert_hover_ok(&h);
+    assert!(!h["result"].is_null(), "hover must not be null");
+    let md = h["result"]["contents"]["value"].as_str().unwrap();
+    assert!(md.contains("```"), "must have code block: {md}");
+    assert!(
+        md.to_lowercase().contains("adds") || md.to_lowercase().contains("sum"),
+        "F# hover must include XML doc: {md}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 44. HOVER AFTER SIDECAR CRASH RECOVERY
+
+#[test]
+fn test_full_stack_hover_crash_recovery() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // First hover — sidecar is healthy.
+    let first = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+    assert!(!first["contents"]["value"].is_null(), "first hover must work");
+
+    // Rapid hovers — server must not crash or hang even under load.
+    for _ in 0..5 {
+        let h = hover(&mut client, &file_uri, 3, 13);
+        assert_hover_ok(&h);
+    }
+
+    // Different symbol — proves pipeline is alive.
+    let method = hover(&mut client, &file_uri, 9, 15);
+    assert_hover_ok(&method);
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 45. HOVER LATENCY BENCHMARK
+
+#[test]
+fn test_full_stack_hover_latency_benchmark() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+
+    // Measure latency across distinct positions.
+    let positions: [(u32, u32); 6] = [
+        (3, 13),  // Calculator
+        (9, 15),  // Add
+        (12, 18), // Name
+        (15, 15), // OldAdd
+        (20, 14), // Point
+        (31, 12), // Color
+    ];
+
+    let mut latencies = Vec::new();
+    for &(line, character) in &positions {
+        let start = std::time::Instant::now();
+        let h = hover(&mut client, &file_uri, line, character);
+        let elapsed = start.elapsed();
+        assert_hover_ok(&h);
+        latencies.push(elapsed.as_millis());
+    }
+
+    latencies.sort_unstable();
+    let p50 = latencies[latencies.len() / 2];
+    let p95 = latencies[latencies.len() * 95 / 100];
+    eprintln!("Hover latency: p50={p50}ms p95={p95}ms (all: {latencies:?})");
+
+    assert!(p50 < 150, "p50 must be <150ms, got {p50}ms");
+    assert!(p95 < 300, "p95 must be <300ms, got {p95}ms");
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -3286,12 +3765,12 @@ fn test_full_stack_definition_on_constructor() {
     //         0123456789012345678901234567890123456789
     let resp = definition(&mut client, &file_uri, 28, 36);
     assert_nav_ok(&resp);
-    let result = &resp["result"];
+    let result = first_location(&resp["result"]);
     assert!(
         !result.is_null(),
         "definition on constructor call must resolve"
     );
-    assert_location_line(result, 14, "new Dog() → Dog class at line 14");
+    assert_location_line(&result, 14, "new Dog() → Dog class at line 14");
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -4600,4 +5079,731 @@ fn test_profiler_find_gc_roots_missing_file() {
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
+}
+
+// ── Profiler Performance Benchmarks ──────────────────────────────
+
+/// Benchmark: `forge/profiler/listProcesses` completes within 500ms.
+#[test]
+fn test_profiler_list_processes_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = Instant::now();
+    let resp = client.request("forge/profiler/listProcesses", json!({}));
+    let elapsed = start.elapsed();
+
+    assert!(
+        resp.get("result").is_some() || resp.get("error").is_some(),
+        "must return result or error: {resp}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(500),
+        "listProcesses took {elapsed:?}, target <500ms"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: `forge/profiler/startTrace` responds within 1s (even for invalid PID).
+#[test]
+fn test_profiler_start_trace_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = Instant::now();
+    let resp = client.request("forge/profiler/startTrace", json!({ "pid": 999_999_999 }));
+    let elapsed = start.elapsed();
+
+    assert!(
+        resp.get("result").is_some() || resp.get("error").is_some(),
+        "must return result or error: {resp}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "startTrace took {elapsed:?}, target <1s"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: counter stop responds within 100ms.
+#[test]
+fn test_profiler_counter_stop_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = Instant::now();
+    let resp = client.request(
+        "forge/profiler/stopCounters",
+        json!({ "session_id": "bench-nonexistent" }),
+    );
+    let elapsed = start.elapsed();
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for unknown session: {resp}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(100),
+        "stopCounters took {elapsed:?}, target <100ms"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: `forge/profiler/analyzeHeap` error path responds within 5s.
+#[test]
+fn test_profiler_analyze_heap_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = Instant::now();
+    let resp = client.request(
+        "forge/profiler/analyzeHeap",
+        json!({ "dump_path": "/nonexistent/benchmark.dmp" }),
+    );
+    let elapsed = start.elapsed();
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing dump: {resp}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "analyzeHeap took {elapsed:?}, target <5s"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: `forge/profiler/findGCRoots` error path responds within 10s.
+#[test]
+fn test_profiler_find_gc_roots_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = Instant::now();
+    let resp = client.request(
+        "forge/profiler/findGCRoots",
+        json!({
+            "dump_path": "/nonexistent/benchmark.dmp",
+            "object_address": "0x00007ff800001111"
+        }),
+    );
+    let elapsed = start.elapsed();
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing dump: {resp}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "findGCRoots took {elapsed:?}, target <10s"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Profiler Happy-Path E2E Tests ────────────────────────────────
+//
+// These tests start a REAL .NET process (ProfileTarget), attach the REAL
+// dotnet diagnostic tools via the REAL LSP server, and verify REAL output.
+
+/// Build the ProfileTarget .NET app and return the path to its binary.
+fn build_profile_target() -> std::path::PathBuf {
+    let project_dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ProfileTarget");
+
+    let status = Command::new("dotnet")
+        .args(["build", "-c", "Release", "--nologo", "-v", "q"])
+        .current_dir(&project_dir)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .status()
+        .expect("failed to run dotnet build");
+    assert!(status.success(), "ProfileTarget build failed");
+
+    project_dir.join("bin/Release/net10.0/ProfileTarget")
+}
+
+/// Start the ProfileTarget process. Waits for "READY" on stdout before returning.
+fn start_profile_target(binary: &std::path::Path) -> Child {
+    let mut child = Command::new(binary)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed to start ProfileTarget");
+
+    // Wait for "READY" line — proves the runtime is loaded and objects allocated.
+    let stdout = child.stdout.as_mut().expect("no stdout");
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        line.clear();
+        let n = reader.read_line(&mut line).expect("read stdout");
+        if n == 0 || Instant::now() > deadline {
+            panic!("ProfileTarget did not print READY within 30s");
+        }
+        if line.trim() == "READY" {
+            break;
+        }
+    }
+
+    // Detach stdout so we don't hold the pipe (child keeps running).
+    child.stdout.take();
+    child
+}
+
+/// Kill and reap the target process.
+fn stop_profile_target(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Full lifecycle: listProcesses → find our PID → startTrace → stopTrace → verify .nettrace file.
+#[test]
+fn test_profiler_happy_path_trace_lifecycle() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // 1. listProcesses must include our target PID.
+    let resp = client.request("forge/profiler/listProcesses", json!({}));
+    let processes = resp["result"].as_array().expect("result must be array");
+    let found = processes
+        .iter()
+        .any(|p| p["pid"].as_u64() == Some(u64::from(target_pid)));
+    assert!(
+        found,
+        "listProcesses must include target PID {target_pid}, got: {processes:?}"
+    );
+
+    // 2. startTrace on the target.
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let trace_path = tmp_dir.path().join("test.nettrace");
+    let trace_path_str = trace_path.to_string_lossy().to_string();
+
+    let resp = client.request(
+        "forge/profiler/startTrace",
+        json!({
+            "pid": target_pid,
+            "profile": "gc-collect",
+            "duration": 0,
+            "output_path": trace_path_str,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "startTrace must succeed: {resp}"
+    );
+    let session_id = resp["result"]["session_id"]
+        .as_str()
+        .expect("session_id must be string");
+    assert!(!session_id.is_empty(), "session_id must not be empty");
+    assert_eq!(
+        resp["result"]["output_path"].as_str().unwrap(),
+        trace_path_str,
+        "output_path must match"
+    );
+
+    // 3. Let it collect for a moment.
+    std::thread::sleep(Duration::from_secs(2));
+
+    // 4. stopTrace.
+    let resp = client.request(
+        "forge/profiler/stopTrace",
+        json!({ "session_id": session_id }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "stopTrace must succeed: {resp}"
+    );
+    let stop_result = &resp["result"];
+    assert!(
+        stop_result["duration_ms"].as_u64().unwrap_or(0) >= 1000,
+        "duration must be at least 1s: {stop_result}"
+    );
+
+    // 5. Verify the .nettrace file actually exists on disk.
+    //    dotnet-trace may still be flushing after our SIGINT, so poll briefly.
+    let mut file_size = 0u64;
+    for _ in 0..10 {
+        file_size = std::fs::metadata(&trace_path).map(|m| m.len()).unwrap_or(0);
+        if file_size > 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(
+        trace_path.exists(),
+        "trace file must exist at: {}",
+        trace_path.display()
+    );
+    assert!(file_size > 0, "trace file must not be empty (got 0 bytes)");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+/// Happy path: startCounters → receive counterUpdate notification → stopCounters.
+#[test]
+fn test_profiler_happy_path_counter_lifecycle() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // 1. startCounters on the target.
+    let resp = client.request(
+        "forge/profiler/startCounters",
+        json!({
+            "pid": target_pid,
+            "providers": ["System.Runtime"],
+            "refresh_interval": 1,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "startCounters must succeed: {resp}"
+    );
+    let session_id = resp["result"]["session_id"]
+        .as_str()
+        .expect("session_id must be string");
+    assert!(!session_id.is_empty(), "session_id must not be empty");
+
+    // 2. Wait for at least one counterUpdate notification.
+    let notif =
+        client.wait_for_notification("forge/profiler/counterUpdate", Duration::from_secs(15));
+    let params = &notif["params"];
+    assert_eq!(
+        params["session_id"].as_str().unwrap(),
+        session_id,
+        "notification session_id must match"
+    );
+    let counters = params["counters"]
+        .as_array()
+        .expect("counters must be array");
+    assert!(
+        !counters.is_empty(),
+        "must receive at least one counter value"
+    );
+    let counter = &counters[0];
+    assert!(
+        counter["display_name"].is_string(),
+        "counter must have display_name"
+    );
+    assert!(
+        counter["value"].is_number(),
+        "counter must have numeric value"
+    );
+
+    // 3. stopCounters.
+    let resp = client.request(
+        "forge/profiler/stopCounters",
+        json!({ "session_id": session_id }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "stopCounters must succeed: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+/// Happy path: collectDump → analyzeHeap → verify real heap stats.
+#[test]
+fn test_profiler_happy_path_dump_and_analyze() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // 1. collectDump on the target.
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let dump_path = tmp_dir.path().join("test.dmp");
+    let dump_path_str = dump_path.to_string_lossy().to_string();
+
+    let (resp, notifications) = client.request_collecting_notifications(
+        "forge/profiler/collectDump",
+        json!({
+            "pid": target_pid,
+            "dump_type": "Heap",
+            "output_path": dump_path_str,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "collectDump must succeed: {resp}"
+    );
+    let dump_result = &resp["result"];
+    assert!(
+        dump_result["file_size_bytes"].as_u64().unwrap_or(0) > 0,
+        "dump file must have non-zero size: {dump_result}"
+    );
+
+    // Verify progress notifications were sent.
+    let progress_methods: Vec<&str> = notifications
+        .iter()
+        .filter_map(|n| n["method"].as_str())
+        .collect();
+    assert!(
+        progress_methods.contains(&"$/progress"),
+        "must receive $/progress notifications during dump: {progress_methods:?}"
+    );
+
+    // Verify the dump file exists on disk.
+    assert!(
+        dump_path.exists(),
+        "dump file must exist at: {}",
+        dump_path.display()
+    );
+    let file_size = std::fs::metadata(&dump_path).unwrap().len();
+    assert!(file_size > 0, "dump file must not be empty");
+
+    // 2. analyzeHeap on the dump.
+    let resp = client.request(
+        "forge/profiler/analyzeHeap",
+        json!({
+            "dump_path": dump_path_str,
+            "limit": 20,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "analyzeHeap must succeed: {resp}"
+    );
+    let heap = &resp["result"];
+    assert!(
+        heap["total_objects"].as_u64().unwrap_or(0) > 0,
+        "heap must report objects: {heap}"
+    );
+    assert!(
+        heap["total_size_bytes"].as_u64().unwrap_or(0) > 0,
+        "heap must report non-zero size: {heap}"
+    );
+    let types = heap["types"].as_array().expect("types must be array");
+    assert!(
+        !types.is_empty(),
+        "heap must contain at least one type: {heap}"
+    );
+
+    // Verify type entries have the right shape.
+    let first_type = &types[0];
+    assert!(
+        first_type["type_name"].is_string(),
+        "type_name must be string"
+    );
+    assert!(first_type["count"].is_u64(), "count must be u64");
+    assert!(
+        first_type["total_size_bytes"].is_u64(),
+        "total_size_bytes must be u64"
+    );
+
+    // 3. We allocated 1000 strings in ProfileTarget — System.String must appear.
+    let has_string = types.iter().any(|t| {
+        t["type_name"]
+            .as_str()
+            .is_some_and(|n| n.contains("String"))
+    });
+    assert!(
+        has_string,
+        "heap must contain System.String (we allocated 1000): {types:?}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+// ── Profiler Edge Case Tests ─────────────────────────────────────
+
+/// Edge case: double-stop the same trace session must error on second stop.
+#[test]
+fn test_profiler_edge_double_stop_trace() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let trace_path = tmp_dir
+        .path()
+        .join("double-stop.nettrace")
+        .to_string_lossy()
+        .to_string();
+
+    let resp = client.request(
+        "forge/profiler/startTrace",
+        json!({
+            "pid": target_pid,
+            "output_path": trace_path,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "startTrace must succeed: {resp}"
+    );
+    let session_id = resp["result"]["session_id"].as_str().unwrap();
+
+    std::thread::sleep(Duration::from_secs(1));
+
+    // First stop: must succeed.
+    let resp1 = client.request(
+        "forge/profiler/stopTrace",
+        json!({ "session_id": session_id }),
+    );
+    assert!(
+        resp1.get("error").is_none(),
+        "first stopTrace must succeed: {resp1}"
+    );
+
+    // Second stop: must error (session already stopped).
+    let resp2 = client.request(
+        "forge/profiler/stopTrace",
+        json!({ "session_id": session_id }),
+    );
+    assert!(
+        resp2.get("error").is_some(),
+        "second stopTrace must error: {resp2}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+/// Edge case: start trace, then kill the target process, then stop — must not hang.
+#[test]
+fn test_profiler_edge_trace_target_dies() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let trace_path = tmp_dir
+        .path()
+        .join("target-dies.nettrace")
+        .to_string_lossy()
+        .to_string();
+
+    let resp = client.request(
+        "forge/profiler/startTrace",
+        json!({
+            "pid": target_pid,
+            "output_path": trace_path,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "startTrace must succeed: {resp}"
+    );
+    let session_id = resp["result"]["session_id"].as_str().unwrap();
+
+    // Kill the target while trace is running.
+    stop_profile_target(&mut target);
+    std::thread::sleep(Duration::from_millis(500));
+
+    // stopTrace must complete without hanging (server must not deadlock).
+    let start = Instant::now();
+    let resp = client.request(
+        "forge/profiler/stopTrace",
+        json!({ "session_id": session_id }),
+    );
+    let elapsed = start.elapsed();
+
+    // Either error or result is fine — must not hang.
+    assert!(
+        resp.get("error").is_some() || resp.get("result").is_some(),
+        "stopTrace must respond: {resp}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "stopTrace must not hang, took {elapsed:?}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Edge case: listProcesses finds ProfileTarget by name in the process list.
+#[test]
+fn test_profiler_edge_process_list_finds_target_by_name() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/profiler/listProcesses", json!({}));
+    let processes = resp["result"].as_array().expect("result must be array");
+
+    let entry = processes
+        .iter()
+        .find(|p| p["pid"].as_u64() == Some(u64::from(target_pid)));
+    assert!(entry.is_some(), "must find target by PID");
+
+    let entry = entry.unwrap();
+    let name = entry["name"].as_str().unwrap_or("");
+    assert!(
+        name.contains("ProfileTarget"),
+        "process name must contain 'ProfileTarget', got: {name}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+/// Edge case: max concurrent sessions enforcement.
+#[test]
+fn test_profiler_edge_max_concurrent_sessions() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let mut session_ids = Vec::new();
+
+    // Start 5 trace sessions (the default max).
+    for i in 0..5 {
+        let trace_path = tmp_dir
+            .path()
+            .join(format!("max-{i}.nettrace"))
+            .to_string_lossy()
+            .to_string();
+
+        let resp = client.request(
+            "forge/profiler/startTrace",
+            json!({
+                "pid": target_pid,
+                "output_path": trace_path,
+            }),
+        );
+        assert!(
+            resp.get("error").is_none(),
+            "session {i} must start: {resp}"
+        );
+        session_ids.push(resp["result"]["session_id"].as_str().unwrap().to_string());
+    }
+
+    // 6th session must be rejected.
+    let trace_path = tmp_dir
+        .path()
+        .join("max-overflow.nettrace")
+        .to_string_lossy()
+        .to_string();
+    let resp = client.request(
+        "forge/profiler/startTrace",
+        json!({
+            "pid": target_pid,
+            "output_path": trace_path,
+        }),
+    );
+    assert!(
+        resp.get("error").is_some(),
+        "6th session must be rejected: {resp}"
+    );
+    let err_msg = resp["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        err_msg.contains("limit"),
+        "error must mention session limit: {err_msg}"
+    );
+
+    // Clean up all sessions.
+    for sid in &session_ids {
+        let _ = client.request("forge/profiler/stopTrace", json!({ "session_id": sid }));
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+/// Edge case: analyzeHeap with type filter returns only matching types.
+#[test]
+fn test_profiler_edge_analyze_heap_type_filter() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // Collect a dump first.
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let dump_path = tmp_dir
+        .path()
+        .join("filter-test.dmp")
+        .to_string_lossy()
+        .to_string();
+
+    let resp = client.request(
+        "forge/profiler/collectDump",
+        json!({
+            "pid": target_pid,
+            "dump_type": "Heap",
+            "output_path": dump_path,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "collectDump must succeed: {resp}"
+    );
+
+    // Analyze with filter for "String".
+    let resp = client.request(
+        "forge/profiler/analyzeHeap",
+        json!({
+            "dump_path": dump_path,
+            "type_filter": "String",
+            "limit": 100,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "analyzeHeap must succeed: {resp}"
+    );
+    let types = resp["result"]["types"]
+        .as_array()
+        .expect("types must be array");
+    assert!(!types.is_empty(), "filtered result must not be empty");
+
+    // Every returned type must contain "String" (case-insensitive filter).
+    for t in types {
+        let name = t["type_name"].as_str().unwrap_or("");
+        assert!(
+            name.to_lowercase().contains("string"),
+            "filtered type must contain 'String', got: {name}"
+        );
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
 }

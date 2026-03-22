@@ -20,6 +20,7 @@ internal sealed class CSharpSidecar : SidecarHost
         Register("workspace/status", HandleWorkspaceStatusAsync);
         Register("workspace/diagnostics", HandleDiagnosticsAsync);
         Register("workspace/diagnostics/all", HandleAllDiagnosticsAsync);
+        Register("textDocument/didChange", HandleDidChangeAsync);
         Register("textDocument/completion", HandleCompletionAsync);
         Register("textDocument/hover", HandleHoverAsync);
         Register("textDocument/definition", HandleDefinitionAsync);
@@ -39,6 +40,30 @@ internal sealed class CSharpSidecar : SidecarHost
 
 
 
+
+    private async Task<ByteResult> HandleDidChangeAsync(
+        byte[] payload,
+        CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer
+                .Deserialize<DidChangeRequest>(
+                    payload, cancellationToken: ct);
+            var result = await _workspace.UpdateDocumentTextAsync(
+                request.FilePath, request.NewText, ct)
+                .ConfigureAwait(false);
+            return result.IsError
+                ? ByteResult.Failure(!result ?? "Update failed")
+                : new ByteResult.Ok<byte[], string>(
+                    MessagePackSerializer.Serialize(
+                        "ok", cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
 
     private async Task<ByteResult> HandleAllDiagnosticsAsync(
         byte[] payload,
@@ -287,6 +312,13 @@ internal sealed class CSharpSidecar : SidecarHost
             return ByteResult.Failure(ex.Message);
         }
     }
+}
+
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class DidChangeRequest
+{
+    [Key(0)] public string FilePath { get; set; } = "";
+    [Key(1)] public string NewText { get; set; } = "";
 }
 
 [MessagePackObject(AllowPrivate = true)]

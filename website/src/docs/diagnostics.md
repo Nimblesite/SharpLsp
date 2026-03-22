@@ -6,7 +6,8 @@ eleventyNavigation:
   order: 5
 ---
 
-![Real-time Roslyn diagnostics across your entire solution](/assets/screenshots/diagnostics-page.png)
+![Diagnostics in VS Code](/assets/screenshots/vscode-diagnostics-page.png)
+![Diagnostics in Zed](/assets/screenshots/zed-diagnostics-page.png)
 
 *Real-time Roslyn diagnostics across your entire solution — not just open files.*
 

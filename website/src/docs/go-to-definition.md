@@ -6,7 +6,8 @@ eleventyNavigation:
   order: 7
 ---
 
-![Navigate to any symbol definition, type, declaration, or implementation](/assets/screenshots/go-to-definition-page.png)
+![Go to Definition in VS Code](/assets/screenshots/vscode-go-to-definition-page.png)
+![Go to Definition in Zed](/assets/screenshots/zed-go-to-definition-page.png)
 
 *Navigate to any symbol definition, type definition, declaration, or implementation — all four LSP navigation methods fully implemented.*
 

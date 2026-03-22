@@ -105,42 +105,6 @@ function writeSln(slnPath: string, projName: string, guid: string): void {
   ].join("\n"));
 }
 
-/**
- * Load a solution and wait until the tree contains a node matching `waitForLabel`.
- */
-async function loadAndWait(
-  tmpDir: string,
-  projName: string,
-  guid: string,
-  csContent: string,
-  waitForLabel: string,
-): Promise<ExplorerApi["explorerProvider"]> {
-  const projDir = path.join(tmpDir, projName);
-  fs.mkdirSync(projDir, { recursive: true });
-  writeCsproj(projDir, projName);
-  fs.writeFileSync(path.join(projDir, "Source.cs"), csContent);
-
-  const slnPath = path.join(tmpDir, `${projName}.sln`);
-  writeSln(slnPath, projName, guid);
-
-  const provider = getProvider();
-  await provider.loadSolution(slnPath);
-
-  const csUri = vscode.Uri.file(path.join(projDir, "Source.cs"));
-  const csDoc = await vscode.workspace.openTextDocument(csUri);
-  await vscode.window.showTextDocument(csDoc);
-  await waitForDocumentSymbols(csUri);
-  await provider.refresh();
-
-  await pollUntilResult(
-    async () => findByLabel(provider.getChildren(), waitForLabel),
-    (n) => n !== undefined,
-    10_000,
-  );
-
-  return provider;
-}
-
 // ── C# source used for all "AllTypes" suites ──────────────────────
 
 const ALL_TYPES_CS = `namespace AllTypesNS
@@ -1142,8 +1106,7 @@ suite("Context Menu — Correct Node Type Scoping", () => {
   });
 
   test("revealInExplorer contextValue pattern matches all symbol nodes", () => {
-    // Pattern: /^symbol\./
-    const pattern = /^symbol\./;
+    const prefix = "symbol.";
 
     const mustMatch = [
       "symbol.class",
@@ -1169,21 +1132,20 @@ suite("Context Menu — Correct Node Type Scoping", () => {
 
     for (const cv of mustMatch) {
       assert.ok(
-        pattern.test(cv),
+        cv.startsWith(prefix),
         `revealInExplorer pattern must match '${cv}'`,
       );
     }
     for (const cv of mustNotMatch) {
       assert.ok(
-        !pattern.test(cv),
+        !cv.startsWith(prefix),
         `revealInExplorer pattern must NOT match '${cv}'`,
       );
     }
   });
 
   test("copyQualifiedName contextValue pattern matches all symbol nodes", () => {
-    // Pattern: /^symbol\./
-    const pattern = /^symbol\./;
+    const prefix = "symbol.";
     const mustMatch = [
       "symbol.class",
       "symbol.method",
@@ -1191,10 +1153,10 @@ suite("Context Menu — Correct Node Type Scoping", () => {
       "symbol.namespace",
     ];
     for (const cv of mustMatch) {
-      assert.ok(pattern.test(cv), `copyQualifiedName must match '${cv}'`);
+      assert.ok(cv.startsWith(prefix), `copyQualifiedName must match '${cv}'`);
     }
-    assert.ok(!pattern.test("solution"), "copyQualifiedName must not match 'solution'");
-    assert.ok(!pattern.test("project"), "copyQualifiedName must not match 'project'");
+    assert.ok(!"solution".startsWith(prefix), "copyQualifiedName must not match 'solution'");
+    assert.ok(!"project".startsWith(prefix), "copyQualifiedName must not match 'project'");
   });
 
   test("copyName contextValue pattern matches symbol, solution, and project nodes", () => {

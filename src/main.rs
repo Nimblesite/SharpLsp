@@ -176,10 +176,11 @@ fn run_server() -> Result<()> {
         &runtime,
         &forge_config,
         csharp_sidecar.as_ref(),
+        fsharp_sidecar.as_ref(),
     )?;
 
     // Shut down profiler sessions.
-    runtime.block_on(profiler::session::store().shutdown());
+    profiler::session::store().shutdown();
 
     // Shut down sidecars gracefully.
     if let Some(ref sidecar) = csharp_sidecar {
@@ -295,6 +296,7 @@ fn main_loop(
     runtime: &tokio::runtime::Runtime,
     _forge_config: &config::ForgeConfig,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<()> {
     let vfs = Vfs::new();
     let parsers = TsParsers::new();
@@ -332,6 +334,7 @@ fn main_loop(
                     connection,
                     runtime,
                     csharp_sidecar,
+                    fsharp_sidecar,
                 )?;
             }
             Message::Notification(notif) => {
@@ -375,6 +378,7 @@ fn handle_request(
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<()> {
     let id = req.id.clone();
 
@@ -391,40 +395,48 @@ fn handle_request(
             handlers::handle_linked_editing_range(req, vfs, parsers, trees)
         }
         // Semantic (sidecar)
-        Completion::METHOD => semantic::handle_completion(req, runtime, csharp_sidecar),
+        Completion::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            semantic::handle_completion(req, runtime, sidecar)
+        }
         HoverRequest::METHOD => {
             if handlers::is_hover_on_comment(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                semantic::handle_hover(req, runtime, csharp_sidecar)
+                let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+                semantic::handle_hover(req, runtime, sidecar)
             }
         }
         GotoDefinition::METHOD => {
             if handlers::is_non_symbol_position(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                semantic::handle_definition(req, vfs, nav_cache, runtime, csharp_sidecar)
+                let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+                semantic::handle_definition(req, vfs, nav_cache, runtime, primary, fallback)
             }
         }
         GotoTypeDefinition::METHOD => {
             if handlers::is_non_symbol_position(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                semantic::handle_type_definition(req, vfs, nav_cache, runtime, csharp_sidecar)
+                let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+                semantic::handle_type_definition(req, vfs, nav_cache, runtime, primary, fallback)
             }
         }
         GotoDeclaration::METHOD => {
             if handlers::is_non_symbol_position(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                semantic::handle_declaration(req, vfs, nav_cache, runtime, csharp_sidecar)
+                let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+                semantic::handle_declaration(req, vfs, nav_cache, runtime, primary, fallback)
             }
         }
         GotoImplementation::METHOD => {
             if handlers::is_non_symbol_position(&req, trees) {
                 Ok(serde_json::Value::Null)
             } else {
-                semantic::handle_implementation(req, runtime, csharp_sidecar)
+                let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+                semantic::handle_implementation(req, runtime, primary, fallback)
             }
         }
         // Custom requests
@@ -433,11 +445,11 @@ fn handle_request(
         // Profiler requests
         "forge/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
         "forge/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
-        "forge/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req, runtime),
+        "forge/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req),
         "forge/profiler/startCounters" => {
             profiler::handlers::handle_start_counters(req, connection.sender.clone())
         }
-        "forge/profiler/stopCounters" => profiler::handlers::handle_stop_counters(req, runtime),
+        "forge/profiler/stopCounters" => profiler::handlers::handle_stop_counters(req),
         "forge/profiler/collectDump" => {
             profiler::handlers::handle_collect_dump(req, runtime, connection.sender.clone())
         }
@@ -459,6 +471,30 @@ fn handle_request(
     };
     connection.sender.send(Message::Response(resp))?;
     Ok(())
+}
+
+// ── Language-Based Sidecar Routing ────────────────────────────────
+
+/// Pick the correct sidecar (C# or F#) based on the request's document URI.
+fn pick_sidecar<'a>(
+    req: &Request,
+    csharp: Option<&'a Arc<SidecarManager>>,
+    fsharp: Option<&'a Arc<SidecarManager>>,
+) -> Option<&'a Arc<SidecarManager>> {
+    let uri = extract_document_uri(req);
+    match uri.and_then(|u| LangId::from_uri(&u)) {
+        Some(LangId::FSharp) => fsharp,
+        _ => csharp,
+    }
+}
+
+/// Extract the document URI from a request's params (best-effort).
+fn extract_document_uri(req: &Request) -> Option<Uri> {
+    req.params
+        .get("textDocument")
+        .and_then(|td| td.get("uri"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<Uri>().ok())
 }
 
 // ── Custom Request Handling ───────────────────────────────────────
@@ -519,6 +555,15 @@ fn handle_notification(
                     vfs.change(uri, params.text_document.version, change.text.clone());
                     reparse(parsers, trees, uri, &change.text);
                     nav_cache.invalidate(uri);
+                    // Notify the sidecar so Roslyn sees the new source text.
+                    if let Ok(file_path) = semantic::uri_to_path(uri) {
+                        semantic::notify_did_change(
+                            &file_path,
+                            &change.text,
+                            runtime,
+                            csharp_sidecar,
+                        );
+                    }
                     trigger_diagnostics(uri, runtime, csharp_sidecar, connection);
                 }
             }

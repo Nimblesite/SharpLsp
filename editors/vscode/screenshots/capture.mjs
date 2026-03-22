@@ -145,6 +145,20 @@ async function main() {
     await sleep(3000);
     await captureScreenshot(page, "nested-classes", "Nested class hierarchy");
 
+    // 4. Profiler tree view
+    console.log("  Switching to Profiler view...");
+    const forgeTab = page.getByRole("tab", { name: "Forge" });
+    if (await forgeTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await forgeTab.click();
+      await sleep(1000);
+    }
+    const profilerSection = page.getByRole("treeitem", { name: /Profiler/i });
+    if (await profilerSection.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await profilerSection.click();
+      await sleep(2000);
+    }
+    await captureScreenshot(page, "profiler-page", "Profiler tree view with .NET processes");
+
     console.log("\nDone! Screenshots saved to website/src/assets/screenshots/");
 
     // List results

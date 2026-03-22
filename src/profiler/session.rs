@@ -1,12 +1,12 @@
 //! Profiler session management — tracks active trace and counter sessions.
 
+use std::process::Child;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
 use anyhow::{bail, Result};
 use dashmap::DashMap;
 use serde::Serialize;
-use tokio::process::Child;
 use tracing::{info, warn};
 
 /// Global session store shared across all profiler handlers.
@@ -158,14 +158,14 @@ impl SessionStore {
     }
 
     /// Clean up all sessions (called on LSP shutdown).
-    pub async fn shutdown(&self) {
+    pub fn shutdown(&self) {
         info!("Cleaning up profiler sessions");
         let session_ids: Vec<String> = self.sessions.iter().map(|entry| entry.id.clone()).collect();
 
         for id in session_ids {
             if let Some(mut entry) = self.sessions.get_mut(&id) {
                 if let Some(ref mut child) = entry.child {
-                    let _ = child.kill().await;
+                    let _ = child.kill();
                 }
                 entry.state = SessionState::Stopped;
             }

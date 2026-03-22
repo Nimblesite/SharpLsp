@@ -1,5 +1,8 @@
 //! Live counter monitoring via `dotnet-counters monitor`.
 
+use std::io::BufRead;
+use std::process::{Command, Stdio};
+
 use anyhow::{Context, Result};
 use lsp_server::{Message, Notification};
 use serde::{Deserialize, Serialize};
@@ -57,44 +60,40 @@ pub fn start(
         "Starting dotnet-counters monitor"
     );
 
-    let child = tokio::process::Command::new(tool)
+    let child = Command::new(tool)
         .args(["monitor", "-p"])
         .arg(params.pid.to_string())
         .args(["--counters", &providers_arg])
         .args(["--refresh-interval", &params.refresh_interval.to_string()])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .context("failed to spawn dotnet-counters")?;
 
     let session_id = session::store().create(SessionKind::Counters, params.pid, None, child)?;
 
-    // Spawn a reader task to parse stdout and send notifications.
     spawn_counter_reader(session_id.clone(), sender);
 
     Ok(StartCountersResult { session_id })
 }
 
 /// Stop counter monitoring.
-pub async fn stop(session_id: &str) -> Result<()> {
+pub fn stop(session_id: &str) -> Result<()> {
     let store = session::store();
     let mut child = store.take_child(session_id)?;
 
-    let _ = child.kill().await;
-    let _ = child.wait().await;
+    let _ = child.kill();
+    let _ = child.wait();
 
     store.mark_stopped(session_id, None);
     info!(session_id = %session_id, "Counter monitoring stopped");
     Ok(())
 }
 
-/// Spawn a background task to read counter output and send LSP notifications.
+/// Spawn a background thread to read counter output and send notifications.
 fn spawn_counter_reader(session_id: String, sender: crossbeam_channel::Sender<Message>) {
-    tokio::spawn(async move {
-        // Read counter output from the session's child stdout.
-        // The actual parsing happens when we receive lines from dotnet-counters.
-        // For now, we parse the simple text output format.
+    std::thread::spawn(move || {
         let store = session::store();
         let stdout = {
             let Some(mut entry) = store.sessions().get_mut(&session_id) else {
@@ -107,11 +106,10 @@ fn spawn_counter_reader(session_id: String, sender: crossbeam_channel::Sender<Me
         };
 
         let Some(stdout) = stdout else { return };
+        let reader = std::io::BufReader::new(stdout);
 
-        let reader = tokio::io::BufReader::new(stdout);
-        let mut lines = tokio::io::AsyncBufReadExt::lines(reader);
-
-        while let Ok(Some(line)) = lines.next_line().await {
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
             if let Some(counter) = parse_counter_line(&line) {
                 let params = CounterUpdateParams {
                     session_id: session_id.clone(),
@@ -139,7 +137,6 @@ fn parse_counter_line(line: &str) -> Option<CounterValue> {
         return None;
     }
 
-    // Find the last whitespace-separated token as the value.
     let parts: Vec<&str> = trimmed.rsplitn(2, char::is_whitespace).collect();
     if parts.len() < 2 {
         return None;
@@ -150,7 +147,6 @@ fn parse_counter_line(line: &str) -> Option<CounterValue> {
 
     let value: f64 = value_str.replace(',', "").parse().ok()?;
 
-    // Extract unit from parentheses if present: "GC Heap Size (MB)" -> unit = "MB"
     let (display_name, unit) = if let Some(paren_start) = name_part.rfind('(') {
         let unit = name_part
             .get(paren_start..)

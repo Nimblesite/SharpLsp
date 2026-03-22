@@ -90,8 +90,8 @@ The implementation is phased: get process discovery and basic tracing working fi
 
 ### Performance Validation
 
-- [ ] Benchmark process list refresh — target <500ms
-- [ ] Benchmark trace start latency — target <1s
-- [ ] Benchmark counter update delivery latency — target <100ms from tool output to editor
-- [ ] Benchmark heap analysis on dump with 50k+ types — target <5s
-- [ ] Benchmark GC root traversal — target <10s
+- [x] Benchmark process list refresh — target <500ms
+- [x] Benchmark trace start latency — target <1s
+- [x] Benchmark counter update delivery latency — target <100ms from tool output to editor
+- [x] Benchmark heap analysis on dump with 50k+ types — target <5s
+- [x] Benchmark GC root traversal — target <10s

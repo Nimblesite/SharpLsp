@@ -113,75 +113,67 @@ pub fn handle_hover(
     Ok(value)
 }
 
-/// Handle `textDocument/definition` via the C# sidecar.
-///
-/// Returns `Location[]` because a symbol may have multiple definitions
-/// (e.g. partial classes split across files).
+/// Handle `textDocument/definition` — tries primary sidecar, falls back to
+/// the other for cross-language navigation (C# ↔ F#).
 pub fn handle_definition(
     req: Request,
     vfs: &crate::vfs::Vfs,
     nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    handle_cached_nav(
-        req,
-        vfs,
-        nav_cache,
-        runtime,
-        sidecar,
-        "textDocument/definition",
-        true,
+    handle_cached_nav_with_fallback(
+        req, vfs, nav_cache, runtime, sidecar, fallback,
+        "textDocument/definition", true,
     )
 }
 
-/// Handle `textDocument/typeDefinition` via the C# sidecar.
+/// Handle `textDocument/typeDefinition` with cross-language fallback.
 pub fn handle_type_definition(
     req: Request,
     vfs: &crate::vfs::Vfs,
     nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    handle_cached_nav(
-        req,
-        vfs,
-        nav_cache,
-        runtime,
-        sidecar,
-        "textDocument/typeDefinition",
-        false,
+    handle_cached_nav_with_fallback(
+        req, vfs, nav_cache, runtime, sidecar, fallback,
+        "textDocument/typeDefinition", false,
     )
 }
 
-/// Handle `textDocument/declaration` via the C# sidecar.
+/// Handle `textDocument/declaration` with cross-language fallback.
 pub fn handle_declaration(
     req: Request,
     vfs: &crate::vfs::Vfs,
     nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    handle_cached_nav(
-        req,
-        vfs,
-        nav_cache,
-        runtime,
-        sidecar,
-        "textDocument/declaration",
-        false,
+    handle_cached_nav_with_fallback(
+        req, vfs, nav_cache, runtime, sidecar, fallback,
+        "textDocument/declaration", false,
     )
 }
 
-/// Handle `textDocument/implementation` via the C# sidecar.
-///
-/// Returns `Location[]` because a symbol may have multiple implementations.
+/// Handle `textDocument/implementation` with cross-language fallback.
 pub fn handle_implementation(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    handle_multi_location_nav(req, runtime, sidecar, "textDocument/implementation")
+    let value = handle_multi_location_nav(req.clone(), runtime, sidecar, "textDocument/implementation")?;
+    if is_empty_nav_result(&value) {
+        if let Some(fb) = fallback {
+            debug!("Cross-language fallback for textDocument/implementation");
+            return handle_multi_location_nav(req, runtime, Some(fb), "textDocument/implementation");
+        }
+    }
+    Ok(value)
 }
 
 // ── Shared Helpers ────────────────────────────────────────────────
@@ -233,6 +225,40 @@ fn handle_multi_location_nav(
 
     let response = GotoDefinitionResponse::Array(locations);
     Ok(serde_json::to_value(response)?)
+}
+
+/// Check if a navigation result is empty (null or empty array).
+fn is_empty_nav_result(value: &serde_json::Value) -> bool {
+    value.is_null()
+        || value.as_array().is_some_and(|a| a.is_empty())
+}
+
+/// Cached navigation with cross-language fallback.
+///
+/// Tries the primary sidecar first. If it returns empty/null,
+/// retries with the fallback sidecar (cross-language C# ↔ F#).
+fn handle_cached_nav_with_fallback(
+    req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
+    method: &str,
+    multi: bool,
+) -> Result<serde_json::Value> {
+    let value = handle_cached_nav(
+        req.clone(), vfs, nav_cache, runtime, sidecar, method, multi,
+    )?;
+    if is_empty_nav_result(&value) {
+        if let Some(fb) = fallback {
+            debug!("Cross-language fallback for {method}");
+            return handle_cached_nav(
+                req, vfs, nav_cache, runtime, Some(fb), method, multi,
+            );
+        }
+    }
+    Ok(value)
 }
 
 /// Cached navigation handler — checks cache before dispatching to sidecar.
@@ -388,6 +414,36 @@ struct SidecarCompletionReq {
     file_path: String,
     line: u32,
     character: u32,
+}
+
+/// Notify the sidecar that a document's text has changed.
+pub fn notify_did_change(
+    file_path: &str,
+    new_text: &str,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) {
+    let Some(sidecar) = sidecar else { return };
+    let request = SidecarDidChangeReq {
+        file_path: file_path.to_string(),
+        new_text: new_text.to_string(),
+    };
+    let Ok(payload) = rmp_serde::to_vec(&request) else {
+        warn!("Failed to serialize didChange request");
+        return;
+    };
+    let sidecar = Arc::clone(sidecar);
+    runtime.spawn(async move {
+        if let Err(err) = sidecar.request("textDocument/didChange", payload).await {
+            debug!("Sidecar didChange failed: {err:#}");
+        }
+    });
+}
+
+#[derive(serde::Serialize)]
+struct SidecarDidChangeReq {
+    file_path: String,
+    new_text: String,
 }
 
 #[derive(serde::Serialize)]

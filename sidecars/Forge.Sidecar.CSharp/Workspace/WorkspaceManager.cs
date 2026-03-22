@@ -42,6 +42,33 @@ internal sealed class WorkspaceManager
         }
     }
 
+    /// <summary>Update the in-memory text for a document (live editing).</summary>
+    public async Task<VoidResult> UpdateDocumentTextAsync(
+        string filePath,
+        string newText,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var document = await FindDocumentAsync(filePath, ct)
+                .ConfigureAwait(false);
+            if (document is null)
+            {
+                return VoidResult.Failure(
+                    $"Document not found: {filePath}");
+            }
+
+            var newSource = SourceText.From(newText);
+            _solution = _solution!.WithDocumentText(
+                document.Id, newSource);
+            return new VoidResult.Ok<Unit, string>(Unit.Value);
+        }
+        catch (Exception ex)
+        {
+            return VoidResult.Failure(ex.Message);
+        }
+    }
+
     /// <summary>Get compiler diagnostics for a file.</summary>
     public async Task<DiagnosticsResult>
         GetDiagnosticsAsync(
@@ -50,7 +77,8 @@ internal sealed class WorkspaceManager
     {
         try
         {
-            var document = FindDocument(filePath);
+            var document = await FindDocumentAsync(filePath, ct)
+                .ConfigureAwait(false);
             if (document is null)
             {
                 return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([]);
@@ -137,7 +165,8 @@ internal sealed class WorkspaceManager
     {
         try
         {
-            var document = FindDocument(filePath);
+            var document = await FindDocumentAsync(filePath, ct)
+                .ConfigureAwait(false);
             if (document is null)
             {
                 return new HoverQueryResult.Ok<HoverResult?, string>(null);
@@ -167,7 +196,8 @@ internal sealed class WorkspaceManager
     {
         try
         {
-            var document = FindDocument(filePath);
+            var document = await FindDocumentAsync(filePath, ct)
+                .ConfigureAwait(false);
             if (document is null)
             {
                 return new ImplementationsResult.Ok<LocationListResult, string>(
@@ -195,7 +225,8 @@ internal sealed class WorkspaceManager
     {
         try
         {
-            var document = FindDocument(filePath);
+            var document = await FindDocumentAsync(filePath, ct)
+                .ConfigureAwait(false);
             if (document is null)
             {
                 return new DefinitionResult.Ok<LocationResult?, string>(null);
