@@ -104,7 +104,6 @@ for (const viewport of MOBILE_VIEWPORTS) {
         `${BASE}/docs/diagnostics/`,
         `${BASE}/docs/hover/`,
         `${BASE}/docs/go-to-definition/`,
-        `${BASE}/docs/fsharp/`,
         `${BASE}/docs/configuration/`,
       ];
 

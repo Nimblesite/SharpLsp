@@ -6,6 +6,10 @@ eleventyNavigation:
   order: 5
 ---
 
+![Real-time Roslyn diagnostics across your entire solution](/assets/screenshots/diagnostics-page.png)
+
+*Real-time Roslyn diagnostics across your entire solution — not just open files.*
+
 # Diagnostics
 
 Forge delivers real-time C# compiler errors, warnings, and Roslyn analyzer diagnostics for your entire solution — not just open files. Solution-wide analysis is **on by default**, which is the #1 feature C# Dev Kit lacks and the primary reason developers choose Visual Studio or Rider for large solutions.
@@ -120,8 +124,3 @@ Changes to `solution_wide_analysis` and `project_filter` take effect immediately
 
 Solution-wide analysis is default-on in Forge. C# Dev Kit doesn't support it at all. This single difference makes Forge the correct choice for any multi-project solution.
 
-## Screenshot
-
-![Diagnostics documentation page]({{ "/assets/screenshots/diagnostics-page.png" | url }})
-
-*Real-time Roslyn diagnostics across your entire solution — not just open files.*
