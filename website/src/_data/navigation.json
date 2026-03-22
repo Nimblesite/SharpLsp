@@ -10,21 +10,26 @@
       "items": [
         { "text": "Getting Started", "url": "/docs/" },
         { "text": "Architecture", "url": "/docs/architecture/" },
-        { "text": "Editor Setup", "url": "/docs/editors/" }
+        { "text": "Editor Setup", "url": "/docs/editors/" },
+        { "text": "Configuration", "url": "/docs/configuration/" }
+      ]
+    },
+    {
+      "title": "Features",
+      "items": [
+        { "text": "Code Completions", "url": "/docs/completions/" },
+        { "text": "Diagnostics", "url": "/docs/diagnostics/" },
+        { "text": "Hover / Quick Info", "url": "/docs/hover/" },
+        { "text": "Go to Definition", "url": "/docs/go-to-definition/" },
+        { "text": "F# Support", "url": "/docs/fsharp/" }
       ]
     },
     {
       "title": "Community",
       "items": [
         { "text": "GitHub", "url": "https://github.com/MelbourneDeveloper/forge" },
-        { "text": "Issues", "url": "https://github.com/MelbourneDeveloper/forge/issues" }
-      ]
-    },
-    {
-      "title": "More",
-      "items": [
-        { "text": "Blog", "url": "/blog/" },
-        { "text": "LSP Specification", "url": "https://microsoft.github.io/language-server-protocol/" }
+        { "text": "Issues", "url": "https://github.com/MelbourneDeveloper/forge/issues" },
+        { "text": "Blog", "url": "/blog/" }
       ]
     }
   ]
