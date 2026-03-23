@@ -1,4 +1,4 @@
-module Forge.Sidecar.FSharp.Tests
+module Forge.Sidecar.FSharp.Tests.MessagePackRoundtripTests
 
 open System
 open Xunit

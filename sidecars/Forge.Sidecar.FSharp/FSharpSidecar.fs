@@ -38,7 +38,7 @@ type LocationResult =
 [<MessagePackObject(AllowPrivate = true)>]
 [<NoComparison; NoEquality>]
 type LocationListResult =
-    { [<Key(0)>] Locations: LocationResult list }
+    { [<Key(0)>] Locations: LocationResult array }
 
 module private Helpers =
     /// Convert a FSharpWorkspace.DefinitionLocation to a LocationResult.
@@ -66,9 +66,9 @@ module private Helpers =
                     let! result = getLocation workspace request.FilePath request.Line request.Character
                     match result with
                     | Some loc ->
-                        return serializeOk { Locations = [ toLocationResult loc ] } ct
+                        return serializeOk { Locations = [| toLocationResult loc |] } ct
                     | None ->
-                        return serializeOk { Locations = [] } ct
+                        return serializeOk { Locations = [||] } ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)
             })
@@ -83,7 +83,7 @@ module private Helpers =
                 try
                     let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
                     let! results = getLocations workspace request.FilePath request.Line request.Character
-                    let locations = results |> List.map toLocationResult
+                    let locations = results |> List.map toLocationResult |> Array.ofList
                     return serializeOk { Locations = locations } ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)

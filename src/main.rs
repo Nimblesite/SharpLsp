@@ -416,7 +416,7 @@ fn handle_request(
             pull_diagnostics::handle_document_diagnostic(req, runtime, sidecar)
         }
         WorkspaceDiagnosticRequest::METHOD => pull_diagnostics::handle_workspace_diagnostic(req),
-        _ => handle_custom_request(req, parsers, connection, runtime),
+        _ => handle_custom_request(req, parsers, vfs, connection, runtime),
     };
 
     let resp = match result {
@@ -475,11 +475,12 @@ fn handle_nav_request(
 fn handle_custom_request(
     req: Request,
     parsers: &TsParsers,
+    vfs: &Vfs,
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
 ) -> Result<serde_json::Value> {
     match req.method.as_str() {
-        "forge/workspaceSymbols" => handle_workspace_symbols(req, parsers),
+        "forge/workspaceSymbols" => handle_workspace_symbols(req, parsers, vfs),
         "forge/sortMembers" => handle_sort_members(req, parsers),
         "forge/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
         "forge/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
@@ -546,9 +547,13 @@ fn extract_document_uri(req: &Request) -> Option<Uri> {
 
 // ── Custom Request Handling ───────────────────────────────────────
 
-fn handle_workspace_symbols(req: Request, parsers: &TsParsers) -> Result<serde_json::Value> {
+fn handle_workspace_symbols(
+    req: Request,
+    parsers: &TsParsers,
+    vfs: &Vfs,
+) -> Result<serde_json::Value> {
     let params: workspace_symbols::WorkspaceSymbolsParams = serde_json::from_value(req.params)?;
-    let response = workspace_symbols::handle(&params, parsers)?;
+    let response = workspace_symbols::handle(&params, parsers, vfs)?;
     Ok(serde_json::to_value(response)?)
 }
 

@@ -268,8 +268,13 @@ let private getSymbolUse
     else
         let lineText = lines[line]
         let fcsLine = line + 1
-        checkResults.GetSymbolUseAtLocation(
-            fcsLine, character, lineText, [])
+        let island =
+            QuickParse.GetCompleteIdentifierIsland true lineText character
+        match island with
+        | None -> None
+        | Some(name, endCol, _) ->
+            checkResults.GetSymbolUseAtLocation(
+                fcsLine, endCol, lineText, [ name ])
 
 /// Extract the type entity from an FSharpType.
 let private getTypeEntity (ty: FSharpType) =

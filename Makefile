@@ -145,6 +145,11 @@ test-dotnet: build-dotnet
 	 done | head -1) ; \
 	 FSHARP_PCT=$$(echo "$${FSHARP_COV:-0} * 100" | bc 2>/dev/null || echo "0") ; \
 	 $(CHECK_COV) forge-sidecar-fsharp "$$FSHARP_PCT" ; \
+	 COMMON_COV=$$(for f in target/coverage-dotnet/*/coverage.cobertura.xml; do \
+		sed -n 's/.*package name="Forge.Sidecar.Common" line-rate="\([^"]*\)".*/\1/p' "$$f" 2>/dev/null; \
+	 done | sort -rn | head -1) ; \
+	 COMMON_PCT=$$(echo "$${COMMON_COV:-0} * 100" | bc 2>/dev/null || echo "0") ; \
+	 $(CHECK_COV) forge-sidecar-common "$$COMMON_PCT" ; \
 	 exit $$TEST_EXIT
 
 # ── Lint (all languages — includes build) ────────────────────────

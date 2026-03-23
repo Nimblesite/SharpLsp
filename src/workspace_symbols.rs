@@ -13,6 +13,7 @@ use tree_sitter::Node;
 
 use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::utils::usize_to_u32;
+use crate::vfs::Vfs;
 
 /// Request params for `forge/workspaceSymbols`.
 #[derive(Debug, Deserialize)]
@@ -70,6 +71,7 @@ pub struct SymbolPosition {
 pub fn handle(
     params: &WorkspaceSymbolsParams,
     parsers: &TsParsers,
+    vfs: &Vfs,
 ) -> Result<WorkspaceSymbolsResponse> {
     let sln_path = Path::new(&params.solution);
     let projects = discover_projects(sln_path)?;
@@ -82,7 +84,7 @@ pub fn handle(
 
     let project_nodes: Vec<ProjectNode> = projects
         .iter()
-        .filter_map(|proj| build_project_node(proj, parsers).ok())
+        .filter_map(|proj| build_project_node(proj, parsers, vfs).ok())
         .collect();
 
     Ok(WorkspaceSymbolsResponse {
@@ -140,7 +142,11 @@ struct ProjectInfo {
 }
 
 /// Build a `ProjectNode` by finding and parsing all source files.
-fn build_project_node(project: &ProjectInfo, parsers: &TsParsers) -> Result<ProjectNode> {
+fn build_project_node(
+    project: &ProjectInfo,
+    parsers: &TsParsers,
+    vfs: &Vfs,
+) -> Result<ProjectNode> {
     let proj_dir = Path::new(&project.path)
         .parent()
         .context("project has no parent")?;
@@ -149,7 +155,7 @@ fn build_project_node(project: &ProjectInfo, parsers: &TsParsers) -> Result<Proj
 
     let symbols: Vec<FileSymbol> = source_files
         .iter()
-        .filter_map(|file| parse_file_symbols(file, parsers).ok())
+        .filter_map(|file| parse_file_symbols(file, parsers, vfs).ok())
         .filter(|fs| !fs.symbols.is_empty())
         .collect();
 
@@ -194,9 +200,22 @@ fn is_source_file(path: &Path) -> bool {
     matches!(path.extension().and_then(|e| e.to_str()), Some("cs" | "fs"))
 }
 
+/// Read file content from VFS if the document is open, otherwise from disk.
+fn vfs_or_disk(file_path: &str, vfs: &Vfs) -> Result<String> {
+    let abs = std::fs::canonicalize(file_path).unwrap_or_else(|_| file_path.into());
+    let uri_str = format!("file://{}", abs.display());
+    if let Ok(uri) = uri_str.parse::<lsp_types::Uri>() {
+        if let Some(content) = vfs.get_content(&uri) {
+            return Ok(content);
+        }
+    }
+    std::fs::read_to_string(file_path).with_context(|| format!("read {file_path}"))
+}
+
 /// Parse a single source file and extract symbols.
-fn parse_file_symbols(file_path: &str, parsers: &TsParsers) -> Result<FileSymbol> {
-    let source = std::fs::read_to_string(file_path).with_context(|| format!("read {file_path}"))?;
+/// Prefers VFS content (unsaved buffer) over disk for open documents.
+fn parse_file_symbols(file_path: &str, parsers: &TsParsers, vfs: &Vfs) -> Result<FileSymbol> {
+    let source = vfs_or_disk(file_path, vfs)?;
 
     let path = Path::new(file_path);
     let lang = LangId::from_path(path).context("unsupported file type")?;
@@ -259,25 +278,47 @@ fn collect_symbols(node: Node, source: &[u8]) -> Vec<SymbolNode> {
     symbols
 }
 
+/// Extract the symbol name, handling field/event nested structure.
+fn extract_ws_symbol_name(node: Node, source: &[u8]) -> Option<String> {
+    if let Some(name_node) = node.child_by_field_name("name") {
+        return name_node.utf8_text(source).ok().map(String::from);
+    }
+    // field_declaration / event_field_declaration: variable_declaration > variable_declarator
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "variable_declaration" {
+            let mut inner = child.walk();
+            for declarator in child.children(&mut inner) {
+                if declarator.kind() == "variable_declarator" {
+                    return declarator
+                        .child_by_field_name("name")
+                        .and_then(|n| n.utf8_text(source).ok())
+                        .map(String::from);
+                }
+            }
+        }
+    }
+    None
+}
+
 fn node_to_symbol(node: Node, source: &[u8]) -> Option<SymbolNode> {
-    let (kind, name_field) = match node.kind() {
-        "namespace_declaration" | "file_scoped_namespace_declaration" => ("Namespace", "name"),
-        "class_declaration" | "record_declaration" => ("Class", "name"),
-        "struct_declaration" => ("Struct", "name"),
-        "interface_declaration" => ("Interface", "name"),
-        "enum_declaration" => ("Enum", "name"),
-        "method_declaration" => ("Method", "name"),
-        "constructor_declaration" => ("Constructor", "name"),
-        "property_declaration" => ("Property", "name"),
-        "field_declaration" => ("Field", "name"),
-        "delegate_declaration" => ("Function", "name"),
-        "event_declaration" => ("Event", "name"),
-        "enum_member_declaration" => ("EnumMember", "name"),
+    let kind = match node.kind() {
+        "namespace_declaration" | "file_scoped_namespace_declaration" => "Namespace",
+        "class_declaration" | "record_declaration" => "Class",
+        "struct_declaration" => "Struct",
+        "interface_declaration" => "Interface",
+        "enum_declaration" => "Enum",
+        "method_declaration" => "Method",
+        "constructor_declaration" => "Constructor",
+        "property_declaration" => "Property",
+        "field_declaration" => "Field",
+        "delegate_declaration" => "Function",
+        "event_declaration" | "event_field_declaration" => "Event",
+        "enum_member_declaration" => "EnumMember",
         _ => return None,
     };
 
-    let name_node = node.child_by_field_name(name_field)?;
-    let name = name_node.utf8_text(source).ok()?.to_string();
+    let name = extract_ws_symbol_name(node, source)?;
 
     let detail = extract_type_detail(node, source);
     let access = extract_access(node, source);

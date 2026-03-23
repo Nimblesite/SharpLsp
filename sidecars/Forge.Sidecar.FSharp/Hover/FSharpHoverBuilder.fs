@@ -25,9 +25,12 @@ let private renderGroupItem (item: ToolTipElementData) : string option =
         sb.AppendLine("```") |> ignore
 
         // XML documentation.
+        // FCS returns raw XML (e.g. <summary>...</summary>) without a wrapper element,
+        // unlike Roslyn which wraps in <member>. Wrap in <doc> so the shared renderer
+        // can find child elements like <summary> consistently.
         match item.XmlDoc with
         | FSharpXmlDoc.FromXmlText xmlDoc ->
-            let xmlText = xmlDoc.GetXmlText()
+            let xmlText = $"<doc>{xmlDoc.GetXmlText()}</doc>"
             let rendered = XmlDocRenderer.Render(xmlText)
             if rendered.Length > 0 then
                 sb.AppendLine() |> ignore
