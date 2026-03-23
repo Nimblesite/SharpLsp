@@ -46,53 +46,51 @@ let private parseFsprojSourceFiles (fsprojPath: string) : string array =
 
 /// Load a project from a path (finds .fsproj).
 let loadProject (state: FSharpWorkspaceState) (path: string) =
-    task {
-        try
-            let fsprojFiles =
-                Directory.GetFiles(path, "*.fsproj", SearchOption.AllDirectories)
-            if fsprojFiles.Length = 0 then
-                eprintfn $"No .fsproj found in {path}"
-                return Error "No .fsproj found"
-            else
-                let fsprojPath = fsprojFiles[0]
-                let sourceFiles = parseFsprojSourceFiles fsprojPath
-                // Build compiler options with framework refs from the runtime dir.
-                let runtimeDir =
-                    Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory()
-                let frameworkRefs =
-                    Directory.GetFiles(runtimeDir, "*.dll")
-                    |> Array.map (fun dll -> $"-r:{dll}")
-                // Also find FSharp.Core from the SDK directory.
-                let sdkFSharpCore =
-                    let sdkBase = Path.Combine(Path.GetDirectoryName(runtimeDir) |> string, "..", "..", "sdk")
-                    let sdkDir = Path.GetFullPath(sdkBase)
-                    if Directory.Exists(sdkDir) then
-                        Directory.GetFiles(sdkDir, "FSharp.Core.dll", SearchOption.AllDirectories)
-                        |> Array.tryHead
-                    else
-                        None
-                let fsharpCoreRef =
-                    match sdkFSharpCore with
-                    | Some path -> [| $"-r:{path}" |]
-                    | None -> [||]
-                let otherOptions =
-                    [| yield "--noframework"
-                       yield "--targetprofile:netcore"
-                       yield! frameworkRefs
-                       yield! fsharpCoreRef |]
-                let options =
-                    state.Checker.GetProjectOptionsFromCommandLineArgs(
-                        fsprojPath,
-                        [| yield! sourceFiles; yield! otherOptions |])
-                state.ProjectOptions <- Some options
-                state.IsLoaded <- true
-                let fileList = String.Join(", ", sourceFiles |> Array.map Path.GetFileName)
-                eprintfn $"F# workspace loaded from {fsprojPath} with files: [{fileList}]"
-                return Ok()
-        with ex ->
-            eprintfn $"F# workspace load failed: {ex.Message}"
-            return Error ex.Message
-    }
+    try
+        let fsprojFiles =
+            Directory.GetFiles(path, "*.fsproj", SearchOption.AllDirectories)
+        if fsprojFiles.Length = 0 then
+            eprintfn $"No .fsproj found in {path}"
+            System.Threading.Tasks.Task.FromResult(Error "No .fsproj found")
+        else
+            let fsprojPath = fsprojFiles[0]
+            let sourceFiles = parseFsprojSourceFiles fsprojPath
+            // Build compiler options with framework refs from the runtime dir.
+            let runtimeDir =
+                Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory()
+            let frameworkRefs =
+                Directory.GetFiles(runtimeDir, "*.dll")
+                |> Array.map (fun dll -> $"-r:{dll}")
+            // Also find FSharp.Core from the SDK directory.
+            let sdkFSharpCore =
+                let sdkBase = Path.Combine(Path.GetDirectoryName(runtimeDir) |> string, "..", "..", "sdk")
+                let sdkDir = Path.GetFullPath(sdkBase)
+                if Directory.Exists(sdkDir) then
+                    Directory.GetFiles(sdkDir, "FSharp.Core.dll", SearchOption.AllDirectories)
+                    |> Array.tryHead
+                else
+                    None
+            let fsharpCoreRef =
+                match sdkFSharpCore with
+                | Some corePath -> [| $"-r:{corePath}" |]
+                | None -> [||]
+            let otherOptions =
+                [| yield "--noframework"
+                   yield "--targetprofile:netcore"
+                   yield! frameworkRefs
+                   yield! fsharpCoreRef |]
+            let options =
+                state.Checker.GetProjectOptionsFromCommandLineArgs(
+                    fsprojPath,
+                    [| yield! sourceFiles; yield! otherOptions |])
+            state.ProjectOptions <- Some options
+            state.IsLoaded <- true
+            let fileList = String.Join(", ", sourceFiles |> Array.map Path.GetFileName)
+            eprintfn $"F# workspace loaded from {fsprojPath} with files: [{fileList}]"
+            System.Threading.Tasks.Task.FromResult(Ok())
+    with ex ->
+        eprintfn $"F# workspace load failed: {ex.Message}"
+        System.Threading.Tasks.Task.FromResult(Error ex.Message)
 
 /// Extract hover from FSharpCheckFileResults.
 let private extractToolTip
