@@ -3,6 +3,7 @@ module Forge.Sidecar.FSharp.FSharpWorkspace
 
 open System
 open System.IO
+open System.Xml.Linq
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Symbols
@@ -32,22 +33,62 @@ let create () : FSharpWorkspaceState =
       ProjectOptions = None
       IsLoaded = false }
 
-/// Load a project from a path (finds .fsproj or .fsx).
+/// Parse an .fsproj file to extract Compile Include entries.
+let private parseFsprojSourceFiles (fsprojPath: string) : string array =
+    let doc = XDocument.Load(fsprojPath)
+    let projDir = Path.GetDirectoryName(fsprojPath) |> string
+    doc.Descendants(XName.Get("Compile"))
+    |> Seq.choose (fun el ->
+        match el.Attribute(XName.Get("Include")) |> Option.ofObj with
+        | None -> None
+        | Some attr -> Some(Path.GetFullPath(Path.Combine(projDir, string attr.Value))))
+    |> Seq.toArray
+
+/// Load a project from a path (finds .fsproj).
 let loadProject (state: FSharpWorkspaceState) (path: string) =
     task {
         try
-            // For now, create script-based options.
-            // Full .fsproj support requires Ionide.ProjInfo (Phase 3).
-            let dummyScript = Path.Combine(path, "script.fsx")
-            let! options, _diagnostics =
-                state.Checker.GetProjectOptionsFromScript(
-                    dummyScript,
-                    SourceText.ofString "",
-                    assumeDotNetFramework = false)
-            state.ProjectOptions <- Some options
-            state.IsLoaded <- true
-            eprintfn $"F# workspace loaded from {path}"
-            return Ok()
+            let fsprojFiles =
+                Directory.GetFiles(path, "*.fsproj", SearchOption.AllDirectories)
+            if fsprojFiles.Length = 0 then
+                eprintfn $"No .fsproj found in {path}"
+                return Error "No .fsproj found"
+            else
+                let fsprojPath = fsprojFiles[0]
+                let sourceFiles = parseFsprojSourceFiles fsprojPath
+                // Build compiler options with framework refs from the runtime dir.
+                let runtimeDir =
+                    Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory()
+                let frameworkRefs =
+                    Directory.GetFiles(runtimeDir, "*.dll")
+                    |> Array.map (fun dll -> $"-r:{dll}")
+                // Also find FSharp.Core from the SDK directory.
+                let sdkFSharpCore =
+                    let sdkBase = Path.Combine(Path.GetDirectoryName(runtimeDir) |> string, "..", "..", "sdk")
+                    let sdkDir = Path.GetFullPath(sdkBase)
+                    if Directory.Exists(sdkDir) then
+                        Directory.GetFiles(sdkDir, "FSharp.Core.dll", SearchOption.AllDirectories)
+                        |> Array.tryHead
+                    else
+                        None
+                let fsharpCoreRef =
+                    match sdkFSharpCore with
+                    | Some path -> [| $"-r:{path}" |]
+                    | None -> [||]
+                let otherOptions =
+                    [| yield "--noframework"
+                       yield "--targetprofile:netcore"
+                       yield! frameworkRefs
+                       yield! fsharpCoreRef |]
+                let options =
+                    state.Checker.GetProjectOptionsFromCommandLineArgs(
+                        fsprojPath,
+                        [| yield! sourceFiles; yield! otherOptions |])
+                state.ProjectOptions <- Some options
+                state.IsLoaded <- true
+                let fileList = String.Join(", ", sourceFiles |> Array.map Path.GetFileName)
+                eprintfn $"F# workspace loaded from {fsprojPath} with files: [{fileList}]"
+                return Ok()
         with ex ->
             eprintfn $"F# workspace load failed: {ex.Message}"
             return Error ex.Message
@@ -74,11 +115,12 @@ let private extractToolTip
 
         match island with
         | None -> None
-        | Some(name, _, _) ->
+        | Some(name, endCol, _) ->
             let names = [ name ]
+            // GetToolTip expects colAtEndOfNames, not start position.
             let tip =
                 checkResults.GetToolTip(
-                    fcsLine, character, lineText, names, FSharpTokenTag.Identifier)
+                    fcsLine, endCol, lineText, names, FSharpTokenTag.Identifier)
 
             match FSharpHoverBuilder.renderToolTip tip with
             | Some markdown ->

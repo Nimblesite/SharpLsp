@@ -129,17 +129,23 @@ test-vsix: build-vsix
 
 test-dotnet: build-dotnet
 	@echo "==> Running .NET sidecar tests with coverage..."
+	@rm -rf target/coverage-dotnet
 	@dotnet test $(SIDECAR_SLN) --configuration $(DOTNET_CFG) \
 		--collect:"XPlat Code Coverage" \
 		--results-directory target/coverage-dotnet \
-		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura \
-		2>/dev/null || true
-	@CSHARP_COV=$$(find target/coverage-dotnet -name 'coverage.cobertura.xml' -path '*CSharp*' -exec grep -oP 'line-rate="\K[^"]+' {} \; 2>/dev/null | head -1) ; \
+		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura ; \
+	 TEST_EXIT=$$? ; \
+	 CSHARP_COV=$$(for f in target/coverage-dotnet/*/coverage.cobertura.xml; do \
+		sed -n 's/.*package name="Forge.Sidecar.CSharp" line-rate="\([^"]*\)".*/\1/p' "$$f" 2>/dev/null | head -1; \
+	 done | head -1) ; \
 	 CSHARP_PCT=$$(echo "$${CSHARP_COV:-0} * 100" | bc 2>/dev/null || echo "0") ; \
-	 $(CHECK_COV) forge-sidecar-csharp "$$CSHARP_PCT"
-	@FSHARP_COV=$$(find target/coverage-dotnet -name 'coverage.cobertura.xml' -path '*FSharp*' -exec grep -oP 'line-rate="\K[^"]+' {} \; 2>/dev/null | head -1) ; \
+	 $(CHECK_COV) forge-sidecar-csharp "$$CSHARP_PCT" ; \
+	 FSHARP_COV=$$(for f in target/coverage-dotnet/*/coverage.cobertura.xml; do \
+		sed -n 's/.*package name="Forge.Sidecar.FSharp" line-rate="\([^"]*\)".*/\1/p' "$$f" 2>/dev/null | head -1; \
+	 done | head -1) ; \
 	 FSHARP_PCT=$$(echo "$${FSHARP_COV:-0} * 100" | bc 2>/dev/null || echo "0") ; \
-	 $(CHECK_COV) forge-sidecar-fsharp "$$FSHARP_PCT"
+	 $(CHECK_COV) forge-sidecar-fsharp "$$FSHARP_PCT" ; \
+	 exit $$TEST_EXIT
 
 # ── Lint (all languages — includes build) ────────────────────────
 

@@ -1,14 +1,14 @@
 {
   "forge-lsp": {
-    "line_percent": 88.60
+    "line_percent": 91.45
   },
   "vscode-extension": {
     "line_percent": 82.0
   },
   "forge-sidecar-csharp": {
-    "line_percent": 0.0
+    "line_percent": 20.61
   },
   "forge-sidecar-fsharp": {
-    "line_percent": 0.0
+    "line_percent": 0.89
   }
 }

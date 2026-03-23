@@ -34,3 +34,5 @@ editors/zed/target/
 .too_many_cooks/
 .playwright-mcp/
 logs/
+
+editors/vscode/coverage/
