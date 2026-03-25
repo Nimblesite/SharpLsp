@@ -19,7 +19,11 @@ public sealed class Envelope
 
     /// <summary>MessagePack-encoded payload bytes. Array required by MessagePack serialization.</summary>
     [Key("payload")]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "MessagePack serialization requires byte[]")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1819:Properties should not return arrays",
+        Justification = "MessagePack serialization requires byte[]"
+    )]
     public byte[] Payload { get; set; } = [];
 
     /// <summary>Error message, if this is an error response.</summary>

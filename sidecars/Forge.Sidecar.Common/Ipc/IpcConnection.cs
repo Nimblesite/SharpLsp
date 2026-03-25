@@ -24,14 +24,15 @@ public static class IpcConnection
 
     /// <summary>Start listening on a Unix domain socket.</summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability", "CA2000:Dispose objects before losing scope",
-        Justification = "Socket ownership transfers to caller via Result")]
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Socket ownership transfers to caller via Result"
+    )]
     public static SocketResult CreateListener(string socketPath)
     {
         try
         {
-            return new SocketResult.Ok<Socket, string>(
-                CreateListenerCore(socketPath));
+            return new SocketResult.Ok<Socket, string>(CreateListenerCore(socketPath));
         }
         catch (Exception ex)
         {
@@ -41,17 +42,20 @@ public static class IpcConnection
 
     /// <summary>Connect to an existing Unix domain socket.</summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability", "CA2000:Dispose objects before losing scope",
-        Justification = "Socket ownership transfers to caller via Result")]
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Socket ownership transfers to caller via Result"
+    )]
     public static async Task<SocketResult> ConnectAsync(
         string socketPath,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
             return new SocketResult.Ok<Socket, string>(
-                await ConnectCoreAsync(socketPath, ct)
-                    .ConfigureAwait(false));
+                await ConnectCoreAsync(socketPath, ct).ConfigureAwait(false)
+            );
         }
         catch (Exception ex)
         {
@@ -66,8 +70,7 @@ public static class IpcConnection
             File.Delete(socketPath);
         }
 
-        var socket = new Socket(
-            AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         try
         {
             socket.Bind(new UnixDomainSocketEndPoint(socketPath));
@@ -81,16 +84,13 @@ public static class IpcConnection
         }
     }
 
-    private static async Task<Socket> ConnectCoreAsync(
-        string socketPath,
-        CancellationToken ct)
+    private static async Task<Socket> ConnectCoreAsync(string socketPath, CancellationToken ct)
     {
-        var socket = new Socket(
-            AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         try
         {
-            await socket.ConnectAsync(
-                new UnixDomainSocketEndPoint(socketPath), ct)
+            await socket
+                .ConnectAsync(new UnixDomainSocketEndPoint(socketPath), ct)
                 .ConfigureAwait(false);
             return socket;
         }

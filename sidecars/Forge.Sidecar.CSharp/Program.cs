@@ -7,8 +7,9 @@ try
 }
 catch (Exception ex)
 {
-    await Console.Error.WriteLineAsync(
-        $"MSBuild locator failed: {ex.Message}").ConfigureAwait(false);
+    await Console
+        .Error.WriteLineAsync($"MSBuild locator failed: {ex.Message}")
+        .ConfigureAwait(false);
     Environment.Exit(1);
 }
 
@@ -18,8 +19,8 @@ static async Task RunSidecarAsync(string[] args)
 {
     if (args.Length < 1)
     {
-        await Console.Error.WriteLineAsync(
-            "Usage: Forge.Sidecar.CSharp <socket-path>")
+        await Console
+            .Error.WriteLineAsync("Usage: Forge.Sidecar.CSharp <socket-path>")
             .ConfigureAwait(false);
         Environment.Exit(1);
     }
@@ -35,8 +36,7 @@ static async Task RunSidecarAsync(string[] args)
     }
     catch (Exception ex)
     {
-        await Console.Error.WriteLineAsync(
-            $"Sidecar failed: {ex.Message}").ConfigureAwait(false);
+        await Console.Error.WriteLineAsync($"Sidecar failed: {ex.Message}").ConfigureAwait(false);
         Environment.Exit(1);
     }
 }

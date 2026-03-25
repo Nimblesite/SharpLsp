@@ -16,11 +16,15 @@ namespace Forge.Sidecar.CSharp.Tests;
 /// → CSharpSidecar → WorkspaceManager → Roslyn → HoverBuilder/DefinitionResolver.
 /// </summary>
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
-    "Reliability", "CA2000:Dispose objects before losing scope",
-    Justification = "Socket ownership transfers to FramedTransport")]
+    "Reliability",
+    "CA2000:Dispose objects before losing scope",
+    Justification = "Socket ownership transfers to FramedTransport"
+)]
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
-    "Reliability", "CA1001:Types that own disposable fields should be disposable",
-    Justification = "Disposal handled by IAsyncLifetime.DisposeAsync")]
+    "Reliability",
+    "CA1001:Types that own disposable fields should be disposable",
+    Justification = "Disposal handled by IAsyncLifetime.DisposeAsync"
+)]
 public sealed class CSharpSidecarFixture : IAsyncLifetime
 {
     // Line reference for TestSource (0-based):
@@ -81,7 +85,9 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
     private static bool _msBuildRegistered;
     private readonly CSharpSidecar _sidecar = new();
     private readonly string _socketPath = Path.Combine(
-        Path.GetTempPath(), $"forge-csharp-e2e-{Guid.NewGuid():N}.sock");
+        Path.GetTempPath(),
+        $"forge-csharp-e2e-{Guid.NewGuid():N}.sock"
+    );
 
     private FramedTransport? _transport;
     private int _nextId;
@@ -92,9 +98,14 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
     public async Task<Envelope> SendAsync(string method, byte[] payload)
     {
         var id = (uint)Interlocked.Increment(ref _nextId);
-        var envelope = new Envelope { Id = id, Method = method, Payload = payload };
-        await _transport!.WriteFrameAsync(
-            MessagePackSerializer.Serialize(envelope))
+        var envelope = new Envelope
+        {
+            Id = id,
+            Method = method,
+            Payload = payload,
+        };
+        await _transport!
+            .WriteFrameAsync(MessagePackSerializer.Serialize(envelope))
             .ConfigureAwait(false);
         var raw = await _transport.ReadFrameAsync().ConfigureAwait(false);
         return raw is null
@@ -104,12 +115,14 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
 
     public byte[] PosPayload(int line, int character)
     {
-        return MessagePackSerializer.Serialize(new PositionRequest
-        {
-            FilePath = SourceFile,
-            Line = line,
-            Character = character,
-        });
+        return MessagePackSerializer.Serialize(
+            new PositionRequest
+            {
+                FilePath = SourceFile,
+                Line = line,
+                Character = character,
+            }
+        );
     }
 
     public async Task InitializeAsync()
@@ -134,11 +147,8 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
             await Task.Delay(50).ConfigureAwait(false);
             try
             {
-                var s = new Socket(
-                    AddressFamily.Unix, SocketType.Stream,
-                    ProtocolType.Unspecified);
-                await s.ConnectAsync(
-                    new UnixDomainSocketEndPoint(_socketPath))
+                var s = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+                await s.ConnectAsync(new UnixDomainSocketEndPoint(_socketPath))
                     .ConfigureAwait(false);
                 client = s;
             }
@@ -153,12 +163,10 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
             : new FramedTransport(new NetworkStream(client, ownsSocket: true));
 
         var payload = MessagePackSerializer.Serialize(TempDir);
-        var resp = await SendAsync("workspace/open", payload)
-            .ConfigureAwait(false);
+        var resp = await SendAsync("workspace/open", payload).ConfigureAwait(false);
         if (resp.Error is not null)
         {
-            throw new InvalidOperationException(
-                $"workspace/open failed: {resp.Error}");
+            throw new InvalidOperationException($"workspace/open failed: {resp.Error}");
         }
     }
 
@@ -171,8 +179,13 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
 
         await _sidecar.DisposeAsync().ConfigureAwait(false);
 
-        try { Directory.Delete(TempDir, true); }
-        catch { /* cleanup best-effort */ }
+        try
+        {
+            Directory.Delete(TempDir, true);
+        }
+        catch
+        { /* cleanup best-effort */
+        }
 
         try
         {
@@ -181,13 +194,14 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
                 File.Delete(_socketPath);
             }
         }
-        catch { /* cleanup best-effort */ }
+        catch
+        { /* cleanup best-effort */
+        }
     }
 
     private static string CreateTestProject()
     {
-        var dir = Path.Combine(
-            Path.GetTempPath(), $"forge-csharp-e2e-{Guid.NewGuid():N}");
+        var dir = Path.Combine(Path.GetTempPath(), $"forge-csharp-e2e-{Guid.NewGuid():N}");
         Directory.CreateDirectory(dir);
         File.WriteAllText(
             Path.Combine(dir, "TestProject.csproj"),
@@ -199,7 +213,8 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
                 <Nullable>enable</Nullable>
               </PropertyGroup>
             </Project>
-            """);
+            """
+        );
         File.WriteAllText(Path.Combine(dir, "Program.cs"), TestSource);
         return dir;
     }
@@ -228,8 +243,7 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Hover_on_documented_method_shows_xml_docs()
     {
-        var r = await fixture.SendAsync(
-            "textDocument/hover", fixture.PosPayload(9, 15));
+        var r = await fixture.SendAsync("textDocument/hover", fixture.PosPayload(9, 15));
         Assert.Null(r.Error);
         var h = MessagePackSerializer.Deserialize<HoverResult>(r.Payload);
         Assert.Contains("Add", h.Contents);
@@ -240,8 +254,7 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Hover_on_class_shows_type_info()
     {
-        var r = await fixture.SendAsync(
-            "textDocument/hover", fixture.PosPayload(3, 13));
+        var r = await fixture.SendAsync("textDocument/hover", fixture.PosPayload(3, 13));
         Assert.Null(r.Error);
         var h = MessagePackSerializer.Deserialize<HoverResult>(r.Payload);
         Assert.Contains("Calculator", h.Contents);
@@ -250,8 +263,7 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Hover_on_var_resolves_type()
     {
-        var r = await fixture.SendAsync(
-            "textDocument/hover", fixture.PosPayload(31, 8));
+        var r = await fixture.SendAsync("textDocument/hover", fixture.PosPayload(31, 8));
         Assert.Null(r.Error);
         var h = MessagePackSerializer.Deserialize<HoverResult>(r.Payload);
         Assert.Contains("Calculator", h.Contents);
@@ -260,8 +272,7 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Hover_on_property_shows_info()
     {
-        var r = await fixture.SendAsync(
-            "textDocument/hover", fixture.PosPayload(11, 18));
+        var r = await fixture.SendAsync("textDocument/hover", fixture.PosPayload(11, 18));
         Assert.Null(r.Error);
         var h = MessagePackSerializer.Deserialize<HoverResult>(r.Payload);
         Assert.Contains("Name", h.Contents);
@@ -271,17 +282,14 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     public async Task Hover_on_empty_line_returns_result()
     {
         // Even empty lines may resolve to enclosing namespace/type
-        var r = await fixture.SendAsync(
-            "textDocument/hover", fixture.PosPayload(1, 0));
+        var r = await fixture.SendAsync("textDocument/hover", fixture.PosPayload(1, 0));
         Assert.Null(r.Error);
     }
 
     [Fact]
     public async Task Definition_of_method_call_resolves()
     {
-        var r = await fixture.SendAsync(
-            "textDocument/definition", fixture.PosPayload(32, 25))
-            ;
+        var r = await fixture.SendAsync("textDocument/definition", fixture.PosPayload(32, 25));
         Assert.Null(r.Error);
         var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
         Assert.NotEmpty(loc.Locations);
@@ -292,17 +300,14 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     public async Task Definition_on_empty_line_returns_result()
     {
         // Empty lines may still resolve to enclosing constructs
-        var r = await fixture.SendAsync(
-            "textDocument/definition", fixture.PosPayload(1, 0));
+        var r = await fixture.SendAsync("textDocument/definition", fixture.PosPayload(1, 0));
         Assert.Null(r.Error);
     }
 
     [Fact]
     public async Task TypeDefinition_of_variable_resolves_to_type()
     {
-        var r = await fixture.SendAsync(
-            "textDocument/typeDefinition", fixture.PosPayload(31, 8))
-            ;
+        var r = await fixture.SendAsync("textDocument/typeDefinition", fixture.PosPayload(31, 8));
         Assert.Null(r.Error);
         var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
         Assert.NotEmpty(loc.Locations);
@@ -312,9 +317,7 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Declaration_of_interface_impl_finds_interface()
     {
-        var r = await fixture.SendAsync(
-            "textDocument/declaration", fixture.PosPayload(24, 18))
-            ;
+        var r = await fixture.SendAsync("textDocument/declaration", fixture.PosPayload(24, 18));
         Assert.Null(r.Error);
         var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
         Assert.NotEmpty(loc.Locations);
@@ -324,9 +327,7 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Implementation_of_interface_method_finds_impl()
     {
-        var r = await fixture.SendAsync(
-            "textDocument/implementation", fixture.PosPayload(19, 11))
-            ;
+        var r = await fixture.SendAsync("textDocument/implementation", fixture.PosPayload(19, 11));
         Assert.Null(r.Error);
         var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
         Assert.NotEmpty(loc.Locations);
@@ -335,9 +336,7 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Completion_at_position_returns_items()
     {
-        var r = await fixture.SendAsync(
-            "textDocument/completion", fixture.PosPayload(32, 25))
-            ;
+        var r = await fixture.SendAsync("textDocument/completion", fixture.PosPayload(32, 25));
         Assert.Null(r.Error);
         var items = MessagePackSerializer.Deserialize<CompletionItem[]>(r.Payload);
         Assert.NotNull(items);
@@ -356,9 +355,9 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     public async Task AllDiagnostics_returns_results()
     {
         var payload = MessagePackSerializer.Serialize(
-            new SolutionDiagnosticsRequest { ProjectFilter = [] });
-        var r = await fixture.SendAsync("workspace/diagnostics/all", payload)
-            ;
+            new SolutionDiagnosticsRequest { ProjectFilter = [] }
+        );
+        var r = await fixture.SendAsync("workspace/diagnostics/all", payload);
         Assert.Null(r.Error);
     }
 
@@ -373,13 +372,9 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
             }
             """;
         var payload = MessagePackSerializer.Serialize(
-            new DidChangeRequest
-            {
-                FilePath = fixture.SourceFile,
-                NewText = newSource,
-            });
-        var r = await fixture.SendAsync("textDocument/didChange", payload)
-            ;
+            new DidChangeRequest { FilePath = fixture.SourceFile, NewText = newSource }
+        );
+        var r = await fixture.SendAsync("textDocument/didChange", payload);
         Assert.Null(r.Error);
         Assert.Equal("ok", MessagePackSerializer.Deserialize<string>(r.Payload));
     }
@@ -394,9 +389,9 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
                 Line = 9,
                 Character = 15,
                 IncludeDeclaration = true,
-            });
-        var r = await fixture.SendAsync("textDocument/references", payload)
-            ;
+            }
+        );
+        var r = await fixture.SendAsync("textDocument/references", payload);
         Assert.Null(r.Error);
         var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
         Assert.NotEmpty(loc.Locations);
@@ -411,10 +406,9 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
                 FilePath = fixture.SourceFile,
                 Line = 9,
                 Character = 15,
-            });
-        var r = await fixture.SendAsync(
-            "textDocument/documentHighlight", payload)
-            ;
+            }
+        );
+        var r = await fixture.SendAsync("textDocument/documentHighlight", payload);
         Assert.Null(r.Error);
     }
 

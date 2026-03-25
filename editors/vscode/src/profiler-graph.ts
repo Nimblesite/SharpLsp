@@ -12,109 +12,113 @@ import { getErrorMessage } from "./utils.js";
 // ── LSP types ─────────────────────────────────────────────────────
 
 interface ObjectGraphNode {
-  readonly id: string;
-  readonly type_name: string;
-  readonly display_name: string;
-  readonly size_bytes: number;
-  readonly retained_size_bytes: number;
-  readonly instance_count: number;
-  readonly is_root: boolean;
-  readonly root_kind?: string;
-  readonly depth: number;
+    readonly id: string;
+    readonly type_name: string;
+    readonly display_name: string;
+    readonly size_bytes: number;
+    readonly retained_size_bytes: number;
+    readonly instance_count: number;
+    readonly is_root: boolean;
+    readonly root_kind?: string;
+    readonly depth: number;
 }
 
 interface ObjectGraphEdge {
-  readonly from: string;
-  readonly to: string;
-  readonly field_name: string;
-  readonly reference_kind: "Strong" | "Weak";
+    readonly from: string;
+    readonly to: string;
+    readonly field_name: string;
+    readonly reference_kind: "Strong" | "Weak";
 }
 
 interface ObjectGraphStats {
-  readonly total_nodes_traversed: number;
-  readonly total_edges_traversed: number;
-  readonly max_depth_reached: number;
-  readonly truncated: boolean;
+    readonly total_nodes_traversed: number;
+    readonly total_edges_traversed: number;
+    readonly max_depth_reached: number;
+    readonly truncated: boolean;
 }
 
 interface ObjectGraphResult {
-  readonly nodes: ObjectGraphNode[];
-  readonly edges: ObjectGraphEdge[];
-  readonly stats: ObjectGraphStats;
+    readonly nodes: ObjectGraphNode[];
+    readonly edges: ObjectGraphEdge[];
+    readonly stats: ObjectGraphStats;
 }
 
 // ── Panel ─────────────────────────────────────────────────────────
 
 /** Manages the object graph webview panel. */
 export class ObjectGraphPanel {
-  private static readonly panels = new Map<string, ObjectGraphPanel>();
-  private static panelCounter = 0;
+    private static readonly panels = new Map<string, ObjectGraphPanel>();
+    private static panelCounter = 0;
 
-  private readonly panel: vscode.WebviewPanel;
-  private readonly panelId: string;
-  private disposed = false;
+    private readonly panel: vscode.WebviewPanel;
+    private readonly panelId: string;
+    private disposed = false;
 
-  private constructor(
-    dumpPath: string,
-    rootAddress: string,
-    context: vscode.ExtensionContext,
-  ) {
-    this.panelId = `graph-${String(++ObjectGraphPanel.panelCounter)}`;
-    this.panel = vscode.window.createWebviewPanel(
-      "forgeObjectGraph",
-      `Object Graph: ${rootAddress}`,
-      vscode.ViewColumn.Beside,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [],
-      },
-    );
+    private constructor(
+        dumpPath: string,
+        rootAddress: string,
+        context: vscode.ExtensionContext,
+    ) {
+        this.panelId = `graph-${String(++ObjectGraphPanel.panelCounter)}`;
+        this.panel = vscode.window.createWebviewPanel(
+            "forgeObjectGraph",
+            `Object Graph: ${rootAddress}`,
+            vscode.ViewColumn.Beside,
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true,
+                localResourceRoots: [],
+            },
+        );
 
-    this.panel.onDidDispose(() => {
-      this.disposed = true;
-      ObjectGraphPanel.panels.delete(this.panelId);
-    }, undefined, context.subscriptions);
+        this.panel.onDidDispose(
+            () => {
+                this.disposed = true;
+                ObjectGraphPanel.panels.delete(this.panelId);
+            },
+            undefined,
+            context.subscriptions,
+        );
 
-    this.panel.webview.html = buildLoadingHtml(dumpPath, rootAddress);
-  }
-
-  /** Open a graph panel and begin loading data. */
-  public static async open(
-    dumpPath: string,
-    rootAddress: string,
-    context: vscode.ExtensionContext,
-    client: LanguageClient,
-  ): Promise<void> {
-    const pane = new ObjectGraphPanel(dumpPath, rootAddress, context);
-    ObjectGraphPanel.panels.set(pane.panelId, pane);
-
-    try {
-      const result = await client.sendRequest<ObjectGraphResult>(
-        "forge/profiler/getObjectGraph",
-        { dump_path: dumpPath, root_address: rootAddress },
-      );
-      pane.render(result);
-    } catch (err: unknown) {
-      pane.showError(getErrorMessage(err));
+        this.panel.webview.html = buildLoadingHtml(dumpPath, rootAddress);
     }
-  }
 
-  private render(result: ObjectGraphResult): void {
-    if (this.disposed) return;
-    this.panel.webview.html = buildGraphHtml(result);
-  }
+    /** Open a graph panel and begin loading data. */
+    public static async open(
+        dumpPath: string,
+        rootAddress: string,
+        context: vscode.ExtensionContext,
+        client: LanguageClient,
+    ): Promise<void> {
+        const pane = new ObjectGraphPanel(dumpPath, rootAddress, context);
+        ObjectGraphPanel.panels.set(pane.panelId, pane);
 
-  private showError(message: string): void {
-    if (this.disposed) return;
-    this.panel.webview.html = buildErrorHtml(message);
-  }
+        try {
+            const result = await client.sendRequest<ObjectGraphResult>(
+                "forge/profiler/getObjectGraph",
+                { dump_path: dumpPath, root_address: rootAddress },
+            );
+            pane.render(result);
+        } catch (err: unknown) {
+            pane.showError(getErrorMessage(err));
+        }
+    }
+
+    private render(result: ObjectGraphResult): void {
+        if (this.disposed) return;
+        this.panel.webview.html = buildGraphHtml(result);
+    }
+
+    private showError(message: string): void {
+        if (this.disposed) return;
+        this.panel.webview.html = buildErrorHtml(message);
+    }
 }
 
 // ── HTML builders ─────────────────────────────────────────────────
 
 function buildLoadingHtml(dumpPath: string, rootAddress: string): string {
-  return `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -142,7 +146,7 @@ function buildLoadingHtml(dumpPath: string, rootAddress: string): string {
 }
 
 function buildErrorHtml(message: string): string {
-  return `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -162,11 +166,11 @@ function buildErrorHtml(message: string): string {
 }
 
 function buildGraphHtml(result: ObjectGraphResult): string {
-  const nodesJson = JSON.stringify(result.nodes);
-  const edgesJson = JSON.stringify(result.edges);
-  const stats = result.stats;
+    const nodesJson = JSON.stringify(result.nodes);
+    const edgesJson = JSON.stringify(result.edges);
+    const stats = result.stats;
 
-  return `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -514,38 +518,38 @@ function buildGraphHtml(result: ObjectGraphResult): string {
 }
 
 function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
 }
 
 /** Prompt for dump path and root address, then open the graph panel. */
 export async function promptAndOpenGraph(
-  context: vscode.ExtensionContext,
-  client: LanguageClient,
+    context: vscode.ExtensionContext,
+    client: LanguageClient,
 ): Promise<void> {
-  const dumpFiles = await vscode.window.showOpenDialog({
-    canSelectMany: false,
-    filters: { "Dump files": ["dmp"] },
-    title: "Select memory dump file for object graph",
-  });
-  const selectedFile = dumpFiles?.[0];
-  if (selectedFile === undefined) return;
+    const dumpFiles = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: { "Dump files": ["dmp"] },
+        title: "Select memory dump file for object graph",
+    });
+    const selectedFile = dumpFiles?.[0];
+    if (selectedFile === undefined) return;
 
-  const rootAddress = await vscode.window.showInputBox({
-    prompt: "Enter the root object address (hex, e.g. 00007ff812345678)",
-    placeHolder: "00007ff812345678",
-    validateInput: (v) =>
-      v.trim().length > 0 ? undefined : "Address is required",
-  });
-  if (rootAddress === undefined) return;
+    const rootAddress = await vscode.window.showInputBox({
+        prompt: "Enter the root object address (hex, e.g. 00007ff812345678)",
+        placeHolder: "00007ff812345678",
+        validateInput: (v) =>
+            v.trim().length > 0 ? undefined : "Address is required",
+    });
+    if (rootAddress === undefined) return;
 
-  await ObjectGraphPanel.open(
-    selectedFile.fsPath,
-    rootAddress.trim(),
-    context,
-    client,
-  );
+    await ObjectGraphPanel.open(
+        selectedFile.fsPath,
+        rootAddress.trim(),
+        context,
+        client,
+    );
 }

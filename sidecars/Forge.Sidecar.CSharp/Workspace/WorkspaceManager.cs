@@ -4,16 +4,27 @@ using Microsoft.CodeAnalysis.Completion;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 using Outcome;
-
-using VoidResult = Outcome.Result<Outcome.Unit, string>;
-using AllDiagnosticsResult = Outcome.Result<System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<Forge.Sidecar.CSharp.DiagnosticResult>>, string>;
-using DiagnosticsResult = Outcome.Result<System.Collections.Generic.List<Forge.Sidecar.CSharp.DiagnosticResult>, string>;
-using CompletionsResult = Outcome.Result<System.Collections.Generic.List<Forge.Sidecar.CSharp.CompletionItem>, string>;
-using HoverQueryResult = Outcome.Result<Forge.Sidecar.CSharp.HoverResult?, string>;
+using AllDiagnosticsResult = Outcome.Result<
+    System.Collections.Generic.Dictionary<
+        string,
+        System.Collections.Generic.List<Forge.Sidecar.CSharp.DiagnosticResult>
+    >,
+    string
+>;
+using CompletionsResult = Outcome.Result<
+    System.Collections.Generic.List<Forge.Sidecar.CSharp.CompletionItem>,
+    string
+>;
 using DefinitionResult = Outcome.Result<Forge.Sidecar.CSharp.LocationResult?, string>;
+using DiagnosticsResult = Outcome.Result<
+    System.Collections.Generic.List<Forge.Sidecar.CSharp.DiagnosticResult>,
+    string
+>;
+using HighlightsResult = Outcome.Result<Forge.Sidecar.CSharp.DocumentHighlightListResult, string>;
+using HoverQueryResult = Outcome.Result<Forge.Sidecar.CSharp.HoverResult?, string>;
 using ImplementationsResult = Outcome.Result<Forge.Sidecar.CSharp.LocationListResult, string>;
 using ReferencesResult = Outcome.Result<Forge.Sidecar.CSharp.LocationListResult, string>;
-using HighlightsResult = Outcome.Result<Forge.Sidecar.CSharp.DocumentHighlightListResult, string>;
+using VoidResult = Outcome.Result<Outcome.Unit, string>;
 
 namespace Forge.Sidecar.CSharp.Workspace;
 
@@ -30,9 +41,7 @@ internal sealed class WorkspaceManager
 
     /// <summary>Open a solution or project file via MSBuildWorkspace.</summary>
     [Obsolete("Placeholder until workspace loading is redesigned")]
-    public async Task<VoidResult> OpenAsync(
-        string path,
-        CancellationToken ct = default)
+    public async Task<VoidResult> OpenAsync(string path, CancellationToken ct = default)
     {
         try
         {
@@ -48,21 +57,19 @@ internal sealed class WorkspaceManager
     public async Task<VoidResult> UpdateDocumentTextAsync(
         string filePath,
         string newText,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct)
-                .ConfigureAwait(false);
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
             if (document is null)
             {
-                return VoidResult.Failure(
-                    $"Document not found: {filePath}");
+                return VoidResult.Failure($"Document not found: {filePath}");
             }
 
             var newSource = SourceText.From(newText);
-            _solution = _solution!.WithDocumentText(
-                document.Id, newSource);
+            _solution = _solution!.WithDocumentText(document.Id, newSource);
             return new VoidResult.Ok<Unit, string>(Unit.Value);
         }
         catch (Exception ex)
@@ -72,26 +79,25 @@ internal sealed class WorkspaceManager
     }
 
     /// <summary>Get compiler diagnostics for a file.</summary>
-    public async Task<DiagnosticsResult>
-        GetDiagnosticsAsync(
-            string filePath,
-            CancellationToken ct = default)
+    public async Task<DiagnosticsResult> GetDiagnosticsAsync(
+        string filePath,
+        CancellationToken ct = default
+    )
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct)
-                .ConfigureAwait(false);
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
             if (document is null)
             {
                 return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([]);
             }
 
-            var model = await document.GetSemanticModelAsync(ct)
-                .ConfigureAwait(false);
+            var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
             return model is null
                 ? new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([])
                 : new DiagnosticsResult.Ok<List<DiagnosticResult>, string>(
-                    MapDiagnostics(filePath, model, ct));
+                    MapDiagnostics(filePath, model, ct)
+                );
         }
         catch (Exception ex)
         {
@@ -100,18 +106,19 @@ internal sealed class WorkspaceManager
     }
 
     /// <summary>Get compiler diagnostics for all files in the solution.</summary>
-    public async Task<AllDiagnosticsResult>
-        GetAllDiagnosticsAsync(
-            string[] projectFilter,
-            CancellationToken ct = default)
+    public async Task<AllDiagnosticsResult> GetAllDiagnosticsAsync(
+        string[] projectFilter,
+        CancellationToken ct = default
+    )
     {
         try
         {
             if (_solution is null)
             {
-                return new AllDiagnosticsResult
-                    .Ok<Dictionary<string, List<DiagnosticResult>>, string>(
-                        new Dictionary<string, List<DiagnosticResult>>());
+                return new AllDiagnosticsResult.Ok<
+                    Dictionary<string, List<DiagnosticResult>>,
+                    string
+                >(new Dictionary<string, List<DiagnosticResult>>());
             }
 
             var results = new Dictionary<string, List<DiagnosticResult>>();
@@ -120,13 +127,12 @@ internal sealed class WorkspaceManager
             foreach (var project in projects)
             {
                 ct.ThrowIfCancellationRequested();
-                await CollectProjectDiagnosticsAsync(
-                    project, results, ct).ConfigureAwait(false);
+                await CollectProjectDiagnosticsAsync(project, results, ct).ConfigureAwait(false);
             }
 
-            return new AllDiagnosticsResult
-                .Ok<Dictionary<string, List<DiagnosticResult>>, string>(
-                    results);
+            return new AllDiagnosticsResult.Ok<Dictionary<string, List<DiagnosticResult>>, string>(
+                results
+            );
         }
         catch (OperationCanceledException)
         {
@@ -139,17 +145,17 @@ internal sealed class WorkspaceManager
     }
 
     /// <summary>Get completion items at a position.</summary>
-    public async Task<CompletionsResult>
-        GetCompletionsAsync(
-            string filePath,
-            int line,
-            int character,
-            CancellationToken ct = default)
+    public async Task<CompletionsResult> GetCompletionsAsync(
+        string filePath,
+        int line,
+        int character,
+        CancellationToken ct = default
+    )
     {
         try
         {
-            var items = await GetCompletionsCoreAsync(
-                filePath, line, character, ct).ConfigureAwait(false);
+            var items = await GetCompletionsCoreAsync(filePath, line, character, ct)
+                .ConfigureAwait(false);
             return new CompletionsResult.Ok<List<CompletionItem>, string>(items);
         }
         catch (Exception ex)
@@ -163,22 +169,20 @@ internal sealed class WorkspaceManager
         string filePath,
         int line,
         int character,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct)
-                .ConfigureAwait(false);
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
             if (document is null)
             {
                 return new HoverQueryResult.Ok<HoverResult?, string>(null);
             }
 
             var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-            var position = text.Lines.GetPosition(
-                new LinePosition(line, character));
-            var model = await document.GetSemanticModelAsync(ct)
-                .ConfigureAwait(false);
+            var position = text.Lines.GetPosition(new LinePosition(line, character));
+            var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
             return model is null
                 ? new HoverQueryResult.Ok<HoverResult?, string>(null)
                 : CSharpHoverBuilder.Build(model, position, ct);
@@ -194,23 +198,23 @@ internal sealed class WorkspaceManager
         string filePath,
         int line,
         int character,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct)
-                .ConfigureAwait(false);
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
             if (document is null)
             {
                 return new ImplementationsResult.Ok<LocationListResult, string>(
-                    new LocationListResult());
+                    new LocationListResult()
+                );
             }
 
             var result = await DefinitionResolver
                 .ResolveDefinitionLocationsAsync(document, line, character, ct)
                 .ConfigureAwait(false);
-            return new ImplementationsResult.Ok<LocationListResult, string>(
-                result);
+            return new ImplementationsResult.Ok<LocationListResult, string>(result);
         }
         catch (Exception ex)
         {
@@ -223,12 +227,12 @@ internal sealed class WorkspaceManager
         string filePath,
         int line,
         int character,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct)
-                .ConfigureAwait(false);
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
             if (document is null)
             {
                 return new DefinitionResult.Ok<LocationResult?, string>(null);
@@ -250,12 +254,12 @@ internal sealed class WorkspaceManager
         string filePath,
         int line,
         int character,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct)
-                .ConfigureAwait(false);
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
             if (document is null)
             {
                 return new DefinitionResult.Ok<LocationResult?, string>(null);
@@ -277,24 +281,23 @@ internal sealed class WorkspaceManager
         string filePath,
         int line,
         int character,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct)
-                .ConfigureAwait(false);
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
             if (document is null || _solution is null)
             {
                 return new ImplementationsResult.Ok<LocationListResult, string>(
-                    new LocationListResult());
+                    new LocationListResult()
+                );
             }
 
             var result = await DefinitionResolver
-                .ResolveImplementationsAsync(
-                    document, _solution, line, character, ct)
+                .ResolveImplementationsAsync(document, _solution, line, character, ct)
                 .ConfigureAwait(false);
-            return new ImplementationsResult.Ok<LocationListResult, string>(
-                result);
+            return new ImplementationsResult.Ok<LocationListResult, string>(result);
         }
         catch (Exception ex)
         {
@@ -307,25 +310,30 @@ internal sealed class WorkspaceManager
         int line,
         int character,
         bool includeDeclaration,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct)
-                .ConfigureAwait(false);
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
             if (document is null || _solution is null)
             {
                 return new ReferencesResult.Ok<LocationListResult, string>(
-                    new LocationListResult());
+                    new LocationListResult()
+                );
             }
 
             var result = await DefinitionResolver
                 .ResolveReferencesAsync(
-                    document, _solution, line, character,
-                    includeDeclaration, ct)
+                    document,
+                    _solution,
+                    line,
+                    character,
+                    includeDeclaration,
+                    ct
+                )
                 .ConfigureAwait(false);
-            return new ReferencesResult.Ok<LocationListResult, string>(
-                result);
+            return new ReferencesResult.Ok<LocationListResult, string>(result);
         }
         catch (Exception ex)
         {
@@ -337,24 +345,25 @@ internal sealed class WorkspaceManager
         string filePath,
         int line,
         int character,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct)
-                .ConfigureAwait(false);
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
             if (document is null || _solution is null)
             {
                 return new HighlightsResult.Ok<DocumentHighlightListResult, string>(
-                    new DocumentHighlightListResult());
+                    new DocumentHighlightListResult()
+                );
             }
 
             var highlights = await DefinitionResolver
-                .ResolveDocumentHighlightsAsync(
-                    document, _solution, line, character, ct)
+                .ResolveDocumentHighlightsAsync(document, _solution, line, character, ct)
                 .ConfigureAwait(false);
             return new HighlightsResult.Ok<DocumentHighlightListResult, string>(
-                new DocumentHighlightListResult { Highlights = highlights });
+                new DocumentHighlightListResult { Highlights = highlights }
+            );
         }
         catch (Exception ex)
         {
@@ -362,9 +371,7 @@ internal sealed class WorkspaceManager
         }
     }
 
-    private async Task<VoidResult> OpenCoreAsync(
-        string path,
-        CancellationToken ct)
+    private async Task<VoidResult> OpenCoreAsync(string path, CancellationToken ct)
     {
         var properties = new Dictionary<string, string>
         {
@@ -375,51 +382,48 @@ internal sealed class WorkspaceManager
 
         _workspace = MSBuildWorkspace.Create(properties);
         _ = _workspace.RegisterWorkspaceFailedHandler(args =>
-            Console.Error.WriteLine(
-                $"Workspace warning: {args.Diagnostic.Message}"));
+            Console.Error.WriteLine($"Workspace warning: {args.Diagnostic.Message}")
+        );
 
         var findResult = SolutionLoader.FindSolutionOrProject(path);
         if (findResult.IsError)
         {
-            return VoidResult.Failure(
-                !findResult ?? "Search failed");
+            return VoidResult.Failure(!findResult ?? "Search failed");
         }
 
-        var target = findResult.Match(
-                value => value,
-                _ => null)
-            ?? throw new FileNotFoundException(
-                $"No .sln or .csproj found at or under '{path}'.");
+        var target =
+            findResult.Match(value => value, _ => null)
+            ?? throw new FileNotFoundException($"No .sln or .csproj found at or under '{path}'.");
 
-        _solution = await LoadSolutionOrProjectAsync(target, ct)
-            .ConfigureAwait(false);
+        _solution = await LoadSolutionOrProjectAsync(target, ct).ConfigureAwait(false);
 
-        await Console.Error.WriteLineAsync(
-            $"Loaded {_solution.ProjectIds.Count} project(s) from {target}")
+        await Console
+            .Error.WriteLineAsync($"Loaded {_solution.ProjectIds.Count} project(s) from {target}")
             .ConfigureAwait(false);
 
         return new VoidResult.Ok<Unit, string>(Unit.Value);
     }
 
-    private async Task<Solution> LoadSolutionOrProjectAsync(
-        string target,
-        CancellationToken ct)
+    private async Task<Solution> LoadSolutionOrProjectAsync(string target, CancellationToken ct)
     {
         if (target.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
         {
-            return await _workspace!.OpenSolutionAsync(
-                target, cancellationToken: ct).ConfigureAwait(false);
+            return await _workspace!
+                .OpenSolutionAsync(target, cancellationToken: ct)
+                .ConfigureAwait(false);
         }
 
-        var project = await _workspace!.OpenProjectAsync(
-            target, cancellationToken: ct).ConfigureAwait(false);
+        var project = await _workspace!
+            .OpenProjectAsync(target, cancellationToken: ct)
+            .ConfigureAwait(false);
         return project.Solution;
     }
 
     private static List<DiagnosticResult> MapDiagnostics(
         string filePath,
         SemanticModel model,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var results = new List<DiagnosticResult>();
         foreach (var diag in model.GetDiagnostics(cancellationToken: ct))
@@ -439,7 +443,8 @@ internal sealed class WorkspaceManager
     private static DiagnosticResult MapOneDiagnostic(
         string filePath,
         Diagnostic diag,
-        FileLinePositionSpan span)
+        FileLinePositionSpan span
+    )
     {
         return new DiagnosticResult
         {
@@ -448,8 +453,7 @@ internal sealed class WorkspaceManager
             StartCharacter = span.StartLinePosition.Character,
             EndLine = span.EndLinePosition.Line,
             EndCharacter = span.EndLinePosition.Character,
-            Message = diag.GetMessage(
-                System.Globalization.CultureInfo.InvariantCulture),
+            Message = diag.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
             Severity = diag.Severity.ToString(),
             Code = diag.Id,
         };
@@ -459,18 +463,17 @@ internal sealed class WorkspaceManager
         string filePath,
         int line,
         int character,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var document = await FindDocumentAsync(filePath, ct)
-            .ConfigureAwait(false);
+        var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
         if (document is null)
         {
             return [];
         }
 
         var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-        var position = text.Lines.GetPosition(
-            new LinePosition(line, character));
+        var position = text.Lines.GetPosition(new LinePosition(line, character));
 
         var service = CompletionService.GetService(document);
         if (service is null)
@@ -478,24 +481,26 @@ internal sealed class WorkspaceManager
             return [];
         }
 
-        var completions = await service.GetCompletionsAsync(
-            document, position, cancellationToken: ct).ConfigureAwait(false);
+        var completions = await service
+            .GetCompletionsAsync(document, position, cancellationToken: ct)
+            .ConfigureAwait(false);
         return completions is null ? [] : MapCompletionItems(completions);
     }
 
-    private static List<CompletionItem> MapCompletionItems(
-        CompletionList completions)
+    private static List<CompletionItem> MapCompletionItems(CompletionList completions)
     {
         var results = new List<CompletionItem>();
         foreach (var item in completions.ItemsList)
         {
-            results.Add(new CompletionItem
-            {
-                Label = item.DisplayText,
-                Kind = item.Tags.Length > 0 ? item.Tags[0] : "Text",
-                Detail = item.InlineDescription,
-                InsertText = item.FilterText,
-            });
+            results.Add(
+                new CompletionItem
+                {
+                    Label = item.DisplayText,
+                    Kind = item.Tags.Length > 0 ? item.Tags[0] : "Text",
+                    Detail = item.InlineDescription,
+                    InsertText = item.FilterText,
+                }
+            );
         }
 
         return results;
@@ -505,19 +510,20 @@ internal sealed class WorkspaceManager
     {
         return filter.Length == 0
             ? _solution!.Projects
-            : _solution!.Projects.Where(
-                project => filter.Any(
-                    pattern => project.Name.Contains(
-                        pattern, StringComparison.OrdinalIgnoreCase)));
+            : _solution!.Projects.Where(project =>
+                filter.Any(pattern =>
+                    project.Name.Contains(pattern, StringComparison.OrdinalIgnoreCase)
+                )
+            );
     }
 
     private static async Task CollectProjectDiagnosticsAsync(
         Project project,
         Dictionary<string, List<DiagnosticResult>> results,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var compilation = await project.GetCompilationAsync(ct)
-            .ConfigureAwait(false);
+        var compilation = await project.GetCompilationAsync(ct).ConfigureAwait(false);
         if (compilation is null)
         {
             return;
@@ -545,9 +551,7 @@ internal sealed class WorkspaceManager
     /// Find a document by file path, searching regular documents first,
     /// then falling back to source-generated documents.
     /// </summary>
-    private async Task<Document?> FindDocumentAsync(
-        string filePath,
-        CancellationToken ct)
+    private async Task<Document?> FindDocumentAsync(string filePath, CancellationToken ct)
     {
         if (_solution is null)
         {
@@ -558,8 +562,8 @@ internal sealed class WorkspaceManager
         {
             var normalizedPath = Path.GetFullPath(filePath);
             return FindRegularDocumentByPath(normalizedPath)
-                ?? await FindSourceGeneratedDocumentByPathAsync(
-                    normalizedPath, ct).ConfigureAwait(false);
+                ?? await FindSourceGeneratedDocumentByPathAsync(normalizedPath, ct)
+                    .ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -590,7 +594,8 @@ internal sealed class WorkspaceManager
     /// </summary>
     private async Task<Document?> FindSourceGeneratedDocumentByPathAsync(
         string normalizedPath,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         foreach (var project in _solution!.Projects)
         {
@@ -616,6 +621,7 @@ internal sealed class WorkspaceManager
             && string.Equals(
                 Path.GetFullPath(documentPath),
                 normalizedPath,
-                StringComparison.OrdinalIgnoreCase);
+                StringComparison.OrdinalIgnoreCase
+            );
     }
 }

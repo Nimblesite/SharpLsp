@@ -27,11 +27,7 @@ public sealed class EnvelopeTests
     [Fact]
     public void Roundtrip_notification_has_null_id()
     {
-        var original = new Envelope
-        {
-            Method = "workspace/open",
-            Payload = [0xFF],
-        };
+        var original = new Envelope { Method = "workspace/open", Payload = [0xFF] };
 
         var bytes = MessagePackSerializer.Serialize(original);
         var deserialized = MessagePackSerializer.Deserialize<Envelope>(bytes);
@@ -43,11 +39,7 @@ public sealed class EnvelopeTests
     [Fact]
     public void Roundtrip_error_response_preserves_error()
     {
-        var original = new Envelope
-        {
-            Id = 7,
-            Error = "something went wrong",
-        };
+        var original = new Envelope { Id = 7, Error = "something went wrong" };
 
         var bytes = MessagePackSerializer.Serialize(original);
         var deserialized = MessagePackSerializer.Deserialize<Envelope>(bytes);

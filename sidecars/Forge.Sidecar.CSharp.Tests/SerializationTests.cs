@@ -24,11 +24,7 @@ public sealed class SerializationTests
     [Fact]
     public void DidChangeRequest_roundtrip()
     {
-        var original = new DidChangeRequest
-        {
-            FilePath = "/src/Foo.cs",
-            NewText = "class Foo { }",
-        };
+        var original = new DidChangeRequest { FilePath = "/src/Foo.cs", NewText = "class Foo { }" };
         var bytes = MessagePackSerializer.Serialize(original);
         var result = MessagePackSerializer.Deserialize<DidChangeRequest>(bytes);
 
@@ -114,13 +110,19 @@ public sealed class SerializationTests
             [
                 new LocationResult
                 {
-                    FilePath = "/a.cs", Line = 1, Character = 0,
-                    EndLine = 1, EndCharacter = 5,
+                    FilePath = "/a.cs",
+                    Line = 1,
+                    Character = 0,
+                    EndLine = 1,
+                    EndCharacter = 5,
                 },
                 new LocationResult
                 {
-                    FilePath = "/b.cs", Line = 10, Character = 2,
-                    EndLine = 10, EndCharacter = 8,
+                    FilePath = "/b.cs",
+                    Line = 10,
+                    Character = 2,
+                    EndLine = 10,
+                    EndCharacter = 8,
                 },
             ],
         };
@@ -167,10 +169,7 @@ public sealed class SerializationTests
     [Fact]
     public void SolutionDiagnosticsRequest_roundtrip()
     {
-        var original = new SolutionDiagnosticsRequest
-        {
-            ProjectFilter = ["MyApp", "MyLib"],
-        };
+        var original = new SolutionDiagnosticsRequest { ProjectFilter = ["MyApp", "MyLib"] };
         var bytes = MessagePackSerializer.Serialize(original);
         var result = MessagePackSerializer.Deserialize<SolutionDiagnosticsRequest>(bytes);
 

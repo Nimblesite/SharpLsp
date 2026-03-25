@@ -23,7 +23,9 @@ public sealed class IpcConnectionTests
     [Fact]
     public void GenerateSocketPath_under_108_chars()
     {
-        var path = IpcConnection.GenerateSocketPath("/some/very/long/workspace/path/that/might/be/deep");
+        var path = IpcConnection.GenerateSocketPath(
+            "/some/very/long/workspace/path/that/might/be/deep"
+        );
         Assert.True(path.Length < 108, $"Socket path too long: {path.Length} chars");
     }
 
@@ -45,14 +47,20 @@ public sealed class IpcConnectionTests
     public void CreateListener_valid_path_returns_ok()
     {
         var socketPath = Path.Combine(
-            AppContext.BaseDirectory, $"forge-test-{Guid.NewGuid():N}.sock");
+            AppContext.BaseDirectory,
+            $"forge-test-{Guid.NewGuid():N}.sock"
+        );
         try
         {
             var result = IpcConnection.CreateListener(socketPath);
             Assert.True(
-                result is Outcome.Result<System.Net.Sockets.Socket, string>
-                    .Ok<System.Net.Sockets.Socket, string>,
-                "CreateListener must succeed for a valid temp path");
+                result
+                    is Outcome.Result<System.Net.Sockets.Socket, string>.Ok<
+                        System.Net.Sockets.Socket,
+                        string
+                    >,
+                "CreateListener must succeed for a valid temp path"
+            );
         }
         finally
         {
@@ -68,11 +76,17 @@ public sealed class IpcConnectionTests
     public async Task ConnectAsync_no_listener_returns_failure()
     {
         var socketPath = Path.Combine(
-            AppContext.BaseDirectory, $"forge-noexist-{Guid.NewGuid():N}.sock");
+            AppContext.BaseDirectory,
+            $"forge-noexist-{Guid.NewGuid():N}.sock"
+        );
         var result = await IpcConnection.ConnectAsync(socketPath);
         Assert.True(
-            result is Outcome.Result<System.Net.Sockets.Socket, string>
-                .Error<System.Net.Sockets.Socket, string>,
-            "ConnectAsync must fail when no listener exists");
+            result
+                is Outcome.Result<System.Net.Sockets.Socket, string>.Error<
+                    System.Net.Sockets.Socket,
+                    string
+                >,
+            "ConnectAsync must fail when no listener exists"
+        );
     }
 }
