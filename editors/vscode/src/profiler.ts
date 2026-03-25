@@ -11,7 +11,13 @@ import {
   CMD_PROFILER_COLLECT_DUMP,
   CMD_PROFILER_ANALYZE_HEAP,
   CMD_PROFILER_REFRESH,
+  CMD_PROFILER_DIFF_SNAPSHOTS,
+  CMD_PROFILER_DETECT_LEAKS,
+  CMD_PROFILER_SHOW_OBJECT_GRAPH,
+  CMD_PROFILER_INSPECT_OBJECT,
 } from "./constants.js";
+import { promptAndOpenGraph } from "./profiler-graph.js";
+import { promptAndOpenDiff, detectLeaksWorkflow } from "./profiler-diff.js";
 
 // ── LSP Types ─────────────────────────────────────────────────────
 
@@ -641,6 +647,116 @@ export function registerCommands(
       } catch (err: unknown) {
         const msg = getErrorMessage(err);
         void vscode.window.showErrorMessage(`Heap analysis failed: ${msg}`);
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_PROFILER_DIFF_SNAPSHOTS, async () => {
+      const lsp = getClient();
+      if (lsp === undefined) return;
+      try {
+        await promptAndOpenDiff(context, lsp);
+      } catch (err: unknown) {
+        void vscode.window.showErrorMessage(
+          `Heap diff failed: ${getErrorMessage(err)}`,
+        );
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_PROFILER_DETECT_LEAKS, async () => {
+      const lsp = getClient();
+      if (lsp === undefined) return;
+      try {
+        await detectLeaksWorkflow(context, lsp);
+      } catch (err: unknown) {
+        void vscode.window.showErrorMessage(
+          `Leak detection failed: ${getErrorMessage(err)}`,
+        );
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_PROFILER_SHOW_OBJECT_GRAPH, async () => {
+      const lsp = getClient();
+      if (lsp === undefined) return;
+      try {
+        await promptAndOpenGraph(context, lsp);
+      } catch (err: unknown) {
+        void vscode.window.showErrorMessage(
+          `Object graph failed: ${getErrorMessage(err)}`,
+        );
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_PROFILER_INSPECT_OBJECT, async () => {
+      const lsp = getClient();
+      if (lsp === undefined) return;
+
+      const dumpFiles = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: { "Dump files": ["dmp"] },
+        title: "Select memory dump file",
+      });
+      const dumpFile = dumpFiles?.[0];
+      if (dumpFile === undefined) return;
+
+      const address = await vscode.window.showInputBox({
+        prompt: "Enter the object address (hex)",
+        placeHolder: "00007ff812345678",
+        validateInput: (v) =>
+          v.trim().length > 0 ? undefined : "Address is required",
+      });
+      if (address === undefined) return;
+
+      try {
+        const result = await lsp.sendRequest<{
+          address: string;
+          type_name: string;
+          size_bytes: number;
+          generation: string;
+          is_pinned: boolean;
+          fields: {
+            name: string;
+            type_name: string;
+            value: string;
+            is_reference: boolean;
+            reference_address?: string;
+          }[];
+        }>(
+          "forge/profiler/inspectObject",
+          { dump_path: dumpFile.fsPath, object_address: address.trim() },
+        );
+
+        const lines = [
+          `Object Inspection: ${result.type_name}`,
+          `Address: ${result.address}`,
+          `Size: ${String(result.size_bytes)} bytes`,
+          `Generation: ${result.generation}`,
+          `Pinned: ${String(result.is_pinned)}`,
+          "",
+          "Fields:",
+          "─".repeat(60),
+        ];
+        for (const f of result.fields) {
+          const ref = f.reference_address !== undefined ? ` → ${f.reference_address}` : "";
+          lines.push(`  ${f.name}: ${f.type_name} = ${f.value}${ref}`);
+        }
+
+        const doc = await vscode.workspace.openTextDocument({
+          content: lines.join("\n"),
+          language: "plaintext",
+        });
+        await vscode.window.showTextDocument(doc, { preview: true });
+      } catch (err: unknown) {
+        void vscode.window.showErrorMessage(
+          `Object inspection failed: ${getErrorMessage(err)}`,
+        );
       }
     }),
   );

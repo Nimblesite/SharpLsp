@@ -2750,7 +2750,7 @@ fn create_fsharp_test_workspace() -> (tempfile::TempDir, String, String, String)
     )
     .unwrap();
 
-    let fs_source = r#"namespace TestFSharp
+    let fs_source = r"namespace TestFSharp
 
 /// A simple calculator module.
 module Calculator =
@@ -2774,7 +2774,7 @@ let area (shape: Shape) : float =
 /// Pipeline example: sum of squares.
 let sumOfSquares (xs: int list) : int =
     xs |> List.map (fun x -> x * x) |> List.sum
-"#;
+";
     std::fs::write(proj_dir.join("Library.fs"), fs_source).unwrap();
 
     std::fs::write(
@@ -4025,7 +4025,7 @@ fn test_diagnostics_rapid_open_close_cycles() {
     // All three URIs must have been cleared (order may vary).
     for uri in &uris {
         assert!(
-            cleared_uris.contains(&uri.to_string()),
+            cleared_uris.iter().any(|s| s.as_str() == *uri),
             "expected {uri} in cleared set, got {cleared_uris:?}",
         );
     }
@@ -4116,13 +4116,13 @@ fn test_full_stack_solution_wide_diagnostics_on_load() {
     .unwrap();
 
     // File with a deliberate type error: UndefinedType doesn't exist.
-    let cs_source = r#"namespace DiagTest;
+    let cs_source = r"namespace DiagTest;
 
 public class Broken
 {
     public UndefinedType Oops { get; set; }
 }
-"#;
+";
     std::fs::write(proj_dir.join("Broken.cs"), cs_source).unwrap();
 
     std::fs::write(
@@ -4233,17 +4233,17 @@ fn test_full_stack_diagnostics_on_open_detects_errors() {
     )
     .unwrap();
 
-    let good_source = r#"namespace ErrTest;
+    let good_source = r"namespace ErrTest;
 public class Good { public int Value { get; set; } }
-"#;
+";
     std::fs::write(proj_dir.join("Good.cs"), good_source).unwrap();
 
-    let bad_source = r#"namespace ErrTest;
+    let bad_source = r"namespace ErrTest;
 public class Bad
 {
     public MissingType Broken { get; set; }
 }
-"#;
+";
     std::fs::write(proj_dir.join("Bad.cs"), bad_source).unwrap();
 
     std::fs::write(
@@ -5233,7 +5233,7 @@ fn test_profiler_find_gc_roots_latency() {
 // These tests start a REAL .NET process (ProfileTarget), attach the REAL
 // dotnet diagnostic tools via the REAL LSP server, and verify REAL output.
 
-/// Build the ProfileTarget .NET app and return the path to its binary.
+/// Build the `ProfileTarget` .NET app and return the path to its binary.
 fn build_profile_target() -> std::path::PathBuf {
     let project_dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ProfileTarget");
@@ -5250,7 +5250,7 @@ fn build_profile_target() -> std::path::PathBuf {
     project_dir.join("bin/Release/net10.0/ProfileTarget")
 }
 
-/// Start the ProfileTarget process. Waits for "READY" on stdout before returning.
+/// Start the `ProfileTarget` process. Waits for `READY` on stdout before returning.
 fn start_profile_target(binary: &std::path::Path) -> Child {
     let mut child = Command::new(binary)
         .stdout(Stdio::piped())
@@ -5266,9 +5266,10 @@ fn start_profile_target(binary: &std::path::Path) -> Child {
     loop {
         line.clear();
         let n = reader.read_line(&mut line).expect("read stdout");
-        if n == 0 || Instant::now() > deadline {
-            panic!("ProfileTarget did not print READY within 30s");
-        }
+        assert!(
+            n > 0 && Instant::now() <= deadline,
+            "ProfileTarget did not print READY within 30s",
+        );
         if line.trim() == "READY" {
             break;
         }
@@ -5659,7 +5660,7 @@ fn test_profiler_edge_trace_target_dies() {
     client.wait_with_timeout();
 }
 
-/// Edge case: listProcesses finds ProfileTarget by name in the process list.
+/// Edge case: `listProcesses` finds `ProfileTarget` by name in the process list.
 #[test]
 fn test_profiler_edge_process_list_finds_target_by_name() {
     let binary = build_profile_target();
@@ -5925,6 +5926,155 @@ fn test_profiler_inspect_object_missing_file() {
     client.wait_with_timeout();
 }
 
+/// Error path: diffHeapSnapshots with a nonexistent baseline dump must error.
+#[test]
+fn test_profiler_diff_heap_snapshots_missing_baseline() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/diffHeapSnapshots",
+        json!({
+            "baseline_dump_path": "/nonexistent/baseline.dmp",
+            "comparison_dump_path": "/nonexistent/comparison.dmp",
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing baseline dump: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Error path: diffHeapSnapshots with a nonexistent comparison dump must error.
+#[test]
+fn test_profiler_diff_heap_snapshots_missing_comparison() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // Create a real temp file for baseline but missing comparison.
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    let baseline = tmp.path().to_string_lossy().to_string();
+
+    let resp = client.request(
+        "forge/profiler/diffHeapSnapshots",
+        json!({
+            "baseline_dump_path": baseline,
+            "comparison_dump_path": "/nonexistent/comparison.dmp",
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing comparison dump: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Error path: getObjectGraph with a nonexistent dump file must error.
+#[test]
+fn test_profiler_get_object_graph_missing_file() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/getObjectGraph",
+        json!({
+            "dump_path": "/nonexistent/path/to/dump.dmp",
+            "root_address": "0x00007ff812345678",
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing dump: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Error path: diffHeapSnapshots does not crash the server.
+#[test]
+fn test_profiler_diff_heap_snapshots_server_survives_error() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // Send bad request.
+    let _ = client.request(
+        "forge/profiler/diffHeapSnapshots",
+        json!({
+            "baseline_dump_path": "/no/such/file.dmp",
+            "comparison_dump_path": "/no/such/file2.dmp",
+        }),
+    );
+
+    // Server must still respond to subsequent requests.
+    let resp2 = client.request("forge/profiler/listProcesses", json!({}));
+    assert!(
+        resp2.get("error").is_none() || resp2.get("result").is_some(),
+        "server must still respond after diffHeapSnapshots error: {resp2}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: diffHeapSnapshots error path responds within 5s.
+#[test]
+fn test_profiler_diff_heap_snapshots_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = std::time::Instant::now();
+    let _ = client.request(
+        "forge/profiler/diffHeapSnapshots",
+        json!({
+            "baseline_dump_path": "/nonexistent/baseline.dmp",
+            "comparison_dump_path": "/nonexistent/comparison.dmp",
+        }),
+    );
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "diffHeapSnapshots took {elapsed:?}, target <5s"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: getObjectGraph error path responds within 3s.
+#[test]
+fn test_profiler_get_object_graph_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = std::time::Instant::now();
+    let _ = client.request(
+        "forge/profiler/getObjectGraph",
+        json!({
+            "dump_path": "/nonexistent/dump.dmp",
+            "root_address": "0x00007ff812345678",
+        }),
+    );
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_secs(3),
+        "getObjectGraph took {elapsed:?}, target <3s"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 // ── Workspace Symbols Tests ──────────────────────────────────────
 
 /// Create a temp .sln + .csproj + .cs workspace for workspaceSymbols tests.
@@ -6029,17 +6179,6 @@ fn test_workspace_symbols_returns_project_with_symbols() {
 
 #[test]
 fn test_workspace_symbols_extracts_all_symbol_kinds() {
-    let (_tmp, sln_path) = create_workspace_symbols_fixture();
-
-    let mut client = LspClient::start();
-    client.initialize();
-
-    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
-    assert!(resp.get("error").is_none(), "must not error: {resp}");
-
-    let file_symbols = &resp["result"]["projects"][0]["symbols"][0]["symbols"];
-    let syms = file_symbols.as_array().unwrap();
-
     fn collect_kinds(syms: &[Value]) -> Vec<String> {
         let mut kinds = Vec::new();
         for s in syms {
@@ -6050,6 +6189,17 @@ fn test_workspace_symbols_extracts_all_symbol_kinds() {
         }
         kinds
     }
+
+    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+
+    let file_symbols = &resp["result"]["projects"][0]["symbols"][0]["symbols"];
+    let syms = file_symbols.as_array().unwrap();
 
     let kinds = collect_kinds(syms);
 
@@ -6076,14 +6226,6 @@ fn test_workspace_symbols_extracts_all_symbol_kinds() {
 
 #[test]
 fn test_workspace_symbols_symbol_ranges_valid() {
-    let (_tmp, sln_path) = create_workspace_symbols_fixture();
-
-    let mut client = LspClient::start();
-    client.initialize();
-
-    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
-    let file_symbols = &resp["result"]["projects"][0]["symbols"][0]["symbols"];
-
     fn assert_ranges(syms: &[Value]) {
         for s in syms {
             let range = &s["range"];
@@ -6100,6 +6242,14 @@ fn test_workspace_symbols_symbol_ranges_valid() {
         }
     }
 
+    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    let file_symbols = &resp["result"]["projects"][0]["symbols"][0]["symbols"];
+
     assert_ranges(file_symbols.as_array().unwrap());
 
     client.shutdown_and_exit();
@@ -6108,13 +6258,6 @@ fn test_workspace_symbols_symbol_ranges_valid() {
 
 #[test]
 fn test_workspace_symbols_access_modifiers() {
-    let (_tmp, sln_path) = create_workspace_symbols_fixture();
-
-    let mut client = LspClient::start();
-    client.initialize();
-
-    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
-
     fn find_symbol<'a>(syms: &'a [Value], name: &str) -> Option<&'a Value> {
         for s in syms {
             if s["name"].as_str() == Some(name) {
@@ -6128,6 +6271,13 @@ fn test_workspace_symbols_access_modifiers() {
         }
         None
     }
+
+    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
 
     let syms = resp["result"]["projects"][0]["symbols"][0]["symbols"]
         .as_array()
@@ -6479,17 +6629,17 @@ fn test_definition_cache_different_positions() {
     assert_nav_ok(&resp_b);
 
     // Second request to each position hits cache.
-    let resp_a2 = definition(&mut client, TEST_URI, 2, 10);
-    let resp_b2 = definition(&mut client, TEST_URI, 3, 10);
-    assert_nav_ok(&resp_a2);
-    assert_nav_ok(&resp_b2);
+    let cached_a = definition(&mut client, TEST_URI, 2, 10);
+    let cached_b = definition(&mut client, TEST_URI, 3, 10);
+    assert_nav_ok(&cached_a);
+    assert_nav_ok(&cached_b);
 
     assert_eq!(
-        resp_a["result"], resp_a2["result"],
+        resp_a["result"], cached_a["result"],
         "cache hit for position A"
     );
     assert_eq!(
-        resp_b["result"], resp_b2["result"],
+        resp_b["result"], cached_b["result"],
         "cache hit for position B"
     );
 
@@ -6784,12 +6934,12 @@ fn test_full_stack_nav_methods_with_range_assertions() {
     assert_nav_ok(&r4);
     if !r4["result"].is_null() {
         assert!(r4["result"].is_array(), "implementation must return array");
-        let locs = r4["result"].as_array().unwrap();
-        for loc in locs {
-            assert_location_shape(loc);
-            let loc_uri = loc["uri"].as_str().unwrap();
+        let impl_locations = r4["result"].as_array().unwrap();
+        for location in impl_locations {
+            assert_location_shape(location);
+            let location_uri = location["uri"].as_str().unwrap();
             assert!(
-                loc_uri.starts_with("file://"),
+                location_uri.starts_with("file://"),
                 "implementation loc uri must be file://"
             );
         }
@@ -6801,15 +6951,14 @@ fn test_full_stack_nav_methods_with_range_assertions() {
 
 // ── Additional Diagnostics & Sidecar Coverage Tests ──────────────
 
-// Full-stack: diagnostics refreshed on didChange — edit introduces error.
-
-#[test]
-fn test_full_stack_diagnostics_refreshed_on_did_change() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
-
+/// Create a temporary `ChangeTest` workspace. Returns `(tmp_dir, root_uri, file_path, file_uri, clean_source)`.
+fn create_change_test_workspace() -> (
+    tempfile::TempDir,
+    String,
+    std::path::PathBuf,
+    String,
+    &'static str,
+) {
     let tmp = tempfile::tempdir().unwrap();
     let proj_dir = tmp.path().join("ChangeTest");
     std::fs::create_dir_all(&proj_dir).unwrap();
@@ -6826,13 +6975,12 @@ fn test_full_stack_diagnostics_refreshed_on_did_change() {
     )
     .unwrap();
 
-    // Start with a clean file — no errors.
-    let clean_source = r#"namespace ChangeTest;
+    let clean_source = r"namespace ChangeTest;
 public class Widget
 {
     public int Count { get; set; }
 }
-"#;
+";
     std::fs::write(proj_dir.join("Widget.cs"), clean_source).unwrap();
 
     std::fs::write(
@@ -6856,6 +7004,19 @@ EndGlobal"#,
     let root_uri = format!("file://{}", real_root.display());
     let file_path = real_root.join("ChangeTest").join("Widget.cs");
     let file_uri = format!("file://{}", file_path.display());
+    (tmp, root_uri, file_path, file_uri, clean_source)
+}
+
+// Full-stack: diagnostics refreshed on didChange — edit introduces error.
+
+#[test]
+fn test_full_stack_diagnostics_refreshed_on_did_change() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_path, file_uri, clean_source) = create_change_test_workspace();
 
     let mut client = LspClient::start_verbose();
     client.initialize_with_root(json!(root_uri));
@@ -6870,12 +7031,12 @@ EndGlobal"#,
     );
 
     // Now edit the file to introduce a type error.
-    let broken_source = r#"namespace ChangeTest;
+    let broken_source = r"namespace ChangeTest;
 public class Widget
 {
     public NonExistentType Count { get; set; }
 }
-"#;
+";
     client.change_document(&file_uri, 2, broken_source);
     // Also update the file on disk for the sidecar to pick up.
     std::fs::write(&file_path, broken_source).unwrap();
@@ -6974,11 +7135,11 @@ fn test_full_stack_diagnostics_syntax_error() {
     .unwrap();
 
     // File with a deliberate syntax error: missing closing brace.
-    let syntax_error_source = r#"namespace SyntaxErr;
+    let syntax_error_source = r"namespace SyntaxErr;
 public class Oops
 {
     public void Broken(
-"#;
+";
     std::fs::write(proj_dir.join("Oops.cs"), syntax_error_source).unwrap();
 
     std::fs::write(

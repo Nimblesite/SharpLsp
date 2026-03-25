@@ -36,6 +36,10 @@ export const CMD_PROFILER_STOP_COUNTERS = "forge.profiler.stopCounters";
 export const CMD_PROFILER_COLLECT_DUMP = "forge.profiler.collectDump";
 export const CMD_PROFILER_ANALYZE_HEAP = "forge.profiler.analyzeHeap";
 export const CMD_PROFILER_REFRESH = "forge.profiler.refresh";
+export const CMD_PROFILER_DIFF_SNAPSHOTS = "forge.profiler.diffSnapshots";
+export const CMD_PROFILER_DETECT_LEAKS = "forge.profiler.detectLeaks";
+export const CMD_PROFILER_SHOW_OBJECT_GRAPH = "forge.profiler.showObjectGraph";
+export const CMD_PROFILER_INSPECT_OBJECT = "forge.profiler.inspectObject";
 
 export const VIEW_SOLUTION_EXPLORER = "forge.solutionExplorer";
 export const VIEW_PROFILER = "forge.profiler";

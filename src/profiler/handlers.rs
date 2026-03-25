@@ -6,7 +6,9 @@ use anyhow::Result;
 use lsp_server::{Message, Request};
 use tracing::info;
 
-use super::{counters, dump, heap_analysis, object_inspection, process_list, trace};
+use super::{
+    counters, dump, heap_analysis, heap_diff, object_graph, object_inspection, process_list, trace,
+};
 
 /// Handle `forge/profiler/listProcesses`.
 pub fn handle_list_processes(req: Request) -> Result<serde_json::Value> {
@@ -93,6 +95,28 @@ pub fn handle_inspect_object(
     info!("Handling forge/profiler/inspectObject");
     let params: object_inspection::InspectObjectParams = serde_json::from_value(req.params)?;
     let result = runtime.block_on(object_inspection::inspect(params))?;
+    Ok(serde_json::to_value(result)?)
+}
+
+/// Handle `forge/profiler/diffHeapSnapshots`.
+pub fn handle_diff_heap_snapshots(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+) -> Result<serde_json::Value> {
+    info!("Handling forge/profiler/diffHeapSnapshots");
+    let params: heap_diff::DiffHeapSnapshotsParams = serde_json::from_value(req.params)?;
+    let result = runtime.block_on(heap_diff::diff_snapshots(params))?;
+    Ok(serde_json::to_value(result)?)
+}
+
+/// Handle `forge/profiler/getObjectGraph`.
+pub fn handle_get_object_graph(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+) -> Result<serde_json::Value> {
+    info!("Handling forge/profiler/getObjectGraph");
+    let params: object_graph::GetObjectGraphParams = serde_json::from_value(req.params)?;
+    let result = runtime.block_on(object_graph::get_object_graph(params))?;
     Ok(serde_json::to_value(result)?)
 }
 

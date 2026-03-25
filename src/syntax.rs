@@ -54,10 +54,7 @@ fn extract_symbol_name<'a>(node: Node<'a>, source: &[u8]) -> Option<(String, Nod
 }
 
 /// Walk `variable_declaration > variable_declarator` to find the field name.
-fn find_variable_declarator_name<'a>(
-    node: Node<'a>,
-    source: &[u8],
-) -> Option<(String, Node<'a>)> {
+fn find_variable_declarator_name<'a>(node: Node<'a>, source: &[u8]) -> Option<(String, Node<'a>)> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "variable_declaration" {

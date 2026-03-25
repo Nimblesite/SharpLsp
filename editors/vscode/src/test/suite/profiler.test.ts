@@ -69,6 +69,10 @@ suite("Profiler", () => {
     "forge.profiler.stopCounters",
     "forge.profiler.collectDump",
     "forge.profiler.analyzeHeap",
+    "forge.profiler.diffSnapshots",
+    "forge.profiler.detectLeaks",
+    "forge.profiler.showObjectGraph",
+    "forge.profiler.inspectObject",
   ]) {
     test(`${cmd} command is registered`, async () => {
       const allCommands = await vscode.commands.getCommands(true);
@@ -341,5 +345,106 @@ suite("Profiler", () => {
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand("forge.profiler.refresh");
     }, "profiler.refresh command should not throw");
+  });
+
+  // ── New Phase G/I/J/K commands: registration + no-crash ──────
+
+  test("diffSnapshots command does not throw when cancelled", async function () {
+    this.timeout(5_000);
+    await assert.doesNotReject(async () => {
+      // The command opens a file dialog; without a client it returns early.
+      await vscode.commands.executeCommand("forge.profiler.diffSnapshots");
+    }, "diffSnapshots must not throw when no file is selected");
+  });
+
+  test("detectLeaks command does not throw when user cancels", async function () {
+    this.timeout(5_000);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand("forge.profiler.detectLeaks");
+    }, "detectLeaks must not throw when user cancels the workflow");
+  });
+
+  test("showObjectGraph command does not throw when cancelled", async function () {
+    this.timeout(5_000);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand("forge.profiler.showObjectGraph");
+    }, "showObjectGraph must not throw when no file is selected");
+  });
+
+  test("inspectObject command does not throw when cancelled", async function () {
+    this.timeout(5_000);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand("forge.profiler.inspectObject");
+    }, "inspectObject must not throw when no file is selected");
+  });
+
+  // ── Package contribution: new commands declared ───────────────
+
+  test("package.json declares diffSnapshots command", () => {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, "Extension must exist");
+    const commands: { command: string }[] =
+      ext.packageJSON.contributes?.commands ?? [];
+    assert.ok(
+      commands.some((c) => c.command === "forge.profiler.diffSnapshots"),
+      "package.json must declare forge.profiler.diffSnapshots",
+    );
+  });
+
+  test("package.json declares detectLeaks command", () => {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, "Extension must exist");
+    const commands: { command: string }[] =
+      ext.packageJSON.contributes?.commands ?? [];
+    assert.ok(
+      commands.some((c) => c.command === "forge.profiler.detectLeaks"),
+      "package.json must declare forge.profiler.detectLeaks",
+    );
+  });
+
+  test("package.json declares showObjectGraph command", () => {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, "Extension must exist");
+    const commands: { command: string }[] =
+      ext.packageJSON.contributes?.commands ?? [];
+    assert.ok(
+      commands.some((c) => c.command === "forge.profiler.showObjectGraph"),
+      "package.json must declare forge.profiler.showObjectGraph",
+    );
+  });
+
+  test("package.json declares inspectObject command", () => {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, "Extension must exist");
+    const commands: { command: string }[] =
+      ext.packageJSON.contributes?.commands ?? [];
+    assert.ok(
+      commands.some((c) => c.command === "forge.profiler.inspectObject"),
+      "package.json must declare forge.profiler.inspectObject",
+    );
+  });
+
+  // ── Tree: mixed sessions with heap diff flow ──────────────────
+
+  test("heap diff workflow: mixed sessions show correctly in tree", async function () {
+    this.timeout(10_000);
+    const provider = getProvider();
+
+    // Simulate a heap analysis session alongside a trace session.
+    provider.addSession("heap-trace-001", "Trace", 20001);
+
+    try {
+      const children = provider.getChildren();
+      const node = findByLabel(children, "Trace: PID 20001");
+      assert.ok(node, "Trace session must appear in tree");
+      assert.strictEqual(node.nodeKind, "session");
+      assert.strictEqual(node.sessionId, "heap-trace-001");
+      assert.ok(
+        provider.sessionCount >= 1,
+        "Session count must reflect added session",
+      );
+    } finally {
+      provider.removeSession("heap-trace-001");
+    }
   });
 });

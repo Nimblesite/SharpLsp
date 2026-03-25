@@ -275,6 +275,10 @@ fn validate_dump_path(path: &str) -> Result<()> {
     clippy::unwrap_used,
     reason = "test code — panics are the correct failure mode"
 )]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code — panics are the correct failure mode"
+)]
 mod tests {
     use super::*;
 

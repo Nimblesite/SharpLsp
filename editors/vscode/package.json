@@ -324,6 +324,30 @@
         "title": "Refresh Profiler",
         "category": "Forge",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "forge.profiler.diffSnapshots",
+        "title": "Compare Heap Snapshots",
+        "category": "Forge",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "forge.profiler.detectLeaks",
+        "title": "Detect Memory Leaks",
+        "category": "Forge",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "forge.profiler.showObjectGraph",
+        "title": "Show Object Retention Graph",
+        "category": "Forge",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "forge.profiler.inspectObject",
+        "title": "Inspect Object",
+        "category": "Forge",
+        "icon": "$(search)"
       }
     ],
     "menus": {

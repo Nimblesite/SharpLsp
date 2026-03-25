@@ -498,6 +498,10 @@ fn byte_to_position(source: &[u8], byte_offset: usize) -> (u32, u32) {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
 mod tests {
     use super::*;
 
