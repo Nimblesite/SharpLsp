@@ -18,6 +18,7 @@ jobs:
   rust:
     name: Rust
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +34,7 @@ jobs:
   dotnet:
     name: .NET
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -50,7 +52,7 @@ jobs:
         run: dotnet tool restore
 
       - name: Format
-        run: dotnet csharpier check sidecars/
+        run: dotnet csharpier --check sidecars/
 
       - name: Lint
         run: make lint-dotnet
@@ -58,6 +60,7 @@ jobs:
   vscode:
     name: VS Code
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -115,6 +118,7 @@ jobs:
     name: Test
     needs: [rust]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
