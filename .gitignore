@@ -36,3 +36,6 @@ editors/zed/target/
 logs/
 
 editors/vscode/coverage/
+
+# Screenshot test artifacts at root
+/*.png
