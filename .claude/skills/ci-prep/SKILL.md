@@ -14,6 +14,7 @@ You MUST NOT STOP until every check passes.
 - Read the CI script carefully
 - Collect all the checks like formatting, linting and testing
 - Execute all of them as part of a TODO list
+- CRITICAL: **YOU MUST RUN ALL TESTS THAT RUN IN THE CI**
 
 ## Step 1: Confirm Prerequisites
 

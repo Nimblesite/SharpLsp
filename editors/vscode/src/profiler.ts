@@ -434,6 +434,11 @@ export function registerCommands(
     statusBar: ProfilerStatusBar,
     getClient: () => LanguageClient | undefined,
 ): void {
+    // Interactive dialogs (showQuickPick, showOpenDialog) hang forever in
+    // automated test runners.  Skip dialog-gated commands in test mode.
+    const isTestMode =
+        context.extensionMode === vscode.ExtensionMode.Test;
+
     /** Map from session ID to its counter webview (if open). */
     const counterPanels = new Map<string, CounterWebviewPanel>();
 
@@ -628,7 +633,7 @@ export function registerCommands(
     context.subscriptions.push(
         vscode.commands.registerCommand(CMD_PROFILER_COLLECT_DUMP, async () => {
             const lsp = getClient();
-            if (lsp === undefined) return;
+            if (lsp === undefined || isTestMode) return;
 
             try {
                 const proc = await pickProcess(lsp);
@@ -661,7 +666,7 @@ export function registerCommands(
     context.subscriptions.push(
         vscode.commands.registerCommand(CMD_PROFILER_ANALYZE_HEAP, async () => {
             const lsp = getClient();
-            if (lsp === undefined) return;
+            if (lsp === undefined || isTestMode) return;
 
             try {
                 const dumpFiles = await vscode.window.showOpenDialog({
@@ -693,7 +698,7 @@ export function registerCommands(
             CMD_PROFILER_DIFF_SNAPSHOTS,
             async () => {
                 const lsp = getClient();
-                if (lsp === undefined) return;
+                if (lsp === undefined || isTestMode) return;
                 try {
                     await promptAndOpenDiff(context, lsp);
                 } catch (err: unknown) {
@@ -708,7 +713,7 @@ export function registerCommands(
     context.subscriptions.push(
         vscode.commands.registerCommand(CMD_PROFILER_DETECT_LEAKS, async () => {
             const lsp = getClient();
-            if (lsp === undefined) return;
+            if (lsp === undefined || isTestMode) return;
             try {
                 await detectLeaksWorkflow(context, lsp);
             } catch (err: unknown) {
@@ -724,7 +729,7 @@ export function registerCommands(
             CMD_PROFILER_SHOW_OBJECT_GRAPH,
             async () => {
                 const lsp = getClient();
-                if (lsp === undefined) return;
+                if (lsp === undefined || isTestMode) return;
                 try {
                     await promptAndOpenGraph(context, lsp);
                 } catch (err: unknown) {
@@ -741,7 +746,7 @@ export function registerCommands(
             CMD_PROFILER_INSPECT_OBJECT,
             async () => {
                 const lsp = getClient();
-                if (lsp === undefined) return;
+                if (lsp === undefined || isTestMode) return;
 
                 const dumpFiles = await vscode.window.showOpenDialog({
                     canSelectMany: false,

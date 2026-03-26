@@ -426,7 +426,7 @@
         },
         {
           "command": "forge.copyName",
-          "when": "view == forge.solutionExplorer && viewItem =~ /^(symbol\\.|solution|project)/",
+          "when": "view == forge.solutionExplorer && viewItem =~ /^(symbol\\.|solution$|project$)/",
           "group": "9_cutcopypaste"
         }
       ]
