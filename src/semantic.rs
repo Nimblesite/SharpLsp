@@ -375,6 +375,9 @@ fn handle_multi_location_nav(
         .filter_map(|loc| sidecar_location_to_lsp(&loc))
         .collect();
 
+    if locations.is_empty() {
+        return Ok(serde_json::Value::Null);
+    }
     let response = GotoDefinitionResponse::Array(locations);
     Ok(serde_json::to_value(response)?)
 }

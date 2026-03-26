@@ -188,15 +188,20 @@ fn run_server() -> Result<()> {
     // Shut down profiler sessions.
     profiler::session::store().shutdown();
 
-    // Shut down sidecars gracefully.
-    if let Some(ref sidecar) = csharp_sidecar {
-        let sidecar_clone = Arc::clone(sidecar);
-        runtime.block_on(async move { sidecar_clone.shutdown().await });
-    }
-    if let Some(ref sidecar) = fsharp_sidecar {
-        let sidecar_clone = Arc::clone(sidecar);
-        runtime.block_on(async move { sidecar_clone.shutdown().await });
-    }
+    // Shut down sidecars gracefully (in parallel to avoid doubling timeout).
+    runtime.block_on(async {
+        let cs = async {
+            if let Some(ref sidecar) = csharp_sidecar {
+                sidecar.shutdown().await;
+            }
+        };
+        let fs = async {
+            if let Some(ref sidecar) = fsharp_sidecar {
+                sidecar.shutdown().await;
+            }
+        };
+        tokio::join!(cs, fs);
+    });
 
     // Drop the connection so the writer thread's channel closes,
     // allowing io_threads.join() to complete.
