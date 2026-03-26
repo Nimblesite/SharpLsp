@@ -5,10 +5,9 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
 use tracing::{debug, info};
 
-use super::tool_discovery;
+use super::{dump_cmd, tool_discovery};
 
 /// Parameters for inspecting a managed object.
 #[derive(Debug, Deserialize)]
@@ -42,7 +41,7 @@ pub struct ObjectField {
 /// Inspect a managed object by address.
 pub async fn inspect(params: InspectObjectParams) -> Result<ObjectInspection> {
     let tool = tool_discovery::require_dump()?;
-    validate_dump_path(&params.dump_path)?;
+    dump_cmd::validate_dump_path(&params.dump_path)?;
 
     info!(
         dump = %params.dump_path,
@@ -51,7 +50,7 @@ pub async fn inspect(params: InspectObjectParams) -> Result<ObjectInspection> {
     );
 
     let cmd = format!("dumpobj {}", params.object_address);
-    let output = run_dump_command(tool, &params.dump_path, &cmd)
+    let output = dump_cmd::run(tool, &params.dump_path, &cmd)
         .await
         .context("failed to run dumpobj")?;
 
@@ -60,7 +59,7 @@ pub async fn inspect(params: InspectObjectParams) -> Result<ObjectInspection> {
 
     // Query generation and pinned status via `gcroot`.
     let gen_cmd = format!("gcroot {}", params.object_address);
-    let gen_output = run_dump_command(tool, &params.dump_path, &gen_cmd)
+    let gen_output = dump_cmd::run(tool, &params.dump_path, &gen_cmd)
         .await
         .context("failed to run gcroot for generation info")?;
 
@@ -76,32 +75,6 @@ pub async fn inspect(params: InspectObjectParams) -> Result<ObjectInspection> {
     );
 
     Ok(inspection)
-}
-
-/// Run a command in the dotnet-dump analyze interactive session.
-async fn run_dump_command(
-    tool: &std::path::Path,
-    dump_path: &str,
-    command: &str,
-) -> Result<std::process::Output> {
-    let mut child = tokio::process::Command::new(tool)
-        .args(["analyze", dump_path])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .context("spawn dotnet-dump analyze")?;
-
-    let input = format!("{command}\nexit\n");
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(input.as_bytes()).await;
-        drop(stdin);
-    }
-
-    child
-        .wait_with_output()
-        .await
-        .context("wait for dotnet-dump analyze")
 }
 
 /// Parse `dumpobj` output into an `ObjectInspection`.
@@ -289,14 +262,6 @@ fn detect_generation(gcroot_output: &str) -> String {
         }
     }
     "unknown".to_string()
-}
-
-/// Verify the dump file exists before invoking `dotnet-dump analyze`.
-fn validate_dump_path(path: &str) -> Result<()> {
-    if !std::path::Path::new(path).exists() {
-        anyhow::bail!("dump file not found: {path}");
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -517,14 +482,6 @@ Fields:
         assert!(!field.is_reference);
         // Static fields should not have a reference address.
         assert!(field.reference_address.is_none());
-    }
-
-    #[test]
-    fn test_validate_dump_path_missing_file() {
-        let result = validate_dump_path("/nonexistent/path/to/dump.dmp");
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("dump file not found"));
     }
 
     #[test]

@@ -2,10 +2,9 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
 use tracing::{debug, info};
 
-use super::tool_discovery;
+use super::{dump_cmd, tool_discovery};
 
 /// Parameters for heap analysis.
 #[derive(Debug, Deserialize)]
@@ -56,12 +55,12 @@ pub struct GcRootChain {
 /// Analyze heap statistics from a dump file.
 pub async fn analyze_heap(params: AnalyzeHeapParams) -> Result<HeapStats> {
     let tool = tool_discovery::require_dump()?;
-    validate_dump_path(&params.dump_path)?;
+    dump_cmd::validate_dump_path(&params.dump_path)?;
 
     info!(dump = %params.dump_path, "Analyzing heap statistics");
 
     // Run `dumpheap -stat` via dotnet-dump analyze with piped commands.
-    let output = run_dump_command(tool, &params.dump_path, "dumpheap -stat")
+    let output = dump_cmd::run(tool, &params.dump_path, "dumpheap -stat")
         .await
         .context("failed to run dotnet-dump analyze")?;
 
@@ -100,7 +99,7 @@ pub async fn analyze_heap(params: AnalyzeHeapParams) -> Result<HeapStats> {
 /// Find GC roots for a specific object address.
 pub async fn find_gc_roots(params: FindGcRootsParams) -> Result<Vec<GcRootChain>> {
     let tool = tool_discovery::require_dump()?;
-    validate_dump_path(&params.dump_path)?;
+    dump_cmd::validate_dump_path(&params.dump_path)?;
 
     info!(
         dump = %params.dump_path,
@@ -110,7 +109,7 @@ pub async fn find_gc_roots(params: FindGcRootsParams) -> Result<Vec<GcRootChain>
 
     let command_str = format!("gcroot {}", params.object_address);
 
-    let output = run_dump_command(tool, &params.dump_path, &command_str)
+    let output = dump_cmd::run(tool, &params.dump_path, &command_str)
         .await
         .context("failed to run dotnet-dump analyze for gcroot")?;
 
@@ -119,36 +118,6 @@ pub async fn find_gc_roots(params: FindGcRootsParams) -> Result<Vec<GcRootChain>
 
     info!(chain_count = chains.len(), "GC root analysis complete");
     Ok(chains)
-}
-
-/// Run a command in the dotnet-dump analyze interactive session.
-///
-/// Spawns `dotnet-dump analyze <dump>`, writes the command + exit to stdin,
-/// then collects the full stdout output.
-async fn run_dump_command(
-    tool: &std::path::Path,
-    dump_path: &str,
-    command: &str,
-) -> Result<std::process::Output> {
-    let mut child = tokio::process::Command::new(tool)
-        .args(["analyze", dump_path])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .context("spawn dotnet-dump analyze")?;
-
-    let input = format!("{command}\nexit\n");
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(input.as_bytes()).await;
-        // Drop stdin to signal EOF.
-        drop(stdin);
-    }
-
-    child
-        .wait_with_output()
-        .await
-        .context("wait for dotnet-dump analyze")
 }
 
 /// Parse `dumpheap -stat` output into type info structs.
@@ -260,14 +229,6 @@ fn parse_gcroot_output(output: &str) -> Vec<GcRootChain> {
 
 fn default_limit() -> usize {
     50
-}
-
-/// Verify the dump file exists before invoking `dotnet-dump analyze`.
-fn validate_dump_path(path: &str) -> Result<()> {
-    if !std::path::Path::new(path).exists() {
-        anyhow::bail!("dump file not found: {path}");
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -404,12 +365,6 @@ Total 1700 objects
     #[test]
     fn test_parse_dumpheap_stat_line_non_numeric_count() {
         assert!(parse_dumpheap_stat_line("00007ff8  abc  1234 System.String").is_none());
-    }
-
-    #[test]
-    fn test_validate_dump_path_missing() {
-        let result = validate_dump_path("/nonexistent/path/to/dump.dmp");
-        assert!(result.is_err());
     }
 
     #[test]

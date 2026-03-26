@@ -5,6 +5,7 @@
 
 pub mod counters;
 pub mod dump;
+pub mod dump_cmd;
 pub mod handlers;
 pub mod heap_analysis;
 pub mod heap_diff;

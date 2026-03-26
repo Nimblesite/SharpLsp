@@ -5,10 +5,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
 use tracing::{debug, info};
 
-use super::tool_discovery;
+use super::{dump_cmd, tool_discovery};
 
 fn default_max_depth() -> usize {
     5
@@ -82,7 +81,7 @@ pub struct ObjectGraphStats {
 /// Build an object retention graph starting from `root_address`.
 pub async fn get_object_graph(params: GetObjectGraphParams) -> Result<ObjectGraphResult> {
     let tool = tool_discovery::require_dump()?;
-    validate_dump_path(&params.dump_path)?;
+    dump_cmd::validate_dump_path(&params.dump_path)?;
 
     info!(
         dump = %params.dump_path,
@@ -113,10 +112,9 @@ pub async fn get_object_graph(params: GetObjectGraphParams) -> Result<ObjectGrap
         visited.insert(address.clone());
         max_depth_reached = max_depth_reached.max(depth);
 
-        let dumpobj_output =
-            run_dump_command(tool, &params.dump_path, &format!("dumpobj {address}"))
-                .await
-                .context("dumpobj failed")?;
+        let dumpobj_output = dump_cmd::run(tool, &params.dump_path, &format!("dumpobj {address}"))
+            .await
+            .context("dumpobj failed")?;
 
         let stdout = String::from_utf8_lossy(&dumpobj_output.stdout);
         let parsed = parse_dumpobj_for_graph(&stdout, &address, depth);
@@ -299,7 +297,7 @@ async fn annotate_roots(
     nodes: &mut HashMap<String, ObjectGraphNode>,
 ) {
     let cmd = format!("gcroot {root_address}");
-    let Ok(output) = run_dump_command(tool, dump_path, &cmd).await else {
+    let Ok(output) = dump_cmd::run(tool, dump_path, &cmd).await else {
         return;
     };
 
@@ -350,40 +348,6 @@ fn short_type_name(full: &str) -> String {
     // return the part after the last dot before the backtick.
     let base = full.split('`').next().unwrap_or(full);
     base.split('.').next_back().unwrap_or(base).to_string()
-}
-
-/// Run a command in the dotnet-dump analyze interactive session.
-async fn run_dump_command(
-    tool: &std::path::Path,
-    dump_path: &str,
-    command: &str,
-) -> Result<std::process::Output> {
-    let mut child = tokio::process::Command::new(tool)
-        .args(["analyze", dump_path])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .context("spawn dotnet-dump analyze")?;
-
-    let input = format!("{command}\nexit\n");
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(input.as_bytes()).await;
-        drop(stdin);
-    }
-
-    child
-        .wait_with_output()
-        .await
-        .context("wait for dotnet-dump analyze")
-}
-
-/// Verify the dump file exists.
-fn validate_dump_path(path: &str) -> Result<()> {
-    if !std::path::Path::new(path).exists() {
-        anyhow::bail!("dump file not found: {path}");
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -571,13 +535,5 @@ Size:        24(0x18) bytes
             short_type_name("System.Collections.Generic.Dictionary`2[[K],[V]]"),
             "Dictionary"
         );
-    }
-
-    #[test]
-    fn test_validate_dump_path_missing_file() {
-        let result = validate_dump_path("/nonexistent/path/to/dump.dmp");
-        assert!(result.is_err());
-        let msg = format!("{}", result.unwrap_err());
-        assert!(msg.contains("dump file not found"));
     }
 }

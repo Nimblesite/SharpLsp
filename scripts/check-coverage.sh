@@ -24,6 +24,16 @@ if [ -z "$THRESHOLD" ]; then
   exit 1
 fi
 
+# Guard: threshold must NEVER decrease from what's committed in git.
+COMMITTED_THRESHOLD=$(git show HEAD:"$THRESHOLDS" 2>/dev/null | jq -r --arg p "$PROJECT" '.[$p].line_percent // empty' 2>/dev/null || true)
+if [ -n "$COMMITTED_THRESHOLD" ]; then
+  REGRESSED=$(echo "$THRESHOLD < $COMMITTED_THRESHOLD" | bc -l)
+  if [ "$REGRESSED" -eq 1 ]; then
+    echo "FAIL: [$PROJECT] threshold was lowered from ${COMMITTED_THRESHOLD}% to ${THRESHOLD}% — coverage thresholds must NEVER decrease" >&2
+    exit 1
+  fi
+fi
+
 echo "[$PROJECT] coverage: ${ACTUAL}% (threshold: ${THRESHOLD}%)"
 
 BELOW=$(echo "$ACTUAL < $THRESHOLD" | bc -l)
