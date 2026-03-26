@@ -11,28 +11,13 @@ You MUST NOT STOP until every check passes.
 
 ## Checklist (derived from `.github/workflows/ci.yml` and `Makefile`)
 
-The CI pipeline has three independent lint jobs and one test job. Your checklist:
-
-1. **Rust fmt** — `cargo fmt --check`
-2. **Rust clippy** — `cargo clippy --profile debug -- -D warnings`
-3. **TypeScript prettier** — `cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'`
-4. **TypeScript ESLint** — `npm run lint:eslint --prefix editors/vscode`
-5. **TypeScript tsc** — `npm run typecheck --prefix editors/vscode`
-
-> Note: .NET checks (`dotnet csharpier`, `make lint-dotnet`) require the full .NET SDK and are skipped if `dotnet` is not available. Website build is not in CI and is skipped.
+- Read the CI script carefully
+- Collect all the checks like formatting, linting and testing
+- Execute all of them as part of a TODO list
 
 ## Step 1: Confirm Prerequisites
 
-```bash
-which cargo && cargo --version
-which dotnet && dotnet --version || echo "SKIP: dotnet not available"
-node --version && npm --version
-```
-
-If `dotnet` is available, add to your checklist:
-- **dotnet tool restore** — `dotnet tool restore`
-- **.NET csharpier format** — `dotnet csharpier check sidecars/`
-- **.NET build/lint** — `dotnet build sidecars/Forge.Sidecars.sln --configuration Debug -warnaserror`
+- Make sure you have all the components installed to run the checks
 
 ## Step 2: Coordinate with Other Agents
 
@@ -51,45 +36,6 @@ Work through the checklist in order. For each check:
 3. If it fails → **FIX IT**. Do NOT suppress warnings, skip checks, add `allow(clippy::...)`, or lower strictness. Fix the actual code.
 4. Re-run the check to confirm the fix
 5. Move on
-
-### Commands
-
-```bash
-# 1. Rust format (fix)
-cargo fmt
-
-# 1. Rust format (check only)
-cargo fmt --check
-
-# 2. Rust clippy
-cargo clippy --profile debug -- -D warnings
-
-# 3. TypeScript prettier (fix)
-cd editors/vscode && npx prettier@3 --write 'src/**/*.ts'
-
-# 3. TypeScript prettier (check only)
-cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'
-
-# 4. TypeScript ESLint
-npm run lint:eslint --prefix editors/vscode
-
-# 5. TypeScript tsc
-npm run typecheck --prefix editors/vscode
-
-# --- dotnet (if available) ---
-
-# dotnet tool restore
-dotnet tool restore
-
-# .NET csharpier (fix)
-dotnet csharpier sidecars/
-
-# .NET csharpier (check)
-dotnet csharpier check sidecars/
-
-# .NET build with warnings-as-errors
-dotnet build sidecars/Forge.Sidecars.sln --configuration Debug -warnaserror
-```
 
 ### Fix Rules
 

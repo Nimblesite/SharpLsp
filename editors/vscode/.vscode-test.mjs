@@ -8,6 +8,7 @@ export default defineConfig([
     mocha: {
       ui: "tdd",
       timeout: 60_000,
+      bail: true,
     },
     launchArgs: ["--disable-extensions"],
     coverage: {
