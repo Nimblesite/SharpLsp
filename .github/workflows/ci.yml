@@ -155,7 +155,10 @@ jobs:
         run: npm ci --prefix editors/vscode
 
       - name: Test (build + coverage + threshold enforcement)
-        run: make test-rust test-zed test-vsix test-dotnet
+        run: make test-rust test-zed test-dotnet
+
+      - name: Test VS Code extension (requires virtual display)
+        run: xvfb-run -a make test-vsix
 
       - name: Commit ratcheted thresholds
         run: |
