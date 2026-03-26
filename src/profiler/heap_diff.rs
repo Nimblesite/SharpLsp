@@ -267,6 +267,10 @@ fn determine_severity(
     if count_growth_pct > 100.0 && size_delta > 1_000_000 {
         return Some(LeakSeverity::High);
     }
+    // Boost leak-prone / collection types: extreme growth → High even with smaller absolute size.
+    if boost && count_growth_pct > 500.0 && size_delta > 10_000 {
+        return Some(LeakSeverity::High);
+    }
     if count_growth_pct > 50.0 && size_delta > 100_000 {
         return Some(LeakSeverity::Medium);
     }
@@ -504,5 +508,190 @@ mod tests {
 
         assert_eq!(diffs.len(), 1);
         assert_eq!(diffs[0].type_name, "EventHandler");
+    }
+
+    #[test]
+    fn test_compute_growth_percent_zero_baseline_positive_delta() {
+        assert_eq!(compute_growth_percent(0, 100), 100.0);
+    }
+
+    #[test]
+    fn test_compute_growth_percent_zero_baseline_zero_delta() {
+        assert_eq!(compute_growth_percent(0, 0), 0.0);
+    }
+
+    #[test]
+    fn test_compute_growth_percent_normal() {
+        let pct = compute_growth_percent(1000, 500);
+        assert!((pct - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_growth_percent_negative_delta() {
+        let pct = compute_growth_percent(1000, -250);
+        assert!((pct - (-25.0)).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_saturating_delta_normal() {
+        assert_eq!(saturating_delta(300, 100), 200);
+        assert_eq!(saturating_delta(100, 300), -200);
+    }
+
+    #[test]
+    fn test_saturating_delta_zero() {
+        assert_eq!(saturating_delta(0, 0), 0);
+    }
+
+    #[test]
+    fn test_classify_low_severity() {
+        let diff = HeapTypeDiff {
+            type_name: "MyApp.Widget".to_string(),
+            baseline_count: 100,
+            comparison_count: 120,
+            count_delta: 20,
+            baseline_size_bytes: 50_000,
+            comparison_size_bytes: 70_000,
+            size_delta_bytes: 20_000,
+            growth_percent: 40.0,
+        };
+
+        let suspect = classify_single(&diff).unwrap();
+        assert!(matches!(suspect.severity, LeakSeverity::Low));
+    }
+
+    #[test]
+    fn test_classify_leak_prone_boost() {
+        // Small growth but leak-prone type → Low severity via boost
+        let diff = HeapTypeDiff {
+            type_name: "System.EventHandler`1[[MyArgs]]".to_string(),
+            baseline_count: 10,
+            comparison_count: 15,
+            count_delta: 5,
+            baseline_size_bytes: 100,
+            comparison_size_bytes: 200,
+            size_delta_bytes: 100,
+            growth_percent: 100.0,
+        };
+
+        let suspect = classify_single(&diff).unwrap();
+        assert!(matches!(suspect.severity, LeakSeverity::Low));
+        assert!(suspect.reason.contains("known leak-prone"));
+    }
+
+    #[test]
+    fn test_classify_collection_boost() {
+        let diff = HeapTypeDiff {
+            type_name: "System.Collections.Generic.Dictionary`2".to_string(),
+            baseline_count: 10,
+            comparison_count: 15,
+            count_delta: 5,
+            baseline_size_bytes: 100,
+            comparison_size_bytes: 200,
+            size_delta_bytes: 100,
+            growth_percent: 100.0,
+        };
+
+        let suspect = classify_single(&diff).unwrap();
+        assert!(suspect.reason.contains("growing collection"));
+    }
+
+    #[test]
+    fn test_classify_suspects_multiple() {
+        let diffs = vec![
+            HeapTypeDiff {
+                type_name: "LeakyType".to_string(),
+                baseline_count: 10,
+                comparison_count: 1500,
+                count_delta: 1490,
+                baseline_size_bytes: 480,
+                comparison_size_bytes: 2_000_000,
+                size_delta_bytes: 1_999_520,
+                growth_percent: 416_566.7,
+            },
+            HeapTypeDiff {
+                type_name: "StableType".to_string(),
+                baseline_count: 100,
+                comparison_count: 100,
+                count_delta: 0,
+                baseline_size_bytes: 5000,
+                comparison_size_bytes: 5000,
+                size_delta_bytes: 0,
+                growth_percent: 0.0,
+            },
+        ];
+
+        let suspects = classify_suspects(&diffs);
+        assert_eq!(suspects.len(), 1);
+        assert_eq!(suspects[0].type_name, "LeakyType");
+    }
+
+    #[test]
+    fn test_build_diff_only_in_baseline() {
+        let baseline = make_type("OldType", 500, 25_000);
+        let diff = build_diff("OldType", Some(&baseline), None);
+        assert_eq!(diff.comparison_count, 0);
+        assert_eq!(diff.count_delta, -500);
+        assert!(diff.size_delta_bytes < 0);
+    }
+
+    #[test]
+    fn test_build_diff_only_in_comparison() {
+        let comparison = make_type("NewType", 100, 5_000);
+        let diff = build_diff("NewType", None, Some(&comparison));
+        assert_eq!(diff.baseline_count, 0);
+        assert_eq!(diff.count_delta, 100);
+        assert_eq!(diff.size_delta_bytes, 5_000);
+        assert_eq!(diff.growth_percent, 100.0);
+    }
+
+    #[test]
+    fn test_build_reason_size_growth() {
+        let diff = HeapTypeDiff {
+            type_name: "MyType".to_string(),
+            baseline_count: 100,
+            comparison_count: 200,
+            count_delta: 100,
+            baseline_size_bytes: 5000,
+            comparison_size_bytes: 15_000,
+            size_delta_bytes: 10_000,
+            growth_percent: 200.0,
+        };
+
+        let reason = build_reason(&diff, 100.0, false, false);
+        assert!(reason.contains("count grew"));
+        assert!(reason.contains("size grew"));
+    }
+
+    #[test]
+    fn test_default_values() {
+        assert!(default_growing_only());
+        assert!((default_min_growth_percent() - 10.0).abs() < f64::EPSILON);
+        assert_eq!(default_limit(), 50);
+    }
+
+    #[test]
+    fn test_is_leak_prone_timer() {
+        assert!(is_leak_prone_type("System.Threading.Timer"));
+        assert!(is_leak_prone_type("System.Timers.Timer"));
+        assert!(is_leak_prone_type("WeakReference`1"));
+    }
+
+    #[test]
+    fn test_determine_severity_none_for_tiny_growth() {
+        // Below all thresholds, not leak-prone
+        let result = determine_severity(5.0, 100, false, false);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_min_growth_filter() {
+        let baseline = vec![make_type("System.String", 100, 5_000)];
+        let comparison = vec![make_type("System.String", 101, 5_050)];
+
+        let mut diffs = compute_diffs(&baseline, &comparison);
+        // Apply 10% min growth filter
+        diffs.retain(|d| d.growth_percent >= 10.0);
+        assert!(diffs.is_empty());
     }
 }

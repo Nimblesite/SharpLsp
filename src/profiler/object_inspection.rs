@@ -440,4 +440,114 @@ Fields:
         assert_eq!(result.size_bytes, 80);
         assert!(result.fields.is_empty());
     }
+
+    #[test]
+    fn test_detect_generation_gen1() {
+        assert_eq!(detect_generation("Gen 1 segment"), "Gen1");
+    }
+
+    #[test]
+    fn test_detect_generation_gen2() {
+        assert_eq!(detect_generation("Gen 2 region"), "Gen2");
+    }
+
+    #[test]
+    fn test_detect_generation_generation_1() {
+        assert_eq!(detect_generation("generation 1 objects"), "Gen1");
+    }
+
+    #[test]
+    fn test_detect_generation_generation_2() {
+        assert_eq!(detect_generation("generation 2 objects"), "Gen2");
+    }
+
+    #[test]
+    fn test_detect_generation_poh() {
+        assert_eq!(detect_generation("Pinned Object Heap"), "POH");
+    }
+
+    #[test]
+    fn test_detect_generation_poh_lowercase() {
+        assert_eq!(detect_generation("poh"), "POH");
+    }
+
+    #[test]
+    fn test_detect_generation_loh() {
+        assert_eq!(detect_generation("loh"), "LOH");
+    }
+
+    #[test]
+    fn test_detect_generation_large_object_heap() {
+        assert_eq!(detect_generation("Large Object Heap segment"), "LOH");
+    }
+
+    #[test]
+    fn test_detect_pinned_lowercase_pin() {
+        assert!(detect_pinned("  pin handle active\n"));
+    }
+
+    #[test]
+    fn test_detect_pinned_mixed_case() {
+        assert!(detect_pinned("  PINNED object found\n"));
+    }
+
+    #[test]
+    fn test_parse_field_line_empty() {
+        assert!(parse_field_line("").is_none());
+    }
+
+    #[test]
+    fn test_parse_field_line_separator() {
+        assert!(parse_field_line("-------------------").is_none());
+    }
+
+    #[test]
+    fn test_parse_field_line_short_line() {
+        assert!(parse_field_line("only three tokens here").is_none());
+    }
+
+    #[test]
+    fn test_parse_field_line_static_attr() {
+        let line =
+            "00007ff80006  4000300      0         System.Int32  1   static                0 s_count";
+        let field = parse_field_line(line).unwrap();
+        assert_eq!(field.name, "s_count");
+        assert_eq!(field.value, "0");
+        assert_eq!(field.type_name, "System.Int32");
+        assert!(!field.is_reference);
+        // Static fields should not have a reference address.
+        assert!(field.reference_address.is_none());
+    }
+
+    #[test]
+    fn test_validate_dump_path_missing_file() {
+        let result = validate_dump_path("/nonexistent/path/to/dump.dmp");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("dump file not found"));
+    }
+
+    #[test]
+    fn test_parse_size_field_no_digits() {
+        assert_eq!(parse_size_field("Size:        bytes"), 0);
+    }
+
+    #[test]
+    fn test_parse_size_field_empty_after_colon() {
+        assert_eq!(parse_size_field("Size:"), 0);
+    }
+
+    #[test]
+    fn test_parse_dumpobj_fields_header_no_fields() {
+        let output = "\
+Name:        System.Object
+Size:        24(0x18) bytes
+Fields:
+              MT    Field   Offset                 Type VT     Attr            Value Name
+";
+        let result = parse_dumpobj_output(output, "0xbeef").unwrap();
+        assert_eq!(result.type_name, "System.Object");
+        assert_eq!(result.size_bytes, 24);
+        assert!(result.fields.is_empty());
+    }
 }

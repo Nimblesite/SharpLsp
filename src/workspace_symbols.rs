@@ -384,3 +384,129 @@ fn extract_type_detail(node: Node, source: &[u8]) -> Option<String> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
+mod tests {
+    use super::*;
+
+    fn make_symbol(name: &str, kind: &str) -> SymbolNode {
+        SymbolNode {
+            name: name.to_string(),
+            kind: kind.to_string(),
+            detail: None,
+            access: None,
+            range: SymbolRange {
+                start: SymbolPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: SymbolPosition {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            children: Vec::new(),
+        }
+    }
+
+    // ── extract_project_path ──
+
+    #[test]
+    fn extract_project_path_csproj() {
+        let line = r#"Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyApp", "src\MyApp\MyApp.csproj", "{GUID}""#;
+        let result = extract_project_path(line).unwrap();
+        assert_eq!(result, "src/MyApp/MyApp.csproj");
+    }
+
+    #[test]
+    fn extract_project_path_fsproj() {
+        let line = r#"Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MyLib", "lib\MyLib\MyLib.fsproj", "{GUID}""#;
+        let result = extract_project_path(line).unwrap();
+        assert_eq!(result, "lib/MyLib/MyLib.fsproj");
+    }
+
+    #[test]
+    fn extract_project_path_non_project_line() {
+        assert!(extract_project_path("Global").is_none());
+        assert!(extract_project_path("").is_none());
+        assert!(extract_project_path("  EndProject").is_none());
+    }
+
+    #[test]
+    fn extract_project_path_solution_folder() {
+        // Solution folders have a path like "SolutionFolder" — no .csproj/.fsproj
+        let line = r#"Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{GUID}""#;
+        assert!(extract_project_path(line).is_none());
+    }
+
+    // ── is_source_file ──
+
+    #[test]
+    fn is_source_file_cs() {
+        assert!(is_source_file(Path::new("Program.cs")));
+    }
+
+    #[test]
+    fn is_source_file_fs() {
+        assert!(is_source_file(Path::new("Module.fs")));
+    }
+
+    #[test]
+    fn is_source_file_txt_rejected() {
+        assert!(!is_source_file(Path::new("readme.txt")));
+    }
+
+    #[test]
+    fn is_source_file_rs_rejected() {
+        assert!(!is_source_file(Path::new("main.rs")));
+    }
+
+    // ── reparent_file_scoped_members ──
+
+    #[test]
+    fn reparent_no_namespace_returns_unchanged() {
+        let symbols = vec![
+            make_symbol("MyClass", "Class"),
+            make_symbol("MyStruct", "Struct"),
+        ];
+        let result = reparent_file_scoped_members(symbols);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "MyClass");
+        assert_eq!(result[1].name, "MyStruct");
+    }
+
+    #[test]
+    fn reparent_namespace_with_existing_children_unchanged() {
+        let mut ns = make_symbol("MyApp", "Namespace");
+        ns.children.push(make_symbol("Existing", "Class"));
+
+        let symbols = vec![ns, make_symbol("Orphan", "Class")];
+        let result = reparent_file_scoped_members(symbols);
+        // Namespace already has type children, so no reparenting.
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "MyApp");
+        assert_eq!(result[0].children.len(), 1);
+        assert_eq!(result[1].name, "Orphan");
+    }
+
+    #[test]
+    fn reparent_file_scoped_namespace_adopts_orphans() {
+        let ns = make_symbol("MyApp.Models", "Namespace");
+        let class1 = make_symbol("User", "Class");
+        let class2 = make_symbol("Order", "Class");
+
+        let symbols = vec![ns, class1, class2];
+        let result = reparent_file_scoped_members(symbols);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "MyApp.Models");
+        assert_eq!(result[0].kind, "Namespace");
+        assert_eq!(result[0].children.len(), 2);
+        assert_eq!(result[0].children[0].name, "User");
+        assert_eq!(result[0].children[1].name, "Order");
+    }
+}

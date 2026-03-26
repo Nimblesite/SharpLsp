@@ -323,4 +323,97 @@ Found 1 unique root(s).\n";
         assert_eq!(chains[0].roots[1].root_kind, "Reference");
         assert_eq!(chains[0].roots[1].type_name, "MyApp.Service");
     }
+
+    #[test]
+    fn test_parse_gcroot_output_multiple_chains() {
+        let output = "\
+Thread 1234:\n\
+    00007ff800001111 00007ff800002222 System.String\n\
+Thread 5678:\n\
+    00007ff800003333 00007ff800004444 System.Object\n\
+    ->  00007ff800005555 MyApp.Handler\n\
+\n\
+Found 2 unique root(s).\n";
+
+        let chains = parse_gcroot_output(output);
+        assert_eq!(chains.len(), 2);
+        assert_eq!(chains[0].roots.len(), 1);
+        assert_eq!(chains[1].roots.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_gcroot_output_handle_table() {
+        let output = "\
+HandleTable:\n\
+    00007ff800001111 System.EventHandler\n\
+\n\
+Found 1 unique root(s).\n";
+
+        let chains = parse_gcroot_output(output);
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].roots.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_gcroot_output_empty() {
+        let chains = parse_gcroot_output("Found 0 unique root(s).\n");
+        assert!(chains.is_empty());
+    }
+
+    #[test]
+    fn test_parse_gcroot_output_no_thread_header() {
+        // Lines without a Thread/HandleTable header go into a single chain
+        let output = "\
+    00007ff800001111 System.Object\n\
+    ->  00007ff800002222 MyApp.Service\n";
+
+        let chains = parse_gcroot_output(output);
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].roots.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_dumpheap_stat_full_output() {
+        let output = "\
+              MT    Count    TotalSize Class Name
+00007ff8abcd1234     1500       48000 System.String
+00007ff8abcd5678      200       16000 System.Object[]
+Total 1700 objects
+";
+        let types = parse_dumpheap_stat(output);
+        assert_eq!(types.len(), 2);
+        assert_eq!(types[0].type_name, "System.String");
+        assert_eq!(types[0].count, 1500);
+        assert_eq!(types[0].total_size_bytes, 48000);
+        assert_eq!(types[1].type_name, "System.Object[]");
+        assert_eq!(types[1].count, 200);
+    }
+
+    #[test]
+    fn test_parse_dumpheap_stat_empty_output() {
+        assert!(parse_dumpheap_stat("").is_empty());
+        assert!(parse_dumpheap_stat("\n\n").is_empty());
+    }
+
+    #[test]
+    fn test_parse_dumpheap_stat_line_short_line() {
+        assert!(parse_dumpheap_stat_line("foo bar").is_none());
+        assert!(parse_dumpheap_stat_line("one two three").is_none());
+    }
+
+    #[test]
+    fn test_parse_dumpheap_stat_line_non_numeric_count() {
+        assert!(parse_dumpheap_stat_line("00007ff8  abc  1234 System.String").is_none());
+    }
+
+    #[test]
+    fn test_validate_dump_path_missing() {
+        let result = validate_dump_path("/nonexistent/path/to/dump.dmp");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_default_limit() {
+        assert_eq!(default_limit(), 50);
+    }
 }

@@ -324,3 +324,83 @@ fn fxhash(bytes: &[u8]) -> u32 {
     }
     hash
 }
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn fxhash_is_deterministic() {
+        let input = b"hello world";
+        assert_eq!(fxhash(input), fxhash(input));
+    }
+
+    #[test]
+    fn fxhash_different_inputs_produce_different_outputs() {
+        assert_ne!(fxhash(b"hello"), fxhash(b"world"));
+        assert_ne!(fxhash(b""), fxhash(b"a"));
+        assert_ne!(fxhash(b"abc"), fxhash(b"abd"));
+    }
+
+    #[test]
+    fn fxhash_empty_input() {
+        // Should not panic and should return the initial seed after zero iterations.
+        let result = fxhash(b"");
+        assert_eq!(result, 0x811c_9dc5);
+    }
+
+    #[test]
+    fn new_stores_name() {
+        let mgr = SidecarManager::new("test-sidecar", "echo", vec![], "/tmp/test.sock");
+        assert_eq!(mgr.name(), "test-sidecar");
+    }
+
+    #[test]
+    fn new_stores_socket_path() {
+        let mgr = SidecarManager::new("test", "echo", vec![], "/tmp/my.sock");
+        assert_eq!(mgr.socket_path, "/tmp/my.sock");
+    }
+
+    #[test]
+    fn name_returns_display_name() {
+        let mgr = SidecarManager::new("My Sidecar", "cmd", vec![], "/tmp/s.sock");
+        assert_eq!(mgr.name(), "My Sidecar");
+    }
+
+    #[test]
+    fn csharp_has_correct_name() {
+        let mgr = SidecarManager::csharp(&PathBuf::from("/workspace"));
+        assert_eq!(mgr.name(), "C# (Roslyn)");
+    }
+
+    #[test]
+    fn csharp_socket_path_contains_forge_csharp() {
+        let mgr = SidecarManager::csharp(&PathBuf::from("/workspace"));
+        assert!(
+            mgr.socket_path.contains("forge-csharp"),
+            "expected socket_path to contain 'forge-csharp', got: {}",
+            mgr.socket_path
+        );
+    }
+
+    #[test]
+    fn fsharp_has_correct_name() {
+        let mgr = SidecarManager::fsharp(&PathBuf::from("/workspace"));
+        assert_eq!(mgr.name(), "F# (FCS)");
+    }
+
+    #[test]
+    fn fsharp_socket_path_contains_forge_fsharp() {
+        let mgr = SidecarManager::fsharp(&PathBuf::from("/workspace"));
+        assert!(
+            mgr.socket_path.contains("forge-fsharp"),
+            "expected socket_path to contain 'forge-fsharp', got: {}",
+            mgr.socket_path
+        );
+    }
+}

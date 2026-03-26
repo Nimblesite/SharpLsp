@@ -477,4 +477,107 @@ Fields:
         let result = extract_reference_field(line);
         assert!(result.is_none());
     }
+
+    #[test]
+    fn test_extract_reference_field_separator_line_skipped() {
+        assert!(extract_reference_field("---").is_none());
+        assert!(extract_reference_field("   ---   ").is_none());
+    }
+
+    #[test]
+    fn test_extract_reference_field_empty_line_skipped() {
+        assert!(extract_reference_field("").is_none());
+        assert!(extract_reference_field("   ").is_none());
+    }
+
+    #[test]
+    fn test_extract_reference_field_short_line_skipped() {
+        assert!(extract_reference_field("foo bar baz").is_none());
+    }
+
+    #[test]
+    fn test_extract_reference_field_static_attr_skipped() {
+        let line =
+            "00007ff80003  4000200      8        System.String  0   static 00007ff812345678 _shared";
+        let result = extract_reference_field(line);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_reference_field_null_literal_skipped() {
+        let line = "00007ff80003  4000200      8        System.String  0 instance null _name";
+        let result = extract_reference_field(line);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_dumpobj_for_graph_multiple_references() {
+        let output = "\
+Name:        MyApp.Container
+MethodTable: 00007ff8abcd9999
+Size:        64(0x40) bytes
+Fields:
+              MT    Field   Offset                 Type VT     Attr            Value Name
+00007ff80003  4000200      8        System.String  0 instance 00007ff811111111 _first
+00007ff80004  4000201     10        System.String  0 instance 00007ff822222222 _second
+";
+        let parsed = parse_dumpobj_for_graph(output, "0xroot", 2);
+        let node = parsed.node.unwrap();
+
+        assert_eq!(node.type_name, "MyApp.Container");
+        assert_eq!(node.size_bytes, 64);
+        assert_eq!(node.depth, 2);
+        assert!(!node.is_root);
+        assert!(node.root_kind.is_none());
+        assert_eq!(node.instance_count, 1);
+        assert_eq!(node.retained_size_bytes, 64);
+
+        assert_eq!(parsed.references.len(), 2);
+        assert_eq!(parsed.references[0].0, "_first");
+        assert_eq!(parsed.references[0].1, "00007ff811111111");
+        assert_eq!(parsed.references[1].0, "_second");
+        assert_eq!(parsed.references[1].1, "00007ff822222222");
+    }
+
+    #[test]
+    fn test_parse_dumpobj_for_graph_no_fields_section() {
+        let output = "\
+Name:        System.Object
+MethodTable: 00007ff8abcd0000
+Size:        24(0x18) bytes
+";
+        let parsed = parse_dumpobj_for_graph(output, "0xabc", 1);
+        let node = parsed.node.unwrap();
+        assert_eq!(node.type_name, "System.Object");
+        assert_eq!(node.display_name, "Object");
+        assert!(parsed.references.is_empty());
+    }
+
+    #[test]
+    fn test_parse_size_edge_cases() {
+        assert_eq!(parse_size("Size: 0(0x0) bytes"), 0);
+        assert_eq!(parse_size("Size: bytes"), 0);
+        assert_eq!(parse_size("not a size line"), 0);
+    }
+
+    #[test]
+    fn test_short_type_name_no_dots() {
+        assert_eq!(short_type_name("Int32"), "Int32");
+    }
+
+    #[test]
+    fn test_short_type_name_nested_generic() {
+        assert_eq!(
+            short_type_name("System.Collections.Generic.Dictionary`2[[K],[V]]"),
+            "Dictionary"
+        );
+    }
+
+    #[test]
+    fn test_validate_dump_path_missing_file() {
+        let result = validate_dump_path("/nonexistent/path/to/dump.dmp");
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("dump file not found"));
+    }
 }
