@@ -62,10 +62,11 @@ If it fails: read output, fix the issue (same constraints as Step 3), run again.
 
 If stuck on the same failure after 5 attempts, ask the user for help.
 
-## Step 5: Report
+## Step 5: Commit/Push
 
 Once `make ci` passes:
 
-1. List each CI issue found and what was fixed
-2. Confirm `make ci` passes locally
-3. Suggest pushing to verify remote CI
+1. Commit, but DO NOT MARK THE COMMIT WITH YOU AS AN AUTHOR!!! Only the user authors the commit!
+2. Push
+3. Monitor until completion or failure
+4. Upon failure, go back to the start of this document

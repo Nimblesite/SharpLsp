@@ -180,7 +180,8 @@ lint-dotnet:
 	@echo "==> [.NET] Build with TreatWarningsAsErrors (sidecars)..."
 	dotnet build $(SIDECAR_SLN) \
 		--configuration $(DOTNET_CFG) \
-		-warnaserror
+		-warnaserror \
+		/p:UseSharedCompilation=false
 
 # ── Formatting ───────────────────────────────────────────────────
 
