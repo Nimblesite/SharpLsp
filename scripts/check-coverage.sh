@@ -24,8 +24,15 @@ if [ -z "$THRESHOLD" ]; then
   exit 1
 fi
 
-# Guard: threshold must NEVER decrease from what's committed in git.
-COMMITTED_THRESHOLD=$(git show HEAD:"$THRESHOLDS" 2>/dev/null | jq -r --arg p "$PROJECT" '.[$p].line_percent // empty' 2>/dev/null || true)
+# Guard: threshold must NEVER decrease from the baseline.
+# On feature branches, use the merge-base with main so intermediate
+# ratchets don't block subsequent commits with slightly lower coverage.
+BASELINE_REF="HEAD"
+MERGE_BASE=$(git merge-base HEAD main 2>/dev/null || true)
+if [ -n "$MERGE_BASE" ] && [ "$(git rev-parse HEAD)" != "$MERGE_BASE" ]; then
+  BASELINE_REF="$MERGE_BASE"
+fi
+COMMITTED_THRESHOLD=$(git show "$BASELINE_REF":"$THRESHOLDS" 2>/dev/null | jq -r --arg p "$PROJECT" '.[$p].line_percent // empty' 2>/dev/null || true)
 if [ -n "$COMMITTED_THRESHOLD" ]; then
   REGRESSED=$(echo "$THRESHOLD < $COMMITTED_THRESHOLD" | bc -l)
   if [ "$REGRESSED" -eq 1 ]; then

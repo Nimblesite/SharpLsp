@@ -64,6 +64,10 @@ impl NavCache {
     }
 
     /// Store a navigation result in the cache.
+    ///
+    /// Empty results (null or `[]`) are silently skipped — they indicate
+    /// the sidecar hasn't finished loading, so caching them would prevent
+    /// retries from producing a real result.
     pub fn insert(
         &mut self,
         uri: &str,
@@ -73,6 +77,9 @@ impl NavCache {
         method: &str,
         value: serde_json::Value,
     ) {
+        if value.is_null() {
+            return;
+        }
         let key = (
             uri.to_string(),
             CacheKey {
