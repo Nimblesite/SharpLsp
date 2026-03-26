@@ -196,4 +196,26 @@ mod tests {
         // We just verify it doesn't panic.
         let _ = format!("{paths:?}");
     }
+
+    #[test]
+    fn require_trace_returns_result() {
+        // May be Ok or Err depending on whether dotnet-trace is installed.
+        let _ = require_trace();
+    }
+
+    #[test]
+    fn require_counters_returns_result() {
+        let _ = require_counters();
+    }
+
+    #[test]
+    fn require_dump_returns_result() {
+        let _ = require_dump();
+    }
+
+    #[test]
+    fn find_via_dotnet_tool_list_runs_dotnet() {
+        // dotnet-dump is commonly installed; either way, this exercises the code.
+        let _ = find_via_dotnet_tool_list("dotnet-dump");
+    }
 }

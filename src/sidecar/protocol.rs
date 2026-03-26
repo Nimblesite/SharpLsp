@@ -28,3 +28,32 @@ impl Envelope {
         }
     }
 }
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_creates_correct_envelope() {
+        let env = Envelope::request(42, "test/method", vec![1, 2, 3]);
+        assert_eq!(env.id, Some(42));
+        assert_eq!(env.method.as_deref(), Some("test/method"));
+        assert_eq!(env.payload, vec![1, 2, 3]);
+        assert!(env.error.is_none());
+    }
+
+    #[test]
+    fn envelope_roundtrip_via_messagepack() {
+        let original = Envelope::request(1, "ping", vec![0xAA]);
+        let bytes = rmp_serde::to_vec(&original).unwrap();
+        let decoded: Envelope = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(decoded.id, original.id);
+        assert_eq!(decoded.method, original.method);
+        assert_eq!(decoded.payload, original.payload);
+        assert!(decoded.error.is_none());
+    }
+}
