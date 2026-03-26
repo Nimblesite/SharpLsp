@@ -301,13 +301,6 @@ fn extract_ws_symbol_name(node: Node, source: &[u8]) -> Option<String> {
     None
 }
 
-/// Check whether a node lives inside a struct body (declaration_list → struct_declaration).
-fn is_inside_struct(node: Node) -> bool {
-    node.parent()
-        .and_then(|p| p.parent())
-        .is_some_and(|gp| gp.kind() == "struct_declaration")
-}
-
 fn node_to_symbol(node: Node, source: &[u8]) -> Option<SymbolNode> {
     let kind = match node.kind() {
         "namespace_declaration" | "file_scoped_namespace_declaration" => "Namespace",
@@ -318,7 +311,7 @@ fn node_to_symbol(node: Node, source: &[u8]) -> Option<SymbolNode> {
         "method_declaration" => "Method",
         "constructor_declaration" => "Constructor",
         "property_declaration" => "Property",
-        "field_declaration" if !is_inside_struct(node) => "Field",
+        "field_declaration" => "Field",
         "delegate_declaration" => "Function",
         "event_declaration" | "event_field_declaration" => "Event",
         "enum_member_declaration" => "EnumMember",

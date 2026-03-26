@@ -445,11 +445,15 @@ suite("Context Menu — Context Values on Tree Nodes", () => {
     });
 
     test("class node has contextValue 'symbol.class'", () => {
-        const node = findByContext(provider.getChildren(), "symbol.class");
-        assert.ok(node, "A symbol.class node must exist in the tree");
+        const node = findNode(
+            provider.getChildren(),
+            (n) =>
+                nodeLabel(n).includes("AllTypesClass") &&
+                n.contextValue === "symbol.class",
+        );
         assert.ok(
-            nodeLabel(node).includes("AllTypesClass"),
-            `Expected AllTypesClass, got '${nodeLabel(node)}'`,
+            node,
+            "AllTypesClass must have contextValue 'symbol.class'",
         );
     });
 
@@ -513,11 +517,15 @@ suite("Context Menu — Context Values on Tree Nodes", () => {
     });
 
     test("field node has contextValue 'symbol.field'", () => {
-        const node = findByContext(provider.getChildren(), "symbol.field");
-        assert.ok(node, "A symbol.field node must exist in the tree");
+        const node = findNode(
+            provider.getChildren(),
+            (n) =>
+                nodeLabel(n).includes("_count") &&
+                n.contextValue === "symbol.field",
+        );
         assert.ok(
-            nodeLabel(node).includes("_count"),
-            `Expected _count field, got '${nodeLabel(node)}'`,
+            node,
+            "_count must have contextValue 'symbol.field'",
         );
     });
 
@@ -1343,8 +1351,8 @@ suite("Context Menu — Correct Node Type Scoping", () => {
     });
 
     test("copyName contextValue pattern matches symbol, solution, and project nodes", () => {
-        // Pattern from package.json: /^(symbol\.|solution|project)/
-        const pattern = /^(symbol\.|solution|project)/;
+        // Pattern from package.json: /^(symbol\.|solution$|project$)/
+        const pattern = /^(symbol\.|solution$|project$)/;
         const mustMatch = [
             "symbol.class",
             "symbol.method",
