@@ -113,7 +113,7 @@ test: build test-rust test-zed test-vsix test-dotnet
 	@echo ""
 	@echo "==> All tests passed. All coverage thresholds met."
 
-test-rust: build-rust build-dotnet
+test-rust: build-dotnet
 	@echo "==> Running forge-lsp tests with coverage..."
 	cargo llvm-cov --json --output-path target/coverage-rust.json --ignore-run-fail
 	@$(CHECK_COV) forge-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
