@@ -107,11 +107,11 @@ After reaching the end of the checklist, **go back to the start and run it again
 
 **Do NOT stop after one loop. Keep going until a full pass is clean.**
 
-## Step 4: Final Coordination
+## Step 4: Commit/Push
 
-1. Broadcast on TMC that CI prep is complete and all checks pass
-2. Release any locks you hold
-3. Report final status to the user — list each passing check with its output
+1. Commit and push the changes but DO NOT include yourself as an author
+2. Monitor the github action until fails or completes
+3. If there is a failure, go back to the beginning of this skill
 
 ## Hard Rules
 
