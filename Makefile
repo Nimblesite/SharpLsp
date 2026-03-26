@@ -115,7 +115,7 @@ test: build test-rust test-zed test-vsix test-dotnet
 
 test-rust: build-dotnet
 	@echo "==> Running forge-lsp tests with coverage..."
-	cargo llvm-cov --json --output-path target/coverage-rust.json --ignore-run-fail
+	cargo llvm-cov --json --output-path target/coverage-rust.json
 	@$(CHECK_COV) forge-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
 test-zed: build-zed
@@ -133,7 +133,7 @@ test-dotnet: build-dotnet
 	@dotnet test $(SIDECAR_SLN) --configuration $(DOTNET_CFG) \
 		--collect:"XPlat Code Coverage" \
 		--results-directory target/coverage-dotnet \
-		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura ; \
+		-- RunConfiguration.FailFastEnabled=true DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura ; \
 	 TEST_EXIT=$$? ; \
 	 CSHARP_COV=$$(for f in target/coverage-dotnet/*/coverage.cobertura.xml; do \
 		sed -n 's/.*package name="Forge.Sidecar.CSharp" line-rate="\([^"]*\)".*/\1/p' "$$f" 2>/dev/null | head -1; \
