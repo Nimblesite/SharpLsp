@@ -398,7 +398,7 @@ fn handle_request(
                 Ok(serde_json::Value::Null)
             } else {
                 let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-                semantic::handle_hover(req, runtime, sidecar)
+                semantic::handle_hover(req, vfs, nav_cache, runtime, sidecar)
             }
         }
         GotoDefinition::METHOD

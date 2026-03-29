@@ -62,9 +62,11 @@ pub fn handle_completion(
     Ok(serde_json::to_value(CompletionResponse::Array(lsp_items))?)
 }
 
-/// Handle `textDocument/hover` via the C# sidecar.
+/// Handle `textDocument/hover` via the C# sidecar, with caching.
 pub fn handle_hover(
     req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
@@ -75,6 +77,19 @@ pub fn handle_hover(
     let params: HoverParams = serde_json::from_value(req.params)?;
     let uri = &params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
+    let version = vfs.get_version(uri).unwrap_or(0);
+    let method = "textDocument/hover";
+
+    if let Some(cached) = nav_cache.get(
+        uri.as_str(),
+        version,
+        position.line,
+        position.character,
+        method,
+    ) {
+        debug!("Hover cache hit");
+        return Ok(cached.clone());
+    }
 
     let file_path = uri_to_path(uri)?;
     debug!(
@@ -90,7 +105,7 @@ pub fn handle_hover(
         character: position.character,
     };
     let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = match runtime.block_on(sidecar.request("textDocument/hover", payload)) {
+    let response_bytes = match runtime.block_on(sidecar.request(method, payload)) {
         Ok(bytes) => bytes,
         Err(err) => {
             warn!("Sidecar hover unavailable: {err:#}");
@@ -111,6 +126,14 @@ pub fn handle_hover(
     });
 
     let value = serde_json::to_value(hover)?;
+    nav_cache.insert(
+        uri.as_str(),
+        version,
+        position.line,
+        position.character,
+        method,
+        value.clone(),
+    );
     Ok(value)
 }
 

@@ -3080,6 +3080,31 @@ fn poll_definition_until_ready(
     }
 }
 
+/// Poll implementation until the sidecar returns a non-null array result.
+fn poll_implementation_until_ready(
+    client: &mut LspClient,
+    uri: &str,
+    line: u32,
+    character: u32,
+    timeout: Duration,
+) -> Value {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let resp = implementation(client, uri, line, character);
+        assert_nav_ok(&resp);
+        let result = &resp["result"];
+        if result.is_array() {
+            return resp;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "implementation did not resolve within {}s",
+            timeout.as_secs(),
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
 /// Extract the first location from a definition result.
 /// Definition returns Location[] (array) for partial class support.
 fn first_location(result: &Value) -> Value {
@@ -3604,7 +3629,8 @@ fn test_full_stack_implementation_on_virtual_method() {
     //     public virtual string Speak()
     //     0         1         2
     //     012345678901234567890123456789
-    let resp = implementation(&mut client, &file_uri, 11, 25);
+    let resp =
+        poll_implementation_until_ready(&mut client, &file_uri, 11, 25, Duration::from_secs(90));
     assert_nav_ok(&resp);
     let result = &resp["result"];
     assert!(
@@ -3736,7 +3762,8 @@ fn test_full_stack_all_nav_methods_interleaved() {
     assert_location_line(&r3["result"], 11, "declaration override → base line 11");
 
     // 4. implementation: AnimalBase.Speak virtual (line 11, char 25) → Dog + Cat
-    let r4 = implementation(&mut client, &file_uri, 11, 25);
+    let r4 =
+        poll_implementation_until_ready(&mut client, &file_uri, 11, 25, Duration::from_secs(90));
     assert_nav_ok(&r4);
     assert!(r4["result"].is_array(), "implementation must be array");
     let locs = r4["result"].as_array().unwrap();
