@@ -451,10 +451,7 @@ suite("Context Menu — Context Values on Tree Nodes", () => {
                 nodeLabel(n).includes("AllTypesClass") &&
                 n.contextValue === "symbol.class",
         );
-        assert.ok(
-            node,
-            "AllTypesClass must have contextValue 'symbol.class'",
-        );
+        assert.ok(node, "AllTypesClass must have contextValue 'symbol.class'");
     });
 
     test("interface node has contextValue 'symbol.interface'", () => {
@@ -523,10 +520,7 @@ suite("Context Menu — Context Values on Tree Nodes", () => {
                 nodeLabel(n).includes("_count") &&
                 n.contextValue === "symbol.field",
         );
-        assert.ok(
-            node,
-            "_count must have contextValue 'symbol.field'",
-        );
+        assert.ok(node, "_count must have contextValue 'symbol.field'");
     });
 
     test("event node has contextValue 'symbol.event'", () => {

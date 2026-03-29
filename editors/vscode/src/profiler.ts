@@ -436,8 +436,7 @@ export function registerCommands(
 ): void {
     // Interactive dialogs (showQuickPick, showOpenDialog) hang forever in
     // automated test runners.  Skip dialog-gated commands in test mode.
-    const isTestMode =
-        context.extensionMode === vscode.ExtensionMode.Test;
+    const isTestMode = context.extensionMode === vscode.ExtensionMode.Test;
 
     /** Map from session ID to its counter webview (if open). */
     const counterPanels = new Map<string, CounterWebviewPanel>();
