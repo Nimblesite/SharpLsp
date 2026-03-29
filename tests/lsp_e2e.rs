@@ -3625,12 +3625,12 @@ fn test_full_stack_implementation_on_virtual_method() {
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
 
-    // "Speak" virtual in AnimalBase (line 11, char 25).
+    // "Speak" virtual in AnimalBase (line 11, char 26).
     //     public virtual string Speak()
     //     0         1         2
-    //     012345678901234567890123456789
+    //     0123456789012345678901234567890
     let resp =
-        poll_implementation_until_ready(&mut client, &file_uri, 11, 25, Duration::from_secs(90));
+        poll_implementation_until_ready(&mut client, &file_uri, 11, 26, Duration::from_secs(90));
     assert_nav_ok(&resp);
     let result = &resp["result"];
     assert!(
@@ -3761,9 +3761,9 @@ fn test_full_stack_all_nav_methods_interleaved() {
     assert!(!r3["result"].is_null(), "declaration must resolve");
     assert_location_line(&r3["result"], 11, "declaration override → base line 11");
 
-    // 4. implementation: AnimalBase.Speak virtual (line 11, char 25) → Dog + Cat
+    // 4. implementation: AnimalBase.Speak virtual (line 11, char 26) → Dog + Cat
     let r4 =
-        poll_implementation_until_ready(&mut client, &file_uri, 11, 25, Duration::from_secs(90));
+        poll_implementation_until_ready(&mut client, &file_uri, 11, 26, Duration::from_secs(90));
     assert_nav_ok(&r4);
     assert!(r4["result"].is_array(), "implementation must be array");
     let locs = r4["result"].as_array().unwrap();
