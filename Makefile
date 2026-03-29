@@ -181,7 +181,8 @@ lint-dotnet:
 	dotnet build $(SIDECAR_SLN) \
 		--configuration $(DOTNET_CFG) \
 		-warnaserror \
-		/p:UseSharedCompilation=false
+		/p:UseSharedCompilation=false \
+		/nodeReuse:false
 
 # ── Formatting ───────────────────────────────────────────────────
 
