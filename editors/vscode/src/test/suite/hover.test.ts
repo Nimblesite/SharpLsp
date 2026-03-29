@@ -51,9 +51,11 @@ suite("Hover / Quick Info", () => {
         await waitForDocumentSymbols(uri);
 
         // Hover on class "Calculator" (line 2, char 18).
+        // First hover needs a longer timeout — sidecar may still be loading.
         const classHover = await waitForHoverResult(
             uri,
             new vscode.Position(2, 18),
+            LSP_RESPONSE_TIMEOUT_MS * 2,
         );
         assert.ok(classHover.length > 0, "Must return hover for class");
         const classMd = hoverToString(classHover);
