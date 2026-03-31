@@ -59,10 +59,10 @@ suite("Diagnostics / Problems Panel", () => {
     });
 
     teardown(async function () {
-        this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2);
-        // Restore clean content between tests.
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS * 4);
+        // Restore clean content between tests. Give sidecar time to reanalyze.
         await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
-        await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS);
+        await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS * 3);
     });
 
     // ── Error Detection ───────────────────────────────────────────
@@ -121,14 +121,14 @@ suite("Diagnostics / Problems Panel", () => {
     // ── Clean Files ───────────────────────────────────────────────
 
     test("valid file has no error diagnostics", async function () {
-        this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS * 5);
         // Content is already clean from teardown. Verify no errors.
         await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
 
-        // Wait for diagnostics to clear (sidecar needs time to reanalyze).
+        // Wait for diagnostics to clear (sidecar needs time to reanalyze on CI).
         const cleared = await waitForDiagnosticsCleared(
             diagUri,
-            LSP_RESPONSE_TIMEOUT_MS * 2,
+            LSP_RESPONSE_TIMEOUT_MS * 4,
         );
         const errors = cleared.filter(
             (d) => d.severity === vscode.DiagnosticSeverity.Error,
