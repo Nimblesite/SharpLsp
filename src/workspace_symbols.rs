@@ -202,14 +202,27 @@ fn is_source_file(path: &Path) -> bool {
 
 /// Read file content from VFS if the document is open, otherwise from disk.
 fn vfs_or_disk(file_path: &str, vfs: &Vfs) -> Result<String> {
-    let abs = std::fs::canonicalize(file_path).unwrap_or_else(|_| file_path.into());
-    let uri_str = format!("file://{}", abs.display());
-    if let Ok(uri) = uri_str.parse::<lsp_types::Uri>() {
-        if let Some(content) = vfs.get_content(&uri) {
-            return Ok(content);
-        }
+    // Try canonical path first (resolves symlinks).
+    if let Some(content) = std::fs::canonicalize(file_path)
+        .ok()
+        .and_then(|c| try_vfs_uri(&c.to_string_lossy(), vfs))
+    {
+        return Ok(content);
     }
+    // Retry with the original path — editors may use the symlinked form
+    // (e.g. /tmp on macOS is a symlink to /private/tmp).
+    if let Some(content) = try_vfs_uri(file_path, vfs) {
+        return Ok(content);
+    }
+    tracing::trace!("VFS miss for {file_path}, reading from disk");
     std::fs::read_to_string(file_path).with_context(|| format!("read {file_path}"))
+}
+
+fn try_vfs_uri(path_str: &str, vfs: &Vfs) -> Option<String> {
+    let uri = format!("file://{path_str}")
+        .parse::<lsp_types::Uri>()
+        .ok()?;
+    vfs.get_content(&uri)
 }
 
 /// Parse a single source file and extract symbols.

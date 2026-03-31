@@ -15,12 +15,15 @@ You MUST NOT STOP until every check passes.
 - Collect all the checks like formatting, linting and testing
 - Execute all of them as part of a TODO list
 - CRITICAL: **YOU MUST RUN ALL TESTS THAT RUN IN THE CI**
+- Check the last GH action run logs for errors. If there were recent errors, you MUST address these
 
 ## Step 1: Confirm Prerequisites
 
 - Make sure you have all the components installed to run the checks
+- Get the list of ci steps from the ci script and make sure you understand how to run each one locally
+[text](../../../.github/workflows/ci.yml)
 
-## Step 2: Coordinate with Other Agents
+## Step 2: Coordinate with Other Agents (If running)
 
 Before making changes:
 1. Check TMC status for active agents and locked files
@@ -53,6 +56,8 @@ Work through the checklist in order. For each check:
 After reaching the end of the checklist, **go back to the start and run it again**. A fix for one check may break an earlier check. Keep looping until you get a complete clean pass — every check green on the first try with nothing fixed during that pass.
 
 **Do NOT stop after one loop. Keep going until a full pass is clean.**
+
+You are NOT ALLOWED to move to Step 4 until all checks pass without any fixes needed.
 
 ## Step 4: Commit/Push
 
