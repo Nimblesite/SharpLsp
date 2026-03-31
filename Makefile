@@ -182,7 +182,8 @@ lint-dotnet:
 		--configuration $(DOTNET_CFG) \
 		-warnaserror \
 		/p:UseSharedCompilation=false \
-		/nodeReuse:false
+		/nodeReuse:false \
+		-maxcpucount:1
 
 # ── Formatting ───────────────────────────────────────────────────
 
