@@ -36,26 +36,27 @@ suite("Hover / Quick Info", () => {
     // ── Multi-Symbol Hover ──────────────────────────────────────────
 
     test("hover on class, method, property, field in one file", async function () {
-        this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
-        const content = `namespace HoverMulti
-{
-    public class Calculator
-    {
-        private int _count;
-        public string Name { get; set; }
-        public int Add(int a, int b) { return a + b; }
-    }
-}`;
+        this.timeout(90_000);
 
-        const { uri } = await openCSharpFile(tmpDir, "HoverMulti.cs", content);
+        // Use fixture file from the workspace — must be part of the project
+        // so the Roslyn sidecar can provide semantic hover information.
+        const workspaceRoot =
+            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        assert.ok(workspaceRoot, "Workspace folder must be available");
+
+        const filePath = path.join(workspaceRoot, "HoverMulti.cs");
+        assert.ok(fs.existsSync(filePath), "HoverMulti.cs fixture must exist");
+        const uri = vscode.Uri.file(filePath);
+        const doc = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc);
         await waitForDocumentSymbols(uri);
 
         // Hover on class "Calculator" (line 2, char 18).
-        // First hover needs a longer timeout — sidecar may still be loading.
+        // First hover needs a very long timeout — sidecar loads Roslyn + MSBuild.
         const classHover = await waitForHoverResult(
             uri,
             new vscode.Position(2, 18),
-            LSP_RESPONSE_TIMEOUT_MS * 2,
+            60_000,
         );
         assert.ok(classHover.length > 0, "Must return hover for class");
         const classMd = hoverToString(classHover);

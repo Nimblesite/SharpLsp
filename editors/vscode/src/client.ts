@@ -36,12 +36,14 @@ export async function start(
 
     log.info(`Server binary: ${serverPath}`);
 
+    const repoRoot = inferRepoRoot(serverPath);
     const run: Executable = {
         command: serverPath,
         args: [...config.serverExtraArgs()],
         transport: TransportKind.stdio,
         options: {
             env: { ...process.env, RUST_LOG: config.loggingLevel() },
+            ...(repoRoot !== undefined && { cwd: repoRoot }),
         },
     };
 
@@ -120,4 +122,18 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
 
     // Fall back to PATH — the language client resolves the command via the shell.
     return binaryName;
+}
+
+/**
+ * When the binary is in `target/{profile}/forge-lsp`, the repo root
+ * (containing `sidecars/`) is two directories above the binary.
+ * The sidecar uses a relative `dotnet run --project sidecars/...` path,
+ * so the server process CWD must be the repo root.
+ */
+function inferRepoRoot(serverPath: string): string | undefined {
+    const dir = path.dirname(serverPath);
+    if (path.basename(path.dirname(dir)) === "target") {
+        return path.resolve(dir, "../..");
+    }
+    return undefined;
 }
