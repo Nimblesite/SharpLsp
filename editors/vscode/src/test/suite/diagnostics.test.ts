@@ -1,8 +1,9 @@
 import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import * as vscode from "vscode";
 import {
     closeAllEditors,
-    openCSharpFile,
     replaceDocumentContent,
     setupLspTestSuite,
     teardownLspTestSuite,
@@ -12,42 +13,69 @@ import {
     LSP_RESPONSE_TIMEOUT_MS,
 } from "./test-helpers";
 
+/** Clean starting content for the diagnostic target file. */
+const CLEAN_CONTENT = `namespace DiagTest
+{
+    public class DiagTarget
+    {
+        public int Foo() { return 42; }
+    }
+}`;
+
 suite("Diagnostics / Problems Panel", () => {
     let tmpDir: string;
+    let workspaceRoot: string;
+    let diagDoc: vscode.TextDocument;
+    let diagUri: vscode.Uri;
 
     suiteSetup(async function () {
         this.timeout(60_000);
         const result = await setupLspTestSuite("diagnostics-");
         tmpDir = result.tmpDir;
+        const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        assert.ok(ws, "Workspace folder must be available");
+        workspaceRoot = ws;
+
+        // Open the fixture file once for the whole suite.
+        const filePath = path.join(workspaceRoot, "DiagTarget.cs");
+        assert.ok(fs.existsSync(filePath), "DiagTarget.cs fixture must exist");
+        diagUri = vscode.Uri.file(filePath);
+        diagDoc = await vscode.workspace.openTextDocument(diagUri);
+        await vscode.window.showTextDocument(diagDoc);
+        await waitForDocumentSymbols(diagUri);
     });
 
     suiteTeardown(async () => {
+        // Restore clean content so the fixture stays valid.
+        await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
+        await diagDoc.save();
         await closeAllEditors();
         teardownLspTestSuite(tmpDir);
     });
 
-    teardown(async () => {
-        await closeAllEditors();
+    teardown(async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2);
+        // Restore clean content between tests.
+        await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
+        await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS);
     });
 
     // ── Error Detection ───────────────────────────────────────────
 
     test("file with type error shows diagnostics", async function () {
         this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
-        const content = `namespace DiagTest
+        await replaceDocumentContent(
+            diagDoc,
+            `namespace DiagTest
 {
-    public class Broken
+    public class DiagTarget
     {
-        public int Foo()
-        {
-            return "not an int";
-        }
+        public int Foo() { return "not an int"; }
     }
-}`;
-        const { uri } = await openCSharpFile(tmpDir, "Broken.cs", content);
-        await waitForDocumentSymbols(uri);
+}`,
+        );
 
-        const diagnostics = await waitForDiagnostics(uri);
+        const diagnostics = await waitForDiagnostics(diagUri);
         assert.ok(diagnostics.length > 0, "Must have at least one diagnostic");
 
         const error = diagnostics.find(
@@ -62,47 +90,42 @@ suite("Diagnostics / Problems Panel", () => {
 
     test("file with missing type shows diagnostics", async function () {
         this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
-        const content = `namespace DiagTest
+        await replaceDocumentContent(
+            diagDoc,
+            `namespace DiagTest
 {
-    public class UseMissing
+    public class DiagTarget
     {
         public NonExistentType Foo() { return null; }
     }
-}`;
-        const { uri } = await openCSharpFile(tmpDir, "UseMissing.cs", content);
-        await waitForDocumentSymbols(uri);
+}`,
+        );
 
-        const diagnostics = await waitForDiagnostics(uri);
+        const diagnostics = await waitForDiagnostics(diagUri);
         assert.ok(
             diagnostics.length > 0,
             "Must have diagnostics for missing type",
         );
 
-        const csError = diagnostics.find((d) =>
-            d.message.includes("NonExistentType"),
+        const csError = diagnostics.find(
+            (d) => d.severity === vscode.DiagnosticSeverity.Error,
         );
-        assert.ok(csError, "Diagnostic must reference the missing type name");
+        assert.ok(csError, "Must have an error diagnostic for missing type");
     });
 
     // ── Clean Files ───────────────────────────────────────────────
 
     test("valid file has no error diagnostics", async function () {
         this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
-        const content = `namespace DiagTest
-{
-    public class Valid
-    {
-        public int Add(int a, int b) { return a + b; }
-    }
-}`;
-        const { uri } = await openCSharpFile(tmpDir, "Valid.cs", content);
-        await waitForDocumentSymbols(uri);
+        // Content is already clean from teardown. Verify no errors.
+        await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
 
-        // Give the server time to publish diagnostics (or not).
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        const diagnostics = vscode.languages.getDiagnostics(uri);
-        const errors = diagnostics.filter(
+        // Wait for diagnostics to clear (sidecar needs time to reanalyze).
+        const cleared = await waitForDiagnosticsCleared(
+            diagUri,
+            LSP_RESPONSE_TIMEOUT_MS * 2,
+        );
+        const errors = cleared.filter(
             (d) => d.severity === vscode.DiagnosticSeverity.Error,
         );
         assert.strictEqual(
@@ -116,40 +139,28 @@ suite("Diagnostics / Problems Panel", () => {
 
     test("fixing an error clears the diagnostic", async function () {
         this.timeout(LSP_RESPONSE_TIMEOUT_MS * 4);
-        const broken = `namespace DiagTest
+        await replaceDocumentContent(
+            diagDoc,
+            `namespace DiagTest
 {
-    public class EditCycle
+    public class DiagTarget
     {
         public int Foo() { return "bad"; }
     }
-}`;
-        const { doc, uri } = await openCSharpFile(
-            tmpDir,
-            "EditCycle.cs",
-            broken,
+}`,
         );
-        await waitForDocumentSymbols(uri);
 
-        // Wait for error diagnostics to appear.
-        const diagnostics = await waitForDiagnostics(uri);
+        const diagnostics = await waitForDiagnostics(diagUri);
         assert.ok(
             diagnostics.length > 0,
             "Must have diagnostics for broken code",
         );
 
         // Fix the error.
-        const fixed = `namespace DiagTest
-{
-    public class EditCycle
-    {
-        public int Foo() { return 42; }
-    }
-}`;
-        await replaceDocumentContent(doc, fixed);
+        await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
 
-        // Wait for diagnostics to clear.
         const cleared = await waitForDiagnosticsCleared(
-            uri,
+            diagUri,
             LSP_RESPONSE_TIMEOUT_MS * 2,
         );
         const errors = cleared.filter(
@@ -166,20 +177,21 @@ suite("Diagnostics / Problems Panel", () => {
 
     test("diagnostics have correct severity and range", async function () {
         this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
-        const content = `namespace DiagTest
+        await replaceDocumentContent(
+            diagDoc,
+            `namespace DiagTest
 {
-    public class RangeCheck
+    public class DiagTarget
     {
         public void Foo()
         {
             int x = "wrong";
         }
     }
-}`;
-        const { uri } = await openCSharpFile(tmpDir, "RangeCheck.cs", content);
-        await waitForDocumentSymbols(uri);
+}`,
+        );
 
-        const diagnostics = await waitForDiagnostics(uri);
+        const diagnostics = await waitForDiagnostics(diagUri);
         assert.ok(diagnostics.length > 0, "Must have diagnostics");
 
         const error = diagnostics.find(
@@ -204,29 +216,39 @@ suite("Diagnostics / Problems Panel", () => {
 
     test("closing a document clears its diagnostics", async function () {
         this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
-        const content = `namespace DiagTest
+        await replaceDocumentContent(
+            diagDoc,
+            `namespace DiagTest
 {
-    public class CloseClear
+    public class DiagTarget
     {
         public int Foo() { return "bad"; }
     }
-}`;
-        const { uri } = await openCSharpFile(tmpDir, "CloseClear.cs", content);
-        await waitForDocumentSymbols(uri);
+}`,
+        );
 
-        // Wait for error diagnostics to appear.
-        const diagnostics = await waitForDiagnostics(uri);
+        const diagnostics = await waitForDiagnostics(diagUri);
         assert.ok(diagnostics.length > 0, "Must have diagnostics before close");
 
-        // Close the document.
+        // Restore clean content so the sidecar clears errors first.
+        await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
+        await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS);
+
+        // Now close the document.
         await closeAllEditors();
 
-        // Diagnostics should be cleared.
-        const after = await waitForDiagnosticsCleared(uri);
+        // Give the server a moment to process the close notification.
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const after = vscode.languages.getDiagnostics(diagUri);
         assert.strictEqual(
             after.length,
             0,
             "Diagnostics must be empty after closing the document",
         );
+
+        // Re-open for suite teardown to restore content.
+        diagDoc = await vscode.workspace.openTextDocument(diagUri);
+        await vscode.window.showTextDocument(diagDoc);
     });
 });

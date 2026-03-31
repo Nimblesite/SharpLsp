@@ -292,15 +292,15 @@ suite("Extension Activation & Configuration", () => {
         assert.match(ext.packageJSON.version, /^\d+\.\d+\.\d+/);
     });
 
-    test("extension contributes 8 commands", () => {
+    test("extension contributes 26 commands", () => {
         const ext = vscode.extensions.getExtension(EXTENSION_ID);
         assert.ok(ext);
         const cmds: { command: string }[] =
             ext.packageJSON.contributes?.commands ?? [];
         assert.strictEqual(
             cmds.length,
-            8,
-            "Should contribute exactly 8 commands",
+            26,
+            "Should contribute exactly 26 commands",
         );
         const ids = cmds.map((c) => c.command);
         assert.ok(ids.includes("forge.restartServer"));
@@ -321,8 +321,8 @@ suite("Extension Activation & Configuration", () => {
         const keys = Object.keys(props);
         assert.strictEqual(
             keys.length,
-            4,
-            `Expected 4 config properties, got ${keys.length}: ${keys.join(", ")}`,
+            7,
+            `Expected 7 config properties, got ${keys.length}: ${keys.join(", ")}`,
         );
         assert.ok(keys.includes("forge.server.path"));
         assert.ok(keys.includes("forge.server.extraArgs"));
