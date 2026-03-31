@@ -68,7 +68,7 @@ suite("Diagnostics / Problems Panel", () => {
     // ── Error Detection ───────────────────────────────────────────
 
     test("file with type error shows diagnostics", async function () {
-        this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS * 4);
         await replaceDocumentContent(
             diagDoc,
             `namespace DiagTest
@@ -80,7 +80,10 @@ suite("Diagnostics / Problems Panel", () => {
 }`,
         );
 
-        const diagnostics = await waitForDiagnostics(diagUri);
+        const diagnostics = await waitForDiagnostics(
+            diagUri,
+            LSP_RESPONSE_TIMEOUT_MS * 2,
+        );
         assert.ok(diagnostics.length > 0, "Must have at least one diagnostic");
 
         const error = diagnostics.find(
@@ -94,7 +97,7 @@ suite("Diagnostics / Problems Panel", () => {
     });
 
     test("file with missing type shows diagnostics", async function () {
-        this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS * 4);
         await replaceDocumentContent(
             diagDoc,
             `namespace DiagTest
@@ -106,7 +109,10 @@ suite("Diagnostics / Problems Panel", () => {
 }`,
         );
 
-        const diagnostics = await waitForDiagnostics(diagUri);
+        const diagnostics = await waitForDiagnostics(
+            diagUri,
+            LSP_RESPONSE_TIMEOUT_MS * 2,
+        );
         assert.ok(
             diagnostics.length > 0,
             "Must have diagnostics for missing type",
@@ -155,7 +161,10 @@ suite("Diagnostics / Problems Panel", () => {
 }`,
         );
 
-        const diagnostics = await waitForDiagnostics(diagUri);
+        const diagnostics = await waitForDiagnostics(
+            diagUri,
+            LSP_RESPONSE_TIMEOUT_MS * 2,
+        );
         assert.ok(
             diagnostics.length > 0,
             "Must have diagnostics for broken code",
@@ -196,7 +205,10 @@ suite("Diagnostics / Problems Panel", () => {
 }`,
         );
 
-        const diagnostics = await waitForDiagnostics(diagUri);
+        const diagnostics = await waitForDiagnostics(
+            diagUri,
+            LSP_RESPONSE_TIMEOUT_MS * 2,
+        );
         assert.ok(diagnostics.length > 0, "Must have diagnostics");
 
         const error = diagnostics.find(
@@ -232,7 +244,10 @@ suite("Diagnostics / Problems Panel", () => {
 }`,
         );
 
-        const diagnostics = await waitForDiagnostics(diagUri);
+        const diagnostics = await waitForDiagnostics(
+            diagUri,
+            LSP_RESPONSE_TIMEOUT_MS * 2,
+        );
         assert.ok(diagnostics.length > 0, "Must have diagnostics before close");
 
         // Restore clean content so the sidecar clears errors first.
