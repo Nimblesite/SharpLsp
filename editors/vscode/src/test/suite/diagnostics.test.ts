@@ -10,6 +10,7 @@ import {
     waitForDiagnostics,
     waitForDiagnosticsCleared,
     waitForDocumentSymbols,
+    waitForHoverResult,
     LSP_RESPONSE_TIMEOUT_MS,
 } from "./test-helpers";
 
@@ -29,7 +30,7 @@ suite("Diagnostics / Problems Panel", () => {
     let diagUri: vscode.Uri;
 
     suiteSetup(async function () {
-        this.timeout(60_000);
+        this.timeout(120_000);
         const result = await setupLspTestSuite("diagnostics-");
         tmpDir = result.tmpDir;
         const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -43,6 +44,10 @@ suite("Diagnostics / Problems Panel", () => {
         diagDoc = await vscode.workspace.openTextDocument(diagUri);
         await vscode.window.showTextDocument(diagDoc);
         await waitForDocumentSymbols(diagUri);
+
+        // Wait for the sidecar to fully load before running diagnostic tests.
+        // Hover returning results proves the sidecar has the workspace loaded.
+        await waitForHoverResult(diagUri, new vscode.Position(4, 20), 60_000);
     });
 
     suiteTeardown(async () => {
