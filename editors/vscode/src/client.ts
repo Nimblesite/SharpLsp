@@ -125,15 +125,17 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
 }
 
 /**
- * When the binary is in `target/{profile}/forge-lsp`, the repo root
- * (containing `sidecars/`) is two directories above the binary.
  * The sidecar uses a relative `dotnet run --project sidecars/...` path,
- * so the server process CWD must be the repo root.
+ * so the server process CWD must be the repo root containing `sidecars/`.
+ * Walk up from the binary location looking for that directory.
  */
 function inferRepoRoot(serverPath: string): string | undefined {
-    const dir = path.dirname(serverPath);
-    if (path.basename(path.dirname(dir)) === "target") {
-        return path.resolve(dir, "../..");
+    let dir = path.dirname(path.resolve(serverPath));
+    for (let i = 0; i < 5; i++) {
+        if (fs.existsSync(path.join(dir, "sidecars"))) {
+            return dir;
+        }
+        dir = path.dirname(dir);
     }
     return undefined;
 }
