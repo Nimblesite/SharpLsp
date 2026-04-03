@@ -118,6 +118,43 @@ The project system is the hardest engineering problem in .NET tooling. [MSBuild]
 - **File watching:** The Rust host watches .csproj, .fsproj, .sln, Directory.Build.props, Directory.Packages.props, NuGet.config, and global.json for changes. On change, the affected sidecar is notified to reload the project model.
 - **Multi-targeting:** Projects targeting multiple TFMs (e.g., `net8.0;net48;netstandard2.0`) present multiple analysis contexts. Forge exposes a custom LSP extension for users to select the active TFM, defaulting to the first.
 
+### 2.6 Binary Layout & Installation
+
+Forge produces two primary artifacts: the `forge-lsp` Rust binary and the .NET sidecar publish output. Each editor extension expects these in specific locations.
+
+**Build outputs:**
+
+| Artifact | Build Command | Output Path |
+|---|---|---|
+| `forge-lsp` | `cargo build --release` | `target/release/forge-lsp` |
+| C# sidecar | `dotnet publish` | `target/sidecar-csharp/` |
+
+**VS Code extension (`editors/vscode/`):**
+
+The VS Code extension resolves the server binary with a three-step fallback:
+
+1. **User config** — `forge.server.path` setting (absolute path)
+2. **Bundled binary** — `<extensionPath>/bin/forge-lsp` (or `.exe` on Windows)
+3. **System PATH** — bare `forge-lsp` command, resolved by the shell
+
+For local development, `make install` copies both artifacts into the extension:
+
+```
+editors/vscode/bin/
+├── forge-lsp              ← Rust LSP server binary
+└── sidecar-csharp/        ← Published C# sidecar (self-contained=false)
+```
+
+The sidecar is spawned via `dotnet run --project sidecars/Forge.Sidecar.CSharp` using a relative path. The extension infers the repo root by walking up from the binary location looking for a `sidecars/` directory, and sets it as the server process CWD.
+
+**Zed extension (`editors/zed/`):**
+
+The Zed extension resolves `forge-lsp` exclusively via `$PATH` (no bundled binary). Install with `cargo install --path .` or ensure the binary is on `$PATH`.
+
+**`make install` target:**
+
+Builds `forge-lsp` + C# sidecar and copies them into `editors/vscode/bin/`. This is the primary command for local development iteration. For Zed, the binary must be installed to `$PATH` separately.
+
 ## 3. Technology Stack
 
 ### 3.1 Rust Host Crates

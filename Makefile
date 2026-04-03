@@ -13,6 +13,7 @@
 #   make test-vsix           test VS Code extension + coverage threshold
 #   make lint                build + lint ALL languages (Rust, TypeScript, .NET)
 #   make fmt                 format ALL languages (Rust, TypeScript, .NET)
+#   make install              copy forge-lsp + sidecar into editors/vscode/bin/
 #   make clean               remove build artifacts
 
 # Fail fast: any error in any command or pipeline = immediate abort.
@@ -22,7 +23,7 @@ SHELL := /bin/bash
 .PHONY: ci build build-rust build-dotnet build-vsix build-zed \
        test test-rust test-zed test-vsix test-dotnet \
        lint lint-rust lint-zed lint-vsix lint-dotnet \
-       fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet clean
+       fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet install clean
 
 PROFILE    ?= release
 CARGO_FLAG  = $(if $(filter release,$(PROFILE)),--release,)
@@ -206,6 +207,22 @@ fmt-vsix:
 fmt-dotnet:
 	@echo "==> [.NET] Formatting sidecars..."
 	dotnet format $(SIDECAR_SLN)
+
+# ── Install (copy binaries where editors expect them) ────────────
+
+install: build-rust build-dotnet
+	@echo "==> Installing binaries for local development..."
+	@mkdir -p $(VSCODE_DIR)/bin
+	cp $(BINARY) $(VSCODE_DIR)/bin/forge-lsp
+	chmod +x $(VSCODE_DIR)/bin/forge-lsp
+	rm -rf $(VSCODE_DIR)/bin/sidecar-csharp
+	cp -r $(SIDECAR_OUT) $(VSCODE_DIR)/bin/sidecar-csharp
+	@echo ""
+	@echo "==> Installed:"
+	@echo "    VS Code:  $(VSCODE_DIR)/bin/forge-lsp"
+	@echo "    Sidecar:  $(VSCODE_DIR)/bin/sidecar-csharp/"
+	@echo ""
+	@echo "    Zed: forge-lsp must be on \$$PATH (cargo install --path .)"
 
 # ── Clean ────────────────────────────────────────────────────────
 
