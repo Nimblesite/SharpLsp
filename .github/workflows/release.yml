@@ -55,20 +55,25 @@ jobs:
       - name: Build Rust LSP server
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Build C# sidecar
+      - name: Build sidecars
         run: |
           dotnet publish sidecars/Forge.Sidecar.CSharp/Forge.Sidecar.CSharp.csproj \
             --configuration Release \
             --output target/sidecar-csharp \
+            --self-contained false
+          dotnet publish sidecars/Forge.Sidecar.FSharp/Forge.Sidecar.FSharp.fsproj \
+            --configuration Release \
+            --output target/sidecar-fsharp \
             --self-contained false
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
         run: |
           STAGING="forge-${{ github.ref_name }}-${{ matrix.target }}"
-          mkdir -p "$STAGING/bin" "$STAGING/sidecar-csharp"
+          mkdir -p "$STAGING/bin" "$STAGING/sidecar-csharp" "$STAGING/sidecar-fsharp"
           cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$STAGING/bin/"
           cp -r target/sidecar-csharp/* "$STAGING/sidecar-csharp/"
+          cp -r target/sidecar-fsharp/* "$STAGING/sidecar-fsharp/"
           tar czf "$STAGING.tar.gz" "$STAGING"
           echo "ASSET=$STAGING.tar.gz" >> "$GITHUB_ENV"
 
@@ -77,9 +82,10 @@ jobs:
         shell: pwsh
         run: |
           $staging = "forge-${{ github.ref_name }}-${{ matrix.target }}"
-          New-Item -ItemType Directory -Path "$staging/bin", "$staging/sidecar-csharp" -Force
+          New-Item -ItemType Directory -Path "$staging/bin", "$staging/sidecar-csharp", "$staging/sidecar-fsharp" -Force
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$staging/bin/"
           Copy-Item "target/sidecar-csharp/*" "$staging/sidecar-csharp/" -Recurse
+          Copy-Item "target/sidecar-fsharp/*" "$staging/sidecar-fsharp/" -Recurse
           Compress-Archive -Path "$staging" -DestinationPath "$staging.zip"
           echo "ASSET=$staging.zip" >> $env:GITHUB_ENV
 

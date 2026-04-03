@@ -79,18 +79,8 @@ impl SidecarManager {
             fxhash(workspace_root.to_string_lossy().as_bytes())
         );
 
-        Self::new(
-            "C# (Roslyn)",
-            "dotnet",
-            vec![
-                "run".to_string(),
-                "--project".to_string(),
-                "sidecars/Forge.Sidecar.CSharp".to_string(),
-                "--".to_string(),
-                socket_path.clone(),
-            ],
-            &socket_path,
-        )
+        let args = sidecar_args("sidecar-csharp", "Forge.Sidecar.CSharp", &socket_path);
+        Self::new("C# (Roslyn)", "dotnet", args, &socket_path)
     }
 
     /// Create a manager for the F# sidecar.
@@ -101,18 +91,8 @@ impl SidecarManager {
             fxhash(workspace_root.to_string_lossy().as_bytes())
         );
 
-        Self::new(
-            "F# (FCS)",
-            "dotnet",
-            vec![
-                "run".to_string(),
-                "--project".to_string(),
-                "sidecars/Forge.Sidecar.FSharp".to_string(),
-                "--".to_string(),
-                socket_path.clone(),
-            ],
-            &socket_path,
-        )
+        let args = sidecar_args("sidecar-fsharp", "Forge.Sidecar.FSharp", &socket_path);
+        Self::new("F# (FCS)", "dotnet", args, &socket_path)
     }
 
     /// Ensure the sidecar is running and connected.
@@ -313,6 +293,48 @@ async fn health_loop(sidecar: Arc<SidecarManager>) -> ! {
             sidecar.handle_crash().await;
         }
     }
+}
+
+/// Resolve sidecar launch arguments.
+///
+/// Bundled (VSIX): `<exe_dir>/<subdir>/<name>.dll`
+/// Installed (`make install`): `<exe_dir>/../lib/forge/<subdir>/<name>.dll`
+/// Dev build: `dotnet run --project sidecars/<name>` (CWD = repo root)
+fn sidecar_args(subdir: &str, name: &str, socket_path: &str) -> Vec<String> {
+    if let Some(dll) = installed_sidecar_dll(subdir, name) {
+        info!(dll = %dll.display(), "Using installed sidecar");
+        return vec![dll.to_string_lossy().to_string(), socket_path.to_string()];
+    }
+
+    info!(sidecar = %name, "Using dev sidecar (dotnet run)");
+    vec![
+        "run".to_string(),
+        "--project".to_string(),
+        format!("sidecars/{name}"),
+        "--".to_string(),
+        socket_path.to_string(),
+    ]
+}
+
+/// Check for a published sidecar DLL.
+///
+/// Searches two layouts:
+///   1. VSIX bundle:   `<exe_dir>/<subdir>/<name>.dll`
+///   2. `make install`: `<exe_dir>/../lib/forge/<subdir>/<name>.dll`
+fn installed_sidecar_dll(subdir: &str, name: &str) -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    let dll_name = format!("{name}.dll");
+
+    // VSIX layout: sidecar sits next to the binary.
+    let vsix = exe_dir.join(subdir).join(&dll_name);
+    if vsix.exists() {
+        return Some(vsix);
+    }
+
+    // make install layout: ../lib/forge/<subdir>/
+    let installed = exe_dir.parent()?.join("lib/forge").join(subdir).join(&dll_name);
+    installed.exists().then_some(installed)
 }
 
 /// Simple FNV-style hash for generating short socket names.

@@ -120,40 +120,43 @@ The project system is the hardest engineering problem in .NET tooling. [MSBuild]
 
 ### 2.6 Binary Layout & Installation
 
-Forge produces two primary artifacts: the `forge-lsp` Rust binary and the .NET sidecar publish output. Each editor extension expects these in specific locations.
+Forge binaries are installed to standard system locations, not inside any editor extension. Every editor (VS Code, Zed, Neovim, Helix, etc.) finds `forge-lsp` on `$PATH`. **Editor extensions do NOT bundle binaries.**
 
-**Build outputs:**
+**Install locations (PREFIX defaults to `~/.local`):**
 
-| Artifact | Build Command | Output Path |
+| Artifact | Install Path | Purpose |
 |---|---|---|
-| `forge-lsp` | `cargo build --release` | `target/release/forge-lsp` |
-| C# sidecar | `dotnet publish` | `target/sidecar-csharp/` |
-
-**VS Code extension (`editors/vscode/`):**
-
-The VS Code extension resolves the server binary with a three-step fallback:
-
-1. **User config** — `forge.server.path` setting (absolute path)
-2. **Bundled binary** — `<extensionPath>/bin/forge-lsp` (or `.exe` on Windows)
-3. **System PATH** — bare `forge-lsp` command, resolved by the shell
-
-For local development, `make install` copies both artifacts into the extension:
+| `forge-lsp` | `$(PREFIX)/bin/forge-lsp` | Rust LSP server binary (on `$PATH`) |
+| C# sidecar | `$(PREFIX)/lib/forge/sidecar-csharp/` | Published C# sidecar (`dotnet publish` output) |
+| F# sidecar | `$(PREFIX)/lib/forge/sidecar-fsharp/` | Published F# sidecar (`dotnet publish` output) |
 
 ```
-editors/vscode/bin/
-├── forge-lsp              ← Rust LSP server binary
-└── sidecar-csharp/        ← Published C# sidecar (self-contained=false)
+~/.local/
+├── bin/
+│   └── forge-lsp
+└── lib/forge/
+    ├── sidecar-csharp/
+    │   └── Forge.Sidecar.CSharp.dll (+ dependencies)
+    └── sidecar-fsharp/
+        └── Forge.Sidecar.FSharp.dll (+ dependencies)
 ```
 
-The sidecar is spawned via `dotnet run --project sidecars/Forge.Sidecar.CSharp` using a relative path. The extension infers the repo root by walking up from the binary location looking for a `sidecars/` directory, and sets it as the server process CWD.
+**`make install`** builds everything and copies to these locations. This is the primary install command.
 
-**Zed extension (`editors/zed/`):**
+**Sidecar resolution by the Rust host (two-step fallback):**
 
-The Zed extension resolves `forge-lsp` exclusively via `$PATH` (no bundled binary). Install with `cargo install --path .` or ensure the binary is on `$PATH`.
+1. **Installed:** `<exe_dir>/../lib/forge/sidecar-csharp/Forge.Sidecar.CSharp.dll` — launched via `dotnet <path>.dll`
+2. **Dev build:** `dotnet run --project sidecars/Forge.Sidecar.CSharp` — requires CWD = repo root
 
-**`make install` target:**
+**Editor extension binary strategy:**
 
-Builds `forge-lsp` + C# sidecar and copies them into `editors/vscode/bin/`. This is the primary command for local development iteration. For Zed, the binary must be installed to `$PATH` separately.
+Editor extensions (VS Code, Zed, etc.) do NOT include forge-lsp or sidecars in their packages. On activation:
+
+1. Run `forge-lsp --version` to check if forge-lsp is already installed on the system.
+2. If the version matches the expected version: **do nothing**. Use the installed binary.
+3. If missing or outdated: download the correct platform binaries from the GitHub release matching the extension version and install them to the standard locations above.
+
+This is editor-agnostic by design — one install serves every editor on the machine. A user who runs `make install` or downloads binaries manually should never have their work overwritten or duplicated by an extension.
 
 ## 3. Technology Stack
 
