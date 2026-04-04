@@ -100,7 +100,7 @@ Key optimization: on every keystroke, tree-sitter re-parses in <1ms and provides
 
 ### 2.4 Sidecar Lifecycle Management
 
-- **Startup:** Sidecars are spawned lazily on first request for their language. [ReadyToRun (R2R)](https://learn.microsoft.com/en-us/dotnet/core/deploying/ready-to-run) compilation reduces cold start from ~2s to ~500ms.
+- **Startup:** Sidecars are spawned lazily on first request for their language. Published as self-contained single-file executables (AOT is incompatible with Roslyn, FSharp.Compiler.Service, and other reflection-heavy dependencies).
 - **Health monitoring:** Periodic heartbeat pings (every 5s). If a sidecar fails to respond within 2s, it is marked unhealthy.
 - **Crash recovery:** On sidecar death, cache last-known-good results for graceful degradation. Restart with exponential backoff (1s, 2s, 4s, max 30s). Notify editor via LSP `window/showMessage`.
 - **Isolation:** C# and F# sidecars are independent processes. A Roslyn OOM does not affect FCS, and vice versa.
@@ -120,43 +120,71 @@ The project system is the hardest engineering problem in .NET tooling. [MSBuild]
 
 ### 2.6 Binary Layout & Installation
 
-Forge binaries are installed to standard system locations, not inside any editor extension. Every editor (VS Code, Zed, Neovim, Helix, etc.) finds `forge-lsp` on `$PATH`. **Editor extensions do NOT bundle binaries.**
+**ALL Forge binaries live in ONE central location on the machine. NEVER inside an editor extension.** Every editor (VS Code, Zed, Neovim, Helix, etc.) finds `forge-lsp` on `$PATH`. Extensions are thin clients that launch the system-installed binaries. **Extensions contain ZERO binaries.**
 
 **Install locations (PREFIX defaults to `~/.local`):**
 
 | Artifact | Install Path | Purpose |
 |---|---|---|
-| `forge-lsp` | `$(PREFIX)/bin/forge-lsp` | Rust LSP server binary (on `$PATH`) |
-| C# sidecar | `$(PREFIX)/lib/forge/sidecar-csharp/` | Published C# sidecar (`dotnet publish` output) |
-| F# sidecar | `$(PREFIX)/lib/forge/sidecar-fsharp/` | Published F# sidecar (`dotnet publish` output) |
+| `forge-lsp` | `$(PREFIX)/bin/forge-lsp` | Rust LSP server binary (MUST be on `$PATH`) |
+| C# sidecar | `$(PREFIX)/lib/forge/sidecar-csharp/` | Self-contained single-file executable |
+| F# sidecar | `$(PREFIX)/lib/forge/sidecar-fsharp/` | Self-contained single-file executable |
 
 ```
 ~/.local/
 ├── bin/
-│   └── forge-lsp
+│   └── forge-lsp                          (on $PATH)
 └── lib/forge/
     ├── sidecar-csharp/
-    │   └── Forge.Sidecar.CSharp.dll (+ dependencies)
+    │   └── Forge.Sidecar.CSharp          (self-contained executable)
     └── sidecar-fsharp/
-        └── Forge.Sidecar.FSharp.dll (+ dependencies)
+        └── Forge.Sidecar.FSharp          (self-contained executable)
 ```
 
-**`make install`** builds everything and copies to these locations. This is the primary install command.
+`$(PREFIX)/bin` MUST be on `$PATH`. This is non-negotiable.
+
+**Who installs binaries:**
+
+- **`make install`** — builds from source and copies to the standard locations above. Primary install for developers building from source.
+- **Editor extensions** — download pre-built binaries from GitHub releases and install to the same standard locations. This is the primary install path for end users.
+- **Manual download** — users can download release archives and extract to the standard locations.
+
+All three methods install to the SAME locations. One install serves every editor on the machine.
+
+**Version checking (`--version` flag):**
+
+All three binaries support `--version` and print their version to stdout:
+
+```
+$ forge-lsp --version
+forge-lsp 0.1.0
+
+$ Forge.Sidecar.CSharp --version
+forge-sidecar-csharp 0.1.0
+
+$ Forge.Sidecar.FSharp --version
+forge-sidecar-fsharp 0.1.0
+```
+
+Extensions use this to verify the correct version is installed before starting.
 
 **Sidecar resolution by the Rust host (two-step fallback):**
 
-1. **Installed:** `<exe_dir>/../lib/forge/sidecar-csharp/Forge.Sidecar.CSharp.dll` — launched via `dotnet <path>.dll`
+1. **Installed:** `<exe_dir>/../lib/forge/sidecar-csharp/Forge.Sidecar.CSharp` — launched directly as native executable (no `dotnet` required)
 2. **Dev build:** `dotnet run --project sidecars/Forge.Sidecar.CSharp` — requires CWD = repo root
 
-**Editor extension binary strategy:**
+### 2.7 Editor Extension Binary Strategy
 
-Editor extensions (VS Code, Zed, etc.) do NOT include forge-lsp or sidecars in their packages. On activation:
+**Extensions contain NO binaries. Extensions are THIN CLIENTS.** They exist solely to integrate with the editor's UI and launch `forge-lsp` from `$PATH`.
 
-1. Run `forge-lsp --version` to check if forge-lsp is already installed on the system.
-2. If the version matches the expected version: **do nothing**. Use the installed binary.
-3. If missing or outdated: download the correct platform binaries from the GitHub release matching the extension version and install them to the standard locations above.
+On activation, every editor extension follows this exact sequence:
 
-This is editor-agnostic by design — one install serves every editor on the machine. A user who runs `make install` or downloads binaries manually should never have their work overwritten or duplicated by an extension.
+1. **Version check:** Run `forge-lsp --version` to check if forge-lsp is installed and what version it is.
+2. **Version match:** If the installed version matches the extension's expected version, start normally. Done.
+3. **Missing or outdated:** Download the correct platform-specific archive from the GitHub release matching the extension version. Install `forge-lsp` to `$(PREFIX)/bin/` and sidecars to `$(PREFIX)/lib/forge/`. Then start normally.
+4. **Download fails:** Surface an error to the user with maximum urgency. Do NOT silently degrade. Do NOT fall back to some partial mode. The extension CANNOT function without the binaries. Tell the user exactly what went wrong and how to fix it (manual download link, `make install` instructions, etc.).
+
+This is editor-agnostic by design. One set of binaries serves VS Code, Zed, Neovim, Helix, and any future editor. A user who runs `make install` already has everything every extension needs. An extension that auto-installs binaries provides them for every other extension too.
 
 ## 3. Technology Stack
 

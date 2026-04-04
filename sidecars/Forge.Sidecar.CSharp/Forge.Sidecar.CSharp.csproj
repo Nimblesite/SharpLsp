@@ -4,6 +4,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- AOT and single-file are incompatible with Roslyn: MSBuildWorkspace spawns
+         BuildHost-netcore/*.dll as a child process, so those DLLs must remain on disk.
+         Publish as self-contained instead. -->
+    <SelfContained>true</SelfContained>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningLevel>9999</WarningLevel>
     <!-- NU1903: transitive vuln in Microsoft.Build.Tasks.Core via MSBuild packages.

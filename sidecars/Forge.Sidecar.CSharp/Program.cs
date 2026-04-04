@@ -1,5 +1,13 @@
+using System.Reflection;
 using Forge.Sidecar.CSharp;
 using Microsoft.Build.Locator;
+
+if (args.Length > 0 && args[0] == "--version")
+{
+    var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
+    Console.WriteLine($"forge-sidecar-csharp {version}");
+    return;
+}
 
 try
 {

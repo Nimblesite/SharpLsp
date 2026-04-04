@@ -6,7 +6,7 @@
 #   make ci                  build → lint → test (with coverage thresholds) — the full pipeline
 #   make build-rust          forge-lsp binary only
 #   make build-dotnet        C# sidecar only
-#   make build-vsix          VS Code extension (pulls in build-rust + build-dotnet)
+#   make build-vsix          VS Code extension (no binaries — thin client only)
 #   make build-zed           Zed extension WASM only
 #   make test                run all tests (with coverage + threshold enforcement)
 #   make test-rust           test forge-lsp + coverage threshold
@@ -68,30 +68,21 @@ build-rust:
 	@test -f $(BINARY) || { echo "ERROR: $(BINARY) not found" >&2; exit 1; }
 	@echo "==> Binary: $(BINARY)"
 
-# ── .NET sidecars ────────────────────────────────────────────────
+# ── .NET sidecars (self-contained single-file) ──────────────────
 
 build-dotnet:
-	@echo "==> Building C# sidecar ($(DOTNET_CFG))..."
+	@echo "==> Building C# sidecar ($(DOTNET_CFG), self-contained)..."
 	dotnet publish $(SIDECAR_CS)/Forge.Sidecar.CSharp.csproj \
 		--configuration $(DOTNET_CFG) \
-		--output $(SIDECAR_CS_OUT) \
-		--self-contained false
-	@echo "==> Building F# sidecar ($(DOTNET_CFG))..."
+		--output $(SIDECAR_CS_OUT)
+	@echo "==> Building F# sidecar ($(DOTNET_CFG), self-contained)..."
 	dotnet publish $(SIDECAR_FS)/Forge.Sidecar.FSharp.fsproj \
 		--configuration $(DOTNET_CFG) \
-		--output $(SIDECAR_FS_OUT) \
-		--self-contained false
+		--output $(SIDECAR_FS_OUT)
 
 # ── VS Code extension (.vsix) ───────────────────────────────────
 
 build-vsix:
-	@echo "==> Staging binaries for VSIX..."
-	@mkdir -p $(VSCODE_DIR)/bin
-	cp $(BINARY) $(VSCODE_DIR)/bin/forge-lsp
-	chmod +x $(VSCODE_DIR)/bin/forge-lsp
-	rm -rf $(VSCODE_DIR)/bin/sidecar-csharp $(VSCODE_DIR)/bin/sidecar-fsharp
-	cp -r $(SIDECAR_CS_OUT) $(VSCODE_DIR)/bin/sidecar-csharp
-	cp -r $(SIDECAR_FS_OUT) $(VSCODE_DIR)/bin/sidecar-fsharp
 	@echo "==> Installing VS Code extension dependencies..."
 	npm ci --prefix $(VSCODE_DIR)
 	@echo "==> Bundling extension with esbuild..."
@@ -226,12 +217,13 @@ PREFIX     ?= $(HOME)/.local
 LIBDIR      = $(PREFIX)/lib/forge
 
 install: build-rust build-dotnet
-	@mkdir -p $(PREFIX)/bin $(LIBDIR)
+	@mkdir -p $(PREFIX)/bin
 	cp $(BINARY) $(PREFIX)/bin/forge-lsp
 	chmod +x $(PREFIX)/bin/forge-lsp
 	rm -rf $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
-	cp -r $(SIDECAR_CS_OUT) $(LIBDIR)/sidecar-csharp
-	cp -r $(SIDECAR_FS_OUT) $(LIBDIR)/sidecar-fsharp
+	mkdir -p $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
+	cp -r $(SIDECAR_CS_OUT)/* $(LIBDIR)/sidecar-csharp/
+	cp -r $(SIDECAR_FS_OUT)/* $(LIBDIR)/sidecar-fsharp/
 	@echo "==> Installed:"
 	@echo "    $(PREFIX)/bin/forge-lsp"
 	@echo "    $(LIBDIR)/sidecar-csharp/"
@@ -241,12 +233,9 @@ install: build-rust build-dotnet
 
 # ── Rebuild VSIX (clean + full rebuild + package + install) ──────
 
-rebuild-vsix:
-	@echo "==> Clean rebuild of VSIX..."
-	cargo clean
-	rm -rf $(VSCODE_DIR)/bin $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
-	rm -f $(VSIX)
-	$(MAKE) build-rust build-dotnet build-vsix
+rebuild-vsix: clean install build-vsix
+	@echo "==> Uninstalling old VSIX..."
+	-code --uninstall-extension forge-lsp.forge 2>/dev/null
 	@echo "==> Installing VSIX..."
 	code --install-extension $(VSIX) --force
 	@echo "==> Rebuild + install complete. Reload VS Code to activate."
@@ -257,6 +246,7 @@ clean:
 	@echo "==> Cleaning all build artifacts..."
 	cargo clean
 	cargo clean --manifest-path $(ZED_DIR)/Cargo.toml
-	rm -rf $(VSCODE_DIR)/bin $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
+	rm -rf $(SIDECAR_CS_OUT) $(SIDECAR_FS_OUT)
+	rm -rf $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
 	rm -f $(VSIX)
 	@echo "==> Clean."

@@ -71,7 +71,7 @@
         "forge.server.path": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `forge-lsp` binary. Leave empty to use the bundled server or `$PATH`.",
+          "markdownDescription": "Absolute path to the `forge-lsp` binary. Leave empty to use the system-installed binary from `~/.local/bin/` or `$PATH`.",
           "scope": "machine-overridable",
           "order": 0
         },

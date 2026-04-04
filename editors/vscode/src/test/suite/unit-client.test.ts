@@ -1,5 +1,4 @@
 import * as assert from "node:assert/strict";
-import * as path from "node:path";
 import * as fs from "node:fs";
 import * as vscode from "vscode";
 import * as config from "../../config.js";
@@ -52,7 +51,7 @@ suite("Client Module — Binary Resolution Logic", () => {
 
     test("if findForgeBinary() returns a path, it exists on disk", () => {
         const result = findForgeBinary();
-        if (result && !result.includes(path.sep)) {
+        if (result && !result.includes("/")) {
             return;
         }
         if (result) {
@@ -186,28 +185,18 @@ suite("Client Module — Error Path: Missing Binary", () => {
         }
     });
 
-    test("empty configured path falls through to bundled/PATH", () => {
+    test("empty configured path falls through to installed/PATH", () => {
         const configured = config.serverPath();
         if (configured === "") {
             assert.ok(true, "Empty string falls through correctly");
         }
     });
 
-    test("bundled binary path construction is correct", () => {
-        const binaryName =
-            process.platform === "win32" ? SERVER_BINARY_WIN : SERVER_BINARY;
-        const fakePath = path.join("/fake/extension/path", "bin", binaryName);
-        assert.ok(
-            fakePath.endsWith(path.join("bin", binaryName)),
-            "Bundled path should end with bin/<binary>",
-        );
-    });
-
     test("PATH fallback returns just the binary name", () => {
         const binaryName =
             process.platform === "win32" ? SERVER_BINARY_WIN : SERVER_BINARY;
         assert.ok(
-            !binaryName.includes(path.sep),
+            !binaryName.includes("/"),
             "Bare binary name should not contain path separators",
         );
     });

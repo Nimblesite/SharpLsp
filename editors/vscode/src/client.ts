@@ -1,5 +1,3 @@
-import * as path from "node:path";
-import * as fs from "node:fs";
 import { type ExtensionContext, type Disposable, window } from "vscode";
 import {
     type Executable,
@@ -9,13 +7,9 @@ import {
     TransportKind,
     State,
 } from "vscode-languageclient/node";
-import {
-    EXTENSION_ID,
-    EXTENSION_NAME,
-    SERVER_BINARY,
-    SERVER_BINARY_WIN,
-} from "./constants.js";
+import { EXTENSION_ID, EXTENSION_NAME } from "./constants.js";
 import * as config from "./config.js";
+import * as install from "./install.js";
 import * as log from "./log.js";
 import { type ForgeStatusBar, ServerState } from "./status.js";
 
@@ -24,26 +18,23 @@ export async function start(
     context: ExtensionContext,
     statusBar: ForgeStatusBar,
 ): Promise<LanguageClient | undefined> {
-    const serverPath = resolveServerPath(context);
-    if (serverPath === undefined) {
-        const msg =
-            "Forge LSP binary not found. Install via `cargo install forge-lsp` or set `forge.server.path`.";
-        log.info(msg);
-        window.showErrorMessage(msg);
+    let serverPath: string;
+    try {
+        const result = await install.ensureBinaries(config.serverPath());
+        serverPath = result.serverPath;
+    } catch {
         statusBar.setState(ServerState.Error);
         return undefined;
     }
 
     log.info(`Server binary: ${serverPath}`);
 
-    const repoRoot = inferRepoRoot(serverPath);
     const run: Executable = {
         command: serverPath,
         args: [...config.serverExtraArgs()],
         transport: TransportKind.stdio,
         options: {
             env: { ...process.env, RUST_LOG: config.loggingLevel() },
-            ...(repoRoot !== undefined && { cwd: repoRoot }),
         },
     };
 
@@ -96,46 +87,4 @@ function wireStatusBar(
         }
     });
     context.subscriptions.push(listener);
-}
-
-/**
- * Resolve the forge-lsp binary path.
- *
- * Priority:
- *   1. User-configured `forge.server.path`
- *   2. Bundled binary in `<extension>/bin/`
- *   3. Binary name on `$PATH` (client resolves via shell)
- */
-function resolveServerPath(context: ExtensionContext): string | undefined {
-    const configured = config.serverPath();
-    if (configured !== "" && fs.existsSync(configured)) {
-        return configured;
-    }
-
-    const binaryName =
-        process.platform === "win32" ? SERVER_BINARY_WIN : SERVER_BINARY;
-
-    const bundled = path.join(context.extensionPath, "bin", binaryName);
-    if (fs.existsSync(bundled)) {
-        return bundled;
-    }
-
-    // Fall back to PATH — the language client resolves the command via the shell.
-    return binaryName;
-}
-
-/**
- * The sidecar uses a relative `dotnet run --project sidecars/...` path,
- * so the server process CWD must be the repo root containing `sidecars/`.
- * Walk up from the binary location looking for that directory.
- */
-function inferRepoRoot(serverPath: string): string | undefined {
-    let dir = path.dirname(path.resolve(serverPath));
-    for (let i = 0; i < 5; i++) {
-        if (fs.existsSync(path.join(dir, "sidecars"))) {
-            return dir;
-        }
-        dir = path.dirname(dir);
-    }
-    return undefined;
 }

@@ -79,8 +79,9 @@ impl SidecarManager {
             fxhash(workspace_root.to_string_lossy().as_bytes())
         );
 
-        let args = sidecar_args("sidecar-csharp", "Forge.Sidecar.CSharp", &socket_path);
-        Self::new("C# (Roslyn)", "dotnet", args, &socket_path)
+        let (command, args) =
+            sidecar_launch("sidecar-csharp", "Forge.Sidecar.CSharp", &socket_path);
+        Self::new("C# (Roslyn)", &command, args, &socket_path)
     }
 
     /// Create a manager for the F# sidecar.
@@ -91,8 +92,9 @@ impl SidecarManager {
             fxhash(workspace_root.to_string_lossy().as_bytes())
         );
 
-        let args = sidecar_args("sidecar-fsharp", "Forge.Sidecar.FSharp", &socket_path);
-        Self::new("F# (FCS)", "dotnet", args, &socket_path)
+        let (command, args) =
+            sidecar_launch("sidecar-fsharp", "Forge.Sidecar.FSharp", &socket_path);
+        Self::new("F# (FCS)", &command, args, &socket_path)
     }
 
     /// Ensure the sidecar is running and connected.
@@ -295,45 +297,60 @@ async fn health_loop(sidecar: Arc<SidecarManager>) -> ! {
     }
 }
 
-/// Resolve sidecar launch arguments.
+/// Resolve sidecar launch command and arguments.
 ///
-/// Bundled (VSIX): `<exe_dir>/<subdir>/<name>.dll`
-/// Installed (`make install`): `<exe_dir>/../lib/forge/<subdir>/<name>.dll`
-/// Dev build: `dotnet run --project sidecars/<name>` (CWD = repo root)
-fn sidecar_args(subdir: &str, name: &str, socket_path: &str) -> Vec<String> {
-    if let Some(dll) = installed_sidecar_dll(subdir, name) {
-        info!(dll = %dll.display(), "Using installed sidecar");
-        return vec![dll.to_string_lossy().to_string(), socket_path.to_string()];
+/// Published sidecar binary layouts:
+///   Bundled (VSIX): `<exe_dir>/<subdir>/<name>`
+///   Installed (`make install`): `<exe_dir>/../lib/forge/<subdir>/<name>`
+///   Dev build: `dotnet run --project sidecars/<name>` (CWD = repo root)
+fn sidecar_launch(subdir: &str, name: &str, socket_path: &str) -> (String, Vec<String>) {
+    if let Some(exe) = installed_sidecar_exe(subdir, name) {
+        info!(exe = %exe.display(), "Using installed sidecar");
+        return (
+            exe.to_string_lossy().to_string(),
+            vec![socket_path.to_string()],
+        );
     }
 
     info!(sidecar = %name, "Using dev sidecar (dotnet run)");
-    vec![
-        "run".to_string(),
-        "--project".to_string(),
-        format!("sidecars/{name}"),
-        "--".to_string(),
-        socket_path.to_string(),
-    ]
+    (
+        "dotnet".to_string(),
+        vec![
+            "run".to_string(),
+            "--project".to_string(),
+            format!("sidecars/{name}"),
+            "--".to_string(),
+            socket_path.to_string(),
+        ],
+    )
 }
 
-/// Check for a published sidecar DLL.
+/// Check for a published sidecar executable.
 ///
 /// Searches two layouts:
-///   1. VSIX bundle:   `<exe_dir>/<subdir>/<name>.dll`
-///   2. `make install`: `<exe_dir>/../lib/forge/<subdir>/<name>.dll`
-fn installed_sidecar_dll(subdir: &str, name: &str) -> Option<std::path::PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let exe_dir = exe.parent()?;
-    let dll_name = format!("{name}.dll");
+///   1. VSIX bundle:    `<exe_dir>/<subdir>/<name>[.exe]`
+///   2. `make install`: `<exe_dir>/../lib/forge/<subdir>/<name>[.exe]`
+fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf> {
+    let current = std::env::current_exe().ok()?;
+    let exe_dir = current.parent()?;
+    let exe_name = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
 
     // VSIX layout: sidecar sits next to the binary.
-    let vsix = exe_dir.join(subdir).join(&dll_name);
+    let vsix = exe_dir.join(subdir).join(&exe_name);
     if vsix.exists() {
         return Some(vsix);
     }
 
     // make install layout: ../lib/forge/<subdir>/
-    let installed = exe_dir.parent()?.join("lib/forge").join(subdir).join(&dll_name);
+    let installed = exe_dir
+        .parent()?
+        .join("lib/forge")
+        .join(subdir)
+        .join(&exe_name);
     installed.exists().then_some(installed)
 }
 
