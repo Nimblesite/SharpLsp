@@ -180,7 +180,7 @@
         {
           "id": "forge-explorer",
           "title": "Forge",
-          "icon": "icons/forge.svg"
+          "icon": "icons/forge-activity.svg"
         }
       ]
     },
