@@ -8,22 +8,15 @@ let outputChannel: OutputChannel | undefined;
 let traceChannel: OutputChannel | undefined;
 
 const LOG_FILE = path.join(os.tmpdir(), "forge-vscode.log");
-let logStream: fs.WriteStream | undefined;
 
-/** Get or create the file log stream. */
-function fileStream(): fs.WriteStream {
-    logStream ??= fs.createWriteStream(LOG_FILE, { flags: "a" });
-    return logStream;
-}
-
-/** Write a timestamped line to the log file. */
+/** Write a timestamped line to the log file synchronously (never lost on crash). */
 function fileLog(level: string, message: string): void {
     const ts = new Date().toISOString();
     const line = `[${ts}] [${level}] ${message}\n`;
     try {
-        fileStream().write(line);
+        fs.appendFileSync(LOG_FILE, line);
     } catch {
-        /* best-effort */
+        /* best-effort: cannot log a logging failure */
     }
 }
 
@@ -53,17 +46,22 @@ export function traceInfo(message: string): void {
     fileLog("TRACE", message);
 }
 
+/** Log an error message to the main output channel + file. */
+export function error(message: string): void {
+    const ts = new Date().toISOString();
+    output().appendLine(`[${ts}] ERROR: ${message}`);
+    fileLog("ERROR", message);
+}
+
 /** Return the path to the log file for diagnostics. */
 export function logFilePath(): string {
     return LOG_FILE;
 }
 
-/** Dispose both channels and close the file stream. */
+/** Dispose both channels. */
 export function dispose(): void {
     outputChannel?.dispose();
     traceChannel?.dispose();
     outputChannel = undefined;
     traceChannel = undefined;
-    logStream?.end();
-    logStream = undefined;
 }

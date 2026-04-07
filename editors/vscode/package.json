@@ -32,6 +32,7 @@
     "url": "https://github.com/forge-lsp/forge"
   },
   "activationEvents": [
+    "onStartupFinished",
     "workspaceContains:**/*.sln",
     "workspaceContains:**/*.csproj",
     "workspaceContains:**/*.fsproj"

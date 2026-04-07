@@ -231,14 +231,16 @@ install: build-rust build-dotnet
 	@echo ""
 	@echo "    Make sure $(PREFIX)/bin is on your \$$PATH"
 
-# ── Rebuild VSIX (clean + full rebuild + package + install) ──────
+# ── Rebuild VSIX (uninstall → clean node_modules → rebuild → package) ──
 
-rebuild-vsix: clean install build-vsix
-	@echo "==> Uninstalling old VSIX..."
+rebuild-vsix:
+	@echo "==> Uninstalling old VSIX from VS Code..."
 	-code --uninstall-extension forge-lsp.forge 2>/dev/null
-	@echo "==> Installing VSIX..."
-	code --install-extension $(VSIX) --force
-	@echo "==> Rebuild + install complete. Reload VS Code to activate."
+	@echo "==> Cleaning VS Code extension node_modules + dist + vsix..."
+	rm -rf $(VSCODE_DIR)/node_modules $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
+	rm -f $(VSIX)
+	$(MAKE) build-vsix
+	@echo "==> VSIX packaged at $(VSIX)."
 
 # ── Clean ────────────────────────────────────────────────────────
 

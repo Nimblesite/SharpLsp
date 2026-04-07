@@ -46,9 +46,25 @@ let profilerProvider: profiler.ProfilerTreeProvider | undefined;
 export async function activate(
     context: ExtensionContext,
 ): Promise<ForgeExtensionApi> {
+    // FIRST line: synchronous file log so we always know activate() ran,
+    // even if every subsequent line throws.
     log.info("Forge activating…");
     log.info(`File log: ${log.logFilePath()}`);
+    try {
+        return await activateInner(context);
+    } catch (err: unknown) {
+        const msg = getErrorMessage(err);
+        log.error(`activate() threw: ${msg}`);
+        if (err instanceof Error && err.stack !== undefined) {
+            log.error(err.stack);
+        }
+        throw err;
+    }
+}
 
+async function activateInner(
+    context: ExtensionContext,
+): Promise<ForgeExtensionApi> {
     statusBar = new ForgeStatusBar();
     context.subscriptions.push(statusBar);
 
@@ -83,7 +99,7 @@ export async function activate(
         lspClient = await client.start(context, statusBar);
     } catch (err: unknown) {
         const msg = getErrorMessage(err);
-        log.info(`Failed to start server: ${msg}`);
+        log.error(`Failed to start server: ${msg}`);
         statusBar.setState(ServerState.Error);
         return { explorerProvider, profilerProvider };
     }
@@ -94,7 +110,7 @@ export async function activate(
         // Fire-and-forget — don't block activation on solution loading.
         void selectAndLoadSolution().catch((err: unknown) => {
             const msg = getErrorMessage(err);
-            log.info(`Auto-select solution failed: ${msg}`);
+            log.error(`Auto-select solution failed: ${msg}`);
         });
     }
 
