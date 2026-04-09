@@ -65,10 +65,13 @@ export async function activate(
 async function activateInner(
     context: ExtensionContext,
 ): Promise<ForgeExtensionApi> {
+    log.info("step 1: ForgeStatusBar");
     statusBar = new ForgeStatusBar();
     context.subscriptions.push(statusBar);
 
+    log.info("step 2: SolutionExplorerProvider");
     explorerProvider = new SolutionExplorerProvider();
+    log.info("step 3: createTreeView SOLUTION_EXPLORER");
     context.subscriptions.push(
         window.createTreeView(VIEW_SOLUTION_EXPLORER, {
             treeDataProvider: explorerProvider,
@@ -76,27 +79,36 @@ async function activateInner(
         }),
     );
 
+    log.info("step 4: ProfilerTreeProvider");
     profilerProvider = new profiler.ProfilerTreeProvider();
+    log.info("step 5: createTreeView PROFILER");
     context.subscriptions.push(
         window.createTreeView(VIEW_PROFILER, {
             treeDataProvider: profilerProvider,
         }),
     );
 
+    log.info("step 6: ProfilerStatusBar");
     const profilerStatusBar = new profiler.ProfilerStatusBar(context);
 
+    log.info("step 7: initSortContext");
     explorerProvider.initSortContext();
+    log.info("step 8: registerCommands");
     registerCommands(context);
+    log.info("step 9: profiler.registerCommands");
     profiler.registerCommands(
         context,
         profilerProvider,
         profilerStatusBar,
         () => lspClient,
     );
+    log.info("step 10: wireDocumentChangeRefresh");
     wireDocumentChangeRefresh(context);
 
+    log.info("step 11: client.start (await)");
     try {
         lspClient = await client.start(context, statusBar);
+        log.info("step 11: client.start returned");
     } catch (err: unknown) {
         const msg = getErrorMessage(err);
         log.error(`Failed to start server: ${msg}`);
@@ -104,6 +116,7 @@ async function activateInner(
         return { explorerProvider, profilerProvider };
     }
 
+    log.info("step 12: post-start wiring");
     if (lspClient !== undefined) {
         explorerProvider.setClient(lspClient);
         profilerProvider.setClient(lspClient);
@@ -114,6 +127,7 @@ async function activateInner(
         });
     }
 
+    log.info("step 13: activate complete");
     return { explorerProvider, profilerProvider };
 }
 
