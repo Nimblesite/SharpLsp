@@ -258,6 +258,12 @@
         "icon": "$(trash)"
       },
       {
+        "command": "forge.browseNuGetPackages",
+        "title": "Browse NuGet Packages",
+        "category": "Forge",
+        "icon": "$(package)"
+      },
+      {
         "command": "forge.sortMembers",
         "title": "Sort Members",
         "category": "Forge",
@@ -419,6 +425,11 @@
           "command": "forge.removeProjectReference",
           "when": "view == forge.solutionExplorer && viewItem == projectReference",
           "group": "7_modification"
+        },
+        {
+          "command": "forge.browseNuGetPackages",
+          "when": "view == forge.solutionExplorer && viewItem == project",
+          "group": "5_dependencies"
         },
         {
           "command": "forge.copyQualifiedName",

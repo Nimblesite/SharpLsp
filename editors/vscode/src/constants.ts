@@ -23,6 +23,7 @@ export const CMD_SORT_ACCESSIBILITY = "forge.sortAccessibility";
 
 export const CMD_REMOVE_NUGET_PACKAGE = "forge.removeNuGetPackage";
 export const CMD_REMOVE_PROJECT_REFERENCE = "forge.removeProjectReference";
+export const CMD_BROWSE_NUGET_PACKAGES = "forge.browseNuGetPackages";
 export const CMD_SORT_MEMBERS = "forge.sortMembers";
 export const CMD_COPY_QUALIFIED_NAME = "forge.copyQualifiedName";
 export const CMD_COPY_NAME = "forge.copyName";

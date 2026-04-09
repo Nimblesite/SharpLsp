@@ -250,6 +250,7 @@ function buildProjectNode(project: ProjectNode): ExplorerNode {
     );
     node.sortName = project.name;
     node.contextValue = "project";
+    node.projectFilePath = project.path;
     const depFolder = buildDependencyFolder(project.path);
     const symbols = groupByNamespace(project.symbols);
     node.children = depFolder !== undefined ? [depFolder, ...symbols] : symbols;

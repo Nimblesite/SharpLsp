@@ -13,6 +13,7 @@ import {
     CMD_SORT_ACCESSIBILITY,
     CMD_REMOVE_NUGET_PACKAGE,
     CMD_REMOVE_PROJECT_REFERENCE,
+    CMD_BROWSE_NUGET_PACKAGES,
     CMD_SORT_MEMBERS,
     CMD_COPY_QUALIFIED_NAME,
     CMD_COPY_NAME,
@@ -31,6 +32,7 @@ import {
     SolutionExplorerProvider,
     buildQualifiedName,
 } from "./tree.js";
+import { NuGetBrowserPanel } from "./nuget-browser.js";
 
 /** Public API exported from activate() for tests and other extensions. */
 export interface ForgeExtensionApi {
@@ -207,7 +209,26 @@ function registerDependencyCommands(context: ExtensionContext): void {
                 await confirmAndRemoveDependency(node, "reference");
             },
         ),
+        commands.registerCommand(
+            CMD_BROWSE_NUGET_PACKAGES,
+            async (node: ExplorerNode) => {
+                await browseNuGetPackages(node, context);
+            },
+        ),
     );
+}
+
+async function browseNuGetPackages(
+    node: ExplorerNode,
+    context: ExtensionContext,
+): Promise<void> {
+    if (node.projectFilePath === undefined) {
+        void window.showWarningMessage("No project file path available.");
+        return;
+    }
+    const projectName = node.sortName;
+    log.info(`Opening NuGet browser for ${projectName} (${node.projectFilePath})`);
+    NuGetBrowserPanel.open(context, node.projectFilePath, projectName);
 }
 
 function registerContextMenuCommands(context: ExtensionContext): void {

@@ -19,6 +19,8 @@ We treat this codebase with respect. This code would pass a review at Google, Me
 
 - Logging is critical. Can't see what's happening? Add more logging immediately (use `tracing` crate, `ILogger` in .NET)
 - 100% test coverage is only the start
+- No feature is complete without e2e tests to prove that it works. 
+- Building a feature without tests is ⛔️ ILLEGAL
 - No unit tests. Only COARSE e2e tests
 
 ## Hard Rules
