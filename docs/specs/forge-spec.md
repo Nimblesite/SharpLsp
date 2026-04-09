@@ -299,6 +299,9 @@ This is where Forge must match Rider's 2,200+ inspections and 60+ refactorings. 
 
 ### 4.5 Formatting
 
+While some code for formatting exists and it will become a feature in future. Formatting shall be delegated to CSharpier/Fantomas until it becomes a priority at a later stage.
+No work to be done on formatting at this point in time.
+
 | Feature | LSP Method | C# API | F# API | Priority |
 |---|---|---|---|---|
 | Document formatting | `textDocument/formatting` | [Formatter.FormatAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.formatting.formatter.formatasync) | [Fantomas.FormatDocumentAsync()](https://github.com/fsprojects/fantomas) | P0 |

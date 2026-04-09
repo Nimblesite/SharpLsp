@@ -6,8 +6,6 @@ import { getErrorMessage } from "./utils.js";
 
 const execFileAsync = promisify(execFile);
 
-// ── Types ────────────────────────────────────────────────────────
-
 export interface NuGetSearchResult {
     readonly id: string;
     readonly version: string;
@@ -20,12 +18,9 @@ export interface NuGetSearchResult {
     readonly downloadCount?: number;
     readonly tags: string[];
     readonly isInstalled?: boolean;
-    readonly installedVersion?: string;
+    readonly installedVersion?: string | undefined;
 }
 
-// ── NuGet Browser Webview ────────────────────────────────────────
-
-/** Manages the NuGet package browser webview panel. */
 export class NuGetBrowserPanel {
     private static instance: NuGetBrowserPanel | undefined;
     private readonly panel: vscode.WebviewPanel;
@@ -77,7 +72,6 @@ export class NuGetBrowserPanel {
         });
     }
 
-    /** Open or reveal the NuGet browser for a project. */
     public static open(
         context: vscode.ExtensionContext,
         projectPath: string,
@@ -95,12 +89,9 @@ export class NuGetBrowserPanel {
         return NuGetBrowserPanel.instance;
     }
 
-    /** Close the browser panel. */
     public dispose(): void {
         this.panel.dispose();
     }
-
-    // ── Message Handling ───────────────────────────────────────────
 
     private async handleMessage(message: {
         command: string;
@@ -161,8 +152,6 @@ export class NuGetBrowserPanel {
             }
         }
     }
-
-    // ── Package Operations ─────────────────────────────────────────
 
     private async loadInstalledPackages(): Promise<void> {
         try {
@@ -326,10 +315,28 @@ export class NuGetBrowserPanel {
         }
     }
 
-    // ── Webview Content ────────────────────────────────────────────
-
     private updateContent(): void {
         this.panel.webview.html = this.buildHtml();
+    }
+
+    private escapeHtml(text: string): string {
+        const amp = String.fromCharCode(38) + "amp;";
+        const lt = String.fromCharCode(38) + "lt;";
+        const gt = String.fromCharCode(38) + "gt;";
+        const quot = String.fromCharCode(38) + "quot;";
+        const apos = String.fromCharCode(38) + "#039;";
+        return text
+            .replace(/&/g, amp)
+            .replace(/</g, lt)
+            .replace(/>/g, gt)
+            .replace(/"/g, quot)
+            .replace(/'/g, apos);
+    }
+
+    private escapeAttr(text: string): string {
+        const quot = String.fromCharCode(38) + "quot;";
+        const apos = String.fromCharCode(38) + "#039;";
+        return text.replace(/"/g, quot).replace(/'/g, apos);
     }
 
     private buildHtml(): string {
@@ -357,8 +364,8 @@ export class NuGetBrowserPanel {
             ([id, version]) => ({ id, version, isInstalled: true, installedVersion: version }),
         );
 
-        const safeProjectName = this.projectName.replace(/</g, "<").replace(/>/g, ">");
-        const safeQuery = this.currentSearchQuery.replace(/"/g, """);
+        const safeProjectName = this.escapeHtml(this.projectName);
+        const safeQuery = this.escapeAttr(this.currentSearchQuery);
 
         return `<!DOCTYPE html>
 <html lang="en" class="dark">
@@ -523,13 +530,13 @@ function refresh() { location.reload(); }
             const isInstalled = "isInstalled" in pkg && pkg.isInstalled;
             const installedVersion = "installedVersion" in pkg ? pkg.installedVersion : pkg.version;
             const downloadCount = "downloadCount" in pkg && pkg.downloadCount ? this.formatDownloads(pkg.downloadCount) : null;
-            const safeId = pkg.id.replace(/</g, "<").replace(/>/g, ">").replace(/"/g, """);
-            const safeDesc = (("description" in pkg ? pkg.description : "") || "No description available").replace(/</g, "<").replace(/>/g, ">");
-            const safeVersion = (installedVersion ?? "").replace(/</g, "<").replace(/>/g, ">");
-            const pkgVersion = ("version" in pkg ? pkg.version : "").replace(/</g, "<").replace(/>/g, ">");
-            const safeAuthors = ("authors" in pkg && pkg.authors ? pkg.authors : "").replace(/</g, "<").replace(/>/g, ">");
+            const safeId = this.escapeHtml(pkg.id);
+            const safeDesc = this.escapeHtml(("description" in pkg ? pkg.description : "") || "No description available");
+            const safeVersion = this.escapeHtml(installedVersion ?? "");
+            const pkgVersion = this.escapeHtml("version" in pkg ? pkg.version : "");
+            const safeAuthors = this.escapeHtml("authors" in pkg && pkg.authors ? pkg.authors : "");
 
-            return `<div class="package-item ${isSelected ? "selected" : ""}" onclick="selectPackage('${safeId}')">
+            return `<div class="package-item ${isSelected ? "selected" : ""}" onclick="selectPackage('${safeId.replace(/'/g, "\\'")}')">
 <div class="package-icon ${isSelected ? "selected" : ""}">${isInstalled ? "📦" : "📋"}</div>
 <div class="package-content">
 <div class="package-header">
@@ -557,9 +564,9 @@ ${safeAuthors ? `<span class="package-meta-item">👤 ${safeAuthors}</span>` : "
         const pkg = this.selectedPackage;
         const isInstalled = pkg.isInstalled ?? false;
         const versions = ((pkg as unknown as { _versions?: string[] })._versions ?? []).slice().reverse().slice(0, 20);
-        const safeId = pkg.id.replace(/</g, "<").replace(/>/g, ">");
-        const safeAuthors = (pkg.authors || "Unknown author").replace(/</g, "<").replace(/>/g, ">");
-        const safeDesc = (pkg.description || "No description available").replace(/</g, "<").replace(/>/g, ">");
+        const safeId = this.escapeHtml(pkg.id);
+        const safeAuthors = this.escapeHtml(pkg.authors || "Unknown author");
+        const safeDesc = this.escapeHtml(pkg.description || "No description available");
 
         let infoRows = "";
         if (pkg.licenseUrl) {
@@ -569,7 +576,7 @@ ${safeAuthors ? `<span class="package-meta-item">👤 ${safeAuthors}</span>` : "
             infoRows += `<div class="info-row"><span class="info-label">Published</span><span class="info-value">${this.formatDate(pkg.published)}</span></div>`;
         }
         if (pkg.projectUrl) {
-            const safeUrl = pkg.projectUrl.replace(/</g, "<").replace(/>/g, ">");
+            const safeUrl = this.escapeHtml(pkg.projectUrl);
             infoRows += `<div class="info-row"><span class="info-label">Project URL</span><a class="info-value info-link" href="#" onclick="openExternal('${pkg.projectUrl}')">${safeUrl} ↗</a></div>`;
         }
         if (pkg.downloadCount) {
@@ -577,15 +584,15 @@ ${safeAuthors ? `<span class="package-meta-item">👤 ${safeAuthors}</span>` : "
         }
 
         const tagsHtml = pkg.tags.length > 0
-            ? `<div class="section"><h4 class="section-title">Tags</h4><div class="tags">${pkg.tags.map((t) => `<span class="tag">${t.toUpperCase().replace(/</g, "<").replace(/>/g, ">")}</span>`).join("")}</div></div>`
+            ? `<div class="section"><h4 class="section-title">Tags</h4><div class="tags">${pkg.tags.map((t) => `<span class="tag">${this.escapeHtml(t.toUpperCase())}</span>`).join("")}</div></div>`
             : "";
 
         const versionOptions = versions.map((v) => `<option value="${v}" ${v === pkg.installedVersion ? "selected" : ""}>${v}</option>`).join("");
 
         return `<div class="details-header"><div class="details-icon">📦</div><div class="details-title"><h2>${safeId}</h2><p>${safeAuthors}</p></div></div>
 <div class="details-actions">
-${isInstalled ? `<button class="btn btn-danger" onclick="uninstallPackage('${safeId}')">🗑️ Remove</button>` : `<button class="btn btn-primary" onclick="installPackage('${safeId}', '${pkg.version}')">⬇️ Install</button>`}
-<div class="version-select"><select onchange="changeVersion('${safeId}', this.value)" ${!isInstalled ? "disabled" : ""}>${versionOptions}</select></div>
+${isInstalled ? `<button class="btn btn-danger" onclick="uninstallPackage('${safeId.replace(/'/g, "\\'")}')">🗑️ Remove</button>` : `<button class="btn btn-primary" onclick="installPackage('${safeId.replace(/'/g, "\\'")}', '${pkg.version}')">⬇️ Install</button>`}
+<div class="version-select"><select onchange="changeVersion('${safeId.replace(/'/g, "\\'")}', this.value)" ${!isInstalled ? "disabled" : ""}>${versionOptions}</select></div>
 </div>
 <div class="section"><h4 class="section-title">Description</h4><p class="section-content">${safeDesc}</p></div>
 <div class="section"><div class="info-grid">${infoRows}</div></div>${tagsHtml}`;

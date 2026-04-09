@@ -218,10 +218,10 @@ function registerDependencyCommands(context: ExtensionContext): void {
     );
 }
 
-async function browseNuGetPackages(
+function browseNuGetPackages(
     node: ExplorerNode,
     context: ExtensionContext,
-): Promise<void> {
+): void {
     if (node.projectFilePath === undefined) {
         void window.showWarningMessage("No project file path available.");
         return;
