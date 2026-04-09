@@ -327,9 +327,12 @@ fn sidecar_launch(subdir: &str, name: &str, socket_path: &str) -> (String, Vec<S
 
 /// Check for a published sidecar executable.
 ///
-/// Searches two layouts:
+/// Searches three layouts in priority order:
 ///   1. VSIX bundle:    `<exe_dir>/<subdir>/<name>[.exe]`
 ///   2. `make install`: `<exe_dir>/../lib/forge/<subdir>/<name>[.exe]`
+///   3. Dev build:      `<exe_dir>/../<subdir>/<name>[.exe]`
+///      (e.g. `target/sidecar-csharp/` next to `target/release/forge-lsp`,
+///      where `make build-dotnet` writes the published sidecar output)
 fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf> {
     let current = std::env::current_exe().ok()?;
     let exe_dir = current.parent()?;
@@ -339,19 +342,25 @@ fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf>
         name.to_string()
     };
 
-    // VSIX layout: sidecar sits next to the binary.
+    // 1. VSIX layout: sidecar sits next to the binary.
     let vsix = exe_dir.join(subdir).join(&exe_name);
     if vsix.exists() {
         return Some(vsix);
     }
 
-    // make install layout: ../lib/forge/<subdir>/
+    // 2. make install layout: ../lib/forge/<subdir>/
     let installed = exe_dir
         .parent()?
         .join("lib/forge")
         .join(subdir)
         .join(&exe_name);
-    installed.exists().then_some(installed)
+    if installed.exists() {
+        return Some(installed);
+    }
+
+    // 3. Dev-build layout: sibling of target/release or target/debug.
+    let dev = exe_dir.parent()?.join(subdir).join(&exe_name);
+    dev.exists().then_some(dev)
 }
 
 /// Simple FNV-style hash for generating short socket names.
