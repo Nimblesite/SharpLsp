@@ -24,13 +24,26 @@ interface InstallResult {
 /** GitHub release repo (owner/repo). */
 const GITHUB_REPO = "forge-lsp/forge";
 
+/** Type guard for the subset of package.json we care about. */
+function hasVersionString(value: unknown): value is { version: string } {
+    if (typeof value !== "object" || value === null) return false;
+    if (!("version" in value)) return false;
+    const record: Record<string, unknown> = value;
+    return typeof record.version === "string";
+}
+
 /** Expected version — read from the extension's package.json via VS Code API. */
 function expectedVersion(): string {
     const ext = extensions.getExtension("forge-lsp.forge");
     if (ext === undefined) {
-        throw new Error("Forge extension not found — cannot determine expected version");
+        throw new Error(
+            "Forge extension not found — cannot determine expected version",
+        );
     }
-    return ext.packageJSON.version as string;
+    if (!hasVersionString(ext.packageJSON)) {
+        throw new Error("Forge extension package.json has no version string");
+    }
+    return ext.packageJSON.version;
 }
 
 /** Standard install prefix. */
@@ -41,6 +54,21 @@ function installPrefix(): string {
 /** Where forge-lsp should be installed. */
 function installedBinaryPath(): string {
     return path.join(installPrefix(), "bin", SERVER_BINARY);
+}
+
+/** Path to the binary bundled inside the installed extension's bin/ folder. */
+function bundledBinaryPath(): string | undefined {
+    const ext = extensions.getExtension("forge-lsp.forge");
+    if (ext === undefined) return undefined;
+    const candidate = path.join(ext.extensionPath, "bin", SERVER_BINARY);
+    if (!fs.existsSync(candidate)) return undefined;
+    // Ensure the executable bit survived unpacking from the .vsix.
+    try {
+        fs.chmodSync(candidate, 0o755);
+    } catch {
+        /* best-effort */
+    }
+    return candidate;
 }
 
 /** Get the installed version by running `forge-lsp --version`. */
@@ -74,7 +102,10 @@ function platformRid(): string | undefined {
     return undefined;
 }
 
-/** Download a file from a URL, following redirects. */
+/** Hard timeout (ms) for the GitHub release download path. */
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
+/** Download a file from a URL, following redirects, with a hard timeout. */
 async function downloadToFile(
     url: string,
     destPath: string,
@@ -91,42 +122,50 @@ async function downloadToFile(
                 hostname: parsed.hostname,
                 path: parsed.pathname + parsed.search,
                 headers: { "User-Agent": "forge-vscode-extension" },
+                timeout: DOWNLOAD_TIMEOUT_MS,
             };
 
-            https
-                .get(options, (response) => {
-                    // Follow redirects
-                    if (
-                        (response.statusCode === 301 ||
-                            response.statusCode === 302) &&
-                        response.headers.location !== undefined
-                    ) {
-                        doRequest(response.headers.location, redirectCount + 1);
-                        return;
-                    }
+            const request = https.get(options, (response) => {
+                // Follow redirects
+                if (
+                    (response.statusCode === 301 ||
+                        response.statusCode === 302) &&
+                    response.headers.location !== undefined
+                ) {
+                    doRequest(response.headers.location, redirectCount + 1);
+                    return;
+                }
 
-                    if (response.statusCode !== 200) {
-                        reject(
-                            new Error(
-                                `Download failed: HTTP ${String(response.statusCode)}`,
-                            ),
-                        );
-                        return;
-                    }
+                if (response.statusCode !== 200) {
+                    reject(
+                        new Error(
+                            `Download failed: HTTP ${String(response.statusCode)}`,
+                        ),
+                    );
+                    return;
+                }
 
-                    const file = fs.createWriteStream(destPath);
-                    response.pipe(file);
-                    file.on("finish", () => {
-                        file.close(() => {
-                            resolve();
-                        });
+                const file = fs.createWriteStream(destPath);
+                response.pipe(file);
+                file.on("finish", () => {
+                    file.close(() => {
+                        resolve();
                     });
-                    file.on("error", (err) => {
-                        fs.unlinkSync(destPath);
-                        reject(err);
-                    });
-                })
-                .on("error", reject);
+                });
+                file.on("error", (err) => {
+                    fs.unlinkSync(destPath);
+                    reject(err);
+                });
+            });
+
+            request.on("error", reject);
+            request.on("timeout", () => {
+                request.destroy(
+                    new Error(
+                        `Download timed out after ${String(DOWNLOAD_TIMEOUT_MS)}ms: ${requestUrl}`,
+                    ),
+                );
+            });
         };
 
         doRequest(url, 0);
@@ -269,13 +308,19 @@ async function downloadAndInstall(version: string): Promise<void> {
 }
 
 /**
- * Ensure the correct version of forge-lsp is installed.
+ * Ensure forge-lsp is available, in this priority order:
  *
- * 1. Check user-configured path first.
- * 2. Check standard install location (~/.local/bin/forge-lsp).
- * 3. Check $PATH.
- * 4. If missing or wrong version: download from GitHub release.
- * 5. If download fails: hard error.
+ * 1. User-configured `forge.server.path` (version-checked).
+ * 2. Binary bundled in the extension VSIX itself (`<extensionPath>/bin/forge-lsp`).
+ * 3. Standard install location (`~/.local/bin/forge-lsp`).
+ * 4. Anything resolvable on `$PATH`.
+ * 5. Download from a GitHub release.
+ *
+ * The bundled-binary check is intentionally trust-on-presence (no version
+ * probe): it ships in the same .vsix as this code, so it cannot drift.
+ * This also means activation never blocks on `forge-lsp --version` for the
+ * common installed-from-vsix path, which previously hung the extension host
+ * if the binary was wedged.
  */
 export async function ensureBinaries(
     configuredPath: string,
@@ -294,7 +339,14 @@ export async function ensureBinaries(
         );
     }
 
-    // 2. Standard install location.
+    // 2. Binary bundled inside the .vsix — preferred for installed extensions.
+    const bundled = bundledBinaryPath();
+    if (bundled !== undefined) {
+        log.info(`Using bundled binary: ${bundled} (v${version})`);
+        return { serverPath: bundled };
+    }
+
+    // 3. Standard install location.
     const standardPath = installedBinaryPath();
     if (fs.existsSync(standardPath)) {
         const installed = getInstalledVersion(standardPath);
@@ -309,14 +361,14 @@ export async function ensureBinaries(
         );
     }
 
-    // 3. Check $PATH.
+    // 4. Check $PATH.
     const pathVersion = getInstalledVersion(SERVER_BINARY);
     if (pathVersion === version) {
         log.info(`Using binary from PATH: ${SERVER_BINARY} (v${version})`);
         return { serverPath: SERVER_BINARY };
     }
 
-    // 4. Not found or wrong version — download and install.
+    // 5. Not found or wrong version — download and install.
     log.info(
         `Forge v${version} not found. Attempting download from GitHub releases.`,
     );
@@ -329,6 +381,6 @@ export async function ensureBinaries(
         const fullMsg = `Forge: FATAL — Failed to install binaries v${version}. ${msg}. Install manually: https://github.com/${GITHUB_REPO}/releases or run \`make install\` from source.`;
         log.info(fullMsg);
         void window.showErrorMessage(fullMsg);
-        throw new Error(fullMsg);
+        throw new Error(fullMsg, { cause: err });
     }
 }

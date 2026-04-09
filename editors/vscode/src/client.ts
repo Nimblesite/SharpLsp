@@ -1,4 +1,4 @@
-import { type ExtensionContext, type Disposable, window } from "vscode";
+import { type ExtensionContext, type Disposable } from "vscode";
 import {
     type Executable,
     LanguageClient,

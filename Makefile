@@ -81,8 +81,22 @@ build-dotnet:
 		--output $(SIDECAR_FS_OUT)
 
 # ── VS Code extension (.vsix) ───────────────────────────────────
+#
+# The .vsix is a thin client. It does NOT bundle the forge-lsp binary or
+# the .NET sidecars: bundling the published sidecars (~234 MB unpacked)
+# previously broke VS Code's extension scanner and prevented activation
+# entirely. The extension resolves forge-lsp via the workflow in
+# editors/vscode/src/install.ts:
+#   1. user-configured forge.server.path
+#   2. ~/.local/bin/forge-lsp (from `make install`)
+#   3. anything on $PATH
+#   4. download from GitHub releases (last resort, time-bounded)
+#
+# Run `make install` once to populate ~/.local/bin and ~/.local/lib/forge.
 
 build-vsix:
+	@echo "==> Cleaning stale bundled binaries from $(VSCODE_DIR)/bin/..."
+	@rm -rf $(VSCODE_DIR)/bin
 	@echo "==> Installing VS Code extension dependencies..."
 	npm ci --prefix $(VSCODE_DIR)
 	@echo "==> Bundling extension with esbuild..."
