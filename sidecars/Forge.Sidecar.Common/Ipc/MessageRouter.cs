@@ -112,19 +112,44 @@ public sealed class MessageRouter
     {
         if (!_handlers.TryGetValue(request.Method!, out var handler))
         {
+            await Console
+                .Error.WriteLineAsync($"[Router] Unknown method: {request.Method}")
+                .ConfigureAwait(false);
             return new Envelope { Id = request.Id, Error = $"Unknown method: {request.Method}" };
         }
 
         try
         {
+            await Console
+                .Error.WriteLineAsync(
+                    $"[Router] Handling {request.Method} (id={request.Id})"
+                )
+                .ConfigureAwait(false);
             var result = await handler(request.Payload, ct).ConfigureAwait(false);
             return result.Match(
-                payload => new Envelope { Id = request.Id, Payload = payload },
-                error => new Envelope { Id = request.Id, Error = error }
+                payload =>
+                {
+                    Console.Error.WriteLine(
+                        $"[Router] {request.Method} (id={request.Id}) => OK ({payload.Length} bytes)"
+                    );
+                    return new Envelope { Id = request.Id, Payload = payload };
+                },
+                error =>
+                {
+                    Console.Error.WriteLine(
+                        $"[Router] {request.Method} (id={request.Id}) => Error: {error}"
+                    );
+                    return new Envelope { Id = request.Id, Error = error };
+                }
             );
         }
         catch (Exception ex)
         {
+            await Console
+                .Error.WriteLineAsync(
+                    $"[Router] {request.Method} (id={request.Id}) => Exception: {ex.Message}"
+                )
+                .ConfigureAwait(false);
             return new Envelope { Id = request.Id, Error = ex.Message };
         }
     }

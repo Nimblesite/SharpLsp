@@ -119,6 +119,7 @@ impl SidecarManager {
         self.ensure_running().await?;
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        info!(sidecar = %self.name, method = %method, id = id, "Sidecar request");
         let envelope = Envelope::request(id, method, payload);
 
         let mut transport_guard = self.transport.lock().await;
@@ -132,8 +133,17 @@ impl SidecarManager {
             .context("sidecar closed connection")?;
 
         if let Some(err) = response.error {
+            error!(sidecar = %self.name, method = %method, id = id, "Sidecar error: {err}");
             bail!("sidecar error: {err}");
         }
+
+        info!(
+            sidecar = %self.name,
+            method = %method,
+            id = id,
+            bytes = response.payload.len(),
+            "Sidecar response"
+        );
 
         // Reset backoff on successful communication.
         *self.backoff.lock().await = INITIAL_BACKOFF;

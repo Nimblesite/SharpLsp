@@ -179,10 +179,46 @@ Extensions use this to verify the correct version is installed before starting.
 
 On activation, every editor extension follows this exact sequence:
 
-1. **Version check:** Run `forge-lsp --version` to check if forge-lsp is installed and what version it is.
+1. **Version check:** Run `forge-lsp --version` to check if forge-lsp is installed and what version it is. The output format is `forge-lsp X.Y.Z` — the version is always the second whitespace-delimited token. Extensions parse this deterministically.
 2. **Version match:** If the installed version matches the extension's expected version, start normally. Done.
 3. **Missing or outdated:** Download the correct platform-specific archive from the GitHub release matching the extension version. Install `forge-lsp` to `$(PREFIX)/bin/` and sidecars to `$(PREFIX)/lib/forge/`. Then start normally.
 4. **Download fails:** Surface an error to the user with maximum urgency. Do NOT silently degrade. Do NOT fall back to some partial mode. The extension CANNOT function without the binaries. Tell the user exactly what went wrong and how to fix it (manual download link, `make install` instructions, etc.).
+
+**CRITICAL — Failure must NEVER lock up the editor:**
+
+When any step above fails — version mismatch, binary not found, download failed, `--version` returns garbage — the extension MUST:
+
+- Show a clear, user-facing error message explaining what happened and how to fix it (e.g., "Forge: forge-lsp v0.1.0 required but v0.0.9 found. Run `make install` or update the extension.")
+- Deactivate gracefully — dispose all resources, unregister providers, stop any pending operations
+- NEVER throw an unhandled exception that propagates to the editor host process
+- NEVER block the editor's main thread or event loop waiting for a binary that will never arrive
+- NEVER leave the extension in a half-initialized zombie state where it eats CPU or holds locks
+
+This applies to ALL editor extensions: VS Code, Zed, Neovim, Helix, etc. An extension that locks up the editor because the binary version is wrong is a critical bug of the highest severity.
+
+**Version contract:**
+
+| Component | Version source | `--version` output format |
+|---|---|---|
+| `forge-lsp` | `Cargo.toml` via `env!("CARGO_PKG_VERSION")` | `forge-lsp X.Y.Z` |
+| C# sidecar | `.csproj` AssemblyVersion | `forge-sidecar-csharp X.Y.Z` |
+| F# sidecar | `.fsproj` AssemblyVersion | `forge-sidecar-fsharp X.Y.Z` |
+| VS Code ext | `package.json` version field | N/A (not a CLI) |
+| Zed ext | `extension.toml` version field | N/A (not a CLI) |
+
+All versions MUST be kept in sync across all components. A release tags all components at the same version. Extensions MUST check the binary version matches their own version before starting the server.
+
+**Test requirements:**
+
+Every editor extension MUST have e2e tests that prove:
+1. `forge-lsp --version` returns the correct format and version
+2. When the version matches, the extension starts the server successfully
+3. When the version mismatches, the extension shows a user-facing error and does NOT freeze the editor
+4. When the binary is missing, the extension shows a user-facing error and does NOT freeze the editor
+
+The Rust binary MUST have a test that proves:
+1. `--version` prints the correct format: `forge-lsp X.Y.Z` where X.Y.Z matches `Cargo.toml`
+2. The process exits with code 0
 
 This is editor-agnostic by design. One set of binaries serves VS Code, Zed, Neovim, Helix, and any future editor. A user who runs `make install` already has everything every extension needs. An extension that auto-installs binaries provides them for every other extension too.
 
@@ -354,7 +390,11 @@ No work to be done on formatting at this point in time.
 |---|---|---|---|
 | Solution/project loading | Custom: `forge/openSolution` | MSBuildWorkspace + Ionide.ProjInfo | P0 |
 | Project dependency graph | Custom: `forge/projectGraph` | MSBuild project reference analysis | P1 |
-| NuGet package management | Custom: `forge/nuget` | `dotnet add/remove/restore package` | P2 |
+| NuGet package search | Custom: `forge/nuget/search` | HTTP GET nuget.org v3 API, cross-ref installed | P2 |
+| NuGet package versions | Custom: `forge/nuget/versions` | HTTP GET nuget.org flat container API | P2 |
+| NuGet installed packages | Custom: `forge/nuget/installed` | `dotnet list <project> package --format json` | P2 |
+| NuGet install package | Custom: `forge/nuget/install` | `dotnet add <project> package` + sidecar reload | P2 |
+| NuGet uninstall package | Custom: `forge/nuget/uninstall` | `dotnet remove <project> package` + sidecar reload | P2 |
 | Multi-TFM selection | Custom: `forge/targetFramework` | Active TFM switching per project | P1 |
 | File watching & reload | `workspace/didChangeWatchedFiles` | [notify](https://crates.io/crates/notify) crate + sidecar reload | P0 |
 | Workspace diagnostics | `workspace/diagnostic` | Solution-wide error analysis | P1 |

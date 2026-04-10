@@ -14,7 +14,7 @@ use lsp_types::{
     Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, Position, Range,
     ReferenceParams, Uri,
 };
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::sidecar::manager::SidecarManager;
 
@@ -71,7 +71,7 @@ pub fn handle_hover(
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     let Some(sidecar) = sidecar else {
-        debug!("Hover: no sidecar available");
+        warn!("Hover: no sidecar available");
         return Ok(serde_json::Value::Null);
     };
     let params: HoverParams = serde_json::from_value(req.params)?;
@@ -87,12 +87,12 @@ pub fn handle_hover(
         position.character,
         method,
     ) {
-        debug!("Hover cache hit");
+        info!("Hover cache hit");
         return Ok(cached.clone());
     }
 
     let file_path = uri_to_path(uri)?;
-    debug!(
+    info!(
         file = %file_path,
         line = position.line,
         character = position.character,
@@ -114,6 +114,7 @@ pub fn handle_hover(
     };
 
     let result: Option<SidecarHoverResult> = rmp_serde::from_slice(&response_bytes)?;
+    let has_content = result.is_some();
     let hover = result.map(|r| {
         let range = build_hover_range(&r);
         Hover {
@@ -124,6 +125,12 @@ pub fn handle_hover(
             range,
         }
     });
+
+    if has_content {
+        info!(file = uri.as_str(), "Hover: sidecar returned content");
+    } else {
+        info!(file = uri.as_str(), "Hover: sidecar returned null");
+    }
 
     let value = serde_json::to_value(hover)?;
     nav_cache.insert(

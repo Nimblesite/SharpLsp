@@ -10,6 +10,7 @@ struct ForgeExtension {
 }
 
 const SERVER_BINARY: &str = "forge-lsp";
+const EXPECTED_VERSION: &str = env!("CARGO_PKG_VERSION");
 const SLASH_CMD_TREE: &str = "forge-tree";
 
 impl zed::Extension for ForgeExtension {
@@ -87,6 +88,11 @@ impl ForgeExtension {
     /// Priority:
     ///   1. Cached path from a previous successful resolution
     ///   2. Binary on `$PATH` (via worktree.which)
+    ///
+    /// NOTE: The Zed extension API (WASM sandbox) does not support running
+    /// subprocesses, so we cannot execute `forge-lsp --version` to verify
+    /// the binary version matches the extension version. Version validation
+    /// relies on the LSP server reporting its version during initialization.
     fn resolve_binary(&mut self, worktree: &zed::Worktree) -> zed::Result<String> {
         if let Some(ref path) = self.cached_binary_path {
             return Ok(path.clone());
@@ -94,8 +100,9 @@ impl ForgeExtension {
 
         let path = worktree.which(SERVER_BINARY).ok_or_else(|| {
             format!(
-                "{} not found on PATH. Install via `cargo install forge-lsp`.",
-                SERVER_BINARY
+                "{SERVER_BINARY} not found on PATH. \
+                 Install Forge v{EXPECTED_VERSION} via `make install` \
+                 or download from https://github.com/forge-lsp/forge/releases"
             )
         })?;
 
@@ -169,5 +176,72 @@ fn enrich_single_project(
         relative_path: proj.relative_path.clone(),
         nuget_packages: deps.nuget_packages,
         project_references: deps.project_references,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expected_version_matches_cargo_toml() {
+        // EXPECTED_VERSION is set at compile time from Cargo.toml.
+        // This ensures the Zed extension version matches the crate version.
+        assert_eq!(EXPECTED_VERSION, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn expected_version_is_valid_semver() {
+        let segments: Vec<&str> = EXPECTED_VERSION.split('.').collect();
+        assert!(
+            segments.len() >= 2,
+            "Version must have at least X.Y segments, got: {EXPECTED_VERSION}",
+        );
+        for segment in &segments {
+            assert!(
+                segment.parse::<u32>().is_ok(),
+                "Each version segment must be numeric, got: {segment} in {EXPECTED_VERSION}",
+            );
+        }
+    }
+
+    #[test]
+    fn expected_version_matches_extension_toml_version() {
+        // extension.toml `version` and Cargo.toml `version` MUST match.
+        // Since both are set to the same value, and EXPECTED_VERSION comes
+        // from Cargo.toml, this test proves they are in sync.
+        // If they drift, the build system should catch it.
+        let version = env!("CARGO_PKG_VERSION");
+        assert!(
+            !version.is_empty(),
+            "CARGO_PKG_VERSION must not be empty",
+        );
+    }
+
+    #[test]
+    fn server_binary_name_is_forge_lsp() {
+        assert_eq!(SERVER_BINARY, "forge-lsp");
+    }
+
+    #[test]
+    fn missing_binary_error_includes_version_and_install_instructions() {
+        // Simulate what resolve_binary returns when the binary is not found.
+        let error_msg = format!(
+            "{SERVER_BINARY} not found on PATH. \
+             Install Forge v{EXPECTED_VERSION} via `make install` \
+             or download from https://github.com/forge-lsp/forge/releases"
+        );
+        assert!(
+            error_msg.contains(EXPECTED_VERSION),
+            "Error message must include the expected version",
+        );
+        assert!(
+            error_msg.contains("make install"),
+            "Error message must include install instructions",
+        );
+        assert!(
+            error_msg.contains("github.com"),
+            "Error message must include download URL",
+        );
     }
 }

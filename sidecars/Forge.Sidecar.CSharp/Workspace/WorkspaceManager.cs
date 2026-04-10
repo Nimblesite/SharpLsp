@@ -174,21 +174,42 @@ internal sealed class WorkspaceManager
     {
         try
         {
+            await Console
+                .Error.WriteLineAsync($"[Hover] GetHoverAsync: {filePath}:{line}:{character}")
+                .ConfigureAwait(false);
             var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
             if (document is null)
             {
+                await Console
+                    .Error.WriteLineAsync($"[Hover] Document not found: {filePath}")
+                    .ConfigureAwait(false);
                 return new HoverQueryResult.Ok<HoverResult?, string>(null);
             }
 
             var text = await document.GetTextAsync(ct).ConfigureAwait(false);
             var position = text.Lines.GetPosition(new LinePosition(line, character));
             var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-            return model is null
-                ? new HoverQueryResult.Ok<HoverResult?, string>(null)
-                : CSharpHoverBuilder.Build(model, position, ct);
+            if (model is null)
+            {
+                await Console
+                    .Error.WriteLineAsync($"[Hover] Semantic model is null: {filePath}")
+                    .ConfigureAwait(false);
+                return new HoverQueryResult.Ok<HoverResult?, string>(null);
+            }
+
+            var result = CSharpHoverBuilder.Build(model, position, ct);
+            await Console
+                .Error.WriteLineAsync(
+                    $"[Hover] Result: {(result is HoverQueryResult.Ok<HoverResult?, string> { Value: not null } ? "content" : "null")}"
+                )
+                .ConfigureAwait(false);
+            return result;
         }
         catch (Exception ex)
         {
+            await Console
+                .Error.WriteLineAsync($"[Hover] Exception: {ex.Message}")
+                .ConfigureAwait(false);
             return HoverQueryResult.Failure(ex.Message);
         }
     }

@@ -72,7 +72,7 @@ function bundledBinaryPath(): string | undefined {
 }
 
 /** Get the installed version by running `forge-lsp --version`. */
-function getInstalledVersion(binaryPath: string): string | undefined {
+export function getInstalledVersion(binaryPath: string): string | undefined {
     try {
         const result = child_process.execFileSync(binaryPath, ["--version"], {
             timeout: 2000,
@@ -104,7 +104,7 @@ function platformRid(): string | undefined {
 }
 
 /** Hard timeout (ms) for the GitHub release download path. */
-const DOWNLOAD_TIMEOUT_MS = 60_000;
+const DOWNLOAD_TIMEOUT_MS = 15_000;
 
 /** Download a file from a URL, following redirects, with a hard timeout. */
 async function downloadToFile(
@@ -379,9 +379,34 @@ export async function ensureBinaries(
         return { serverPath: installedBinaryPath() };
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        const fullMsg = `Forge: FATAL — Failed to install binaries v${version}. ${msg}. Install manually: https://github.com/${GITHUB_REPO}/releases or run \`make install\` from source.`;
+        const fullMsg = `Forge: forge-lsp v${version} required but not found. ${msg}. Install manually: https://github.com/${GITHUB_REPO}/releases or run \`make install\` from source.`;
         log.info(fullMsg);
         void window.showErrorMessage(fullMsg);
         throw new Error(fullMsg, { cause: err });
     }
+}
+
+/**
+ * Summarise why binary resolution failed, for user-facing error messages.
+ * Returns the closest match (if any) and the expected version.
+ */
+export function describeBinaryStatus(
+    configuredPath: string,
+): { expected: string; found: string | undefined; location: string } {
+    const expected = expectedVersion();
+    const standardPath = installedBinaryPath();
+
+    // Check standard install location first.
+    if (fs.existsSync(standardPath)) {
+        const installed = getInstalledVersion(standardPath);
+        return { expected, found: installed, location: standardPath };
+    }
+
+    // Check configured path.
+    if (configuredPath.length > 0 && fs.existsSync(configuredPath)) {
+        const installed = getInstalledVersion(configuredPath);
+        return { expected, found: installed, location: configuredPath };
+    }
+
+    return { expected, found: undefined, location: standardPath };
 }

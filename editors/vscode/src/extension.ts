@@ -116,6 +116,9 @@ async function activateInner(
         const msg = getErrorMessage(err);
         log.error(`Failed to start server: ${msg}`);
         statusBar.setState(ServerState.Error);
+        void window.showErrorMessage(
+            `Forge: Failed to start language server. ${msg}`,
+        );
         return { explorerProvider, profilerProvider };
     }
 

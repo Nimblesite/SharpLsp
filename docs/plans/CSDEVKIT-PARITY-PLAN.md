@@ -139,11 +139,16 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 ### NuGet Package Management
 
+See [NUGET-BROWSER-SPEC.md](../specs/NUGET-BROWSER-SPEC.md) and [NUGET-BROWSER-PLAN.md](NUGET-BROWSER-PLAN.md) for full details.
+
+All NuGet operations route through LSP custom requests (`forge/nuget/*`). The extension is a thin UI shell only.
+
 | Feature | C# Dev Kit | Forge | Status |
 |---------|-----------|-------|--------|
-| Search & add packages | Yes | No | **MISSING** |
-| Update packages | Yes | No | **MISSING** |
-| Remove packages | Yes | Yes | **DONE** |
+| Search & add packages | Yes | Partial (UI exists, needs LSP backend) | **IN PROGRESS** |
+| Update packages | Yes | Partial (UI exists, needs LSP backend) | **IN PROGRESS** |
+| Remove packages | Yes | Partial (UI exists, needs LSP backend) | **IN PROGRESS** |
+| NuGet browser webview | No | Yes (needs design fixes) | **IN PROGRESS** |
 | Auto-restore on load/build | Yes | No | **MISSING** |
 | Prerelease toggle | Yes | No | **MISSING** |
 
@@ -254,14 +259,20 @@ Features users expect within the first day of use.
   - [ ] Auto-build on test discovery refresh
   - [ ] Build task provider for tasks.json integration
 
-- [ ] **P2.4: NuGet Package Management**
-  - [ ] Search NuGet.org API for packages
-  - [ ] Add NuGet package to project (modify .csproj)
-  - [ ] Update NuGet package version
+- [ ] **P2.4: NuGet Package Management** — see [NUGET-BROWSER-PLAN.md](NUGET-BROWSER-PLAN.md)
+  - [ ] Implement `forge/nuget/search` LSP handler (Rust host)
+  - [ ] Implement `forge/nuget/versions` LSP handler (Rust host)
+  - [ ] Implement `forge/nuget/installed` LSP handler (Rust host)
+  - [ ] Implement `forge/nuget/install` LSP handler (Rust host, + sidecar reload)
+  - [ ] Implement `forge/nuget/uninstall` LSP handler (Rust host, + sidecar reload)
+  - [ ] Refactor extension NuGet browser to use LSP requests (remove direct CLI/HTTP)
+  - [ ] Fix NuGet browser UI to match design spec (Material icons, no emoji, no duplicate settings)
+  - [ ] Add Dependencies section to details panel
+  - [ ] Add automated VSIX tests for NuGet browser
+  - [ ] Add E2E Rust tests for all forge/nuget/* handlers
   - [ ] Prerelease version toggle
   - [ ] NuGet restore command
   - [ ] Auto-restore on project load
-  - [ ] Quick pick UI for package search results
 
 ### Priority 3 -- Quality of Life (Weeks 15-20)
 

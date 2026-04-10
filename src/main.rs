@@ -380,6 +380,7 @@ fn handle_request(
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<()> {
     let id = req.id.clone();
+    let method = req.method.clone();
 
     let result = match req.method.as_str() {
         // Syntax-only (tree-sitter, Rust)
@@ -400,6 +401,7 @@ fn handle_request(
         }
         HoverRequest::METHOD => {
             if handlers::is_hover_on_comment(&req, trees) {
+                info!("Hover: skipped (comment position)");
                 Ok(serde_json::Value::Null)
             } else {
                 let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
@@ -431,11 +433,14 @@ fn handle_request(
 
     let resp = match result {
         Ok(value) => Response::new_ok(id, value),
-        Err(e) => Response::new_err(
-            id,
-            error_code_i32(lsp_server::ErrorCode::InternalError),
-            format!("{e:#}"),
-        ),
+        Err(e) => {
+            error!(method = %method, "Request failed: {e:#}");
+            Response::new_err(
+                id,
+                error_code_i32(lsp_server::ErrorCode::InternalError),
+                format!("{e:#}"),
+            )
+        }
     };
     connection.sender.send(Message::Response(resp))?;
     Ok(())
