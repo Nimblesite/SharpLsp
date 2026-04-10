@@ -211,8 +211,8 @@ function registerDependencyCommands(context: ExtensionContext): void {
         ),
         commands.registerCommand(
             CMD_BROWSE_NUGET_PACKAGES,
-            async (node: ExplorerNode) => {
-                await browseNuGetPackages(node, context);
+            (node: ExplorerNode) => {
+                browseNuGetPackages(node, context);
             },
         ),
     );

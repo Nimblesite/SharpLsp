@@ -19,6 +19,51 @@ export interface NuGetSearchResult {
     readonly tags: string[];
     readonly isInstalled?: boolean;
     readonly installedVersion?: string | undefined;
+    _versions?: string[];
+}
+
+interface WebviewMessage {
+    command: string;
+    data?: Record<string, unknown>;
+}
+
+interface NuGetPackageData {
+    id: string;
+    version: string;
+    description: string;
+    authors: string;
+    iconUrl: string;
+    licenseUrl: string;
+    projectUrl: string;
+    published: string;
+    totalDownloads: number;
+    tags: string[];
+}
+
+interface NuGetSearchResponse {
+    data?: NuGetPackageData[];
+}
+
+interface NuGetVersionsResponse {
+    versions?: string[];
+}
+
+interface InstalledPackage {
+    id: string;
+    requestedVersion: string;
+    resolvedVersion: string;
+}
+
+interface FrameworkData {
+    topLevelPackages?: InstalledPackage[];
+}
+
+interface ProjectData {
+    frameworks?: FrameworkData[];
+}
+
+interface DotNetListPackageResponse {
+    projects?: ProjectData[];
 }
 
 export class NuGetBrowserPanel {
@@ -27,7 +72,7 @@ export class NuGetBrowserPanel {
     private readonly context: vscode.ExtensionContext;
     private readonly projectPath: string;
     private readonly projectName: string;
-    private installedPackages: Map<string, string> = new Map();
+    private readonly installedPackages = new Map<string, string>();
     private currentSearchQuery = "";
     private currentTab: "browse" | "installed" | "updates" = "browse";
     private searchResults: NuGetSearchResult[] = [];
@@ -57,14 +102,16 @@ export class NuGetBrowserPanel {
             () => {
                 NuGetBrowserPanel.instance = undefined;
             },
-            undefined,
-            context.subscriptions,
+            null,
+            this.context.subscriptions,
         );
 
         this.panel.webview.onDidReceiveMessage(
-            (message) => this.handleMessage(message),
-            undefined,
-            context.subscriptions,
+            (message: WebviewMessage) => {
+                void this.handleMessage(message);
+            },
+            null,
+            this.context.subscriptions,
         );
 
         void this.loadInstalledPackages().then(() => {
@@ -93,19 +140,16 @@ export class NuGetBrowserPanel {
         this.panel.dispose();
     }
 
-    private async handleMessage(message: {
-        command: string;
-        data?: Record<string, unknown>;
-    }): Promise<void> {
+    private async handleMessage(message: WebviewMessage): Promise<void> {
         switch (message.command) {
             case "search": {
-                const query = String(message.data?.query ?? "");
+                const query = this.getStringValue(message.data?.query);
                 this.currentSearchQuery = query;
                 await this.performSearch(query);
                 break;
             }
             case "selectPackage": {
-                const packageId = String(message.data?.packageId ?? "");
+                const packageId = this.getStringValue(message.data?.packageId);
                 const pkg = this.searchResults.find((p) => p.id === packageId);
                 if (pkg !== undefined) {
                     this.selectedPackage = pkg;
@@ -115,27 +159,27 @@ export class NuGetBrowserPanel {
                 break;
             }
             case "install": {
-                const packageId = String(message.data?.packageId ?? "");
-                const version = String(message.data?.version ?? "");
+                const packageId = this.getStringValue(message.data?.packageId);
+                const version = this.getStringValue(message.data?.version);
                 await this.installPackage(packageId, version);
                 break;
             }
             case "uninstall": {
-                const packageId = String(message.data?.packageId ?? "");
+                const packageId = this.getStringValue(message.data?.packageId);
                 await this.uninstallPackage(packageId);
                 break;
             }
             case "changeVersion": {
-                const packageId = String(message.data?.packageId ?? "");
-                const version = String(message.data?.version ?? "");
+                const packageId = this.getStringValue(message.data?.packageId);
+                const version = this.getStringValue(message.data?.version);
                 await this.changeVersion(packageId, version);
                 break;
             }
             case "switchTab": {
-                const tab = String(message.data?.tab ?? "browse") as
-                    | "browse"
-                    | "installed"
-                    | "updates";
+                const tabValue = this.getStringValue(message.data?.tab, "browse");
+                const tab: "browse" | "installed" | "updates" =
+                    tabValue === "installed" ? "installed" :
+                    tabValue === "updates" ? "updates" : "browse";
                 this.currentTab = tab;
                 if (tab === "installed") {
                     await this.loadInstalledPackages();
@@ -144,13 +188,20 @@ export class NuGetBrowserPanel {
                 break;
             }
             case "openExternal": {
-                const url = String(message.data?.url ?? "");
+                const url = this.getStringValue(message.data?.url);
                 if (url.length > 0) {
                     void vscode.env.openExternal(vscode.Uri.parse(url));
                 }
                 break;
             }
         }
+    }
+
+    private getStringValue(value: unknown, defaultValue = ""): string {
+        if (typeof value === "string") {
+            return value;
+        }
+        return defaultValue;
     }
 
     private async loadInstalledPackages(): Promise<void> {
@@ -160,17 +211,8 @@ export class NuGetBrowserPanel {
                 ["list", this.projectPath, "package", "--format", "json"],
                 { encoding: "utf-8" },
             );
-            const data = JSON.parse(result.stdout) as {
-                projects?: Array<{
-                    frameworks?: Array<{
-                        topLevelPackages?: Array<{
-                            id: string;
-                            requestedVersion: string;
-                            resolvedVersion: string;
-                        }>;
-                    }>;
-                }>;
-            };
+            // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+            const data: DotNetListPackageResponse = JSON.parse(result.stdout) as DotNetListPackageResponse;
 
             this.installedPackages.clear();
             const project = data.projects?.[0];
@@ -204,20 +246,8 @@ export class NuGetBrowserPanel {
     private async searchNuGet(query: string): Promise<NuGetSearchResult[]> {
         const url = `https://azuresearch-usnc.nuget.org/query?q=${encodeURIComponent(query)}&prerelease=false&take=50`;
         const response = await fetch(url);
-        const data = (await response.json()) as {
-            data?: Array<{
-                id: string;
-                version: string;
-                description: string;
-                authors: string;
-                iconUrl: string;
-                licenseUrl: string;
-                projectUrl: string;
-                published: string;
-                totalDownloads: number;
-                tags: string[];
-            }>;
-        };
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+        const data: NuGetSearchResponse = await response.json() as NuGetSearchResponse;
 
         return (data.data ?? []).map((pkg) => ({
             id: pkg.id,
@@ -229,7 +259,7 @@ export class NuGetBrowserPanel {
             projectUrl: pkg.projectUrl,
             published: pkg.published,
             downloadCount: pkg.totalDownloads,
-            tags: pkg.tags ?? [],
+            tags: pkg.tags.length > 0 ? pkg.tags : [],
             isInstalled: this.installedPackages.has(pkg.id),
             installedVersion: this.installedPackages.get(pkg.id),
         }));
@@ -260,8 +290,9 @@ export class NuGetBrowserPanel {
         try {
             const url = `https://api.nuget.org/v3-flatcontainer/${pkg.id.toLowerCase()}/index.json`;
             const response = await fetch(url);
-            const data = (await response.json()) as { versions?: string[] };
-            (pkg as unknown as { _versions?: string[] })._versions = data.versions ?? [];
+            // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+            const data: NuGetVersionsResponse = await response.json() as NuGetVersionsResponse;
+            pkg._versions = data.versions ?? [];
         } catch (err: unknown) {
             log.info(`Failed to load versions for ${pkg.id}: ${getErrorMessage(err)}`);
         }
@@ -357,11 +388,11 @@ export class NuGetBrowserPanel {
         };
 
         const packages = this.currentTab === "installed"
-            ? this.searchResults.filter((p) => p.isInstalled)
+            ? this.searchResults.filter((p) => p.isInstalled === true)
             : this.searchResults;
 
-        const installedList = Array.from(this.installedPackages.entries()).map(
-            ([id, version]) => ({ id, version, isInstalled: true, installedVersion: version }),
+        const installedList: { id: string; version: string; isInstalled: true; installedVersion: string }[] = Array.from(this.installedPackages.entries()).map(
+            ([id, version]) => ({ id, version, isInstalled: true as const, installedVersion: version }),
         );
 
         const safeProjectName = this.escapeHtml(this.projectName);
@@ -515,45 +546,79 @@ function refresh() { location.reload(); }
 
     private buildPackageListHtml(
         packages: NuGetSearchResult[],
-        installedPackages: Array<{ id: string; version: string; isInstalled: boolean }>,
+        installedPackages: { id: string; version: string; isInstalled: true; installedVersion: string }[],
     ): string {
-        const displayPackages = this.currentTab === "installed" ? installedPackages : packages;
+        if (this.currentTab === "installed") {
+            return this.buildInstalledPackagesHtml(installedPackages);
+        }
+        return this.buildBrowsePackagesHtml(packages);
+    }
 
-        if (displayPackages.length === 0) {
-            const title = this.currentTab === "installed" ? "No packages installed" : "No packages found";
-            const msg = this.currentTab === "installed" ? "This project has no NuGet packages installed." : "Try a different search term.";
-            return `<div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-title">${title}</div><p>${msg}</p></div>`;
+    private buildInstalledPackagesHtml(
+        installedPackages: { id: string; version: string; isInstalled: true; installedVersion: string }[],
+    ): string {
+        if (installedPackages.length === 0) {
+            return `<div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-title">No packages installed</div><p>This project has no NuGet packages installed.</p></div>`;
         }
 
-        const items = displayPackages.map((pkg) => {
+        const items = installedPackages.map((pkg) => {
             const isSelected = this.selectedPackage?.id === pkg.id;
-            const isInstalled = "isInstalled" in pkg && pkg.isInstalled;
-            const installedVersion = "installedVersion" in pkg ? pkg.installedVersion : pkg.version;
-            const downloadCount = "downloadCount" in pkg && pkg.downloadCount ? this.formatDownloads(pkg.downloadCount) : null;
             const safeId = this.escapeHtml(pkg.id);
-            const safeDesc = this.escapeHtml(("description" in pkg ? pkg.description : "") || "No description available");
-            const safeVersion = this.escapeHtml(installedVersion ?? "");
-            const pkgVersion = this.escapeHtml("version" in pkg ? pkg.version : "");
-            const safeAuthors = this.escapeHtml("authors" in pkg && pkg.authors ? pkg.authors : "");
+            const safeVersion = this.escapeHtml(pkg.installedVersion);
+            const safeAuthors = this.escapeHtml("");
+
+            return `<div class="package-item ${isSelected ? "selected" : ""}" onclick="selectPackage('${safeId.replace(/'/g, "\\'")}')">
+<div class="package-icon ${isSelected ? "selected" : ""}">📦</div>
+<div class="package-content">
+<div class="package-header">
+<span class="package-name">${safeId}</span>
+<span class="package-version installed">v${safeVersion}</span>
+</div>
+<p class="package-description">Installed package</p>
+<div class="package-meta">
+${safeAuthors.length > 0 ? `<span class="package-meta-item">👤 ${safeAuthors}</span>` : ""}
+</div>
+</div>
+</div>`;
+        });
+
+        return `<div class="package-list-header"><span class="package-list-title">Installed Packages</span><div class="sort-select"><span>Sort By:</span><select><option>Relevance</option><option>Downloads</option><option>Recently Updated</option></select></div></div>${items.join("")}`;
+    }
+
+    private buildBrowsePackagesHtml(packages: NuGetSearchResult[]): string {
+        if (packages.length === 0) {
+            return `<div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-title">No packages found</div><p>Try a different search term.</p></div>`;
+        }
+
+        const items = packages.map((pkg) => {
+            const isSelected = this.selectedPackage?.id === pkg.id;
+            const safeId = this.escapeHtml(pkg.id);
+            const desc = pkg.description.length > 0 ? pkg.description : "No description available";
+            const safeDesc = this.escapeHtml(desc);
+            const version = pkg.installedVersion ?? pkg.version;
+            const safeVersion = this.escapeHtml(version);
+            const safeAuthors = this.escapeHtml(pkg.authors);
+            const downloadCount = pkg.downloadCount;
+            const downloadCountStr = downloadCount !== undefined ? this.formatDownloads(downloadCount) : null;
+            const isInstalled = pkg.isInstalled === true;
 
             return `<div class="package-item ${isSelected ? "selected" : ""}" onclick="selectPackage('${safeId.replace(/'/g, "\\'")}')">
 <div class="package-icon ${isSelected ? "selected" : ""}">${isInstalled ? "📦" : "📋"}</div>
 <div class="package-content">
 <div class="package-header">
 <span class="package-name">${safeId}</span>
-${isInstalled ? `<span class="package-version installed">v${safeVersion}</span>` : `<span class="package-version">v${pkgVersion}</span>`}
+<span class="package-version ${isInstalled ? "installed" : ""}">v${safeVersion}</span>
 </div>
 <p class="package-description">${safeDesc}</p>
 <div class="package-meta">
-${downloadCount ? `<span class="package-meta-item">⬇️ ${downloadCount}</span>` : ""}
-${safeAuthors ? `<span class="package-meta-item">👤 ${safeAuthors}</span>` : ""}
+${downloadCountStr !== null ? `<span class="package-meta-item">⬇️ ${downloadCountStr}</span>` : ""}
+${safeAuthors.length > 0 ? `<span class="package-meta-item">👤 ${safeAuthors}</span>` : ""}
 </div>
 </div>
 </div>`;
         });
 
-        const listTitle = this.currentTab === "installed" ? "Installed Packages" : "Available Packages";
-        return `<div class="package-list-header"><span class="package-list-title">${listTitle}</span><div class="sort-select"><span>Sort By:</span><select><option>Relevance</option><option>Downloads</option><option>Recently Updated</option></select></div></div>${items.join("")}`;
+        return `<div class="package-list-header"><span class="package-list-title">Available Packages</span><div class="sort-select"><span>Sort By:</span><select><option>Relevance</option><option>Downloads</option><option>Recently Updated</option></select></div></div>${items.join("")}`;
     }
 
     private buildDetailsHtml(): string {
@@ -562,24 +627,24 @@ ${safeAuthors ? `<span class="package-meta-item">👤 ${safeAuthors}</span>` : "
         }
 
         const pkg = this.selectedPackage;
-        const isInstalled = pkg.isInstalled ?? false;
-        const versions = ((pkg as unknown as { _versions?: string[] })._versions ?? []).slice().reverse().slice(0, 20);
+        const isInstalled = pkg.isInstalled === true;
+        const versions = (pkg._versions ?? []).slice().reverse().slice(0, 20);
         const safeId = this.escapeHtml(pkg.id);
         const safeAuthors = this.escapeHtml(pkg.authors || "Unknown author");
         const safeDesc = this.escapeHtml(pkg.description || "No description available");
 
         let infoRows = "";
-        if (pkg.licenseUrl) {
+        if (pkg.licenseUrl !== undefined && pkg.licenseUrl.length > 0) {
             infoRows += `<div class="info-row"><span class="info-label">License</span><a class="info-value info-link" href="#" onclick="openExternal('${pkg.licenseUrl}')">View License ↗</a></div>`;
         }
-        if (pkg.published) {
+        if (pkg.published !== undefined && pkg.published.length > 0) {
             infoRows += `<div class="info-row"><span class="info-label">Published</span><span class="info-value">${this.formatDate(pkg.published)}</span></div>`;
         }
-        if (pkg.projectUrl) {
+        if (pkg.projectUrl !== undefined && pkg.projectUrl.length > 0) {
             const safeUrl = this.escapeHtml(pkg.projectUrl);
             infoRows += `<div class="info-row"><span class="info-label">Project URL</span><a class="info-value info-link" href="#" onclick="openExternal('${pkg.projectUrl}')">${safeUrl} ↗</a></div>`;
         }
-        if (pkg.downloadCount) {
+        if (pkg.downloadCount !== undefined && pkg.downloadCount > 0) {
             infoRows += `<div class="info-row"><span class="info-label">Downloads</span><span class="info-value">${this.formatDownloads(pkg.downloadCount)}</span></div>`;
         }
 
@@ -613,9 +678,9 @@ ${isInstalled ? `<button class="btn btn-danger" onclick="uninstallPackage('${saf
             const days = Math.floor(diff / (1000 * 60 * 60 * 24));
             if (days < 1) return "Today";
             if (days === 1) return "Yesterday";
-            if (days < 30) return `${days} days ago`;
-            if (days < 365) return `${Math.floor(days / 30)} months ago`;
-            return `${Math.floor(days / 365)} years ago`;
+            if (days < 30) return `${days.toString()} days ago`;
+            if (days < 365) return `${Math.floor(days / 30).toString()} months ago`;
+            return `${Math.floor(days / 365).toString()} years ago`;
         } catch {
             return dateStr;
         }

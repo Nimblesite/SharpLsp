@@ -75,8 +75,9 @@ function bundledBinaryPath(): string | undefined {
 function getInstalledVersion(binaryPath: string): string | undefined {
     try {
         const result = child_process.execFileSync(binaryPath, ["--version"], {
-            timeout: 5000,
+            timeout: 2000,
             encoding: "utf-8",
+            killSignal: "SIGKILL",
         });
         // Output format: "forge-lsp 0.1.0"
         const parts = result.trim().split(" ");

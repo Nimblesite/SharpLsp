@@ -25,7 +25,7 @@ SHELL := /bin/bash
        test test-rust test-zed test-vsix test-dotnet \
        lint lint-rust lint-zed lint-vsix lint-dotnet \
        fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet install clean \
-       rebuild-vsix
+       rebuild-vsix fresh-vsix
 
 PROFILE    ?= release
 CARGO_FLAG  = $(if $(filter release,$(PROFILE)),--release,)
@@ -255,6 +255,27 @@ rebuild-vsix:
 	rm -f $(VSIX)
 	$(MAKE) build-vsix
 	@echo "==> VSIX packaged at $(VSIX)."
+
+# ── Fresh VSIX (uninstall → full clean → install LSP → package VSIX) ──
+#
+# Use this to get a clean, reproducible VSIX package without installing it.
+# After this completes, install manually with:
+#   code --install-extension $(VSIX)
+
+fresh-vsix:
+	@echo "==> Uninstalling old VSIX from VS Code..."
+	-code --uninstall-extension forge-lsp.forge 2>/dev/null
+	@echo "==> Cleaning all build artifacts..."
+	$(MAKE) clean
+	rm -rf $(VSCODE_DIR)/node_modules
+	@echo "==> Installing LSP binary and sidecars..."
+	$(MAKE) install
+	@echo "==> Packaging VSIX..."
+	$(MAKE) build-vsix
+	@echo ""
+	@echo "==> Fresh build complete."
+	@echo "    VSIX: $(VSIX)"
+	@echo "    Install manually with: code --install-extension $(VSIX)"
 
 # ── Clean ────────────────────────────────────────────────────────
 
