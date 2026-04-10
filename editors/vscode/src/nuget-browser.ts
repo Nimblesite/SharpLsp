@@ -87,6 +87,7 @@ export class NuGetBrowserPanel {
         this.projectPath = projectPath;
         this.projectName = projectName;
 
+        log.info(`NuGetBrowserPanel: creating panel for ${projectName}`);
         this.panel = vscode.window.createWebviewPanel(
             "nugetBrowser",
             `NuGet: ${projectName}`,
@@ -100,6 +101,7 @@ export class NuGetBrowserPanel {
 
         this.panel.onDidDispose(
             () => {
+                log.info("NuGetBrowserPanel: panel disposed");
                 NuGetBrowserPanel.instance = undefined;
             },
             null,
@@ -115,6 +117,7 @@ export class NuGetBrowserPanel {
         );
 
         void this.loadInstalledPackages().then(() => {
+            log.info(`NuGetBrowserPanel: initial load complete, rendering content`);
             this.updateContent();
         });
     }
@@ -125,9 +128,11 @@ export class NuGetBrowserPanel {
         projectName: string,
     ): NuGetBrowserPanel {
         if (NuGetBrowserPanel.instance !== undefined) {
+            log.info(`NuGetBrowserPanel: reusing existing panel, revealing`);
             NuGetBrowserPanel.instance.panel.reveal(vscode.ViewColumn.One);
             return NuGetBrowserPanel.instance;
         }
+        log.info(`NuGetBrowserPanel: creating new instance for ${projectName}`);
         NuGetBrowserPanel.instance = new NuGetBrowserPanel(
             context,
             projectPath,
@@ -141,6 +146,7 @@ export class NuGetBrowserPanel {
     }
 
     private async handleMessage(message: WebviewMessage): Promise<void> {
+        log.info(`NuGetBrowserPanel: received message command=${message.command}`);
         switch (message.command) {
             case "search": {
                 const query = this.getStringValue(message.data?.query);
@@ -205,6 +211,7 @@ export class NuGetBrowserPanel {
     }
 
     private async loadInstalledPackages(): Promise<void> {
+        log.info(`NuGetBrowserPanel: loading installed packages from ${this.projectPath}`);
         try {
             const result = await execFileAsync(
                 "dotnet",
@@ -223,29 +230,34 @@ export class NuGetBrowserPanel {
                     }
                 }
             }
+            log.info(`NuGetBrowserPanel: loaded ${this.installedPackages.size.toString()} installed packages`);
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
-            log.info(`Failed to load installed packages: ${msg}`);
+            log.error(`NuGetBrowserPanel: failed to load installed packages: ${msg}`);
         }
     }
 
     private async performSearch(query: string): Promise<void> {
+        log.info(`NuGetBrowserPanel: searching query="${query.length > 0 ? query : "(popular)"}"`);
         try {
             if (query.length === 0) {
                 this.searchResults = await this.fetchPopularPackages();
             } else {
                 this.searchResults = await this.searchNuGet(query);
             }
+            log.info(`NuGetBrowserPanel: search returned ${this.searchResults.length.toString()} results`);
             this.updateContent();
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
-            log.error(`NuGet search failed: ${msg}`);
+            log.error(`NuGetBrowserPanel: search failed: ${msg}`);
         }
     }
 
     private async searchNuGet(query: string): Promise<NuGetSearchResult[]> {
         const url = `https://azuresearch-usnc.nuget.org/query?q=${encodeURIComponent(query)}&prerelease=false&take=50`;
+        log.info(`NuGetBrowserPanel: fetching ${url}`);
         const response = await fetch(url);
+        log.info(`NuGetBrowserPanel: NuGet API responded status=${response.status.toString()}`);
         // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
         const data: NuGetSearchResponse = await response.json() as NuGetSearchResponse;
 
@@ -266,6 +278,7 @@ export class NuGetBrowserPanel {
     }
 
     private async fetchPopularPackages(): Promise<NuGetSearchResult[]> {
+        log.info("NuGetBrowserPanel: fetching popular packages");
         const popularQueries = ["microsoft", "newtonsoft", "serilog", "automapper"];
         const allResults: NuGetSearchResult[] = [];
 
@@ -287,66 +300,72 @@ export class NuGetBrowserPanel {
     }
 
     private async loadPackageDetails(pkg: NuGetSearchResult): Promise<void> {
+        log.info(`NuGetBrowserPanel: loading details for ${pkg.id}`);
         try {
             const url = `https://api.nuget.org/v3-flatcontainer/${pkg.id.toLowerCase()}/index.json`;
             const response = await fetch(url);
             // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
             const data: NuGetVersionsResponse = await response.json() as NuGetVersionsResponse;
             pkg._versions = data.versions ?? [];
+            log.info(`NuGetBrowserPanel: loaded ${pkg._versions.length.toString()} versions for ${pkg.id}`);
         } catch (err: unknown) {
-            log.info(`Failed to load versions for ${pkg.id}: ${getErrorMessage(err)}`);
+            log.error(`NuGetBrowserPanel: failed to load versions for ${pkg.id}: ${getErrorMessage(err)}`);
         }
     }
 
     private async installPackage(packageId: string, version: string): Promise<void> {
         try {
-            log.info(`Installing ${packageId} v${version} to ${this.projectName}`);
+            log.info(`NuGetBrowserPanel: installing ${packageId} v${version} to ${this.projectName}`);
             await execFileAsync("dotnet", [
                 "add", this.projectPath, "package", packageId, "--version", version,
             ]);
+            log.info(`NuGetBrowserPanel: installed ${packageId} v${version} successfully`);
             void vscode.window.showInformationMessage(`Installed ${packageId} v${version}`);
             this.installedPackages.set(packageId, version);
             await this.loadInstalledPackages();
             await this.performSearch(this.currentSearchQuery);
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
-            log.error(`Failed to install package: ${msg}`);
+            log.error(`NuGetBrowserPanel: failed to install ${packageId}: ${msg}`);
             void vscode.window.showErrorMessage(`Failed to install: ${msg}`);
         }
     }
 
     private async uninstallPackage(packageId: string): Promise<void> {
         try {
-            log.info(`Removing ${packageId} from ${this.projectName}`);
+            log.info(`NuGetBrowserPanel: removing ${packageId} from ${this.projectName}`);
             await execFileAsync("dotnet", ["remove", this.projectPath, "package", packageId]);
+            log.info(`NuGetBrowserPanel: removed ${packageId} successfully`);
             void vscode.window.showInformationMessage(`Removed ${packageId}`);
             this.installedPackages.delete(packageId);
             await this.loadInstalledPackages();
             await this.performSearch(this.currentSearchQuery);
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
-            log.error(`Failed to remove package: ${msg}`);
+            log.error(`NuGetBrowserPanel: failed to remove ${packageId}: ${msg}`);
             void vscode.window.showErrorMessage(`Failed to remove: ${msg}`);
         }
     }
 
     private async changeVersion(packageId: string, version: string): Promise<void> {
         try {
-            log.info(`Changing ${packageId} to v${version} in ${this.projectName}`);
+            log.info(`NuGetBrowserPanel: changing ${packageId} to v${version} in ${this.projectName}`);
             await execFileAsync("dotnet", ["remove", this.projectPath, "package", packageId]);
             await execFileAsync("dotnet", ["add", this.projectPath, "package", packageId, "--version", version]);
+            log.info(`NuGetBrowserPanel: changed ${packageId} to v${version} successfully`);
             void vscode.window.showInformationMessage(`Updated ${packageId} to v${version}`);
             this.installedPackages.set(packageId, version);
             await this.loadInstalledPackages();
             await this.performSearch(this.currentSearchQuery);
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
-            log.error(`Failed to change version: ${msg}`);
+            log.error(`NuGetBrowserPanel: failed to change ${packageId} version: ${msg}`);
             void vscode.window.showErrorMessage(`Failed to update: ${msg}`);
         }
     }
 
     private updateContent(): void {
+        log.info(`NuGetBrowserPanel: rendering tab=${this.currentTab} packages=${this.searchResults.length.toString()} installed=${this.installedPackages.size.toString()}`);
         this.panel.webview.html = this.buildHtml();
     }
 
