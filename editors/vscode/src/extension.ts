@@ -18,6 +18,7 @@ import {
     CMD_COPY_QUALIFIED_NAME,
     CMD_COPY_NAME,
     CMD_REVEAL_IN_EXPLORER,
+    CMD_OPEN_SOLUTION,
     VIEW_SOLUTION_EXPLORER,
     VIEW_PROFILER,
 } from "./constants.js";
@@ -174,6 +175,15 @@ function registerCommands(context: ExtensionContext): void {
         commands.registerCommand(CMD_SELECT_SOLUTION, async () => {
             await selectAndLoadSolution();
         }),
+    );
+
+    context.subscriptions.push(
+        commands.registerCommand(
+            CMD_OPEN_SOLUTION,
+            async (solutionPath: string) => {
+                await loadSolution({ path: solutionPath, name: "" });
+            },
+        ),
     );
 
     context.subscriptions.push(
@@ -406,10 +416,21 @@ function wireDocumentChangeRefresh(context: ExtensionContext): void {
 
 /** Select a solution (auto or user-picked) and load it into the explorer. */
 async function selectAndLoadSolution(): Promise<void> {
-    const selected = await solution.selectSolution();
-    if (selected !== undefined) {
-        await loadSolution(selected);
+    const solutions = await solution.findSolutions();
+    if (solutions.length === 0) {
+        return;
     }
+    if (solutions.length === 1 && solutions[0] !== undefined) {
+        await loadSolution(solutions[0]);
+        return;
+    }
+    const picked = await solution.promptUserSelection(solutions);
+    if (picked !== undefined) {
+        await loadSolution(picked);
+        return;
+    }
+    // User dismissed the QuickPick — show solutions as buttons in the tree.
+    explorerProvider?.showSolutionPicker(solutions);
 }
 
 /** Load a solution into the explorer tree. */

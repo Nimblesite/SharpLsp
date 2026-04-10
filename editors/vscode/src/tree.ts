@@ -17,12 +17,14 @@ import {
     Uri,
 } from "vscode";
 import { type LanguageClient } from "vscode-languageclient/node";
+import { CMD_OPEN_SOLUTION } from "./constants.js";
 import * as log from "./log.js";
 import * as deps from "./dependencies.js";
 import {
     buildNonSymbolTooltip,
     SYMBOL_CONTEXT_VALUES,
 } from "./tree-tooltip.js";
+import { type SolutionSelection } from "./solution.js";
 import * as state from "./state.js";
 import {
     SortOrder,
@@ -44,6 +46,7 @@ const enum NodeType {
     DependencyFolder = "dependencyFolder",
     NuGetPackage = "nugetPackage",
     ProjectRef = "projectRef",
+    SolutionChoice = "solutionChoice",
 }
 
 /** A node in the solution explorer tree. */
@@ -161,6 +164,12 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
     /** Refresh tree data from the LSP. */
     public async refresh(): Promise<void> {
         await state.refresh();
+    }
+
+    /** Show discovered solutions as clickable items before one is loaded. */
+    public showSolutionPicker(solutions: readonly SolutionSelection[]): void {
+        this.roots = solutions.map((sol) => buildSolutionChoiceNode(sol));
+        this.onDidChangeEmitter.fire(undefined);
     }
 
     public getTreeItem(element: ExplorerNode): TreeItem {
@@ -586,6 +595,26 @@ function applySortOrder(nodes: ExplorerNode[], order: SortOrder): void {
             applySortOrder(node.children, order);
         }
     }
+}
+
+function buildSolutionChoiceNode(sol: SolutionSelection): ExplorerNode {
+    const node = new ExplorerNode(
+        sol.name,
+        NodeType.SolutionChoice,
+        TreeItemCollapsibleState.None,
+    );
+    node.description = sol.path;
+    node.iconPath = new ThemeIcon(
+        "file-symlink-directory",
+        new ThemeColor("terminal.ansiGreen"),
+    );
+    node.contextValue = "solutionChoice";
+    node.command = {
+        title: "Open Solution",
+        command: CMD_OPEN_SOLUTION,
+        arguments: [sol.path],
+    };
+    return node;
 }
 
 function makeErrorNode(message: string): ExplorerNode {

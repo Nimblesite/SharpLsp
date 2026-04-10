@@ -58,7 +58,7 @@ export async function promptUserSelection(
 }
 
 /** Find all .sln files across workspace folders. */
-async function findSolutions(): Promise<SolutionSelection[]> {
+export async function findSolutions(): Promise<SolutionSelection[]> {
     const folders = workspace.workspaceFolders;
     if (folders === undefined || folders.length === 0) {
         return [];

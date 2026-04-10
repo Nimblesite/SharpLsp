@@ -199,6 +199,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "forge.solutionExplorer",
+        "contents": "No .sln files found in this workspace."
+      }
+    ],
     "commands": [
       {
         "command": "forge.restartServer",
@@ -220,6 +226,11 @@
         "title": "Select Solution",
         "category": "Forge",
         "icon": "$(folder-opened)"
+      },
+      {
+        "command": "forge.openSolution",
+        "title": "Open Solution",
+        "category": "Forge"
       },
       {
         "command": "forge.refreshExplorer",

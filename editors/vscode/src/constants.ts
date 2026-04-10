@@ -28,6 +28,7 @@ export const CMD_SORT_MEMBERS = "forge.sortMembers";
 export const CMD_COPY_QUALIFIED_NAME = "forge.copyQualifiedName";
 export const CMD_COPY_NAME = "forge.copyName";
 export const CMD_REVEAL_IN_EXPLORER = "forge.revealInExplorer";
+export const CMD_OPEN_SOLUTION = "forge.openSolution";
 
 export const CMD_PROFILER_LIST_PROCESSES = "forge.profiler.listProcesses";
 export const CMD_PROFILER_START_TRACE = "forge.profiler.startTrace";
