@@ -24,8 +24,8 @@ SHELL := /bin/bash
 .PHONY: ci build build-rust build-dotnet build-vsix build-zed \
        test test-rust test-zed test-vsix test-dotnet \
        lint lint-rust lint-zed lint-vsix lint-dotnet \
-       fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet install clean \
-       rebuild-vsix fresh-vsix
+       fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet \
+       kill-forge install clean rebuild-vsix fresh-vsix
 
 PROFILE    ?= release
 CARGO_FLAG  = $(if $(filter release,$(PROFILE)),--release,)
@@ -225,19 +225,35 @@ fmt-dotnet:
 	@echo "==> [.NET] Formatting sidecars..."
 	dotnet format $(SIDECAR_SLN)
 
+# ── Kill stale forge processes ───────────────────────────────────
+#
+# Zombie forge-lsp processes (especially --version checks spawned by the
+# VSCode extension) MUST be killed before installing new binaries.
+# Without this, the old binary holds file locks and the extension host
+# keeps spawning --version probes that hang forever.
+
+kill-forge:
+	@echo "==> Killing stale forge-lsp and sidecar processes..."
+	-@pkill -9 -f 'forge-lsp' 2>/dev/null || true
+	-@pkill -9 -f 'Forge\.Sidecar\.' 2>/dev/null || true
+	@sleep 0.5
+	@echo "==> Done."
+
 # ── Install (system-wide: /usr/local/bin + /usr/local/lib/forge/) ──
 
 PREFIX     ?= $(HOME)/.local
 LIBDIR      = $(PREFIX)/lib/forge
 
-install: build-rust build-dotnet
+install: build-rust build-dotnet kill-forge
 	@mkdir -p $(PREFIX)/bin
+	rm -f $(PREFIX)/bin/forge-lsp
 	cp $(BINARY) $(PREFIX)/bin/forge-lsp
 	chmod +x $(PREFIX)/bin/forge-lsp
 	rm -rf $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
 	mkdir -p $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
 	cp -r $(SIDECAR_CS_OUT)/* $(LIBDIR)/sidecar-csharp/
 	cp -r $(SIDECAR_FS_OUT)/* $(LIBDIR)/sidecar-fsharp/
+	-@xattr -cr $(LIBDIR)/sidecar-csharp/ $(LIBDIR)/sidecar-fsharp/ 2>/dev/null || true
 	@echo "==> Installed:"
 	@echo "    $(PREFIX)/bin/forge-lsp"
 	@echo "    $(LIBDIR)/sidecar-csharp/"
@@ -247,7 +263,7 @@ install: build-rust build-dotnet
 
 # ── Rebuild VSIX (uninstall → clean node_modules → rebuild → package) ──
 
-rebuild-vsix:
+rebuild-vsix: kill-forge
 	@echo "==> Uninstalling old VSIX from VS Code..."
 	-code --uninstall-extension forge-lsp.forge 2>/dev/null
 	@echo "==> Cleaning VS Code extension node_modules + dist + vsix..."
@@ -262,7 +278,7 @@ rebuild-vsix:
 # After this completes, install manually with:
 #   code --install-extension $(VSIX)
 
-fresh-vsix:
+fresh-vsix: kill-forge
 	@echo "==> Uninstalling old VSIX from VS Code..."
 	-code --uninstall-extension forge-lsp.forge 2>/dev/null
 	@echo "==> Cleaning all build artifacts..."
@@ -270,12 +286,14 @@ fresh-vsix:
 	rm -rf $(VSCODE_DIR)/node_modules
 	@echo "==> Installing LSP binary and sidecars..."
 	$(MAKE) install
+	@echo "==> Verifying installed binary..."
+	@perl -e 'alarm 5; exec @ARGV' $(PREFIX)/bin/forge-lsp --version || { echo "ERROR: forge-lsp --version failed or timed out" >&2; exit 1; }
 	@echo "==> Packaging VSIX..."
 	$(MAKE) build-vsix
 	@echo ""
 	@echo "==> Fresh build complete."
-	@echo "    VSIX: $(VSIX)"
-	@echo "    Install manually with: code --install-extension $(VSIX)"
+	@echo "    VSIX:    $(VSIX)"
+	@echo "    Install: code --install-extension $(VSIX)"
 
 # ── Clean ────────────────────────────────────────────────────────
 

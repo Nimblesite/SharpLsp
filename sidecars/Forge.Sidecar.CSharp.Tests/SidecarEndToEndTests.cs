@@ -419,4 +419,35 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
         Assert.NotNull(r.Error);
         Assert.Contains("Unknown method", r.Error);
     }
+
+    /// <summary>
+    /// BUG: workspace/open receives the workspace ROOT directory, not the
+    /// user-selected .sln path. When the root contains multiple .sln files
+    /// in subdirectories, the sidecar picks an arbitrary one via
+    /// Directory.GetFiles with SearchOption.AllDirectories. The user's
+    /// actual solution selection is never communicated to the sidecar.
+    ///
+    /// This test proves the bug: hover returns null ("Document not found")
+    /// because the sidecar loaded the wrong solution.
+    /// </summary>
+    [Fact]
+    public async Task Hover_on_file_in_loaded_project_returns_content()
+    {
+        // Hover on "Calculator" class name at line 4, char 17.
+        // The fixture loaded the project via workspace/open with the temp dir.
+        // If the correct solution is loaded, this MUST return hover content.
+        var payload = fixture.PosPayload(4, 17);
+        var r = await fixture.SendAsync("textDocument/hover", payload);
+        Assert.Null(r.Error);
+
+        // The sidecar must find the document and return non-null hover content.
+        // BUG: If workspace/open picked the wrong .sln, this returns
+        // MessagePack nil (0xC0, 1 byte) instead of actual hover content.
+        Assert.True(
+            r.Payload.Length > 1,
+            "Hover must return content for a symbol in the loaded project. "
+                + $"Got {r.Payload.Length} byte(s) — the sidecar likely loaded the wrong solution "
+                + "or the document was not found in the workspace."
+        );
+    }
 }
