@@ -428,6 +428,13 @@ fn handle_request(
             pull_diagnostics::handle_document_diagnostic(req, runtime, sidecar)
         }
         WorkspaceDiagnosticRequest::METHOD => pull_diagnostics::handle_workspace_diagnostic(req),
+        "forge/loadSolution" => handle_load_solution(
+            req,
+            runtime,
+            csharp_sidecar,
+            fsharp_sidecar,
+            connection,
+        ),
         _ => handle_custom_request(req, parsers, vfs, connection, runtime),
     };
 
@@ -564,6 +571,59 @@ fn extract_document_uri(req: &Request) -> Option<Uri> {
         .and_then(|td| td.get("uri"))
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse::<Uri>().ok())
+}
+
+// ── Solution Loading ─────────────────────────────────────────────
+
+/// Handle `forge/loadSolution` — reload sidecars with an explicit .sln path.
+///
+/// The extension sends this when the user selects a solution. Without it,
+/// the sidecar receives only the workspace root and picks an arbitrary .sln
+/// from recursive search, which breaks hover/definition/etc.
+fn handle_load_solution(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+    connection: &Connection,
+) -> Result<serde_json::Value> {
+    let params: serde_json::Value = serde_json::from_value(req.params)?;
+    let sln_path = params
+        .get("solutionPath")
+        .and_then(|v| v.as_str())
+        .context("forge/loadSolution requires { solutionPath: string }")?;
+
+    info!("Loading solution: {sln_path}");
+
+    let payload = rmp_serde::to_vec(sln_path).context("serialize solution path")?;
+
+    if let Some(cs) = csharp_sidecar {
+        let cs = Arc::clone(cs);
+        let p = payload.clone();
+        let sender = connection.sender.clone();
+        runtime.spawn(async move {
+            match cs.request("workspace/open", p).await {
+                Ok(_) => {
+                    info!("Solution loaded in C# (Roslyn) sidecar");
+                    diagnostics::request_solution_in_background(cs, sender, vec![]);
+                }
+                Err(err) => error!("C# sidecar workspace/open failed: {err:#}"),
+            }
+        });
+    }
+
+    if let Some(fs) = fsharp_sidecar {
+        let fs = Arc::clone(fs);
+        let p = payload;
+        runtime.spawn(async move {
+            match fs.request("workspace/open", p).await {
+                Ok(_) => info!("Solution loaded in F# (FCS) sidecar"),
+                Err(err) => error!("F# sidecar workspace/open failed: {err:#}"),
+            }
+        });
+    }
+
+    Ok(serde_json::json!({ "success": true }))
 }
 
 // ── Custom Request Handling ───────────────────────────────────────

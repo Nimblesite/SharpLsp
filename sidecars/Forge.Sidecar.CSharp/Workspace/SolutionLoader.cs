@@ -76,9 +76,16 @@ internal static class SolutionLoader
         }
 
         var slnFiles = Directory.GetFiles(workspacePath, "*.sln", SearchOption.AllDirectories);
-        if (slnFiles.Length > 0)
+        if (slnFiles.Length is 1)
         {
             return slnFiles[0];
+        }
+
+        // Multiple .sln files: ambiguous. Return null so the caller can
+        // ask the user to specify which solution to load.
+        if (slnFiles.Length > 1)
+        {
+            return null;
         }
 
         var csprojFiles = Directory.GetFiles(
@@ -86,6 +93,6 @@ internal static class SolutionLoader
             "*.csproj",
             SearchOption.AllDirectories
         );
-        return csprojFiles.Length > 0 ? csprojFiles[0] : null;
+        return csprojFiles.Length is 1 ? csprojFiles[0] : null;
     }
 }

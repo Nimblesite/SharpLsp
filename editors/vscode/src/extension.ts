@@ -436,10 +436,25 @@ async function selectAndLoadSolution(): Promise<void> {
     explorerProvider?.showSolutionPicker(solutions);
 }
 
-/** Load a solution into the explorer tree. */
+/** Load a solution into the explorer tree AND the LSP sidecar. */
 async function loadSolution(
     selected: solution.SolutionSelection,
 ): Promise<void> {
     log.info(`Loading solution: ${selected.path}`);
+
+    // Tell the LSP server to reload sidecars with this specific solution.
+    // Without this, the sidecar uses the workspace root and may pick the
+    // wrong .sln when multiple exist — breaking hover, definition, etc.
+    if (lspClient !== undefined) {
+        try {
+            await lspClient.sendRequest("forge/loadSolution", {
+                solutionPath: selected.path,
+            });
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err);
+            log.error(`forge/loadSolution failed: ${msg}`);
+        }
+    }
+
     await explorerProvider?.loadSolution(selected.path);
 }
