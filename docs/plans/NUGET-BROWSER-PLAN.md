@@ -169,6 +169,36 @@ Fix the webview HTML/CSS to match `docs/designs/code.html` exactly.
 - [ ] Update `docs/plans/CSDEVKIT-PARITY-PLAN.md` - mark NuGet items as in-progress/done
 - [ ] Update `docs/plans/TODO.md` - update NuGet items
 
+## Phase 7: Dead UI Removal (User-Reported)
+
+The original implementation copied decorative chrome from the design mockup
+that had no functionality. Per CLAUDE.md ("Don't add features beyond what
+the task requires"), all dead buttons and fake data have been removed.
+
+**Root cause**: The mockups in `code.html` and `screen.png` show a full IDE
+window for context. The activity bar (left icon column) and status bar (blue
+bar at the bottom of the mockup) belong to **VS Code itself** — they are
+**not** part of what the webview panel should render. The original
+implementation copied them into the panel verbatim, producing duplicated
+chrome inside the editor area. Both `docs/designs/DESIGN.md` § 0 and
+`docs/specs/NUGET-BROWSER-SPEC.md` § 4.1 now warn loudly about this.
+
+- [x] Remove decorative left sidebar (terminal, folder, search, layers, settings icons + avatar) — none of these had click handlers
+- [x] Remove no-op Settings button from header (kept Refresh which works)
+- [x] Remove fake status bar (hardcoded `main*`, `Ready`, `NuGet v6.8.0`, `UTF-8`)
+- [x] Remove hardcoded fake Dependencies section (always showed `.NETStandard 2.0` and `.NETStandard 2.1` regardless of package)
+- [x] Remove broken Updates tab (had no implementation, switched state but rendered nothing)
+- [x] Remove decorative Sort By dropdown (no `onchange` handler)
+- [x] Narrow `currentTab` type from `"browse" | "installed" | "updates"` to `"browse" | "installed"`
+- [x] Delete dead CSS for `.sidebar*`, `.status-bar*`, `.deps*`, `.sort-select*`
+- [x] Update VSIX test `valid tab values` to reflect 2 tabs instead of 3
+- [x] Shortened logo from `NuGet Architect` to `NuGet`
+- [x] Add `getRenderedHtml()` test accessor on `NuGetBrowserPanel`
+- [x] Add regression VSIX test `rendered HTML does not include VS Code chrome` that asserts none of the dead elements (status bar strings, sidebar classes, fake dependencies, Updates tab, Sort By) ever come back
+- [x] Add `docs/designs/DESIGN.md` § 0 explaining what is VS Code chrome vs. panel content
+- [x] Add warning callout to `docs/specs/NUGET-BROWSER-SPEC.md` § 4.1 referencing § 0
+- [x] **Rebuild `dist/extension.js` via `npm run build`** — esbuild bundles the extension; source-only edits are invisible to a running VS Code session until the bundle is rebuilt and the window is reloaded. This is why the user still saw the status bar after the previous "removal" pass.
+
 ## Phase 6: Bug Fixes (User-Reported)
 
 ### 6.1 Browse Tab Empty on Initial Load

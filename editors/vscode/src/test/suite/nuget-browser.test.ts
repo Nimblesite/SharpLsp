@@ -209,12 +209,12 @@ suite("NuGet Browser", () => {
 
     // ── Tab state management ────────────────────────────────────
 
-    test("valid tab values are browse, installed, and updates", () => {
-        const validTabs = ["browse", "installed", "updates"];
+    test("valid tab values are browse and installed", () => {
+        const validTabs = ["browse", "installed"];
         assert.deepStrictEqual(
             validTabs,
-            ["browse", "installed", "updates"],
-            "NuGet browser should support three tabs",
+            ["browse", "installed"],
+            "NuGet browser should support browse and installed tabs",
         );
     });
 
@@ -361,6 +361,89 @@ suite("NuGet Browser", () => {
             assert.ok(
                 ids.includes("Newtonsoft.Json"),
                 `Expected Newtonsoft.Json in installed list, got: ${ids.join(", ")}`,
+            );
+        } finally {
+            panel.dispose();
+        }
+    });
+
+    /**
+     * REGRESSION: The mockup includes chrome (activity bar, status bar) that
+     * belongs to VS Code itself, not the webview panel. None of those
+     * elements may appear in the rendered HTML. See docs/designs/DESIGN.md § 0.
+     */
+    test("rendered HTML does not include VS Code chrome (regression)", async function () {
+        this.timeout(30_000);
+
+        const projectPath = nugetTestProjectPath();
+        const context = getExtensionContext();
+        const getClient = getLspClientGetter();
+
+        assert.ok(getClient(), "LSP client must be running for this test");
+
+        const panel = NuGetBrowserPanel.open(
+            context,
+            projectPath,
+            "NuGetTest",
+            getClient,
+        );
+
+        try {
+            await panel.waitForInitialLoad();
+            const html = panel.getRenderedHtml();
+
+            // Status bar fake content.
+            assert.ok(
+                !html.includes("main*"),
+                "Rendered HTML must not include fake git status (`main*`) — VS Code provides the status bar",
+            );
+            assert.ok(
+                !html.includes("NuGet v6.8.0"),
+                "Rendered HTML must not include fake `NuGet v6.8.0` version label",
+            );
+            assert.ok(
+                !/UTF-8\s*<\/span>/.exec(html),
+                "Rendered HTML must not include fake UTF-8 encoding label",
+            );
+            assert.ok(
+                !html.includes("status-bar"),
+                "Rendered HTML must not include status-bar CSS class",
+            );
+
+            // Activity bar fake content.
+            assert.ok(
+                !html.includes('class="sidebar"'),
+                "Rendered HTML must not include sidebar (activity bar) — VS Code provides one",
+            );
+            assert.ok(
+                !html.includes("sidebar-icon"),
+                "Rendered HTML must not include sidebar-icon class",
+            );
+            assert.ok(
+                !html.includes("sidebar-avatar"),
+                "Rendered HTML must not include user avatar",
+            );
+
+            // Hardcoded fake dependencies.
+            assert.ok(
+                !html.includes(".NETStandard 2.0"),
+                "Rendered HTML must not include hardcoded fake .NETStandard 2.0 dependency",
+            );
+            assert.ok(
+                !html.includes(".NETStandard 2.1"),
+                "Rendered HTML must not include hardcoded fake .NETStandard 2.1 dependency",
+            );
+
+            // Broken Updates tab.
+            assert.ok(
+                !html.includes("switchTab('updates')"),
+                "Rendered HTML must not include broken Updates tab",
+            );
+
+            // Decorative sort dropdown with no handler.
+            assert.ok(
+                !html.includes("Sort By:"),
+                "Rendered HTML must not include decorative Sort By dropdown",
             );
         } finally {
             panel.dispose();

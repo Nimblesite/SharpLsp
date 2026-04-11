@@ -201,29 +201,44 @@ interface NuGetUninstallResponse {
 
 The NuGet browser uses a webview panel rendered by the editor extension. The design follows the Material Design 3 dark theme specified in `docs/designs/code.html`.
 
+> ⚠️ **CRITICAL — Read [`docs/designs/DESIGN.md`](../designs/DESIGN.md) § 0
+> before touching this UI.** The mockups in `code.html` and `screen.png` show
+> a full IDE window for context. The activity bar (left icon column) and
+> status bar (blue bar at the bottom of the mockup) belong to **VS Code
+> itself** and **MUST NOT** be reimplemented in the webview panel. The panel
+> renders **only** the header (tabs + search + refresh), package list, and
+> details panel — nothing else.
+
 **Key design requirements:**
 - Material Symbols Outlined icons (NOT emoji)
 - Inter font family
 - M3 dark color tokens (see `docs/designs/code.html` tailwind config)
-- Three-column layout: sidebar nav | package list | details panel
-- Tabs: Browse | Installed | Updates
-- Status bar at bottom
+- Two-column layout: package list | details panel
+- Tabs: Browse | Installed
+- **NO** activity bar (VS Code provides one)
+- **NO** status bar (VS Code provides one)
+- **NO** decorative buttons without real handlers
 
 ### 4.2 Layout Structure
 
+The panel renders only what's inside the editor area. Activity bar and
+status bar shown below are **VS Code's own chrome** — drawn here for
+orientation only, NOT part of the panel.
+
 ```
-+--------+---------------------------+------------------+
-| Sidebar| Package List              | Details Panel    |
-| Nav    |                           |                  |
-|        | [Package Item]            | [Header]         |
-| [icon] | [Package Item] (selected) | [Install/Version]|
-| [icon] | [Package Item]            | [Description]    |
-| [icon] | [Package Item]            | [Info Grid]      |
-|        |                           | [Dependencies]   |
-|        |                           | [Tags]           |
-+--------+---------------------------+------------------+
-| Status Bar                                            |
-+-------------------------------------------------------+
+[VS Code activity bar — NOT part of panel]
++----------------------------------------------------------+
+| Header: [logo] [Browse|Installed]   [search] [refresh]   |   ← panel starts
++---------------------------+------------------------------+
+| Package List              | Details Panel               |
+|                           |                              |
+| [Package Item]            | [Header]                     |
+| [Package Item] (selected) | [Install/Version]            |
+| [Package Item]            | [Description]                |
+| [Package Item]            | [Info Grid]                  |
+|                           | [Tags]                       |
++---------------------------+------------------------------+   ← panel ends
+[VS Code status bar — NOT part of panel]
 ```
 
 ### 4.3 Extension Responsibilities

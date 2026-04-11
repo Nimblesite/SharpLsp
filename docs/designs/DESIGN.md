@@ -1,5 +1,37 @@
 # Editorial Design Guidelines: High-Density Extension Interface
 
+## 0. CRITICAL: What Belongs to VS Code, NOT the Panel
+
+> ⚠️ **READ THIS FIRST. The mockups in `code.html` and `screen.png` show a
+> full IDE window for context. They are NOT a spec for what the webview panel
+> should render. The chrome shown in the mockups is VS Code itself — the
+> webview must NEVER reimplement it.**
+
+The mockups include the following elements **that VS Code already provides**.
+A Forge webview panel **must not** render any of them:
+
+- ❌ **Activity Bar** — the leftmost icon column (folder, search, layers, settings, avatar). VS Code has this. Don't draw it.
+- ❌ **Status Bar** — the blue bar at the bottom showing git branch, ready state, encoding (`main*`, `Ready`, `UTF-8`, `NuGet v6.8.0`). VS Code has this. Don't draw it.
+- ❌ **Title Bar / Window Chrome** — VS Code provides this.
+- ❌ **Terminal icon, settings cog in the bottom-left, user avatar** — these are VS Code workbench affordances.
+- ❌ **Any decorative button without a real handler.** If a control doesn't do anything, delete it. No "for the design" exceptions.
+
+A webview panel renders **only the panel-specific content** — the package list,
+the details panel, the header tabs, the search box. Nothing else. If you find
+yourself drawing anything that lives outside the workbench area, stop.
+
+**Why this rule exists**: A webview is a child of the editor area. Drawing a
+fake activity bar or fake status bar inside it produces a duplicated,
+nonsensical UI ("two status bars stacked, two sidebars side-by-side, etc."),
+wastes vertical and horizontal space, and confuses the user about which
+controls are real.
+
+**Mockup-to-panel translation rule of thumb**: Take the mockup, mentally erase
+the activity bar on the left and the status bar at the bottom. What's left
+inside the editor area is your panel.
+
+---
+
 ## 1. Overview & Creative North Star
 **Creative North Star: The Precision Architect**
 

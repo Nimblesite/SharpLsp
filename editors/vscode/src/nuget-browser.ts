@@ -61,7 +61,7 @@ export class NuGetBrowserPanel {
     private readonly getClient: () => LanguageClient | undefined;
     private readonly installedPackages = new Map<string, string>();
     private currentSearchQuery = "";
-    private currentTab: "browse" | "installed" | "updates" = "browse";
+    private currentTab: "browse" | "installed" = "browse";
     private searchResults: NuGetSearchResult[] = [];
     private selectedPackage: NuGetSearchResult | undefined;
     /** Resolves when the constructor's async initial load completes. */
@@ -139,8 +139,13 @@ export class NuGetBrowserPanel {
         return this.selectedPackage?.id;
     }
 
-    public getCurrentTab(): "browse" | "installed" | "updates" {
+    public getCurrentTab(): "browse" | "installed" {
         return this.currentTab;
+    }
+
+    /** Return the HTML currently set on the webview (for assertions). */
+    public getRenderedHtml(): string {
+        return this.panel.webview.html;
     }
 
     /** Simulate a webview message for testing. */
@@ -219,9 +224,8 @@ export class NuGetBrowserPanel {
             }
             case "switchTab": {
                 const tabValue = this.str(message.data?.tab, "browse");
-                const tab: "browse" | "installed" | "updates" =
-                    tabValue === "installed" ? "installed" :
-                    tabValue === "updates" ? "updates" : "browse";
+                const tab: "browse" | "installed" =
+                    tabValue === "installed" ? "installed" : "browse";
                 this.currentTab = tab;
                 if (tab === "installed") {
                     await this.loadInstalledPackages();
@@ -525,7 +529,6 @@ export class NuGetBrowserPanel {
 ${this.buildCss()}
 </head>
 <body>
-${this.buildSidebar()}
 <main class="main">
 ${this.buildHeader(safeQuery)}
 <div class="content">
@@ -536,16 +539,6 @@ ${this.buildPackageListHtml(packages, installedList)}
 ${this.buildDetailsHtml()}
 </aside>
 </div>
-<footer class="status-bar">
-<div class="status-left">
-<span class="status-item"><span class="material-symbols-outlined" style="font-size: 0.8rem;">rebase</span> main*</span>
-<span class="status-item"><span class="material-symbols-outlined" style="font-size: 0.8rem;">sync_alt</span> Ready</span>
-</div>
-<div class="status-right">
-<span>NuGet v6.8.0</span>
-<span>UTF-8</span>
-</div>
-</footer>
 </main>
 <script>
 const vscode = acquireVsCodeApi();
@@ -562,35 +555,18 @@ function refresh() { doSearch(); }
 </html>`;
     }
 
-    private buildSidebar(): string {
-        return `<nav class="sidebar">
-<div class="sidebar-top"><span class="material-symbols-outlined sidebar-terminal">terminal</span></div>
-<div class="sidebar-nav">
-<button class="sidebar-icon" title="Explorer"><span class="material-symbols-outlined">folder</span></button>
-<button class="sidebar-icon active" title="NuGet Packages"><span class="material-symbols-outlined">search</span></button>
-<button class="sidebar-icon" title="Dependencies"><span class="material-symbols-outlined">layers</span></button>
-</div>
-<div class="sidebar-bottom">
-<button class="sidebar-icon" title="Settings"><span class="material-symbols-outlined">settings</span></button>
-<div class="sidebar-avatar"></div>
-</div>
-</nav>`;
-    }
-
     private buildHeader(safeQuery: string): string {
         return `<header class="header">
 <div class="header-left">
-<span class="logo">NuGet Architect</span>
+<span class="logo">NuGet</span>
 <nav class="nav-tabs">
 <a class="nav-tab ${this.currentTab === "browse" ? "active" : ""}" onclick="switchTab('browse')">Browse</a>
 <a class="nav-tab ${this.currentTab === "installed" ? "active" : ""}" onclick="switchTab('installed')">Installed</a>
-<a class="nav-tab ${this.currentTab === "updates" ? "active" : ""}" onclick="switchTab('updates')">Updates</a>
 </nav>
 </div>
 <div class="header-right">
 ${this.currentTab === "browse" ? `<div class="search-box"><span class="material-symbols-outlined search-icon">search</span><input type="text" id="searchInput" placeholder="Search packages..." value="${safeQuery}" onkeydown="if(event.key==='Enter')doSearch()"></div>` : ""}
 <button class="icon-btn" onclick="refresh()" title="Refresh"><span class="material-symbols-outlined">sync</span></button>
-<button class="icon-btn" title="Settings"><span class="material-symbols-outlined">settings</span></button>
 </div>
 </header>`;
     }
@@ -635,7 +611,7 @@ ${this.currentTab === "browse" ? `<div class="search-box"><span class="material-
 </div>`;
             })
             .join("");
-        return `<div class="list-header"><span class="list-title">Installed Packages</span>${this.sortDropdown()}</div>${items}`;
+        return `<div class="list-header"><span class="list-title">Installed Packages</span></div>${items}`;
     }
 
     private buildBrowseListHtml(packages: NuGetSearchResult[]): string {
@@ -664,11 +640,7 @@ ${pkg.authors.length > 0 ? `<span class="meta-item"><span class="material-symbol
 </div>`;
             })
             .join("");
-        return `<div class="list-header"><span class="list-title">Available Packages</span>${this.sortDropdown()}</div>${items}`;
-    }
-
-    private sortDropdown(): string {
-        return `<div class="sort-select"><span class="sort-label">Sort By:</span><select><option>Relevance</option><option>Downloads</option><option>Recently Updated</option></select></div>`;
+        return `<div class="list-header"><span class="list-title">Available Packages</span></div>${items}`;
     }
 
     private buildDetailsHtml(): string {
@@ -702,11 +674,6 @@ ${pkg.authors.length > 0 ? `<span class="meta-item"><span class="material-symbol
                 ? `<div class="section"><h4 class="section-title">Tags</h4><div class="tags">${pkg.tags.map((t) => `<span class="tag">${this.esc(t.toUpperCase())}</span>`).join("")}</div></div>`
                 : "";
 
-        const depsHtml = `<div class="section"><h4 class="section-title">Dependencies</h4><div class="deps-list">
-<div class="dep-item"><div class="dep-info"><span class="material-symbols-outlined dep-icon">account_tree</span><span class="dep-name">.NETStandard 2.0</span></div><span class="material-symbols-outlined dep-chevron">chevron_right</span></div>
-<div class="dep-item"><div class="dep-info"><span class="material-symbols-outlined dep-icon">account_tree</span><span class="dep-name">.NETStandard 2.1</span></div><span class="material-symbols-outlined dep-chevron">chevron_right</span></div>
-</div></div>`;
-
         const versionOptions = versions
             .map(
                 (v) =>
@@ -724,7 +691,7 @@ ${installed ? `<button class="btn btn-danger" onclick="uninstallPackage('${this.
 </div>
 <div class="section"><h4 class="section-title">Description</h4><p class="section-content">${safeDesc}</p></div>
 <div class="section"><div class="info-grid">${infoRows}</div></div>
-${depsHtml}${tagsHtml}`;
+${tagsHtml}`;
     }
 
     private fmtDl(count: number): string {
@@ -758,17 +725,6 @@ ${depsHtml}${tagsHtml}`;
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; color: #E5E2E1; background: #131313; height: 100vh; overflow: hidden; display: flex; }
 
-/* Sidebar */
-.sidebar { width: 64px; background: #1B1B1C; display: flex; flex-direction: column; align-items: center; padding: 16px 0; z-index: 50; }
-.sidebar-top { margin-bottom: 32px; opacity: 0.4; }
-.sidebar-terminal { font-size: 24px; }
-.sidebar-nav { display: flex; flex-direction: column; gap: 24px; align-items: center; width: 100%; }
-.sidebar-icon { width: 100%; padding: 8px; display: flex; justify-content: center; align-items: center; background: none; border: none; color: #C0C7D3; cursor: pointer; border-radius: 8px; transition: all 0.15s; border-left: 2px solid transparent; }
-.sidebar-icon:hover { color: #FFFFFF; background: #353535; }
-.sidebar-icon.active { color: #9FCAFF; border-left-color: #9FCAFF; background: #202020; border-radius: 0; }
-.sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 24px; align-items: center; }
-.sidebar-avatar { width: 32px; height: 32px; border-radius: 50%; background: #353535; }
-
 /* Main */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
@@ -794,9 +750,6 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font
 .package-list { flex: 1; overflow-y: auto; padding: 16px; }
 .list-header { display: flex; justify-content: space-between; align-items: center; padding: 24px 16px 16px; }
 .list-title { font-size: 20px; font-weight: 700; color: #E5E2E1; letter-spacing: -0.02em; }
-.sort-select { display: flex; align-items: center; gap: 12px; }
-.sort-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #C0C7D3; }
-.sort-select select { background: #1B1B1C; border: none; border-radius: 4px; padding: 4px 8px; color: #E5E2E1; font-size: 12px; font-family: 'Inter', sans-serif; cursor: pointer; }
 
 /* Package items */
 .package-item { display: flex; gap: 16px; padding: 16px; border-radius: 6px; border-left: 2px solid transparent; cursor: pointer; transition: all 0.15s; margin-bottom: 8px; }
@@ -852,20 +805,6 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font
 .tags { display: flex; flex-wrap: wrap; gap: 8px; }
 .tag { padding: 4px 8px; background: #353535; border: 1px solid rgba(64,71,81,0.1); border-radius: 999px; font-size: 0.6rem; color: #C0C7D3; text-transform: uppercase; letter-spacing: 0.02em; }
 
-/* Dependencies */
-.deps-list { display: flex; flex-direction: column; gap: 8px; }
-.dep-item { padding: 12px; background: #202020; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; transition: background 0.15s; cursor: pointer; }
-.dep-item:hover { background: #2A2A2A; }
-.dep-info { display: flex; align-items: center; gap: 12px; }
-.dep-icon { font-size: 16px; color: #C0C7D3; }
-.dep-name { font-size: 12px; color: #E5E2E1; }
-.dep-chevron { font-size: 14px; opacity: 0; transition: opacity 0.15s; }
-.dep-item:hover .dep-chevron { opacity: 1; }
-
-/* Status bar */
-.status-bar { height: 24px; background: #007ACC; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; font-size: 0.65rem; color: rgba(255,255,255,0.9); }
-.status-left, .status-right { display: flex; gap: 16px; }
-.status-item { display: flex; align-items: center; gap: 4px; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 8px; }
