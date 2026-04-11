@@ -257,7 +257,7 @@ test-zed: build-zed
 	@echo "==> Running Zed extension tests..."
 	cargo test --manifest-path $(ZED_DIR)/Cargo.toml
 
-test-vsix: build-vsix
+test-vsix: build-rust build-vsix
 	@echo "==> Running VS Code extension tests with coverage..."
 	cd $(VSCODE_DIR) && npm test -- --coverage
 	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
