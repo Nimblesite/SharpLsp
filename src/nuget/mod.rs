@@ -7,4 +7,6 @@ pub mod cache;
 pub mod cli;
 pub mod handlers;
 pub mod search;
+pub mod targets;
 pub mod types;
+pub mod xml_edit;

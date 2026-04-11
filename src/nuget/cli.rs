@@ -1,13 +1,15 @@
 //! `dotnet` CLI operations for `NuGet` package management.
 //!
 //! - `dotnet list <project> package --format json`
-//! - `dotnet add <project> package <id> --version <version>`
-//! - `dotnet remove <project> package <id>`
+//!
+//! Install / uninstall bypass the `dotnet` CLI entirely — we edit XML
+//! directly via `nuget::xml_edit` and fire restore in the background for
+//! instant-feedback UX.
 
 use anyhow::{Context, Result};
 use tracing::info;
 
-use super::types::{DotNetListOutput, InstallResponse, InstalledPackageInfo, UninstallResponse};
+use super::types::{DotNetListOutput, InstalledPackageInfo};
 
 /// List installed `NuGet` packages for a project.
 pub async fn list_installed(project_path: &str) -> Result<Vec<InstalledPackageInfo>> {
@@ -51,79 +53,3 @@ pub async fn list_installed(project_path: &str) -> Result<Vec<InstalledPackageIn
     Ok(packages)
 }
 
-/// Install (or update) a `NuGet` package.
-pub async fn install_package(
-    project_path: &str,
-    package_id: &str,
-    version: &str,
-) -> Result<InstallResponse> {
-    info!("nuget/install: dotnet add {project_path} package {package_id} --version {version}");
-
-    let output = tokio::process::Command::new("dotnet")
-        .args([
-            "add",
-            project_path,
-            "package",
-            package_id,
-            "--version",
-            version,
-        ])
-        .output()
-        .await
-        .context("spawn dotnet add")?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    if output.status.success() {
-        info!("nuget/install: {package_id} v{version} installed successfully");
-        Ok(InstallResponse {
-            success: true,
-            message: format!("Installed {package_id} v{version}"),
-        })
-    } else {
-        let msg = if stderr.is_empty() {
-            stdout.to_string()
-        } else {
-            stderr.to_string()
-        };
-        info!("nuget/install: failed — {msg}");
-        Ok(InstallResponse {
-            success: false,
-            message: msg,
-        })
-    }
-}
-
-/// Remove a `NuGet` package from a project.
-pub async fn uninstall_package(project_path: &str, package_id: &str) -> Result<UninstallResponse> {
-    info!("nuget/uninstall: dotnet remove {project_path} package {package_id}");
-
-    let output = tokio::process::Command::new("dotnet")
-        .args(["remove", project_path, "package", package_id])
-        .output()
-        .await
-        .context("spawn dotnet remove")?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    if output.status.success() {
-        info!("nuget/uninstall: {package_id} removed successfully");
-        Ok(UninstallResponse {
-            success: true,
-            message: format!("Removed {package_id}"),
-        })
-    } else {
-        let msg = if stderr.is_empty() {
-            stdout.to_string()
-        } else {
-            stderr.to_string()
-        };
-        info!("nuget/uninstall: failed — {msg}");
-        Ok(UninstallResponse {
-            success: false,
-            message: msg,
-        })
-    }
-}

@@ -502,11 +502,16 @@ fn handle_custom_request(
         "forge/workspaceSymbols" => handle_workspace_symbols(req, parsers, vfs),
         "forge/sortMembers" => handle_sort_members(req, parsers),
         // NuGet package management
+        "forge/nuget/targets" => nuget::handlers::handle_targets(req),
         "forge/nuget/search" => nuget::handlers::handle_search(req, runtime),
         "forge/nuget/versions" => nuget::handlers::handle_versions(req, runtime),
         "forge/nuget/installed" => nuget::handlers::handle_installed(req, runtime),
-        "forge/nuget/install" => nuget::handlers::handle_install(req, runtime),
-        "forge/nuget/uninstall" => nuget::handlers::handle_uninstall(req, runtime),
+        "forge/nuget/install" => {
+            nuget::handlers::handle_install(req, runtime, connection.sender.clone())
+        }
+        "forge/nuget/uninstall" => {
+            nuget::handlers::handle_uninstall(req, runtime, connection.sender.clone())
+        }
         // Profiler
         "forge/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
         "forge/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
