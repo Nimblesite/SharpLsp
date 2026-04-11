@@ -257,7 +257,13 @@ test-zed: build-zed
 	@echo "==> Running Zed extension tests..."
 	cargo test --manifest-path $(ZED_DIR)/Cargo.toml
 
-test-vsix: build-rust build-vsix
+test-vsix: build-rust build-dotnet build-vsix
+	@echo "==> Staging forge-lsp + sidecars at $(PREFIX) so VS Code tests find them via the install priority chain..."
+	@mkdir -p $(PREFIX)/bin $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
+	@cp $(BINARY) $(PREFIX)/bin/forge-lsp
+	@chmod +x $(PREFIX)/bin/forge-lsp
+	@cp -r $(SIDECAR_CS_OUT)/. $(LIBDIR)/sidecar-csharp/
+	@cp -r $(SIDECAR_FS_OUT)/. $(LIBDIR)/sidecar-fsharp/
 	@echo "==> Running VS Code extension tests with coverage..."
 	cd $(VSCODE_DIR) && npm test -- --coverage
 	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
