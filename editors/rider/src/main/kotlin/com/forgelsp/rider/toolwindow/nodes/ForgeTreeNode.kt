@@ -53,4 +53,11 @@ interface ForgeTreeNode {
      * grouping nodes like "Dependencies").
      */
     fun navigationTarget(): NavigationTarget? = null
+
+    /**
+     * Tooltip shown on hover. Default null = no tooltip. Nodes that
+     * represent a file or carry extra metadata (full path, version,
+     * framework) should return a multi-line string.
+     */
+    fun tooltip(): String? = null
 }

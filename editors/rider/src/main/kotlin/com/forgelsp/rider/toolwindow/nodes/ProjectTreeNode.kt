@@ -44,4 +44,10 @@ class ProjectTreeNode(
             null
         }
     }
+
+    override fun tooltip(): String =
+        "<html><b>${projectNode.name}</b><br/>${projectNode.path}</html>"
+
+    fun projectPath(): String = projectNode.path
+    fun projectName(): String = projectNode.name
 }

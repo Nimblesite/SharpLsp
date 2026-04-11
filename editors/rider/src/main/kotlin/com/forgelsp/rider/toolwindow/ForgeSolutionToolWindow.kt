@@ -73,6 +73,9 @@ class ForgeSolutionToolWindow(
         tree.isRootVisible = true
         tree.showsRootHandles = true
         tree.cellRenderer = ForgeTreeCellRenderer()
+        // Register with the tooltip manager so the renderer's toolTipText
+        // actually surfaces on hover — without this Swing ignores it.
+        javax.swing.ToolTipManager.sharedInstance().registerComponent(tree)
 
         tree.addMouseListener(object : MouseAdapter() {
             override fun mousePressed(e: MouseEvent) {
@@ -81,6 +84,23 @@ class ForgeSolutionToolWindow(
                 handleActivation(path)
             }
         })
+
+        // Right-click → context menu. PopupHandler fires for both
+        // mousePressed(isPopupTrigger) on macOS/Linux and
+        // mouseReleased(isPopupTrigger) on Windows, so it beats a
+        // hand-rolled MouseListener.
+        com.intellij.ui.PopupHandler.installPopupMenu(
+            tree,
+            object : com.intellij.openapi.actionSystem.ActionGroup() {
+                override fun getChildren(e: com.intellij.openapi.actionSystem.AnActionEvent?): Array<com.intellij.openapi.actionSystem.AnAction> {
+                    val path = tree.selectionPath ?: return emptyArray()
+                    val mutable = path.lastPathComponent as? DefaultMutableTreeNode
+                        ?: return emptyArray()
+                    return ForgeTreeActions.menuFor(project, mutable).childActionsOrStubs
+                }
+            },
+            "ForgeSolutionToolWindow",
+        )
 
         tree.addTreeWillExpandListener(object : javax.swing.event.TreeWillExpandListener {
             override fun treeWillExpand(event: javax.swing.event.TreeExpansionEvent) {
@@ -241,7 +261,10 @@ private class ForgeTreeCellRenderer : com.intellij.ui.ColoredTreeCellRenderer() 
     ) {
         val mutable = value as? DefaultMutableTreeNode ?: return
         when (val payload = mutable.userObject) {
-            is ForgeTreeNode -> payload.render(this)
+            is ForgeTreeNode -> {
+                payload.render(this)
+                toolTipText = payload.tooltip()
+            }
             is String -> append(payload)
             else -> append(payload?.toString() ?: "")
         }

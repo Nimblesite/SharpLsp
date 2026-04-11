@@ -15,7 +15,7 @@ import java.io.File
  * data is already in front of us).
  */
 class DependenciesNode(
-    private val projectNode: ProjectNode,
+    val projectNode: ProjectNode,
 ) : ForgeTreeNode {
     override var childrenLoaded: Boolean = false
 
@@ -35,7 +35,7 @@ class DependenciesNode(
                 children += ErrorNode("NuGet load failed: ${err.message}")
             } else {
                 children += PackagesGroupNode(response.packages.map {
-                    NuGetPackageNode(it.id, it.resolvedVersion)
+                    NuGetPackageNode(it.id, it.resolvedVersion, projectNode.path)
                 })
             }
             children += ProjectReferencesGroupNode(readProjectRefs(projectNode.path))
@@ -43,27 +43,48 @@ class DependenciesNode(
         }
     }
 
+    override fun tooltip(): String = "Dependencies of ${projectNode.name}"
+
     private fun readProjectRefs(csproj: String): List<ProjectReferenceNode> {
         return try {
             val content = File(csproj).readText()
-            parseProjectRefs(content)
+            parseProjectRefs(content, csproj)
         } catch (_: Throwable) {
             emptyList()
         }
     }
 
     companion object {
-        private val REF_REGEX = Regex(
-            """<ProjectReference\b[^>]*\bInclude\s*=\s*"([^"]+)"""",
-            RegexOption.IGNORE_CASE,
-        )
-
-        fun parseProjectRefs(xml: String): List<ProjectReferenceNode> {
-            return REF_REGEX.findAll(xml).map { match ->
-                val path = match.groupValues[1].replace('\\', '/')
-                val name = path.substringAfterLast('/').substringBeforeLast('.')
-                ProjectReferenceNode(name, path)
-            }.toList()
+        /**
+         * Parse `<ProjectReference Include="..."/>` entries out of a
+         * csproj/fsproj. Uses a real XML parser rather than regex —
+         * msbuild files are well-formed XML, and regex over XML is
+         * banned by CLAUDE.md.
+         */
+        fun parseProjectRefs(xml: String, owningProjectPath: String): List<ProjectReferenceNode> {
+            return try {
+                val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance().apply {
+                    isNamespaceAware = false
+                    // Harden against XXE — these files come from disk but
+                    // are still untrusted enough to deserve the defaults.
+                    setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+                    isXIncludeAware = false
+                    isExpandEntityReferences = false
+                }
+                val doc = factory.newDocumentBuilder().parse(xml.byteInputStream(Charsets.UTF_8))
+                val nodes = doc.getElementsByTagName("ProjectReference")
+                val result = mutableListOf<ProjectReferenceNode>()
+                for (i in 0 until nodes.length) {
+                    val el = nodes.item(i) as? org.w3c.dom.Element ?: continue
+                    val include = el.getAttribute("Include").takeIf { it.isNotBlank() } ?: continue
+                    val normalized = include.replace('\\', '/')
+                    val name = normalized.substringAfterLast('/').substringBeforeLast('.')
+                    result += ProjectReferenceNode(name, normalized, owningProjectPath)
+                }
+                result
+            } catch (_: Throwable) {
+                emptyList()
+            }
         }
     }
 }

@@ -7,8 +7,9 @@ import com.intellij.ui.SimpleTextAttributes
 
 /** A single installed NuGet package. */
 class NuGetPackageNode(
-    private val id: String,
-    private val version: String,
+    val id: String,
+    val version: String,
+    val owningProjectPath: String,
 ) : ForgeTreeNode {
     override var childrenLoaded: Boolean = true
     override val hasChildren: Boolean = false
@@ -27,12 +28,16 @@ class NuGetPackageNode(
     override fun loadChildren(project: Project, callback: (List<ForgeTreeNode>) -> Unit) {
         callback(emptyList())
     }
+
+    override fun tooltip(): String =
+        "<html><b>$id</b><br/>Version: $version<br/>In: $owningProjectPath</html>"
 }
 
 /** A single project-to-project reference. */
 class ProjectReferenceNode(
-    private val name: String,
-    private val path: String,
+    val name: String,
+    val path: String,
+    val owningProjectPath: String,
 ) : ForgeTreeNode {
     override var childrenLoaded: Boolean = true
     override val hasChildren: Boolean = false
@@ -49,6 +54,9 @@ class ProjectReferenceNode(
     override fun loadChildren(project: Project, callback: (List<ForgeTreeNode>) -> Unit) {
         callback(emptyList())
     }
+
+    override fun tooltip(): String =
+        "<html><b>$name</b><br/>$path<br/>Referenced by: $owningProjectPath</html>"
 }
 
 /**

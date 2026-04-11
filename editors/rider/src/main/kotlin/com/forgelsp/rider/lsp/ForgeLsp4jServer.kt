@@ -32,6 +32,26 @@ interface ForgeLsp4jServer : LanguageServer {
         params: NuGetTargetsParams,
     ): CompletableFuture<NuGetTargetsResponse>
 
+    @JsonRequest("forge/nuget/search")
+    fun nugetSearch(
+        params: NuGetSearchParams,
+    ): CompletableFuture<NuGetSearchResponse>
+
+    @JsonRequest("forge/nuget/versions")
+    fun nugetVersions(
+        params: NuGetVersionsParams,
+    ): CompletableFuture<NuGetVersionsResponse>
+
+    @JsonRequest("forge/nuget/install")
+    fun nugetInstall(
+        params: NuGetInstallParams,
+    ): CompletableFuture<NuGetInstallResponse>
+
+    @JsonRequest("forge/nuget/uninstall")
+    fun nugetUninstall(
+        params: NuGetUninstallParams,
+    ): CompletableFuture<NuGetUninstallResponse>
+
     @JsonRequest("forge/loadSolution")
     fun loadSolution(
         params: LoadSolutionParams,
@@ -119,4 +139,74 @@ data class LoadSolutionParams(
 
 data class LoadSolutionResponse(
     val success: Boolean,
+)
+
+// ── forge/nuget/search ──────────────────────────────────────────
+
+data class NuGetSearchParams(
+    val query: String,
+    val target: NuGetTarget? = null,
+    val projectPath: String? = null,
+    val prerelease: Boolean = false,
+    val take: Int = 50,
+    val skip: Int = 0,
+)
+
+data class NuGetSearchResponse(
+    val packages: List<PackageInfo> = emptyList(),
+    val totalHits: Long = 0,
+)
+
+data class PackageInfo(
+    val id: String,
+    val version: String,
+    val description: String = "",
+    val authors: String = "",
+    val iconUrl: String? = null,
+    val licenseUrl: String? = null,
+    val projectUrl: String? = null,
+    val published: String? = null,
+    val downloadCount: Long = 0,
+    val tags: List<String> = emptyList(),
+    val isInstalled: Boolean = false,
+    val installedVersion: String? = null,
+)
+
+// ── forge/nuget/versions ────────────────────────────────────────
+
+data class NuGetVersionsParams(
+    val packageId: String,
+)
+
+data class NuGetVersionsResponse(
+    val versions: List<String> = emptyList(),
+)
+
+// ── forge/nuget/install ─────────────────────────────────────────
+
+data class NuGetInstallParams(
+    val target: NuGetTarget? = null,
+    val projectPath: String? = null,
+    val packageId: String,
+    val version: String,
+)
+
+data class NuGetInstallResponse(
+    val success: Boolean,
+    val message: String = "",
+    val modifiedFiles: List<String> = emptyList(),
+)
+
+// ── forge/nuget/uninstall ───────────────────────────────────────
+
+data class NuGetUninstallParams(
+    val target: NuGetTarget? = null,
+    val projectPath: String? = null,
+    val packageId: String,
+)
+
+data class NuGetUninstallResponse(
+    val success: Boolean,
+    val message: String = "",
+    val modifiedFiles: List<String> = emptyList(),
 )

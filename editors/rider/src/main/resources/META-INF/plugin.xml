@@ -27,6 +27,21 @@
             icon="/icons/forge.svg"
             factoryClass="com.forgelsp.rider.toolwindow.ForgeSolutionToolWindowFactory"/>
 
+        <!-- NuGet Package Browser tool window. Anchored to the bottom
+             so it doesn't fight with the solution tree. -->
+        <toolWindow
+            id="Forge NuGet"
+            anchor="bottom"
+            icon="/icons/forge.svg"
+            factoryClass="com.forgelsp.rider.toolwindow.nuget.ForgeNuGetToolWindowFactory"/>
+
+        <!-- Notification group used by every Forge action. Must be
+             registered so user toasts for install/uninstall/restore
+             actually surface. -->
+        <notificationGroup
+            id="Forge"
+            displayType="BALLOON"/>
+
         <!-- Project-level settings UI at Settings → Tools → Forge. -->
         <projectConfigurable
             parentId="tools"
