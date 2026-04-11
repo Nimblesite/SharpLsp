@@ -6,6 +6,7 @@ mod config;
 mod diagnostics;
 mod handlers;
 mod nav_cache;
+mod nuget;
 mod profiler;
 mod pull_diagnostics;
 mod semantic;
@@ -428,13 +429,9 @@ fn handle_request(
             pull_diagnostics::handle_document_diagnostic(req, runtime, sidecar)
         }
         WorkspaceDiagnosticRequest::METHOD => pull_diagnostics::handle_workspace_diagnostic(req),
-        "forge/loadSolution" => handle_load_solution(
-            req,
-            runtime,
-            csharp_sidecar,
-            fsharp_sidecar,
-            connection,
-        ),
+        "forge/loadSolution" => {
+            handle_load_solution(req, runtime, csharp_sidecar, fsharp_sidecar, connection)
+        }
         _ => handle_custom_request(req, parsers, vfs, connection, runtime),
     };
 
@@ -504,6 +501,13 @@ fn handle_custom_request(
     match req.method.as_str() {
         "forge/workspaceSymbols" => handle_workspace_symbols(req, parsers, vfs),
         "forge/sortMembers" => handle_sort_members(req, parsers),
+        // NuGet package management
+        "forge/nuget/search" => nuget::handlers::handle_search(req, runtime),
+        "forge/nuget/versions" => nuget::handlers::handle_versions(req, runtime),
+        "forge/nuget/installed" => nuget::handlers::handle_installed(req, runtime),
+        "forge/nuget/install" => nuget::handlers::handle_install(req, runtime),
+        "forge/nuget/uninstall" => nuget::handlers::handle_uninstall(req, runtime),
+        // Profiler
         "forge/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
         "forge/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
         "forge/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req),

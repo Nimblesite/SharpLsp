@@ -34,6 +34,9 @@ tracing-appender = "0.2"
 # Error handling
 anyhow = "1"
 
+# HTTP client (NuGet API)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
 # Utilities
 dashmap = "6"
 

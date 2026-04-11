@@ -1,70 +1,56 @@
 import * as vscode from "vscode";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { type LanguageClient } from "vscode-languageclient/node";
 import * as log from "./log.js";
 import { getErrorMessage } from "./utils.js";
 
-const execFileAsync = promisify(execFile);
+// ── LSP Response Types ──────────────────────────────────────────
 
 export interface NuGetSearchResult {
-    readonly id: string;
-    readonly version: string;
-    readonly description: string;
-    readonly authors: string;
-    readonly iconUrl?: string;
-    readonly licenseUrl?: string;
-    readonly projectUrl?: string;
-    readonly published?: string;
-    readonly downloadCount?: number;
-    readonly tags: string[];
-    readonly isInstalled?: boolean;
-    readonly installedVersion?: string | undefined;
-    _versions?: string[];
-}
-
-interface WebviewMessage {
-    command: string;
-    data?: Record<string, unknown>;
-}
-
-interface NuGetPackageData {
     id: string;
     version: string;
     description: string;
     authors: string;
-    iconUrl: string;
-    licenseUrl: string;
-    projectUrl: string;
-    published: string;
-    totalDownloads: number;
+    iconUrl?: string;
+    licenseUrl?: string;
+    projectUrl?: string;
+    published?: string;
+    downloadCount?: number;
     tags: string[];
+    isInstalled?: boolean;
+    installedVersion?: string | undefined;
+    _versions?: string[];
 }
 
 interface NuGetSearchResponse {
-    data?: NuGetPackageData[];
+    readonly packages: NuGetSearchResult[];
+    readonly totalHits: number;
 }
 
 interface NuGetVersionsResponse {
-    versions?: string[];
+    readonly versions: string[];
 }
 
 interface InstalledPackage {
-    id: string;
-    requestedVersion: string;
-    resolvedVersion: string;
+    readonly id: string;
+    readonly requestedVersion: string;
+    readonly resolvedVersion: string;
 }
 
-interface FrameworkData {
-    topLevelPackages?: InstalledPackage[];
+interface NuGetInstalledResponse {
+    readonly packages: InstalledPackage[];
 }
 
-interface ProjectData {
-    frameworks?: FrameworkData[];
+interface NuGetMutationResponse {
+    readonly success: boolean;
+    readonly message: string;
 }
 
-interface DotNetListPackageResponse {
-    projects?: ProjectData[];
+export interface WebviewMessage {
+    command: string;
+    data?: Record<string, unknown>;
 }
+
+// ── Panel ───────────────────────────────────────────────────────
 
 export class NuGetBrowserPanel {
     private static instance: NuGetBrowserPanel | undefined;
@@ -72,20 +58,25 @@ export class NuGetBrowserPanel {
     private readonly context: vscode.ExtensionContext;
     private readonly projectPath: string;
     private readonly projectName: string;
+    private readonly getClient: () => LanguageClient | undefined;
     private readonly installedPackages = new Map<string, string>();
     private currentSearchQuery = "";
     private currentTab: "browse" | "installed" | "updates" = "browse";
     private searchResults: NuGetSearchResult[] = [];
     private selectedPackage: NuGetSearchResult | undefined;
+    /** Resolves when the constructor's async initial load completes. */
+    private readonly initialLoadDone: Promise<void>;
 
     private constructor(
         context: vscode.ExtensionContext,
         projectPath: string,
         projectName: string,
+        getClient: () => LanguageClient | undefined,
     ) {
         this.context = context;
         this.projectPath = projectPath;
         this.projectName = projectName;
+        this.getClient = getClient;
 
         log.info(`NuGetBrowserPanel: creating panel for ${projectName}`);
         this.panel = vscode.window.createWebviewPanel(
@@ -116,19 +107,55 @@ export class NuGetBrowserPanel {
             this.context.subscriptions,
         );
 
-        void this.loadInstalledPackages().then(() => {
-            log.info(`NuGetBrowserPanel: initial load complete, rendering content`);
-            this.updateContent();
-        });
+        this.initialLoadDone = this.initialLoad();
+    }
+
+    private async initialLoad(): Promise<void> {
+        await this.loadInstalledPackages();
+        log.info("NuGetBrowserPanel: installed loaded, fetching popular packages");
+        // Populate the Browse tab with popular packages so it's not empty.
+        await this.performSearch("");
+        log.info("NuGetBrowserPanel: initial load complete");
+    }
+
+    // ── Test helpers ────────────────────────────────────────────
+    // These accessors exist so e2e tests can observe internal state
+    // after opening the panel without resorting to webview DOM scraping.
+
+    /** Resolves when the initial load (installed + popular) has completed. */
+    public async waitForInitialLoad(): Promise<void> {
+        await this.initialLoadDone;
+    }
+
+    public getSearchResultsCount(): number {
+        return this.searchResults.length;
+    }
+
+    public getInstalledPackageIds(): string[] {
+        return Array.from(this.installedPackages.keys());
+    }
+
+    public getSelectedPackageId(): string | undefined {
+        return this.selectedPackage?.id;
+    }
+
+    public getCurrentTab(): "browse" | "installed" | "updates" {
+        return this.currentTab;
+    }
+
+    /** Simulate a webview message for testing. */
+    public async simulateWebviewMessage(message: WebviewMessage): Promise<void> {
+        await this.handleMessage(message);
     }
 
     public static open(
         context: vscode.ExtensionContext,
         projectPath: string,
         projectName: string,
+        getClient: () => LanguageClient | undefined,
     ): NuGetBrowserPanel {
         if (NuGetBrowserPanel.instance !== undefined) {
-            log.info(`NuGetBrowserPanel: reusing existing panel, revealing`);
+            log.info("NuGetBrowserPanel: reusing existing panel, revealing");
             NuGetBrowserPanel.instance.panel.reveal(vscode.ViewColumn.One);
             return NuGetBrowserPanel.instance;
         }
@@ -137,6 +164,7 @@ export class NuGetBrowserPanel {
             context,
             projectPath,
             projectName,
+            getClient,
         );
         return NuGetBrowserPanel.instance;
     }
@@ -145,44 +173,52 @@ export class NuGetBrowserPanel {
         this.panel.dispose();
     }
 
+    // ── Message handling ────────────────────────────────────────
+
     private async handleMessage(message: WebviewMessage): Promise<void> {
         log.info(`NuGetBrowserPanel: received message command=${message.command}`);
         switch (message.command) {
             case "search": {
-                const query = this.getStringValue(message.data?.query);
+                const query = this.str(message.data?.query);
                 this.currentSearchQuery = query;
                 await this.performSearch(query);
                 break;
             }
             case "selectPackage": {
-                const packageId = this.getStringValue(message.data?.packageId);
-                const pkg = this.searchResults.find((p) => p.id === packageId);
+                const packageId = this.str(message.data?.packageId);
+                const pkg = this.findOrSynthesizePackage(packageId);
                 if (pkg !== undefined) {
                     this.selectedPackage = pkg;
-                    await this.loadPackageDetails(pkg);
+                    // Render the skeleton immediately so the panel feels snappy.
+                    this.updateContent();
+                    // Enrich installed-only packages with real metadata.
+                    if (pkg.description.length === 0) {
+                        await this.enrichPackageMetadata(pkg);
+                    }
+                    await this.loadPackageVersions(pkg);
                     this.updateContent();
                 }
                 break;
             }
             case "install": {
-                const packageId = this.getStringValue(message.data?.packageId);
-                const version = this.getStringValue(message.data?.version);
+                const packageId = this.str(message.data?.packageId);
+                const version = this.str(message.data?.version);
                 await this.installPackage(packageId, version);
                 break;
             }
             case "uninstall": {
-                const packageId = this.getStringValue(message.data?.packageId);
+                const packageId = this.str(message.data?.packageId);
                 await this.uninstallPackage(packageId);
                 break;
             }
             case "changeVersion": {
-                const packageId = this.getStringValue(message.data?.packageId);
-                const version = this.getStringValue(message.data?.version);
+                const packageId = this.str(message.data?.packageId);
+                const version = this.str(message.data?.version);
                 await this.changeVersion(packageId, version);
                 break;
             }
             case "switchTab": {
-                const tabValue = this.getStringValue(message.data?.tab, "browse");
+                const tabValue = this.str(message.data?.tab, "browse");
                 const tab: "browse" | "installed" | "updates" =
                     tabValue === "installed" ? "installed" :
                     tabValue === "updates" ? "updates" : "browse";
@@ -194,7 +230,7 @@ export class NuGetBrowserPanel {
                 break;
             }
             case "openExternal": {
-                const url = this.getStringValue(message.data?.url);
+                const url = this.str(message.data?.url);
                 if (url.length > 0) {
                     void vscode.env.openExternal(vscode.Uri.parse(url));
                 }
@@ -203,34 +239,60 @@ export class NuGetBrowserPanel {
         }
     }
 
-    private getStringValue(value: unknown, defaultValue = ""): string {
-        if (typeof value === "string") {
-            return value;
-        }
+    private str(value: unknown, defaultValue = ""): string {
+        if (typeof value === "string") return value;
         return defaultValue;
     }
 
-    private async loadInstalledPackages(): Promise<void> {
-        log.info(`NuGetBrowserPanel: loading installed packages from ${this.projectPath}`);
-        try {
-            const result = await execFileAsync(
-                "dotnet",
-                ["list", this.projectPath, "package", "--format", "json"],
-                { encoding: "utf-8" },
-            );
-            // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-            const data: DotNetListPackageResponse = JSON.parse(result.stdout) as DotNetListPackageResponse;
+    /**
+     * Find a package by id across all known sources.
+     *
+     * On the Browse tab packages come from `searchResults`. On the Installed
+     * tab they come from `installedPackages` (a simple Map) — those items
+     * aren't in `searchResults` until the user searches, so we synthesize a
+     * minimal `NuGetSearchResult` on demand so selection still works.
+     */
+    private findOrSynthesizePackage(packageId: string): NuGetSearchResult | undefined {
+        const existing = this.searchResults.find((p) => p.id === packageId);
+        if (existing !== undefined) return existing;
 
+        const installedVersion = this.installedPackages.get(packageId);
+        if (installedVersion === undefined) return undefined;
+
+        // Synthesize a minimal record for installed-only packages. Versions
+        // will be fetched lazily by loadPackageVersions() on selection.
+        return {
+            id: packageId,
+            version: installedVersion,
+            description: "",
+            authors: "",
+            tags: [],
+            isInstalled: true,
+            installedVersion,
+        };
+    }
+
+    // ── LSP operations ──────────────────────────────────────────
+
+    private async loadInstalledPackages(): Promise<void> {
+        log.info(`NuGetBrowserPanel: loading installed packages via LSP`);
+        const lsp = this.getClient();
+        if (lsp === undefined) {
+            log.error("NuGetBrowserPanel: no LSP client available");
+            return;
+        }
+        try {
+            const result = await lsp.sendRequest<NuGetInstalledResponse>(
+                "forge/nuget/installed",
+                { projectPath: this.projectPath },
+            );
             this.installedPackages.clear();
-            const project = data.projects?.[0];
-            if (project?.frameworks !== undefined) {
-                for (const framework of project.frameworks) {
-                    for (const pkg of framework.topLevelPackages ?? []) {
-                        this.installedPackages.set(pkg.id, pkg.resolvedVersion);
-                    }
-                }
+            for (const pkg of result.packages) {
+                this.installedPackages.set(pkg.id, pkg.resolvedVersion);
             }
-            log.info(`NuGetBrowserPanel: loaded ${this.installedPackages.size.toString()} installed packages`);
+            log.info(
+                `NuGetBrowserPanel: loaded ${this.installedPackages.size.toString()} installed packages`,
+            );
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
             log.error(`NuGetBrowserPanel: failed to load installed packages: ${msg}`);
@@ -238,14 +300,28 @@ export class NuGetBrowserPanel {
     }
 
     private async performSearch(query: string): Promise<void> {
-        log.info(`NuGetBrowserPanel: searching query="${query.length > 0 ? query : "(popular)"}"`);
+        const displayQuery = query.length > 0 ? query : "(popular)";
+        log.info(`NuGetBrowserPanel: searching query="${displayQuery}"`);
+        const lsp = this.getClient();
+        if (lsp === undefined) {
+            log.error("NuGetBrowserPanel: no LSP client available");
+            return;
+        }
         try {
-            if (query.length === 0) {
-                this.searchResults = await this.fetchPopularPackages();
-            } else {
-                this.searchResults = await this.searchNuGet(query);
-            }
-            log.info(`NuGetBrowserPanel: search returned ${this.searchResults.length.toString()} results`);
+            const result = await lsp.sendRequest<NuGetSearchResponse>(
+                "forge/nuget/search",
+                {
+                    query,
+                    projectPath: this.projectPath,
+                    prerelease: false,
+                    take: 50,
+                    skip: 0,
+                },
+            );
+            this.searchResults = result.packages;
+            log.info(
+                `NuGetBrowserPanel: search returned ${this.searchResults.length.toString()} results`,
+            );
             this.updateContent();
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
@@ -253,77 +329,92 @@ export class NuGetBrowserPanel {
         }
     }
 
-    private async searchNuGet(query: string): Promise<NuGetSearchResult[]> {
-        const url = `https://azuresearch-usnc.nuget.org/query?q=${encodeURIComponent(query)}&prerelease=false&take=50`;
-        log.info(`NuGetBrowserPanel: fetching ${url}`);
-        const response = await fetch(url);
-        log.info(`NuGetBrowserPanel: NuGet API responded status=${response.status.toString()}`);
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-        const data: NuGetSearchResponse = await response.json() as NuGetSearchResponse;
-
-        return (data.data ?? []).map((pkg) => ({
-            id: pkg.id,
-            version: pkg.version,
-            description: pkg.description,
-            authors: pkg.authors,
-            iconUrl: pkg.iconUrl,
-            licenseUrl: pkg.licenseUrl,
-            projectUrl: pkg.projectUrl,
-            published: pkg.published,
-            downloadCount: pkg.totalDownloads,
-            tags: pkg.tags.length > 0 ? pkg.tags : [],
-            isInstalled: this.installedPackages.has(pkg.id),
-            installedVersion: this.installedPackages.get(pkg.id),
-        }));
-    }
-
-    private async fetchPopularPackages(): Promise<NuGetSearchResult[]> {
-        log.info("NuGetBrowserPanel: fetching popular packages");
-        const popularQueries = ["microsoft", "newtonsoft", "serilog", "automapper"];
-        const allResults: NuGetSearchResult[] = [];
-
-        for (const q of popularQueries) {
-            const results = await this.searchNuGet(q);
-            allResults.push(...results.slice(0, 10));
-        }
-
-        const unique = new Map<string, NuGetSearchResult>();
-        for (const pkg of allResults) {
-            if (!unique.has(pkg.id) || (pkg.downloadCount ?? 0) > (unique.get(pkg.id)?.downloadCount ?? 0)) {
-                unique.set(pkg.id, pkg);
-            }
-        }
-
-        return Array.from(unique.values())
-            .sort((a, b) => (b.downloadCount ?? 0) - (a.downloadCount ?? 0))
-            .slice(0, 50);
-    }
-
-    private async loadPackageDetails(pkg: NuGetSearchResult): Promise<void> {
-        log.info(`NuGetBrowserPanel: loading details for ${pkg.id}`);
+    /**
+     * Fetch full metadata for a package that was synthesized from the
+     * installed list. Uses an exact-match search and copies description,
+     * authors, icon, license, etc. into the target package object.
+     */
+    private async enrichPackageMetadata(pkg: NuGetSearchResult): Promise<void> {
+        const lsp = this.getClient();
+        if (lsp === undefined) return;
         try {
-            const url = `https://api.nuget.org/v3-flatcontainer/${pkg.id.toLowerCase()}/index.json`;
-            const response = await fetch(url);
-            // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-            const data: NuGetVersionsResponse = await response.json() as NuGetVersionsResponse;
-            pkg._versions = data.versions ?? [];
-            log.info(`NuGetBrowserPanel: loaded ${pkg._versions.length.toString()} versions for ${pkg.id}`);
+            const result = await lsp.sendRequest<NuGetSearchResponse>(
+                "forge/nuget/search",
+                {
+                    query: `packageid:${pkg.id}`,
+                    projectPath: this.projectPath,
+                    prerelease: false,
+                    take: 1,
+                    skip: 0,
+                },
+            );
+            const match = result.packages.find((p) => p.id === pkg.id);
+            if (match === undefined) {
+                log.info(`NuGetBrowserPanel: no metadata for ${pkg.id}`);
+                return;
+            }
+            // Mutate the package in place so the selected reference still
+            // points to the enriched object.
+            Object.assign(pkg, {
+                description: match.description,
+                authors: match.authors,
+                iconUrl: match.iconUrl,
+                licenseUrl: match.licenseUrl,
+                projectUrl: match.projectUrl,
+                published: match.published,
+                downloadCount: match.downloadCount,
+                tags: match.tags,
+                version: match.version,
+            });
+            log.info(`NuGetBrowserPanel: enriched metadata for ${pkg.id}`);
         } catch (err: unknown) {
-            log.error(`NuGetBrowserPanel: failed to load versions for ${pkg.id}: ${getErrorMessage(err)}`);
+            log.error(
+                `NuGetBrowserPanel: failed to enrich ${pkg.id}: ${getErrorMessage(err)}`,
+            );
+        }
+    }
+
+    private async loadPackageVersions(pkg: NuGetSearchResult): Promise<void> {
+        log.info(`NuGetBrowserPanel: loading versions for ${pkg.id}`);
+        const lsp = this.getClient();
+        if (lsp === undefined) return;
+        try {
+            const result = await lsp.sendRequest<NuGetVersionsResponse>(
+                "forge/nuget/versions",
+                { packageId: pkg.id },
+            );
+            pkg._versions = result.versions;
+            log.info(
+                `NuGetBrowserPanel: loaded ${pkg._versions.length.toString()} versions for ${pkg.id}`,
+            );
+        } catch (err: unknown) {
+            log.error(
+                `NuGetBrowserPanel: failed to load versions for ${pkg.id}: ${getErrorMessage(err)}`,
+            );
         }
     }
 
     private async installPackage(packageId: string, version: string): Promise<void> {
+        const lsp = this.getClient();
+        if (lsp === undefined) return;
         try {
-            log.info(`NuGetBrowserPanel: installing ${packageId} v${version} to ${this.projectName}`);
-            await execFileAsync("dotnet", [
-                "add", this.projectPath, "package", packageId, "--version", version,
-            ]);
-            log.info(`NuGetBrowserPanel: installed ${packageId} v${version} successfully`);
-            void vscode.window.showInformationMessage(`Installed ${packageId} v${version}`);
-            this.installedPackages.set(packageId, version);
-            await this.loadInstalledPackages();
-            await this.performSearch(this.currentSearchQuery);
+            log.info(`NuGetBrowserPanel: installing ${packageId} v${version}`);
+            const result = await lsp.sendRequest<NuGetMutationResponse>(
+                "forge/nuget/install",
+                {
+                    projectPath: this.projectPath,
+                    packageId,
+                    version,
+                },
+            );
+            if (result.success) {
+                void vscode.window.showInformationMessage(`Installed ${packageId} v${version}`);
+                this.installedPackages.set(packageId, version);
+                await this.loadInstalledPackages();
+                await this.performSearch(this.currentSearchQuery);
+            } else {
+                void vscode.window.showErrorMessage(`Failed to install: ${result.message}`);
+            }
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
             log.error(`NuGetBrowserPanel: failed to install ${packageId}: ${msg}`);
@@ -332,14 +423,25 @@ export class NuGetBrowserPanel {
     }
 
     private async uninstallPackage(packageId: string): Promise<void> {
+        const lsp = this.getClient();
+        if (lsp === undefined) return;
         try {
-            log.info(`NuGetBrowserPanel: removing ${packageId} from ${this.projectName}`);
-            await execFileAsync("dotnet", ["remove", this.projectPath, "package", packageId]);
-            log.info(`NuGetBrowserPanel: removed ${packageId} successfully`);
-            void vscode.window.showInformationMessage(`Removed ${packageId}`);
-            this.installedPackages.delete(packageId);
-            await this.loadInstalledPackages();
-            await this.performSearch(this.currentSearchQuery);
+            log.info(`NuGetBrowserPanel: removing ${packageId}`);
+            const result = await lsp.sendRequest<NuGetMutationResponse>(
+                "forge/nuget/uninstall",
+                {
+                    projectPath: this.projectPath,
+                    packageId,
+                },
+            );
+            if (result.success) {
+                void vscode.window.showInformationMessage(`Removed ${packageId}`);
+                this.installedPackages.delete(packageId);
+                await this.loadInstalledPackages();
+                await this.performSearch(this.currentSearchQuery);
+            } else {
+                void vscode.window.showErrorMessage(`Failed to remove: ${result.message}`);
+            }
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
             log.error(`NuGetBrowserPanel: failed to remove ${packageId}: ${msg}`);
@@ -348,15 +450,26 @@ export class NuGetBrowserPanel {
     }
 
     private async changeVersion(packageId: string, version: string): Promise<void> {
+        const lsp = this.getClient();
+        if (lsp === undefined) return;
         try {
-            log.info(`NuGetBrowserPanel: changing ${packageId} to v${version} in ${this.projectName}`);
-            await execFileAsync("dotnet", ["remove", this.projectPath, "package", packageId]);
-            await execFileAsync("dotnet", ["add", this.projectPath, "package", packageId, "--version", version]);
-            log.info(`NuGetBrowserPanel: changed ${packageId} to v${version} successfully`);
-            void vscode.window.showInformationMessage(`Updated ${packageId} to v${version}`);
-            this.installedPackages.set(packageId, version);
-            await this.loadInstalledPackages();
-            await this.performSearch(this.currentSearchQuery);
+            log.info(`NuGetBrowserPanel: changing ${packageId} to v${version}`);
+            const result = await lsp.sendRequest<NuGetMutationResponse>(
+                "forge/nuget/install",
+                {
+                    projectPath: this.projectPath,
+                    packageId,
+                    version,
+                },
+            );
+            if (result.success) {
+                void vscode.window.showInformationMessage(`Updated ${packageId} to v${version}`);
+                this.installedPackages.set(packageId, version);
+                await this.loadInstalledPackages();
+                await this.performSearch(this.currentSearchQuery);
+            } else {
+                void vscode.window.showErrorMessage(`Failed to update: ${result.message}`);
+            }
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
             log.error(`NuGetBrowserPanel: failed to change ${packageId} version: ${msg}`);
@@ -364,171 +477,57 @@ export class NuGetBrowserPanel {
         }
     }
 
+    // ── Rendering ───────────────────────────────────────────────
+
     private updateContent(): void {
-        log.info(`NuGetBrowserPanel: rendering tab=${this.currentTab} packages=${this.searchResults.length.toString()} installed=${this.installedPackages.size.toString()}`);
+        log.info(
+            `NuGetBrowserPanel: rendering tab=${this.currentTab} packages=${this.searchResults.length.toString()} installed=${this.installedPackages.size.toString()}`,
+        );
         this.panel.webview.html = this.buildHtml();
     }
 
-    private escapeHtml(text: string): string {
-        const amp = String.fromCharCode(38) + "amp;";
-        const lt = String.fromCharCode(38) + "lt;";
-        const gt = String.fromCharCode(38) + "gt;";
-        const quot = String.fromCharCode(38) + "quot;";
-        const apos = String.fromCharCode(38) + "#039;";
+    private esc(text: string): string {
         return text
-            .replace(/&/g, amp)
-            .replace(/</g, lt)
-            .replace(/>/g, gt)
-            .replace(/"/g, quot)
-            .replace(/'/g, apos);
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 
-    private escapeAttr(text: string): string {
-        const quot = String.fromCharCode(38) + "quot;";
-        const apos = String.fromCharCode(38) + "#039;";
-        return text.replace(/"/g, quot).replace(/'/g, apos);
+    private escAttr(text: string): string {
+        return text.replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 
     private buildHtml(): string {
-        const theme = {
-            bg: "#131313",
-            surface: "#1B1B1C",
-            surfaceHigh: "#202020",
-            surfaceHigher: "#2A2A2A",
-            surfaceHighest: "#353535",
-            onSurface: "#E5E2E1",
-            onSurfaceVariant: "#C0C7D3",
-            primary: "#9FCAFF",
-            primaryContainer: "#007ACC",
-            onPrimaryContainer: "#FFFFFF",
-            outline: "#8A919D",
-            outlineVariant: "#404751",
-            error: "#FFB4AB",
-        };
+        const packages = this.searchResults;
 
-        const packages = this.currentTab === "installed"
-            ? this.searchResults.filter((p) => p.isInstalled === true)
-            : this.searchResults;
+        const installedList = Array.from(this.installedPackages.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([id, version]) => ({
+                id,
+                version,
+                isInstalled: true as const,
+                installedVersion: version,
+            }));
 
-        const installedList: { id: string; version: string; isInstalled: true; installedVersion: string }[] = Array.from(this.installedPackages.entries()).map(
-            ([id, version]) => ({ id, version, isInstalled: true as const, installedVersion: version }),
-        );
-
-        const safeProjectName = this.escapeHtml(this.projectName);
-        const safeQuery = this.escapeAttr(this.currentSearchQuery);
+        const safeProjectName = this.esc(this.projectName);
+        const safeQuery = this.escAttr(this.currentSearchQuery);
 
         return `<!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src https://*;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline';">
 <title>NuGet Architect - ${safeProjectName}</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Inter, sans-serif; font-size: 13px; color: ${theme.onSurface}; background: ${theme.bg}; height: 100vh; overflow: hidden; display: flex; }
-.sidebar { width: 64px; background: #1B1B1C; display: flex; flex-direction: column; align-items: center; padding: 16px 0; z-index: 50; }
-.sidebar-icon { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 8px; margin-bottom: 8px; color: ${theme.onSurfaceVariant}; cursor: pointer; transition: all 0.15s; }
-.sidebar-icon:hover { background: ${theme.surfaceHighest}; color: ${theme.onSurface}; }
-.sidebar-icon.active { color: ${theme.primary}; border-left: 2px solid ${theme.primary}; background: ${theme.surfaceHigh}; border-radius: 0 8px 8px 0; margin-left: -2px; }
-.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.header { height: 56px; background: ${theme.bg}; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid ${theme.outlineVariant}20; }
-.header-left { display: flex; align-items: center; gap: 32px; }
-.logo { font-size: 18px; font-weight: 700; color: ${theme.primary}; letter-spacing: -0.02em; }
-.nav-tabs { display: flex; height: 56px; }
-.nav-tab { display: flex; align-items: center; padding: 0 16px; color: ${theme.onSurfaceVariant}; text-decoration: none; font-weight: 500; font-size: 13px; border-bottom: 2px solid transparent; height: 100%; cursor: pointer; transition: all 0.15s; }
-.nav-tab:hover { color: ${theme.onSurface}; background: ${theme.surfaceHigh}; }
-.nav-tab.active { color: ${theme.primary}; border-bottom-color: ${theme.primary}; }
-.search-area { display: flex; align-items: center; gap: 12px; }
-.search-box { position: relative; }
-.search-box input { width: 280px; height: 32px; background: ${theme.bg}; border: 1px solid ${theme.outline}40; border-radius: 6px; padding: 0 12px 0 36px; color: ${theme.onSurface}; font-size: 13px; outline: none; transition: all 0.15s; }
-.search-box input:focus { border-color: ${theme.primary}; box-shadow: 0 0 0 2px ${theme.primary}15; }
-.search-box::before { content: "🔍"; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; opacity: 0.6; }
-.icon-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; color: ${theme.onSurfaceVariant}; cursor: pointer; border-radius: 6px; font-size: 16px; }
-.icon-btn:hover { background: ${theme.surfaceHigh}; color: ${theme.onSurface}; }
-.content { flex: 1; display: flex; overflow: hidden; }
-.package-list { flex: 1; overflow-y: auto; padding: 16px; }
-.package-list-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px 16px; border-bottom: 1px solid ${theme.outlineVariant}20; margin-bottom: 8px; }
-.package-list-title { font-size: 18px; font-weight: 700; color: ${theme.onSurface}; letter-spacing: -0.02em; }
-.sort-select { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: ${theme.onSurfaceVariant}; }
-.sort-select select { background: ${theme.surfaceHigh}; border: none; border-radius: 4px; padding: 4px 8px; color: ${theme.onSurface}; font-size: 12px; cursor: pointer; }
-.package-item { display: flex; gap: 16px; padding: 16px; border-radius: 6px; border-left: 2px solid transparent; cursor: pointer; transition: all 0.15s; margin-bottom: 4px; }
-.package-item:hover { background: ${theme.surfaceHigh}; }
-.package-item.selected { background: ${theme.surfaceHigh}; border-left-color: ${theme.primary}; }
-.package-icon { width: 40px; height: 40px; border-radius: 6px; background: ${theme.surfaceHigh}; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 20px; }
-.package-icon.selected { background: ${theme.primaryContainer}; }
-.package-content { flex: 1; min-width: 0; }
-.package-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
-.package-name { font-size: 15px; font-weight: 600; color: ${theme.onSurface}; }
-.package-version { font-size: 11px; color: ${theme.onSurfaceVariant}; background: ${theme.surfaceHigher}; padding: 2px 8px; border-radius: 999px; }
-.package-version.installed { background: ${theme.primary}30; color: ${theme.primary}; }
-.package-description { font-size: 13px; color: ${theme.onSurfaceVariant}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
-.package-meta { display: flex; gap: 16px; font-size: 11px; color: ${theme.onSurfaceVariant}90; }
-.package-meta-item { display: flex; align-items: center; gap: 4px; }
-.details-panel { width: 384px; background: ${theme.surface}; border-left: 1px solid ${theme.outlineVariant}20; overflow-y: auto; padding: 24px; }
-.details-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: ${theme.onSurfaceVariant}; text-align: center; gap: 16px; }
-.details-empty-icon { font-size: 48px; opacity: 0.5; }
-.details-header { display: flex; gap: 12px; margin-bottom: 20px; }
-.details-icon { width: 48px; height: 48px; border-radius: 8px; background: ${theme.primaryContainer}; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
-.details-title h2 { font-size: 18px; font-weight: 700; color: ${theme.onSurface}; margin-bottom: 4px; line-height: 1.2; }
-.details-title p { font-size: 12px; color: ${theme.onSurfaceVariant}; }
-.details-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 24px; }
-.btn { height: 36px; border-radius: 6px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s; }
-.btn-primary { background: linear-gradient(135deg, ${theme.primaryContainer}, #005a9e); color: ${theme.onPrimaryContainer}; }
-.btn-primary:hover { filter: brightness(1.1); }
-.btn-secondary { background: ${theme.surfaceHigher}; color: ${theme.onSurface}; }
-.btn-secondary:hover { background: ${theme.surfaceHighest}; }
-.btn-danger { background: ${theme.error}20; color: ${theme.error}; }
-.btn-danger:hover { background: ${theme.error}30; }
-.version-select { position: relative; }
-.version-select select { width: 100%; height: 36px; background: ${theme.surfaceHigher}; border: 1px solid ${theme.outlineVariant}40; border-radius: 6px; padding: 0 32px 0 12px; color: ${theme.onSurface}; font-size: 12px; appearance: none; cursor: pointer; }
-.section { margin-bottom: 24px; }
-.section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: ${theme.onSurfaceVariant}; margin-bottom: 12px; }
-.section-content { font-size: 12px; line-height: 1.6; color: ${theme.onSurfaceVariant}; }
-.info-grid { display: flex; flex-direction: column; gap: 8px; }
-.info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid ${theme.outlineVariant}15; }
-.info-label { font-size: 12px; color: ${theme.onSurfaceVariant}; }
-.info-value { font-size: 12px; color: ${theme.onSurface}; }
-.info-link { color: ${theme.primary}; text-decoration: none; display: flex; align-items: center; gap: 4px; }
-.info-link:hover { text-decoration: underline; }
-.tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.tag { padding: 4px 10px; background: ${theme.surfaceHighest}; border: 1px solid ${theme.outlineVariant}20; border-radius: 999px; font-size: 10px; color: ${theme.onSurfaceVariant}; text-transform: uppercase; letter-spacing: 0.02em; }
-.status-bar { height: 24px; background: ${theme.primaryContainer}; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; font-size: 11px; color: white; }
-.status-left, .status-right { display: flex; gap: 16px; }
-.status-item { display: flex; align-items: center; gap: 4px; }
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: ${theme.surfaceHighest}; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: ${theme.outlineVariant}; }
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px; color: ${theme.onSurfaceVariant}; text-align: center; }
-.empty-state-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
-.empty-state-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; color: ${theme.onSurface}; }
-</style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+${this.buildCss()}
 </head>
 <body>
-<nav class="sidebar">
-<div class="sidebar-icon" title="Explorer">📁</div>
-<div class="sidebar-icon active" title="NuGet Packages">🔍</div>
-<div class="sidebar-icon" title="Dependencies">📦</div>
-<div style="flex: 1;"></div>
-<div class="sidebar-icon" title="Settings">⚙️</div>
-</nav>
+${this.buildSidebar()}
 <main class="main">
-<header class="header">
-<div class="header-left">
-<span class="logo">NuGet Architect</span>
-<nav class="nav-tabs">
-<a class="nav-tab ${this.currentTab === "browse" ? "active" : ""}" onclick="switchTab('browse')">Browse</a>
-<a class="nav-tab ${this.currentTab === "installed" ? "active" : ""}" onclick="switchTab('installed')">Installed</a>
-<a class="nav-tab ${this.currentTab === "updates" ? "active" : ""}" onclick="switchTab('updates')">Updates</a>
-</nav>
-</div>
-<div class="search-area">
-${this.currentTab === "browse" ? `<div class="search-box"><input type="text" id="searchInput" placeholder="Search packages..." value="${safeQuery}" onkeydown="if(event.key==='Enter')doSearch()"></div>` : ""}
-<button class="icon-btn" onclick="refresh()" title="Refresh">🔄</button>
-<button class="icon-btn" title="Settings">⚙️</button>
-</div>
-</header>
+${this.buildHeader(safeQuery)}
 <div class="content">
 <section class="package-list">
 ${this.buildPackageListHtml(packages, installedList)}
@@ -539,8 +538,8 @@ ${this.buildDetailsHtml()}
 </div>
 <footer class="status-bar">
 <div class="status-left">
-<span class="status-item">🌿 main*</span>
-<span class="status-item">↔️ Ready</span>
+<span class="status-item"><span class="material-symbols-outlined" style="font-size: 0.8rem;">rebase</span> main*</span>
+<span class="status-item"><span class="material-symbols-outlined" style="font-size: 0.8rem;">sync_alt</span> Ready</span>
 </div>
 <div class="status-right">
 <span>NuGet v6.8.0</span>
@@ -550,146 +549,194 @@ ${this.buildDetailsHtml()}
 </main>
 <script>
 const vscode = acquireVsCodeApi();
-function doSearch() { const query = document.getElementById('searchInput').value; vscode.postMessage({ command: 'search', data: { query } }); }
+function doSearch() { const q = document.getElementById('searchInput')?.value ?? ''; vscode.postMessage({ command: 'search', data: { query: q } }); }
 function switchTab(tab) { vscode.postMessage({ command: 'switchTab', data: { tab } }); }
-function selectPackage(packageId) { vscode.postMessage({ command: 'selectPackage', data: { packageId } }); }
-function installPackage(packageId, version) { vscode.postMessage({ command: 'install', data: { packageId, version } }); }
-function uninstallPackage(packageId) { vscode.postMessage({ command: 'uninstall', data: { packageId } }); }
-function changeVersion(packageId, version) { vscode.postMessage({ command: 'changeVersion', data: { packageId, version } }); }
+function selectPackage(id) { vscode.postMessage({ command: 'selectPackage', data: { packageId: id } }); }
+function installPackage(id, v) { vscode.postMessage({ command: 'install', data: { packageId: id, version: v } }); }
+function uninstallPackage(id) { vscode.postMessage({ command: 'uninstall', data: { packageId: id } }); }
+function changeVersion(id, v) { vscode.postMessage({ command: 'changeVersion', data: { packageId: id, version: v } }); }
 function openExternal(url) { vscode.postMessage({ command: 'openExternal', data: { url } }); }
-function refresh() { location.reload(); }
+function refresh() { doSearch(); }
 </script>
 </body>
 </html>`;
     }
 
+    private buildSidebar(): string {
+        return `<nav class="sidebar">
+<div class="sidebar-top"><span class="material-symbols-outlined sidebar-terminal">terminal</span></div>
+<div class="sidebar-nav">
+<button class="sidebar-icon" title="Explorer"><span class="material-symbols-outlined">folder</span></button>
+<button class="sidebar-icon active" title="NuGet Packages"><span class="material-symbols-outlined">search</span></button>
+<button class="sidebar-icon" title="Dependencies"><span class="material-symbols-outlined">layers</span></button>
+</div>
+<div class="sidebar-bottom">
+<button class="sidebar-icon" title="Settings"><span class="material-symbols-outlined">settings</span></button>
+<div class="sidebar-avatar"></div>
+</div>
+</nav>`;
+    }
+
+    private buildHeader(safeQuery: string): string {
+        return `<header class="header">
+<div class="header-left">
+<span class="logo">NuGet Architect</span>
+<nav class="nav-tabs">
+<a class="nav-tab ${this.currentTab === "browse" ? "active" : ""}" onclick="switchTab('browse')">Browse</a>
+<a class="nav-tab ${this.currentTab === "installed" ? "active" : ""}" onclick="switchTab('installed')">Installed</a>
+<a class="nav-tab ${this.currentTab === "updates" ? "active" : ""}" onclick="switchTab('updates')">Updates</a>
+</nav>
+</div>
+<div class="header-right">
+${this.currentTab === "browse" ? `<div class="search-box"><span class="material-symbols-outlined search-icon">search</span><input type="text" id="searchInput" placeholder="Search packages..." value="${safeQuery}" onkeydown="if(event.key==='Enter')doSearch()"></div>` : ""}
+<button class="icon-btn" onclick="refresh()" title="Refresh"><span class="material-symbols-outlined">sync</span></button>
+<button class="icon-btn" title="Settings"><span class="material-symbols-outlined">settings</span></button>
+</div>
+</header>`;
+    }
+
     private buildPackageListHtml(
         packages: NuGetSearchResult[],
-        installedPackages: { id: string; version: string; isInstalled: true; installedVersion: string }[],
+        installedPackages: {
+            id: string;
+            version: string;
+            isInstalled: true;
+            installedVersion: string;
+        }[],
     ): string {
         if (this.currentTab === "installed") {
-            return this.buildInstalledPackagesHtml(installedPackages);
+            return this.buildInstalledListHtml(installedPackages);
         }
-        return this.buildBrowsePackagesHtml(packages);
+        return this.buildBrowseListHtml(packages);
     }
 
-    private buildInstalledPackagesHtml(
-        installedPackages: { id: string; version: string; isInstalled: true; installedVersion: string }[],
+    private buildInstalledListHtml(
+        installedPackages: {
+            id: string;
+            version: string;
+            isInstalled: true;
+            installedVersion: string;
+        }[],
     ): string {
         if (installedPackages.length === 0) {
-            return `<div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-title">No packages installed</div><p>This project has no NuGet packages installed.</p></div>`;
+            return `<div class="empty-state"><span class="material-symbols-outlined empty-icon">package_2</span><div class="empty-title">No packages installed</div><p>This project has no NuGet packages installed.</p></div>`;
         }
-
-        const items = installedPackages.map((pkg) => {
-            const isSelected = this.selectedPackage?.id === pkg.id;
-            const safeId = this.escapeHtml(pkg.id);
-            const safeVersion = this.escapeHtml(pkg.installedVersion);
-            const safeAuthors = this.escapeHtml("");
-
-            return `<div class="package-item ${isSelected ? "selected" : ""}" onclick="selectPackage('${safeId.replace(/'/g, "\\'")}')">
-<div class="package-icon ${isSelected ? "selected" : ""}">📦</div>
+        const items = installedPackages
+            .map((pkg) => {
+                const sel = this.selectedPackage?.id === pkg.id;
+                const safeId = this.esc(pkg.id);
+                const safeVer = this.esc(pkg.installedVersion);
+                return `<div class="package-item ${sel ? "selected" : ""}" onclick="selectPackage('${this.escAttr(pkg.id)}')">
+<div class="package-icon-box ${sel ? "selected" : ""}"><span class="material-symbols-outlined">package_2</span></div>
 <div class="package-content">
-<div class="package-header">
-<span class="package-name">${safeId}</span>
-<span class="package-version installed">v${safeVersion}</span>
-</div>
+<div class="package-header"><span class="package-name">${safeId}</span><span class="package-version installed">v${safeVer}</span></div>
 <p class="package-description">Installed package</p>
-<div class="package-meta">
-${safeAuthors.length > 0 ? `<span class="package-meta-item">👤 ${safeAuthors}</span>` : ""}
-</div>
 </div>
 </div>`;
-        });
-
-        return `<div class="package-list-header"><span class="package-list-title">Installed Packages</span><div class="sort-select"><span>Sort By:</span><select><option>Relevance</option><option>Downloads</option><option>Recently Updated</option></select></div></div>${items.join("")}`;
+            })
+            .join("");
+        return `<div class="list-header"><span class="list-title">Installed Packages</span>${this.sortDropdown()}</div>${items}`;
     }
 
-    private buildBrowsePackagesHtml(packages: NuGetSearchResult[]): string {
+    private buildBrowseListHtml(packages: NuGetSearchResult[]): string {
         if (packages.length === 0) {
-            return `<div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-title">No packages found</div><p>Try a different search term.</p></div>`;
+            return `<div class="empty-state"><span class="material-symbols-outlined empty-icon">package_2</span><div class="empty-title">No packages found</div><p>Try a different search term.</p></div>`;
         }
-
-        const items = packages.map((pkg) => {
-            const isSelected = this.selectedPackage?.id === pkg.id;
-            const safeId = this.escapeHtml(pkg.id);
-            const desc = pkg.description.length > 0 ? pkg.description : "No description available";
-            const safeDesc = this.escapeHtml(desc);
-            const version = pkg.installedVersion ?? pkg.version;
-            const safeVersion = this.escapeHtml(version);
-            const safeAuthors = this.escapeHtml(pkg.authors);
-            const downloadCount = pkg.downloadCount;
-            const downloadCountStr = downloadCount !== undefined ? this.formatDownloads(downloadCount) : null;
-            const isInstalled = pkg.isInstalled === true;
-
-            return `<div class="package-item ${isSelected ? "selected" : ""}" onclick="selectPackage('${safeId.replace(/'/g, "\\'")}')">
-<div class="package-icon ${isSelected ? "selected" : ""}">${isInstalled ? "📦" : "📋"}</div>
+        const items = packages
+            .map((pkg) => {
+                const sel = this.selectedPackage?.id === pkg.id;
+                const safeId = this.esc(pkg.id);
+                const desc = pkg.description.length > 0 ? pkg.description : "No description available";
+                const version = pkg.installedVersion ?? pkg.version;
+                const installed = pkg.isInstalled === true;
+                const dl = pkg.downloadCount !== undefined ? this.fmtDl(pkg.downloadCount) : null;
+                const icon = installed ? "database" : "package_2";
+                return `<div class="package-item ${sel ? "selected" : ""}" onclick="selectPackage('${this.escAttr(pkg.id)}')">
+<div class="package-icon-box ${sel ? "selected" : ""}"><span class="material-symbols-outlined ${sel ? "icon-selected" : ""}">${icon}</span></div>
 <div class="package-content">
-<div class="package-header">
-<span class="package-name">${safeId}</span>
-<span class="package-version ${isInstalled ? "installed" : ""}">v${safeVersion}</span>
-</div>
-<p class="package-description">${safeDesc}</p>
+<div class="package-header"><span class="package-name">${safeId}</span><span class="package-version ${installed ? "installed" : ""}">v${this.esc(version)}</span></div>
+<p class="package-description">${this.esc(desc)}</p>
 <div class="package-meta">
-${downloadCountStr !== null ? `<span class="package-meta-item">⬇️ ${downloadCountStr}</span>` : ""}
-${safeAuthors.length > 0 ? `<span class="package-meta-item">👤 ${safeAuthors}</span>` : ""}
+${dl !== null ? `<span class="meta-item"><span class="material-symbols-outlined meta-icon">download</span>${dl}</span>` : ""}
+${pkg.authors.length > 0 ? `<span class="meta-item"><span class="material-symbols-outlined meta-icon">person</span>${this.esc(pkg.authors)}</span>` : ""}
 </div>
 </div>
 </div>`;
-        });
+            })
+            .join("");
+        return `<div class="list-header"><span class="list-title">Available Packages</span>${this.sortDropdown()}</div>${items}`;
+    }
 
-        return `<div class="package-list-header"><span class="package-list-title">Available Packages</span><div class="sort-select"><span>Sort By:</span><select><option>Relevance</option><option>Downloads</option><option>Recently Updated</option></select></div></div>${items.join("")}`;
+    private sortDropdown(): string {
+        return `<div class="sort-select"><span class="sort-label">Sort By:</span><select><option>Relevance</option><option>Downloads</option><option>Recently Updated</option></select></div>`;
     }
 
     private buildDetailsHtml(): string {
         if (this.selectedPackage === undefined) {
-            return `<div class="details-empty"><div class="details-empty-icon">📦</div><p>Select a package to view details</p></div>`;
+            return `<div class="details-empty"><span class="material-symbols-outlined empty-icon">package_2</span><p>Select a package to view details</p></div>`;
         }
 
         const pkg = this.selectedPackage;
-        const isInstalled = pkg.isInstalled === true;
-        const versions = (pkg._versions ?? []).slice().reverse().slice(0, 20);
-        const safeId = this.escapeHtml(pkg.id);
-        const safeAuthors = this.escapeHtml(pkg.authors || "Unknown author");
-        const safeDesc = this.escapeHtml(pkg.description || "No description available");
+        const installed = pkg.isInstalled === true;
+        const versions = (pkg._versions ?? []).slice(0, 20);
+        const safeId = this.esc(pkg.id);
+        const safeAuthors = this.esc(pkg.authors || "Unknown author");
+        const safeDesc = this.esc(pkg.description || "No description available");
 
         let infoRows = "";
         if (pkg.licenseUrl !== undefined && pkg.licenseUrl.length > 0) {
-            infoRows += `<div class="info-row"><span class="info-label">License</span><a class="info-value info-link" href="#" onclick="openExternal('${pkg.licenseUrl}')">View License ↗</a></div>`;
+            infoRows += `<div class="info-row"><span class="info-label">License</span><a class="info-link" href="#" onclick="openExternal('${this.escAttr(pkg.licenseUrl)}')">View License <span class="material-symbols-outlined" style="font-size: 0.8rem;">open_in_new</span></a></div>`;
         }
         if (pkg.published !== undefined && pkg.published.length > 0) {
-            infoRows += `<div class="info-row"><span class="info-label">Published</span><span class="info-value">${this.formatDate(pkg.published)}</span></div>`;
+            infoRows += `<div class="info-row"><span class="info-label">Published</span><span class="info-value">${this.fmtDate(pkg.published)}</span></div>`;
         }
         if (pkg.projectUrl !== undefined && pkg.projectUrl.length > 0) {
-            const safeUrl = this.escapeHtml(pkg.projectUrl);
-            infoRows += `<div class="info-row"><span class="info-label">Project URL</span><a class="info-value info-link" href="#" onclick="openExternal('${pkg.projectUrl}')">${safeUrl} ↗</a></div>`;
+            infoRows += `<div class="info-row"><span class="info-label">Project URL</span><a class="info-link" href="#" onclick="openExternal('${this.escAttr(pkg.projectUrl)}')">${this.esc(pkg.projectUrl)} <span class="material-symbols-outlined" style="font-size: 0.8rem;">link</span></a></div>`;
         }
         if (pkg.downloadCount !== undefined && pkg.downloadCount > 0) {
-            infoRows += `<div class="info-row"><span class="info-label">Downloads</span><span class="info-value">${this.formatDownloads(pkg.downloadCount)}</span></div>`;
+            infoRows += `<div class="info-row"><span class="info-label">Downloads</span><span class="info-value">${this.fmtDl(pkg.downloadCount)}</span></div>`;
         }
 
-        const tagsHtml = pkg.tags.length > 0
-            ? `<div class="section"><h4 class="section-title">Tags</h4><div class="tags">${pkg.tags.map((t) => `<span class="tag">${this.escapeHtml(t.toUpperCase())}</span>`).join("")}</div></div>`
-            : "";
+        const tagsHtml =
+            pkg.tags.length > 0
+                ? `<div class="section"><h4 class="section-title">Tags</h4><div class="tags">${pkg.tags.map((t) => `<span class="tag">${this.esc(t.toUpperCase())}</span>`).join("")}</div></div>`
+                : "";
 
-        const versionOptions = versions.map((v) => `<option value="${v}" ${v === pkg.installedVersion ? "selected" : ""}>${v}</option>`).join("");
+        const depsHtml = `<div class="section"><h4 class="section-title">Dependencies</h4><div class="deps-list">
+<div class="dep-item"><div class="dep-info"><span class="material-symbols-outlined dep-icon">account_tree</span><span class="dep-name">.NETStandard 2.0</span></div><span class="material-symbols-outlined dep-chevron">chevron_right</span></div>
+<div class="dep-item"><div class="dep-info"><span class="material-symbols-outlined dep-icon">account_tree</span><span class="dep-name">.NETStandard 2.1</span></div><span class="material-symbols-outlined dep-chevron">chevron_right</span></div>
+</div></div>`;
 
-        return `<div class="details-header"><div class="details-icon">📦</div><div class="details-title"><h2>${safeId}</h2><p>${safeAuthors}</p></div></div>
+        const versionOptions = versions
+            .map(
+                (v) =>
+                    `<option value="${this.escAttr(v)}" ${v === pkg.installedVersion ? "selected" : ""}>${this.esc(v)}</option>`,
+            )
+            .join("");
+
+        return `<div class="details-header">
+<div class="details-icon-box"><span class="material-symbols-outlined details-icon-glyph" style="font-variation-settings: 'FILL' 1;">database</span></div>
+<div class="details-title"><h2>${safeId}</h2><p>${safeAuthors}</p></div>
+</div>
 <div class="details-actions">
-${isInstalled ? `<button class="btn btn-danger" onclick="uninstallPackage('${safeId.replace(/'/g, "\\'")}')">🗑️ Remove</button>` : `<button class="btn btn-primary" onclick="installPackage('${safeId.replace(/'/g, "\\'")}', '${pkg.version}')">⬇️ Install</button>`}
-<div class="version-select"><select onchange="changeVersion('${safeId.replace(/'/g, "\\'")}', this.value)" ${!isInstalled ? "disabled" : ""}>${versionOptions}</select></div>
+${installed ? `<button class="btn btn-danger" onclick="uninstallPackage('${this.escAttr(pkg.id)}')"><span class="material-symbols-outlined btn-icon">delete</span> Remove</button>` : `<button class="btn btn-primary" onclick="installPackage('${this.escAttr(pkg.id)}', '${this.escAttr(pkg.version)}')"><span class="material-symbols-outlined btn-icon">download</span> Install</button>`}
+<div class="version-select"><select onchange="changeVersion('${this.escAttr(pkg.id)}', this.value)" ${!installed ? "disabled" : ""}>${versionOptions}</select><span class="material-symbols-outlined version-chevron">expand_more</span></div>
 </div>
 <div class="section"><h4 class="section-title">Description</h4><p class="section-content">${safeDesc}</p></div>
-<div class="section"><div class="info-grid">${infoRows}</div></div>${tagsHtml}`;
+<div class="section"><div class="info-grid">${infoRows}</div></div>
+${depsHtml}${tagsHtml}`;
     }
 
-    private formatDownloads(count: number): string {
-        if (count >= 1_000_000_000) return `${(count / 1_000_000_000).toFixed(1)}B`;
-        if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
-        if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
-        return count.toString();
+    private fmtDl(count: number): string {
+        if (count >= 1_000_000_000)
+            return `${(count / 1_000_000_000).toFixed(1)}B Downloads`;
+        if (count >= 1_000_000)
+            return `${(count / 1_000_000).toFixed(1)}M Downloads`;
+        if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K Downloads`;
+        return `${count.toString()} Downloads`;
     }
 
-    private formatDate(dateStr: string): string {
+    private fmtDate(dateStr: string): string {
         try {
             const date = new Date(dateStr);
             const now = new Date();
@@ -703,5 +750,128 @@ ${isInstalled ? `<button class="btn btn-danger" onclick="uninstallPackage('${saf
         } catch {
             return dateStr;
         }
+    }
+
+    private buildCss(): string {
+        return `<style>
+.material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; color: #E5E2E1; background: #131313; height: 100vh; overflow: hidden; display: flex; }
+
+/* Sidebar */
+.sidebar { width: 64px; background: #1B1B1C; display: flex; flex-direction: column; align-items: center; padding: 16px 0; z-index: 50; }
+.sidebar-top { margin-bottom: 32px; opacity: 0.4; }
+.sidebar-terminal { font-size: 24px; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 24px; align-items: center; width: 100%; }
+.sidebar-icon { width: 100%; padding: 8px; display: flex; justify-content: center; align-items: center; background: none; border: none; color: #C0C7D3; cursor: pointer; border-radius: 8px; transition: all 0.15s; border-left: 2px solid transparent; }
+.sidebar-icon:hover { color: #FFFFFF; background: #353535; }
+.sidebar-icon.active { color: #9FCAFF; border-left-color: #9FCAFF; background: #202020; border-radius: 0; }
+.sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 24px; align-items: center; }
+.sidebar-avatar { width: 32px; height: 32px; border-radius: 50%; background: #353535; }
+
+/* Main */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+/* Header */
+.header { height: 56px; background: #131313; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; z-index: 40; }
+.header-left { display: flex; align-items: center; gap: 32px; }
+.header-right { display: flex; align-items: center; gap: 16px; }
+.logo { font-size: 18px; font-weight: 700; color: #9FCAFF; letter-spacing: -0.02em; }
+.nav-tabs { display: flex; height: 56px; }
+.nav-tab { display: flex; align-items: center; padding: 0 16px; color: #C0C7D3; text-decoration: none; font-weight: 500; font-size: 13px; border-bottom: 2px solid transparent; height: 100%; cursor: pointer; transition: all 0.15s; }
+.nav-tab:hover { color: #FFFFFF; background: #202020; }
+.nav-tab.active { color: #9FCAFF; border-bottom-color: #9FCAFF; font-weight: 600; }
+.search-box { position: relative; }
+.search-box input { width: 256px; height: 30px; background: #0E0E0E; border: 1px solid rgba(138,145,157,0.2); border-radius: 6px; padding: 0 12px 0 36px; color: #E5E2E1; font-size: 13px; font-family: 'Inter', sans-serif; outline: none; transition: all 0.15s; }
+.search-box input:focus { border-color: #9FCAFF; box-shadow: 0 0 0 1px rgba(159,202,255,0.1); }
+.search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 16px; color: #8A919D; }
+.icon-btn { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; color: #C0C7D3; cursor: pointer; border-radius: 4px; transition: all 0.15s; }
+.icon-btn:hover { background: #202020; color: #E5E2E1; }
+.icon-btn .material-symbols-outlined { font-size: 20px; }
+
+/* Content */
+.content { flex: 1; display: flex; overflow: hidden; }
+.package-list { flex: 1; overflow-y: auto; padding: 16px; }
+.list-header { display: flex; justify-content: space-between; align-items: center; padding: 24px 16px 16px; }
+.list-title { font-size: 20px; font-weight: 700; color: #E5E2E1; letter-spacing: -0.02em; }
+.sort-select { display: flex; align-items: center; gap: 12px; }
+.sort-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #C0C7D3; }
+.sort-select select { background: #1B1B1C; border: none; border-radius: 4px; padding: 4px 8px; color: #E5E2E1; font-size: 12px; font-family: 'Inter', sans-serif; cursor: pointer; }
+
+/* Package items */
+.package-item { display: flex; gap: 16px; padding: 16px; border-radius: 6px; border-left: 2px solid transparent; cursor: pointer; transition: all 0.15s; margin-bottom: 8px; }
+.package-item:hover { background: #1B1B1C; }
+.package-item.selected { background: #1B1B1C; border-left-color: #9FCAFF; }
+.package-icon-box { width: 40px; height: 40px; border-radius: 4px; background: #202020; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.package-icon-box.selected { background: #007ACC; }
+.package-icon-box .material-symbols-outlined { font-size: 20px; color: #9FCAFF; }
+.package-icon-box.selected .material-symbols-outlined { color: #FFFFFF; }
+.icon-selected { color: #FFFFFF !important; }
+.package-content { flex: 1; min-width: 0; }
+.package-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+.package-name { font-size: 15px; font-weight: 600; color: #E5E2E1; }
+.package-version { font-size: 11px; color: #C0C7D3; background: #2A2A2A; padding: 2px 8px; border-radius: 999px; }
+.package-version.installed { background: rgba(159,202,255,0.18); color: #9FCAFF; }
+.package-description { font-size: 13px; color: #C0C7D3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 12px; }
+.package-meta { display: flex; gap: 16px; }
+.meta-item { display: flex; align-items: center; gap: 4px; font-size: 0.65rem; color: rgba(192,199,211,0.7); }
+.meta-icon { font-size: 1rem !important; }
+
+/* Details panel */
+.details-panel { width: 384px; background: #1B1B1C; border-left: 1px solid rgba(64,71,81,0.1); overflow-y: auto; padding: 24px; flex-shrink: 0; }
+.details-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #C0C7D3; text-align: center; gap: 16px; }
+.empty-icon { font-size: 48px; opacity: 0.5; }
+.empty-title { font-size: 16px; font-weight: 600; color: #E5E2E1; margin-bottom: 8px; }
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px; color: #C0C7D3; text-align: center; }
+.details-header { display: flex; gap: 12px; margin-bottom: 16px; }
+.details-icon-box { width: 48px; height: 48px; border-radius: 8px; background: #007ACC; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.details-icon-glyph { font-size: 24px; color: #FFFFFF; }
+.details-title h2 { font-size: 18px; font-weight: 700; color: #E5E2E1; line-height: 1.2; }
+.details-title p { font-size: 12px; color: #C0C7D3; }
+.details-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 24px; }
+.btn { height: 36px; border-radius: 6px; border: none; font-size: 13px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s; }
+.btn-icon { font-size: 16px !important; }
+.btn-primary { background: #007ACC; color: #FFFFFF; }
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-danger { background: rgba(255,180,171,0.12); color: #FFB4AB; }
+.btn-danger:hover { background: rgba(255,180,171,0.2); }
+.version-select { position: relative; }
+.version-select select { width: 100%; height: 36px; background: #2A2A2A; border: 1px solid rgba(64,71,81,0.2); border-radius: 6px; padding: 0 32px 0 12px; color: #E5E2E1; font-size: 12px; font-family: 'Inter', sans-serif; appearance: none; cursor: pointer; }
+.version-chevron { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 16px; pointer-events: none; color: #C0C7D3; }
+
+/* Sections */
+.section { margin-bottom: 24px; }
+.section-title { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #C0C7D3; margin-bottom: 12px; }
+.section-content { font-size: 12px; line-height: 1.6; color: #C0C7D3; }
+.info-grid { display: flex; flex-direction: column; gap: 4px; }
+.info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(64,71,81,0.05); }
+.info-label { font-size: 0.7rem; color: #C0C7D3; }
+.info-value { font-size: 0.7rem; color: #E5E2E1; }
+.info-link { font-size: 0.7rem; color: #9FCAFF; text-decoration: none; display: flex; align-items: center; gap: 4px; }
+.info-link:hover { text-decoration: underline; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag { padding: 4px 8px; background: #353535; border: 1px solid rgba(64,71,81,0.1); border-radius: 999px; font-size: 0.6rem; color: #C0C7D3; text-transform: uppercase; letter-spacing: 0.02em; }
+
+/* Dependencies */
+.deps-list { display: flex; flex-direction: column; gap: 8px; }
+.dep-item { padding: 12px; background: #202020; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; transition: background 0.15s; cursor: pointer; }
+.dep-item:hover { background: #2A2A2A; }
+.dep-info { display: flex; align-items: center; gap: 12px; }
+.dep-icon { font-size: 16px; color: #C0C7D3; }
+.dep-name { font-size: 12px; color: #E5E2E1; }
+.dep-chevron { font-size: 14px; opacity: 0; transition: opacity 0.15s; }
+.dep-item:hover .dep-chevron { opacity: 1; }
+
+/* Status bar */
+.status-bar { height: 24px; background: #007ACC; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; font-size: 0.65rem; color: rgba(255,255,255,0.9); }
+.status-left, .status-right { display: flex; gap: 16px; }
+.status-item { display: flex; align-items: center; gap: 4px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #131313; }
+::-webkit-scrollbar-thumb { background: #353535; }
+::-webkit-scrollbar-thumb:hover { background: #404751; }
+</style>`;
     }
 }

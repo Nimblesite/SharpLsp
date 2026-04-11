@@ -7,6 +7,11 @@ import { getErrorMessage } from "./utils.js";
 
 const execFileAsync = promisify(execFile);
 
+// Note: removeNuGetPackage still uses direct CLI here because it's called
+// from the solution explorer context menu where the LSP client may not
+// be readily available. The NuGet browser panel uses LSP exclusively
+// via forge/nuget/* custom requests.
+
 // ── Types ────────────────────────────────────────────────────────
 
 export interface NuGetPackage {

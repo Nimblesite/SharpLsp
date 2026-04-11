@@ -39,6 +39,8 @@ import { NuGetBrowserPanel } from "./nuget-browser.js";
 export interface ForgeExtensionApi {
     readonly explorerProvider: SolutionExplorerProvider;
     readonly profilerProvider: profiler.ProfilerTreeProvider;
+    /** Get the active LSP client, if started. Used by tests. */
+    readonly getLspClient: () => LanguageClient | undefined;
 }
 
 let lspClient: LanguageClient | undefined;
@@ -119,7 +121,7 @@ async function activateInner(
         void window.showErrorMessage(
             `Forge: Failed to start language server. ${msg}`,
         );
-        return { explorerProvider, profilerProvider };
+        return { explorerProvider, profilerProvider, getLspClient: () => lspClient };
     }
 
     log.info("step 12: post-start wiring");
@@ -134,7 +136,7 @@ async function activateInner(
     }
 
     log.info("step 13: activate complete");
-    return { explorerProvider, profilerProvider };
+    return { explorerProvider, profilerProvider, getLspClient: () => lspClient };
 }
 
 export async function deactivate(): Promise<void> {
@@ -241,7 +243,7 @@ function browseNuGetPackages(
     }
     const projectName = node.sortName;
     log.info(`Opening NuGet browser for ${projectName} (${node.projectFilePath})`);
-    NuGetBrowserPanel.open(context, node.projectFilePath, projectName);
+    NuGetBrowserPanel.open(context, node.projectFilePath, projectName, () => lspClient);
 }
 
 function registerContextMenuCommands(context: ExtensionContext): void {
