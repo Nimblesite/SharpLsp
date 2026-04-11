@@ -47,11 +47,17 @@ object LspBridge {
                     )
                     return@executeOnPooledThread
                 }
-                val value: T = srv.sendRequestSync(timeoutMs) { lsp4j ->
+                val value: T? = srv.sendRequestSync(timeoutMs) { lsp4j ->
                     @Suppress("UNCHECKED_CAST")
                     block(lsp4j as ForgeLsp4jServer)
                 }
-                result.complete(value)
+                if (value == null) {
+                    result.completeExceptionally(
+                        IllegalStateException("forge-lsp returned no response (timeout or closed)"),
+                    )
+                } else {
+                    result.complete(value)
+                }
             } catch (err: Throwable) {
                 log.warn("forge-lsp custom request failed", err)
                 result.completeExceptionally(err)

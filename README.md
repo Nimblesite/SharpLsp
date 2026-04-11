@@ -66,6 +66,14 @@ Then in Zed: command palette → `zed: install dev extension` → pick `target/z
 
 Full `forge-lsp` (hover, completions, go-to-def, diagnostics, rename, …) works in Zed over stdio. The `/forge-tree <Solution.sln>` slash command renders the solution tree in the assistant. A sidebar Solution Explorer is not possible — Zed's extension API has no panel/tree-view/webview contribution point.
 
+### JetBrains Rider
+
+```sh
+make package-rider        # requires JDK 21 (brew install openjdk@21)
+```
+
+Then in Rider: **Settings → Plugins → ⚙ → Install Plugin from Disk…** and pick `forge-rider.zip`. Restart. The plugin attaches `forge-lsp` over LSP for `.cs/.csx/.fs/.fsx/.fsi` and adds a **Forge Solution** tool window that mirrors the VS Code solution explorer (projects, NuGet packages, project references, namespaces, types, members — all via the same `forge/*` custom LSP requests).
+
 ## Architecture
 
 Three-tier architecture:

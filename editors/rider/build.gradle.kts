@@ -32,10 +32,12 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        create(
-            type = providers.gradleProperty("platformType").get(),
-            version = providers.gradleProperty("platformVersion").get(),
-        )
+        // Rider 2024.3 is distributed as a .dmg/.exe installer only —
+        // the intellij-platform plugin 2.14 requires `useInstaller = false`
+        // to fall back to the .tar.gz / .zip archive resolver instead.
+        rider(providers.gradleProperty("platformVersion").get()) {
+            useInstaller = false
+        }
         // The LSP API (com.intellij.platform.lsp.api.*) lives inside
         // Rider's main `lib/product.jar`, not in a separately-declarable
         // bundled module. It is already on the compile classpath once
@@ -92,6 +94,6 @@ tasks {
 
     // Let Gradle wire the wrapper task so `./gradlew wrapper` regenerates.
     wrapper {
-        gradleVersion = "8.11.1"
+        gradleVersion = "9.0.0"
     }
 }

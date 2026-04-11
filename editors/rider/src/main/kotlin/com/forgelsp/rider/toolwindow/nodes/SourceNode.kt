@@ -137,18 +137,10 @@ class SymbolTreeNode(
             "enum" -> AllIcons.Nodes.Enum
             "struct" -> AllIcons.Nodes.Static
             "record" -> AllIcons.Nodes.Record
-            "method", "function" -> when (access?.lowercase()) {
-                "private" -> AllIcons.Nodes.PrivateMethod
-                "protected" -> AllIcons.Nodes.ProtectedMethod
-                else -> AllIcons.Nodes.Method
-            }
+            "method", "function" -> AllIcons.Nodes.Method
             "property" -> AllIcons.Nodes.Property
-            "field" -> when (access?.lowercase()) {
-                "private" -> AllIcons.Nodes.PrivateField
-                "protected" -> AllIcons.Nodes.ProtectedField
-                else -> AllIcons.Nodes.Field
-            }
-            "event" -> AllIcons.Nodes.Event
+            "field" -> AllIcons.Nodes.Field
+            "event" -> AllIcons.Nodes.Property
             "delegate" -> AllIcons.Nodes.Function
             "namespace" -> AllIcons.Nodes.Package
             else -> AllIcons.Nodes.AbstractClass

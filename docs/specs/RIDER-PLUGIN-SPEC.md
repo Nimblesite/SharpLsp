@@ -2,6 +2,8 @@
 
 **Parent:** [FORGE-SPEC.md](FORGE-SPEC.md)
 
+https://plugins.jetbrains.com/docs/intellij/language-server-protocol.html
+
 ## 1. Overview
 
 The Forge Rider plugin wires the `forge-lsp` binary into JetBrains Rider (and

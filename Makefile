@@ -23,6 +23,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eo pipefail -c
 
 .PHONY: ci build build-rust build-dotnet build-vsix build-zed package-zed \
+       build-rider package-rider clean-rider \
        test test-rust test-zed test-vsix test-dotnet \
        lint lint-rust lint-zed lint-vsix lint-dotnet \
        fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet \
@@ -51,10 +52,13 @@ ZED_WASM    = $(ZED_DIR)/target/wasm32-wasip1/$(PROFILE)/forge_zed.wasm
 VSIX        = forge.vsix
 ZED_PKG_DIR = target/zed-extension
 ZED_PKG_TAR = forge-zed-extension.tar.gz
+RIDER_DIR   = editors/rider
+RIDER_ZIP_SRC = $(RIDER_DIR)/build/distributions/forge-rider-0.1.0.zip
+RIDER_ZIP   = forge-rider.zip
 
 # ── Default target ───────────────────────────────────────────────
 
-build: build-rust build-dotnet build-vsix build-zed
+build: build-rust build-dotnet build-vsix build-zed package-rider
 	@echo ""
 	@echo "==> Build complete."
 	@echo "    Server:     $(BINARY)"
@@ -62,6 +66,7 @@ build: build-rust build-dotnet build-vsix build-zed
 	@echo "    Sidecar F#: $(SIDECAR_FS_OUT)"
 	@echo "    VSIX:       $(VSIX)"
 	@echo "    Zed:        $(ZED_WASM)"
+	@if [ -f $(RIDER_ZIP) ]; then echo "    Rider:      $(RIDER_ZIP)"; fi
 
 # ── Rust LSP server (native) ────────────────────────────────────
 
@@ -173,6 +178,61 @@ package-zed: build-zed
 	@echo "      - Rust installed via rustup (Zed invokes cargo to build)"
 	@echo "      - wasm32-wasip1 target: rustup target add wasm32-wasip1"
 	@echo "      - forge-lsp on \$$PATH: run 'make install' once."
+
+# ── JetBrains Rider plugin ──────────────────────────────────────
+#
+# The Rider plugin lives in `editors/rider/` and is built with the
+# `org.jetbrains.intellij.platform` Gradle plugin. It requires:
+#   - JDK 21 (brew install openjdk@21 on macOS)
+#   - Gradle 9.0+ (wrapper handles this automatically)
+#   - ~2 GB free disk for the cached Rider platform extraction
+#
+# `build-rider` produces `editors/rider/build/distributions/forge-rider-0.1.0.zip`
+# and `package-rider` copies it to `forge-rider.zip` at the repo root
+# so the top-level `make build` has one canonical output alongside `forge.vsix`.
+#
+# Gracefully skips on machines without a JVM — CI can run `make build`
+# without exploding on agents that only have Rust + .NET.
+
+build-rider:
+	@if ! command -v java >/dev/null 2>&1; then \
+		echo "==> Skipping Rider plugin (no 'java' on PATH — install JDK 21 to build)"; \
+		exit 0; \
+	fi
+	@echo "==> Building Forge Rider plugin..."
+	cd $(RIDER_DIR) && ./gradlew buildPlugin --no-daemon
+	@test -f $(RIDER_ZIP_SRC) || { echo "ERROR: $(RIDER_ZIP_SRC) not found" >&2; exit 1; }
+	@echo "==> Rider plugin zip: $(RIDER_ZIP_SRC)"
+
+package-rider: build-rider
+	@if [ ! -f $(RIDER_ZIP_SRC) ]; then \
+		echo "==> Skipping package-rider (build-rider produced no output)"; \
+		exit 0; \
+	fi
+	@echo "==> Copying Rider plugin to repo root as $(RIDER_ZIP)..."
+	@rm -f $(RIDER_ZIP)
+	cp $(RIDER_ZIP_SRC) $(RIDER_ZIP)
+	@echo ""
+	@echo "==> Rider plugin packaged."
+	@echo "    Zip: $(abspath $(RIDER_ZIP))"
+	@echo ""
+	@echo "    Install into Rider:"
+	@echo "      1. Open Rider → Settings → Plugins"
+	@echo "      2. Gear icon → Install Plugin from Disk…"
+	@echo "      3. Select $(abspath $(RIDER_ZIP))"
+	@echo "      4. Restart Rider"
+	@echo ""
+	@echo "    Prerequisites:"
+	@echo "      - forge-lsp on \$$PATH: run 'make install' once."
+
+clean-rider:
+	@echo "==> Cleaning Rider plugin build artifacts..."
+	@if [ -d $(RIDER_DIR) ] && command -v java >/dev/null 2>&1; then \
+		cd $(RIDER_DIR) && ./gradlew clean --no-daemon || true; \
+	fi
+	rm -rf $(RIDER_DIR)/build $(RIDER_DIR)/.gradle
+	rm -f $(RIDER_ZIP)
+	@echo "==> Rider clean."
 
 # ── CI (full pipeline: build → lint → test) ────────────────────
 
@@ -354,7 +414,7 @@ fresh-vsix: kill-forge
 
 # ── Clean ────────────────────────────────────────────────────────
 
-clean:
+clean: clean-rider
 	@echo "==> Cleaning all build artifacts..."
 	cargo clean
 	cargo clean --manifest-path $(ZED_DIR)/Cargo.toml

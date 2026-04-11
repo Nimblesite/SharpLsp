@@ -5,7 +5,7 @@ import org.eclipse.lsp4j.services.LanguageServer
 import java.util.concurrent.CompletableFuture
 
 /**
- * Custom LSP server interface for forge-lsp's `forge/*` extensions.
+ * Custom LSP server interface for forge-lsp's forge/ extensions.
  *
  * JetBrains's LSP API lets us override `LspServerDescriptor.lsp4jServerClass`
  * with a subinterface of [LanguageServer] that adds `@JsonRequest` methods.
