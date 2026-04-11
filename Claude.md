@@ -2,6 +2,7 @@
 
 ⚠️ KILLING A VSCODE PROCESS - EVEN IN THE BROWSER WILL BE MET WITH INSTANT, EXTREME VIOLENCE!
 ⚠️ DO NOT KILL VSCODE PROCESSES
+⚠️ DO NOT ASK THE USER QUESTIONS. USE YOUR JUDGMENT ⚠️
 
 Forge is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
 

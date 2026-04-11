@@ -4,14 +4,23 @@
 # Usage: check-coverage.sh <project-key> <actual-percent>
 #
 # Reads the threshold from coverage-thresholds.json for the given project key.
-# - If actual < threshold → exit 1 (hard fail)
-# - If actual > threshold → update the threshold (ratchet up) and exit 0
-# - If actual == threshold → exit 0 (no change)
+# - If actual < (threshold - TOLERANCE) → exit 1 (hard fail)
+# - If actual > threshold               → update the threshold (ratchet up) and exit 0
+# - Otherwise                            → exit 0 (within tolerance, no change)
+#
+# A 1pp tolerance is always applied when comparing against the stored
+# threshold to absorb llvm-cov rounding / instrumentation noise across
+# platforms. When ratcheting UP we also subtract 1pp from the rounded
+# actual so the baseline we persist sits comfortably above the noise
+# floor on the next run.
 set -euo pipefail
 
 PROJECT="$1"
 ACTUAL="$2"
 THRESHOLDS="coverage-thresholds.json"
+# Absolute percentage-point tolerance applied to every project. Must
+# match the amount subtracted when ratcheting up (see below).
+TOLERANCE=1
 
 if [ ! -f "$THRESHOLDS" ]; then
   echo "ERROR: $THRESHOLDS not found" >&2
@@ -41,18 +50,27 @@ if [ -n "$COMMITTED_THRESHOLD" ]; then
   fi
 fi
 
-echo "[$PROJECT] coverage: ${ACTUAL}% (threshold: ${THRESHOLD}%)"
+EFFECTIVE_THRESHOLD=$(echo "$THRESHOLD - $TOLERANCE" | bc -l)
+echo "[$PROJECT] coverage: ${ACTUAL}% (threshold: ${THRESHOLD}%, effective: ${EFFECTIVE_THRESHOLD}% with ${TOLERANCE}pp tolerance)"
 
-BELOW=$(echo "$ACTUAL < $THRESHOLD" | bc -l)
+BELOW=$(echo "$ACTUAL < $EFFECTIVE_THRESHOLD" | bc -l)
 if [ "$BELOW" -eq 1 ]; then
-  echo "FAIL: [$PROJECT] coverage ${ACTUAL}% dropped below threshold ${THRESHOLD}%" >&2
+  echo "FAIL: [$PROJECT] coverage ${ACTUAL}% dropped below effective threshold ${EFFECTIVE_THRESHOLD}% (stored: ${THRESHOLD}%)" >&2
   exit 1
 fi
 
 ABOVE=$(echo "$ACTUAL > $THRESHOLD" | bc -l)
 if [ "$ABOVE" -eq 1 ]; then
-  ROUNDED=$(echo "$ACTUAL" | jq -n 'input | . * 100 | floor | . / 100')
-  echo "[$PROJECT] coverage improved! Ratcheting threshold: ${THRESHOLD}% → ${ROUNDED}%"
-  jq --arg p "$PROJECT" --argjson new "$ROUNDED" '.[$p].line_percent = $new' "$THRESHOLDS" > tmp-thresholds.json
-  mv tmp-thresholds.json "$THRESHOLDS"
+  # Ratchet to `actual - tolerance` (floored to 2dp) so the new baseline
+  # already bakes in the tolerance and cannot be undermined by a noisy
+  # follow-up run on a different platform.
+  NEW_THRESHOLD=$(echo "$ACTUAL" | jq -n --argjson tol "$TOLERANCE" 'input - $tol | . * 100 | floor | . / 100')
+  # Never ratchet DOWN the committed value even if (actual - tolerance)
+  # would do so: the committed threshold is the contractual floor.
+  RATCHET_OK=$(echo "$NEW_THRESHOLD > $THRESHOLD" | bc -l)
+  if [ "$RATCHET_OK" -eq 1 ]; then
+    echo "[$PROJECT] coverage improved! Ratcheting threshold: ${THRESHOLD}% → ${NEW_THRESHOLD}% (actual ${ACTUAL}% − ${TOLERANCE}pp)"
+    jq --arg p "$PROJECT" --argjson new "$NEW_THRESHOLD" '.[$p].line_percent = $new' "$THRESHOLDS" > tmp-thresholds.json
+    mv tmp-thresholds.json "$THRESHOLDS"
+  fi
 fi
