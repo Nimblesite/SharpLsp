@@ -81,7 +81,7 @@ export function getInstalledVersion(binaryPath: string): string | undefined {
         });
         // Output format: "forge-lsp 0.1.0"
         const parts = result.trim().split(" ");
-        if (parts.length >= 2) {
+        if (parts.length >= 2 && parts[0] === "forge-lsp") {
             return parts[1];
         }
         return undefined;
