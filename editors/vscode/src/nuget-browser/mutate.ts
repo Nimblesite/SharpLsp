@@ -4,10 +4,7 @@
 
 import { type LanguageClient } from "vscode-languageclient/node";
 import { searchPackages } from "./lsp.js";
-import {
-    type NuGetSearchResult,
-    type NuGetTarget,
-} from "./types.js";
+import { type NuGetSearchResult, type NuGetTarget } from "./types.js";
 
 export interface OptimisticSnapshot {
     /** Previous installed version (if any) so we can revert on failure. */
@@ -76,7 +73,8 @@ export function revertOptimisticUninstall(
         installed.set(packageId, snapshot.previousVersion);
         if (snapshot.mutatedSearchResult !== undefined) {
             snapshot.mutatedSearchResult.isInstalled = true;
-            snapshot.mutatedSearchResult.installedVersion = snapshot.previousVersion;
+            snapshot.mutatedSearchResult.installedVersion =
+                snapshot.previousVersion;
         }
     }
 }

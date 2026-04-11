@@ -212,10 +212,7 @@ mod tests {
         // from Cargo.toml, this test proves they are in sync.
         // If they drift, the build system should catch it.
         let version = env!("CARGO_PKG_VERSION");
-        assert!(
-            !version.is_empty(),
-            "CARGO_PKG_VERSION must not be empty",
-        );
+        assert!(!version.is_empty(), "CARGO_PKG_VERSION must not be empty",);
     }
 
     #[test]

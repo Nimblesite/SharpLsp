@@ -197,7 +197,10 @@ fn detect_cpm(path: &Path) -> Result<bool> {
     // Normalise whitespace to catch `<ManagePackageVersionsCentrally>true` with
     // any amount of internal whitespace.
     let normalized: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-    Ok(normalized.contains("<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>"))
+    Ok(
+        normalized
+            .contains("<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>"),
+    )
 }
 
 #[cfg(test)]

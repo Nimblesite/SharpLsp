@@ -218,20 +218,28 @@ function buildBrowseListHtml(state: RenderState): string {
     if (state.searchResults.length === 0) {
         return `<div class="list-header"><span class="list-title">Available Packages</span></div><div class="empty-state"><span class="material-symbols-outlined empty-icon">package_2</span><div class="empty-title">No packages found</div><p>Try a different search term.</p></div>`;
     }
-    const items = state.searchResults.map((pkg) => buildPackageItem(state, pkg)).join("");
+    const items = state.searchResults
+        .map((pkg) => buildPackageItem(state, pkg))
+        .join("");
     return `<div class="list-header"><span class="list-title">Available Packages</span></div>${items}`;
 }
 
 function buildPackageItem(state: RenderState, pkg: NuGetSearchResult): string {
     const sel = state.selectedPackage?.id === pkg.id;
     const safeId = esc(pkg.id);
-    const desc = pkg.description.length > 0 ? pkg.description : "No description available";
+    const desc =
+        pkg.description.length > 0
+            ? pkg.description
+            : "No description available";
     const version = pkg.installedVersion ?? pkg.version;
     const installed = pkg.isInstalled === true;
     const pending =
         state.loading.has(installKey(pkg.id)) ||
         state.loading.has(uninstallKey(pkg.id));
-    const dl = pkg.downloadCount !== undefined ? formatDownloads(pkg.downloadCount) : null;
+    const dl =
+        pkg.downloadCount !== undefined
+            ? formatDownloads(pkg.downloadCount)
+            : null;
     const icon = installed ? "database" : "package_2";
     return `<div class="package-item ${sel ? "selected" : ""} ${pending ? "pending" : ""}" onclick="selectPackage('${escAttr(pkg.id)}')">
 <div class="package-icon-box ${sel ? "selected" : ""}"><span class="material-symbols-outlined ${sel ? "icon-selected" : ""}">${icon}</span></div>
@@ -260,8 +268,14 @@ function buildDetailsHtml(state: RenderState): string {
     const installed = pkg.isInstalled === true;
     const versions = (pkg._versions ?? []).slice(0, 20);
     const safeId = esc(pkg.id);
-    const safeAuthors = esc(pkg.authors.length > 0 ? pkg.authors : "Unknown author");
-    const safeDesc = esc(pkg.description.length > 0 ? pkg.description : "No description available");
+    const safeAuthors = esc(
+        pkg.authors.length > 0 ? pkg.authors : "Unknown author",
+    );
+    const safeDesc = esc(
+        pkg.description.length > 0
+            ? pkg.description
+            : "No description available",
+    );
 
     const installPending = state.loading.has(installKey(pkg.id));
     const uninstallPending = state.loading.has(uninstallKey(pkg.id));
@@ -328,8 +342,7 @@ function formatDate(dateStr: string): string {
         if (days < 1) return "Today";
         if (days === 1) return "Yesterday";
         if (days < 30) return `${days.toString()} days ago`;
-        if (days < 365)
-            return `${Math.floor(days / 30).toString()} months ago`;
+        if (days < 365) return `${Math.floor(days / 30).toString()} months ago`;
         return `${Math.floor(days / 365).toString()} years ago`;
     } catch {
         return dateStr;

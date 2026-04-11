@@ -1,7 +1,11 @@
 import * as vscode from "vscode";
 import { type LanguageClient } from "vscode-languageclient/node";
 import * as log from "./log.js";
-import { buildHtml, type RenderState, type ToastState } from "./nuget-browser/html.js";
+import {
+    buildHtml,
+    type RenderState,
+    type ToastState,
+} from "./nuget-browser/html.js";
 import {
     fetchInstalled,
     fetchVersions,
@@ -150,16 +154,36 @@ export class NuGetBrowserPanel {
     }
 
     // ── Test accessors ──────────────────────────────────────────
-    public async waitForInitialLoad(): Promise<void> { await this.initialLoadDone; }
-    public getSearchResultsCount(): number { return this.searchResults.length; }
-    public getInstalledPackageIds(): string[] { return Array.from(this.installedPackages.keys()); }
-    public getSelectedPackageId(): string | undefined { return this.selectedPackage?.id; }
-    public getCurrentTab(): "browse" | "installed" { return this.currentTab; }
-    public getRenderedHtml(): string { return this.panel.webview.html; }
-    public getSelectedTargetId(): string | undefined { return this.selectedTargetId; }
-    public getTargetIds(): string[] { return this.targets.map((t) => t.id); }
-    public getActiveLoadingKeys(): string[] { return Array.from(this.loading); }
-    public async simulateWebviewMessage(m: WebviewMessage): Promise<void> { await this.handleMessage(m); }
+    public async waitForInitialLoad(): Promise<void> {
+        await this.initialLoadDone;
+    }
+    public getSearchResultsCount(): number {
+        return this.searchResults.length;
+    }
+    public getInstalledPackageIds(): string[] {
+        return Array.from(this.installedPackages.keys());
+    }
+    public getSelectedPackageId(): string | undefined {
+        return this.selectedPackage?.id;
+    }
+    public getCurrentTab(): "browse" | "installed" {
+        return this.currentTab;
+    }
+    public getRenderedHtml(): string {
+        return this.panel.webview.html;
+    }
+    public getSelectedTargetId(): string | undefined {
+        return this.selectedTargetId;
+    }
+    public getTargetIds(): string[] {
+        return this.targets.map((t) => t.id);
+    }
+    public getActiveLoadingKeys(): string[] {
+        return Array.from(this.loading);
+    }
+    public async simulateWebviewMessage(m: WebviewMessage): Promise<void> {
+        await this.handleMessage(m);
+    }
 
     // ── Restore progress subscription ───────────────────────────
 
@@ -221,25 +245,37 @@ export class NuGetBrowserPanel {
     // ── Message handling ────────────────────────────────────────
 
     private async handleMessage(message: WebviewMessage): Promise<void> {
-        log.info(`NuGetBrowserPanel: received message command=${message.command}`);
+        log.info(
+            `NuGetBrowserPanel: received message command=${message.command}`,
+        );
         switch (message.command) {
             case "search":
                 await this.performSearch(this.str(message.data?.query));
                 break;
             case "selectPackage":
-                await this.handleSelectPackage(this.str(message.data?.packageId));
+                await this.handleSelectPackage(
+                    this.str(message.data?.packageId),
+                );
                 break;
             case "install":
-                await this.handleInstall(this.str(message.data?.packageId), this.str(message.data?.version));
+                await this.handleInstall(
+                    this.str(message.data?.packageId),
+                    this.str(message.data?.version),
+                );
                 break;
             case "uninstall":
                 await this.handleUninstall(this.str(message.data?.packageId));
                 break;
             case "changeVersion":
-                await this.handleChangeVersion(this.str(message.data?.packageId), this.str(message.data?.version));
+                await this.handleChangeVersion(
+                    this.str(message.data?.packageId),
+                    this.str(message.data?.version),
+                );
                 break;
             case "switchTab":
-                await this.handleSwitchTab(this.str(message.data?.tab, "browse"));
+                await this.handleSwitchTab(
+                    this.str(message.data?.tab, "browse"),
+                );
                 break;
             case "changeTarget":
                 await this.handleChangeTarget(this.str(message.data?.targetId));
@@ -249,7 +285,8 @@ export class NuGetBrowserPanel {
                 break;
             case "openExternal": {
                 const url = this.str(message.data?.url);
-                if (url.length > 0) void vscode.env.openExternal(vscode.Uri.parse(url));
+                if (url.length > 0)
+                    void vscode.env.openExternal(vscode.Uri.parse(url));
                 break;
             }
         }
@@ -272,12 +309,19 @@ export class NuGetBrowserPanel {
             this.updateContent();
             return;
         }
-        const result = await loadTargetsWithDefaults(lsp, this.context, this.initialProjectPath);
+        const result = await loadTargetsWithDefaults(
+            lsp,
+            this.context,
+            this.initialProjectPath,
+        );
         this.targetsLoading = false;
         this.targets = result.targets;
         this.selectedTargetId = result.selectedTargetId;
         if (result.error !== undefined) {
-            this.toast = { kind: "error", text: `Failed to load targets: ${result.error}` };
+            this.toast = {
+                kind: "error",
+                text: `Failed to load targets: ${result.error}`,
+            };
         }
         this.updateContent();
     }
@@ -337,7 +381,10 @@ export class NuGetBrowserPanel {
         const result = await searchPackages(lsp, target, query);
         this.loading.delete("search");
         if (!result.ok) {
-            this.toast = { kind: "error", text: `Search failed: ${result.error}` };
+            this.toast = {
+                kind: "error",
+                text: `Search failed: ${result.error}`,
+            };
             this.updateContent();
             return;
         }
@@ -359,7 +406,11 @@ export class NuGetBrowserPanel {
         this.updateContent();
         const target = this.currentTarget();
         const lsp = this.getClient();
-        if (target !== undefined && lsp !== undefined && pkg.description.length === 0) {
+        if (
+            target !== undefined &&
+            lsp !== undefined &&
+            pkg.description.length === 0
+        ) {
             await enrichPackageMetadata(lsp, target, pkg);
         }
         await this.loadPackageVersions(pkg);
@@ -384,7 +435,10 @@ export class NuGetBrowserPanel {
         this.updateContent();
     }
 
-    private async handleInstall(packageId: string, version: string): Promise<void> {
+    private async handleInstall(
+        packageId: string,
+        version: string,
+    ): Promise<void> {
         const target = this.currentTarget();
         const lsp = this.getClient();
         if (target === undefined || lsp === undefined) return;
@@ -397,7 +451,10 @@ export class NuGetBrowserPanel {
         );
         const installLoadKey = installKey(packageId);
         this.loading.add(installLoadKey);
-        this.toast = { kind: "info", text: buildInstallToast(target, packageId, version) };
+        this.toast = {
+            kind: "info",
+            text: buildInstallToast(target, packageId, version),
+        };
         this.updateContent();
 
         const result = await installPackage(lsp, target, packageId, version);
@@ -406,7 +463,11 @@ export class NuGetBrowserPanel {
         if (this.handleMutationResult(result, "install", packageId)) {
             await this.loadInstalledPackages();
         } else {
-            revertOptimisticInstall(this.installedPackages, packageId, snapshot);
+            revertOptimisticInstall(
+                this.installedPackages,
+                packageId,
+                snapshot,
+            );
             this.updateContent();
         }
     }
@@ -423,7 +484,10 @@ export class NuGetBrowserPanel {
         );
         const uninstallLoadKey = uninstallKey(packageId);
         this.loading.add(uninstallLoadKey);
-        this.toast = { kind: "info", text: buildUninstallToast(target, packageId) };
+        this.toast = {
+            kind: "info",
+            text: buildUninstallToast(target, packageId),
+        };
         this.updateContent();
 
         const result = await uninstallPackage(lsp, target, packageId);
@@ -432,12 +496,19 @@ export class NuGetBrowserPanel {
         if (this.handleMutationResult(result, "uninstall", packageId)) {
             await this.loadInstalledPackages();
         } else {
-            revertOptimisticUninstall(this.installedPackages, packageId, snapshot);
+            revertOptimisticUninstall(
+                this.installedPackages,
+                packageId,
+                snapshot,
+            );
             this.updateContent();
         }
     }
 
-    private async handleChangeVersion(packageId: string, version: string): Promise<void> {
+    private async handleChangeVersion(
+        packageId: string,
+        version: string,
+    ): Promise<void> {
         await this.handleInstall(packageId, version);
     }
 
@@ -457,10 +528,11 @@ export class NuGetBrowserPanel {
         op: "install" | "uninstall",
         packageId: string,
     ): boolean {
-        const errorText =
-            !result.ok ? result.error
-            : !result.value.success ? result.value.message
-            : undefined;
+        const errorText = !result.ok
+            ? result.error
+            : !result.value.success
+              ? result.value.message
+              : undefined;
         if (errorText !== undefined) {
             const text = `${op} failed: ${errorText}`;
             this.toast = { kind: "error", text };

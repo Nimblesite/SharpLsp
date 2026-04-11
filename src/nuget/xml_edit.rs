@@ -89,7 +89,11 @@ pub fn add_package(
 }
 
 /// Remove a package entry from the given file.
-pub fn remove_package(path: &Path, package_id: &str, element: PackageElement) -> Result<EditOutcome> {
+pub fn remove_package(
+    path: &Path,
+    package_id: &str,
+    element: PackageElement,
+) -> Result<EditOutcome> {
     let original =
         std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
 
@@ -327,10 +331,7 @@ fn create_item_group_with(
     out.push_str("<ItemGroup>\n");
     out.push_str(indent);
     out.push_str("  ");
-    out.push_str(
-        render_element(package_id, version, element, "")
-            .trim_start(),
-    );
+    out.push_str(render_element(package_id, version, element, "").trim_start());
     out.push('\n');
     out.push_str(indent);
     out.push_str("</ItemGroup>\n");
@@ -387,14 +388,24 @@ mod tests {
 
     #[test]
     fn updates_existing_version() {
-        let out = upsert(SIMPLE_CSPROJ, "Newtonsoft.Json", "13.0.4", PackageElement::Reference);
+        let out = upsert(
+            SIMPLE_CSPROJ,
+            "Newtonsoft.Json",
+            "13.0.4",
+            PackageElement::Reference,
+        );
         assert!(out.contains("Version=\"13.0.4\""));
         assert!(!out.contains("Version=\"13.0.3\""));
     }
 
     #[test]
     fn no_change_when_already_present_and_same_version() {
-        let out = upsert(SIMPLE_CSPROJ, "Newtonsoft.Json", "13.0.3", PackageElement::Reference);
+        let out = upsert(
+            SIMPLE_CSPROJ,
+            "Newtonsoft.Json",
+            "13.0.3",
+            PackageElement::Reference,
+        );
         assert_eq!(out, SIMPLE_CSPROJ);
     }
 

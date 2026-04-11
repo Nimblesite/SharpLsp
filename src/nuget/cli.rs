@@ -52,4 +52,3 @@ pub async fn list_installed(project_path: &str) -> Result<Vec<InstalledPackageIn
     info!("nuget/installed: found {} packages", packages.len());
     Ok(packages)
 }
-
