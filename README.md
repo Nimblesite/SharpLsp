@@ -38,6 +38,16 @@ cargo test
 cd editors/vscode && npm install && npm run compile
 ```
 
+## Install
+
+Install the LSP binary and sidecars once; every editor picks them up from `$PATH`.
+
+```sh
+make install        # installs forge-lsp to ~/.local/bin and sidecars to ~/.local/lib/forge
+make build-vsix     # produces forge.vsix at the repo root
+code --install-extension forge.vsix
+```
+
 ## Architecture
 
 Three-tier architecture:
@@ -61,7 +71,8 @@ forge/
 │   ├── Forge.Sidecar.Common/   # Shared sidecar code
 │   └── Forge.Sidecars.sln
 ├── editors/
-│   └── vscode/           # VS Code extension
+│   ├── vscode/           # VS Code extension (TypeScript)
+│   └── zed/              # Zed extension (Rust → wasm32-wasip1)
 ├── docs/
 │   ├── specs/            # Specifications — how functionality works
 │   ├── plans/            # Implementation plans — how we build it (with TODOs)

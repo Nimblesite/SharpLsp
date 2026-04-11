@@ -8,6 +8,7 @@
 #   make build-dotnet        C# sidecar only
 #   make build-vsix          VS Code extension (no binaries — thin client only)
 #   make build-zed           Zed extension WASM only
+#   make package-zed         Assemble a distributable Zed extension directory + tarball
 #   make test                run all tests (with coverage + threshold enforcement)
 #   make test-rust           test forge-lsp + coverage threshold
 #   make test-vsix           test VS Code extension + coverage threshold
@@ -21,7 +22,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eo pipefail -c
 
-.PHONY: ci build build-rust build-dotnet build-vsix build-zed \
+.PHONY: ci build build-rust build-dotnet build-vsix build-zed package-zed \
        test test-rust test-zed test-vsix test-dotnet \
        lint lint-rust lint-zed lint-vsix lint-dotnet \
        fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet \
@@ -48,6 +49,8 @@ SIDECAR_CS_OUT = target/sidecar-csharp
 SIDECAR_FS_OUT = target/sidecar-fsharp
 ZED_WASM    = $(ZED_DIR)/target/wasm32-wasip1/$(PROFILE)/forge_zed.wasm
 VSIX        = forge.vsix
+ZED_PKG_DIR = target/zed-extension
+ZED_PKG_TAR = forge-zed-extension.tar.gz
 
 # ── Default target ───────────────────────────────────────────────
 
@@ -116,6 +119,60 @@ build-zed:
 		--target wasm32-wasip1
 	@test -f $(ZED_WASM) || { echo "ERROR: $(ZED_WASM) not found" >&2; exit 1; }
 	@echo "==> Zed WASM: $(ZED_WASM)"
+
+# ── Zed extension package (dev-install ready) ───────────────────
+#
+# IMPORTANT: Zed's "install dev extension" action RECOMPILES the extension
+# from source on your machine. It does NOT load a pre-built .wasm. It
+# therefore needs the full source tree — `extension.toml`, `Cargo.toml`,
+# and `src/`. A bare wasm directory produces
+#   "No extension manifest found for extension forge"
+#
+# What `package-zed` does:
+#   1. Runs `build-zed` as a smoke test that the source compiles cleanly
+#      on your toolchain (catches broken deps / missing wasm target now,
+#      not later when the user tries to dev-install).
+#   2. Stages a SELF-CONTAINED source tree at `target/zed-extension/` —
+#      this is what you feed to Zed's "install dev extension" dialog.
+#      It contains everything Zed needs to recompile: `extension.toml`,
+#      `Cargo.toml`, `Cargo.lock`, and `src/`.
+#   3. Tars the staged directory into `forge-zed-extension.tar.gz` for
+#      distribution (GitHub releases, etc.). End users extract the tar,
+#      cd into it, and run "zed: install dev extension" on the resulting
+#      directory.
+#
+# You can also dev-install directly from `editors/zed/` without packaging
+# — but that pollutes the source tree with Zed's build artifacts. The
+# staged `target/zed-extension/` keeps the dev-install sandboxed.
+
+package-zed: build-zed
+	@echo "==> Staging Zed extension source tree at $(ZED_PKG_DIR)..."
+	@rm -rf $(ZED_PKG_DIR)
+	@mkdir -p $(ZED_PKG_DIR)
+	cp $(ZED_DIR)/extension.toml $(ZED_PKG_DIR)/extension.toml
+	cp $(ZED_DIR)/Cargo.toml    $(ZED_PKG_DIR)/Cargo.toml
+	cp $(ZED_DIR)/Cargo.lock    $(ZED_PKG_DIR)/Cargo.lock
+	cp -R $(ZED_DIR)/src        $(ZED_PKG_DIR)/src
+	@test -f $(ZED_PKG_DIR)/extension.toml || { echo "ERROR: extension.toml missing" >&2; exit 1; }
+	@test -f $(ZED_PKG_DIR)/Cargo.toml || { echo "ERROR: Cargo.toml missing" >&2; exit 1; }
+	@test -d $(ZED_PKG_DIR)/src || { echo "ERROR: src/ missing" >&2; exit 1; }
+	@echo "==> Creating tarball $(ZED_PKG_TAR)..."
+	@rm -f $(ZED_PKG_TAR)
+	tar -czf $(ZED_PKG_TAR) -C $(dir $(ZED_PKG_DIR)) $(notdir $(ZED_PKG_DIR))
+	@echo ""
+	@echo "==> Zed extension packaged."
+	@echo "    Source tree: $(ZED_PKG_DIR)/"
+	@echo "    Tarball:     $(ZED_PKG_TAR)"
+	@echo ""
+	@echo "    Dev-install into Zed (recompiles on your machine):"
+	@echo "      1. Open the command palette (cmd-shift-p / ctrl-shift-p)"
+	@echo "      2. Run: zed: install dev extension"
+	@echo "      3. Select $(abspath $(ZED_PKG_DIR))"
+	@echo ""
+	@echo "    Prerequisites:"
+	@echo "      - Rust installed via rustup (Zed invokes cargo to build)"
+	@echo "      - wasm32-wasip1 target: rustup target add wasm32-wasip1"
+	@echo "      - forge-lsp on \$$PATH: run 'make install' once."
 
 # ── CI (full pipeline: build → lint → test) ────────────────────
 
@@ -303,5 +360,6 @@ clean:
 	cargo clean --manifest-path $(ZED_DIR)/Cargo.toml
 	rm -rf $(SIDECAR_CS_OUT) $(SIDECAR_FS_OUT)
 	rm -rf $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
-	rm -f $(VSIX)
+	rm -rf $(ZED_PKG_DIR)
+	rm -f $(VSIX) $(ZED_PKG_TAR)
 	@echo "==> Clean."

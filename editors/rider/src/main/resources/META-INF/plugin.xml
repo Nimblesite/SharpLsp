@@ -1,0 +1,40 @@
+<idea-plugin>
+    <id>com.forgelsp.rider</id>
+    <name>Forge LSP</name>
+    <vendor url="https://github.com/forge-lsp/forge">Forge LSP</vendor>
+
+    <!-- Required for every plugin that uses the IntelliJ Platform APIs. -->
+    <depends>com.intellij.modules.platform</depends>
+
+    <!-- LSP API is gated behind this module. It ships in Rider, IntelliJ
+         Ultimate, WebStorm, PhpStorm, PyCharm Professional, etc.
+         Declaring this dependency makes the plugin refuse to load on
+         IntelliJ Community and Android Studio, which is the correct
+         behaviour — those editions have no LSP support. -->
+    <depends>com.intellij.modules.lsp</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- LSP server registration — extension point lives in the
+             com.intellij.modules.lsp module. -->
+        <platform.lsp.serverSupportProvider
+            implementation="com.forgelsp.rider.lsp.ForgeLspServerSupportProvider"/>
+
+        <!-- Solution Explorer tool window. Anchored to the left so it
+             sits next to Rider's built-in Solution Explorer. -->
+        <toolWindow
+            id="Forge Solution"
+            anchor="left"
+            icon="/icons/forge.svg"
+            factoryClass="com.forgelsp.rider.toolwindow.ForgeSolutionToolWindowFactory"/>
+
+        <!-- Project-level settings UI at Settings → Tools → Forge. -->
+        <projectConfigurable
+            parentId="tools"
+            id="com.forgelsp.rider.settings"
+            displayName="Forge"
+            instance="com.forgelsp.rider.settings.ForgeSettingsConfigurable"/>
+
+        <projectService
+            serviceImplementation="com.forgelsp.rider.settings.ForgeSettings"/>
+    </extensions>
+</idea-plugin>

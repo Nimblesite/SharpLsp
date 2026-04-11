@@ -39,3 +39,4 @@ editors/vscode/coverage/
 
 # Screenshot test artifacts at root
 /*.png
+forge-zed-extension.tar.gz
