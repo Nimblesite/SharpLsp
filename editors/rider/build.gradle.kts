@@ -2,7 +2,7 @@ import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
     id("java")
-    kotlin("jvm") version "2.0.21"
+    kotlin("jvm") version "2.3.0"
     // 2.14 is the current stable intellij-platform Gradle plugin release;
     // 2.2 was rejected by the platform with an "outdated" warning.
     id("org.jetbrains.intellij.platform") version "2.14.0"
@@ -11,7 +11,7 @@ plugins {
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
 
-// Rider 2024.3 runs on JetBrains Runtime 21 and its platform jars are
+// Rider 2026.1 runs on JetBrains Runtime 21 and its platform jars are
 // compiled against bytecode 21. Targeting 17 causes
 // `sourceCompatibility='17' but ... requires sourceCompatibility='21'`
 // at `verifyPluginProjectConfiguration`.
