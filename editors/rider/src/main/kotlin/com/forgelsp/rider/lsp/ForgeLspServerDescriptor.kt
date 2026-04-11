@@ -39,10 +39,11 @@ class ForgeLspServerDescriptor(
             .withCharset(Charsets.UTF_8)
     }
 
-    // Hook that JetBrains documents for custom LSP requests: return an
-    // interface extending LanguageServer with @JsonRequest methods.
-    override val lsp4jServerClass: Class<out org.eclipse.lsp4j.services.LanguageServer>
-        get() = ForgeLsp4jServer::class.java
+    // Hook JetBrains documents for custom LSP requests: point
+    // lsp4jServerClass at our subinterface of LanguageServer with
+    // @JsonRequest methods declared on it.
+    override val lsp4jServerClass: Class<out org.eclipse.lsp4j.services.LanguageServer> =
+        ForgeLsp4jServer::class.java
 
     companion object {
         private val SUPPORTED_EXTENSIONS = setOf(
