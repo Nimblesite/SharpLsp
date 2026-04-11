@@ -1,26 +1,26 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <!-- Override strict settings from Directory.Build.props for test fixtures.
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <!-- Override strict settings from Directory.Build.props for test fixtures.
          These are minimal C# snippets for VS Code extension integration tests,
          not production code — analyzers and doc requirements don't apply. -->
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
-    <EnableNETAnalyzers>false</EnableNETAnalyzers>
-    <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>
-    <AnalysisMode>None</AnalysisMode>
-    <WarningsAsErrors />
-    <NoWarn>$(NoWarn);CS8618;CS0169;CS0649;CS1591;CS0168;CA1822;CA1051;CA1815</NoWarn>
-  </PropertyGroup>
-  <!-- Remove analyzer packages inherited from Directory.Build.props -->
-  <ItemGroup>
-    <PackageReference Remove="Microsoft.CodeAnalysis.NetAnalyzers" />
-    <PackageReference Remove="Microsoft.CodeAnalysis.CSharp" />
-    <PackageReference Remove="Microsoft.CodeAnalysis.Analyzers" />
-    <PackageReference Remove="Microsoft.CodeAnalysis.BannedApiAnalyzers" />
-    <PackageReference Remove="Outcome" />
-    <PackageReference Remove="Exhaustion" />
-  </ItemGroup>
+        <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+        <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+        <EnableNETAnalyzers>false</EnableNETAnalyzers>
+        <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>
+        <AnalysisMode>None</AnalysisMode>
+        <WarningsAsErrors />
+        <NoWarn>$(NoWarn);CS8618;CS0169;CS0649;CS1591;CS0168;CA1822;CA1051;CA1815</NoWarn>
+    </PropertyGroup>
+    <!-- Remove analyzer packages inherited from Directory.Build.props -->
+    <ItemGroup>
+        <PackageReference Remove="Microsoft.CodeAnalysis.NetAnalyzers" />
+        <PackageReference Remove="Microsoft.CodeAnalysis.CSharp" />
+        <PackageReference Remove="Microsoft.CodeAnalysis.Analyzers" />
+        <PackageReference Remove="Microsoft.CodeAnalysis.BannedApiAnalyzers" />
+        <PackageReference Remove="Outcome" />
+        <PackageReference Remove="Exhaustion" />
+    </ItemGroup>
 </Project>

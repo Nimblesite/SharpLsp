@@ -1,53 +1,57 @@
 <Project>
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Version>0.1.0</Version>
+        <LangVersion>latest</LangVersion>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <WarningsAsErrors>IDE0301;IDE0063;IDE0005;MSB3243</WarningsAsErrors>
+        <WarningLevel>9999</WarningLevel>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+        <EnableNETAnalyzers>true</EnableNETAnalyzers>
+        <AnalysisMode>All</AnalysisMode>
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <!-- Null reference warnings as errors -->
+        <WarningsAsErrors>$(WarningsAsErrors);CS8600;CS8601;CS8602;CS8603;CS8604;CS8605;CS8618;CS8619;CS8625;CS8629;CS8631;CS8633;CS8634;CS8638;CS8643;CS8644;CS8645;CS8653;CS8654;CS8655;CS8667;CS8714;CS8762;CS8764;CS8765;CS8766;CS8767;CS8768;CS8769;CS8770;CS8774;CS8775;CS8776;CS8777;CS8794;CS8795;CS8796;CS8797;CS8798;CS8847;EXHAUSTION001</WarningsAsErrors>
+        <!-- IDE errors -->
+        <WarningsAsErrors>$(WarningsAsErrors);IDE0001;IDE0042;IDE0051;IDE0052;IDE0056;IDE0060;IDE0022;IDE0002;IDE0130;IDE0060;IDE0002</WarningsAsErrors>
+        <!-- Performance critical rules as errors -->
+        <WarningsAsErrors>$(WarningsAsErrors);CA1805;CA1806;CA1810;CA1812;CA1813;CA1814;CA1815;CA1816;CA1819;CA1820;CA1821;CA1822;CA1823;CA1824;CA1825;CA1826;CA1827;CA1828;CA1829;CA1830;CA1831;CA1832;CA1833;CA1834;CA1835;CA1836;CA1837;CA1838;CA1839;CA1840;CA1841;CA1842;CA1843;CA1844;CA1845;CA1846;CA1847;CA1849;CA1850;CA1851;CA1852;CA1853;CA1854;CA1855;CA1856;CA1857;CA1858;CA1859;CA1860;CA1861;CA1862;CA1863;CA1864;CA1865;CA1866;CA1867;CA1868;CA1869;CA1870</WarningsAsErrors>
+        <!-- Security rules as errors -->
+        <WarningsAsErrors>$(WarningsAsErrors);CA2100;CA2101;CA2102;CA2103;CA2104;CA2105;CA2106;CA2107;CA2108;CA2109;CA2110;CA2111;CA2112;CA2113;CA2114;CA2115;CA2116;CA2117;CA2118;CA2119;CA2120;CA2121;CA2122;CA2123;CA2124;CA2125;CA2126;CA2127;CA2128;CA2129;CA2130;CA2131;CA2132;CA2133;CA2134;CA2135;CA2136;CA2137;CA2138;CA2139;CA2140;CA2141;CA2142;CA2143;CA2144;CA2145;CA2146;CA2147;CA2148;CA2149;CA2150;CA2151;CA2152;CA2153;CA2154;CA2155;CA2156;CA2157;CA2158;CA2159;CA2160</WarningsAsErrors>
+        <!-- Design rules as errors -->
+        <WarningsAsErrors>$(WarningsAsErrors);IDE0004;SYSLIB1045;CA1000;CA1001;CA1003;CA1005;CA1008;CA1010;CA1012;CA1018;CA1019;CA1021;CA1024;CA1027;CA1028;CA1030;CA1031;CA1032;CA1033;CA1036;CA1040;CA1041;CA1043;CA1044;CA1045;CA1046;CA1047;CA1048;CA1049;CA1050;CA1051;CA1052;CA1053;CA1054;CA1055;CA1056;CA1057;CA1058;CA1059;CA1060;CA1061;CA1063;CA1064;CA1065;CA1066;CA1067;CA1068;CA1069;CA1070</WarningsAsErrors>
+        <!-- Async/await rules as errors -->
+        <WarningsAsErrors>$(WarningsAsErrors);VSTHRD001;VSTHRD002;VSTHRD003;VSTHRD004;VSTHRD005;VSTHRD006;VSTHRD010;VSTHRD011;VSTHRD012;VSTHRD100;VSTHRD101;VSTHRD102;VSTHRD103;VSTHRD104;VSTHRD105;VSTHRD106;VSTHRD107;VSTHRD108;VSTHRD109;VSTHRD110;VSTHRD111;VSTHRD112;VSTHRD114;VSTHRD200</WarningsAsErrors>
+    </PropertyGroup>
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Version>0.1.0</Version>
-    <LangVersion>latest</LangVersion>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <WarningsAsErrors>IDE0301;IDE0063;IDE0005;MSB3243</WarningsAsErrors>
-    <WarningLevel>9999</WarningLevel>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <AnalysisMode>All</AnalysisMode>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <!-- Null reference warnings as errors -->
-    <WarningsAsErrors>$(WarningsAsErrors);CS8600;CS8601;CS8602;CS8603;CS8604;CS8605;CS8618;CS8619;CS8625;CS8629;CS8631;CS8633;CS8634;CS8638;CS8643;CS8644;CS8645;CS8653;CS8654;CS8655;CS8667;CS8714;CS8762;CS8764;CS8765;CS8766;CS8767;CS8768;CS8769;CS8770;CS8774;CS8775;CS8776;CS8777;CS8794;CS8795;CS8796;CS8797;CS8798;CS8847;EXHAUSTION001</WarningsAsErrors>
-    <!-- IDE errors -->
-    <WarningsAsErrors>$(WarningsAsErrors);IDE0001;IDE0042;IDE0051;IDE0052;IDE0056;IDE0060;IDE0022;IDE0002;IDE0130;IDE0060;IDE0002</WarningsAsErrors>
-    <!-- Performance critical rules as errors -->
-    <WarningsAsErrors>$(WarningsAsErrors);CA1805;CA1806;CA1810;CA1812;CA1813;CA1814;CA1815;CA1816;CA1819;CA1820;CA1821;CA1822;CA1823;CA1824;CA1825;CA1826;CA1827;CA1828;CA1829;CA1830;CA1831;CA1832;CA1833;CA1834;CA1835;CA1836;CA1837;CA1838;CA1839;CA1840;CA1841;CA1842;CA1843;CA1844;CA1845;CA1846;CA1847;CA1849;CA1850;CA1851;CA1852;CA1853;CA1854;CA1855;CA1856;CA1857;CA1858;CA1859;CA1860;CA1861;CA1862;CA1863;CA1864;CA1865;CA1866;CA1867;CA1868;CA1869;CA1870</WarningsAsErrors>
-    <!-- Security rules as errors -->
-    <WarningsAsErrors>$(WarningsAsErrors);CA2100;CA2101;CA2102;CA2103;CA2104;CA2105;CA2106;CA2107;CA2108;CA2109;CA2110;CA2111;CA2112;CA2113;CA2114;CA2115;CA2116;CA2117;CA2118;CA2119;CA2120;CA2121;CA2122;CA2123;CA2124;CA2125;CA2126;CA2127;CA2128;CA2129;CA2130;CA2131;CA2132;CA2133;CA2134;CA2135;CA2136;CA2137;CA2138;CA2139;CA2140;CA2141;CA2142;CA2143;CA2144;CA2145;CA2146;CA2147;CA2148;CA2149;CA2150;CA2151;CA2152;CA2153;CA2154;CA2155;CA2156;CA2157;CA2158;CA2159;CA2160</WarningsAsErrors>
-    <!-- Design rules as errors -->
-    <WarningsAsErrors>$(WarningsAsErrors);IDE0004;SYSLIB1045;CA1000;CA1001;CA1003;CA1005;CA1008;CA1010;CA1012;CA1018;CA1019;CA1021;CA1024;CA1027;CA1028;CA1030;CA1031;CA1032;CA1033;CA1036;CA1040;CA1041;CA1043;CA1044;CA1045;CA1046;CA1047;CA1048;CA1049;CA1050;CA1051;CA1052;CA1053;CA1054;CA1055;CA1056;CA1057;CA1058;CA1059;CA1060;CA1061;CA1063;CA1064;CA1065;CA1066;CA1067;CA1068;CA1069;CA1070</WarningsAsErrors>
-    <!-- Async/await rules as errors -->
-    <WarningsAsErrors>$(WarningsAsErrors);VSTHRD001;VSTHRD002;VSTHRD003;VSTHRD004;VSTHRD005;VSTHRD006;VSTHRD010;VSTHRD011;VSTHRD012;VSTHRD100;VSTHRD101;VSTHRD102;VSTHRD103;VSTHRD104;VSTHRD105;VSTHRD106;VSTHRD107;VSTHRD108;VSTHRD109;VSTHRD110;VSTHRD111;VSTHRD112;VSTHRD114;VSTHRD200</WarningsAsErrors>
-  </PropertyGroup>
+    <ItemGroup>
+        <!-- Microsoft .NET Analyzers -->
+        <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.201">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+        </PackageReference>
+        <PackageReference
+            Include="Microsoft.CodeAnalysis.CSharp"
+            Version="5.3.0"
+            PrivateAssets="all"
+        />
+        <PackageReference
+            Include="Microsoft.CodeAnalysis.Analyzers"
+            Version="5.3.0"
+            PrivateAssets="all"
+        />
+        <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+        </PackageReference>
 
-  <ItemGroup>
-
-    <!-- Microsoft .NET Analyzers -->
-    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.201">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.3.0" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-    </PackageReference>
-
-    <PackageReference Include="Outcome" Version="1.0.0" />
-    <PackageReference Include="Exhaustion" Version="1.0.0">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-    </PackageReference>
-
-  </ItemGroup>
-
-</Project> 
+        <PackageReference Include="Outcome" Version="1.0.0" />
+        <PackageReference Include="Exhaustion" Version="1.0.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+</Project>

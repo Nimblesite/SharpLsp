@@ -4,9 +4,7 @@ namespace TestFixtures.Nested
     {
         public class Inner
         {
-            public void InnerMethod()
-            {
-            }
+            public void InnerMethod() { }
         }
 
         public void OuterMethod()

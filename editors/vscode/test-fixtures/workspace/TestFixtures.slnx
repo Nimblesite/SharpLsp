@@ -1,3 +1,3 @@
 <Solution>
-  <Project Path="TestFixtures.csproj" />
+    <Project Path="TestFixtures.csproj" />
 </Solution>
