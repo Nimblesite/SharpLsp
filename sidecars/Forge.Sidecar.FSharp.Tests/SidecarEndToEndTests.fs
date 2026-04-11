@@ -312,6 +312,71 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Contains("Unknown method", r.Error)
     }
 
+    [<Fact>]
+    member _.``typeDefinition on Person type itself resolves to itself``() = task {
+        let! r = fixture.Send("textDocument/typeDefinition", posPayload fixture.Src 9 5)
+        Assert.Null(r.Error)
+        let loc = deserialize<LocationListResult>(r.Payload)
+        Assert.NotEmpty(loc.Locations)
+        Assert.Equal(9, loc.Locations[0].Line)
+    }
+
+    [<Fact>]
+    member _.``typeDefinition on record field Name resolves``() = task {
+        let! r = fixture.Send("textDocument/typeDefinition", posPayload fixture.Src 9 16)
+        Assert.Null(r.Error)
+        let loc = deserialize<LocationListResult>(r.Payload)
+        Assert.NotEmpty(loc.Locations)
+    }
+
+    [<Fact>]
+    member _.``typeDefinition on empty line returns empty``() = task {
+        let! r = fixture.Send("textDocument/typeDefinition", posPayload fixture.Src 1 0)
+        Assert.Null(r.Error)
+        let loc = deserialize<LocationListResult>(r.Payload)
+        Assert.Empty(loc.Locations)
+    }
+
+    [<Fact>]
+    member _.``declaration on empty line returns empty``() = task {
+        let! r = fixture.Send("textDocument/declaration", posPayload fixture.Src 1 0)
+        Assert.Null(r.Error)
+        let loc = deserialize<LocationListResult>(r.Payload)
+        Assert.Empty(loc.Locations)
+    }
+
+    [<Fact>]
+    member _.``definition on out of bounds line returns empty``() = task {
+        let! r = fixture.Send("textDocument/definition", posPayload fixture.Src 999 0)
+        Assert.Null(r.Error)
+        let loc = deserialize<LocationListResult>(r.Payload)
+        Assert.Empty(loc.Locations)
+    }
+
+    [<Fact>]
+    member _.``typeDefinition on out of bounds line returns empty``() = task {
+        let! r = fixture.Send("textDocument/typeDefinition", posPayload fixture.Src 999 0)
+        Assert.Null(r.Error)
+        let loc = deserialize<LocationListResult>(r.Payload)
+        Assert.Empty(loc.Locations)
+    }
+
+    [<Fact>]
+    member _.``declaration on out of bounds line returns empty``() = task {
+        let! r = fixture.Send("textDocument/declaration", posPayload fixture.Src 999 0)
+        Assert.Null(r.Error)
+        let loc = deserialize<LocationListResult>(r.Payload)
+        Assert.Empty(loc.Locations)
+    }
+
+    [<Fact>]
+    member _.``implementation on out of bounds line returns empty``() = task {
+        let! r = fixture.Send("textDocument/implementation", posPayload fixture.Src 999 0)
+        Assert.Null(r.Error)
+        let loc = deserialize<LocationListResult>(r.Payload)
+        Assert.Empty(loc.Locations)
+    }
+
 // ── Workspace-level tests (real FCS, no IPC) ────────────────────
 
 [<Fact>]
