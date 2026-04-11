@@ -112,7 +112,9 @@ export class NuGetBrowserPanel {
 
     private async initialLoad(): Promise<void> {
         await this.loadInstalledPackages();
-        log.info("NuGetBrowserPanel: installed loaded, fetching popular packages");
+        log.info(
+            "NuGetBrowserPanel: installed loaded, fetching popular packages",
+        );
         // Populate the Browse tab with popular packages so it's not empty.
         await this.performSearch("");
         log.info("NuGetBrowserPanel: initial load complete");
@@ -149,7 +151,9 @@ export class NuGetBrowserPanel {
     }
 
     /** Simulate a webview message for testing. */
-    public async simulateWebviewMessage(message: WebviewMessage): Promise<void> {
+    public async simulateWebviewMessage(
+        message: WebviewMessage,
+    ): Promise<void> {
         await this.handleMessage(message);
     }
 
@@ -181,7 +185,9 @@ export class NuGetBrowserPanel {
     // ── Message handling ────────────────────────────────────────
 
     private async handleMessage(message: WebviewMessage): Promise<void> {
-        log.info(`NuGetBrowserPanel: received message command=${message.command}`);
+        log.info(
+            `NuGetBrowserPanel: received message command=${message.command}`,
+        );
         switch (message.command) {
             case "search": {
                 const query = this.str(message.data?.query);
@@ -256,7 +262,9 @@ export class NuGetBrowserPanel {
      * aren't in `searchResults` until the user searches, so we synthesize a
      * minimal `NuGetSearchResult` on demand so selection still works.
      */
-    private findOrSynthesizePackage(packageId: string): NuGetSearchResult | undefined {
+    private findOrSynthesizePackage(
+        packageId: string,
+    ): NuGetSearchResult | undefined {
         const existing = this.searchResults.find((p) => p.id === packageId);
         if (existing !== undefined) return existing;
 
@@ -299,7 +307,9 @@ export class NuGetBrowserPanel {
             );
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
-            log.error(`NuGetBrowserPanel: failed to load installed packages: ${msg}`);
+            log.error(
+                `NuGetBrowserPanel: failed to load installed packages: ${msg}`,
+            );
         }
     }
 
@@ -398,7 +408,10 @@ export class NuGetBrowserPanel {
         }
     }
 
-    private async installPackage(packageId: string, version: string): Promise<void> {
+    private async installPackage(
+        packageId: string,
+        version: string,
+    ): Promise<void> {
         const lsp = this.getClient();
         if (lsp === undefined) return;
         try {
@@ -412,16 +425,22 @@ export class NuGetBrowserPanel {
                 },
             );
             if (result.success) {
-                void vscode.window.showInformationMessage(`Installed ${packageId} v${version}`);
+                void vscode.window.showInformationMessage(
+                    `Installed ${packageId} v${version}`,
+                );
                 this.installedPackages.set(packageId, version);
                 await this.loadInstalledPackages();
                 await this.performSearch(this.currentSearchQuery);
             } else {
-                void vscode.window.showErrorMessage(`Failed to install: ${result.message}`);
+                void vscode.window.showErrorMessage(
+                    `Failed to install: ${result.message}`,
+                );
             }
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
-            log.error(`NuGetBrowserPanel: failed to install ${packageId}: ${msg}`);
+            log.error(
+                `NuGetBrowserPanel: failed to install ${packageId}: ${msg}`,
+            );
             void vscode.window.showErrorMessage(`Failed to install: ${msg}`);
         }
     }
@@ -439,21 +458,30 @@ export class NuGetBrowserPanel {
                 },
             );
             if (result.success) {
-                void vscode.window.showInformationMessage(`Removed ${packageId}`);
+                void vscode.window.showInformationMessage(
+                    `Removed ${packageId}`,
+                );
                 this.installedPackages.delete(packageId);
                 await this.loadInstalledPackages();
                 await this.performSearch(this.currentSearchQuery);
             } else {
-                void vscode.window.showErrorMessage(`Failed to remove: ${result.message}`);
+                void vscode.window.showErrorMessage(
+                    `Failed to remove: ${result.message}`,
+                );
             }
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
-            log.error(`NuGetBrowserPanel: failed to remove ${packageId}: ${msg}`);
+            log.error(
+                `NuGetBrowserPanel: failed to remove ${packageId}: ${msg}`,
+            );
             void vscode.window.showErrorMessage(`Failed to remove: ${msg}`);
         }
     }
 
-    private async changeVersion(packageId: string, version: string): Promise<void> {
+    private async changeVersion(
+        packageId: string,
+        version: string,
+    ): Promise<void> {
         const lsp = this.getClient();
         if (lsp === undefined) return;
         try {
@@ -467,16 +495,22 @@ export class NuGetBrowserPanel {
                 },
             );
             if (result.success) {
-                void vscode.window.showInformationMessage(`Updated ${packageId} to v${version}`);
+                void vscode.window.showInformationMessage(
+                    `Updated ${packageId} to v${version}`,
+                );
                 this.installedPackages.set(packageId, version);
                 await this.loadInstalledPackages();
                 await this.performSearch(this.currentSearchQuery);
             } else {
-                void vscode.window.showErrorMessage(`Failed to update: ${result.message}`);
+                void vscode.window.showErrorMessage(
+                    `Failed to update: ${result.message}`,
+                );
             }
         } catch (err: unknown) {
             const msg = getErrorMessage(err);
-            log.error(`NuGetBrowserPanel: failed to change ${packageId} version: ${msg}`);
+            log.error(
+                `NuGetBrowserPanel: failed to change ${packageId} version: ${msg}`,
+            );
             void vscode.window.showErrorMessage(`Failed to update: ${msg}`);
         }
     }
@@ -622,10 +656,16 @@ ${this.currentTab === "browse" ? `<div class="search-box"><span class="material-
             .map((pkg) => {
                 const sel = this.selectedPackage?.id === pkg.id;
                 const safeId = this.esc(pkg.id);
-                const desc = pkg.description.length > 0 ? pkg.description : "No description available";
+                const desc =
+                    pkg.description.length > 0
+                        ? pkg.description
+                        : "No description available";
                 const version = pkg.installedVersion ?? pkg.version;
                 const installed = pkg.isInstalled === true;
-                const dl = pkg.downloadCount !== undefined ? this.fmtDl(pkg.downloadCount) : null;
+                const dl =
+                    pkg.downloadCount !== undefined
+                        ? this.fmtDl(pkg.downloadCount)
+                        : null;
                 const icon = installed ? "database" : "package_2";
                 return `<div class="package-item ${sel ? "selected" : ""}" onclick="selectPackage('${this.escAttr(pkg.id)}')">
 <div class="package-icon-box ${sel ? "selected" : ""}"><span class="material-symbols-outlined ${sel ? "icon-selected" : ""}">${icon}</span></div>
@@ -653,7 +693,9 @@ ${pkg.authors.length > 0 ? `<span class="meta-item"><span class="material-symbol
         const versions = (pkg._versions ?? []).slice(0, 20);
         const safeId = this.esc(pkg.id);
         const safeAuthors = this.esc(pkg.authors || "Unknown author");
-        const safeDesc = this.esc(pkg.description || "No description available");
+        const safeDesc = this.esc(
+            pkg.description || "No description available",
+        );
 
         let infoRows = "";
         if (pkg.licenseUrl !== undefined && pkg.licenseUrl.length > 0) {
@@ -712,7 +754,8 @@ ${tagsHtml}`;
             if (days < 1) return "Today";
             if (days === 1) return "Yesterday";
             if (days < 30) return `${days.toString()} days ago`;
-            if (days < 365) return `${Math.floor(days / 30).toString()} months ago`;
+            if (days < 365)
+                return `${Math.floor(days / 30).toString()} months ago`;
             return `${Math.floor(days / 365).toString()} years ago`;
         } catch {
             return dateStr;

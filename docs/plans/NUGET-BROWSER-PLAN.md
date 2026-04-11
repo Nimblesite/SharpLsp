@@ -224,6 +224,128 @@ chrome inside the editor area. Both `docs/designs/DESIGN.md` § 0 and
 - [x] Test: `installed packages loaded from LSP on open` — regression check for LSP wiring
 - [x] Test: `search message populates searchResults` — regression check for search flow
 
+## Phase 8: Target Selection + Directory.Build.props Support (User-Reported P0)
+
+**User report (verbatim):** "I just tapped install on the nuget package and it did fucking NOTHING!!! For starters, we need a drop down which tells us WHICH project we are working with, OR the build props! … we need an option to install into the build props!!! … It did something after a long delay... it installed the package - but it took TOO long! It should be instant!! … We also need SPINNERS as the nuget browser loads shit in the background."
+
+**Root causes identified:**
+
+1. **No target selector.** The extension hardcodes a single "first project in workspace" as the install target. The user cannot see which project they're installing into, cannot switch project, and cannot install into `Directory.Build.props` / `Directory.Packages.props` at all.
+2. **Install feels broken.** `dotnet add` runs synchronously on the Rust side and blocks the LSP response for the entire restore duration (seconds). There is no spinner, no optimistic UI, no toast — the button just sits there looking dead, then eventually "works".
+3. **No loading indicators.** Every LSP round trip is a silent dead zone. The panel appears frozen during search, install, version fetch, and initial load.
+
+This phase implements spec §§ 3.0, 3A, 3.4 (rewritten), 3.5 (rewritten), 3.6, and 6 (rewritten).
+
+### 8.1 Rust Host — `forge/nuget/targets` handler
+
+- [ ] Add `NuGetTarget`, `NuGetTargetsParams`, `NuGetTargetsResponse` types in `src/nuget/types.rs`
+- [ ] Implement workspace walker: find every `*.csproj`, `*.fsproj`, `Directory.Build.props`, `Directory.Packages.props` under the workspace root
+- [ ] Detect CPM by parsing nearest `Directory.Packages.props` for `<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>`
+- [ ] Register `forge/nuget/targets` route in `handle_custom_request()`
+- [ ] Cache results keyed by workspace root + (dir mtimes); invalidate on file watcher events
+- [ ] E2E test: enumerates all target kinds
+- [ ] E2E test: detects CPM correctly
+- [ ] E2E test: returns empty targets gracefully for empty workspace
+
+### 8.2 Rust Host — XML fast-path install / uninstall
+
+Goal: `forge/nuget/install` returns in < 150 ms by editing XML directly, then fires `dotnet restore` in a background task.
+
+- [ ] Add `src/nuget/xml_edit.rs` with pure XML edit helpers (use `quick-xml` or similar; preserve formatting, whitespace, comments)
+- [ ] `add_package_reference(csproj_path, id, version) -> Result<ModifiedFiles>` — edits csproj XML directly
+- [ ] `add_package_reference_cpm(csproj_path, props_path, id, version)` — edits both files for CPM
+- [ ] `add_package_reference_to_props(props_path, id, version)` — handles `Directory.Build.props` and `Directory.Packages.props`
+- [ ] `remove_package_reference*` counterparts
+- [ ] Rewrite `forge/nuget/install` handler:
+    - [ ] Take `target: NuGetTarget` instead of `projectPath: string`
+    - [ ] Route by `target.kind` and CPM detection
+    - [ ] Commit XML edit synchronously
+    - [ ] Spawn `dotnet restore` as a **background** tokio task
+    - [ ] Return `NuGetInstallResponse { success, message, modifiedFiles }` immediately after XML commit
+- [ ] Rewrite `forge/nuget/uninstall` handler the same way
+- [ ] E2E test: install (project, no CPM) returns in < 150 ms
+- [ ] E2E test: install (project, CPM) writes `<PackageVersion>` to props AND `<PackageReference>` without version to csproj
+- [ ] E2E test: install (buildProps) preserves formatting of `Directory.Build.props`
+- [ ] E2E test: uninstall on all target kinds
+
+### 8.3 Rust Host — `forge/nuget/restoreProgress` notifications
+
+- [ ] Add notification type in `src/nuget/types.rs`
+- [ ] Background restore task sends `started` → `restoring` → `succeeded` / `failed` notifications via the LSP client
+- [ ] Each notification carries the `target` so the UI can route it
+- [ ] E2E test: notifications are emitted in order for a successful install
+- [ ] E2E test: `failed` notification carries the stderr output
+
+### 8.4 Rust Host — cancellation
+
+- [ ] Ensure every `dotnet` child spawned for a request is tracked by `RequestId`
+- [ ] On `$/cancelRequest`, kill the tracked child process and clean up any in-flight XML edits (they should already be committed; just cancel the restore)
+- [ ] E2E test: cancelling a search request mid-flight does not leave orphaned `dotnet` processes
+
+### 8.5 Rewire other handlers to take `target`
+
+- [ ] `forge/nuget/search` params switch from `projectPath` to `target`
+- [ ] `forge/nuget/installed` params switch from `projectPath` to `target`
+- [ ] `dotnet list` path only runs when `target.kind === "project"`; for `buildProps`, parse the XML directly
+- [ ] Update all existing E2E tests for the new param shape
+
+### 8.6 Extension — Target dropdown UI
+
+- [ ] Fetch targets on panel open via `forge/nuget/targets`
+- [ ] Render target dropdown in the panel header, between tabs and search box
+- [ ] Group as "Projects" / "Build Props" with Material Symbols icons (`account_tree` / `description`)
+- [ ] Persist last-used target per workspace via `ExtensionContext.workspaceState`
+- [ ] Default to last-used target on open, otherwise first project
+- [ ] On target change: re-fire `installed` + current search, clear invalid details selection
+- [ ] Disable Install / Uninstall buttons (+ tooltip "Select a target first") when no target is selected
+- [ ] VSIX test: dropdown renders all targets grouped
+- [ ] VSIX test: dropdown defaults to last-used target
+- [ ] VSIX test: changing target re-fires `installed` and current search
+- [ ] VSIX test: install button disabled without target
+
+### 8.7 Extension — Spinners everywhere
+
+Per spec § 3A.1 — every async operation shows a spinner. NO blank or frozen states, ever.
+
+- [ ] Add reusable spinner CSS (`@keyframes spin` on Material Symbols `progress_activity`)
+- [ ] Target dropdown spinner while `forge/nuget/targets` in flight
+- [ ] Search box spinner (replaces search icon) during `forge/nuget/search`
+- [ ] Skeleton list placeholders on the first search
+- [ ] Installed-list inline spinner row at top during `forge/nuget/installed`
+- [ ] Version dropdown spinner during `forge/nuget/versions`
+- [ ] Install button spinner + "Installing…" label during `forge/nuget/install`
+- [ ] Uninstall button spinner + "Uninstalling…" label during `forge/nuget/uninstall`
+- [ ] Global toast: `Installing <id> <version> into <target.displayName>…`
+- [ ] Toast updates on `forge/nuget/restoreProgress` notifications
+- [ ] VSIX test: search spinner appears within 50 ms of typing
+- [ ] VSIX test: install button shows spinner within 100 ms of click
+- [ ] VSIX test: toast appears within 500 ms
+- [ ] VSIX test: spinner clears on `succeeded` restore progress
+- [ ] VSIX test: spinner shows error state on `failed` restore progress
+
+### 8.8 Extension — Optimistic UI
+
+- [ ] On install click: immediately mark package `isInstalled=true`, `installedVersion=<requested>` in local model, re-render
+- [ ] On success response: swap spinner for checkmark for 1.5 s
+- [ ] On error response: revert optimistic state + show error toast with LSP error message
+- [ ] Same for uninstall (optimistic removal)
+- [ ] VSIX test: optimistic install visible in rendered HTML before LSP response
+- [ ] VSIX test: error response reverts optimistic state
+
+### 8.9 Extension — Cancellation
+
+- [ ] When user changes target / retypes search / closes panel, cancel in-flight LSP requests via `$/cancelRequest`
+- [ ] Debounce search input by 250 ms before firing a new request
+- [ ] VSIX test: retyping during an in-flight search cancels the previous request
+- [ ] VSIX test: changing target cancels in-flight requests
+
+### 8.10 Restore progress routing
+
+- [ ] Extension subscribes to `forge/nuget/restoreProgress` notifications from the LSP client
+- [ ] Routes them into the webview via postMessage
+- [ ] Webview updates the matching spinner + toast
+- [ ] VSIX test: restore progress end-to-end updates the UI
+
 ## Execution Order
 
 1. **Phase 1** (Rust handlers) - must exist before extension can use them
@@ -232,3 +354,5 @@ chrome inside the editor area. Both `docs/designs/DESIGN.md` § 0 and
 4. **Phase 4** (Tests) - verify everything works
 5. **Phase 5** (Docs) - update specs and plans
 6. **Phase 6** (Bug fixes) - address user-reported issues from manual testing
+7. **Phase 7** (Dead UI removal) - done
+8. **Phase 8** (Target dropdown + build.props + fast-path install + spinners) - **current P0**

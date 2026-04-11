@@ -63,9 +63,7 @@ suite("NuGet Browser", () => {
         const commands: { command: string }[] =
             ext.packageJSON.contributes?.commands ?? [];
         assert.ok(
-            commands.some(
-                (c) => c.command === "forge.browseNuGetPackages",
-            ),
+            commands.some((c) => c.command === "forge.browseNuGetPackages"),
             "package.json must declare forge.browseNuGetPackages",
         );
     });
@@ -76,9 +74,7 @@ suite("NuGet Browser", () => {
         const commands: { command: string }[] =
             ext.packageJSON.contributes?.commands ?? [];
         assert.ok(
-            commands.some(
-                (c) => c.command === "forge.removeNuGetPackage",
-            ),
+            commands.some((c) => c.command === "forge.removeNuGetPackage"),
             "package.json must declare forge.removeNuGetPackage",
         );
     });
@@ -96,18 +92,14 @@ suite("NuGet Browser", () => {
         // a real project file, but we can verify the command doesn't crash
         // when invoked without a valid node (it shows a warning message).
         await assert.doesNotReject(async () => {
-            await vscode.commands.executeCommand(
-                "forge.browseNuGetPackages",
-            );
+            await vscode.commands.executeCommand("forge.browseNuGetPackages");
         }, "browseNuGetPackages should not throw when no node is provided");
     });
 
     test("removeNuGetPackage command does not throw when cancelled", async function () {
         this.timeout(5_000);
         await assert.doesNotReject(async () => {
-            await vscode.commands.executeCommand(
-                "forge.removeNuGetPackage",
-            );
+            await vscode.commands.executeCommand("forge.removeNuGetPackage");
         }, "removeNuGetPackage must not throw when no node is provided");
     });
 
@@ -116,9 +108,7 @@ suite("NuGet Browser", () => {
     test("extension exports API with explorerProvider", () => {
         const ext = vscode.extensions.getExtension(EXTENSION_ID);
         assert.ok(ext?.isActive, "Extension must be active");
-        const api = ext.exports as
-            | { explorerProvider: unknown }
-            | undefined;
+        const api = ext.exports as { explorerProvider: unknown } | undefined;
         assert.ok(
             api?.explorerProvider,
             "Extension must export explorerProvider",

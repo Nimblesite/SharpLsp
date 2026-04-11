@@ -119,7 +119,10 @@ suite("Install Module — version mismatch handling", () => {
             typeof status.expected === "string",
             "Must report expected version",
         );
-        assert.ok(status.expected.length > 0, "Expected version must not be empty");
+        assert.ok(
+            status.expected.length > 0,
+            "Expected version must not be empty",
+        );
     });
 
     test("describeBinaryStatus reports found version for real binary", function () {

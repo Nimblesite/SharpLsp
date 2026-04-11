@@ -38,7 +38,9 @@ public sealed class SolutionLoaderTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_root, "App.sln"), "");
         var result = SolutionLoader.FindSolutionOrProject(_root);
-        Assert.True(result is Outcome.Result<string?, string>.Ok<string?, string> { Value: not null });
+        Assert.True(
+            result is Outcome.Result<string?, string>.Ok<string?, string> { Value: not null }
+        );
     }
 
     [Fact]
@@ -80,8 +82,9 @@ public sealed class SolutionLoaderTests : IDisposable
         // It SHOULD return an error or null when ambiguous, forcing the
         // caller to provide an explicit path.
         Assert.True(
-            result is Outcome.Result<string?, string>.Ok<string?, string> { Value: null }
-                or Outcome.Result<string?, string>.Error<string?, string>,
+            result
+                is Outcome.Result<string?, string>.Ok<string?, string> { Value: null }
+                    or Outcome.Result<string?, string>.Error<string?, string>,
             "Ambiguous solution discovery must NOT silently pick an arbitrary .sln. "
                 + $"Got: {result.Match(v => v ?? "null", e => $"Error: {e}")}"
         );

@@ -11,29 +11,28 @@ namespace Forge.Sidecar.CSharp.Hover;
 /// </summary>
 internal static class CSharpHoverBuilder
 {
-    private static readonly SymbolDisplayFormat SignatureFormat =
-        new(
-            globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted,
-            typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
-            genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters
-                | SymbolDisplayGenericsOptions.IncludeTypeConstraints,
-            memberOptions: SymbolDisplayMemberOptions.IncludeType
-                | SymbolDisplayMemberOptions.IncludeParameters
-                | SymbolDisplayMemberOptions.IncludeAccessibility
-                | SymbolDisplayMemberOptions.IncludeModifiers
-                | SymbolDisplayMemberOptions.IncludeRef
-                | SymbolDisplayMemberOptions.IncludeContainingType,
-            parameterOptions: SymbolDisplayParameterOptions.IncludeType
-                | SymbolDisplayParameterOptions.IncludeName
-                | SymbolDisplayParameterOptions.IncludeDefaultValue
-                | SymbolDisplayParameterOptions.IncludeParamsRefOut,
-            propertyStyle: SymbolDisplayPropertyStyle.ShowReadWriteDescriptor,
-            kindOptions: SymbolDisplayKindOptions.IncludeTypeKeyword
-                | SymbolDisplayKindOptions.IncludeMemberKeyword
-                | SymbolDisplayKindOptions.IncludeNamespaceKeyword,
-            miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes
-                | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
-        );
+    private static readonly SymbolDisplayFormat SignatureFormat = new(
+        globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted,
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+        genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters
+            | SymbolDisplayGenericsOptions.IncludeTypeConstraints,
+        memberOptions: SymbolDisplayMemberOptions.IncludeType
+            | SymbolDisplayMemberOptions.IncludeParameters
+            | SymbolDisplayMemberOptions.IncludeAccessibility
+            | SymbolDisplayMemberOptions.IncludeModifiers
+            | SymbolDisplayMemberOptions.IncludeRef
+            | SymbolDisplayMemberOptions.IncludeContainingType,
+        parameterOptions: SymbolDisplayParameterOptions.IncludeType
+            | SymbolDisplayParameterOptions.IncludeName
+            | SymbolDisplayParameterOptions.IncludeDefaultValue
+            | SymbolDisplayParameterOptions.IncludeParamsRefOut,
+        propertyStyle: SymbolDisplayPropertyStyle.ShowReadWriteDescriptor,
+        kindOptions: SymbolDisplayKindOptions.IncludeTypeKeyword
+            | SymbolDisplayKindOptions.IncludeMemberKeyword
+            | SymbolDisplayKindOptions.IncludeNamespaceKeyword,
+        miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes
+            | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
+    );
 
     /// <summary>Build a hover result for the symbol at the given position.</summary>
     public static HoverQueryResult Build(SemanticModel model, int position, CancellationToken ct)

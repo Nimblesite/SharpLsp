@@ -121,7 +121,11 @@ async function activateInner(
         void window.showErrorMessage(
             `Forge: Failed to start language server. ${msg}`,
         );
-        return { explorerProvider, profilerProvider, getLspClient: () => lspClient };
+        return {
+            explorerProvider,
+            profilerProvider,
+            getLspClient: () => lspClient,
+        };
     }
 
     log.info("step 12: post-start wiring");
@@ -136,7 +140,11 @@ async function activateInner(
     }
 
     log.info("step 13: activate complete");
-    return { explorerProvider, profilerProvider, getLspClient: () => lspClient };
+    return {
+        explorerProvider,
+        profilerProvider,
+        getLspClient: () => lspClient,
+    };
 }
 
 export async function deactivate(): Promise<void> {
@@ -242,8 +250,15 @@ function browseNuGetPackages(
         return;
     }
     const projectName = node.sortName;
-    log.info(`Opening NuGet browser for ${projectName} (${node.projectFilePath})`);
-    NuGetBrowserPanel.open(context, node.projectFilePath, projectName, () => lspClient);
+    log.info(
+        `Opening NuGet browser for ${projectName} (${node.projectFilePath})`,
+    );
+    NuGetBrowserPanel.open(
+        context,
+        node.projectFilePath,
+        projectName,
+        () => lspClient,
+    );
 }
 
 function registerContextMenuCommands(context: ExtensionContext): void {

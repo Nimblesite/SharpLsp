@@ -121,9 +121,7 @@ public sealed class MessageRouter
         try
         {
             await Console
-                .Error.WriteLineAsync(
-                    $"[Router] Handling {request.Method} (id={request.Id})"
-                )
+                .Error.WriteLineAsync($"[Router] Handling {request.Method} (id={request.Id})")
                 .ConfigureAwait(false);
             var result = await handler(request.Payload, ct).ConfigureAwait(false);
             return result.Match(

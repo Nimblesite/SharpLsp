@@ -68,7 +68,7 @@ jobs:
         run: dotnet tool restore
 
       - name: Format
-        run: dotnet csharpier --check sidecars/
+        run: dotnet csharpier check sidecars/
 
       - name: Lint
         run: make lint-dotnet

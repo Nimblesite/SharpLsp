@@ -95,7 +95,8 @@ function platformRid(): string | undefined {
     const arch = os.arch();
     const platform = os.platform();
 
-    if (platform === "darwin" && arch === "arm64") return "aarch64-apple-darwin";
+    if (platform === "darwin" && arch === "arm64")
+        return "aarch64-apple-darwin";
     if (platform === "darwin" && arch === "x64") return "x86_64-apple-darwin";
     if (platform === "linux" && arch === "x64")
         return "x86_64-unknown-linux-gnu";
@@ -107,10 +108,7 @@ function platformRid(): string | undefined {
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 
 /** Download a file from a URL, following redirects, with a hard timeout. */
-async function downloadToFile(
-    url: string,
-    destPath: string,
-): Promise<void> {
+async function downloadToFile(url: string, destPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
         const doRequest = (requestUrl: string, redirectCount: number): void => {
             if (redirectCount > 5) {
@@ -197,11 +195,7 @@ async function extractTarGz(
                     extractTarBuffer(data, destDir);
                     resolve();
                 } catch (err: unknown) {
-                    reject(
-                        err instanceof Error
-                            ? err
-                            : new Error(String(err)),
-                    );
+                    reject(err instanceof Error ? err : new Error(String(err)));
                 }
             })
             .on("error", reject);
@@ -241,7 +235,10 @@ function extractTarBuffer(data: Buffer, destDir: string): void {
             if (stripped.length > 0 && !isNaN(size)) {
                 const filePath = path.join(destDir, stripped);
                 fs.mkdirSync(path.dirname(filePath), { recursive: true });
-                fs.writeFileSync(filePath, data.subarray(offset, offset + size));
+                fs.writeFileSync(
+                    filePath,
+                    data.subarray(offset, offset + size),
+                );
                 // Make executables in bin/ executable
                 if (stripped.startsWith("bin/")) {
                     fs.chmodSync(filePath, 0o755);
@@ -332,7 +329,9 @@ export async function ensureBinaries(
     if (configuredPath.length > 0 && fs.existsSync(configuredPath)) {
         const installed = getInstalledVersion(configuredPath);
         if (installed === version) {
-            log.info(`Using configured binary: ${configuredPath} (v${version})`);
+            log.info(
+                `Using configured binary: ${configuredPath} (v${version})`,
+            );
             return { serverPath: configuredPath };
         }
         log.info(
@@ -352,9 +351,7 @@ export async function ensureBinaries(
     if (fs.existsSync(standardPath)) {
         const installed = getInstalledVersion(standardPath);
         if (installed === version) {
-            log.info(
-                `Using installed binary: ${standardPath} (v${version})`,
-            );
+            log.info(`Using installed binary: ${standardPath} (v${version})`);
             return { serverPath: standardPath };
         }
         log.info(
@@ -390,9 +387,11 @@ export async function ensureBinaries(
  * Summarise why binary resolution failed, for user-facing error messages.
  * Returns the closest match (if any) and the expected version.
  */
-export function describeBinaryStatus(
-    configuredPath: string,
-): { expected: string; found: string | undefined; location: string } {
+export function describeBinaryStatus(configuredPath: string): {
+    expected: string;
+    found: string | undefined;
+    location: string;
+} {
     const expected = expectedVersion();
     const standardPath = installedBinaryPath();
 
