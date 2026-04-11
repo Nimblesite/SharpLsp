@@ -11,6 +11,7 @@ class NuGetPackageNode(
     private val version: String,
 ) : ForgeTreeNode {
     override var childrenLoaded: Boolean = true
+    override val hasChildren: Boolean = false
 
     override fun render(renderer: ColoredTreeCellRenderer) {
         renderer.icon = AllIcons.Nodes.PpLib
@@ -34,6 +35,7 @@ class ProjectReferenceNode(
     private val path: String,
 ) : ForgeTreeNode {
     override var childrenLoaded: Boolean = true
+    override val hasChildren: Boolean = false
 
     override fun render(renderer: ColoredTreeCellRenderer) {
         renderer.icon = AllIcons.Nodes.Module
@@ -55,6 +57,7 @@ class ProjectReferenceNode(
  */
 class ErrorNode(private val message: String) : ForgeTreeNode {
     override var childrenLoaded: Boolean = true
+    override val hasChildren: Boolean = false
 
     override fun render(renderer: ColoredTreeCellRenderer) {
         renderer.icon = AllIcons.General.Error

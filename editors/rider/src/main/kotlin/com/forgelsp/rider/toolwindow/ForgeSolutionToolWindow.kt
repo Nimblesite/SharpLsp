@@ -117,11 +117,27 @@ class ForgeSolutionToolWindow(
             SwingUtilities.invokeLater {
                 mutable.removeAllChildren()
                 for (child in children) {
-                    mutable.add(DefaultMutableTreeNode(child))
+                    mutable.add(wrapForgeNode(child))
                 }
                 treeModel.nodeStructureChanged(mutable)
             }
         }
+    }
+
+    /**
+     * Wrap a [ForgeTreeNode] in a Swing [DefaultMutableTreeNode]. If the
+     * wrapped node claims it can have children, pre-insert a "Loading…"
+     * placeholder so Swing's JTree renders the disclosure triangle and
+     * fires `treeWillExpand` when the user clicks it. Without this,
+     * leaf-looking nodes never become expandable and the whole tree
+     * bottoms out at projects.
+     */
+    private fun wrapForgeNode(node: ForgeTreeNode): DefaultMutableTreeNode {
+        val mutable = DefaultMutableTreeNode(node)
+        if (node.hasChildren) {
+            mutable.add(DefaultMutableTreeNode("Loading…"))
+        }
+        return mutable
     }
 
     private fun handleActivation(path: TreePath) {

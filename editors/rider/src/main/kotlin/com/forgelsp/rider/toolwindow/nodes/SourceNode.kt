@@ -103,6 +103,7 @@ class SymbolTreeNode(
     private val symbol: SymbolNode,
 ) : ForgeTreeNode {
     override var childrenLoaded: Boolean = false
+    override val hasChildren: Boolean get() = symbol.children.isNotEmpty()
 
     override fun render(renderer: ColoredTreeCellRenderer) {
         renderer.icon = iconFor(symbol.kind, symbol.access)

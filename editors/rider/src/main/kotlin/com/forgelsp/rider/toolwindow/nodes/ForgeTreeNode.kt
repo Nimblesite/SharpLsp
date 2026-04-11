@@ -26,6 +26,16 @@ interface ForgeTreeNode {
      */
     var childrenLoaded: Boolean
 
+    /**
+     * Whether this node can have children at all. Swing's JTree needs
+     * to know *before* expansion so it renders the disclosure triangle
+     * and fires `treeWillExpand` on click. True leaves (NuGet package,
+     * project reference, error node) return false; every grouping /
+     * container node returns true and pays for expansion with an
+     * async [loadChildren] call.
+     */
+    val hasChildren: Boolean get() = true
+
     /** Draw this node into the given renderer. */
     fun render(renderer: ColoredTreeCellRenderer)
 
