@@ -43,7 +43,7 @@ All commands are available from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift
 
 ## Requirements
 
-- .NET SDK 9.0+
+- .NET SDK 10.0+
 - `forge-lsp` binary (built from source or downloaded from releases)
 
 ## Configuration

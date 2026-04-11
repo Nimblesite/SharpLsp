@@ -68,20 +68,14 @@ Diagnostics are pushed in three situations:
 ```toml
 # forge.toml
 [diagnostics]
-# Run Roslyn/FCS analyzers (not just compiler errors)
+# Run Roslyn analyzers (not just compiler errors)
 analyzers_enabled = true
 
 # Analyze all files in the solution, not just open ones
 solution_wide_analysis = true
 
-# Restrict analysis to specific projects (glob patterns, empty = all)
+# Restrict analysis to specific projects by name (empty = all)
 project_filter = []
-
-# Minimum severity to report: "error", "warning", "info", "hint"
-min_severity = "hint"
-
-# Maximum diagnostics per file (0 = unlimited)
-max_per_file = 0
 ```
 
 ### Project Filter
@@ -90,10 +84,8 @@ Narrow the scope for large monorepos:
 
 ```toml
 [diagnostics]
-project_filter = ["MyApp.Core", "MyApp.Api", "MyApp.Tests.*"]
+project_filter = ["MyApp.Core", "MyApp.Api"]
 ```
-
-Changes to `solution_wide_analysis` and `project_filter` take effect immediately via `workspace/didChangeConfiguration` — no restart needed.
 
 ## Performance Targets
 

@@ -1,3 +1,4 @@
+# agent-pmo:3140e31
 name: PR
 
 on:
@@ -134,6 +135,8 @@ jobs:
     name: Test
     needs: [rust, zed, dotnet, vscode]
     runs-on: ubuntu-latest
+    # TIMEOUT EXCEPTION: Rust + .NET + VS Code E2E suites with coverage instrumentation
+    # across 3 sidecars and xvfb-driven extension host exceed the 10-minute default.
     timeout-minutes: 20
     permissions:
       contents: write

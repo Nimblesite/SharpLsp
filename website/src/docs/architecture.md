@@ -16,13 +16,13 @@ The host process handles:
 
 - **LSP protocol**: JSON-RPC over stdio, full LSP 3.17 compliance
 - **Virtual File System (VFS)**: In-memory file state with change tracking
-- **tree-sitter parsing**: Incremental C# and F# parsing at sub-millisecond speeds
+- **tree-sitter parsing**: Incremental C# parsing at sub-millisecond speeds (F# grammar integration is pending; F# syntax features route to the sidecar)
 - **salsa cache**: Incremental computation — only reprocess what changed
 - **Request routing**: Fast syntax requests stay in Rust, semantic requests go to sidecars
 
 ## Tier 2 — C# Sidecar (Roslyn)
 
-A long-running .NET process providing:
+A long-running .NET 10 process providing:
 
 - MSBuildWorkspace for solution/project loading
 - Full Roslyn API: completions, diagnostics, code actions, refactoring
@@ -31,12 +31,10 @@ A long-running .NET process providing:
 
 ## Tier 3 — F# Sidecar (FCS)
 
-A separate .NET process for F# support:
+A separate .NET 10 process for F# support:
 
-- FSharpChecker for type checking and analysis
-- Ionide.ProjInfo for project system integration
-- Fantomas for formatting
-- FSharpLint for additional diagnostics
+- FSharp.Compiler.Service (`FSharpChecker`) for type checking, hover, and semantic analysis
+- MessagePack serialization over the same IPC transport as the C# sidecar
 
 ## IPC Protocol
 

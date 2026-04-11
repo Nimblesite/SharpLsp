@@ -61,21 +61,6 @@ var json = JsonSerializer.Serialize(obj);
 //         ↑ completion adds: using System.Text.Json;
 ```
 
-## Configuration
-
-```toml
-# forge.toml
-[completions]
-# Show types from unreferenced assemblies (requires NuGet restore)
-import_completions = true
-
-# Maximum results returned per request
-max_results = 200
-
-# Minimum characters before triggering completions
-min_trigger_length = 0
-```
-
 ## LSP Protocol
 
 Forge advertises:
