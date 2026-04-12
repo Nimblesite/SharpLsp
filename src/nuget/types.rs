@@ -27,6 +27,7 @@ pub struct NuGetTarget {
     pub framework: Vec<String>,
 }
 
+/// The kind of `MSBuild` target file being operated on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TargetKind {
@@ -286,6 +287,7 @@ pub struct UninstallResponse {
 
 // ── forge/nuget/restoreProgress (server → client notification) ──
 
+/// Parameters for the `forge/nuget/restoreProgress` notification.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RestoreProgressParams {
