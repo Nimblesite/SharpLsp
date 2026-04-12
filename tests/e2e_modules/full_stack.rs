@@ -72,7 +72,10 @@ fn test_full_stack_hover_class_method_property() {
         prop_md.contains("Name"),
         "must contain property name: {prop_md}"
     );
-    assert!(prop_md.contains("```"), "must have code elaborate: {prop_md}");
+    assert!(
+        prop_md.contains("```"),
+        "must have code elaborate: {prop_md}"
+    );
 
     // ASSERT: OBSOLETE METHOD — deprecation warning
     let obsolete_hover = hover(&mut client, &file_uri, 15, 15);

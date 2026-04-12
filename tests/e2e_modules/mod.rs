@@ -25,8 +25,12 @@ pub mod fixtures;
 pub mod nav_helpers;
 
 // ── Test sub-modules ──────────────────────────────────────────────
+pub mod call_hierarchy_tests;
+pub mod code_actions_tests;
+pub mod coverage_boost;
 pub mod definition;
 pub mod definition_full_stack;
+pub mod inlay_hints_tests;
 pub mod definition_no_sidecar;
 pub mod diagnostics;
 pub mod diagnostics_full_stack;
@@ -56,11 +60,11 @@ pub use nav_helpers::*;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use wait_timeout::ChildExt;
 
 // ── Test Harness ──────────────────────────────────────────────────

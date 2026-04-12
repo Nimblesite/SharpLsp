@@ -486,4 +486,3 @@ public class Calculator
     let file_uri = format!("file://{}", real_root.join("Calculator.cs").display());
     (tmp, root_uri, file_uri, cs_source.to_string())
 }
-

@@ -1,5 +1,5 @@
-use super::*;
 use super::profiler_full_stack::{build_profile_target, start_profile_target, stop_profile_target};
+use super::*;
 
 // ── Profiler Edge Case Tests ─────────────────────────────────────
 

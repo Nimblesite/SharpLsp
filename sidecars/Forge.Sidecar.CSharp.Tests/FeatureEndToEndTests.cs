@@ -89,7 +89,12 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     public async Task InlayHint_returns_type_and_parameter_hints()
     {
         var payload = MessagePackSerializer.Serialize(
-            new InlayHintRequest { FilePath = fixture.SourceFile, StartLine = 0, EndLine = 35 }
+            new InlayHintRequest
+            {
+                FilePath = fixture.SourceFile,
+                StartLine = 0,
+                EndLine = 35,
+            }
         );
         var r = await fixture.SendAsync("textDocument/inlayHint", payload);
         Assert.Null(r.Error);
@@ -113,10 +118,7 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task IncomingCalls_on_Add_finds_caller()
     {
-        var r = await fixture.SendAsync(
-            "callHierarchy/incomingCalls",
-            fixture.PosPayload(9, 15)
-        );
+        var r = await fixture.SendAsync("callHierarchy/incomingCalls", fixture.PosPayload(9, 15));
         Assert.Null(r.Error);
         var calls = MessagePackSerializer.Deserialize<CallHierarchyCallResult[]>(r.Payload);
         Assert.NotEmpty(calls);
@@ -125,10 +127,7 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task OutgoingCalls_returns_results()
     {
-        var r = await fixture.SendAsync(
-            "callHierarchy/outgoingCalls",
-            fixture.PosPayload(28, 20)
-        );
+        var r = await fixture.SendAsync("callHierarchy/outgoingCalls", fixture.PosPayload(28, 20));
         Assert.Null(r.Error);
         var calls = MessagePackSerializer.Deserialize<CallHierarchyCallResult[]>(r.Payload);
         Assert.NotNull(calls);
@@ -149,10 +148,7 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Supertypes_of_SimpleGreeter_includes_IGreeter()
     {
-        var r = await fixture.SendAsync(
-            "typeHierarchy/supertypes",
-            fixture.PosPayload(22, 13)
-        );
+        var r = await fixture.SendAsync("typeHierarchy/supertypes", fixture.PosPayload(22, 13));
         Assert.Null(r.Error);
         var items = MessagePackSerializer.Deserialize<TypeHierarchyItem[]>(r.Payload);
         Assert.NotEmpty(items);

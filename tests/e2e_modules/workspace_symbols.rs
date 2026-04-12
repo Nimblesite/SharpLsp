@@ -268,3 +268,166 @@ fn test_workspace_symbols_file_scoped_namespace_reparenting() {
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
+
+/// Create a workspace with a solution folder and NestedProjects section
+/// to exercise the parent folder resolution code path.
+fn create_nested_workspace() -> (tempfile::TempDir, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("SrcLib");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("SrcLib.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        proj_dir.join("Core.cs"),
+        "namespace SrcLib;\npublic class Core { public void Run() {} }\n",
+    )
+    .unwrap();
+
+    // Solution with a solution folder "src" containing SrcLib.
+    std::fs::write(
+        tmp.path().join("Nested.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{AAAAAAAA-0000-0000-0000-000000000001}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SrcLib", "SrcLib/SrcLib.csproj", "{BBBBBBBB-0000-0000-0000-000000000002}"
+EndProject
+Global
+	GlobalSection(NestedProjects) = preSolution
+		{BBBBBBBB-0000-0000-0000-000000000002} = {AAAAAAAA-0000-0000-0000-000000000001}
+	EndGlobalSection
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let sln_path = tmp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("Nested.sln")
+        .to_string_lossy()
+        .to_string();
+    (tmp, sln_path)
+}
+
+#[test]
+fn test_workspace_symbols_with_nested_solution_folders() {
+    let (_tmp, sln_path) = create_nested_workspace();
+
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+
+    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    assert!(
+        resp.get("error").is_none(),
+        "nested solution must not error: {resp}"
+    );
+
+    let result = &resp["result"];
+
+    // The NestedProjects section exercises the nesting code path.
+    // The solutionFolders array exists (may be empty depending on GUID matching).
+    assert!(
+        result["solutionFolders"].is_array(),
+        "solutionFolders must be an array: {result}"
+    );
+
+    // The SrcLib project must be found.
+    let projects = result["projects"].as_array().unwrap();
+    assert_eq!(projects.len(), 1, "must find one project");
+    assert_eq!(projects[0]["name"], "SrcLib");
+
+    // Symbols must be extracted from Core.cs.
+    let syms = projects[0]["symbols"].as_array().unwrap();
+    assert!(!syms.is_empty(), "SrcLib must have file symbols");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_workspace_symbols_solution_with_multiple_projects() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Two projects side by side.
+    for name in &["Alpha", "Beta"] {
+        let proj_dir = tmp.path().join(name);
+        std::fs::create_dir_all(&proj_dir).unwrap();
+
+        std::fs::write(
+            proj_dir.join(format!("{name}.csproj")),
+            r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+</Project>"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            proj_dir.join("Lib.cs"),
+            format!(
+                "namespace {name};\npublic class {name}Lib {{ public void Do() {{}} }}\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    std::fs::write(
+        tmp.path().join("Multi.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Alpha", "Alpha/Alpha.csproj", "{11111111-0000-0000-0000-000000000001}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Beta", "Beta/Beta.csproj", "{22222222-0000-0000-0000-000000000002}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let sln_path = tmp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("Multi.sln")
+        .to_string_lossy()
+        .to_string();
+
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+
+    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    assert!(
+        resp.get("error").is_none(),
+        "multi-project solution must not error: {resp}"
+    );
+
+    let projects = resp["result"]["projects"].as_array().unwrap();
+    assert_eq!(projects.len(), 2, "must find two projects");
+
+    let names: Vec<&str> = projects
+        .iter()
+        .filter_map(|p| p["name"].as_str())
+        .collect();
+    assert!(names.contains(&"Alpha"), "must find Alpha: {names:?}");
+    assert!(names.contains(&"Beta"), "must find Beta: {names:?}");
+
+    // Both projects have symbols.
+    for proj in projects {
+        let syms = proj["symbols"].as_array().unwrap();
+        assert!(
+            !syms.is_empty(),
+            "project {} must have symbols",
+            proj["name"]
+        );
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
