@@ -7,9 +7,11 @@
 #   make ci                  lint → test → build — the full pipeline
 #   make build-rust          forge-lsp binary only
 #   make build-dotnet        C# sidecar only
-#   make build-vsix          VS Code extension (no binaries — thin client only)
+#   make package-vsix        VS Code extension (no binaries — thin client only)
 #   make build-zed           Zed extension WASM only
 #   make package-zed         Assemble a distributable Zed extension directory + tarball
+#   make package-rider       Build + package the Rider plugin zip
+#   make install-binaries    Kill forge, hard-delete, deploy forge-lsp + sidecars to ~/.local
 #   make test                run all tests (with coverage + threshold enforcement)
 #   make test-rust           test forge-lsp + coverage threshold
 #   make test-vsix           test VS Code extension + coverage threshold
@@ -34,11 +36,12 @@ endif
 SHELL := /bin/bash
 .SHELLFLAGS := -eo pipefail -c
 
-.PHONY: ci build build-rust build-dotnet build-vsix build-zed package-zed \
-       build-rider package-rider clean-rider \
+.PHONY: ci build build-rust build-dotnet build-zed package-zed \
+       package-vsix package-rider clean-rider \
        test test-rust test-zed test-vsix test-dotnet \
        lint lint-rust lint-zed lint-vsix lint-dotnet \
        fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet \
+       kill-forge install-binaries \
        setup clean
 
 PROFILE    ?= release
@@ -79,7 +82,7 @@ CHECK_COV = scripts/check-coverage.sh
 
 # ── Default target ───────────────────────────────────────────────
 
-build: build-rust build-dotnet build-vsix build-zed package-rider
+build: build-rust build-dotnet package-vsix build-zed package-rider
 	@echo ""
 	@echo "==> Build complete."
 	@echo "    Server:     $(BINARY)"
@@ -111,11 +114,7 @@ build-dotnet:
 
 # ── VS Code extension (.vsix) ───────────────────────────────────
 
-build-vsix:
-	@echo "==> Cleaning stale bundled binaries from $(VSCODE_DIR)/bin/..."
-	@$(RM) $(VSCODE_DIR)/bin
-	@echo "==> Installing VS Code extension dependencies..."
-	npm ci --prefix $(VSCODE_DIR)
+package-vsix:
 	@echo "==> Bundling extension with esbuild..."
 	npm run build --prefix $(VSCODE_DIR)
 	@echo "==> Packaging .vsix..."
@@ -157,7 +156,7 @@ package-zed: build-zed
 
 # ── JetBrains Rider plugin ──────────────────────────────────────
 
-build-rider:
+package-rider:
 	@if ! command -v java >/dev/null 2>&1; then \
 		echo "==> Skipping Rider plugin (no 'java' on PATH — install JDK 21 to build)"; \
 		exit 0; \
@@ -165,13 +164,6 @@ build-rider:
 	@echo "==> Building Forge Rider plugin..."
 	cd $(RIDER_DIR) && ./gradlew buildPlugin --no-daemon
 	@test -f $(RIDER_ZIP_SRC) || { echo "ERROR: $(RIDER_ZIP_SRC) not found" >&2; exit 1; }
-	@echo "==> Rider plugin zip: $(RIDER_ZIP_SRC)"
-
-package-rider: build-rider
-	@if [ ! -f $(RIDER_ZIP_SRC) ]; then \
-		echo "==> Skipping package-rider (build-rider produced no output)"; \
-		exit 0; \
-	fi
 	@echo "==> Copying Rider plugin to repo root as $(RIDER_ZIP)..."
 	@$(RM) $(RIDER_ZIP)
 	cp $(RIDER_ZIP_SRC) $(RIDER_ZIP)
@@ -214,7 +206,7 @@ test-zed: build-zed
 	@echo "==> Running Zed extension tests (nextest, fail-fast)..."
 	cargo nextest run --manifest-path $(ZED_DIR)/Cargo.toml --fail-fast
 
-test-vsix: build-rust build-dotnet build-vsix
+test-vsix: build-rust build-dotnet package-vsix
 	@echo "==> Staging forge-lsp + sidecars at $(PREFIX) so VS Code tests find them via the install priority chain..."
 	@$(MKDIR) $(PREFIX)/bin $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
 	@cp $(BINARY) $(PREFIX)/bin/forge-lsp
@@ -314,6 +306,38 @@ setup:
 	dotnet tool restore
 	@echo "==> Setup complete. Run 'make ci' to validate."
 
+# ── Kill forge processes ─────────────────────────────────────────
+
+kill-forge:
+	@echo "==> Killing stale forge-lsp and sidecar processes..."
+	-@pkill -9 -f 'forge-lsp' 2>/dev/null || true
+	-@pkill -9 -f 'Forge\.Sidecar\.' 2>/dev/null || true
+	@sleep 0.5
+	@echo "==> Processes killed."
+
+# ── Install binaries (kill → hard-delete → deploy) ───────────────
+
+install-binaries: build-rust build-dotnet kill-forge
+	@echo "==> Hard-deleting existing binaries from install prefix..."
+	$(RM) $(PREFIX)/bin/forge-lsp
+	$(RM) $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
+	@echo "==> Deploying forge-lsp to $(PREFIX)/bin/..."
+	$(MKDIR) $(PREFIX)/bin
+	cp $(BINARY) $(PREFIX)/bin/forge-lsp
+	chmod +x $(PREFIX)/bin/forge-lsp
+	@echo "==> Deploying sidecars to $(LIBDIR)/..."
+	$(MKDIR) $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
+	cp -r $(SIDECAR_CS_OUT)/. $(LIBDIR)/sidecar-csharp/
+	cp -r $(SIDECAR_FS_OUT)/. $(LIBDIR)/sidecar-fsharp/
+	-@xattr -cr $(LIBDIR)/sidecar-csharp/ $(LIBDIR)/sidecar-fsharp/ 2>/dev/null || true
+	@echo ""
+	@echo "==> Installed:"
+	@echo "    $(PREFIX)/bin/forge-lsp"
+	@echo "    $(LIBDIR)/sidecar-csharp/"
+	@echo "    $(LIBDIR)/sidecar-fsharp/"
+	@echo ""
+	@echo "    Make sure $(PREFIX)/bin is on your \$$PATH"
+
 # ── Clean ────────────────────────────────────────────────────────
 
 clean: clean-rider
@@ -321,7 +345,7 @@ clean: clean-rider
 	cargo clean
 	cargo clean --manifest-path $(ZED_DIR)/Cargo.toml
 	$(RM) $(SIDECAR_CS_OUT) $(SIDECAR_FS_OUT)
-	$(RM) $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
+	$(RM) $(VSCODE_DIR)/bin $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
 	$(RM) $(ZED_PKG_DIR)
 	$(RM) $(VSIX) $(ZED_PKG_TAR)
 	@echo "==> Clean."
