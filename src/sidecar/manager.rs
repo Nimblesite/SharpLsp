@@ -66,6 +66,11 @@ impl SidecarManager {
         }
     }
 
+    /// Returns the display name of this sidecar.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// Create a manager for the C# sidecar.
     pub fn csharp(workspace_root: &Path) -> Self {
         let socket_path = format!(
@@ -74,18 +79,30 @@ impl SidecarManager {
             fxhash(workspace_root.to_string_lossy().as_bytes())
         );
 
-        Self::new(
-            "C# (Roslyn)",
-            "dotnet",
-            vec![
-                "run".to_string(),
-                "--project".to_string(),
-                "sidecars/Forge.Sidecar.CSharp".to_string(),
-                "--".to_string(),
-                socket_path.clone(),
-            ],
+        let (command, args) = sidecar_launch(
+            "forge-sidecar-csharp",
+            "sidecar-csharp",
+            "Forge.Sidecar.CSharp",
             &socket_path,
-        )
+        );
+        Self::new("C# (Roslyn)", &command, args, &socket_path)
+    }
+
+    /// Create a manager for the F# sidecar.
+    pub fn fsharp(workspace_root: &Path) -> Self {
+        let socket_path = format!(
+            "{}/forge-fsharp-{:x}.sock",
+            std::env::temp_dir().display(),
+            fxhash(workspace_root.to_string_lossy().as_bytes())
+        );
+
+        let (command, args) = sidecar_launch(
+            "forge-sidecar-fsharp",
+            "sidecar-fsharp",
+            "Forge.Sidecar.FSharp",
+            &socket_path,
+        );
+        Self::new("F# (FCS)", &command, args, &socket_path)
     }
 
     /// Ensure the sidecar is running and connected.
@@ -110,6 +127,7 @@ impl SidecarManager {
         self.ensure_running().await?;
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        info!(sidecar = %self.name, method = %method, id = id, "Sidecar request");
         let envelope = Envelope::request(id, method, payload);
 
         let mut transport_guard = self.transport.lock().await;
@@ -123,8 +141,17 @@ impl SidecarManager {
             .context("sidecar closed connection")?;
 
         if let Some(err) = response.error {
+            error!(sidecar = %self.name, method = %method, id = id, "Sidecar error: {err}");
             bail!("sidecar error: {err}");
         }
+
+        info!(
+            sidecar = %self.name,
+            method = %method,
+            id = id,
+            bytes = response.payload.len(),
+            "Sidecar response"
+        );
 
         // Reset backoff on successful communication.
         *self.backoff.lock().await = INITIAL_BACKOFF;
@@ -288,6 +315,108 @@ async fn health_loop(sidecar: Arc<SidecarManager>) -> ! {
     }
 }
 
+/// Resolve sidecar launch command and arguments.
+///
+/// Resolution order:
+///   1. `dotnet tool` shim on `PATH` (e.g. `forge-sidecar-csharp`).
+///      This is the production distribution path.
+///   2. Legacy installed layouts (VSIX bundle, `make install`, dev target).
+///      Kept as a transitional fallback while the distribution spec
+///      migrates away from bundled sidecars; see
+///      `docs/specs/BINARY-DEPLOYMENT.md`.
+///   3. Dev build via `dotnet run --project sidecars/<name>`
+///      (CWD = repo root).
+fn sidecar_launch(
+    tool_command: &str,
+    subdir: &str,
+    name: &str,
+    socket_path: &str,
+) -> (String, Vec<String>) {
+    if find_on_path(tool_command).is_some() {
+        info!(tool = %tool_command, "Using dotnet-tool sidecar from PATH");
+        return (tool_command.to_string(), vec![socket_path.to_string()]);
+    }
+
+    if let Some(exe) = installed_sidecar_exe(subdir, name) {
+        info!(exe = %exe.display(), "Using legacy installed sidecar");
+        return (
+            exe.to_string_lossy().to_string(),
+            vec![socket_path.to_string()],
+        );
+    }
+
+    info!(sidecar = %name, "Using dev sidecar (dotnet run)");
+    (
+        "dotnet".to_string(),
+        vec![
+            "run".to_string(),
+            "--project".to_string(),
+            format!("sidecars/{name}"),
+            "--".to_string(),
+            socket_path.to_string(),
+        ],
+    )
+}
+
+/// Resolve a command name to its full path via the `PATH` environment
+/// variable. Returns `None` if the command is not found or is not
+/// executable. On Windows, also tries `.exe` and `.cmd` suffixes.
+fn find_on_path(command: &str) -> Option<std::path::PathBuf> {
+    let path_var = std::env::var_os("PATH")?;
+    let suffixes: &[&str] = if cfg!(windows) {
+        &["", ".exe", ".cmd", ".bat"]
+    } else {
+        &[""]
+    };
+    for dir in std::env::split_paths(&path_var) {
+        for suffix in suffixes {
+            let candidate = dir.join(format!("{command}{suffix}"));
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+/// Check for a published sidecar executable.
+///
+/// Searches three layouts in priority order:
+///   1. VSIX bundle:    `<exe_dir>/<subdir>/<name>[.exe]`
+///   2. `make install`: `<exe_dir>/../lib/forge/<subdir>/<name>[.exe]`
+///   3. Dev build:      `<exe_dir>/../<subdir>/<name>[.exe]`
+///      (e.g. `target/sidecar-csharp/` next to `target/release/forge-lsp`,
+///      where `make build-dotnet` writes the published sidecar output)
+fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf> {
+    let current = std::env::current_exe().ok()?;
+    let exe_dir = current.parent()?;
+    let exe_name = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
+
+    // 1. VSIX layout: sidecar sits next to the binary.
+    let vsix = exe_dir.join(subdir).join(&exe_name);
+    if vsix.exists() {
+        return Some(vsix);
+    }
+
+    // 2. make install layout: ../lib/forge/<subdir>/
+    let installed = exe_dir
+        .parent()?
+        .join("lib/forge")
+        .join(subdir)
+        .join(&exe_name);
+    if installed.exists() {
+        return Some(installed);
+    }
+
+    // 3. Dev-build layout: sibling of target/release or target/debug.
+    let dev = exe_dir.parent()?.join(subdir).join(&exe_name);
+    dev.exists().then_some(dev)
+}
+
 /// Simple FNV-style hash for generating short socket names.
 fn fxhash(bytes: &[u8]) -> u32 {
     let mut hash: u32 = 0x811c_9dc5;
@@ -296,4 +425,80 @@ fn fxhash(bytes: &[u8]) -> u32 {
         hash = hash.wrapping_mul(0x0100_0193);
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn fxhash_is_deterministic() {
+        let input = b"hello world";
+        assert_eq!(fxhash(input), fxhash(input));
+    }
+
+    #[test]
+    fn fxhash_different_inputs_produce_different_outputs() {
+        assert_ne!(fxhash(b"hello"), fxhash(b"world"));
+        assert_ne!(fxhash(b""), fxhash(b"a"));
+        assert_ne!(fxhash(b"abc"), fxhash(b"abd"));
+    }
+
+    #[test]
+    fn fxhash_empty_input() {
+        // Should not panic and should return the initial seed after zero iterations.
+        let result = fxhash(b"");
+        assert_eq!(result, 0x811c_9dc5);
+    }
+
+    #[test]
+    fn new_stores_name() {
+        let mgr = SidecarManager::new("test-sidecar", "echo", vec![], "/tmp/test.sock");
+        assert_eq!(mgr.name(), "test-sidecar");
+    }
+
+    #[test]
+    fn new_stores_socket_path() {
+        let mgr = SidecarManager::new("test", "echo", vec![], "/tmp/my.sock");
+        assert_eq!(mgr.socket_path, "/tmp/my.sock");
+    }
+
+    #[test]
+    fn name_returns_display_name() {
+        let mgr = SidecarManager::new("My Sidecar", "cmd", vec![], "/tmp/s.sock");
+        assert_eq!(mgr.name(), "My Sidecar");
+    }
+
+    #[test]
+    fn csharp_has_correct_name() {
+        let mgr = SidecarManager::csharp(&PathBuf::from("/workspace"));
+        assert_eq!(mgr.name(), "C# (Roslyn)");
+    }
+
+    #[test]
+    fn csharp_socket_path_contains_forge_csharp() {
+        let mgr = SidecarManager::csharp(&PathBuf::from("/workspace"));
+        assert!(
+            mgr.socket_path.contains("forge-csharp"),
+            "expected socket_path to contain 'forge-csharp', got: {}",
+            mgr.socket_path
+        );
+    }
+
+    #[test]
+    fn fsharp_has_correct_name() {
+        let mgr = SidecarManager::fsharp(&PathBuf::from("/workspace"));
+        assert_eq!(mgr.name(), "F# (FCS)");
+    }
+
+    #[test]
+    fn fsharp_socket_path_contains_forge_fsharp() {
+        let mgr = SidecarManager::fsharp(&PathBuf::from("/workspace"));
+        assert!(
+            mgr.socket_path.contains("forge-fsharp"),
+            "expected socket_path to contain 'forge-fsharp', got: {}",
+            mgr.socket_path
+        );
+    }
 }

@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <WarningLevel>9999</WarningLevel>
-    <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>
-  </PropertyGroup>
+    <PropertyGroup>
+        <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <WarningLevel>9999</WarningLevel>
+        <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="MessagePack" Version="3.1.3" />
-  </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="MessagePack" Version="3.1.3" />
+    </ItemGroup>
 </Project>

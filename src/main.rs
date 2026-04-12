@@ -5,13 +5,16 @@
 mod config;
 mod diagnostics;
 mod handlers;
-mod hover_cache;
+mod nav_cache;
+mod nuget;
 mod profiler;
+mod pull_diagnostics;
 mod semantic;
 mod sidecar;
 mod sort_members;
 mod syntax;
 mod tree_sitter_parse;
+mod utils;
 mod vfs;
 mod workspace_symbols;
 
@@ -28,9 +31,10 @@ use lsp_types::{
         Notification as _,
     },
     request::{
-        Completion, DocumentSymbolRequest, FoldingRangeRequest, GotoDeclaration, GotoDefinition,
-        GotoImplementation, GotoTypeDefinition, HoverRequest, LinkedEditingRange, Request as _,
-        SelectionRangeRequest, Shutdown,
+        Completion, DocumentDiagnosticRequest, DocumentHighlightRequest, DocumentSymbolRequest,
+        FoldingRangeRequest, GotoDeclaration, GotoDefinition, GotoImplementation,
+        GotoTypeDefinition, HoverRequest, LinkedEditingRange, References, Request as _,
+        SelectionRangeRequest, Shutdown, WorkspaceDiagnosticRequest,
     },
     FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams, OneOf,
     SelectionRangeProviderCapability, ServerCapabilities, TextDocumentSyncCapability,
@@ -58,6 +62,11 @@ fn error_code_i32(code: lsp_server::ErrorCode) -> i32 {
 }
 
 fn main() -> ExitCode {
+    if std::env::args().any(|a| a == "--version") {
+        println!("forge-lsp {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
+
     let log_dir = std::env::temp_dir().join("forge-lsp-logs");
     let file_appender = tracing_appender::rolling::daily(&log_dir, "forge-lsp.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
@@ -148,50 +157,57 @@ fn run_server() -> Result<()> {
         None
     };
 
-    // Eagerly open the workspace in the sidecar, then start health monitoring.
+    // Initialize F# sidecar manager if enabled and workspace root is available.
+    let fsharp_sidecar = if forge_config.fsharp.enabled {
+        workspace_root
+            .as_ref()
+            .map(|root| Arc::new(SidecarManager::fsharp(root)))
+    } else {
+        None
+    };
+
+    // Eagerly open workspaces in sidecars, then start health monitoring.
     // Health monitoring must wait until workspace/open completes — otherwise the
     // health check can time out on the transport lock (held by workspace/open),
     // declare a false crash, and kill the sidecar before the solution is loaded.
-    //
-    // After workspace load, trigger solution-wide diagnostics if enabled.
-    if let (Some(ref sidecar), Some(ref root)) = (&csharp_sidecar, &workspace_root) {
-        let sidecar_clone = Arc::clone(sidecar);
-        let root_str = root.to_string_lossy().to_string();
-        let solution_wide = forge_config.diagnostics.solution_wide_analysis;
-        let project_filter = forge_config.diagnostics.project_filter.clone();
-        let sender = connection.sender.clone();
-        runtime.spawn(async move {
-            if let Err(err) = open_workspace(&sidecar_clone, &root_str).await {
-                error!("Failed to open workspace in sidecar: {err:#}");
-                return;
-            }
-            if solution_wide {
-                info!("Starting solution-wide diagnostics scan");
-                diagnostics::request_solution_in_background(
-                    Arc::clone(&sidecar_clone),
-                    sender,
-                    project_filter,
-                );
-            }
-            sidecar_clone.start_health_monitor().await;
-        });
-    }
+    start_sidecar(
+        csharp_sidecar.as_ref(),
+        workspace_root.as_ref(),
+        Some((&forge_config.diagnostics, &connection)),
+        &runtime,
+    );
+    start_sidecar(
+        fsharp_sidecar.as_ref(),
+        workspace_root.as_ref(),
+        None,
+        &runtime,
+    );
 
     main_loop(
         &connection,
         &runtime,
         &forge_config,
         csharp_sidecar.as_ref(),
+        fsharp_sidecar.as_ref(),
     )?;
 
     // Shut down profiler sessions.
-    runtime.block_on(profiler::session::store().shutdown());
+    profiler::session::store().shutdown();
 
-    // Shut down sidecar gracefully.
-    if let Some(ref sidecar) = csharp_sidecar {
-        let sidecar_clone = Arc::clone(sidecar);
-        runtime.block_on(async move { sidecar_clone.shutdown().await });
-    }
+    // Shut down sidecars gracefully (in parallel to avoid doubling timeout).
+    runtime.block_on(async {
+        let cs = async {
+            if let Some(ref sidecar) = csharp_sidecar {
+                sidecar.shutdown().await;
+            }
+        };
+        let fs = async {
+            if let Some(ref sidecar) = fsharp_sidecar {
+                sidecar.shutdown().await;
+            }
+        };
+        tokio::join!(cs, fs);
+    });
 
     // Drop the connection so the writer thread's channel closes,
     // allowing io_threads.join() to complete.
@@ -216,6 +232,8 @@ fn build_capabilities() -> ServerCapabilities {
         type_definition_provider: Some(lsp_types::TypeDefinitionProviderCapability::Simple(true)),
         declaration_provider: Some(lsp_types::DeclarationCapability::Simple(true)),
         implementation_provider: Some(lsp_types::ImplementationProviderCapability::Simple(true)),
+        references_provider: Some(OneOf::Left(true)),
+        document_highlight_provider: Some(OneOf::Left(true)),
         diagnostic_provider: Some(lsp_types::DiagnosticServerCapabilities::Options(
             lsp_types::DiagnosticOptions {
                 inter_file_dependencies: true,
@@ -227,12 +245,44 @@ fn build_capabilities() -> ServerCapabilities {
     }
 }
 
-/// Open the workspace in the sidecar.
+/// Open the workspace in a sidecar.
 async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
     let payload = rmp_serde::to_vec(root).context("serialize workspace path")?;
     sidecar.request("workspace/open", payload).await?;
-    info!("Workspace opened in C# sidecar");
+    info!("Workspace opened in {} sidecar", sidecar.name());
     Ok(())
+}
+
+/// Start a sidecar: open workspace, optionally trigger solution diagnostics, begin health monitoring.
+fn start_sidecar(
+    sidecar: Option<&Arc<SidecarManager>>,
+    workspace_root: Option<&PathBuf>,
+    diagnostics_cfg: Option<(&config::DiagnosticsConfig, &Connection)>,
+    runtime: &tokio::runtime::Runtime,
+) {
+    if let (Some(sidecar), Some(root)) = (sidecar, workspace_root) {
+        let sc = Arc::clone(sidecar);
+        let root_str = root.to_string_lossy().to_string();
+        let diag = diagnostics_cfg.and_then(|(cfg, conn)| {
+            cfg.solution_wide_analysis
+                .then(|| (conn.sender.clone(), cfg.project_filter.clone()))
+        });
+        runtime.spawn(async move {
+            if let Err(err) = open_workspace(&sc, &root_str).await {
+                error!("Failed to open workspace in sidecar: {err:#}");
+                return;
+            }
+            if let Some((sender, project_filter)) = diag {
+                info!("Starting solution-wide diagnostics scan");
+                diagnostics::request_solution_in_background(
+                    Arc::clone(&sc),
+                    sender,
+                    project_filter,
+                );
+            }
+            sc.start_health_monitor().await;
+        });
+    }
 }
 
 // ── Main Loop ─────────────────────────────────────────────────────
@@ -246,10 +296,12 @@ fn main_loop(
     runtime: &tokio::runtime::Runtime,
     _forge_config: &config::ForgeConfig,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<()> {
     let vfs = Vfs::new();
     let parsers = TsParsers::new();
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
+    let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
 
     for msg in &connection.receiver {
@@ -278,9 +330,11 @@ fn main_loop(
                     &vfs,
                     &parsers,
                     &trees,
+                    &mut nav_cache,
                     connection,
                     runtime,
                     csharp_sidecar,
+                    fsharp_sidecar,
                 )?;
             }
             Message::Notification(notif) => {
@@ -293,6 +347,7 @@ fn main_loop(
                     &vfs,
                     &parsers,
                     &mut trees,
+                    &mut nav_cache,
                     connection,
                     runtime,
                     csharp_sidecar,
@@ -310,16 +365,23 @@ fn main_loop(
 // ── Request Handling ──────────────────────────────────────────────
 
 #[expect(clippy::mutable_key_type, reason = "see main_loop")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "dispatcher passes per-request context; extracting a struct adds indirection for no benefit"
+)]
 fn handle_request(
     req: Request,
     vfs: &Vfs,
     parsers: &TsParsers,
     trees: &HashMap<Uri, Tree>,
+    nav_cache: &mut nav_cache::NavCache,
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<()> {
     let id = req.id.clone();
+    let method = req.method.clone();
 
     let result = match req.method.as_str() {
         // Syntax-only (tree-sitter, Rust)
@@ -334,79 +396,254 @@ fn handle_request(
             handlers::handle_linked_editing_range(req, vfs, parsers, trees)
         }
         // Semantic (sidecar)
-        Completion::METHOD => semantic::handle_completion(req, runtime, csharp_sidecar),
+        Completion::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            semantic::handle_completion(req, runtime, sidecar)
+        }
         HoverRequest::METHOD => {
             if handlers::is_hover_on_comment(&req, trees) {
+                info!("Hover: skipped (comment position)");
                 Ok(serde_json::Value::Null)
             } else {
-                semantic::handle_hover(req, runtime, csharp_sidecar)
+                let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+                semantic::handle_hover(req, vfs, nav_cache, runtime, sidecar)
             }
         }
-        GotoDefinition::METHOD => {
-            if handlers::is_non_symbol_position(&req, trees) {
-                Ok(serde_json::Value::Null)
-            } else {
-                semantic::handle_definition(req, runtime, csharp_sidecar)
-            }
+        GotoDefinition::METHOD
+        | GotoTypeDefinition::METHOD
+        | GotoDeclaration::METHOD
+        | GotoImplementation::METHOD
+        | References::METHOD
+        | DocumentHighlightRequest::METHOD => handle_nav_request(
+            req,
+            vfs,
+            trees,
+            nav_cache,
+            runtime,
+            csharp_sidecar,
+            fsharp_sidecar,
+        ),
+        // Pull diagnostics (LSP 3.17)
+        DocumentDiagnosticRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            pull_diagnostics::handle_document_diagnostic(req, runtime, sidecar)
         }
-        GotoTypeDefinition::METHOD => {
-            if handlers::is_non_symbol_position(&req, trees) {
-                Ok(serde_json::Value::Null)
-            } else {
-                semantic::handle_type_definition(req, runtime, csharp_sidecar)
-            }
+        WorkspaceDiagnosticRequest::METHOD => pull_diagnostics::handle_workspace_diagnostic(req),
+        "forge/loadSolution" => {
+            handle_load_solution(req, runtime, csharp_sidecar, fsharp_sidecar, connection)
         }
-        GotoDeclaration::METHOD => {
-            if handlers::is_non_symbol_position(&req, trees) {
-                Ok(serde_json::Value::Null)
-            } else {
-                semantic::handle_declaration(req, runtime, csharp_sidecar)
-            }
-        }
-        GotoImplementation::METHOD => {
-            if handlers::is_non_symbol_position(&req, trees) {
-                Ok(serde_json::Value::Null)
-            } else {
-                semantic::handle_implementation(req, runtime, csharp_sidecar)
-            }
-        }
-        // Custom requests
-        "forge/workspaceSymbols" => handle_workspace_symbols(req, parsers),
-        "forge/sortMembers" => handle_sort_members(req, parsers),
-        // Profiler requests
-        "forge/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
-        "forge/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
-        "forge/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req, runtime),
-        "forge/profiler/startCounters" => {
-            profiler::handlers::handle_start_counters(req, connection.sender.clone())
-        }
-        "forge/profiler/stopCounters" => profiler::handlers::handle_stop_counters(req, runtime),
-        "forge/profiler/collectDump" => profiler::handlers::handle_collect_dump(req, runtime),
-        "forge/profiler/analyzeHeap" => profiler::handlers::handle_analyze_heap(req, runtime),
-        "forge/profiler/findGCRoots" => profiler::handlers::handle_find_gc_roots(req, runtime),
-        _ => {
-            warn!("Unhandled request: {}", req.method);
-            Err(anyhow::anyhow!("method not found"))
-        }
+        _ => handle_custom_request(req, parsers, vfs, connection, runtime),
     };
 
     let resp = match result {
         Ok(value) => Response::new_ok(id, value),
-        Err(e) => Response::new_err(
-            id,
-            error_code_i32(lsp_server::ErrorCode::InternalError),
-            format!("{e:#}"),
-        ),
+        Err(e) => {
+            error!(method = %method, "Request failed: {e:#}");
+            Response::new_err(
+                id,
+                error_code_i32(lsp_server::ErrorCode::InternalError),
+                format!("{e:#}"),
+            )
+        }
     };
     connection.sender.send(Message::Response(resp))?;
     Ok(())
 }
 
+// ── Navigation Request Dispatch ───────────────────────────────────
+
+/// Route navigation requests (definition, typeDefinition, declaration,
+/// implementation, references, documentHighlight) with tree-sitter
+/// pre-validation and cross-language fallback.
+#[expect(clippy::mutable_key_type, reason = "see main_loop")]
+fn handle_nav_request(
+    req: Request,
+    vfs: &Vfs,
+    trees: &HashMap<Uri, Tree>,
+    nav_cache: &mut nav_cache::NavCache,
+    runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    if handlers::is_non_symbol_position(&req, trees) {
+        return Ok(serde_json::Value::Null);
+    }
+    let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+    match req.method.as_str() {
+        GotoDefinition::METHOD => {
+            semantic::handle_definition(req, vfs, nav_cache, runtime, primary, fallback)
+        }
+        GotoTypeDefinition::METHOD => {
+            semantic::handle_type_definition(req, vfs, nav_cache, runtime, primary, fallback)
+        }
+        GotoDeclaration::METHOD => {
+            semantic::handle_declaration(req, vfs, nav_cache, runtime, primary, fallback)
+        }
+        GotoImplementation::METHOD => {
+            semantic::handle_implementation(req, runtime, primary, fallback)
+        }
+        References::METHOD => semantic::handle_references(req, runtime, primary, fallback),
+        DocumentHighlightRequest::METHOD => {
+            semantic::handle_document_highlight(req, runtime, primary)
+        }
+        _ => Err(anyhow::anyhow!("unexpected nav method: {}", req.method)),
+    }
+}
+
+/// Route custom and profiler requests.
+fn handle_custom_request(
+    req: Request,
+    parsers: &TsParsers,
+    vfs: &Vfs,
+    connection: &Connection,
+    runtime: &tokio::runtime::Runtime,
+) -> Result<serde_json::Value> {
+    match req.method.as_str() {
+        "forge/workspaceSymbols" => handle_workspace_symbols(req, parsers, vfs),
+        "forge/sortMembers" => handle_sort_members(req, parsers),
+        // NuGet package management
+        "forge/nuget/targets" => nuget::handlers::handle_targets(req),
+        "forge/nuget/search" => nuget::handlers::handle_search(req, runtime),
+        "forge/nuget/versions" => nuget::handlers::handle_versions(req, runtime),
+        "forge/nuget/installed" => nuget::handlers::handle_installed(req, runtime),
+        "forge/nuget/install" => {
+            nuget::handlers::handle_install(req, runtime, connection.sender.clone())
+        }
+        "forge/nuget/uninstall" => {
+            nuget::handlers::handle_uninstall(req, runtime, connection.sender.clone())
+        }
+        // Profiler
+        "forge/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
+        "forge/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
+        "forge/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req),
+        "forge/profiler/startCounters" => {
+            profiler::handlers::handle_start_counters(req, connection.sender.clone())
+        }
+        "forge/profiler/stopCounters" => profiler::handlers::handle_stop_counters(req),
+        "forge/profiler/collectDump" => {
+            profiler::handlers::handle_collect_dump(req, runtime, connection.sender.clone())
+        }
+        "forge/profiler/analyzeHeap" => profiler::handlers::handle_analyze_heap(req, runtime),
+        "forge/profiler/findGCRoots" => profiler::handlers::handle_find_gc_roots(req, runtime),
+        "forge/profiler/inspectObject" => profiler::handlers::handle_inspect_object(req, runtime),
+        "forge/profiler/diffHeapSnapshots" => {
+            profiler::handlers::handle_diff_heap_snapshots(req, runtime)
+        }
+        "forge/profiler/getObjectGraph" => {
+            profiler::handlers::handle_get_object_graph(req, runtime)
+        }
+        _ => {
+            warn!("Unhandled request: {}", req.method);
+            Err(anyhow::anyhow!("method not found"))
+        }
+    }
+}
+
+// ── Language-Based Sidecar Routing ────────────────────────────────
+
+/// Pick the correct sidecar (C# or F#) based on the request's document URI.
+fn pick_sidecar<'a>(
+    req: &Request,
+    csharp: Option<&'a Arc<SidecarManager>>,
+    fsharp: Option<&'a Arc<SidecarManager>>,
+) -> Option<&'a Arc<SidecarManager>> {
+    let uri = extract_document_uri(req);
+    match uri.and_then(|u| LangId::from_uri(&u)) {
+        Some(LangId::FSharp) => fsharp,
+        _ => csharp,
+    }
+}
+
+/// Pick primary + fallback sidecar for cross-language navigation.
+///
+/// Primary is chosen by document language. Fallback is the other sidecar,
+/// used when the primary can't resolve the symbol (cross-language reference).
+fn pick_sidecar_with_fallback<'a>(
+    req: &Request,
+    csharp: Option<&'a Arc<SidecarManager>>,
+    fsharp: Option<&'a Arc<SidecarManager>>,
+) -> (
+    Option<&'a Arc<SidecarManager>>,
+    Option<&'a Arc<SidecarManager>>,
+) {
+    let uri = extract_document_uri(req);
+    match uri.and_then(|u| LangId::from_uri(&u)) {
+        Some(LangId::FSharp) => (fsharp, csharp),
+        _ => (csharp, fsharp),
+    }
+}
+
+/// Extract the document URI from a request's params (best-effort).
+fn extract_document_uri(req: &Request) -> Option<Uri> {
+    req.params
+        .get("textDocument")
+        .and_then(|td| td.get("uri"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<Uri>().ok())
+}
+
+// ── Solution Loading ─────────────────────────────────────────────
+
+/// Handle `forge/loadSolution` — reload sidecars with an explicit .sln path.
+///
+/// The extension sends this when the user selects a solution. Without it,
+/// the sidecar receives only the workspace root and picks an arbitrary .sln
+/// from recursive search, which breaks hover/definition/etc.
+fn handle_load_solution(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+    connection: &Connection,
+) -> Result<serde_json::Value> {
+    let params: serde_json::Value = serde_json::from_value(req.params)?;
+    let sln_path = params
+        .get("solutionPath")
+        .and_then(|v| v.as_str())
+        .context("forge/loadSolution requires { solutionPath: string }")?;
+
+    info!("Loading solution: {sln_path}");
+
+    let payload = rmp_serde::to_vec(sln_path).context("serialize solution path")?;
+
+    if let Some(cs) = csharp_sidecar {
+        let cs = Arc::clone(cs);
+        let p = payload.clone();
+        let sender = connection.sender.clone();
+        runtime.spawn(async move {
+            match cs.request("workspace/open", p).await {
+                Ok(_) => {
+                    info!("Solution loaded in C# (Roslyn) sidecar");
+                    diagnostics::request_solution_in_background(cs, sender, vec![]);
+                }
+                Err(err) => error!("C# sidecar workspace/open failed: {err:#}"),
+            }
+        });
+    }
+
+    if let Some(fs) = fsharp_sidecar {
+        let fs = Arc::clone(fs);
+        let p = payload;
+        runtime.spawn(async move {
+            match fs.request("workspace/open", p).await {
+                Ok(_) => info!("Solution loaded in F# (FCS) sidecar"),
+                Err(err) => error!("F# sidecar workspace/open failed: {err:#}"),
+            }
+        });
+    }
+
+    Ok(serde_json::json!({ "success": true }))
+}
+
 // ── Custom Request Handling ───────────────────────────────────────
 
-fn handle_workspace_symbols(req: Request, parsers: &TsParsers) -> Result<serde_json::Value> {
+fn handle_workspace_symbols(
+    req: Request,
+    parsers: &TsParsers,
+    vfs: &Vfs,
+) -> Result<serde_json::Value> {
     let params: workspace_symbols::WorkspaceSymbolsParams = serde_json::from_value(req.params)?;
-    let response = workspace_symbols::handle(&params, parsers)?;
+    let response = workspace_symbols::handle(&params, parsers, vfs)?;
     Ok(serde_json::to_value(response)?)
 }
 
@@ -419,11 +656,16 @@ fn handle_sort_members(req: Request, parsers: &TsParsers) -> Result<serde_json::
 // ── Notification Handling ─────────────────────────────────────────
 
 #[expect(clippy::mutable_key_type, reason = "see main_loop")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "dispatcher passes per-notification context; extracting a struct adds indirection for no benefit"
+)]
 fn handle_notification(
     notif: Notification,
     vfs: &Vfs,
     parsers: &TsParsers,
     trees: &mut HashMap<Uri, Tree>,
+    nav_cache: &mut nav_cache::NavCache,
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
@@ -454,7 +696,16 @@ fn handle_notification(
                 if let Some(change) = params.content_changes.into_iter().next_back() {
                     vfs.change(uri, params.text_document.version, change.text.clone());
                     reparse(parsers, trees, uri, &change.text);
-
+                    nav_cache.invalidate(uri);
+                    // Notify the sidecar so Roslyn sees the new source text.
+                    if let Ok(file_path) = semantic::uri_to_path(uri) {
+                        semantic::notify_did_change(
+                            &file_path,
+                            &change.text,
+                            runtime,
+                            csharp_sidecar,
+                        );
+                    }
                     trigger_diagnostics(uri, runtime, csharp_sidecar, connection);
                 }
             }
@@ -479,6 +730,7 @@ fn handle_notification(
                 info!("Closed: {}", params.text_document.uri.as_str());
                 vfs.close(&params.text_document.uri);
                 trees.remove(&params.text_document.uri);
+                nav_cache.invalidate(&params.text_document.uri);
                 if let Err(err) = diagnostics::clear(&connection.sender, params.text_document.uri) {
                     warn!("Failed to clear diagnostics: {err:#}");
                 }

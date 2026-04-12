@@ -27,7 +27,8 @@ public abstract class SidecarHost : IAsyncDisposable
     /// <summary>Register language-specific handlers.</summary>
     protected void Register(
         string method,
-        Func<byte[], CancellationToken, Task<ByteResult>> handler)
+        Func<byte[], CancellationToken, Task<ByteResult>> handler
+    )
     {
         _router.Register(method, handler);
     }
@@ -40,8 +41,8 @@ public abstract class SidecarHost : IAsyncDisposable
             var listenerResult = IpcConnection.CreateListener(socketPath);
             if (listenerResult.IsError)
             {
-                await Console.Error.WriteLineAsync(
-                    $"Listener failed: {!listenerResult}")
+                await Console
+                    .Error.WriteLineAsync($"Listener failed: {!listenerResult}")
                     .ConfigureAwait(false);
                 return;
             }
@@ -49,11 +50,14 @@ public abstract class SidecarHost : IAsyncDisposable
             _listener = +listenerResult;
             await AcceptAndRunLoopAsync(socketPath).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) { /* clean shutdown */ }
+        catch (OperationCanceledException)
+        { /* clean shutdown */
+        }
         catch (Exception ex)
         {
-            await Console.Error.WriteLineAsync(
-                $"Sidecar error: {ex.Message}").ConfigureAwait(false);
+            await Console
+                .Error.WriteLineAsync($"Sidecar error: {ex.Message}")
+                .ConfigureAwait(false);
         }
     }
 
@@ -77,8 +81,7 @@ public abstract class SidecarHost : IAsyncDisposable
         Console.WriteLine($"READY:{socketPath}");
         await Console.Out.FlushAsync().ConfigureAwait(false);
 
-        var client = await _listener!.AcceptAsync(_shutdownCts.Token)
-            .ConfigureAwait(false);
+        var client = await _listener!.AcceptAsync(_shutdownCts.Token).ConfigureAwait(false);
         var stream = new NetworkStream(client, ownsSocket: true);
         _transport = new FramedTransport(stream);
 
@@ -97,66 +100,60 @@ public abstract class SidecarHost : IAsyncDisposable
                     break;
                 }
             }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
             catch (Exception ex)
             {
-                await Console.Error.WriteLineAsync(
-                    $"Message error: {ex.Message}").ConfigureAwait(false);
+                await Console
+                    .Error.WriteLineAsync($"Message error: {ex.Message}")
+                    .ConfigureAwait(false);
             }
         }
     }
 
     private async Task<bool> ProcessOneMessageAsync(CancellationToken ct)
     {
-        var frameBytes = await _transport!.ReadFrameAsync(ct)
-            .ConfigureAwait(false);
+        var frameBytes = await _transport!.ReadFrameAsync(ct).ConfigureAwait(false);
         if (frameBytes is null)
         {
             return false;
         }
 
         var envelope = MessagePackSerializer.Deserialize<Envelope>(
-            frameBytes, cancellationToken: ct);
-        var response = await _router.HandleAsync(envelope, ct)
-            .ConfigureAwait(false);
+            frameBytes,
+            cancellationToken: ct
+        );
+        var response = await _router.HandleAsync(envelope, ct).ConfigureAwait(false);
         if (response is null)
         {
             return true;
         }
 
-        var responseBytes = MessagePackSerializer.Serialize(
-            response, cancellationToken: ct);
-        await _transport.WriteFrameAsync(responseBytes, ct)
-            .ConfigureAwait(false);
+        var responseBytes = MessagePackSerializer.Serialize(response, cancellationToken: ct);
+        await _transport.WriteFrameAsync(responseBytes, ct).ConfigureAwait(false);
         return true;
     }
 
-    private static Task<ByteResult> HandlePingAsync(
-        byte[] _,
-        CancellationToken ct)
+    private static Task<ByteResult> HandlePingAsync(byte[] _, CancellationToken ct)
     {
         try
         {
-            var bytes = MessagePackSerializer.Serialize(
-                "pong", cancellationToken: ct);
-            return Task.FromResult<ByteResult>(
-                new ByteResult.Ok<byte[], string>(bytes));
+            var bytes = MessagePackSerializer.Serialize("pong", cancellationToken: ct);
+            return Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(bytes));
         }
         catch (Exception ex)
         {
-            return Task.FromResult(
-                ByteResult.Failure(ex.Message));
+            return Task.FromResult(ByteResult.Failure(ex.Message));
         }
     }
 
-    private async Task<ByteResult> HandleShutdownAsync(
-        byte[] _,
-        CancellationToken ct)
+    private async Task<ByteResult> HandleShutdownAsync(byte[] _, CancellationToken ct)
     {
         try
         {
-            var result = MessagePackSerializer.Serialize(
-                "ok", cancellationToken: ct);
+            var result = MessagePackSerializer.Serialize("ok", cancellationToken: ct);
             await _shutdownCts.CancelAsync().ConfigureAwait(false);
             return new ByteResult.Ok<byte[], string>(result);
         }

@@ -6,7 +6,7 @@ eleventyNavigation:
   order: 4
 ---
 
-![Code completions powered by Roslyn](/assets/screenshots/completions-page.png)
+![Code completions in VS Code](/assets/screenshots/vscode-completions-page.png)
 
 *Full IntelliSense completions powered by Roslyn — same engine as Visual Studio.*
 
@@ -59,21 +59,6 @@ Types that are not yet `using`-imported appear in the completion list with a dim
 // Before: no using for JsonSerializer
 var json = JsonSerializer.Serialize(obj);
 //         ↑ completion adds: using System.Text.Json;
-```
-
-## Configuration
-
-```toml
-# forge.toml
-[completions]
-# Show types from unreferenced assemblies (requires NuGet restore)
-import_completions = true
-
-# Maximum results returned per request
-max_results = 200
-
-# Minimum characters before triggering completions
-min_trigger_length = 0
 ```
 
 ## LSP Protocol

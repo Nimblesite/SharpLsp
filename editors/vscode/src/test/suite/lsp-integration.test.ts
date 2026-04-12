@@ -2,70 +2,70 @@ import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import {
-  closeAllEditors,
-  openCSharpFile,
-  setupLspTestSuite,
-  teardownLspTestSuite,
-  waitForDocumentSymbols,
-  waitForFoldingRanges,
-  waitForSelectionRanges,
-  LSP_RESPONSE_TIMEOUT_MS,
+    closeAllEditors,
+    openCSharpFile,
+    setupLspTestSuite,
+    teardownLspTestSuite,
+    waitForDocumentSymbols,
+    waitForFoldingRanges,
+    waitForSelectionRanges,
+    LSP_RESPONSE_TIMEOUT_MS,
 } from "./test-helpers";
 
 suite("LSP Integration — Document Symbols", () => {
-  let tmpDir: string;
+    let tmpDir: string;
 
-  suiteSetup(async function () {
-    this.timeout(60_000);
-    const result = await setupLspTestSuite("symbols-");
-    tmpDir = result.tmpDir;
-  });
+    suiteSetup(async function () {
+        this.timeout(60_000);
+        const result = await setupLspTestSuite("symbols-");
+        tmpDir = result.tmpDir;
+    });
 
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
+    suiteTeardown(async () => {
+        await closeAllEditors();
+        teardownLspTestSuite(tmpDir);
+    });
 
-  teardown(async () => {
-    await closeAllEditors();
-  });
+    teardown(async () => {
+        await closeAllEditors();
+    });
 
-  test("returns class and method symbols for a C# file", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = `namespace Test {
+    test("returns class and method symbols for a C# file", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = `namespace Test {
   public class Foo {
     public void Bar() { }
     public int Baz { get; set; }
   }
 }`;
-    const { uri } = await openCSharpFile(tmpDir, "symbols.cs", content);
-    const symbols = await waitForDocumentSymbols(uri);
+        const { uri } = await openCSharpFile(tmpDir, "symbols.cs", content);
+        const symbols = await waitForDocumentSymbols(uri);
 
-    assert.ok(symbols.length > 0, "Should return at least one symbol");
+        assert.ok(symbols.length > 0, "Should return at least one symbol");
 
-    // Flatten to find all symbol names
-    const names = flattenSymbolNames(symbols);
-    assert.ok(names.includes("Foo"), "Should contain class Foo");
-    assert.ok(names.includes("Bar"), "Should contain method Bar");
-    assert.ok(names.includes("Baz"), "Should contain property Baz");
-  });
+        // Flatten to find all symbol names
+        const names = flattenSymbolNames(symbols);
+        assert.ok(names.includes("Foo"), "Should contain class Foo");
+        assert.ok(names.includes("Bar"), "Should contain method Bar");
+        assert.ok(names.includes("Baz"), "Should contain property Baz");
+    });
 
-  test("returns namespace symbol", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = "namespace MyApp.Models { public class Item { } }";
-    const { uri } = await openCSharpFile(tmpDir, "ns.cs", content);
-    const symbols = await waitForDocumentSymbols(uri);
-    const names = flattenSymbolNames(symbols);
+    test("returns namespace symbol", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = "namespace MyApp.Models { public class Item { } }";
+        const { uri } = await openCSharpFile(tmpDir, "ns.cs", content);
+        const symbols = await waitForDocumentSymbols(uri);
+        const names = flattenSymbolNames(symbols);
 
-    assert.ok(
-      names.some((n) => n.includes("MyApp")),
-      "Should contain the namespace symbol",
-    );
-  });
+        assert.ok(
+            names.some((n) => n.includes("MyApp")),
+            "Should contain the namespace symbol",
+        );
+    });
 
-  test("returns nested class symbols with hierarchy", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = `namespace N {
+    test("returns nested class symbols with hierarchy", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = `namespace N {
   public class Outer {
     public class Inner {
       public void InnerMethod() { }
@@ -73,104 +73,101 @@ suite("LSP Integration — Document Symbols", () => {
     public void OuterMethod() { }
   }
 }`;
-    const { uri } = await openCSharpFile(tmpDir, "nested.cs", content);
-    const symbols = await waitForDocumentSymbols(uri);
+        const { uri } = await openCSharpFile(tmpDir, "nested.cs", content);
+        const symbols = await waitForDocumentSymbols(uri);
 
-    // Find the Outer class and verify it has children
-    const outer = findSymbol(symbols, "Outer");
-    assert.ok(outer, "Should find Outer class");
-    assert.ok(
-      outer.children.length > 0,
-      "Outer should have child symbols",
-    );
+        // Find the Outer class and verify it has children
+        const outer = findSymbol(symbols, "Outer");
+        assert.ok(outer, "Should find Outer class");
+        assert.ok(outer.children.length > 0, "Outer should have child symbols");
 
-    const innerNames = outer.children.map((c) => c.name);
-    assert.ok(innerNames.includes("Inner"), "Outer should contain Inner");
-    assert.ok(
-      innerNames.includes("OuterMethod"),
-      "Outer should contain OuterMethod",
-    );
-  });
+        const innerNames = outer.children.map((c) => c.name);
+        assert.ok(innerNames.includes("Inner"), "Outer should contain Inner");
+        assert.ok(
+            innerNames.includes("OuterMethod"),
+            "Outer should contain OuterMethod",
+        );
+    });
 
-  test("returns interface and enum symbols", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = `namespace T {
+    test("returns interface and enum symbols", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = `namespace T {
   public interface IService { void Execute(); }
   public enum Color { Red, Green, Blue }
 }`;
-    const { uri } = await openCSharpFile(tmpDir, "iface-enum.cs", content);
-    const symbols = await waitForDocumentSymbols(uri);
-    const names = flattenSymbolNames(symbols);
+        const { uri } = await openCSharpFile(tmpDir, "iface-enum.cs", content);
+        const symbols = await waitForDocumentSymbols(uri);
+        const names = flattenSymbolNames(symbols);
 
-    assert.ok(names.includes("IService"), "Should contain interface");
-    assert.ok(names.includes("Color"), "Should contain enum");
-  });
+        assert.ok(names.includes("IService"), "Should contain interface");
+        assert.ok(names.includes("Color"), "Should contain enum");
+    });
 
-  test("returns empty array for file with no declarations", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const { uri } = await openCSharpFile(
-      tmpDir,
-      "empty-decl.cs",
-      "// Just a comment\n",
-    );
+    test("returns empty array for file with no declarations", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const { uri } = await openCSharpFile(
+            tmpDir,
+            "empty-decl.cs",
+            "// Just a comment\n",
+        );
 
-    // Give the server time to respond, then check
-    const result = await vscode.commands.executeCommand<
-      vscode.DocumentSymbol[]
-    >("vscode.executeDocumentSymbolProvider", uri);
-    // Empty file may return null or empty array
-    const count = result?.length ?? 0;
-    assert.strictEqual(count, 0, "Empty file should have zero symbols");
-  });
+        // Give the server time to respond, then check
+        const result = await vscode.commands.executeCommand<
+            vscode.DocumentSymbol[]
+        >("vscode.executeDocumentSymbolProvider", uri);
+        // Empty file may return null or empty array
+        const count = result?.length ?? 0;
+        assert.strictEqual(count, 0, "Empty file should have zero symbols");
+    });
 
-  test("returns struct symbol", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = `namespace T {
+    test("returns struct symbol", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = `namespace T {
   public struct Point {
     public int X;
     public int Y;
   }
 }`;
-    const { uri } = await openCSharpFile(tmpDir, "struct.cs", content);
-    const symbols = await waitForDocumentSymbols(uri);
-    const names = flattenSymbolNames(symbols);
+        const { uri } = await openCSharpFile(tmpDir, "struct.cs", content);
+        const symbols = await waitForDocumentSymbols(uri);
+        const names = flattenSymbolNames(symbols);
 
-    assert.ok(names.includes("Point"), "Should contain struct Point");
-  });
+        assert.ok(names.includes("Point"), "Should contain struct Point");
+    });
 
-  test("returns record symbol", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content =
-      "namespace T { public record Person(string Name, int Age); }";
-    const { uri } = await openCSharpFile(tmpDir, "record.cs", content);
-    const symbols = await waitForDocumentSymbols(uri);
-    const names = flattenSymbolNames(symbols);
+    test("returns record symbol", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content =
+            "namespace T { public record Person(string Name, int Age); }";
+        const { uri } = await openCSharpFile(tmpDir, "record.cs", content);
+        const symbols = await waitForDocumentSymbols(uri);
+        const names = flattenSymbolNames(symbols);
 
-    assert.ok(names.includes("Person"), "Should contain record Person");
-  });
+        assert.ok(names.includes("Person"), "Should contain record Person");
+    });
 });
 
 suite("LSP Integration — Folding Ranges", () => {
-  let tmpDir: string;
+    let tmpDir: string;
 
-  suiteSetup(async function () {
-    this.timeout(60_000);
-    const result = await setupLspTestSuite("folding-");
-    tmpDir = result.tmpDir;
-  });
+    suiteSetup(async function () {
+        this.timeout(60_000);
+        const result = await setupLspTestSuite("folding-");
+        tmpDir = result.tmpDir;
+    });
 
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
+    suiteTeardown(async () => {
+        await closeAllEditors();
+        teardownLspTestSuite(tmpDir);
+    });
 
-  teardown(async () => {
-    await closeAllEditors();
-  });
+    teardown(async () => {
+        await closeAllEditors();
+    });
 
-  test("returns folding ranges for class and method bodies", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = `namespace Test {
+    test("returns folding ranges for class and method bodies", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = `namespace Test {
   public class Foo {
     public void Bar() {
       var x = 1;
@@ -182,53 +179,56 @@ suite("LSP Integration — Folding Ranges", () => {
     }
   }
 }`;
-    const { uri } = await openCSharpFile(tmpDir, "fold.cs", content);
-    const ranges = await waitForFoldingRanges(uri);
+        const { uri } = await openCSharpFile(tmpDir, "fold.cs", content);
+        const ranges = await waitForFoldingRanges(uri);
 
-    assert.ok(ranges.length >= 3, `Expected ≥3 folding ranges, got ${ranges.length}`);
-  });
+        assert.ok(
+            ranges.length >= 3,
+            `Expected ≥3 folding ranges, got ${ranges.length}`,
+        );
+    });
 
-  test("returns folding ranges for region directives", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = `public class C {
+    test("returns folding ranges for region directives", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = `public class C {
   #region Methods
   public void A() { }
   public void B() { }
   #endregion
 }`;
-    const { uri } = await openCSharpFile(tmpDir, "region.cs", content);
-    const ranges = await waitForFoldingRanges(uri);
+        const { uri } = await openCSharpFile(tmpDir, "region.cs", content);
+        const ranges = await waitForFoldingRanges(uri);
 
-    assert.ok(ranges.length >= 1, "Should have at least one folding range");
-    // Region folding should be present
-    const regionRange = ranges.find(
-      (r) => r.kind === vscode.FoldingRangeKind.Region,
-    );
-    assert.ok(regionRange, "Should have a region folding range");
-  });
+        assert.ok(ranges.length >= 1, "Should have at least one folding range");
+        // Region folding should be present
+        const regionRange = ranges.find(
+            (r) => r.kind === vscode.FoldingRangeKind.Region,
+        );
+        assert.ok(regionRange, "Should have a region folding range");
+    });
 
-  test("returns folding ranges for using directives", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = `using System;
+    test("returns folding ranges for using directives", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = `using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace Test {
   public class C { }
 }`;
-    const { uri } = await openCSharpFile(tmpDir, "usings.cs", content);
-    const ranges = await waitForFoldingRanges(uri);
+        const { uri } = await openCSharpFile(tmpDir, "usings.cs", content);
+        const ranges = await waitForFoldingRanges(uri);
 
-    // Should fold at least the namespace block.
-    assert.ok(
-      ranges.length >= 1,
-      `Expected ≥1 folding ranges, got ${String(ranges.length)}`,
-    );
-  });
+        // Should fold at least the namespace block.
+        assert.ok(
+            ranges.length >= 1,
+            `Expected ≥1 folding ranges, got ${String(ranges.length)}`,
+        );
+    });
 
-  test("nested classes produce nested folding ranges", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = `namespace N {
+    test("nested classes produce nested folding ranges", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = `namespace N {
   class Outer {
     class Inner {
       void Method() {
@@ -237,222 +237,231 @@ namespace Test {
     }
   }
 }`;
-    const { uri } = await openCSharpFile(tmpDir, "nested-fold.cs", content);
-    const ranges = await waitForFoldingRanges(uri);
+        const { uri } = await openCSharpFile(tmpDir, "nested-fold.cs", content);
+        const ranges = await waitForFoldingRanges(uri);
 
-    assert.ok(
-      ranges.length >= 4,
-      `Expected ≥4 folding ranges for nested classes, got ${ranges.length}`,
-    );
-  });
+        assert.ok(
+            ranges.length >= 4,
+            `Expected ≥4 folding ranges for nested classes, got ${ranges.length}`,
+        );
+    });
 });
 
 suite("LSP Integration — Selection Ranges", () => {
-  let tmpDir: string;
+    let tmpDir: string;
 
-  suiteSetup(async function () {
-    this.timeout(60_000);
-    const result = await setupLspTestSuite("selection-");
-    tmpDir = result.tmpDir;
-  });
+    suiteSetup(async function () {
+        this.timeout(60_000);
+        const result = await setupLspTestSuite("selection-");
+        tmpDir = result.tmpDir;
+    });
 
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
+    suiteTeardown(async () => {
+        await closeAllEditors();
+        teardownLspTestSuite(tmpDir);
+    });
 
-  teardown(async () => {
-    await closeAllEditors();
-  });
+    teardown(async () => {
+        await closeAllEditors();
+    });
 
-  test("returns selection ranges expanding from cursor position", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = `namespace Test {
+    test("returns selection ranges expanding from cursor position", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = `namespace Test {
   public class Foo {
     public void Bar() {
       var x = 42;
     }
   }
 }`;
-    const { uri } = await openCSharpFile(tmpDir, "sel.cs", content);
+        const { uri } = await openCSharpFile(tmpDir, "sel.cs", content);
 
-    // Position on "x" in "var x = 42;"
-    const position = new vscode.Position(3, 10);
-    const ranges = await waitForSelectionRanges(uri, [position]);
+        // Position on "x" in "var x = 42;"
+        const position = new vscode.Position(3, 10);
+        const ranges = await waitForSelectionRanges(uri, [position]);
 
-    assert.ok(ranges.length > 0, "Should return at least one selection range");
+        assert.ok(
+            ranges.length > 0,
+            "Should return at least one selection range",
+        );
 
-    // Walk the parent chain — it should expand outward
-    let current: vscode.SelectionRange | undefined = ranges[0];
-    let depth = 0;
-    while (current) {
-      depth++;
-      current = current.parent;
-    }
-    assert.ok(
-      depth >= 3,
-      `Selection range chain should have ≥3 levels, got ${depth}`,
-    );
-  });
+        // Walk the parent chain — it should expand outward
+        let current: vscode.SelectionRange | undefined = ranges[0];
+        let depth = 0;
+        while (current) {
+            depth++;
+            current = current.parent;
+        }
+        assert.ok(
+            depth >= 3,
+            `Selection range chain should have ≥3 levels, got ${depth}`,
+        );
+    });
 
-  test("returns selection ranges for multiple positions", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = `class C {
+    test("returns selection ranges for multiple positions", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = `class C {
   int a = 1;
   int b = 2;
 }`;
-    const { uri } = await openCSharpFile(tmpDir, "sel-multi.cs", content);
+        const { uri } = await openCSharpFile(tmpDir, "sel-multi.cs", content);
 
-    const positions = [
-      new vscode.Position(1, 6), // on 'a'
-      new vscode.Position(2, 6), // on 'b'
-    ];
-    const ranges = await waitForSelectionRanges(uri, positions);
+        const positions = [
+            new vscode.Position(1, 6), // on 'a'
+            new vscode.Position(2, 6), // on 'b'
+        ];
+        const ranges = await waitForSelectionRanges(uri, positions);
 
-    assert.strictEqual(
-      ranges.length,
-      2,
-      "Should return one selection range per position",
-    );
-  });
+        assert.strictEqual(
+            ranges.length,
+            2,
+            "Should return one selection range per position",
+        );
+    });
 
-  test("selection ranges at class level expand to file", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const content = `namespace N {
+    test("selection ranges at class level expand to file", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const content = `namespace N {
   class MyClass {
     void M() { }
   }
 }`;
-    const { uri } = await openCSharpFile(tmpDir, "sel-class.cs", content);
+        const { uri } = await openCSharpFile(tmpDir, "sel-class.cs", content);
 
-    // Position on "MyClass"
-    const position = new vscode.Position(1, 8);
-    const ranges = await waitForSelectionRanges(uri, [position]);
-    assert.ok(ranges.length > 0, "Should return selection ranges");
+        // Position on "MyClass"
+        const position = new vscode.Position(1, 8);
+        const ranges = await waitForSelectionRanges(uri, [position]);
+        assert.ok(ranges.length > 0, "Should return selection ranges");
 
-    // The outermost parent should cover the entire file (or close to it)
-    let outermost: vscode.SelectionRange = ranges[0]!;
-    while (outermost.parent) {
-      outermost = outermost.parent;
-    }
-    assert.ok(
-      outermost.range.start.line <= 1,
-      "Outermost range should start near beginning of file",
-    );
-  });
+        // The outermost parent should cover the entire file (or close to it)
+        let outermost: vscode.SelectionRange = ranges[0]!;
+        while (outermost.parent) {
+            outermost = outermost.parent;
+        }
+        assert.ok(
+            outermost.range.start.line <= 1,
+            "Outermost range should start near beginning of file",
+        );
+    });
 });
 
 suite("LSP Integration — Fixture Files", () => {
-  let fixtureDir: string;
+    let fixtureDir: string;
 
-  suiteSetup(async function () {
-    this.timeout(60_000);
-    // The fixture workspace is opened by the test runner.
-    fixtureDir = path.resolve(__dirname, "../../../test-fixtures/workspace");
-  });
+    suiteSetup(async function () {
+        this.timeout(60_000);
+        // The fixture workspace is opened by the test runner.
+        fixtureDir = path.resolve(
+            __dirname,
+            "../../../test-fixtures/workspace",
+        );
+    });
 
-  suiteTeardown(async () => {
-    await closeAllEditors();
-  });
+    suiteTeardown(async () => {
+        await closeAllEditors();
+    });
 
-  teardown(async () => {
-    await closeAllEditors();
-  });
+    teardown(async () => {
+        await closeAllEditors();
+    });
 
-  test("Calculator.cs returns symbols for class, methods, properties", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
-    const uri = vscode.Uri.file(path.join(fixtureDir, "Calculator.cs"));
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
+    test("Calculator.cs returns symbols for class, methods, properties", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
+        const uri = vscode.Uri.file(path.join(fixtureDir, "Calculator.cs"));
+        const doc = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc);
 
-    const symbols = await waitForDocumentSymbols(uri);
-    const names = flattenSymbolNames(symbols);
+        const symbols = await waitForDocumentSymbols(uri);
+        const names = flattenSymbolNames(symbols);
 
-    assert.ok(names.includes("Calculator"), "Should find Calculator class");
-    assert.ok(names.includes("Add"), "Should find Add method");
-    assert.ok(names.includes("Subtract"), "Should find Subtract method");
-    assert.ok(names.includes("Divide"), "Should find Divide method");
-    assert.ok(
-      names.includes("ICalculator"),
-      "Should find ICalculator interface",
-    );
-    assert.ok(names.includes("Operation"), "Should find Operation enum");
-  });
+        assert.ok(names.includes("Calculator"), "Should find Calculator class");
+        assert.ok(names.includes("Add"), "Should find Add method");
+        assert.ok(names.includes("Subtract"), "Should find Subtract method");
+        assert.ok(names.includes("Divide"), "Should find Divide method");
+        assert.ok(
+            names.includes("ICalculator"),
+            "Should find ICalculator interface",
+        );
+        assert.ok(names.includes("Operation"), "Should find Operation enum");
+    });
 
-  test("Calculator.cs has folding ranges for regions", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
-    const uri = vscode.Uri.file(path.join(fixtureDir, "Calculator.cs"));
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
+    test("Calculator.cs has folding ranges for regions", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
+        const uri = vscode.Uri.file(path.join(fixtureDir, "Calculator.cs"));
+        const doc = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc);
 
-    const ranges = await waitForFoldingRanges(uri);
-    assert.ok(ranges.length >= 5, `Expected ≥5 folding ranges, got ${ranges.length}`);
+        const ranges = await waitForFoldingRanges(uri);
+        assert.ok(
+            ranges.length >= 5,
+            `Expected ≥5 folding ranges, got ${ranges.length}`,
+        );
 
-    const regionRanges = ranges.filter(
-      (r) => r.kind === vscode.FoldingRangeKind.Region,
-    );
-    assert.ok(
-      regionRanges.length >= 2,
-      `Expected ≥2 region folding ranges (#region), got ${regionRanges.length}`,
-    );
-  });
+        const regionRanges = ranges.filter(
+            (r) => r.kind === vscode.FoldingRangeKind.Region,
+        );
+        assert.ok(
+            regionRanges.length >= 2,
+            `Expected ≥2 region folding ranges (#region), got ${regionRanges.length}`,
+        );
+    });
 
-  test("Nested.cs returns nested class hierarchy", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
-    const uri = vscode.Uri.file(path.join(fixtureDir, "Nested.cs"));
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
+    test("Nested.cs returns nested class hierarchy", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
+        const uri = vscode.Uri.file(path.join(fixtureDir, "Nested.cs"));
+        const doc = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc);
 
-    const symbols = await waitForDocumentSymbols(uri);
-    const names = flattenSymbolNames(symbols);
+        const symbols = await waitForDocumentSymbols(uri);
+        const names = flattenSymbolNames(symbols);
 
-    assert.ok(names.includes("Outer"), "Should find Outer");
-    assert.ok(names.includes("Inner"), "Should find Inner");
-    assert.ok(names.includes("AnotherInner"), "Should find AnotherInner");
-    assert.ok(names.includes("InnerMethod"), "Should find InnerMethod");
-    assert.ok(names.includes("OuterMethod"), "Should find OuterMethod");
-  });
+        assert.ok(names.includes("Outer"), "Should find Outer");
+        assert.ok(names.includes("Inner"), "Should find Inner");
+        assert.ok(names.includes("AnotherInner"), "Should find AnotherInner");
+        assert.ok(names.includes("InnerMethod"), "Should find InnerMethod");
+        assert.ok(names.includes("OuterMethod"), "Should find OuterMethod");
+    });
 
-  test("Empty.cs returns no symbols", async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
-    const uri = vscode.Uri.file(path.join(fixtureDir, "Empty.cs"));
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
+    test("Empty.cs returns no symbols", async function () {
+        this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+        const uri = vscode.Uri.file(path.join(fixtureDir, "Empty.cs"));
+        const doc = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc);
 
-    // Give server a moment, then verify empty
-    await new Promise((r) => setTimeout(r, 2_000));
-    const result = await vscode.commands.executeCommand<
-      vscode.DocumentSymbol[]
-    >("vscode.executeDocumentSymbolProvider", uri);
-    const count = result?.length ?? 0;
-    assert.strictEqual(count, 0, "Empty.cs should have zero symbols");
-  });
+        // Give server a moment, then verify empty
+        await new Promise((r) => setTimeout(r, 2_000));
+        const result = await vscode.commands.executeCommand<
+            vscode.DocumentSymbol[]
+        >("vscode.executeDocumentSymbolProvider", uri);
+        const count = result?.length ?? 0;
+        assert.strictEqual(count, 0, "Empty.cs should have zero symbols");
+    });
 });
 
 // ── Helpers ──────────────────────────────────────────────────────
 
 function flattenSymbolNames(symbols: vscode.DocumentSymbol[]): string[] {
-  const names: string[] = [];
-  function walk(list: vscode.DocumentSymbol[]): void {
-    for (const sym of list) {
-      names.push(sym.name);
-      if (sym.children.length > 0) {
-        walk(sym.children);
-      }
+    const names: string[] = [];
+    function walk(list: vscode.DocumentSymbol[]): void {
+        for (const sym of list) {
+            names.push(sym.name);
+            if (sym.children.length > 0) {
+                walk(sym.children);
+            }
+        }
     }
-  }
-  walk(symbols);
-  return names;
+    walk(symbols);
+    return names;
 }
 
 function findSymbol(
-  symbols: vscode.DocumentSymbol[],
-  name: string,
+    symbols: vscode.DocumentSymbol[],
+    name: string,
 ): vscode.DocumentSymbol | undefined {
-  for (const sym of symbols) {
-    if (sym.name === name) return sym;
-    const found = findSymbol(sym.children, name);
-    if (found) return found;
-  }
-  return undefined;
+    for (const sym of symbols) {
+        if (sym.name === name) return sym;
+        const found = findSymbol(sym.children, name);
+        if (found) return found;
+    }
+    return undefined;
 }

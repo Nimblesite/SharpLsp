@@ -2,11 +2,11 @@
 
 **Spec:** [SOLUTION-EXPLORER-SPEC.md](../specs/SOLUTION-EXPLORER-SPEC.md)
 **Status:** In Progress
-**Last Updated:** 2026-03-22
+**Last Updated:** 2026-04-07
 
 ## Overview
 
-Add context menus to Solution Explorer tree nodes. Includes **Sort Members**, **Copy Qualified Name**, **Copy Name**, **Reveal in File Explorer**, and **Collapse All Children**.
+Add context menus to Solution Explorer tree nodes and file explorer for .NET solution management. Includes Sort Members, Copy Qualified Name, Copy Name, Reveal in File Explorer, Collapse All Children, Build, Rebuild, Run, Debug, Configure Args, and Solution Management (Add/Remove projects).
 
 ## Phase 1: Context Value Foundation
 
@@ -59,19 +59,153 @@ Implement the `forge/sortMembers` custom request in the Rust host.
   - [x] Preserve comments/attributes attached to members (leading trivia)
   - [x] Handle partial classes (sort only the members in the selected type declaration)
 
-## Phase 5: Tests
+## Phase 5: Build, Rebuild, Run, Debug Actions
 
-- [x] E2E test: Sort Members on a class with mixed accessibility/category members
-- [x] E2E test: Sort Members preserves attached comments and attributes
-- [x] E2E test: Sort Members with custom hierarchy config
-- [x] E2E test: Sort Members on an enum, interface, and record
-- [x] E2E test: Sort Members inserts blank lines between groups
-- [x] E2E test: Sort Members preserves `#region` / `#endregion` blocks
-- [ ] E2E test: Context menu only appears on correct node types
-- [ ] E2E test: Verify `contextValue` is set correctly for all node types
-- [ ] E2E test: Copy Qualified Name produces correct output for nested types
-- [ ] E2E test: Copy Name copies unqualified name
-- [ ] E2E test: Reveal in File Explorer opens correct file
+Add .NET CLI integration for build and run operations.
+
+### 5.1 Command Infrastructure
+
+- [ ] Add command constants to `editors/vscode/src/constants.ts`:
+  - `CMD_BUILD`, `CMD_REBUILD`, `CMD_RUN`, `CMD_DEBUG`
+  - `CMD_CONFIGURE_BUILD_ARGS`, `CMD_CONFIGURE_RUN_ARGS`
+- [ ] Add commands to `package.json`:
+  - Titles: Build, Rebuild, Run, Debug, Configure Build Arguments..., Configure Run Arguments...
+  - Icons: `$(debug-start)` for Run, `$(debug)` for Debug, `$(gear)` for configure
+- [ ] Add `view/item/context` menu entries in `package.json`:
+  - Build/Rebuild: `when: viewItem =~ /^(solution|project)$/`, group `2_build`
+  - Run/Debug: `when: viewItem == project`, group `3_run`
+  - Configure args: group `9_configure`
+
+### 5.2 Configuration Schema
+
+Add to `package.json` configuration:
+
+```json
+{
+  "forge.build.extraArgs": {
+    "type": "array",
+    "items": { "type": "string" },
+    "default": [],
+    "description": "Extra arguments for dotnet build/rebuild"
+  },
+  "forge.run.extraArgs": {
+    "type": "array",
+    "items": { "type": "string" },
+    "default": [],
+    "description": "Extra arguments for dotnet run"
+  },
+  "forge.test.extraArgs": {
+    "type": "array",
+    "items": { "type": "string" },
+    "default": [],
+    "description": "Extra arguments for dotnet test"
+  }
+}
+```
+
+### 5.3 Task Execution Module
+
+Create `editors/vscode/src/dotnet-commands.ts`:
+
+- [ ] `runBuild(projectPath: string, extraArgs: string[]): Promise<void>` — execute `dotnet build`
+- [ ] `runRebuild(projectPath: string, extraArgs: string[]): Promise<void>` — execute `dotnet rebuild`
+- [ ] `runProject(projectPath: string, extraArgs: string[]): Promise<void>` — execute `dotnet run`
+- [ ] `debugProject(projectPath: string, extraArgs: string[]): Promise<void>` — start debug session
+- [ ] Use VS Code Task API for build/run operations
+- [ ] Show progress notification during long operations
+- [ ] Capture and display output in VS Code terminal
+
+### 5.4 Argument Storage
+
+Implement per-project argument storage in `editors/vscode/src/extension.ts`:
+
+- [ ] Store format: `forge.buildArgs.${projectPath}` and `forge.runArgs.${projectPath}`
+- [ ] `getBuildArgs(projectPath: string): string[]` — combine per-project + global args
+- [ ] `getRunArgs(projectPath: string): string[]` — combine per-project + global args
+- [ ] `configureBuildArgs(projectPath: string): Promise<void>` — input box for args
+- [ ] `configureRunArgs(projectPath: string): Promise<void>` — input box for args
+
+### 5.5 Command Handlers
+
+Register handlers in `editors/vscode/src/extension.ts`:
+
+- [ ] `forge.build` — get project path from node, get args, call `runBuild()`
+- [ ] `forge.rebuild` — get project path from node, get args, call `runRebuild()`
+- [ ] `forge.run` — get project path from node, get args, call `runProject()`
+- [ ] `forge.debug` — get project path from node, get args, call `debugProject()`
+- [ ] `forge.configureBuildArgs` — show input, store per-project args
+- [ ] `forge.configureRunArgs` — show input, store per-project args
+
+## Phase 6: Solution Management
+
+Add/Remove projects from solutions.
+
+### 6.1 Command Infrastructure
+
+- [ ] Add command constants to `editors/vscode/src/constants.ts`:
+  - `CMD_ADD_TO_SOLUTION`, `CMD_REMOVE_FROM_SOLUTION`
+- [ ] Add commands to `package.json`:
+  - Titles: Add to Solution, Remove from Solution
+  - Icons: `$(add)` for Add, `$(remove)` for Remove
+
+### 6.2 File Explorer Context Menu
+
+Add to `package.json` `menus/explorer/context`:
+
+```json
+{
+  "command": "forge.addToSolution",
+  "when": "resourceExtname == .csproj || resourceExtname == .fsproj",
+  "group": "2_solution@1"
+}
+```
+
+### 6.3 Solution Explorer Context Menu
+
+Add to `package.json` `view/item/context`:
+
+```json
+{
+  "command": "forge.removeFromSolution",
+  "when": "view == forge.solutionExplorer && viewItem == project",
+  "group": "7_modification@3"
+}
+```
+
+### 6.4 Solution Management Functions
+
+Update `editors/vscode/src/solution.ts`:
+
+- [ ] `addProjectToSolution(projectPath: string): Promise<Result<void, string>>`
+  - Check if solution is loaded (get from state)
+  - Run `dotnet sln <solution> add <project>`
+  - Refresh Solution Explorer
+- [ ] `removeProjectFromSolution(projectPath: string): Promise<Result<void, string>>`
+  - Show confirmation dialog
+  - Run `dotnet sln <solution> remove <project>`
+  - Refresh Solution Explorer
+
+### 6.5 Command Handlers
+
+Register handlers in `editors/vscode/src/extension.ts`:
+
+- [ ] `forge.addToSolution` — called from file explorer, gets URI from parameter
+- [ ] `forge.removeFromSolution` — called from solution explorer, gets path from node
+
+## Phase 7: Tests
+
+- [ ] E2E test: Build action on solution runs `dotnet build` with correct path
+- [ ] E2E test: Build action on project runs `dotnet build` with correct path
+- [ ] E2E test: Run action executes `dotnet run` with configured args
+- [ ] E2E test: Debug action starts debug session with correct configuration
+- [ ] E2E test: Configure Build Args stores and retrieves per-project args
+- [ ] E2E test: Configure Run Args stores and retrieves per-project args
+- [ ] E2E test: Global extraArgs are applied when no per-project args set
+- [ ] E2E test: Add to Solution from file explorer adds project correctly
+- [ ] E2E test: Remove from Solution shows confirmation and removes project
+- [ ] E2E test: Context menu visibility for Build/Rebuild on solution/project nodes
+- [ ] E2E test: Context menu visibility for Run/Debug on project nodes only
+- [ ] E2E test: Context menu visibility for Add to Solution on .csproj/.fsproj files
 
 ## Future Context Menu Items
 

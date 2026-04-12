@@ -30,9 +30,16 @@ obj/
 forge.vsix
 .vscode-test/
 node_modules/
-
 editors/zed/target/
-
 .too_many_cooks/
-
 .playwright-mcp/
+logs/
+
+editors/vscode/coverage/
+
+# Screenshot test artifacts at root
+/*.png
+forge-zed-extension.tar.gz
+
+editors/rider/.intellijPlatform/
+forge-rider.zip

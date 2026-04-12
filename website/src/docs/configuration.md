@@ -10,10 +10,34 @@ eleventyNavigation:
 
 Forge is configured via a `forge.toml` file placed at the root of your workspace (alongside your `.sln` or root `.csproj`). All settings have sensible defaults — the file is optional.
 
+`forge.toml` uses `deny_unknown_fields` — any key not listed below will cause a parse error at startup.
+
 ## forge.toml Reference
 
 ```toml
 # forge.toml — full configuration reference
+# Every key shown is optional; defaults are applied when omitted.
+
+# ─── Server ────────────────────────────────────────────────────────────────────
+[server]
+# Log level: "trace", "debug", "info", "warn", "error"
+log_level = "info"
+
+# Debounce window in milliseconds for semantic requests after a keystroke
+debounce_ms = 150
+
+# ─── C# ────────────────────────────────────────────────────────────────────────
+[csharp]
+# Enable the C# sidecar
+enabled = true
+
+# Path to the .sln file to load. Empty = auto-detect.
+solution_path = ""
+
+# ─── F# ────────────────────────────────────────────────────────────────────────
+[fsharp]
+# Enable the F# sidecar
+enabled = true
 
 # ─── Diagnostics ───────────────────────────────────────────────────────────────
 [diagnostics]
@@ -23,42 +47,28 @@ analyzers_enabled = true
 # Analyze all files in the solution, not just open ones
 solution_wide_analysis = true
 
-# Restrict analysis to specific projects (glob patterns)
-# Empty = analyze all projects
+# Project name patterns to include (empty = all projects)
 project_filter = []
 
-# Minimum severity to report: "error", "warning", "info", "hint"
-min_severity = "hint"
+# ─── Profiler ──────────────────────────────────────────────────────────────────
+[profiler]
+# Maximum concurrent profiling sessions
+max_concurrent_sessions = 5
 
-# Maximum diagnostics per file (0 = unlimited)
-max_per_file = 0
+# Default trace duration in seconds (0 = unlimited)
+default_trace_duration = 30
 
-# Debounce window in milliseconds before triggering re-analysis
-debounce_ms = 150
+# Default trace output format ("speedscope", "chromium", "nettrace")
+default_trace_format = "speedscope"
 
-# ─── Completions ───────────────────────────────────────────────────────────────
-[completions]
-# Show types from unimported assemblies (adds using/open automatically)
-import_completions = true
+# Default counter providers
+default_counter_providers = ["System.Runtime"]
 
-# Maximum results per request
-max_results = 200
+# Default counter refresh interval in seconds
+default_counter_interval = 1
 
-# ─── Sidecar ───────────────────────────────────────────────────────────────────
-[sidecar]
-# Maximum restart attempts before giving up (0 = unlimited)
-max_restarts = 10
-
-# Delay between restart attempts in milliseconds (doubles each attempt)
-restart_delay_ms = 500
-
-# ─── Logging ───────────────────────────────────────────────────────────────────
-[log]
-# Log level: "trace", "debug", "info", "warn", "error"
-level = "info"
-
-# Log file path (empty = stderr only)
-file = ""
+# Output directory for trace/dump files
+output_directory = ".forge/profiles"
 ```
 
 ## File Location
@@ -75,17 +85,9 @@ my-solution/
     └── MyApp.Api.csproj
 ```
 
-## Hot Reload
-
-Most settings are hot-reloadable via `workspace/didChangeConfiguration`. Changes to `solution_wide_analysis`, `project_filter`, `min_severity`, and `analyzers_enabled` take effect without restarting Forge.
-
-Settings that require a restart:
-- `[sidecar]` settings
-- `[log]` settings
-
 ## Per-Project Overrides
 
-For fine-grained control, `.editorconfig` rules are respected for C# formatting. Roslyn maps `.editorconfig` severity settings directly to analyzer severity:
+`.editorconfig` rules are respected for C# formatting. Roslyn maps `.editorconfig` severity settings directly to analyzer severity:
 
 ```ini
 # .editorconfig
@@ -94,25 +96,13 @@ dotnet_diagnostic.IDE0003.severity = warning   # Remove 'this' qualification
 dotnet_diagnostic.CA1054.severity = error       # URI parameters should not be strings
 ```
 
-## Environment Variables
+## Disabling a Language
 
-| Variable | Description |
-|----------|-------------|
-| `FORGE_LOG` | Override log level (e.g., `FORGE_LOG=debug`) |
-| `FORGE_CONFIG` | Override path to `forge.toml` |
-| `FORGE_DOTNET_ROOT` | Override .NET SDK root for MSBuild discovery |
-
-## Disabling Features
-
-To run Forge in a minimal mode (syntax only, no sidecar):
+To skip starting a sidecar entirely, set its `enabled` flag to `false`:
 
 ```toml
-[diagnostics]
-analyzers_enabled = false
-solution_wide_analysis = false
-
-[completions]
-import_completions = false
+[fsharp]
+enabled = false
 ```
 
-This disables sidecar startup and all semantic operations. Forge will still provide tree-sitter-powered document symbols, folding ranges, and selection ranges at full speed.
+Requests for that language will be rejected and no sidecar process will be spawned.

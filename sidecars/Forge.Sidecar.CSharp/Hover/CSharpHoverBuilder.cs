@@ -31,21 +31,17 @@ internal static class CSharpHoverBuilder
             | SymbolDisplayKindOptions.IncludeMemberKeyword
             | SymbolDisplayKindOptions.IncludeNamespaceKeyword,
         miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes
-            | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+            | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
+    );
 
     /// <summary>Build a hover result for the symbol at the given position.</summary>
-    public static HoverQueryResult Build(
-        SemanticModel model,
-        int position,
-        CancellationToken ct)
+    public static HoverQueryResult Build(SemanticModel model, int position, CancellationToken ct)
     {
         try
         {
             var root = model.SyntaxTree.GetRoot(ct);
             var token = root.FindToken(position);
-            var result = token.IsKind(SyntaxKind.None)
-                ? null
-                : ResolveAndBuild(model, token, ct);
+            var result = token.IsKind(SyntaxKind.None) ? null : ResolveAndBuild(model, token, ct);
             return new HoverQueryResult.Ok<HoverResult?, string>(result);
         }
         catch (Exception ex)
@@ -57,7 +53,8 @@ internal static class CSharpHoverBuilder
     private static HoverResult? ResolveAndBuild(
         SemanticModel model,
         SyntaxToken token,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (IsStringLiteral(token))
         {
@@ -88,7 +85,8 @@ internal static class CSharpHoverBuilder
     private static ISymbol? ResolveSymbol(
         SemanticModel model,
         SyntaxToken token,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var parent = token.Parent;
         if (parent is null)
@@ -105,8 +103,7 @@ internal static class CSharpHoverBuilder
         }
 
         var symbolInfo = model.GetSymbolInfo(parent, ct);
-        var symbol = symbolInfo.Symbol
-            ?? symbolInfo.CandidateSymbols.FirstOrDefault();
+        var symbol = symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
 
         if (symbol is not null)
         {
@@ -120,7 +117,8 @@ internal static class CSharpHoverBuilder
     private static HoverResult? BuildVarHover(
         SemanticModel model,
         SyntaxToken token,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var declaration = token.Parent?.Parent;
         if (declaration is not VariableDeclarationSyntax varDecl)
@@ -141,9 +139,7 @@ internal static class CSharpHoverBuilder
         return MakeResult(markdown, token);
     }
 
-    private static HoverResult BuildFromSymbol(
-        ISymbol symbol,
-        SyntaxToken token)
+    private static HoverResult BuildFromSymbol(ISymbol symbol, SyntaxToken token)
     {
         var markdown = BuildMarkdown(symbol);
         return MakeResult(markdown, token);
@@ -159,9 +155,7 @@ internal static class CSharpHoverBuilder
         return sb.ToString().TrimEnd();
     }
 
-    private static void AppendSignature(
-        System.Text.StringBuilder sb,
-        ISymbol symbol)
+    private static void AppendSignature(System.Text.StringBuilder sb, ISymbol symbol)
     {
         var signature = symbol.ToDisplayString(SignatureFormat);
         _ = sb.AppendLine("```csharp");
@@ -169,40 +163,35 @@ internal static class CSharpHoverBuilder
         _ = sb.AppendLine("```");
     }
 
-    private static void AppendContainingType(
-        System.Text.StringBuilder sb,
-        ISymbol symbol)
+    private static void AppendContainingType(System.Text.StringBuilder sb, ISymbol symbol)
     {
         if (symbol.ContainingType is null)
         {
             return;
         }
 
-        if (symbol is IMethodSymbol or IPropertySymbol
-            or IFieldSymbol or IEventSymbol)
+        if (symbol is IMethodSymbol or IPropertySymbol or IFieldSymbol or IEventSymbol)
         {
             var container = symbol.ContainingType.ToDisplayString(
-                SymbolDisplayFormat.MinimallyQualifiedFormat);
-            _ = sb.Append("*in* `").Append(container).Append('`')
-                .AppendLine();
+                SymbolDisplayFormat.MinimallyQualifiedFormat
+            );
+            _ = sb.Append("*in* `").Append(container).Append('`').AppendLine();
         }
     }
 
-    private static void AppendDeprecation(
-        System.Text.StringBuilder sb,
-        ISymbol symbol)
+    private static void AppendDeprecation(System.Text.StringBuilder sb, ISymbol symbol)
     {
-        var obsolete = symbol.GetAttributes()
-            .FirstOrDefault(IsObsoleteAttribute);
+        var obsolete = symbol.GetAttributes().FirstOrDefault(IsObsoleteAttribute);
 
         if (obsolete is null)
         {
             return;
         }
 
-        var message = obsolete.ConstructorArguments.Length > 0
-            ? obsolete.ConstructorArguments[0].Value?.ToString()
-            : null;
+        var message =
+            obsolete.ConstructorArguments.Length > 0
+                ? obsolete.ConstructorArguments[0].Value?.ToString()
+                : ExtractObsoleteMessageFromSyntax(obsolete);
 
         _ = sb.AppendLine();
         _ = sb.Append("**Deprecated**");
@@ -214,9 +203,7 @@ internal static class CSharpHoverBuilder
         _ = sb.AppendLine();
     }
 
-    private static void AppendDocumentation(
-        System.Text.StringBuilder sb,
-        ISymbol symbol)
+    private static void AppendDocumentation(System.Text.StringBuilder sb, ISymbol symbol)
     {
         var xmlDoc = symbol.GetDocumentationCommentXml();
         var rendered = XmlDocRenderer.Render(xmlDoc);
@@ -245,7 +232,8 @@ internal static class CSharpHoverBuilder
         SemanticModel model,
         SyntaxToken token,
         string? prefix,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var parent = token.Parent;
         if (parent is null)
@@ -261,9 +249,7 @@ internal static class CSharpHoverBuilder
         }
 
         var sig = type.ToDisplayString(SignatureFormat);
-        var label = prefix is not null
-            ? $"({prefix}) {sig}"
-            : sig;
+        var label = prefix is not null ? $"({prefix}) {sig}" : sig;
         var markdown = $"```csharp\n{label}\n```";
         return MakeResult(markdown, token);
     }
@@ -279,6 +265,18 @@ internal static class CSharpHoverBuilder
     private static bool IsNumericLiteral(SyntaxToken token)
     {
         return token.IsKind(SyntaxKind.NumericLiteralToken);
+    }
+
+    /// Fallback: extract the obsolete message from the attribute syntax tree
+    /// when ConstructorArguments is empty (unresolved reference to System.ObsoleteAttribute).
+    private static string? ExtractObsoleteMessageFromSyntax(AttributeData attr)
+    {
+        var args = (attr.ApplicationSyntaxReference?.GetSyntax() as AttributeSyntax)
+            ?.ArgumentList
+            ?.Arguments;
+        return args is { Count: > 0 } && args.Value[0].Expression is LiteralExpressionSyntax literal
+            ? literal.Token.ValueText
+            : null;
     }
 
     private static bool IsObsoleteAttribute(AttributeData attr)

@@ -54,6 +54,6 @@ namespace TestFixtures
         Add,
         Subtract,
         Multiply,
-        Divide
+        Divide,
     }
 }

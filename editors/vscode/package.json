@@ -32,6 +32,7 @@
     "url": "https://github.com/forge-lsp/forge"
   },
   "activationEvents": [
+    "onStartupFinished",
     "workspaceContains:**/*.sln",
     "workspaceContains:**/*.csproj",
     "workspaceContains:**/*.fsproj"
@@ -71,7 +72,7 @@
         "forge.server.path": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `forge-lsp` binary. Leave empty to use the bundled server or `$PATH`.",
+          "markdownDescription": "Absolute path to the `forge-lsp` binary. Leave empty to use the system-installed binary from `~/.local/bin/` or `$PATH`.",
           "scope": "machine-overridable",
           "order": 0
         },
@@ -180,7 +181,7 @@
         {
           "id": "forge-explorer",
           "title": "Forge",
-          "icon": "icons/forge.svg"
+          "icon": "icons/forge-activity.svg"
         }
       ]
     },
@@ -198,6 +199,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "forge.solutionExplorer",
+        "contents": "No .sln files found in this workspace."
+      }
+    ],
     "commands": [
       {
         "command": "forge.restartServer",
@@ -219,6 +226,11 @@
         "title": "Select Solution",
         "category": "Forge",
         "icon": "$(folder-opened)"
+      },
+      {
+        "command": "forge.openSolution",
+        "title": "Open Solution",
+        "category": "Forge"
       },
       {
         "command": "forge.refreshExplorer",
@@ -255,6 +267,12 @@
         "title": "Remove Project Reference",
         "category": "Forge",
         "icon": "$(trash)"
+      },
+      {
+        "command": "forge.browseNuGetPackages",
+        "title": "Browse NuGet Packages",
+        "category": "Forge",
+        "icon": "$(package)"
       },
       {
         "command": "forge.sortMembers",
@@ -324,6 +342,30 @@
         "title": "Refresh Profiler",
         "category": "Forge",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "forge.profiler.diffSnapshots",
+        "title": "Compare Heap Snapshots",
+        "category": "Forge",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "forge.profiler.detectLeaks",
+        "title": "Detect Memory Leaks",
+        "category": "Forge",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "forge.profiler.showObjectGraph",
+        "title": "Show Object Retention Graph",
+        "category": "Forge",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "forge.profiler.inspectObject",
+        "title": "Inspect Object",
+        "category": "Forge",
+        "icon": "$(search)"
       }
     ],
     "menus": {
@@ -396,13 +438,18 @@
           "group": "7_modification"
         },
         {
+          "command": "forge.browseNuGetPackages",
+          "when": "view == forge.solutionExplorer && viewItem == project",
+          "group": "5_dependencies"
+        },
+        {
           "command": "forge.copyQualifiedName",
           "when": "view == forge.solutionExplorer && viewItem =~ /^symbol\\./",
           "group": "9_cutcopypaste"
         },
         {
           "command": "forge.copyName",
-          "when": "view == forge.solutionExplorer && viewItem =~ /^(symbol\\.|solution|project)/",
+          "when": "view == forge.solutionExplorer && viewItem =~ /^(symbol\\.|solution$|project$)/",
           "group": "9_cutcopypaste"
         }
       ]

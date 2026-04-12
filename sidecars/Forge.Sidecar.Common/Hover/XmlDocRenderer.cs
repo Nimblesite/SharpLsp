@@ -72,8 +72,7 @@ public static partial class XmlDocRenderer
         {
             var name = tp.Attribute("name")?.Value ?? "T";
             var desc = InlineContent(tp).Trim();
-            _ = sb.Append(CultureInfo.InvariantCulture, $"- `{name}`: {desc}")
-                .AppendLine();
+            _ = sb.Append(CultureInfo.InvariantCulture, $"- `{name}`: {desc}").AppendLine();
         }
     }
 
@@ -91,8 +90,7 @@ public static partial class XmlDocRenderer
         {
             var name = param.Attribute("name")?.Value ?? "?";
             var desc = InlineContent(param).Trim();
-            _ = sb.Append(CultureInfo.InvariantCulture, $"- `{name}`: {desc}")
-                .AppendLine();
+            _ = sb.Append(CultureInfo.InvariantCulture, $"- `{name}`: {desc}").AppendLine();
         }
     }
 
@@ -108,8 +106,7 @@ public static partial class XmlDocRenderer
         if (text.Length > 0)
         {
             _ = sb.AppendLine();
-            _ = sb.Append(CultureInfo.InvariantCulture, $"**Returns:** {text}")
-                .AppendLine();
+            _ = sb.Append(CultureInfo.InvariantCulture, $"**Returns:** {text}").AppendLine();
         }
     }
 
@@ -125,8 +122,7 @@ public static partial class XmlDocRenderer
         if (text.Length > 0)
         {
             _ = sb.AppendLine();
-            _ = sb.Append(CultureInfo.InvariantCulture, $"*{text}*")
-                .AppendLine();
+            _ = sb.Append(CultureInfo.InvariantCulture, $"*{text}*").AppendLine();
         }
     }
 
@@ -144,8 +140,7 @@ public static partial class XmlDocRenderer
         {
             var cref = CrefToDisplay(ex.Attribute("cref")?.Value);
             var desc = InlineContent(ex).Trim();
-            _ = sb.Append(CultureInfo.InvariantCulture, $"- `{cref}` \u2014 {desc}")
-                .AppendLine();
+            _ = sb.Append(CultureInfo.InvariantCulture, $"- `{cref}` \u2014 {desc}").AppendLine();
         }
     }
 
@@ -203,17 +198,17 @@ public static partial class XmlDocRenderer
         _ = child.Name.LocalName switch
         {
             "see" => sb.Append('`')
-                                .Append(CrefToDisplay(child.Attribute("cref")?.Value))
-                                .Append('`'),
+                .Append(CrefToDisplay(child.Attribute("cref")?.Value))
+                .Append('`'),
             "c" => sb.Append('`').Append(child.Value).Append('`'),
             "code" => sb.AppendLine()
-                                .AppendLine("```csharp")
-                                .AppendLine(child.Value.Trim())
-                                .AppendLine("```"),
+                .AppendLine("```csharp")
+                .AppendLine(child.Value.Trim())
+                .AppendLine("```"),
             "para" => sb.AppendLine().AppendLine(),
             "paramref" or "typeparamref" => sb.Append('`')
-                                .Append(child.Attribute("name")?.Value ?? "?")
-                                .Append('`'),
+                .Append(child.Attribute("name")?.Value ?? "?")
+                .Append('`'),
             _ => sb.Append(child.Value),
         };
     }
@@ -226,9 +221,7 @@ public static partial class XmlDocRenderer
             return "?";
         }
 
-        var display = cref.Length >= 2 && cref[1] == ':'
-            ? cref[2..]
-            : cref;
+        var display = cref.Length >= 2 && cref[1] == ':' ? cref[2..] : cref;
 
         var lastDot = display.LastIndexOf('.');
         return lastDot >= 0 ? display[(lastDot + 1)..] : display;

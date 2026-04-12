@@ -24,14 +24,15 @@ public static class IpcConnection
 
     /// <summary>Start listening on a Unix domain socket.</summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability", "CA2000:Dispose objects before losing scope",
-        Justification = "Socket ownership transfers to caller via Result")]
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Socket ownership transfers to caller via Result"
+    )]
     public static SocketResult CreateListener(string socketPath)
     {
         try
         {
-            return new SocketResult.Ok<Socket, string>(
-                CreateListenerCore(socketPath));
+            return new SocketResult.Ok<Socket, string>(CreateListenerCore(socketPath));
         }
         catch (Exception ex)
         {
@@ -41,17 +42,20 @@ public static class IpcConnection
 
     /// <summary>Connect to an existing Unix domain socket.</summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability", "CA2000:Dispose objects before losing scope",
-        Justification = "Socket ownership transfers to caller via Result")]
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Socket ownership transfers to caller via Result"
+    )]
     public static async Task<SocketResult> ConnectAsync(
         string socketPath,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         try
         {
             return new SocketResult.Ok<Socket, string>(
-                await ConnectCoreAsync(socketPath, ct)
-                    .ConfigureAwait(false));
+                await ConnectCoreAsync(socketPath, ct).ConfigureAwait(false)
+            );
         }
         catch (Exception ex)
         {
@@ -61,16 +65,17 @@ public static class IpcConnection
 
     private static Socket CreateListenerCore(string socketPath)
     {
-        if (File.Exists(socketPath))
+        var effectivePath = ShortenIfNeeded(socketPath);
+
+        if (File.Exists(effectivePath))
         {
-            File.Delete(socketPath);
+            File.Delete(effectivePath);
         }
 
-        var socket = new Socket(
-            AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         try
         {
-            socket.Bind(new UnixDomainSocketEndPoint(socketPath));
+            socket.Bind(new UnixDomainSocketEndPoint(effectivePath));
             socket.Listen(1);
             return socket;
         }
@@ -81,16 +86,14 @@ public static class IpcConnection
         }
     }
 
-    private static async Task<Socket> ConnectCoreAsync(
-        string socketPath,
-        CancellationToken ct)
+    private static async Task<Socket> ConnectCoreAsync(string socketPath, CancellationToken ct)
     {
-        var socket = new Socket(
-            AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        var effectivePath = ShortenIfNeeded(socketPath);
+        var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         try
         {
-            await socket.ConnectAsync(
-                new UnixDomainSocketEndPoint(socketPath), ct)
+            await socket
+                .ConnectAsync(new UnixDomainSocketEndPoint(effectivePath), ct)
                 .ConfigureAwait(false);
             return socket;
         }
@@ -99,5 +102,22 @@ public static class IpcConnection
             socket.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Unix domain sockets have a 108-char path limit. If the path exceeds
+    /// this, relocate to a temp directory using a hash of the original path.
+    /// </summary>
+    private static string ShortenIfNeeded(string socketPath)
+    {
+        const int unixSocketPathLimit = 107;
+        if (socketPath.Length <= unixSocketPathLimit)
+        {
+            return socketPath;
+        }
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(socketPath));
+        var hex = Convert.ToHexString(hash).AsSpan(0, 16);
+        return Path.Combine(Path.GetTempPath(), $"forge-{hex}.sock");
     }
 }

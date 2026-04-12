@@ -57,7 +57,7 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
         "Starting dotnet-trace collect"
     );
 
-    let mut cmd = tokio::process::Command::new(tool);
+    let mut cmd = std::process::Command::new(tool);
     cmd.args(["collect", "-p"])
         .arg(params.pid.to_string())
         .args(["--profile", &params.profile])
@@ -87,7 +87,7 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
 }
 
 /// Stop a running trace session.
-pub async fn stop(session_id: &str) -> Result<StopTraceResult> {
+pub fn stop(session_id: &str) -> Result<StopTraceResult> {
     let store = session::store();
     let mut child = store.take_child(session_id)?;
     let started_at = store
@@ -95,22 +95,24 @@ pub async fn stop(session_id: &str) -> Result<StopTraceResult> {
         .get(session_id)
         .map_or_else(std::time::Instant::now, |s| s.started_at);
 
-    // Send SIGINT on Unix via the `kill` command, SIGKILL on Windows.
+    // Send SIGINT on Unix, SIGKILL on Windows.
     // dotnet-trace handles SIGINT gracefully, flushing the trace file.
     #[cfg(unix)]
-    if let Some(pid) = child.id() {
-        let _ = tokio::process::Command::new("kill")
-            .args(["-INT", &pid.to_string()])
-            .status()
-            .await;
+    {
+        let pid = child.id();
+        if let Ok(pid_i32) = i32::try_from(pid) {
+            let _ = std::process::Command::new("kill")
+                .args(["-INT", &pid_i32.to_string()])
+                .status();
+        }
     }
 
     #[cfg(not(unix))]
     {
-        let _ = child.kill().await;
+        let _ = child.kill();
     }
 
-    let _ = child.wait().await;
+    let _ = child.wait();
     let duration_ms = started_at.elapsed().as_millis();
 
     // Get output path from session.
@@ -126,8 +128,20 @@ pub async fn stop(session_id: &str) -> Result<StopTraceResult> {
 
     store.mark_stopped(session_id, None);
 
-    // Convert to speedscope format if requested.
-    if let Err(err) = convert_trace(&output_path).await {
+    if file_size_bytes == 0 {
+        warn!(
+            session_id = %session_id,
+            output = %output_path,
+            "Trace file is empty or missing — no data was captured"
+        );
+        anyhow::bail!(
+            "trace captured no data (0 bytes). \
+             The target process may have exited before collection started."
+        );
+    }
+
+    // Convert to speedscope format only when we have actual data.
+    if let Err(err) = convert_trace(&output_path) {
         warn!("Trace conversion failed: {err:#}");
     }
 
@@ -149,15 +163,14 @@ pub async fn stop(session_id: &str) -> Result<StopTraceResult> {
 }
 
 /// Convert `.nettrace` to `SpeedScope` JSON format.
-async fn convert_trace(nettrace_path: &str) -> Result<()> {
+fn convert_trace(nettrace_path: &str) -> Result<()> {
     let tool = tool_discovery::require_trace()?;
 
     info!(path = %nettrace_path, "Converting trace to speedscope format");
 
-    let output = tokio::process::Command::new(tool)
+    let output = std::process::Command::new(tool)
         .args(["convert", nettrace_path, "--format", "speedscope"])
         .output()
-        .await
         .context("failed to run dotnet-trace convert")?;
 
     if !output.status.success() {
@@ -181,7 +194,7 @@ fn ensure_output_dir(path: &str) -> Result<()> {
 }
 
 fn default_profile() -> String {
-    "cpu-sampling".to_string()
+    "gc-collect".to_string()
 }
 
 fn default_format() -> String {

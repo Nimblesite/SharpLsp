@@ -73,7 +73,15 @@ src/sidecar/
 10. Implement `src/sidecar/connection.rs` — platform-specific connect
 11. Implement `src/sidecar/manager.rs` — spawn, health monitoring, crash recovery, request forwarding
 
-### Phase B: C# Sidecar
+### Phase B: F# Sidecar
+
+1. Create `Forge.Sidecar.FSharp` project with FCS + Ionide.ProjInfo dependencies
+2. `Program.cs` — parse args, run
+3. `FSharpSidecar.cs` — register handlers
+4. `CheckerManager.cs` — `FSharpChecker.Create()`, parse/check operations
+5. `ProjectCracker.cs` — `Ionide.ProjInfo` to crack .fsproj into `FSharpProjectOptions`
+
+### Phase C: C# Sidecar
 
 1. Create `Forge.Sidecar.CSharp` project with Roslyn + MSBuild dependencies
 2. `Program.cs` — `MSBuildLocator.RegisterDefaults()`, parse args, run
@@ -81,14 +89,6 @@ src/sidecar/
 4. `WorkspaceManager.cs` — `MSBuildWorkspace.Create()` with design-time build properties:
    - `DesignTimeBuild=true`, `BuildingInsideVisualStudio=true`, `SkipCompilerExecution=true`
 5. `SolutionLoader.cs` — auto-detect .sln, fall back to .csproj discovery
-
-### Phase C: F# Sidecar
-
-1. Create `Forge.Sidecar.FSharp` project with FCS + Ionide.ProjInfo dependencies
-2. `Program.cs` — parse args, run
-3. `FSharpSidecar.cs` — register handlers
-4. `CheckerManager.cs` — `FSharpChecker.Create()`, parse/check operations
-5. `ProjectCracker.cs` — `Ionide.ProjInfo` to crack .fsproj into `FSharpProjectOptions`
 
 ### Phase D: Integration
 

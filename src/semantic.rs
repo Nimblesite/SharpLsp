@@ -6,14 +6,15 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind,
-    Position, Range, Uri,
+    CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentHighlight,
+    DocumentHighlightKind, DocumentHighlightParams, GotoDefinitionParams, GotoDefinitionResponse,
+    Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, Position, Range,
+    ReferenceParams, Uri,
 };
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::sidecar::manager::SidecarManager;
 
@@ -61,22 +62,37 @@ pub fn handle_completion(
     Ok(serde_json::to_value(CompletionResponse::Array(lsp_items))?)
 }
 
-/// Handle `textDocument/hover` via the C# sidecar.
+/// Handle `textDocument/hover` via the C# sidecar, with caching.
 pub fn handle_hover(
     req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     let Some(sidecar) = sidecar else {
-        debug!("Hover: no sidecar available");
+        warn!("Hover: no sidecar available");
         return Ok(serde_json::Value::Null);
     };
     let params: HoverParams = serde_json::from_value(req.params)?;
     let uri = &params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
+    let version = vfs.get_version(uri).unwrap_or(0);
+    let method = "textDocument/hover";
+
+    if let Some(cached) = nav_cache.get(
+        uri.as_str(),
+        version,
+        position.line,
+        position.character,
+        method,
+    ) {
+        info!("Hover cache hit");
+        return Ok(cached.clone());
+    }
 
     let file_path = uri_to_path(uri)?;
-    debug!(
+    info!(
         file = %file_path,
         line = position.line,
         character = position.character,
@@ -89,7 +105,7 @@ pub fn handle_hover(
         character: position.character,
     };
     let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = match runtime.block_on(sidecar.request("textDocument/hover", payload)) {
+    let response_bytes = match runtime.block_on(sidecar.request(method, payload)) {
         Ok(bytes) => bytes,
         Err(err) => {
             warn!("Sidecar hover unavailable: {err:#}");
@@ -98,6 +114,7 @@ pub fn handle_hover(
     };
 
     let result: Option<SidecarHoverResult> = rmp_serde::from_slice(&response_bytes)?;
+    let has_content = result.is_some();
     let hover = result.map(|r| {
         let range = build_hover_range(&r);
         Hover {
@@ -109,47 +126,250 @@ pub fn handle_hover(
         }
     });
 
+    if has_content {
+        info!(file = uri.as_str(), "Hover: sidecar returned content");
+    } else {
+        info!(file = uri.as_str(), "Hover: sidecar returned null");
+    }
+
     let value = serde_json::to_value(hover)?;
+    nav_cache.insert(
+        uri.as_str(),
+        version,
+        position.line,
+        position.character,
+        method,
+        value.clone(),
+    );
     Ok(value)
 }
 
-/// Handle `textDocument/definition` via the C# sidecar.
+/// Handle `textDocument/definition` — tries primary sidecar, falls back to
+/// the other for cross-language navigation (C# ↔ F#).
 pub fn handle_definition(
     req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    handle_single_location_nav(req, runtime, sidecar, "textDocument/definition")
+    handle_cached_nav_with_fallback(
+        req,
+        vfs,
+        nav_cache,
+        runtime,
+        sidecar,
+        fallback,
+        "textDocument/definition",
+        true,
+    )
 }
 
-/// Handle `textDocument/typeDefinition` via the C# sidecar.
+/// Handle `textDocument/typeDefinition` with cross-language fallback.
 pub fn handle_type_definition(
     req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    handle_single_location_nav(req, runtime, sidecar, "textDocument/typeDefinition")
+    handle_cached_nav_with_fallback(
+        req,
+        vfs,
+        nav_cache,
+        runtime,
+        sidecar,
+        fallback,
+        "textDocument/typeDefinition",
+        false,
+    )
 }
 
-/// Handle `textDocument/declaration` via the C# sidecar.
+/// Handle `textDocument/declaration` with cross-language fallback.
 pub fn handle_declaration(
+    req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    handle_cached_nav_with_fallback(
+        req,
+        vfs,
+        nav_cache,
+        runtime,
+        sidecar,
+        fallback,
+        "textDocument/declaration",
+        false,
+    )
+}
+
+/// Handle `textDocument/implementation` with cross-language fallback.
+pub fn handle_implementation(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    handle_single_location_nav(req, runtime, sidecar, "textDocument/declaration")
+    let value =
+        handle_multi_location_nav(req.clone(), runtime, sidecar, "textDocument/implementation")?;
+    if is_empty_nav_result(&value) {
+        if let Some(fb) = fallback {
+            debug!("Cross-language fallback for textDocument/implementation");
+            match handle_multi_location_nav(req, runtime, Some(fb), "textDocument/implementation") {
+                Ok(fb_value) if !is_empty_nav_result(&fb_value) => return Ok(fb_value),
+                Ok(_) => debug!("Cross-language fallback returned empty for implementation"),
+                Err(err) => debug!("Cross-language fallback failed for implementation: {err:#}"),
+            }
+        }
+    }
+    Ok(value)
 }
 
-/// Handle `textDocument/implementation` via the C# sidecar.
-///
-/// Returns `Location[]` because a symbol may have multiple implementations.
-pub fn handle_implementation(
+/// Handle `textDocument/references` with cross-language fallback.
+pub fn handle_references(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    let value = handle_references_nav(req.clone(), runtime, sidecar)?;
+    if is_empty_nav_result(&value) {
+        if let Some(fb) = fallback {
+            debug!("Cross-language fallback for textDocument/references");
+            match handle_references_nav(req, runtime, Some(fb)) {
+                Ok(fb_value) if !is_empty_nav_result(&fb_value) => return Ok(fb_value),
+                Ok(_) => debug!("Cross-language fallback returned empty for references"),
+                Err(err) => debug!("Cross-language fallback failed for references: {err:#}"),
+            }
+        }
+    }
+    Ok(value)
+}
+
+/// Handle `textDocument/documentHighlight` via the sidecar.
+pub fn handle_document_highlight(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     let Some(sidecar) = sidecar else {
-        debug!("Implementation: no sidecar available");
+        debug!("DocumentHighlight: no sidecar available");
+        return Ok(serde_json::Value::Null);
+    };
+    let params: DocumentHighlightParams = serde_json::from_value(req.params)?;
+    let file_path = uri_to_path(&params.text_document_position_params.text_document.uri)?;
+    let line = params.text_document_position_params.position.line;
+    let character = params.text_document_position_params.position.character;
+
+    debug!(
+        file = %file_path,
+        line = line,
+        character = character,
+        "DocumentHighlight request dispatching to sidecar"
+    );
+
+    let request = SidecarPositionReq {
+        file_path,
+        line,
+        character,
+    };
+    let payload = rmp_serde::to_vec(&request)?;
+    let response_bytes =
+        match runtime.block_on(sidecar.request("textDocument/documentHighlight", payload)) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                warn!("Sidecar documentHighlight unavailable: {err:#}");
+                return Ok(serde_json::Value::Null);
+            }
+        };
+
+    let result: SidecarDocumentHighlightListResult = rmp_serde::from_slice(&response_bytes)?;
+    let highlights: Vec<DocumentHighlight> = result
+        .highlights
+        .into_iter()
+        .map(|h| DocumentHighlight {
+            range: Range::new(
+                Position::new(h.start_line, h.start_character),
+                Position::new(h.end_line, h.end_character),
+            ),
+            kind: Some(match h.kind {
+                3 => DocumentHighlightKind::WRITE,
+                2 => DocumentHighlightKind::READ,
+                _ => DocumentHighlightKind::TEXT,
+            }),
+        })
+        .collect();
+
+    Ok(serde_json::to_value(highlights)?)
+}
+
+/// Inner handler for references (serializes `ReferencesRequest` with `include_declaration`).
+fn handle_references_nav(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    let Some(sidecar) = sidecar else {
+        debug!("References: no sidecar available");
+        return Ok(serde_json::Value::Null);
+    };
+    let params: ReferenceParams = serde_json::from_value(req.params)?;
+    let file_path = uri_to_path(&params.text_document_position.text_document.uri)?;
+    let line = params.text_document_position.position.line;
+    let character = params.text_document_position.position.character;
+    let include_declaration = params.context.include_declaration;
+
+    debug!(
+        file = %file_path,
+        line = line,
+        character = character,
+        include_declaration = include_declaration,
+        "References request dispatching to sidecar"
+    );
+
+    let request = SidecarReferencesReq {
+        file_path,
+        line,
+        character,
+        include_declaration,
+    };
+    let payload = rmp_serde::to_vec(&request)?;
+    let response_bytes = match runtime.block_on(sidecar.request("textDocument/references", payload))
+    {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!("Sidecar references unavailable: {err:#}");
+            return Ok(serde_json::Value::Null);
+        }
+    };
+
+    let result: SidecarLocationListResult = rmp_serde::from_slice(&response_bytes)?;
+    let locations: Vec<Location> = result
+        .locations
+        .into_iter()
+        .filter_map(|loc| sidecar_location_to_lsp(&loc))
+        .collect();
+
+    Ok(serde_json::to_value(locations)?)
+}
+
+// ── Shared Helpers ────────────────────────────────────────────────
+
+/// Shared handler for multi-location navigation requests
+/// (definition, implementation).
+fn handle_multi_location_nav(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    method: &str,
+) -> Result<serde_json::Value> {
+    let Some(sidecar) = sidecar else {
+        debug!("{method}: no sidecar available");
         return Ok(serde_json::Value::Null);
     };
     let params: GotoDefinitionParams = serde_json::from_value(req.params)?;
@@ -161,7 +381,7 @@ pub fn handle_implementation(
         file = %file_path,
         line = line,
         character = character,
-        "Implementation request dispatching to sidecar"
+        "{method} request dispatching to sidecar"
     );
 
     let request = SidecarPositionReq {
@@ -170,14 +390,13 @@ pub fn handle_implementation(
         character,
     };
     let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("textDocument/implementation", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar implementation unavailable: {err:#}");
-                return Ok(serde_json::Value::Null);
-            }
-        };
+    let response_bytes = match runtime.block_on(sidecar.request(method, payload)) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!("Sidecar {method} unavailable: {err:#}");
+            return Ok(serde_json::Value::Null);
+        }
+    };
 
     let result: SidecarLocationListResult = rmp_serde::from_slice(&response_bytes)?;
     let locations: Vec<Location> = result
@@ -186,14 +405,92 @@ pub fn handle_implementation(
         .filter_map(|loc| sidecar_location_to_lsp(&loc))
         .collect();
 
-    let response = GotoDefinitionResponse::Array(locations);
+    let response = (!locations.is_empty()).then(|| GotoDefinitionResponse::Array(locations));
     Ok(serde_json::to_value(response)?)
 }
 
-// ── Shared Helpers ────────────────────────────────────────────────
+/// Check if a navigation result is empty (null or empty array).
+fn is_empty_nav_result(value: &serde_json::Value) -> bool {
+    value.is_null() || value.as_array().is_some_and(Vec::is_empty)
+}
+
+/// Cached navigation with cross-language fallback.
+///
+/// Tries the primary sidecar first. If it returns empty/null,
+/// retries with the fallback sidecar (cross-language C# ↔ F#).
+/// If the fallback also fails (e.g. sidecar not running), returns
+/// the original result without blocking.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "cross-language fallback requires both sidecars plus cached-nav params"
+)]
+fn handle_cached_nav_with_fallback(
+    req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    fallback: Option<&Arc<SidecarManager>>,
+    method: &str,
+    multi: bool,
+) -> Result<serde_json::Value> {
+    let value = handle_cached_nav(req.clone(), vfs, nav_cache, runtime, sidecar, method, multi)?;
+    if is_empty_nav_result(&value) {
+        if let Some(fb) = fallback {
+            debug!("Cross-language fallback for {method}");
+            match handle_cached_nav(req, vfs, nav_cache, runtime, Some(fb), method, multi) {
+                Ok(fb_value) if !is_empty_nav_result(&fb_value) => return Ok(fb_value),
+                Ok(_) => debug!("Cross-language fallback returned empty for {method}"),
+                Err(err) => debug!("Cross-language fallback failed for {method}: {err:#}"),
+            }
+        }
+    }
+    Ok(value)
+}
+
+/// Cached navigation handler — checks cache before dispatching to sidecar.
+///
+/// `multi` controls whether to use multi-location (definition) or
+/// single-location (typeDefinition, declaration) response format.
+fn handle_cached_nav(
+    req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    method: &str,
+    multi: bool,
+) -> Result<serde_json::Value> {
+    let params: GotoDefinitionParams = serde_json::from_value(req.params.clone())?;
+    let uri = &params.text_document_position_params.text_document.uri;
+    let line = params.text_document_position_params.position.line;
+    let character = params.text_document_position_params.position.character;
+    let version = vfs.get_version(uri).unwrap_or(0);
+
+    if let Some(cached) = nav_cache.get(uri.as_str(), version, line, character, method) {
+        debug!("{method} cache hit");
+        return Ok(cached.clone());
+    }
+
+    let value = if multi {
+        handle_multi_location_nav(req, runtime, sidecar, method)?
+    } else {
+        handle_single_location_nav(req, runtime, sidecar, method)?
+    };
+
+    nav_cache.insert(
+        uri.as_str(),
+        version,
+        line,
+        character,
+        method,
+        value.clone(),
+    );
+    Ok(value)
+}
 
 /// Shared handler for single-location navigation requests
-/// (definition, typeDefinition, declaration).
+/// (typeDefinition, declaration).
 fn handle_single_location_nav(
     req: Request,
     runtime: &tokio::runtime::Runtime,
@@ -230,9 +527,9 @@ fn handle_single_location_nav(
         }
     };
 
-    let result: Option<SidecarLocationResult> = rmp_serde::from_slice(&response_bytes)?;
-    let response = result.and_then(|loc| {
-        let location = sidecar_location_to_lsp(&loc)?;
+    let result: SidecarLocationListResult = rmp_serde::from_slice(&response_bytes)?;
+    let response = result.locations.first().and_then(|loc| {
+        let location = sidecar_location_to_lsp(loc)?;
         Some(GotoDefinitionResponse::Scalar(location))
     });
 
@@ -247,7 +544,7 @@ fn sidecar_location_to_lsp(loc: &SidecarLocationResult) -> Option<Location> {
         uri,
         range: Range::new(
             Position::new(loc.line, loc.character),
-            Position::new(loc.line, loc.character),
+            Position::new(loc.end_line, loc.end_character),
         ),
     })
 }
@@ -269,10 +566,7 @@ fn build_hover_range(result: &SidecarHoverResult) -> Option<Range> {
 
 /// Convert a file URI to a filesystem path string.
 pub(crate) fn uri_to_path(uri: &Uri) -> Result<String> {
-    let s = uri.as_str();
-    s.strip_prefix("file://")
-        .map(String::from)
-        .context("expected file:// URI")
+    crate::utils::uri_to_path(uri.as_str())
 }
 
 /// Map a Roslyn completion tag to an LSP `CompletionItemKind`.
@@ -306,6 +600,36 @@ struct SidecarCompletionReq {
     character: u32,
 }
 
+/// Notify the sidecar that a document's text has changed.
+pub fn notify_did_change(
+    file_path: &str,
+    new_text: &str,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) {
+    let Some(sidecar) = sidecar else { return };
+    let request = SidecarDidChangeReq {
+        file_path: file_path.to_string(),
+        new_text: new_text.to_string(),
+    };
+    let Ok(payload) = rmp_serde::to_vec(&request) else {
+        warn!("Failed to serialize didChange request");
+        return;
+    };
+    let sidecar = Arc::clone(sidecar);
+    runtime.spawn(async move {
+        if let Err(err) = sidecar.request("textDocument/didChange", payload).await {
+            debug!("Sidecar didChange failed: {err:#}");
+        }
+    });
+}
+
+#[derive(serde::Serialize)]
+struct SidecarDidChangeReq {
+    file_path: String,
+    new_text: String,
+}
+
 #[derive(serde::Serialize)]
 struct SidecarPositionReq {
     file_path: String,
@@ -336,9 +660,33 @@ struct SidecarLocationResult {
     file_path: String,
     line: u32,
     character: u32,
+    end_line: u32,
+    end_character: u32,
 }
 
 #[derive(serde::Deserialize)]
 struct SidecarLocationListResult {
     locations: Vec<SidecarLocationResult>,
+}
+
+#[derive(serde::Serialize)]
+struct SidecarReferencesReq {
+    file_path: String,
+    line: u32,
+    character: u32,
+    include_declaration: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct SidecarDocumentHighlightResult {
+    start_line: u32,
+    start_character: u32,
+    end_line: u32,
+    end_character: u32,
+    kind: u32,
+}
+
+#[derive(serde::Deserialize)]
+struct SidecarDocumentHighlightListResult {
+    highlights: Vec<SidecarDocumentHighlightResult>,
 }

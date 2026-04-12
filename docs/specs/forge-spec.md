@@ -100,7 +100,7 @@ Key optimization: on every keystroke, tree-sitter re-parses in <1ms and provides
 
 ### 2.4 Sidecar Lifecycle Management
 
-- **Startup:** Sidecars are spawned lazily on first request for their language. [ReadyToRun (R2R)](https://learn.microsoft.com/en-us/dotnet/core/deploying/ready-to-run) compilation reduces cold start from ~2s to ~500ms.
+- **Startup:** Sidecars are spawned lazily on first request for their language. Published as self-contained single-file executables (AOT is incompatible with Roslyn, FSharp.Compiler.Service, and other reflection-heavy dependencies).
 - **Health monitoring:** Periodic heartbeat pings (every 5s). If a sidecar fails to respond within 2s, it is marked unhealthy.
 - **Crash recovery:** On sidecar death, cache last-known-good results for graceful degradation. Restart with exponential backoff (1s, 2s, 4s, max 30s). Notify editor via LSP `window/showMessage`.
 - **Isolation:** C# and F# sidecars are independent processes. A Roslyn OOM does not affect FCS, and vice versa.
@@ -117,6 +117,110 @@ The project system is the hardest engineering problem in .NET tooling. [MSBuild]
 - **Mixed solutions:** Both sidecars load their respective projects from the same .sln file. Cross-language project references are resolved via binary reference (compiled DLL), not source-level.
 - **File watching:** The Rust host watches .csproj, .fsproj, .sln, Directory.Build.props, Directory.Packages.props, NuGet.config, and global.json for changes. On change, the affected sidecar is notified to reload the project model.
 - **Multi-targeting:** Projects targeting multiple TFMs (e.g., `net8.0;net48;netstandard2.0`) present multiple analysis contexts. Forge exposes a custom LSP extension for users to select the active TFM, defaulting to the first.
+
+### 2.6 Binary Layout & Installation
+
+**ALL Forge binaries live in ONE central location on the machine. NEVER inside an editor extension.** Every editor (VS Code, Zed, Neovim, Helix, etc.) finds `forge-lsp` on `$PATH`. Extensions are thin clients that launch the system-installed binaries. **Extensions contain ZERO binaries.**
+
+**Install locations (PREFIX defaults to `~/.local`):**
+
+| Artifact | Install Path | Purpose |
+|---|---|---|
+| `forge-lsp` | `$(PREFIX)/bin/forge-lsp` | Rust LSP server binary (MUST be on `$PATH`) |
+| C# sidecar | `$(PREFIX)/lib/forge/sidecar-csharp/` | Self-contained single-file executable |
+| F# sidecar | `$(PREFIX)/lib/forge/sidecar-fsharp/` | Self-contained single-file executable |
+
+```
+~/.local/
+├── bin/
+│   └── forge-lsp                          (on $PATH)
+└── lib/forge/
+    ├── sidecar-csharp/
+    │   └── Forge.Sidecar.CSharp          (self-contained executable)
+    └── sidecar-fsharp/
+        └── Forge.Sidecar.FSharp          (self-contained executable)
+```
+
+`$(PREFIX)/bin` MUST be on `$PATH`. This is non-negotiable.
+
+**Who installs binaries:**
+
+- **`make install`** — builds from source and copies to the standard locations above. Primary install for developers building from source.
+- **Editor extensions** — download pre-built binaries from GitHub releases and install to the same standard locations. This is the primary install path for end users.
+- **Manual download** — users can download release archives and extract to the standard locations.
+
+All three methods install to the SAME locations. One install serves every editor on the machine.
+
+**Version checking (`--version` flag):**
+
+All three binaries support `--version` and print their version to stdout:
+
+```
+$ forge-lsp --version
+forge-lsp 0.1.0
+
+$ Forge.Sidecar.CSharp --version
+forge-sidecar-csharp 0.1.0
+
+$ Forge.Sidecar.FSharp --version
+forge-sidecar-fsharp 0.1.0
+```
+
+Extensions use this to verify the correct version is installed before starting.
+
+**Sidecar resolution by the Rust host (two-step fallback):**
+
+1. **Installed:** `<exe_dir>/../lib/forge/sidecar-csharp/Forge.Sidecar.CSharp` — launched directly as native executable (no `dotnet` required)
+2. **Dev build:** `dotnet run --project sidecars/Forge.Sidecar.CSharp` — requires CWD = repo root
+
+### 2.7 Editor Extension Binary Strategy
+
+**Extensions contain NO binaries. Extensions are THIN CLIENTS.** They exist solely to integrate with the editor's UI and launch `forge-lsp` from `$PATH`.
+
+On activation, every editor extension follows this exact sequence:
+
+1. **Version check:** Run `forge-lsp --version` to check if forge-lsp is installed and what version it is. The output format is `forge-lsp X.Y.Z` — the version is always the second whitespace-delimited token. Extensions parse this deterministically.
+2. **Version match:** If the installed version matches the extension's expected version, start normally. Done.
+3. **Missing or outdated:** Download the correct platform-specific archive from the GitHub release matching the extension version. Install `forge-lsp` to `$(PREFIX)/bin/` and sidecars to `$(PREFIX)/lib/forge/`. Then start normally.
+4. **Download fails:** Surface an error to the user with maximum urgency. Do NOT silently degrade. Do NOT fall back to some partial mode. The extension CANNOT function without the binaries. Tell the user exactly what went wrong and how to fix it (manual download link, `make install` instructions, etc.).
+
+**CRITICAL — Failure must NEVER lock up the editor:**
+
+When any step above fails — version mismatch, binary not found, download failed, `--version` returns garbage — the extension MUST:
+
+- Show a clear, user-facing error message explaining what happened and how to fix it (e.g., "Forge: forge-lsp v0.1.0 required but v0.0.9 found. Run `make install` or update the extension.")
+- Deactivate gracefully — dispose all resources, unregister providers, stop any pending operations
+- NEVER throw an unhandled exception that propagates to the editor host process
+- NEVER block the editor's main thread or event loop waiting for a binary that will never arrive
+- NEVER leave the extension in a half-initialized zombie state where it eats CPU or holds locks
+
+This applies to ALL editor extensions: VS Code, Zed, Neovim, Helix, etc. An extension that locks up the editor because the binary version is wrong is a critical bug of the highest severity.
+
+**Version contract:**
+
+| Component | Version source | `--version` output format |
+|---|---|---|
+| `forge-lsp` | `Cargo.toml` via `env!("CARGO_PKG_VERSION")` | `forge-lsp X.Y.Z` |
+| C# sidecar | `.csproj` AssemblyVersion | `forge-sidecar-csharp X.Y.Z` |
+| F# sidecar | `.fsproj` AssemblyVersion | `forge-sidecar-fsharp X.Y.Z` |
+| VS Code ext | `package.json` version field | N/A (not a CLI) |
+| Zed ext | `extension.toml` version field | N/A (not a CLI) |
+
+All versions MUST be kept in sync across all components. A release tags all components at the same version. Extensions MUST check the binary version matches their own version before starting the server.
+
+**Test requirements:**
+
+Every editor extension MUST have e2e tests that prove:
+1. `forge-lsp --version` returns the correct format and version
+2. When the version matches, the extension starts the server successfully
+3. When the version mismatches, the extension shows a user-facing error and does NOT freeze the editor
+4. When the binary is missing, the extension shows a user-facing error and does NOT freeze the editor
+
+The Rust binary MUST have a test that proves:
+1. `--version` prints the correct format: `forge-lsp X.Y.Z` where X.Y.Z matches `Cargo.toml`
+2. The process exits with code 0
+
+This is editor-agnostic by design. One set of binaries serves VS Code, Zed, Neovim, Helix, and any future editor. A user who runs `make install` already has everything every extension needs. An extension that auto-installs binaries provides them for every other extension too.
 
 ## 3. Technology Stack
 
@@ -231,6 +335,9 @@ This is where Forge must match Rider's 2,200+ inspections and 60+ refactorings. 
 
 ### 4.5 Formatting
 
+While some code for formatting exists and it will become a feature in future. Formatting shall be delegated to CSharpier/Fantomas until it becomes a priority at a later stage.
+No work to be done on formatting at this point in time.
+
 | Feature | LSP Method | C# API | F# API | Priority |
 |---|---|---|---|---|
 | Document formatting | `textDocument/formatting` | [Formatter.FormatAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.formatting.formatter.formatasync) | [Fantomas.FormatDocumentAsync()](https://github.com/fsprojects/fantomas) | P0 |
@@ -283,7 +390,11 @@ This is where Forge must match Rider's 2,200+ inspections and 60+ refactorings. 
 |---|---|---|---|
 | Solution/project loading | Custom: `forge/openSolution` | MSBuildWorkspace + Ionide.ProjInfo | P0 |
 | Project dependency graph | Custom: `forge/projectGraph` | MSBuild project reference analysis | P1 |
-| NuGet package management | Custom: `forge/nuget` | `dotnet add/remove/restore package` | P2 |
+| NuGet package search | Custom: `forge/nuget/search` | HTTP GET nuget.org v3 API, cross-ref installed | P2 |
+| NuGet package versions | Custom: `forge/nuget/versions` | HTTP GET nuget.org flat container API | P2 |
+| NuGet installed packages | Custom: `forge/nuget/installed` | `dotnet list <project> package --format json` | P2 |
+| NuGet install package | Custom: `forge/nuget/install` | `dotnet add <project> package` + sidecar reload | P2 |
+| NuGet uninstall package | Custom: `forge/nuget/uninstall` | `dotnet remove <project> package` + sidecar reload | P2 |
 | Multi-TFM selection | Custom: `forge/targetFramework` | Active TFM switching per project | P1 |
 | File watching & reload | `workspace/didChangeWatchedFiles` | [notify](https://crates.io/crates/notify) crate + sidecar reload | P0 |
 | Workspace diagnostics | `workspace/diagnostic` | Solution-wide error analysis | P1 |

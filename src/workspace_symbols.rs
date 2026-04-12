@@ -12,6 +12,8 @@ use tracing::info;
 use tree_sitter::Node;
 
 use crate::tree_sitter_parse::{LangId, TsParsers};
+use crate::utils::usize_to_u32;
+use crate::vfs::Vfs;
 
 /// Request params for `forge/workspaceSymbols`.
 #[derive(Debug, Deserialize)]
@@ -69,6 +71,7 @@ pub struct SymbolPosition {
 pub fn handle(
     params: &WorkspaceSymbolsParams,
     parsers: &TsParsers,
+    vfs: &Vfs,
 ) -> Result<WorkspaceSymbolsResponse> {
     let sln_path = Path::new(&params.solution);
     let projects = discover_projects(sln_path)?;
@@ -81,7 +84,7 @@ pub fn handle(
 
     let project_nodes: Vec<ProjectNode> = projects
         .iter()
-        .filter_map(|proj| build_project_node(proj, parsers).ok())
+        .filter_map(|proj| build_project_node(proj, parsers, vfs).ok())
         .collect();
 
     Ok(WorkspaceSymbolsResponse {
@@ -139,7 +142,11 @@ struct ProjectInfo {
 }
 
 /// Build a `ProjectNode` by finding and parsing all source files.
-fn build_project_node(project: &ProjectInfo, parsers: &TsParsers) -> Result<ProjectNode> {
+fn build_project_node(
+    project: &ProjectInfo,
+    parsers: &TsParsers,
+    vfs: &Vfs,
+) -> Result<ProjectNode> {
     let proj_dir = Path::new(&project.path)
         .parent()
         .context("project has no parent")?;
@@ -148,7 +155,7 @@ fn build_project_node(project: &ProjectInfo, parsers: &TsParsers) -> Result<Proj
 
     let symbols: Vec<FileSymbol> = source_files
         .iter()
-        .filter_map(|file| parse_file_symbols(file, parsers).ok())
+        .filter_map(|file| parse_file_symbols(file, parsers, vfs).ok())
         .filter(|fs| !fs.symbols.is_empty())
         .collect();
 
@@ -193,9 +200,35 @@ fn is_source_file(path: &Path) -> bool {
     matches!(path.extension().and_then(|e| e.to_str()), Some("cs" | "fs"))
 }
 
+/// Read file content from VFS if the document is open, otherwise from disk.
+fn vfs_or_disk(file_path: &str, vfs: &Vfs) -> Result<String> {
+    // Try canonical path first (resolves symlinks).
+    if let Some(content) = std::fs::canonicalize(file_path)
+        .ok()
+        .and_then(|c| try_vfs_uri(&c.to_string_lossy(), vfs))
+    {
+        return Ok(content);
+    }
+    // Retry with the original path — editors may use the symlinked form
+    // (e.g. /tmp on macOS is a symlink to /private/tmp).
+    if let Some(content) = try_vfs_uri(file_path, vfs) {
+        return Ok(content);
+    }
+    tracing::trace!("VFS miss for {file_path}, reading from disk");
+    std::fs::read_to_string(file_path).with_context(|| format!("read {file_path}"))
+}
+
+fn try_vfs_uri(path_str: &str, vfs: &Vfs) -> Option<String> {
+    let uri = format!("file://{path_str}")
+        .parse::<lsp_types::Uri>()
+        .ok()?;
+    vfs.get_content(&uri)
+}
+
 /// Parse a single source file and extract symbols.
-fn parse_file_symbols(file_path: &str, parsers: &TsParsers) -> Result<FileSymbol> {
-    let source = std::fs::read_to_string(file_path).with_context(|| format!("read {file_path}"))?;
+/// Prefers VFS content (unsaved buffer) over disk for open documents.
+fn parse_file_symbols(file_path: &str, parsers: &TsParsers, vfs: &Vfs) -> Result<FileSymbol> {
+    let source = vfs_or_disk(file_path, vfs)?;
 
     let path = Path::new(file_path);
     let lang = LangId::from_path(path).context("unsupported file type")?;
@@ -258,25 +291,47 @@ fn collect_symbols(node: Node, source: &[u8]) -> Vec<SymbolNode> {
     symbols
 }
 
+/// Extract the symbol name, handling field/event nested structure.
+fn extract_ws_symbol_name(node: Node, source: &[u8]) -> Option<String> {
+    if let Some(name_node) = node.child_by_field_name("name") {
+        return name_node.utf8_text(source).ok().map(String::from);
+    }
+    // field_declaration / event_field_declaration: variable_declaration > variable_declarator
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "variable_declaration" {
+            let mut inner = child.walk();
+            for declarator in child.children(&mut inner) {
+                if declarator.kind() == "variable_declarator" {
+                    return declarator
+                        .child_by_field_name("name")
+                        .and_then(|n| n.utf8_text(source).ok())
+                        .map(String::from);
+                }
+            }
+        }
+    }
+    None
+}
+
 fn node_to_symbol(node: Node, source: &[u8]) -> Option<SymbolNode> {
-    let (kind, name_field) = match node.kind() {
-        "namespace_declaration" | "file_scoped_namespace_declaration" => ("Namespace", "name"),
-        "class_declaration" | "record_declaration" => ("Class", "name"),
-        "struct_declaration" => ("Struct", "name"),
-        "interface_declaration" => ("Interface", "name"),
-        "enum_declaration" => ("Enum", "name"),
-        "method_declaration" => ("Method", "name"),
-        "constructor_declaration" => ("Constructor", "name"),
-        "property_declaration" => ("Property", "name"),
-        "field_declaration" => ("Field", "name"),
-        "delegate_declaration" => ("Function", "name"),
-        "event_declaration" => ("Event", "name"),
-        "enum_member_declaration" => ("EnumMember", "name"),
+    let kind = match node.kind() {
+        "namespace_declaration" | "file_scoped_namespace_declaration" => "Namespace",
+        "class_declaration" | "record_declaration" => "Class",
+        "struct_declaration" => "Struct",
+        "interface_declaration" => "Interface",
+        "enum_declaration" => "Enum",
+        "method_declaration" => "Method",
+        "constructor_declaration" => "Constructor",
+        "property_declaration" => "Property",
+        "field_declaration" => "Field",
+        "delegate_declaration" => "Function",
+        "event_declaration" | "event_field_declaration" => "Event",
+        "enum_member_declaration" => "EnumMember",
         _ => return None,
     };
 
-    let name_node = node.child_by_field_name(name_field)?;
-    let name = name_node.utf8_text(source).ok()?.to_string();
+    let name = extract_ws_symbol_name(node, source)?;
 
     let detail = extract_type_detail(node, source);
     let access = extract_access(node, source);
@@ -343,6 +398,129 @@ fn extract_type_detail(node: Node, source: &[u8]) -> Option<String> {
     }
 }
 
-fn usize_to_u32(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code — panics are the correct failure mode"
+)]
+mod tests {
+    use super::*;
+
+    fn make_symbol(name: &str, kind: &str) -> SymbolNode {
+        SymbolNode {
+            name: name.to_string(),
+            kind: kind.to_string(),
+            detail: None,
+            access: None,
+            range: SymbolRange {
+                start: SymbolPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: SymbolPosition {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            children: Vec::new(),
+        }
+    }
+
+    // ── extract_project_path ──
+
+    #[test]
+    fn extract_project_path_csproj() {
+        let line = r#"Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyApp", "src\MyApp\MyApp.csproj", "{GUID}""#;
+        let result = extract_project_path(line).unwrap();
+        assert_eq!(result, "src/MyApp/MyApp.csproj");
+    }
+
+    #[test]
+    fn extract_project_path_fsproj() {
+        let line = r#"Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MyLib", "lib\MyLib\MyLib.fsproj", "{GUID}""#;
+        let result = extract_project_path(line).unwrap();
+        assert_eq!(result, "lib/MyLib/MyLib.fsproj");
+    }
+
+    #[test]
+    fn extract_project_path_non_project_line() {
+        assert!(extract_project_path("Global").is_none());
+        assert!(extract_project_path("").is_none());
+        assert!(extract_project_path("  EndProject").is_none());
+    }
+
+    #[test]
+    fn extract_project_path_solution_folder() {
+        // Solution folders have a path like "SolutionFolder" — no .csproj/.fsproj
+        let line = r#"Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{GUID}""#;
+        assert!(extract_project_path(line).is_none());
+    }
+
+    // ── is_source_file ──
+
+    #[test]
+    fn is_source_file_cs() {
+        assert!(is_source_file(Path::new("Program.cs")));
+    }
+
+    #[test]
+    fn is_source_file_fs() {
+        assert!(is_source_file(Path::new("Module.fs")));
+    }
+
+    #[test]
+    fn is_source_file_txt_rejected() {
+        assert!(!is_source_file(Path::new("readme.txt")));
+    }
+
+    #[test]
+    fn is_source_file_rs_rejected() {
+        assert!(!is_source_file(Path::new("main.rs")));
+    }
+
+    // ── reparent_file_scoped_members ──
+
+    #[test]
+    fn reparent_no_namespace_returns_unchanged() {
+        let symbols = vec![
+            make_symbol("MyClass", "Class"),
+            make_symbol("MyStruct", "Struct"),
+        ];
+        let result = reparent_file_scoped_members(symbols);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "MyClass");
+        assert_eq!(result[1].name, "MyStruct");
+    }
+
+    #[test]
+    fn reparent_namespace_with_existing_children_unchanged() {
+        let mut ns = make_symbol("MyApp", "Namespace");
+        ns.children.push(make_symbol("Existing", "Class"));
+
+        let symbols = vec![ns, make_symbol("Orphan", "Class")];
+        let result = reparent_file_scoped_members(symbols);
+        // Namespace already has type children, so no reparenting.
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "MyApp");
+        assert_eq!(result[0].children.len(), 1);
+        assert_eq!(result[1].name, "Orphan");
+    }
+
+    #[test]
+    fn reparent_file_scoped_namespace_adopts_orphans() {
+        let ns = make_symbol("MyApp.Models", "Namespace");
+        let class1 = make_symbol("User", "Class");
+        let class2 = make_symbol("Order", "Class");
+
+        let symbols = vec![ns, class1, class2];
+        let result = reparent_file_scoped_members(symbols);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "MyApp.Models");
+        assert_eq!(result[0].kind, "Namespace");
+        assert_eq!(result[0].children.len(), 2);
+        assert_eq!(result[0].children[0].name, "User");
+        assert_eq!(result[0].children[1].name, "Order");
+    }
 }
