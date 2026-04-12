@@ -167,6 +167,7 @@ fn list_props_packages(path: &str) -> Result<Vec<types::InstalledPackageInfo>> {
     Ok(packages)
 }
 
+/// Extract the value of an XML attribute (e.g. `Include="..."`) from a line.
 fn extract_attr(line: &str, attr: &str) -> Option<String> {
     let needle = format!("{attr}=\"");
     let start = line.find(&needle)? + needle.len();
@@ -279,6 +280,7 @@ fn find_packages_props(start: &Path) -> Option<std::path::PathBuf> {
 
 // ── Background restore + notifications ─────────────────────────
 
+/// Spawn a background `dotnet restore` and send progress notifications.
 fn spawn_restore(
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
@@ -350,6 +352,7 @@ fn spawn_restore(
     }));
 }
 
+/// Send a `forge/nuget/restoreProgress` notification to the client.
 fn send_restore_progress(
     sender: &Sender<Message>,
     target_id: &str,

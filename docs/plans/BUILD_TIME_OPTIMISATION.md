@@ -108,3 +108,11 @@ Once split into parallel jobs:
 2. Verify total wall-clock time drops from 20min to ~10min
 3. Verify coverage thresholds still ratchet correctly
 4. Verify no test coverage is lost (thresholds should not drop)
+
+## TODO
+
+- [ ] Split monolithic `Test` job into parallel jobs (`test-rust`, `test-dotnet`, `test-zed`, `test-vsix`)
+- [ ] Fix Zed double-build waste (remove `build-zed` dependency from `test-zed`)
+- [ ] Deduplicate Rust E2E tests that overlap with sidecar tests
+- [ ] Set per-job timeouts appropriately
+- [ ] Verify total wall-clock drops from ~20min to ~10min

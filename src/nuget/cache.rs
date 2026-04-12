@@ -9,11 +9,14 @@ use dashmap::DashMap;
 
 /// Thread-safe cache with per-entry TTL.
 pub struct TtlCache<V> {
+    /// Map of cache keys to (value, insertion_time) pairs.
     entries: DashMap<String, (V, Instant)>,
+    /// Maximum age before an entry is considered stale.
     ttl: Duration,
 }
 
 impl<V: Clone> TtlCache<V> {
+    /// Create a new cache with the given time-to-live per entry.
     pub fn new(ttl: Duration) -> Self {
         Self {
             entries: DashMap::new(),
@@ -41,15 +44,19 @@ impl<V: Clone> TtlCache<V> {
 }
 
 /// Global caches for `NuGet` API responses.
+/// Lazily-initialized cache for `NuGet` search results (60s TTL).
 static SEARCH_CACHE: std::sync::OnceLock<TtlCache<serde_json::Value>> = std::sync::OnceLock::new();
+/// Lazily-initialized cache for `NuGet` version lists (5 min TTL).
 static VERSIONS_CACHE: std::sync::OnceLock<TtlCache<Vec<String>>> = std::sync::OnceLock::new();
 static HTTP_CLIENT: std::sync::OnceLock<Mutex<Option<reqwest::Client>>> =
     std::sync::OnceLock::new();
 
+/// Return the shared search-result cache, creating it on first access.
 pub fn search_cache() -> &'static TtlCache<serde_json::Value> {
     SEARCH_CACHE.get_or_init(|| TtlCache::new(Duration::from_secs(60)))
 }
 
+/// Return the shared version-list cache, creating it on first access.
 pub fn versions_cache() -> &'static TtlCache<Vec<String>> {
     VERSIONS_CACHE.get_or_init(|| TtlCache::new(Duration::from_secs(300)))
 }

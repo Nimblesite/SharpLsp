@@ -386,6 +386,7 @@ fn vfs_or_disk(file_path: &str, vfs: &Vfs) -> Result<String> {
     std::fs::read_to_string(file_path).with_context(|| format!("read {file_path}"))
 }
 
+/// Attempt to read file content from the VFS using a `file://` URI.
 fn try_vfs_uri(path_str: &str, vfs: &Vfs) -> Option<String> {
     let uri = format!("file://{path_str}")
         .parse::<lsp_types::Uri>()

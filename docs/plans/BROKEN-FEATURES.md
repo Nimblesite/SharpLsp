@@ -2,22 +2,13 @@
 
 These LSP features are **broken in `code serve-web`** (VS Code browser mode used for automated screenshots). The website pages for these features have been excluded from navigation until fixed.
 
-## Diagnostics — BROKEN
+## Diagnostics — FIXED (pull diagnostics implemented)
 
 **Symptom**: No red/yellow squiggly underlines appear on code with errors.
 
-**Root cause**: Forge only implements **push diagnostics** (`textDocument/publishDiagnostics`). VS Code's web client uses **pull diagnostics** (`textDocument/diagnostic` and `workspace/diagnostic`), which Forge has NOT implemented. LSP logs show:
+**Root cause**: Forge only implemented **push diagnostics**. VS Code's web client uses **pull diagnostics**.
 
-```
-Message: method not found  Code: -32603
-Workspace diagnostic pull failed.
-Unhandled request: workspace/diagnostic
-Request textDocument/diagnostic failed.
-```
-
-**Fix**: Implement `textDocument/diagnostic` (pull model) per [LSP 3.17 Pull Diagnostics](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_pullDiagnostics). This requires a new request handler in the Rust host that forwards to the sidecar.
-
-**Files to touch**: `src/main.rs` (request routing), sidecar diagnostic handler.
+**Status**: `textDocument/diagnostic` and `workspace/diagnostic` are now implemented in `pull_diagnostics.rs`. **Re-test in `code serve-web` to verify the screenshot issue is resolved.**
 
 ---
 
@@ -46,3 +37,12 @@ Request textDocument/diagnostic failed.
 
 **Files to touch**: `sidecars/Forge.Sidecar.CSharp/Workspace/DefinitionResolver.cs`, test workspace config.
 
+---
+
+## TODO
+
+- [x] Implement pull diagnostics (`textDocument/diagnostic`, `workspace/diagnostic`) — `pull_diagnostics.rs`
+- [ ] Re-test diagnostics screenshot in `code serve-web` and re-enable the page if fixed
+- [ ] Debug hover in `code serve-web` — verify sidecar loads `TestFixtures.csproj` and returns hover data
+- [ ] Debug go-to-definition in `code serve-web` — verify sidecar resolves symbol locations
+- [ ] Re-enable excluded website pages once their screenshots are fixed (see SCREENSHOT-FIX-PLAN for frontmatter)

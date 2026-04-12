@@ -79,10 +79,10 @@ Analyze ALL files in the solution, not just open ones.
 - [ ] IDE0005 (unused usings) detection
 - [ ] Map analyzer diagnostic codes to LSP `Diagnostic.code` + `codeDescription` URL
 
-## Phase 5: Pull Diagnostics (P1)
+## Phase 5: Pull Diagnostics (P1) — DONE
 
-- [ ] Implement `textDocument/diagnostic` request handler (LSP 3.17 pull model)
-- [ ] Implement `workspace/diagnostic` request handler
+- [x] Implement `textDocument/diagnostic` request handler (LSP 3.17 pull model) — `pull_diagnostics.rs`
+- [x] Implement `workspace/diagnostic` request handler — `pull_diagnostics.rs`
 - [ ] Support `previousResultId` for incremental updates
 - [ ] Report `unchanged` when diagnostics haven't changed
 
@@ -110,8 +110,8 @@ Analyze ALL files in the solution, not just open ones.
 - [x] **Rust host**: Stream diagnostics incrementally by file
 - [ ] **Rust host**: Re-request diagnostics for changed file + dependents
 - [x] **Rust host**: Advertise `workspaceDiagnostics: true` in capabilities
-- [ ] **Rust host**: Implement `textDocument/diagnostic` pull handler (LSP 3.17)
-- [ ] **Rust host**: Implement `workspace/diagnostic` pull handler
+- [x] **Rust host**: Implement `textDocument/diagnostic` pull handler (LSP 3.17) — `pull_diagnostics.rs`
+- [x] **Rust host**: Implement `workspace/diagnostic` pull handler — `pull_diagnostics.rs`
 - [ ] **Rust host**: Support `previousResultId` for incremental pull updates
 - [ ] **Rust host**: Priority queue: active > visible > recent > rest
 - [ ] **Rust host**: Cancel stale analysis on new edits

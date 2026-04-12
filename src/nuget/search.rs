@@ -9,7 +9,9 @@ use tracing::info;
 use super::cache;
 use super::types::{NuGetApiSearchResponse, NuGetApiVersionIndex, PackageInfo};
 
+/// Base URL for the `NuGet` v3 Search API.
 const SEARCH_URL: &str = "https://azuresearch-usnc.nuget.org/query";
+/// Base URL for the `NuGet` v3 flat-container (version index) API.
 const VERSIONS_URL: &str = "https://api.nuget.org/v3-flatcontainer";
 
 /// Search nuget.org for packages. Returns raw API response with `total_hits`.

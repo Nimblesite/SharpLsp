@@ -23,7 +23,9 @@ use tracing::info;
 /// Result of a single-file edit operation.
 #[derive(Debug, Clone)]
 pub struct EditOutcome {
+    /// Whether the file was actually changed on disk.
     pub modified: bool,
+    /// Human-readable description of what happened.
     pub message: String,
 }
 
@@ -39,6 +41,7 @@ pub enum PackageElement {
 }
 
 impl PackageElement {
+    /// Return the XML tag name for this element variant.
     fn tag(self) -> &'static str {
         match self {
             Self::Reference | Self::ReferenceNoVersion => "PackageReference",
@@ -120,6 +123,7 @@ pub fn remove_package(
 
 // ── Core line-oriented upsert ───────────────────────────────────
 
+/// Insert or update a package element in the raw XML string.
 fn upsert(original: &str, package_id: &str, version: &str, element: PackageElement) -> String {
     let tag = element.tag();
     let needle = format!("Include=\"{package_id}\"");
@@ -143,6 +147,7 @@ fn upsert(original: &str, package_id: &str, version: &str, element: PackageEleme
     create_item_group_with(original, package_id, version, element)
 }
 
+/// Find the index of the first line containing `<{tag}` and `needle`.
 fn find_line_with(text: &str, tag: &str, needle: &str) -> Option<usize> {
     text.lines().enumerate().find_map(|(idx, line)| {
         let trimmed = line.trim_start();
@@ -154,6 +159,7 @@ fn find_line_with(text: &str, tag: &str, needle: &str) -> Option<usize> {
     })
 }
 
+/// Replace the version attribute (or strip it) on an existing element line.
 fn update_existing_line(
     original: &str,
     line_idx: usize,
@@ -191,6 +197,7 @@ fn update_existing_line(
     out
 }
 
+/// Replace `Version="..."` in a line, or append it before `/>` if absent.
 fn replace_or_insert_version(line: &str, version: &str) -> String {
     // Find `Version="..."` and replace.
     if let Some(start) = line.find("Version=\"") {
@@ -216,6 +223,7 @@ fn replace_or_insert_version(line: &str, version: &str) -> String {
     line.to_string()
 }
 
+/// Remove the ` Version="..."` attribute from a line.
 fn strip_version_attr(line: &str) -> String {
     if let Some(start) = line.find(" Version=\"") {
         let after = &line[start + " Version=\"".len()..];
@@ -263,6 +271,7 @@ fn detect_content_indent(text: &str, pos: usize, tag: &str) -> String {
     "    ".to_string()
 }
 
+/// Render a new `PackageReference` or `PackageVersion` XML element string.
 fn render_element(
     package_id: &str,
     version: &str,
@@ -299,6 +308,7 @@ fn splice_line(original: &str, pos: usize, new_line: &str) -> String {
     out
 }
 
+/// Create a new `<ItemGroup>` with one package element before `</Project>`.
 fn create_item_group_with(
     original: &str,
     package_id: &str,
@@ -339,6 +349,7 @@ fn create_item_group_with(
     out
 }
 
+/// Remove the first line matching `<{tag} ... Include="{package_id}" ...>`.
 fn remove_entry(original: &str, package_id: &str, element: PackageElement) -> String {
     let tag = element.tag();
     let needle = format!("Include=\"{package_id}\"");

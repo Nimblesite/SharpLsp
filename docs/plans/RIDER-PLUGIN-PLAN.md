@@ -104,7 +104,7 @@ only — Community editions are not supported.
 - [x] Add `gradle/wrapper/gradle-wrapper.properties` + `gradlew` shim
 - [x] Commit a `.gitignore` for `build/`, `.gradle/`, `.idea/`
 - [ ] `./gradlew buildPlugin` produces a non-empty `build/distributions/*.zip`
-      *(in progress — see build log; Phase 3 node stubs block final compile)*
+      *(blocked — Phase 2/3 Kotlin stubs need full implementation)*
 
 ### Phase 2: LSP server integration
 
