@@ -184,12 +184,12 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           VERSION="${{ steps.version.outputs.VERSION }}"
-          BASE="https://github.com/forge-lsp/forge/releases/download/${TAG}"
+          BASE="https://github.com/Nimblesite/forge/releases/download/${TAG}"
           mkdir -p homebrew-tap/Formula
           cat > homebrew-tap/Formula/forge-lsp.rb << EOF
           class ForgeLsp < Formula
             desc "Open-source .NET LSP server — C# and F# intelligence for every editor"
-            homepage "https://github.com/forge-lsp/forge"
+            homepage "https://github.com/Nimblesite/forge"
             license "MIT"
             version "${VERSION}"
 
@@ -254,22 +254,22 @@ jobs:
           {
             "version": "${VERSION}",
             "description": "Open-source .NET LSP server — C# and F# intelligence for every editor",
-            "homepage": "https://github.com/forge-lsp/forge",
+            "homepage": "https://github.com/Nimblesite/forge",
             "license": "MIT",
             "architecture": {
               "64bit": {
-                "url": "https://github.com/forge-lsp/forge/releases/download/${TAG}/forge-lsp-${TAG}-x86_64-pc-windows-msvc.zip",
+                "url": "https://github.com/Nimblesite/forge/releases/download/${TAG}/forge-lsp-${TAG}-x86_64-pc-windows-msvc.zip",
                 "hash": "${SHA_WIN}",
                 "bin": "forge-lsp.exe"
               }
             },
             "checkver": {
-              "github": "https://github.com/forge-lsp/forge"
+              "github": "https://github.com/Nimblesite/forge"
             },
             "autoupdate": {
               "architecture": {
                 "64bit": {
-                  "url": "https://github.com/forge-lsp/forge/releases/download/v\$version/forge-lsp-v\$version-x86_64-pc-windows-msvc.zip"
+                  "url": "https://github.com/Nimblesite/forge/releases/download/v\$version/forge-lsp-v\$version-x86_64-pc-windows-msvc.zip"
                 }
               }
             }

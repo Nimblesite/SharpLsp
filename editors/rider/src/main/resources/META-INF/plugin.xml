@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.forgelsp.rider</id>
     <name>Forge LSP</name>
-    <vendor url="https://github.com/forge-lsp/forge">Forge LSP</vendor>
+    <vendor url="https://github.com/Nimblesite/forge">Forge LSP</vendor>
 
     <!-- Required for every plugin that uses the IntelliJ Platform APIs. -->
     <depends>com.intellij.modules.platform</depends>

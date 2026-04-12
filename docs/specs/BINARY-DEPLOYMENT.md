@@ -303,7 +303,7 @@ suggestions):
    `bucket/forge-lsp.json`. Both are auto-updated by the release workflow
    using `BREW_SCOOP_PAT`. Manual edits are forbidden.
 
-5. **Required secrets on `forge-lsp/forge`:** `BREW_SCOOP_PAT` (PAT with
+5. **Required secrets on `Nimblesite/forge`:** `BREW_SCOOP_PAT` (PAT with
    `contents:write` on both tap repos), `NUGET_API_KEY` (push rights to
    `Forge.Sidecar.*` on nuget.org).
 
@@ -333,7 +333,7 @@ before merging the changes:
 - GitHub repo `Nimblesite/homebrew-tap` (empty, default branch `main`)
 - GitHub repo `Nimblesite/scoop-bucket` (empty, default branch `main`)
 - PAT with `contents:write` on both repos → add as `BREW_SCOOP_PAT` secret
-  on `forge-lsp/forge`
+  on `Nimblesite/forge`
 - NuGet.org account + API key with push rights to `Forge.Sidecar.*` →
   add as `NUGET_API_KEY` secret
 - Reserve package IDs `Forge.Sidecar.CSharp` and `Forge.Sidecar.FSharp` on

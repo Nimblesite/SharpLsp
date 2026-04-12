@@ -101,5 +101,5 @@ class ForgeLspNotFoundException : RuntimeException(
     "forge-lsp binary not found. Install it with " +
         "`make install` (puts it in ~/.local/bin), or set the binary " +
         "path at Settings → Tools → Forge → Server path. " +
-        "See https://github.com/forge-lsp/forge",
+        "See https://github.com/Nimblesite/forge",
 )

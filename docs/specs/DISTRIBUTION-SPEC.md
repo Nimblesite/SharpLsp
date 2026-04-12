@@ -84,8 +84,8 @@ Tag-triggered (`v*`). Three jobs:
 
 | Secret | Purpose | Scope |
 |--------|---------|-------|
-| `BREW_SCOOP_PAT` | PAT with `contents:write` on `Nimblesite/homebrew-tap` and `Nimblesite/scoop-bucket` | `forge-lsp/forge` |
-| `NUGET_API_KEY` | Push rights to `Forge.Sidecar.*` on nuget.org | `forge-lsp/forge` |
+| `BREW_SCOOP_PAT` | PAT with `contents:write` on `Nimblesite/homebrew-tap` and `Nimblesite/scoop-bucket` | `Nimblesite/forge` |
+| `NUGET_API_KEY` | Push rights to `Forge.Sidecar.*` on nuget.org | `Nimblesite/forge` |
 
 ## 7. CI Smoke Test
 

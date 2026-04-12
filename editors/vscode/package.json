@@ -29,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/forge-lsp/forge"
+    "url": "https://github.com/Nimblesite/forge"
   },
   "activationEvents": [
     "onStartupFinished",

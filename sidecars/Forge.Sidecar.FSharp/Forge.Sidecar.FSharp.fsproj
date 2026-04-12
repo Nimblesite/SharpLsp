@@ -9,8 +9,8 @@
     <Authors>Forge contributors</Authors>
     <Description>Forge F# language sidecar — FSharp.Compiler.Service-backed semantic analysis for the Forge LSP server.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/forge-lsp/forge</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/forge-lsp/forge</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Nimblesite/forge</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Nimblesite/forge</PackageProjectUrl>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
