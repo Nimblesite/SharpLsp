@@ -21,16 +21,16 @@ suite('LSP Document Synchronization', () => {
     tmpDir = result.tmpDir;
   });
 
-    suiteTeardown(async () => {
-        await closeAllEditors();
-        teardownLspTestSuite(tmpDir);
-    });
+  suiteTeardown(async () => {
+    await closeAllEditors();
+    teardownLspTestSuite(tmpDir);
+  });
 
-    teardown(async () => {
-        await closeAllEditors();
-    });
+  teardown(async () => {
+    await closeAllEditors();
+  });
 
-    // ── didOpen ──────────────────────────────────────────────────
+  // ── didOpen ──────────────────────────────────────────────────
 
   test('opening a C# file makes it available to the LSP server', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
@@ -42,7 +42,7 @@ suite('LSP Document Synchronization', () => {
     assert.ok(names.includes('OpenTest'), 'Should find OpenTest symbol');
   });
 
-    // ── didChange ────────────────────────────────────────────────
+  // ── didChange ────────────────────────────────────────────────
 
   test('editing a document updates symbols from the LSP', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2 + 10_000);
@@ -58,8 +58,8 @@ suite('LSP Document Synchronization', () => {
     let names = flattenNames(symbols);
     assert.ok(names.includes('Original'), 'Should find Original initially');
 
-        // Edit the document — add a new class.
-        const newContent = `class Original { void OldMethod() { } }
+    // Edit the document — add a new class.
+    const newContent = `class Original { void OldMethod() { } }
 class Added { void NewMethod() { } }`;
     const editApplied = await replaceDocumentContent(doc, newContent);
     assert.ok(editApplied, 'Edit should be applied');
@@ -88,12 +88,12 @@ class Added { void NewMethod() { } }`;
 
     const { doc, uri } = await openCSharpFile(tmpDir, 'change-fold.cs', 'class C { void M() { } }');
 
-        // Initial folding — small file, few ranges.
-        const initial = await waitForFoldingRanges(uri);
-        const initialCount = initial.length;
+    // Initial folding — small file, few ranges.
+    const initial = await waitForFoldingRanges(uri);
+    const initialCount = initial.length;
 
-        // Expand the file with more methods.
-        const expanded = `class C {
+    // Expand the file with more methods.
+    const expanded = `class C {
   void M1() {
     var a = 1;
   }
@@ -104,7 +104,7 @@ class Added { void NewMethod() { } }`;
     var c = 3;
   }
 }`;
-        await replaceDocumentContent(doc, expanded);
+    await replaceDocumentContent(doc, expanded);
 
     // Wait for more folding ranges to appear.
     const updated = await pollUntilResult(
@@ -119,16 +119,16 @@ class Added { void NewMethod() { } }`;
       LSP_RESPONSE_TIMEOUT_MS * 2,
     );
 
-        assert.ok(
-            updated.length > initialCount,
-            `Folding ranges should increase after adding methods: ${initialCount} → ${updated.length}`,
-        );
-    });
+    assert.ok(
+      updated.length > initialCount,
+      `Folding ranges should increase after adding methods: ${initialCount} → ${updated.length}`,
+    );
+  });
 
   test('removing content updates symbols accordingly', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2 + 10_000);
 
-        const initial = `class A { void X() { } }
+    const initial = `class A { void X() { } }
 class B { void Y() { } }`;
     const { doc, uri } = await openCSharpFile(tmpDir, 'remove-test.cs', initial);
 
@@ -157,7 +157,7 @@ class B { void Y() { } }`;
     assert.ok(!names.includes('B'), 'B should be gone after removal');
   });
 
-    // ── didClose ─────────────────────────────────────────────────
+  // ── didClose ─────────────────────────────────────────────────
 
   test('closing a document frees it from the server', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
@@ -165,8 +165,8 @@ class B { void Y() { } }`;
     const { uri } = await openCSharpFile(tmpDir, 'close-test.cs', 'class CloseTest { }');
     await waitForDocumentSymbols(uri);
 
-        // Close the file.
-        await closeAllEditors();
+    // Close the file.
+    await closeAllEditors();
 
     // Opening a different file should still work — server didn't crash.
     const { uri: uri2 } = await openCSharpFile(
@@ -178,7 +178,7 @@ class B { void Y() { } }`;
     assert.ok(symbols.length > 0, 'Server should work after closing a file');
   });
 
-    // ── Full Cycle ───────────────────────────────────────────────
+  // ── Full Cycle ───────────────────────────────────────────────
 
   test('full open-edit-close cycle maintains server stability', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3 + 15_000);
@@ -203,8 +203,8 @@ class B { void Y() { } }`;
     );
     assert.ok(flattenNames(symbols).includes('Step2'), 'Step 2: Should find Step2 after edit');
 
-        // Close.
-        await closeAllEditors();
+    // Close.
+    await closeAllEditors();
 
     // Verify server is still responsive.
     const { uri: finalUri } = await openCSharpFile(tmpDir, 'final.cs', 'class Final { }');
@@ -215,20 +215,17 @@ class B { void Y() { } }`;
     );
   });
 
-    // ── Rapid Edits ──────────────────────────────────────────────
+  // ── Rapid Edits ──────────────────────────────────────────────
 
   test('rapid successive edits resolve correctly', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2 + 10_000);
 
     const { doc, uri } = await openCSharpFile(tmpDir, 'rapid-edit.cs', 'class V0 { }');
 
-        // Fire off several rapid edits.
-        for (let i = 1; i <= 5; i++) {
-            await replaceDocumentContent(
-                doc,
-                `class V${i} { void M${i}() { } }`,
-            );
-        }
+    // Fire off several rapid edits.
+    for (let i = 1; i <= 5; i++) {
+      await replaceDocumentContent(doc, `class V${i} { void M${i}() { } }`);
+    }
 
     // The server should eventually settle on the final version.
     const symbols = await pollUntilResult(
@@ -252,13 +249,13 @@ class B { void Y() { } }`;
 // ── Helpers ──────────────────────────────────────────────────────
 
 function flattenNames(symbols: vscode.DocumentSymbol[]): string[] {
-    const names: string[] = [];
-    function walk(list: vscode.DocumentSymbol[]): void {
-        for (const sym of list) {
-            names.push(sym.name);
-            walk(sym.children);
-        }
+  const names: string[] = [];
+  function walk(list: vscode.DocumentSymbol[]): void {
+    for (const sym of list) {
+      names.push(sym.name);
+      walk(sym.children);
     }
-    walk(symbols);
-    return names;
+  }
+  walk(symbols);
+  return names;
 }

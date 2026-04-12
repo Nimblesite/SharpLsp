@@ -18,16 +18,16 @@ suite('Extension Activation & Configuration', () => {
     tmpDir = result.tmpDir;
   });
 
-    suiteTeardown(async () => {
-        await closeAllEditors();
-        teardownLspTestSuite(tmpDir);
-    });
+  suiteTeardown(async () => {
+    await closeAllEditors();
+    teardownLspTestSuite(tmpDir);
+  });
 
-    teardown(async () => {
-        await closeAllEditors();
-    });
+  teardown(async () => {
+    await closeAllEditors();
+  });
 
-    // ── Activation ───────────────────────────────────────────────
+  // ── Activation ───────────────────────────────────────────────
 
   test('extension is present in the extension list', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
@@ -57,7 +57,7 @@ suite('Extension Activation & Configuration', () => {
     assert.ok(ext?.isActive, 'Extension should be active after opening .fs');
   });
 
-    // ── Commands ─────────────────────────────────────────────────
+  // ── Commands ─────────────────────────────────────────────────
 
   test('forge.restartServer command is registered', async () => {
     const allCommands = await vscode.commands.getCommands(true);
@@ -80,7 +80,7 @@ suite('Extension Activation & Configuration', () => {
     );
   });
 
-    // ── Configuration ────────────────────────────────────────────
+  // ── Configuration ────────────────────────────────────────────
 
   test('forge.server.path setting is contributed', () => {
     const config = vscode.workspace.getConfiguration('forge');
@@ -110,7 +110,7 @@ suite('Extension Activation & Configuration', () => {
     assert.strictEqual(inspect.defaultValue, 'info', 'Default logging level should be info');
   });
 
-    // ── Package Metadata ─────────────────────────────────────────
+  // ── Package Metadata ─────────────────────────────────────────
 
   test('extension has correct display name', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
@@ -134,7 +134,7 @@ suite('Extension Activation & Configuration', () => {
     assert.ok(fsharp, 'Should contribute fsharp language');
   });
 
-    // ── Command Handler Invocation ─────────────────────────────
+  // ── Command Handler Invocation ─────────────────────────────
 
   test('forge.showOutput executes without error', async function () {
     this.timeout(5_000);
@@ -165,7 +165,7 @@ suite('Extension Activation & Configuration', () => {
     assert.ok(symbols.length > 0, 'Server should respond after restart');
   });
 
-    // ── C# Language Configuration ──────────────────────────────
+  // ── C# Language Configuration ──────────────────────────────
 
   test('csharp language contributes .cs extension', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
@@ -187,7 +187,7 @@ suite('Extension Activation & Configuration', () => {
     assert.ok(csharp.extensions?.includes('.csx'), 'csharp should include .csx extension');
   });
 
-    // ── F# Language Configuration ──────────────────────────────
+  // ── F# Language Configuration ──────────────────────────────
 
   test('fsharp language contributes .fs extension', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
@@ -219,7 +219,7 @@ suite('Extension Activation & Configuration', () => {
     assert.ok(fsharp.extensions?.includes('.fsi'), 'fsharp should include .fsi extension');
   });
 
-    // ── Package Metadata Extras ────────────────────────────────
+  // ── Package Metadata Extras ────────────────────────────────
 
   test('extension has MIT license', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
@@ -315,7 +315,7 @@ suite('Extension Activation & Configuration', () => {
     }
   });
 
-    // ── Activation Events ──────────────────────────────────────
+  // ── Activation Events ──────────────────────────────────────
 
   test('extension has workspaceContains activation events', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);

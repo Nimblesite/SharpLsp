@@ -9,7 +9,7 @@ use dashmap::DashMap;
 
 /// Thread-safe cache with per-entry TTL.
 pub struct TtlCache<V> {
-    /// Map of cache keys to (value, insertion_time) pairs.
+    /// Map of cache keys to (value, `insertion_time`) pairs.
     entries: DashMap<String, (V, Instant)>,
     /// Maximum age before an entry is considered stale.
     ttl: Duration,
@@ -48,6 +48,7 @@ impl<V: Clone> TtlCache<V> {
 static SEARCH_CACHE: std::sync::OnceLock<TtlCache<serde_json::Value>> = std::sync::OnceLock::new();
 /// Lazily-initialized cache for `NuGet` version lists (5 min TTL).
 static VERSIONS_CACHE: std::sync::OnceLock<TtlCache<Vec<String>>> = std::sync::OnceLock::new();
+/// Lazily-initialized shared HTTP client for `NuGet` API requests.
 static HTTP_CLIENT: std::sync::OnceLock<Mutex<Option<reqwest::Client>>> =
     std::sync::OnceLock::new();
 

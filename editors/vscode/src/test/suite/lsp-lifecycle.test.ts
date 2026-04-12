@@ -19,16 +19,16 @@ suite('LSP Lifecycle', () => {
     tmpDir = result.tmpDir;
   });
 
-    suiteTeardown(async () => {
-        await closeAllEditors();
-        teardownLspTestSuite(tmpDir);
-    });
+  suiteTeardown(async () => {
+    await closeAllEditors();
+    teardownLspTestSuite(tmpDir);
+  });
 
-    teardown(async () => {
-        await closeAllEditors();
-    });
+  teardown(async () => {
+    await closeAllEditors();
+  });
 
-    // ── Restart ──────────────────────────────────────────────────
+  // ── Restart ──────────────────────────────────────────────────
 
   test('forge.restartServer restarts the LSP server', async function () {
     this.timeout(60_000);
@@ -60,7 +60,7 @@ suite('LSP Lifecycle', () => {
     await vscode.commands.executeCommand('forge.showTraceOutput');
   });
 
-    // ── Status Bar ───────────────────────────────────────────────
+  // ── Status Bar ───────────────────────────────────────────────
 
   test('status bar item is visible after activation', async function () {
     this.timeout(10_000);
@@ -77,7 +77,7 @@ suite('LSP Lifecycle', () => {
     assert.ok(true, 'Extension activated with status bar creation');
   });
 
-    // ── File Cycling ─────────────────────────────────────────────
+  // ── File Cycling ─────────────────────────────────────────────
 
   test('opening and closing multiple C# files works', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3 + 10_000);
@@ -91,7 +91,7 @@ suite('LSP Lifecycle', () => {
     const symbols1 = await waitForDocumentSymbols(uri1);
     assert.ok(symbols1.length > 0, 'File 1 should produce symbols');
 
-        await closeAllEditors();
+    await closeAllEditors();
 
     // Open second file.
     const { uri: uri2 } = await openCSharpFile(
@@ -103,7 +103,7 @@ suite('LSP Lifecycle', () => {
     assert.ok(symbols2.length > 0, 'File 2 should produce symbols');
     assert.ok(flattenNames(symbols2).includes('Cycle2'), 'File 2 symbols should contain Cycle2');
 
-        await closeAllEditors();
+    await closeAllEditors();
 
     // Open third file.
     const { uri: uri3 } = await openCSharpFile(
@@ -122,11 +122,11 @@ suite('LSP Lifecycle', () => {
 
     const { uri: uriB } = await openCSharpFile(tmpDir, 'simB.cs', 'class Beta { void Y() { } }');
 
-        const symbolsA = await waitForDocumentSymbols(uriA);
-        const symbolsB = await waitForDocumentSymbols(uriB);
+    const symbolsA = await waitForDocumentSymbols(uriA);
+    const symbolsB = await waitForDocumentSymbols(uriB);
 
-        const namesA = flattenNames(symbolsA);
-        const namesB = flattenNames(symbolsB);
+    const namesA = flattenNames(symbolsA);
+    const namesB = flattenNames(symbolsB);
 
     assert.ok(namesA.includes('Alpha'), 'File A should contain Alpha');
     assert.ok(namesB.includes('Beta'), 'File B should contain Beta');
@@ -134,7 +134,7 @@ suite('LSP Lifecycle', () => {
     assert.ok(!namesB.includes('Alpha'), 'File B should NOT contain Alpha');
   });
 
-    // ── Error Recovery ───────────────────────────────────────────
+  // ── Error Recovery ───────────────────────────────────────────
 
   test('server handles rapid file open/close gracefully', async function () {
     this.timeout(30_000);
@@ -155,7 +155,7 @@ suite('LSP Lifecycle', () => {
     assert.ok(symbols.length > 0, 'Server should still respond after rapid open/close');
   });
 
-    // ── Double Restart ─────────────────────────────────────────
+  // ── Double Restart ─────────────────────────────────────────
 
   test('restarting twice in succession does not crash', async function () {
     this.timeout(90_000);
@@ -177,7 +177,7 @@ suite('LSP Lifecycle', () => {
     assert.ok(symbols.length > 0, 'Server should respond after double restart');
   });
 
-    // ── Restart With Different Content ─────────────────────────
+  // ── Restart With Different Content ─────────────────────────
 
   test('restart preserves ability to handle new files', async function () {
     this.timeout(60_000);
@@ -205,7 +205,7 @@ suite('LSP Lifecycle', () => {
     assert.ok(names.includes('NewMethod'), 'New file methods should be resolved');
   });
 
-    // ── Large File Handling ────────────────────────────────────
+  // ── Large File Handling ────────────────────────────────────
 
   test('server handles a file with many declarations', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
@@ -228,7 +228,7 @@ suite('LSP Lifecycle', () => {
     assert.ok(names.length >= 21, `Expected ≥21 symbols, got ${names.length}`);
   });
 
-    // ── Empty File ─────────────────────────────────────────────
+  // ── Empty File ─────────────────────────────────────────────
 
   test('server handles empty file without crashing', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
@@ -244,7 +244,7 @@ suite('LSP Lifecycle', () => {
     assert.strictEqual(count, 0, 'Empty file should produce zero symbols');
   });
 
-    // ── Malformed File ─────────────────────────────────────────
+  // ── Malformed File ─────────────────────────────────────────
 
   test('server handles malformed C# without crashing', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
@@ -268,13 +268,13 @@ suite('LSP Lifecycle', () => {
 // ── Helpers ──────────────────────────────────────────────────────
 
 function flattenNames(symbols: vscode.DocumentSymbol[]): string[] {
-    const names: string[] = [];
-    function walk(list: vscode.DocumentSymbol[]): void {
-        for (const sym of list) {
-            names.push(sym.name);
-            walk(sym.children);
-        }
+  const names: string[] = [];
+  function walk(list: vscode.DocumentSymbol[]): void {
+    for (const sym of list) {
+      names.push(sym.name);
+      walk(sym.children);
     }
-    walk(symbols);
-    return names;
+  }
+  walk(symbols);
+  return names;
 }

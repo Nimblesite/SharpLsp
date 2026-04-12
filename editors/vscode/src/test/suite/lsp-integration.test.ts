@@ -21,14 +21,14 @@ suite('LSP Integration — Document Symbols', () => {
     tmpDir = result.tmpDir;
   });
 
-    suiteTeardown(async () => {
-        await closeAllEditors();
-        teardownLspTestSuite(tmpDir);
-    });
+  suiteTeardown(async () => {
+    await closeAllEditors();
+    teardownLspTestSuite(tmpDir);
+  });
 
-    teardown(async () => {
-        await closeAllEditors();
-    });
+  teardown(async () => {
+    await closeAllEditors();
+  });
 
   test('returns class and method symbols for a C# file', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
@@ -149,14 +149,14 @@ suite('LSP Integration — Folding Ranges', () => {
     tmpDir = result.tmpDir;
   });
 
-    suiteTeardown(async () => {
-        await closeAllEditors();
-        teardownLspTestSuite(tmpDir);
-    });
+  suiteTeardown(async () => {
+    await closeAllEditors();
+    teardownLspTestSuite(tmpDir);
+  });
 
-    teardown(async () => {
-        await closeAllEditors();
-    });
+  teardown(async () => {
+    await closeAllEditors();
+  });
 
   test('returns folding ranges for class and method bodies', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
@@ -175,11 +175,8 @@ suite('LSP Integration — Folding Ranges', () => {
     const { uri } = await openCSharpFile(tmpDir, 'fold.cs', content);
     const ranges = await waitForFoldingRanges(uri);
 
-        assert.ok(
-            ranges.length >= 3,
-            `Expected ≥3 folding ranges, got ${ranges.length}`,
-        );
-    });
+    assert.ok(ranges.length >= 3, `Expected ≥3 folding ranges, got ${ranges.length}`);
+  });
 
   test('returns folding ranges for region directives', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
@@ -228,11 +225,11 @@ namespace Test {
     const { uri } = await openCSharpFile(tmpDir, 'nested-fold.cs', content);
     const ranges = await waitForFoldingRanges(uri);
 
-        assert.ok(
-            ranges.length >= 4,
-            `Expected ≥4 folding ranges for nested classes, got ${ranges.length}`,
-        );
-    });
+    assert.ok(
+      ranges.length >= 4,
+      `Expected ≥4 folding ranges for nested classes, got ${ranges.length}`,
+    );
+  });
 });
 
 suite('LSP Integration — Selection Ranges', () => {
@@ -244,14 +241,14 @@ suite('LSP Integration — Selection Ranges', () => {
     tmpDir = result.tmpDir;
   });
 
-    suiteTeardown(async () => {
-        await closeAllEditors();
-        teardownLspTestSuite(tmpDir);
-    });
+  suiteTeardown(async () => {
+    await closeAllEditors();
+    teardownLspTestSuite(tmpDir);
+  });
 
-    teardown(async () => {
-        await closeAllEditors();
-    });
+  teardown(async () => {
+    await closeAllEditors();
+  });
 
   test('returns selection ranges expanding from cursor position', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
@@ -264,9 +261,9 @@ suite('LSP Integration — Selection Ranges', () => {
 }`;
     const { uri } = await openCSharpFile(tmpDir, 'sel.cs', content);
 
-        // Position on "x" in "var x = 42;"
-        const position = new vscode.Position(3, 10);
-        const ranges = await waitForSelectionRanges(uri, [position]);
+    // Position on "x" in "var x = 42;"
+    const position = new vscode.Position(3, 10);
+    const ranges = await waitForSelectionRanges(uri, [position]);
 
     assert.ok(ranges.length > 0, 'Should return at least one selection range');
 
@@ -288,11 +285,11 @@ suite('LSP Integration — Selection Ranges', () => {
 }`;
     const { uri } = await openCSharpFile(tmpDir, 'sel-multi.cs', content);
 
-        const positions = [
-            new vscode.Position(1, 6), // on 'a'
-            new vscode.Position(2, 6), // on 'b'
-        ];
-        const ranges = await waitForSelectionRanges(uri, positions);
+    const positions = [
+      new vscode.Position(1, 6), // on 'a'
+      new vscode.Position(2, 6), // on 'b'
+    ];
+    const ranges = await waitForSelectionRanges(uri, positions);
 
     assert.strictEqual(ranges.length, 2, 'Should return one selection range per position');
   });
@@ -332,13 +329,13 @@ suite('LSP Integration — Fixture Files', () => {
     fixtureDir = path.resolve(__dirname, '../../../test-fixtures/workspace');
   });
 
-    suiteTeardown(async () => {
-        await closeAllEditors();
-    });
+  suiteTeardown(async () => {
+    await closeAllEditors();
+  });
 
-    teardown(async () => {
-        await closeAllEditors();
-    });
+  teardown(async () => {
+    await closeAllEditors();
+  });
 
   test('Calculator.cs returns symbols for class, methods, properties', async function () {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
@@ -346,8 +343,8 @@ suite('LSP Integration — Fixture Files', () => {
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
 
-        const symbols = await waitForDocumentSymbols(uri);
-        const names = flattenSymbolNames(symbols);
+    const symbols = await waitForDocumentSymbols(uri);
+    const names = flattenSymbolNames(symbols);
 
     assert.ok(names.includes('Calculator'), 'Should find Calculator class');
     assert.ok(names.includes('Add'), 'Should find Add method');
@@ -363,11 +360,8 @@ suite('LSP Integration — Fixture Files', () => {
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
 
-        const ranges = await waitForFoldingRanges(uri);
-        assert.ok(
-            ranges.length >= 5,
-            `Expected ≥5 folding ranges, got ${ranges.length}`,
-        );
+    const ranges = await waitForFoldingRanges(uri);
+    assert.ok(ranges.length >= 5, `Expected ≥5 folding ranges, got ${ranges.length}`);
 
     const regionRanges = ranges.filter((r) => r.kind === vscode.FoldingRangeKind.Region);
     assert.ok(
@@ -382,8 +376,8 @@ suite('LSP Integration — Fixture Files', () => {
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
 
-        const symbols = await waitForDocumentSymbols(uri);
-        const names = flattenSymbolNames(symbols);
+    const symbols = await waitForDocumentSymbols(uri);
+    const names = flattenSymbolNames(symbols);
 
     assert.ok(names.includes('Outer'), 'Should find Outer');
     assert.ok(names.includes('Inner'), 'Should find Inner');
@@ -412,27 +406,27 @@ suite('LSP Integration — Fixture Files', () => {
 // ── Helpers ──────────────────────────────────────────────────────
 
 function flattenSymbolNames(symbols: vscode.DocumentSymbol[]): string[] {
-    const names: string[] = [];
-    function walk(list: vscode.DocumentSymbol[]): void {
-        for (const sym of list) {
-            names.push(sym.name);
-            if (sym.children.length > 0) {
-                walk(sym.children);
-            }
-        }
+  const names: string[] = [];
+  function walk(list: vscode.DocumentSymbol[]): void {
+    for (const sym of list) {
+      names.push(sym.name);
+      if (sym.children.length > 0) {
+        walk(sym.children);
+      }
     }
-    walk(symbols);
-    return names;
+  }
+  walk(symbols);
+  return names;
 }
 
 function findSymbol(
-    symbols: vscode.DocumentSymbol[],
-    name: string,
+  symbols: vscode.DocumentSymbol[],
+  name: string,
 ): vscode.DocumentSymbol | undefined {
-    for (const sym of symbols) {
-        if (sym.name === name) return sym;
-        const found = findSymbol(sym.children, name);
-        if (found) return found;
-    }
-    return undefined;
+  for (const sym of symbols) {
+    if (sym.name === name) return sym;
+    const found = findSymbol(sym.children, name);
+    if (found) return found;
+  }
+  return undefined;
 }

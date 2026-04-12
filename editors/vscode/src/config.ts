@@ -7,7 +7,7 @@ import {
 } from './constants.js';
 
 function section(): ReturnType<typeof workspace.getConfiguration> {
-    return workspace.getConfiguration(CONFIG_SECTION);
+  return workspace.getConfiguration(CONFIG_SECTION);
 }
 
 /** User-configured path to the forge-lsp binary, or empty string. */
@@ -17,7 +17,7 @@ export function serverPath(): string {
 
 /** Extra CLI arguments to pass to the server process. */
 export function serverExtraArgs(): readonly string[] {
-    return section().get<string[]>(CONFIG_SERVER_EXTRA_ARGS) ?? [];
+  return section().get<string[]>(CONFIG_SERVER_EXTRA_ARGS) ?? [];
 }
 
 /** Logging level forwarded to the server as `RUST_LOG`. */

@@ -29,14 +29,14 @@ function fileLog(level: string, message: string): void {
 
 /** Lazily create and return the main output channel. */
 export function output(): OutputChannel {
-    outputChannel ??= window.createOutputChannel(OUTPUT_CHANNEL_NAME);
-    return outputChannel;
+  outputChannel ??= window.createOutputChannel(OUTPUT_CHANNEL_NAME);
+  return outputChannel;
 }
 
 /** Lazily create and return the LSP trace channel. */
 export function trace(): OutputChannel {
-    traceChannel ??= window.createOutputChannel(TRACE_CHANNEL_NAME);
-    return traceChannel;
+  traceChannel ??= window.createOutputChannel(TRACE_CHANNEL_NAME);
+  return traceChannel;
 }
 
 /** Log a timestamped message to the main output channel + file. */
@@ -55,20 +55,20 @@ export function traceInfo(message: string): void {
 
 /** Log an error message to the main output channel + file. */
 export function error(message: string): void {
-    const ts = new Date().toISOString();
-    output().appendLine(`[${ts}] ERROR: ${message}`);
-    fileLog("ERROR", message);
+  const ts = new Date().toISOString();
+  output().appendLine(`[${ts}] ERROR: ${message}`);
+  fileLog('ERROR', message);
 }
 
 /** Return the path to the log file for diagnostics. */
 export function logFilePath(): string {
-    return LOG_FILE;
+  return LOG_FILE;
 }
 
 /** Dispose both channels. */
 export function dispose(): void {
-    outputChannel?.dispose();
-    traceChannel?.dispose();
-    outputChannel = undefined;
-    traceChannel = undefined;
+  outputChannel?.dispose();
+  traceChannel?.dispose();
+  outputChannel = undefined;
+  traceChannel = undefined;
 }

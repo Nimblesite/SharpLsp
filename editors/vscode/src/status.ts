@@ -22,10 +22,10 @@ const ICONS: Record<ServerState, string> = {
 };
 
 const TOOLTIPS: Record<ServerState, string> = {
-    [ServerState.Starting]: `${EXTENSION_NAME}: Starting…`,
-    [ServerState.Running]: `${EXTENSION_NAME}: Running — click to restart`,
-    [ServerState.Stopped]: `${EXTENSION_NAME}: Stopped`,
-    [ServerState.Error]: `${EXTENSION_NAME}: Error — click to restart`,
+  [ServerState.Starting]: `${EXTENSION_NAME}: Starting…`,
+  [ServerState.Running]: `${EXTENSION_NAME}: Running — click to restart`,
+  [ServerState.Stopped]: `${EXTENSION_NAME}: Stopped`,
+  [ServerState.Error]: `${EXTENSION_NAME}: Error — click to restart`,
 };
 
 const COLORS: Record<ServerState, ThemeColor | undefined> = {
@@ -36,22 +36,22 @@ const COLORS: Record<ServerState, ThemeColor | undefined> = {
 };
 
 export class ForgeStatusBar implements Disposable {
-    private readonly item: StatusBarItem;
+  private readonly item: StatusBarItem;
 
-    constructor() {
-        this.item = window.createStatusBarItem(StatusBarAlignment.Left, 100);
-        this.item.command = CMD_RESTART_SERVER;
-        this.setState(ServerState.Starting);
-        this.item.show();
-    }
+  constructor() {
+    this.item = window.createStatusBarItem(StatusBarAlignment.Left, 100);
+    this.item.command = CMD_RESTART_SERVER;
+    this.setState(ServerState.Starting);
+    this.item.show();
+  }
 
-    public setState(state: ServerState): void {
-        this.item.text = `${ICONS[state]} ${EXTENSION_NAME}`;
-        this.item.tooltip = TOOLTIPS[state];
-        this.item.color = COLORS[state];
-    }
+  public setState(state: ServerState): void {
+    this.item.text = `${ICONS[state]} ${EXTENSION_NAME}`;
+    this.item.tooltip = TOOLTIPS[state];
+    this.item.color = COLORS[state];
+  }
 
-    public dispose(): void {
-        this.item.dispose();
-    }
+  public dispose(): void {
+    this.item.dispose();
+  }
 }

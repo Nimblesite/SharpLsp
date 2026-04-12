@@ -15,18 +15,18 @@ const execFileAsync = promisify(execFile);
 // ── Types ────────────────────────────────────────────────────────
 
 export interface NuGetPackage {
-    readonly name: string;
-    readonly version: string;
+  readonly name: string;
+  readonly version: string;
 }
 
 export interface ProjectReference {
-    readonly name: string;
-    readonly includePath: string;
+  readonly name: string;
+  readonly includePath: string;
 }
 
 export interface ProjectDependencies {
-    readonly nugetPackages: NuGetPackage[];
-    readonly projectReferences: ProjectReference[];
+  readonly nugetPackages: NuGetPackage[];
+  readonly projectReferences: ProjectReference[];
 }
 
 // ── Parsing ──────────────────────────────────────────────────────
@@ -82,8 +82,8 @@ function extractAttribute(attrs: string, name: string): string | undefined {
 
 /** Remove a NuGet package from a project via `dotnet remove`. */
 export async function removeNuGetPackage(
-    projectPath: string,
-    packageName: string,
+  projectPath: string,
+  packageName: string,
 ): Promise<string | undefined> {
   try {
     log.info(`Removing NuGet package ${packageName} from ${projectPath}`);
@@ -98,8 +98,8 @@ export async function removeNuGetPackage(
 
 /** Remove a project reference from a project via `dotnet remove`. */
 export async function removeProjectReference(
-    projectPath: string,
-    referencePath: string,
+  projectPath: string,
+  referencePath: string,
 ): Promise<string | undefined> {
   try {
     log.info(`Removing project reference ${referencePath} from ${projectPath}`);

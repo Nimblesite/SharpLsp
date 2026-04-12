@@ -1,5 +1,5 @@
 export function buildCss(): string {
-    return `<style>
+  return `<style>
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { display: inline-block; animation: spin 1s linear infinite; transform-origin: center; }
 .spinner { display: inline-flex; align-items: center; gap: 6px; color: #9FCAFF; }

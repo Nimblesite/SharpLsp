@@ -16,8 +16,8 @@ import { type ForgeStatusBar, ServerState } from './status.js';
 
 /** Create, start, and return a new `LanguageClient`. */
 export async function start(
-    context: ExtensionContext,
-    statusBar: ForgeStatusBar,
+  context: ExtensionContext,
+  statusBar: ForgeStatusBar,
 ): Promise<LanguageClient | undefined> {
   const serverPath = resolveServerPath(context);
   if (serverPath === undefined) {
@@ -29,18 +29,18 @@ export async function start(
     return undefined;
   }
 
-    log.info(`Server binary: ${serverPath}`);
+  log.info(`Server binary: ${serverPath}`);
 
-    const run: Executable = {
-        command: serverPath,
-        args: [...config.serverExtraArgs()],
-        transport: TransportKind.stdio,
-        options: {
-            env: { ...process.env, RUST_LOG: config.loggingLevel() },
-        },
-    };
+  const run: Executable = {
+    command: serverPath,
+    args: [...config.serverExtraArgs()],
+    transport: TransportKind.stdio,
+    options: {
+      env: { ...process.env, RUST_LOG: config.loggingLevel() },
+    },
+  };
 
-    const serverOptions: ServerOptions = { run, debug: run };
+  const serverOptions: ServerOptions = { run, debug: run };
 
   const clientOptions: LanguageClientOptions = {
     documentSelector: [
@@ -55,18 +55,18 @@ export async function start(
 
   const client = new LanguageClient(EXTENSION_ID, EXTENSION_NAME, serverOptions, clientOptions);
 
-    wireStatusBar(client, statusBar, context);
+  wireStatusBar(client, statusBar, context);
 
-    statusBar.setState(ServerState.Starting);
-    await client.start();
-    return client;
+  statusBar.setState(ServerState.Starting);
+  await client.start();
+  return client;
 }
 
 /** Wire client state changes to the status bar indicator. */
 function wireStatusBar(
-    client: LanguageClient,
-    statusBar: ForgeStatusBar,
-    context: ExtensionContext,
+  client: LanguageClient,
+  statusBar: ForgeStatusBar,
+  context: ExtensionContext,
 ): void {
   const listener: Disposable = client.onDidChangeState((event) => {
     switch (event.newState) {
