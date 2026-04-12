@@ -362,6 +362,53 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
             Assert.NotEmpty(preview.Formatted)
     }
 
+    // ── References ──────────────────────────────────────────────
+
+    [<Fact>]
+    member _.``references finds usages of add``() = task {
+        let payload =
+            MessagePackSerializer.Serialize(
+                { ReferencesRequest.FilePath = fixture.Src
+                  Line = 6; Character = 4
+                  IncludeDeclaration = true })
+        let! r = fixture.Send("textDocument/references", payload)
+        Assert.Null(r.Error)
+        let loc = deserialize<LocationListResult>(r.Payload)
+        Assert.NotEmpty(loc.Locations)
+    }
+
+    // ── Document Highlights ────────────────────────────────────
+
+    [<Fact>]
+    member _.``document highlight finds occurrences``() = task {
+        let! r = fixture.Send("textDocument/documentHighlight", posPayload fixture.Src 6 4)
+        Assert.Null(r.Error)
+        let hl = deserialize<DocumentHighlightListResult>(r.Payload)
+        Assert.NotEmpty(hl.Highlights)
+    }
+
+    // ── Semantic Tokens ────────────────────────────────────────
+
+    [<Fact>]
+    member _.``semantic tokens full returns data``() = task {
+        let! r = fixture.Send("textDocument/semanticTokens/full", posPayload fixture.Src 0 0)
+        Assert.Null(r.Error)
+        let tokens = deserialize<SemanticTokensResult>(r.Payload)
+        Assert.NotEmpty(tokens.Data)
+    }
+
+    // ── Inlay Hints ────────────────────────────────────────────
+
+    [<Fact>]
+    member _.``inlay hints returns hints for range``() = task {
+        let payload =
+            MessagePackSerializer.Serialize(
+                { InlayHintRequest.FilePath = fixture.Src
+                  StartLine = 0; EndLine = 30 })
+        let! r = fixture.Send("textDocument/inlayHint", payload)
+        Assert.Null(r.Error)
+    }
+
 // ── Workspace-level tests (real FCS, no IPC) ────────────────────
 
 [<Fact>]

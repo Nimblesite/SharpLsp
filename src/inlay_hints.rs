@@ -2,23 +2,29 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use lsp_server::Request;
 use lsp_types::{InlayHint, InlayHintKind, InlayHintLabel, InlayHintParams, Position};
 use tracing::{debug, warn};
 
 use crate::sidecar::manager::SidecarManager;
+use crate::vfs::Vfs;
 
 /// Handle `textDocument/inlayHint`.
 pub fn handle_inlay_hint(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
+    vfs: &Vfs,
 ) -> Result<serde_json::Value> {
+    let params: InlayHintParams = serde_json::from_value(req.params)?;
+    let uri = &params.text_document.uri;
+    if vfs.get_content(uri).is_none() {
+        bail!("Document not found: {uri}");
+    }
     let Some(sidecar) = sidecar else {
         return Ok(serde_json::Value::Null);
     };
-    let params: InlayHintParams = serde_json::from_value(req.params)?;
     let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
 
     let request = SidecarInlayHintReq {

@@ -288,6 +288,7 @@ fn build_capabilities() -> ServerCapabilities {
             ),
         ),
         inlay_hint_provider: Some(OneOf::Left(true)),
+        type_hierarchy_provider: Some(lsp_types::TypeHierarchyServerCapability::Simple(true)),
         workspace_symbol_provider: Some(OneOf::Left(true)),
         call_hierarchy_provider: Some(lsp_types::CallHierarchyServerCapability::Simple(true)),
         code_lens_provider: Some(lsp_types::CodeLensOptions {
@@ -511,7 +512,7 @@ fn handle_request(
         // Inlay hints
         InlayHintRequest::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            inlay_hints::handle_inlay_hint(req, runtime, sidecar)
+            inlay_hints::handle_inlay_hint(req, runtime, sidecar, vfs)
         }
         // Code lens
         CodeLensRequest::METHOD => {

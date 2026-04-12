@@ -4,7 +4,7 @@
     <DataCollectors>
       <DataCollector friendlyName="XPlat Code Coverage">
         <Configuration>
-          <Format>json,lcov,opencover,cobertura</Format>
+          <Format>cobertura</Format>
           <Exclude>[*]*.Generated*,[*]*.g.*</Exclude>
           <ExcludeByFile>**/obj/**/*,**/bin/**/*,**/Migrations/**/*,**/FormattingResolver.cs</ExcludeByFile>
           <ExcludeByAttribute>
