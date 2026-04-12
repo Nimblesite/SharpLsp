@@ -153,6 +153,8 @@ jobs:
 
       - uses: taiki-e/install-action@cargo-llvm-cov
 
+      - uses: taiki-e/install-action@nextest
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'

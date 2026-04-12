@@ -249,13 +249,13 @@ test: build test-rust test-zed test-vsix test-dotnet
 	@echo "==> All tests passed. All coverage thresholds met."
 
 test-rust: build-dotnet
-	@echo "==> Running forge-lsp tests with coverage..."
-	cargo llvm-cov --json --output-path target/coverage-rust.json
+	@echo "==> Running forge-lsp tests with coverage (nextest, fail-fast)..."
+	cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast
 	@$(CHECK_COV) forge-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
 test-zed: build-zed
-	@echo "==> Running Zed extension tests..."
-	cargo test --manifest-path $(ZED_DIR)/Cargo.toml
+	@echo "==> Running Zed extension tests (nextest, fail-fast)..."
+	cargo nextest run --manifest-path $(ZED_DIR)/Cargo.toml --fail-fast
 
 test-vsix: build-rust build-dotnet build-vsix
 	@echo "==> Staging forge-lsp + sidecars at $(PREFIX) so VS Code tests find them via the install priority chain..."
