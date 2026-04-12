@@ -25,6 +25,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -5261,21 +5262,31 @@ fn test_profiler_find_gc_roots_latency() {
 // These tests start a REAL .NET process (ProfileTarget), attach the REAL
 // dotnet diagnostic tools via the REAL LSP server, and verify REAL output.
 
-/// Build the `ProfileTarget` .NET app and return the path to its binary.
+/// Build the `ProfileTarget` .NET app once and return the path to its binary.
+/// Uses `OnceLock` so concurrent test threads share a single build.
 fn build_profile_target() -> std::path::PathBuf {
-    let project_dir =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ProfileTarget");
+    static BINARY: OnceLock<std::path::PathBuf> = OnceLock::new();
+    BINARY
+        .get_or_init(|| {
+            let project_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/ProfileTarget");
 
-    let status = Command::new("dotnet")
-        .args(["build", "-c", "Release", "--nologo", "-v", "q"])
-        .current_dir(&project_dir)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .status()
-        .expect("failed to run dotnet build");
-    assert!(status.success(), "ProfileTarget build failed");
+            let output = Command::new("dotnet")
+                .args(["build", "-c", "Release", "--nologo", "-v", "q"])
+                .current_dir(&project_dir)
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .output()
+                .expect("failed to run dotnet build");
+            assert!(
+                output.status.success(),
+                "ProfileTarget build failed: {}",
+                String::from_utf8_lossy(&output.stderr),
+            );
 
-    project_dir.join("bin/Release/net10.0/ProfileTarget")
+            project_dir.join("bin/Release/net10.0/ProfileTarget")
+        })
+        .clone()
 }
 
 /// Start the `ProfileTarget` process. Waits for `READY` on stdout before returning.
