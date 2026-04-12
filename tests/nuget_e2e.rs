@@ -138,10 +138,28 @@ impl Drop for LspClient {
     }
 }
 
-/// Absolute path to the `NuGetTest` test fixture project.
+/// Absolute path to the `NuGetTest` test fixture project (read-only — never mutate).
+///
+/// Tests that mutate the project file (install/uninstall) MUST use
+/// [`isolated_nuget_project`] to copy the fixture into a temp dir first,
+/// otherwise nextest's parallel execution races between mutating and
+/// reading tests against the same shared file.
 fn nuget_test_project() -> String {
     let manifest = env!("CARGO_MANIFEST_DIR");
     format!("{manifest}/tests/fixtures/NuGetTest/NuGetTest.csproj")
+}
+
+/// Copies the `NuGetTest` fixture into a fresh temp dir and returns
+/// `(TempDir, csproj path)`. The `TempDir` must be kept alive for the
+/// duration of the test — when it drops, the directory is removed.
+fn isolated_nuget_project() -> (TempDir, String) {
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let src = Path::new(manifest).join("tests/fixtures/NuGetTest/NuGetTest.csproj");
+    let dst = tmp.path().join("NuGetTest.csproj");
+    std::fs::copy(&src, &dst).expect("copy fixture csproj into tempdir");
+    let dst_str = dst.to_string_lossy().into_owned();
+    (tmp, dst_str)
 }
 
 // ── forge/nuget/search ──────────────────────────────────────────
@@ -334,7 +352,9 @@ fn nuget_install_and_uninstall_package() {
     let mut client = LspClient::start();
     client.initialize();
 
-    let project = nuget_test_project();
+    // Use an isolated copy of the fixture so this mutating test does not
+    // race against parallel read-only tests touching the shared csproj.
+    let (_tmp, project) = isolated_nuget_project();
 
     // Install a small package that isn't already in the fixture.
     let install_resp = client.request(
