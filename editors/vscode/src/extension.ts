@@ -222,19 +222,19 @@ function registerDependencyCommands(context: ExtensionContext): void {
     context.subscriptions.push(
         commands.registerCommand(
             CMD_REMOVE_NUGET_PACKAGE,
-            async (node: ExplorerNode) => {
+            async (node: ExplorerNode | undefined) => {
                 await confirmAndRemoveDependency(node, "package");
             },
         ),
         commands.registerCommand(
             CMD_REMOVE_PROJECT_REFERENCE,
-            async (node: ExplorerNode) => {
+            async (node: ExplorerNode | undefined) => {
                 await confirmAndRemoveDependency(node, "reference");
             },
         ),
         commands.registerCommand(
             CMD_BROWSE_NUGET_PACKAGES,
-            (node: ExplorerNode) => {
+            (node: ExplorerNode | undefined) => {
                 browseNuGetPackages(node, context);
             },
         ),
@@ -242,10 +242,10 @@ function registerDependencyCommands(context: ExtensionContext): void {
 }
 
 function browseNuGetPackages(
-    node: ExplorerNode,
+    node: ExplorerNode | undefined,
     context: ExtensionContext,
 ): void {
-    if (node.projectFilePath === undefined) {
+    if (node?.projectFilePath === undefined) {
         void window.showWarningMessage("No project file path available.");
         return;
     }
@@ -386,10 +386,10 @@ interface SortMembersResponse {
 }
 
 async function confirmAndRemoveDependency(
-    node: ExplorerNode,
+    node: ExplorerNode | undefined,
     kind: "package" | "reference",
 ): Promise<void> {
-    if (node.projectFilePath === undefined) return;
+    if (node?.projectFilePath === undefined) return;
     if (node.referenceName === undefined) return;
     const rawLabel = node.label;
     const displayName =

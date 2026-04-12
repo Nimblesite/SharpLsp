@@ -292,15 +292,15 @@ suite("Extension Activation & Configuration", () => {
         assert.match(ext.packageJSON.version, /^\d+\.\d+\.\d+/);
     });
 
-    test("extension contributes 26 commands", () => {
+    test("extension contributes 28 commands", () => {
         const ext = vscode.extensions.getExtension(EXTENSION_ID);
         assert.ok(ext);
         const cmds: { command: string }[] =
             ext.packageJSON.contributes?.commands ?? [];
         assert.strictEqual(
             cmds.length,
-            26,
-            "Should contribute exactly 26 commands",
+            28,
+            "Should contribute exactly 28 commands",
         );
         const ids = cmds.map((c) => c.command);
         assert.ok(ids.includes("forge.restartServer"));

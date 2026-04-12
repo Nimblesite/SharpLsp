@@ -334,10 +334,7 @@ fn sidecar_launch(
 ) -> (String, Vec<String>) {
     if find_on_path(tool_command).is_some() {
         info!(tool = %tool_command, "Using dotnet-tool sidecar from PATH");
-        return (
-            tool_command.to_string(),
-            vec![socket_path.to_string()],
-        );
+        return (tool_command.to_string(), vec![socket_path.to_string()]);
     }
 
     if let Some(exe) = installed_sidecar_exe(subdir, name) {

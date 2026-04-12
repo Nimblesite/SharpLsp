@@ -38,6 +38,10 @@ export async function loadTargetsWithDefaults(
         }
     }
 
+    if (!targets.some((t) => t.path === initialProjectPath)) {
+        targets = [synthesizeFallback(initialProjectPath), ...targets];
+    }
+
     const persisted = context.workspaceState.get<string>(LAST_TARGET_KEY);
     const persistedMatch = targets.find((t) => t.id === persisted);
     const initialMatch = targets.find((t) => t.path === initialProjectPath);

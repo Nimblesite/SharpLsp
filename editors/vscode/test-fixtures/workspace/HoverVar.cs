@@ -1,10 +1,6 @@
 namespace HoverVar
 {
-    public class Gadget
-    {
-        public int Size { get; set; }
-    }
-
+    public class Gadget { public int Size { get; set; } }
     public class Runner
     {
         public void Go()

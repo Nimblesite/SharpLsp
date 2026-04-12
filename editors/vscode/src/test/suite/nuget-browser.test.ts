@@ -213,10 +213,19 @@ suite("NuGet Browser", () => {
     function getExtensionContext(): vscode.ExtensionContext {
         const ext = vscode.extensions.getExtension(EXTENSION_ID);
         assert.ok(ext?.isActive, "Extension must be active");
-        // Pull the context out of the activate-time `subscriptions` reference
-        // via the explorer provider. Simpler: use a dummy context shim.
+        const store = new Map<string, unknown>();
+        const workspaceState = {
+            get: (key: string): unknown => store.get(key),
+            update: (key: string, value: unknown): Thenable<void> => {
+                if (value === undefined) store.delete(key);
+                else store.set(key, value);
+                return Promise.resolve();
+            },
+            keys: (): readonly string[] => Array.from(store.keys()),
+        };
         return {
             subscriptions: [],
+            workspaceState,
         } as unknown as vscode.ExtensionContext;
     }
 

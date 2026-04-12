@@ -138,6 +138,7 @@ export class NuGetBrowserPanel {
     }
 
     public dispose(): void {
+        NuGetBrowserPanel.instance = undefined;
         this.panel.dispose();
     }
 
