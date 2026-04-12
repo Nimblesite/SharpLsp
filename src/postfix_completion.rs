@@ -360,4 +360,46 @@ mod tests {
         let items = get_postfix_completions("x.notnull", 0, 9, LangId::FSharp);
         assert!(items.is_empty());
     }
+
+    #[test]
+    fn returns_none_for_dot_with_empty_expr() {
+        // Leading dot — no expression before it.
+        assert!(extract_postfix_context(".if", 3).is_none());
+    }
+
+    #[test]
+    fn returns_none_for_paren_open_before_expr() {
+        // Expression preceded only by `(` which opens a depth < 0 stop.
+        // "(x.if" with cursor at 5 — expr is "x", trigger is "if"
+        let result = extract_postfix_context("(x.if", 5);
+        // Should succeed: depth goes negative at `(` so start = 1 (after `(`).
+        assert!(result.is_some());
+        let (_, expr, trigger) = result.unwrap();
+        assert_eq!(expr, "x");
+        assert_eq!(trigger, "if");
+    }
+
+    #[test]
+    fn extracts_after_keyword_with_space() {
+        // "return expr.if" — the `return` keyword triggers the space-stop logic.
+        let result = extract_postfix_context("return expr.if", 14);
+        assert!(result.is_some());
+        let (_, expr, trigger) = result.unwrap();
+        assert_eq!(expr, "expr");
+        assert_eq!(trigger, "if");
+    }
+
+    #[test]
+    fn returns_none_when_out_of_line_bounds() {
+        // Line only has 3 chars; requesting col 100 must return None.
+        let items = get_postfix_completions("foo", 0, 100, LangId::CSharp);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn returns_empty_when_line_index_out_of_range() {
+        // Source has 1 line; requesting line 99 must return empty.
+        let items = get_postfix_completions("foo.if", 99, 6, LangId::CSharp);
+        assert!(items.is_empty());
+    }
 }

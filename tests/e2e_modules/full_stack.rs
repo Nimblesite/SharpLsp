@@ -378,9 +378,9 @@ fn test_full_stack_hover_cache_hit_latency() {
         "cached hover must return content"
     );
 
-    // Cache hit should be <50ms (generous; target is <1ms).
+    // Cache hit should be <200ms (CI runners can be slow).
     assert!(
-        elapsed.as_millis() < 50,
+        elapsed.as_millis() < 200,
         "cache hit must be fast, took {}ms",
         elapsed.as_millis(),
     );

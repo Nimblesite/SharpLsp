@@ -489,4 +489,104 @@ mod tests {
         assert!(out.contains('A'));
         assert!(out.contains('B'));
     }
+
+    #[test]
+    fn no_trailing_newline_preserved() {
+        // Input without trailing newline must produce output without trailing newline.
+        let src = "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <ItemGroup>\n    <PackageReference Include=\"A\" Version=\"1.0.0\" />\n  </ItemGroup>\n</Project>";
+        let out = upsert(src, "B", "2.0.0", PackageElement::Reference);
+        assert!(!out.ends_with('\n'), "output must not add trailing newline");
+        assert!(out.contains("Include=\"B\""));
+    }
+
+    #[test]
+    fn replace_or_insert_version_inserts_when_no_version_attr() {
+        // A line with Include but no Version= attr.
+        let line = "    <PackageReference Include=\"Foo\" />";
+        let out = replace_or_insert_version(line, "1.2.3");
+        assert!(out.contains("Version=\"1.2.3\""));
+        assert!(out.ends_with("/>"));
+    }
+
+    #[test]
+    fn strip_version_attr_removes_version() {
+        let line = "    <PackageReference Include=\"Foo\" Version=\"1.2.3\" />";
+        let out = strip_version_attr(line);
+        assert!(!out.contains("Version="));
+        assert!(out.contains("Include=\"Foo\""));
+    }
+
+    #[test]
+    fn strip_version_attr_no_op_when_absent() {
+        let line = "    <PackageReference Include=\"Foo\" />";
+        let out = strip_version_attr(line);
+        assert_eq!(out, line);
+    }
+
+    #[test]
+    fn removes_package_when_absent_returns_unchanged() {
+        let out = remove_entry(SIMPLE_CSPROJ, "NonExistent", PackageElement::Reference);
+        assert_eq!(out, SIMPLE_CSPROJ);
+    }
+
+    #[test]
+    fn upsert_version_element_removes_version_attr() {
+        // PackageElement::ReferenceNoVersion should strip Version= from existing entries.
+        let out = upsert(
+            SIMPLE_CSPROJ,
+            "Newtonsoft.Json",
+            "13.0.3",
+            PackageElement::ReferenceNoVersion,
+        );
+        // The existing Newtonsoft.Json entry should now have no Version attribute.
+        assert!(!out.contains("Newtonsoft.Json\" Version="));
+    }
+
+    #[test]
+    fn add_package_writes_new_package_to_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("Project.csproj");
+        std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+
+        let result = add_package(&path, "Serilog", "3.1.0", PackageElement::Reference).unwrap();
+        assert!(result.modified);
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("Include=\"Serilog\" Version=\"3.1.0\""));
+    }
+
+    #[test]
+    fn add_package_no_change_when_already_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("Project.csproj");
+        std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+
+        let result =
+            add_package(&path, "Newtonsoft.Json", "13.0.3", PackageElement::Reference).unwrap();
+        assert!(!result.modified);
+        assert!(result.message.contains("already at 13.0.3"));
+    }
+
+    #[test]
+    fn remove_package_from_file_modifies_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("Project.csproj");
+        std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+
+        let result = remove_package(&path, "Newtonsoft.Json", PackageElement::Reference).unwrap();
+        assert!(result.modified);
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(!content.contains("Newtonsoft.Json"));
+    }
+
+    #[test]
+    fn remove_package_no_change_when_not_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("Project.csproj");
+        std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+
+        let result = remove_package(&path, "NonExistent", PackageElement::Reference).unwrap();
+        assert!(!result.modified);
+    }
 }

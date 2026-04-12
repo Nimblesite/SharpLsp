@@ -42,10 +42,17 @@ pub fn handle_prepare(
             }
         };
 
-    let items: Vec<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
-    debug!("Got {} type hierarchy items from sidecar", items.len());
+    let item: Option<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
+    debug!(
+        "Got type hierarchy item from sidecar: {}",
+        item.is_some()
+    );
 
-    let result: Vec<TypeHierarchyItem> = items.iter().filter_map(map_type_hierarchy_item).collect();
+    let result: Vec<TypeHierarchyItem> = item
+        .as_ref()
+        .and_then(map_type_hierarchy_item)
+        .into_iter()
+        .collect();
     Ok(serde_json::to_value(result)?)
 }
 

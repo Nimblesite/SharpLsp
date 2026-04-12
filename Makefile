@@ -199,6 +199,13 @@ test: build test-rust test-zed test-vsix test-dotnet
 	@echo "==> All tests passed. All coverage thresholds met."
 
 test-rust: build-dotnet
+	@echo "==> Staging sidecars for Rust integration tests..."
+	@$(MKDIR) target/debug/sidecar-csharp target/debug/sidecar-fsharp
+	@$(MKDIR) target/llvm-cov-target/debug/sidecar-csharp target/llvm-cov-target/debug/sidecar-fsharp
+	@cp -r $(SIDECAR_CS_OUT)/. target/debug/sidecar-csharp/
+	@cp -r $(SIDECAR_FS_OUT)/. target/debug/sidecar-fsharp/
+	@cp -r $(SIDECAR_CS_OUT)/. target/llvm-cov-target/debug/sidecar-csharp/
+	@cp -r $(SIDECAR_FS_OUT)/. target/llvm-cov-target/debug/sidecar-fsharp/
 	@echo "==> Running forge-lsp tests with coverage (nextest, fail-fast)..."
 	cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast
 	@$(CHECK_COV) forge-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"

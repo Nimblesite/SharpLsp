@@ -237,7 +237,7 @@ fn test_code_lens_without_sidecar_returns_empty_array() {
     // Without sidecar the handler returns an empty array.
     let result = &resp["result"];
     assert!(
-        result.is_null() || result.as_array().is_some_and(|a| a.is_empty()),
+        result.is_null() || result.as_array().is_some_and(Vec::is_empty),
         "codeLens without sidecar must return null or empty array, got: {result}"
     );
 
@@ -260,7 +260,7 @@ fn test_code_lens_on_complex_class_without_sidecar() {
     assert!(resp.get("error").is_none(), "must not error: {resp}");
     let result = &resp["result"];
     assert!(
-        result.is_null() || result.as_array().is_some_and(|a| a.is_empty()),
+        result.is_null() || result.as_array().is_some_and(Vec::is_empty),
         "codeLens without sidecar must return null or empty array"
     );
 
