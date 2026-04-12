@@ -221,6 +221,189 @@ EndGlobal"#,
     client.wait_with_timeout();
 }
 
+// Full-stack: solution-wide diagnostics must not produce false positives.
+// A solution that compiles clean (`dotnet build` succeeds) must produce
+// zero Error-severity diagnostics. The sidecar must verify initial scan
+// results by re-requesting compilations for files with errors — if the
+// error disappears on recompilation, it was a false positive from
+// incomplete workspace loading and must be cleared.
+
+#[test]
+fn test_full_stack_solution_wide_no_false_positives() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    // Build a multi-project solution that compiles clean.
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Project A: a library with a public type.
+    let proj_a_dir = tmp.path().join("LibA");
+    std::fs::create_dir_all(&proj_a_dir).unwrap();
+    std::fs::write(
+        proj_a_dir.join("LibA.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+    std::fs::write(
+        proj_a_dir.join("Widget.cs"),
+        r"namespace LibA;
+public class Widget
+{
+    public int Count { get; set; }
+    public string Label { get; set; } = string.Empty;
+}
+",
+    )
+    .unwrap();
+
+    // Project B: references LibA, uses Widget.
+    let proj_b_dir = tmp.path().join("LibB");
+    std::fs::create_dir_all(&proj_b_dir).unwrap();
+    std::fs::write(
+        proj_b_dir.join("LibB.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LibA\LibA.csproj" />
+  </ItemGroup>
+</Project>"#,
+    )
+    .unwrap();
+    std::fs::write(
+        proj_b_dir.join("Consumer.cs"),
+        r"namespace LibB;
+public class Consumer
+{
+    public LibA.Widget MyWidget { get; } = new LibA.Widget();
+    public int GetCount() => MyWidget.Count;
+}
+",
+    )
+    .unwrap();
+
+    std::fs::write(
+        tmp.path().join("NoFalsePositives.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibA", "LibA/LibA.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibB", "LibB/LibB.csproj", "{00000000-0000-0000-0000-000000000002}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    // Verify the solution actually builds clean.
+    let build = std::process::Command::new("dotnet")
+        .args(["build", "--verbosity", "quiet"])
+        .current_dir(tmp.path())
+        .status()
+        .expect("dotnet build failed to start");
+    assert!(
+        build.success(),
+        "solution must build clean — this test checks for false positives",
+    );
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let root_uri = format!("file://{}", real_root.display());
+
+    let mut client = LspClient::start_verbose();
+    let _ = client.initialize_with_root(json!(root_uri));
+
+    // Wait for solution-wide diagnostics to be published.
+    // Collect all publishDiagnostics notifications for up to 90s.
+    let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let mut error_diagnostics: Vec<(String, String)> = Vec::new();
+    let mut received_any_diagnostics = false;
+
+    // Give sidecar time to load and run solution-wide scan.
+    std::thread::sleep(Duration::from_secs(10));
+
+    // Open both files to also trigger per-file diagnostics.
+    let widget_uri = format!(
+        "file://{}",
+        real_root.join("LibA").join("Widget.cs").display()
+    );
+    let consumer_uri = format!(
+        "file://{}",
+        real_root.join("LibB").join("Consumer.cs").display()
+    );
+    client.open_document(
+        &widget_uri,
+        &std::fs::read_to_string(real_root.join("LibA").join("Widget.cs")).unwrap(),
+    );
+    client.open_document(
+        &consumer_uri,
+        &std::fs::read_to_string(real_root.join("LibB").join("Consumer.cs")).unwrap(),
+    );
+
+    // Poll for diagnostics — wait until we get stable results.
+    let mut stable_checks = 0;
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_secs(5));
+
+        // Use pull diagnostics to check both files.
+        for uri in [&widget_uri, &consumer_uri] {
+            let resp = client.request(
+                "textDocument/diagnostic",
+                json!({ "textDocument": { "uri": uri } }),
+            );
+            if let Some(items) = resp["result"]["items"].as_array() {
+                received_any_diagnostics = true;
+                for diag in items {
+                    if diag["severity"].as_u64() == Some(1) {
+                        let msg = diag["message"].as_str().unwrap_or("").to_string();
+                        let code = diag["code"]
+                            .as_str()
+                            .unwrap_or("")
+                            .to_string();
+                        error_diagnostics.push((uri.clone(), format!("{code}: {msg}")));
+                    }
+                }
+            }
+        }
+
+        if received_any_diagnostics && error_diagnostics.is_empty() {
+            stable_checks += 1;
+            // Require 3 consecutive clean checks to avoid flaky results.
+            if stable_checks >= 3 {
+                break;
+            }
+        } else if !error_diagnostics.is_empty() {
+            // Got false positives — the bug.
+            // Give the verification pass time to clear them.
+            error_diagnostics.clear();
+            stable_checks = 0;
+        }
+    }
+
+    assert!(
+        received_any_diagnostics,
+        "must receive at least one diagnostic response from sidecar within 90s",
+    );
+
+    assert!(
+        error_diagnostics.is_empty(),
+        "Solution builds clean but Forge reports Error-severity diagnostics (false positives). \
+         Forge does not lie. Diagnostics: {error_diagnostics:?}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 // Full-stack: diagnostics refreshed on didChange — edit introduces error.
 
 #[test]

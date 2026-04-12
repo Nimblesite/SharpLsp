@@ -231,3 +231,47 @@ When a file changes, only re-analyze:
 - The changed file
 - Files with direct dependencies on the changed file's types/members
 - Roslyn handles this via `Compilation` incremental updates
+
+## 9. Diagnostic Verification (No False Positives)
+
+**Forge does not lie.** Every diagnostic shown to the developer must be real. False positives from stale or incomplete compilation state are unacceptable — this is the #1 complaint about C# Dev Kit and Forge must never reproduce it.
+
+### 9.1 The Problem
+
+MSBuildWorkspace loads projects asynchronously. The initial `GetCompilationAsync()` may return a compilation with unresolved metadata references, missing source generators, or incomplete project graphs. Diagnostics from this incomplete state are often false positives — errors that do not exist when `dotnet build` runs.
+
+### 9.2 Incremental Verification (Low Priority Background)
+
+The solution-wide scan runs **once** on workspace load. It is expensive and must not be repeated. After the initial scan completes, a **low-priority incremental verification** pass works through files that reported errors:
+
+1. **Collect error files**: gather all file paths where diagnostics with `Error` severity were reported during the initial scan
+2. **Traverse incrementally**: process error files one at a time on a low-priority background thread — this must not interfere with user interactions (completions, hover, go-to-definition)
+3. **Re-request compilation**: for each error file's project, call `GetCompilationAsync()` — Roslyn may have resolved more references since the initial scan
+4. **Recheck**: get a fresh `SemanticModel` and call `GetDiagnostics()` again
+5. **Keep or clear**: if the error persists, it is real — move to the next file. If the error disappears, it was a false positive — publish an empty diagnostic set to clear it from the editor
+6. **Skip clean files**: files with no errors on the initial pass are already correct — do not recheck them
+
+This is NOT a repeated full scan. It is a targeted, incremental walk through files with known errors, verifying each one individually.
+
+### 9.3 Verification Triggers
+
+- **After initial solution-wide scan**: automatically, as a low-priority follow-up
+- **After file changes**: when `didChange` updates source text, re-verify error files in the same project and dependent projects
+- **Exponential backoff**: if an error persists across multiple verification checks, back off (1s, 2s, 4s, max 30s) to avoid CPU thrashing — the error is likely real
+
+### 9.4 Priority
+
+Verification runs at the **lowest priority**. It must yield to:
+1. Active document operations (completions, hover, diagnostics for the focused file)
+2. Visible document analysis
+3. Any user-initiated request
+
+The verification thread should sleep between files to avoid starving the sidecar of resources.
+
+### 9.5 Guarantees
+
+- A diagnostic shown in the Problems panel **must** correspond to a real compiler or analyzer error
+- If `dotnet build` succeeds with zero errors, Forge must show zero Error-severity diagnostics
+- Clearing a false positive must happen within 10 seconds of the compilation state becoming valid
+- The verification pass must not block the initial scan — it runs as a follow-up background task
+- The verification pass must not repeat the full solution scan — it only rechecks files with errors
