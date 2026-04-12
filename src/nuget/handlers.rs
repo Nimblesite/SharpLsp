@@ -293,7 +293,7 @@ fn spawn_restore(
     // Notify "started" synchronously so the UI sees it immediately.
     send_restore_progress(&sender, &target_id, types::RestorePhase::Started, None);
 
-    runtime.spawn(async move {
+    drop(runtime.spawn(async move {
         send_restore_progress(
             &sender,
             &target_id,
@@ -347,7 +347,7 @@ fn spawn_restore(
                 );
             }
         }
-    });
+    }));
 }
 
 fn send_restore_progress(

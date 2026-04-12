@@ -12,28 +12,38 @@ use super::tool_discovery;
 /// Parameters for starting a trace session.
 #[derive(Debug, Deserialize)]
 pub struct StartTraceParams {
+    /// Target process ID.
     pub pid: u32,
+    /// Trace profile (e.g. `gc-collect`, `cpu-sampling`).
     #[serde(default = "default_profile")]
     pub profile: String,
+    /// Output format (e.g. `speedscope`, `nettrace`).
     #[serde(default = "default_format")]
     pub format: String,
+    /// Trace duration in seconds (0 = unlimited).
     #[serde(default = "default_duration")]
     pub duration: u32,
+    /// Optional file path for the trace output.
     pub output_path: Option<String>,
 }
 
 /// Result of starting a trace.
 #[derive(Debug, Serialize)]
 pub struct StartTraceResult {
+    /// Unique identifier for this trace session.
     pub session_id: String,
+    /// Path where trace data will be written.
     pub output_path: String,
 }
 
 /// Result of stopping a trace.
 #[derive(Debug, Serialize)]
 pub struct StopTraceResult {
+    /// Path to the collected trace file.
     pub output_path: String,
+    /// Size of the trace file in bytes.
     pub file_size_bytes: u64,
+    /// Duration of the trace in milliseconds.
     pub duration_ms: u64,
 }
 
@@ -58,16 +68,18 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
     );
 
     let mut cmd = std::process::Command::new(tool);
-    cmd.args(["collect", "-p"])
+    let _ = cmd
+        .args(["collect", "-p"])
         .arg(params.pid.to_string())
         .args(["--profile", &params.profile])
         .args(["-o", &output_path]);
 
     if params.duration > 0 {
-        cmd.args(["--duration", &format!("00:00:{:02}", params.duration)]);
+        let _ = cmd.args(["--duration", &format!("00:00:{:02}", params.duration)]);
     }
 
-    cmd.stdin(std::process::Stdio::null())
+    let _ = cmd
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
@@ -181,10 +193,12 @@ fn convert_trace(nettrace_path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Default directory for trace output files.
 fn output_dir() -> &'static str {
     ".forge/profiles"
 }
 
+/// Create parent directories for the output path if they don't exist.
 fn ensure_output_dir(path: &str) -> Result<()> {
     if let Some(parent) = PathBuf::from(path).parent() {
         std::fs::create_dir_all(parent)
@@ -193,14 +207,17 @@ fn ensure_output_dir(path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Default trace profile.
 fn default_profile() -> String {
     "gc-collect".to_string()
 }
 
+/// Default output format.
 fn default_format() -> String {
     "speedscope".to_string()
 }
 
+/// Default trace duration in seconds.
 fn default_duration() -> u32 {
     30
 }

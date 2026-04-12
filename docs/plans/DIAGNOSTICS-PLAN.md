@@ -145,3 +145,8 @@ Analyze ALL files in the solution, not just open ones.
 - [ ] **Test**: Solution-wide scan finds errors in unopened files
 - [ ] **Test**: Project filter excludes specified projects
 - [ ] **Test**: Sidecar crash recovery preserves last-known diagnostics
+
+## Phase 7: Advanced Analysis
+
+- [ ] Code metrics (cyclomatic complexity)
+- [ ] Value tracking / data flow analysis

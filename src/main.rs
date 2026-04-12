@@ -2,18 +2,29 @@
 //!
 //! Implements LSP 3.17 lifecycle over stdio using `lsp-server`.
 
+mod call_hierarchy;
+mod code_actions;
+mod code_lens;
 mod config;
 mod diagnostics;
+// Formatting module is sequestered — not wired into the LSP server.
+// Use CSharpier (C#) / Fantomas via Ionide (F#). See docs/formatting/README.md.
+#[cfg(feature = "formatting")]
+mod formatting;
 mod handlers;
+mod inlay_hints;
 mod nav_cache;
 mod nuget;
+mod postfix_completion;
 mod profiler;
 mod pull_diagnostics;
 mod semantic;
+mod semantic_tokens;
 mod sidecar;
 mod sort_members;
 mod syntax;
 mod tree_sitter_parse;
+mod type_hierarchy;
 mod utils;
 mod vfs;
 mod workspace_symbols;
@@ -31,10 +42,15 @@ use lsp_types::{
         Notification as _,
     },
     request::{
-        Completion, DocumentDiagnosticRequest, DocumentHighlightRequest, DocumentSymbolRequest,
+        CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
+        CodeActionRequest, CodeActionResolveRequest, CodeLensRequest, Completion,
+        DocumentDiagnosticRequest, DocumentHighlightRequest, DocumentSymbolRequest,
         FoldingRangeRequest, GotoDeclaration, GotoDefinition, GotoImplementation,
-        GotoTypeDefinition, HoverRequest, LinkedEditingRange, References, Request as _,
-        SelectionRangeRequest, Shutdown, WorkspaceDiagnosticRequest,
+        GotoTypeDefinition, HoverRequest, InlayHintRequest, LinkedEditingRange, References,
+        Request as _, ResolveCompletionItem, SelectionRangeRequest, SemanticTokensFullDeltaRequest,
+        SemanticTokensFullRequest, SemanticTokensRangeRequest, Shutdown, TypeHierarchyPrepare,
+        TypeHierarchySubtypes, TypeHierarchySupertypes, WorkspaceDiagnosticRequest,
+        WorkspaceSymbolRequest,
     },
     FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams, OneOf,
     SelectionRangeProviderCapability, ServerCapabilities, TextDocumentSyncCapability,
@@ -99,6 +115,7 @@ fn main() -> ExitCode {
     }
 }
 
+/// Initialize the LSP connection, start sidecars, and run the main message loop.
 fn run_server() -> Result<()> {
     let (connection, io_threads) = Connection::stdio();
 
@@ -217,6 +234,7 @@ fn run_server() -> Result<()> {
     Ok(())
 }
 
+/// Build the server capabilities advertised during LSP initialization.
 fn build_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
@@ -226,7 +244,10 @@ fn build_capabilities() -> ServerCapabilities {
         linked_editing_range_provider: Some(
             lsp_types::LinkedEditingRangeServerCapabilities::Simple(true),
         ),
-        completion_provider: Some(lsp_types::CompletionOptions::default()),
+        completion_provider: Some(lsp_types::CompletionOptions {
+            resolve_provider: Some(true),
+            ..lsp_types::CompletionOptions::default()
+        }),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
         type_definition_provider: Some(lsp_types::TypeDefinitionProviderCapability::Simple(true)),
@@ -234,6 +255,44 @@ fn build_capabilities() -> ServerCapabilities {
         implementation_provider: Some(lsp_types::ImplementationProviderCapability::Simple(true)),
         references_provider: Some(OneOf::Left(true)),
         document_highlight_provider: Some(OneOf::Left(true)),
+        code_action_provider: Some(lsp_types::CodeActionProviderCapability::Options(
+            lsp_types::CodeActionOptions {
+                code_action_kinds: Some(vec![
+                    lsp_types::CodeActionKind::QUICKFIX,
+                    lsp_types::CodeActionKind::REFACTOR,
+                    lsp_types::CodeActionKind::REFACTOR_EXTRACT,
+                    lsp_types::CodeActionKind::REFACTOR_INLINE,
+                    lsp_types::CodeActionKind::REFACTOR_REWRITE,
+                    lsp_types::CodeActionKind::SOURCE_ORGANIZE_IMPORTS,
+                ]),
+                resolve_provider: Some(true),
+                ..lsp_types::CodeActionOptions::default()
+            },
+        )),
+        // Formatting is intentionally disabled. Use CSharpier (C#) / Fantomas via Ionide (F#).
+        // See docs/formatting/README.md for details on the sequestered formatter code.
+        document_formatting_provider: None,
+        document_range_formatting_provider: None,
+        document_on_type_formatting_provider: None,
+        semantic_tokens_provider: Some(
+            lsp_types::SemanticTokensServerCapabilities::SemanticTokensOptions(
+                lsp_types::SemanticTokensOptions {
+                    legend: lsp_types::SemanticTokensLegend {
+                        token_types: semantic_tokens::token_types(),
+                        token_modifiers: semantic_tokens::token_modifiers(),
+                    },
+                    full: Some(lsp_types::SemanticTokensFullOptions::Delta { delta: Some(true) }),
+                    range: Some(true),
+                    ..lsp_types::SemanticTokensOptions::default()
+                },
+            ),
+        ),
+        inlay_hint_provider: Some(OneOf::Left(true)),
+        workspace_symbol_provider: Some(OneOf::Left(true)),
+        call_hierarchy_provider: Some(lsp_types::CallHierarchyServerCapability::Simple(true)),
+        code_lens_provider: Some(lsp_types::CodeLensOptions {
+            resolve_provider: Some(false),
+        }),
         diagnostic_provider: Some(lsp_types::DiagnosticServerCapabilities::Options(
             lsp_types::DiagnosticOptions {
                 inter_file_dependencies: true,
@@ -248,7 +307,7 @@ fn build_capabilities() -> ServerCapabilities {
 /// Open the workspace in a sidecar.
 async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
     let payload = rmp_serde::to_vec(root).context("serialize workspace path")?;
-    sidecar.request("workspace/open", payload).await?;
+    let _ = sidecar.request("workspace/open", payload).await?;
     info!("Workspace opened in {} sidecar", sidecar.name());
     Ok(())
 }
@@ -267,7 +326,7 @@ fn start_sidecar(
             cfg.solution_wide_analysis
                 .then(|| (conn.sender.clone(), cfg.project_filter.clone()))
         });
-        runtime.spawn(async move {
+        drop(runtime.spawn(async move {
             if let Err(err) = open_workspace(&sc, &root_str).await {
                 error!("Failed to open workspace in sidecar: {err:#}");
                 return;
@@ -281,7 +340,7 @@ fn start_sidecar(
                 );
             }
             sc.start_health_monitor().await;
-        });
+        }));
     }
 }
 
@@ -291,6 +350,7 @@ fn start_sidecar(
     clippy::mutable_key_type,
     reason = "lsp_types::Uri Hash/Eq use string repr only"
 )]
+/// Process LSP messages until the connection closes or exit is received.
 fn main_loop(
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
@@ -351,6 +411,7 @@ fn main_loop(
                     connection,
                     runtime,
                     csharp_sidecar,
+                    fsharp_sidecar,
                 );
             }
             Message::Response(_) => {
@@ -364,10 +425,15 @@ fn main_loop(
 
 // ── Request Handling ──────────────────────────────────────────────
 
+/// Dispatch an incoming LSP request to the appropriate handler.
 #[expect(clippy::mutable_key_type, reason = "see main_loop")]
 #[expect(
     clippy::too_many_arguments,
     reason = "dispatcher passes per-request context; extracting a struct adds indirection for no benefit"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "match dispatch table is inherently long; splitting it would hurt readability"
 )]
 fn handle_request(
     req: Request,
@@ -398,7 +464,11 @@ fn handle_request(
         // Semantic (sidecar)
         Completion::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            semantic::handle_completion(req, runtime, sidecar)
+            semantic::handle_completion(req, runtime, sidecar, vfs)
+        }
+        ResolveCompletionItem::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            semantic::handle_completion_resolve(req, runtime, sidecar)
         }
         HoverRequest::METHOD => {
             if handlers::is_hover_on_comment(&req, trees) {
@@ -423,12 +493,75 @@ fn handle_request(
             csharp_sidecar,
             fsharp_sidecar,
         ),
+        // Formatting intentionally disabled — use CSharpier (C#) / Fantomas via Ionide (F#).
+        // Handler code is sequestered in src/formatting.rs (see docs/formatting/README.md).
+        // Semantic tokens
+        SemanticTokensFullRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            semantic_tokens::handle_full(req, runtime, sidecar)
+        }
+        SemanticTokensRangeRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            semantic_tokens::handle_range(req, runtime, sidecar)
+        }
+        SemanticTokensFullDeltaRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            semantic_tokens::handle_delta(req, runtime, sidecar)
+        }
+        // Inlay hints
+        InlayHintRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            inlay_hints::handle_inlay_hint(req, runtime, sidecar)
+        }
+        // Code lens
+        CodeLensRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            code_lens::handle_code_lens(req, runtime, sidecar)
+        }
+        // Call hierarchy
+        CallHierarchyPrepare::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            call_hierarchy::handle_prepare(req, runtime, sidecar)
+        }
+        CallHierarchyIncomingCalls::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            call_hierarchy::handle_incoming(req, runtime, sidecar)
+        }
+        CallHierarchyOutgoingCalls::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            call_hierarchy::handle_outgoing(req, runtime, sidecar)
+        }
+        // Type hierarchy
+        TypeHierarchyPrepare::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            type_hierarchy::handle_prepare(req, runtime, sidecar)
+        }
+        TypeHierarchySupertypes::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            type_hierarchy::handle_supertypes(req, runtime, sidecar)
+        }
+        TypeHierarchySubtypes::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            type_hierarchy::handle_subtypes(req, runtime, sidecar)
+        }
+        // Code actions
+        CodeActionRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            code_actions::handle_code_action(req, runtime, sidecar)
+        }
+        CodeActionResolveRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            code_actions::handle_code_action_resolve(req, runtime, sidecar)
+        }
         // Pull diagnostics (LSP 3.17)
         DocumentDiagnosticRequest::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             pull_diagnostics::handle_document_diagnostic(req, runtime, sidecar)
         }
         WorkspaceDiagnosticRequest::METHOD => pull_diagnostics::handle_workspace_diagnostic(req),
+        // Standard workspace/symbol
+        WorkspaceSymbolRequest::METHOD => handle_standard_workspace_symbol(req, parsers, vfs),
+        // Solution loading
         "forge/loadSolution" => {
             handle_load_solution(req, runtime, csharp_sidecar, fsharp_sidecar, connection)
         }
@@ -482,9 +615,11 @@ fn handle_nav_request(
         GotoImplementation::METHOD => {
             semantic::handle_implementation(req, runtime, primary, fallback)
         }
-        References::METHOD => semantic::handle_references(req, runtime, primary, fallback),
+        References::METHOD => {
+            semantic::handle_references(req, vfs, nav_cache, runtime, primary, fallback)
+        }
         DocumentHighlightRequest::METHOD => {
-            semantic::handle_document_highlight(req, runtime, primary)
+            semantic::handle_document_highlight(req, vfs, nav_cache, runtime, primary)
         }
         _ => Err(anyhow::anyhow!("unexpected nav method: {}", req.method)),
     }
@@ -574,12 +709,22 @@ fn pick_sidecar_with_fallback<'a>(
 }
 
 /// Extract the document URI from a request's params (best-effort).
+///
+/// Checks `params.textDocument.uri` first, then falls back to `params.data.uri`
+/// for code action resolve requests where the URI is embedded in the data field.
 fn extract_document_uri(req: &Request) -> Option<Uri> {
     req.params
         .get("textDocument")
         .and_then(|td| td.get("uri"))
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse::<Uri>().ok())
+        .or_else(|| {
+            req.params
+                .get("data")
+                .and_then(|d| d.get("uri"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<Uri>().ok())
+        })
 }
 
 // ── Solution Loading ─────────────────────────────────────────────
@@ -610,7 +755,7 @@ fn handle_load_solution(
         let cs = Arc::clone(cs);
         let p = payload.clone();
         let sender = connection.sender.clone();
-        runtime.spawn(async move {
+        drop(runtime.spawn(async move {
             match cs.request("workspace/open", p).await {
                 Ok(_) => {
                     info!("Solution loaded in C# (Roslyn) sidecar");
@@ -618,18 +763,18 @@ fn handle_load_solution(
                 }
                 Err(err) => error!("C# sidecar workspace/open failed: {err:#}"),
             }
-        });
+        }));
     }
 
     if let Some(fs) = fsharp_sidecar {
         let fs = Arc::clone(fs);
         let p = payload;
-        runtime.spawn(async move {
+        drop(runtime.spawn(async move {
             match fs.request("workspace/open", p).await {
                 Ok(_) => info!("Solution loaded in F# (FCS) sidecar"),
                 Err(err) => error!("F# sidecar workspace/open failed: {err:#}"),
             }
-        });
+        }));
     }
 
     Ok(serde_json::json!({ "success": true }))
@@ -637,6 +782,7 @@ fn handle_load_solution(
 
 // ── Custom Request Handling ───────────────────────────────────────
 
+/// Handle the custom `forge/workspaceSymbols` request.
 fn handle_workspace_symbols(
     req: Request,
     parsers: &TsParsers,
@@ -647,6 +793,132 @@ fn handle_workspace_symbols(
     Ok(serde_json::to_value(response)?)
 }
 
+/// Standard `workspace/symbol` handler using tree-sitter to find symbols matching a query.
+fn handle_standard_workspace_symbol(
+    req: Request,
+    parsers: &TsParsers,
+    vfs: &Vfs,
+) -> Result<serde_json::Value> {
+    let params: lsp_types::WorkspaceSymbolParams = serde_json::from_value(req.params)?;
+    let query = params.query.to_lowercase();
+
+    // Reuse the existing workspace symbols infrastructure.
+    // Get all files from the VFS and search for matching symbols.
+    let mut symbols = Vec::new();
+    for entry in vfs.iter() {
+        let uri = entry.key().clone();
+        let content = entry.value().content.clone();
+        let Some(lang) = LangId::from_uri(&uri) else {
+            continue;
+        };
+        if let Ok(tree) = parsers.parse(lang, &content, None) {
+            collect_matching_symbols(&uri, &tree, &content, &query, &mut symbols);
+        }
+    }
+
+    Ok(serde_json::to_value(symbols)?)
+}
+
+/// Collect symbols from a tree that match the query string.
+fn collect_matching_symbols(
+    uri: &Uri,
+    tree: &tree_sitter::Tree,
+    source: &str,
+    query: &str,
+    symbols: &mut Vec<lsp_types::SymbolInformation>,
+) {
+    let root = tree.root_node();
+    collect_symbols_recursive(uri, root, source.as_bytes(), query, symbols);
+}
+
+/// Recursively walk tree-sitter nodes and collect matching workspace symbols.
+fn collect_symbols_recursive(
+    uri: &Uri,
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    query: &str,
+    symbols: &mut Vec<lsp_types::SymbolInformation>,
+) {
+    let kind = match node.kind() {
+        "class_declaration" | "record_declaration" | "type_definition" => {
+            Some(lsp_types::SymbolKind::CLASS)
+        }
+        "struct_declaration" => Some(lsp_types::SymbolKind::STRUCT),
+        "interface_declaration" => Some(lsp_types::SymbolKind::INTERFACE),
+        "enum_declaration" => Some(lsp_types::SymbolKind::ENUM),
+        "method_declaration" | "local_function_statement" => Some(lsp_types::SymbolKind::METHOD),
+        "property_declaration" => Some(lsp_types::SymbolKind::PROPERTY),
+        "field_declaration" => Some(lsp_types::SymbolKind::FIELD),
+        "constructor_declaration" => Some(lsp_types::SymbolKind::CONSTRUCTOR),
+        "event_declaration" => Some(lsp_types::SymbolKind::EVENT),
+        "delegate_declaration" | "value_declaration" | "function_or_value_defn" => {
+            Some(lsp_types::SymbolKind::FUNCTION)
+        }
+        "enum_member_declaration" => Some(lsp_types::SymbolKind::ENUM_MEMBER),
+        "namespace_declaration" | "file_scoped_namespace_declaration" => {
+            Some(lsp_types::SymbolKind::NAMESPACE)
+        }
+        "module_defn" => Some(lsp_types::SymbolKind::MODULE),
+        _ => None,
+    };
+
+    if let Some(symbol_kind) = kind {
+        if let Some(name_node) = node.child_by_field_name("name") {
+            let name = name_node.utf8_text(source).unwrap_or_default();
+            let matches = query.is_empty() || fuzzy_match_subsequence(&name.to_lowercase(), query);
+            if matches {
+                let start = node.start_position();
+                let end = node.end_position();
+                #[expect(
+                    deprecated,
+                    reason = "SymbolInformation is the LSP 3.17 workspace/symbol response type"
+                )]
+                symbols.push(lsp_types::SymbolInformation {
+                    name: name.to_string(),
+                    kind: symbol_kind,
+                    tags: None,
+                    deprecated: None,
+                    location: lsp_types::Location {
+                        uri: uri.clone(),
+                        range: lsp_types::Range::new(
+                            lsp_types::Position::new(
+                                u32::try_from(start.row).unwrap_or(0),
+                                u32::try_from(start.column).unwrap_or(0),
+                            ),
+                            lsp_types::Position::new(
+                                u32::try_from(end.row).unwrap_or(0),
+                                u32::try_from(end.column).unwrap_or(0),
+                            ),
+                        ),
+                    },
+                    container_name: None,
+                });
+            }
+        }
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_symbols_recursive(uri, child, source, query, symbols);
+    }
+}
+
+/// Fuzzy subsequence match: every character in `query` appears in `name` in order.
+fn fuzzy_match_subsequence(name: &str, query: &str) -> bool {
+    let mut name_chars = name.chars();
+    for qc in query.chars() {
+        loop {
+            match name_chars.next() {
+                Some(nc) if nc == qc => break,
+                Some(_) => {}
+                None => return false,
+            }
+        }
+    }
+    true
+}
+
+/// Handle the custom `forge/sortMembers` request.
 fn handle_sort_members(req: Request, parsers: &TsParsers) -> Result<serde_json::Value> {
     let params: sort_members::SortMembersParams = serde_json::from_value(req.params)?;
     let response = sort_members::handle(&params, parsers)?;
@@ -660,6 +932,7 @@ fn handle_sort_members(req: Request, parsers: &TsParsers) -> Result<serde_json::
     clippy::too_many_arguments,
     reason = "dispatcher passes per-notification context; extracting a struct adds indirection for no benefit"
 )]
+/// Dispatch an incoming LSP notification (open, change, save, close).
 fn handle_notification(
     notif: Notification,
     vfs: &Vfs,
@@ -669,6 +942,7 @@ fn handle_notification(
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) {
     match notif.method.as_str() {
         DidOpenTextDocument::METHOD => {
@@ -679,7 +953,13 @@ fn handle_notification(
                 info!("Opened: {}", doc.uri.as_str());
                 vfs.open(doc.uri.clone(), doc.version, doc.text.clone());
                 reparse(parsers, trees, &doc.uri, &doc.text);
-                trigger_diagnostics(&doc.uri, runtime, csharp_sidecar, connection);
+                trigger_diagnostics(
+                    &doc.uri,
+                    runtime,
+                    csharp_sidecar,
+                    fsharp_sidecar,
+                    connection,
+                );
             }
         }
         DidChangeTextDocument::METHOD => {
@@ -706,7 +986,7 @@ fn handle_notification(
                             csharp_sidecar,
                         );
                     }
-                    trigger_diagnostics(uri, runtime, csharp_sidecar, connection);
+                    trigger_diagnostics(uri, runtime, csharp_sidecar, fsharp_sidecar, connection);
                 }
             }
         }
@@ -719,6 +999,7 @@ fn handle_notification(
                     &params.text_document.uri,
                     runtime,
                     csharp_sidecar,
+                    fsharp_sidecar,
                     connection,
                 );
             }
@@ -729,7 +1010,7 @@ fn handle_notification(
             {
                 info!("Closed: {}", params.text_document.uri.as_str());
                 vfs.close(&params.text_document.uri);
-                trees.remove(&params.text_document.uri);
+                let _ = trees.remove(&params.text_document.uri);
                 nav_cache.invalidate(&params.text_document.uri);
                 if let Err(err) = diagnostics::clear(&connection.sender, params.text_document.uri) {
                     warn!("Failed to clear diagnostics: {err:#}");
@@ -743,13 +1024,20 @@ fn handle_notification(
 }
 
 /// Spawn a background diagnostic request for the given URI.
+///
+/// Routes to the correct sidecar based on the document's language.
 fn trigger_diagnostics(
     uri: &Uri,
     runtime: &tokio::runtime::Runtime,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
     connection: &Connection,
 ) {
-    let Some(sidecar) = csharp_sidecar else {
+    let sidecar = match crate::tree_sitter_parse::LangId::from_uri(uri) {
+        Some(crate::tree_sitter_parse::LangId::FSharp) => fsharp_sidecar,
+        _ => csharp_sidecar,
+    };
+    let Some(sidecar) = sidecar else {
         return;
     };
     let Ok(file_path) = semantic::uri_to_path(uri) else {
@@ -778,12 +1066,12 @@ fn reparse(parsers: &TsParsers, trees: &mut HashMap<Uri, Tree>, uri: &Uri, sourc
     };
     match parsers.parse(lang, source, None) {
         Ok(tree) => {
-            trees.insert(uri.clone(), tree);
+            let _ = trees.insert(uri.clone(), tree);
         }
         Err(e) => {
             // Remove stale tree so request handlers don't use a mismatched
             // old tree with the updated VFS content.
-            trees.remove(uri);
+            let _ = trees.remove(uri);
             warn!("tree-sitter parse failed for {}: {e:#}", uri.as_str());
         }
     }

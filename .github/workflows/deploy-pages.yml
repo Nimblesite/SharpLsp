@@ -1,16 +1,13 @@
-# agent-pmo:3140e31
 name: Deploy Pages
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'website/**'
+  # Only deploys on release — triggered by release.yml via workflow_dispatch.
+  # Never on push to main (website must not get ahead of the actual release).
   workflow_dispatch:
 
 concurrency:
-  group: deploy-website
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 permissions:
   contents: read

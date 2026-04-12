@@ -87,7 +87,7 @@ my-solution/
 
 ## Per-Project Overrides
 
-`.editorconfig` rules are respected for C# formatting. Roslyn maps `.editorconfig` severity settings directly to analyzer severity:
+Roslyn maps `.editorconfig` severity settings directly to analyzer severity:
 
 ```ini
 # .editorconfig

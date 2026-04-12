@@ -17,8 +17,11 @@ use crate::utils::{uri_to_path, usize_to_u32};
 /// Request params for `forge/sortMembers`.
 #[derive(Debug, Deserialize)]
 pub struct SortMembersParams {
+    /// Document URI to sort.
     pub uri: String,
+    /// Range covering the type declaration.
     pub range: SortRange,
+    /// Sort configuration from the client.
     #[serde(rename = "sortConfig")]
     pub sort_config: SortConfig,
 }
@@ -26,23 +29,30 @@ pub struct SortMembersParams {
 /// Range identifying the type declaration to sort.
 #[derive(Debug, Deserialize)]
 pub struct SortRange {
+    /// Start position of the range.
     pub start: SortPosition,
+    /// End position of the range.
     pub end: SortPosition,
 }
 
 /// Position within a file.
 #[derive(Debug, Deserialize)]
 pub struct SortPosition {
+    /// Zero-based line number.
     pub line: u32,
+    /// Zero-based column offset.
     pub character: u32,
 }
 
 /// Sort configuration from the client.
 #[derive(Debug, Deserialize)]
 pub struct SortConfig {
+    /// Ordered list of sort criteria (e.g. accessibility, category, alphabetical).
     pub hierarchy: Vec<String>,
+    /// Accessibility modifier ordering.
     #[serde(rename = "accessibilityOrder")]
     pub accessibility_order: Vec<String>,
+    /// Member category ordering.
     #[serde(rename = "categoryOrder")]
     pub category_order: Vec<String>,
 }
@@ -50,13 +60,16 @@ pub struct SortConfig {
 /// Response for `forge/sortMembers`.
 #[derive(Debug, Serialize)]
 pub struct SortMembersResponse {
+    /// Text edits that reorder the members.
     pub edits: Vec<TextEdit>,
 }
 
 /// A text edit to apply.
 #[derive(Debug, Serialize)]
 pub struct TextEdit {
+    /// Range to replace.
     pub range: EditRange,
+    /// Replacement text.
     #[serde(rename = "newText")]
     pub new_text: String,
 }
@@ -64,14 +77,18 @@ pub struct TextEdit {
 /// Range for a text edit.
 #[derive(Debug, Serialize)]
 pub struct EditRange {
+    /// Start of the range.
     pub start: EditPosition,
+    /// End of the range.
     pub end: EditPosition,
 }
 
 /// Position for a text edit.
 #[derive(Debug, Serialize)]
 pub struct EditPosition {
+    /// Zero-based line number.
     pub line: u32,
+    /// Zero-based column offset.
     pub character: u32,
 }
 
@@ -106,14 +123,21 @@ pub fn handle(params: &SortMembersParams, parsers: &TsParsers) -> Result<SortMem
 
 /// A member extracted from the type body.
 struct MemberInfo {
+    /// Position of this member among its siblings.
     index: usize,
+    /// Identifier name of the member.
     name: String,
+    /// Sort category (e.g. "field", "method", "constructor").
     category: String,
+    /// Accessibility modifier (e.g. "public", "private").
     access: Option<String>,
     /// Byte offset where the member's leading trivia starts.
     trivia_byte: usize,
+    /// Byte offset where the member ends.
     end_byte: usize,
+    /// End row of the member in the source.
     end_row: u32,
+    /// End column of the member in the source.
     end_col: u32,
 }
 
@@ -123,6 +147,7 @@ fn find_type_at_range<'a>(root: Node<'a>, range: &SortRange) -> Option<Node<'a>>
     find_type_recursive(&mut cursor, range)
 }
 
+/// Recursively search for a type declaration node matching the range.
 fn find_type_recursive<'a>(
     cursor: &mut tree_sitter::TreeCursor<'a>,
     range: &SortRange,
@@ -136,7 +161,7 @@ fn find_type_recursive<'a>(
             if let Some(found) = find_type_recursive(cursor, range) {
                 return Some(found);
             }
-            cursor.goto_parent();
+            let _ = cursor.goto_parent();
         }
         if !cursor.goto_next_sibling() {
             return None;
@@ -144,7 +169,8 @@ fn find_type_recursive<'a>(
     }
 }
 
-fn is_type_node(node: &Node) -> bool {
+/// Return true if the node is a type declaration (class, struct, etc.).
+fn is_type_node(node: &Node<'_>) -> bool {
     matches!(
         node.kind(),
         "class_declaration"
@@ -155,7 +181,8 @@ fn is_type_node(node: &Node) -> bool {
     )
 }
 
-fn node_matches_range(node: &Node, range: &SortRange) -> bool {
+/// Return true if the node's position matches the given range.
+fn node_matches_range(node: &Node<'_>, range: &SortRange) -> bool {
     let start = node.start_position();
     let end = node.end_position();
     // Match by start position; end line must be within range.
@@ -166,7 +193,7 @@ fn node_matches_range(node: &Node, range: &SortRange) -> bool {
 }
 
 /// Collect direct member declarations from a type body.
-fn collect_members(type_node: Node, source: &[u8]) -> Vec<MemberInfo> {
+fn collect_members(type_node: Node<'_>, source: &[u8]) -> Vec<MemberInfo> {
     let body = find_body_node(type_node);
     let parent = body.unwrap_or(type_node);
     let mut members = Vec::new();
@@ -197,9 +224,9 @@ fn collect_members(type_node: Node, source: &[u8]) -> Vec<MemberInfo> {
 }
 
 /// Find the `declaration_list` or `enum_member_declaration_list` body node.
-fn find_body_node(type_node: Node) -> Option<Node> {
+fn find_body_node(type_node: Node<'_>) -> Option<Node<'_>> {
     let mut cursor = type_node.walk();
-    let is_body = |child: &Node| {
+    let is_body = |child: &Node<'_>| {
         child.kind() == "declaration_list" || child.kind() == "enum_member_declaration_list"
     };
     let body = type_node.children(&mut cursor).find(is_body);
@@ -207,7 +234,7 @@ fn find_body_node(type_node: Node) -> Option<Node> {
 }
 
 /// Check whether a node's modifier list contains a specific keyword.
-fn has_modifier(node: &Node, source: &[u8], modifier: &str) -> bool {
+fn has_modifier(node: &Node<'_>, source: &[u8], modifier: &str) -> bool {
     let mut cursor = node.walk();
     let found = node.children(&mut cursor).any(|child| {
         child.kind() == "modifier" && child.utf8_text(source).is_ok_and(|text| text == modifier)
@@ -216,7 +243,7 @@ fn has_modifier(node: &Node, source: &[u8], modifier: &str) -> bool {
 }
 
 /// Map tree-sitter node kinds to sort categories.
-fn member_category(node: &Node, source: &[u8]) -> Option<&'static str> {
+fn member_category(node: &Node<'_>, source: &[u8]) -> Option<&'static str> {
     match node.kind() {
         "field_declaration" => {
             if has_modifier(node, source, "const") {
@@ -242,7 +269,8 @@ fn member_category(node: &Node, source: &[u8]) -> Option<&'static str> {
     }
 }
 
-fn extract_member_name(node: &Node, source: &[u8]) -> Option<String> {
+/// Extract the identifier name from a member declaration node.
+fn extract_member_name(node: &Node<'_>, source: &[u8]) -> Option<String> {
     // Direct name field (class, method, property, constructor, etc.)
     if let Some(name_node) = node.child_by_field_name("name") {
         return name_node.utf8_text(source).ok().map(String::from);
@@ -255,7 +283,7 @@ fn extract_member_name(node: &Node, source: &[u8]) -> Option<String> {
 }
 
 /// Extract the name from a `field_declaration`'s `variable_declarator`.
-fn find_field_name(node: &Node, source: &[u8]) -> Option<String> {
+fn find_field_name(node: &Node<'_>, source: &[u8]) -> Option<String> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "variable_declaration" {
@@ -273,7 +301,8 @@ fn find_field_name(node: &Node, source: &[u8]) -> Option<String> {
     None
 }
 
-fn extract_member_access(node: &Node, source: &[u8]) -> Option<String> {
+/// Extract the accessibility modifier(s) from a member declaration node.
+fn extract_member_access(node: &Node<'_>, source: &[u8]) -> Option<String> {
     let mut cursor = node.walk();
     let mut parts: Vec<&str> = Vec::new();
     for child in node.children(&mut cursor) {
@@ -294,7 +323,7 @@ fn extract_member_access(node: &Node, source: &[u8]) -> Option<String> {
 
 /// Find where leading trivia (comments, preprocessor directives) starts
 /// for a given member node by walking backwards through non-member siblings.
-fn leading_trivia_start(node: &Node, parent: &Node) -> usize {
+fn leading_trivia_start(node: &Node<'_>, parent: &Node<'_>) -> usize {
     let mut current = *node;
     while let Some(prev) = current.prev_sibling() {
         if prev.kind() == "{" {
@@ -309,7 +338,7 @@ fn leading_trivia_start(node: &Node, parent: &Node) -> usize {
 }
 
 /// Check if a node is trivia that should travel with the next member.
-fn is_trivia_node(node: &Node) -> bool {
+fn is_trivia_node(node: &Node<'_>) -> bool {
     matches!(
         node.kind(),
         "comment"
@@ -366,6 +395,7 @@ fn sort_member_infos(members: &[MemberInfo], config: &SortConfig) -> Vec<usize> 
         .collect()
 }
 
+/// Return the priority index of an accessibility modifier within the config order.
 fn access_priority(access: Option<&str>, order: &[String]) -> usize {
     match access {
         Some(a) => order.iter().position(|o| o == a).unwrap_or(order.len()),
@@ -373,6 +403,7 @@ fn access_priority(access: Option<&str>, order: &[String]) -> usize {
     }
 }
 
+/// Return the priority index of a member category within the config order.
 fn category_priority(category: &str, order: &[String]) -> usize {
     order
         .iter()

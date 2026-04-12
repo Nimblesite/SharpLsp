@@ -15,8 +15,11 @@ static TOOL_PATHS: OnceLock<ToolPaths> = OnceLock::new();
 /// Resolved paths for each diagnostic tool.
 #[derive(Debug)]
 pub struct ToolPaths {
+    /// Path to `dotnet-trace`, if found.
     pub trace: Option<PathBuf>,
+    /// Path to `dotnet-counters`, if found.
     pub counters: Option<PathBuf>,
+    /// Path to `dotnet-dump`, if found.
     pub dump: Option<PathBuf>,
 }
 
@@ -126,6 +129,7 @@ fn find_via_dotnet_tool_list(name: &str) -> Option<PathBuf> {
     }
 }
 
+/// Log whether a diagnostic tool was found.
 fn log_discovery(name: &str, path: Option<&PathBuf>) {
     if let Some(p) = path {
         info!("{name} found: {}", p.display());

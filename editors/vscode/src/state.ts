@@ -1,14 +1,14 @@
-import { State, type LanguageClient } from "vscode-languageclient/node";
-import { Signal } from "./signals.js";
-import * as log from "./log.js";
-import { getErrorMessage } from "./utils.js";
+import { State, type LanguageClient } from 'vscode-languageclient/node';
+import { Signal } from './signals.js';
+import * as log from './log.js';
+import { getErrorMessage } from './utils.js';
 
 // ── Sort order ──────────────────────────────────────────────────
 
 export enum SortOrder {
-    Natural = "natural",
-    Alphabetical = "alphabetical",
-    Accessibility = "accessibility",
+  Natural = 'natural',
+  Alphabetical = 'alphabetical',
+  Accessibility = 'accessibility',
 }
 
 export const SORT_CYCLE: Record<SortOrder, SortOrder> = {
@@ -56,9 +56,9 @@ export interface LspPosition {
 // ── Symbols state (discriminated union) ─────────────────────────
 
 export type SymbolsState =
-    | { readonly kind: "empty" }
-    | { readonly kind: "loaded"; readonly response: WorkspaceSymbolsResponse }
-    | { readonly kind: "error"; readonly message: string };
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'loaded'; readonly response: WorkspaceSymbolsResponse }
+  | { readonly kind: 'error'; readonly message: string };
 
 // ── Centralized reactive state ──────────────────────────────────
 
@@ -75,7 +75,7 @@ export const solutionPath = new Signal<string | undefined>(undefined);
 export const sortOrder = new Signal<SortOrder>(SortOrder.Natural);
 
 /** Workspace symbols — empty, loaded, or error. */
-export const symbolsState = new Signal<SymbolsState>({ kind: "empty" });
+export const symbolsState = new Signal<SymbolsState>({ kind: 'empty' });
 
 // ── Actions ─────────────────────────────────────────────────────
 
@@ -95,20 +95,20 @@ export async function loadSolution(slnPath: string): Promise<void> {
 
 /** Clear all solution state. */
 export function clear(): void {
-    log.traceInfo("Clearing solution state");
-    solutionPath.value = undefined;
-    symbolsState.value = { kind: "empty" };
+  log.traceInfo('Clearing solution state');
+  solutionPath.value = undefined;
+  symbolsState.value = { kind: 'empty' };
 }
 
 /** Refresh workspace symbols from the LSP server. */
 export async function refresh(): Promise<void> {
-    const lsp = client.value;
-    const solution = solutionPath.value;
-    if (lsp === undefined || solution === undefined) {
-        log.traceInfo("Refresh skipped: no client or solution");
-        symbolsState.value = { kind: "empty" };
-        return;
-    }
+  const lsp = client.value;
+  const solution = solutionPath.value;
+  if (lsp === undefined || solution === undefined) {
+    log.traceInfo('Refresh skipped: no client or solution');
+    symbolsState.value = { kind: 'empty' };
+    return;
+  }
 
     log.traceInfo(`Refreshing workspace symbols for ${solution}`);
     await fetchWithRetry(lsp, solution);
@@ -116,59 +116,49 @@ export async function refresh(): Promise<void> {
 
 // ── Internal ────────────────────────────────────────────────────
 
-async function fetchWithRetry(
-    lsp: LanguageClient,
-    solution: string,
-): Promise<void> {
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        if (await tryFetch(lsp, solution, attempt)) return;
-        if (attempt < MAX_RETRIES) await delay(RETRY_DELAY_MS);
-    }
-    log.info("All workspace symbol retries exhausted");
-    symbolsState.value = { kind: "error", message: "All retries exhausted" };
+async function fetchWithRetry(lsp: LanguageClient, solution: string): Promise<void> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (await tryFetch(lsp, solution, attempt)) return;
+    if (attempt < MAX_RETRIES) await delay(RETRY_DELAY_MS);
+  }
+  log.info('All workspace symbol retries exhausted');
+  symbolsState.value = { kind: 'error', message: 'All retries exhausted' };
 }
 
-async function tryFetch(
-    lsp: LanguageClient,
-    solution: string,
-    attempt: number,
-): Promise<boolean> {
-    if (lsp.state !== State.Running) {
-        log.traceInfo(
-            `LSP not running (state=${String(lsp.state)}), ` +
-                `attempt ${String(attempt + 1)}/${String(MAX_RETRIES)}`,
-        );
-        return false;
-    }
+async function tryFetch(lsp: LanguageClient, solution: string, attempt: number): Promise<boolean> {
+  if (lsp.state !== State.Running) {
+    log.traceInfo(
+      `LSP not running (state=${String(lsp.state)}), ` +
+        `attempt ${String(attempt + 1)}/${String(MAX_RETRIES)}`,
+    );
+    return false;
+  }
 
-    try {
-        const response = await lsp.sendRequest<WorkspaceSymbolsResponse>(
-            "forge/workspaceSymbols",
-            { solution },
-        );
-        logSymbolCounts(response);
-        symbolsState.value = { kind: "loaded", response };
-        return true;
-    } catch (err: unknown) {
-        return handleFetchError(err, attempt);
-    }
+  try {
+    const response = await lsp.sendRequest<WorkspaceSymbolsResponse>('forge/workspaceSymbols', {
+      solution,
+    });
+    logSymbolCounts(response);
+    symbolsState.value = { kind: 'loaded', response };
+    return true;
+  } catch (err: unknown) {
+    return handleFetchError(err, attempt);
+  }
 }
 
 function handleFetchError(err: unknown, attempt: number): boolean {
-    const msg = getErrorMessage(err);
-    if (isTransient(msg) && attempt < MAX_RETRIES) {
-        log.traceInfo(
-            `Transient failure (${String(attempt + 1)}/${String(MAX_RETRIES)}): ${msg}`,
-        );
-        return false;
-    }
-    log.info(`Failed to load workspace symbols: ${msg}`);
-    symbolsState.value = { kind: "error", message: msg };
-    return true;
+  const msg = getErrorMessage(err);
+  if (isTransient(msg) && attempt < MAX_RETRIES) {
+    log.traceInfo(`Transient failure (${String(attempt + 1)}/${String(MAX_RETRIES)}): ${msg}`);
+    return false;
+  }
+  log.info(`Failed to load workspace symbols: ${msg}`);
+  symbolsState.value = { kind: 'error', message: msg };
+  return true;
 }
 
 function isTransient(message: string): boolean {
-    return message.includes("disposed") || message.includes("connection");
+  return message.includes('disposed') || message.includes('connection');
 }
 
 function logSymbolCounts(response: WorkspaceSymbolsResponse): void {

@@ -21,19 +21,28 @@ use crate::sidecar::manager::SidecarManager;
 /// Field order is significant — `MessagePack` uses positional keys.
 #[derive(serde::Deserialize)]
 struct SidecarDiagnostic {
+    /// Original file path (unused; kept for positional `MessagePack` alignment).
     _file_path: String,
+    /// Zero-based start line of the diagnostic span.
     start_line: u32,
+    /// Zero-based start column of the diagnostic span.
     start_character: u32,
+    /// Zero-based end line of the diagnostic span.
     end_line: u32,
+    /// Zero-based end column of the diagnostic span.
     end_character: u32,
+    /// Human-readable diagnostic message.
     message: String,
+    /// Roslyn severity string (`Error`, `Warning`, `Info`, or `Hidden`).
     severity: String,
+    /// Compiler or analyzer diagnostic code (e.g. `CS0219`).
     code: String,
 }
 
 /// Wire type matching C# `SolutionDiagnosticsRequest` `[Key(N)]` ordering.
 #[derive(serde::Serialize)]
 struct SolutionDiagnosticsRequest {
+    /// Optional list of project paths to restrict analysis to.
     project_filter: Vec<String>,
 }
 
@@ -48,8 +57,9 @@ pub fn request_in_background(
     uri: Uri,
     file_path: String,
 ) {
-    runtime.spawn(async move {
-        match fetch(&sidecar, &file_path).await {
+    let source_tag = source_tag_for_uri(&uri);
+    let _handle = runtime.spawn(async move {
+        match fetch(&sidecar, &file_path, &source_tag).await {
             Ok(diagnostics) => {
                 if let Err(err) = publish(&sender, uri, diagnostics) {
                     warn!("Failed to publish diagnostics: {err:#}");
@@ -62,6 +72,14 @@ pub fn request_in_background(
     });
 }
 
+/// Determine the diagnostic source tag based on the document language.
+fn source_tag_for_uri(uri: &Uri) -> String {
+    match crate::tree_sitter_parse::LangId::from_uri(uri) {
+        Some(crate::tree_sitter_parse::LangId::FSharp) => "forge-fsharp".to_string(),
+        _ => "forge-csharp".to_string(),
+    }
+}
+
 /// Spawn a background task to fetch solution-wide diagnostics.
 ///
 /// Results are published incrementally — one notification per file —
@@ -72,7 +90,7 @@ pub fn request_solution_in_background(
     sender: crossbeam_channel::Sender<Message>,
     project_filter: Vec<String>,
 ) {
-    tokio::spawn(async move {
+    let _handle = tokio::spawn(async move {
         match fetch_all(&sidecar, &project_filter).await {
             Ok(file_diagnostics) => {
                 let file_count = file_diagnostics.len();
@@ -107,11 +125,15 @@ pub async fn fetch_from_sidecar(
     sidecar: &SidecarManager,
     file_path: &str,
 ) -> Result<Vec<Diagnostic>> {
-    fetch(sidecar, file_path).await
+    fetch(sidecar, file_path, "forge").await
 }
 
 /// Fetch diagnostics from the sidecar for a single file.
-async fn fetch(sidecar: &SidecarManager, file_path: &str) -> Result<Vec<Diagnostic>> {
+async fn fetch(
+    sidecar: &SidecarManager,
+    file_path: &str,
+    source_tag: &str,
+) -> Result<Vec<Diagnostic>> {
     let payload = rmp_serde::to_vec(file_path).context("serialize file path")?;
     let response_bytes = sidecar
         .request("workspace/diagnostics", payload)
@@ -119,7 +141,10 @@ async fn fetch(sidecar: &SidecarManager, file_path: &str) -> Result<Vec<Diagnost
         .context("sidecar diagnostics request")?;
     let results: Vec<SidecarDiagnostic> =
         rmp_serde::from_slice(&response_bytes).context("deserialize diagnostics")?;
-    Ok(results.into_iter().map(to_lsp_diagnostic).collect())
+    Ok(results
+        .into_iter()
+        .map(|r| to_lsp_diagnostic(r, source_tag))
+        .collect())
 }
 
 /// Fetch diagnostics for all files in the solution, batched by file.
@@ -139,7 +164,15 @@ async fn fetch_all(
         rmp_serde::from_slice(&response_bytes).context("deserialize solution diagnostics")?;
     let mapped = results
         .into_iter()
-        .map(|(path, diags)| (path, diags.into_iter().map(to_lsp_diagnostic).collect()))
+        .map(|(path, diags)| {
+            (
+                path,
+                diags
+                    .into_iter()
+                    .map(|d| to_lsp_diagnostic(d, "forge"))
+                    .collect(),
+            )
+        })
         .collect();
     Ok(mapped)
 }
@@ -172,7 +205,7 @@ fn publish(
 }
 
 /// Map a sidecar diagnostic to an LSP `Diagnostic`.
-fn to_lsp_diagnostic(result: SidecarDiagnostic) -> Diagnostic {
+fn to_lsp_diagnostic(result: SidecarDiagnostic, source_tag: &str) -> Diagnostic {
     Diagnostic {
         range: Range::new(
             Position::new(result.start_line, result.start_character),
@@ -180,7 +213,7 @@ fn to_lsp_diagnostic(result: SidecarDiagnostic) -> Diagnostic {
         ),
         severity: Some(map_severity(&result.severity)),
         code: Some(NumberOrString::String(result.code)),
-        source: Some("forge-csharp".to_string()),
+        source: Some(source_tag.to_string()),
         message: result.message,
         ..Diagnostic::default()
     }
@@ -240,7 +273,7 @@ mod tests {
             code: "CS0219".to_string(),
         };
 
-        let diag = to_lsp_diagnostic(input);
+        let diag = to_lsp_diagnostic(input, "forge-csharp");
 
         assert_eq!(diag.range.start, Position::new(10, 4));
         assert_eq!(diag.range.end, Position::new(10, 20));

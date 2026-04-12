@@ -186,7 +186,7 @@ fn update_existing_line(
     }
     // Preserve trailing-newline state of original.
     if !original.ends_with('\n') {
-        out.pop();
+        let _ = out.pop();
     }
     out
 }

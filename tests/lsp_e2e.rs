@@ -91,7 +91,7 @@ impl LspClient {
         let mut content_length: usize = 0;
         loop {
             let mut line = String::new();
-            self.reader.read_line(&mut line).unwrap();
+            let _ = self.reader.read_line(&mut line).unwrap();
             let trimmed = line.trim().to_string();
             if trimmed.is_empty() {
                 break;
@@ -254,7 +254,7 @@ impl LspClient {
     /// Wait for the process to exit (with timeout).
     fn wait_with_timeout(&mut self) {
         // Close stdin so the server's IO reader thread gets EOF and can finish.
-        self.stdin.take();
+        let _ = self.stdin.take();
         let result = self
             .child
             .wait_timeout(Duration::from_secs(5))
@@ -379,7 +379,7 @@ fn test_initialize_returns_capabilities() {
 #[test]
 fn test_shutdown_and_exit() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Shutdown should return null result.
     let resp = client.request("shutdown", json!(null));
@@ -394,10 +394,10 @@ fn test_shutdown_and_exit() {
 #[test]
 fn test_request_after_shutdown_returns_error() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Shutdown.
-    client.request("shutdown", json!(null));
+    let _ = client.request("shutdown", json!(null));
 
     // Any request after shutdown should get InvalidRequest error.
     let resp = client.request(
@@ -419,7 +419,7 @@ fn test_request_after_shutdown_returns_error() {
 #[test]
 fn test_did_open_then_document_symbol() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
@@ -445,7 +445,7 @@ fn test_did_open_then_document_symbol() {
 #[test]
 fn test_did_change_updates_document() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Open with simple class.
     client.open_document(TEST_URI, "public class Foo {}");
@@ -483,7 +483,7 @@ fn test_did_change_updates_document() {
 #[test]
 fn test_did_close_removes_document() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
     client.close_document(TEST_URI);
@@ -505,7 +505,7 @@ fn test_did_close_removes_document() {
 #[test]
 fn test_did_save_is_handled() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
     // Save should not crash — it's a no-op notification.
@@ -527,7 +527,7 @@ fn test_did_save_is_handled() {
 #[test]
 fn test_document_symbols_class_with_members() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
     let resp = client.request(
@@ -561,7 +561,7 @@ fn test_document_symbols_class_with_members() {
 #[test]
 fn test_document_symbols_complex_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, COMPLEX_CLASS);
 
     let resp = client.request(
@@ -637,7 +637,7 @@ fn test_document_symbols_complex_file() {
 #[test]
 fn test_document_symbols_empty_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, EMPTY_FILE);
 
     let resp = client.request(
@@ -654,7 +654,7 @@ fn test_document_symbols_empty_file() {
 #[test]
 fn test_document_symbols_symbol_ranges() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     // 0-indexed: class is on line 0.
     client.open_document(TEST_URI, "public class Foo\n{\n}\n");
 
@@ -686,7 +686,7 @@ fn test_document_symbols_symbol_ranges() {
 #[test]
 fn test_folding_ranges_basic() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
     let resp = client.request(
@@ -720,7 +720,7 @@ fn test_folding_ranges_basic() {
 #[test]
 fn test_folding_ranges_using_directives() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "using System;\nusing System.Collections.Generic;\n\npublic class Foo\n{\n}\n";
     client.open_document(TEST_URI, code);
@@ -743,7 +743,7 @@ fn test_folding_ranges_using_directives() {
 #[test]
 fn test_folding_ranges_empty_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, EMPTY_FILE);
 
     let resp = client.request(
@@ -762,7 +762,7 @@ fn test_folding_ranges_empty_file() {
 #[test]
 fn test_selection_ranges_basic() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
     let resp = client.request(
@@ -788,7 +788,7 @@ fn test_selection_ranges_basic() {
 #[test]
 fn test_selection_ranges_multiple_positions() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
     let resp = client.request(
@@ -812,7 +812,7 @@ fn test_selection_ranges_multiple_positions() {
 #[test]
 fn test_selection_ranges_at_start() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, "public class Foo {}");
 
     let resp = client.request(
@@ -834,7 +834,7 @@ fn test_selection_ranges_at_start() {
 #[test]
 fn test_linked_editing_range_no_xml() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     // Plain code without XML doc comments.
     client.open_document(TEST_URI, "public class Foo {}");
 
@@ -857,7 +857,7 @@ fn test_linked_editing_range_no_xml() {
 #[test]
 fn test_unknown_method_returns_error() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request("textDocument/doesNotExist", json!({}));
     assert!(resp.get("error").is_some(), "unknown method should error");
@@ -869,7 +869,7 @@ fn test_unknown_method_returns_error() {
 #[test]
 fn test_request_on_unopened_document() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Request symbols without opening the document first.
     let resp = client.request(
@@ -888,7 +888,7 @@ fn test_request_on_unopened_document() {
 #[test]
 fn test_request_on_unsupported_file_type() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Open a .txt file — unsupported extension.
     let txt_uri = "file:///test/readme.txt";
@@ -920,7 +920,7 @@ fn test_request_on_unsupported_file_type() {
 #[test]
 fn test_folding_range_on_unopened_document() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "textDocument/foldingRange",
@@ -935,7 +935,7 @@ fn test_folding_range_on_unopened_document() {
 #[test]
 fn test_selection_range_on_unopened_document() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "textDocument/selectionRange",
@@ -953,7 +953,7 @@ fn test_selection_range_on_unopened_document() {
 #[test]
 fn test_linked_editing_range_on_unopened_document() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "textDocument/linkedEditingRange",
@@ -973,7 +973,7 @@ fn test_linked_editing_range_on_unopened_document() {
 #[test]
 fn test_open_change_close_reopen() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Open → symbols.
     client.open_document(TEST_URI, "public class First {}");
@@ -1004,7 +1004,7 @@ fn test_open_change_close_reopen() {
 #[test]
 fn test_multiple_documents_simultaneously() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let uri1 = "file:///test/File1.cs";
     let uri2 = "file:///test/File2.cs";
@@ -1044,7 +1044,7 @@ fn test_multiple_documents_simultaneously() {
 #[test]
 fn test_all_features_on_complex_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, COMPLEX_CLASS);
 
     // Document symbols.
@@ -1093,7 +1093,7 @@ fn test_all_features_on_complex_file() {
 #[test]
 fn test_enum_members_in_symbols() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "public enum Color\n{\n    Red,\n    Green,\n    Blue\n}\n";
     client.open_document(TEST_URI, code);
@@ -1125,7 +1125,7 @@ fn test_enum_members_in_symbols() {
 #[test]
 fn test_file_scoped_namespace() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace MyApp;\n\npublic class Widget {}\n";
     client.open_document(TEST_URI, code);
@@ -1150,7 +1150,7 @@ fn test_file_scoped_namespace() {
 #[test]
 fn test_rapid_changes() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, "public class V1 {}");
     client.change_document(TEST_URI, 2, "public class V2 {}");
@@ -1176,7 +1176,7 @@ fn test_rapid_changes() {
 #[test]
 fn test_fsharp_file_errors_gracefully() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let fs_uri = "file:///test/Module.fs";
     client.notify(
@@ -1210,7 +1210,7 @@ fn test_fsharp_file_errors_gracefully() {
 #[test]
 fn test_unknown_notification_ignored() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Send a completely unknown notification.
     client.notify("custom/unknownMethod", json!({"foo": "bar"}));
@@ -1232,7 +1232,7 @@ fn test_unknown_notification_ignored() {
 #[test]
 fn test_folding_ranges_multiline_comment() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "/* This is a\n   multi-line\n   comment */\npublic class Foo\n{\n}\n";
     client.open_document(TEST_URI, code);
@@ -1263,7 +1263,7 @@ fn test_folding_ranges_multiline_comment() {
 #[test]
 fn test_linked_editing_range_with_xml_doc_comment() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // XML doc comments with <summary> tags.
     let code = "/// <summary>Hello</summary>\npublic class Foo {}\n";
@@ -1290,7 +1290,7 @@ fn test_linked_editing_range_with_xml_doc_comment() {
 #[test]
 fn test_fsharp_fsx_extension() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let fsx_uri = "file:///test/Script.fsx";
     client.notify(
@@ -1319,7 +1319,7 @@ fn test_fsharp_fsx_extension() {
 #[test]
 fn test_fsharp_fsi_extension() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let fsi_uri = "file:///test/Signature.fsi";
     client.notify(
@@ -1349,7 +1349,7 @@ fn test_fsharp_fsi_extension() {
 #[test]
 fn test_folding_range_on_fsharp_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let fs_uri = "file:///test/Module.fs";
     client.notify(
@@ -1377,7 +1377,7 @@ fn test_folding_range_on_fsharp_file() {
 #[test]
 fn test_selection_range_on_fsharp_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let fs_uri = "file:///test/Module.fs";
     client.notify(
@@ -1411,7 +1411,7 @@ fn test_selection_range_on_fsharp_file() {
 #[test]
 fn test_linked_editing_range_on_fsharp_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let fs_uri = "file:///test/Module.fs";
     client.notify(
@@ -1447,7 +1447,7 @@ fn test_linked_editing_range_on_fsharp_file() {
 #[test]
 fn test_folding_ranges_switch_body() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = r"public class Foo
 {
@@ -1485,7 +1485,7 @@ fn test_folding_ranges_switch_body() {
 #[test]
 fn test_malformed_did_open_params() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Send didOpen with garbage params — should not crash.
     client.notify("textDocument/didOpen", json!({ "garbage": true }));
@@ -1505,7 +1505,7 @@ fn test_malformed_did_open_params() {
 #[test]
 fn test_malformed_did_change_params() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, "public class Foo {}");
 
@@ -1530,7 +1530,7 @@ fn test_malformed_did_change_params() {
 #[test]
 fn test_malformed_did_save_params() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Send didSave with garbage params — should not crash.
     client.notify("textDocument/didSave", json!({ "bad": "data" }));
@@ -1549,7 +1549,7 @@ fn test_malformed_did_save_params() {
 #[test]
 fn test_malformed_did_close_params() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Send didClose with garbage params — should not crash.
     client.notify("textDocument/didClose", json!({ "nonsense": 42 }));
@@ -1570,7 +1570,7 @@ fn test_malformed_did_close_params() {
 #[test]
 fn test_unsolicited_response_ignored() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Send a raw JSON-RPC response (not a request or notification).
     // The server should silently ignore it.
@@ -1600,7 +1600,7 @@ fn test_unsolicited_response_ignored() {
 #[test]
 fn test_stdin_close_without_exit() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Send shutdown but then close stdin WITHOUT sending exit notification.
     // This exercises the main loop's Ok(()) return when the channel drains.
@@ -1609,7 +1609,7 @@ fn test_stdin_close_without_exit() {
 
     // Drop stdin to close the pipe — the server should exit cleanly
     // via the for loop ending (channel closed).
-    client.stdin.take();
+    let _ = client.stdin.take();
     let result = client
         .child
         .wait_timeout(Duration::from_secs(5))
@@ -1622,7 +1622,7 @@ fn test_stdin_close_without_exit() {
 #[test]
 fn test_event_declaration_symbol() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Use event with add/remove accessors — tree-sitter recognizes this as event_declaration.
     let code = "public class Foo\n{\n    public event System.EventHandler OnClick\n    {\n        add { }\n        remove { }\n    }\n}\n";
@@ -1675,7 +1675,7 @@ fn assert_hover_ok(resp: &Value) {
 #[test]
 fn test_hover_on_class_method_property_field() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "\
 public class Calculator
@@ -1732,7 +1732,7 @@ public class Calculator
 #[test]
 fn test_hover_on_all_comment_styles_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "\
 // single-line comment
@@ -1789,7 +1789,7 @@ public class Foo { }";
 #[test]
 fn test_hover_across_multiple_documents() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let uri_a = "file:///test/A.cs";
     let uri_b = "file:///test/B.cs";
@@ -1834,7 +1834,7 @@ fn test_hover_across_multiple_documents() {
 #[test]
 fn test_hover_edit_hover_cycle() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Open with class Alpha — validate symbols + hover.
     client.open_document(TEST_URI, "public class Alpha { }");
@@ -1877,7 +1877,7 @@ fn test_hover_edit_hover_cycle() {
 #[test]
 fn test_hover_on_fresh_comment_only_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Open a fresh file that is entirely a comment.
     let comment_uri = "file:///test/CommentOnly.cs";
@@ -1924,7 +1924,7 @@ fn test_hover_on_fresh_comment_only_file() {
 #[test]
 fn test_hover_response_validates_lsp_shape() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, "public class Widget { }");
 
@@ -1981,7 +1981,7 @@ fn test_hover_response_validates_lsp_shape() {
 #[test]
 fn test_hover_unopened_then_open_then_hover() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Hover on a document that has not been opened.
     let resp1 = hover(&mut client, "file:///ghost/NotOpen.cs", 0, 0);
@@ -2018,7 +2018,7 @@ fn test_hover_unopened_then_open_then_hover() {
 #[test]
 fn test_hover_interleaved_with_other_requests() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "\
 namespace Interleaved
@@ -2147,7 +2147,7 @@ fn test_definition_capabilities_advertised() {
 #[test]
 fn test_definition_on_unopened_document() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = definition(&mut client, "file:///ghost/NoFile.cs", 0, 0);
     assert_eq!(resp["jsonrpc"], "2.0");
@@ -2164,7 +2164,7 @@ fn test_definition_on_unopened_document() {
 #[test]
 fn test_definition_after_document_edit() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, "public class Alpha { }");
 
@@ -2340,7 +2340,7 @@ fn test_full_stack_hover_class_method_property() {
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // Wait for the sidecar to load Roslyn + MSBuild (may take 30-60s).
@@ -2460,7 +2460,7 @@ fn test_full_stack_hover_struct_enum_interface() {
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // Wait for sidecar — poll on Calculator class.
@@ -2527,7 +2527,7 @@ fn test_full_stack_hover_after_edit() {
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // Wait for sidecar to be ready.
@@ -2587,7 +2587,7 @@ fn test_full_stack_hover_var_keyword() {
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // Wait for sidecar.
@@ -2619,7 +2619,7 @@ fn test_full_stack_hover_xml_documentation() {
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
@@ -2662,7 +2662,7 @@ fn test_full_stack_hover_obsolete_deprecation() {
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
@@ -2698,7 +2698,7 @@ fn test_full_stack_hover_cache_hit_latency() {
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // First hover — warm the cache.
@@ -2813,7 +2813,7 @@ fn test_full_stack_fsharp_hover_function_type_module() {
 
     let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // Wait for F# sidecar — poll hover on "Calculator" module (line 3, char 7).
@@ -2859,7 +2859,7 @@ fn test_full_stack_fsharp_hover_du_case() {
 
     let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 7, Duration::from_secs(90));
@@ -2889,7 +2889,7 @@ fn test_full_stack_fsharp_hover_pipeline() {
 
     let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 7, Duration::from_secs(90));
@@ -2919,7 +2919,7 @@ fn test_full_stack_fsharp_hover_xml_docs() {
 
     let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 7, Duration::from_secs(90));
@@ -2950,7 +2950,7 @@ fn test_full_stack_hover_crash_recovery() {
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // First hover — sidecar is healthy.
@@ -2985,7 +2985,7 @@ fn test_full_stack_hover_latency_benchmark() {
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
@@ -3255,7 +3255,7 @@ EndGlobal"#,
 #[test]
 fn test_definition_on_comment_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "// This is a comment\nnamespace Test { public class Foo { } }\n";
     client.open_document(TEST_URI, code);
@@ -3276,7 +3276,7 @@ fn test_definition_on_comment_returns_null() {
 #[test]
 fn test_definition_on_string_literal_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace T\n{\n    public class F\n    {\n        public string X = \"hello\";\n    }\n}\n";
     client.open_document(TEST_URI, code);
@@ -3297,7 +3297,7 @@ fn test_definition_on_string_literal_returns_null() {
 #[test]
 fn test_definition_without_sidecar_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
@@ -3317,7 +3317,7 @@ fn test_definition_without_sidecar_returns_null() {
 #[test]
 fn test_type_definition_on_comment_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "// comment\nnamespace X { }\n";
     client.open_document(TEST_URI, code);
@@ -3338,7 +3338,7 @@ fn test_type_definition_on_comment_returns_null() {
 #[test]
 fn test_declaration_on_string_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace T { public class F { public string X = \"abc\"; } }\n";
     client.open_document(TEST_URI, code);
@@ -3359,7 +3359,7 @@ fn test_declaration_on_string_returns_null() {
 #[test]
 fn test_implementation_without_sidecar_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, COMPLEX_CLASS);
 
@@ -3388,7 +3388,7 @@ fn test_full_stack_definition_on_class_name() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // "AnimalBase" in "class Dog : AnimalBase" (line 14, char 23).
@@ -3417,7 +3417,7 @@ fn test_full_stack_definition_on_method_call() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -3453,7 +3453,7 @@ fn test_full_stack_definition_on_property_access() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -3484,7 +3484,7 @@ fn test_full_stack_type_definition_on_variable() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -3518,7 +3518,7 @@ fn test_full_stack_declaration_on_override() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -3552,7 +3552,7 @@ fn test_full_stack_declaration_on_interface_impl() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -3583,7 +3583,7 @@ fn test_full_stack_implementation_on_interface() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -3622,7 +3622,7 @@ fn test_full_stack_implementation_on_virtual_method() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -3675,7 +3675,7 @@ fn test_full_stack_definition_response_structure() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let result =
@@ -3712,7 +3712,7 @@ fn test_full_stack_definition_on_empty_line() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -3737,7 +3737,7 @@ fn test_full_stack_all_nav_methods_interleaved() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(180));
@@ -3801,7 +3801,7 @@ fn test_full_stack_definition_on_constructor() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -3830,7 +3830,7 @@ fn test_full_stack_definition_on_constructor() {
 #[test]
 fn test_diagnostics_cleared_on_close_raw_recv() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace Test { public class Foo { } }\n";
     client.open_document(TEST_URI, code);
@@ -3864,7 +3864,7 @@ fn test_diagnostics_cleared_on_close_raw_recv() {
 #[test]
 fn test_request_works_after_diagnostic_notification() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace Test { public class Foo { } }\n";
     client.open_document(TEST_URI, code);
@@ -3920,7 +3920,7 @@ fn test_diagnostics_cleared_independently_per_document() {
     let uri_a = "file:///test/A.cs";
     let uri_b = "file:///test/B.cs";
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(uri_a, "namespace A { public class Alpha { } }");
     client.open_document(uri_b, "namespace B { public class Beta { } }");
@@ -3979,7 +3979,7 @@ fn test_diagnostics_cleared_independently_per_document() {
 #[test]
 fn test_diagnostics_clear_after_edit_cycle() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code_v1 = "namespace Test { public class V1 { } }";
     let code_v2 = "namespace Test { public class V2 { public int X; } }";
@@ -4021,7 +4021,7 @@ fn test_diagnostics_clear_after_edit_cycle() {
 #[test]
 fn test_diagnostics_rapid_open_close_cycles() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let uris = [
         "file:///test/Rapid1.cs",
@@ -4068,7 +4068,7 @@ fn test_diagnostics_rapid_open_close_cycles() {
 #[test]
 fn test_diagnostics_reopen_after_close() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace Test { public class Reopen { } }";
 
@@ -4177,7 +4177,7 @@ EndGlobal"#,
     let broken_uri = format!("file://{}", broken_path.display());
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
 
     // Open the broken file to trigger per-file diagnostics and ensure
     // the sidecar starts. Solution-wide scan also fires after workspace load.
@@ -4298,7 +4298,7 @@ EndGlobal"#,
     let bad_uri = format!("file://{}", bad_path.display());
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
 
     // Open the bad file to trigger per-file diagnostics.
     client.open_document(&bad_uri, bad_source);
@@ -4418,7 +4418,7 @@ EndGlobal"#,
     let file_uri = format!("file://{}", file_path.display());
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, clean_source);
 
     // Wait for sidecar to be ready by polling hover.
@@ -4503,7 +4503,7 @@ fn test_sort_members_reorders_by_accessibility() {
     let source = "namespace Test\n{\n    public class Foo\n    {\n        private void PrivateMethod() { }\n        public void PublicMethod() { }\n        internal void InternalMethod() { }\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4544,7 +4544,7 @@ fn test_sort_members_reorders_by_category() {
     let source = "namespace Test\n{\n    public class Bar\n    {\n        public void DoStuff() { }\n        public int Value { get; set; }\n        public int _field;\n        public Bar() { }\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4583,7 +4583,7 @@ fn test_sort_members_already_sorted_returns_no_edits() {
     let source = "namespace Test\n{\n    public class Sorted\n    {\n        public int Alpha;\n        public int Beta;\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4612,7 +4612,7 @@ fn test_sort_members_single_member_returns_no_edits() {
     let source = "namespace Test\n{\n    public class OneMember\n    {\n        public void Only() { }\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4641,7 +4641,7 @@ fn test_sort_members_custom_hierarchy_category_first() {
     let source = "namespace Test\n{\n    public class Custom\n    {\n        public void PublicMethod() { }\n        private int _privateField;\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4682,7 +4682,7 @@ fn test_sort_members_interface_sorts_methods() {
     let source = "namespace Test\n{\n    public interface IService\n    {\n        void Zebra();\n        void Alpha();\n        void Middle();\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4720,7 +4720,7 @@ fn test_sort_members_enum_sorts_members() {
     let source = "namespace Test\n{\n    public enum Priority\n    {\n        Zebra,\n        Alpha,\n        Middle\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4758,7 +4758,7 @@ fn test_sort_members_invalid_range_returns_error() {
     let source = "namespace Test { }\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4788,7 +4788,7 @@ fn test_sort_members_mixed_accessibility_and_category() {
     let source = "namespace Test\n{\n    public class Mixed\n    {\n        private void PrivateMethod() { }\n        public int PublicField;\n        internal int InternalProp { get; set; }\n        public void PublicMethod() { }\n        private int PrivateField;\n        public Mixed() { }\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4836,7 +4836,7 @@ fn test_sort_members_struct_sorts_members() {
     let source = "namespace Test\n{\n    public struct Point\n    {\n        public void Reset() { }\n        public int Y;\n        public int X;\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4872,7 +4872,7 @@ fn test_sort_members_preserves_comments_and_attributes() {
     let source = "namespace Test\n{\n    public class Decorated\n    {\n        // Private helper\n        [System.Obsolete]\n        private void Helper() { }\n        /// <summary>Public API</summary>\n        public void Api() { }\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4920,7 +4920,7 @@ fn test_sort_members_inserts_blank_lines_between_groups() {
     let source = "namespace Test\n{\n    public class Groups\n    {\n        private void PrivMethod() { }\n        public int PubField;\n        public void PubMethod() { }\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4961,7 +4961,7 @@ fn test_sort_members_preserves_region_blocks() {
     let source = "namespace Test\n{\n    public class Regions\n    {\n        #region Private\n        private void Beta() { }\n        #endregion\n        public void Alpha() { }\n    }\n}\n";
     let (_tmp, _path, uri) = create_sort_members_file(source);
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/sortMembers",
@@ -4998,7 +4998,7 @@ fn test_sort_members_preserves_region_blocks() {
 #[test]
 fn test_profiler_list_processes() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request("forge/profiler/listProcesses", json!({}));
 
@@ -5031,7 +5031,7 @@ fn test_profiler_list_processes() {
 #[test]
 fn test_profiler_start_trace_invalid_pid() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request("forge/profiler/startTrace", json!({ "pid": 999_999_999 }));
 
@@ -5049,7 +5049,7 @@ fn test_profiler_start_trace_invalid_pid() {
 #[test]
 fn test_profiler_stop_trace_unknown_session() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/profiler/stopTrace",
@@ -5069,7 +5069,7 @@ fn test_profiler_stop_trace_unknown_session() {
 #[test]
 fn test_profiler_stop_counters_unknown_session() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/profiler/stopCounters",
@@ -5089,7 +5089,7 @@ fn test_profiler_stop_counters_unknown_session() {
 #[test]
 fn test_profiler_analyze_heap_missing_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/profiler/analyzeHeap",
@@ -5109,7 +5109,7 @@ fn test_profiler_analyze_heap_missing_file() {
 #[test]
 fn test_profiler_find_gc_roots_missing_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/profiler/findGCRoots",
@@ -5134,7 +5134,7 @@ fn test_profiler_find_gc_roots_missing_file() {
 #[test]
 fn test_profiler_list_processes_latency() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let start = Instant::now();
     let resp = client.request("forge/profiler/listProcesses", json!({}));
@@ -5157,7 +5157,7 @@ fn test_profiler_list_processes_latency() {
 #[test]
 fn test_profiler_start_trace_latency() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let start = Instant::now();
     let resp = client.request("forge/profiler/startTrace", json!({ "pid": 999_999_999 }));
@@ -5180,7 +5180,7 @@ fn test_profiler_start_trace_latency() {
 #[test]
 fn test_profiler_counter_stop_latency() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let start = Instant::now();
     let resp = client.request(
@@ -5206,7 +5206,7 @@ fn test_profiler_counter_stop_latency() {
 #[test]
 fn test_profiler_analyze_heap_latency() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let start = Instant::now();
     let resp = client.request(
@@ -5232,7 +5232,7 @@ fn test_profiler_analyze_heap_latency() {
 #[test]
 fn test_profiler_find_gc_roots_latency() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let start = Instant::now();
     let resp = client.request(
@@ -5315,7 +5315,7 @@ fn start_profile_target(binary: &std::path::Path) -> Child {
     }
 
     // Detach stdout so we don't hold the pipe (child keeps running).
-    child.stdout.take();
+    let _ = child.stdout.take();
     child
 }
 
@@ -5333,7 +5333,7 @@ fn test_profiler_happy_path_trace_lifecycle() {
     let target_pid = target.id();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // 1. listProcesses must include our target PID.
     let resp = client.request("forge/profiler/listProcesses", json!({}));
@@ -5422,7 +5422,7 @@ fn test_profiler_happy_path_counter_lifecycle() {
     let target_pid = target.id();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // 1. startCounters on the target.
     let resp = client.request(
@@ -5478,7 +5478,7 @@ fn test_profiler_happy_path_dump_and_analyze() {
     let target_pid = target.id();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // 1. collectDump on the target.
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
@@ -5587,7 +5587,7 @@ fn test_profiler_edge_double_stop_trace() {
     let target_pid = target.id();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
     let trace_path = tmp_dir
@@ -5644,7 +5644,7 @@ fn test_profiler_edge_trace_target_dies() {
     let target_pid = target.id();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
     let trace_path = tmp_dir
@@ -5707,7 +5707,7 @@ fn test_profiler_edge_process_list_finds_target_by_name() {
     let target_pid = target.id();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request("forge/profiler/listProcesses", json!({}));
     let processes = resp["result"].as_array().expect("result must be array");
@@ -5742,7 +5742,7 @@ fn test_profiler_edge_max_concurrent_sessions() {
     let target_pid = target.id();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
     let mut session_ids = Vec::new();
@@ -5810,7 +5810,7 @@ fn test_profiler_edge_analyze_heap_type_filter() {
     let target_pid = target.id();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Collect a dump first.
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
@@ -5875,7 +5875,7 @@ fn test_profiler_inspect_object_from_dump() {
     let target_pid = target.id();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // 1. Collect a heap dump.
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
@@ -5946,7 +5946,7 @@ fn test_profiler_inspect_object_from_dump() {
 #[test]
 fn test_profiler_inspect_object_missing_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/profiler/inspectObject",
@@ -5969,7 +5969,7 @@ fn test_profiler_inspect_object_missing_file() {
 #[test]
 fn test_profiler_diff_heap_snapshots_missing_baseline() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/profiler/diffHeapSnapshots",
@@ -5992,7 +5992,7 @@ fn test_profiler_diff_heap_snapshots_missing_baseline() {
 #[test]
 fn test_profiler_diff_heap_snapshots_missing_comparison() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Create a real temp file for baseline but missing comparison.
     let tmp = tempfile::NamedTempFile::new().unwrap();
@@ -6019,7 +6019,7 @@ fn test_profiler_diff_heap_snapshots_missing_comparison() {
 #[test]
 fn test_profiler_get_object_graph_missing_file() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/profiler/getObjectGraph",
@@ -6042,7 +6042,7 @@ fn test_profiler_get_object_graph_missing_file() {
 #[test]
 fn test_profiler_diff_heap_snapshots_server_survives_error() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     // Send bad request.
     let _ = client.request(
@@ -6068,7 +6068,7 @@ fn test_profiler_diff_heap_snapshots_server_survives_error() {
 #[test]
 fn test_profiler_diff_heap_snapshots_latency() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let start = std::time::Instant::now();
     let _ = client.request(
@@ -6093,7 +6093,7 @@ fn test_profiler_diff_heap_snapshots_latency() {
 #[test]
 fn test_profiler_get_object_graph_latency() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let start = std::time::Instant::now();
     let _ = client.request(
@@ -6194,7 +6194,7 @@ fn test_workspace_symbols_returns_project_with_symbols() {
     let (_tmp, sln_path) = create_workspace_symbols_fixture();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
     assert!(resp.get("error").is_none(), "must not error: {resp}");
@@ -6232,7 +6232,7 @@ fn test_workspace_symbols_extracts_all_symbol_kinds() {
     let (_tmp, sln_path) = create_workspace_symbols_fixture();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
     assert!(resp.get("error").is_none(), "must not error: {resp}");
@@ -6284,7 +6284,7 @@ fn test_workspace_symbols_symbol_ranges_valid() {
     let (_tmp, sln_path) = create_workspace_symbols_fixture();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
     let file_symbols = &resp["result"]["projects"][0]["symbols"][0]["symbols"];
@@ -6314,7 +6314,7 @@ fn test_workspace_symbols_access_modifiers() {
     let (_tmp, sln_path) = create_workspace_symbols_fixture();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
 
@@ -6335,7 +6335,7 @@ fn test_workspace_symbols_access_modifiers() {
 #[test]
 fn test_workspace_symbols_nonexistent_solution() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "forge/workspaceSymbols",
@@ -6355,7 +6355,7 @@ fn test_workspace_symbols_file_scoped_namespace_reparenting() {
     let (_tmp, sln_path) = create_workspace_symbols_fixture();
 
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
     let syms = resp["result"]["projects"][0]["symbols"][0]["symbols"]
@@ -6390,7 +6390,7 @@ fn test_workspace_symbols_file_scoped_namespace_reparenting() {
 #[test]
 fn test_definition_cache_returns_same_result() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
     // Without sidecar, definition returns null — cache stores null.
@@ -6412,7 +6412,7 @@ fn test_definition_cache_returns_same_result() {
 #[test]
 fn test_definition_cache_invalidated_on_change() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace T { class F { void M() { } } }\n";
     client.open_document(TEST_URI, code);
@@ -6435,7 +6435,7 @@ fn test_definition_cache_invalidated_on_change() {
 #[test]
 fn test_type_definition_without_sidecar_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
     let resp = type_definition(&mut client, TEST_URI, 5, 18);
@@ -6454,7 +6454,7 @@ fn test_type_definition_without_sidecar_returns_null() {
 #[test]
 fn test_declaration_without_sidecar_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
     let resp = declaration(&mut client, TEST_URI, 5, 18);
@@ -6473,7 +6473,7 @@ fn test_declaration_without_sidecar_returns_null() {
 #[test]
 fn test_type_definition_cache_returns_same_result() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
     let resp1 = type_definition(&mut client, TEST_URI, 5, 18);
@@ -6494,7 +6494,7 @@ fn test_type_definition_cache_returns_same_result() {
 #[test]
 fn test_declaration_cache_returns_same_result() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
     let resp1 = declaration(&mut client, TEST_URI, 5, 18);
@@ -6515,7 +6515,7 @@ fn test_declaration_cache_returns_same_result() {
 #[test]
 fn test_implementation_repeated_returns_same_result() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, COMPLEX_CLASS);
 
     let resp1 = implementation(&mut client, TEST_URI, 6, 22);
@@ -6536,7 +6536,7 @@ fn test_implementation_repeated_returns_same_result() {
 #[test]
 fn test_definition_on_identifier_without_sidecar() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace N { class C { void M() { int x = 1; } } }\n";
     client.open_document(TEST_URI, code);
@@ -6559,7 +6559,7 @@ fn test_definition_on_identifier_without_sidecar() {
 #[test]
 fn test_did_change_then_definition_exercises_notify_path() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code_v1 = "namespace N { class A { void Foo() { } } }\n";
     let code_v2 = "namespace N { class B { void Bar() { } } }\n";
@@ -6583,7 +6583,7 @@ fn test_did_change_then_definition_exercises_notify_path() {
 #[test]
 fn test_type_definition_on_identifier_without_sidecar() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace N { class C { void M() { int x = 1; } } }\n";
     client.open_document(TEST_URI, code);
@@ -6604,7 +6604,7 @@ fn test_type_definition_on_identifier_without_sidecar() {
 #[test]
 fn test_declaration_on_identifier_without_sidecar() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace N { class C { void M() { int x = 1; } } }\n";
     client.open_document(TEST_URI, code);
@@ -6625,7 +6625,7 @@ fn test_declaration_on_identifier_without_sidecar() {
 #[test]
 fn test_all_nav_methods_on_same_position_without_sidecar() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace N { class C { void M() { var x = new C(); } } }\n";
     client.open_document(TEST_URI, code);
@@ -6656,7 +6656,7 @@ fn test_all_nav_methods_on_same_position_without_sidecar() {
 #[test]
 fn test_definition_cache_different_positions() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "namespace N\n{\n    class A { }\n    class B { }\n}\n";
     client.open_document(TEST_URI, code);
@@ -6697,7 +6697,7 @@ fn test_full_stack_definition_cache_hit() {
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // First request warms the cache.
@@ -6733,7 +6733,7 @@ fn test_full_stack_declaration_on_non_override() {
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -6783,7 +6783,7 @@ fn test_full_stack_implementation_on_concrete_class() {
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -6828,7 +6828,7 @@ fn test_full_stack_type_definition_location_structure() {
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -6871,7 +6871,7 @@ fn test_full_stack_definition_cache_invalidated_on_change() {
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // Warm the cache.
@@ -6910,7 +6910,7 @@ fn test_full_stack_nav_methods_with_range_assertions() {
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
@@ -7058,7 +7058,7 @@ fn test_full_stack_diagnostics_refreshed_on_did_change() {
     let (_tmp, root_uri, file_path, file_uri, clean_source) = create_change_test_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, clean_source);
 
     // Wait for sidecar readiness via hover polling.
@@ -7204,7 +7204,7 @@ EndGlobal"#,
     let file_uri = format!("file://{}", file_path.display());
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, syntax_error_source);
 
     // Poll for syntax error diagnostics (CS1002, CS1513, CS1514 etc).
@@ -7270,7 +7270,7 @@ EndGlobal"#,
 #[test]
 fn test_hover_without_sidecar_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
@@ -7292,7 +7292,7 @@ fn test_hover_without_sidecar_returns_null() {
 #[test]
 fn test_completion_without_sidecar_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
@@ -7325,7 +7325,7 @@ fn test_completion_without_sidecar_returns_null() {
 #[test]
 fn test_all_nav_methods_without_sidecar_return_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
@@ -7370,7 +7370,7 @@ fn test_all_nav_methods_without_sidecar_return_null() {
 #[test]
 fn test_completion_and_hover_without_sidecar_both_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
@@ -7409,7 +7409,7 @@ fn test_completion_and_hover_without_sidecar_both_null() {
 #[test]
 fn test_pull_diagnostics_document_request_is_handled() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
     let resp = client.request(
@@ -7444,7 +7444,7 @@ fn test_pull_diagnostics_document_request_is_handled() {
 #[test]
 fn test_pull_diagnostics_workspace_request_is_handled() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let resp = client.request(
         "workspace/diagnostic",
@@ -7547,7 +7547,7 @@ fn test_references_capabilities_advertised() {
 #[test]
 fn test_references_on_comment_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "// This is a comment\nnamespace Test { public class Foo { } }\n";
     client.open_document(TEST_URI, code);
@@ -7566,7 +7566,7 @@ fn test_references_on_comment_returns_null() {
 #[test]
 fn test_references_without_sidecar_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
@@ -7584,7 +7584,7 @@ fn test_references_without_sidecar_returns_null() {
 #[test]
 fn test_document_highlight_on_comment_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     let code = "// This is a comment\nnamespace Test { public class Foo { } }\n";
     client.open_document(TEST_URI, code);
@@ -7603,7 +7603,7 @@ fn test_document_highlight_on_comment_returns_null() {
 #[test]
 fn test_document_highlight_without_sidecar_returns_null() {
     let mut client = LspClient::start();
-    client.initialize();
+    let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
@@ -7630,7 +7630,7 @@ fn test_full_stack_references_on_method_returns_call_sites() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // Wait for sidecar to be ready using Speak on line 5 (interface declaration).
@@ -7673,7 +7673,7 @@ fn test_full_stack_references_include_declaration_true() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_references_until_ready(&mut client, &file_uri, 5, 11, Duration::from_secs(90));
@@ -7711,7 +7711,7 @@ fn test_full_stack_references_on_class_returns_type_usages() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_references_until_ready(&mut client, &file_uri, 5, 11, Duration::from_secs(90));
@@ -7741,7 +7741,7 @@ fn test_full_stack_references_response_structure() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     let _ = poll_references_until_ready(&mut client, &file_uri, 5, 11, Duration::from_secs(90));
@@ -7781,7 +7781,7 @@ fn test_full_stack_document_highlight_read_write() {
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // Wait for sidecar readiness.
@@ -7894,7 +7894,7 @@ fn test_full_stack_hover_standalone_csproj_no_sln() {
     let (_tmp, root_uri, file_uri, source) = create_standalone_csproj_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // Hover on "Calculator" class name (line 2, char 14).
@@ -7924,11 +7924,11 @@ fn test_full_stack_definition_standalone_csproj_no_sln() {
     let (_tmp, root_uri, file_uri, source) = create_standalone_csproj_workspace();
 
     let mut client = LspClient::start_verbose();
-    client.initialize_with_root(json!(root_uri));
+    let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
     // Wait for sidecar to load before requesting definition.
-    poll_hover_until_ready(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
 
     // Definition on "Add" method name (line 4, char 16).
     let resp = definition(&mut client, &file_uri, 4, 16);

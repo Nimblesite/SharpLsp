@@ -12,14 +12,77 @@ use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentHighlight,
     DocumentHighlightKind, DocumentHighlightParams, GotoDefinitionParams, GotoDefinitionResponse,
     Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, Position, Range,
-    ReferenceParams, Uri,
+    ReferenceParams, TextEdit, Uri,
 };
 use tracing::{debug, info, warn};
 
 use crate::sidecar::manager::SidecarManager;
 
-/// Handle `textDocument/completion` via the C# sidecar.
+/// Handle `textDocument/completion` via the .NET sidecar + postfix templates.
 pub fn handle_completion(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    vfs: &crate::vfs::Vfs,
+) -> Result<serde_json::Value> {
+    let params: CompletionParams = serde_json::from_value(req.params)?;
+    let uri = &params.text_document_position.text_document.uri;
+    let file_path = uri_to_path(uri)?;
+    let line = params.text_document_position.position.line;
+    let character = params.text_document_position.position.character;
+
+    // Collect postfix completion items from VFS document text.
+    let mut lsp_items: Vec<CompletionItem> = Vec::new();
+    if let Some(source) = vfs.get_content(uri) {
+        if let Some(lang) = crate::tree_sitter_parse::LangId::from_uri(uri) {
+            let postfix =
+                crate::postfix_completion::get_postfix_completions(&source, line, character, lang);
+            lsp_items.extend(postfix);
+        }
+    }
+
+    // Fetch sidecar completions.
+    if let Some(sidecar) = sidecar {
+        let request = SidecarCompletionReq {
+            file_path,
+            line,
+            character,
+        };
+        let payload = rmp_serde::to_vec(&request)?;
+        match runtime.block_on(sidecar.request("textDocument/completion", payload)) {
+            Ok(response_bytes) => {
+                let items: Vec<SidecarCompletionItem> = rmp_serde::from_slice(&response_bytes)?;
+                let sidecar_items = items.into_iter().map(|item| {
+                    let data = serde_json::json!({
+                        "file_path": &request.file_path,
+                        "index": item.index,
+                    });
+                    CompletionItem {
+                        label: item.label,
+                        kind: Some(map_completion_kind(&item.kind)),
+                        detail: item.detail,
+                        insert_text: item.insert_text,
+                        data: Some(data),
+                        ..CompletionItem::default()
+                    }
+                });
+                lsp_items.extend(sidecar_items);
+            }
+            Err(err) => {
+                warn!("Sidecar completion unavailable: {err:#}");
+            }
+        }
+    }
+
+    if lsp_items.is_empty() {
+        return Ok(serde_json::Value::Null);
+    }
+
+    Ok(serde_json::to_value(CompletionResponse::Array(lsp_items))?)
+}
+
+/// Handle `completionItem/resolve` — fetches additional text edits (e.g. using directives).
+pub fn handle_completion_resolve(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
@@ -27,39 +90,54 @@ pub fn handle_completion(
     let Some(sidecar) = sidecar else {
         return Ok(serde_json::Value::Null);
     };
-    let params: CompletionParams = serde_json::from_value(req.params)?;
-    let file_path = uri_to_path(&params.text_document_position.text_document.uri)?;
-    let line = params.text_document_position.position.line;
-    let character = params.text_document_position.position.character;
+    let mut item: CompletionItem = serde_json::from_value(req.params)?;
+    let data = item.data.clone().unwrap_or_default();
+    let file_path = data
+        .get("file_path")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let index = data
+        .get("index")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(-1);
 
-    let request = SidecarCompletionReq {
+    if file_path.is_empty() || index < 0 {
+        return Ok(serde_json::to_value(item)?);
+    }
+
+    let request = SidecarCompletionResolveReq {
         file_path,
-        line,
-        character,
+        index: i32::try_from(index).unwrap_or(-1),
     };
     let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = match runtime.block_on(sidecar.request("textDocument/completion", payload))
+    let response_bytes = match runtime.block_on(sidecar.request("completionItem/resolve", payload))
     {
         Ok(bytes) => bytes,
         Err(err) => {
-            warn!("Sidecar completion unavailable: {err:#}");
-            return Ok(serde_json::Value::Null);
+            warn!("Sidecar completion resolve unavailable: {err:#}");
+            return Ok(serde_json::to_value(item)?);
         }
     };
 
-    let items: Vec<SidecarCompletionItem> = rmp_serde::from_slice(&response_bytes)?;
-    let lsp_items: Vec<CompletionItem> = items
-        .into_iter()
-        .map(|item| CompletionItem {
-            label: item.label,
-            kind: Some(map_completion_kind(&item.kind)),
-            detail: item.detail,
-            insert_text: item.insert_text,
-            ..CompletionItem::default()
-        })
-        .collect();
+    let result: SidecarCompletionResolveResult = rmp_serde::from_slice(&response_bytes)?;
+    if !result.additional_edits.is_empty() {
+        item.additional_text_edits = Some(
+            result
+                .additional_edits
+                .into_iter()
+                .map(|e| TextEdit {
+                    range: Range::new(
+                        Position::new(e.start_line, e.start_character),
+                        Position::new(e.end_line, e.end_character),
+                    ),
+                    new_text: e.new_text,
+                })
+                .collect(),
+        );
+    }
 
-    Ok(serde_json::to_value(CompletionResponse::Array(lsp_items))?)
+    Ok(serde_json::to_value(item)?)
 }
 
 /// Handle `textDocument/hover` via the C# sidecar, with caching.
@@ -230,29 +308,99 @@ pub fn handle_implementation(
     Ok(value)
 }
 
-/// Handle `textDocument/references` with cross-language fallback.
+/// Handle `textDocument/references` with caching and cross-language fallback.
 pub fn handle_references(
     req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
     fallback: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
+    let params: ReferenceParams = serde_json::from_value(req.params.clone())?;
+    let uri = &params.text_document_position.text_document.uri;
+    let line = params.text_document_position.position.line;
+    let character = params.text_document_position.position.character;
+    let include_decl = params.context.include_declaration;
+    let version = vfs.get_version(uri).unwrap_or(0);
+    let cache_method = if include_decl {
+        "textDocument/references:decl"
+    } else {
+        "textDocument/references:nodecl"
+    };
+
+    if let Some(cached) = nav_cache.get(uri.as_str(), version, line, character, cache_method) {
+        debug!("References cache hit");
+        return Ok(cached.clone());
+    }
+
     let value = handle_references_nav(req.clone(), runtime, sidecar)?;
-    if is_empty_nav_result(&value) {
+    let value = if is_empty_nav_result(&value) {
         if let Some(fb) = fallback {
             debug!("Cross-language fallback for textDocument/references");
             match handle_references_nav(req, runtime, Some(fb)) {
-                Ok(fb_value) if !is_empty_nav_result(&fb_value) => return Ok(fb_value),
-                Ok(_) => debug!("Cross-language fallback returned empty for references"),
-                Err(err) => debug!("Cross-language fallback failed for references: {err:#}"),
+                Ok(fb_value) if !is_empty_nav_result(&fb_value) => fb_value,
+                Ok(_) => {
+                    debug!("Cross-language fallback returned empty for references");
+                    value
+                }
+                Err(err) => {
+                    debug!("Cross-language fallback failed for references: {err:#}");
+                    value
+                }
             }
+        } else {
+            value
         }
-    }
+    } else {
+        value
+    };
+
+    nav_cache.insert(
+        uri.as_str(),
+        version,
+        line,
+        character,
+        cache_method,
+        value.clone(),
+    );
     Ok(value)
 }
 
-/// Handle `textDocument/documentHighlight` via the sidecar.
+/// Handle `textDocument/documentHighlight` with caching via the sidecar.
 pub fn handle_document_highlight(
+    req: Request,
+    vfs: &crate::vfs::Vfs,
+    nav_cache: &mut crate::nav_cache::NavCache,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    let params: DocumentHighlightParams = serde_json::from_value(req.params.clone())?;
+    let uri = &params.text_document_position_params.text_document.uri;
+    let line = params.text_document_position_params.position.line;
+    let character = params.text_document_position_params.position.character;
+    let version = vfs.get_version(uri).unwrap_or(0);
+    let method = "textDocument/documentHighlight";
+
+    if let Some(cached) = nav_cache.get(uri.as_str(), version, line, character, method) {
+        debug!("DocumentHighlight cache hit");
+        return Ok(cached.clone());
+    }
+
+    let value = dispatch_document_highlight(req, runtime, sidecar)?;
+    nav_cache.insert(
+        uri.as_str(),
+        version,
+        line,
+        character,
+        method,
+        value.clone(),
+    );
+    Ok(value)
+}
+
+/// Dispatch document highlight request to the sidecar.
+fn dispatch_document_highlight(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
@@ -593,10 +741,14 @@ fn map_completion_kind(tag: &str) -> CompletionItemKind {
 
 // ── Sidecar wire types (MessagePack) ──────────────────────────────
 
+/// Sidecar request for text completions at a given position.
 #[derive(serde::Serialize)]
 struct SidecarCompletionReq {
+    /// Absolute filesystem path of the document.
     file_path: String,
+    /// Zero-based line number.
     line: u32,
+    /// Zero-based character offset.
     character: u32,
 }
 
@@ -617,76 +769,148 @@ pub fn notify_did_change(
         return;
     };
     let sidecar = Arc::clone(sidecar);
-    runtime.spawn(async move {
+    drop(runtime.spawn(async move {
         if let Err(err) = sidecar.request("textDocument/didChange", payload).await {
             debug!("Sidecar didChange failed: {err:#}");
         }
-    });
+    }));
 }
 
+/// Sidecar notification payload for document content changes.
 #[derive(serde::Serialize)]
 struct SidecarDidChangeReq {
+    /// Absolute filesystem path of the changed document.
     file_path: String,
+    /// Full replacement text of the document.
     new_text: String,
 }
 
+/// Sidecar request for a position-based query (hover, definition, etc.).
 #[derive(serde::Serialize)]
 struct SidecarPositionReq {
+    /// Absolute filesystem path of the document.
     file_path: String,
+    /// Zero-based line number.
     line: u32,
+    /// Zero-based character offset.
     character: u32,
 }
 
+/// A single completion item returned by the sidecar.
 #[derive(serde::Deserialize)]
 struct SidecarCompletionItem {
+    /// Display label for the completion.
     label: String,
+    /// Roslyn completion tag (e.g. "Class", "Method").
     kind: String,
+    /// Optional detail text shown alongside the label.
     detail: Option<String>,
+    /// Optional text to insert (may differ from label).
     insert_text: Option<String>,
+    /// Sidecar-internal index used for resolve requests.
+    index: i32,
 }
 
+/// Sidecar request to resolve additional details for a completion item.
+#[derive(serde::Serialize)]
+struct SidecarCompletionResolveReq {
+    /// Absolute filesystem path of the document.
+    file_path: String,
+    /// Sidecar-internal index identifying the completion item.
+    index: i32,
+}
+
+/// Sidecar response containing additional text edits for a resolved completion.
+#[derive(serde::Deserialize)]
+struct SidecarCompletionResolveResult {
+    /// Additional edits to apply (e.g. adding `using` directives).
+    additional_edits: Vec<SidecarTextEdit>,
+}
+
+/// A text edit returned by the sidecar (flat coordinate representation).
+#[derive(serde::Deserialize)]
+struct SidecarTextEdit {
+    /// Start line of the edit range.
+    start_line: u32,
+    /// Start character of the edit range.
+    start_character: u32,
+    /// End line of the edit range.
+    end_line: u32,
+    /// End character of the edit range.
+    end_character: u32,
+    /// Replacement text.
+    new_text: String,
+}
+
+/// Sidecar hover response with optional range coordinates.
 #[derive(Default, serde::Deserialize)]
 #[serde(default)]
 struct SidecarHoverResult {
+    /// Markdown-formatted hover content.
     contents: String,
+    /// Optional start line of the hovered symbol.
     start_line: Option<u32>,
+    /// Optional start character of the hovered symbol.
     start_character: Option<u32>,
+    /// Optional end line of the hovered symbol.
     end_line: Option<u32>,
+    /// Optional end character of the hovered symbol.
     end_character: Option<u32>,
 }
 
+/// A single location result from the sidecar (definition, references, etc.).
 #[derive(serde::Deserialize)]
 struct SidecarLocationResult {
+    /// Absolute filesystem path of the target file.
     file_path: String,
+    /// Start line of the target range.
     line: u32,
+    /// Start character of the target range.
     character: u32,
+    /// End line of the target range.
     end_line: u32,
+    /// End character of the target range.
     end_character: u32,
 }
 
+/// Sidecar response containing a list of locations.
 #[derive(serde::Deserialize)]
 struct SidecarLocationListResult {
+    /// The resolved locations.
     locations: Vec<SidecarLocationResult>,
 }
 
+/// Sidecar request for find-references at a given position.
 #[derive(serde::Serialize)]
 struct SidecarReferencesReq {
+    /// Absolute filesystem path of the document.
     file_path: String,
+    /// Zero-based line number.
     line: u32,
+    /// Zero-based character offset.
     character: u32,
+    /// Whether to include the declaration itself in results.
     include_declaration: bool,
 }
 
+/// A single document highlight from the sidecar.
 #[derive(serde::Deserialize)]
 struct SidecarDocumentHighlightResult {
+    /// Start line of the highlighted range.
     start_line: u32,
+    /// Start character of the highlighted range.
     start_character: u32,
+    /// End line of the highlighted range.
     end_line: u32,
+    /// End character of the highlighted range.
     end_character: u32,
+    /// Highlight kind (1=text, 2=read, 3=write).
     kind: u32,
 }
 
+/// Sidecar response containing a list of document highlights.
 #[derive(serde::Deserialize)]
 struct SidecarDocumentHighlightListResult {
+    /// The resolved highlights.
     highlights: Vec<SidecarDocumentHighlightResult>,
 }

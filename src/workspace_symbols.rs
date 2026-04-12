@@ -18,52 +18,87 @@ use crate::vfs::Vfs;
 /// Request params for `forge/workspaceSymbols`.
 #[derive(Debug, Deserialize)]
 pub struct WorkspaceSymbolsParams {
+    /// Path to the `.sln` file to scan.
     pub solution: String,
 }
 
 /// Full response for `forge/workspaceSymbols`.
 #[derive(Debug, Serialize)]
 pub struct WorkspaceSymbolsResponse {
+    /// Projects discovered in the solution.
     pub projects: Vec<ProjectNode>,
+    /// Virtual solution folders from the `.sln`.
+    #[serde(rename = "solutionFolders")]
+    pub solution_folders: Vec<SolutionFolderNode>,
+}
+
+/// A solution folder (virtual grouping in .sln).
+#[derive(Debug, Serialize)]
+pub struct SolutionFolderNode {
+    /// Display name of the folder.
+    pub name: String,
+    /// Unique GUID from the `.sln`.
+    pub guid: String,
+    /// GUID of the parent folder, if nested.
+    #[serde(rename = "parentGuid")]
+    pub parent_guid: Option<String>,
 }
 
 /// A project in the solution.
 #[derive(Debug, Serialize)]
 pub struct ProjectNode {
+    /// Project name (stem of `.csproj`/`.fsproj`).
     pub name: String,
+    /// Absolute path to the project file.
     pub path: String,
+    /// Symbols extracted from the project source files.
     pub symbols: Vec<FileSymbol>,
+    /// Name of the parent solution folder, if any.
+    #[serde(rename = "parentFolder")]
+    pub parent_folder: Option<String>,
 }
 
 /// Symbols extracted from a single source file.
 #[derive(Debug, Serialize)]
 pub struct FileSymbol {
+    /// Path to the source file.
     pub file: String,
+    /// Top-level symbols in the file.
     pub symbols: Vec<SymbolNode>,
 }
 
 /// A symbol in the code hierarchy.
 #[derive(Debug, Serialize)]
 pub struct SymbolNode {
+    /// Symbol identifier.
     pub name: String,
+    /// LSP-style kind (e.g. "Class", "Method").
     pub kind: String,
+    /// Optional type detail (return type, base class).
     pub detail: Option<String>,
+    /// Access modifier (e.g. "public", "private").
     pub access: Option<String>,
+    /// Source range of the symbol.
     pub range: SymbolRange,
+    /// Nested child symbols.
     pub children: Vec<SymbolNode>,
 }
 
 /// Range within a file.
 #[derive(Debug, Serialize)]
 pub struct SymbolRange {
+    /// Start of the range.
     pub start: SymbolPosition,
+    /// End of the range.
     pub end: SymbolPosition,
 }
 
 /// Position within a file.
 #[derive(Debug, Serialize)]
 pub struct SymbolPosition {
+    /// Zero-based line number.
     pub line: u32,
+    /// Zero-based character offset.
     pub character: u32,
 }
 
@@ -74,50 +109,175 @@ pub fn handle(
     vfs: &Vfs,
 ) -> Result<WorkspaceSymbolsResponse> {
     let sln_path = Path::new(&params.solution);
-    let projects = discover_projects(sln_path)?;
+    let sln_data = discover_solution(sln_path)?;
 
     info!(
-        "forge/workspaceSymbols: {} projects from {}",
-        projects.len(),
+        "forge/workspaceSymbols: {} projects, {} folders from {}",
+        sln_data.projects.len(),
+        sln_data.folders.len(),
         sln_path.display()
     );
 
-    let project_nodes: Vec<ProjectNode> = projects
+    let project_nodes: Vec<ProjectNode> = sln_data
+        .projects
         .iter()
-        .filter_map(|proj| build_project_node(proj, parsers, vfs).ok())
+        .filter_map(|proj| {
+            let mut node = build_project_node(proj, parsers, vfs).ok()?;
+            // Resolve parent folder name from nesting.
+            if let Some(guid) = &proj.guid {
+                if let Some(parent_guid) = sln_data.nesting.get(guid) {
+                    let parent_name = sln_data
+                        .folders
+                        .iter()
+                        .find(|f| &f.guid == parent_guid)
+                        .map(|f| f.name.clone());
+                    node.parent_folder = parent_name;
+                }
+            }
+            Some(node)
+        })
         .collect();
 
     Ok(WorkspaceSymbolsResponse {
         projects: project_nodes,
+        solution_folders: sln_data.folders,
     })
 }
 
-/// Discover `.csproj` / `.fsproj` paths from a `.sln` file.
-fn discover_projects(sln_path: &Path) -> Result<Vec<ProjectInfo>> {
+/// Parsed solution data: projects, folders, and nesting hierarchy.
+struct SolutionData {
+    /// Project entries discovered in the `.sln`.
+    projects: Vec<ProjectInfo>,
+    /// Solution folder entries.
+    folders: Vec<SolutionFolderNode>,
+    /// Maps project/folder GUID to parent folder GUID.
+    nesting: std::collections::HashMap<String, String>,
+}
+
+/// Well-known type GUID for solution folders in `.sln` files.
+const SOLUTION_FOLDER_GUID: &str = "2150E333-8FDC-42A3-9474-1A3956D46DE8";
+
+/// Discover projects, folders, and nesting from a `.sln` file.
+fn discover_solution(sln_path: &Path) -> Result<SolutionData> {
     let sln_dir = sln_path.parent().context("sln has no parent")?;
     let content = std::fs::read_to_string(sln_path)
         .with_context(|| format!("read {}", sln_path.display()))?;
 
     let mut projects = Vec::new();
+    let mut folders = Vec::new();
+    let mut nesting = std::collections::HashMap::new();
+
+    // Parse projects and solution folders.
     for line in content.lines() {
-        if let Some(proj_path) = extract_project_path(line) {
-            let full_path = sln_dir.join(&proj_path);
-            if full_path.exists() {
-                let name = Path::new(&proj_path)
-                    .file_stem()
-                    .map_or_else(|| proj_path.clone(), |s| s.to_string_lossy().to_string());
-                projects.push(ProjectInfo {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("Project(") {
+            continue;
+        }
+
+        if let Some((type_guid, name, path, proj_guid)) = parse_project_line(trimmed) {
+            if type_guid.to_uppercase() == SOLUTION_FOLDER_GUID {
+                folders.push(SolutionFolderNode {
                     name,
-                    path: full_path.to_string_lossy().to_string(),
+                    guid: proj_guid.clone(),
+                    parent_guid: None,
                 });
+            } else if path.ends_with(".csproj") || path.ends_with(".fsproj") {
+                let normalized = path.replace('\\', "/");
+                let full_path = sln_dir.join(&normalized);
+                if full_path.exists() {
+                    let proj_name = Path::new(&normalized)
+                        .file_stem()
+                        .map_or_else(|| normalized.clone(), |s| s.to_string_lossy().to_string());
+                    projects.push(ProjectInfo {
+                        name: proj_name,
+                        path: full_path.to_string_lossy().to_string(),
+                        guid: Some(proj_guid),
+                    });
+                }
             }
         }
     }
 
-    Ok(projects)
+    // Parse NestedProjects section for folder hierarchy.
+    let mut in_nested = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("GlobalSection(NestedProjects)") {
+            in_nested = true;
+            continue;
+        }
+        if in_nested && trimmed == "EndGlobalSection" {
+            break;
+        }
+        if in_nested {
+            // Format: {CHILD-GUID} = {PARENT-GUID}
+            if let Some((child, parent)) = parse_nested_line(trimmed) {
+                let _ = nesting.insert(child, parent);
+            }
+        }
+    }
+
+    // Set parent_guid on folders.
+    for folder in &mut folders {
+        folder.parent_guid = nesting.get(&folder.guid).cloned();
+    }
+
+    Ok(SolutionData {
+        projects,
+        folders,
+        nesting,
+    })
+}
+
+/// Parse a `Project(...)` line into (`type_guid`, `name`, `path`, `proj_guid`).
+fn parse_project_line(line: &str) -> Option<(String, String, String, String)> {
+    // Project("{TYPE-GUID}") = "Name", "Path", "{PROJ-GUID}"
+    let after_paren = line.strip_prefix("Project(\"")?;
+    let type_end = after_paren.find('"')?;
+    let type_guid = after_paren[..type_end].to_string();
+    let rest = &after_paren[type_end..];
+
+    let parts: Vec<&str> = rest.split(',').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+
+    let name = parts
+        .first()?
+        .split('=')
+        .nth(1)?
+        .trim()
+        .trim_matches('"')
+        .to_string();
+    let path = parts.get(1)?.trim().trim_matches('"').to_string();
+    let guid = parts
+        .get(2)?
+        .trim()
+        .trim_matches('"')
+        .trim_matches('{')
+        .trim_matches('}')
+        .to_string();
+
+    Some((type_guid, name, path, format!("{{{guid}}}")))
+}
+
+/// Parse a `NestedProjects` line into (`child_guid`, `parent_guid`).
+fn parse_nested_line(line: &str) -> Option<(String, String)> {
+    let parts: Vec<&str> = line.split('=').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let child = parts.first()?.trim().to_string();
+    let parent = parts.get(1)?.trim().to_string();
+    if child.starts_with('{') && parent.starts_with('{') {
+        Some((child, parent))
+    } else {
+        None
+    }
 }
 
 /// Parse a .sln `Project(...)` line to extract the relative path.
+#[cfg(test)]
 fn extract_project_path(line: &str) -> Option<String> {
     let trimmed = line.trim();
     if !trimmed.starts_with("Project(") {
@@ -136,9 +296,14 @@ fn extract_project_path(line: &str) -> Option<String> {
     }
 }
 
+/// Intermediate representation of a project discovered in a `.sln`.
 struct ProjectInfo {
+    /// Project name.
     name: String,
+    /// Absolute path to the project file.
     path: String,
+    /// GUID from the solution file.
+    guid: Option<String>,
 }
 
 /// Build a `ProjectNode` by finding and parsing all source files.
@@ -163,6 +328,7 @@ fn build_project_node(
         name: project.name.clone(),
         path: project.path.clone(),
         symbols,
+        parent_folder: None,
     })
 }
 
@@ -173,6 +339,7 @@ fn find_source_files(dir: &Path) -> Vec<String> {
     files
 }
 
+/// Recursively collect `.cs` and `.fs` files, skipping build output.
 fn collect_source_files(dir: &Path, files: &mut Vec<String>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -196,6 +363,7 @@ fn collect_source_files(dir: &Path, files: &mut Vec<String>) {
     }
 }
 
+/// Check whether the path has a `.cs` or `.fs` extension.
 fn is_source_file(path: &Path) -> bool {
     matches!(path.extension().and_then(|e| e.to_str()), Some("cs" | "fs"))
 }
@@ -276,7 +444,8 @@ fn reparent_file_scoped_members(symbols: Vec<SymbolNode>) -> Vec<SymbolNode> {
     namespaces
 }
 
-fn collect_symbols(node: Node, source: &[u8]) -> Vec<SymbolNode> {
+/// Walk a tree-sitter node and collect recognized symbols.
+fn collect_symbols(node: Node<'_>, source: &[u8]) -> Vec<SymbolNode> {
     let mut symbols = Vec::new();
     let mut cursor = node.walk();
 
@@ -292,7 +461,7 @@ fn collect_symbols(node: Node, source: &[u8]) -> Vec<SymbolNode> {
 }
 
 /// Extract the symbol name, handling field/event nested structure.
-fn extract_ws_symbol_name(node: Node, source: &[u8]) -> Option<String> {
+fn extract_ws_symbol_name(node: Node<'_>, source: &[u8]) -> Option<String> {
     if let Some(name_node) = node.child_by_field_name("name") {
         return name_node.utf8_text(source).ok().map(String::from);
     }
@@ -314,7 +483,8 @@ fn extract_ws_symbol_name(node: Node, source: &[u8]) -> Option<String> {
     None
 }
 
-fn node_to_symbol(node: Node, source: &[u8]) -> Option<SymbolNode> {
+/// Map a tree-sitter node to a `SymbolNode` if it is a recognized declaration.
+fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<SymbolNode> {
     let kind = match node.kind() {
         "namespace_declaration" | "file_scoped_namespace_declaration" => "Namespace",
         "class_declaration" | "record_declaration" => "Class",
@@ -360,7 +530,7 @@ fn node_to_symbol(node: Node, source: &[u8]) -> Option<SymbolNode> {
 }
 
 /// Extract access modifier (public, private, protected, internal).
-fn extract_access(node: Node, source: &[u8]) -> Option<String> {
+fn extract_access(node: Node<'_>, source: &[u8]) -> Option<String> {
     let mut cursor = node.walk();
     let mut parts: Vec<&str> = Vec::new();
     for child in node.children(&mut cursor) {
@@ -380,7 +550,7 @@ fn extract_access(node: Node, source: &[u8]) -> Option<String> {
 }
 
 /// Extract type info (base class, return type) for display.
-fn extract_type_detail(node: Node, source: &[u8]) -> Option<String> {
+fn extract_type_detail(node: Node<'_>, source: &[u8]) -> Option<String> {
     match node.kind() {
         "class_declaration" | "struct_declaration" | "record_declaration" => node
             .child_by_field_name("bases")

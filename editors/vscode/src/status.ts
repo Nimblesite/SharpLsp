@@ -1,24 +1,24 @@
 import {
-    type Disposable,
-    StatusBarAlignment,
-    type StatusBarItem,
-    ThemeColor,
-    window,
-} from "vscode";
-import { EXTENSION_NAME, CMD_RESTART_SERVER } from "./constants.js";
+  type Disposable,
+  StatusBarAlignment,
+  type StatusBarItem,
+  ThemeColor,
+  window,
+} from 'vscode';
+import { EXTENSION_NAME, CMD_RESTART_SERVER } from './constants.js';
 
 export const enum ServerState {
-    Starting = "starting",
-    Running = "running",
-    Stopped = "stopped",
-    Error = "error",
+  Starting = 'starting',
+  Running = 'running',
+  Stopped = 'stopped',
+  Error = 'error',
 }
 
 const ICONS: Record<ServerState, string> = {
-    [ServerState.Starting]: "$(loading~spin)",
-    [ServerState.Running]: "$(flame)",
-    [ServerState.Stopped]: "$(circle-outline)",
-    [ServerState.Error]: "$(error)",
+  [ServerState.Starting]: '$(loading~spin)',
+  [ServerState.Running]: '$(flame)',
+  [ServerState.Stopped]: '$(circle-outline)',
+  [ServerState.Error]: '$(error)',
 };
 
 const TOOLTIPS: Record<ServerState, string> = {
@@ -29,10 +29,10 @@ const TOOLTIPS: Record<ServerState, string> = {
 };
 
 const COLORS: Record<ServerState, ThemeColor | undefined> = {
-    [ServerState.Starting]: new ThemeColor("statusBarItem.warningForeground"),
-    [ServerState.Running]: undefined,
-    [ServerState.Stopped]: new ThemeColor("disabledForeground"),
-    [ServerState.Error]: new ThemeColor("statusBarItem.errorForeground"),
+  [ServerState.Starting]: new ThemeColor('statusBarItem.warningForeground'),
+  [ServerState.Running]: undefined,
+  [ServerState.Stopped]: new ThemeColor('disabledForeground'),
+  [ServerState.Error]: new ThemeColor('statusBarItem.errorForeground'),
 };
 
 export class ForgeStatusBar implements Disposable {

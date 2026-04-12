@@ -29,14 +29,14 @@ impl<V: Clone> TtlCache<V> {
             Some(value.clone())
         } else {
             drop(entry);
-            self.entries.remove(key);
+            let _ = self.entries.remove(key);
             None
         }
     }
 
     /// Insert or update a cache entry.
     pub fn insert(&self, key: String, value: V) {
-        self.entries.insert(key, (value, Instant::now()));
+        let _ = self.entries.insert(key, (value, Instant::now()));
     }
 }
 

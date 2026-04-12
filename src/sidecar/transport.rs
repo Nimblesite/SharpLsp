@@ -11,6 +11,7 @@ use super::protocol::Envelope;
 
 /// Async framed transport over a Unix domain socket.
 pub struct FramedTransport {
+    /// Underlying Unix domain socket connection.
     stream: UnixStream,
 }
 
@@ -31,7 +32,8 @@ impl FramedTransport {
 
         let len = u32::from_le_bytes(len_buf);
         let mut payload = vec![0u8; usize::try_from(len)?];
-        self.stream
+        let _ = self
+            .stream
             .read_exact(&mut payload)
             .await
             .context("read frame payload")?;

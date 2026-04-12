@@ -9,12 +9,58 @@
       "empty": "No blog posts yet. Check back soon!"
     },
     "nav": {
-      "docs": "Documentation",
+      "docs": "Docs",
       "blog": "Blog"
     },
     "docs": {
       "title": "Documentation",
       "gettingStarted": "Getting Started"
+    },
+    "footer": {
+      "documentation": "Documentation",
+      "features": "Features",
+      "resources": "Resources",
+      "community": "Community",
+      "gettingStarted": "Getting Started",
+      "architecture": "Architecture",
+      "editorSetup": "Editor Setup",
+      "configuration": "Configuration",
+      "codeCompletions": "Code Completions",
+      "github": "GitHub",
+      "issues": "Issues",
+      "blog": "Blog"
+    }
+  },
+  "zh": {
+    "blog": {
+      "back": "返回博客",
+      "title": "博客",
+      "subtitle": "最新文章与动态",
+      "tags": "标签",
+      "categories": "分类",
+      "empty": "暂无博客文章，请稍后再来！"
+    },
+    "nav": {
+      "docs": "文档",
+      "blog": "博客"
+    },
+    "docs": {
+      "title": "文档",
+      "gettingStarted": "快速入门"
+    },
+    "footer": {
+      "documentation": "文档",
+      "features": "功能",
+      "resources": "资源",
+      "community": "社区",
+      "gettingStarted": "快速入门",
+      "architecture": "架构",
+      "editorSetup": "编辑器配置",
+      "configuration": "配置",
+      "codeCompletions": "代码补全",
+      "github": "GitHub",
+      "issues": "问题反馈",
+      "blog": "博客"
     }
   }
 }

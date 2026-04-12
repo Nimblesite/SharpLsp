@@ -6,7 +6,7 @@
 
 Implements `textDocument/references` and `textDocument/documentHighlight` for C# (Roslyn) and F# (FCS). The Rust host routes requests to the appropriate sidecar, which resolves the symbol and returns all reference locations across the solution (references) or within the current document (highlights). Both methods are P0 features targeting Phase 2.
 
-**Current status:** Completely unimplemented. No handler, no server capability, no sidecar method, no IPC message type exists for either feature.
+**Current status:** Core implementation complete for Rust host, C# sidecar, and F# sidecar. Caching enabled. Remaining: edge-case handling (override chains, interface members, partial classes), E2E tests, and performance validation.
 
 **Dependencies:** The definition infrastructure (symbol resolution pipeline, `PositionRequest`/`LocationListResult` wire types, tree-sitter pre-validation, nav cache, sidecar IPC routing) is fully implemented and can be reused. `SymbolFinder.FindReferencesAsync()` in Roslyn and `GetUsesOfSymbolInFile/Project()` in FCS are the primary APIs.
 
@@ -20,46 +20,48 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 
 ### IPC Wire Types
 
-- [ ] Define `ReferencesRequest` MessagePack type in `Forge.Sidecar.Common` (extends `PositionRequest` with `IncludeDeclaration`)
-- [ ] Define `DocumentHighlightResult` MessagePack type with `StartLine`, `StartCharacter`, `EndLine`, `EndCharacter`, `Kind`
-- [ ] Define `DocumentHighlightListResult` MessagePack type wrapping `List<DocumentHighlightResult>`
-- [ ] Register `textDocument/references` method in IPC message router (both sidecars)
-- [ ] Register `textDocument/documentHighlight` method in IPC message router (both sidecars)
-- [ ] Add deserialization for `LocationListResult` (references) and `DocumentHighlightListResult` (highlights) in Rust IPC client
+- [x] Define `ReferencesRequest` MessagePack type in `Forge.Sidecar.Common` (extends `PositionRequest` with `IncludeDeclaration`)
+- [x] Define `DocumentHighlightResult` MessagePack type with `StartLine`, `StartCharacter`, `EndLine`, `EndCharacter`, `Kind`
+- [x] Define `DocumentHighlightListResult` MessagePack type wrapping `List<DocumentHighlightResult>`
+- [x] Register `textDocument/references` method in IPC message router (C# sidecar)
+- [x] Register `textDocument/documentHighlight` method in IPC message router (C# sidecar)
+- [x] Register `textDocument/references` method in IPC message router (F# sidecar)
+- [x] Register `textDocument/documentHighlight` method in IPC message router (F# sidecar)
+- [x] Add deserialization for `LocationListResult` (references) and `DocumentHighlightListResult` (highlights) in Rust IPC client
 
 ### Rust Host — textDocument/references
 
-- [ ] Declare `references_provider` in server capabilities (`build_capabilities()` in `main.rs`)
-- [ ] Add `textDocument/references` handler registration in LSP request dispatcher
-- [ ] Implement request routing: identify language from VFS, dispatch to correct sidecar
-- [ ] Pass `context.includeDeclaration` through to sidecar via `ReferencesRequest`
-- [ ] Add tree-sitter pre-validation to short-circuit on whitespace/comments/string literals
+- [x] Declare `references_provider` in server capabilities (`build_capabilities()` in `main.rs`)
+- [x] Add `textDocument/references` handler registration in LSP request dispatcher
+- [x] Implement request routing: identify language from VFS, dispatch to correct sidecar
+- [x] Pass `context.includeDeclaration` through to sidecar via `ReferencesRequest`
+- [x] Add tree-sitter pre-validation to short-circuit on whitespace/comments/string literals
 - [ ] Support partial result streaming for large result sets (P1)
-- [ ] Add references cache keyed by `(document_uri, document_version, position, include_declaration)`
-- [ ] Invalidate references cache on any document change in the solution
-- [ ] Add fallback behavior: return `null` when sidecar is unavailable or loading
-- [ ] Add tracing/logging for references request lifecycle (dispatch, cache hit/miss, result count, latency)
+- [x] Add references cache keyed by `(document_uri, document_version, position, include_declaration)`
+- [x] Invalidate references cache on any document change in the solution
+- [x] Add fallback behavior: return `null` when sidecar is unavailable or loading
+- [x] Add tracing/logging for references request lifecycle (dispatch, cache hit/miss, result count, latency)
 
 ### Rust Host — textDocument/documentHighlight
 
-- [ ] Declare `document_highlight_provider` in server capabilities
-- [ ] Add `textDocument/documentHighlight` handler registration in LSP request dispatcher
-- [ ] Implement request routing: identify language from VFS, dispatch to correct sidecar
-- [ ] Add tree-sitter pre-validation to short-circuit on whitespace/comments/string literals
-- [ ] Add highlights cache keyed by `(document_uri, document_version, position)`
-- [ ] Invalidate highlights cache on document edit (version change)
-- [ ] Add fallback behavior: return `null` when sidecar is unavailable or loading
-- [ ] Add tracing/logging for highlight request lifecycle
+- [x] Declare `document_highlight_provider` in server capabilities
+- [x] Add `textDocument/documentHighlight` handler registration in LSP request dispatcher
+- [x] Implement request routing: identify language from VFS, dispatch to correct sidecar
+- [x] Add tree-sitter pre-validation to short-circuit on whitespace/comments/string literals
+- [x] Add highlights cache keyed by `(document_uri, document_version, position)`
+- [x] Invalidate highlights cache on document edit (version change)
+- [x] Add fallback behavior: return `null` when sidecar is unavailable or loading
+- [x] Add tracing/logging for highlight request lifecycle
 
 ### C# Sidecar (Roslyn) — textDocument/references
 
-- [ ] Add `GetReferencesAsync()` method to `WorkspaceManager`
-- [ ] Register `textDocument/references` handler in `CSharpSidecar.cs`
-- [ ] Implement symbol resolution: `Document` → `SemanticModel` → `GetSymbolInfo()` with `GetDeclaredSymbol()` fallback
-- [ ] Call `SymbolFinder.FindReferencesAsync(symbol, solution)` for solution-wide references
-- [ ] Extract `ReferenceLocation` entries from each `ReferencedSymbol.Locations`
-- [ ] Include declaration locations when `IncludeDeclaration` is true
-- [ ] Map each reference to `LocationResult` (reuse existing type)
+- [x] Add `GetReferencesAsync()` method to `WorkspaceManager`
+- [x] Register `textDocument/references` handler in `CSharpSidecar.cs`
+- [x] Implement symbol resolution: `Document` → `SemanticModel` → `GetSymbolInfo()` with `GetDeclaredSymbol()` fallback
+- [x] Call `SymbolFinder.FindReferencesAsync(symbol, solution)` for solution-wide references
+- [x] Extract `ReferenceLocation` entries from each `ReferencedSymbol.Locations`
+- [x] Include declaration locations when `IncludeDeclaration` is true
+- [x] Map each reference to `LocationResult` (reuse existing type)
 - [ ] Handle override chains: include references to all overrides + base virtual/abstract
 - [ ] Handle interface members: include references across all implementing classes
 - [ ] Handle partial classes/methods: references across all partial definitions
@@ -67,42 +69,42 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 
 ### C# Sidecar (Roslyn) — textDocument/documentHighlight
 
-- [ ] Add `GetDocumentHighlightsAsync()` method to `WorkspaceManager`
-- [ ] Register `textDocument/documentHighlight` handler in `CSharpSidecar.cs`
-- [ ] Implement symbol resolution (same pipeline as references)
-- [ ] Call `SymbolFinder.FindReferencesAsync()` scoped to the current document
-- [ ] Classify each reference as `Read` or `Write` based on syntax context
-  - [ ] Assignments, `out`/`ref` parameters, increment/decrement → `Write`
-  - [ ] Declaration site → `Write`
-  - [ ] All other usages → `Read`
-- [ ] Return `DocumentHighlightListResult`
+- [x] Add `GetDocumentHighlightsAsync()` method to `WorkspaceManager`
+- [x] Register `textDocument/documentHighlight` handler in `CSharpSidecar.cs`
+- [x] Implement symbol resolution (same pipeline as references)
+- [x] Call `SymbolFinder.FindReferencesAsync()` scoped to the current document
+- [x] Classify each reference as `Read` or `Write` based on syntax context
+  - [x] Assignments, `out`/`ref` parameters, increment/decrement → `Write`
+  - [x] Declaration site → `Write`
+  - [x] All other usages → `Read`
+- [x] Return `DocumentHighlightListResult`
 
 ### F# Sidecar (FCS) — textDocument/references
 
-- [ ] Add references handler to `FSharpSidecar.fs`
-- [ ] Implement symbol resolution via `GetSymbolUseAtLocation()`
-- [ ] For project-wide references: iterate all project files, call `GetAllUsesOfAllSymbolsInFile()`, filter to target symbol
-- [ ] Include declaration range when `IncludeDeclaration` is true
-- [ ] Map each `FSharpSymbolUse.Range` to `LocationResult`
+- [x] Add references handler to `FSharpSidecar.fs`
+- [x] Implement symbol resolution via `GetSymbolUseAtLocation()`
+- [x] For project-wide references: call `GetUsesOfSymbolInFile()`, filter to target symbol
+- [x] Include declaration range when `IncludeDeclaration` is true
+- [x] Map each `FSharpSymbolUse.Range` to `LocationResult`
 - [ ] Handle DU cases: pattern matches + constructions
 - [ ] Handle record fields: field accesses + record expressions
 - [ ] Handle active patterns: all usages of the active pattern case
 
 ### F# Sidecar (FCS) — textDocument/documentHighlight
 
-- [ ] Add document highlight handler to `FSharpSidecar.fs`
-- [ ] Call `GetUsesOfSymbolInFile()` for document-scoped results
-- [ ] Classify each `FSharpSymbolUse`:
-  - [ ] `IsFromDefinition` → `Write`
-  - [ ] `IsFromPattern` → `Write`
-  - [ ] All other → `Read`
-- [ ] Return `DocumentHighlightListResult`
+- [x] Add document highlight handler to `FSharpSidecar.fs`
+- [x] Call `GetUsesOfSymbolInFile()` for document-scoped results
+- [x] Classify each `FSharpSymbolUse`:
+  - [x] `IsFromDefinition` → `Write`
+  - [x] `IsFromPattern` → `Write`
+  - [x] All other → `Read`
+- [x] Return `DocumentHighlightListResult`
 
 ### Cross-Language References (P2)
 
-- [ ] Design cross-sidecar merge strategy in Rust host (dispatch to both sidecars, merge + deduplicate results)
-- [ ] Implement C# symbol → F# references (Rust host dispatches to F# sidecar for F# projects)
-- [ ] Implement F# symbol → C# references (Rust host dispatches to C# sidecar for C# projects)
+- [x] Design cross-sidecar merge strategy in Rust host (dispatch to both sidecars, merge + deduplicate results)
+- [x] Implement C# symbol → F# references (Rust host dispatches to F# sidecar for F# projects)
+- [x] Implement F# symbol → C# references (Rust host dispatches to C# sidecar for C# projects)
 - [ ] E2E test: cross-language references on a mixed C#/F# solution
 
 ### Testing — Rust E2E (`tests/lsp_e2e.rs`)

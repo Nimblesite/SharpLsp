@@ -27,7 +27,8 @@ SHELL := /bin/bash
        test test-rust test-zed test-vsix test-dotnet \
        lint lint-rust lint-zed lint-vsix lint-dotnet \
        fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet \
-       kill-forge install clean rebuild-vsix fresh-vsix
+       fmt-check fmt-check-rust fmt-check-zed fmt-check-vsix fmt-check-dotnet \
+       check coverage coverage-check setup clean
 
 PROFILE    ?= release
 CARGO_FLAG  = $(if $(filter release,$(PROFILE)),--release,)
@@ -342,81 +343,62 @@ fmt-zed:
 
 fmt-vsix:
 	@echo "==> [TypeScript] Formatting VS Code extension..."
-	cd $(VSCODE_DIR) && npx eslint --fix src/
+	cd $(VSCODE_DIR) && npx prettier --write 'src/**/*.ts'
 
 fmt-dotnet:
 	@echo "==> [.NET] Formatting sidecars..."
+	dotnet csharpier format $(SIDECAR_SLN)/..
 	dotnet format $(SIDECAR_SLN)
 
-# ── Kill stale forge processes ───────────────────────────────────
-#
-# Zombie forge-lsp processes (especially --version checks spawned by the
-# VSCode extension) MUST be killed before installing new binaries.
-# Without this, the old binary holds file locks and the extension host
-# keeps spawning --version probes that hang forever.
+# ── Format check (CI uses this) ─────────────────────────────────
 
-kill-forge:
-	@echo "==> Killing stale forge-lsp and sidecar processes..."
-	-@pkill -9 -f 'forge-lsp' 2>/dev/null || true
-	-@pkill -9 -f 'Forge\.Sidecar\.' 2>/dev/null || true
-	@sleep 0.5
-	@echo "==> Done."
-
-# ── Install (system-wide: /usr/local/bin + /usr/local/lib/forge/) ──
-
-PREFIX     ?= $(HOME)/.local
-LIBDIR      = $(PREFIX)/lib/forge
-
-install: build-rust build-dotnet kill-forge
-	@mkdir -p $(PREFIX)/bin
-	rm -f $(PREFIX)/bin/forge-lsp
-	cp $(BINARY) $(PREFIX)/bin/forge-lsp
-	chmod +x $(PREFIX)/bin/forge-lsp
-	rm -rf $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
-	mkdir -p $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
-	cp -r $(SIDECAR_CS_OUT)/* $(LIBDIR)/sidecar-csharp/
-	cp -r $(SIDECAR_FS_OUT)/* $(LIBDIR)/sidecar-fsharp/
-	-@xattr -cr $(LIBDIR)/sidecar-csharp/ $(LIBDIR)/sidecar-fsharp/ 2>/dev/null || true
-	@echo "==> Installed:"
-	@echo "    $(PREFIX)/bin/forge-lsp"
-	@echo "    $(LIBDIR)/sidecar-csharp/"
-	@echo "    $(LIBDIR)/sidecar-fsharp/"
+fmt-check: fmt-check-rust fmt-check-zed fmt-check-vsix fmt-check-dotnet
 	@echo ""
-	@echo "    Make sure $(PREFIX)/bin is on your \$$PATH"
+	@echo "==> All format checks passed."
 
-# ── Rebuild VSIX (uninstall → clean node_modules → rebuild → package) ──
+fmt-check-rust:
+	@echo "==> [Rust] Format check forge-lsp..."
+	cargo fmt --check
 
-rebuild-vsix: kill-forge
-	@echo "==> Uninstalling old VSIX from VS Code..."
-	-code --uninstall-extension forge-lsp.forge 2>/dev/null
-	@echo "==> Cleaning VS Code extension node_modules + dist + vsix..."
-	rm -rf $(VSCODE_DIR)/node_modules $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
-	rm -f $(VSIX)
-	$(MAKE) build-vsix
-	@echo "==> VSIX packaged at $(VSIX)."
+fmt-check-zed:
+	@echo "==> [Rust] Format check Zed extension..."
+	cargo fmt --check --manifest-path $(ZED_DIR)/Cargo.toml
 
-# ── Fresh VSIX (uninstall → full clean → install LSP → package VSIX) ──
-#
-# Use this to get a clean, reproducible VSIX package without installing it.
-# After this completes, install manually with:
-#   code --install-extension $(VSIX)
+fmt-check-vsix:
+	@echo "==> [TypeScript] Format check VS Code extension..."
+	cd $(VSCODE_DIR) && npx prettier --check 'src/**/*.ts'
 
-fresh-vsix: kill-forge
-	@echo "==> Uninstalling old VSIX from VS Code..."
-	-code --uninstall-extension forge-lsp.forge 2>/dev/null
-	@echo "==> Cleaning all build artifacts..."
-	$(MAKE) clean
-	rm -rf $(VSCODE_DIR)/node_modules
-	@echo "==> Installing LSP binary and sidecars..."
-	$(MAKE) install
-	@echo "==> Verifying installed binary..."
-	@perl -e 'alarm 5; exec @ARGV' $(PREFIX)/bin/forge-lsp --version || { echo "ERROR: forge-lsp --version failed or timed out" >&2; exit 1; }
-	@echo "==> Packaging VSIX..."
-	$(MAKE) build-vsix
-	@echo ""
-	@echo "==> Fresh build complete."
-	@echo "    VSIX:    $(VSIX)"
-	@echo "    Install: code --install-extension $(VSIX)"
+fmt-check-dotnet:
+	@echo "==> [.NET] Format check sidecars..."
+	dotnet csharpier check sidecars/
+
+# ── Check / CI ───────────────────────────────────────────────────
+
+check: lint test
+
+# ── Coverage ─────────────────────────────────────────────────────
+
+COVERAGE_THRESHOLD ?= 90
+
+coverage:
+	@echo "==> Generating coverage reports..."
+	cargo llvm-cov --html --output-dir target/llvm-cov/html
+	@echo "==> Rust HTML report: target/llvm-cov/html/index.html"
+
+coverage-check:
+	@echo "==> Checking coverage thresholds..."
+	$(MAKE) test
+
+# ── Setup (devcontainer post-create) ─────────────────────────────
+
+setup:
+	@echo "==> Setting up development environment..."
+	rustup component add clippy rustfmt llvm-tools-preview
+	cargo install cargo-llvm-cov || true
+	cd $(VSCODE_DIR) && npm install
+	dotnet restore $(SIDECAR_SLN)
+	dotnet tool restore
+	@echo "==> Setup complete. Run 'make ci' to validate."
 
 # ── Clean ────────────────────────────────────────────────────────
 

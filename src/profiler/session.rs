@@ -29,7 +29,9 @@ pub fn store() -> &'static SessionStore {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SessionKind {
+    /// A `dotnet-trace` collection session.
     Trace,
+    /// A `dotnet-counters` monitoring session.
     Counters,
 }
 
@@ -37,30 +39,42 @@ pub enum SessionKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SessionState {
+    /// Session is actively collecting data.
     Running,
+    /// Session was stopped normally.
     Stopped,
+    /// Session terminated due to an error.
     Failed,
 }
 
 /// An active profiling session.
 pub struct ProfileSession {
+    /// Unique session identifier.
     pub id: String,
+    /// Kind of profiling session.
     #[expect(dead_code, reason = "read by session listing and future UI")]
     pub kind: SessionKind,
+    /// Target process ID.
     #[expect(dead_code, reason = "read by session listing and future UI")]
     pub pid: u32,
+    /// Current session state.
     pub state: SessionState,
+    /// Path to the output artifact, if available.
     pub output_path: Option<String>,
+    /// When the session was created.
     pub started_at: Instant,
+    /// Handle to the spawned tool process.
     pub child: Option<Child>,
 }
 
 /// Thread-safe store for active profiling sessions.
 pub struct SessionStore {
+    /// Map of session ID to active session.
     sessions: DashMap<String, ProfileSession>,
 }
 
 impl SessionStore {
+    /// Create an empty session store.
     #[cfg(not(test))]
     fn new() -> Self {
         Self {
@@ -104,7 +118,7 @@ impl SessionStore {
         let id = generate_session_id();
         info!(session_id = %id, kind = ?kind, pid = pid, "Profiler session created");
 
-        self.sessions.insert(
+        let _ = self.sessions.insert(
             id.clone(),
             ProfileSession {
                 id: id.clone(),
@@ -165,7 +179,7 @@ impl SessionStore {
         )
     )]
     pub fn remove(&self, session_id: &str) {
-        self.sessions.remove(session_id);
+        let _ = self.sessions.remove(session_id);
     }
 
     /// Access the underlying session map (for reading session metadata).

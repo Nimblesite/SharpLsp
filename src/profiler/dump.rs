@@ -12,16 +12,21 @@ use super::tool_discovery;
 /// Parameters for collecting a memory dump.
 #[derive(Debug, Deserialize)]
 pub struct CollectDumpParams {
+    /// Target process ID.
     pub pid: u32,
+    /// Dump type (e.g. `Heap`, `Full`, `Mini`).
     #[serde(default = "default_dump_type")]
     pub dump_type: String,
+    /// Optional file path for the resulting dump.
     pub output_path: Option<String>,
 }
 
 /// Result of dump collection.
 #[derive(Debug, Serialize)]
 pub struct CollectDumpResult {
+    /// Path where the dump was written.
     pub output_path: String,
+    /// Size of the dump file in bytes.
     pub file_size_bytes: u64,
 }
 
@@ -84,6 +89,7 @@ pub async fn collect(
     })
 }
 
+/// Create parent directories for the output path if they don't exist.
 fn ensure_output_dir(path: &str) -> Result<()> {
     if let Some(parent) = PathBuf::from(path).parent() {
         std::fs::create_dir_all(parent)
@@ -92,6 +98,7 @@ fn ensure_output_dir(path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Default dump type used when none is specified.
 fn default_dump_type() -> String {
     "Heap".to_string()
 }
@@ -118,6 +125,7 @@ fn send_progress_end(sender: &crossbeam_channel::Sender<Message>, token: &str) {
     send_notification(sender, "$/progress", params);
 }
 
+/// Send an LSP notification over the given channel.
 fn send_notification(
     sender: &crossbeam_channel::Sender<Message>,
     method: &str,

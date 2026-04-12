@@ -112,6 +112,55 @@
           "scope": "window",
           "order": 3
         },
+        "forge.debug.netcoredbgPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to netcoredbg executable. Leave empty for auto-detection.",
+          "scope": "machine",
+          "order": 20
+        },
+        "forge.inlayHints.parameterNames": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show parameter name hints in method calls.",
+          "scope": "resource",
+          "order": 5
+        },
+        "forge.inlayHints.typeInference": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show type inference hints for var declarations and lambdas.",
+          "scope": "resource",
+          "order": 6
+        },
+        "forge.inlayHints.pipelineTypes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show type hints for F# pipeline operators.",
+          "scope": "resource",
+          "order": 7
+        },
+        "forge.nuget.includePrerelease": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include prerelease versions in NuGet package search results.",
+          "scope": "resource",
+          "order": 15
+        },
+        "forge.hotReload.onSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically start hot reload on file save when a dotnet watch session is active.",
+          "scope": "resource",
+          "order": 16
+        },
+        "forge.testLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show pass/fail status, Run Test, and Debug Test lenses above test methods.",
+          "scope": "resource",
+          "order": 17
+        },
         "forge.memberSortOrder.hierarchy": {
           "type": "array",
           "items": {
@@ -176,6 +225,76 @@
         }
       }
     },
+    "debuggers": [
+      {
+        "type": "forge-coreclr",
+        "label": "Forge .NET Debugger",
+        "languages": ["csharp", "fsharp"],
+        "configurationAttributes": {
+          "launch": {
+            "required": ["program"],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Path to the .NET assembly to debug."
+              },
+              "args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Command line arguments.",
+                "default": []
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory."
+              },
+              "env": {
+                "type": "object",
+                "description": "Environment variables."
+              },
+              "stopAtEntry": {
+                "type": "boolean",
+                "description": "Break at the entry point.",
+                "default": false
+              }
+            }
+          },
+          "attach": {
+            "required": ["processId"],
+            "properties": {
+              "processId": {
+                "type": "number",
+                "description": "Process ID to attach to."
+              }
+            }
+          }
+        },
+        "configurationSnippets": [
+          {
+            "label": "Forge: Launch .NET Project",
+            "description": "Launch a .NET project with Forge debugger",
+            "body": {
+              "type": "forge-coreclr",
+              "request": "launch",
+              "name": "Launch .NET Project",
+              "program": "${workspaceFolder}/bin/Debug/net9.0/${workspaceFolderBasename}.dll",
+              "cwd": "${workspaceFolder}",
+              "stopAtEntry": false
+            }
+          },
+          {
+            "label": "Forge: Attach to .NET Process",
+            "description": "Attach to a running .NET process",
+            "body": {
+              "type": "forge-coreclr",
+              "request": "attach",
+              "name": "Attach to Process",
+              "processId": 0
+            }
+          }
+        ]
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -366,6 +485,125 @@
         "title": "Inspect Object",
         "category": "Forge",
         "icon": "$(search)"
+      },
+      {
+        "command": "forge.build",
+        "title": "Build",
+        "category": "Forge",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "forge.rebuild",
+        "title": "Rebuild",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.clean",
+        "title": "Clean",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.nuget.add",
+        "title": "Add NuGet Package",
+        "category": "Forge",
+        "icon": "$(package)"
+      },
+      {
+        "command": "forge.nuget.update",
+        "title": "Update NuGet Package",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.newProject",
+        "title": "New Project",
+        "category": "Forge",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "forge.newFile",
+        "title": "New File (Class/Interface/Enum/Struct/Record)",
+        "category": "Forge",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "forge.addProjectToSolution",
+        "title": "Add Project to Solution",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.nuget.restore",
+        "title": "Restore NuGet Packages",
+        "category": "Forge",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "forge.openProjectFile",
+        "title": "Open Project File",
+        "category": "Forge",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "forge.addProjectReference",
+        "title": "Add Project Reference",
+        "category": "Forge",
+        "icon": "$(add)"
+      },
+      {
+        "command": "forge.nuget.addFromExplorer",
+        "title": "Add NuGet Package",
+        "category": "Forge",
+        "icon": "$(package)"
+      },
+      {
+        "command": "forge.fsi.send",
+        "title": "F# Interactive: Send Selection",
+        "category": "Forge",
+        "icon": "$(play)"
+      },
+      {
+        "command": "forge.fsi.sendFile",
+        "title": "F# Interactive: Load File",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.fsi.start",
+        "title": "F# Interactive: Start New Session",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.fsi.generateSignature",
+        "title": "F#: Generate Signature File (.fsi)",
+        "category": "Forge"
+      },
+      {
+        "command": "forge.hotReload.start",
+        "title": "Start Hot Reload (dotnet watch)",
+        "category": "Forge",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "forge.hotReload.stop",
+        "title": "Stop Hot Reload",
+        "category": "Forge",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "forge.hotReload.toggle",
+        "title": "Toggle Hot Reload",
+        "category": "Forge",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "forge.test.runAtCursor",
+        "title": "Run Test at Cursor",
+        "category": "Forge",
+        "icon": "$(play)"
+      },
+      {
+        "command": "forge.test.debugAtCursor",
+        "title": "Debug Test at Cursor",
+        "category": "Forge",
+        "icon": "$(bug)"
       }
     ],
     "menus": {
@@ -416,6 +654,18 @@
           "group": "navigation"
         }
       ],
+      "debug/toolbar": [
+        {
+          "command": "forge.hotReload.toggle",
+          "when": "debugType == forge-coreclr && !forge.hotReloadRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "forge.hotReload.stop",
+          "when": "debugType == forge-coreclr && forge.hotReloadRunning",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
         {
           "command": "forge.sortMembers",
@@ -438,9 +688,34 @@
           "group": "7_modification"
         },
         {
-          "command": "forge.browseNuGetPackages",
+          "command": "forge.openProjectFile",
           "when": "view == forge.solutionExplorer && viewItem == project",
-          "group": "5_dependencies"
+          "group": "3_open"
+        },
+        {
+          "command": "forge.build",
+          "when": "view == forge.solutionExplorer && viewItem == project",
+          "group": "2_build"
+        },
+        {
+          "command": "forge.rebuild",
+          "when": "view == forge.solutionExplorer && viewItem == project",
+          "group": "2_build"
+        },
+        {
+          "command": "forge.clean",
+          "when": "view == forge.solutionExplorer && viewItem == project",
+          "group": "2_build"
+        },
+        {
+          "command": "forge.addProjectReference",
+          "when": "view == forge.solutionExplorer && viewItem == dependencyFolder",
+          "group": "1_add"
+        },
+        {
+          "command": "forge.nuget.addFromExplorer",
+          "when": "view == forge.solutionExplorer && viewItem == dependencyFolder",
+          "group": "1_add"
         },
         {
           "command": "forge.copyQualifiedName",

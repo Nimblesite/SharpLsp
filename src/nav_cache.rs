@@ -12,14 +12,19 @@ use lsp_types::Uri;
 /// Cache key: position + method within a specific document version.
 #[derive(Clone, Hash, Eq, PartialEq)]
 struct CacheKey {
+    /// Line number of the cursor position.
     line: u32,
+    /// Column (character offset) of the cursor position.
     character: u32,
+    /// LSP method name (e.g. `textDocument/definition`).
     method: String,
 }
 
 /// Cached entry with the document version at cache time.
 struct CacheEntry {
+    /// Document version when this entry was cached.
     version: i32,
+    /// Serialized navigation result.
     value: serde_json::Value,
 }
 
@@ -28,10 +33,12 @@ struct CacheEntry {
 /// Stores cached navigation results per `(uri, position, method)`.
 /// A version mismatch invalidates the entry.
 pub struct NavCache {
+    /// Map from `(uri, cache_key)` to cached navigation result.
     entries: HashMap<(String, CacheKey), CacheEntry>,
 }
 
 impl NavCache {
+    /// Create an empty navigation cache.
     pub fn new() -> Self {
         Self {
             entries: HashMap::new(),
@@ -88,7 +95,7 @@ impl NavCache {
                 method: method.to_string(),
             },
         );
-        self.entries.insert(key, CacheEntry { version, value });
+        let _ = self.entries.insert(key, CacheEntry { version, value });
     }
 
     /// Invalidate all cached entries for a document.

@@ -1,6 +1,5 @@
 using Forge.Sidecar.CSharp.Hover;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Completion;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 using Outcome;
@@ -9,6 +8,10 @@ using AllDiagnosticsResult = Outcome.Result<
         string,
         System.Collections.Generic.List<Forge.Sidecar.CSharp.DiagnosticResult>
     >,
+    string
+>;
+using CodeActionsResult = Outcome.Result<
+    System.Collections.Generic.List<Forge.Sidecar.CSharp.CodeActionItem>,
     string
 >;
 using CompletionsResult = Outcome.Result<
@@ -24,6 +27,7 @@ using HighlightsResult = Outcome.Result<Forge.Sidecar.CSharp.DocumentHighlightLi
 using HoverQueryResult = Outcome.Result<Forge.Sidecar.CSharp.HoverResult?, string>;
 using ImplementationsResult = Outcome.Result<Forge.Sidecar.CSharp.LocationListResult, string>;
 using ReferencesResult = Outcome.Result<Forge.Sidecar.CSharp.LocationListResult, string>;
+using ResolveResult = Outcome.Result<Forge.Sidecar.CSharp.WorkspaceEditResult, string>;
 using VoidResult = Outcome.Result<Outcome.Unit, string>;
 
 namespace Forge.Sidecar.CSharp.Workspace;
@@ -32,10 +36,11 @@ namespace Forge.Sidecar.CSharp.Workspace;
 /// Manages the Roslyn MSBuildWorkspace lifecycle.
 /// Provides semantic operations: diagnostics, completions, hover, go-to-definition.
 /// </summary>
-internal sealed class WorkspaceManager
+internal sealed partial class WorkspaceManager
 {
     private MSBuildWorkspace? _workspace;
     private Solution? _solution;
+    private readonly CodeActionResolver _codeActionResolver = new();
 
     public bool IsLoaded => _solution is not null;
 
@@ -362,6 +367,66 @@ internal sealed class WorkspaceManager
         }
     }
 
+    /// <summary>Get available code actions (fixes + refactorings) for a range.</summary>
+    public async Task<CodeActionsResult> GetCodeActionsAsync(
+        string filePath,
+        int startLine,
+        int startCharacter,
+        int endLine,
+        int endCharacter,
+        CancellationToken ct = default
+    )
+    {
+        try
+        {
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
+            if (document is null)
+            {
+                return new CodeActionsResult.Ok<List<CodeActionItem>, string>([]);
+            }
+
+            var text = await document.GetTextAsync(ct).ConfigureAwait(false);
+            var startPos = text.Lines.GetPosition(new LinePosition(startLine, startCharacter));
+            var endPos = text.Lines.GetPosition(new LinePosition(endLine, endCharacter));
+            var span = TextSpan.FromBounds(startPos, Math.Max(startPos, endPos));
+
+            var items = await _codeActionResolver
+                .GetCodeActionsAsync(document, span, ct)
+                .ConfigureAwait(false);
+            return new CodeActionsResult.Ok<List<CodeActionItem>, string>(items);
+        }
+        catch (Exception ex)
+        {
+            return CodeActionsResult.Failure(ex.Message);
+        }
+    }
+
+    /// <summary>Resolve a code action by ID to a workspace edit.</summary>
+    public async Task<ResolveResult> ResolveCodeActionAsync(
+        int actionId,
+        CancellationToken ct = default
+    )
+    {
+        try
+        {
+            if (_solution is null)
+            {
+                return ResolveResult.Failure("No solution loaded");
+            }
+
+            var result = await _codeActionResolver
+                .ResolveAsync(actionId, _solution, ct)
+                .ConfigureAwait(false);
+            return result is null
+                ? ResolveResult.Failure($"Code action {actionId} not found")
+                : new ResolveResult.Ok<WorkspaceEditResult, string>(result);
+        }
+        catch (Exception ex)
+        {
+            return ResolveResult.Failure(ex.Message);
+        }
+    }
+
     public async Task<HighlightsResult> GetDocumentHighlightsAsync(
         string filePath,
         int line,
@@ -438,211 +503,5 @@ internal sealed class WorkspaceManager
             .OpenProjectAsync(target, cancellationToken: ct)
             .ConfigureAwait(false);
         return project.Solution;
-    }
-
-    private static List<DiagnosticResult> MapDiagnostics(
-        string filePath,
-        SemanticModel model,
-        CancellationToken ct
-    )
-    {
-        var results = new List<DiagnosticResult>();
-        foreach (var diag in model.GetDiagnostics(cancellationToken: ct))
-        {
-            var span = diag.Location.GetMappedLineSpan();
-            if (!span.IsValid)
-            {
-                continue;
-            }
-
-            results.Add(MapOneDiagnostic(filePath, diag, span));
-        }
-
-        return results;
-    }
-
-    private static DiagnosticResult MapOneDiagnostic(
-        string filePath,
-        Diagnostic diag,
-        FileLinePositionSpan span
-    )
-    {
-        return new DiagnosticResult
-        {
-            FilePath = filePath,
-            StartLine = span.StartLinePosition.Line,
-            StartCharacter = span.StartLinePosition.Character,
-            EndLine = span.EndLinePosition.Line,
-            EndCharacter = span.EndLinePosition.Character,
-            Message = diag.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
-            Severity = diag.Severity.ToString(),
-            Code = diag.Id,
-        };
-    }
-
-    private async Task<List<CompletionItem>> GetCompletionsCoreAsync(
-        string filePath,
-        int line,
-        int character,
-        CancellationToken ct
-    )
-    {
-        var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-        if (document is null)
-        {
-            return [];
-        }
-
-        var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-        var position = text.Lines.GetPosition(new LinePosition(line, character));
-
-        var service = CompletionService.GetService(document);
-        if (service is null)
-        {
-            return [];
-        }
-
-        var completions = await service
-            .GetCompletionsAsync(document, position, cancellationToken: ct)
-            .ConfigureAwait(false);
-        return completions is null ? [] : MapCompletionItems(completions);
-    }
-
-    private static List<CompletionItem> MapCompletionItems(CompletionList completions)
-    {
-        var results = new List<CompletionItem>();
-        foreach (var item in completions.ItemsList)
-        {
-            results.Add(
-                new CompletionItem
-                {
-                    Label = item.DisplayText,
-                    Kind = item.Tags.Length > 0 ? item.Tags[0] : "Text",
-                    Detail = item.InlineDescription,
-                    InsertText = item.FilterText,
-                }
-            );
-        }
-
-        return results;
-    }
-
-    private IEnumerable<Project> FilterProjects(string[] filter)
-    {
-        return filter.Length == 0
-            ? _solution!.Projects
-            : _solution!.Projects.Where(project =>
-                filter.Any(pattern =>
-                    project.Name.Contains(pattern, StringComparison.OrdinalIgnoreCase)
-                )
-            );
-    }
-
-    private static async Task CollectProjectDiagnosticsAsync(
-        Project project,
-        Dictionary<string, List<DiagnosticResult>> results,
-        CancellationToken ct
-    )
-    {
-        var compilation = await project.GetCompilationAsync(ct).ConfigureAwait(false);
-        if (compilation is null)
-        {
-            return;
-        }
-
-        foreach (var tree in compilation.SyntaxTrees)
-        {
-            ct.ThrowIfCancellationRequested();
-            var filePath = tree.FilePath;
-            if (string.IsNullOrEmpty(filePath))
-            {
-                continue;
-            }
-
-            var model = compilation.GetSemanticModel(tree);
-            var diagnostics = MapDiagnostics(filePath, model, ct);
-            if (diagnostics.Count > 0)
-            {
-                results[filePath] = diagnostics;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Find a document by file path, searching regular documents first,
-    /// then falling back to source-generated documents.
-    /// </summary>
-    private async Task<Document?> FindDocumentAsync(string filePath, CancellationToken ct)
-    {
-        if (_solution is null)
-        {
-            return null;
-        }
-
-        try
-        {
-            var normalizedPath = Path.GetFullPath(filePath);
-            return FindRegularDocumentByPath(normalizedPath)
-                ?? await FindSourceGeneratedDocumentByPathAsync(normalizedPath, ct)
-                    .ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    private Document? FindRegularDocumentByPath(string normalizedPath)
-    {
-        foreach (var project in _solution!.Projects)
-        {
-            foreach (var document in project.Documents)
-            {
-                if (IsPathMatch(document.FilePath, normalizedPath))
-                {
-                    return document;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Search source-generated documents across all projects.
-    /// Source generators produce documents that are not in the regular
-    /// Documents collection but are accessible via the compilation.
-    /// </summary>
-    private async Task<Document?> FindSourceGeneratedDocumentByPathAsync(
-        string normalizedPath,
-        CancellationToken ct
-    )
-    {
-        foreach (var project in _solution!.Projects)
-        {
-            var generatedDocs = await project
-                .GetSourceGeneratedDocumentsAsync(ct)
-                .ConfigureAwait(false);
-
-            foreach (var document in generatedDocs)
-            {
-                if (IsPathMatch(document.FilePath, normalizedPath))
-                {
-                    return document;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private static bool IsPathMatch(string? documentPath, string normalizedPath)
-    {
-        return documentPath is not null
-            && string.Equals(
-                Path.GetFullPath(documentPath),
-                normalizedPath,
-                StringComparison.OrdinalIgnoreCase
-            );
     }
 }

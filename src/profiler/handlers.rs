@@ -123,5 +123,6 @@ pub fn handle_get_object_graph(
 /// Wire type for stopping a profiler session (trace or counters).
 #[derive(serde::Deserialize)]
 struct StopSessionParams {
+    /// Identifier of the session to stop.
     session_id: String,
 }
