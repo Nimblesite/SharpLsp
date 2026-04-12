@@ -16,10 +16,10 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  rust:
-    name: Rust
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -28,32 +28,6 @@ jobs:
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
-
-      - name: Lint
-        run: make lint-rust PROFILE=debug
-
-  zed:
-    name: Zed
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Lint
-        run: make lint-zed
-
-  dotnet:
-    name: .NET
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -65,75 +39,38 @@ jobs:
           key: ${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}
           restore-keys: ${{ runner.os }}-nuget-
 
-      - name: Restore tools
-        run: dotnet tool restore
-
-      - name: Format
-        run: dotnet csharpier check sidecars/
-
-      - name: Lint
-        run: make lint-dotnet
-
-  vscode:
-    name: VS Code
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: editors/vscode/package-lock.json
 
-      - run: npm ci --prefix editors/vscode
+      - name: Install dependencies
+        run: |
+          dotnet tool restore
+          npm ci --prefix editors/vscode
 
-      - name: Format
+      - name: Rust
+        run: make lint-rust PROFILE=debug
+
+      - name: Zed
+        run: make lint-zed
+
+      - name: .NET format
+        run: dotnet csharpier check sidecars/
+
+      - name: .NET lint
+        run: make lint-dotnet
+
+      - name: VS Code format
         run: cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'
 
-      - name: Lint
+      - name: VS Code lint
         run: make lint-vsix
-
-  # screenshots:
-  #   name: Screenshots
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
-  #         cache: npm
-  #         cache-dependency-path: editors/vscode/package-lock.json
-
-  #     - name: Install extension deps
-  #       working-directory: editors/vscode
-  #       run: npm ci
-
-  #     - name: Install Playwright browsers
-  #       working-directory: editors/vscode
-  #       run: npx playwright install --with-deps chromium
-
-  #     - name: Install VS Code CLI
-  #       run: |
-  #         curl -fsSL "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64" -o /tmp/vscode-cli.tar.gz
-  #         tar -xzf /tmp/vscode-cli.tar.gz -C /usr/local/bin
-
-  #     - name: Capture screenshots
-  #       working-directory: editors/vscode
-  #       run: npm run screenshots
-
-  #     - name: Upload screenshots
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: extension-screenshots
-  #         path: website/src/assets/screenshots/
-  #         if-no-files-found: warn
 
   test:
     name: Test
-    needs: [rust, zed, dotnet, vscode]
+    needs: [lint]
     runs-on: ubuntu-latest
     # TIMEOUT EXCEPTION: Rust + .NET + VS Code E2E suites with coverage instrumentation
     # across 3 sidecars and xvfb-driven extension host exceed the 10-minute default.
