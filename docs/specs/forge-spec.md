@@ -737,6 +737,23 @@ These are features no single incumbent offers today. This is where Forge stops p
 | Community adoption | 1,000+ GitHub stars, 100+ daily active users | Month 24 |
 | Feature superiority | Features no incumbent has (cross-language nav, AI actions, architecture analysis) | Month 24+ |
 
+## 11. Distribution
+
+Forge is distributed via three channels:
+
+- **`forge-lsp`** — Homebrew (macOS/Linux) and Scoop (Windows), from GitHub release assets.
+- **`Forge.Sidecar.CSharp`** — dotnet global tool on NuGet.org.
+- **`Forge.Sidecar.FSharp`** — dotnet global tool on NuGet.org.
+
+Editor extensions MUST verify all three binary versions on activation by
+spawning each with `--version` and comparing against the extension's own
+version. Extensions are forbidden from downloading binaries directly;
+all installation goes through `brew`, `scoop`, or `dotnet tool`.
+
+See [DISTRIBUTION-SPEC.md](DISTRIBUTION-SPEC.md) for the full distribution
+specification including version invariants, release workflow, and the
+editor extension contract.
+
 ---
 
 **END OF SPECIFICATION**

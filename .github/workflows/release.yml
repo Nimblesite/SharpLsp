@@ -1,4 +1,3 @@
-# agent-pmo:3140e31
 name: Release
 
 on:
@@ -14,8 +13,9 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  build:
-    name: Build (${{ matrix.target }})
+  # Build forge-lsp binary for each target platform (must be parallel — different OSes).
+  build-forge-lsp:
+    name: Build forge-lsp (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -24,22 +24,18 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            dotnet_rid: linux-x64
             artifact: forge-lsp
             archive: tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
-            dotnet_rid: osx-arm64
             artifact: forge-lsp
             archive: tar.gz
           - os: macos-13
             target: x86_64-apple-darwin
-            dotnet_rid: osx-x64
             artifact: forge-lsp
             archive: tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            dotnet_rid: win-x64
             artifact: forge-lsp.exe
             archive: zip
     steps:
@@ -53,32 +49,15 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
       - name: Build Rust LSP server
         run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Build sidecars (self-contained)
-        run: |
-          dotnet publish sidecars/Forge.Sidecar.CSharp/Forge.Sidecar.CSharp.csproj \
-            --configuration Release \
-            --output target/sidecar-csharp \
-            --runtime ${{ matrix.dotnet_rid }}
-          dotnet publish sidecars/Forge.Sidecar.FSharp/Forge.Sidecar.FSharp.fsproj \
-            --configuration Release \
-            --output target/sidecar-fsharp \
-            --runtime ${{ matrix.dotnet_rid }}
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
         run: |
-          STAGING="forge-${{ github.ref_name }}-${{ matrix.target }}"
-          mkdir -p "$STAGING/bin" "$STAGING/sidecar-csharp" "$STAGING/sidecar-fsharp"
-          cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$STAGING/bin/"
-          cp -r target/sidecar-csharp/* "$STAGING/sidecar-csharp/"
-          cp -r target/sidecar-fsharp/* "$STAGING/sidecar-fsharp/"
+          STAGING="forge-lsp-${{ github.ref_name }}-${{ matrix.target }}"
+          mkdir -p "$STAGING"
+          cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$STAGING/"
           tar czf "$STAGING.tar.gz" "$STAGING"
           echo "ASSET=$STAGING.tar.gz" >> "$GITHUB_ENV"
 
@@ -86,31 +65,79 @@ jobs:
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $staging = "forge-${{ github.ref_name }}-${{ matrix.target }}"
-          New-Item -ItemType Directory -Path "$staging/bin", "$staging/sidecar-csharp", "$staging/sidecar-fsharp" -Force
-          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$staging/bin/"
-          Copy-Item "target/sidecar-csharp/*" "$staging/sidecar-csharp/" -Recurse
-          Copy-Item "target/sidecar-fsharp/*" "$staging/sidecar-fsharp/" -Recurse
+          $staging = "forge-lsp-${{ github.ref_name }}-${{ matrix.target }}"
+          New-Item -ItemType Directory -Path "$staging" -Force
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$staging/"
           Compress-Archive -Path "$staging" -DestinationPath "$staging.zip"
           echo "ASSET=$staging.zip" >> $env:GITHUB_ENV
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: forge-${{ matrix.target }}
+          name: forge-lsp-${{ matrix.target }}
           path: ${{ env.ASSET }}
 
-  release:
-    name: Create Release
-    needs: [build]
+  # Pack sidecars as framework-dependent dotnet tools (runs parallel with build — different runner, cached dotnet).
+  pack-sidecars:
+    name: Pack sidecars
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          path: artifacts
+          dotnet-version: '10.0.x'
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Pack C# sidecar
+        run: |
+          dotnet pack sidecars/Forge.Sidecar.CSharp/Forge.Sidecar.CSharp.csproj \
+            -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
+            -c Release \
+            -o nupkgs
+
+      - name: Pack F# sidecar
+        run: |
+          dotnet pack sidecars/Forge.Sidecar.FSharp/Forge.Sidecar.FSharp.fsproj \
+            -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
+            -c Release \
+            -o nupkgs
+
+      - name: Upload nupkg artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-nupkgs
+          path: nupkgs/*.nupkg
+
+  # Create GitHub release, publish NuGet packages, and update Homebrew/Scoop.
+  # Sequential steps in one job — no point spinning up 4 separate runners for
+  # lightweight operations that share the same ubuntu environment.
+  release:
+    name: Release & Publish
+    needs: [build-forge-lsp, pack-sidecars]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # ── GitHub Release ──────────────────────────────────────────────
+      - name: Download forge-lsp artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/forge-lsp
+          pattern: forge-lsp-*
           merge-multiple: true
 
       - name: Create GitHub release
@@ -120,4 +147,140 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "Forge ${{ github.ref_name }}" \
             --generate-notes \
-            artifacts/*
+            artifacts/forge-lsp/*
+
+      # ── NuGet Publish ───────────────────────────────────────────────
+      - name: Download sidecar nupkgs
+        uses: actions/download-artifact@v4
+        with:
+          name: sidecar-nupkgs
+          path: nupkgs
+
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push nupkgs/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
+      # ── Homebrew Tap ────────────────────────────────────────────────
+      - name: Compute checksums for Homebrew
+        run: |
+          TAG="${{ github.ref_name }}"
+          for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu; do
+            ARCHIVE="forge-lsp-${TAG}-${target}.tar.gz"
+            SHA=$(sha256sum "artifacts/forge-lsp/$ARCHIVE" | cut -d' ' -f1)
+            echo "SHA_${target//-/_}=$SHA" >> "$GITHUB_ENV"
+          done
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: forge-lsp/homebrew-tap
+          token: ${{ secrets.BREW_SCOOP_PAT }}
+          path: homebrew-tap
+
+      - name: Generate Homebrew formula
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          BASE="https://github.com/forge-lsp/forge/releases/download/${TAG}"
+          mkdir -p homebrew-tap/Formula
+          cat > homebrew-tap/Formula/forge-lsp.rb << EOF
+          class ForgeLsp < Formula
+            desc "Open-source .NET LSP server — C# and F# intelligence for every editor"
+            homepage "https://github.com/forge-lsp/forge"
+            license "MIT"
+            version "${VERSION}"
+
+            on_macos do
+              on_arm do
+                url "${BASE}/forge-lsp-${TAG}-aarch64-apple-darwin.tar.gz"
+                sha256 "${SHA_aarch64_apple_darwin}"
+              end
+              on_intel do
+                url "${BASE}/forge-lsp-${TAG}-x86_64-apple-darwin.tar.gz"
+                sha256 "${SHA_x86_64_apple_darwin}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "${BASE}/forge-lsp-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${SHA_x86_64_unknown_linux_gnu}"
+              end
+            end
+
+            def install
+              bin.install "forge-lsp"
+            end
+
+            test do
+              assert_match "forge-lsp", shell_output("#{bin}/forge-lsp --version")
+            end
+          end
+          EOF
+
+      - name: Push Homebrew formula
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/forge-lsp.rb
+          git commit -m "Update forge-lsp to ${{ github.ref_name }}"
+          git push
+
+      # ── Scoop Bucket ────────────────────────────────────────────────
+      - name: Compute checksum for Scoop
+        run: |
+          TAG="${{ github.ref_name }}"
+          ARCHIVE="forge-lsp-${TAG}-x86_64-pc-windows-msvc.zip"
+          SHA=$(sha256sum "artifacts/forge-lsp/$ARCHIVE" | cut -d' ' -f1)
+          echo "SHA_WIN=$SHA" >> "$GITHUB_ENV"
+
+      - name: Checkout Scoop bucket
+        uses: actions/checkout@v4
+        with:
+          repository: forge-lsp/scoop-bucket
+          token: ${{ secrets.BREW_SCOOP_PAT }}
+          path: scoop-bucket
+
+      - name: Generate Scoop manifest
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          mkdir -p scoop-bucket/bucket
+          cat > scoop-bucket/bucket/forge-lsp.json << EOF
+          {
+            "version": "${VERSION}",
+            "description": "Open-source .NET LSP server — C# and F# intelligence for every editor",
+            "homepage": "https://github.com/forge-lsp/forge",
+            "license": "MIT",
+            "architecture": {
+              "64bit": {
+                "url": "https://github.com/forge-lsp/forge/releases/download/${TAG}/forge-lsp-${TAG}-x86_64-pc-windows-msvc.zip",
+                "hash": "${SHA_WIN}",
+                "bin": "forge-lsp.exe"
+              }
+            },
+            "checkver": {
+              "github": "https://github.com/forge-lsp/forge"
+            },
+            "autoupdate": {
+              "architecture": {
+                "64bit": {
+                  "url": "https://github.com/forge-lsp/forge/releases/download/v\$version/forge-lsp-v\$version-x86_64-pc-windows-msvc.zip"
+                }
+              }
+            }
+          }
+          EOF
+
+      - name: Push Scoop manifest
+        run: |
+          cd scoop-bucket
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/forge-lsp.json
+          git commit -m "Update forge-lsp to ${{ github.ref_name }}"
+          git push

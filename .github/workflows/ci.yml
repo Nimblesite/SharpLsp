@@ -62,6 +62,14 @@ jobs:
       - name: .NET lint
         run: make lint-dotnet
 
+      - name: Sidecar dotnet pack (smoke test)
+        run: |
+          dotnet pack sidecars/Forge.Sidecar.CSharp/Forge.Sidecar.CSharp.csproj \
+            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+          dotnet pack sidecars/Forge.Sidecar.FSharp/Forge.Sidecar.FSharp.fsproj \
+            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+          ls -la /tmp/nupkg-smoke/*.nupkg
+
       - name: VS Code format
         run: cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'
 

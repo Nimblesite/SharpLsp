@@ -6,13 +6,13 @@ import { findForgeBinary } from './test-helpers.js';
 
 suite('Install Module — getInstalledVersion()', () => {
   test('returns undefined for nonexistent binary', () => {
-    const result = getInstalledVersion('/nonexistent/forge-lsp');
+    const result = getInstalledVersion('/nonexistent/forge-lsp', 'forge-lsp');
     assert.strictEqual(result, undefined);
   });
 
   test('returns undefined for binary that outputs wrong format', () => {
     // Use 'echo' which outputs something but not the expected format.
-    const result = getInstalledVersion('echo');
+    const result = getInstalledVersion('echo', 'forge-lsp');
     // echo with no args just outputs empty line — undefined.
     assert.strictEqual(result, undefined);
   });
@@ -23,7 +23,7 @@ suite('Install Module — getInstalledVersion()', () => {
       this.skip();
       return;
     }
-    const version = getInstalledVersion(binary);
+    const version = getInstalledVersion(binary, 'forge-lsp');
     assert.ok(version !== undefined, `Expected a version string from ${binary}, got undefined`);
     // Must be a valid semver-ish format.
     const segments = version.split('.');
@@ -82,7 +82,7 @@ suite('Install Module — forge-lsp --version contract', () => {
     const expected = raw.split(' ')[1];
 
     // Via our function.
-    const parsed = getInstalledVersion(binary);
+    const parsed = getInstalledVersion(binary, 'forge-lsp');
 
     assert.strictEqual(parsed, expected, `getInstalledVersion must match raw --version output`);
   });

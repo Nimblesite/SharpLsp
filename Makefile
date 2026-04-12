@@ -11,7 +11,9 @@
 #   make build-zed           Zed extension WASM only
 #   make package-zed         Assemble a distributable Zed extension directory + tarball
 #   make package-rider       Build + package the Rider plugin zip
-#   make install-binaries    Kill forge, hard-delete, deploy forge-lsp + sidecars to ~/.local
+#   make install-rust         Deploy forge-lsp to ~/.local/bin
+#   make install-sidecars    Pack + install sidecars as dotnet global tools
+#   make install-binaries    Install everything (forge-lsp + sidecars)
 #   make test                run all tests (with coverage + threshold enforcement)
 #   make test-rust           test forge-lsp + coverage threshold
 #   make test-vsix           test VS Code extension + coverage threshold
@@ -41,7 +43,7 @@ SHELL := /bin/bash
        test test-rust test-zed test-vsix test-dotnet \
        lint lint-rust lint-zed lint-vsix lint-dotnet \
        fmt fmt-rust fmt-zed fmt-vsix fmt-dotnet \
-       kill-forge install-binaries \
+       kill-forge install-binaries install-rust install-sidecars \
        setup clean
 
 PROFILE    ?= release
@@ -315,28 +317,38 @@ kill-forge:
 	@sleep 0.5
 	@echo "==> Processes killed."
 
-# ── Install binaries (kill → hard-delete → deploy) ───────────────
+# ── Install forge-lsp binary only ────────────────────────────────
 
-install-binaries: build-rust build-dotnet kill-forge
-	@echo "==> Hard-deleting existing binaries from install prefix..."
-	$(RM) $(PREFIX)/bin/forge-lsp
-	$(RM) $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
+install-rust: build-rust kill-forge
 	@echo "==> Deploying forge-lsp to $(PREFIX)/bin/..."
 	$(MKDIR) $(PREFIX)/bin
 	cp $(BINARY) $(PREFIX)/bin/forge-lsp
 	chmod +x $(PREFIX)/bin/forge-lsp
-	@echo "==> Deploying sidecars to $(LIBDIR)/..."
-	$(MKDIR) $(LIBDIR)/sidecar-csharp $(LIBDIR)/sidecar-fsharp
-	cp -r $(SIDECAR_CS_OUT)/. $(LIBDIR)/sidecar-csharp/
-	cp -r $(SIDECAR_FS_OUT)/. $(LIBDIR)/sidecar-fsharp/
-	-@xattr -cr $(LIBDIR)/sidecar-csharp/ $(LIBDIR)/sidecar-fsharp/ 2>/dev/null || true
-	@echo ""
-	@echo "==> Installed:"
-	@echo "    $(PREFIX)/bin/forge-lsp"
-	@echo "    $(LIBDIR)/sidecar-csharp/"
-	@echo "    $(LIBDIR)/sidecar-fsharp/"
-	@echo ""
+	@echo "==> Installed: $(PREFIX)/bin/forge-lsp"
 	@echo "    Make sure $(PREFIX)/bin is on your \$$PATH"
+
+# ── Install sidecars as dotnet global tools from local nupkgs ────
+
+install-sidecars: build-dotnet
+	@echo "==> Packing sidecars as dotnet tools..."
+	dotnet pack $(SIDECAR_CS)/Forge.Sidecar.CSharp.csproj \
+		-p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
+	dotnet pack $(SIDECAR_FS)/Forge.Sidecar.FSharp.fsproj \
+		-p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
+	@echo "==> Installing sidecars as dotnet global tools..."
+	dotnet tool update -g Forge.Sidecar.CSharp \
+		--version 0.0.0-local --add-source target/nupkgs
+	dotnet tool update -g Forge.Sidecar.FSharp \
+		--version 0.0.0-local --add-source target/nupkgs
+	@echo ""
+	@echo "==> Installed dotnet global tools:"
+	@echo "    forge-sidecar-csharp (dotnet tool)"
+	@echo "    forge-sidecar-fsharp (dotnet tool)"
+
+# ── Install everything (legacy alias) ───────────────────────────
+
+install-binaries: install-rust install-sidecars
+	@echo "==> All binaries installed."
 
 # ── Clean ────────────────────────────────────────────────────────
 

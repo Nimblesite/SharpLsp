@@ -221,28 +221,24 @@ EndGlobal"#,
     client.wait_with_timeout();
 }
 
-// Full-stack: solution-wide diagnostics must not produce false positives.
-// A solution that compiles clean (`dotnet build` succeeds) must produce
-// zero Error-severity diagnostics. The sidecar must verify initial scan
-// results by re-requesting compilations for files with errors — if the
-// error disappears on recompilation, it was a false positive from
-// incomplete workspace loading and must be cleared.
+// Full-stack: after fixing a compilation error, the sidecar must
+// incrementally re-verify and clear the diagnostic. Currently it never
+// does — diagnostics from the initial scan persist forever as false
+// positives even after the source is fixed.
 
 #[test]
-fn test_full_stack_solution_wide_no_false_positives() {
+fn test_full_stack_diagnostics_cleared_after_error_fixed() {
     if !is_dotnet_available() {
         eprintln!("SKIPPED: dotnet SDK not installed");
         return;
     }
 
-    // Build a multi-project solution that compiles clean.
     let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("VerifyTest");
+    std::fs::create_dir_all(&proj_dir).unwrap();
 
-    // Project A: a library with a public type.
-    let proj_a_dir = tmp.path().join("LibA");
-    std::fs::create_dir_all(&proj_a_dir).unwrap();
     std::fs::write(
-        proj_a_dir.join("LibA.csproj"),
+        proj_dir.join("VerifyTest.csproj"),
         r#"<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -252,152 +248,130 @@ fn test_full_stack_solution_wide_no_false_positives() {
 </Project>"#,
     )
     .unwrap();
-    std::fs::write(
-        proj_a_dir.join("Widget.cs"),
-        r"namespace LibA;
-public class Widget
-{
-    public int Count { get; set; }
-    public string Label { get; set; } = string.Empty;
-}
-",
-    )
-    .unwrap();
 
-    // Project B: references LibA, uses Widget.
-    let proj_b_dir = tmp.path().join("LibB");
-    std::fs::create_dir_all(&proj_b_dir).unwrap();
-    std::fs::write(
-        proj_b_dir.join("LibB.csproj"),
-        r#"<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <OutputType>Library</OutputType>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\LibA\LibA.csproj" />
-  </ItemGroup>
-</Project>"#,
-    )
-    .unwrap();
-    std::fs::write(
-        proj_b_dir.join("Consumer.cs"),
-        r"namespace LibB;
-public class Consumer
+    // Start with a file that has a real compilation error.
+    let broken_source = r"namespace VerifyTest;
+public class Item
 {
-    public LibA.Widget MyWidget { get; } = new LibA.Widget();
-    public int GetCount() => MyWidget.Count;
+    public BogusType Value { get; set; }
 }
-",
-    )
-    .unwrap();
+";
+    std::fs::write(proj_dir.join("Item.cs"), broken_source).unwrap();
 
     std::fs::write(
-        tmp.path().join("NoFalsePositives.sln"),
+        tmp.path().join("VerifyTest.sln"),
         r#"Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibA", "LibA/LibA.csproj", "{00000000-0000-0000-0000-000000000001}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibB", "LibB/LibB.csproj", "{00000000-0000-0000-0000-000000000002}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VerifyTest", "VerifyTest/VerifyTest.csproj", "{00000000-0000-0000-0000-000000000001}"
 EndProject
 Global
 EndGlobal"#,
     )
     .unwrap();
 
-    // Verify the solution actually builds clean.
-    let build = std::process::Command::new("dotnet")
-        .args(["build", "--verbosity", "quiet"])
-        .current_dir(tmp.path())
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(&proj_dir)
         .status()
-        .expect("dotnet build failed to start");
-    assert!(
-        build.success(),
-        "solution must build clean — this test checks for false positives",
-    );
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let root_uri = format!("file://{}", real_root.display());
+    let file_path = real_root.join("VerifyTest").join("Item.cs");
+    let file_uri = format!("file://{}", file_path.display());
 
     let mut client = LspClient::start_verbose();
     let _ = client.initialize_with_root(json!(root_uri));
 
-    // Wait for solution-wide diagnostics to be published.
-    // Collect all publishDiagnostics notifications for up to 90s.
+    // Step 1: Open the broken file.
+    client.open_document(&file_uri, broken_source);
+
+    // Step 2: Wait for the solution-wide scan to report the error.
     let deadline = std::time::Instant::now() + Duration::from_secs(90);
-    let mut error_diagnostics: Vec<(String, String)> = Vec::new();
-    let mut received_any_diagnostics = false;
-
-    // Give sidecar time to load and run solution-wide scan.
-    std::thread::sleep(Duration::from_secs(10));
-
-    // Open both files to also trigger per-file diagnostics.
-    let widget_uri = format!(
-        "file://{}",
-        real_root.join("LibA").join("Widget.cs").display()
-    );
-    let consumer_uri = format!(
-        "file://{}",
-        real_root.join("LibB").join("Consumer.cs").display()
-    );
-    client.open_document(
-        &widget_uri,
-        &std::fs::read_to_string(real_root.join("LibA").join("Widget.cs")).unwrap(),
-    );
-    client.open_document(
-        &consumer_uri,
-        &std::fs::read_to_string(real_root.join("LibB").join("Consumer.cs")).unwrap(),
-    );
-
-    // Poll for diagnostics — wait until we get stable results.
-    let mut stable_checks = 0;
+    let mut found_error = false;
     while std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_secs(5));
+        std::thread::sleep(Duration::from_secs(3));
+        client.save_document(&file_uri);
+        std::thread::sleep(Duration::from_secs(2));
 
-        // Use pull diagnostics to check both files.
-        for uri in [&widget_uri, &consumer_uri] {
-            let resp = client.request(
-                "textDocument/diagnostic",
-                json!({ "textDocument": { "uri": uri } }),
-            );
-            if let Some(items) = resp["result"]["items"].as_array() {
-                received_any_diagnostics = true;
-                for diag in items {
-                    if diag["severity"].as_u64() == Some(1) {
-                        let msg = diag["message"].as_str().unwrap_or("").to_string();
-                        let code = diag["code"]
-                            .as_str()
-                            .unwrap_or("")
-                            .to_string();
-                        error_diagnostics.push((uri.clone(), format!("{code}: {msg}")));
-                    }
-                }
-            }
-        }
-
-        if received_any_diagnostics && error_diagnostics.is_empty() {
-            stable_checks += 1;
-            // Require 3 consecutive clean checks to avoid flaky results.
-            if stable_checks >= 3 {
+        let resp = client.request(
+            "textDocument/diagnostic",
+            json!({ "textDocument": { "uri": file_uri } }),
+        );
+        if let Some(items) = resp["result"]["items"].as_array() {
+            if items.iter().any(|d| {
+                d["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("BogusType") || m.contains("CS0246"))
+            }) {
+                found_error = true;
                 break;
             }
-        } else if !error_diagnostics.is_empty() {
-            // Got false positives — the bug.
-            // Give the verification pass time to clear them.
-            error_diagnostics.clear();
-            stable_checks = 0;
+        }
+    }
+    assert!(
+        found_error,
+        "sidecar must detect BogusType compilation error within 90s",
+    );
+
+    // Step 3: Fix the error — replace BogusType with int.
+    let fixed_source = r"namespace VerifyTest;
+public class Item
+{
+    public int Value { get; set; }
+}
+";
+    client.change_document(&file_uri, 2, fixed_source);
+    std::fs::write(&file_path, fixed_source).unwrap();
+
+    // Step 4: Wait and verify that a publishDiagnostics notification clears
+    // the error for this file. The initial solution-wide scan pushed errors
+    // to the editor — after the fix, a new publishDiagnostics with empty
+    // diagnostics (or no errors) must be sent to clear the Problems panel.
+    //
+    // NOTE: We do NOT trigger save here. The sidecar must proactively
+    // re-verify files that had errors and push corrections without the
+    // user having to manually trigger a re-check. This is the whole point
+    // of incremental verification.
+    let verify_deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let mut received_clear = false;
+    while std::time::Instant::now() < verify_deadline {
+        std::thread::sleep(Duration::from_secs(2));
+
+        // Drain notifications by sending a no-op request.
+        let (_, notifications) = client.request_collecting_notifications(
+            "textDocument/documentSymbol",
+            json!({ "textDocument": { "uri": file_uri } }),
+        );
+
+        for notif in &notifications {
+            if notif["method"].as_str() != Some("textDocument/publishDiagnostics") {
+                continue;
+            }
+            let notif_uri = notif["params"]["uri"].as_str().unwrap_or("");
+            if !notif_uri.contains("Item.cs") {
+                continue;
+            }
+            let diags = notif["params"]["diagnostics"].as_array().unwrap();
+            let has_errors = diags
+                .iter()
+                .any(|d| d["severity"].as_u64() == Some(1));
+            if !has_errors {
+                received_clear = true;
+                break;
+            }
+        }
+        if received_clear {
+            break;
         }
     }
 
     assert!(
-        received_any_diagnostics,
-        "must receive at least one diagnostic response from sidecar within 90s",
-    );
-
-    assert!(
-        error_diagnostics.is_empty(),
-        "Solution builds clean but Forge reports Error-severity diagnostics (false positives). \
-         Forge does not lie. Diagnostics: {error_diagnostics:?}",
+        received_clear,
+        "After fixing BogusType -> int via didChange, a publishDiagnostics \
+         notification must clear the error from the Problems panel within 30s. \
+         The sidecar must re-verify files with errors and push corrections. \
+         Forge does not lie about compilation state.",
     );
 
     client.shutdown_and_exit();

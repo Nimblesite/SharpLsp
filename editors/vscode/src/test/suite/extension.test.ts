@@ -269,7 +269,10 @@ suite('Extension Activation & Configuration', () => {
     assert.ok(ext);
     const props = ext.packageJSON.contributes?.configuration?.properties ?? {};
     const keys = Object.keys(props);
-    assert.ok(keys.length >= 4, `Should contribute at least 4 config properties, got ${keys.length}`);
+    assert.ok(
+      keys.length >= 4,
+      `Should contribute at least 4 config properties, got ${keys.length}`,
+    );
     for (const required of [
       'forge.server.path',
       'forge.server.extraArgs',

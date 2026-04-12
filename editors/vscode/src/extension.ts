@@ -299,10 +299,7 @@ async function addProjectReference(node: ExplorerNode): Promise<void> {
     void window.showWarningMessage('No project file path available.');
     return;
   }
-  const projectFiles = await workspace.findFiles(
-    '**/*.{csproj,fsproj}',
-    '**/node_modules/**',
-  );
+  const projectFiles = await workspace.findFiles('**/*.{csproj,fsproj}', '**/node_modules/**');
   const candidates = projectFiles.filter((f) => f.fsPath !== node.projectFilePath);
   if (candidates.length === 0) {
     void window.showWarningMessage('No other project files found to reference.');

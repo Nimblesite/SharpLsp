@@ -1166,8 +1166,7 @@ suite('Context Menu — All view/item/context Commands Registered', () => {
   test('every command in view/title menus is a registered VS Code command', async () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, 'Extension must be found');
-    const menus: { command: string }[] =
-      ext.packageJSON.contributes?.menus?.['view/title'] ?? [];
+    const menus: { command: string }[] = ext.packageJSON.contributes?.menus?.['view/title'] ?? [];
     assert.ok(menus.length > 0, 'Must have view/title menu entries');
 
     const allCommands = await vscode.commands.getCommands(true);
