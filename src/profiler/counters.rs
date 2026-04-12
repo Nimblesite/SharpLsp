@@ -193,6 +193,8 @@ fn default_refresh_interval() -> u32 {
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
     reason = "test code — panics are the correct failure mode"
 )]
 mod tests {

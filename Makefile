@@ -300,14 +300,14 @@ lint: build lint-rust lint-zed lint-vsix lint-dotnet
 	@echo "==> All lints passed."
 
 lint-rust:
-	@echo "==> [Rust] Clippy (forge-lsp)..."
-	cargo clippy $(CARGO_FLAG) -- -D warnings
+	@echo "==> [Rust] Clippy (forge-lsp, all targets including tests)..."
+	cargo clippy $(CARGO_FLAG) --all-targets -- -D warnings
 	@echo "==> [Rust] Rustfmt check (forge-lsp)..."
 	cargo fmt --check
 
 lint-zed:
-	@echo "==> [Rust] Clippy (Zed extension)..."
-	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml -- -D warnings
+	@echo "==> [Rust] Clippy (Zed extension, all targets including tests)..."
+	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 	@echo "==> [Rust] Rustfmt check (Zed extension)..."
 	cargo fmt --check --manifest-path $(ZED_DIR)/Cargo.toml
 

@@ -204,6 +204,10 @@ fn detect_cpm(path: &Path) -> Result<bool> {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
 mod tests {
     use super::*;
     use tempfile::TempDir;

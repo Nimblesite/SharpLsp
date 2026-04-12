@@ -428,10 +428,6 @@ fn fxhash(bytes: &[u8]) -> u32 {
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::unwrap_used,
-    reason = "test code — panics are the correct failure mode"
-)]
 mod tests {
     use super::*;
     use std::path::PathBuf;

@@ -475,7 +475,7 @@ mod tests {
         let src = "<Project>\n  <!-- keep me -->\n  <ItemGroup>\n    <PackageReference Include=\"A\" Version=\"1.0.0\" />\n  </ItemGroup>\n</Project>\n";
         let out = upsert(src, "B", "2.0.0", PackageElement::Reference);
         assert!(out.contains("<!-- keep me -->"));
-        assert!(out.contains("A"));
-        assert!(out.contains("B"));
+        assert!(out.contains('A'));
+        assert!(out.contains('B'));
     }
 }

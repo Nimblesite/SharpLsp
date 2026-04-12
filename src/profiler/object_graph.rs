@@ -353,10 +353,8 @@ fn short_type_name(full: &str) -> String {
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
-    reason = "test code — panics are the correct failure mode"
-)]
-#[expect(
     clippy::expect_used,
+    clippy::indexing_slicing,
     reason = "test code — panics are the correct failure mode"
 )]
 mod tests {

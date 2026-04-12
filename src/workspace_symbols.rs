@@ -401,6 +401,7 @@ fn extract_type_detail(node: Node, source: &[u8]) -> Option<String> {
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
+    clippy::indexing_slicing,
     reason = "test code — panics are the correct failure mode"
 )]
 mod tests {

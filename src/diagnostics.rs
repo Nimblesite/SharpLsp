@@ -199,6 +199,8 @@ fn map_severity(severity: &str) -> DiagnosticSeverity {
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
     reason = "test code — panics are the correct failure mode"
 )]
 mod tests {
