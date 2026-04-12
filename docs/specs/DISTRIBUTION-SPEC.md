@@ -7,7 +7,7 @@ All statements below are normative requirements, not suggestions.
 
 | Component | Channel | Package ID |
 |-----------|---------|------------|
-| `forge-lsp` | Homebrew (macOS/Linux), Scoop (Windows) | `forge-lsp/tap/forge-lsp` / `forge-lsp/forge-lsp` |
+| `forge-lsp` | Homebrew (macOS/Linux), Scoop (Windows) | `Nimblesite/tap/forge-lsp` / `Nimblesite/forge-lsp` |
 | C# sidecar | dotnet global tool on NuGet.org | `Forge.Sidecar.CSharp` |
 | F# sidecar | dotnet global tool on NuGet.org | `Forge.Sidecar.FSharp` |
 
@@ -63,8 +63,8 @@ page and abort. Do not offer to install package managers automatically.
 
 ## 4. Tap/Bucket Repo Layout
 
-- `forge-lsp/homebrew-tap` contains `Formula/forge-lsp.rb`
-- `forge-lsp/scoop-bucket` contains `bucket/forge-lsp.json`
+- `Nimblesite/homebrew-tap` contains `Formula/forge-lsp.rb`
+- `Nimblesite/scoop-bucket` contains `bucket/forge-lsp.json`
 - Both are auto-updated by the release workflow using `BREW_SCOOP_PAT`
 - Manual edits are forbidden
 
@@ -84,7 +84,7 @@ Tag-triggered (`v*`). Three jobs:
 
 | Secret | Purpose | Scope |
 |--------|---------|-------|
-| `BREW_SCOOP_PAT` | PAT with `contents:write` on `forge-lsp/homebrew-tap` and `forge-lsp/scoop-bucket` | `forge-lsp/forge` |
+| `BREW_SCOOP_PAT` | PAT with `contents:write` on `Nimblesite/homebrew-tap` and `Nimblesite/scoop-bucket` | `forge-lsp/forge` |
 | `NUGET_API_KEY` | Push rights to `Forge.Sidecar.*` on nuget.org | `forge-lsp/forge` |
 
 ## 7. CI Smoke Test

@@ -221,10 +221,25 @@ EndGlobal"#,
     client.wait_with_timeout();
 }
 
-// Full-stack: after fixing a compilation error, the sidecar must
-// incrementally re-verify and clear the diagnostic. Currently it never
-// does — diagnostics from the initial scan persist forever as false
-// positives even after the source is fixed.
+// Full-stack: after didChange fixes an error, the LAST
+// publishDiagnostics for that file must have zero Error diagnostics.
+//
+// The Rust host fires notify_did_change and trigger_diagnostics as
+// independent fire-and-forget async spawns. If trigger_diagnostics
+// grabs the sidecar transport lock before notify_did_change, it
+// fetches stale compilation state and publishes stale errors. No
+// correction ever follows — the stale errors persist in the Problems
+// panel.
+//
+// The fix: notify_did_change must complete before trigger_diagnostics
+// runs, OR a verification pass must correct stale results.
+//
+// This test is deterministic because didOpen does NOT call
+// notify_did_change — it only calls trigger_diagnostics. So after
+// closing and reopening with fixed text, the sidecar still has the
+// OLD source in its _solution. Pull diagnostics (which use
+// GetDiagnosticsAsync on the sidecar's _solution) will return stale
+// errors every time.
 
 #[test]
 fn test_full_stack_diagnostics_cleared_after_error_fixed() {
@@ -249,7 +264,7 @@ fn test_full_stack_diagnostics_cleared_after_error_fixed() {
     )
     .unwrap();
 
-    // Start with a file that has a real compilation error.
+    // Start with a real compilation error.
     let broken_source = r"namespace VerifyTest;
 public class Item
 {
@@ -278,25 +293,23 @@ EndGlobal"#,
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let root_uri = format!("file://{}", real_root.display());
     let file_path = real_root.join("VerifyTest").join("Item.cs");
-    let file_uri = format!("file://{}", file_path.display());
+    let item_uri = format!("file://{}", file_path.display());
 
     let mut client = LspClient::start_verbose();
     let _ = client.initialize_with_root(json!(root_uri));
 
-    // Step 1: Open the broken file.
-    client.open_document(&file_uri, broken_source);
+    // Step 1: Open the broken file and wait for sidecar to detect it.
+    client.open_document(&item_uri, broken_source);
 
-    // Step 2: Wait for the solution-wide scan to report the error.
-    let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let scan_deadline = std::time::Instant::now() + Duration::from_secs(90);
     let mut found_error = false;
-    while std::time::Instant::now() < deadline {
+    while std::time::Instant::now() < scan_deadline {
         std::thread::sleep(Duration::from_secs(3));
-        client.save_document(&file_uri);
+        client.save_document(&item_uri);
         std::thread::sleep(Duration::from_secs(2));
-
         let resp = client.request(
             "textDocument/diagnostic",
-            json!({ "textDocument": { "uri": file_uri } }),
+            json!({ "textDocument": { "uri": item_uri } }),
         );
         if let Some(items) = resp["result"]["items"].as_array() {
             if items.iter().any(|d| {
@@ -309,69 +322,54 @@ EndGlobal"#,
             }
         }
     }
-    assert!(
-        found_error,
-        "sidecar must detect BogusType compilation error within 90s",
-    );
+    assert!(found_error, "sidecar must detect BogusType error");
 
-    // Step 3: Fix the error — replace BogusType with int.
+    // Step 2: Fix the file on disk. Then close and reopen with fixed
+    // text. didOpen does NOT call notify_did_change, so the sidecar's
+    // internal _solution still has the broken source. This is
+    // deterministic — the sidecar ALWAYS has stale text after this.
     let fixed_source = r"namespace VerifyTest;
 public class Item
 {
     public int Value { get; set; }
 }
 ";
-    client.change_document(&file_uri, 2, fixed_source);
     std::fs::write(&file_path, fixed_source).unwrap();
+    client.close_document(&item_uri);
+    // Consume the close clear notification.
+    let _ = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": "file:///dev/null" } }),
+    );
+    client.open_document(&item_uri, fixed_source);
 
-    // Step 4: Wait and verify that a publishDiagnostics notification clears
-    // the error for this file. The initial solution-wide scan pushed errors
-    // to the editor — after the fix, a new publishDiagnostics with empty
-    // diagnostics (or no errors) must be sent to clear the Problems panel.
-    //
-    // NOTE: We do NOT trigger save here. The sidecar must proactively
-    // re-verify files that had errors and push corrections without the
-    // user having to manually trigger a re-check. This is the whole point
-    // of incremental verification.
-    let verify_deadline = std::time::Instant::now() + Duration::from_secs(30);
-    let mut received_clear = false;
-    while std::time::Instant::now() < verify_deadline {
-        std::thread::sleep(Duration::from_secs(2));
-
-        // Drain notifications by sending a no-op request.
-        let (_, notifications) = client.request_collecting_notifications(
-            "textDocument/documentSymbol",
-            json!({ "textDocument": { "uri": file_uri } }),
-        );
-
-        for notif in &notifications {
-            if notif["method"].as_str() != Some("textDocument/publishDiagnostics") {
-                continue;
-            }
-            let notif_uri = notif["params"]["uri"].as_str().unwrap_or("");
-            if !notif_uri.contains("Item.cs") {
-                continue;
-            }
-            let diags = notif["params"]["diagnostics"].as_array().unwrap();
-            let has_errors = diags
-                .iter()
-                .any(|d| d["severity"].as_u64() == Some(1));
-            if !has_errors {
-                received_clear = true;
-                break;
-            }
-        }
-        if received_clear {
-            break;
-        }
-    }
+    // Step 3: Pull diagnostics. The sidecar's _solution still has
+    // BogusType because didOpen doesn't update sidecar text. The
+    // host must ensure the sidecar text is synced on didOpen.
+    std::thread::sleep(Duration::from_secs(3));
+    let resp = client.request(
+        "textDocument/diagnostic",
+        json!({ "textDocument": { "uri": item_uri } }),
+    );
+    let items = resp["result"]["items"].as_array().unwrap();
+    let errors: Vec<String> = items
+        .iter()
+        .filter(|d| d["severity"].as_u64() == Some(1))
+        .map(|d| {
+            format!(
+                "{}: {}",
+                d["code"].as_str().unwrap_or("?"),
+                d["message"].as_str().unwrap_or("?")
+            )
+        })
+        .collect();
 
     assert!(
-        received_clear,
-        "After fixing BogusType -> int via didChange, a publishDiagnostics \
-         notification must clear the error from the Problems panel within 30s. \
-         The sidecar must re-verify files with errors and push corrections. \
-         Forge does not lie about compilation state.",
+        errors.is_empty(),
+        "After closing and reopening with fixed source, pull diagnostics \
+         must return zero errors. The sidecar must sync document text on \
+         didOpen — not just on didChange. Stale errors: {errors:?}. \
+         Forge does not lie.",
     );
 
     client.shutdown_and_exit();

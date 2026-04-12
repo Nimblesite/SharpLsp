@@ -176,7 +176,7 @@ jobs:
       - name: Checkout Homebrew tap
         uses: actions/checkout@v4
         with:
-          repository: forge-lsp/homebrew-tap
+          repository: Nimblesite/homebrew-tap
           token: ${{ secrets.BREW_SCOOP_PAT }}
           path: homebrew-tap
 
@@ -241,7 +241,7 @@ jobs:
       - name: Checkout Scoop bucket
         uses: actions/checkout@v4
         with:
-          repository: forge-lsp/scoop-bucket
+          repository: Nimblesite/scoop-bucket
           token: ${{ secrets.BREW_SCOOP_PAT }}
           path: scoop-bucket
 

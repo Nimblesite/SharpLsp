@@ -95,9 +95,9 @@ function forgeLspPackageManager(): string {
 /** Get the install command for forge-lsp based on platform. */
 function forgeLspInstallArgs(): readonly string[] {
   if (os.platform() === 'win32') {
-    return ['scoop', 'install', 'forge-lsp/forge-lsp'];
+    return ['scoop', 'install', 'Nimblesite/forge-lsp'];
   }
-  return ['brew', 'install', 'forge-lsp/tap/forge-lsp'];
+  return ['brew', 'install', 'Nimblesite/tap/forge-lsp'];
 }
 
 /** Get the update command for forge-lsp based on platform. */
@@ -105,7 +105,7 @@ function forgeLspUpdateArgs(): readonly string[] {
   if (os.platform() === 'win32') {
     return ['scoop', 'update', 'forge-lsp'];
   }
-  return ['brew', 'upgrade', 'forge-lsp/tap/forge-lsp'];
+  return ['brew', 'upgrade', 'Nimblesite/tap/forge-lsp'];
 }
 
 /** All binary components that the extension requires. */

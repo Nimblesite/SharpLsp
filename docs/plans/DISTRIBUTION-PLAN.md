@@ -55,8 +55,8 @@ Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 
 ### External prerequisites (manual, pre-merge)
 
-- [ ] Create GitHub repo `forge-lsp/homebrew-tap` (empty, default branch `main`)
-- [ ] Create GitHub repo `forge-lsp/scoop-bucket` (empty, default branch `main`)
+- [ ] Create GitHub repo `Nimblesite/homebrew-tap` (empty, default branch `main`)
+- [ ] Create GitHub repo `Nimblesite/scoop-bucket` (empty, default branch `main`)
 - [ ] Create PAT with `contents:write` on both repos → add as `BREW_SCOOP_PAT`
 - [ ] Create NuGet.org API key → add as `NUGET_API_KEY`
 - [ ] Reserve `Forge.Sidecar.CSharp` and `Forge.Sidecar.FSharp` on nuget.org
