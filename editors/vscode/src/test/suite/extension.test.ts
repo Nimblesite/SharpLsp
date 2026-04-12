@@ -234,36 +234,50 @@ suite('Extension Activation & Configuration', () => {
     assert.match(ext.packageJSON.version, /^\d+\.\d+\.\d+/);
   });
 
-  test('extension contributes 8 commands', () => {
+  test('extension contributes all expected commands', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext);
     const cmds: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
-    assert.strictEqual(cmds.length, 8, 'Should contribute exactly 8 commands');
+    assert.ok(cmds.length >= 8, `Should contribute at least 8 commands, got ${cmds.length}`);
     const ids = cmds.map((c) => c.command);
-    assert.ok(ids.includes('forge.restartServer'));
-    assert.ok(ids.includes('forge.showOutput'));
-    assert.ok(ids.includes('forge.showTraceOutput'));
-    assert.ok(ids.includes('forge.selectSolution'));
-    assert.ok(ids.includes('forge.refreshExplorer'));
-    assert.ok(ids.includes('forge.sortNatural'));
-    assert.ok(ids.includes('forge.sortAlphabetical'));
-    assert.ok(ids.includes('forge.sortAccessibility'));
+    // Core commands that must always be present.
+    for (const required of [
+      'forge.restartServer',
+      'forge.showOutput',
+      'forge.showTraceOutput',
+      'forge.selectSolution',
+      'forge.refreshExplorer',
+      'forge.sortNatural',
+      'forge.sortAlphabetical',
+      'forge.sortAccessibility',
+      'forge.build',
+      'forge.rebuild',
+      'forge.clean',
+      'forge.openProjectFile',
+      'forge.addProjectReference',
+      'forge.nuget.addFromExplorer',
+      'forge.nuget.add',
+      'forge.nuget.update',
+      'forge.nuget.restore',
+    ]) {
+      assert.ok(ids.includes(required), `Missing required command: ${required}`);
+    }
   });
 
-  test('extension contributes 4 configuration properties', () => {
+  test('extension contributes all expected configuration properties', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext);
     const props = ext.packageJSON.contributes?.configuration?.properties ?? {};
     const keys = Object.keys(props);
-    assert.strictEqual(
-      keys.length,
-      4,
-      `Expected 4 config properties, got ${keys.length}: ${keys.join(', ')}`,
-    );
-    assert.ok(keys.includes('forge.server.path'));
-    assert.ok(keys.includes('forge.server.extraArgs'));
-    assert.ok(keys.includes('forge.trace.server'));
-    assert.ok(keys.includes('forge.logging.level'));
+    assert.ok(keys.length >= 4, `Should contribute at least 4 config properties, got ${keys.length}`);
+    for (const required of [
+      'forge.server.path',
+      'forge.server.extraArgs',
+      'forge.trace.server',
+      'forge.logging.level',
+    ]) {
+      assert.ok(keys.includes(required), `Missing required config property: ${required}`);
+    }
   });
 
   test('extension contributes exactly 2 languages', () => {

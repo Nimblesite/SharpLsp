@@ -139,6 +139,14 @@ suite('Context Menu — Package.json Contributions', () => {
     'forge.copyName',
     'forge.revealInExplorer',
     'forge.sortMembers',
+    'forge.openProjectFile',
+    'forge.build',
+    'forge.rebuild',
+    'forge.clean',
+    'forge.addProjectReference',
+    'forge.nuget.addFromExplorer',
+    'forge.removeNuGetPackage',
+    'forge.removeProjectReference',
   ]) {
     test(`${cmd} command is registered`, async () => {
       const cmds = await vscode.commands.getCommands(true);
@@ -1128,5 +1136,201 @@ suite('Context Menu — Correct Node Type Scoping', () => {
     // All must start with 'symbol.' — so they all satisfy the copyQualifiedName and revealInExplorer patterns.
     const badKinds = symbolKinds.filter((k) => !k.startsWith('symbol.'));
     assert.deepEqual(badKinds, [], "All symbol context values must start with 'symbol.'");
+  });
+});
+
+// ── Suite 7: Every Context Menu Command is Registered ──────────────
+
+suite('Context Menu — All view/item/context Commands Registered', () => {
+  test('every command in view/item/context menus is a registered VS Code command', async () => {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, 'Extension must be found');
+    const menus: { command: string }[] =
+      ext.packageJSON.contributes?.menus?.['view/item/context'] ?? [];
+    assert.ok(menus.length > 0, 'Must have view/item/context menu entries');
+
+    const allCommands = await vscode.commands.getCommands(true);
+    const missing: string[] = [];
+    for (const entry of menus) {
+      if (!allCommands.includes(entry.command)) {
+        missing.push(entry.command);
+      }
+    }
+    assert.deepEqual(
+      missing,
+      [],
+      `These context menu commands are declared in package.json but NOT registered: ${missing.join(', ')}`,
+    );
+  });
+
+  test('every command in view/title menus is a registered VS Code command', async () => {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, 'Extension must be found');
+    const menus: { command: string }[] =
+      ext.packageJSON.contributes?.menus?.['view/title'] ?? [];
+    assert.ok(menus.length > 0, 'Must have view/title menu entries');
+
+    const allCommands = await vscode.commands.getCommands(true);
+    const missing: string[] = [];
+    for (const entry of menus) {
+      if (!allCommands.includes(entry.command)) {
+        missing.push(entry.command);
+      }
+    }
+    assert.deepEqual(
+      missing,
+      [],
+      `These title menu commands are declared but NOT registered: ${missing.join(', ')}`,
+    );
+  });
+
+  test('every command declared in package.json is a registered VS Code command', async () => {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, 'Extension must be found');
+    const declared: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
+    assert.ok(declared.length > 0, 'Must have declared commands');
+
+    const allCommands = await vscode.commands.getCommands(true);
+    const missing: string[] = [];
+    for (const entry of declared) {
+      if (!allCommands.includes(entry.command)) {
+        missing.push(entry.command);
+      }
+    }
+    assert.deepEqual(
+      missing,
+      [],
+      `These commands are declared in package.json but NOT registered: ${missing.join(', ')}`,
+    );
+  });
+});
+
+// ── Suite 8: Project Context Menu Execution ─────────────────────────
+
+suite('Context Menu — Project Node Commands Execute', () => {
+  let tmpDir: string;
+  let provider: ExplorerApi['explorerProvider'];
+
+  suiteSetup(async function () {
+    this.timeout(60_000);
+    const result = await setupLspTestSuite('ctx-proj-');
+    tmpDir = result.tmpDir;
+    provider = getProvider();
+
+    const projDir = path.join(tmpDir, 'ProjMenuTest');
+    fs.mkdirSync(projDir, { recursive: true });
+    writeCsproj(projDir, 'ProjMenuTest');
+    fs.writeFileSync(
+      path.join(projDir, 'Source.cs'),
+      'namespace ProjMenuNS { public class Foo { } }',
+    );
+
+    const slnPath = path.join(tmpDir, 'ProjMenuTest.sln');
+    writeSln(slnPath, 'ProjMenuTest', '{00000000-0000-0000-0000-000000000501}');
+    await provider.loadSolution(slnPath);
+
+    const csUri = vscode.Uri.file(path.join(projDir, 'Source.cs'));
+    await vscode.workspace.openTextDocument(csUri).then((d) => vscode.window.showTextDocument(d));
+    await waitForDocumentSymbols(csUri);
+    await provider.refresh();
+
+    await pollUntilResult(
+      async () => findByContext(provider.getChildren(), 'project'),
+      (n) => n !== undefined,
+      15_000,
+    );
+  });
+
+  suiteTeardown(async () => {
+    provider.clear();
+    await closeAllEditors();
+    teardownLspTestSuite(tmpDir);
+  });
+
+  teardown(async () => {
+    await closeAllEditors();
+  });
+
+  test('forge.openProjectFile executes without error on a project node', async function () {
+    this.timeout(10_000);
+    const projectNode = findByContext(provider.getChildren(), 'project');
+    assert.ok(projectNode, 'Project node must exist');
+
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('forge.openProjectFile', projectNode);
+    }, 'openProjectFile must not throw when tapped on a project node');
+  });
+
+  test('forge.openProjectFile opens the .csproj file in the editor', async function () {
+    this.timeout(10_000);
+    const projectNode = findByContext(provider.getChildren(), 'project');
+    assert.ok(projectNode, 'Project node must exist');
+
+    await vscode.commands.executeCommand('forge.openProjectFile', projectNode);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const activeDoc = vscode.window.activeTextEditor?.document;
+    assert.ok(activeDoc, 'An editor must be open after openProjectFile');
+    assert.ok(
+      activeDoc.fileName.endsWith('.csproj'),
+      `Expected .csproj file, got ${activeDoc.fileName}`,
+    );
+  });
+
+  test('forge.build executes without error', async function () {
+    this.timeout(10_000);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('forge.build');
+    }, 'forge.build must not throw');
+  });
+
+  test('forge.rebuild executes without error', async function () {
+    this.timeout(10_000);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('forge.rebuild');
+    }, 'forge.rebuild must not throw');
+  });
+
+  test('forge.clean executes without error', async function () {
+    this.timeout(10_000);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('forge.clean');
+    }, 'forge.clean must not throw');
+  });
+
+  test('forge.openProjectFile handles node without projectFilePath gracefully', async function () {
+    this.timeout(5_000);
+    const mockNode = {
+      projectFilePath: undefined,
+      sortName: 'NoPath',
+      contextValue: 'project',
+    };
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('forge.openProjectFile', mockNode);
+    }, 'openProjectFile must handle missing projectFilePath without throwing');
+  });
+
+  test('forge.addProjectReference handles node without projectFilePath gracefully', async function () {
+    this.timeout(5_000);
+    const mockNode = {
+      projectFilePath: undefined,
+      sortName: 'NoPath',
+      contextValue: 'dependencyFolder',
+    };
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('forge.addProjectReference', mockNode);
+    }, 'addProjectReference must handle missing projectFilePath without throwing');
+  });
+
+  test('forge.nuget.addFromExplorer handles node without projectFilePath gracefully', async function () {
+    this.timeout(5_000);
+    const mockNode = {
+      projectFilePath: undefined,
+      sortName: 'NoPath',
+      contextValue: 'dependencyFolder',
+    };
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('forge.nuget.addFromExplorer', mockNode);
+    }, 'nuget.addFromExplorer must handle missing projectFilePath without throwing');
   });
 });

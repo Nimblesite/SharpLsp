@@ -96,6 +96,22 @@ export async function removeNuGetPackage(
   }
 }
 
+/** Add a project reference to a project via `dotnet add`. */
+export async function addProjectReference(
+  projectPath: string,
+  referencePath: string,
+): Promise<string | undefined> {
+  try {
+    log.info(`Adding project reference ${referencePath} to ${projectPath}`);
+    await execFileAsync('dotnet', ['add', projectPath, 'reference', referencePath]);
+    return undefined;
+  } catch (err: unknown) {
+    const msg = getErrorMessage(err);
+    log.info(`Failed to add project reference: ${msg}`);
+    return msg;
+  }
+}
+
 /** Remove a project reference from a project via `dotnet remove`. */
 export async function removeProjectReference(
   projectPath: string,

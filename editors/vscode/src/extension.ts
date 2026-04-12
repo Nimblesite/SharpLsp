@@ -19,6 +19,9 @@ import {
   CMD_COPY_NAME,
   CMD_REVEAL_IN_EXPLORER,
   CMD_OPEN_SOLUTION,
+  CMD_OPEN_PROJECT_FILE,
+  CMD_ADD_PROJECT_REFERENCE,
+  CMD_NUGET_ADD_FROM_EXPLORER,
   VIEW_SOLUTION_EXPLORER,
   VIEW_PROFILER,
 } from './constants.js';
@@ -30,6 +33,14 @@ import * as solution from './solution.js';
 import { ForgeStatusBar, ServerState } from './status.js';
 import { type ExplorerNode, SolutionExplorerProvider, buildQualifiedName } from './tree.js';
 import { NuGetBrowserPanel } from './nuget-browser.js';
+import { registerBuildCommands } from './build.js';
+import { registerNuGetCommands, addNuGetPackageToProject } from './nuget.js';
+import { registerScaffoldingCommands } from './scaffolding.js';
+import { registerFsiCommands } from './fsi.js';
+import { registerHotReloadCommands } from './hot-reload.js';
+import { registerDebugAdapter } from './debug.js';
+import { registerTestExplorer } from './testing.js';
+import { registerTestStatusLens } from './test-lens.js';
 
 /** Public API exported from activate() for tests and other extensions. */
 export interface ForgeExtensionApi {
@@ -92,8 +103,16 @@ async function activateInner(context: ExtensionContext): Promise<ForgeExtensionA
   explorerProvider.initSortContext();
   log.info('step 8: registerCommands');
   registerCommands(context);
-  log.info('step 9: profiler.registerCommands');
+  log.info('step 9: registerAllModuleCommands');
   profiler.registerCommands(context, profilerProvider, profilerStatusBar, () => lspClient);
+  registerBuildCommands(context);
+  registerNuGetCommands(context);
+  registerScaffoldingCommands(context);
+  registerFsiCommands(context);
+  registerHotReloadCommands(context);
+  registerDebugAdapter(context);
+  const testController = registerTestExplorer(context);
+  registerTestStatusLens(context, testController);
   log.info('step 10: wireDocumentChangeRefresh');
   wireDocumentChangeRefresh(context);
 
@@ -248,7 +267,62 @@ function registerContextMenuCommands(context: ExtensionContext): void {
     commands.registerCommand(CMD_SORT_MEMBERS, async (node: ExplorerNode) => {
       await sortMembers(node);
     }),
+    commands.registerCommand(CMD_OPEN_PROJECT_FILE, async (node: ExplorerNode) => {
+      await openProjectFile(node);
+    }),
+    commands.registerCommand(CMD_ADD_PROJECT_REFERENCE, async (node: ExplorerNode) => {
+      await addProjectReference(node);
+    }),
+    commands.registerCommand(CMD_NUGET_ADD_FROM_EXPLORER, async (node: ExplorerNode) => {
+      if (node.projectFilePath === undefined) {
+        void window.showWarningMessage('No project file path available.');
+        return;
+      }
+      await addNuGetPackageToProject(node.projectFilePath);
+    }),
   );
+}
+
+async function openProjectFile(node: ExplorerNode): Promise<void> {
+  if (node.projectFilePath === undefined) {
+    void window.showWarningMessage('No project file path available.');
+    return;
+  }
+  const uri = vscode.Uri.file(node.projectFilePath);
+  const doc = await workspace.openTextDocument(uri);
+  await window.showTextDocument(doc);
+  log.info(`Opened project file: ${node.projectFilePath}`);
+}
+
+async function addProjectReference(node: ExplorerNode): Promise<void> {
+  if (node.projectFilePath === undefined) {
+    void window.showWarningMessage('No project file path available.');
+    return;
+  }
+  const projectFiles = await workspace.findFiles(
+    '**/*.{csproj,fsproj}',
+    '**/node_modules/**',
+  );
+  const candidates = projectFiles.filter((f) => f.fsPath !== node.projectFilePath);
+  if (candidates.length === 0) {
+    void window.showWarningMessage('No other project files found to reference.');
+    return;
+  }
+  const pick = await window.showQuickPick(
+    candidates.map((f) => ({
+      label: workspace.asRelativePath(f),
+      uri: f,
+    })),
+    { placeHolder: 'Select project to reference' },
+  );
+  if (pick === undefined) return;
+  const error = await deps.addProjectReference(node.projectFilePath, pick.uri.fsPath);
+  if (error !== undefined) {
+    void window.showErrorMessage(`Failed to add project reference: ${error}`);
+    return;
+  }
+  void window.showInformationMessage(`Added reference to ${pick.label}`);
+  await explorerProvider?.refresh();
 }
 
 async function sortMembers(node: ExplorerNode): Promise<void> {
