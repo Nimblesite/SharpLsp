@@ -20,7 +20,7 @@ pub fn handle_inlay_hint(
     let params: InlayHintParams = serde_json::from_value(req.params)?;
     let uri = &params.text_document.uri;
     if vfs.get_content(uri).is_none() {
-        bail!("Document not found: {uri}");
+        bail!("Document not found: {uri:?}");
     }
     let Some(sidecar) = sidecar else {
         return Ok(serde_json::Value::Null);

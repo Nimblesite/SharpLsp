@@ -288,7 +288,6 @@ fn build_capabilities() -> ServerCapabilities {
             ),
         ),
         inlay_hint_provider: Some(OneOf::Left(true)),
-        type_hierarchy_provider: Some(lsp_types::TypeHierarchyServerCapability::Simple(true)),
         workspace_symbol_provider: Some(OneOf::Left(true)),
         call_hierarchy_provider: Some(lsp_types::CallHierarchyServerCapability::Simple(true)),
         code_lens_provider: Some(lsp_types::CodeLensOptions {
