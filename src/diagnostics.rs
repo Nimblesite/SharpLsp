@@ -125,7 +125,7 @@ pub async fn fetch_from_sidecar(
     sidecar: &SidecarManager,
     file_path: &str,
 ) -> Result<Vec<Diagnostic>> {
-    fetch(sidecar, file_path, "forge").await
+    fetch(sidecar, file_path, "forge-csharp").await
 }
 
 /// Fetch diagnostics from the sidecar for a single file.
@@ -169,7 +169,7 @@ async fn fetch_all(
                 path,
                 diags
                     .into_iter()
-                    .map(|d| to_lsp_diagnostic(d, "forge"))
+                    .map(|d| to_lsp_diagnostic(d, "forge-csharp"))
                     .collect(),
             )
         })
