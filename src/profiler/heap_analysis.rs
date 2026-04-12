@@ -2,10 +2,9 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
 use tracing::{debug, info};
 
-use super::tool_discovery;
+use super::{dump_cmd, tool_discovery};
 
 /// Parameters for heap analysis.
 #[derive(Debug, Deserialize)]
@@ -56,11 +55,12 @@ pub struct GcRootChain {
 /// Analyze heap statistics from a dump file.
 pub async fn analyze_heap(params: AnalyzeHeapParams) -> Result<HeapStats> {
     let tool = tool_discovery::require_dump()?;
+    dump_cmd::validate_dump_path(&params.dump_path)?;
 
     info!(dump = %params.dump_path, "Analyzing heap statistics");
 
     // Run `dumpheap -stat` via dotnet-dump analyze with piped commands.
-    let output = run_dump_command(tool, &params.dump_path, "dumpheap -stat")
+    let output = dump_cmd::run(tool, &params.dump_path, "dumpheap -stat")
         .await
         .context("failed to run dotnet-dump analyze")?;
 
@@ -99,6 +99,7 @@ pub async fn analyze_heap(params: AnalyzeHeapParams) -> Result<HeapStats> {
 /// Find GC roots for a specific object address.
 pub async fn find_gc_roots(params: FindGcRootsParams) -> Result<Vec<GcRootChain>> {
     let tool = tool_discovery::require_dump()?;
+    dump_cmd::validate_dump_path(&params.dump_path)?;
 
     info!(
         dump = %params.dump_path,
@@ -108,7 +109,7 @@ pub async fn find_gc_roots(params: FindGcRootsParams) -> Result<Vec<GcRootChain>
 
     let command_str = format!("gcroot {}", params.object_address);
 
-    let output = run_dump_command(tool, &params.dump_path, &command_str)
+    let output = dump_cmd::run(tool, &params.dump_path, &command_str)
         .await
         .context("failed to run dotnet-dump analyze for gcroot")?;
 
@@ -117,36 +118,6 @@ pub async fn find_gc_roots(params: FindGcRootsParams) -> Result<Vec<GcRootChain>
 
     info!(chain_count = chains.len(), "GC root analysis complete");
     Ok(chains)
-}
-
-/// Run a command in the dotnet-dump analyze interactive session.
-///
-/// Spawns `dotnet-dump analyze <dump>`, writes the command + exit to stdin,
-/// then collects the full stdout output.
-async fn run_dump_command(
-    tool: &std::path::Path,
-    dump_path: &str,
-    command: &str,
-) -> Result<std::process::Output> {
-    let mut child = tokio::process::Command::new(tool)
-        .args(["analyze", dump_path])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .context("spawn dotnet-dump analyze")?;
-
-    let input = format!("{command}\nexit\n");
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(input.as_bytes()).await;
-        // Drop stdin to signal EOF.
-        drop(stdin);
-    }
-
-    child
-        .wait_with_output()
-        .await
-        .context("wait for dotnet-dump analyze")
 }
 
 /// Parse `dumpheap -stat` output into type info structs.
@@ -265,6 +236,10 @@ fn default_limit() -> usize {
     clippy::unwrap_used,
     reason = "test code — panics are the correct failure mode"
 )]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code — panics are the correct failure mode"
+)]
 mod tests {
     use super::*;
 
@@ -308,5 +283,92 @@ Found 1 unique root(s).\n";
         assert_eq!(chains[0].roots[0].root_kind, "Root");
         assert_eq!(chains[0].roots[1].root_kind, "Reference");
         assert_eq!(chains[0].roots[1].type_name, "MyApp.Service");
+    }
+
+    #[test]
+    fn test_parse_gcroot_output_multiple_chains() {
+        let output = "\
+Thread 1234:\n\
+    00007ff800001111 00007ff800002222 System.String\n\
+Thread 5678:\n\
+    00007ff800003333 00007ff800004444 System.Object\n\
+    ->  00007ff800005555 MyApp.Handler\n\
+\n\
+Found 2 unique root(s).\n";
+
+        let chains = parse_gcroot_output(output);
+        assert_eq!(chains.len(), 2);
+        assert_eq!(chains[0].roots.len(), 1);
+        assert_eq!(chains[1].roots.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_gcroot_output_handle_table() {
+        let output = "\
+HandleTable:\n\
+    00007ff800001111 System.EventHandler\n\
+\n\
+Found 1 unique root(s).\n";
+
+        let chains = parse_gcroot_output(output);
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].roots.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_gcroot_output_empty() {
+        let chains = parse_gcroot_output("Found 0 unique root(s).\n");
+        assert!(chains.is_empty());
+    }
+
+    #[test]
+    fn test_parse_gcroot_output_no_thread_header() {
+        // Lines without a Thread/HandleTable header go into a single chain
+        let output = "\
+    00007ff800001111 System.Object\n\
+    ->  00007ff800002222 MyApp.Service\n";
+
+        let chains = parse_gcroot_output(output);
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].roots.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_dumpheap_stat_full_output() {
+        let output = "\
+              MT    Count    TotalSize Class Name
+00007ff8abcd1234     1500       48000 System.String
+00007ff8abcd5678      200       16000 System.Object[]
+Total 1700 objects
+";
+        let types = parse_dumpheap_stat(output);
+        assert_eq!(types.len(), 2);
+        assert_eq!(types[0].type_name, "System.String");
+        assert_eq!(types[0].count, 1500);
+        assert_eq!(types[0].total_size_bytes, 48000);
+        assert_eq!(types[1].type_name, "System.Object[]");
+        assert_eq!(types[1].count, 200);
+    }
+
+    #[test]
+    fn test_parse_dumpheap_stat_empty_output() {
+        assert!(parse_dumpheap_stat("").is_empty());
+        assert!(parse_dumpheap_stat("\n\n").is_empty());
+    }
+
+    #[test]
+    fn test_parse_dumpheap_stat_line_short_line() {
+        assert!(parse_dumpheap_stat_line("foo bar").is_none());
+        assert!(parse_dumpheap_stat_line("one two three").is_none());
+    }
+
+    #[test]
+    fn test_parse_dumpheap_stat_line_non_numeric_count() {
+        assert!(parse_dumpheap_stat_line("00007ff8  abc  1234 System.String").is_none());
+    }
+
+    #[test]
+    fn test_default_limit() {
+        assert_eq!(default_limit(), 50);
     }
 }

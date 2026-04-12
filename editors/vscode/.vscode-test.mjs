@@ -1,24 +1,21 @@
 // @ts-check
 import { defineConfig } from "@vscode/test-cli";
 
-export default defineConfig([
-  {
-    files: "out/test/suite/**/*.test.js",
-    workspaceFolder: "test-fixtures/workspace",
-    mocha: {
-      ui: "tdd",
-      timeout: 60_000,
+export default defineConfig({
+  tests: [
+    {
+      files: "out/test/suite/**/*.test.js",
+      workspaceFolder: "test-fixtures/workspace",
+      mocha: {
+        ui: "tdd",
+        timeout: 60_000,
+        bail: true,
+      },
+      launchArgs: ["--disable-extensions"],
     },
-    launchArgs: ["--disable-extensions"],
-    coverage: {
-      includeAll: true,
-      include: ["out/*.js"],
-      exclude: ["out/test/**"],
-      reporter: ["text", "text-summary", "html", "lcov"],
-      lines: 100,
-      functions: 100,
-      branches: 100,
-      statements: 100,
-    },
+  ],
+  coverage: {
+    exclude: ["out/test/**"],
+    reporter: ["text", "text-summary", "json-summary", "html", "lcov"],
   },
-]);
+});

@@ -62,7 +62,15 @@ Analyze ALL files in the solution, not just open ones.
 - [ ] Add `max_per_file: u32` to `DiagnosticsConfig` (default: `0` = unlimited)
 - [ ] Hot-reload config via `workspace/didChangeConfiguration`
 
-## Phase 3: Analyzer Diagnostics (P0)
+## Phase 3: F# Diagnostics (P0 — parallel with C#)
+
+- [ ] `FSharpCheckFileResults.Diagnostics` integration in F# sidecar
+- [ ] Map F# diagnostic severity to LSP
+- [ ] Solution-wide F# analysis via `FSharpChecker`
+- [ ] FSharpLint integration for code style
+- [ ] FSharp.Analyzers.SDK plugin loading
+
+## Phase 4: Analyzer Diagnostics (P0)
 
 - [ ] Enable Roslyn `DiagnosticAnalyzer` framework in sidecar
   - `CompilationWithAnalyzers.GetAnalyzerDiagnosticsAsync()`
@@ -71,28 +79,20 @@ Analyze ALL files in the solution, not just open ones.
 - [ ] IDE0005 (unused usings) detection
 - [ ] Map analyzer diagnostic codes to LSP `Diagnostic.code` + `codeDescription` URL
 
-## Phase 4: Pull Diagnostics (P1)
+## Phase 5: Pull Diagnostics (P1)
 
 - [ ] Implement `textDocument/diagnostic` request handler (LSP 3.17 pull model)
 - [ ] Implement `workspace/diagnostic` request handler
 - [ ] Support `previousResultId` for incremental updates
 - [ ] Report `unchanged` when diagnostics haven't changed
 
-## Phase 5: Background Analysis Optimization (P1)
+## Phase 6: Background Analysis Optimization (P1)
 
 - [ ] Priority queue: active doc > visible docs > recent > rest
 - [ ] Cancel stale analysis on new edits
 - [ ] Incremental re-analysis: only changed file + dependents
 - [ ] Memory budget: cap analysis working set
 - [ ] Progress reporting via `$/progress` for solution-wide scans
-
-## Phase 6: F# Diagnostics (P0 — parallel with C#)
-
-- [ ] `FSharpCheckFileResults.Diagnostics` integration in F# sidecar
-- [ ] Map F# diagnostic severity to LSP
-- [ ] Solution-wide F# analysis via `FSharpChecker`
-- [ ] FSharpLint integration for code style
-- [ ] FSharp.Analyzers.SDK plugin loading
 
 ---
 

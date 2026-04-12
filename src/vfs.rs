@@ -50,7 +50,6 @@ impl Vfs {
     }
 
     /// Get the current version of a document.
-    #[expect(dead_code, reason = "public API for future diagnostic versioning")]
     pub fn get_version(&self, uri: &Uri) -> Option<i32> {
         self.documents.get(uri).map(|d| d.version)
     }

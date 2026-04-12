@@ -13,7 +13,7 @@ Forge is an open-source .NET Language Server Protocol (LSP) implementation built
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (latest stable)
-- [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) or later
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - An LSP-compatible editor (VS Code, Neovim, Emacs, Helix, Zed, etc.)
 
 ## Installation
@@ -38,7 +38,7 @@ Forge uses a three-tier architecture:
 |------|-----------|------|
 | **1** | Rust LSP Host | LSP connection, VFS, tree-sitter parsing, salsa cache |
 | **2** | C# Sidecar | Roslyn-powered completions, diagnostics, refactoring |
-| **3** | F# Sidecar | FSharp.Compiler.Service, Fantomas formatting |
+| **3** | F# Sidecar | FSharp.Compiler.Service for type checking, hover, semantics |
 
 The Rust host handles all LSP communication and syntax-level operations. Semantic operations are delegated to the appropriate .NET sidecar process over IPC.
 

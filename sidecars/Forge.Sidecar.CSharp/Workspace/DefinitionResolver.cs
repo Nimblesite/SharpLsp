@@ -10,16 +10,62 @@ namespace Forge.Sidecar.CSharp.Workspace;
 /// </summary>
 internal static class DefinitionResolver
 {
-    /// <summary>Find the definition location(s) of the symbol at a position.</summary>
-    public static async Task<LocationResult?> ResolveDefinitionAsync(
+    /// <summary>Find all definition locations of the symbol at a position.</summary>
+    public static async Task<LocationListResult> ResolveDefinitionLocationsAsync(
         Document document,
         int line,
         int character,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var symbol = await ResolveSymbolAsync(document, line, character, ct)
-            .ConfigureAwait(false);
-        return symbol is null ? null : ToFirstSourceLocation(symbol);
+        var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
+        if (symbol is null)
+        {
+            return new LocationListResult();
+        }
+
+        var sourceLocations = ToAllSourceLocations(symbol);
+        return sourceLocations.Locations.Count > 0
+            ? sourceLocations
+            : await ResolveMetadataFallbackAsync(document, symbol, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Fall back to decompiled metadata when no in-source locations exist.
+    /// </summary>
+    private static async Task<LocationListResult> ResolveMetadataFallbackAsync(
+        Document document,
+        ISymbol symbol,
+        CancellationToken ct
+    )
+    {
+        var compilation = await document.Project.GetCompilationAsync(ct).ConfigureAwait(false);
+        if (compilation is null)
+        {
+            return new LocationListResult();
+        }
+
+        var metadataLocation = MetadataNavigator.ResolveMetadataSymbol(symbol, compilation);
+
+        return metadataLocation is null
+            ? new LocationListResult()
+            : new LocationListResult { Locations = [metadataLocation] };
+    }
+
+    /// <summary>
+    /// Single-location metadata fallback for type-definition and declaration.
+    /// </summary>
+    private static async Task<LocationResult?> ResolveMetadataFallbackSingleAsync(
+        Document document,
+        ISymbol symbol,
+        CancellationToken ct
+    )
+    {
+        var compilation = await document.Project.GetCompilationAsync(ct).ConfigureAwait(false);
+
+        return compilation is null
+            ? null
+            : MetadataNavigator.ResolveMetadataSymbol(symbol, compilation);
     }
 
     /// <summary>Find the type definition of the symbol at a position.</summary>
@@ -27,10 +73,10 @@ internal static class DefinitionResolver
         Document document,
         int line,
         int character,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var model = await document.GetSemanticModelAsync(ct)
-            .ConfigureAwait(false);
+        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
         if (model is null)
         {
             return null;
@@ -40,12 +86,17 @@ internal static class DefinitionResolver
             .ConfigureAwait(false);
 
         var typeInfo = model.GetTypeInfo(
-            await GetNodeAtPositionAsync(document, position, ct)
-                .ConfigureAwait(false),
-            ct);
+            await GetNodeAtPositionAsync(document, position, ct).ConfigureAwait(false),
+            ct
+        );
 
         var typeSymbol = typeInfo.Type ?? typeInfo.ConvertedType;
-        return typeSymbol is null ? null : ToFirstSourceLocation(typeSymbol);
+
+        return typeSymbol is null
+            ? null
+            : ToFirstSourceLocation(typeSymbol)
+                ?? await ResolveMetadataFallbackSingleAsync(document, typeSymbol, ct)
+                    .ConfigureAwait(false);
     }
 
     /// <summary>Find the declaration (interface/base member) of the symbol.</summary>
@@ -53,17 +104,19 @@ internal static class DefinitionResolver
         Document document,
         int line,
         int character,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var symbol = await ResolveSymbolAsync(document, line, character, ct)
-            .ConfigureAwait(false);
+        var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
         if (symbol is null)
         {
             return null;
         }
 
         var declSymbol = FindDeclarationSymbol(symbol);
-        return ToFirstSourceLocation(declSymbol);
+        return ToFirstSourceLocation(declSymbol)
+            ?? await ResolveMetadataFallbackSingleAsync(document, declSymbol, ct)
+                .ConfigureAwait(false);
     }
 
     /// <summary>Find all implementations of the symbol at a position.</summary>
@@ -72,10 +125,10 @@ internal static class DefinitionResolver
         Solution solution,
         int line,
         int character,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var symbol = await ResolveSymbolAsync(document, line, character, ct)
-            .ConfigureAwait(false);
+        var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
         if (symbol is null)
         {
             return new LocationListResult();
@@ -95,14 +148,157 @@ internal static class DefinitionResolver
         // For virtual/abstract methods/properties, find overrides via
         // derived classes (FindOverridesAsync is unreliable with
         // MSBuildWorkspace).
-        if (symbol is IMethodSymbol or IPropertySymbol
-            && (symbol.IsVirtual || symbol.IsAbstract || symbol.IsOverride))
+        if (
+            symbol is IMethodSymbol or IPropertySymbol
+            && (symbol.IsVirtual || symbol.IsAbstract || symbol.IsOverride)
+        )
         {
-            await FindOverridesViaDerivedTypesAsync(
-                symbol, solution, locations, ct).ConfigureAwait(false);
+            await FindOverridesViaDerivedTypesAsync(symbol, solution, locations, ct)
+                .ConfigureAwait(false);
+        }
+
+        // If no implementations found, include the symbol's own location.
+        // Matches VS/Rider: "Go to Implementation" on a concrete type navigates
+        // to itself when nothing derives from or implements it.
+        if (locations.Count == 0)
+        {
+            AddSourceLocation(locations, symbol);
         }
 
         return new LocationListResult { Locations = locations };
+    }
+
+    /// <summary>Find all references to the symbol at a position across the solution.</summary>
+    public static async Task<LocationListResult> ResolveReferencesAsync(
+        Document document,
+        Solution solution,
+        int line,
+        int character,
+        bool includeDeclaration,
+        CancellationToken ct
+    )
+    {
+        var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
+        if (symbol is null)
+        {
+            return new LocationListResult();
+        }
+
+        var locations = new List<LocationResult>();
+        var referencedSymbols = await SymbolFinder
+            .FindReferencesAsync(symbol, solution, cancellationToken: ct)
+            .ConfigureAwait(false);
+
+        foreach (var refSymbol in referencedSymbols)
+        {
+            if (includeDeclaration)
+            {
+                AddSourceLocation(locations, refSymbol.Definition);
+            }
+
+            foreach (var refLoc in refSymbol.Locations)
+            {
+                var span = refLoc.Location.GetMappedLineSpan();
+                if (span.IsValid && refLoc.Location.IsInSource)
+                {
+                    locations.Add(
+                        new LocationResult
+                        {
+                            FilePath = span.Path,
+                            Line = span.StartLinePosition.Line,
+                            Character = span.StartLinePosition.Character,
+                            EndLine = span.EndLinePosition.Line,
+                            EndCharacter = span.EndLinePosition.Character,
+                        }
+                    );
+                }
+            }
+        }
+
+        return new LocationListResult { Locations = locations };
+    }
+
+    /// <summary>Find document highlights for the symbol at a position (current doc only).</summary>
+    public static async Task<List<DocumentHighlightResult>> ResolveDocumentHighlightsAsync(
+        Document document,
+        Solution solution,
+        int line,
+        int character,
+        CancellationToken ct
+    )
+    {
+        var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
+        if (symbol is null)
+        {
+            return [];
+        }
+
+        var highlights = new List<DocumentHighlightResult>();
+        var referencedSymbols = await SymbolFinder
+            .FindReferencesAsync(symbol, solution, cancellationToken: ct)
+            .ConfigureAwait(false);
+
+        foreach (var refSymbol in referencedSymbols)
+        {
+            // Include declaration as Write.
+            foreach (var loc in refSymbol.Definition.Locations)
+            {
+                if (!loc.IsInSource || loc.SourceTree?.FilePath != document.FilePath)
+                {
+                    continue;
+                }
+
+                var declSpan = loc.GetMappedLineSpan();
+                if (declSpan.IsValid)
+                {
+                    highlights.Add(
+                        new DocumentHighlightResult
+                        {
+                            StartLine = declSpan.StartLinePosition.Line,
+                            StartCharacter = declSpan.StartLinePosition.Character,
+                            EndLine = declSpan.EndLinePosition.Line,
+                            EndCharacter = declSpan.EndLinePosition.Character,
+                            Kind = 3, // Write
+                        }
+                    );
+                }
+            }
+
+            // Include references, classifying as Read vs Write.
+            foreach (var refLoc in refSymbol.Locations)
+            {
+                if (refLoc.Document.Id != document.Id)
+                {
+                    continue;
+                }
+
+                var span = refLoc.Location.GetMappedLineSpan();
+                if (!span.IsValid)
+                {
+                    continue;
+                }
+
+                var kind = IsWriteReference(refLoc) ? 3 : 2;
+                highlights.Add(
+                    new DocumentHighlightResult
+                    {
+                        StartLine = span.StartLinePosition.Line,
+                        StartCharacter = span.StartLinePosition.Character,
+                        EndLine = span.EndLinePosition.Line,
+                        EndCharacter = span.EndLinePosition.Character,
+                        Kind = kind,
+                    }
+                );
+            }
+        }
+
+        return highlights;
+    }
+
+    /// <summary>Check if a reference location is a write (implicit references are typically assignments).</summary>
+    private static bool IsWriteReference(ReferenceLocation refLoc)
+    {
+        return refLoc.IsImplicit;
     }
 
     /// <summary>Resolve the symbol at a given document position.</summary>
@@ -110,20 +306,19 @@ internal static class DefinitionResolver
         Document document,
         int line,
         int character,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var model = await document.GetSemanticModelAsync(ct)
-            .ConfigureAwait(false);
+        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
         if (model is null)
         {
             return null;
         }
 
-        var position = await ToAbsolutePositionAsync(
-            document, line, character, ct).ConfigureAwait(false);
-
-        var root = await document.GetSyntaxRootAsync(ct)
+        var position = await ToAbsolutePositionAsync(document, line, character, ct)
             .ConfigureAwait(false);
+
+        var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
         if (root is null)
         {
             return null;
@@ -132,15 +327,15 @@ internal static class DefinitionResolver
         var token = root.FindToken(position);
         if (token.Parent is null)
         {
-            await Console.Error.WriteLineAsync("[Resolve] token.Parent is null")
+            await Console
+                .Error.WriteLineAsync("[Resolve] token.Parent is null")
                 .ConfigureAwait(false);
             return null;
         }
 
         // Try reference resolution first (call sites, type references).
         var symbolInfo = model.GetSymbolInfo(token.Parent, ct);
-        var symbol = symbolInfo.Symbol
-            ?? symbolInfo.CandidateSymbols.FirstOrDefault();
+        var symbol = symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
         if (symbol is not null)
         {
             return symbol;
@@ -169,7 +364,8 @@ internal static class DefinitionResolver
         Document document,
         int line,
         int character,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var text = await document.GetTextAsync(ct).ConfigureAwait(false);
         return text.Lines.GetPosition(new LinePosition(line, character));
@@ -179,15 +375,15 @@ internal static class DefinitionResolver
     private static async Task<SyntaxNode> GetNodeAtPositionAsync(
         Document document,
         int position,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var root = await document.GetSyntaxRootAsync(ct)
-            .ConfigureAwait(false)
+        var root =
+            await document.GetSyntaxRootAsync(ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Syntax root is null");
 
         var token = root.FindToken(position);
-        return token.Parent
-            ?? throw new InvalidOperationException("Token parent is null");
+        return token.Parent ?? throw new InvalidOperationException("Token parent is null");
     }
 
     /// <summary>
@@ -220,8 +416,7 @@ internal static class DefinitionResolver
         }
 
         // Partial method → defining part.
-        if (symbol is IMethodSymbol
-            { PartialDefinitionPart: { } defPart })
+        if (symbol is IMethodSymbol { PartialDefinitionPart: { } defPart })
         {
             return defPart;
         }
@@ -245,8 +440,7 @@ internal static class DefinitionResolver
         {
             foreach (var member in iface.GetMembers())
             {
-                var impl = containingType.FindImplementationForInterfaceMember(
-                    member);
+                var impl = containingType.FindImplementationForInterfaceMember(member);
                 if (SymbolEqualityComparer.Default.Equals(impl, symbol))
                 {
                     return member;
@@ -265,7 +459,8 @@ internal static class DefinitionResolver
         ISymbol symbol,
         Solution solution,
         List<LocationResult> locations,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var containingType = symbol.ContainingType;
         if (containingType is null)
@@ -273,27 +468,31 @@ internal static class DefinitionResolver
             return;
         }
 
-        await Console.Error.WriteLineAsync(
-            $"[Override] Looking for overrides of {containingType.Name}.{symbol.Name}")
+        await Console
+            .Error.WriteLineAsync(
+                $"[Override] Looking for overrides of {containingType.Name}.{symbol.Name}"
+            )
             .ConfigureAwait(false);
 
         var derivedTypes = await SymbolFinder
             .FindDerivedClassesAsync(containingType, solution, cancellationToken: ct)
             .ConfigureAwait(false);
 
-        await Console.Error.WriteLineAsync(
-            $"[Override] Found {derivedTypes.Count()} derived types")
+        await Console
+            .Error.WriteLineAsync($"[Override] Found {derivedTypes.Count()} derived types")
             .ConfigureAwait(false);
 
         foreach (var derived in derivedTypes)
         {
-            await Console.Error.WriteLineAsync(
-                $"[Override] Checking {derived.Name}")
+            await Console
+                .Error.WriteLineAsync($"[Override] Checking {derived.Name}")
                 .ConfigureAwait(false);
             foreach (var member in derived.GetMembers(symbol.Name))
             {
-                await Console.Error.WriteLineAsync(
-                    $"[Override] Member {member.Name} override={member.IsOverride}")
+                await Console
+                    .Error.WriteLineAsync(
+                        $"[Override] Member {member.Name} override={member.IsOverride}"
+                    )
                     .ConfigureAwait(false);
                 if (member.IsOverride)
                 {
@@ -313,11 +512,42 @@ internal static class DefinitionResolver
         }
     }
 
-    /// <summary>Map a symbol to its first in-source location.</summary>
+    /// <summary>
+    /// Map a symbol to all of its in-source locations.
+    /// Source-generated symbols (e.g. from ISourceGenerator / IIncrementalGenerator)
+    /// have IsInSource = true with a valid SourceTree, so this filter captures them.
+    /// Navigation FROM generated files requires WorkspaceManager.FindDocumentAsync
+    /// to resolve source-generated documents via Project.GetSourceGeneratedDocumentsAsync.
+    /// </summary>
+    private static LocationListResult ToAllSourceLocations(ISymbol symbol)
+    {
+        var locations = new List<LocationResult>();
+        foreach (var location in symbol.Locations.Where(l => l.IsInSource))
+        {
+            var span = location.GetMappedLineSpan();
+            locations.Add(
+                new LocationResult
+                {
+                    FilePath = span.Path,
+                    Line = span.StartLinePosition.Line,
+                    Character = span.StartLinePosition.Character,
+                    EndLine = span.EndLinePosition.Line,
+                    EndCharacter = span.EndLinePosition.Character,
+                }
+            );
+        }
+
+        return new LocationListResult { Locations = locations };
+    }
+
+    /// <summary>
+    /// Map a symbol to its first in-source location.
+    /// Roslyn marks source-generated locations as IsInSource = true,
+    /// so no special handling is needed for source generator output.
+    /// </summary>
     private static LocationResult? ToFirstSourceLocation(ISymbol symbol)
     {
-        var location = symbol.Locations
-            .FirstOrDefault(l => l.IsInSource);
+        var location = symbol.Locations.FirstOrDefault(l => l.IsInSource);
         if (location is null)
         {
             return null;
@@ -329,6 +559,8 @@ internal static class DefinitionResolver
             FilePath = span.Path,
             Line = span.StartLinePosition.Line,
             Character = span.StartLinePosition.Character,
+            EndLine = span.EndLinePosition.Line,
+            EndCharacter = span.EndLinePosition.Character,
         };
     }
 }

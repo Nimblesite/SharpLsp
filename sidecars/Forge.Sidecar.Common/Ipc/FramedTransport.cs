@@ -69,8 +69,8 @@ public sealed class FramedTransport : IAsyncDisposable
         var offset = 0;
         while (offset < buffer.Length)
         {
-            var read = await _stream.ReadAsync(
-                buffer.AsMemory(offset, buffer.Length - offset), ct)
+            var read = await _stream
+                .ReadAsync(buffer.AsMemory(offset, buffer.Length - offset), ct)
                 .ConfigureAwait(false);
             if (read is 0)
             {

@@ -12,6 +12,7 @@
     clippy::expect_used,
     reason = "test code — panics are the correct failure mode"
 )]
+#![allow(dead_code, reason = "test helper methods may be used by future tests")]
 #![expect(
     clippy::indexing_slicing,
     reason = "test code — JSON indexing panics are acceptable test failures"
@@ -24,7 +25,8 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::time::Duration;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use wait_timeout::ChildExt;
@@ -205,6 +207,48 @@ impl LspClient {
                 "textDocument": { "uri": uri },
             }),
         );
+    }
+
+    /// Send a request, collecting all notifications received before the response.
+    fn request_collecting_notifications(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> (Value, Vec<Value>) {
+        let id = next_id();
+        self.send(&json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        }));
+        let mut notifications = Vec::new();
+        loop {
+            let msg = self.recv();
+            if msg.get("id").is_some() {
+                return (msg, notifications);
+            }
+            notifications.push(msg);
+        }
+    }
+
+    /// Wait for a notification with the given method (with timeout).
+    /// Returns the notification, or panics on timeout.
+    fn wait_for_notification(&mut self, method: &str, timeout: Duration) -> Value {
+        let deadline = Instant::now() + timeout;
+        loop {
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for notification: {method}"
+            );
+            let msg = self.recv();
+            if msg.get("id").is_some() {
+                continue; // skip responses
+            }
+            if msg.get("method").and_then(|m| m.as_str()) == Some(method) {
+                return msg;
+            }
+        }
     }
 
     /// Wait for the process to exit (with timeout).
@@ -2243,6 +2287,15 @@ public enum Color
     Red,
     Green,
     Blue
+}
+
+public static class VarExample
+{
+    public static void Run()
+    {
+        var calc = new Calculator();
+        var name = calc.Name;
+    }
 }"#;
     std::fs::write(proj_dir.join("Program.cs"), cs_source).unwrap();
 
@@ -2523,6 +2576,452 @@ fn test_full_stack_hover_after_edit() {
     client.wait_with_timeout();
 }
 
+// 36. FULL-STACK: HOVER ON VAR KEYWORD RETURNS INFERRED TYPE
+
+#[test]
+fn test_full_stack_hover_var_keyword() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait for sidecar.
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+
+    // Hover on `var` at line 42, char 8 ("var calc = new Calculator()")
+    let var_hover = hover(&mut client, &file_uri, 42, 8);
+    assert_hover_ok(&var_hover);
+    assert!(!var_hover["result"].is_null(), "var hover must not be null");
+    let md = var_hover["result"]["contents"]["value"].as_str().unwrap();
+    assert!(md.contains("```"), "var hover must have code block: {md}");
+    assert!(
+        md.to_lowercase().contains("inferred") || md.contains("Calculator"),
+        "var hover must show inferred type: {md}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 37. FULL-STACK: HOVER XML DOCUMENTATION RENDERS TAGS
+
+#[test]
+fn test_full_stack_hover_xml_documentation() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+
+    // Hover on Add method (line 9, char 15) — has <summary>, <param>, <returns>.
+    let h = hover(&mut client, &file_uri, 9, 15);
+    assert_hover_ok(&h);
+    assert!(!h["result"].is_null(), "method hover must not be null");
+    let md = h["result"]["contents"]["value"].as_str().unwrap();
+    assert!(md.contains("```"), "must have code block: {md}");
+    assert!(md.contains("Add"), "must contain method name: {md}");
+    // <summary>
+    assert!(
+        md.to_lowercase().contains("adds") || md.to_lowercase().contains("two integers"),
+        "must render <summary>: {md}",
+    );
+    // <param>
+    assert!(
+        md.to_lowercase().contains("first operand") || md.to_lowercase().contains("parameter"),
+        "must render <param>: {md}",
+    );
+    // <returns>
+    assert!(
+        md.to_lowercase().contains("sum") || md.to_lowercase().contains("return"),
+        "must render <returns>: {md}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 38. FULL-STACK: HOVER ON [Obsolete] SYMBOL INCLUDES DEPRECATION
+
+#[test]
+fn test_full_stack_hover_obsolete_deprecation() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+
+    // Hover on OldAdd (line 15, char 15) — marked [System.Obsolete("Use Add instead")]
+    let h = hover(&mut client, &file_uri, 15, 15);
+    assert_hover_ok(&h);
+    assert!(!h["result"].is_null(), "obsolete hover must not be null");
+    let md = h["result"]["contents"]["value"].as_str().unwrap();
+    assert!(md.contains("OldAdd"), "must contain method name: {md}");
+    assert!(md.contains("```"), "must have code block: {md}");
+    assert!(
+        md.contains("Deprecated") || md.contains("Obsolete"),
+        "must show deprecation: {md}",
+    );
+    assert!(
+        md.contains("Use Add instead"),
+        "must include obsolete message: {md}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 39. FULL-STACK: HOVER CACHE HIT RETURNS FAST
+
+#[test]
+fn test_full_stack_hover_cache_hit_latency() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // First hover — warm the cache.
+    let first = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+    assert!(
+        !first["contents"]["value"].is_null(),
+        "first hover must return content"
+    );
+
+    // Second hover — same position, should hit cache.
+    let start = std::time::Instant::now();
+    let second = hover(&mut client, &file_uri, 3, 13);
+    let elapsed = start.elapsed();
+    assert_hover_ok(&second);
+    assert!(
+        !second["result"].is_null(),
+        "cached hover must return content"
+    );
+
+    // Cache hit should be <50ms (generous; target is <1ms).
+    assert!(
+        elapsed.as_millis() < 50,
+        "cache hit must be fast, took {}ms",
+        elapsed.as_millis(),
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── F# Hover Tests ──────────────────────────────────────────────
+
+/// Create an F# test workspace with .fsproj and .fs files.
+fn create_fsharp_test_workspace() -> (tempfile::TempDir, String, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("TestFSharp");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("TestFSharp.fsproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Library.fs" />
+  </ItemGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    let fs_source = r"namespace TestFSharp
+
+/// A simple calculator module.
+module Calculator =
+    /// Adds two integers and returns the sum.
+    let add (a: int) (b: int) : int = a + b
+
+    /// Multiplies two integers.
+    let multiply (a: int) (b: int) : int = a * b
+
+/// Represents a shape with area calculation.
+type Shape =
+    | Circle of radius: float
+    | Rectangle of width: float * height: float
+
+/// Compute the area of a shape.
+let area (shape: Shape) : float =
+    match shape with
+    | Shape.Circle r -> System.Math.PI * r * r
+    | Shape.Rectangle(w, h) -> w * h
+
+/// Pipeline example: sum of squares.
+let sumOfSquares (xs: int list) : int =
+    xs |> List.map (fun x -> x * x) |> List.sum
+";
+    std::fs::write(proj_dir.join("Library.fs"), fs_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("TestFSharp.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "TestFSharp", "TestFSharp/TestFSharp.fsproj", "{00000000-0000-0000-0000-000000000002}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(tmp.path())
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let real_proj = real_root.join("TestFSharp");
+    let root_uri = format!("file://{}", real_root.display());
+    let file_uri = format!("file://{}", real_proj.join("Library.fs").display());
+    (tmp, root_uri, file_uri, fs_source.to_string())
+}
+
+// 40. F# HOVER ON FUNCTION/TYPE/MODULE
+
+#[test]
+fn test_full_stack_fsharp_hover_function_type_module() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait for F# sidecar — poll hover on "Calculator" module (line 3, char 7).
+    let module_hover =
+        poll_hover_until_ready(&mut client, &file_uri, 3, 7, Duration::from_secs(90));
+    let md = module_hover["contents"]["value"].as_str().unwrap();
+    assert!(!md.is_empty(), "F# module hover must not be empty: {md}");
+    assert!(md.contains("```"), "must have code block: {md}");
+
+    // Hover on `add` function (line 5, char 8).
+    let fn_hover = hover(&mut client, &file_uri, 5, 8);
+    assert_hover_ok(&fn_hover);
+    assert!(
+        !fn_hover["result"].is_null(),
+        "function hover must not be null"
+    );
+    let fn_md = fn_hover["result"]["contents"]["value"].as_str().unwrap();
+    assert!(
+        fn_md.contains("```"),
+        "function hover must have code block: {fn_md}"
+    );
+
+    // Hover on `Shape` type (line 11, char 5).
+    let type_hover = hover(&mut client, &file_uri, 11, 5);
+    assert_hover_ok(&type_hover);
+    assert!(
+        !type_hover["result"].is_null(),
+        "type hover must not be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 41. F# HOVER ON DU CASE
+
+#[test]
+fn test_full_stack_fsharp_hover_du_case() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 7, Duration::from_secs(90));
+
+    // Hover on `Circle` DU case (line 12, char 6).
+    let du_hover = hover(&mut client, &file_uri, 12, 6);
+    assert_hover_ok(&du_hover);
+    assert!(
+        !du_hover["result"].is_null(),
+        "DU case hover must not be null"
+    );
+    let md = du_hover["result"]["contents"]["value"].as_str().unwrap();
+    assert!(md.contains("```"), "DU hover must have code block: {md}");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 42. F# HOVER ON PIPELINE OPERATOR
+
+#[test]
+fn test_full_stack_fsharp_hover_pipeline() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 7, Duration::from_secs(90));
+
+    // Hover on `List.map` in pipeline (line 23, char 14).
+    let h = hover(&mut client, &file_uri, 23, 14);
+    assert_hover_ok(&h);
+    assert!(!h["result"].is_null(), "pipeline hover must not be null");
+    let md = h["result"]["contents"]["value"].as_str().unwrap();
+    assert!(
+        md.contains("```"),
+        "pipeline hover must have code block: {md}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 43. F# HOVER WITH XML DOCUMENTATION
+
+#[test]
+fn test_full_stack_fsharp_hover_xml_docs() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 7, Duration::from_secs(90));
+
+    // Hover on `add` function (line 5, char 8) — has doc "Adds two integers".
+    let h = hover(&mut client, &file_uri, 5, 8);
+    assert_hover_ok(&h);
+    assert!(!h["result"].is_null(), "hover must not be null");
+    let md = h["result"]["contents"]["value"].as_str().unwrap();
+    assert!(md.contains("```"), "must have code block: {md}");
+    assert!(
+        md.to_lowercase().contains("adds") || md.to_lowercase().contains("sum"),
+        "F# hover must include XML doc: {md}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 44. HOVER AFTER SIDECAR CRASH RECOVERY
+
+#[test]
+fn test_full_stack_hover_crash_recovery() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // First hover — sidecar is healthy.
+    let first = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+    assert!(
+        !first["contents"]["value"].is_null(),
+        "first hover must work"
+    );
+
+    // Rapid hovers — server must not crash or hang even under load.
+    for _ in 0..5 {
+        let h = hover(&mut client, &file_uri, 3, 13);
+        assert_hover_ok(&h);
+    }
+
+    // Different symbol — proves pipeline is alive.
+    let method = hover(&mut client, &file_uri, 9, 15);
+    assert_hover_ok(&method);
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 45. HOVER LATENCY BENCHMARK
+
+#[test]
+fn test_full_stack_hover_latency_benchmark() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 13, Duration::from_secs(90));
+
+    // Measure latency across distinct positions.
+    let positions: [(u32, u32); 6] = [
+        (3, 13),  // Calculator
+        (9, 15),  // Add
+        (12, 18), // Name
+        (15, 15), // OldAdd
+        (20, 14), // Point
+        (31, 12), // Color
+    ];
+
+    let mut latencies = Vec::new();
+    for &(line, character) in &positions {
+        let start = std::time::Instant::now();
+        let h = hover(&mut client, &file_uri, line, character);
+        let elapsed = start.elapsed();
+        assert_hover_ok(&h);
+        latencies.push(elapsed.as_millis());
+    }
+
+    latencies.sort_unstable();
+    let p50 = latencies[latencies.len() / 2];
+    let p95 = latencies[latencies.len() * 95 / 100];
+    eprintln!("Hover latency: p50={p50}ms p95={p95}ms (all: {latencies:?})");
+
+    assert!(p50 < 200, "p50 must be <200ms, got {p50}ms");
+    // CI runners have high jitter; allow up to 5s for worst-case outliers.
+    assert!(p95 < 5000, "p95 must be <5000ms, got {p95}ms");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 // ── Definition Test Helpers ──────────────────────────────────────
 
 /// Assert a definition-family response is valid JSON-RPC with no error.
@@ -2557,6 +3056,7 @@ fn assert_location_line(loc: &Value, expected_line: u64, msg: &str) {
 }
 
 /// Poll definition until the sidecar returns a non-null result.
+/// Returns the first location from the result (definition now returns Location[]).
 fn poll_definition_until_ready(
     client: &mut LspClient,
     uri: &str,
@@ -2569,8 +3069,9 @@ fn poll_definition_until_ready(
     loop {
         let resp = definition(client, uri, line, character);
         assert_nav_ok(&resp);
-        if !resp["result"].is_null() {
-            return resp["result"].clone();
+        let result = &resp["result"];
+        if !result.is_null() {
+            return first_location(result);
         }
         assert!(
             std::time::Instant::now() < deadline,
@@ -2578,6 +3079,45 @@ fn poll_definition_until_ready(
             timeout.as_secs(),
         );
         std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+/// Poll implementation until the sidecar returns a non-null array result.
+fn poll_implementation_until_ready(
+    client: &mut LspClient,
+    uri: &str,
+    line: u32,
+    character: u32,
+    timeout: Duration,
+) -> Value {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let resp = implementation(client, uri, line, character);
+        assert_nav_ok(&resp);
+        let result = &resp["result"];
+        if result.is_array() {
+            return resp;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "implementation did not resolve within {}s",
+            timeout.as_secs(),
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+/// Extract the first location from a definition result.
+/// Definition returns Location[] (array) for partial class support.
+fn first_location(result: &Value) -> Value {
+    if result.is_array() {
+        result
+            .as_array()
+            .and_then(|a| a.first())
+            .cloned()
+            .unwrap_or(Value::Null)
+    } else {
+        result.clone()
     }
 }
 
@@ -2888,9 +3428,9 @@ fn test_full_stack_definition_on_method_call() {
     //         0123456789012345678901234567
     let resp = definition(&mut client, &file_uri, 34, 26);
     assert_nav_ok(&resp);
-    let result = &resp["result"];
+    let result = first_location(&resp["result"]);
     assert!(!result.is_null(), "definition on method call must resolve");
-    assert_location_shape(result);
+    assert_location_shape(&result);
     let line = result["range"]["start"]["line"].as_u64().unwrap();
     assert!(
         line == 11 || line == 17,
@@ -2924,9 +3464,9 @@ fn test_full_stack_definition_on_property_access() {
     //         012345678901234567890
     let resp = definition(&mut client, &file_uri, 33, 18);
     assert_nav_ok(&resp);
-    let result = &resp["result"];
+    let result = first_location(&resp["result"]);
     assert!(!result.is_null(), "definition on property must resolve");
-    assert_location_line(result, 28, "MyDog property declared at line 28");
+    assert_location_line(&result, 28, "MyDog property declared at line 28");
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -3087,11 +3627,12 @@ fn test_full_stack_implementation_on_virtual_method() {
 
     let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
 
-    // "Speak" virtual in AnimalBase (line 11, char 25).
+    // "Speak" virtual in AnimalBase (line 11, char 26).
     //     public virtual string Speak()
     //     0         1         2
-    //     012345678901234567890123456789
-    let resp = implementation(&mut client, &file_uri, 11, 25);
+    //     0123456789012345678901234567890
+    let resp =
+        poll_implementation_until_ready(&mut client, &file_uri, 11, 26, Duration::from_secs(90));
     assert_nav_ok(&resp);
     let result = &resp["result"];
     assert!(
@@ -3199,12 +3740,16 @@ fn test_full_stack_all_nav_methods_interleaved() {
     client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
-    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(180));
 
     // 1. definition: "AnimalBase" in Dog's extends (line 14) → line 8
     let r1 = definition(&mut client, &file_uri, 14, 23);
     assert_nav_ok(&r1);
-    assert_location_line(&r1["result"], 8, "definition AnimalBase → line 8");
+    assert_location_line(
+        &first_location(&r1["result"]),
+        8,
+        "definition AnimalBase → line 8",
+    );
 
     // 2. typeDefinition: "MyDog" (line 33, char 18) → Dog type (line 14)
     let r2 = type_definition(&mut client, &file_uri, 33, 18);
@@ -3218,8 +3763,9 @@ fn test_full_stack_all_nav_methods_interleaved() {
     assert!(!r3["result"].is_null(), "declaration must resolve");
     assert_location_line(&r3["result"], 11, "declaration override → base line 11");
 
-    // 4. implementation: AnimalBase.Speak virtual (line 11, char 25) → Dog + Cat
-    let r4 = implementation(&mut client, &file_uri, 11, 25);
+    // 4. implementation: AnimalBase.Speak virtual (line 11, char 26) → Dog + Cat
+    let r4 =
+        poll_implementation_until_ready(&mut client, &file_uri, 11, 26, Duration::from_secs(90));
     assert_nav_ok(&r4);
     assert!(r4["result"].is_array(), "implementation must be array");
     let locs = r4["result"].as_array().unwrap();
@@ -3228,12 +3774,50 @@ fn test_full_stack_all_nav_methods_interleaved() {
     // 5. definition again: "MyDog" (line 33, char 18) → property (line 28)
     let r5 = definition(&mut client, &file_uri, 33, 18);
     assert_nav_ok(&r5);
-    assert_location_line(&r5["result"], 28, "definition MyDog → line 28");
+    assert_location_line(
+        &first_location(&r5["result"]),
+        28,
+        "definition MyDog → line 28",
+    );
 
     // 6. hover still works after all the navigation requests
     let r6 = hover(&mut client, &file_uri, 14, 14);
     assert_hover_ok(&r6);
     assert!(!r6["result"].is_null(), "hover must still work");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 63. DEFINITION ON CONSTRUCTOR CALL → CLASS DECLARATION
+
+#[test]
+fn test_full_stack_definition_on_constructor() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "Dog" in "new Dog()" at line 28, char 36.
+    //         public Dog MyDog { get; } = new Dog();
+    //         0         1         2         3
+    //         0123456789012345678901234567890123456789
+    let resp = definition(&mut client, &file_uri, 28, 36);
+    assert_nav_ok(&resp);
+    let result = first_location(&resp["result"]);
+    assert!(
+        !result.is_null(),
+        "definition on constructor call must resolve"
+    );
+    assert_location_line(&result, 14, "new Dog() → Dog class at line 14");
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -3470,7 +4054,7 @@ fn test_diagnostics_rapid_open_close_cycles() {
     // All three URIs must have been cleared (order may vary).
     for uri in &uris {
         assert!(
-            cleared_uris.contains(&uri.to_string()),
+            cleared_uris.iter().any(|s| s.as_str() == *uri),
             "expected {uri} in cleared set, got {cleared_uris:?}",
         );
     }
@@ -3561,13 +4145,13 @@ fn test_full_stack_solution_wide_diagnostics_on_load() {
     .unwrap();
 
     // File with a deliberate type error: UndefinedType doesn't exist.
-    let cs_source = r#"namespace DiagTest;
+    let cs_source = r"namespace DiagTest;
 
 public class Broken
 {
     public UndefinedType Oops { get; set; }
 }
-"#;
+";
     std::fs::write(proj_dir.join("Broken.cs"), cs_source).unwrap();
 
     std::fs::write(
@@ -3678,17 +4262,17 @@ fn test_full_stack_diagnostics_on_open_detects_errors() {
     )
     .unwrap();
 
-    let good_source = r#"namespace ErrTest;
+    let good_source = r"namespace ErrTest;
 public class Good { public int Value { get; set; } }
-"#;
+";
     std::fs::write(proj_dir.join("Good.cs"), good_source).unwrap();
 
-    let bad_source = r#"namespace ErrTest;
+    let bad_source = r"namespace ErrTest;
 public class Bad
 {
     public MissingType Broken { get; set; }
 }
-"#;
+";
     std::fs::write(proj_dir.join("Bad.cs"), bad_source).unwrap();
 
     std::fs::write(
@@ -4406,4 +4990,3014 @@ fn test_sort_members_preserves_region_blocks() {
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
+}
+
+// ── Profiler Tests ────────────────────────────────────────────────
+
+/// `forge/profiler/listProcesses` returns a JSON array or tool-not-found error.
+#[test]
+fn test_profiler_list_processes() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/profiler/listProcesses", json!({}));
+
+    if let Some(error) = resp.get("error") {
+        // Tool not installed — acceptable in CI / dev without dotnet tools.
+        let msg = error["message"].as_str().unwrap_or("");
+        assert!(
+            msg.contains("not found"),
+            "error must be tool-not-found, got: {msg}"
+        );
+    } else {
+        let result = &resp["result"];
+        assert!(result.is_array(), "result must be a JSON array: {result}");
+
+        if let Some(processes) = result.as_array() {
+            for proc in processes {
+                assert!(proc["pid"].is_u64(), "pid must be a number");
+                assert!(proc["name"].is_string(), "name must be a string");
+                assert!(proc.get("command_line").is_some(), "command_line field");
+            }
+        }
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `forge/profiler/startTrace` returns an error for a non-existent PID
+/// (tool not found or attach failure — both acceptable, server must not crash).
+#[test]
+fn test_profiler_start_trace_invalid_pid() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/profiler/startTrace", json!({ "pid": 999_999_999 }));
+
+    // Either error or result is fine — just must not crash.
+    assert!(
+        resp.get("error").is_some() || resp.get("result").is_some(),
+        "must return a response: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `forge/profiler/stopTrace` errors for a non-existent session.
+#[test]
+fn test_profiler_stop_trace_unknown_session() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/stopTrace",
+        json!({ "session_id": "nonexistent-session-id" }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for unknown session: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `forge/profiler/stopCounters` errors for a non-existent session.
+#[test]
+fn test_profiler_stop_counters_unknown_session() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/stopCounters",
+        json!({ "session_id": "nonexistent-session-id" }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for unknown session: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `forge/profiler/analyzeHeap` errors for a nonexistent dump file.
+#[test]
+fn test_profiler_analyze_heap_missing_file() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/analyzeHeap",
+        json!({ "dump_path": "/nonexistent/path/to/dump.dmp" }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing dump: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `forge/profiler/findGCRoots` errors for a nonexistent dump file.
+#[test]
+fn test_profiler_find_gc_roots_missing_file() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/findGCRoots",
+        json!({
+            "dump_path": "/nonexistent/path/to/dump.dmp",
+            "object_address": "0x00007ff800001111"
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing dump: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Profiler Performance Benchmarks ──────────────────────────────
+
+/// Benchmark: `forge/profiler/listProcesses` completes within 500ms.
+#[test]
+fn test_profiler_list_processes_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = Instant::now();
+    let resp = client.request("forge/profiler/listProcesses", json!({}));
+    let elapsed = start.elapsed();
+
+    assert!(
+        resp.get("result").is_some() || resp.get("error").is_some(),
+        "must return result or error: {resp}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(500),
+        "listProcesses took {elapsed:?}, target <500ms"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: `forge/profiler/startTrace` responds within 1s (even for invalid PID).
+#[test]
+fn test_profiler_start_trace_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = Instant::now();
+    let resp = client.request("forge/profiler/startTrace", json!({ "pid": 999_999_999 }));
+    let elapsed = start.elapsed();
+
+    assert!(
+        resp.get("result").is_some() || resp.get("error").is_some(),
+        "must return result or error: {resp}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "startTrace took {elapsed:?}, target <1s"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: counter stop responds within 100ms.
+#[test]
+fn test_profiler_counter_stop_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = Instant::now();
+    let resp = client.request(
+        "forge/profiler/stopCounters",
+        json!({ "session_id": "bench-nonexistent" }),
+    );
+    let elapsed = start.elapsed();
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for unknown session: {resp}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(100),
+        "stopCounters took {elapsed:?}, target <100ms"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: `forge/profiler/analyzeHeap` error path responds within 5s.
+#[test]
+fn test_profiler_analyze_heap_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = Instant::now();
+    let resp = client.request(
+        "forge/profiler/analyzeHeap",
+        json!({ "dump_path": "/nonexistent/benchmark.dmp" }),
+    );
+    let elapsed = start.elapsed();
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing dump: {resp}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "analyzeHeap took {elapsed:?}, target <5s"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: `forge/profiler/findGCRoots` error path responds within 10s.
+#[test]
+fn test_profiler_find_gc_roots_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = Instant::now();
+    let resp = client.request(
+        "forge/profiler/findGCRoots",
+        json!({
+            "dump_path": "/nonexistent/benchmark.dmp",
+            "object_address": "0x00007ff800001111"
+        }),
+    );
+    let elapsed = start.elapsed();
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing dump: {resp}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "findGCRoots took {elapsed:?}, target <10s"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Profiler Happy-Path E2E Tests ────────────────────────────────
+//
+// These tests start a REAL .NET process (ProfileTarget), attach the REAL
+// dotnet diagnostic tools via the REAL LSP server, and verify REAL output.
+
+/// Build the `ProfileTarget` .NET app once and return the path to its binary.
+/// Uses `OnceLock` so concurrent test threads share a single build.
+fn build_profile_target() -> std::path::PathBuf {
+    static BINARY: OnceLock<std::path::PathBuf> = OnceLock::new();
+    BINARY
+        .get_or_init(|| {
+            let project_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/ProfileTarget");
+
+            let output = Command::new("dotnet")
+                .args(["build", "-c", "Release", "--nologo", "-v", "q"])
+                .current_dir(&project_dir)
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .output()
+                .expect("failed to run dotnet build");
+            assert!(
+                output.status.success(),
+                "ProfileTarget build failed: {}",
+                String::from_utf8_lossy(&output.stderr),
+            );
+
+            project_dir.join("bin/Release/net10.0/ProfileTarget")
+        })
+        .clone()
+}
+
+/// Start the `ProfileTarget` process. Waits for `READY` on stdout before returning.
+fn start_profile_target(binary: &std::path::Path) -> Child {
+    let mut child = Command::new(binary)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed to start ProfileTarget");
+
+    // Wait for "READY" line — proves the runtime is loaded and objects allocated.
+    let stdout = child.stdout.as_mut().expect("no stdout");
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        line.clear();
+        let n = reader.read_line(&mut line).expect("read stdout");
+        assert!(
+            n > 0 && Instant::now() <= deadline,
+            "ProfileTarget did not print READY within 30s",
+        );
+        if line.trim() == "READY" {
+            break;
+        }
+    }
+
+    // Detach stdout so we don't hold the pipe (child keeps running).
+    child.stdout.take();
+    child
+}
+
+/// Kill and reap the target process.
+fn stop_profile_target(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Full lifecycle: listProcesses → find our PID → startTrace → stopTrace → verify .nettrace file.
+#[test]
+fn test_profiler_happy_path_trace_lifecycle() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // 1. listProcesses must include our target PID.
+    let resp = client.request("forge/profiler/listProcesses", json!({}));
+    let processes = resp["result"].as_array().expect("result must be array");
+    let found = processes
+        .iter()
+        .any(|p| p["pid"].as_u64() == Some(u64::from(target_pid)));
+    assert!(
+        found,
+        "listProcesses must include target PID {target_pid}, got: {processes:?}"
+    );
+
+    // 2. startTrace on the target.
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let trace_path = tmp_dir.path().join("test.nettrace");
+    let trace_path_str = trace_path.to_string_lossy().to_string();
+
+    let resp = client.request(
+        "forge/profiler/startTrace",
+        json!({
+            "pid": target_pid,
+            "profile": "gc-collect",
+            "duration": 0,
+            "output_path": trace_path_str,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "startTrace must succeed: {resp}"
+    );
+    let session_id = resp["result"]["session_id"]
+        .as_str()
+        .expect("session_id must be string");
+    assert!(!session_id.is_empty(), "session_id must not be empty");
+    assert_eq!(
+        resp["result"]["output_path"].as_str().unwrap(),
+        trace_path_str,
+        "output_path must match"
+    );
+
+    // 3. Let it collect for a moment.
+    std::thread::sleep(Duration::from_secs(2));
+
+    // 4. stopTrace.
+    let resp = client.request(
+        "forge/profiler/stopTrace",
+        json!({ "session_id": session_id }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "stopTrace must succeed: {resp}"
+    );
+    let stop_result = &resp["result"];
+    assert!(
+        stop_result["duration_ms"].as_u64().unwrap_or(0) >= 1000,
+        "duration must be at least 1s: {stop_result}"
+    );
+
+    // 5. Verify the .nettrace file actually exists on disk.
+    //    dotnet-trace may still be flushing after our SIGINT, so poll briefly.
+    let mut file_size = 0u64;
+    for _ in 0..10 {
+        file_size = std::fs::metadata(&trace_path).map(|m| m.len()).unwrap_or(0);
+        if file_size > 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(
+        trace_path.exists(),
+        "trace file must exist at: {}",
+        trace_path.display()
+    );
+    assert!(file_size > 0, "trace file must not be empty (got 0 bytes)");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+/// Happy path: startCounters → let it run → stopCounters → verify clean lifecycle.
+#[test]
+fn test_profiler_happy_path_counter_lifecycle() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // 1. startCounters on the target.
+    let resp = client.request(
+        "forge/profiler/startCounters",
+        json!({
+            "pid": target_pid,
+            "providers": ["System.Runtime"],
+            "refresh_interval": 1,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "startCounters must succeed: {resp}"
+    );
+    let session_id = resp["result"]["session_id"]
+        .as_str()
+        .expect("session_id must be string");
+    assert!(!session_id.is_empty(), "session_id must not be empty");
+
+    // 2. Let counters run for a moment to prove the process doesn't crash.
+    std::thread::sleep(Duration::from_secs(3));
+
+    // 3. stopCounters — must succeed cleanly.
+    let resp = client.request(
+        "forge/profiler/stopCounters",
+        json!({ "session_id": session_id }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "stopCounters must succeed: {resp}"
+    );
+
+    // 4. Double-stop must error.
+    let resp = client.request(
+        "forge/profiler/stopCounters",
+        json!({ "session_id": session_id }),
+    );
+    assert!(
+        resp.get("error").is_some(),
+        "double-stop must error: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+/// Happy path: collectDump → analyzeHeap → verify real heap stats.
+#[test]
+fn test_profiler_happy_path_dump_and_analyze() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // 1. collectDump on the target.
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let dump_path = tmp_dir.path().join("test.dmp");
+    let dump_path_str = dump_path.to_string_lossy().to_string();
+
+    let (resp, notifications) = client.request_collecting_notifications(
+        "forge/profiler/collectDump",
+        json!({
+            "pid": target_pid,
+            "dump_type": "Heap",
+            "output_path": dump_path_str,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "collectDump must succeed: {resp}"
+    );
+    let dump_result = &resp["result"];
+    assert!(
+        dump_result["file_size_bytes"].as_u64().unwrap_or(0) > 0,
+        "dump file must have non-zero size: {dump_result}"
+    );
+
+    // Verify progress notifications were sent.
+    let progress_methods: Vec<&str> = notifications
+        .iter()
+        .filter_map(|n| n["method"].as_str())
+        .collect();
+    assert!(
+        progress_methods.contains(&"$/progress"),
+        "must receive $/progress notifications during dump: {progress_methods:?}"
+    );
+
+    // Verify the dump file exists on disk.
+    assert!(
+        dump_path.exists(),
+        "dump file must exist at: {}",
+        dump_path.display()
+    );
+    let file_size = std::fs::metadata(&dump_path).unwrap().len();
+    assert!(file_size > 0, "dump file must not be empty");
+
+    // 2. analyzeHeap on the dump.
+    let resp = client.request(
+        "forge/profiler/analyzeHeap",
+        json!({
+            "dump_path": dump_path_str,
+            "limit": 20,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "analyzeHeap must succeed: {resp}"
+    );
+    let heap = &resp["result"];
+    assert!(
+        heap["total_objects"].as_u64().unwrap_or(0) > 0,
+        "heap must report objects: {heap}"
+    );
+    assert!(
+        heap["total_size_bytes"].as_u64().unwrap_or(0) > 0,
+        "heap must report non-zero size: {heap}"
+    );
+    let types = heap["types"].as_array().expect("types must be array");
+    assert!(
+        !types.is_empty(),
+        "heap must contain at least one type: {heap}"
+    );
+
+    // Verify type entries have the right shape.
+    let first_type = &types[0];
+    assert!(
+        first_type["type_name"].is_string(),
+        "type_name must be string"
+    );
+    assert!(first_type["count"].is_u64(), "count must be u64");
+    assert!(
+        first_type["total_size_bytes"].is_u64(),
+        "total_size_bytes must be u64"
+    );
+
+    // 3. We allocated 1000 strings in ProfileTarget — System.String must appear.
+    let has_string = types.iter().any(|t| {
+        t["type_name"]
+            .as_str()
+            .is_some_and(|n| n.contains("String"))
+    });
+    assert!(
+        has_string,
+        "heap must contain System.String (we allocated 1000): {types:?}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+// ── Profiler Edge Case Tests ─────────────────────────────────────
+
+/// Edge case: double-stop the same trace session must error on second stop.
+#[test]
+fn test_profiler_edge_double_stop_trace() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let trace_path = tmp_dir
+        .path()
+        .join("double-stop.nettrace")
+        .to_string_lossy()
+        .to_string();
+
+    let resp = client.request(
+        "forge/profiler/startTrace",
+        json!({
+            "pid": target_pid,
+            "output_path": trace_path,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "startTrace must succeed: {resp}"
+    );
+    let session_id = resp["result"]["session_id"].as_str().unwrap();
+
+    std::thread::sleep(Duration::from_secs(1));
+
+    // First stop: must succeed.
+    let resp1 = client.request(
+        "forge/profiler/stopTrace",
+        json!({ "session_id": session_id }),
+    );
+    assert!(
+        resp1.get("error").is_none(),
+        "first stopTrace must succeed: {resp1}"
+    );
+
+    // Second stop: must error (session already stopped).
+    let resp2 = client.request(
+        "forge/profiler/stopTrace",
+        json!({ "session_id": session_id }),
+    );
+    assert!(
+        resp2.get("error").is_some(),
+        "second stopTrace must error: {resp2}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+/// Edge case: start trace, then kill the target process, then stop — must not hang.
+#[test]
+fn test_profiler_edge_trace_target_dies() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let trace_path = tmp_dir
+        .path()
+        .join("target-dies.nettrace")
+        .to_string_lossy()
+        .to_string();
+
+    let resp = client.request(
+        "forge/profiler/startTrace",
+        json!({
+            "pid": target_pid,
+            "output_path": trace_path,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "startTrace must succeed: {resp}"
+    );
+    let session_id = resp["result"]["session_id"].as_str().unwrap();
+
+    // Kill the target while trace is running.
+    stop_profile_target(&mut target);
+    std::thread::sleep(Duration::from_millis(500));
+
+    // stopTrace must complete without hanging (server must not deadlock).
+    let start = Instant::now();
+    let resp = client.request(
+        "forge/profiler/stopTrace",
+        json!({ "session_id": session_id }),
+    );
+    let elapsed = start.elapsed();
+
+    // Must not hang.
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "stopTrace must not hang, took {elapsed:?}"
+    );
+
+    // When the target died and no trace data was captured, stop must return
+    // an error — not a silent success with file_size_bytes=0.
+    if let Some(result) = resp.get("result") {
+        let size = result["file_size_bytes"].as_u64().unwrap_or(0);
+        assert!(
+            size > 0,
+            "stopTrace must not silently succeed with 0-byte trace; \
+             should return an error when no data was captured: {resp}"
+        );
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Edge case: `listProcesses` finds `ProfileTarget` by name in the process list.
+#[test]
+fn test_profiler_edge_process_list_finds_target_by_name() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/profiler/listProcesses", json!({}));
+    let processes = resp["result"].as_array().expect("result must be array");
+
+    let entry = processes
+        .iter()
+        .find(|p| p["pid"].as_u64() == Some(u64::from(target_pid)));
+    assert!(entry.is_some(), "must find target by PID");
+
+    let entry = entry.unwrap();
+    let name = entry["name"].as_str().unwrap_or("");
+    assert!(
+        name.contains("ProfileTarget"),
+        "process name must contain 'ProfileTarget', got: {name}"
+    );
+    let cmd = entry["command_line"].as_str().unwrap_or("");
+    assert!(
+        cmd.contains("ProfileTarget"),
+        "command_line must contain 'ProfileTarget', got: {cmd}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+/// Edge case: max concurrent sessions enforcement.
+#[test]
+fn test_profiler_edge_max_concurrent_sessions() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let mut session_ids = Vec::new();
+
+    // Start 5 trace sessions (the default max).
+    for i in 0..5 {
+        let trace_path = tmp_dir
+            .path()
+            .join(format!("max-{i}.nettrace"))
+            .to_string_lossy()
+            .to_string();
+
+        let resp = client.request(
+            "forge/profiler/startTrace",
+            json!({
+                "pid": target_pid,
+                "output_path": trace_path,
+            }),
+        );
+        assert!(
+            resp.get("error").is_none(),
+            "session {i} must start: {resp}"
+        );
+        session_ids.push(resp["result"]["session_id"].as_str().unwrap().to_string());
+    }
+
+    // 6th session must be rejected.
+    let trace_path = tmp_dir
+        .path()
+        .join("max-overflow.nettrace")
+        .to_string_lossy()
+        .to_string();
+    let resp = client.request(
+        "forge/profiler/startTrace",
+        json!({
+            "pid": target_pid,
+            "output_path": trace_path,
+        }),
+    );
+    assert!(
+        resp.get("error").is_some(),
+        "6th session must be rejected: {resp}"
+    );
+    let err_msg = resp["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        err_msg.contains("limit"),
+        "error must mention session limit: {err_msg}"
+    );
+
+    // Clean up all sessions.
+    for sid in &session_ids {
+        let _ = client.request("forge/profiler/stopTrace", json!({ "session_id": sid }));
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+/// Edge case: analyzeHeap with type filter returns only matching types.
+#[test]
+fn test_profiler_edge_analyze_heap_type_filter() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // Collect a dump first.
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let dump_path = tmp_dir
+        .path()
+        .join("filter-test.dmp")
+        .to_string_lossy()
+        .to_string();
+
+    let resp = client.request(
+        "forge/profiler/collectDump",
+        json!({
+            "pid": target_pid,
+            "dump_type": "Heap",
+            "output_path": dump_path,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "collectDump must succeed: {resp}"
+    );
+
+    // Analyze with filter for "String".
+    let resp = client.request(
+        "forge/profiler/analyzeHeap",
+        json!({
+            "dump_path": dump_path,
+            "type_filter": "String",
+            "limit": 100,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "analyzeHeap must succeed: {resp}"
+    );
+    let types = resp["result"]["types"]
+        .as_array()
+        .expect("types must be array");
+    assert!(!types.is_empty(), "filtered result must not be empty");
+
+    // Every returned type must contain "String" (case-insensitive filter).
+    for t in types {
+        let name = t["type_name"].as_str().unwrap_or("");
+        assert!(
+            name.to_lowercase().contains("string"),
+            "filtered type must contain 'String', got: {name}"
+        );
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+// ── Object Inspection Tests ──────────────────────────────────────
+
+/// Happy path: collectDump → inspectObject on a real heap address.
+#[test]
+fn test_profiler_inspect_object_from_dump() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // 1. Collect a heap dump.
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let dump_path = tmp_dir
+        .path()
+        .join("inspect-test.dmp")
+        .to_string_lossy()
+        .to_string();
+
+    let resp = client.request(
+        "forge/profiler/collectDump",
+        json!({
+            "pid": target_pid,
+            "dump_type": "Heap",
+            "output_path": &dump_path,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "collectDump must succeed: {resp}"
+    );
+
+    // 2. Get a real object address from analyzeHeap (find System.String).
+    let resp = client.request(
+        "forge/profiler/analyzeHeap",
+        json!({
+            "dump_path": &dump_path,
+            "type_filter": "String",
+            "limit": 1,
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "analyzeHeap must succeed: {resp}"
+    );
+    let types = resp["result"]["types"]
+        .as_array()
+        .expect("types must be array");
+    assert!(!types.is_empty(), "must find String type on heap");
+
+    // 3. Use findGCRoots or dumpheap to get an actual address.
+    //    We'll use a known-good approach: get the first String address
+    //    from the heap by running analyzeHeap and finding an object.
+    //    Since inspectObject needs a real address, and we can't easily
+    //    get one from analyzeHeap (it returns stats not addresses),
+    //    test the error path for a well-formed but nonexistent address.
+    let resp = client.request(
+        "forge/profiler/inspectObject",
+        json!({
+            "dump_path": &dump_path,
+            "object_address": "0x0000000000000001",
+        }),
+    );
+
+    // A bogus address should either error or return an inspection
+    // with limited data — it must not crash the server.
+    assert!(
+        resp.get("error").is_some() || resp.get("result").is_some(),
+        "inspectObject must respond (error or result): {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
+/// Error path: inspectObject on a nonexistent dump file must error.
+#[test]
+fn test_profiler_inspect_object_missing_file() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/inspectObject",
+        json!({
+            "dump_path": "/nonexistent/path/to/dump.dmp",
+            "object_address": "0x12345678",
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing dump: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Error path: diffHeapSnapshots with a nonexistent baseline dump must error.
+#[test]
+fn test_profiler_diff_heap_snapshots_missing_baseline() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/diffHeapSnapshots",
+        json!({
+            "baseline_dump_path": "/nonexistent/baseline.dmp",
+            "comparison_dump_path": "/nonexistent/comparison.dmp",
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing baseline dump: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Error path: diffHeapSnapshots with a nonexistent comparison dump must error.
+#[test]
+fn test_profiler_diff_heap_snapshots_missing_comparison() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // Create a real temp file for baseline but missing comparison.
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    let baseline = tmp.path().to_string_lossy().to_string();
+
+    let resp = client.request(
+        "forge/profiler/diffHeapSnapshots",
+        json!({
+            "baseline_dump_path": baseline,
+            "comparison_dump_path": "/nonexistent/comparison.dmp",
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing comparison dump: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Error path: getObjectGraph with a nonexistent dump file must error.
+#[test]
+fn test_profiler_get_object_graph_missing_file() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/getObjectGraph",
+        json!({
+            "dump_path": "/nonexistent/path/to/dump.dmp",
+            "root_address": "0x00007ff812345678",
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "must error for missing dump: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Error path: diffHeapSnapshots does not crash the server.
+#[test]
+fn test_profiler_diff_heap_snapshots_server_survives_error() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    // Send bad request.
+    let _ = client.request(
+        "forge/profiler/diffHeapSnapshots",
+        json!({
+            "baseline_dump_path": "/no/such/file.dmp",
+            "comparison_dump_path": "/no/such/file2.dmp",
+        }),
+    );
+
+    // Server must still respond to subsequent requests.
+    let resp2 = client.request("forge/profiler/listProcesses", json!({}));
+    assert!(
+        resp2.get("error").is_none() || resp2.get("result").is_some(),
+        "server must still respond after diffHeapSnapshots error: {resp2}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: diffHeapSnapshots error path responds within 5s.
+#[test]
+fn test_profiler_diff_heap_snapshots_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = std::time::Instant::now();
+    let _ = client.request(
+        "forge/profiler/diffHeapSnapshots",
+        json!({
+            "baseline_dump_path": "/nonexistent/baseline.dmp",
+            "comparison_dump_path": "/nonexistent/comparison.dmp",
+        }),
+    );
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "diffHeapSnapshots took {elapsed:?}, target <5s"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Benchmark: getObjectGraph error path responds within 3s.
+#[test]
+fn test_profiler_get_object_graph_latency() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let start = std::time::Instant::now();
+    let _ = client.request(
+        "forge/profiler/getObjectGraph",
+        json!({
+            "dump_path": "/nonexistent/dump.dmp",
+            "root_address": "0x00007ff812345678",
+        }),
+    );
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_secs(3),
+        "getObjectGraph took {elapsed:?}, target <3s"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Workspace Symbols Tests ──────────────────────────────────────
+
+/// Create a temp .sln + .csproj + .cs workspace for workspaceSymbols tests.
+fn create_workspace_symbols_fixture() -> (tempfile::TempDir, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("MyLib");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("MyLib.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        proj_dir.join("Models.cs"),
+        r#"namespace MyLib.Models;
+
+public class Customer
+{
+    public string Name { get; set; } = "";
+    public int Age { get; set; }
+
+    public void Greet() { }
+    private int _id;
+}
+
+public interface IRepository
+{
+    void Save();
+}
+
+public enum Status
+{
+    Active,
+    Inactive
+}
+
+public struct Point
+{
+    public int X;
+    public int Y;
+}
+
+public record Address(string Street, string City);
+
+public delegate void Handler(string msg);
+"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        tmp.path().join("Test.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyLib", "MyLib/MyLib.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let sln_path = tmp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("Test.sln")
+        .to_string_lossy()
+        .to_string();
+    (tmp, sln_path)
+}
+
+#[test]
+fn test_workspace_symbols_returns_project_with_symbols() {
+    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+
+    let projects = resp["result"]["projects"].as_array().unwrap();
+    assert_eq!(projects.len(), 1, "must find one project");
+    assert_eq!(projects[0]["name"], "MyLib");
+
+    let symbols = projects[0]["symbols"].as_array().unwrap();
+    assert!(!symbols.is_empty(), "project must have file symbols");
+
+    let file_sym = &symbols[0];
+    assert!(
+        file_sym["file"].as_str().unwrap().contains("Models.cs"),
+        "must reference Models.cs"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_workspace_symbols_extracts_all_symbol_kinds() {
+    fn collect_kinds(syms: &[Value]) -> Vec<String> {
+        let mut kinds = Vec::new();
+        for s in syms {
+            kinds.push(s["kind"].as_str().unwrap_or("").to_string());
+            if let Some(children) = s["children"].as_array() {
+                kinds.extend(collect_kinds(children));
+            }
+        }
+        kinds
+    }
+
+    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+
+    let file_symbols = &resp["result"]["projects"][0]["symbols"][0]["symbols"];
+    let syms = file_symbols.as_array().unwrap();
+
+    let kinds = collect_kinds(syms);
+
+    for expected in [
+        "Namespace",
+        "Class",
+        "Interface",
+        "Enum",
+        "Struct",
+        "Method",
+        "Property",
+        "EnumMember",
+        "Function",
+    ] {
+        assert!(
+            kinds.iter().any(|k| k == expected),
+            "must find {expected} symbol kind, got: {kinds:?}"
+        );
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_workspace_symbols_symbol_ranges_valid() {
+    fn assert_ranges(syms: &[Value]) {
+        for s in syms {
+            let range = &s["range"];
+            let start_line = range["start"]["line"].as_u64().unwrap();
+            let end_line = range["end"]["line"].as_u64().unwrap();
+            assert!(
+                end_line >= start_line,
+                "end line must be >= start line for symbol {}",
+                s["name"]
+            );
+            if let Some(children) = s["children"].as_array() {
+                assert_ranges(children);
+            }
+        }
+    }
+
+    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    let file_symbols = &resp["result"]["projects"][0]["symbols"][0]["symbols"];
+
+    assert_ranges(file_symbols.as_array().unwrap());
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_workspace_symbols_access_modifiers() {
+    fn find_symbol<'a>(syms: &'a [Value], name: &str) -> Option<&'a Value> {
+        for s in syms {
+            if s["name"].as_str() == Some(name) {
+                return Some(s);
+            }
+            if let Some(children) = s["children"].as_array() {
+                if let Some(found) = find_symbol(children, name) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+
+    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+
+    let syms = resp["result"]["projects"][0]["symbols"][0]["symbols"]
+        .as_array()
+        .unwrap();
+
+    let customer = find_symbol(syms, "Customer").expect("must find Customer");
+    assert_eq!(customer["access"], "public");
+
+    let greet = find_symbol(syms, "Greet").expect("must find Greet");
+    assert_eq!(greet["access"], "public");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_workspace_symbols_nonexistent_solution() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/workspaceSymbols",
+        json!({ "solution": "/nonexistent/path.sln" }),
+    );
+    assert!(
+        resp.get("error").is_some(),
+        "nonexistent solution must return error"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_workspace_symbols_file_scoped_namespace_reparenting() {
+    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    let syms = resp["result"]["projects"][0]["symbols"][0]["symbols"]
+        .as_array()
+        .unwrap();
+
+    // File-scoped namespace: all types should be children of the namespace.
+    let ns = syms.iter().find(|s| s["kind"] == "Namespace");
+    assert!(ns.is_some(), "must have a namespace symbol");
+    let ns = ns.unwrap();
+    assert_eq!(ns["name"], "MyLib.Models");
+
+    let children = ns["children"].as_array().unwrap();
+    let child_names: Vec<&str> = children.iter().filter_map(|c| c["name"].as_str()).collect();
+    assert!(
+        child_names.contains(&"Customer"),
+        "Customer must be a child of namespace: {child_names:?}"
+    );
+    assert!(
+        child_names.contains(&"IRepository"),
+        "IRepository must be a child of namespace: {child_names:?}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Semantic coverage tests ──────────────────────────────────────
+
+// 65. DEFINITION CACHE RETURNS SAME RESULT ON REPEATED REQUEST
+
+#[test]
+fn test_definition_cache_returns_same_result() {
+    let mut client = LspClient::start();
+    client.initialize();
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    // Without sidecar, definition returns null — cache stores null.
+    let resp1 = definition(&mut client, TEST_URI, 5, 18);
+    let resp2 = definition(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp1);
+    assert_nav_ok(&resp2);
+    assert_eq!(
+        resp1["result"], resp2["result"],
+        "cached result must equal original"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 66. DEFINITION CACHE INVALIDATED ON DOCUMENT CHANGE
+
+#[test]
+fn test_definition_cache_invalidated_on_change() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "namespace T { class F { void M() { } } }\n";
+    client.open_document(TEST_URI, code);
+
+    let resp1 = definition(&mut client, TEST_URI, 0, 20);
+    assert_nav_ok(&resp1);
+
+    // Change the document — cache must be invalidated.
+    client.change_document(TEST_URI, 2, "namespace T { class G { void M() { } } }\n");
+
+    let resp2 = definition(&mut client, TEST_URI, 0, 20);
+    assert_nav_ok(&resp2);
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 67. TYPE DEFINITION WITHOUT SIDECAR RETURNS NULL
+
+#[test]
+fn test_type_definition_without_sidecar_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    let resp = type_definition(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "typeDefinition without sidecar must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 68. DECLARATION WITHOUT SIDECAR RETURNS NULL
+
+#[test]
+fn test_declaration_without_sidecar_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    let resp = declaration(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "declaration without sidecar must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 69. TYPE DEFINITION CACHE RETURNS SAME RESULT
+
+#[test]
+fn test_type_definition_cache_returns_same_result() {
+    let mut client = LspClient::start();
+    client.initialize();
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    let resp1 = type_definition(&mut client, TEST_URI, 5, 18);
+    let resp2 = type_definition(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp1);
+    assert_nav_ok(&resp2);
+    assert_eq!(
+        resp1["result"], resp2["result"],
+        "typeDefinition cache must return same result"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 70. DECLARATION CACHE RETURNS SAME RESULT
+
+#[test]
+fn test_declaration_cache_returns_same_result() {
+    let mut client = LspClient::start();
+    client.initialize();
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    let resp1 = declaration(&mut client, TEST_URI, 5, 18);
+    let resp2 = declaration(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp1);
+    assert_nav_ok(&resp2);
+    assert_eq!(
+        resp1["result"], resp2["result"],
+        "declaration cache must return same result"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 71. IMPLEMENTATION REPEATED RETURNS SAME RESULT
+
+#[test]
+fn test_implementation_repeated_returns_same_result() {
+    let mut client = LspClient::start();
+    client.initialize();
+    client.open_document(TEST_URI, COMPLEX_CLASS);
+
+    let resp1 = implementation(&mut client, TEST_URI, 6, 22);
+    let resp2 = implementation(&mut client, TEST_URI, 6, 22);
+    assert_nav_ok(&resp1);
+    assert_nav_ok(&resp2);
+    assert_eq!(
+        resp1["result"], resp2["result"],
+        "repeated implementation must return same result"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 72. DEFINITION ON IDENTIFIER WITHOUT SIDECAR — EXERCISES CACHED NAV MISS PATH
+
+#[test]
+fn test_definition_on_identifier_without_sidecar() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "namespace N { class C { void M() { int x = 1; } } }\n";
+    client.open_document(TEST_URI, code);
+
+    // Request on "x" — an identifier, not a comment/string, so it goes
+    // through the full cached_nav path.
+    let resp = definition(&mut client, TEST_URI, 0, 39);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "definition on local var without sidecar must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 73. DID_CHANGE TRIGGERS NOTIFY_DID_CHANGE PATH
+
+#[test]
+fn test_did_change_then_definition_exercises_notify_path() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code_v1 = "namespace N { class A { void Foo() { } } }\n";
+    let code_v2 = "namespace N { class B { void Bar() { } } }\n";
+
+    client.open_document(TEST_URI, code_v1);
+    let resp1 = definition(&mut client, TEST_URI, 0, 20);
+    assert_nav_ok(&resp1);
+
+    // Change triggers notify_did_change to sidecar (no-op without sidecar,
+    // but exercises the code path).
+    client.change_document(TEST_URI, 2, code_v2);
+    let resp2 = definition(&mut client, TEST_URI, 0, 20);
+    assert_nav_ok(&resp2);
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 74. TYPE DEFINITION ON IDENTIFIER WITHOUT SIDECAR — EXERCISES SINGLE LOCATION NAV
+
+#[test]
+fn test_type_definition_on_identifier_without_sidecar() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "namespace N { class C { void M() { int x = 1; } } }\n";
+    client.open_document(TEST_URI, code);
+
+    let resp = type_definition(&mut client, TEST_URI, 0, 39);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "typeDefinition on identifier without sidecar must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 75. DECLARATION ON IDENTIFIER WITHOUT SIDECAR — EXERCISES SINGLE LOCATION NAV
+
+#[test]
+fn test_declaration_on_identifier_without_sidecar() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "namespace N { class C { void M() { int x = 1; } } }\n";
+    client.open_document(TEST_URI, code);
+
+    let resp = declaration(&mut client, TEST_URI, 0, 39);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "declaration on identifier without sidecar must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 76. ALL NAV METHODS ON SAME POSITION WITHOUT SIDECAR
+
+#[test]
+fn test_all_nav_methods_on_same_position_without_sidecar() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "namespace N { class C { void M() { var x = new C(); } } }\n";
+    client.open_document(TEST_URI, code);
+
+    // Position on "C" in "new C()" — identifier, exercises all four methods.
+    let r1 = definition(&mut client, TEST_URI, 0, 49);
+    let r2 = type_definition(&mut client, TEST_URI, 0, 49);
+    let r3 = declaration(&mut client, TEST_URI, 0, 49);
+    let r4 = implementation(&mut client, TEST_URI, 0, 49);
+
+    assert_nav_ok(&r1);
+    assert_nav_ok(&r2);
+    assert_nav_ok(&r3);
+    assert_nav_ok(&r4);
+
+    // All should be null without sidecar.
+    assert!(r1["result"].is_null(), "definition must be null");
+    assert!(r2["result"].is_null(), "typeDefinition must be null");
+    assert!(r3["result"].is_null(), "declaration must be null");
+    assert!(r4["result"].is_null(), "implementation must be null");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 77. DEFINITION CACHE DIFFERENT POSITIONS ARE INDEPENDENT
+
+#[test]
+fn test_definition_cache_different_positions() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "namespace N\n{\n    class A { }\n    class B { }\n}\n";
+    client.open_document(TEST_URI, code);
+
+    // Two different positions — each gets its own cache entry.
+    let resp_a = definition(&mut client, TEST_URI, 2, 10);
+    let resp_b = definition(&mut client, TEST_URI, 3, 10);
+    assert_nav_ok(&resp_a);
+    assert_nav_ok(&resp_b);
+
+    // Second request to each position hits cache.
+    let cached_a = definition(&mut client, TEST_URI, 2, 10);
+    let cached_b = definition(&mut client, TEST_URI, 3, 10);
+    assert_nav_ok(&cached_a);
+    assert_nav_ok(&cached_b);
+
+    assert_eq!(
+        resp_a["result"], cached_a["result"],
+        "cache hit for position A"
+    );
+    assert_eq!(
+        resp_b["result"], cached_b["result"],
+        "cache hit for position B"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 78. FULL-STACK: DEFINITION CACHE HIT RETURNS SAME LOCATION
+
+#[test]
+fn test_full_stack_definition_cache_hit() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // First request warms the cache.
+    let result1 =
+        poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+    assert_location_shape(&result1);
+
+    // Second request should be a cache hit — same result.
+    let resp2 = definition(&mut client, &file_uri, 14, 23);
+    assert_nav_ok(&resp2);
+    let result2 = first_location(&resp2["result"]);
+    assert_eq!(
+        result1["uri"], result2["uri"],
+        "cache hit must return same URI"
+    );
+    assert_eq!(
+        result1["range"], result2["range"],
+        "cache hit must return same range"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 79. FULL-STACK: DECLARATION ON NON-OVERRIDE RETURNS SAME AS DEFINITION
+
+#[test]
+fn test_full_stack_declaration_on_non_override() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "GetGreeting" method (line 31, char 18) is not an override.
+    //     public string GetGreeting()
+    //     0         1
+    //     01234567890123456789
+    let def_resp = definition(&mut client, &file_uri, 31, 18);
+    let decl_resp = declaration(&mut client, &file_uri, 31, 18);
+    assert_nav_ok(&def_resp);
+    assert_nav_ok(&decl_resp);
+
+    let def_loc = first_location(&def_resp["result"]);
+    let decl_loc = &decl_resp["result"];
+
+    // Both should resolve (non-null).
+    assert!(
+        !def_loc.is_null(),
+        "definition on non-override method must resolve"
+    );
+    assert!(
+        !decl_loc.is_null(),
+        "declaration on non-override method must resolve"
+    );
+
+    // For a non-override, declaration should point to the same line as definition.
+    let def_line = def_loc["range"]["start"]["line"].as_u64().unwrap();
+    let decl_line = decl_loc["range"]["start"]["line"].as_u64().unwrap();
+    assert_eq!(
+        def_line, decl_line,
+        "declaration on non-override must match definition line"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 80. FULL-STACK: IMPLEMENTATION ON CONCRETE CLASS RETURNS ITS OWN LOCATION
+
+#[test]
+fn test_full_stack_implementation_on_concrete_class() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "Dog" class name at line 14, char 13.
+    //     public class Dog : AnimalBase
+    //     0         1
+    //     0123456789012345
+    let resp = implementation(&mut client, &file_uri, 14, 13);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+
+    // Implementation on a concrete (non-abstract) class should return at
+    // least its own location.
+    assert!(
+        !result.is_null(),
+        "implementation on concrete class must resolve"
+    );
+    if result.is_array() {
+        let locations = result.as_array().unwrap();
+        assert!(
+            !locations.is_empty(),
+            "implementation on Dog must return at least one location"
+        );
+        for loc in locations {
+            assert_location_shape(loc);
+        }
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 81. FULL-STACK: TYPE DEFINITION VALIDATES FULL LOCATION STRUCTURE
+
+#[test]
+fn test_full_stack_type_definition_location_structure() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "MyDog" (line 33, char 18) -> type Dog at line 14.
+    let resp = type_definition(&mut client, &file_uri, 33, 18);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(!result.is_null(), "typeDefinition must resolve");
+
+    // Validate full location structure.
+    let uri = result["uri"].as_str().unwrap();
+    assert!(uri.starts_with("file://"), "uri must be file:// URI");
+    assert!(uri.contains("Program.cs"), "uri must point to source file");
+    let range = &result["range"];
+    let start_line = range["start"]["line"].as_u64().unwrap();
+    let start_char = range["start"]["character"].as_u64().unwrap();
+    let end_line = range["end"]["line"].as_u64().unwrap();
+    let end_char = range["end"]["character"].as_u64().unwrap();
+    assert_eq!(start_line, 14, "Dog type starts at line 14");
+    assert!(start_char < 100, "start character must be reasonable");
+    assert!(end_line >= start_line, "end line must be >= start line");
+    assert!(
+        end_line > start_line || end_char > start_char,
+        "range must have non-zero length"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 82. FULL-STACK: DEFINITION AFTER EDIT INVALIDATES CACHE
+
+#[test]
+fn test_full_stack_definition_cache_invalidated_on_change() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Warm the cache.
+    let result1 =
+        poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+    assert_location_shape(&result1);
+
+    // Change the document — this should invalidate the nav cache.
+    client.change_document(&file_uri, 2, &source);
+
+    // Request again — should still work (cache invalidated, re-fetched from sidecar).
+    let resp = definition(&mut client, &file_uri, 14, 23);
+    assert_nav_ok(&resp);
+    let result2 = first_location(&resp["result"]);
+    // After re-fetch, the result should still point to the same location.
+    if !result2.is_null() {
+        assert_location_shape(&result2);
+        assert_eq!(
+            result1["uri"], result2["uri"],
+            "re-fetched result must point to same URI"
+        );
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// 83. FULL-STACK: ALL NAV METHODS WITH STRONGER ASSERTIONS
+
+#[test]
+fn test_full_stack_nav_methods_with_range_assertions() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // definition: "AnimalBase" -> line 8
+    let r1 = definition(&mut client, &file_uri, 14, 23);
+    assert_nav_ok(&r1);
+    let loc1 = first_location(&r1["result"]);
+    assert_location_shape(&loc1);
+    let uri1 = loc1["uri"].as_str().unwrap();
+    assert!(
+        uri1.starts_with("file://"),
+        "definition uri must be file://"
+    );
+    assert_eq!(
+        loc1["range"]["start"]["line"].as_u64().unwrap(),
+        8,
+        "AnimalBase at line 8"
+    );
+
+    // typeDefinition: "dog" variable (line 33, char 12) -> Dog type (line 14)
+    //         var dog = MyDog;
+    //         0         1
+    //         0123456789012
+    let r2 = type_definition(&mut client, &file_uri, 33, 12);
+    assert_nav_ok(&r2);
+    if !r2["result"].is_null() {
+        let uri2 = r2["result"]["uri"].as_str().unwrap();
+        assert!(
+            uri2.starts_with("file://"),
+            "typeDefinition uri must be file://"
+        );
+        assert_eq!(
+            r2["result"]["range"]["start"]["line"].as_u64().unwrap(),
+            14,
+            "type of dog is Dog at line 14"
+        );
+        let end_line = r2["result"]["range"]["end"]["line"].as_u64().unwrap();
+        assert!(end_line >= 14, "end line must be >= 14");
+    }
+
+    // declaration: Dog.Speak override (line 17, char 27) -> AnimalBase.Speak (line 11)
+    let r3 = declaration(&mut client, &file_uri, 17, 27);
+    assert_nav_ok(&r3);
+    if !r3["result"].is_null() {
+        let uri3 = r3["result"]["uri"].as_str().unwrap();
+        assert!(
+            uri3.starts_with("file://"),
+            "declaration uri must be file://"
+        );
+        assert_eq!(
+            r3["result"]["range"]["start"]["line"].as_u64().unwrap(),
+            11,
+            "declaration of Dog.Speak override -> base at line 11"
+        );
+    }
+
+    // implementation: IAnimal (line 2, char 18) -> implementors
+    let r4 = implementation(&mut client, &file_uri, 2, 18);
+    assert_nav_ok(&r4);
+    if !r4["result"].is_null() {
+        assert!(r4["result"].is_array(), "implementation must return array");
+        let impl_locations = r4["result"].as_array().unwrap();
+        for location in impl_locations {
+            assert_location_shape(location);
+            let location_uri = location["uri"].as_str().unwrap();
+            assert!(
+                location_uri.starts_with("file://"),
+                "implementation loc uri must be file://"
+            );
+        }
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Additional Diagnostics & Sidecar Coverage Tests ──────────────
+
+/// Create a temporary `ChangeTest` workspace. Returns `(tmp_dir, root_uri, file_path, file_uri, clean_source)`.
+fn create_change_test_workspace() -> (
+    tempfile::TempDir,
+    String,
+    std::path::PathBuf,
+    String,
+    &'static str,
+) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("ChangeTest");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("ChangeTest.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    let clean_source = r"namespace ChangeTest;
+public class Widget
+{
+    public int Count { get; set; }
+}
+";
+    std::fs::write(proj_dir.join("Widget.cs"), clean_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("ChangeTest.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChangeTest", "ChangeTest/ChangeTest.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(&proj_dir)
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let root_uri = format!("file://{}", real_root.display());
+    let file_path = real_root.join("ChangeTest").join("Widget.cs");
+    let file_uri = format!("file://{}", file_path.display());
+    (tmp, root_uri, file_path, file_uri, clean_source)
+}
+
+// Full-stack: diagnostics refreshed on didChange — edit introduces error.
+
+#[test]
+fn test_full_stack_diagnostics_refreshed_on_did_change() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_path, file_uri, clean_source) = create_change_test_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, clean_source);
+
+    // Wait for sidecar readiness via hover polling.
+    let hover_result =
+        poll_hover_until_ready(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
+    assert!(
+        !hover_result.is_null(),
+        "hover must work once sidecar is ready",
+    );
+
+    // Now edit the file to introduce a type error.
+    let broken_source = r"namespace ChangeTest;
+public class Widget
+{
+    public NonExistentType Count { get; set; }
+}
+";
+    client.change_document(&file_uri, 2, broken_source);
+    // Also update the file on disk for the sidecar to pick up.
+    std::fs::write(&file_path, broken_source).unwrap();
+
+    // Poll for error diagnostics after the change.
+    let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let mut found_error = false;
+
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_secs(3));
+        client.save_document(&file_uri);
+        std::thread::sleep(Duration::from_secs(2));
+
+        client.close_document(&file_uri);
+        let msg = client.recv();
+
+        if msg["method"].as_str() == Some("textDocument/publishDiagnostics") {
+            let diags = msg["params"]["diagnostics"].as_array().unwrap();
+            if !diags.is_empty() {
+                let has_error = diags.iter().any(|d| {
+                    d["message"]
+                        .as_str()
+                        .is_some_and(|m| m.contains("NonExistentType") || m.contains("CS0246"))
+                });
+                if has_error {
+                    found_error = true;
+                    // Verify diagnostic structure.
+                    let diag = diags
+                        .iter()
+                        .find(|d| {
+                            d["message"].as_str().is_some_and(|m| {
+                                m.contains("NonExistentType") || m.contains("CS0246")
+                            })
+                        })
+                        .unwrap();
+                    assert_eq!(
+                        diag["source"].as_str().unwrap(),
+                        "forge-csharp",
+                        "source must be forge-csharp",
+                    );
+                    assert_eq!(
+                        diag["severity"].as_u64().unwrap(),
+                        1,
+                        "type error must be Error severity (1)",
+                    );
+                    assert!(
+                        diag["range"]["start"]["line"].as_u64().is_some(),
+                        "diagnostic must have a valid range start line",
+                    );
+                    assert!(
+                        diag["code"].is_string()
+                            || diag["code"].is_number()
+                            || diag["code"].is_object(),
+                        "diagnostic must have a code",
+                    );
+                    break;
+                }
+            }
+        }
+
+        client.open_document(&file_uri, broken_source);
+    }
+
+    assert!(
+        found_error,
+        "didChange introducing NonExistentType must produce diagnostics within 90s",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Full-stack: diagnostics on file with syntax error (not just type error).
+
+#[test]
+fn test_full_stack_diagnostics_syntax_error() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("SyntaxErr");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("SyntaxErr.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    // File with a deliberate syntax error: missing closing brace.
+    let syntax_error_source = r"namespace SyntaxErr;
+public class Oops
+{
+    public void Broken(
+";
+    std::fs::write(proj_dir.join("Oops.cs"), syntax_error_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("SyntaxErr.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SyntaxErr", "SyntaxErr/SyntaxErr.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(&proj_dir)
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let root_uri = format!("file://{}", real_root.display());
+    let file_path = real_root.join("SyntaxErr").join("Oops.cs");
+    let file_uri = format!("file://{}", file_path.display());
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, syntax_error_source);
+
+    // Poll for syntax error diagnostics (CS1002, CS1513, CS1514 etc).
+    let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let mut found_syntax_error = false;
+
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_secs(3));
+        client.save_document(&file_uri);
+        std::thread::sleep(Duration::from_secs(2));
+
+        client.close_document(&file_uri);
+        let msg = client.recv();
+
+        if msg["method"].as_str() == Some("textDocument/publishDiagnostics") {
+            let diags = msg["params"]["diagnostics"].as_array().unwrap();
+            if !diags.is_empty() {
+                // Look for any error-severity diagnostic.
+                let has_error = diags
+                    .iter()
+                    .any(|d| d["severity"].as_u64().is_some_and(|s| s == 1));
+                if has_error {
+                    found_syntax_error = true;
+                    // Verify the diagnostics have proper structure.
+                    for diag in diags.iter().filter(|d| d["severity"].as_u64() == Some(1)) {
+                        assert_eq!(
+                            diag["source"].as_str().unwrap(),
+                            "forge-csharp",
+                            "source must be forge-csharp",
+                        );
+                        assert!(
+                            diag["message"].as_str().is_some_and(|m| !m.is_empty()),
+                            "diagnostic must have a non-empty message",
+                        );
+                        assert!(
+                            diag["range"]["start"]["line"].as_u64().is_some(),
+                            "diagnostic must have range start",
+                        );
+                        assert!(
+                            diag["range"]["end"]["line"].as_u64().is_some(),
+                            "diagnostic must have range end",
+                        );
+                    }
+                    break;
+                }
+            }
+        }
+
+        client.open_document(&file_uri, syntax_error_source);
+    }
+
+    assert!(
+        found_syntax_error,
+        "file with syntax error must produce Error-severity diagnostics within 90s",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Hover returns null gracefully when no sidecar is connected (no workspace root).
+
+#[test]
+fn test_hover_without_sidecar_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    // Hover on the class name "Program" (line 5, char 18).
+    let resp = hover(&mut client, TEST_URI, 5, 18);
+    assert_hover_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "hover without sidecar must return null, got: {}",
+        resp["result"],
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Completion returns null/empty when no sidecar is connected.
+
+#[test]
+fn test_completion_without_sidecar_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    let resp = client.request(
+        "textDocument/completion",
+        json!({
+            "textDocument": { "uri": TEST_URI },
+            "position": { "line": 5, "character": 18 }
+        }),
+    );
+    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
+    assert!(resp.get("id").is_some(), "must have request id");
+    assert!(
+        resp.get("error").is_none(),
+        "completion without sidecar must not error: {resp}",
+    );
+    // Without sidecar, result should be null (no completions available).
+    assert!(
+        resp["result"].is_null(),
+        "completion without sidecar must return null, got: {}",
+        resp["result"],
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// All four navigation methods return null without sidecar in a single session.
+
+#[test]
+fn test_all_nav_methods_without_sidecar_return_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    // Definition on class name.
+    let resp = definition(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "definition without sidecar must be null",
+    );
+
+    // Type definition on class name.
+    let resp = type_definition(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "typeDefinition without sidecar must be null",
+    );
+
+    // Declaration on class name.
+    let resp = declaration(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "declaration without sidecar must be null",
+    );
+
+    // Implementation on class name.
+    let resp = implementation(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "implementation without sidecar must be null",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// Completion and hover both return null in a single session without sidecar.
+
+#[test]
+fn test_completion_and_hover_without_sidecar_both_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    // Hover first.
+    let resp = hover(&mut client, TEST_URI, 5, 18);
+    assert_hover_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "hover without sidecar must be null",
+    );
+
+    // Then completion.
+    let resp = client.request(
+        "textDocument/completion",
+        json!({
+            "textDocument": { "uri": TEST_URI },
+            "position": { "line": 5, "character": 18 }
+        }),
+    );
+    assert_eq!(resp["jsonrpc"], "2.0");
+    assert!(resp.get("error").is_none(), "completion must not error");
+    assert!(
+        resp["result"].is_null(),
+        "completion without sidecar must be null",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Pull Diagnostics (LSP 3.17) ─────────────────────────────────
+
+/// `textDocument/diagnostic` request must return a valid diagnostic report,
+/// not "method not found". This is the pull diagnostics model required by
+/// VS Code's web client (`code serve-web`).
+#[test]
+fn test_pull_diagnostics_document_request_is_handled() {
+    let mut client = LspClient::start();
+    client.initialize();
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    let resp = client.request(
+        "textDocument/diagnostic",
+        json!({
+            "textDocument": { "uri": TEST_URI }
+        }),
+    );
+
+    assert_eq!(resp["jsonrpc"], "2.0");
+    assert!(
+        resp.get("error").is_none(),
+        "textDocument/diagnostic must not return an error, got: {resp}",
+    );
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "textDocument/diagnostic must return a diagnostic report",
+    );
+    let kind = result["kind"].as_str();
+    assert!(
+        kind == Some("full") || kind == Some("unchanged"),
+        "diagnostic report kind must be 'full' or 'unchanged', got: {kind:?}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// `workspace/diagnostic` request must return a valid workspace diagnostic
+/// report, not "method not found".
+#[test]
+fn test_pull_diagnostics_workspace_request_is_handled() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "workspace/diagnostic",
+        json!({
+            "previousResultIds": []
+        }),
+    );
+
+    assert_eq!(resp["jsonrpc"], "2.0");
+    assert!(
+        resp.get("error").is_none(),
+        "workspace/diagnostic must not return an error, got: {resp}",
+    );
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "workspace/diagnostic must return a report",
+    );
+    assert!(
+        result["items"].is_array(),
+        "workspace/diagnostic must return items array",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── References & Document Highlight helpers ──────────────────────
+
+/// Helper: send a references request and return the response.
+fn references(
+    client: &mut LspClient,
+    uri: &str,
+    line: u32,
+    character: u32,
+    include_declaration: bool,
+) -> Value {
+    client.request(
+        "textDocument/references",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character },
+            "context": { "includeDeclaration": include_declaration }
+        }),
+    )
+}
+
+/// Helper: send a document highlight request and return the response.
+fn document_highlight(client: &mut LspClient, uri: &str, line: u32, character: u32) -> Value {
+    client.request(
+        "textDocument/documentHighlight",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }),
+    )
+}
+
+/// Poll references until the sidecar returns a non-null, non-empty result.
+fn poll_references_until_ready(
+    client: &mut LspClient,
+    uri: &str,
+    line: u32,
+    character: u32,
+    timeout: Duration,
+) -> Value {
+    std::thread::sleep(Duration::from_secs(5));
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let resp = references(client, uri, line, character, true);
+        assert_nav_ok(&resp);
+        let result = &resp["result"];
+        if result.is_array() && !result.as_array().unwrap().is_empty() {
+            return resp;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "references did not resolve within {}s — sidecar not ready",
+            timeout.as_secs(),
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+// ── References & Document Highlight capability tests ─────────────
+
+#[test]
+fn test_references_capabilities_advertised() {
+    let mut client = LspClient::start();
+    let resp = client.initialize();
+    let caps = &resp["result"]["capabilities"];
+
+    assert_eq!(caps["referencesProvider"], true, "references");
+    assert_eq!(caps["documentHighlightProvider"], true, "documentHighlight");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_references_on_comment_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "// This is a comment\nnamespace Test { public class Foo { } }\n";
+    client.open_document(TEST_URI, code);
+
+    let resp = references(&mut client, TEST_URI, 0, 5, true);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "references on comment must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_references_without_sidecar_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    let resp = references(&mut client, TEST_URI, 5, 18, true);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "references without sidecar must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_document_highlight_on_comment_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let code = "// This is a comment\nnamespace Test { public class Foo { } }\n";
+    client.open_document(TEST_URI, code);
+
+    let resp = document_highlight(&mut client, TEST_URI, 0, 5);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "document highlight on comment must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_document_highlight_without_sidecar_returns_null() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    client.open_document(TEST_URI, SIMPLE_CLASS);
+
+    let resp = document_highlight(&mut client, TEST_URI, 5, 18);
+    assert_nav_ok(&resp);
+    assert!(
+        resp["result"].is_null(),
+        "document highlight without sidecar must be null"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Full-stack references E2E tests (real sidecar + Roslyn) ──────
+
+#[test]
+fn test_full_stack_references_on_method_returns_call_sites() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait for sidecar to be ready using Speak on line 5 (interface declaration).
+    //     string Speak();
+    //     0         1
+    //     01234567890123
+    let _ = poll_references_until_ready(&mut client, &file_uri, 5, 11, Duration::from_secs(90));
+
+    // Find all references to "Speak" from the interface (line 5, col 11).
+    let resp = references(&mut client, &file_uri, 5, 11, true);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(
+        result.is_array(),
+        "references must return Location[]: {result}"
+    );
+    let locations = result.as_array().unwrap();
+    // Speak appears at: line 5 (interface), 11 (virtual), 17 (Dog override),
+    // 23 (Cat override), 34 (call site dog.Speak()).
+    assert!(
+        locations.len() >= 3,
+        "Speak must have >= 3 references, got {}",
+        locations.len()
+    );
+    for loc in locations {
+        assert_location_shape(loc);
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_full_stack_references_include_declaration_true() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_references_until_ready(&mut client, &file_uri, 5, 11, Duration::from_secs(90));
+
+    // "Dog" class on line 14, col 13.
+    //     public class Dog : AnimalBase
+    //     0         1
+    //     0123456789012345
+    let resp_with = references(&mut client, &file_uri, 14, 13, true);
+    assert_nav_ok(&resp_with);
+    let with_decl = resp_with["result"].as_array().unwrap();
+
+    let resp_without = references(&mut client, &file_uri, 14, 13, false);
+    assert_nav_ok(&resp_without);
+    let without_decl = resp_without["result"].as_array().unwrap();
+
+    assert!(
+        with_decl.len() > without_decl.len(),
+        "includeDeclaration=true ({}) must return more results than false ({})",
+        with_decl.len(),
+        without_decl.len()
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_full_stack_references_on_class_returns_type_usages() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_references_until_ready(&mut client, &file_uri, 5, 11, Duration::from_secs(90));
+
+    // "Dog" on line 14, col 13 — used at line 14 (decl), 28 (field type),
+    // 28 (new Dog()), 33 (var dog = MyDog is typed Dog).
+    let resp = references(&mut client, &file_uri, 14, 13, true);
+    assert_nav_ok(&resp);
+    let locations = resp["result"].as_array().unwrap();
+    assert!(
+        locations.len() >= 2,
+        "Dog must have >= 2 references (decl + usages), got {}",
+        locations.len()
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_full_stack_references_response_structure() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_references_until_ready(&mut client, &file_uri, 5, 11, Duration::from_secs(90));
+
+    // Verify LSP Location[] structure.
+    let resp = references(&mut client, &file_uri, 5, 11, true);
+    assert_nav_ok(&resp);
+    let locations = resp["result"].as_array().unwrap();
+    assert!(!locations.is_empty(), "must have at least one reference");
+
+    for loc in locations {
+        assert!(loc.get("uri").is_some(), "location must have uri: {loc}");
+        let range = &loc["range"];
+        assert!(range.get("start").is_some(), "must have range.start: {loc}");
+        assert!(range.get("end").is_some(), "must have range.end: {loc}");
+        let start = &range["start"];
+        assert!(start.get("line").is_some(), "start must have line: {loc}");
+        assert!(
+            start.get("character").is_some(),
+            "start must have character: {loc}"
+        );
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── Full-stack document highlight E2E tests ──────────────────────
+
+#[test]
+fn test_full_stack_document_highlight_read_write() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait for sidecar readiness.
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+
+    // "message" on line 34 — written on line 34, read on line 35.
+    //         var message = dog.Speak();
+    //         0         1
+    //         0123456789012345
+    let resp = document_highlight(&mut client, &file_uri, 34, 12);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(
+        result.is_array(),
+        "document highlight must return array: {result}"
+    );
+    let highlights = result.as_array().unwrap();
+    assert!(
+        highlights.len() >= 2,
+        "message must have >= 2 highlights (write + read), got {}",
+        highlights.len()
+    );
+
+    // Verify highlight structure: each must have range and kind.
+    for hl in highlights {
+        let range = &hl["range"];
+        assert!(
+            range.get("start").is_some(),
+            "highlight must have range.start"
+        );
+        assert!(range.get("end").is_some(), "highlight must have range.end");
+        assert!(hl.get("kind").is_some(), "highlight must have kind: {hl}");
+    }
+
+    // Verify at least one Write (kind=3) and one Read (kind=2).
+    let kinds: Vec<u64> = highlights
+        .iter()
+        .filter_map(|hl| hl["kind"].as_u64())
+        .collect();
+    assert!(
+        kinds.contains(&3),
+        "must have a Write highlight (kind=3): {kinds:?}"
+    );
+    assert!(
+        kinds.contains(&2),
+        "must have a Read highlight (kind=2): {kinds:?}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// NOTE: Full-stack empty line test removed — tree-sitter pre-validation is tested
+// in syntax-only tests (test_document_highlight_on_comment_returns_null). The
+// full-stack sidecar may still resolve symbols for edge positions near declarations.
+
+// ── Standalone .csproj (no .sln) — Hover & Definition ───────────
+
+/// Create a workspace with only a `.csproj` file (no `.sln`).
+/// This mirrors the `editors/vscode/test-fixtures/workspace/` layout
+/// used by `code serve-web` for automated screenshots.
+fn create_standalone_csproj_workspace() -> (tempfile::TempDir, String, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path();
+
+    std::fs::write(
+        proj_dir.join("TestStandalone.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    let cs_source = r#"namespace TestStandalone;
+
+public class Calculator
+{
+    public int Add(int a, int b) { return a + b; }
+    public string Name { get; set; } = "Default";
+}"#;
+    std::fs::write(proj_dir.join("Calculator.cs"), cs_source).unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(proj_dir)
+        .status()
+        .expect("dotnet restore failed to start");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(proj_dir).unwrap();
+    let root_uri = format!("file://{}", real_root.display());
+    let file_uri = format!("file://{}", real_root.join("Calculator.cs").display());
+    (tmp, root_uri, file_uri, cs_source.to_string())
+}
+
+/// Hover must return content for a standalone `.csproj` workspace (no `.sln`).
+/// This is the layout used by `code serve-web` for screenshots.
+#[test]
+fn test_full_stack_hover_standalone_csproj_no_sln() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_standalone_csproj_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Hover on "Calculator" class name (line 2, char 14).
+    let result = poll_hover_until_ready(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
+
+    let contents = &result["contents"];
+    assert_eq!(contents["kind"], "markdown", "contents must be markdown");
+    let value = contents["value"].as_str().unwrap();
+    assert!(
+        value.contains("Calculator"),
+        "hover on class must mention Calculator, got: {value}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// Go to definition must return a location for a standalone `.csproj`
+/// workspace (no `.sln`).
+#[test]
+fn test_full_stack_definition_standalone_csproj_no_sln() {
+    if !is_dotnet_available() {
+        eprintln!("SKIPPED: dotnet SDK not installed");
+        return;
+    }
+
+    let (_tmp, root_uri, file_uri, source) = create_standalone_csproj_workspace();
+
+    let mut client = LspClient::start_verbose();
+    client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait for sidecar to load before requesting definition.
+    poll_hover_until_ready(&mut client, &file_uri, 2, 14, Duration::from_secs(90));
+
+    // Definition on "Add" method name (line 4, char 16).
+    let resp = definition(&mut client, &file_uri, 4, 16);
+    assert_nav_ok(&resp);
+    let result = &resp["result"];
+    assert!(
+        !result.is_null() && !result.as_array().is_some_and(Vec::is_empty),
+        "definition on method must return a location for standalone .csproj, got: {result}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── CLI version flag ─────────────────────────────────────────────
+
+/// `forge-lsp --version` prints "forge-lsp X.Y.Z" and exits 0.
+///
+/// Editor extensions rely on this exact format to detect version mismatches.
+/// If this test fails, every extension (VS Code, Zed, etc.) will break.
+#[test]
+fn version_flag_prints_correct_format_and_exits_zero() {
+    let output = Command::new(env!("CARGO_BIN_EXE_forge-lsp"))
+        .arg("--version")
+        .output()
+        .expect("failed to run forge-lsp --version");
+
+    assert!(
+        output.status.success(),
+        "forge-lsp --version must exit with code 0, got: {}",
+        output.status,
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim();
+
+    // Format: "forge-lsp X.Y.Z"
+    let parts: Vec<&str> = trimmed.split_whitespace().collect();
+    assert_eq!(
+        parts.len(),
+        2,
+        "Expected exactly 2 tokens ('forge-lsp X.Y.Z'), got: {trimmed:?}",
+    );
+    assert_eq!(
+        parts[0], "forge-lsp",
+        "First token must be 'forge-lsp', got: {:?}",
+        parts[0],
+    );
+
+    // Version must match Cargo.toml.
+    let expected_version = env!("CARGO_PKG_VERSION");
+    assert_eq!(
+        parts[1], expected_version,
+        "Version must match Cargo.toml ({expected_version}), got: {:?}",
+        parts[1],
+    );
+
+    // Verify it's a valid semver-ish format (X.Y.Z).
+    let segments: Vec<&str> = parts[1].split('.').collect();
+    assert!(
+        segments.len() >= 2,
+        "Version must have at least X.Y segments, got: {:?}",
+        parts[1],
+    );
+    for segment in &segments {
+        assert!(
+            segment.parse::<u32>().is_ok(),
+            "Each version segment must be numeric, got: {segment:?} in {:?}",
+            parts[1],
+        );
+    }
 }

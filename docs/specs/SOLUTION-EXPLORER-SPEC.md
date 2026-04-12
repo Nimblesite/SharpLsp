@@ -329,6 +329,125 @@ Right-clicking any collapsible node shows a **Collapse All Children** action tha
 | When | `view == forge.solutionExplorer` |
 | Group | `inline` |
 
+## Build, Run, and Debug Actions
+
+The Solution Explorer provides direct access to common .NET CLI operations through context menus.
+
+### Build and Rebuild
+
+Right-clicking a solution or project node shows **Build** and **Rebuild** actions.
+
+| Property | Value |
+|----------|-------|
+| Command | `forge.build` |
+| Title | Build |
+| When | `view == forge.solutionExplorer && viewItem =~ /^(solution\|project)$/` |
+| Group | `2_build@1` |
+
+| Property | Value |
+|----------|-------|
+| Command | `forge.rebuild` |
+| Title | Rebuild |
+| When | `view == forge.solutionExplorer && viewItem =~ /^(solution\|project)$/` |
+| Group | `2_build@2` |
+
+**Build Behavior:**
+- On solution: runs `dotnet build <solution.sln>` with configured extra args
+- On project: runs `dotnet build <project.csproj>` with configured extra args
+- Output appears in VS Code terminal
+- Progress notification shown during build
+
+### Run and Debug
+
+Right-clicking a project node shows **Run** and **Debug** actions.
+
+| Property | Value |
+|----------|-------|
+| Command | `forge.run` |
+| Title | Run |
+| When | `view == forge.solutionExplorer && viewItem == project` |
+| Group | `3_run@1` |
+
+| Property | Value |
+|----------|-------|
+| Command | `forge.debug` |
+| Title | Debug |
+| When | `view == forge.solutionExplorer && viewItem == project` |
+| Group | `3_run@2` |
+
+**Run Behavior:**
+- Runs `dotnet run --project <project.csproj>` with configured extra args
+- Output appears in VS Code terminal
+
+**Debug Behavior:**
+- Starts a debug session using VS Code's debug API
+- Uses the `forge` debug configuration type
+- Attaches debugger to the running process
+
+### Configure Extra Arguments
+
+Users can configure extra arguments for dotnet commands via context menu or settings.
+
+| Property | Value |
+|----------|-------|
+| Command | `forge.configureBuildArgs` |
+| Title | Configure Build Arguments... |
+| When | `view == forge.solutionExplorer && viewItem =~ /^(solution\|project)$/` |
+| Group | `9_configure@1` |
+
+| Property | Value |
+|----------|-------|
+| Command | `forge.configureRunArgs` |
+| Title | Configure Run Arguments... |
+| When | `view == forge.solutionExplorer && viewItem == project` |
+| Group | `9_configure@2` |
+
+**Configuration Storage:**
+- Per-project args stored in workspace state: `forge.buildArgs.${projectPath}` and `forge.runArgs.${projectPath}`
+- Global defaults configured via settings:
+  - `forge.build.extraArgs` — default args for all build operations
+  - `forge.run.extraArgs` — default args for all run operations  
+  - `forge.test.extraArgs` — default args for test operations
+
+**Argument Precedence:**
+1. Per-project configured args (highest priority)
+2. Global setting `forge.*.extraArgs`
+3. No extra args (lowest priority)
+
+## Solution Management
+
+### Add Project to Solution
+
+Right-clicking a `.csproj` or `.fsproj` file in the VS Code file explorer shows **Add to Solution** when a solution is loaded.
+
+| Property | Value |
+|----------|-------|
+| Command | `forge.addToSolution` |
+| Title | Add to Solution |
+| When | `resourceExtname == .csproj \|\| resourceExtname == .fsproj` |
+| Group | `2_solution@1` |
+
+**Behavior:**
+- Runs `dotnet sln <current-solution> add <project-path>`
+- Refreshes Solution Explorer after adding
+- Shows error if no solution is loaded
+
+### Remove Project from Solution
+
+Right-clicking a project node in the Solution Explorer shows **Remove from Solution**.
+
+| Property | Value |
+|----------|-------|
+| Command | `forge.removeFromSolution` |
+| Title | Remove from Solution |
+| When | `view == forge.solutionExplorer && viewItem == project` |
+| Group | `7_modification@3` |
+
+**Behavior:**
+- Shows confirmation dialog before removing
+- Runs `dotnet sln <solution> remove <project-path>`
+- Refreshes Solution Explorer after removing
+
 ### Context Value Mapping
 
 To support scoped context menus, symbol nodes set `contextValue` based on their kind:

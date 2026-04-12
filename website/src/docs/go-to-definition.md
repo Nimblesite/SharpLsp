@@ -1,12 +1,14 @@
 ---
 layout: layouts/docs.njk
 title: Go to Definition
-eleventyNavigation:
-  key: Go to Definition
-  order: 7
+eleventyExcludeFromCollections: true
 ---
 
-![Navigate to any symbol definition, type, declaration, or implementation](/assets/screenshots/go-to-definition-page.png)
+**VS Code**
+![Go to Definition in VS Code](/assets/screenshots/vscode-go-to-definition-page.png)
+
+**Zed**
+![Go to Definition in Zed](/assets/screenshots/zed-go-to-definition-page.png)
 
 *Navigate to any symbol definition, type definition, declaration, or implementation — all four LSP navigation methods fully implemented.*
 

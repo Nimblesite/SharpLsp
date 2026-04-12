@@ -3,8 +3,9 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use lsp_server::{Message, Notification};
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{info, warn};
 
 use super::tool_discovery;
 
@@ -25,7 +26,13 @@ pub struct CollectDumpResult {
 }
 
 /// Collect a memory dump from a running .NET process.
-pub async fn collect(params: CollectDumpParams) -> Result<CollectDumpResult> {
+///
+/// Sends `$/progress` begin/end notifications via `sender` so the editor can
+/// show a progress indicator while waiting for the (potentially large) dump.
+pub async fn collect(
+    params: CollectDumpParams,
+    sender: crossbeam_channel::Sender<Message>,
+) -> Result<CollectDumpResult> {
     let tool = tool_discovery::require_dump()?;
 
     let output_path = params
@@ -41,6 +48,9 @@ pub async fn collect(params: CollectDumpParams) -> Result<CollectDumpResult> {
         "Collecting memory dump"
     );
 
+    let token = format!("dump-{}", params.pid);
+    send_progress_begin(&sender, &token, "Collecting memory dump…");
+
     let output = tokio::process::Command::new(tool)
         .args(["collect", "-p"])
         .arg(params.pid.to_string())
@@ -52,12 +62,15 @@ pub async fn collect(params: CollectDumpParams) -> Result<CollectDumpResult> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        send_progress_end(&sender, &token);
         anyhow::bail!("dotnet-dump collect failed: {stderr}");
     }
 
     let file_size_bytes = std::fs::metadata(&output_path)
         .map(|m| m.len())
         .unwrap_or(0);
+
+    send_progress_end(&sender, &token);
 
     info!(
         output = %output_path,
@@ -81,4 +94,122 @@ fn ensure_output_dir(path: &str) -> Result<()> {
 
 fn default_dump_type() -> String {
     "Heap".to_string()
+}
+
+/// Send a `$/progress` begin notification.
+fn send_progress_begin(sender: &crossbeam_channel::Sender<Message>, token: &str, message: &str) {
+    let params = serde_json::json!({
+        "token": token,
+        "value": {
+            "kind": "begin",
+            "title": message,
+            "cancellable": false
+        }
+    });
+    send_notification(sender, "$/progress", params);
+}
+
+/// Send a `$/progress` end notification.
+fn send_progress_end(sender: &crossbeam_channel::Sender<Message>, token: &str) {
+    let params = serde_json::json!({
+        "token": token,
+        "value": { "kind": "end" }
+    });
+    send_notification(sender, "$/progress", params);
+}
+
+fn send_notification(
+    sender: &crossbeam_channel::Sender<Message>,
+    method: &str,
+    params: serde_json::Value,
+) {
+    let notification = Notification {
+        method: method.to_string(),
+        params,
+    };
+    if let Err(err) = sender.send(Message::Notification(notification)) {
+        warn!("Failed to send notification {method}: {err:#}");
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    reason = "test code — panics are the correct failure mode"
+)]
+mod tests {
+    use super::*;
+    use crossbeam_channel::unbounded;
+
+    #[test]
+    fn default_dump_type_returns_heap() {
+        assert_eq!(default_dump_type(), "Heap");
+    }
+
+    #[test]
+    fn ensure_output_dir_creates_directories() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nested = tmp.path().join("a").join("b").join("dump.dmp");
+        let nested_str = nested.to_str().unwrap();
+
+        ensure_output_dir(nested_str).unwrap();
+
+        assert!(nested.parent().unwrap().is_dir());
+    }
+
+    #[test]
+    fn send_progress_begin_sends_correct_notification() {
+        let (tx, rx) = unbounded::<Message>();
+        send_progress_begin(&tx, "tok-1", "Working…");
+
+        let msg = rx.try_recv().unwrap();
+        let Message::Notification(notif) = msg else {
+            panic!("expected Notification");
+        };
+        assert_eq!(notif.method, "$/progress");
+
+        let value = &notif.params["value"];
+        assert_eq!(value["kind"], "begin");
+        assert_eq!(value["title"], "Working…");
+        assert_eq!(value["cancellable"], false);
+        assert_eq!(notif.params["token"], "tok-1");
+    }
+
+    #[test]
+    fn send_progress_end_sends_correct_notification() {
+        let (tx, rx) = unbounded::<Message>();
+        send_progress_end(&tx, "tok-2");
+
+        let msg = rx.try_recv().unwrap();
+        let Message::Notification(notif) = msg else {
+            panic!("expected Notification");
+        };
+        assert_eq!(notif.method, "$/progress");
+        assert_eq!(notif.params["value"]["kind"], "end");
+        assert_eq!(notif.params["token"], "tok-2");
+    }
+
+    #[test]
+    fn send_notification_handles_send_correctly() {
+        let (tx, rx) = unbounded::<Message>();
+        let params = serde_json::json!({"key": "value"});
+        send_notification(&tx, "custom/method", params.clone());
+
+        let msg = rx.try_recv().unwrap();
+        let Message::Notification(notif) = msg else {
+            panic!("expected Notification");
+        };
+        assert_eq!(notif.method, "custom/method");
+        assert_eq!(notif.params, params);
+    }
+
+    #[test]
+    fn send_notification_does_not_panic_on_closed_channel() {
+        let (tx, rx) = unbounded::<Message>();
+        drop(rx);
+        // Should not panic — just logs a warning
+        send_notification(&tx, "$/progress", serde_json::json!({"token": "t"}));
+    }
 }

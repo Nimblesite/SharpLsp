@@ -39,6 +39,10 @@ Add to your `languages.toml`:
 name = "c-sharp"
 language-servers = ["forge-lsp"]
 
+[[language]]
+name = "fsharp"
+language-servers = ["forge-lsp"]
+
 [language-server.forge-lsp]
 command = "forge-lsp"
 ```
@@ -55,4 +59,11 @@ command = "forge-lsp"
 
 ## Zed
 
-Forge support for Zed is planned. Check the repository for the latest status.
+Forge ships a Zed extension that attaches `forge-lsp` over stdio for `.cs`, `.csx`, `.fs`, `.fsx`, and `.fsi` files. Zed compiles extensions from source at install time, so the repo's `make package-zed` target stages a self-contained source tree.
+
+```sh
+rustup target add wasm32-wasip1   # one-off
+make package-zed                  # stages target/zed-extension/
+```
+
+Then in Zed: command palette → `zed: install dev extension` → pick `target/zed-extension/`. Hover, completions, go-to-definition, and diagnostics all work. The `/forge-tree <Solution.sln>` slash command renders the solution tree in the assistant panel.

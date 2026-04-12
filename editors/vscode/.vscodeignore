@@ -3,6 +3,6 @@
 !language-configuration/*.json
 !icons/forge.png
 !icons/forge.svg
-!bin/**
+!icons/forge-activity.svg
 !package.json
 !LICENSE

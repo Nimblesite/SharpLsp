@@ -175,7 +175,25 @@ The Rust host SHOULD cache the most recent hover result per document and return 
 
 Hover MUST NOT block, hang, or return errors to the client. On any failure, return `null`.
 
-## 9. Competitive Parity Matrix
+## 9. Solution Explorer Tree Hover
+
+The Solution Explorer tree view MUST use the **same hover** as the code editor. When a user hovers over a symbol in the tree, the tooltip MUST be identical to the tooltip shown when hovering over the same symbol in the code editor.
+
+### Implementation
+
+Tree item tooltips are resolved via `resolveTreeItem()`, which calls `vscode.executeHoverProvider` at the symbol's source position. This triggers the exact same `textDocument/hover` LSP request pipeline (Rust host -> sidecar -> Roslyn/FCS) used by the code editor.
+
+| Tree Node Type | Tooltip Source |
+|---|---|
+| Symbol (class, method, property, etc.) | LSP hover (`textDocument/hover`) — same as code editor |
+| Namespace | LSP hover (`textDocument/hover`) — same as code editor |
+| NuGet Package | Static metadata (package name + version) |
+| Project Reference | Static metadata (reference name) |
+| Solution / Project / Folder | No tooltip |
+
+**Critical invariant:** Tree hover and code hover MUST produce identical content for the same symbol. They are the same code path. Any divergence is a bug.
+
+## 10. Competitive Parity Matrix
 
 | Feature | VS | CDK | Rider | Forge Target | Priority |
 |---|---|---|---|---|---|

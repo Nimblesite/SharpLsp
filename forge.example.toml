@@ -19,7 +19,7 @@ solution_path = ""
 enabled = true
 
 [diagnostics]
-# Run Roslyn/FSharpLint analyzers alongside compiler diagnostics
+# Run Roslyn analyzers alongside compiler diagnostics
 analyzers_enabled = true
 # Run solution-wide error analysis (more expensive, richer diagnostics)
-solution_wide_analysis = false
+solution_wide_analysis = true

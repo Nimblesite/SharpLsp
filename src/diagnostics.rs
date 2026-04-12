@@ -102,6 +102,14 @@ pub fn clear(sender: &crossbeam_channel::Sender<Message>, uri: Uri) -> Result<()
     publish(sender, uri, vec![])
 }
 
+/// Fetch diagnostics from the sidecar for a single file (public for pull diagnostics).
+pub async fn fetch_from_sidecar(
+    sidecar: &SidecarManager,
+    file_path: &str,
+) -> Result<Vec<Diagnostic>> {
+    fetch(sidecar, file_path).await
+}
+
 /// Fetch diagnostics from the sidecar for a single file.
 async fn fetch(sidecar: &SidecarManager, file_path: &str) -> Result<Vec<Diagnostic>> {
     let payload = rmp_serde::to_vec(file_path).context("serialize file path")?;
@@ -185,5 +193,113 @@ fn map_severity(severity: &str) -> DiagnosticSeverity {
         "Warning" => DiagnosticSeverity::WARNING,
         "Info" => DiagnosticSeverity::INFORMATION,
         _ => DiagnosticSeverity::HINT,
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    reason = "test code — panics are the correct failure mode"
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_severity_error() {
+        assert_eq!(map_severity("Error"), DiagnosticSeverity::ERROR);
+    }
+
+    #[test]
+    fn map_severity_warning() {
+        assert_eq!(map_severity("Warning"), DiagnosticSeverity::WARNING);
+    }
+
+    #[test]
+    fn map_severity_info() {
+        assert_eq!(map_severity("Info"), DiagnosticSeverity::INFORMATION);
+    }
+
+    #[test]
+    fn map_severity_unknown_falls_back_to_hint() {
+        assert_eq!(map_severity("Nonsense"), DiagnosticSeverity::HINT);
+        assert_eq!(map_severity(""), DiagnosticSeverity::HINT);
+    }
+
+    #[test]
+    fn to_lsp_diagnostic_maps_all_fields() {
+        let input = SidecarDiagnostic {
+            _file_path: "/src/main.cs".to_string(),
+            start_line: 10,
+            start_character: 4,
+            end_line: 10,
+            end_character: 20,
+            message: "Unused variable".to_string(),
+            severity: "Warning".to_string(),
+            code: "CS0219".to_string(),
+        };
+
+        let diag = to_lsp_diagnostic(input);
+
+        assert_eq!(diag.range.start, Position::new(10, 4));
+        assert_eq!(diag.range.end, Position::new(10, 20));
+        assert_eq!(diag.severity, Some(DiagnosticSeverity::WARNING));
+        assert_eq!(
+            diag.code,
+            Some(NumberOrString::String("CS0219".to_string()))
+        );
+        assert_eq!(diag.source, Some("forge-csharp".to_string()));
+        assert_eq!(diag.message, "Unused variable");
+    }
+
+    #[test]
+    fn path_to_uri_valid_path() {
+        let uri = path_to_uri("/home/user/project/Program.cs").unwrap();
+        assert_eq!(uri.as_str(), "file:///home/user/project/Program.cs");
+    }
+
+    #[test]
+    fn publish_sends_notification() {
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        let uri: Uri = "file:///tmp/test.cs".parse().unwrap();
+        let diag = Diagnostic {
+            message: "test diagnostic".to_string(),
+            ..Diagnostic::default()
+        };
+
+        publish(&sender, uri.clone(), vec![diag]).unwrap();
+
+        let msg = receiver.recv().unwrap();
+        match msg {
+            Message::Notification(n) => {
+                assert_eq!(n.method, "textDocument/publishDiagnostics");
+                let params: PublishDiagnosticsParams = serde_json::from_value(n.params).unwrap();
+                assert_eq!(params.uri, uri);
+                assert_eq!(params.diagnostics.len(), 1);
+                assert_eq!(params.diagnostics[0].message, "test diagnostic");
+                assert!(params.version.is_none());
+            }
+            _ => panic!("expected Notification, got {msg:?}"),
+        }
+    }
+
+    #[test]
+    fn clear_sends_empty_diagnostics() {
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        let uri: Uri = "file:///tmp/test.cs".parse().unwrap();
+
+        clear(&sender, uri.clone()).unwrap();
+
+        let msg = receiver.recv().unwrap();
+        match msg {
+            Message::Notification(n) => {
+                assert_eq!(n.method, "textDocument/publishDiagnostics");
+                let params: PublishDiagnosticsParams = serde_json::from_value(n.params).unwrap();
+                assert_eq!(params.uri, uri);
+                assert!(params.diagnostics.is_empty());
+            }
+            _ => panic!("expected Notification, got {msg:?}"),
+        }
     }
 }

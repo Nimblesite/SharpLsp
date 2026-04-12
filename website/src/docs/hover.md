@@ -1,18 +1,20 @@
 ---
 layout: layouts/docs.njk
 title: Hover and Quick Info
-eleventyNavigation:
-  key: Hover and Quick Info
-  order: 6
+eleventyExcludeFromCollections: true
 ---
 
-![Hover shows full XML documentation, type signatures, and nullability annotations](/assets/screenshots/hover-page.png)
+**VS Code**
+![Hover in VS Code](/assets/screenshots/vscode-hover-page.png)
+
+**Zed**
+![Hover in Zed](/assets/screenshots/zed-hover-page.png)
 
 *Hover shows full XML documentation, type signatures, and nullability annotations.*
 
 # Hover and Quick Info
 
-Hover over any symbol to see its full type signature, XML documentation, parameter descriptions, nullability annotations, and deprecation notices. Forge implements `textDocument/hover` (LSP 3.17) for C# via the Roslyn sidecar.
+Hover over any symbol to see its full type signature, XML documentation, parameter descriptions, nullability annotations, and deprecation notices. Forge implements `textDocument/hover` (LSP 3.17) for both C# and F# as equal first-class citizens.
 
 ## What You See
 
@@ -60,6 +62,44 @@ var result = Enumerable.Range(0, 10).Select(x => x * x).ToList();
 //   start: The value of the first integer in the sequence.
 //   count: The number of sequential integers to generate.
 ```
+
+## F# Hover (FSharp.Compiler.Service)
+
+The F# sidecar resolves symbols via `FSharpCheckFileResults.GetToolTip()` and renders the `ToolTipElement` structure into Markdown. XML documentation is rendered through the same shared `XmlDocRenderer` used by the C# sidecar.
+
+### F#-Specific Cases
+
+| Hover Target | Behavior |
+|--------------|---------|
+| Discriminated union cases | Shows case fields with types |
+| Record fields | Shows field type and containing record |
+| Pipeline operators (`\|>`, `>>`) | Shows inferred function types |
+| Active patterns | Shows the pattern signature and documentation |
+| Computation expression keywords (`let!`, `do!`, `return!`) | Shows the CE builder method |
+| Type providers | Shows the provided type and its properties |
+| Measure types | Shows the unit of measure annotation |
+
+### Example
+
+```fsharp
+let result = [1..10] |> List.map (fun x -> x * x) |> List.sum
+//                       ↑ hover shows:
+// val map: mapping: ('T -> 'U) -> list: 'T list -> 'U list
+// Builds a new collection whose elements are the results
+// of applying the given function to each of the elements
+// of the collection.
+```
+
+## Solution Explorer Hover
+
+The Solution Explorer tree view uses the **same hover pipeline** as the code editor. When you hover a symbol in the tree, the tooltip is identical to the one shown in the code editor.
+
+| Tree Node Type | Tooltip Source |
+|---|---|
+| Symbol (class, method, property, etc.) | LSP hover --- same as code editor |
+| Namespace | LSP hover --- same as code editor |
+| NuGet Package | Package name + version |
+| Project Reference | Reference name |
 
 ## Caching
 

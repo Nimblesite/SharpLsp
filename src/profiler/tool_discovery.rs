@@ -133,3 +133,89 @@ fn log_discovery(name: &str, path: Option<&PathBuf>) {
         warn!("{name} not found");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_on_path_finds_existing_tool() {
+        // `ls` (or `cmd` on Windows) is always on PATH.
+        let tool = if cfg!(windows) { "cmd" } else { "ls" };
+        let result = find_on_path(tool);
+        assert!(result.is_some(), "{tool} should be on PATH");
+        assert!(result.as_ref().is_some_and(|p| p.exists()));
+    }
+
+    #[test]
+    fn find_on_path_returns_none_for_nonexistent() {
+        let result = find_on_path("nonexistent-tool-abc123xyz");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn find_tool_returns_some_for_existing() {
+        let tool = if cfg!(windows) { "cmd" } else { "ls" };
+        assert!(find_tool(tool).is_some());
+    }
+
+    #[test]
+    fn find_tool_returns_none_for_nonexistent() {
+        assert!(find_tool("nonexistent-tool-abc123xyz").is_none());
+    }
+
+    #[test]
+    fn find_via_dotnet_tool_list_nonexistent() {
+        let result = find_via_dotnet_tool_list("nonexistent-tool-abc123xyz");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_returns_static_ref() {
+        let paths = get();
+        // Calling get() twice returns the same reference.
+        let paths2 = get();
+        assert!(std::ptr::eq(paths, paths2));
+    }
+
+    #[test]
+    fn log_discovery_found() {
+        let path = PathBuf::from("/usr/bin/dotnet-trace");
+        log_discovery("dotnet-trace", Some(&path));
+    }
+
+    #[test]
+    fn log_discovery_not_found() {
+        log_discovery("dotnet-missing", None);
+    }
+
+    #[test]
+    fn discover_populates_tool_paths() {
+        let paths = discover();
+        // At minimum, the struct is constructed with Some/None for each tool.
+        // We just verify it doesn't panic.
+        let _ = format!("{paths:?}");
+    }
+
+    #[test]
+    fn require_trace_returns_result() {
+        // May be Ok or Err depending on whether dotnet-trace is installed.
+        let _ = require_trace();
+    }
+
+    #[test]
+    fn require_counters_returns_result() {
+        let _ = require_counters();
+    }
+
+    #[test]
+    fn require_dump_returns_result() {
+        let _ = require_dump();
+    }
+
+    #[test]
+    fn find_via_dotnet_tool_list_runs_dotnet() {
+        // dotnet-dump is commonly installed; either way, this exercises the code.
+        let _ = find_via_dotnet_tool_list("dotnet-dump");
+    }
+}

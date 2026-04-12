@@ -12,6 +12,8 @@ use lsp_types::{
 };
 use tree_sitter::{Node, Point, Tree};
 
+use crate::utils::usize_to_u32;
+
 // ── Document Symbols ──────────────────────────────────────────────
 
 /// Extract document symbols from a tree-sitter parse tree.
@@ -37,27 +39,56 @@ fn collect_symbols(node: Node, source: &[u8]) -> Vec<DocumentSymbol> {
     symbols
 }
 
-fn node_to_symbol(node: Node, source: &[u8]) -> Option<DocumentSymbol> {
-    let (kind, name_field) = match node.kind() {
-        "class_declaration" | "record_declaration" => (SymbolKind::CLASS, "name"),
-        "struct_declaration" => (SymbolKind::STRUCT, "name"),
-        "interface_declaration" => (SymbolKind::INTERFACE, "name"),
-        "enum_declaration" => (SymbolKind::ENUM, "name"),
-        "method_declaration" => (SymbolKind::METHOD, "name"),
-        "constructor_declaration" => (SymbolKind::CONSTRUCTOR, "name"),
-        "property_declaration" => (SymbolKind::PROPERTY, "name"),
-        "field_declaration" => (SymbolKind::FIELD, "name"),
-        "namespace_declaration" | "file_scoped_namespace_declaration" => {
-            (SymbolKind::NAMESPACE, "name")
+/// Extract the symbol name and its AST node for range calculation.
+///
+/// Most declarations have a direct `name` field. Field and event-field
+/// declarations nest the name inside `variable_declaration > variable_declarator`.
+fn extract_symbol_name<'a>(node: Node<'a>, source: &[u8]) -> Option<(String, Node<'a>)> {
+    // Try direct name field first (class, method, property, etc.)
+    if let Some(name_node) = node.child_by_field_name("name") {
+        let name = name_node.utf8_text(source).ok()?.to_string();
+        return Some((name, name_node));
+    }
+    // field_declaration / event_field_declaration: walk into variable_declarator
+    find_variable_declarator_name(node, source)
+}
+
+/// Walk `variable_declaration > variable_declarator` to find the field name.
+fn find_variable_declarator_name<'a>(node: Node<'a>, source: &[u8]) -> Option<(String, Node<'a>)> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "variable_declaration" {
+            let mut inner = child.walk();
+            for declarator in child.children(&mut inner) {
+                if declarator.kind() == "variable_declarator" {
+                    let name_node = declarator.child_by_field_name("name")?;
+                    let name = name_node.utf8_text(source).ok()?.to_string();
+                    return Some((name, name_node));
+                }
+            }
         }
-        "delegate_declaration" => (SymbolKind::FUNCTION, "name"),
-        "event_declaration" => (SymbolKind::EVENT, "name"),
-        "enum_member_declaration" => (SymbolKind::ENUM_MEMBER, "name"),
+    }
+    None
+}
+
+fn node_to_symbol(node: Node, source: &[u8]) -> Option<DocumentSymbol> {
+    let kind = match node.kind() {
+        "class_declaration" | "record_declaration" => SymbolKind::CLASS,
+        "struct_declaration" => SymbolKind::STRUCT,
+        "interface_declaration" => SymbolKind::INTERFACE,
+        "enum_declaration" => SymbolKind::ENUM,
+        "method_declaration" => SymbolKind::METHOD,
+        "constructor_declaration" => SymbolKind::CONSTRUCTOR,
+        "property_declaration" => SymbolKind::PROPERTY,
+        "field_declaration" => SymbolKind::FIELD,
+        "namespace_declaration" | "file_scoped_namespace_declaration" => SymbolKind::NAMESPACE,
+        "delegate_declaration" => SymbolKind::FUNCTION,
+        "event_declaration" | "event_field_declaration" => SymbolKind::EVENT,
+        "enum_member_declaration" => SymbolKind::ENUM_MEMBER,
         _ => return None,
     };
 
-    let name_node = node.child_by_field_name(name_field)?;
-    let name = name_node.utf8_text(source).ok()?.to_string();
+    let (name, name_node) = extract_symbol_name(node, source)?;
 
     let range = ts_range_to_lsp(node);
     let selection_range = ts_range_to_lsp(name_node);
@@ -278,11 +309,6 @@ pub fn is_string_at_position(tree: &Tree, position: Position) -> bool {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
-
-/// Convert a `usize` to `u32`, saturating at `u32::MAX`.
-fn usize_to_u32(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
-}
 
 /// Convert a tree-sitter `Point` to an LSP `Position`.
 fn ts_point_to_lsp_pos(point: Point) -> Position {

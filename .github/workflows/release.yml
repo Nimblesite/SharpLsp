@@ -1,0 +1,123 @@
+# agent-pmo:3140e31
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            dotnet_rid: linux-x64
+            artifact: forge-lsp
+            archive: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            dotnet_rid: osx-arm64
+            artifact: forge-lsp
+            archive: tar.gz
+          - os: macos-13
+            target: x86_64-apple-darwin
+            dotnet_rid: osx-x64
+            artifact: forge-lsp
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            dotnet_rid: win-x64
+            artifact: forge-lsp.exe
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build Rust LSP server
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build sidecars (self-contained)
+        run: |
+          dotnet publish sidecars/Forge.Sidecar.CSharp/Forge.Sidecar.CSharp.csproj \
+            --configuration Release \
+            --output target/sidecar-csharp \
+            --runtime ${{ matrix.dotnet_rid }}
+          dotnet publish sidecars/Forge.Sidecar.FSharp/Forge.Sidecar.FSharp.fsproj \
+            --configuration Release \
+            --output target/sidecar-fsharp \
+            --runtime ${{ matrix.dotnet_rid }}
+
+      - name: Package (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          STAGING="forge-${{ github.ref_name }}-${{ matrix.target }}"
+          mkdir -p "$STAGING/bin" "$STAGING/sidecar-csharp" "$STAGING/sidecar-fsharp"
+          cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$STAGING/bin/"
+          cp -r target/sidecar-csharp/* "$STAGING/sidecar-csharp/"
+          cp -r target/sidecar-fsharp/* "$STAGING/sidecar-fsharp/"
+          tar czf "$STAGING.tar.gz" "$STAGING"
+          echo "ASSET=$STAGING.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $staging = "forge-${{ github.ref_name }}-${{ matrix.target }}"
+          New-Item -ItemType Directory -Path "$staging/bin", "$staging/sidecar-csharp", "$staging/sidecar-fsharp" -Force
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$staging/bin/"
+          Copy-Item "target/sidecar-csharp/*" "$staging/sidecar-csharp/" -Recurse
+          Copy-Item "target/sidecar-fsharp/*" "$staging/sidecar-fsharp/" -Recurse
+          Compress-Archive -Path "$staging" -DestinationPath "$staging.zip"
+          echo "ASSET=$staging.zip" >> $env:GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-${{ matrix.target }}
+          path: ${{ env.ASSET }}
+
+  release:
+    name: Create Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Forge ${{ github.ref_name }}" \
+            --generate-notes \
+            artifacts/*
