@@ -263,10 +263,7 @@ fn test_full_stack_code_actions_on_class() {
     );
     if let Some(actions) = result.as_array() {
         for action in actions {
-            assert!(
-                action.get("title").is_some(),
-                "each action must have title"
-            );
+            assert!(action.get("title").is_some(), "each action must have title");
         }
     }
 
@@ -367,4 +364,3 @@ fn test_full_stack_call_hierarchy_incoming_calls() {
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
-

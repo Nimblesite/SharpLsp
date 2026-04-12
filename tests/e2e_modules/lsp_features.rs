@@ -450,7 +450,10 @@ fn test_inlay_hints_on_unopened_document_errors() {
         "inlayHint on unopened document must return an error, got: {resp}"
     );
     let err = &resp["error"];
-    assert!(err["code"].as_i64().is_some(), "error must have numeric code");
+    assert!(
+        err["code"].as_i64().is_some(),
+        "error must have numeric code"
+    );
     assert!(
         err["message"].as_str().is_some(),
         "error must have message string"
@@ -459,4 +462,3 @@ fn test_inlay_hints_on_unopened_document_errors() {
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
-

@@ -164,7 +164,10 @@ namespace TypeHierTest
         }),
     );
     assert_eq!(supertypes["jsonrpc"], "2.0");
-    assert!(supertypes.get("error").is_none(), "supertypes must not error");
+    assert!(
+        supertypes.get("error").is_none(),
+        "supertypes must not error"
+    );
     assert!(
         supertypes["result"].is_null(),
         "supertypes without sidecar must return null"
@@ -225,7 +228,10 @@ fn test_type_hierarchy_prepare_repeated_same_position() {
     assert_eq!(resp1["jsonrpc"], "2.0");
     assert_eq!(resp2["jsonrpc"], "2.0");
     assert!(resp1.get("error").is_none(), "first prepare must not error");
-    assert!(resp2.get("error").is_none(), "second prepare must not error");
+    assert!(
+        resp2.get("error").is_none(),
+        "second prepare must not error"
+    );
     assert_eq!(
         resp1["result"], resp2["result"],
         "repeated prepareTypeHierarchy must return same result"

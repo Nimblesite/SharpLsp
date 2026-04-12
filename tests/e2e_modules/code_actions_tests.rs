@@ -165,7 +165,10 @@ fn test_code_action_repeated_same_range_without_sidecar() {
     assert_eq!(resp1["jsonrpc"], "2.0");
     assert_eq!(resp2["jsonrpc"], "2.0");
     assert!(resp1.get("error").is_none(), "first request must not error");
-    assert!(resp2.get("error").is_none(), "second request must not error");
+    assert!(
+        resp2.get("error").is_none(),
+        "second request must not error"
+    );
     assert_eq!(
         resp1["result"], resp2["result"],
         "repeated codeAction must return same result"
@@ -193,7 +196,10 @@ fn test_code_action_after_document_change_without_sidecar() {
             "context": { "diagnostics": [] }
         }),
     );
-    assert!(before.get("error").is_none(), "before change must not error");
+    assert!(
+        before.get("error").is_none(),
+        "before change must not error"
+    );
 
     // Change document.
     client.change_document(TEST_URI, 2, "public class V2 { public void Go() {} }");
@@ -307,7 +313,10 @@ fn test_code_lens_after_document_change_without_sidecar() {
         "textDocument/codeLens",
         json!({ "textDocument": { "uri": TEST_URI } }),
     );
-    assert!(before.get("error").is_none(), "before change must not error");
+    assert!(
+        before.get("error").is_none(),
+        "before change must not error"
+    );
 
     client.change_document(
         TEST_URI,
@@ -371,7 +380,10 @@ fn test_code_lens_and_code_action_interleaved_without_sidecar() {
     assert!(action2.get("error").is_none(), "action2 must not error");
 
     // All must be null or empty (no sidecar).
-    assert_eq!(lens1["result"], lens2["result"], "lens results must be equal");
+    assert_eq!(
+        lens1["result"], lens2["result"],
+        "lens results must be equal"
+    );
 
     client.shutdown_and_exit();
     client.wait_with_timeout();

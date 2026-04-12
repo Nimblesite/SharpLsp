@@ -30,18 +30,24 @@ fn test_full_stack_completion_returns_items() {
     );
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("error").is_none(), "completion must not error: {resp}");
+    assert!(
+        resp.get("error").is_none(),
+        "completion must not error: {resp}"
+    );
     // Result may be null if the sidecar hasn't indexed yet, or an array/CompletionList.
     let result = &resp["result"];
     if !result.is_null() {
         let items = if result.is_array() {
-            result.as_array().expect("array")
-        } else if let Some(arr) = result["items"].as_array() {
-            arr
+            result.as_array().expect("completion result must be array")
         } else {
-            panic!("unexpected completion result shape: {result}");
+            result["items"]
+                .as_array()
+                .expect("completion result must have items array")
         };
-        assert!(!items.is_empty(), "completion must return at least one item");
+        assert!(
+            !items.is_empty(),
+            "completion must return at least one item"
+        );
         let first = &items[0];
         assert!(first.get("label").is_some(), "each item must have a label");
     }
@@ -121,10 +127,7 @@ fn test_full_stack_completion_resolve_with_valid_item() {
     let items = if result.is_array() {
         result.as_array().expect("array").clone()
     } else {
-        result["items"]
-            .as_array()
-            .expect("items array")
-            .clone()
+        result["items"].as_array().expect("items array").clone()
     };
 
     let item_with_data = items.iter().find(|i| i.get("data").is_some());
@@ -230,11 +233,17 @@ fn test_full_stack_document_highlight_caches_second_request() {
 
     // First request — populates cache.
     let resp1 = document_highlight(&mut client, &file_uri, 12, 18);
-    assert!(resp1.get("error").is_none(), "first highlight must not error: {resp1}");
+    assert!(
+        resp1.get("error").is_none(),
+        "first highlight must not error: {resp1}"
+    );
 
     // Second request — should hit cache.
     let resp2 = document_highlight(&mut client, &file_uri, 12, 18);
-    assert!(resp2.get("error").is_none(), "second highlight must not error: {resp2}");
+    assert!(
+        resp2.get("error").is_none(),
+        "second highlight must not error: {resp2}"
+    );
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -248,13 +257,11 @@ fn test_standard_workspace_symbol_returns_results() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
-    let code = "namespace MyApp; public class Calculator { public int Add(int a, int b) => a + b; }";
+    let code =
+        "namespace MyApp; public class Calculator { public int Add(int a, int b) => a + b; }";
     client.open_document(TEST_URI, code);
 
-    let resp = client.request(
-        "workspace/symbol",
-        json!({ "query": "calc" }),
-    );
+    let resp = client.request("workspace/symbol", json!({ "query": "calc" }));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(
@@ -279,14 +286,12 @@ fn test_standard_workspace_symbol_query_matches_class() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
-    let code = "namespace MyApp; public class Calculator { public int Add(int a, int b) => a + b; }";
+    let code =
+        "namespace MyApp; public class Calculator { public int Add(int a, int b) => a + b; }";
     client.open_document(TEST_URI, code);
 
     // Empty query returns all symbols.
-    let resp = client.request(
-        "workspace/symbol",
-        json!({ "query": "" }),
-    );
+    let resp = client.request("workspace/symbol", json!({ "query": "" }));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(
@@ -365,10 +370,7 @@ fn test_full_stack_load_solution_with_sidecar() {
     let root_path = root_uri.strip_prefix("file://").unwrap_or(&root_uri);
     let sln_path = format!("{root_path}/TestHover.sln");
 
-    let resp = client.request(
-        "forge/loadSolution",
-        json!({ "solutionPath": sln_path }),
-    );
+    let resp = client.request("forge/loadSolution", json!({ "solutionPath": sln_path }));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(

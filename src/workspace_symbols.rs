@@ -764,4 +764,42 @@ mod tests {
         assert!(files.iter().any(|f| f.ends_with("Nested.cs")));
         assert!(files.iter().any(|f| f.ends_with("Root.cs")));
     }
+
+    // ── parse_project_line ──
+
+    #[test]
+    fn parse_project_line_returns_parts() {
+        let line = r#"Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyApp", "src/MyApp.csproj", "{11111111-1111-1111-1111-111111111111}""#;
+        let result = parse_project_line(line);
+        assert!(result.is_some());
+        let (type_guid, name, path, proj_guid) = result.unwrap();
+        assert!(type_guid.contains("FAE04EC0"));
+        assert_eq!(name, "MyApp");
+        assert_eq!(path, "src/MyApp.csproj");
+        assert!(proj_guid.contains("11111111"));
+    }
+
+    #[test]
+    fn parse_project_line_returns_none_for_invalid() {
+        assert!(parse_project_line("not a project line").is_none());
+        assert!(parse_project_line("Project(\"only-one-part\")").is_none());
+    }
+
+    // ── parse_nested_line ──
+
+    #[test]
+    fn parse_nested_line_valid() {
+        let line = "{CHILD-GUID} = {PARENT-GUID}";
+        let result = parse_nested_line(line);
+        assert!(result.is_some());
+        let (child, parent) = result.unwrap();
+        assert_eq!(child, "{CHILD-GUID}");
+        assert_eq!(parent, "{PARENT-GUID}");
+    }
+
+    #[test]
+    fn parse_nested_line_invalid_returns_none() {
+        assert!(parse_nested_line("no equals sign here").is_none());
+        assert!(parse_nested_line("no-brace = no-brace").is_none());
+    }
 }

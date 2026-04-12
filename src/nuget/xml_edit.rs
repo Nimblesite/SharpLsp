@@ -374,6 +374,10 @@ fn remove_entry(original: &str, package_id: &str, element: PackageElement) -> St
     out
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -561,8 +565,13 @@ mod tests {
         let path = tmp.path().join("Project.csproj");
         std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
 
-        let result =
-            add_package(&path, "Newtonsoft.Json", "13.0.3", PackageElement::Reference).unwrap();
+        let result = add_package(
+            &path,
+            "Newtonsoft.Json",
+            "13.0.3",
+            PackageElement::Reference,
+        )
+        .unwrap();
         assert!(!result.modified);
         assert!(result.message.contains("already at 13.0.3"));
     }
@@ -588,5 +597,39 @@ mod tests {
 
         let result = remove_package(&path, "NonExistent", PackageElement::Reference).unwrap();
         assert!(!result.modified);
+    }
+
+    #[test]
+    fn replace_or_insert_version_falls_back_when_no_slash_gt() {
+        // A line without `/>` — should return the line unchanged.
+        let line = "<PackageReference Include=\"Foo\">";
+        let out = replace_or_insert_version(line, "1.2.3");
+        assert_eq!(out, line);
+    }
+
+    #[test]
+    fn strip_version_attr_no_op_when_version_has_no_closing_quote() {
+        // Malformed: " Version=\"noquote" — no closing quote after the value.
+        let line = "    <PackageReference Include=\"Foo\" Version=\"noquote";
+        let out = strip_version_attr(line);
+        // Should fall through to the unchanged path.
+        assert_eq!(out, line);
+    }
+
+    #[test]
+    fn create_item_group_when_no_project_close_tag() {
+        // A string without `</Project>` should still produce output with ItemGroup.
+        let src = "<NotAProject>\n  <ItemGroup>\n    <SomeOtherTag />\n  </ItemGroup>";
+        let out = create_item_group_with(src, "Serilog", "3.1.0", PackageElement::Reference);
+        assert!(out.contains("<ItemGroup>"));
+        assert!(out.contains("Include=\"Serilog\""));
+    }
+
+    #[test]
+    fn detect_content_indent_falls_back_to_four_spaces() {
+        // Text with no matching tag element — must return 4 spaces.
+        let text = "<Project>\n  <PropertyGroup />\n</Project>";
+        let out = detect_content_indent(text, text.len(), "PackageReference");
+        assert_eq!(out, "    ");
     }
 }

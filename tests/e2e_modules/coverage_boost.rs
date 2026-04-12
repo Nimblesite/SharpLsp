@@ -405,4 +405,3 @@ fn test_implementation_on_fsharp_file_without_sidecar_returns_null() {
 }
 
 // ── Document highlight on F# exercises FSharp sidecar route ─────────
-

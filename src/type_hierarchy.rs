@@ -43,10 +43,7 @@ pub fn handle_prepare(
         };
 
     let item: Option<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
-    debug!(
-        "Got type hierarchy item from sidecar: {}",
-        item.is_some()
-    );
+    debug!("Got type hierarchy item from sidecar: {}", item.is_some());
 
     let result: Vec<TypeHierarchyItem> = item
         .as_ref()

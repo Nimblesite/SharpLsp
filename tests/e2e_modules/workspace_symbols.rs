@@ -372,9 +372,7 @@ fn test_workspace_symbols_solution_with_multiple_projects() {
 
         std::fs::write(
             proj_dir.join("Lib.cs"),
-            format!(
-                "namespace {name};\npublic class {name}Lib {{ public void Do() {{}} }}\n"
-            ),
+            format!("namespace {name};\npublic class {name}Lib {{ public void Do() {{}} }}\n"),
         )
         .unwrap();
     }
@@ -411,10 +409,7 @@ EndGlobal"#,
     let projects = resp["result"]["projects"].as_array().unwrap();
     assert_eq!(projects.len(), 2, "must find two projects");
 
-    let names: Vec<&str> = projects
-        .iter()
-        .filter_map(|p| p["name"].as_str())
-        .collect();
+    let names: Vec<&str> = projects.iter().filter_map(|p| p["name"].as_str()).collect();
     assert!(names.contains(&"Alpha"), "must find Alpha: {names:?}");
     assert!(names.contains(&"Beta"), "must find Beta: {names:?}");
 

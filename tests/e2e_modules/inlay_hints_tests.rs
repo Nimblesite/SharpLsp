@@ -149,7 +149,10 @@ fn test_inlay_hint_after_document_change_without_sidecar() {
             }
         }),
     );
-    assert!(before.get("error").is_none(), "before change must not error");
+    assert!(
+        before.get("error").is_none(),
+        "before change must not error"
+    );
     assert!(before["result"].is_null(), "before must be null");
 
     // Change the document.
@@ -170,7 +173,10 @@ fn test_inlay_hint_after_document_change_without_sidecar() {
         }),
     );
     assert!(after.get("error").is_none(), "after change must not error");
-    assert!(after["result"].is_null(), "after must be null without sidecar");
+    assert!(
+        after["result"].is_null(),
+        "after must be null without sidecar"
+    );
 
     client.shutdown_and_exit();
     client.wait_with_timeout();
@@ -391,11 +397,7 @@ fn test_semantic_tokens_after_document_change_without_sidecar() {
     );
     assert!(before.get("error").is_none(), "before must not error");
 
-    client.change_document(
-        TEST_URI,
-        2,
-        "public class V2 { public void Go() {} }",
-    );
+    client.change_document(TEST_URI, 2, "public class V2 { public void Go() {} }");
 
     let after = client.request(
         "textDocument/semanticTokens/full",

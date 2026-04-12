@@ -262,7 +262,10 @@ fn test_call_hierarchy_repeated_prepare_same_position() {
     assert_eq!(resp1["jsonrpc"], "2.0");
     assert_eq!(resp2["jsonrpc"], "2.0");
     assert!(resp1.get("error").is_none(), "first prepare must not error");
-    assert!(resp2.get("error").is_none(), "second prepare must not error");
+    assert!(
+        resp2.get("error").is_none(),
+        "second prepare must not error"
+    );
     assert_eq!(
         resp1["result"], resp2["result"],
         "repeated prepare must return same result"
@@ -271,4 +274,3 @@ fn test_call_hierarchy_repeated_prepare_same_position() {
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
-
