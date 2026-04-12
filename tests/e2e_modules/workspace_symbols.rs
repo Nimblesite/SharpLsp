@@ -269,7 +269,7 @@ fn test_workspace_symbols_file_scoped_namespace_reparenting() {
     client.wait_with_timeout();
 }
 
-/// Create a workspace with a solution folder and NestedProjects section
+/// Create a workspace with a solution folder and `NestedProjects` section
 /// to exercise the parent folder resolution code path.
 fn create_nested_workspace() -> (tempfile::TempDir, String) {
     let tmp = tempfile::tempdir().unwrap();
