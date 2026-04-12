@@ -79,8 +79,12 @@ impl SidecarManager {
             fxhash(workspace_root.to_string_lossy().as_bytes())
         );
 
-        let (command, args) =
-            sidecar_launch("sidecar-csharp", "Forge.Sidecar.CSharp", &socket_path);
+        let (command, args) = sidecar_launch(
+            "forge-sidecar-csharp",
+            "sidecar-csharp",
+            "Forge.Sidecar.CSharp",
+            &socket_path,
+        );
         Self::new("C# (Roslyn)", &command, args, &socket_path)
     }
 
@@ -92,8 +96,12 @@ impl SidecarManager {
             fxhash(workspace_root.to_string_lossy().as_bytes())
         );
 
-        let (command, args) =
-            sidecar_launch("sidecar-fsharp", "Forge.Sidecar.FSharp", &socket_path);
+        let (command, args) = sidecar_launch(
+            "forge-sidecar-fsharp",
+            "sidecar-fsharp",
+            "Forge.Sidecar.FSharp",
+            &socket_path,
+        );
         Self::new("F# (FCS)", &command, args, &socket_path)
     }
 
@@ -309,13 +317,31 @@ async fn health_loop(sidecar: Arc<SidecarManager>) -> ! {
 
 /// Resolve sidecar launch command and arguments.
 ///
-/// Published sidecar binary layouts:
-///   Bundled (VSIX): `<exe_dir>/<subdir>/<name>`
-///   Installed (`make install`): `<exe_dir>/../lib/forge/<subdir>/<name>`
-///   Dev build: `dotnet run --project sidecars/<name>` (CWD = repo root)
-fn sidecar_launch(subdir: &str, name: &str, socket_path: &str) -> (String, Vec<String>) {
+/// Resolution order:
+///   1. `dotnet tool` shim on `PATH` (e.g. `forge-sidecar-csharp`).
+///      This is the production distribution path.
+///   2. Legacy installed layouts (VSIX bundle, `make install`, dev target).
+///      Kept as a transitional fallback while the distribution spec
+///      migrates away from bundled sidecars; see
+///      `docs/specs/BINARY-DEPLOYMENT.md`.
+///   3. Dev build via `dotnet run --project sidecars/<name>`
+///      (CWD = repo root).
+fn sidecar_launch(
+    tool_command: &str,
+    subdir: &str,
+    name: &str,
+    socket_path: &str,
+) -> (String, Vec<String>) {
+    if find_on_path(tool_command).is_some() {
+        info!(tool = %tool_command, "Using dotnet-tool sidecar from PATH");
+        return (
+            tool_command.to_string(),
+            vec![socket_path.to_string()],
+        );
+    }
+
     if let Some(exe) = installed_sidecar_exe(subdir, name) {
-        info!(exe = %exe.display(), "Using installed sidecar");
+        info!(exe = %exe.display(), "Using legacy installed sidecar");
         return (
             exe.to_string_lossy().to_string(),
             vec![socket_path.to_string()],
@@ -333,6 +359,27 @@ fn sidecar_launch(subdir: &str, name: &str, socket_path: &str) -> (String, Vec<S
             socket_path.to_string(),
         ],
     )
+}
+
+/// Resolve a command name to its full path via the `PATH` environment
+/// variable. Returns `None` if the command is not found or is not
+/// executable. On Windows, also tries `.exe` and `.cmd` suffixes.
+fn find_on_path(command: &str) -> Option<std::path::PathBuf> {
+    let path_var = std::env::var_os("PATH")?;
+    let suffixes: &[&str] = if cfg!(windows) {
+        &["", ".exe", ".cmd", ".bat"]
+    } else {
+        &[""]
+    };
+    for dir in std::env::split_paths(&path_var) {
+        for suffix in suffixes {
+            let candidate = dir.join(format!("{command}{suffix}"));
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 /// Check for a published sidecar executable.
