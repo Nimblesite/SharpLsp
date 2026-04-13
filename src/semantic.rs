@@ -778,11 +778,11 @@ pub fn notify_did_change(
 
 /// Sidecar notification payload for document content changes.
 #[derive(serde::Serialize)]
-struct SidecarDidChangeReq {
+pub(crate) struct SidecarDidChangeReq {
     /// Absolute filesystem path of the changed document.
-    file_path: String,
+    pub(crate) file_path: String,
     /// Full replacement text of the document.
-    new_text: String,
+    pub(crate) new_text: String,
 }
 
 /// Sidecar request for a position-based query (hover, definition, etc.).

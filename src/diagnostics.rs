@@ -145,9 +145,10 @@ pub fn request_solution_in_background(
 ///
 /// The initial `GetCompilationAsync` may return incomplete results
 /// (unresolved references, pending source generators). This pass
-/// re-fetches diagnostics per-file and publishes corrections.
-/// Files that still have errors are real — files where errors
-/// disappeared were false positives that get cleared.
+/// re-reads each file from disk, sends `textDocument/didChange` to
+/// update the sidecar's in-memory compilation, then re-fetches
+/// diagnostics. Files that still have errors are real — files where
+/// errors disappeared were false positives that get cleared.
 async fn verify_error_files(
     sidecar: &SidecarManager,
     sender: &crossbeam_channel::Sender<Message>,
@@ -164,6 +165,20 @@ async fn verify_error_files(
             _ => "forge-csharp",
         };
 
+        // Re-read from disk so the sidecar gets fresh text.
+        let disk_text = match tokio::fs::read_to_string(file_path).await {
+            Ok(text) => text,
+            Err(err) => {
+                info!("Cannot read {file_path} from disk: {err:#}");
+                continue;
+            }
+        };
+
+        // Update the sidecar's in-memory compilation with disk content.
+        if let Err(err) = sync_text_to_sidecar(sidecar, file_path, &disk_text).await {
+            warn!("Failed to sync {file_path} to sidecar: {err:#}");
+        }
+
         match fetch(sidecar, file_path, source_tag).await {
             Ok(diagnostics) => {
                 let uri = match path_to_uri(file_path) {
@@ -173,7 +188,6 @@ async fn verify_error_files(
                         continue;
                     }
                 };
-                // Publish updated diagnostics — clears false positives.
                 if let Err(err) = publish(sender, uri, diagnostics) {
                     warn!("Failed to publish verified diagnostics for {file_path}: {err:#}");
                 }
@@ -191,6 +205,24 @@ async fn verify_error_files(
         "Verification pass complete for {} file(s)",
         error_files.len()
     );
+}
+
+/// Send `textDocument/didChange` to the sidecar with fresh text.
+async fn sync_text_to_sidecar(
+    sidecar: &SidecarManager,
+    file_path: &str,
+    new_text: &str,
+) -> Result<()> {
+    let request = crate::semantic::SidecarDidChangeReq {
+        file_path: file_path.to_string(),
+        new_text: new_text.to_string(),
+    };
+    let payload = rmp_serde::to_vec(&request).context("serialize didChange")?;
+    let _response = sidecar
+        .request("textDocument/didChange", payload)
+        .await
+        .context("sidecar didChange for verification")?;
+    Ok(())
 }
 
 /// Clear diagnostics for a closed document.
