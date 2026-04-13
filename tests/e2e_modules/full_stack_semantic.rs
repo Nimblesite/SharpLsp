@@ -7,10 +7,7 @@ use super::*;
 
 #[test]
 fn test_full_stack_completion_returns_items() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -88,10 +85,7 @@ fn test_full_stack_completion_no_sidecar_returns_postfix_or_null() {
 
 #[test]
 fn test_full_stack_completion_resolve_with_valid_item() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -184,10 +178,7 @@ fn test_full_stack_completion_resolve_no_sidecar_returns_item() {
 
 #[test]
 fn test_full_stack_document_highlight_returns_results() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -219,10 +210,7 @@ fn test_full_stack_document_highlight_returns_results() {
 
 #[test]
 fn test_full_stack_document_highlight_caches_second_request() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -316,10 +304,7 @@ fn test_standard_workspace_symbol_query_matches_class() {
 
 #[test]
 fn test_full_stack_pull_diagnostics_document_returns_report() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -354,10 +339,7 @@ fn test_full_stack_pull_diagnostics_document_returns_report() {
 
 #[test]
 fn test_full_stack_load_solution_with_sidecar() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();

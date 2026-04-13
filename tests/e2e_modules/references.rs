@@ -150,10 +150,7 @@ fn test_document_highlight_without_sidecar_returns_null() {
 
 #[test]
 fn test_full_stack_references_on_method_returns_call_sites() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -193,10 +190,7 @@ fn test_full_stack_references_on_method_returns_call_sites() {
 
 #[test]
 fn test_full_stack_references_include_declaration_true() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -231,10 +225,7 @@ fn test_full_stack_references_include_declaration_true() {
 
 #[test]
 fn test_full_stack_references_on_class_returns_type_usages() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -261,10 +252,7 @@ fn test_full_stack_references_on_class_returns_type_usages() {
 
 #[test]
 fn test_full_stack_references_response_structure() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -301,10 +289,7 @@ fn test_full_stack_references_response_structure() {
 
 #[test]
 fn test_full_stack_document_highlight_read_write() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 

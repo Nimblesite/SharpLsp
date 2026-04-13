@@ -46,10 +46,7 @@ fn test_definition_after_document_edit() {
 
 #[test]
 fn test_full_stack_definition_on_class_name() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -75,10 +72,7 @@ fn test_full_stack_definition_on_class_name() {
 
 #[test]
 fn test_full_stack_definition_on_method_call() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -108,10 +102,7 @@ fn test_full_stack_definition_on_method_call() {
 
 #[test]
 fn test_full_stack_definition_on_property_access() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -136,10 +127,7 @@ fn test_full_stack_definition_on_property_access() {
 
 #[test]
 fn test_full_stack_type_definition_on_variable() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -167,10 +155,7 @@ fn test_full_stack_type_definition_on_variable() {
 
 #[test]
 fn test_full_stack_declaration_on_override() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -198,10 +183,7 @@ fn test_full_stack_declaration_on_override() {
 
 #[test]
 fn test_full_stack_declaration_on_interface_impl() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -229,10 +211,7 @@ fn test_full_stack_declaration_on_interface_impl() {
 
 #[test]
 fn test_full_stack_implementation_on_interface() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -268,10 +247,7 @@ fn test_full_stack_implementation_on_interface() {
 
 #[test]
 fn test_full_stack_implementation_on_virtual_method() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -318,10 +294,7 @@ fn test_full_stack_implementation_on_virtual_method() {
 
 #[test]
 fn test_full_stack_definition_response_structure() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -355,10 +328,7 @@ fn test_full_stack_definition_response_structure() {
 
 #[test]
 fn test_full_stack_definition_on_empty_line() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -380,10 +350,7 @@ fn test_full_stack_definition_on_empty_line() {
 
 #[test]
 fn test_full_stack_all_nav_methods_interleaved() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 
@@ -444,10 +411,7 @@ fn test_full_stack_all_nav_methods_interleaved() {
 
 #[test]
 fn test_full_stack_definition_on_constructor() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
 

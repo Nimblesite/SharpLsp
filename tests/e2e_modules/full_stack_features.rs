@@ -8,10 +8,7 @@ use super::*;
 
 #[test]
 fn test_full_stack_semantic_tokens_full() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -47,10 +44,7 @@ fn test_full_stack_semantic_tokens_full() {
 
 #[test]
 fn test_full_stack_semantic_tokens_range() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -87,10 +81,7 @@ fn test_full_stack_semantic_tokens_range() {
 
 #[test]
 fn test_full_stack_semantic_tokens_delta() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -138,10 +129,7 @@ fn test_full_stack_semantic_tokens_delta() {
 
 #[test]
 fn test_full_stack_code_lens_returns_lenses() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -180,10 +168,7 @@ fn test_full_stack_code_lens_returns_lenses() {
 
 #[test]
 fn test_full_stack_inlay_hints_returns_hints() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -229,10 +214,7 @@ fn test_full_stack_inlay_hints_returns_hints() {
 
 #[test]
 fn test_full_stack_code_actions_on_class() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -275,10 +257,7 @@ fn test_full_stack_code_actions_on_class() {
 
 #[test]
 fn test_full_stack_prepare_call_hierarchy() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -322,10 +301,7 @@ fn test_full_stack_prepare_call_hierarchy() {
 
 #[test]
 fn test_full_stack_call_hierarchy_incoming_calls() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();

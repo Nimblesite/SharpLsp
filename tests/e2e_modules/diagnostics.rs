@@ -297,10 +297,7 @@ fn test_diagnostics_reopen_after_close() {
 
 #[test]
 fn test_full_stack_solution_wide_diagnostics_on_load() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let tmp = tempfile::tempdir().unwrap();
     let proj_dir = tmp.path().join("DiagTest");

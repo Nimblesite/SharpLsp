@@ -314,12 +314,15 @@ impl Drop for LspClient {
     }
 }
 
-/// Check if `dotnet` CLI is available on this machine.
-pub fn is_dotnet_available() -> bool {
-    std::process::Command::new("dotnet")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+/// Panic if `dotnet` CLI is not available. Tests MUST NOT silently skip.
+pub fn require_dotnet() {
+    assert!(
+        std::process::Command::new("dotnet")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success()),
+        "dotnet SDK is required — install it before running tests",
+    );
 }

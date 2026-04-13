@@ -4,10 +4,7 @@ use super::*;
 
 #[test]
 fn test_full_stack_prepare_type_hierarchy() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -46,10 +43,7 @@ fn test_full_stack_prepare_type_hierarchy() {
 
 #[test]
 fn test_full_stack_type_hierarchy_supertypes() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -91,10 +85,7 @@ fn test_full_stack_type_hierarchy_supertypes() {
 
 #[test]
 fn test_full_stack_type_hierarchy_subtypes() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet not available");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();

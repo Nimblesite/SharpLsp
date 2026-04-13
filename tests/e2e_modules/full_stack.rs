@@ -6,10 +6,7 @@ use super::*;
 
 #[test]
 fn test_full_stack_hover_class_method_property() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed — cannot run full-stack hover test");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
 
@@ -116,10 +113,7 @@ fn test_full_stack_hover_class_method_property() {
 
 #[test]
 fn test_full_stack_hover_struct_enum_interface() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
 
@@ -183,10 +177,7 @@ fn test_full_stack_hover_struct_enum_interface() {
 
 #[test]
 fn test_full_stack_hover_after_edit() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
 
@@ -243,10 +234,7 @@ fn test_full_stack_hover_after_edit() {
 
 #[test]
 fn test_full_stack_hover_var_keyword() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -275,10 +263,7 @@ fn test_full_stack_hover_var_keyword() {
 
 #[test]
 fn test_full_stack_hover_xml_documentation() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -315,10 +300,7 @@ fn test_full_stack_hover_xml_documentation() {
 
 #[test]
 fn test_full_stack_hover_obsolete_deprecation() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -351,10 +333,7 @@ fn test_full_stack_hover_obsolete_deprecation() {
 
 #[test]
 fn test_full_stack_hover_cache_hit_latency() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -393,10 +372,7 @@ fn test_full_stack_hover_cache_hit_latency() {
 
 #[test]
 fn test_full_stack_hover_latency_benchmark() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -441,10 +417,7 @@ fn test_full_stack_hover_latency_benchmark() {
 
 #[test]
 fn test_full_stack_hover_crash_recovery() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_test_workspace();
     let mut client = LspClient::start_verbose();

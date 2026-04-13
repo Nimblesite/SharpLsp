@@ -97,10 +97,7 @@ fn test_fsharp_fsi_extension() {
 
 #[test]
 fn test_full_stack_fsharp_hover_function_type_module() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -143,10 +140,7 @@ fn test_full_stack_fsharp_hover_function_type_module() {
 
 #[test]
 fn test_full_stack_fsharp_hover_du_case() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -173,10 +167,7 @@ fn test_full_stack_fsharp_hover_du_case() {
 
 #[test]
 fn test_full_stack_fsharp_hover_pipeline() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
     let mut client = LspClient::start_verbose();
@@ -203,10 +194,7 @@ fn test_full_stack_fsharp_hover_pipeline() {
 
 #[test]
 fn test_full_stack_fsharp_hover_xml_docs() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_fsharp_test_workspace();
     let mut client = LspClient::start_verbose();

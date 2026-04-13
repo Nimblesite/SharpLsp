@@ -48,10 +48,7 @@ public class Calculator
 /// This is the layout used by `code serve-web` for screenshots.
 #[test]
 fn test_full_stack_hover_standalone_csproj_no_sln() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_standalone_csproj_workspace();
 
@@ -78,10 +75,7 @@ fn test_full_stack_hover_standalone_csproj_no_sln() {
 /// workspace (no `.sln`).
 #[test]
 fn test_full_stack_definition_standalone_csproj_no_sln() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_standalone_csproj_workspace();
 

@@ -6,10 +6,7 @@ use super::*;
 
 #[test]
 fn test_full_stack_diagnostics_on_open_detects_errors() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let tmp = tempfile::tempdir().unwrap();
     let proj_dir = tmp.path().join("ErrTest");
@@ -122,10 +119,7 @@ EndGlobal"#,
 
 #[test]
 fn test_full_stack_diagnostics_clean_file_no_errors() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let tmp = tempfile::tempdir().unwrap();
     let proj_dir = tmp.path().join("CleanTest");
@@ -226,10 +220,7 @@ EndGlobal"#,
 
 #[test]
 fn test_full_stack_diagnostics_cleared_after_error_fixed() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let tmp = tempfile::tempdir().unwrap();
     let proj_dir = tmp.path().join("VerifyTest");
@@ -489,10 +480,7 @@ public class Item
 
 #[test]
 fn test_full_stack_diagnostics_refreshed_on_did_change() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_path, file_uri, clean_source) = create_change_test_workspace();
 
@@ -591,10 +579,7 @@ public class Widget
 
 #[test]
 fn test_full_stack_diagnostics_syntax_error() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let tmp = tempfile::tempdir().unwrap();
     let proj_dir = tmp.path().join("SyntaxErr");

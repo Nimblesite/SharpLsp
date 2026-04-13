@@ -6,10 +6,7 @@ use super::*;
 
 #[test]
 fn test_full_stack_definition_cache_hit() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
@@ -42,10 +39,7 @@ fn test_full_stack_definition_cache_hit() {
 
 #[test]
 fn test_full_stack_declaration_on_non_override() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
@@ -92,10 +86,7 @@ fn test_full_stack_declaration_on_non_override() {
 
 #[test]
 fn test_full_stack_implementation_on_concrete_class() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
@@ -137,10 +128,7 @@ fn test_full_stack_implementation_on_concrete_class() {
 
 #[test]
 fn test_full_stack_type_definition_location_structure() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
@@ -180,10 +168,7 @@ fn test_full_stack_type_definition_location_structure() {
 
 #[test]
 fn test_full_stack_definition_cache_invalidated_on_change() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
@@ -219,10 +204,7 @@ fn test_full_stack_definition_cache_invalidated_on_change() {
 
 #[test]
 fn test_full_stack_nav_methods_with_range_assertions() {
-    if !is_dotnet_available() {
-        eprintln!("SKIPPED: dotnet SDK not installed");
-        return;
-    }
+    require_dotnet();
 
     let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
     let mut client = LspClient::start_verbose();
