@@ -575,6 +575,159 @@ public class Widget
     client.wait_with_timeout();
 }
 
+// Full-stack: verification pass must read from disk and clear false positives.
+// After solution-wide scan detects errors, fix the file ON DISK (no didChange),
+// and the verification pass must re-read disk content, update the sidecar's
+// compilation, and clear the stale errors.
+
+#[test]
+fn test_full_stack_verification_clears_stale_errors_from_disk() {
+    require_dotnet();
+
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("StaleTest");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("StaleTest.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    // Start with a BROKEN file on disk — the sidecar will cache this.
+    let broken_source = r"namespace StaleTest;
+public class Stale
+{
+    public GhostType Phantom { get; set; }
+}
+";
+    std::fs::write(proj_dir.join("Stale.cs"), broken_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("StaleTest.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StaleTest", "StaleTest/StaleTest.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(&proj_dir)
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let root_uri = format!("file://{}", real_root.display());
+    let stale_path = real_root.join("StaleTest").join("Stale.cs");
+    let _stale_uri = format!("file://{}", stale_path.display());
+
+    // ── Initialize — sidecar loads the broken compilation ───────
+    let mut client = LspClient::start_verbose();
+    let _ = client.initialize_with_root(json!(root_uri));
+
+    // Do NOT open the file via didOpen — we want the solution-wide scan
+    // to be the ONLY source of diagnostics. No editor interaction.
+
+    // ── Wait for solution-wide scan to detect the GhostType error ──
+    let scan_deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let mut initial_error_seen = false;
+
+    while std::time::Instant::now() < scan_deadline {
+        let msg = client.recv();
+        if msg["method"].as_str() != Some("textDocument/publishDiagnostics") {
+            continue;
+        }
+        let msg_uri = msg["params"]["uri"].as_str().unwrap_or("");
+        if !msg_uri.contains("Stale.cs") {
+            continue;
+        }
+        let diags = msg["params"]["diagnostics"].as_array().unwrap();
+        let has_ghost_error = diags.iter().any(|d| {
+            d["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("GhostType") || m.contains("CS0246"))
+        });
+        if has_ghost_error {
+            initial_error_seen = true;
+            eprintln!("PASS: Solution-wide scan detected GhostType error");
+            break;
+        }
+    }
+    assert!(
+        initial_error_seen,
+        "solution-wide scan must detect GhostType error within 90s",
+    );
+
+    // ── Fix the file ON DISK — no didChange, no close/reopen ───
+    let fixed_source = r"namespace StaleTest;
+public class Stale
+{
+    public int Phantom { get; set; }
+}
+";
+    std::fs::write(&stale_path, fixed_source).unwrap();
+    eprintln!("Wrote fixed source to disk (GhostType -> int)");
+
+    // ── Wait for verification pass to publish cleared diagnostics ──
+    // The verification pass runs ~1s after the scan completes and publishes
+    // exactly one more `publishDiagnostics` for Stale.cs. That notification
+    // is the NEXT Stale.cs message after the initial scan error we already
+    // consumed. Read messages until we see it (bounded to avoid blocking).
+    let mut verification_result: Option<Vec<serde_json::Value>> = None;
+
+    // Read up to 10 messages — verification fires within ~2s of scan.
+    for _ in 0..10 {
+        let msg = client.recv();
+        if msg["method"].as_str() != Some("textDocument/publishDiagnostics") {
+            continue;
+        }
+        let msg_uri = msg["params"]["uri"].as_str().unwrap_or("");
+        if !msg_uri.contains("Stale.cs") {
+            continue;
+        }
+        // This is the verification pass result for Stale.cs.
+        let diags = msg["params"]["diagnostics"].as_array().unwrap().clone();
+        eprintln!(
+            "Verification notification for Stale.cs: {} diagnostics",
+            diags.len()
+        );
+        verification_result = Some(diags);
+        break;
+    }
+
+    let diags = verification_result.expect(
+        "Must receive a second publishDiagnostics for Stale.cs from \
+         the verification pass (got 10 messages, none for Stale.cs)",
+    );
+    let still_has_ghost = diags.iter().any(|d| {
+        d["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("GhostType") || m.contains("CS0246"))
+    });
+    assert!(
+        !still_has_ghost,
+        "Verification pass must clear stale GhostType error after file \
+         was fixed on disk, but the error persists ({} diagnostics). \
+         The verification pass must read from disk, send didChange to \
+         update the sidecar compilation, and re-fetch diagnostics. \
+         Forge does not lie about compilation state. Diagnostics: {diags:?}",
+        diags.len(),
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 // Full-stack: diagnostics on file with syntax error (not just type error).
 
 #[test]
