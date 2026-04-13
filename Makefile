@@ -317,6 +317,41 @@ kill-forge:
 	@sleep 0.5
 	@echo "==> Processes killed."
 
+# ── Install everything: remove → build → install ────────────────
+
+install-binaries: kill-forge
+	@echo "==> Removing old forge-lsp..."
+	$(RM) $(PREFIX)/bin/forge-lsp
+	@echo "==> Removing old sidecar tools..."
+	-dotnet tool uninstall -g Forge.Sidecar.CSharp 2>/dev/null || true
+	-dotnet tool uninstall -g Forge.Sidecar.FSharp 2>/dev/null || true
+	$(RM) target/nupkgs
+	@echo "==> Building forge-lsp ($(PROFILE))..."
+	cargo build $(CARGO_FLAG)
+	@echo "==> Building sidecars ($(DOTNET_CFG))..."
+	dotnet publish $(SIDECAR_CS)/Forge.Sidecar.CSharp.csproj \
+		--configuration $(DOTNET_CFG) --output $(SIDECAR_CS_OUT)
+	dotnet publish $(SIDECAR_FS)/Forge.Sidecar.FSharp.fsproj \
+		--configuration $(DOTNET_CFG) --output $(SIDECAR_FS_OUT)
+	@echo "==> Installing forge-lsp to $(PREFIX)/bin/..."
+	$(MKDIR) $(PREFIX)/bin
+	cp $(BINARY) $(PREFIX)/bin/forge-lsp
+	chmod +x $(PREFIX)/bin/forge-lsp
+	@echo "==> Packing + installing sidecar tools..."
+	dotnet pack $(SIDECAR_CS)/Forge.Sidecar.CSharp.csproj \
+		-p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
+	dotnet pack $(SIDECAR_FS)/Forge.Sidecar.FSharp.fsproj \
+		-p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
+	dotnet tool install -g Forge.Sidecar.CSharp \
+		--version 0.0.0-local --add-source target/nupkgs
+	dotnet tool install -g Forge.Sidecar.FSharp \
+		--version 0.0.0-local --add-source target/nupkgs
+	@echo ""
+	@echo "==> All binaries installed:"
+	@echo "    $(PREFIX)/bin/forge-lsp"
+	@echo "    forge-sidecar-csharp (dotnet tool)"
+	@echo "    forge-sidecar-fsharp (dotnet tool)"
+
 # ── Install forge-lsp binary only ────────────────────────────────
 
 install-rust: build-rust kill-forge
@@ -325,30 +360,22 @@ install-rust: build-rust kill-forge
 	cp $(BINARY) $(PREFIX)/bin/forge-lsp
 	chmod +x $(PREFIX)/bin/forge-lsp
 	@echo "==> Installed: $(PREFIX)/bin/forge-lsp"
-	@echo "    Make sure $(PREFIX)/bin is on your \$$PATH"
 
-# ── Install sidecars as dotnet global tools from local nupkgs ────
+# ── Install sidecars only ────────────────────────────────────────
 
 install-sidecars: build-dotnet
-	@echo "==> Packing sidecars as dotnet tools..."
+	-dotnet tool uninstall -g Forge.Sidecar.CSharp 2>/dev/null || true
+	-dotnet tool uninstall -g Forge.Sidecar.FSharp 2>/dev/null || true
+	$(RM) target/nupkgs
 	dotnet pack $(SIDECAR_CS)/Forge.Sidecar.CSharp.csproj \
 		-p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
 	dotnet pack $(SIDECAR_FS)/Forge.Sidecar.FSharp.fsproj \
 		-p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
-	@echo "==> Installing sidecars as dotnet global tools..."
-	dotnet tool update -g Forge.Sidecar.CSharp \
+	dotnet tool install -g Forge.Sidecar.CSharp \
 		--version 0.0.0-local --add-source target/nupkgs
-	dotnet tool update -g Forge.Sidecar.FSharp \
+	dotnet tool install -g Forge.Sidecar.FSharp \
 		--version 0.0.0-local --add-source target/nupkgs
-	@echo ""
-	@echo "==> Installed dotnet global tools:"
-	@echo "    forge-sidecar-csharp (dotnet tool)"
-	@echo "    forge-sidecar-fsharp (dotnet tool)"
-
-# ── Install everything (legacy alias) ───────────────────────────
-
-install-binaries: install-rust install-sidecars
-	@echo "==> All binaries installed."
+	@echo "==> Sidecars installed."
 
 # ── Clean ────────────────────────────────────────────────────────
 
