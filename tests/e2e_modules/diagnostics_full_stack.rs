@@ -221,25 +221,8 @@ EndGlobal"#,
     client.wait_with_timeout();
 }
 
-// Full-stack: after didChange fixes an error, the LAST
-// publishDiagnostics for that file must have zero Error diagnostics.
-//
-// The Rust host fires notify_did_change and trigger_diagnostics as
-// independent fire-and-forget async spawns. If trigger_diagnostics
-// grabs the sidecar transport lock before notify_did_change, it
-// fetches stale compilation state and publishes stale errors. No
-// correction ever follows — the stale errors persist in the Problems
-// panel.
-//
-// The fix: notify_did_change must complete before trigger_diagnostics
-// runs, OR a verification pass must correct stale results.
-//
-// This test is deterministic because didOpen does NOT call
-// notify_did_change — it only calls trigger_diagnostics. So after
-// closing and reopening with fixed text, the sidecar still has the
-// OLD source in its _solution. Pull diagnostics (which use
-// GetDiagnosticsAsync on the sidecar's _solution) will return stale
-// errors every time.
+// Full-stack: close/reopen with fixed source must clear stale errors.
+// didOpen must sync text to sidecar so diagnostics reflect reality.
 
 #[test]
 fn test_full_stack_diagnostics_cleared_after_error_fixed() {
@@ -264,7 +247,6 @@ fn test_full_stack_diagnostics_cleared_after_error_fixed() {
     )
     .unwrap();
 
-    // Start with a real compilation error.
     let broken_source = r"namespace VerifyTest;
 public class Item
 {
@@ -295,14 +277,31 @@ EndGlobal"#,
     let file_path = real_root.join("VerifyTest").join("Item.cs");
     let item_uri = format!("file://{}", file_path.display());
 
+    // ── Initialize ──────────────────────────────────────────────
     let mut client = LspClient::start_verbose();
-    let _ = client.initialize_with_root(json!(root_uri));
+    let init_resp = client.initialize_with_root(json!(root_uri));
+    assert!(
+        init_resp.get("error").is_none(),
+        "initialize must succeed: {init_resp}",
+    );
+    let caps = &init_resp["result"]["capabilities"];
+    assert!(
+        !caps["diagnosticProvider"].is_null(),
+        "server must advertise diagnosticProvider",
+    );
+    assert_eq!(
+        caps["diagnosticProvider"]["workspaceDiagnostics"],
+        json!(true),
+        "server must advertise workspaceDiagnostics",
+    );
 
-    // Step 1: Open the broken file and wait for sidecar to detect it.
+    // ── Step 1: Open broken file ────────────────────────────────
     client.open_document(&item_uri, broken_source);
 
+    // Poll pull diagnostics until the BogusType error appears.
     let scan_deadline = std::time::Instant::now() + Duration::from_secs(90);
     let mut found_error = false;
+    let mut last_pull_resp = json!(null);
     while std::time::Instant::now() < scan_deadline {
         std::thread::sleep(Duration::from_secs(3));
         client.save_document(&item_uri);
@@ -311,23 +310,86 @@ EndGlobal"#,
             "textDocument/diagnostic",
             json!({ "textDocument": { "uri": item_uri } }),
         );
-        if let Some(items) = resp["result"]["items"].as_array() {
-            if items.iter().any(|d| {
-                d["message"]
-                    .as_str()
-                    .is_some_and(|m| m.contains("BogusType") || m.contains("CS0246"))
-            }) {
-                found_error = true;
-                break;
-            }
+        // Assert the pull diagnostics response is well-formed.
+        assert!(
+            resp.get("error").is_none(),
+            "textDocument/diagnostic must not return error: {resp}",
+        );
+        assert!(
+            resp["result"]["items"].is_array(),
+            "pull diagnostics must return items array: {resp}",
+        );
+        last_pull_resp = resp.clone();
+        let items = resp["result"]["items"].as_array().unwrap();
+        if items.iter().any(|d| {
+            d["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("BogusType") || m.contains("CS0246"))
+        }) {
+            found_error = true;
+            break;
         }
     }
-    assert!(found_error, "sidecar must detect BogusType error");
+    assert!(
+        found_error,
+        "sidecar must detect BogusType error within 90s. Last response: {last_pull_resp}",
+    );
 
-    // Step 2: Fix the file on disk. Then close and reopen with fixed
-    // text. didOpen does NOT call notify_did_change, so the sidecar's
-    // internal _solution still has the broken source. This is
-    // deterministic — the sidecar ALWAYS has stale text after this.
+    // Assert the detected error has proper structure.
+    let initial_items = last_pull_resp["result"]["items"].as_array().unwrap();
+    let bogus_diag = initial_items
+        .iter()
+        .find(|d| {
+            d["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("BogusType") || m.contains("CS0246"))
+        })
+        .unwrap();
+    assert_eq!(
+        bogus_diag["severity"].as_u64().unwrap(),
+        1,
+        "BogusType must be Error severity (1), got: {}",
+        bogus_diag["severity"],
+    );
+    assert!(
+        bogus_diag["range"]["start"]["line"].as_u64().is_some(),
+        "diagnostic must have range.start.line: {bogus_diag}",
+    );
+    assert!(
+        bogus_diag["range"]["end"]["line"].as_u64().is_some(),
+        "diagnostic must have range.end.line: {bogus_diag}",
+    );
+    assert_eq!(
+        bogus_diag["source"].as_str().unwrap(),
+        "forge-csharp",
+        "diagnostic source must be forge-csharp",
+    );
+
+    // ── Step 2: Close the broken file ───────────────────────────
+    client.close_document(&item_uri);
+
+    // Close must produce a publishDiagnostics with empty diagnostics.
+    let close_notif = client.wait_for_notification(
+        "textDocument/publishDiagnostics",
+        Duration::from_secs(5),
+    );
+    assert!(
+        close_notif["params"]["uri"]
+            .as_str()
+            .unwrap()
+            .contains("Item.cs"),
+        "close publishDiagnostics must target Item.cs, got: {}",
+        close_notif["params"]["uri"],
+    );
+    assert!(
+        close_notif["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "close publishDiagnostics must have empty diagnostics array",
+    );
+
+    // ── Step 3: Fix the file on disk and reopen ─────────────────
     let fixed_source = r"namespace VerifyTest;
 public class Item
 {
@@ -335,24 +397,28 @@ public class Item
 }
 ";
     std::fs::write(&file_path, fixed_source).unwrap();
-    client.close_document(&item_uri);
-    // Consume the close clear notification.
-    let _ = client.request(
-        "textDocument/documentSymbol",
-        json!({ "textDocument": { "uri": "file:///dev/null" } }),
-    );
     client.open_document(&item_uri, fixed_source);
 
-    // Step 3: Pull diagnostics. The sidecar's _solution still has
-    // BogusType because didOpen doesn't update sidecar text. The
-    // host must ensure the sidecar text is synced on didOpen.
+    // Wait for didOpen text sync + diagnostics to complete.
     std::thread::sleep(Duration::from_secs(3));
-    let resp = client.request(
+
+    // ── Step 4: Pull diagnostics — must be clean ────────────────
+    let fixed_resp = client.request(
         "textDocument/diagnostic",
         json!({ "textDocument": { "uri": item_uri } }),
     );
-    let items = resp["result"]["items"].as_array().unwrap();
-    let errors: Vec<String> = items
+    assert!(
+        fixed_resp.get("error").is_none(),
+        "pull diagnostics after fix must not error: {fixed_resp}",
+    );
+    assert!(
+        fixed_resp["result"]["items"].is_array(),
+        "pull diagnostics must return items array: {fixed_resp}",
+    );
+    let fixed_items = fixed_resp["result"]["items"].as_array().unwrap();
+
+    // Assert ZERO Error-severity diagnostics.
+    let errors: Vec<String> = fixed_items
         .iter()
         .filter(|d| d["severity"].as_u64() == Some(1))
         .map(|d| {
@@ -363,15 +429,58 @@ public class Item
             )
         })
         .collect();
-
     assert!(
         errors.is_empty(),
-        "After closing and reopening with fixed source, pull diagnostics \
-         must return zero errors. The sidecar must sync document text on \
-         didOpen — not just on didChange. Stale errors: {errors:?}. \
-         Forge does not lie.",
+        "After reopening with fixed source (BogusType -> int), pull \
+         diagnostics must return zero Error-severity diagnostics. \
+         Stale errors: {errors:?}. Forge does not lie.",
     );
 
+    // Assert no BogusType mentioned anywhere in any diagnostic.
+    for diag in fixed_items {
+        let msg = diag["message"].as_str().unwrap_or("");
+        assert!(
+            !msg.contains("BogusType"),
+            "No diagnostic should mention BogusType after fix. Got: {msg}",
+        );
+    }
+
+    // ── Step 5: Verify documentSymbol works on the fixed file ───
+    let sym_resp = client.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": item_uri } }),
+    );
+    assert!(
+        sym_resp.get("error").is_none(),
+        "documentSymbol on open file must not error: {sym_resp}",
+    );
+    let symbols = sym_resp["result"].as_array().unwrap();
+    assert!(
+        !symbols.is_empty(),
+        "documentSymbol must return symbols for the fixed file",
+    );
+
+    // ── Step 6: Pull diagnostics a second time — still clean ────
+    let recheck_resp = client.request(
+        "textDocument/diagnostic",
+        json!({ "textDocument": { "uri": item_uri } }),
+    );
+    assert!(
+        recheck_resp.get("error").is_none(),
+        "second pull diagnostics must not error: {recheck_resp}",
+    );
+    let recheck_items = recheck_resp["result"]["items"].as_array().unwrap();
+    let recheck_errors: Vec<String> = recheck_items
+        .iter()
+        .filter(|d| d["severity"].as_u64() == Some(1))
+        .map(|d| d["message"].as_str().unwrap_or("?").to_string())
+        .collect();
+    assert!(
+        recheck_errors.is_empty(),
+        "Second pull must also be clean. Errors: {recheck_errors:?}",
+    );
+
+    // ── Shutdown ────────────────────────────────────────────────
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
