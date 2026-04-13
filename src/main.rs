@@ -953,6 +953,17 @@ fn handle_notification(
                 info!("Opened: {}", doc.uri.as_str());
                 vfs.open(doc.uri.clone(), doc.version, doc.text.clone());
                 reparse(parsers, trees, &doc.uri, &doc.text);
+                // Sync text to sidecar so Roslyn sees the current source.
+                // Without this, the sidecar's _solution retains stale text
+                // from the initial workspace load or a previous didChange.
+                if let Ok(file_path) = semantic::uri_to_path(&doc.uri) {
+                    semantic::notify_did_change(
+                        &file_path,
+                        &doc.text,
+                        runtime,
+                        csharp_sidecar,
+                    );
+                }
                 trigger_diagnostics(
                     &doc.uri,
                     runtime,

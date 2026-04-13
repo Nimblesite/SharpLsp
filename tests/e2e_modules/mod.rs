@@ -19,6 +19,7 @@
     clippy::needless_pass_by_value,
     reason = "test helper ergonomics — Value args are consumed"
 )]
+#![allow(clippy::too_many_lines, reason = "full-stack e2e tests are inherently long")]
 
 // ── Infrastructure sub-modules ────────────────────────────────────
 pub mod fixtures;

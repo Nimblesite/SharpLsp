@@ -94,6 +94,17 @@ pub fn request_solution_in_background(
         match fetch_all(&sidecar, &project_filter).await {
             Ok(file_diagnostics) => {
                 let file_count = file_diagnostics.len();
+                // Collect files with errors/warnings for verification pass.
+                let mut error_files: Vec<String> = Vec::new();
+                for (file_path, diagnostics) in &file_diagnostics {
+                    let has_issues = diagnostics.iter().any(|d| {
+                        d.severity == Some(DiagnosticSeverity::ERROR)
+                            || d.severity == Some(DiagnosticSeverity::WARNING)
+                    });
+                    if has_issues {
+                        error_files.push(file_path.clone());
+                    }
+                }
                 for (file_path, diagnostics) in file_diagnostics {
                     let uri = match path_to_uri(&file_path) {
                         Ok(uri) => uri,
@@ -107,12 +118,79 @@ pub fn request_solution_in_background(
                     }
                 }
                 info!("Solution-wide diagnostics published for {file_count} file(s)");
+
+                // Verification pass: re-check files with errors/warnings.
+                if !error_files.is_empty() {
+                    info!(
+                        "Starting verification pass for {} file(s) with errors/warnings",
+                        error_files.len()
+                    );
+                    verify_error_files(
+                        &sidecar,
+                        &sender,
+                        &error_files,
+                    )
+                    .await;
+                }
             }
             Err(err) => {
                 warn!("Solution-wide diagnostics unavailable: {err:#}");
             }
         }
     });
+}
+
+/// Low-priority verification pass: re-check files that had errors or
+/// warnings during the initial solution-wide scan.
+///
+/// The initial `GetCompilationAsync` may return incomplete results
+/// (unresolved references, pending source generators). This pass
+/// re-fetches diagnostics per-file and publishes corrections.
+/// Files that still have errors are real — files where errors
+/// disappeared were false positives that get cleared.
+async fn verify_error_files(
+    sidecar: &SidecarManager,
+    sender: &crossbeam_channel::Sender<Message>,
+    error_files: &[String],
+) {
+    // Small delay to let the workspace settle after initial load.
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    for file_path in error_files {
+        let source_tag = match std::path::Path::new(file_path.as_str()).extension() {
+            Some(ext) if ext.eq_ignore_ascii_case("fs") || ext.eq_ignore_ascii_case("fsx") => {
+                "forge-fsharp"
+            }
+            _ => "forge-csharp",
+        };
+
+        match fetch(sidecar, file_path, source_tag).await {
+            Ok(diagnostics) => {
+                let uri = match path_to_uri(file_path) {
+                    Ok(uri) => uri,
+                    Err(err) => {
+                        warn!("Skip verification for {file_path}: {err:#}");
+                        continue;
+                    }
+                };
+                // Publish updated diagnostics — clears false positives.
+                if let Err(err) = publish(sender, uri, diagnostics) {
+                    warn!("Failed to publish verified diagnostics for {file_path}: {err:#}");
+                }
+            }
+            Err(err) => {
+                info!("Verification fetch failed for {file_path}: {err:#}");
+            }
+        }
+
+        // Yield between files to avoid starving other sidecar requests.
+        tokio::task::yield_now().await;
+    }
+
+    info!(
+        "Verification pass complete for {} file(s)",
+        error_files.len()
+    );
 }
 
 /// Clear diagnostics for a closed document.

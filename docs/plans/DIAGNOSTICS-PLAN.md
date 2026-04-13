@@ -86,6 +86,16 @@ Analyze ALL files in the solution, not just open ones.
 - [ ] Support `previousResultId` for incremental updates
 - [ ] Report `unchanged` when diagnostics haven't changed
 
+## Phase 5.5: Diagnostic Verification (P0) — DONE
+
+- [x] `didOpen` syncs document text to sidecar via `notify_did_change`
+- [x] After solution-wide scan, verification pass re-checks files with errors/warnings
+- [x] Verification publishes corrected diagnostics per-file (clears false positives)
+- [x] Verification yields between files to avoid starving other sidecar requests
+- [x] Test: `test_full_stack_diagnostics_cleared_after_error_fixed` (deterministic)
+- [ ] Exponential backoff for persistent errors (1s, 2s, 4s, max 30s)
+- [ ] Periodic re-verification for long-running sessions
+
 ## Phase 6: Background Analysis Optimization (P1)
 
 - [ ] Priority queue: active doc > visible docs > recent > rest
@@ -108,6 +118,8 @@ Analyze ALL files in the solution, not just open ones.
 - [x] **Rust host**: Read `diagnostics.project_filter` from config
 - [x] **Rust host**: On solution load, request solution-wide diagnostics
 - [x] **Rust host**: Stream diagnostics incrementally by file
+- [x] **Rust host**: `didOpen` syncs text to sidecar via `notify_did_change`
+- [x] **Rust host**: Verification pass re-checks files with errors after solution-wide scan
 - [ ] **Rust host**: Re-request diagnostics for changed file + dependents
 - [x] **Rust host**: Advertise `workspaceDiagnostics: true` in capabilities
 - [x] **Rust host**: Implement `textDocument/diagnostic` pull handler (LSP 3.17) — `pull_diagnostics.rs`
@@ -141,6 +153,7 @@ Analyze ALL files in the solution, not just open ones.
 - [x] **Test**: VSCode — fixing an error clears the diagnostic
 - [x] **Test**: VSCode — diagnostics have correct severity and range
 - [x] **Test**: VSCode — closing a document clears its diagnostics
+- [x] **Test**: Full-stack — close/reopen with fixed source clears stale diagnostics
 - [ ] **Test**: Full-stack — open file with errors → errors in Problems panel
 - [ ] **Test**: Solution-wide scan finds errors in unopened files
 - [ ] **Test**: Project filter excludes specified projects
