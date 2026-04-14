@@ -111,6 +111,13 @@ internal sealed partial class WorkspaceManager
     }
 
     /// <summary>Get compiler diagnostics for all files in the solution.</summary>
+    /// <remarks>
+    /// Iterates projects in topological (dependency) order so each project's
+    /// compilation is built AFTER its referenced projects. Without this,
+    /// Roslyn's lazy compilation produces phantom CS0246/CS0234 errors when
+    /// a consumer project is compiled before its dependencies are cached
+    /// as CompilationReferences. Forge does not lie about compilation state.
+    /// </remarks>
     public async Task<AllDiagnosticsResult> GetAllDiagnosticsAsync(
         string[] projectFilter,
         CancellationToken ct = default
@@ -127,9 +134,10 @@ internal sealed partial class WorkspaceManager
             }
 
             var results = new Dictionary<string, List<DiagnosticResult>>();
-            var projects = FilterProjects(projectFilter);
+            var filteredProjects = FilterProjects(projectFilter).ToHashSet();
+            var orderedProjects = OrderProjectsByDependencies(_solution, filteredProjects, ct);
 
-            foreach (var project in projects)
+            foreach (var project in orderedProjects)
             {
                 ct.ThrowIfCancellationRequested();
                 await CollectProjectDiagnosticsAsync(project, results, ct).ConfigureAwait(false);
@@ -146,6 +154,28 @@ internal sealed partial class WorkspaceManager
         catch (Exception ex)
         {
             return AllDiagnosticsResult.Failure(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Return the given projects ordered topologically (dependencies first,
+    /// consumers last) so `GetCompilationAsync` on consumers sees already-built
+    /// dependency compilations as CompilationReferences.
+    /// </summary>
+    private static IEnumerable<Project> OrderProjectsByDependencies(
+        Solution solution,
+        HashSet<Project> filtered,
+        CancellationToken ct
+    )
+    {
+        var graph = solution.GetProjectDependencyGraph();
+        foreach (var projectId in graph.GetTopologicallySortedProjects(ct))
+        {
+            var project = solution.GetProject(projectId);
+            if (project is not null && filtered.Contains(project))
+            {
+                yield return project;
+            }
         }
     }
 

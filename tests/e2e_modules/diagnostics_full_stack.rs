@@ -728,6 +728,297 @@ public class Stale
     client.wait_with_timeout();
 }
 
+// Full-stack: solution-wide scan must NOT produce false positives for
+// cross-project references. When project A depends on project B and B
+// defines a type used by A, the solution-wide scan must compile B before
+// A (topological order) so A's semantic model sees B's types as resolved.
+//
+// Without topological ordering, Roslyn's GetCompilationAsync on a freshly
+// loaded MSBuildWorkspace returns compilations with unresolved
+// CompilationReferences, producing phantom CS0246 "type could not be
+// found" errors in files that actually compile fine.
+
+#[test]
+fn test_full_stack_cross_project_references_no_false_positives() {
+    require_dotnet();
+
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Build a diamond dependency graph with 8 projects to stress project
+    // ordering during compilation. Layout:
+    //
+    //    Core (leaf — no deps)
+    //     │
+    //    ┌┴┬──┬──┐
+    //   A B  C  D  (each depends on Core)
+    //    └┬┴──┴──┘
+    //     │
+    //   Combined (depends on A, B, C, D)
+    //     │
+    //    App1, App2  (each depends on Combined)
+    //
+    // When MSBuildWorkspace enumerates projects in arbitrary order and
+    // compiles them out-of-order, consumers see phantom CS0246 errors.
+
+    let make_project =
+        |dir: &std::path::Path, name: &str, deps: &[&str], source: &str, source_file: &str| {
+            std::fs::create_dir_all(dir).unwrap();
+            let mut refs = String::new();
+            for d in deps {
+                use std::fmt::Write;
+                writeln!(
+                    refs,
+                    "    <ProjectReference Include=\"..\\{d}\\{d}.csproj\" />",
+                )
+                .unwrap();
+            }
+            let csproj = format!(
+                r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+{refs}  </ItemGroup>
+</Project>"#
+            );
+            std::fs::write(dir.join(format!("{name}.csproj")), csproj).unwrap();
+            std::fs::write(dir.join(source_file), source).unwrap();
+        };
+
+    // Core — defines types used by all other projects.
+    make_project(
+        &tmp.path().join("Core"),
+        "Core",
+        &[],
+        "namespace Core;\n\
+         public class CoreType { public int Id { get; set; } }\n\
+         public interface ICoreService { void Run(); }\n",
+        "Core.cs",
+    );
+
+    // A, B, C, D — each depends on Core and defines their own types.
+    for name in &["A", "B", "C", "D"] {
+        let src = format!(
+            "namespace {name};\n\
+             using Core;\n\
+             public class {name}Type\n\
+             {{\n\
+             \x20\x20\x20\x20public CoreType Core {{ get; set; }} = new();\n\
+             \x20\x20\x20\x20public int Value {{ get; set; }}\n\
+             }}\n"
+        );
+        make_project(
+            &tmp.path().join(name),
+            name,
+            &["Core"],
+            &src,
+            &format!("{name}File.cs"),
+        );
+    }
+
+    // Combined — depends on A, B, C, D and uses all their types.
+    make_project(
+        &tmp.path().join("Combined"),
+        "Combined",
+        &["A", "B", "C", "D", "Core"],
+        "namespace Combined;\n\
+         using A;\n\
+         using B;\n\
+         using C;\n\
+         using D;\n\
+         using Core;\n\
+         public class CombinedType\n\
+         {\n\
+         \x20\x20\x20\x20public AType A { get; set; } = new();\n\
+         \x20\x20\x20\x20public BType B { get; set; } = new();\n\
+         \x20\x20\x20\x20public CType C { get; set; } = new();\n\
+         \x20\x20\x20\x20public DType D { get; set; } = new();\n\
+         \x20\x20\x20\x20public CoreType Core { get; set; } = new();\n\
+         }\n",
+        "Combined.cs",
+    );
+
+    // App1, App2 — top-level consumers of Combined.
+    for name in &["App1", "App2"] {
+        let src = format!(
+            "namespace {name};\n\
+             using Combined;\n\
+             using Core;\n\
+             public class {name}Main\n\
+             {{\n\
+             \x20\x20\x20\x20public CombinedType Combined {{ get; set; }} = new();\n\
+             \x20\x20\x20\x20public CoreType Core {{ get; set; }} = new();\n\
+             }}\n"
+        );
+        make_project(
+            &tmp.path().join(name),
+            name,
+            &["Combined", "Core"],
+            &src,
+            &format!("{name}.cs"),
+        );
+    }
+
+    // Write the .sln file with projects listed in REVERSE dependency order
+    // (leafs last) to maximally stress enumerator ordering.
+    let sln = r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App1", "App1/App1.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App2", "App2/App2.csproj", "{00000000-0000-0000-0000-000000000002}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Combined", "Combined/Combined.csproj", "{00000000-0000-0000-0000-000000000003}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "A", "A/A.csproj", "{00000000-0000-0000-0000-000000000004}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "B", "B/B.csproj", "{00000000-0000-0000-0000-000000000005}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "C", "C/C.csproj", "{00000000-0000-0000-0000-000000000006}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "D", "D/D.csproj", "{00000000-0000-0000-0000-000000000007}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Core", "Core/Core.csproj", "{00000000-0000-0000-0000-000000000008}"
+EndProject
+Global
+EndGlobal
+"#;
+    std::fs::write(tmp.path().join("Test.sln"), sln).unwrap();
+
+    // Restore and build the solution to confirm it compiles cleanly — this
+    // is ground truth. If dotnet build succeeds, Forge must not report
+    // any errors.
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "Test.sln", "--verbosity", "quiet"])
+        .current_dir(tmp.path())
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let build = std::process::Command::new("dotnet")
+        .args(["build", "Test.sln", "--no-restore", "--verbosity", "quiet"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("dotnet build failed");
+    assert!(
+        build.status.success(),
+        "dotnet build must succeed — this is the ground truth. \
+         stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr),
+    );
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let root_uri = format!("file://{}", real_root.display());
+    let consumer_path = real_root.join("Combined").join("Combined.cs");
+    let consumer_uri = format!("file://{}", consumer_path.display());
+
+    // ── Initialize ──────────────────────────────────────────────
+    let mut client = LspClient::start_verbose();
+    let _ = client.initialize_with_root(json!(root_uri));
+
+    // Do NOT open Consumer.cs via didOpen — we want the solution-wide scan
+    // to be the source of truth. The solution compiles fine; the scan must
+    // not lie about PublicType being missing.
+
+    // ── Wait for and drain publishDiagnostics from the scan ──
+    //
+    // The scan publishes one notification per file WITH diagnostics.
+    // We give the scan 20s to complete, then read messages from stdin
+    // until we've received enough to conclude.
+    //
+    // Since recv() blocks forever when no messages arrive, we first
+    // issue a textDocument/diagnostic (pull) — this is a REQUEST with
+    // a response id. Reading until we get that id naturally drains
+    // any buffered publish notifications along the way. The request()
+    // method already skips notifications via its id-check, so we
+    // replace it with a manual loop that collects notifications too.
+
+    std::thread::sleep(Duration::from_secs(20));
+
+    let mut all_publish_diags: Vec<(String, Vec<serde_json::Value>)> = Vec::new();
+
+    // Send a pull diagnostics request to act as a drain barrier.
+    let drain_id = next_id();
+    client.send(&json!({
+        "jsonrpc": "2.0",
+        "id": drain_id,
+        "method": "textDocument/diagnostic",
+        "params": { "textDocument": { "uri": consumer_uri } },
+    }));
+
+    // Read messages until we receive the response to our drain barrier.
+    // All publishDiagnostics notifications that were queued before our
+    // request will arrive in order before the response to that request.
+    loop {
+        let msg = client.recv();
+        if msg.get("id").and_then(serde_json::Value::as_i64) == Some(drain_id.into()) {
+            // Response to our drain request. Stop reading.
+            break;
+        }
+        if msg["method"].as_str() == Some("textDocument/publishDiagnostics") {
+            let msg_uri = msg["params"]["uri"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+            let diags = msg["params"]["diagnostics"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            all_publish_diags.push((msg_uri, diags));
+        }
+    }
+
+    // Analyze every published diagnostic for false-positive codes.
+    let mut all_false_positives: Vec<(String, Vec<String>)> = Vec::new();
+    for (uri, diags) in &all_publish_diags {
+        let false_positives: Vec<String> = diags
+            .iter()
+            .filter(|d| d["severity"].as_u64() == Some(1))
+            .filter_map(|d| {
+                let msg = d["message"].as_str().unwrap_or("");
+                let code = d["code"].as_str().unwrap_or("");
+                // CS0246: type or namespace not found
+                // CS0234: type or namespace does not exist in namespace
+                // CS0103: name does not exist in current context
+                // CS0012: type defined in an unreferenced assembly
+                let is_false_pos = code == "CS0246"
+                    || code == "CS0234"
+                    || code == "CS0103"
+                    || code == "CS0012";
+                if is_false_pos {
+                    Some(format!("{code}: {msg}"))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if !false_positives.is_empty() {
+            all_false_positives.push((uri.clone(), false_positives));
+        }
+    }
+
+    // Unused variable silencing.
+    let _ = &consumer_uri;
+
+    // ── Assert: NO false-positive type-not-found errors ──
+    //
+    // The whole point of Forge is to NOT LIE TO THE USER. The solution
+    // builds cleanly via `dotnet build`. Forge must not publish errors
+    // for types that the compiler resolves correctly.
+    assert!(
+        all_false_positives.is_empty(),
+        "Solution-wide scan PUBLISHED false-positive type-not-found \
+         errors to the editor. The solution builds cleanly via \
+         `dotnet build` — Forge must not lie about compilation state. \
+         False positives by URI: {all_false_positives:?}\n\
+         All publishDiagnostics notifications received: {all_publish_diags:?}",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 // Full-stack: diagnostics on file with syntax error (not just type error).
 
 #[test]
