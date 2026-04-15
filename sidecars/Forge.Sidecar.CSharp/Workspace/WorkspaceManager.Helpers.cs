@@ -194,7 +194,7 @@ internal sealed partial class WorkspaceManager
         {
             ct.ThrowIfCancellationRequested();
             var filePath = tree.FilePath;
-            if (string.IsNullOrEmpty(filePath))
+            if (string.IsNullOrEmpty(filePath) || IsGeneratedBuildOutput(filePath))
             {
                 continue;
             }
@@ -206,6 +206,20 @@ internal sealed partial class WorkspaceManager
                 results[filePath] = diagnostics;
             }
         }
+    }
+
+    /// <summary>
+    /// MSBuild-generated files under <c>obj/</c> (AssemblyInfo, GlobalUsings,
+    /// AssemblyAttributes) belong to the build system, not the user. Diagnostics
+    /// against them are never actionable and produce noisy false positives when
+    /// transient assembly references aren't fully resolved during a scan.
+    /// </summary>
+    private static bool IsGeneratedBuildOutput(string filePath)
+    {
+        return filePath.Contains(
+                $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                StringComparison.Ordinal
+            ) || filePath.Contains("/obj/", StringComparison.Ordinal);
     }
 
     /// <summary>
