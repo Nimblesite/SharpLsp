@@ -104,8 +104,14 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 | Feature | C# Dev Kit | Forge | Status |
 |---------|-----------|-------|--------|
-| Compiler diagnostics | Yes | Yes | **DONE** |
-| Solution-wide analysis | Yes (configurable) | Yes (default enabled) | **DONE** |
+| Compiler diagnostics (per-document pull) | Yes | Yes | **DONE** |
+| LSP 3.17 pull diagnostics (`textDocument/diagnostic`) | Yes | Yes (handlers wired; `previousResultId`/`unchanged` reporting in [DIAGNOSTICS-PLAN Phase 5](DIAGNOSTICS-PLAN.md#phase-5-pull-diagnostics--refresh-cycle-p0--primary-path)) | **PARTIAL** |
+| Workspace pull diagnostics (`workspace/diagnostic`) | Yes (server side; UX gap in CDK extension) | Yes (server + extension surfaces in Problems panel) | **PARTIAL** |
+| `workspace/diagnostic/refresh` (debounced workspace event → editor re-pull) | Yes (2000ms `AsyncBatchingWorkQueue`) | In [Phase 5](DIAGNOSTICS-PLAN.md#phase-5-pull-diagnostics--refresh-cycle-p0--primary-path) (matches Roslyn LSP 2000ms debounce) | **MISSING** |
+| NuGet restore gate before workspace open | Yes (`ProjectDependencyHelper`) | In [Phase 5.6](DIAGNOSTICS-PLAN.md#phase-56-nuget-restore-gate-p0); critical for eliminating phantom CS0246 | **MISSING** |
+| `workspace/projectInitializationComplete` notification | Yes | In [Phase 5.6](DIAGNOSTICS-PLAN.md#phase-56-nuget-restore-gate-p0) | **MISSING** |
+| Solution-wide analysis surfaced in Problems panel without opening files | UX gap (server supports it; extension doesn't drive the pull) | Yes (Forge VS Code extension drives `workspace/diagnostic` pull) | **DIFFERENTIATOR** |
+| No phantom CS0246 during workspace load | Yes (because pull-only + restore gate) | Yes (after [Phase 5](DIAGNOSTICS-PLAN.md#phase-5-pull-diagnostics--refresh-cycle-p0--primary-path) + [5.6](DIAGNOSTICS-PLAN.md#phase-56-nuget-restore-gate-p0); previous push+verification model removed because it lied) | **IN PROGRESS** |
 | Roslyn analyzer diagnostics | Yes | Partial | **PARTIAL** |
 | EditorConfig diagnostic config | Yes | Partial | **PARTIAL** |
 

@@ -301,7 +301,9 @@ This section specifies every feature Forge will implement, mapped to the LSP pro
 
 ### 4.3 Diagnostics & Analysis
 
-See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) for the full diagnostics specification, including solution-wide analysis (default on), project filtering, background analysis strategy, and competitive analysis.
+Forge uses the LSP 3.17 **pull-diagnostics + workspace-refresh** model (`textDocument/diagnostic`, `workspace/diagnostic`, `workspace/diagnostic/refresh`), mirroring `Microsoft.CodeAnalysis.LanguageServer` (the engine behind C# Dev Kit). The Rust host never proactively pushes errors during workspace load — that is the only architecture that produces correct diagnostics while NuGet restore, source generators, and cross-project `CompilationReference`s are still resolving. A NuGet restore gate runs before `MSBuildWorkspace.OpenSolutionAsync` to eliminate the largest class of phantom CS0246s.
+
+See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) for the full specification, including the pull + refresh cycle, the NuGet restore gate, project filtering, and the truth guarantees Forge makes (and doesn't make) about diagnostic completeness during workspace load.
 
 ### 4.4 Code Actions & Refactoring
 
@@ -391,7 +393,9 @@ These tools are excellent at what they do and there is no reason to duplicate th
 | NuGet uninstall package | Custom: `forge/nuget/uninstall` | `dotnet remove <project> package` + sidecar reload | P2 |
 | Multi-TFM selection | Custom: `forge/targetFramework` | Active TFM switching per project | P1 |
 | File watching & reload | `workspace/didChangeWatchedFiles` | [notify](https://crates.io/crates/notify) crate + sidecar reload | P0 |
-| Workspace diagnostics | `workspace/diagnostic` | Solution-wide error analysis | P1 |
+| Workspace diagnostics (pull) | `workspace/diagnostic` + `workspace/diagnostic/refresh` | Solution-wide error analysis via LSP 3.17 pull model + 2000ms-debounced refresh; primary diagnostic path (see [DIAGNOSTICS-SPEC §1.1](DIAGNOSTICS-SPEC.md#11-the-pull--refresh-cycle)) | P0 |
+| NuGet restore gate | (internal, before `workspace/open`) | `dotnet restore` if `obj/project.assets.json` is stale; eliminates phantom CS0246 for NuGet types ([DIAGNOSTICS-SPEC §6](DIAGNOSTICS-SPEC.md#6-nuget-restore-gate)) | P0 |
+| Project init complete | Custom: `workspace/projectInitializationComplete` | Notification fired once per workspace open after restore + `MSBuildWorkspace.OpenSolutionAsync`; matches Roslyn LSP contract | P0 |
 | Configuration | `workspace/didChangeConfiguration` | [.editorconfig](https://editorconfig.org/) + forge.toml | P0 |
 
 ### 4.11 F#-Specific Features

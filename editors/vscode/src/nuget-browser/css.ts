@@ -72,7 +72,8 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font
 .package-item:hover { background: #1B1B1C; }
 .package-item.selected { background: #1B1B1C; border-left-color: #9FCAFF; }
 .package-item.pending { opacity: 0.8; }
-.package-icon-box { width: 40px; height: 40px; border-radius: 4px; background: #202020; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.package-icon-box { width: 40px; height: 40px; border-radius: 4px; background: #202020; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; overflow: hidden; }
+.package-icon-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #FFFFFF; }
 .package-icon-box.selected { background: #007ACC; }
 .package-icon-box .material-symbols-outlined { font-size: 20px; color: #9FCAFF; }
 .package-icon-box.selected .material-symbols-outlined { color: #FFFFFF; }

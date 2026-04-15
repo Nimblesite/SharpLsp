@@ -52,7 +52,7 @@ export function buildHtml(state: RenderState): string {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; img-src https: data:;">
 <title>NuGet - ${safeProjectName}</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
 ${buildCss()}
@@ -227,8 +227,12 @@ function buildPackageItem(state: RenderState, pkg: NuGetSearchResult): string {
   const pending = state.loading.has(installKey(pkg.id)) || state.loading.has(uninstallKey(pkg.id));
   const dl = pkg.downloadCount !== undefined ? formatDownloads(pkg.downloadCount) : null;
   const icon = installed ? 'database' : 'package_2';
+  const iconImg =
+    pkg.iconUrl !== undefined && pkg.iconUrl.length > 0
+      ? `<img class="package-icon-img" src="${escAttr(pkg.iconUrl)}" alt="" onerror="this.style.display='none'" />`
+      : '';
   return `<div class="package-item ${sel ? 'selected' : ''} ${pending ? 'pending' : ''}" onclick="selectPackage('${escAttr(pkg.id)}')">
-<div class="package-icon-box ${sel ? 'selected' : ''}"><span class="material-symbols-outlined ${sel ? 'icon-selected' : ''}">${icon}</span></div>
+<div class="package-icon-box ${sel ? 'selected' : ''}"><span class="material-symbols-outlined ${sel ? 'icon-selected' : ''}">${icon}</span>${iconImg}</div>
 <div class="package-content">
 <div class="package-header"><span class="package-name">${safeId}</span><span class="package-version ${installed ? 'installed' : ''} ${pending ? 'pending' : ''}">v${esc(version)}</span></div>
 <p class="package-description">${esc(desc)}</p>

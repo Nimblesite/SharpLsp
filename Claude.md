@@ -19,6 +19,7 @@ This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate
 
 - Logging is critical. Add more logging immediately (`tracing` crate, `ILogger` in .NET)
 - 100% test coverage is only the start
+- Use libraries like Signals for reactivity
 - No feature is complete without e2e tests
 - Building a feature without tests is ⛔️ ILLEGAL
 - No unit tests. Only COARSE e2e tests
@@ -26,6 +27,7 @@ This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate
 ## Hard Rules
 
 - Do not use Git.
+- All screens MUST BE 100% reactive. If underlying data changes, the screen must be listening and update accordingly
 - Zero duplication. DRY AF!!! Check for existing code before writing new code <- Highest priority
 - Any function that can throw/panic must return Result<T,E> (outcome package in .NET)
 - Avoid RegEx and string matching. Always use ACTUAL parsers and traverse the AST/CST
