@@ -136,6 +136,169 @@ fn test_profiler_find_gc_roots_missing_file() {
     client.wait_with_timeout();
 }
 
+// ── convertTrace: real dotnet-trace invocation ───────────────────
+
+/// `forge/profiler/convertTrace` on a real `.nettrace` file must return a
+/// path that actually exists on disk.
+///
+/// This test REPRODUCES and PROVES the fix for the bug where
+/// `derived_output_path` appended `.speedscope.json` to the full `.nettrace`
+/// filename instead of replacing the extension. Before the fix the server
+/// returned `"<name>.nettrace.speedscope.json"` which `stat` could not find
+/// because `dotnet-trace convert` actually writes `<name>.speedscope.json`.
+///
+/// The test is skipped when `dotnet-trace` is not on PATH or when no real
+/// `.nettrace` sample is available to seed the conversion.
+#[test]
+fn test_profiler_convert_trace_real_file_roundtrip() {
+    let Some(sample) = locate_nettrace_sample() else {
+        eprintln!(
+            "skip: no real .nettrace sample available; run a trace once to populate .forge/profiles/"
+        );
+        return;
+    };
+    if !has_dotnet_trace() {
+        eprintln!("skip: dotnet-trace not installed on PATH");
+        return;
+    }
+
+    // Copy the sample into a unique tempdir so the test is isolated from any
+    // previously-converted sibling file on disk. This guarantees the
+    // `.speedscope.json` we assert on was created by THIS test invocation.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input_path = tmp.path().join("roundtrip.nettrace");
+    let _bytes = std::fs::copy(&sample, &input_path).expect("copy .nettrace into tempdir");
+
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+
+    let resp = client.request(
+        "forge/profiler/convertTrace",
+        json!({
+            "input_path": input_path.to_str().unwrap(),
+            "format": "speedscope",
+        }),
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+
+    // Must succeed — this is the actual fix assertion.
+    assert!(
+        resp.get("error").is_none(),
+        "convertTrace must succeed on a real .nettrace, got error: {}",
+        resp.get("error").map(std::string::ToString::to_string).unwrap_or_default(),
+    );
+
+    let result = &resp["result"];
+    let output_path = result["output_path"]
+        .as_str()
+        .expect("result.output_path must be a string");
+
+    // The returned path must exist on disk — this is what failed before the
+    // fix (server returned `<x>.nettrace.speedscope.json` but dotnet-trace
+    // wrote `<x>.speedscope.json`).
+    assert!(
+        std::path::Path::new(output_path).exists(),
+        "output_path must exist on disk — returned {output_path} but file is missing",
+    );
+
+    // Stronger assertion: the path must be the stripped form, not the
+    // doubled form. Catches any regression that silently creates a file
+    // matching the wrong name.
+    assert!(
+        output_path.ends_with("roundtrip.speedscope.json"),
+        "output_path must end with .speedscope.json (stripped form), got {output_path}",
+    );
+    assert!(
+        !output_path.contains(".nettrace.speedscope.json"),
+        "BUG REGRESSION: path uses the doubled form .nettrace.speedscope.json — got {output_path}",
+    );
+
+    // file_size_bytes must be populated and match actual file length.
+    let reported = result["file_size_bytes"]
+        .as_u64()
+        .expect("file_size_bytes must be a u64");
+    let actual = std::fs::metadata(output_path)
+        .expect("stat converted file")
+        .len();
+    assert_eq!(
+        reported, actual,
+        "reported file_size_bytes {reported} must match actual {actual}",
+    );
+}
+
+/// Negative assertion: the doubled-suffix path MUST NOT be written by
+/// `dotnet-trace convert`. If this ever starts existing we need to
+/// re-examine the tool's naming convention.
+#[test]
+fn test_profiler_convert_trace_does_not_write_doubled_suffix() {
+    let Some(sample) = locate_nettrace_sample() else {
+        eprintln!("skip: no real .nettrace sample available");
+        return;
+    };
+    if !has_dotnet_trace() {
+        eprintln!("skip: dotnet-trace not installed on PATH");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input_path = tmp.path().join("no-double.nettrace");
+    let _bytes = std::fs::copy(&sample, &input_path).expect("copy .nettrace into tempdir");
+
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+    let resp = client.request(
+        "forge/profiler/convertTrace",
+        json!({ "input_path": input_path.to_str().unwrap() }),
+    );
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+
+    assert!(resp.get("error").is_none(), "convert must succeed: {resp}");
+
+    let doubled = tmp.path().join("no-double.nettrace.speedscope.json");
+    assert!(
+        !doubled.exists(),
+        "dotnet-trace must not have written the doubled-suffix file at {}",
+        doubled.display(),
+    );
+    let stripped = tmp.path().join("no-double.speedscope.json");
+    assert!(
+        stripped.exists(),
+        "dotnet-trace must have written the stripped-suffix file at {}",
+        stripped.display(),
+    );
+}
+
+/// Locate a real `.nettrace` sample to seed the convertTrace test, or
+/// return None so the test skips gracefully on environments without one.
+///
+/// Looks in `.forge/profiles/` (relative to the workspace root) for any
+/// previously captured trace. This keeps the test self-contained without
+/// committing a binary fixture to the repo.
+fn has_dotnet_trace() -> bool {
+    std::process::Command::new("dotnet-trace")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn locate_nettrace_sample() -> Option<std::path::PathBuf> {
+    let profiles_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".forge/profiles");
+    let entries = std::fs::read_dir(profiles_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("nettrace") {
+            return Some(path);
+        }
+    }
+    None
+}
+
 // ── Profiler Performance Benchmarks ──────────────────────────────
 
 /// Benchmark: `forge/profiler/listProcesses` completes within 500ms.
