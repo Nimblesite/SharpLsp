@@ -693,6 +693,11 @@
           "group": "3_open"
         },
         {
+          "command": "forge.browseNuGetPackages",
+          "when": "view == forge.solutionExplorer && viewItem == project",
+          "group": "5_dependencies"
+        },
+        {
           "command": "forge.build",
           "when": "view == forge.solutionExplorer && viewItem == project",
           "group": "2_build"

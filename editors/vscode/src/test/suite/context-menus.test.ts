@@ -1266,13 +1266,18 @@ suite('Context Menu — Project Node Commands Execute', () => {
     assert.ok(projectNode, 'Project node must exist');
 
     await vscode.commands.executeCommand('forge.openProjectFile', projectNode);
-    await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const activeDoc = vscode.window.activeTextEditor?.document;
-    assert.ok(activeDoc, 'An editor must be open after openProjectFile');
+    // The LSP trace output channel can grab focus right after the command
+    // completes, so check `visibleTextEditors` (which includes our doc even
+    // when an output panel is focused) rather than `activeTextEditor`.
+    const csprojEditor = vscode.window.visibleTextEditors.find((editor) =>
+      editor.document.fileName.endsWith('.csproj'),
+    );
     assert.ok(
-      activeDoc.fileName.endsWith('.csproj'),
-      `Expected .csproj file, got ${activeDoc.fileName}`,
+      csprojEditor,
+      `Expected a visible .csproj editor, got: ${vscode.window.visibleTextEditors
+        .map((editor) => editor.document.fileName)
+        .join(', ')}`,
     );
   });
 

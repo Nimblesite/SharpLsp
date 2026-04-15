@@ -213,3 +213,113 @@ struct SidecarWorkspaceEdit {
     /// Per-document edits that compose this workspace edit.
     document_changes: Vec<SidecarDocumentEdit>,
 }
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code — panics are the correct failure mode"
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_action_kind_known_kinds() {
+        assert_eq!(map_action_kind("refactor.extract"), CodeActionKind::REFACTOR_EXTRACT);
+        assert_eq!(map_action_kind("refactor.inline"), CodeActionKind::REFACTOR_INLINE);
+        assert_eq!(map_action_kind("refactor.rewrite"), CodeActionKind::REFACTOR_REWRITE);
+        assert_eq!(
+            map_action_kind("source.organizeImports"),
+            CodeActionKind::SOURCE_ORGANIZE_IMPORTS,
+        );
+        assert_eq!(map_action_kind("refactor"), CodeActionKind::REFACTOR);
+    }
+
+    #[test]
+    fn map_action_kind_unknown_falls_back_to_quickfix() {
+        assert_eq!(map_action_kind(""), CodeActionKind::QUICKFIX);
+        assert_eq!(map_action_kind("anything-else"), CodeActionKind::QUICKFIX);
+    }
+
+    #[test]
+    fn map_text_edit_translates_range_and_text() {
+        let edit = SidecarTextEdit {
+            start_line: 1,
+            start_character: 2,
+            end_line: 3,
+            end_character: 4,
+            new_text: "x".to_string(),
+        };
+        let mapped = map_text_edit(&edit);
+        assert_eq!(mapped.range.start, Position::new(1, 2));
+        assert_eq!(mapped.range.end, Position::new(3, 4));
+        assert_eq!(mapped.new_text, "x");
+    }
+
+    #[test]
+    fn map_code_action_carries_metadata() {
+        let item = SidecarCodeActionItem {
+            id: 7,
+            title: "Add using".to_string(),
+            kind: "quickfix".to_string(),
+            is_preferred: true,
+        };
+        let uri: Uri = "file:///tmp/Foo.cs".parse().unwrap();
+        let action = map_code_action(&item, &uri);
+        assert_eq!(action.title, "Add using");
+        assert_eq!(action.kind, Some(CodeActionKind::QUICKFIX));
+        assert_eq!(action.is_preferred, Some(true));
+        let data = action.data.unwrap();
+        assert_eq!(data["id"], serde_json::json!(7));
+        assert_eq!(data["uri"], serde_json::json!("file:///tmp/Foo.cs"));
+    }
+
+    #[test]
+    #[expect(
+        clippy::mutable_key_type,
+        reason = "Uri is the key type mandated by lsp-types WorkspaceEdit"
+    )]
+    fn map_workspace_edit_groups_edits_by_uri() {
+        let edit = SidecarWorkspaceEdit {
+            document_changes: vec![SidecarDocumentEdit {
+                file_path: "/tmp/Foo.cs".to_string(),
+                edits: vec![
+                    SidecarTextEdit {
+                        start_line: 0,
+                        start_character: 0,
+                        end_line: 0,
+                        end_character: 1,
+                        new_text: "a".to_string(),
+                    },
+                    SidecarTextEdit {
+                        start_line: 5,
+                        start_character: 6,
+                        end_line: 5,
+                        end_character: 7,
+                        new_text: "b".to_string(),
+                    },
+                ],
+            }],
+        };
+        let workspace_edit = map_workspace_edit(&edit);
+        let changes = workspace_edit.changes.unwrap();
+        assert_eq!(changes.len(), 1);
+        let (uri, edits) = changes.iter().next().unwrap();
+        assert_eq!(uri.as_str(), "file:///tmp/Foo.cs");
+        assert_eq!(edits.len(), 2);
+        assert_eq!(edits[0].new_text, "a");
+        assert_eq!(edits[1].new_text, "b");
+    }
+
+    #[test]
+    fn map_workspace_edit_skips_unparseable_paths() {
+        let edit = SidecarWorkspaceEdit {
+            document_changes: vec![SidecarDocumentEdit {
+                file_path: "\u{0}".to_string(),
+                edits: vec![],
+            }],
+        };
+        let workspace_edit = map_workspace_edit(&edit);
+        assert!(workspace_edit.changes.unwrap().is_empty());
+    }
+}

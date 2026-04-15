@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <Compile Include="Tests.fs" />
+    <Compile Include="FSharpCoverageTests.fs" />
     <Compile Include="SidecarEndToEndTests.fs" />
   </ItemGroup>
 

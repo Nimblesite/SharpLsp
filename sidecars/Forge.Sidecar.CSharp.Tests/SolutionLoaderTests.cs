@@ -111,4 +111,88 @@ public sealed class SolutionLoaderTests : IDisposable
         var value = result.Match(v => v, _ => null);
         Assert.Equal(wanted, value);
     }
+
+    [Fact]
+    public void Csproj_in_root_is_found_when_no_sln_present()
+    {
+        var csproj = Path.Combine(_root, "App.csproj");
+        File.WriteAllText(csproj, "");
+
+        var result = SolutionLoader.FindSolutionOrProject(_root);
+
+        var value = result.Match(v => v, _ => null);
+        Assert.Equal(csproj, value);
+    }
+
+    [Fact]
+    public void Nonexistent_path_returns_null()
+    {
+        var missing = Path.Combine(_root, "does_not_exist");
+
+        var result = SolutionLoader.FindSolutionOrProject(missing);
+
+        var value = result.Match(v => v, _ => "ERR");
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void Multiple_sln_in_root_picks_one_matching_dir_name()
+    {
+        // Workspace dir "MyApp" with "Other.sln" and "MyApp.sln" — must pick MyApp.sln.
+        var app = Path.Combine(_root, "MyApp");
+        Directory.CreateDirectory(app);
+        var wanted = Path.Combine(app, "MyApp.sln");
+        var other = Path.Combine(app, "Other.sln");
+        File.WriteAllText(wanted, "");
+        File.WriteAllText(other, "");
+
+        var result = SolutionLoader.FindSolutionOrProject(app);
+
+        var value = result.Match(v => v, _ => null);
+        Assert.Equal(wanted, value);
+    }
+
+    [Fact]
+    public void Multiple_sln_in_root_without_matching_name_falls_back_to_first()
+    {
+        // Two unrelated .sln files in root — pick the first one returned by OS.
+        var a = Path.Combine(_root, "A.sln");
+        var b = Path.Combine(_root, "B.sln");
+        File.WriteAllText(a, "");
+        File.WriteAllText(b, "");
+
+        var result = SolutionLoader.FindSolutionOrProject(_root);
+
+        var value = result.Match(v => v, _ => null);
+        Assert.True(value == a || value == b);
+    }
+
+    [Fact]
+    public void Single_csproj_in_subdir_is_found_recursively()
+    {
+        // No .sln, one .csproj nested — recursive search should find it.
+        var sub = Path.Combine(_root, "nested", "Project");
+        Directory.CreateDirectory(sub);
+        var csproj = Path.Combine(sub, "Deep.csproj");
+        File.WriteAllText(csproj, "");
+
+        var result = SolutionLoader.FindSolutionOrProject(_root);
+
+        var value = result.Match(v => v, _ => null);
+        Assert.Equal(csproj, value);
+    }
+
+    [Fact]
+    public void Single_sln_in_subdir_is_found_recursively()
+    {
+        var sub = Path.Combine(_root, "nested", "Solution");
+        Directory.CreateDirectory(sub);
+        var sln = Path.Combine(sub, "Nested.sln");
+        File.WriteAllText(sln, "");
+
+        var result = SolutionLoader.FindSolutionOrProject(_root);
+
+        var value = result.Match(v => v, _ => null);
+        Assert.Equal(sln, value);
+    }
 }
