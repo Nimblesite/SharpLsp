@@ -238,12 +238,48 @@ fn convert_trace_with_format(nettrace_path: &str, format: &str) -> Result<()> {
 }
 
 /// Derive the output path that `dotnet-trace convert` writes for a given input.
+///
+/// `dotnet-trace convert` replaces a trailing `.nettrace` with the format
+/// suffix rather than appending — so `trace-42.nettrace` becomes
+/// `trace-42.speedscope.json`, not `trace-42.nettrace.speedscope.json`.
 fn derived_output_path(input_path: &str, format: &str) -> String {
     let suffix = match format {
         "chromium" => ".chromium.json",
         _ => ".speedscope.json",
     };
-    format!("{input_path}{suffix}")
+    let stem = input_path
+        .strip_suffix(".nettrace")
+        .unwrap_or(input_path);
+    format!("{stem}{suffix}")
+}
+
+#[cfg(test)]
+mod derived_output_path_tests {
+    use super::derived_output_path;
+
+    #[test]
+    fn strips_nettrace_extension_for_speedscope() {
+        assert_eq!(
+            derived_output_path(".forge/profiles/trace-21288.nettrace", "speedscope"),
+            ".forge/profiles/trace-21288.speedscope.json"
+        );
+    }
+
+    #[test]
+    fn strips_nettrace_extension_for_chromium() {
+        assert_eq!(
+            derived_output_path("/tmp/x.nettrace", "chromium"),
+            "/tmp/x.chromium.json"
+        );
+    }
+
+    #[test]
+    fn handles_missing_nettrace_extension() {
+        assert_eq!(
+            derived_output_path("/tmp/weird-name", "speedscope"),
+            "/tmp/weird-name.speedscope.json"
+        );
+    }
 }
 
 /// Default directory for trace output files.
