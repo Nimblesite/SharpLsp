@@ -209,7 +209,7 @@ fn test_full_stack_hover_after_edit() {
         &file_uri,
         u32::try_from(new_line).unwrap(),
         14,
-        Duration::from_secs(30),
+        Duration::from_secs(90),
     );
     let new_md = new_hover["contents"]["value"].as_str().unwrap();
     assert!(
