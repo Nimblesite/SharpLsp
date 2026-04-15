@@ -124,7 +124,7 @@ suite('Diagnostics / Problems Panel', () => {
   // ── Edit Cycle ────────────────────────────────────────────────
 
   test('fixing an error clears the diagnostic', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 4);
+    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 6);
     await replaceDocumentContent(
       diagDoc,
       `namespace DiagTest
@@ -142,7 +142,10 @@ suite('Diagnostics / Problems Panel', () => {
     // Fix the error.
     await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
 
-    const cleared = await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS * 2);
+    // CI's coverage-instrumented sidecar can take noticeably longer to
+    // re-publish cleared diagnostics than a local debug build, so allow
+    // the same generous window we use for `valid file has no error`.
+    const cleared = await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS * 4);
     const errors = cleared.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
     assert.strictEqual(errors.length, 0, 'Diagnostics should clear after fixing the error');
   });
