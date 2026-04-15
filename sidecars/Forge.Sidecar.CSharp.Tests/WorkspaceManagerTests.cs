@@ -62,9 +62,7 @@ public sealed class WorkspaceManagerTests : IDisposable
     [Fact]
     public async Task UpdateDocumentText_unknown_file_after_open_returns_error()
     {
-        var (csprojPath, _) = WriteSingleFileProject(
-            "namespace S; public class Foo {}\n"
-        );
+        var (csprojPath, _) = WriteSingleFileProject("namespace S; public class Foo {}\n");
 
         using var manager = new WorkspaceManager();
 #pragma warning disable CS0618
