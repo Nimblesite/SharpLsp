@@ -658,4 +658,114 @@ suite('NuGet Browser', () => {
       panel.dispose();
     }
   });
+
+  /**
+   * REGRESSION (snapshot-vs-live-derivation):
+   *
+   * The details panel used to read `selectedPackage.isInstalled` from a
+   * stored snapshot baked at selection time. When the user (or another
+   * tool) removed the package from the csproj, the list row updated but
+   * the details panel kept showing the Remove button — because the
+   * snapshot was never refreshed.
+   *
+   * The fix: derive `installed` from the live `installedPackages` signal
+   * at render time, NOT from the snapshot. This test pins that contract
+   * by asserting on the details-panel section specifically.
+   */
+  test('details panel button flips Remove→Install on external csproj edit (snapshot bug)', async function () {
+    this.timeout(45_000);
+
+    const scratch = path.join(tmpDir, 'reactivity-details');
+    const csprojPath = createScratchProject(
+      scratch,
+      `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>`,
+    );
+
+    const context = getExtensionContext();
+    const getClient = getLspClientGetter();
+    assert.ok(getClient(), 'LSP client must be running');
+
+    const panel = NuGetBrowserPanel.open(context, csprojPath, 'ReactivityDetails', getClient);
+
+    /** Extract just the right-hand details-panel HTML for tight assertions. */
+    function detailsSection(html: string): string {
+      const start = html.indexOf('<aside class="details-panel">');
+      assert.ok(start >= 0, 'Rendered HTML must contain the details-panel <aside>');
+      const end = html.indexOf('</aside>', start);
+      return html.slice(start, end);
+    }
+
+    try {
+      await panel.waitForInitialLoad();
+
+      // Select Newtonsoft.Json — it's installed, so the details panel
+      // header MUST render the Remove button.
+      await panel.simulateWebviewMessage({
+        command: 'selectPackage',
+        data: { packageId: 'Newtonsoft.Json' },
+      });
+
+      const detailsBefore = detailsSection(panel.getRenderedHtml());
+      assert.ok(
+        detailsBefore.includes('uninstallPackage'),
+        'PRECONDITION: details panel must show Remove button while package is installed',
+      );
+      assert.ok(
+        !detailsBefore.includes('installPackage('),
+        'PRECONDITION: details panel must NOT show Install button while package is installed',
+      );
+
+      // External edit: rewrite the csproj to drop the PackageReference.
+      // No manual refresh, no UI interaction — just a file write.
+      fs.writeFileSync(
+        csprojPath,
+        `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup></ItemGroup>
+</Project>`,
+        'utf-8',
+      );
+
+      // Wait for the signal to drive a re-render of the details panel.
+      // The selectedPackage snapshot still has isInstalled=true; the bug
+      // would leave the Remove button visible because the renderer trusted
+      // the snapshot. With the fix, the renderer derives `installed` from
+      // the live installedPackages signal and flips to Install.
+      await pollUntilResult(
+        () => Promise.resolve(detailsSection(panel.getRenderedHtml())),
+        (details) => details.includes('installPackage(') && !details.includes('uninstallPackage'),
+        15_000,
+      );
+
+      const detailsAfter = detailsSection(panel.getRenderedHtml());
+      assert.ok(
+        detailsAfter.includes('installPackage('),
+        'After csproj removes PackageReference, details panel MUST render Install button. ' +
+          'If this fails, the renderer is reading isInstalled from the stale ' +
+          'selectedPackage snapshot instead of the live installedPackages signal.',
+      );
+      assert.ok(
+        !detailsAfter.includes('uninstallPackage'),
+        'After csproj removes PackageReference, details panel MUST NOT render Remove button. ' +
+          'Snapshot-vs-live-derivation regression — see VSCODE-REACTIVITY-SPEC.md §8.',
+      );
+
+      // selectedPackage is intentionally NOT cleared by an external edit
+      // — the user's selection persists. We only require the derived UI
+      // to reflect current state.
+      assert.strictEqual(
+        panel.getSelectedPackageId(),
+        'Newtonsoft.Json',
+        'selectedPackage reference must persist across external edits — ' +
+          'only the derived rendering changes, not the user-visible selection',
+      );
+    } finally {
+      panel.dispose();
+    }
+  });
 });

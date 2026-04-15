@@ -249,8 +249,11 @@ function buildPackageItem(state: RenderState, pkg: NuGetSearchResult): string {
   const sel = state.selectedPackage?.id === pkg.id;
   const safeId = esc(pkg.id);
   const desc = pkg.description.length > 0 ? pkg.description : 'No description available';
-  const version = pkg.installedVersion ?? pkg.version;
-  const installed = pkg.isInstalled === true;
+  // Derive `installed` + version from the live installedPackages signal,
+  // not the snapshot — keeps every row in sync with on-disk csproj edits.
+  const installedVersion = state.installedPackages.get(pkg.id);
+  const installed = installedVersion !== undefined;
+  const version = installedVersion ?? pkg.installedVersion ?? pkg.version;
   const pending = state.loading.has(installKey(pkg.id)) || state.loading.has(uninstallKey(pkg.id));
   const dl = pkg.downloadCount !== undefined ? formatDownloads(pkg.downloadCount) : null;
   const icon = installed ? 'database' : 'package_2';
@@ -278,7 +281,10 @@ function buildDetailsHtml(state: RenderState): string {
     return `<div class="details-empty"><span class="material-symbols-outlined empty-icon">package_2</span><p>Select a package to view details</p></div>`;
   }
 
-  const installed = pkg.isInstalled === true;
+  // Derive `installed` from the live installedPackages signal at render
+  // time — never trust the selectedPackage snapshot's isInstalled flag,
+  // which is stale the moment the user (or another tool) edits the csproj.
+  const installed = state.installedPackages.has(pkg.id);
   const versions = (pkg._versions ?? []).slice(0, 20);
   const safeId = esc(pkg.id);
   const safeAuthors = esc(pkg.authors.length > 0 ? pkg.authors : 'Unknown author');

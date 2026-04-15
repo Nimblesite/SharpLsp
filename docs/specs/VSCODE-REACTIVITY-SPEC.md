@@ -119,3 +119,4 @@ Current coverage:
 - **Exposing a manual Refresh button** as the primary way to sync state. Refresh buttons may exist as a user escape hatch; they must not be the load-bearing update mechanism.
 - **Duplicated inline HTML for the same visual element.** Extract a helper.
 - **Diverging representations** of the same data (e.g. a bespoke installed-row renderer alongside the main package-row renderer).
+- **Snapshotting derived state into a stored object.** Example: storing `selectedPackage` with an `isInstalled` boolean baked in at selection time. The snapshot becomes stale the moment the underlying data changes. **Always derive boolean flags, version strings, and other derived fields from the live source-of-truth signal at render time.** The renderer is the only correct place to compute "is this package currently installed" — never the selection handler.
