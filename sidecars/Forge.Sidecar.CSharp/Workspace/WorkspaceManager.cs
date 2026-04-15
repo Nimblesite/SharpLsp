@@ -36,11 +36,29 @@ namespace Forge.Sidecar.CSharp.Workspace;
 /// Manages the Roslyn MSBuildWorkspace lifecycle.
 /// Provides semantic operations: diagnostics, completions, hover, go-to-definition.
 /// </summary>
-internal sealed partial class WorkspaceManager
+internal sealed partial class WorkspaceManager : IDisposable
 {
     private MSBuildWorkspace? _workspace;
     private Solution? _solution;
     private readonly CodeActionResolver _codeActionResolver = new();
+
+    // Roslyn's Solution is immutable; mutating _solution = _solution.WithX(...)
+    // is a non-atomic read-modify-write. Concurrent didChange and workspace-load
+    // mutations would drop edits, leaving Roslyn with stale text.
+    private readonly SemaphoreSlim _solutionMutationLock = new(1, 1);
+
+    public void Dispose()
+    {
+        _workspace?.Dispose();
+        _solutionMutationLock.Dispose();
+    }
+
+    // Pending text edits keyed by file path that arrived BEFORE the workspace
+    // finished loading. We replay them after OpenAsync completes so live edits
+    // sent during workspace warmup aren't silently lost.
+    private readonly Dictionary<string, string> _pendingTextEdits = new(
+        StringComparer.OrdinalIgnoreCase
+    );
 
     public bool IsLoaded => _solution is not null;
 
@@ -67,15 +85,30 @@ internal sealed partial class WorkspaceManager
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
+            await _solutionMutationLock.WaitAsync(ct).ConfigureAwait(false);
+            try
             {
-                return VoidResult.Failure($"Document not found: {filePath}");
-            }
+                if (_solution is null)
+                {
+                    // Workspace still loading. Stash the edit; OpenAsync will
+                    // replay it once the solution is materialized.
+                    _pendingTextEdits[filePath] = newText;
+                    return new VoidResult.Ok<Unit, string>(Unit.Value);
+                }
 
-            var newSource = SourceText.From(newText);
-            _solution = _solution!.WithDocumentText(document.Id, newSource);
-            return new VoidResult.Ok<Unit, string>(Unit.Value);
+                var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
+                if (document is null)
+                {
+                    return VoidResult.Failure($"Document not found: {filePath}");
+                }
+
+                _solution = _solution.WithDocumentText(document.Id, SourceText.From(newText));
+                return new VoidResult.Ok<Unit, string>(Unit.Value);
+            }
+            finally
+            {
+                _ = _solutionMutationLock.Release();
+            }
         }
         catch (Exception ex)
         {
@@ -511,13 +544,62 @@ internal sealed partial class WorkspaceManager
             findResult.Match(value => value, _ => null)
             ?? throw new FileNotFoundException($"No .sln or .csproj found at or under '{path}'.");
 
-        _solution = await LoadSolutionOrProjectAsync(target, ct).ConfigureAwait(false);
+        var loaded = await LoadSolutionOrProjectAsync(target, ct).ConfigureAwait(false);
+
+        await _solutionMutationLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            _solution = loaded;
+            ReplayPendingTextEdits();
+        }
+        finally
+        {
+            _ = _solutionMutationLock.Release();
+        }
 
         await Console
             .Error.WriteLineAsync($"Loaded {_solution.ProjectIds.Count} project(s) from {target}")
             .ConfigureAwait(false);
 
         return new VoidResult.Ok<Unit, string>(Unit.Value);
+    }
+
+    /// <summary>
+    /// Replay any didChange edits that arrived before the workspace finished
+    /// loading. Caller must hold <see cref="_solutionMutationLock" />.
+    /// </summary>
+    private void ReplayPendingTextEdits()
+    {
+        if (_pendingTextEdits.Count == 0 || _solution is null)
+        {
+            return;
+        }
+
+        foreach (var (filePath, newText) in _pendingTextEdits)
+        {
+            var normalizedPath = Path.GetFullPath(filePath);
+            var documentId = FindDocumentIdByPath(normalizedPath);
+            if (documentId is not null)
+            {
+                _solution = _solution.WithDocumentText(documentId, SourceText.From(newText));
+            }
+        }
+        _pendingTextEdits.Clear();
+    }
+
+    private DocumentId? FindDocumentIdByPath(string normalizedPath)
+    {
+        foreach (var project in _solution!.Projects)
+        {
+            foreach (var document in project.Documents)
+            {
+                if (IsPathMatch(document.FilePath, normalizedPath))
+                {
+                    return document.Id;
+                }
+            }
+        }
+        return null;
     }
 
     private async Task<Solution> LoadSolutionOrProjectAsync(string target, CancellationToken ct)
