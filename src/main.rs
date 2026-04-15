@@ -165,6 +165,10 @@ fn run_server() -> Result<()> {
     // Create tokio runtime for async sidecar IPC.
     let runtime = tokio::runtime::Runtime::new().context("create tokio runtime")?;
 
+    // Shared VFS — created here so the solution-diagnostics verification pass
+    // can consult it before re-syncing files from disk and clobbering live edits.
+    let vfs = Arc::new(Vfs::new());
+
     // Initialize C# sidecar manager if enabled and workspace root is available.
     let csharp_sidecar = if forge_config.csharp.enabled {
         workspace_root
@@ -192,12 +196,14 @@ fn run_server() -> Result<()> {
         workspace_root.as_ref(),
         Some((&forge_config.diagnostics, &connection)),
         &runtime,
+        Arc::clone(&vfs),
     );
     start_sidecar(
         fsharp_sidecar.as_ref(),
         workspace_root.as_ref(),
         None,
         &runtime,
+        Arc::clone(&vfs),
     );
 
     main_loop(
@@ -206,6 +212,7 @@ fn run_server() -> Result<()> {
         &forge_config,
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
+        &vfs,
     )?;
 
     // Shut down profiler sessions.
@@ -318,6 +325,7 @@ fn start_sidecar(
     workspace_root: Option<&PathBuf>,
     diagnostics_cfg: Option<(&config::DiagnosticsConfig, &Connection)>,
     runtime: &tokio::runtime::Runtime,
+    vfs: Arc<Vfs>,
 ) {
     if let (Some(sidecar), Some(root)) = (sidecar, workspace_root) {
         let sc = Arc::clone(sidecar);
@@ -337,6 +345,7 @@ fn start_sidecar(
                     Arc::clone(&sc),
                     sender,
                     project_filter,
+                    vfs,
                 );
             }
             sc.start_health_monitor().await;
@@ -357,8 +366,8 @@ fn main_loop(
     _forge_config: &config::ForgeConfig,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
+    vfs: &Arc<Vfs>,
 ) -> Result<()> {
-    let vfs = Vfs::new();
     let parsers = TsParsers::new();
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
     let mut nav_cache = nav_cache::NavCache::new();
@@ -387,7 +396,7 @@ fn main_loop(
 
                 handle_request(
                     req,
-                    &vfs,
+                    vfs,
                     &parsers,
                     &trees,
                     &mut nav_cache,
@@ -404,7 +413,7 @@ fn main_loop(
                 }
                 handle_notification(
                     notif,
-                    &vfs,
+                    vfs,
                     &parsers,
                     &mut trees,
                     &mut nav_cache,
@@ -437,7 +446,7 @@ fn main_loop(
 )]
 fn handle_request(
     req: Request,
-    vfs: &Vfs,
+    vfs: &Arc<Vfs>,
     parsers: &TsParsers,
     trees: &HashMap<Uri, Tree>,
     nav_cache: &mut nav_cache::NavCache,
@@ -563,7 +572,7 @@ fn handle_request(
         WorkspaceSymbolRequest::METHOD => handle_standard_workspace_symbol(req, parsers, vfs),
         // Solution loading
         "forge/loadSolution" => {
-            handle_load_solution(req, runtime, csharp_sidecar, fsharp_sidecar, connection)
+            handle_load_solution(req, runtime, csharp_sidecar, fsharp_sidecar, connection, vfs)
         }
         _ => handle_custom_request(req, parsers, vfs, connection, runtime),
     };
@@ -740,6 +749,7 @@ fn handle_load_solution(
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     connection: &Connection,
+    vfs: &Arc<Vfs>,
 ) -> Result<serde_json::Value> {
     let params: serde_json::Value = serde_json::from_value(req.params)?;
     let sln_path = params
@@ -755,11 +765,17 @@ fn handle_load_solution(
         let cs = Arc::clone(cs);
         let p = payload.clone();
         let sender = connection.sender.clone();
+        let vfs_for_diagnostics = Arc::clone(vfs);
         drop(runtime.spawn(async move {
             match cs.request("workspace/open", p).await {
                 Ok(_) => {
                     info!("Solution loaded in C# (Roslyn) sidecar");
-                    diagnostics::request_solution_in_background(cs, sender, vec![]);
+                    diagnostics::request_solution_in_background(
+                        cs,
+                        sender,
+                        vec![],
+                        vfs_for_diagnostics,
+                    );
                 }
                 Err(err) => error!("C# sidecar workspace/open failed: {err:#}"),
             }

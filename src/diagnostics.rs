@@ -15,6 +15,7 @@ use lsp_types::{
 use tracing::{info, warn};
 
 use crate::sidecar::manager::SidecarManager;
+use crate::vfs::Vfs;
 
 /// Wire type matching C# `DiagnosticResult` `[Key(N)]` ordering.
 ///
@@ -89,6 +90,7 @@ pub fn request_solution_in_background(
     sidecar: Arc<SidecarManager>,
     sender: crossbeam_channel::Sender<Message>,
     project_filter: Vec<String>,
+    vfs: Arc<Vfs>,
 ) {
     let _handle = tokio::spawn(async move {
         match fetch_all(&sidecar, &project_filter).await {
@@ -129,6 +131,7 @@ pub fn request_solution_in_background(
                         &sidecar,
                         &sender,
                         &error_files,
+                        &vfs,
                     )
                     .await;
                 }
@@ -153,6 +156,7 @@ async fn verify_error_files(
     sidecar: &SidecarManager,
     sender: &crossbeam_channel::Sender<Message>,
     error_files: &[String],
+    vfs: &Vfs,
 ) {
     // Small delay to let the workspace settle after initial load.
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -165,18 +169,29 @@ async fn verify_error_files(
             _ => "forge-csharp",
         };
 
-        // Re-read from disk so the sidecar gets fresh text.
-        let disk_text = match tokio::fs::read_to_string(file_path).await {
-            Ok(text) => text,
-            Err(err) => {
-                info!("Cannot read {file_path} from disk: {err:#}");
-                continue;
-            }
-        };
+        // Skip the disk-resync step for documents the editor has open. The
+        // VFS holds the live, possibly-unsaved text — overwriting the sidecar
+        // with on-disk bytes would silently destroy the editor's edits and
+        // leave Roslyn analyzing yesterday's source.
+        let in_vfs = path_to_uri(file_path)
+            .ok()
+            .and_then(|uri| vfs.get_content(&uri))
+            .is_some();
 
-        // Update the sidecar's in-memory compilation with disk content.
-        if let Err(err) = sync_text_to_sidecar(sidecar, file_path, &disk_text).await {
-            warn!("Failed to sync {file_path} to sidecar: {err:#}");
+        if !in_vfs {
+            // Re-read from disk so the sidecar gets fresh text.
+            let disk_text = match tokio::fs::read_to_string(file_path).await {
+                Ok(text) => text,
+                Err(err) => {
+                    info!("Cannot read {file_path} from disk: {err:#}");
+                    continue;
+                }
+            };
+
+            // Update the sidecar's in-memory compilation with disk content.
+            if let Err(err) = sync_text_to_sidecar(sidecar, file_path, &disk_text).await {
+                warn!("Failed to sync {file_path} to sidecar: {err:#}");
+            }
         }
 
         match fetch(sidecar, file_path, source_tag).await {
