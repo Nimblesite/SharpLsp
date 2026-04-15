@@ -147,6 +147,41 @@ interface StopTraceResult {
 }
 ```
 
+### 4.2.1 Trace File Conversion
+
+A `.nettrace` file is not directly viewable — it must be converted to SpeedScope JSON (or Chromium JSON) before it can be opened in a visualizer. Forge exposes an explicit conversion entrypoint so that any trace file on disk (including orphaned files from a previous session, a colleague's dump, or a CI artifact) can be opened in Forge without re-recording.
+
+**Method:** `forge/profiler/convertTrace`
+
+**Params:**
+```typescript
+interface ConvertTraceParams {
+  /** Absolute path to a `.nettrace` file. */
+  inputPath: string;
+  /** Output format: "speedscope" (default) or "chromium". */
+  format?: "speedscope" | "chromium";
+}
+```
+
+**Result:**
+```typescript
+interface ConvertTraceResult {
+  /** Path to the converted file — always a sibling of inputPath. */
+  outputPath: string;
+  /** Size of the converted file in bytes. */
+  fileSizeBytes: number;
+}
+```
+
+Invokes `dotnet-trace convert <input> --format <format>`. The resulting sibling file is:
+
+| Format | Output sibling |
+|--------|----------------|
+| `speedscope` | `<input>.speedscope.json` |
+| `chromium` | `<input>.chromium.json` |
+
+Stopping a trace session (`forge/profiler/stopTrace`) already runs this conversion automatically when the session produced data. `convertTrace` is for files where no live session exists — for example, when the editor was closed during recording, or when opening a `.nettrace` the user recorded elsewhere.
+
 ### 4.3 Counter Monitoring
 
 **Method:** `forge/profiler/startCounters`
@@ -688,6 +723,94 @@ output_directory = ".forge/profiles"
 | Quick pick | Process selection from discovered .NET processes |
 | File open | Open `.speedscope.json` output in browser/SpeedScope viewer |
 
+### 7.1.1 Profiler Tree View — Intent-Revealing UX
+
+The PROFILER tree view MUST make every action discoverable **directly from the node the user is looking at**. A user who right-clicks a session must be able to stop it. A user who right-clicks a process must be able to profile it. No toolbar hunting. No blind QuickPicks.
+
+#### Tree Structure
+
+```
+PROFILER  [refresh]  [open-trace]  [⋯ overflow]
+├── Active Sessions (N)
+│   ├── 🔴 Trace: PID 7161  (recording · 42s)      ← contextValue: profiler-session-trace
+│   └── 🟢 Counters: PID 8203  (streaming)         ← contextValue: profiler-session-counters
+└── .NET Processes (N)
+    ├── ProfileTarget (PID 1608)                   ← contextValue: profiler-process
+    └── Claude (PID 98153)
+```
+
+#### Context Values
+
+Every tree item MUST set a `contextValue` that the `view/item/context` menu `when` clauses key off:
+
+| Tree Item | `contextValue` |
+|-----------|---------------|
+| Active Sessions header | `profiler-header-sessions` |
+| .NET Processes header | `profiler-header-processes` |
+| Trace session | `profiler-session-trace` |
+| Counters session | `profiler-session-counters` |
+| Process entry | `profiler-process` |
+
+#### Default Click Behavior
+
+Clicking a node performs the most common action for that node kind — never a no-op.
+
+| Node | Default Click | Rationale |
+|------|--------------|-----------|
+| Trace session | Stop trace + open result in SpeedScope | Click = "I'm done, show me the flamegraph." |
+| Counters session | Reveal the live counters webview | Click = "Show me the numbers" (stopping is a menu item). |
+| Process | Start trace on this PID | Click = "profile this." |
+| Header / empty | No-op | Informational. |
+
+#### Context Menu (Right-Click) Entries
+
+**On a trace session:**
+- Stop & Open (inline icon = `debug-stop`)
+- Reveal Output File in Finder
+- Copy Output Path
+
+**On a counters session:**
+- Show Live Counters Panel (inline icon = `preview`)
+- Stop Counter Monitoring
+
+**On a process:**
+- Start Trace on This Process (inline icon = `record`)
+- Start Counters on This Process
+- Collect Memory Dump of This Process
+- Copy PID
+
+#### Tooltips
+
+Every session and process node MUST have a Markdown tooltip that includes:
+- Node identity (PID, session ID, kind)
+- Output path if any
+- A one-line hint describing what clicking does
+
+This eliminates "what is this thing and what do I do with it?" confusion.
+
+#### Toolbar Organisation
+
+The view title bar keeps only actions that don't belong to a specific node:
+
+| Group | Command | Icon |
+|-------|---------|------|
+| `navigation@1` | Refresh | `refresh` |
+| `navigation@2` | Open Trace File… | `folder-opened` |
+| `overflow` | Start Trace (picker), Start Counters (picker), Collect Dump (picker), Convert .nettrace, Analyze Heap, Compare Snapshots, Detect Leaks | — |
+
+The overflow menu (`⋯`) holds picker-based workflows that don't need a visible button. All direct-action equivalents live on the tree node context menus.
+
+### 7.1.2 Trace File Opening
+
+Forge MUST let the user open a `.nettrace` **file** as a first-class action, not just as a side-effect of stopping a session. Users who find an orphaned `.nettrace` (e.g. because the editor was closed mid-recording) need a path forward.
+
+The `forge.profiler.openTrace` command:
+1. Shows an open-file dialog filtering for `.nettrace`, `.speedscope.json`, and `.json` files.
+2. If the chosen file is `.nettrace`, invokes `forge/profiler/convertTrace` to produce a sibling `.speedscope.json`.
+3. Opens the resulting SpeedScope file in the external SpeedScope web viewer.
+
+Stopping a trace session uses the same pipeline, so the UX is consistent: every trace — freshly captured or loaded from disk — ends up in SpeedScope with one interaction.
+
 ### 7.2 Commands
 
 | Command | Title |
@@ -703,6 +826,16 @@ output_directory = ".forge/profiles"
 | `forge.profiler.detectLeaks` | Forge: Detect Memory Leaks |
 | `forge.profiler.showObjectGraph` | Forge: Show Object Retention Graph |
 | `forge.profiler.inspectObject` | Forge: Inspect Object |
+| `forge.profiler.openTrace` | Forge: Open Trace File… |
+| `forge.profiler.convertTrace` | Forge: Convert .nettrace to SpeedScope |
+| `forge.profiler.stopSession` | Forge: Stop Session |
+| `forge.profiler.revealOutput` | Forge: Reveal Output File in Finder |
+| `forge.profiler.copyOutputPath` | Forge: Copy Output Path |
+| `forge.profiler.showCountersPanel` | Forge: Show Live Counters Panel |
+| `forge.profiler.traceProcess` | Forge: Start Trace on This Process |
+| `forge.profiler.countersProcess` | Forge: Start Counters on This Process |
+| `forge.profiler.dumpProcess` | Forge: Collect Memory Dump of This Process |
+| `forge.profiler.copyPid` | Forge: Copy PID |
 
 ## 8. Performance Requirements
 

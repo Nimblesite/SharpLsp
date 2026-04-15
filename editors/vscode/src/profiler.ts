@@ -15,6 +15,16 @@ import {
   CMD_PROFILER_DETECT_LEAKS,
   CMD_PROFILER_SHOW_OBJECT_GRAPH,
   CMD_PROFILER_INSPECT_OBJECT,
+  CMD_PROFILER_OPEN_TRACE,
+  CMD_PROFILER_CONVERT_TRACE,
+  CMD_PROFILER_STOP_SESSION,
+  CMD_PROFILER_REVEAL_OUTPUT,
+  CMD_PROFILER_COPY_OUTPUT_PATH,
+  CMD_PROFILER_SHOW_COUNTERS_PANEL,
+  CMD_PROFILER_TRACE_PROCESS,
+  CMD_PROFILER_COUNTERS_PROCESS,
+  CMD_PROFILER_DUMP_PROCESS,
+  CMD_PROFILER_COPY_PID,
 } from './constants.js';
 import { promptAndOpenGraph } from './profiler-graph.js';
 import { promptAndOpenDiff, detectLeaksWorkflow } from './profiler-diff.js';
@@ -76,26 +86,44 @@ interface CounterUpdateParams {
 
 interface SessionInfo {
   readonly id: string;
+  /** 'Trace' or 'Counters'. */
   readonly kind: string;
   readonly pid: number;
+  /** Output file path (for traces; counters sessions leave this undefined). */
+  readonly outputPath: string | undefined;
+  /** When the session was started. */
+  readonly startedAt: number;
+}
+
+interface ConvertTraceResult {
+  readonly output_path: string;
+  readonly file_size_bytes: number;
 }
 
 /** A node in the Profiler tree view. */
-class ProfilerTreeItem extends vscode.TreeItem {
+export class ProfilerTreeItem extends vscode.TreeItem {
   public readonly nodeKind: string;
   public readonly processPid: number | undefined;
   public readonly sessionId: string | undefined;
+  public readonly outputPath: string | undefined;
 
   constructor(
     label: string,
     nodeKind: string,
     collapsible: vscode.TreeItemCollapsibleState,
-    options?: { pid?: number; sessionId?: string },
+    options?: {
+      pid?: number;
+      sessionId?: string;
+      outputPath?: string;
+      contextValue?: string;
+    },
   ) {
     super(label, collapsible);
     this.nodeKind = nodeKind;
     this.processPid = options?.pid ?? undefined;
     this.sessionId = options?.sessionId ?? undefined;
+    this.outputPath = options?.outputPath ?? undefined;
+    if (options?.contextValue !== undefined) this.contextValue = options.contextValue;
   }
 }
 
@@ -127,9 +155,14 @@ export class ProfilerTreeProvider implements vscode.TreeDataProvider<ProfilerTre
     this.emitter.fire(undefined);
   }
 
-  public addSession(id: string, kind: string, pid: number): void {
-    this.activeSessions.push({ id, kind, pid });
+  public addSession(id: string, kind: string, pid: number, outputPath?: string): void {
+    this.activeSessions.push({ id, kind, pid, outputPath, startedAt: Date.now() });
     this.emitter.fire(undefined);
+  }
+
+  /** Lookup a session by ID (for context-menu dispatch). */
+  public findSession(id: string): SessionInfo | undefined {
+    return this.activeSessions.find((s) => s.id === id);
   }
 
   public removeSession(id: string): void {
@@ -151,19 +184,13 @@ export class ProfilerTreeProvider implements vscode.TreeDataProvider<ProfilerTre
         `Active Sessions (${String(this.activeSessions.length)})`,
         'header',
         vscode.TreeItemCollapsibleState.None,
+        { contextValue: 'profiler-header-sessions' },
       );
       header.iconPath = new vscode.ThemeIcon('pulse');
       nodes.push(header);
 
       for (const session of this.activeSessions) {
-        const node = new ProfilerTreeItem(
-          `${session.kind}: PID ${String(session.pid)} [${session.id}]`,
-          'session',
-          vscode.TreeItemCollapsibleState.None,
-          { sessionId: session.id },
-        );
-        node.iconPath = new vscode.ThemeIcon('debug-start');
-        nodes.push(node);
+        nodes.push(buildSessionNode(session));
       }
     }
 
@@ -172,20 +199,13 @@ export class ProfilerTreeProvider implements vscode.TreeDataProvider<ProfilerTre
         `.NET Processes (${String(this.processes.length)})`,
         'header',
         vscode.TreeItemCollapsibleState.None,
+        { contextValue: 'profiler-header-processes' },
       );
       header.iconPath = new vscode.ThemeIcon('server-process');
       nodes.push(header);
 
       for (const proc of this.processes) {
-        const node = new ProfilerTreeItem(
-          `${proc.name} (PID ${String(proc.pid)})`,
-          'process',
-          vscode.TreeItemCollapsibleState.None,
-          { pid: proc.pid },
-        );
-        node.description = proc.command_line;
-        node.iconPath = new vscode.ThemeIcon('terminal');
-        nodes.push(node);
+        nodes.push(buildProcessNode(proc));
       }
     }
 
@@ -195,6 +215,7 @@ export class ProfilerTreeProvider implements vscode.TreeDataProvider<ProfilerTre
         'header',
         vscode.TreeItemCollapsibleState.None,
       );
+      empty.description = 'Click the refresh icon to scan again';
       empty.iconPath = new vscode.ThemeIcon('info');
       nodes.push(empty);
     }
@@ -211,6 +232,76 @@ export class ProfilerTreeProvider implements vscode.TreeDataProvider<ProfilerTre
   public get sessionCount(): number {
     return this.activeSessions.length;
   }
+}
+
+/** Build a tree node for an active profiling session. */
+function buildSessionNode(session: SessionInfo): ProfilerTreeItem {
+  const kindLower = session.kind.toLowerCase();
+  const contextValue = `profiler-session-${kindLower}`;
+  const options: { sessionId: string; contextValue: string; outputPath?: string } = {
+    sessionId: session.id,
+    contextValue,
+  };
+  if (session.outputPath !== undefined) options.outputPath = session.outputPath;
+  const node = new ProfilerTreeItem(
+    `${session.kind}: PID ${String(session.pid)}`,
+    'session',
+    vscode.TreeItemCollapsibleState.None,
+    options,
+  );
+  const elapsedSec = Math.floor((Date.now() - session.startedAt) / 1000);
+  node.description = session.kind === 'Trace' ? `recording · ${String(elapsedSec)}s` : 'streaming';
+  node.iconPath = new vscode.ThemeIcon(
+    session.kind === 'Trace' ? 'record' : 'pulse',
+    new vscode.ThemeColor('charts.red'),
+  );
+  node.tooltip = new vscode.MarkdownString(
+    [
+      `**${session.kind} session**`,
+      `- PID: \`${String(session.pid)}\``,
+      `- Session ID: \`${session.id}\``,
+      session.outputPath !== undefined ? `- Output: \`${session.outputPath}\`` : '',
+      '',
+      session.kind === 'Trace'
+        ? 'Click to **stop & open** the trace. Right-click for more options.'
+        : 'Click to **show the live counters panel**. Right-click to stop.',
+    ]
+      .filter((s) => s.length > 0)
+      .join('\n'),
+  );
+  node.command = {
+    command: CMD_PROFILER_STOP_SESSION,
+    title: session.kind === 'Trace' ? 'Stop Trace' : 'Show Counters',
+    arguments: [node],
+  };
+  return node;
+}
+
+/** Build a tree node for a discovered .NET process. */
+function buildProcessNode(proc: DotNetProcess): ProfilerTreeItem {
+  const node = new ProfilerTreeItem(
+    `${proc.name} (PID ${String(proc.pid)})`,
+    'process',
+    vscode.TreeItemCollapsibleState.None,
+    { pid: proc.pid, contextValue: 'profiler-process' },
+  );
+  node.description = proc.command_line;
+  node.iconPath = new vscode.ThemeIcon('terminal');
+  node.tooltip = new vscode.MarkdownString(
+    [
+      `**${proc.name}** · PID \`${String(proc.pid)}\``,
+      '',
+      `\`${proc.command_line}\``,
+      '',
+      'Click to choose an action. Right-click for: trace, counters, dump, copy PID.',
+    ].join('\n'),
+  );
+  node.command = {
+    command: CMD_PROFILER_TRACE_PROCESS,
+    title: 'Start Trace',
+    arguments: [node],
+  };
+  return node;
 }
 
 // ── Counter Webview ───────────────────────────────────────────────
@@ -454,152 +545,294 @@ export function registerCommands(
     }),
   );
 
+  /** Start a trace session on a known PID. Used by toolbar + per-process menu. */
+  async function startTraceOn(pid: number): Promise<void> {
+    const lsp = getClient();
+    if (lsp === undefined) return;
+    try {
+      const result = await lsp.sendRequest<StartTraceResult>('forge/profiler/startTrace', { pid });
+      provider.addSession(result.session_id, 'Trace', pid, result.output_path);
+      statusBar.update(provider.sessionCount);
+      void vscode.window.showInformationMessage(
+        `Trace recording on PID ${String(pid)} → ${result.output_path}`,
+      );
+    } catch (err: unknown) {
+      void vscode.window.showErrorMessage(`Start trace failed: ${getErrorMessage(err)}`);
+    }
+  }
+
+  /** Stop a trace session by ID. Returns the output path of the resulting file. */
+  async function stopTraceById(sessionId: string): Promise<string | undefined> {
+    const lsp = getClient();
+    if (lsp === undefined) return undefined;
+    try {
+      const result = await lsp.sendRequest<StopTraceResult>('forge/profiler/stopTrace', {
+        session_id: sessionId,
+      });
+      provider.removeSession(sessionId);
+      statusBar.update(provider.sessionCount);
+      const size = formatBytes(result.file_size_bytes);
+      const dur = formatDuration(result.duration_ms);
+      void vscode.window.showInformationMessage(
+        `Trace saved: ${result.output_path} (${size}, ${dur})`,
+      );
+      return result.output_path;
+    } catch (err: unknown) {
+      void vscode.window.showErrorMessage(`Stop trace failed: ${getErrorMessage(err)}`);
+      return undefined;
+    }
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_START_TRACE, async () => {
       const lsp = getClient();
       if (lsp === undefined) return;
-
-      try {
-        const proc = await pickProcess(lsp);
-        if (proc === undefined) return;
-
-        const result = await lsp.sendRequest<StartTraceResult>('forge/profiler/startTrace', {
-          pid: proc.pid,
-        });
-
-        provider.addSession(result.session_id, 'Trace', proc.pid);
-        statusBar.update(provider.sessionCount);
-        void vscode.window.showInformationMessage(`Trace started: ${result.output_path}`);
-      } catch (err: unknown) {
-        const msg = getErrorMessage(err);
-        void vscode.window.showErrorMessage(`Start trace failed: ${msg}`);
-      }
+      const proc = await pickProcess(lsp);
+      if (proc === undefined) return;
+      await startTraceOn(proc.pid);
     }),
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_STOP_TRACE, async () => {
-      const lsp = getClient();
-      if (lsp === undefined) return;
+    vscode.commands.registerCommand(CMD_PROFILER_TRACE_PROCESS, async (item?: ProfilerTreeItem) => {
+      const pid = item?.processPid;
+      if (pid === undefined) return;
+      await startTraceOn(pid);
+    }),
+  );
 
-      const sessionId = await pickActiveSession(provider, 'Trace');
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_PROFILER_STOP_TRACE, async (item?: ProfilerTreeItem) => {
+      let sessionId = item?.sessionId;
+      if (sessionId === undefined) {
+        sessionId = await pickActiveSession(provider, 'Trace');
+      }
       if (sessionId === undefined) return;
-
-      try {
-        const result = await lsp.sendRequest<StopTraceResult>('forge/profiler/stopTrace', {
-          session_id: sessionId,
-        });
-
-        provider.removeSession(sessionId);
-        statusBar.update(provider.sessionCount);
-        const size = formatBytes(result.file_size_bytes);
-        const dur = formatDuration(result.duration_ms);
-        void vscode.window.showInformationMessage(
-          `Trace saved: ${result.output_path} (${size}, ${dur})`,
-        );
-
-        // Open SpeedScope JSON in browser if the output is a speedscope file.
-        if (result.output_path.endsWith('.speedscope.json')) {
-          await openSpeedScope(result.output_path);
-        }
-      } catch (err: unknown) {
-        const msg = getErrorMessage(err);
-        void vscode.window.showErrorMessage(`Stop trace failed: ${msg}`);
+      const outputPath = await stopTraceById(sessionId);
+      if (outputPath !== undefined) {
+        // Default Stop action also opens the resulting trace (converted if needed).
+        await openTraceFile(getClient(), outputPath);
       }
     }),
   );
+
+  async function startCountersOn(pid: number): Promise<void> {
+    const lsp = getClient();
+    if (lsp === undefined) return;
+    try {
+      const result = await lsp.sendRequest<StartCountersResult>('forge/profiler/startCounters', {
+        pid,
+      });
+      provider.addSession(result.session_id, 'Counters', pid);
+      statusBar.update(provider.sessionCount);
+      const panel = CounterWebviewPanel.open(result.session_id, pid, context);
+      counterPanels.set(result.session_id, panel);
+      const currentClient = getClient();
+      if (currentClient !== undefined && !CounterWebviewPanel.has('__wired__')) {
+        wireCounterNotifications(currentClient);
+      }
+      void vscode.window.showInformationMessage(
+        `Counter monitoring started for PID ${String(pid)}`,
+      );
+    } catch (err: unknown) {
+      void vscode.window.showErrorMessage(`Start counters failed: ${getErrorMessage(err)}`);
+    }
+  }
+
+  async function stopCountersById(sessionId: string): Promise<void> {
+    const lsp = getClient();
+    if (lsp === undefined) return;
+    try {
+      await lsp.sendRequest('forge/profiler/stopCounters', { session_id: sessionId });
+      provider.removeSession(sessionId);
+      statusBar.update(provider.sessionCount);
+      const panel = counterPanels.get(sessionId);
+      if (panel !== undefined) {
+        panel.dispose();
+        counterPanels.delete(sessionId);
+      }
+      void vscode.window.showInformationMessage('Counter monitoring stopped.');
+    } catch (err: unknown) {
+      void vscode.window.showErrorMessage(`Stop counters failed: ${getErrorMessage(err)}`);
+    }
+  }
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_START_COUNTERS, async () => {
       const lsp = getClient();
       if (lsp === undefined) return;
+      const proc = await pickProcess(lsp);
+      if (proc === undefined) return;
+      await startCountersOn(proc.pid);
+    }),
+  );
 
-      try {
-        const proc = await pickProcess(lsp);
-        if (proc === undefined) return;
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      CMD_PROFILER_COUNTERS_PROCESS,
+      async (item?: ProfilerTreeItem) => {
+        const pid = item?.processPid;
+        if (pid === undefined) return;
+        await startCountersOn(pid);
+      },
+    ),
+  );
 
-        const result = await lsp.sendRequest<StartCountersResult>('forge/profiler/startCounters', {
-          pid: proc.pid,
-        });
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_PROFILER_STOP_COUNTERS, async (item?: ProfilerTreeItem) => {
+      let sessionId = item?.sessionId;
+      if (sessionId === undefined) {
+        sessionId = await pickActiveSession(provider, 'Counters');
+      }
+      if (sessionId === undefined) return;
+      await stopCountersById(sessionId);
+    }),
+  );
 
-        provider.addSession(result.session_id, 'Counters', proc.pid);
-        statusBar.update(provider.sessionCount);
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      CMD_PROFILER_SHOW_COUNTERS_PANEL,
+      (item?: ProfilerTreeItem) => {
+        const sessionId = item?.sessionId;
+        if (sessionId === undefined) return;
+        const session = provider.findSession(sessionId);
+        if (session === undefined) return;
+        const panel = CounterWebviewPanel.open(sessionId, session.pid, context);
+        counterPanels.set(sessionId, panel);
+      },
+    ),
+  );
 
-        // Open the live counter webview.
-        const panel = CounterWebviewPanel.open(result.session_id, proc.pid, context);
-        counterPanels.set(result.session_id, panel);
-
-        // Wire notifications now if the client was unavailable at startup.
-        const currentClient = getClient();
-        if (currentClient !== undefined && !CounterWebviewPanel.has('__wired__')) {
-          wireCounterNotifications(currentClient);
+  // Default click on a session tree item: dispatch to the right "stop" by kind.
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_PROFILER_STOP_SESSION, async (item?: ProfilerTreeItem) => {
+      const sessionId = item?.sessionId;
+      if (sessionId === undefined) return;
+      const session = provider.findSession(sessionId);
+      if (session === undefined) return;
+      if (session.kind === 'Trace') {
+        const outputPath = await stopTraceById(sessionId);
+        if (outputPath !== undefined) {
+          await openTraceFile(getClient(), outputPath);
         }
-
-        void vscode.window.showInformationMessage(
-          `Counter monitoring started for PID ${String(proc.pid)}`,
-        );
-      } catch (err: unknown) {
-        const msg = getErrorMessage(err);
-        void vscode.window.showErrorMessage(`Start counters failed: ${msg}`);
+      } else if (session.kind === 'Counters') {
+        // Clicking a counters session reveals the live panel rather than stopping it.
+        const panel = CounterWebviewPanel.open(sessionId, session.pid, context);
+        counterPanels.set(sessionId, panel);
       }
     }),
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_PROFILER_STOP_COUNTERS, async () => {
+    vscode.commands.registerCommand(CMD_PROFILER_COPY_PID, async (item?: ProfilerTreeItem) => {
+      const pid = item?.processPid;
+      if (pid === undefined) return;
+      await vscode.env.clipboard.writeText(String(pid));
+      void vscode.window.showInformationMessage(`Copied PID ${String(pid)} to clipboard`);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      CMD_PROFILER_COPY_OUTPUT_PATH,
+      async (item?: ProfilerTreeItem) => {
+        const path = item?.outputPath;
+        if (path === undefined || path.length === 0) {
+          void vscode.window.showInformationMessage('Session has no output file yet.');
+          return;
+        }
+        await vscode.env.clipboard.writeText(path);
+        void vscode.window.showInformationMessage(`Copied: ${path}`);
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      CMD_PROFILER_REVEAL_OUTPUT,
+      async (item?: ProfilerTreeItem) => {
+        const path = item?.outputPath;
+        if (path === undefined || path.length === 0) {
+          void vscode.window.showInformationMessage('Session has no output file yet.');
+          return;
+        }
+        await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(path));
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_PROFILER_OPEN_TRACE, async () => {
+      const picked = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: { Traces: ['nettrace', 'speedscope.json', 'json'] },
+        title: 'Open Trace File',
+      });
+      const file = picked?.[0];
+      if (file === undefined) return;
+      await openTraceFile(getClient(), file.fsPath);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_PROFILER_CONVERT_TRACE, async () => {
       const lsp = getClient();
       if (lsp === undefined) return;
-
-      const sessionId = await pickActiveSession(provider, 'Counters');
-      if (sessionId === undefined) return;
-
+      const picked = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        filters: { 'nettrace files': ['nettrace'] },
+        title: 'Convert .nettrace File',
+      });
+      const file = picked?.[0];
+      if (file === undefined) return;
       try {
-        await lsp.sendRequest('forge/profiler/stopCounters', {
-          session_id: sessionId,
+        const result = await lsp.sendRequest<ConvertTraceResult>('forge/profiler/convertTrace', {
+          input_path: file.fsPath,
+          format: 'speedscope',
         });
-        provider.removeSession(sessionId);
-        statusBar.update(provider.sessionCount);
-
-        // Close the counter webview if open.
-        const panel = counterPanels.get(sessionId);
-        if (panel !== undefined) {
-          panel.dispose();
-          counterPanels.delete(sessionId);
-        }
-
-        void vscode.window.showInformationMessage('Counter monitoring stopped.');
+        const size = formatBytes(result.file_size_bytes);
+        void vscode.window.showInformationMessage(`Converted: ${result.output_path} (${size})`);
+        await openSpeedScope(result.output_path);
       } catch (err: unknown) {
-        const msg = getErrorMessage(err);
-        void vscode.window.showErrorMessage(`Stop counters failed: ${msg}`);
+        void vscode.window.showErrorMessage(`Convert failed: ${getErrorMessage(err)}`);
       }
     }),
   );
+
+  async function collectDumpOn(pid: number): Promise<void> {
+    const lsp = getClient();
+    if (lsp === undefined || isTestMode) return;
+    try {
+      const dumpType = await vscode.window.showQuickPick(['Heap', 'Full', 'Mini'], {
+        placeHolder: 'Select dump type',
+      });
+      if (dumpType === undefined) return;
+      const result = await lsp.sendRequest<CollectDumpResult>('forge/profiler/collectDump', {
+        pid,
+        dump_type: dumpType,
+      });
+      const size = formatBytes(result.file_size_bytes);
+      void vscode.window.showInformationMessage(`Dump saved: ${result.output_path} (${size})`);
+    } catch (err: unknown) {
+      void vscode.window.showErrorMessage(`Collect dump failed: ${getErrorMessage(err)}`);
+    }
+  }
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_COLLECT_DUMP, async () => {
       const lsp = getClient();
       if (lsp === undefined || isTestMode) return;
+      const proc = await pickProcess(lsp);
+      if (proc === undefined) return;
+      await collectDumpOn(proc.pid);
+    }),
+  );
 
-      try {
-        const proc = await pickProcess(lsp);
-        if (proc === undefined) return;
-
-        const dumpType = await vscode.window.showQuickPick(['Heap', 'Full', 'Mini'], {
-          placeHolder: 'Select dump type',
-        });
-        if (dumpType === undefined) return;
-
-        const result = await lsp.sendRequest<CollectDumpResult>('forge/profiler/collectDump', {
-          pid: proc.pid,
-          dump_type: dumpType,
-        });
-
-        const size = formatBytes(result.file_size_bytes);
-        void vscode.window.showInformationMessage(`Dump saved: ${result.output_path} (${size})`);
-      } catch (err: unknown) {
-        const msg = getErrorMessage(err);
-        void vscode.window.showErrorMessage(`Collect dump failed: ${msg}`);
-      }
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_PROFILER_DUMP_PROCESS, async (item?: ProfilerTreeItem) => {
+      const pid = item?.processPid;
+      if (pid === undefined) return;
+      await collectDumpOn(pid);
     }),
   );
 
@@ -735,6 +968,42 @@ export function registerCommands(
 }
 
 // ── SpeedScope Integration ────────────────────────────────────────
+
+/**
+ * Open a trace file. Converts `.nettrace` to SpeedScope JSON on the fly via
+ * `forge/profiler/convertTrace` when needed. The LSP client may be unavailable
+ * if the extension hasn't finished activating — in that case we just surface
+ * the file path to the user.
+ */
+async function openTraceFile(
+  client: LanguageClient | undefined,
+  filePath: string,
+): Promise<void> {
+  if (filePath.endsWith('.speedscope.json')) {
+    await openSpeedScope(filePath);
+    return;
+  }
+  if (filePath.endsWith('.nettrace')) {
+    if (client === undefined) {
+      void vscode.window.showWarningMessage(
+        `Language server is not ready — can't convert ${filePath} yet.`,
+      );
+      return;
+    }
+    try {
+      const result = await client.sendRequest<ConvertTraceResult>('forge/profiler/convertTrace', {
+        input_path: filePath,
+        format: 'speedscope',
+      });
+      await openSpeedScope(result.output_path);
+    } catch (err: unknown) {
+      void vscode.window.showErrorMessage(`Failed to convert trace: ${getErrorMessage(err)}`);
+    }
+    return;
+  }
+  // Fallback: try to open as SpeedScope directly.
+  await openSpeedScope(filePath);
+}
 
 /** Open a SpeedScope JSON trace file in the browser. */
 async function openSpeedScope(filePath: string): Promise<void> {

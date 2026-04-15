@@ -174,14 +174,58 @@ pub fn stop(session_id: &str) -> Result<StopTraceResult> {
     })
 }
 
-/// Convert `.nettrace` to `SpeedScope` JSON format.
+/// Parameters for converting a `.nettrace` file to another format.
+#[derive(Debug, Deserialize)]
+pub struct ConvertTraceParams {
+    /// Path to the `.nettrace` input file.
+    pub input_path: String,
+    /// Target format: `speedscope` (default) or `chromium`.
+    #[serde(default = "default_format")]
+    pub format: String,
+}
+
+/// Result of converting a trace file.
+#[derive(Debug, Serialize)]
+pub struct ConvertTraceResult {
+    /// Path to the converted output file (derived from input + format).
+    pub output_path: String,
+    /// Size of the converted file in bytes.
+    pub file_size_bytes: u64,
+}
+
+/// Public entry point for `forge/profiler/convertTrace`.
+///
+/// Runs `dotnet-trace convert` and returns the path to the sibling output file
+/// that the tool produces. Unlike the private helper used by `stop`, this takes
+/// an arbitrary file — useful for previously captured traces that were never
+/// converted (e.g. orphaned from a crashed editor session).
+pub fn convert(params: &ConvertTraceParams) -> Result<ConvertTraceResult> {
+    convert_trace_with_format(&params.input_path, &params.format)?;
+
+    let output_path = derived_output_path(&params.input_path, &params.format);
+    let file_size_bytes = std::fs::metadata(&output_path)
+        .with_context(|| format!("stat converted file {output_path}"))?
+        .len();
+
+    Ok(ConvertTraceResult {
+        output_path,
+        file_size_bytes,
+    })
+}
+
+/// Convert `.nettrace` to `SpeedScope` JSON format (internal default path).
 fn convert_trace(nettrace_path: &str) -> Result<()> {
+    convert_trace_with_format(nettrace_path, "speedscope")
+}
+
+/// Convert `.nettrace` to the requested format.
+fn convert_trace_with_format(nettrace_path: &str, format: &str) -> Result<()> {
     let tool = tool_discovery::require_trace()?;
 
-    info!(path = %nettrace_path, "Converting trace to speedscope format");
+    info!(path = %nettrace_path, format = %format, "Converting trace");
 
     let output = std::process::Command::new(tool)
-        .args(["convert", nettrace_path, "--format", "speedscope"])
+        .args(["convert", nettrace_path, "--format", format])
         .output()
         .context("failed to run dotnet-trace convert")?;
 
@@ -191,6 +235,15 @@ fn convert_trace(nettrace_path: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Derive the output path that `dotnet-trace convert` writes for a given input.
+fn derived_output_path(input_path: &str, format: &str) -> String {
+    let suffix = match format {
+        "chromium" => ".chromium.json",
+        _ => ".speedscope.json",
+    };
+    format!("{input_path}{suffix}")
 }
 
 /// Default directory for trace output files.

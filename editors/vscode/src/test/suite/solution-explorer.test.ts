@@ -916,4 +916,124 @@ public class EventSource
         'stale data bug: tree still displays the previous class name',
     );
   });
+
+  // ── Reactivity: csproj PackageReference edits ─────────────────
+
+  /**
+   * REACTIVITY: external csproj edits MUST propagate to the solution tree's
+   * Dependencies → Packages node without any manual refresh. When a user (or
+   * another tool) removes a <PackageReference>, the node must disappear.
+   *
+   * Contract from CLAUDE.md: "All screens MUST BE 100% reactive."
+   */
+  test('Dependencies → Packages tree reacts to external csproj edit', async function () {
+    this.timeout(30_000);
+
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext?.isActive, 'Extension must be active');
+
+    interface TreeNode {
+      readonly label?: string | { label: string };
+      readonly children?: TreeNode[];
+    }
+    interface ExplorerApi {
+      explorerProvider: {
+        loadSolution(slnPath: string): Promise<void>;
+        refresh(): Promise<void>;
+        clear(): void;
+        getChildren(element?: unknown): TreeNode[] | undefined;
+      };
+    }
+    const api = ext.exports as ExplorerApi | undefined;
+    assert.ok(api?.explorerProvider, 'Extension must export explorerProvider');
+
+    // Build a mini solution with one csproj containing Newtonsoft.Json.
+    const projDir = path.join(tmpDir, 'PackageReactivityTest');
+    fs.mkdirSync(projDir, { recursive: true });
+
+    const csprojPath = path.join(projDir, 'PackageReactivityTest.csproj');
+    fs.writeFileSync(
+      csprojPath,
+      `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>`,
+    );
+
+    const slnPath = path.join(tmpDir, 'PackageReactivityTest.sln');
+    fs.writeFileSync(
+      slnPath,
+      [
+        'Microsoft Visual Studio Solution File, Format Version 12.00',
+        'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PackageReactivityTest", ' +
+          '"PackageReactivityTest/PackageReactivityTest.csproj", ' +
+          '"{00000000-0000-0000-0000-000000000098}"',
+        'EndProject',
+        'Global',
+        'EndGlobal',
+      ].join('\n'),
+    );
+
+    // Force at least one source file so the project materializes in the tree.
+    fs.writeFileSync(
+      path.join(projDir, 'Dummy.cs'),
+      'namespace PackageReactivityTest;\n\npublic class Dummy { }',
+    );
+    const { doc } = await openCSharpFile(
+      projDir,
+      'Dummy.cs',
+      'namespace PackageReactivityTest;\n\npublic class Dummy { }',
+    );
+    await waitForDocumentSymbols(doc.uri);
+
+    await api.explorerProvider.loadSolution(slnPath);
+    const provider = api.explorerProvider;
+
+    function searchNodes(nodes: TreeNode[] | undefined, target: string): boolean {
+      if (nodes === undefined) return false;
+      for (const node of nodes) {
+        const text = typeof node.label === 'string' ? node.label : (node.label?.label ?? '');
+        if (text.includes(target)) return true;
+        if (searchNodes(node.children, target)) return true;
+      }
+      return false;
+    }
+
+    // Wait for the initial tree to contain Newtonsoft.Json.
+    const hasPkgInitially = await pollUntilResult(
+      async () => searchNodes(provider.getChildren(), 'Newtonsoft.Json'),
+      (found) => found,
+      10_000,
+    );
+    assert.ok(
+      hasPkgInitially,
+      'Tree must show Newtonsoft.Json under Dependencies → Packages initially',
+    );
+
+    // Rewrite the csproj to drop the PackageReference — no manual refresh.
+    fs.writeFileSync(
+      csprojPath,
+      `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
+  <ItemGroup></ItemGroup>
+</Project>`,
+    );
+
+    // The file watcher + signal must drive a rebuild.
+    const removed = await pollUntilResult(
+      async () => !searchNodes(provider.getChildren(), 'Newtonsoft.Json'),
+      (gone) => gone,
+      10_000,
+    );
+
+    api.explorerProvider.clear();
+
+    assert.ok(
+      removed,
+      'After csproj edit removes PackageReference, tree MUST no longer show Newtonsoft.Json ' +
+        '(reactive contract violated)',
+    );
+  });
 });

@@ -16,11 +16,13 @@ import {
   buildInstallToast,
   buildUninstallToast,
   enrichPackageMetadata,
+  fetchInstalledMetadata,
   findOrSynthesizePackage,
   revertOptimisticInstall,
   revertOptimisticUninstall,
 } from './nuget-browser/mutate.js';
 import { loadTargetsWithDefaults, persistTargetSelection } from './nuget-browser/target-store.js';
+import * as projectDeps from './project-deps-store.js';
 import {
   installKey,
   type LoadingKey,
@@ -45,6 +47,7 @@ export class NuGetBrowserPanel {
   private readonly projectName: string;
   private readonly getClient: () => LanguageClient | undefined;
   private restoreProgressDisposable: vscode.Disposable | undefined;
+  private readonly projectDepsSubscription: () => void;
 
   // ── Reactive state ──
   private targets: NuGetTarget[] = [];
@@ -54,6 +57,7 @@ export class NuGetBrowserPanel {
   private currentSearchQuery = '';
   private searchResults: NuGetSearchResult[] = [];
   private readonly installedPackages = new Map<string, string>();
+  private installedMetadata = new Map<string, NuGetSearchResult>();
   private selectedPackage: NuGetSearchResult | undefined;
   private readonly loading = new Set<LoadingKey>();
   private toast: ToastState | undefined;
@@ -88,11 +92,19 @@ export class NuGetBrowserPanel {
       () => {
         log.info('NuGetBrowserPanel: panel disposed');
         this.restoreProgressDisposable?.dispose();
+        this.projectDepsSubscription();
         NuGetBrowserPanel.instance = undefined;
       },
       null,
       this.context.subscriptions,
     );
+
+    // React to external csproj edits: re-pull installed packages from LSP
+    // so the Install/Remove button reflects the current file on disk.
+    this.projectDepsSubscription = projectDeps.projectDependencies.subscribe(() => {
+      log.info('NuGetBrowserPanel: projectDependencies changed, reloading installed');
+      void this.loadInstalledPackages();
+    });
 
     this.panel.webview.onDidReceiveMessage(
       (message: WebviewMessage) => {
@@ -136,6 +148,12 @@ export class NuGetBrowserPanel {
 
   private async initialLoad(): Promise<void> {
     await this.loadTargets();
+    // Register the active project(s) with the deps store so the watcher
+    // picks up external csproj edits for them.
+    projectDeps.ensureTracked(this.initialProjectPath);
+    for (const target of this.targets) {
+      projectDeps.ensureTracked(target.path);
+    }
     if (this.selectedTargetId !== undefined) {
       await this.loadInstalledPackages();
       await this.performSearch('');
@@ -314,6 +332,7 @@ export class NuGetBrowserPanel {
     this.selectedTargetId = targetId;
     await persistTargetSelection(this.context, targetId);
     this.installedPackages.clear();
+    this.installedMetadata = new Map();
     this.searchResults = [];
     this.selectedPackage = undefined;
     this.updateContent();
@@ -345,6 +364,25 @@ export class NuGetBrowserPanel {
     }
     log.info(
       `NuGetBrowserPanel: loaded ${this.installedPackages.size.toString()} installed packages`,
+    );
+    this.updateContent();
+    // Fetch icons/descriptions in the background — render immediately, refine later.
+    void this.enrichInstalled();
+  }
+
+  private async enrichInstalled(): Promise<void> {
+    const target = this.currentTarget();
+    const lsp = this.getClient();
+    if (target === undefined || lsp === undefined) return;
+    const ids = Array.from(this.installedPackages.keys());
+    if (ids.length === 0) {
+      this.installedMetadata = new Map();
+      this.updateContent();
+      return;
+    }
+    this.installedMetadata = await fetchInstalledMetadata(lsp, target, ids);
+    log.info(
+      `NuGetBrowserPanel: enriched ${this.installedMetadata.size.toString()}/${ids.length.toString()} installed packages`,
     );
     this.updateContent();
   }
@@ -512,6 +550,7 @@ export class NuGetBrowserPanel {
       targetsLoading: this.targetsLoading,
       searchResults: this.searchResults,
       installedPackages: this.installedPackages,
+      installedMetadata: this.installedMetadata,
       selectedPackage: this.selectedPackage,
       loading: this.loading,
       toast: this.toast,

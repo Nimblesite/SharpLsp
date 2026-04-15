@@ -19,7 +19,8 @@ import {
 import { type LanguageClient } from 'vscode-languageclient/node';
 import { CMD_OPEN_SOLUTION } from './constants.js';
 import * as log from './log.js';
-import * as deps from './dependencies.js';
+import * as projectDeps from './project-deps-store.js';
+import type * as deps from './dependencies.js';
 import { buildNonSymbolTooltip, SYMBOL_CONTEXT_VALUES } from './tree-tooltip.js';
 import { type SolutionSelection } from './solution.js';
 import * as state from './state.js';
@@ -108,6 +109,9 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
       this.rebuildTree();
     });
     state.sortOrder.subscribe(() => {
+      this.rebuildTree();
+    });
+    projectDeps.projectDependencies.subscribe(() => {
       this.rebuildTree();
     });
     log.traceInfo('SolutionExplorerProvider: reactive subscriptions active');
@@ -232,7 +236,7 @@ function buildProjectNode(project: ProjectNode): ExplorerNode {
 }
 
 function buildDependencyFolder(projectPath: string): ExplorerNode | undefined {
-  const parsed = deps.parseProjectDependencies(projectPath);
+  const parsed = projectDeps.ensureTracked(projectPath);
   const hasPackages = parsed.nugetPackages.length > 0;
   const hasProjects = parsed.projectReferences.length > 0;
   if (!hasPackages && !hasProjects) return undefined;

@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
@@ -6,6 +7,7 @@ import { NuGetBrowserPanel } from '../../nuget-browser.js';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  pollUntilResult,
   setupLspTestSuite,
   teardownLspTestSuite,
 } from './test-helpers';
@@ -421,6 +423,237 @@ suite('NuGet Browser', () => {
       });
 
       assert.ok(panel.getSearchResultsCount() > 0, "Search for 'Serilog' must return results");
+    } finally {
+      panel.dispose();
+    }
+  });
+
+  // ── Reactivity: csproj edits propagate to the panel ─────────────
+
+  /**
+   * Copy the NuGetTest fixture into a temp directory so we can mutate the
+   * csproj without corrupting the shared fixture used by other tests.
+   */
+  function createScratchProject(scratchDir: string, initialCsproj: string): string {
+    fs.mkdirSync(scratchDir, { recursive: true });
+    const csprojPath = path.join(scratchDir, 'Scratch.csproj');
+    fs.writeFileSync(csprojPath, initialCsproj, 'utf-8');
+    return csprojPath;
+  }
+
+  /**
+   * REACTIVITY: editing a csproj on disk to remove a <PackageReference>
+   * MUST propagate into the panel without any manual refresh. The rendered
+   * HTML must switch from "Remove" to "Install" for that package.
+   *
+   * This test is the hard contract for CLAUDE.md's rule
+   * "All screens MUST BE 100% reactive."
+   */
+  test('panel reacts to external csproj edit (package removed)', async function () {
+    this.timeout(45_000);
+
+    const scratch = path.join(tmpDir, 'reactivity-panel');
+    const csprojPath = createScratchProject(
+      scratch,
+      `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>`,
+    );
+
+    const context = getExtensionContext();
+    const getClient = getLspClientGetter();
+    assert.ok(getClient(), 'LSP client must be running');
+
+    const panel = NuGetBrowserPanel.open(context, csprojPath, 'Scratch', getClient);
+
+    try {
+      await panel.waitForInitialLoad();
+
+      // Select Newtonsoft.Json so we can verify the Remove button exists.
+      await panel.simulateWebviewMessage({
+        command: 'selectPackage',
+        data: { packageId: 'Newtonsoft.Json' },
+      });
+
+      const htmlBefore = panel.getRenderedHtml();
+      assert.ok(
+        htmlBefore.includes('uninstallPackage') && htmlBefore.includes('Remove'),
+        'Panel must render a Remove button for Newtonsoft.Json before csproj edit',
+      );
+
+      // Rewrite the csproj to drop the package — no manual refresh.
+      fs.writeFileSync(
+        csprojPath,
+        `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup></ItemGroup>
+</Project>`,
+        'utf-8',
+      );
+
+      // Wait for the signal-driven re-render. No manual refresh() call.
+      await pollUntilResult(
+        () => Promise.resolve(panel.getRenderedHtml()),
+        (html) =>
+          !panel.getInstalledPackageIds().includes('Newtonsoft.Json') &&
+          html.includes('installPackage') &&
+          !html.includes('uninstallPackage'),
+        15_000,
+      );
+
+      const htmlAfter = panel.getRenderedHtml();
+      assert.ok(
+        !htmlAfter.includes('uninstallPackage'),
+        'After csproj removes the PackageReference, panel must NOT render a Remove button',
+      );
+      assert.ok(
+        htmlAfter.includes('installPackage'),
+        'After csproj removes the PackageReference, panel MUST render an Install button',
+      );
+    } finally {
+      panel.dispose();
+    }
+  });
+
+  /**
+   * REACTIVITY: adding a <PackageReference> to a csproj MUST flip the
+   * button from Install to Remove.
+   */
+  test('panel reacts to external csproj edit (package added)', async function () {
+    this.timeout(45_000);
+
+    const scratch = path.join(tmpDir, 'reactivity-panel-add');
+    const csprojPath = createScratchProject(
+      scratch,
+      `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup></ItemGroup>
+</Project>`,
+    );
+
+    const context = getExtensionContext();
+    const getClient = getLspClientGetter();
+
+    const panel = NuGetBrowserPanel.open(context, csprojPath, 'ScratchAdd', getClient);
+
+    try {
+      await panel.waitForInitialLoad();
+      assert.ok(
+        !panel.getInstalledPackageIds().includes('Newtonsoft.Json'),
+        'Newtonsoft.Json must not be installed initially',
+      );
+
+      fs.writeFileSync(
+        csprojPath,
+        `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>`,
+        'utf-8',
+      );
+
+      await pollUntilResult(
+        () => Promise.resolve(panel.getInstalledPackageIds()),
+        (ids) => ids.includes('Newtonsoft.Json'),
+        15_000,
+      );
+
+      assert.ok(
+        panel.getInstalledPackageIds().includes('Newtonsoft.Json'),
+        'Panel MUST reflect the new PackageReference after csproj write',
+      );
+    } finally {
+      panel.dispose();
+    }
+  });
+
+  /**
+   * REACTIVITY: the details panel header renders the package icon (not just
+   * a generic material-symbol glyph). Regression test for
+   * "installed packages don't have an icon".
+   */
+  test('details panel renders package icon image when iconUrl present', async function () {
+    this.timeout(45_000);
+
+    const projectPath = nugetTestProjectPath();
+    const context = getExtensionContext();
+    const getClient = getLspClientGetter();
+
+    const panel = NuGetBrowserPanel.open(context, projectPath, 'NuGetTest', getClient);
+
+    try {
+      await panel.waitForInitialLoad();
+
+      // Select Newtonsoft.Json — it definitely has an iconUrl on nuget.org.
+      await panel.simulateWebviewMessage({
+        command: 'selectPackage',
+        data: { packageId: 'Newtonsoft.Json' },
+      });
+
+      // Allow enrichment HTTP fetch to complete.
+      await pollUntilResult(
+        () => Promise.resolve(panel.getRenderedHtml()),
+        (html) => html.includes('class="package-icon-img"'),
+        15_000,
+      );
+
+      const html = panel.getRenderedHtml();
+      assert.ok(
+        html.includes('class="package-icon-img"'),
+        'Details panel must render an <img> with class package-icon-img when iconUrl is present',
+      );
+    } finally {
+      panel.dispose();
+    }
+  });
+
+  /**
+   * DRY: the Installed tab must render icons the same way as the Browse tab.
+   * Before this fix, the installed list had its own hardcoded
+   * material-symbol glyph and no <img> overlay.
+   */
+  test('installed tab renders icons (no DRY violation)', async function () {
+    this.timeout(45_000);
+
+    const projectPath = nugetTestProjectPath();
+    const context = getExtensionContext();
+    const getClient = getLspClientGetter();
+
+    const panel = NuGetBrowserPanel.open(context, projectPath, 'NuGetTest', getClient);
+
+    try {
+      await panel.waitForInitialLoad();
+
+      await panel.simulateWebviewMessage({
+        command: 'switchTab',
+        data: { tab: 'installed' },
+      });
+
+      // After enrichment, Newtonsoft.Json must show its real icon.
+      await pollUntilResult(
+        () => Promise.resolve(panel.getRenderedHtml()),
+        (html) => {
+          // Extract the Installed Packages section.
+          const installedIdx = html.indexOf('Installed Packages');
+          if (installedIdx < 0) return false;
+          const section = html.slice(installedIdx);
+          return section.includes('class="package-icon-img"');
+        },
+        15_000,
+      );
+
+      const html = panel.getRenderedHtml();
+      const installedIdx = html.indexOf('Installed Packages');
+      const section = installedIdx >= 0 ? html.slice(installedIdx) : '';
+      assert.ok(
+        section.includes('class="package-icon-img"'),
+        'Installed tab MUST render <img class="package-icon-img"> (DRY with browse tab)',
+      );
     } finally {
       panel.dispose();
     }

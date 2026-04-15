@@ -114,6 +114,32 @@ export async function enrichPackageMetadata(
   });
 }
 
+/**
+ * Batch-fetch metadata for every installed package (icon URL, description,
+ * authors, etc.) so the Installed tab renders real icons and descriptions,
+ * not the generic 'Installed package' fallback. Returns a map keyed by
+ * package id. Packages that don't resolve (e.g. local/private feed without
+ * metadata) are simply omitted.
+ */
+export async function fetchInstalledMetadata(
+  lsp: LanguageClient,
+  target: NuGetTarget,
+  installedIds: readonly string[],
+): Promise<Map<string, NuGetSearchResult>> {
+  const out = new Map<string, NuGetSearchResult>();
+  const results = await Promise.all(
+    installedIds.map(async (id) => {
+      const result = await searchPackages(lsp, target, `packageid:${id}`, 1);
+      if (!result.ok) return undefined;
+      return result.value.packages.find((p) => p.id === id);
+    }),
+  );
+  for (const hit of results) {
+    if (hit !== undefined) out.set(hit.id, hit);
+  }
+  return out;
+}
+
 /** Find or synthesize a package by id. Used by `selectPackage`. */
 export function findOrSynthesizePackage(
   searchResults: NuGetSearchResult[],

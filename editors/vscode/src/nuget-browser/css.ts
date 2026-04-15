@@ -96,7 +96,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font
 .empty-title { font-size: 16px; font-weight: 600; color: #E5E2E1; margin-bottom: 8px; }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px; color: #C0C7D3; text-align: center; }
 .details-header { display: flex; gap: 12px; margin-bottom: 16px; }
-.details-icon-box { width: 48px; height: 48px; border-radius: 8px; background: #007ACC; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.details-icon-box { width: 48px; height: 48px; border-radius: 8px; background: #007ACC; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; overflow: hidden; }
 .details-icon-glyph { font-size: 24px; color: #FFFFFF; }
 .details-title h2 { font-size: 18px; font-weight: 700; color: #E5E2E1; line-height: 1.2; }
 .details-title p { font-size: 12px; color: #C0C7D3; }

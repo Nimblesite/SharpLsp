@@ -42,6 +42,16 @@ export const CMD_PROFILER_DIFF_SNAPSHOTS = 'forge.profiler.diffSnapshots';
 export const CMD_PROFILER_DETECT_LEAKS = 'forge.profiler.detectLeaks';
 export const CMD_PROFILER_SHOW_OBJECT_GRAPH = 'forge.profiler.showObjectGraph';
 export const CMD_PROFILER_INSPECT_OBJECT = 'forge.profiler.inspectObject';
+export const CMD_PROFILER_OPEN_TRACE = 'forge.profiler.openTrace';
+export const CMD_PROFILER_CONVERT_TRACE = 'forge.profiler.convertTrace';
+export const CMD_PROFILER_STOP_SESSION = 'forge.profiler.stopSession';
+export const CMD_PROFILER_REVEAL_OUTPUT = 'forge.profiler.revealOutput';
+export const CMD_PROFILER_COPY_OUTPUT_PATH = 'forge.profiler.copyOutputPath';
+export const CMD_PROFILER_SHOW_COUNTERS_PANEL = 'forge.profiler.showCountersPanel';
+export const CMD_PROFILER_TRACE_PROCESS = 'forge.profiler.traceProcess';
+export const CMD_PROFILER_COUNTERS_PROCESS = 'forge.profiler.countersProcess';
+export const CMD_PROFILER_DUMP_PROCESS = 'forge.profiler.dumpProcess';
+export const CMD_PROFILER_COPY_PID = 'forge.profiler.copyPid';
 
 // Build commands
 export const CMD_BUILD = 'forge.build';

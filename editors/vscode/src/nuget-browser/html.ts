@@ -24,6 +24,16 @@ function spinner(): string {
   return `<span class="material-symbols-outlined spin">progress_activity</span>`;
 }
 
+/**
+ * Single source of truth for the <img> overlay used in every package icon
+ * box (list rows AND details-panel header). Hides itself on load error so
+ * the material-symbol glyph underneath remains visible as fallback.
+ */
+function packageIconImg(pkg: NuGetSearchResult): string {
+  if (pkg.iconUrl === undefined || pkg.iconUrl.length === 0) return '';
+  return `<img class="package-icon-img" src="${escAttr(pkg.iconUrl)}" alt="" onerror="this.style.display='none'" />`;
+}
+
 export interface ToastState {
   kind: 'info' | 'success' | 'error';
   text: string;
@@ -38,6 +48,7 @@ export interface RenderState {
   targetsLoading: boolean;
   searchResults: NuGetSearchResult[];
   installedPackages: Map<string, string>;
+  installedMetadata: Map<string, NuGetSearchResult>;
   selectedPackage: NuGetSearchResult | undefined;
   loading: Set<LoadingKey>;
   toast: ToastState | undefined;
@@ -178,33 +189,49 @@ function buildPackageListHtml(state: RenderState): string {
 }
 
 function buildInstalledListHtml(state: RenderState): string {
-  const installed = Array.from(state.installedPackages.entries())
+  const installedRows = Array.from(state.installedPackages.entries())
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([id, version]) => ({ id, version }));
+    .map(([id, version]) => hydrateInstalledRow(state, id, version));
 
   const loadingRow = state.loading.has('installed')
     ? `<div class="inline-loading-row">${spinner()}<span>Loading installed packages…</span></div>`
     : '';
 
-  if (installed.length === 0) {
+  if (installedRows.length === 0) {
     return `<div class="list-header"><span class="list-title">Installed Packages</span></div>${loadingRow}<div class="empty-state"><span class="material-symbols-outlined empty-icon">package_2</span><div class="empty-title">No packages installed</div><p>This target has no NuGet packages installed.</p></div>`;
   }
 
-  const items = installed
-    .map((pkg) => {
-      const sel = state.selectedPackage?.id === pkg.id;
-      const safeId = esc(pkg.id);
-      const safeVer = esc(pkg.version);
-      return `<div class="package-item ${sel ? 'selected' : ''}" onclick="selectPackage('${escAttr(pkg.id)}')">
-<div class="package-icon-box ${sel ? 'selected' : ''}"><span class="material-symbols-outlined">package_2</span></div>
-<div class="package-content">
-<div class="package-header"><span class="package-name">${safeId}</span><span class="package-version installed">v${safeVer}</span></div>
-<p class="package-description">Installed package</p>
-</div>
-</div>`;
-    })
-    .join('');
+  const items = installedRows.map((pkg) => buildPackageItem(state, pkg)).join('');
   return `<div class="list-header"><span class="list-title">Installed Packages</span></div>${loadingRow}${items}`;
+}
+
+/**
+ * Build a NuGetSearchResult for an installed package, pulling any enriched
+ * metadata (icon, description, authors) from the current searchResults if
+ * we've seen it. This keeps the installed list visually identical to browse.
+ */
+function hydrateInstalledRow(
+  state: RenderState,
+  id: string,
+  resolvedVersion: string,
+): NuGetSearchResult {
+  const fromMetadata = state.installedMetadata.get(id);
+  if (fromMetadata !== undefined) {
+    return { ...fromMetadata, isInstalled: true, installedVersion: resolvedVersion };
+  }
+  const fromSearch = state.searchResults.find((r) => r.id === id);
+  if (fromSearch !== undefined) {
+    return { ...fromSearch, isInstalled: true, installedVersion: resolvedVersion };
+  }
+  return {
+    id,
+    version: resolvedVersion,
+    description: 'Installed package',
+    authors: '',
+    tags: [],
+    isInstalled: true,
+    installedVersion: resolvedVersion,
+  };
 }
 
 function buildBrowseListHtml(state: RenderState): string {
@@ -227,12 +254,8 @@ function buildPackageItem(state: RenderState, pkg: NuGetSearchResult): string {
   const pending = state.loading.has(installKey(pkg.id)) || state.loading.has(uninstallKey(pkg.id));
   const dl = pkg.downloadCount !== undefined ? formatDownloads(pkg.downloadCount) : null;
   const icon = installed ? 'database' : 'package_2';
-  const iconImg =
-    pkg.iconUrl !== undefined && pkg.iconUrl.length > 0
-      ? `<img class="package-icon-img" src="${escAttr(pkg.iconUrl)}" alt="" onerror="this.style.display='none'" />`
-      : '';
   return `<div class="package-item ${sel ? 'selected' : ''} ${pending ? 'pending' : ''}" onclick="selectPackage('${escAttr(pkg.id)}')">
-<div class="package-icon-box ${sel ? 'selected' : ''}"><span class="material-symbols-outlined ${sel ? 'icon-selected' : ''}">${icon}</span>${iconImg}</div>
+<div class="package-icon-box ${sel ? 'selected' : ''}"><span class="material-symbols-outlined ${sel ? 'icon-selected' : ''}">${icon}</span>${packageIconImg(pkg)}</div>
 <div class="package-content">
 <div class="package-header"><span class="package-name">${safeId}</span><span class="package-version ${installed ? 'installed' : ''} ${pending ? 'pending' : ''}">v${esc(version)}</span></div>
 <p class="package-description">${esc(desc)}</p>
@@ -296,7 +319,7 @@ function buildDetailsHtml(state: RenderState): string {
     : `<button class="btn btn-primary" ${installPending ? 'disabled' : ''} onclick="installPackage('${escAttr(pkg.id)}', '${escAttr(pkg.version)}')">${installPending ? `${spinner()} Installing…` : `<span class="material-symbols-outlined btn-icon">download</span> Install`}</button>`;
 
   return `<div class="details-header">
-<div class="details-icon-box"><span class="material-symbols-outlined details-icon-glyph" style="font-variation-settings: 'FILL' 1;">database</span></div>
+<div class="details-icon-box"><span class="material-symbols-outlined details-icon-glyph" style="font-variation-settings: 'FILL' 1;">database</span>${packageIconImg(pkg)}</div>
 <div class="details-title"><h2>${safeId}</h2><p>${safeAuthors}</p></div>
 </div>
 <div class="details-actions">

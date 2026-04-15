@@ -660,6 +660,7 @@ fn handle_custom_request(
         "forge/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
         "forge/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
         "forge/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req),
+        "forge/profiler/convertTrace" => profiler::handlers::handle_convert_trace(req),
         "forge/profiler/startCounters" => {
             profiler::handlers::handle_start_counters(req, connection.sender.clone())
         }

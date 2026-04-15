@@ -41,6 +41,7 @@ import { registerHotReloadCommands } from './hot-reload.js';
 import { registerDebugAdapter } from './debug.js';
 import { registerTestExplorer } from './testing.js';
 import { registerTestStatusLens } from './test-lens.js';
+import { initProjectDepsStore } from './project-deps-store.js';
 
 /** Public API exported from activate() for tests and other extensions. */
 export interface ForgeExtensionApi {
@@ -115,6 +116,9 @@ async function activateInner(context: ExtensionContext): Promise<ForgeExtensionA
   registerTestStatusLens(context, testController);
   log.info('step 10: wireDocumentChangeRefresh');
   wireDocumentChangeRefresh(context);
+
+  log.info('step 10b: initProjectDepsStore');
+  initProjectDepsStore(context);
 
   log.info('step 11: client.start (await)');
   try {
