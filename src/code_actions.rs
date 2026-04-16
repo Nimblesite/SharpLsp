@@ -225,9 +225,18 @@ mod tests {
 
     #[test]
     fn map_action_kind_known_kinds() {
-        assert_eq!(map_action_kind("refactor.extract"), CodeActionKind::REFACTOR_EXTRACT);
-        assert_eq!(map_action_kind("refactor.inline"), CodeActionKind::REFACTOR_INLINE);
-        assert_eq!(map_action_kind("refactor.rewrite"), CodeActionKind::REFACTOR_REWRITE);
+        assert_eq!(
+            map_action_kind("refactor.extract"),
+            CodeActionKind::REFACTOR_EXTRACT
+        );
+        assert_eq!(
+            map_action_kind("refactor.inline"),
+            CodeActionKind::REFACTOR_INLINE
+        );
+        assert_eq!(
+            map_action_kind("refactor.rewrite"),
+            CodeActionKind::REFACTOR_REWRITE
+        );
         assert_eq!(
             map_action_kind("source.organizeImports"),
             CodeActionKind::SOURCE_ORGANIZE_IMPORTS,

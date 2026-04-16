@@ -571,9 +571,14 @@ fn handle_request(
         // Standard workspace/symbol
         WorkspaceSymbolRequest::METHOD => handle_standard_workspace_symbol(req, parsers, vfs),
         // Solution loading
-        "forge/loadSolution" => {
-            handle_load_solution(req, runtime, csharp_sidecar, fsharp_sidecar, connection, vfs)
-        }
+        "forge/loadSolution" => handle_load_solution(
+            req,
+            runtime,
+            csharp_sidecar,
+            fsharp_sidecar,
+            connection,
+            vfs,
+        ),
         _ => handle_custom_request(req, parsers, vfs, connection, runtime),
     };
 
@@ -974,12 +979,7 @@ fn handle_notification(
                 // Without this, the sidecar's _solution retains stale text
                 // from the initial workspace load or a previous didChange.
                 if let Ok(file_path) = semantic::uri_to_path(&doc.uri) {
-                    semantic::notify_did_change(
-                        &file_path,
-                        &doc.text,
-                        runtime,
-                        csharp_sidecar,
-                    );
+                    semantic::notify_did_change(&file_path, &doc.text, runtime, csharp_sidecar);
                 }
                 trigger_diagnostics(
                     &doc.uri,

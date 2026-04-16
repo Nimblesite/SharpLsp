@@ -58,7 +58,9 @@ export function ensureTracked(projectPath: string): deps.ProjectDependencies {
   const next = new Map(projectDependencies.value);
   next.set(absolute, parsed);
   projectDependencies.value = next;
-  log.traceInfo(`project-deps-store: tracked ${absolute} (${parsed.nugetPackages.length.toString()} packages)`);
+  log.traceInfo(
+    `project-deps-store: tracked ${absolute} (${parsed.nugetPackages.length.toString()} packages)`,
+  );
   return parsed;
 }
 

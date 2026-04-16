@@ -127,13 +127,7 @@ pub fn request_solution_in_background(
                         "Starting verification pass for {} file(s) with errors/warnings",
                         error_files.len()
                     );
-                    verify_error_files(
-                        &sidecar,
-                        &sender,
-                        &error_files,
-                        &vfs,
-                    )
-                    .await;
+                    verify_error_files(&sidecar, &sender, &error_files, &vfs).await;
                 }
             }
             Err(err) => {

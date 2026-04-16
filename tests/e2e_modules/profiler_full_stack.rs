@@ -6,28 +6,47 @@ use super::*;
 // dotnet diagnostic tools via the REAL LSP server, and verify REAL output.
 
 /// Build the `ProfileTarget` .NET app once and return the path to its binary.
-/// Uses `OnceLock` so concurrent test threads share a single build.
+///
+/// Nextest spawns each test in its own process, so `OnceLock` cannot serialize
+/// the first cold build across tests. If the binary is already present, we
+/// skip `dotnet build` entirely; otherwise we retry a few times with jittered
+/// backoff so `MSBuild`'s per-project lock contention is tolerated.
 pub fn build_profile_target() -> std::path::PathBuf {
     static BINARY: OnceLock<std::path::PathBuf> = OnceLock::new();
     BINARY
         .get_or_init(|| {
             let project_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("tests/fixtures/ProfileTarget");
+            let binary = project_dir.join("bin/Release/net10.0/ProfileTarget");
 
-            let output = Command::new("dotnet")
-                .args(["build", "-c", "Release", "--nologo", "-v", "q"])
-                .current_dir(&project_dir)
-                .stdout(Stdio::null())
-                .stderr(Stdio::piped())
-                .output()
-                .expect("failed to run dotnet build");
-            assert!(
-                output.status.success(),
-                "ProfileTarget build failed: {}",
-                String::from_utf8_lossy(&output.stderr),
-            );
+            if binary.exists() {
+                return binary;
+            }
 
-            project_dir.join("bin/Release/net10.0/ProfileTarget")
+            let max_attempts = 5u32;
+            let mut last_stderr = String::new();
+            let mut built = false;
+            for attempt in 0..max_attempts {
+                let output = Command::new("dotnet")
+                    .args(["build", "-c", "Release", "--nologo", "-v", "q"])
+                    .current_dir(&project_dir)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .expect("failed to run dotnet build");
+                if output.status.success() || binary.exists() {
+                    built = true;
+                    break;
+                }
+                last_stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+                let jitter = u64::from(std::process::id() % 250);
+                let backoff_ms = 200u64
+                    .saturating_mul(u64::from(attempt) + 1)
+                    .saturating_add(jitter);
+                std::thread::sleep(Duration::from_millis(backoff_ms));
+            }
+            assert!(built, "ProfileTarget build failed after retries: {last_stderr}");
+            binary
         })
         .clone()
 }

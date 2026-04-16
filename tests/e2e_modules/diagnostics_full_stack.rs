@@ -360,10 +360,8 @@ EndGlobal"#,
     client.close_document(&item_uri);
 
     // Close must produce a publishDiagnostics with empty diagnostics.
-    let close_notif = client.wait_for_notification(
-        "textDocument/publishDiagnostics",
-        Duration::from_secs(5),
-    );
+    let close_notif =
+        client.wait_for_notification("textDocument/publishDiagnostics", Duration::from_secs(5));
     assert!(
         close_notif["params"]["uri"]
             .as_str()
@@ -957,10 +955,7 @@ EndGlobal
             break;
         }
         if msg["method"].as_str() == Some("textDocument/publishDiagnostics") {
-            let msg_uri = msg["params"]["uri"]
-                .as_str()
-                .unwrap_or("")
-                .to_string();
+            let msg_uri = msg["params"]["uri"].as_str().unwrap_or("").to_string();
             let diags = msg["params"]["diagnostics"]
                 .as_array()
                 .cloned()
@@ -982,10 +977,8 @@ EndGlobal
                 // CS0234: type or namespace does not exist in namespace
                 // CS0103: name does not exist in current context
                 // CS0012: type defined in an unreferenced assembly
-                let is_false_pos = code == "CS0246"
-                    || code == "CS0234"
-                    || code == "CS0103"
-                    || code == "CS0012";
+                let is_false_pos =
+                    code == "CS0246" || code == "CS0234" || code == "CS0103" || code == "CS0012";
                 if is_false_pos {
                     Some(format!("{code}: {msg}"))
                 } else {

@@ -187,7 +187,9 @@ fn test_profiler_convert_trace_real_file_roundtrip() {
     assert!(
         resp.get("error").is_none(),
         "convertTrace must succeed on a real .nettrace, got error: {}",
-        resp.get("error").map(std::string::ToString::to_string).unwrap_or_default(),
+        resp.get("error")
+            .map(std::string::ToString::to_string)
+            .unwrap_or_default(),
     );
 
     let result = &resp["result"];

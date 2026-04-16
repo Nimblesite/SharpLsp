@@ -604,9 +604,7 @@ export function registerCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_STOP_TRACE, async (item?: ProfilerTreeItem) => {
       let sessionId = item?.sessionId;
-      if (sessionId === undefined) {
-        sessionId = await pickActiveSession(provider, 'Trace');
-      }
+      sessionId ??= await pickActiveSession(provider, 'Trace');
       if (sessionId === undefined) return;
       const outputPath = await stopTraceById(sessionId);
       if (outputPath !== undefined) {
@@ -681,26 +679,21 @@ export function registerCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_STOP_COUNTERS, async (item?: ProfilerTreeItem) => {
       let sessionId = item?.sessionId;
-      if (sessionId === undefined) {
-        sessionId = await pickActiveSession(provider, 'Counters');
-      }
+      sessionId ??= await pickActiveSession(provider, 'Counters');
       if (sessionId === undefined) return;
       await stopCountersById(sessionId);
     }),
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(
-      CMD_PROFILER_SHOW_COUNTERS_PANEL,
-      (item?: ProfilerTreeItem) => {
-        const sessionId = item?.sessionId;
-        if (sessionId === undefined) return;
-        const session = provider.findSession(sessionId);
-        if (session === undefined) return;
-        const panel = CounterWebviewPanel.open(sessionId, session.pid, context);
-        counterPanels.set(sessionId, panel);
-      },
-    ),
+    vscode.commands.registerCommand(CMD_PROFILER_SHOW_COUNTERS_PANEL, (item?: ProfilerTreeItem) => {
+      const sessionId = item?.sessionId;
+      if (sessionId === undefined) return;
+      const session = provider.findSession(sessionId);
+      if (session === undefined) return;
+      const panel = CounterWebviewPanel.open(sessionId, session.pid, context);
+      counterPanels.set(sessionId, panel);
+    }),
   );
 
   // Default click on a session tree item: dispatch to the right "stop" by kind.
@@ -748,17 +741,14 @@ export function registerCommands(
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(
-      CMD_PROFILER_REVEAL_OUTPUT,
-      async (item?: ProfilerTreeItem) => {
-        const path = item?.outputPath;
-        if (path === undefined || path.length === 0) {
-          void vscode.window.showInformationMessage('Session has no output file yet.');
-          return;
-        }
-        await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(path));
-      },
-    ),
+    vscode.commands.registerCommand(CMD_PROFILER_REVEAL_OUTPUT, async (item?: ProfilerTreeItem) => {
+      const path = item?.outputPath;
+      if (path === undefined || path.length === 0) {
+        void vscode.window.showInformationMessage('Session has no output file yet.');
+        return;
+      }
+      await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(path));
+    }),
   );
 
   context.subscriptions.push(
@@ -975,10 +965,7 @@ export function registerCommands(
  * if the extension hasn't finished activating — in that case we just surface
  * the file path to the user.
  */
-async function openTraceFile(
-  client: LanguageClient | undefined,
-  filePath: string,
-): Promise<void> {
+async function openTraceFile(client: LanguageClient | undefined, filePath: string): Promise<void> {
   if (filePath.endsWith('.speedscope.json')) {
     await openSpeedScope(filePath);
     return;
