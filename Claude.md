@@ -17,7 +17,7 @@ F# ahead of C# when building new features. F# never takes the backseat.
 
 This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate code. Grade A+. Anything lesser is illegal and must be fixed immediately.
 
-- Logging is critical. Add more logging immediately (`tracing` crate, `ILogger` in .NET)
+- Logging is critical. Use structured logging: `tracing` crate in Rust, `ILogger` + Serilog in .NET. No raw `println!`/`Console.WriteLine`/`console.log` for diagnostics
 - 100% test coverage is only the start
 - Use libraries like Signals for reactivity
 - No feature is complete without e2e tests
@@ -95,6 +95,10 @@ All documentation lives in `docs/`.
 - `docs/plans/` — **Implementation plans**: describe **how we are going to build it**. Each plan includes TODO checklists tracking progress toward the corresponding spec. Naming: `[COMPONENT]-[FEATURE]-PLAN.md`
 
 `docs/specs/FORGE-SPEC.md` is the **full technical specification** for the project. Always read the relevant spec before working on a feature, and update the corresponding plan's TODOs as work progresses.
+
+## Spec IDs
+
+Every spec section MUST have a hierarchical ID: `[GROUP-TOPIC]` or `[GROUP-TOPIC-DETAIL]`. IDs are uppercase, hyphen-separated, NEVER numbered. The first word is the group — sections sharing a group must be adjacent. All code and tests implementing a spec section MUST reference its ID in a comment (e.g., `// Implements [AUTH-TOKEN-VERIFY]`).
 
 # Critical Docs
 

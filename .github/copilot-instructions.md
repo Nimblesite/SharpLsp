@@ -1,2 +1,2 @@
-<!-- agent-pmo:3140e31 -->
+<!-- agent-pmo:2efd847 -->
 @CLAUDE.md

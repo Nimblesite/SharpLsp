@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agent-pmo:3140e31
+# agent-pmo:2efd847
 # check-coverage.sh — enforce and ratchet a coverage threshold
 #
 # Usage: check-coverage.sh <project-key> <actual-percent>

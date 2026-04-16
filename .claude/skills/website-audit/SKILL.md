@@ -8,6 +8,8 @@ description: Performs comprehensive website audits for SEO, AI search performanc
 
 Perform a comprehensive audit of the Forge website (`website/`) for SEO, AI search readiness, mobile usability, and design compliance.
 
+ENSURE THE FOOTER HAS A copyright link to nimblesite.co
+
 ## Step 1 — Google Search Guidelines
 
 Check the website against Google's current search guidelines:
