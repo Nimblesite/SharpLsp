@@ -18,16 +18,23 @@ The extension automatically manages the Forge LSP server lifecycle.
 
 ## Neovim
 
-Add Forge to your LSP configuration using `nvim-lspconfig`:
+Register Forge as a custom LSP server using `nvim-lspconfig`:
 
 ```lua
 local lspconfig = require('lspconfig')
+local configs = require('lspconfig.configs')
 
-lspconfig.forge.setup({
-  cmd = { "forge-lsp" },
-  filetypes = { "cs", "fsharp" },
-  root_dir = lspconfig.util.root_pattern("*.sln", "*.csproj", "*.fsproj"),
-})
+if not configs.forge_lsp then
+  configs.forge_lsp = {
+    default_config = {
+      cmd = { "forge-lsp" },
+      filetypes = { "cs", "fsharp" },
+      root_dir = lspconfig.util.root_pattern("*.sln", "*.csproj", "*.fsproj"),
+    },
+  }
+end
+
+lspconfig.forge_lsp.setup({})
 ```
 
 ## Helix
@@ -47,7 +54,9 @@ language-servers = ["forge-lsp"]
 command = "forge-lsp"
 ```
 
-## Emacs (lsp-mode)
+## Emacs
+
+### lsp-mode
 
 ```elisp
 (lsp-register-client
@@ -55,6 +64,29 @@ command = "forge-lsp"
     :new-connection (lsp-stdio-connection '("forge-lsp"))
     :major-modes '(csharp-mode fsharp-mode)
     :server-id 'forge-lsp))
+```
+
+### eglot
+
+```elisp
+(add-to-list 'eglot-server-programs
+             '((csharp-mode fsharp-mode) . ("forge-lsp")))
+```
+
+## Sublime Text
+
+Install the [LSP](https://packagecontrol.io/packages/LSP) package, then add a custom client in **Settings > Package Settings > LSP > Settings**:
+
+```json
+{
+  "clients": {
+    "forge-lsp": {
+      "enabled": true,
+      "command": ["forge-lsp"],
+      "selector": "source.cs | source.fsharp"
+    }
+  }
+}
 ```
 
 ## Zed
