@@ -229,10 +229,15 @@
       {
         "type": "forge-coreclr",
         "label": "Forge .NET Debugger",
-        "languages": ["csharp", "fsharp"],
+        "languages": [
+          "csharp",
+          "fsharp"
+        ],
         "configurationAttributes": {
           "launch": {
-            "required": ["program"],
+            "required": [
+              "program"
+            ],
             "properties": {
               "program": {
                 "type": "string",
@@ -240,7 +245,9 @@
               },
               "args": {
                 "type": "array",
-                "items": { "type": "string" },
+                "items": {
+                  "type": "string"
+                },
                 "description": "Command line arguments.",
                 "default": []
               },
@@ -260,7 +267,9 @@
             }
           },
           "attach": {
-            "required": ["processId"],
+            "required": [
+              "processId"
+            ],
             "properties": {
               "processId": {
                 "type": "number",
@@ -893,6 +902,7 @@
     "vscode:prepublish": "node esbuild.mjs --production"
   },
   "dependencies": {
+    "fast-xml-parser": "^5.6.0",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
