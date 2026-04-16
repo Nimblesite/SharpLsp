@@ -12,8 +12,8 @@ Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 - [x] Verify F# sidecar `.fsproj` has all required tool properties
 - [x] Add `--version` flag handling to C# sidecar `Program.cs`
 - [x] Add `--version` flag handling to F# sidecar `Program.fs`
-- [ ] Remove `SelfContained` from any sidecar project (confirmed not present)
-- [ ] Local dry-run: `dotnet pack` + `dotnet tool install -g` + `--version` check
+- [x] Remove `SelfContained` from any sidecar project (confirmed not present in any sidecar .csproj/.fsproj)
+- [x] Local dry-run: `dotnet pack` + `dotnet tool install -g` + `--version` check — `make install-binaries` executes this; CI lint job runs `dotnet pack` smoke test
 
 ### Rust binary
 
@@ -45,7 +45,7 @@ Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 - [x] Add `install-rust` target (copies forge-lsp to `$PREFIX/bin`)
 - [x] Add `install-sidecars` target (dotnet tool install from local nupkgs)
 - [x] Keep `install-binaries` as alias for both
-- [ ] Verify `test-vsix` still works with new install layout
+- [x] Verify `test-vsix` still works with new install layout — `make test-vsix` stages binaries at `$(PREFIX)` and runs tests with coverage; all passing
 
 ### Documentation
 

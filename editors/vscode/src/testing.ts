@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { execFile } from 'child_process';
+import { XMLParser } from 'fast-xml-parser';
 import { info } from './log';
 import { buildWithDiagnostics } from './build';
 
@@ -62,6 +65,18 @@ export class ForgeTestController {
         },
       ),
     );
+
+    const coverageProfile = this.controller.createRunProfile(
+      'Run with Coverage',
+      vscode.TestRunProfileKind.Coverage,
+      async (request, token) => {
+        await this.runTestsWithCoverage(request, token);
+      },
+    );
+    coverageProfile.loadDetailedCoverage =
+      // eslint-disable-next-line @typescript-eslint/require-await -- VS Code API requires Thenable return but lookup is synchronous
+      async (_run, fileCoverage, _token) => loadDetailedCoverage(fileCoverage);
+    this.runProfiles.push(coverageProfile);
 
     this.controller.resolveHandler = async (item): Promise<void> => {
       await this.discoverTests(item);
@@ -194,6 +209,72 @@ export class ForgeTestController {
     return tests;
   }
 
+  private async runTestsWithCoverage(
+    request: vscode.TestRunRequest,
+    token: vscode.CancellationToken,
+  ): Promise<void> {
+    const run = this.controller.createTestRun(request);
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (folder === undefined) {
+      run.end();
+      return;
+    }
+
+    const tests = this.collectTests(request);
+    for (const test of tests) {
+      run.started(test);
+    }
+
+    try {
+      if (token.isCancellationRequested) {
+        run.end();
+        return;
+      }
+
+      const resultsDir = path.join(folder.uri.fsPath, '.forge-coverage');
+      const filterArgs = buildFilterArgs(tests);
+      const args = [
+        'test',
+        ...filterArgs,
+        '--collect:XPlat Code Coverage',
+        `--results-directory=${resultsDir}`,
+        '--verbosity',
+        'quiet',
+      ];
+
+      const output = await runProcess('dotnet', args, folder.uri.fsPath);
+      const passed = output.includes('Passed!');
+
+      for (const test of tests) {
+        const result: TestResult = { passed, duration: undefined };
+        this.results.set(test.id, result);
+        if (passed) {
+          run.passed(test);
+        } else {
+          run.failed(test, new vscode.TestMessage('Test failed'));
+        }
+      }
+
+      const coverageFile = findCoberturaFile(resultsDir);
+      if (coverageFile !== undefined) {
+        const fileCoverages = parseCoberturaXml(coverageFile);
+        for (const fc of fileCoverages) {
+          run.addCoverage(fc);
+        }
+        info(`Coverage loaded: ${String(fileCoverages.length)} files`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      info(`Coverage run failed: ${message}`);
+      for (const test of tests) {
+        run.failed(test, new vscode.TestMessage(message));
+      }
+    }
+
+    run.end();
+    this.resultsChangedEmitter.fire();
+  }
+
   private async executeTest(testId: string, debug: boolean): Promise<TestResult> {
     try {
       const folder = vscode.workspace.workspaceFolders?.[0];
@@ -257,6 +338,102 @@ async function runProcess(command: string, args: string[], cwd: string): Promise
       }
     });
   });
+}
+
+function buildFilterArgs(tests: vscode.TestItem[]): string[] {
+  if (tests.length === 0) return [];
+  const names = tests.map((t) => `FullyQualifiedName=${t.id}`);
+  return ['--filter', names.join('|')];
+}
+
+// ── Cobertura XML parser ────────────────────────────────────────
+
+interface CoberturaLine {
+  readonly '@_number': string;
+  readonly '@_hits': string;
+  readonly '@_branch'?: string;
+}
+
+interface CoberturaClass {
+  readonly '@_filename': string;
+  readonly lines?: { line?: CoberturaLine | CoberturaLine[] };
+}
+
+interface CoberturaPackage {
+  readonly classes?: { class?: CoberturaClass | CoberturaClass[] };
+}
+
+interface CoberturaReport {
+  readonly coverage?: {
+    readonly packages?: { package?: CoberturaPackage | CoberturaPackage[] };
+  };
+}
+
+const coberturaParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  isArray: (tagName) => tagName === 'package' || tagName === 'class' || tagName === 'line',
+});
+
+function findCoberturaFile(resultsDir: string): string | undefined {
+  if (!fs.existsSync(resultsDir)) return undefined;
+  const entries = fs.readdirSync(resultsDir);
+  for (const entry of entries) {
+    const sub = path.join(resultsDir, entry);
+    const candidate = path.join(sub, 'coverage.cobertura.xml');
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+function parseCoberturaXml(filePath: string): vscode.FileCoverage[] {
+  const xml = fs.readFileSync(filePath, 'utf-8');
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- fast-xml-parser returns untyped output; CoberturaReport mirrors the known schema
+  const doc: CoberturaReport = coberturaParser.parse(xml);
+  const packages = doc.coverage?.packages?.package;
+  if (packages === undefined) return [];
+
+  const pkgList = Array.isArray(packages) ? packages : [packages];
+  const result: vscode.FileCoverage[] = [];
+
+  for (const pkg of pkgList) {
+    const classes = pkg.classes?.class;
+    if (classes === undefined) continue;
+    const classList = Array.isArray(classes) ? classes : [classes];
+
+    for (const cls of classList) {
+      const lines = cls.lines?.line;
+      if (lines === undefined) continue;
+      const lineList = Array.isArray(lines) ? lines : [lines];
+
+      let covered = 0;
+      let total = 0;
+      const details: vscode.StatementCoverage[] = [];
+
+      for (const line of lineList) {
+        const lineNo = parseInt(line['@_number'], 10) - 1;
+        const hits = parseInt(line['@_hits'], 10);
+        total++;
+        if (hits > 0) covered++;
+        details.push(new vscode.StatementCoverage(hits, new vscode.Position(lineNo, 0)));
+      }
+
+      const uri = vscode.Uri.file(cls['@_filename']);
+      const fc = new vscode.FileCoverage(uri, new vscode.TestCoverageCount(covered, total));
+      // Stash details on the instance for loadDetailedCoverage callback.
+      coverageDetails.set(uri.toString(), details);
+      result.push(fc);
+    }
+  }
+
+  return result;
+}
+
+/** Coverage details keyed by file URI string, for loadDetailedCoverage. */
+const coverageDetails = new Map<string, vscode.StatementCoverage[]>();
+
+function loadDetailedCoverage(fileCoverage: vscode.FileCoverage): vscode.FileCoverageDetail[] {
+  return coverageDetails.get(fileCoverage.uri.toString()) ?? [];
 }
 
 /**
