@@ -206,7 +206,7 @@ test-rust: build-dotnet
 	cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast
 	@$(CHECK_COV) forge-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
-test-zed: build-zed
+test-zed:
 	@echo "==> Running Zed extension tests (nextest, fail-fast)..."
 	cargo nextest run --manifest-path $(ZED_DIR)/Cargo.toml --fail-fast
 

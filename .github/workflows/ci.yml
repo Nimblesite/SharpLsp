@@ -76,19 +76,13 @@ jobs:
       - name: VS Code lint
         run: make lint-vsix
 
-  test:
-    name: Test
+  test-rust:
+    name: Test Rust
     needs: [lint]
     runs-on: ubuntu-latest
-    # TIMEOUT EXCEPTION: Rust + .NET + VS Code E2E suites with coverage instrumentation
-    # across 3 sidecars and xvfb-driven extension host exceed the 10-minute default.
-    timeout-minutes: 20
-    permissions:
-      contents: write
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -104,27 +98,132 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Test Rust with coverage
+        run: make test-rust
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-rust
+          path: |
+            target/coverage-rust.json
+            coverage-thresholds.json
+
+  test-dotnet:
+    name: Test .NET
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test .NET sidecars with coverage
+        run: make test-dotnet
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-dotnet
+          path: coverage-thresholds.json
+
+  test-zed:
+    name: Test Zed
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: zed
+
+      - uses: taiki-e/install-action@nextest
+
+      - name: Test Zed extension
+        run: make test-zed
+
+  test-vsix:
+    name: Test VS Code
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: editors/vscode/package-lock.json
 
-      - name: Install diagnostic tools
-        run: |
-          dotnet tool install -g dotnet-trace &
-          dotnet tool install -g dotnet-counters &
-          dotnet tool install -g dotnet-dump &
-          wait
-
       - name: Install VS Code extension deps
         run: npm ci --prefix editors/vscode
 
-      - name: Test (build + coverage + threshold enforcement)
-        run: make test-rust test-zed test-dotnet
-
-      - name: Test VS Code extension (requires virtual display)
+      - name: Test VS Code extension with coverage
         run: xvfb-run -a make test-vsix
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-vsix
+          path: coverage-thresholds.json
+
+  coverage:
+    name: Ratchet Coverage
+    needs: [test-rust, test-dotnet, test-vsix]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: coverage-artifacts
+
+      - name: Merge ratcheted thresholds
+        run: |
+          # Each test job may have ratcheted its own thresholds up.
+          # Merge by taking the maximum threshold for each project key.
+          BASE="coverage-thresholds.json"
+          for artifact_dir in coverage-artifacts/coverage-*/; do
+            ARTIFACT="${artifact_dir}coverage-thresholds.json"
+            if [ -f "$ARTIFACT" ]; then
+              # For each project key, take the higher threshold
+              jq -s '
+                .[0] as $base | .[1] as $new |
+                $base | to_entries | map(
+                  if .value | type == "object" then
+                    .key as $k |
+                    .value.line_percent as $bp |
+                    ($new[$k].line_percent // $bp) as $np |
+                    .value.line_percent = (if $np > $bp then $np else $bp end)
+                  else .
+                  end
+                ) | from_entries
+              ' "$BASE" "$ARTIFACT" > tmp-merged.json
+              mv tmp-merged.json "$BASE"
+            fi
+          done
 
       - name: Commit ratcheted thresholds
         run: |
