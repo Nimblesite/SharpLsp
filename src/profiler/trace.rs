@@ -83,7 +83,16 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let child = cmd.spawn().context("failed to spawn dotnet-trace")?;
+    let mut child = cmd.spawn().context("failed to spawn dotnet-trace")?;
+
+    // dotnet-trace collect on macOS reports many non-.NET processes via `ps`,
+    // and attaching to them fails fast with `ServerNotAvailableException`.
+    // Poll briefly — if the child already exited, it couldn't attach.
+    // Surface the real stderr so the UI shows a useful message instead of
+    // silently registering a zombie session that only fails on Stop.
+    if let Some(err) = early_attach_failure(&mut child) {
+        anyhow::bail!("failed to attach dotnet-trace to PID {}: {err}", params.pid);
+    }
 
     let session_id = session::store().create(
         SessionKind::Trace,
@@ -96,6 +105,55 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
         session_id,
         output_path,
     })
+}
+
+/// Poll a freshly-spawned `dotnet-trace collect` child for up to ~500ms. If it
+/// has already exited, capture its stderr and return a human-readable reason.
+/// Returns `None` if the child is still running (attach succeeded).
+fn early_attach_failure(child: &mut std::process::Child) -> Option<String> {
+    use std::io::Read;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                let mut stderr = String::new();
+                if let Some(mut s) = child.stderr.take() {
+                    let _ = s.read_to_string(&mut stderr);
+                }
+                let trimmed = stderr.trim();
+                let reason = if trimmed.is_empty() {
+                    "process exited immediately — target is not a .NET process \
+                     or is no longer running"
+                        .to_string()
+                } else {
+                    summarize_dotnet_trace_error(trimmed)
+                };
+                return Some(reason);
+            }
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    return None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+/// Pull the first useful line out of `dotnet-trace` stderr. The raw output is
+/// a multi-screen .NET stack trace; users only need the primary cause.
+fn summarize_dotnet_trace_error(stderr: &str) -> String {
+    if stderr.contains("ServerNotAvailableException") || stderr.contains("Connection refused") {
+        return "target is not a .NET process (or its diagnostic IPC is not reachable)".to_string();
+    }
+    stderr
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or(stderr)
+        .trim()
+        .to_string()
 }
 
 /// Stop a running trace session.

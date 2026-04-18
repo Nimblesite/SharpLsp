@@ -31,6 +31,7 @@ This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate
 - Zero duplication. DRY AF!!! Check for existing code before writing new code <- Highest priority
 - Any function that can throw/panic must return Result<T,E> (outcome package in .NET)
 - Avoid RegEx and string matching. Always use ACTUAL parsers and traverse the AST/CST
+- **NEVER hand-manipulate structured files.** XML (csproj/fsproj/props/vsixmanifest), JSON, TOML, YAML, solution files, etc. MUST be loaded into a proper document model, mutated via the DOM/AST, and serialized back. Line splicing, regex replacement, or string concatenation on structured files is ILLEGAL. No exceptions for "performance" or "formatting preservation" — use a parser that preserves trivia (e.g. `Microsoft.Build.Construction` for MSBuild, `XDocument`/`quick-xml` with trivia preservation for XML, `serde_json` with `preserve_order` for JSON).
 - `allow(clippy::` = ILLEGAL. If you must, add a damn good reason. **Aggressively remove** existing allows.
 - All code files < 500 LOC. Functions < 20 LOC
 - Aggressively move shared code to shared crates/modules

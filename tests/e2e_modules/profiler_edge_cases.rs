@@ -123,6 +123,68 @@ fn test_profiler_edge_trace_target_dies() {
     client.wait_with_timeout();
 }
 
+/// Edge case: starting a trace on a non-.NET process must fail fast at
+/// `startTrace` time — not register a zombie session that only surfaces the
+/// failure when the user later clicks Stop (at which point the error is the
+/// confusing "session already stopped").
+///
+/// Repro for the user-reported bug: macOS `dotnet-trace ps` over-reports
+/// non-.NET processes (Node, system daemons, Electron helpers, etc.). When
+/// the user picked one of those, `dotnet-trace collect` exited immediately
+/// with `ServerNotAvailableException` and we silently registered a session
+/// anyway. Stop later reported "session already stopped" because the dead
+/// child had been taken on a prior stop attempt.
+#[test]
+fn test_profiler_edge_start_trace_rejects_non_dotnet_pid() {
+    // A shell subprocess is guaranteed not to be a .NET runtime, and we own
+    // its lifetime so the test is deterministic.
+    let mut non_dotnet = std::process::Command::new("sleep")
+        .arg("60")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to spawn sleep");
+    let non_dotnet_pid = non_dotnet.id();
+
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let trace_path = tmp_dir
+        .path()
+        .join("non-dotnet.nettrace")
+        .to_string_lossy()
+        .to_string();
+
+    let resp = client.request(
+        "forge/profiler/startTrace",
+        json!({
+            "pid": non_dotnet_pid,
+            "output_path": trace_path,
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "startTrace against non-.NET PID must fail at start time, not register \
+         a zombie session: {resp}"
+    );
+    let msg = resp["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.to_lowercase().contains("attach") || msg.to_lowercase().contains("not a .net"),
+        "error must explain the attach failure, not be a generic wrapper: {msg}"
+    );
+    assert!(
+        !msg.contains("already stopped"),
+        "must not surface the zombie-session path: {msg}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    let _ = non_dotnet.kill();
+    let _ = non_dotnet.wait();
+}
+
 /// Edge case: `listProcesses` finds `ProfileTarget` by name in the process list.
 #[test]
 fn test_profiler_edge_process_list_finds_target_by_name() {

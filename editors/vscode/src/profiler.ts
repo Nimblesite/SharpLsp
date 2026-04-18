@@ -89,6 +89,8 @@ interface SessionInfo {
   /** 'Trace' or 'Counters'. */
   readonly kind: string;
   readonly pid: number;
+  /** Human-readable process name, when known. */
+  readonly processName: string | undefined;
   /** Output file path (for traces; counters sessions leave this undefined). */
   readonly outputPath: string | undefined;
   /** When the session was started. */
@@ -155,9 +157,27 @@ export class ProfilerTreeProvider implements vscode.TreeDataProvider<ProfilerTre
     this.emitter.fire(undefined);
   }
 
-  public addSession(id: string, kind: string, pid: number, outputPath?: string): void {
-    this.activeSessions.push({ id, kind, pid, outputPath, startedAt: Date.now() });
+  public addSession(
+    id: string,
+    kind: string,
+    pid: number,
+    outputPath?: string,
+    processName?: string,
+  ): void {
+    this.activeSessions.push({
+      id,
+      kind,
+      pid,
+      processName,
+      outputPath,
+      startedAt: Date.now(),
+    });
     this.emitter.fire(undefined);
+  }
+
+  /** Find the cached process name for a PID, if we've seen it in `refresh()`. */
+  public processNameFor(pid: number): string | undefined {
+    return this.processes.find((p) => p.pid === pid)?.name;
   }
 
   /** Lookup a session by ID (for context-menu dispatch). */
@@ -243,8 +263,12 @@ function buildSessionNode(session: SessionInfo): ProfilerTreeItem {
     contextValue,
   };
   if (session.outputPath !== undefined) options.outputPath = session.outputPath;
+  const label =
+    session.processName !== undefined && session.processName.length > 0
+      ? `${session.kind}: ${session.processName} (PID ${String(session.pid)})`
+      : `${session.kind}: PID ${String(session.pid)}`;
   const node = new ProfilerTreeItem(
-    `${session.kind}: PID ${String(session.pid)}`,
+    label,
     'session',
     vscode.TreeItemCollapsibleState.None,
     options,
@@ -258,6 +282,9 @@ function buildSessionNode(session: SessionInfo): ProfilerTreeItem {
   node.tooltip = new vscode.MarkdownString(
     [
       `**${session.kind} session**`,
+      session.processName !== undefined && session.processName.length > 0
+        ? `- Process: \`${session.processName}\``
+        : '',
       `- PID: \`${String(session.pid)}\``,
       `- Session ID: \`${session.id}\``,
       session.outputPath !== undefined ? `- Output: \`${session.outputPath}\`` : '',
@@ -546,15 +573,17 @@ export function registerCommands(
   );
 
   /** Start a trace session on a known PID. Used by toolbar + per-process menu. */
-  async function startTraceOn(pid: number): Promise<void> {
+  async function startTraceOn(pid: number, processName?: string): Promise<void> {
     const lsp = getClient();
     if (lsp === undefined) return;
+    const name = processName ?? provider.processNameFor(pid);
     try {
       const result = await lsp.sendRequest<StartTraceResult>('forge/profiler/startTrace', { pid });
-      provider.addSession(result.session_id, 'Trace', pid, result.output_path);
+      provider.addSession(result.session_id, 'Trace', pid, result.output_path, name);
       statusBar.update(provider.sessionCount);
+      const who = name !== undefined ? `${name} (PID ${String(pid)})` : `PID ${String(pid)}`;
       void vscode.window.showInformationMessage(
-        `Trace recording on PID ${String(pid)} → ${result.output_path}`,
+        `Trace recording on ${who} → ${result.output_path}`,
       );
     } catch (err: unknown) {
       void vscode.window.showErrorMessage(`Start trace failed: ${getErrorMessage(err)}`);
@@ -589,7 +618,7 @@ export function registerCommands(
       if (lsp === undefined) return;
       const proc = await pickProcess(lsp);
       if (proc === undefined) return;
-      await startTraceOn(proc.pid);
+      await startTraceOn(proc.pid, proc.name);
     }),
   );
 
@@ -614,14 +643,15 @@ export function registerCommands(
     }),
   );
 
-  async function startCountersOn(pid: number): Promise<void> {
+  async function startCountersOn(pid: number, processName?: string): Promise<void> {
     const lsp = getClient();
     if (lsp === undefined) return;
+    const name = processName ?? provider.processNameFor(pid);
     try {
       const result = await lsp.sendRequest<StartCountersResult>('forge/profiler/startCounters', {
         pid,
       });
-      provider.addSession(result.session_id, 'Counters', pid);
+      provider.addSession(result.session_id, 'Counters', pid, undefined, name);
       statusBar.update(provider.sessionCount);
       const panel = CounterWebviewPanel.open(result.session_id, pid, context);
       counterPanels.set(result.session_id, panel);
@@ -661,7 +691,7 @@ export function registerCommands(
       if (lsp === undefined) return;
       const proc = await pickProcess(lsp);
       if (proc === undefined) return;
-      await startCountersOn(proc.pid);
+      await startCountersOn(proc.pid, proc.name);
     }),
   );
 
@@ -1021,7 +1051,10 @@ async function pickActiveSession(
 
   const picked = await vscode.window.showQuickPick(
     sessions.map((s) => ({
-      label: `${s.kind}: PID ${String(s.pid)} [${s.id}]`,
+      label:
+        s.processName !== undefined && s.processName.length > 0
+          ? `${s.kind}: ${s.processName} (PID ${String(s.pid)}) [${s.id}]`
+          : `${s.kind}: PID ${String(s.pid)} [${s.id}]`,
       sessionId: s.id,
     })),
     { placeHolder: `Select ${kind} session to stop` },
