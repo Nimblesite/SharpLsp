@@ -89,7 +89,7 @@ pub async fn analyze_heap(params: AnalyzeHeapParams) -> Result<HeapStats> {
     }
 
     // Sort by total size descending.
-    types.sort_by(|a, b| b.total_size_bytes.cmp(&a.total_size_bytes));
+    types.sort_by_key(|t| std::cmp::Reverse(t.total_size_bytes));
 
     // Apply limit.
     types.truncate(params.limit);

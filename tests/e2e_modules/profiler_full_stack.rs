@@ -158,7 +158,7 @@ fn test_profiler_happy_path_trace_lifecycle() {
     //    dotnet-trace may still be flushing after our SIGINT, so poll briefly.
     let mut file_size = 0u64;
     for _ in 0..10 {
-        file_size = std::fs::metadata(&trace_path).map(|m| m.len()).unwrap_or(0);
+        file_size = std::fs::metadata(&trace_path).map_or(0, |m| m.len());
         if file_size > 0 {
             break;
         }

@@ -129,7 +129,7 @@ fn test_diagnostics_cleared_independently_per_document() {
         "document B must still be usable after closing A",
     );
     let symbols = resp["result"].as_array().unwrap();
-    assert!(!symbols.is_empty(), "document B must still return symbols",);
+    assert!(!symbols.is_empty(), "document B must still return symbols");
 
     // Now close B — it should also be cleared.
     client.close_document(uri_b);

@@ -358,7 +358,7 @@ fn test_full_stack_all_nav_methods_interleaved() {
     let _ = client.initialize_with_root(json!(root_uri));
     client.open_document(&file_uri, &source);
 
-    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(180));
+    let _ = poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_mins(3));
 
     // 1. definition: "AnimalBase" in Dog's extends (line 14) → line 8
     let r1 = definition(&mut client, &file_uri, 14, 23);

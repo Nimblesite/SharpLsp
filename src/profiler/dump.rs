@@ -71,9 +71,7 @@ pub async fn collect(
         anyhow::bail!("dotnet-dump collect failed: {stderr}");
     }
 
-    let file_size_bytes = std::fs::metadata(&output_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size_bytes = std::fs::metadata(&output_path).map_or(0, |m| m.len());
 
     send_progress_end(&sender, &token);
 

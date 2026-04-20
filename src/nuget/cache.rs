@@ -54,12 +54,12 @@ static HTTP_CLIENT: std::sync::OnceLock<Mutex<Option<reqwest::Client>>> =
 
 /// Return the shared search-result cache, creating it on first access.
 pub fn search_cache() -> &'static TtlCache<serde_json::Value> {
-    SEARCH_CACHE.get_or_init(|| TtlCache::new(Duration::from_secs(60)))
+    SEARCH_CACHE.get_or_init(|| TtlCache::new(Duration::from_mins(1)))
 }
 
 /// Return the shared version-list cache, creating it on first access.
 pub fn versions_cache() -> &'static TtlCache<Vec<String>> {
-    VERSIONS_CACHE.get_or_init(|| TtlCache::new(Duration::from_secs(300)))
+    VERSIONS_CACHE.get_or_init(|| TtlCache::new(Duration::from_mins(5)))
 }
 
 /// Get or create the shared HTTP client.

@@ -32,7 +32,7 @@ pub fn parse_project_file(content: &str) -> ProjectDependencies {
 /// Extract `<PackageReference Include="..." Version="..." />` entries.
 fn parse_nuget_packages(content: &str) -> Vec<NuGetPackage> {
     let mut packages: Vec<NuGetPackage> = content.lines().filter_map(parse_package_line).collect();
-    packages.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    packages.sort_by_key(|p| p.name.to_lowercase());
     packages
 }
 

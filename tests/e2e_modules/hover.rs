@@ -105,7 +105,7 @@ public class Foo { }";
     // Hover on doc comment (line 3, char 10).
     let resp = hover(&mut client, TEST_URI, 3, 10);
     assert_hover_ok(&resp);
-    assert!(resp["result"].is_null(), "doc comment must return null",);
+    assert!(resp["result"].is_null(), "doc comment must return null");
 
     // Hover on the actual class AFTER comments — must NOT be null.
     let resp = hover(&mut client, TEST_URI, 4, 14);
@@ -155,7 +155,7 @@ fn test_hover_across_multiple_documents() {
     assert_eq!(resp_closed["jsonrpc"], "2.0");
     let has_error = resp_closed.get("error").is_some();
     let is_null = resp_closed["result"].is_null();
-    assert!(has_error || is_null, "hover on closed doc must not crash",);
+    assert!(has_error || is_null, "hover on closed doc must not crash");
 
     client.shutdown_and_exit();
     client.wait_with_timeout();

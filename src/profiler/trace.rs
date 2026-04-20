@@ -192,9 +192,7 @@ pub fn stop(session_id: &str) -> Result<StopTraceResult> {
         .and_then(|s| s.output_path.clone())
         .unwrap_or_default();
 
-    let file_size_bytes = std::fs::metadata(&output_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size_bytes = std::fs::metadata(&output_path).map_or(0, |m| m.len());
 
     store.mark_stopped(session_id, None);
 

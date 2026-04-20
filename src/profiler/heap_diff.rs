@@ -135,7 +135,7 @@ pub async fn diff_snapshots(params: DiffHeapSnapshotsParams) -> Result<HeapDiffR
     }
 
     diffs.retain(|d| d.growth_percent >= params.min_growth_percent);
-    diffs.sort_by(|a, b| b.size_delta_bytes.cmp(&a.size_delta_bytes));
+    diffs.sort_by_key(|d| std::cmp::Reverse(d.size_delta_bytes));
     diffs.truncate(params.limit);
 
     let leak_suspects = classify_suspects(&diffs);
