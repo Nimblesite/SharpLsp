@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import * as log from './log.js';
@@ -34,6 +35,8 @@ import {
   type WebviewMessage,
 } from './nuget-browser/types.js';
 
+const PROJECT_SYNC_MS = 250;
+
 // Re-export types so existing call sites and tests keep working.
 export type { NuGetSearchResult, WebviewMessage } from './nuget-browser/types.js';
 
@@ -48,6 +51,8 @@ export class NuGetBrowserPanel {
   private readonly getClient: () => LanguageClient | undefined;
   private restoreProgressDisposable: vscode.Disposable | undefined;
   private readonly projectDepsSubscription: () => void;
+  private projectRefreshTimer: NodeJS.Timeout | undefined;
+  private disposed = false;
 
   // ── Reactive state ──
   private targets: NuGetTarget[] = [];
@@ -91,20 +96,24 @@ export class NuGetBrowserPanel {
     this.panel.onDidDispose(
       () => {
         log.info('NuGetBrowserPanel: panel disposed');
+        this.disposed = true;
         this.restoreProgressDisposable?.dispose();
         this.projectDepsSubscription();
+        this.stopProjectRefreshTimer();
         NuGetBrowserPanel.instance = undefined;
       },
       null,
       this.context.subscriptions,
     );
 
-    // React to external csproj edits: re-pull installed packages from LSP
-    // so the Install/Remove button reflects the current file on disk.
+    // React to external csproj edits so Install/Remove reflects the file on disk.
     this.projectDepsSubscription = projectDeps.projectDependencies.subscribe(() => {
-      log.info('NuGetBrowserPanel: projectDependencies changed, reloading installed');
-      void this.loadInstalledPackages();
+      log.info('NuGetBrowserPanel: projectDependencies changed, refreshing installed');
+      if (!this.syncInstalledPackagesFromTrackedProject()) {
+        void this.loadInstalledPackages();
+      }
     });
+    this.startProjectRefreshTimer();
 
     this.panel.webview.onDidReceiveMessage(
       (message: WebviewMessage) => {
@@ -343,6 +352,7 @@ export class NuGetBrowserPanel {
   // ── LSP-backed actions ──────────────────────────────────────
 
   private async loadInstalledPackages(): Promise<void> {
+    if (this.syncInstalledPackagesFromTrackedProject()) return;
     const target = this.currentTarget();
     const lsp = this.getClient();
     if (target === undefined || lsp === undefined) return;
@@ -370,7 +380,52 @@ export class NuGetBrowserPanel {
     void this.enrichInstalled();
   }
 
+  private syncInstalledPackagesFromTrackedProject(): boolean {
+    const target = this.currentTarget();
+    if (target?.kind !== 'project') return false;
+    const parsed =
+      projectDeps.refreshTracked(target.path) ??
+      projectDeps.projectDependencies.value.get(path.resolve(target.path));
+    if (parsed === undefined) return false;
+    const wasLoading = this.loading.delete('installed');
+    const changed = this.replaceInstalledPackages(parsed.nugetPackages);
+    if (!changed && !wasLoading) return true;
+    this.updateContent();
+    if (changed) void this.enrichInstalled();
+    return true;
+  }
+
+  private replaceInstalledPackages(
+    packages: readonly { readonly name: string; readonly version: string }[],
+  ): boolean {
+    if (
+      this.installedPackages.size === packages.length &&
+      packages.every((pkg) => this.installedPackages.get(pkg.name) === pkg.version)
+    ) {
+      return false;
+    }
+    this.installedPackages.clear();
+    for (const pkg of packages) {
+      this.installedPackages.set(pkg.name, pkg.version);
+    }
+    return true;
+  }
+
+  private startProjectRefreshTimer(): void {
+    if (this.projectRefreshTimer !== undefined) return;
+    this.projectRefreshTimer = setInterval(() => {
+      this.syncInstalledPackagesFromTrackedProject();
+    }, PROJECT_SYNC_MS);
+  }
+
+  private stopProjectRefreshTimer(): void {
+    if (this.projectRefreshTimer === undefined) return;
+    clearInterval(this.projectRefreshTimer);
+    this.projectRefreshTimer = undefined;
+  }
+
   private async enrichInstalled(): Promise<void> {
+    if (this.isDisposed()) return;
     const target = this.currentTarget();
     const lsp = this.getClient();
     if (target === undefined || lsp === undefined) return;
@@ -380,7 +435,9 @@ export class NuGetBrowserPanel {
       this.updateContent();
       return;
     }
-    this.installedMetadata = await fetchInstalledMetadata(lsp, target, ids);
+    const metadata = await fetchInstalledMetadata(lsp, target, ids);
+    if (this.isDisposed()) return;
+    this.installedMetadata = metadata;
     log.info(
       `NuGetBrowserPanel: enriched ${this.installedMetadata.size.toString()}/${ids.length.toString()} installed packages`,
     );
@@ -538,6 +595,7 @@ export class NuGetBrowserPanel {
   // ── Rendering ───────────────────────────────────────────────
 
   private updateContent(): void {
+    if (this.isDisposed()) return;
     log.info(
       `NuGetBrowserPanel: rendering tab=${this.currentTab} packages=${this.searchResults.length.toString()} installed=${this.installedPackages.size.toString()} loading=${this.loading.size.toString()}`,
     );
@@ -556,5 +614,9 @@ export class NuGetBrowserPanel {
       toast: this.toast,
     };
     this.panel.webview.html = buildHtml(state);
+  }
+
+  private isDisposed(): boolean {
+    return this.disposed;
   }
 }

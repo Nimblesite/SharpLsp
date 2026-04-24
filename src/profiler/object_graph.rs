@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::debug;
 
 use super::{dump_cmd, tool_discovery};
 
@@ -109,14 +109,6 @@ pub struct ObjectGraphStats {
 pub async fn get_object_graph(params: GetObjectGraphParams) -> Result<ObjectGraphResult> {
     let tool = tool_discovery::require_dump()?;
     dump_cmd::validate_dump_path(&params.dump_path)?;
-
-    info!(
-        dump = %params.dump_path,
-        root = %params.root_address,
-        max_depth = params.max_depth,
-        max_nodes = params.max_nodes,
-        "Building object graph"
-    );
 
     let mut nodes: HashMap<String, ObjectGraphNode> = HashMap::new();
     let mut edges: Vec<ObjectGraphEdge> = Vec::new();

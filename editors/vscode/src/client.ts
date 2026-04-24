@@ -91,13 +91,19 @@ function wireStatusBar(
  *
  * Priority:
  *   1. User-configured `forge.server.path`
- *   2. Bundled binary in `<extension>/bin/`
- *   3. Binary name on `$PATH` (client resolves via shell)
+ *   2. `FORGE_EXECUTABLE_PATH` for test and development runs
+ *   3. Bundled binary in `<extension>/bin/`
+ *   4. Binary name on `$PATH` (client resolves via shell)
  */
 function resolveServerPath(context: ExtensionContext): string | undefined {
   const configured = config.serverPath();
   if (configured !== '' && fs.existsSync(configured)) {
     return configured;
+  }
+
+  const envPath = process.env.FORGE_EXECUTABLE_PATH;
+  if (envPath !== undefined && envPath !== '' && fs.existsSync(envPath)) {
+    return envPath;
   }
 
   const binaryName = process.platform === 'win32' ? SERVER_BINARY_WIN : SERVER_BINARY;

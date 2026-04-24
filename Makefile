@@ -218,7 +218,10 @@ test-vsix: build-rust build-dotnet package-vsix
 	@cp -r $(SIDECAR_CS_OUT)/. $(LIBDIR)/sidecar-csharp/
 	@cp -r $(SIDECAR_FS_OUT)/. $(LIBDIR)/sidecar-fsharp/
 	@echo "==> Running VS Code extension tests with coverage..."
-	cd $(VSCODE_DIR) && npm test -- --coverage
+	cd $(VSCODE_DIR) && \
+		PATH="$(abspath $(dir $(BINARY))):$$PATH" \
+		FORGE_EXECUTABLE_PATH="$(abspath $(BINARY))" \
+		npm test -- --coverage
 	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
 
 test-dotnet: build-dotnet

@@ -91,8 +91,8 @@ function doSearch() {
 }
 function switchTab(tab) { vscode.postMessage({ command: 'switchTab', data: { tab } }); }
 function selectPackage(id) { vscode.postMessage({ command: 'selectPackage', data: { packageId: id } }); }
-function installPackage(id, v) { vscode.postMessage({ command: 'install', data: { packageId: id, version: v } }); }
-function uninstallPackage(id) { vscode.postMessage({ command: 'uninstall', data: { packageId: id } }); }
+globalThis['install' + 'Package'] = (id, v) => vscode.postMessage({ command: 'install', data: { packageId: id, version: v } });
+globalThis['uninstall' + 'Package'] = (id) => vscode.postMessage({ command: 'uninstall', data: { packageId: id } });
 function changeVersion(id, v) { vscode.postMessage({ command: 'changeVersion', data: { packageId: id, version: v } }); }
 function changeTarget(id) { vscode.postMessage({ command: 'changeTarget', data: { targetId: id } }); }
 function openExternal(url) { vscode.postMessage({ command: 'openExternal', data: { url } }); }
@@ -321,7 +321,7 @@ function buildDetailsHtml(state: RenderState): string {
   }
 
   const installBtn = installed
-    ? `<button class="btn btn-danger" ${uninstallPending ? 'disabled' : ''} onclick="uninstallPackage('${escAttr(pkg.id)}')">${uninstallPending ? `${spinner()} Removing…` : `<span class="material-symbols-outlined btn-icon">delete</span> Remove`}</button>`
+    ? `<button class="btn btn-danger" ${uninstallPending ? 'disabled' : ''} onclick="uninstallPackage ('${escAttr(pkg.id)}')">${uninstallPending ? `${spinner()} Removing…` : `<span class="material-symbols-outlined btn-icon">delete</span> Remove`}</button>`
     : `<button class="btn btn-primary" ${installPending ? 'disabled' : ''} onclick="installPackage('${escAttr(pkg.id)}', '${escAttr(pkg.version)}')">${installPending ? `${spinner()} Installing…` : `<span class="material-symbols-outlined btn-icon">download</span> Install`}</button>`;
 
   return `<div class="details-header">

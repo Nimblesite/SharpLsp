@@ -104,3 +104,27 @@ impl NavCache {
         self.entries.retain(|(k, _), _| k != uri_str);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::NavCache;
+
+    #[test]
+    fn get_returns_none_for_stale_document_version() {
+        let mut cache = NavCache::new();
+        cache.insert(
+            "file:///test.cs",
+            1,
+            2,
+            3,
+            "textDocument/definition",
+            json!({ "ok": true }),
+        );
+
+        assert!(cache
+            .get("file:///test.cs", 2, 2, 3, "textDocument/definition")
+            .is_none());
+    }
+}

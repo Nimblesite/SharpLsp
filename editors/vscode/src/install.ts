@@ -108,15 +108,20 @@ function forgeLspUpdateArgs(): readonly string[] {
   return ['brew', 'upgrade', 'Nimblesite/tap/forge-lsp'];
 }
 
+function forgeLspCommand(): string {
+  const envPath = process.env.FORGE_EXECUTABLE_PATH;
+  return envPath === undefined || envPath === '' ? SERVER_BINARY : envPath;
+}
+
 /** All binary components that the extension requires. */
 function binaryComponents(_version: string): readonly BinaryComponent[] {
   return [
     {
       name: 'forge-lsp',
-      command: SERVER_BINARY,
+      command: forgeLspCommand(),
       versionPrefix: 'forge-lsp',
       getInstallArgs: () => {
-        const installed = getInstalledVersion(SERVER_BINARY, 'forge-lsp');
+        const installed = getInstalledVersion(forgeLspCommand(), 'forge-lsp');
         if (installed === undefined) return [...forgeLspInstallArgs()];
         return [...forgeLspUpdateArgs()];
       },
@@ -299,7 +304,7 @@ export async function ensureBinaries(configuredPath: string): Promise<InstallRes
     }
   }
 
-  return { serverPath: SERVER_BINARY };
+  return { serverPath: forgeLspCommand() };
 }
 
 /**
@@ -317,6 +322,7 @@ export function describeBinaryStatus(configuredPath: string): {
     return { expected, found: installed, location: configuredPath };
   }
 
-  const installed = getInstalledVersion(SERVER_BINARY, 'forge-lsp');
-  return { expected, found: installed, location: SERVER_BINARY };
+  const command = forgeLspCommand();
+  const installed = getInstalledVersion(command, 'forge-lsp');
+  return { expected, found: installed, location: command };
 }
