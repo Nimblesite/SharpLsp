@@ -542,11 +542,17 @@ fn test_profiler_diff_heap_snapshots_server_survives_error() {
         }),
     );
 
-    // Server must still respond to subsequent requests.
-    let resp2 = client.request("forge/profiler/listProcesses", json!({}));
+    // Server must still handle an in-process request that does not depend on
+    // optional diagnostic tools being installed.
+    let resp2 = client.request("workspace/symbol", json!({ "query": "" }));
+    assert_eq!(resp2["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(
-        resp2.get("error").is_none() || resp2.get("result").is_some(),
+        resp2.get("error").is_none(),
         "server must still respond after diffHeapSnapshots error: {resp2}"
+    );
+    assert!(
+        resp2["result"].is_null() || resp2["result"].as_array().is_some(),
+        "workspace/symbol must return null or array: {resp2}"
     );
 
     client.shutdown_and_exit();
