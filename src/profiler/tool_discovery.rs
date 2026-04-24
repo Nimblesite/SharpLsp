@@ -4,7 +4,7 @@
 //! Caches discovered paths for subsequent calls.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
@@ -108,6 +108,7 @@ fn find_global_tool_shim(name: &str) -> Option<PathBuf> {
     find_global_tool_shim_in_roots(name, &global_tool_roots())
 }
 
+/// Look for a tool shim under the provided global-tool roots.
 fn find_global_tool_shim_in_roots(name: &str, roots: &[PathBuf]) -> Option<PathBuf> {
     let file_name = tool_file_name(name);
     roots
@@ -116,6 +117,7 @@ fn find_global_tool_shim_in_roots(name: &str, roots: &[PathBuf]) -> Option<PathB
         .find(|path| path.exists())
 }
 
+/// Return conventional .NET global tool directories for the current user.
 fn global_tool_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     push_env_global_tool_root(&mut roots, "DOTNET_CLI_HOME");
@@ -125,24 +127,29 @@ fn global_tool_roots() -> Vec<PathBuf> {
     roots
 }
 
+/// Add an environment variable's global-tool root when the variable is set.
 fn push_env_global_tool_root(roots: &mut Vec<PathBuf>, key: &str) {
     if let Some(home) = env::var_os(key) {
-        push_global_tool_root(roots, PathBuf::from(home));
+        let home = PathBuf::from(home);
+        push_global_tool_root(roots, &home);
     }
 }
 
-fn push_global_tool_root(roots: &mut Vec<PathBuf>, home: PathBuf) {
+/// Add `<home>/.dotnet/tools` to the root list, avoiding duplicates.
+fn push_global_tool_root(roots: &mut Vec<PathBuf>, home: &Path) {
     let root = home.join(".dotnet").join("tools");
     if !roots.iter().any(|existing| existing == &root) {
         roots.push(root);
     }
 }
 
+/// Return the platform-specific executable file name for a global tool shim.
 #[cfg(windows)]
 fn tool_file_name(name: &str) -> String {
     format!("{name}.exe")
 }
 
+/// Return the platform-specific executable file name for a global tool shim.
 #[cfg(not(windows))]
 fn tool_file_name(name: &str) -> String {
     name.to_string()
@@ -237,13 +244,14 @@ mod tests {
     }
 
     #[test]
-    fn find_global_tool_shim_in_roots_finds_existing_shim() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn find_global_tool_shim_in_roots_finds_existing_shim() -> Result<()> {
+        let tmp = tempfile::tempdir().context("create temp dir")?;
         let tool = tmp.path().join(tool_file_name("dotnet-dump"));
-        std::fs::write(&tool, "").expect("write shim");
+        std::fs::write(&tool, "").context("write shim")?;
 
         let result = find_global_tool_shim_in_roots("dotnet-dump", &[tmp.path().to_path_buf()]);
         assert_eq!(result.as_deref(), Some(tool.as_path()));
+        Ok(())
     }
 
     #[test]
@@ -251,10 +259,13 @@ mod tests {
         let mut roots = Vec::new();
         let home = PathBuf::from("/tmp/forge-home");
 
-        push_global_tool_root(&mut roots, home.clone());
-        push_global_tool_root(&mut roots, home);
+        push_global_tool_root(&mut roots, &home);
+        push_global_tool_root(&mut roots, &home);
 
         assert_eq!(roots.len(), 1);
-        assert_eq!(roots[0], PathBuf::from("/tmp/forge-home/.dotnet/tools"));
+        assert_eq!(
+            roots.first().map(PathBuf::as_path),
+            Some(Path::new("/tmp/forge-home/.dotnet/tools"))
+        );
     }
 }
