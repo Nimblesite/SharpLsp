@@ -98,6 +98,12 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Install .NET diagnostic tools
+        run: |
+          dotnet tool install -g dotnet-trace
+          dotnet tool install -g dotnet-counters
+          dotnet tool install -g dotnet-dump
+
       - name: Test Rust with coverage
         run: make test-rust
 
