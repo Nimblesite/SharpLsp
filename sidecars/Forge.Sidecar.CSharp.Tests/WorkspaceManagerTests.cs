@@ -92,6 +92,77 @@ public sealed class WorkspaceManagerTests : IDisposable
         Assert.False(manager.IsLoaded);
     }
 
+    [Fact]
+    public async Task Open_loads_slnx_solution_and_its_referenced_project()
+    {
+        // Reproduces the user-reported TradiSite/backend/AiCms.slnx scenario:
+        // a .slnx referencing a .csproj must load successfully via
+        // MSBuildWorkspace.OpenSolutionAsync (Roslyn 5.x).
+        var (slnxPath, sourcePath) = WriteSlnxWithSingleProject(
+            "namespace S; public class Bar { public void M() {} }\n"
+        );
+
+        using var manager = new WorkspaceManager();
+#pragma warning disable CS0618 // Obsolete OpenAsync placeholder
+        var openResult = await manager.OpenAsync(slnxPath);
+#pragma warning restore CS0618
+        Assert.False(openResult.IsError, openResult.Match(_ => "ok", err => err));
+        Assert.True(manager.IsLoaded, "slnx solution must be loaded");
+
+        var diags = await manager.GetDiagnosticsAsync(sourcePath);
+        Assert.False(diags.IsError, "diagnostics on slnx-loaded project must succeed");
+    }
+
+    [Fact]
+    public async Task Open_discovers_slnx_via_recursive_scan()
+    {
+        // Mirrors `forge-lsp <workspace-root>` where the .slnx lives in a subdir.
+        var sub = Path.Combine(_root, "backend");
+        Directory.CreateDirectory(sub);
+        WriteSlnxWithSingleProject("namespace S; public class Baz {}\n", sub);
+
+        using var manager = new WorkspaceManager();
+#pragma warning disable CS0618
+        var openResult = await manager.OpenAsync(_root);
+#pragma warning restore CS0618
+
+        Assert.False(openResult.IsError, openResult.Match(_ => "ok", err => err));
+        Assert.True(manager.IsLoaded);
+    }
+
+    private (string slnxPath, string sourcePath) WriteSlnxWithSingleProject(
+        string source,
+        string? rootOverride = null
+    )
+    {
+        var root = rootOverride ?? _root;
+        const string csproj = """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+                <OutputType>Library</OutputType>
+              </PropertyGroup>
+            </Project>
+            """;
+        var projectDir = Path.Combine(root, "src", "App");
+        Directory.CreateDirectory(projectDir);
+        var csprojPath = Path.Combine(projectDir, "App.csproj");
+        var sourcePath = Path.Combine(projectDir, "Source.cs");
+        File.WriteAllText(csprojPath, csproj);
+        File.WriteAllText(sourcePath, source);
+
+        var slnxPath = Path.Combine(root, "App.slnx");
+        File.WriteAllText(
+            slnxPath,
+            """
+            <Solution>
+              <Project Path="src/App/App.csproj" />
+            </Solution>
+            """
+        );
+        return (slnxPath, sourcePath);
+    }
+
     private (string csprojPath, string sourcePath) WriteSingleFileProject(string source)
     {
         const string csproj = """

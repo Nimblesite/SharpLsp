@@ -542,7 +542,9 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         var target =
             findResult.Match(value => value, _ => null)
-            ?? throw new FileNotFoundException($"No .sln or .csproj found at or under '{path}'.");
+            ?? throw new FileNotFoundException(
+                $"No .sln, .slnx, or .csproj found at or under '{path}'."
+            );
 
         var loaded = await LoadSolutionOrProjectAsync(target, ct).ConfigureAwait(false);
 
@@ -604,7 +606,12 @@ internal sealed partial class WorkspaceManager : IDisposable
 
     private async Task<Solution> LoadSolutionOrProjectAsync(string target, CancellationToken ct)
     {
-        if (target.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+        // Roslyn 5.x's MSBuildWorkspace.OpenSolutionAsync handles both
+        // legacy .sln and the XML-based .slnx format.
+        if (
+            target.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
+            || target.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase)
+        )
         {
             return await _workspace!
                 .OpenSolutionAsync(target, cancellationToken: ct)
