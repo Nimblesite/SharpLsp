@@ -1,4 +1,6 @@
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.Text;
 
@@ -295,10 +297,36 @@ internal static class DefinitionResolver
         return highlights;
     }
 
-    /// <summary>Check if a reference location is a write (implicit references are typically assignments).</summary>
+    /// <summary>Check if a reference location is a write (assignment, out/ref, increment/decrement).</summary>
     private static bool IsWriteReference(ReferenceLocation refLoc)
     {
-        return refLoc.IsImplicit;
+        if (refLoc.IsImplicit)
+        {
+            return true;
+        }
+
+        var node = refLoc.Location.SourceTree?.GetRoot().FindNode(refLoc.Location.SourceSpan);
+        return node is not null && IsWriteContext(node);
+    }
+
+    /// <summary>Check if a syntax node is in a write context.</summary>
+    private static bool IsWriteContext(SyntaxNode node)
+    {
+        var parent = node.Parent;
+        return parent switch
+        {
+            // x = value
+            AssignmentExpressionSyntax assign => assign.Left == node,
+            // out x, ref x
+            ArgumentSyntax { RefKindKeyword.RawKind: var kind }
+                when kind is (int)SyntaxKind.OutKeyword or (int)SyntaxKind.RefKeyword => true,
+            // x++, x--, ++x, --x
+            PostfixUnaryExpressionSyntax => true,
+            PrefixUnaryExpressionSyntax prefix
+                when prefix.IsKind(SyntaxKind.PreIncrementExpression)
+                    || prefix.IsKind(SyntaxKind.PreDecrementExpression) => true,
+            _ => false,
+        };
     }
 
     /// <summary>Resolve the symbol at a given document position.</summary>

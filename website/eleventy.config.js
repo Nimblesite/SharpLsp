@@ -13,12 +13,26 @@ export default function (eleventyConfig) {
       blog: true,
       docs: true,
       darkMode: true,
-      i18n: false,
+      i18n: true,
+    },
+    i18n: {
+      defaultLanguage: 'en',
+      languages: ['en', 'zh'],
     },
   });
 
   eleventyConfig.addPlugin(HtmlBasePlugin);
   eleventyConfig.addPassthroughCopy("src/assets");
+
+  eleventyConfig.addTransform("nimblesite-footer", function (content) {
+    if (!this.page.outputPath?.endsWith(".html")) {
+      return content;
+    }
+    const year = new Date().getFullYear();
+    const original = `&copy; ${year} Forge`;
+    const replacement = `&copy; ${year} <a href="https://nimblesite.co">NIMBLESITE</a>`;
+    return content.replace(original, replacement);
+  });
 
   return {
     dir: { input: "src", output: "_site" },

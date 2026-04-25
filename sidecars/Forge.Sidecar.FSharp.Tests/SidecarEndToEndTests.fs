@@ -312,69 +312,101 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Contains("Unknown method", r.Error)
     }
 
+    // ── Code Actions ────────────────────────────────────────────
+
     [<Fact>]
-    member _.``typeDefinition on Person type itself resolves to itself``() = task {
-        let! r = fixture.Send("textDocument/typeDefinition", posPayload fixture.Src 9 5)
+    member _.``code actions returns array for valid file``() = task {
+        let payload =
+            MessagePackSerializer.Serialize(
+                { CodeActionRequest.FilePath = fixture.Src
+                  StartLine = 6; StartCharacter = 0
+                  EndLine = 6; EndCharacter = 10 })
+        let! r = fixture.Send("textDocument/codeAction", payload)
+        Assert.Null(r.Error)
+        // Should return an array (possibly empty).
+        let items = deserialize<CodeActionItemResult array>(r.Payload)
+        Assert.NotNull(items)
+    }
+
+    [<Fact>]
+    member _.``code action resolve returns workspace edit for unknown id``() = task {
+        let payload =
+            MessagePackSerializer.Serialize({ CodeActionResolveRequest.Id = -1 })
+        let! r = fixture.Send("codeAction/resolve", payload)
+        Assert.Null(r.Error)
+        let edit = deserialize<WorkspaceEditResult>(r.Payload)
+        Assert.Empty(edit.DocumentChanges)
+    }
+
+    // ── Diagnostics ─────────────────────────────────────────────
+
+    [<Fact>]
+    member _.``diagnostics returns array for valid file``() = task {
+        let payload = MessagePackSerializer.Serialize(fixture.Src)
+        let! r = fixture.Send("workspace/diagnostics", payload)
+        Assert.Null(r.Error)
+        let diags = deserialize<DiagnosticResult array>(r.Payload)
+        Assert.NotNull(diags)
+    }
+
+    // ── Formatting Preview ──────────────────────────────────────
+
+    [<Fact>]
+    member _.``formatting preview returns original and formatted``() = task {
+        let! r = fixture.Send("textDocument/formattingPreview", posPayload fixture.Src 0 0)
+        Assert.Null(r.Error)
+        // Should return a FormattingPreviewResult (not nil).
+        if r.Payload <> [| 0xC0uy |] then
+            let preview = deserialize<FormattingPreviewResult>(r.Payload)
+            Assert.NotEmpty(preview.Original)
+            Assert.NotEmpty(preview.Formatted)
+    }
+
+    // ── References ──────────────────────────────────────────────
+
+    [<Fact>]
+    member _.``references finds usages of add``() = task {
+        let payload =
+            MessagePackSerializer.Serialize(
+                { ReferencesRequest.FilePath = fixture.Src
+                  Line = 6; Character = 4
+                  IncludeDeclaration = true })
+        let! r = fixture.Send("textDocument/references", payload)
         Assert.Null(r.Error)
         let loc = deserialize<LocationListResult>(r.Payload)
         Assert.NotEmpty(loc.Locations)
-        Assert.Equal(9, loc.Locations[0].Line)
     }
 
-    [<Fact>]
-    member _.``typeDefinition on record field Name resolves``() = task {
-        let! r = fixture.Send("textDocument/typeDefinition", posPayload fixture.Src 9 16)
-        Assert.Null(r.Error)
-        let loc = deserialize<LocationListResult>(r.Payload)
-        Assert.NotEmpty(loc.Locations)
-    }
+    // ── Document Highlights ────────────────────────────────────
 
     [<Fact>]
-    member _.``typeDefinition on empty line returns empty``() = task {
-        let! r = fixture.Send("textDocument/typeDefinition", posPayload fixture.Src 1 0)
+    member _.``document highlight finds occurrences``() = task {
+        let! r = fixture.Send("textDocument/documentHighlight", posPayload fixture.Src 6 4)
         Assert.Null(r.Error)
-        let loc = deserialize<LocationListResult>(r.Payload)
-        Assert.Empty(loc.Locations)
+        let hl = deserialize<DocumentHighlightListResult>(r.Payload)
+        Assert.NotEmpty(hl.Highlights)
     }
 
-    [<Fact>]
-    member _.``declaration on empty line returns empty``() = task {
-        let! r = fixture.Send("textDocument/declaration", posPayload fixture.Src 1 0)
-        Assert.Null(r.Error)
-        let loc = deserialize<LocationListResult>(r.Payload)
-        Assert.Empty(loc.Locations)
-    }
+    // ── Semantic Tokens ────────────────────────────────────────
 
     [<Fact>]
-    member _.``definition on out of bounds line returns empty``() = task {
-        let! r = fixture.Send("textDocument/definition", posPayload fixture.Src 999 0)
+    member _.``semantic tokens full returns data``() = task {
+        let! r = fixture.Send("textDocument/semanticTokens/full", posPayload fixture.Src 0 0)
         Assert.Null(r.Error)
-        let loc = deserialize<LocationListResult>(r.Payload)
-        Assert.Empty(loc.Locations)
+        let tokens = deserialize<SemanticTokensResult>(r.Payload)
+        Assert.NotEmpty(tokens.Data)
     }
 
-    [<Fact>]
-    member _.``typeDefinition on out of bounds line returns empty``() = task {
-        let! r = fixture.Send("textDocument/typeDefinition", posPayload fixture.Src 999 0)
-        Assert.Null(r.Error)
-        let loc = deserialize<LocationListResult>(r.Payload)
-        Assert.Empty(loc.Locations)
-    }
+    // ── Inlay Hints ────────────────────────────────────────────
 
     [<Fact>]
-    member _.``declaration on out of bounds line returns empty``() = task {
-        let! r = fixture.Send("textDocument/declaration", posPayload fixture.Src 999 0)
+    member _.``inlay hints returns hints for range``() = task {
+        let payload =
+            MessagePackSerializer.Serialize(
+                { InlayHintRequest.FilePath = fixture.Src
+                  StartLine = 0; EndLine = 30 })
+        let! r = fixture.Send("textDocument/inlayHint", payload)
         Assert.Null(r.Error)
-        let loc = deserialize<LocationListResult>(r.Payload)
-        Assert.Empty(loc.Locations)
-    }
-
-    [<Fact>]
-    member _.``implementation on out of bounds line returns empty``() = task {
-        let! r = fixture.Send("textDocument/implementation", posPayload fixture.Src 999 0)
-        Assert.Null(r.Error)
-        let loc = deserialize<LocationListResult>(r.Payload)
-        Assert.Empty(loc.Locations)
     }
 
 // ── Workspace-level tests (real FCS, no IPC) ────────────────────

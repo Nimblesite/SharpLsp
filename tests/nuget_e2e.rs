@@ -19,6 +19,10 @@
     clippy::needless_pass_by_value,
     reason = "test helper ergonomics — Value args are consumed"
 )]
+#![expect(
+    unused_results,
+    reason = "test code — initialize() and I/O return values are intentionally discarded"
+)]
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;

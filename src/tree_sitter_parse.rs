@@ -9,7 +9,9 @@ use tree_sitter::{Language, Parser, Tree};
 /// Language identifier for routing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LangId {
+    /// C# (.cs files).
     CSharp,
+    /// F# (.fs, .fsx, .fsi files).
     FSharp,
 }
 
@@ -33,10 +35,12 @@ impl LangId {
 
 /// Manages tree-sitter parsers and parse trees.
 pub struct TsParsers {
+    /// Compiled C# tree-sitter grammar.
     csharp_language: Language,
 }
 
 impl TsParsers {
+    /// Create a new parser manager with the C# grammar loaded.
     pub fn new() -> Self {
         let csharp_language: Language = tree_sitter_c_sharp::LANGUAGE.into();
         Self { csharp_language }

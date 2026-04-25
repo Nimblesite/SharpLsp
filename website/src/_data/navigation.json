@@ -1,39 +1,43 @@
 {
   "main": [
-    { "text": "Docs", "url": "/docs/" },
-    { "text": "Blog", "url": "/blog/" },
+    { "text": "Docs", "url": "/docs/", "i18nKey": "nav.docs" },
+    { "text": "Blog", "url": "/blog/", "i18nKey": "nav.blog" },
     { "text": "GitHub", "url": "https://github.com/MelbourneDeveloper/forge", "external": true }
   ],
   "footer": [
     {
       "title": "Documentation",
+      "i18nKey": "footer.documentation",
       "items": [
-        { "text": "Getting Started", "url": "/docs/" },
-        { "text": "Architecture", "url": "/docs/architecture/" },
-        { "text": "Editor Setup", "url": "/docs/editors/" },
-        { "text": "Configuration", "url": "/docs/configuration/" }
+        { "text": "Getting Started", "url": "/docs/", "i18nKey": "footer.gettingStarted" },
+        { "text": "Architecture", "url": "/docs/architecture/", "i18nKey": "footer.architecture" },
+        { "text": "Editor Setup", "url": "/docs/editors/", "i18nKey": "footer.editorSetup" },
+        { "text": "Configuration", "url": "/docs/configuration/", "i18nKey": "footer.configuration" }
       ]
     },
     {
       "title": "Features",
+      "i18nKey": "footer.features",
       "items": [
-        { "text": "Code Completions", "url": "/docs/completions/" }
+        { "text": "Code Completions", "url": "/docs/completions/", "i18nKey": "footer.codeCompletions" }
       ]
     },
     {
       "title": "Resources",
+      "i18nKey": "footer.resources",
       "items": [
-        { "text": "Architecture", "url": "/docs/architecture/" },
-        { "text": "Configuration", "url": "/docs/configuration/" },
-        { "text": "Editor Setup", "url": "/docs/editors/" }
+        { "text": "Architecture", "url": "/docs/architecture/", "i18nKey": "footer.architecture" },
+        { "text": "Configuration", "url": "/docs/configuration/", "i18nKey": "footer.configuration" },
+        { "text": "Editor Setup", "url": "/docs/editors/", "i18nKey": "footer.editorSetup" }
       ]
     },
     {
       "title": "Community",
+      "i18nKey": "footer.community",
       "items": [
-        { "text": "GitHub", "url": "https://github.com/MelbourneDeveloper/forge" },
-        { "text": "Issues", "url": "https://github.com/MelbourneDeveloper/forge/issues" },
-        { "text": "Blog", "url": "/blog/" }
+        { "text": "GitHub", "url": "https://github.com/MelbourneDeveloper/forge", "i18nKey": "footer.github" },
+        { "text": "Issues", "url": "https://github.com/MelbourneDeveloper/forge/issues", "i18nKey": "footer.issues" },
+        { "text": "Blog", "url": "/blog/", "i18nKey": "footer.blog" }
       ]
     }
   ]

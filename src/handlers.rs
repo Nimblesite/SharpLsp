@@ -19,6 +19,7 @@ use crate::vfs::Vfs;
 
 // ── Syntax-only request handlers ─────────────────────────────────
 
+/// Handle `textDocument/documentSymbol` using tree-sitter.
 #[expect(
     clippy::mutable_key_type,
     reason = "lsp_types::Uri Hash/Eq use string repr only"
@@ -38,6 +39,7 @@ pub fn handle_document_symbols(
     Ok(serde_json::to_value(response)?)
 }
 
+/// Handle `textDocument/foldingRange` using tree-sitter.
 #[expect(
     clippy::mutable_key_type,
     reason = "lsp_types::Uri Hash/Eq use string repr only"
@@ -56,6 +58,7 @@ pub fn handle_folding_ranges(
     Ok(serde_json::to_value(ranges)?)
 }
 
+/// Handle `textDocument/selectionRange` using tree-sitter.
 #[expect(
     clippy::mutable_key_type,
     reason = "lsp_types::Uri Hash/Eq use string repr only"
@@ -74,6 +77,7 @@ pub fn handle_selection_ranges(
     Ok(serde_json::to_value(ranges)?)
 }
 
+/// Handle `textDocument/linkedEditingRange` using tree-sitter.
 #[expect(
     clippy::mutable_key_type,
     reason = "lsp_types::Uri Hash/Eq use string repr only"
@@ -148,10 +152,12 @@ fn extract_position<T: serde::de::DeserializeOwned + HasTextDocumentPosition>(
 
 /// Trait for extracting text document position from LSP params.
 trait HasTextDocumentPosition {
+    /// Return the document URI and cursor position from the LSP params.
     fn text_document_position(&self) -> (Uri, lsp_types::Position);
 }
 
 impl HasTextDocumentPosition for HoverParams {
+    /// Extract the URI and cursor position from hover params.
     fn text_document_position(&self) -> (Uri, lsp_types::Position) {
         (
             self.text_document_position_params.text_document.uri.clone(),
@@ -161,6 +167,7 @@ impl HasTextDocumentPosition for HoverParams {
 }
 
 impl HasTextDocumentPosition for GotoDefinitionParams {
+    /// Extract the URI and cursor position from goto-definition params.
     fn text_document_position(&self) -> (Uri, lsp_types::Position) {
         (
             self.text_document_position_params.text_document.uri.clone(),

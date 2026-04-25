@@ -12,28 +12,38 @@ use super::tool_discovery;
 /// Parameters for starting a trace session.
 #[derive(Debug, Deserialize)]
 pub struct StartTraceParams {
+    /// Target process ID.
     pub pid: u32,
+    /// Trace profile (e.g. `gc-collect`, `cpu-sampling`).
     #[serde(default = "default_profile")]
     pub profile: String,
+    /// Output format (e.g. `speedscope`, `nettrace`).
     #[serde(default = "default_format")]
     pub format: String,
+    /// Trace duration in seconds (0 = unlimited).
     #[serde(default = "default_duration")]
     pub duration: u32,
+    /// Optional file path for the trace output.
     pub output_path: Option<String>,
 }
 
 /// Result of starting a trace.
 #[derive(Debug, Serialize)]
 pub struct StartTraceResult {
+    /// Unique identifier for this trace session.
     pub session_id: String,
+    /// Path where trace data will be written.
     pub output_path: String,
 }
 
 /// Result of stopping a trace.
 #[derive(Debug, Serialize)]
 pub struct StopTraceResult {
+    /// Path to the collected trace file.
     pub output_path: String,
+    /// Size of the trace file in bytes.
     pub file_size_bytes: u64,
+    /// Duration of the trace in milliseconds.
     pub duration_ms: u64,
 }
 
@@ -58,20 +68,31 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
     );
 
     let mut cmd = std::process::Command::new(tool);
-    cmd.args(["collect", "-p"])
+    let _ = cmd
+        .args(["collect", "-p"])
         .arg(params.pid.to_string())
         .args(["--profile", &params.profile])
         .args(["-o", &output_path]);
 
     if params.duration > 0 {
-        cmd.args(["--duration", &format!("00:00:{:02}", params.duration)]);
+        let _ = cmd.args(["--duration", &format!("00:00:{:02}", params.duration)]);
     }
 
-    cmd.stdin(std::process::Stdio::null())
+    let _ = cmd
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let child = cmd.spawn().context("failed to spawn dotnet-trace")?;
+    let mut child = cmd.spawn().context("failed to spawn dotnet-trace")?;
+
+    // dotnet-trace collect on macOS reports many non-.NET processes via `ps`,
+    // and attaching to them fails fast with `ServerNotAvailableException`.
+    // Poll briefly — if the child already exited, it couldn't attach.
+    // Surface the real stderr so the UI shows a useful message instead of
+    // silently registering a zombie session that only fails on Stop.
+    if let Some(err) = early_attach_failure(&mut child) {
+        anyhow::bail!("failed to attach dotnet-trace to PID {}: {err}", params.pid);
+    }
 
     let session_id = session::store().create(
         SessionKind::Trace,
@@ -84,6 +105,55 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
         session_id,
         output_path,
     })
+}
+
+/// Poll a freshly-spawned `dotnet-trace collect` child for up to ~500ms. If it
+/// has already exited, capture its stderr and return a human-readable reason.
+/// Returns `None` if the child is still running (attach succeeded).
+fn early_attach_failure(child: &mut std::process::Child) -> Option<String> {
+    use std::io::Read;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                let mut stderr = String::new();
+                if let Some(mut s) = child.stderr.take() {
+                    let _ = s.read_to_string(&mut stderr);
+                }
+                let trimmed = stderr.trim();
+                let reason = if trimmed.is_empty() {
+                    "process exited immediately — target is not a .NET process \
+                     or is no longer running"
+                        .to_string()
+                } else {
+                    summarize_dotnet_trace_error(trimmed)
+                };
+                return Some(reason);
+            }
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    return None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+/// Pull the first useful line out of `dotnet-trace` stderr. The raw output is
+/// a multi-screen .NET stack trace; users only need the primary cause.
+fn summarize_dotnet_trace_error(stderr: &str) -> String {
+    if stderr.contains("ServerNotAvailableException") || stderr.contains("Connection refused") {
+        return "target is not a .NET process (or its diagnostic IPC is not reachable)".to_string();
+    }
+    stderr
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or(stderr)
+        .trim()
+        .to_string()
 }
 
 /// Stop a running trace session.
@@ -122,9 +192,7 @@ pub fn stop(session_id: &str) -> Result<StopTraceResult> {
         .and_then(|s| s.output_path.clone())
         .unwrap_or_default();
 
-    let file_size_bytes = std::fs::metadata(&output_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size_bytes = std::fs::metadata(&output_path).map_or(0, |m| m.len());
 
     store.mark_stopped(session_id, None);
 
@@ -162,14 +230,58 @@ pub fn stop(session_id: &str) -> Result<StopTraceResult> {
     })
 }
 
-/// Convert `.nettrace` to `SpeedScope` JSON format.
+/// Parameters for converting a `.nettrace` file to another format.
+#[derive(Debug, Deserialize)]
+pub struct ConvertTraceParams {
+    /// Path to the `.nettrace` input file.
+    pub input_path: String,
+    /// Target format: `speedscope` (default) or `chromium`.
+    #[serde(default = "default_format")]
+    pub format: String,
+}
+
+/// Result of converting a trace file.
+#[derive(Debug, Serialize)]
+pub struct ConvertTraceResult {
+    /// Path to the converted output file (derived from input + format).
+    pub output_path: String,
+    /// Size of the converted file in bytes.
+    pub file_size_bytes: u64,
+}
+
+/// Public entry point for `forge/profiler/convertTrace`.
+///
+/// Runs `dotnet-trace convert` and returns the path to the sibling output file
+/// that the tool produces. Unlike the private helper used by `stop`, this takes
+/// an arbitrary file — useful for previously captured traces that were never
+/// converted (e.g. orphaned from a crashed editor session).
+pub fn convert(params: &ConvertTraceParams) -> Result<ConvertTraceResult> {
+    convert_trace_with_format(&params.input_path, &params.format)?;
+
+    let output_path = derived_output_path(&params.input_path, &params.format);
+    let file_size_bytes = std::fs::metadata(&output_path)
+        .with_context(|| format!("stat converted file {output_path}"))?
+        .len();
+
+    Ok(ConvertTraceResult {
+        output_path,
+        file_size_bytes,
+    })
+}
+
+/// Convert `.nettrace` to `SpeedScope` JSON format (internal default path).
 fn convert_trace(nettrace_path: &str) -> Result<()> {
+    convert_trace_with_format(nettrace_path, "speedscope")
+}
+
+/// Convert `.nettrace` to the requested format.
+fn convert_trace_with_format(nettrace_path: &str, format: &str) -> Result<()> {
     let tool = tool_discovery::require_trace()?;
 
-    info!(path = %nettrace_path, "Converting trace to speedscope format");
+    info!(path = %nettrace_path, format = %format, "Converting trace");
 
     let output = std::process::Command::new(tool)
-        .args(["convert", nettrace_path, "--format", "speedscope"])
+        .args(["convert", nettrace_path, "--format", format])
         .output()
         .context("failed to run dotnet-trace convert")?;
 
@@ -181,10 +293,26 @@ fn convert_trace(nettrace_path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Derive the output path that `dotnet-trace convert` writes for a given input.
+///
+/// `dotnet-trace convert` replaces a trailing `.nettrace` with the format
+/// suffix rather than appending — so `trace-42.nettrace` becomes
+/// `trace-42.speedscope.json`, not `trace-42.nettrace.speedscope.json`.
+fn derived_output_path(input_path: &str, format: &str) -> String {
+    let suffix = match format {
+        "chromium" => ".chromium.json",
+        _ => ".speedscope.json",
+    };
+    let stem = input_path.strip_suffix(".nettrace").unwrap_or(input_path);
+    format!("{stem}{suffix}")
+}
+
+/// Default directory for trace output files.
 fn output_dir() -> &'static str {
     ".forge/profiles"
 }
 
+/// Create parent directories for the output path if they don't exist.
 fn ensure_output_dir(path: &str) -> Result<()> {
     if let Some(parent) = PathBuf::from(path).parent() {
         std::fs::create_dir_all(parent)
@@ -193,14 +321,46 @@ fn ensure_output_dir(path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Default trace profile.
 fn default_profile() -> String {
     "gc-collect".to_string()
 }
 
+/// Default output format.
 fn default_format() -> String {
     "speedscope".to_string()
 }
 
+/// Default trace duration in seconds.
 fn default_duration() -> u32 {
     30
+}
+
+#[cfg(test)]
+mod derived_output_path_tests {
+    use super::derived_output_path;
+
+    #[test]
+    fn strips_nettrace_extension_for_speedscope() {
+        assert_eq!(
+            derived_output_path(".forge/profiles/trace-21288.nettrace", "speedscope"),
+            ".forge/profiles/trace-21288.speedscope.json"
+        );
+    }
+
+    #[test]
+    fn strips_nettrace_extension_for_chromium() {
+        assert_eq!(
+            derived_output_path("/tmp/x.nettrace", "chromium"),
+            "/tmp/x.chromium.json"
+        );
+    }
+
+    #[test]
+    fn handles_missing_nettrace_extension() {
+        assert_eq!(
+            derived_output_path("/tmp/weird-name", "speedscope"),
+            "/tmp/weird-name.speedscope.json"
+        );
+    }
 }

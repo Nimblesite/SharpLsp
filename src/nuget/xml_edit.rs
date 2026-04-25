@@ -23,7 +23,9 @@ use tracing::info;
 /// Result of a single-file edit operation.
 #[derive(Debug, Clone)]
 pub struct EditOutcome {
+    /// Whether the file was actually changed on disk.
     pub modified: bool,
+    /// Human-readable description of what happened.
     pub message: String,
 }
 
@@ -39,6 +41,7 @@ pub enum PackageElement {
 }
 
 impl PackageElement {
+    /// Return the XML tag name for this element variant.
     fn tag(self) -> &'static str {
         match self {
             Self::Reference | Self::ReferenceNoVersion => "PackageReference",
@@ -120,6 +123,7 @@ pub fn remove_package(
 
 // ── Core line-oriented upsert ───────────────────────────────────
 
+/// Insert or update a package element in the raw XML string.
 fn upsert(original: &str, package_id: &str, version: &str, element: PackageElement) -> String {
     let tag = element.tag();
     let needle = format!("Include=\"{package_id}\"");
@@ -143,6 +147,7 @@ fn upsert(original: &str, package_id: &str, version: &str, element: PackageEleme
     create_item_group_with(original, package_id, version, element)
 }
 
+/// Find the index of the first line containing `<{tag}` and `needle`.
 fn find_line_with(text: &str, tag: &str, needle: &str) -> Option<usize> {
     text.lines().enumerate().find_map(|(idx, line)| {
         let trimmed = line.trim_start();
@@ -154,6 +159,7 @@ fn find_line_with(text: &str, tag: &str, needle: &str) -> Option<usize> {
     })
 }
 
+/// Replace the version attribute (or strip it) on an existing element line.
 fn update_existing_line(
     original: &str,
     line_idx: usize,
@@ -186,11 +192,12 @@ fn update_existing_line(
     }
     // Preserve trailing-newline state of original.
     if !original.ends_with('\n') {
-        out.pop();
+        let _ = out.pop();
     }
     out
 }
 
+/// Replace `Version="..."` in a line, or append it before `/>` if absent.
 fn replace_or_insert_version(line: &str, version: &str) -> String {
     // Find `Version="..."` and replace.
     if let Some(start) = line.find("Version=\"") {
@@ -216,6 +223,7 @@ fn replace_or_insert_version(line: &str, version: &str) -> String {
     line.to_string()
 }
 
+/// Remove the ` Version="..."` attribute from a line.
 fn strip_version_attr(line: &str) -> String {
     if let Some(start) = line.find(" Version=\"") {
         let after = &line[start + " Version=\"".len()..];
@@ -263,6 +271,7 @@ fn detect_content_indent(text: &str, pos: usize, tag: &str) -> String {
     "    ".to_string()
 }
 
+/// Render a new `PackageReference` or `PackageVersion` XML element string.
 fn render_element(
     package_id: &str,
     version: &str,
@@ -299,6 +308,7 @@ fn splice_line(original: &str, pos: usize, new_line: &str) -> String {
     out
 }
 
+/// Create a new `<ItemGroup>` with one package element before `</Project>`.
 fn create_item_group_with(
     original: &str,
     package_id: &str,
@@ -339,6 +349,7 @@ fn create_item_group_with(
     out
 }
 
+/// Remove the first line matching `<{tag} ... Include="{package_id}" ...>`.
 fn remove_entry(original: &str, package_id: &str, element: PackageElement) -> String {
     let tag = element.tag();
     let needle = format!("Include=\"{package_id}\"");
@@ -363,6 +374,10 @@ fn remove_entry(original: &str, package_id: &str, element: PackageElement) -> St
     out
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -477,5 +492,144 @@ mod tests {
         assert!(out.contains("<!-- keep me -->"));
         assert!(out.contains('A'));
         assert!(out.contains('B'));
+    }
+
+    #[test]
+    fn no_trailing_newline_preserved() {
+        // Input without trailing newline must produce output without trailing newline.
+        let src = "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <ItemGroup>\n    <PackageReference Include=\"A\" Version=\"1.0.0\" />\n  </ItemGroup>\n</Project>";
+        let out = upsert(src, "B", "2.0.0", PackageElement::Reference);
+        assert!(!out.ends_with('\n'), "output must not add trailing newline");
+        assert!(out.contains("Include=\"B\""));
+    }
+
+    #[test]
+    fn replace_or_insert_version_inserts_when_no_version_attr() {
+        // A line with Include but no Version= attr.
+        let line = "    <PackageReference Include=\"Foo\" />";
+        let out = replace_or_insert_version(line, "1.2.3");
+        assert!(out.contains("Version=\"1.2.3\""));
+        assert!(out.ends_with("/>"));
+    }
+
+    #[test]
+    fn strip_version_attr_removes_version() {
+        let line = "    <PackageReference Include=\"Foo\" Version=\"1.2.3\" />";
+        let out = strip_version_attr(line);
+        assert!(!out.contains("Version="));
+        assert!(out.contains("Include=\"Foo\""));
+    }
+
+    #[test]
+    fn strip_version_attr_no_op_when_absent() {
+        let line = "    <PackageReference Include=\"Foo\" />";
+        let out = strip_version_attr(line);
+        assert_eq!(out, line);
+    }
+
+    #[test]
+    fn removes_package_when_absent_returns_unchanged() {
+        let out = remove_entry(SIMPLE_CSPROJ, "NonExistent", PackageElement::Reference);
+        assert_eq!(out, SIMPLE_CSPROJ);
+    }
+
+    #[test]
+    fn upsert_version_element_removes_version_attr() {
+        // PackageElement::ReferenceNoVersion should strip Version= from existing entries.
+        let out = upsert(
+            SIMPLE_CSPROJ,
+            "Newtonsoft.Json",
+            "13.0.3",
+            PackageElement::ReferenceNoVersion,
+        );
+        // The existing Newtonsoft.Json entry should now have no Version attribute.
+        assert!(!out.contains("Newtonsoft.Json\" Version="));
+    }
+
+    #[test]
+    fn add_package_writes_new_package_to_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("Project.csproj");
+        std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+
+        let result = add_package(&path, "Serilog", "3.1.0", PackageElement::Reference).unwrap();
+        assert!(result.modified);
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("Include=\"Serilog\" Version=\"3.1.0\""));
+    }
+
+    #[test]
+    fn add_package_no_change_when_already_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("Project.csproj");
+        std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+
+        let result = add_package(
+            &path,
+            "Newtonsoft.Json",
+            "13.0.3",
+            PackageElement::Reference,
+        )
+        .unwrap();
+        assert!(!result.modified);
+        assert!(result.message.contains("already at 13.0.3"));
+    }
+
+    #[test]
+    fn remove_package_from_file_modifies_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("Project.csproj");
+        std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+
+        let result = remove_package(&path, "Newtonsoft.Json", PackageElement::Reference).unwrap();
+        assert!(result.modified);
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(!content.contains("Newtonsoft.Json"));
+    }
+
+    #[test]
+    fn remove_package_no_change_when_not_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("Project.csproj");
+        std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+
+        let result = remove_package(&path, "NonExistent", PackageElement::Reference).unwrap();
+        assert!(!result.modified);
+    }
+
+    #[test]
+    fn replace_or_insert_version_falls_back_when_no_slash_gt() {
+        // A line without `/>` — should return the line unchanged.
+        let line = "<PackageReference Include=\"Foo\">";
+        let out = replace_or_insert_version(line, "1.2.3");
+        assert_eq!(out, line);
+    }
+
+    #[test]
+    fn strip_version_attr_no_op_when_version_has_no_closing_quote() {
+        // Malformed: " Version=\"noquote" — no closing quote after the value.
+        let line = "    <PackageReference Include=\"Foo\" Version=\"noquote";
+        let out = strip_version_attr(line);
+        // Should fall through to the unchanged path.
+        assert_eq!(out, line);
+    }
+
+    #[test]
+    fn create_item_group_when_no_project_close_tag() {
+        // A string without `</Project>` should still produce output with ItemGroup.
+        let src = "<NotAProject>\n  <ItemGroup>\n    <SomeOtherTag />\n  </ItemGroup>";
+        let out = create_item_group_with(src, "Serilog", "3.1.0", PackageElement::Reference);
+        assert!(out.contains("<ItemGroup>"));
+        assert!(out.contains("Include=\"Serilog\""));
+    }
+
+    #[test]
+    fn detect_content_indent_falls_back_to_four_spaces() {
+        // Text with no matching tag element — must return 4 spaces.
+        let text = "<Project>\n  <PropertyGroup />\n</Project>";
+        let out = detect_content_indent(text, text.len(), "PackageReference");
+        assert_eq!(out, "    ");
     }
 }

@@ -161,7 +161,7 @@ let getHover
 // ── Definition ───────────────────────────────────────────────────
 
 /// Parse and check a file, returning check results if successful.
-let private checkFile
+let internal checkFile
     (state: FSharpWorkspaceState)
     (filePath: string)
     =
@@ -257,7 +257,7 @@ let private rangeToLocation (r: FSharp.Compiler.Text.Range) =
               EndCharacter = r.EndColumn }
 
 /// Get the symbol use at a given 0-based position.
-let private getSymbolUse
+let internal getSymbolUse
     (checkResults: FSharpCheckFileResults)
     (source: string)
     (line: int)

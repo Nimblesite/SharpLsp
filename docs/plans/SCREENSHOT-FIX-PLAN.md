@@ -21,17 +21,8 @@ The capture script (`editors/vscode/screenshots/capture.mjs`) uses `code serve-w
 
 However:
 
-### Diagnostics — `workspace/diagnostic` not implemented
-The Forge LSP output shows:
-```
-Message: method not found  Code: -32603
-Workspace diagnostic pull failed.
-Unhandled request: workspace/diagnostic
-Request textDocument/diagnostic failed.
-```
-VS Code's web client uses **pull diagnostics** (`textDocument/diagnostic` and `workspace/diagnostic`) which Forge has NOT implemented. Forge only supports **push diagnostics** (`textDocument/publishDiagnostics`), but VS Code web may not render push diagnostics the same way, or the sidecar isn't publishing them for the test workspace.
-
-**Fix**: Implement `textDocument/diagnostic` (pull model) in the Forge LSP, OR ensure push diagnostics work in `code serve-web`. See LSP 3.17 spec section on [Pull Diagnostics](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_pullDiagnostics).
+### Diagnostics — LIKELY FIXED (pull diagnostics now implemented)
+Pull diagnostics (`textDocument/diagnostic` and `workspace/diagnostic`) are now implemented in `pull_diagnostics.rs`. **Re-test the screenshot capture to verify diagnostics appear in `code serve-web`.**
 
 ### Hover — `textDocument/hover` returns empty or fails silently
 Mouse hover over code tokens (verified correct element targeting via Playwright `boundingBox()`) and keyboard commands (`Cmd+K Cmd+I`, command palette "Show Hover") both fail to produce a visible `.monaco-hover` widget. The LSP sidecar may:
@@ -97,3 +88,15 @@ eleventyNavigation:
   key: Profiler
   order: 8
 ```
+
+## TODO
+
+- [x] Implement pull diagnostics to fix `code serve-web` diagnostics — `pull_diagnostics.rs`
+- [ ] Re-run screenshot capture and verify diagnostics squiggles appear
+- [ ] Debug hover in `code serve-web` — check sidecar loads test workspace
+- [ ] Debug go-to-definition in `code serve-web`
+- [ ] Debug profiler sidebar in `code serve-web` — check `viewsContainers` API support
+- [ ] Re-enable diagnostics page (restore frontmatter, add to nav + test list)
+- [ ] Re-enable hover page
+- [ ] Re-enable go-to-definition page
+- [ ] Re-enable profiler page

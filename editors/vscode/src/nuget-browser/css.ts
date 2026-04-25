@@ -1,5 +1,5 @@
 export function buildCss(): string {
-    return `<style>
+  return `<style>
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { display: inline-block; animation: spin 1s linear infinite; transform-origin: center; }
 .spinner { display: inline-flex; align-items: center; gap: 6px; color: #9FCAFF; }
@@ -72,7 +72,8 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font
 .package-item:hover { background: #1B1B1C; }
 .package-item.selected { background: #1B1B1C; border-left-color: #9FCAFF; }
 .package-item.pending { opacity: 0.8; }
-.package-icon-box { width: 40px; height: 40px; border-radius: 4px; background: #202020; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.package-icon-box { width: 40px; height: 40px; border-radius: 4px; background: #202020; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; overflow: hidden; }
+.package-icon-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #FFFFFF; }
 .package-icon-box.selected { background: #007ACC; }
 .package-icon-box .material-symbols-outlined { font-size: 20px; color: #9FCAFF; }
 .package-icon-box.selected .material-symbols-outlined { color: #FFFFFF; }
@@ -95,7 +96,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font
 .empty-title { font-size: 16px; font-weight: 600; color: #E5E2E1; margin-bottom: 8px; }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px; color: #C0C7D3; text-align: center; }
 .details-header { display: flex; gap: 12px; margin-bottom: 16px; }
-.details-icon-box { width: 48px; height: 48px; border-radius: 8px; background: #007ACC; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.details-icon-box { width: 48px; height: 48px; border-radius: 8px; background: #007ACC; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; overflow: hidden; }
 .details-icon-glyph { font-size: 24px; color: #FFFFFF; }
 .details-title h2 { font-size: 18px; font-weight: 700; color: #E5E2E1; line-height: 1.2; }
 .details-title p { font-size: 12px; color: #C0C7D3; }

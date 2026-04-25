@@ -1,9 +1,10 @@
 //! Locate .NET diagnostic CLI tools on the system.
 //!
-//! Searches `PATH` first, then `dotnet tool list -g` output.
+//! Searches `PATH` first, then well-known .NET global tool shim directories.
 //! Caches discovered paths for subsequent calls.
 
-use std::path::PathBuf;
+use std::env;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
@@ -15,8 +16,11 @@ static TOOL_PATHS: OnceLock<ToolPaths> = OnceLock::new();
 /// Resolved paths for each diagnostic tool.
 #[derive(Debug)]
 pub struct ToolPaths {
+    /// Path to `dotnet-trace`, if found.
     pub trace: Option<PathBuf>,
+    /// Path to `dotnet-counters`, if found.
     pub counters: Option<PathBuf>,
+    /// Path to `dotnet-dump`, if found.
     pub dump: Option<PathBuf>,
 }
 
@@ -67,12 +71,12 @@ fn discover() -> ToolPaths {
     }
 }
 
-/// Try to find a tool on PATH, then fall back to `dotnet tool list -g`.
+/// Try to find a tool on PATH, then fall back to .NET global tool shims.
 fn find_tool(name: &str) -> Option<PathBuf> {
     if let Some(path) = find_on_path(name) {
         return Some(path);
     }
-    find_via_dotnet_tool_list(name)
+    find_global_tool_shim(name)
 }
 
 /// Check if the tool is directly available on PATH via `which`/`where`.
@@ -98,34 +102,60 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
     }
 }
 
-/// Parse `dotnet tool list -g` to find the tool's install path.
-fn find_via_dotnet_tool_list(name: &str) -> Option<PathBuf> {
-    debug!("{name} not on PATH, checking dotnet tool list -g");
-    let output = std::process::Command::new("dotnet")
-        .args(["tool", "list", "-g"])
-        .output()
-        .ok()?;
+/// Check the conventional .NET global tool shim locations without invoking dotnet.
+fn find_global_tool_shim(name: &str) -> Option<PathBuf> {
+    debug!("{name} not on PATH, checking .NET global tool shims");
+    find_global_tool_shim_in_roots(name, &global_tool_roots())
+}
 
-    if !output.status.success() {
-        warn!("dotnet tool list -g failed");
-        return None;
-    }
+/// Look for a tool shim under the provided global-tool roots.
+fn find_global_tool_shim_in_roots(name: &str, roots: &[PathBuf]) -> Option<PathBuf> {
+    let file_name = tool_file_name(name);
+    roots
+        .iter()
+        .map(|root| root.join(&file_name))
+        .find(|path| path.exists())
+}
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let found = stdout.lines().any(|line| {
-        line.split_whitespace()
-            .next()
-            .is_some_and(|first| first.eq_ignore_ascii_case(name))
-    });
+/// Return conventional .NET global tool directories for the current user.
+fn global_tool_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    push_env_global_tool_root(&mut roots, "DOTNET_CLI_HOME");
+    push_env_global_tool_root(&mut roots, "HOME");
+    #[cfg(windows)]
+    push_env_global_tool_root(&mut roots, "USERPROFILE");
+    roots
+}
 
-    if found {
-        // Tool is installed globally — dotnet resolves the shim automatically.
-        Some(PathBuf::from(name))
-    } else {
-        None
+/// Add an environment variable's global-tool root when the variable is set.
+fn push_env_global_tool_root(roots: &mut Vec<PathBuf>, key: &str) {
+    if let Some(home) = env::var_os(key) {
+        let home = PathBuf::from(home);
+        push_global_tool_root(roots, &home);
     }
 }
 
+/// Add `<home>/.dotnet/tools` to the root list, avoiding duplicates.
+fn push_global_tool_root(roots: &mut Vec<PathBuf>, home: &Path) {
+    let root = home.join(".dotnet").join("tools");
+    if !roots.iter().any(|existing| existing == &root) {
+        roots.push(root);
+    }
+}
+
+/// Return the platform-specific executable file name for a global tool shim.
+#[cfg(windows)]
+fn tool_file_name(name: &str) -> String {
+    format!("{name}.exe")
+}
+
+/// Return the platform-specific executable file name for a global tool shim.
+#[cfg(not(windows))]
+fn tool_file_name(name: &str) -> String {
+    name.to_string()
+}
+
+/// Log whether a diagnostic tool was found.
 fn log_discovery(name: &str, path: Option<&PathBuf>) {
     if let Some(p) = path {
         info!("{name} found: {}", p.display());
@@ -165,8 +195,8 @@ mod tests {
     }
 
     #[test]
-    fn find_via_dotnet_tool_list_nonexistent() {
-        let result = find_via_dotnet_tool_list("nonexistent-tool-abc123xyz");
+    fn find_global_tool_shim_nonexistent() {
+        let result = find_global_tool_shim("nonexistent-tool-abc123xyz");
         assert!(result.is_none());
     }
 
@@ -214,8 +244,28 @@ mod tests {
     }
 
     #[test]
-    fn find_via_dotnet_tool_list_runs_dotnet() {
-        // dotnet-dump is commonly installed; either way, this exercises the code.
-        let _ = find_via_dotnet_tool_list("dotnet-dump");
+    fn find_global_tool_shim_in_roots_finds_existing_shim() -> Result<()> {
+        let tmp = tempfile::tempdir().context("create temp dir")?;
+        let tool = tmp.path().join(tool_file_name("dotnet-dump"));
+        std::fs::write(&tool, "").context("write shim")?;
+
+        let result = find_global_tool_shim_in_roots("dotnet-dump", &[tmp.path().to_path_buf()]);
+        assert_eq!(result.as_deref(), Some(tool.as_path()));
+        Ok(())
+    }
+
+    #[test]
+    fn push_global_tool_root_deduplicates_roots() {
+        let mut roots = Vec::new();
+        let home = PathBuf::from("/tmp/forge-home");
+
+        push_global_tool_root(&mut roots, &home);
+        push_global_tool_root(&mut roots, &home);
+
+        assert_eq!(roots.len(), 1);
+        assert_eq!(
+            roots.first().map(PathBuf::as_path),
+            Some(Path::new("/tmp/forge-home/.dotnet/tools"))
+        );
     }
 }

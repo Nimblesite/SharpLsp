@@ -1,0 +1,153 @@
+---
+layout: layouts/base.njk
+title: "Forge — 开源 .NET LSP"
+lang: zh
+---
+
+<section class="hero">
+  <div class="hero-badge">开源 &middot; MIT 许可证</div>
+  <h1>Visual Studio 扼杀的<br/>.NET LSP。</h1>
+  <p class="tagline">
+    一个语言服务器。每一款编辑器。由 Roslyn 驱动的完整 C# 智能感知
+    — 使用 Rust 构建，速度快得让专有工具相形见绌。
+  </p>
+  <div class="hero-actions">
+    <a href="/zh/docs/" class="btn btn-primary">快速入门</a>
+    <a href="https://github.com/MelbourneDeveloper/forge" class="btn btn-secondary">GitHub</a>
+  </div>
+</section>
+
+<section class="value-props">
+  <div class="value-props-inner">
+    <div class="value-item">
+      <div class="value-number">&lt;3秒</div>
+      <div class="value-label">冷启动到首次响应</div>
+    </div>
+    <div class="value-divider"></div>
+    <div class="value-item">
+      <div class="value-number">&lt;100ms</div>
+      <div class="value-label">代码补全 p50</div>
+    </div>
+    <div class="value-divider"></div>
+    <div class="value-item">
+      <div class="value-number">&lt;1ms</div>
+      <div class="value-label">Tree-sitter 重新解析</div>
+    </div>
+    <div class="value-divider"></div>
+    <div class="value-item">
+      <div class="value-number">0</div>
+      <div class="value-label">专有依赖</div>
+    </div>
+  </div>
+</section>
+
+<section class="showcase">
+  <h2>亲眼见证。</h2>
+  <p>来自 VS Code 扩展的真实截图，非模拟图。</p>
+  <div class="showcase-grid">
+    <div class="showcase-item showcase-wide">
+      <img src="/assets/screenshots/split-editor.png" alt="Forge 解决方案资源管理器树视图（VS Code）" loading="lazy" />
+      <div class="showcase-caption">
+        <h3>真正好用的解决方案资源管理器</h3>
+        <p>在树视图中浏览整个 .NET 解决方案 — 项目、文件和依赖项 — 远超 C# Dev Kit 的能力。右键单击即可删除包、复制限定名称并即时导航。</p>
+      </div>
+    </div>
+    <div class="showcase-item">
+      <img src="/assets/screenshots/editor-overview.png" alt="Forge LSP 驱动的 VS Code C# 编辑" loading="lazy" />
+      <div class="showcase-caption">
+        <h3>完整的 C# 智能感知</h3>
+        <p>类、接口、枚举、区域、XML 文档注释 — 全部由 Rust 宿主中的 tree-sitter 以亚毫秒速度解析。</p>
+      </div>
+    </div>
+    <div class="showcase-item">
+      <img src="/assets/screenshots/code-folding.png" alt="VS Code 中带区域的代码折叠" loading="lazy" />
+      <div class="showcase-caption">
+        <h3>代码折叠</h3>
+        <p>折叠命名空间、类、方法和 #region 块。折叠噪音，专注于重要内容。低于 1ms。</p>
+      </div>
+    </div>
+    <div class="showcase-item">
+      <img src="/assets/screenshots/nested-classes.png" alt="VS Code 中的嵌套类层次结构" loading="lazy" />
+      <div class="showcase-caption">
+        <h3>嵌套类型层次结构</h3>
+        <p>内部类、嵌套类型和复杂层次结构 — 实时解析并可导航，无需等待编译器。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="perf-section">
+  <h2>性能就是核心特性。</h2>
+  <p>Forge 以 Rust 为优先构建。关键路径从不触及 .NET。</p>
+  <div class="perf-grid">
+    <div class="perf-card">
+      <div class="perf-stat">&lt;3秒</div>
+      <div class="perf-label">冷启动</div>
+      <div class="perf-desc">首次 LSP 响应在 3 秒内完成，包括 sidecar 启动和工作区加载。</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-stat">&lt;1ms</div>
+      <div class="perf-label">按键响应</div>
+      <div class="perf-desc">Tree-sitter 在每次按键时对文档进行增量重新解析。无延迟，无卡顿。</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-stat">&lt;100ms</div>
+      <div class="perf-label">代码补全 p50</div>
+      <div class="perf-desc">通过 sidecar 实现 Roslyn 代码补全。与 Visual Studio 相同的引擎 — 更快的往返速度。</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-stat">&lt;500ms</div>
+      <div class="perf-label">诊断刷新</div>
+      <div class="perf-desc">按键后文件级诊断重新分析，防抖延迟 150ms。</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-stat">&lt;3秒</div>
+      <div class="perf-label">崩溃恢复</div>
+      <div class="perf-desc">如果 Roslyn sidecar 崩溃，Forge 会自动重新启动。编辑器永不冻结。</div>
+    </div>
+    <div class="perf-card">
+      <div class="perf-stat">&lt;1ms</div>
+      <div class="perf-label">缓存命中</div>
+      <div class="perf-desc">salsa 增量缓存在不到一毫秒内返回重复的悬停和定义结果。</div>
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <h2>与众不同。</h2>
+  <p>这不是另一个半成品扩展，而是对 .NET 开发工具的全新重构。</p>
+  <div class="feature-grid">
+    <div class="feature-card feature-highlight">
+      <h3>你的编辑器。你的规则。</h3>
+      <p>VS Code、Neovim、Emacs、Helix — Forge 遵循 LSP 3.17，因此可以在任何地方运行。Zed 支持即将到来。不要再让微软决定你在哪里写代码。</p>
+    </div>
+    <div class="feature-card">
+      <h3>超强解决方案资源管理器。</h3>
+      <p>显示整个解决方案的树视图 — 项目、文件、NuGet 包、引用 — 配有 C# Dev Kit 没有的右键菜单操作。删除包、复制限定名称，即时导航。</p>
+    </div>
+    <div class="feature-card">
+      <h3>Rust 宿主。亚毫秒解析。</h3>
+      <p>Rust 宿主中的 Tree-sitter 增量解析，salsa 驱动的缓存。无需等待 Roslyn 即可获得文档符号、折叠和选择范围。</p>
+    </div>
+    <div class="feature-card">
+      <h3>完整的 Roslyn。零妥协。</h3>
+      <p>代码补全、诊断、悬停、跳转到定义 — 完整的 Roslyn API。与 Visual Studio 相同的引擎，没有任何锁定。</p>
+    </div>
+    <div class="feature-card">
+      <h3>崩溃防护架构。</h3>
+      <p>Sidecar 进程模型意味着 Roslyn 崩溃可在 3 秒内恢复。你的编辑器保持运行，你的工作流不受影响。</p>
+    </div>
+    <div class="feature-card feature-highlight">
+      <h3>零。供应商。锁定。</h3>
+      <p>无许可证。无遥测。无专有模块。Fork 它、扩展它、发布它。这是社区应得的 .NET 工具链。</p>
+    </div>
+  </div>
+</section>
+
+<section class="install">
+  <h2>快速开始。</h2>
+  <pre><code>git clone https://github.com/MelbourneDeveloper/forge.git
+cd forge
+cargo build --release</code></pre>
+  <p>或从<a href="/zh/docs/">快速入门</a>指南安装 VS Code 扩展。</p>
+</section>

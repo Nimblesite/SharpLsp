@@ -15,6 +15,7 @@ use tracing::info;
 
 use super::types::{NuGetTarget, TargetKind, TargetLanguage, TargetsResponse};
 
+/// Maximum directory recursion depth when scanning for project files.
 const MAX_DEPTH: usize = 12;
 
 /// Directories that never contain a real project file.
@@ -112,6 +113,7 @@ fn walk(
     Ok(())
 }
 
+/// Check whether a directory should be skipped during workspace scanning.
 fn should_skip_dir(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
@@ -153,6 +155,7 @@ fn classify_file(
     }
 }
 
+/// Build a project-kind `NuGetTarget` from a `.csproj`/`.fsproj` path.
 fn project_target(path: &Path, file_name: &str, language: TargetLanguage) -> NuGetTarget {
     let abs = path.to_string_lossy().to_string();
     NuGetTarget {
@@ -165,6 +168,7 @@ fn project_target(path: &Path, file_name: &str, language: TargetLanguage) -> NuG
     }
 }
 
+/// Build a props-kind `NuGetTarget` from a `Directory.Build.props` or similar.
 fn build_props_target(root: &Path, path: &Path, file_name: &str) -> NuGetTarget {
     let abs = path.to_string_lossy().to_string();
     let rel = path

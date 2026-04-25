@@ -10,12 +10,17 @@ use super::heap_analysis::{analyze_heap, AnalyzeHeapParams, HeapTypeInfo};
 /// Parameters for diffing two heap snapshots.
 #[derive(Debug, Deserialize)]
 pub struct DiffHeapSnapshotsParams {
+    /// Path to the baseline dump file.
     pub baseline_dump_path: String,
+    /// Path to the comparison dump file.
     pub comparison_dump_path: String,
+    /// If true, only report types that grew between snapshots.
     #[serde(default = "default_growing_only")]
     pub growing_only: bool,
+    /// Minimum growth percentage to include a type.
     #[serde(default = "default_min_growth_percent")]
     pub min_growth_percent: f64,
+    /// Maximum number of diff entries to return.
     #[serde(default = "default_limit")]
     pub limit: usize,
 }
@@ -23,9 +28,13 @@ pub struct DiffHeapSnapshotsParams {
 /// Result of a heap snapshot diff.
 #[derive(Debug, Serialize)]
 pub struct HeapDiffResult {
+    /// Object count in the baseline snapshot.
     pub baseline_total_objects: u64,
+    /// Total heap size in the baseline snapshot.
     pub baseline_total_size_bytes: u64,
+    /// Object count in the comparison snapshot.
     pub comparison_total_objects: u64,
+    /// Total heap size in the comparison snapshot.
     pub comparison_total_size_bytes: u64,
     /// Types sorted by size growth descending.
     pub diffs: Vec<HeapTypeDiff>,
@@ -36,23 +45,36 @@ pub struct HeapDiffResult {
 /// Per-type diff between two heap snapshots.
 #[derive(Debug, Clone, Serialize)]
 pub struct HeapTypeDiff {
+    /// Fully-qualified type name.
     pub type_name: String,
+    /// Instance count in the baseline.
     pub baseline_count: u64,
+    /// Instance count in the comparison.
     pub comparison_count: u64,
+    /// Change in instance count.
     pub count_delta: i64,
+    /// Total size in baseline.
     pub baseline_size_bytes: u64,
+    /// Total size in comparison.
     pub comparison_size_bytes: u64,
+    /// Change in total size.
     pub size_delta_bytes: i64,
+    /// Percentage growth relative to baseline size.
     pub growth_percent: f64,
 }
 
 /// A leak suspect identified from snapshot diffing.
 #[derive(Debug, Serialize)]
 pub struct LeakSuspect {
+    /// Fully-qualified type name.
     pub type_name: String,
+    /// Assessed leak severity.
     pub severity: LeakSeverity,
+    /// Human-readable explanation of why this type is suspect.
     pub reason: String,
+    /// Change in instance count.
     pub count_delta: i64,
+    /// Change in total size.
     pub size_delta_bytes: i64,
 }
 
@@ -60,8 +82,11 @@ pub struct LeakSuspect {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LeakSeverity {
+    /// Large growth and/or significant absolute size increase.
     High,
+    /// Moderate growth above standard thresholds.
     Medium,
+    /// Small but notable growth.
     Low,
 }
 
@@ -110,7 +135,7 @@ pub async fn diff_snapshots(params: DiffHeapSnapshotsParams) -> Result<HeapDiffR
     }
 
     diffs.retain(|d| d.growth_percent >= params.min_growth_percent);
-    diffs.sort_by(|a, b| b.size_delta_bytes.cmp(&a.size_delta_bytes));
+    diffs.sort_by_key(|d| std::cmp::Reverse(d.size_delta_bytes));
     diffs.truncate(params.limit);
 
     let leak_suspects = classify_suspects(&diffs);
@@ -145,10 +170,10 @@ fn compute_diffs(baseline: &[HeapTypeInfo], comparison: &[HeapTypeInfo]) -> Vec<
 
     let mut all_types: std::collections::HashSet<&str> = std::collections::HashSet::new();
     for t in baseline {
-        all_types.insert(t.type_name.as_str());
+        let _ = all_types.insert(t.type_name.as_str());
     }
     for t in comparison {
-        all_types.insert(t.type_name.as_str());
+        let _ = all_types.insert(t.type_name.as_str());
     }
 
     all_types
@@ -163,6 +188,7 @@ fn compute_diffs(baseline: &[HeapTypeInfo], comparison: &[HeapTypeInfo]) -> Vec<
         .collect()
 }
 
+/// Build a single type diff from baseline and comparison entries.
 fn build_diff(
     type_name: &str,
     baseline: Option<&HeapTypeInfo>,
@@ -222,6 +248,7 @@ fn classify_suspects(diffs: &[HeapTypeDiff]) -> Vec<LeakSuspect> {
     diffs.iter().filter_map(classify_single).collect()
 }
 
+/// Classify a single type diff as a leak suspect if it meets severity thresholds.
 fn classify_single(diff: &HeapTypeDiff) -> Option<LeakSuspect> {
     // Only flag types that are growing.
     if diff.count_delta <= 0 && diff.size_delta_bytes <= 0 {
@@ -256,6 +283,7 @@ fn classify_single(diff: &HeapTypeDiff) -> Option<LeakSuspect> {
     })
 }
 
+/// Determine leak severity from growth metrics and type characteristics.
 fn determine_severity(
     count_growth_pct: f64,
     size_delta: i64,
@@ -284,12 +312,14 @@ fn determine_severity(
     None
 }
 
+/// Check if a type name matches known leak-prone patterns.
 fn is_leak_prone_type(type_name: &str) -> bool {
     LEAK_PRONE_PATTERNS
         .iter()
         .any(|pattern| type_name.contains(pattern))
 }
 
+/// Build a human-readable reason string for a leak suspect.
 fn build_reason(
     diff: &HeapTypeDiff,
     count_growth_pct: f64,
@@ -318,14 +348,17 @@ fn build_reason(
     parts.join("; ")
 }
 
+/// Default for the `growing_only` filter.
 fn default_growing_only() -> bool {
     true
 }
 
+/// Default minimum growth percentage threshold.
 fn default_min_growth_percent() -> f64 {
     10.0
 }
 
+/// Default maximum number of diff entries to return.
 fn default_limit() -> usize {
     50
 }

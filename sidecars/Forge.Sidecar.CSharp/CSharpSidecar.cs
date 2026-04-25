@@ -10,7 +10,7 @@ namespace Forge.Sidecar.CSharp;
 /// C# sidecar: hosts Roslyn via MSBuildWorkspace.
 /// Registers handlers for workspace loading, diagnostics, completions, etc.
 /// </summary>
-internal sealed class CSharpSidecar : SidecarHost
+internal sealed partial class CSharpSidecar : SidecarHost
 {
     public CSharpSidecar()
     {
@@ -20,6 +20,7 @@ internal sealed class CSharpSidecar : SidecarHost
         Register("workspace/diagnostics/all", HandleAllDiagnosticsAsync);
         Register("textDocument/didChange", HandleDidChangeAsync);
         Register("textDocument/completion", HandleCompletionAsync);
+        Register("completionItem/resolve", HandleCompletionResolveAsync);
         Register("textDocument/hover", HandleHoverAsync);
         Register("textDocument/definition", HandleDefinitionAsync);
         Register("textDocument/typeDefinition", HandleTypeDefinitionAsync);
@@ -27,9 +28,72 @@ internal sealed class CSharpSidecar : SidecarHost
         Register("textDocument/implementation", HandleImplementationAsync);
         Register("textDocument/references", HandleReferencesAsync);
         Register("textDocument/documentHighlight", HandleDocumentHighlightAsync);
+        Register("textDocument/codeAction", HandleCodeActionAsync);
+        Register("codeAction/resolve", HandleCodeActionResolveAsync);
+        Register("textDocument/codeLens", HandleCodeLensAsync);
+        Register("textDocument/prepareCallHierarchy", HandlePrepareCallHierarchyAsync);
+        Register("callHierarchy/incomingCalls", HandleIncomingCallsAsync);
+        Register("callHierarchy/outgoingCalls", HandleOutgoingCallsAsync);
+        Register("textDocument/prepareTypeHierarchy", HandlePrepareTypeHierarchyAsync);
+        Register("typeHierarchy/supertypes", HandleSupertypesAsync);
+        Register("typeHierarchy/subtypes", HandleSubtypesAsync);
+        Register("textDocument/formatting", HandleFormattingAsync);
+        Register("textDocument/rangeFormatting", HandleRangeFormattingAsync);
+        Register("textDocument/onTypeFormatting", HandleOnTypeFormattingAsync);
+        Register("textDocument/semanticTokens/full", HandleSemanticTokensFullAsync);
+        Register("textDocument/semanticTokens/range", HandleSemanticTokensRangeAsync);
+        Register("textDocument/inlayHint", HandleInlayHintAsync);
     }
 
     private readonly WorkspaceManager _workspace = new();
+
+    private async Task<ByteResult> HandleCodeActionAsync(byte[] payload, CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<CodeActionRequest>(
+                payload,
+                cancellationToken: ct
+            );
+            var result = await _workspace
+                .GetCodeActionsAsync(
+                    request.FilePath,
+                    request.StartLine,
+                    request.StartCharacter,
+                    request.EndLine,
+                    request.EndCharacter,
+                    ct
+                )
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+    private async Task<ByteResult> HandleCodeActionResolveAsync(
+        byte[] payload,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<CodeActionResolveRequest>(
+                payload,
+                cancellationToken: ct
+            );
+            var result = await _workspace
+                .ResolveCodeActionAsync(request.Id, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
 
     private async Task<ByteResult> HandleDidChangeAsync(byte[] payload, CancellationToken ct)
     {
@@ -76,6 +140,29 @@ internal sealed class CSharpSidecar : SidecarHost
     private Task<ByteResult> HandleCompletionAsync(byte[] payload, CancellationToken ct)
     {
         return HandlePositionRequestAsync(payload, _workspace.GetCompletionsAsync, ct);
+    }
+
+    private async Task<ByteResult> HandleCompletionResolveAsync(
+        byte[] payload,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<CompletionResolveRequest>(
+                payload,
+                cancellationToken: ct
+            );
+            var result = await _workspace
+                .ResolveCompletionAsync(request.Index, ct)
+                .ConfigureAwait(false);
+            var bytes = MessagePackSerializer.Serialize(result, cancellationToken: ct);
+            return new ByteResult.Ok<byte[], string>(bytes);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
     }
 
     private async Task<ByteResult> HandleDeclarationAsync(byte[] payload, CancellationToken ct)
@@ -174,10 +261,6 @@ internal sealed class CSharpSidecar : SidecarHost
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Generic handler for requests that deserialize a <see cref="PositionRequest"/>
-    /// and delegate to a workspace method taking (filePath, line, character, ct).
-    /// </summary>
     private static async Task<ByteResult> HandlePositionRequestAsync<T>(
         byte[] payload,
         Func<string, int, int, CancellationToken, Task<Result<T, string>>> workspaceMethod,
@@ -205,10 +288,6 @@ internal sealed class CSharpSidecar : SidecarHost
         }
     }
 
-    /// <summary>
-    /// Handler for requests returning a nullable result (e.g. HoverResult?).
-    /// Serializes null as a successful empty response.
-    /// </summary>
     private static async Task<ByteResult> HandleNullableRequestAsync<T>(
         byte[] payload,
         Func<string, int, int, CancellationToken, Task<Result<T?, string>>> workspaceMethod,
@@ -243,10 +322,6 @@ internal sealed class CSharpSidecar : SidecarHost
         }
     }
 
-    /// <summary>
-    /// Handler for requests returning a single nullable <see cref="LocationResult"/>,
-    /// wrapping it into a <see cref="LocationListResult"/> for the client.
-    /// </summary>
     private static async Task<ByteResult> HandleSingleLocationRequestAsync(
         byte[] payload,
         Func<
@@ -349,165 +424,4 @@ internal sealed class CSharpSidecar : SidecarHost
             return ByteResult.Failure(ex.Message);
         }
     }
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class DidChangeRequest
-{
-    [Key(0)]
-    public string FilePath { get; set; } = "";
-
-    [Key(1)]
-    public string NewText { get; set; } = "";
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class PositionRequest
-{
-    [Key(0)]
-    public string FilePath { get; set; } = "";
-
-    [Key(1)]
-    public int Line { get; init; }
-
-    [Key(2)]
-    public int Character { get; init; }
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class CompletionItem
-{
-    [Key(0)]
-    public string Label { get; set; } = "";
-
-    [Key(1)]
-    public string Kind { get; set; } = "";
-
-    [Key(2)]
-    public string? Detail { get; init; }
-
-    [Key(3)]
-    public string? InsertText { get; init; }
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class HoverResult
-{
-    [Key(0)]
-    public string Contents { get; set; } = "";
-
-    [Key(1)]
-    public int? StartLine { get; init; }
-
-    [Key(2)]
-    public int? StartCharacter { get; init; }
-
-    [Key(3)]
-    public int? EndLine { get; init; }
-
-    [Key(4)]
-    public int? EndCharacter { get; init; }
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class LocationResult
-{
-    [Key(0)]
-    public string FilePath { get; set; } = "";
-
-    [Key(1)]
-    public int Line { get; init; }
-
-    [Key(2)]
-    public int Character { get; init; }
-
-    [Key(3)]
-    public int EndLine { get; init; }
-
-    [Key(4)]
-    public int EndCharacter { get; init; }
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class LocationListResult
-{
-    [Key(0)]
-    public List<LocationResult> Locations { get; set; } = [];
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class ReferencesRequest
-{
-    [Key(0)]
-    public string FilePath { get; set; } = "";
-
-    [Key(1)]
-    public int Line { get; init; }
-
-    [Key(2)]
-    public int Character { get; init; }
-
-    [Key(3)]
-    public bool IncludeDeclaration { get; init; }
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class DocumentHighlightResult
-{
-    [Key(0)]
-    public int StartLine { get; init; }
-
-    [Key(1)]
-    public int StartCharacter { get; init; }
-
-    [Key(2)]
-    public int EndLine { get; init; }
-
-    [Key(3)]
-    public int EndCharacter { get; init; }
-
-    [Key(4)]
-    public int Kind { get; init; }
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class DocumentHighlightListResult
-{
-    [Key(0)]
-    public List<DocumentHighlightResult> Highlights { get; set; } = [];
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class SolutionDiagnosticsRequest
-{
-    [Key(0)]
-    public string[] ProjectFilter { get; set; } = [];
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class DiagnosticResult
-{
-    [Key(0)]
-    public string FilePath { get; set; } = "";
-
-    [Key(1)]
-    public int StartLine { get; init; }
-
-    [Key(2)]
-    public int StartCharacter { get; init; }
-
-    [Key(3)]
-    public int EndLine { get; init; }
-
-    [Key(4)]
-    public int EndCharacter { get; init; }
-
-    [Key(5)]
-    public string Message { get; set; } = "";
-
-    [Key(6)]
-    public string Severity { get; set; } = "";
-
-    [Key(7)]
-    public string Code { get; set; } = "";
 }

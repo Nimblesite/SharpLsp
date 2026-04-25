@@ -1,0 +1,96 @@
+{
+  "manifestVersion": 1,
+  "product": {
+    "id": "forge",
+    "displayName": "Forge",
+    "version": "0.1.0",
+    "repository": "https://github.com/Nimblesite/forge"
+  },
+  "components": [
+    {
+      "id": "forge-lsp",
+      "kind": "lsp",
+      "language": "rust",
+      "binaryName": "forge-lsp",
+      "expectedVersion": "${PRODUCT_VERSION}",
+      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "win32-x64"],
+      "sources": ["user-setting", "env", "path", "pkgmgr"],
+      "userSetting": "forge.lspPath",
+      "env": { "pathVar": "FORGE_LSP_PATH", "dirVar": "FORGE_BINARY_DIR" },
+      "pkgmgr": {
+        "brew": "nimblesite/tap/forge-lsp",
+        "scoop": "nimblesite/forge-lsp"
+      },
+      "verifyStartup": true,
+      "versionCheckStrategy": "version-flag",
+      "required": true
+    },
+    {
+      "id": "forge-sidecar-csharp",
+      "kind": "sidecar",
+      "language": "dotnet",
+      "binaryName": "forge-sidecar-csharp",
+      "expectedVersion": "${PRODUCT_VERSION}",
+      "platforms": ["all"],
+      "sources": ["user-setting", "env", "path", "dotnet-tool"],
+      "userSetting": "forge.csharpSidecarPath",
+      "env": { "pathVar": "FORGE_CSHARP_SIDECAR_PATH" },
+      "dotnetTool": { "package": "Forge.Sidecar.CSharp", "command": "forge-sidecar-csharp" },
+      "verifyStartup": true,
+      "versionCheckStrategy": "version-flag",
+      "required": true
+    },
+    {
+      "id": "forge-sidecar-fsharp",
+      "kind": "sidecar",
+      "language": "dotnet",
+      "binaryName": "forge-sidecar-fsharp",
+      "expectedVersion": "${PRODUCT_VERSION}",
+      "platforms": ["all"],
+      "sources": ["user-setting", "env", "path", "dotnet-tool"],
+      "userSetting": "forge.fsharpSidecarPath",
+      "env": { "pathVar": "FORGE_FSHARP_SIDECAR_PATH" },
+      "dotnetTool": { "package": "Forge.Sidecar.FSharp", "command": "forge-sidecar-fsharp" },
+      "verifyStartup": true,
+      "versionCheckStrategy": "version-flag",
+      "required": false
+    },
+    {
+      "id": "forge-vscode",
+      "kind": "extension-vscode",
+      "language": "typescript",
+      "platforms": ["all"]
+    },
+    {
+      "id": "forge-zed",
+      "kind": "extension-zed",
+      "language": "rust",
+      "platforms": ["all"]
+    },
+    {
+      "id": "forge-rider",
+      "kind": "extension-jetbrains",
+      "language": "kotlin",
+      "platforms": ["all"]
+    }
+  ],
+  "hosts": {
+    "vscode": {
+      "artifact": "vsix-fat",
+      "activationVerifies": ["forge-lsp", "forge-sidecar-csharp", "forge-sidecar-fsharp"],
+      "onMismatch": "prompt-pkgmgr"
+    },
+    "jetbrains": {
+      "artifact": "intellij-jar",
+      "activationVerifies": ["forge-lsp", "forge-sidecar-csharp"],
+      "onMismatch": "prompt-pkgmgr"
+    },
+    "zed": {
+      "artifact": "zed-wasm",
+      "activationVerifies": ["forge-lsp"],
+      "onMismatch": "error"
+    },
+    "cli": { "artifact": "archive" },
+    "pkgmgr": { "artifact": "brew-formula" }
+  }
+}

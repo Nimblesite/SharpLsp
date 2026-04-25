@@ -75,7 +75,7 @@ intellijPlatform {
 
         vendor {
             name = "Forge LSP"
-            url = "https://github.com/forge-lsp/forge"
+            url = "https://github.com/Nimblesite/forge"
         }
     }
 

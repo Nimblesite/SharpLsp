@@ -38,7 +38,7 @@ Forge uses a three-tier architecture:
 |------|-----------|------|
 | **1** | Rust LSP Host | LSP connection, VFS, tree-sitter parsing, salsa cache |
 | **2** | C# Sidecar | Roslyn-powered completions, diagnostics, refactoring |
-| **3** | F# Sidecar | FSharp.Compiler.Service for type checking, hover, semantics |
+| **3** | F# Sidecar | FSharp.Compiler.Service, FSharpLint diagnostics |
 
 The Rust host handles all LSP communication and syntax-level operations. Semantic operations are delegated to the appropriate .NET sidecar process over IPC.
 
