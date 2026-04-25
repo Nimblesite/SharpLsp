@@ -41,10 +41,10 @@ flowchart TD
     BuildRust --> GH[GitHub Release assets]
     PackCS --> Nuget[NuGet.org]
     PackFS --> Nuget
-    GH --> Brew[update forge-lsp/homebrew-tap]
-    GH --> Scoop[update forge-lsp/scoop-bucket]
-    Brew --> UserBrew["brew install<br/>forge-lsp/tap/forge-lsp"]
-    Scoop --> UserScoop["scoop install<br/>forge-lsp/forge-lsp"]
+    GH --> Brew[update Nimblesite/homebrew-tap]
+    GH --> Scoop[update Nimblesite/scoop-bucket]
+    Brew --> UserBrew["brew install<br/>Nimblesite/tap/forge-lsp"]
+    Scoop --> UserScoop["scoop install<br/>Nimblesite/forge-lsp"]
     Nuget --> UserCS["dotnet tool install -g<br/>Forge.Sidecar.CSharp"]
     Nuget --> UserFS["dotnet tool install -g<br/>Forge.Sidecar.FSharp"]
     UserBrew & UserScoop & UserCS & UserFS --> VSIX[VS Code extension activates]
@@ -161,7 +161,7 @@ Replace the current monolithic archive job with:
    --source https://api.nuget.org/v3/index.json`
 
 **Job E: `update-homebrew`** (needs [release])
-- Checkout `forge-lsp/homebrew-tap` with `BREW_SCOOP_PAT`
+- Checkout `Nimblesite/homebrew-tap` with `BREW_SCOOP_PAT`
 - Download macOS arm64 + macOS x64 + linux x64 tar.gz assets, sha256 each
 - Generate `Formula/forge-lsp.rb` with `on_macos {on_arm / on_intel}` and
   `on_linux { on_intel }` blocks, one url+sha256 per block
@@ -170,7 +170,7 @@ Replace the current monolithic archive job with:
 - Commit and push
 
 **Job F: `update-scoop`** (needs [release])
-- Checkout `forge-lsp/scoop-bucket` with `BREW_SCOOP_PAT`
+- Checkout `Nimblesite/scoop-bucket` with `BREW_SCOOP_PAT`
 - Download win x64 zip, sha256 it
 - Write `bucket/forge-lsp.json` with `architecture."64bit".{url,hash,bin}`,
   `checkver.github`, `autoupdate.architecture."64bit".url` template
@@ -201,9 +201,9 @@ This is called for all three: `forge-lsp`, `forge-sidecar-csharp`,
 // No HTTPS downloads, no tarball extraction, no ~/.local staging.
 const INSTALL_COMMANDS = {
     "forge-lsp": {
-        darwin: ["brew", "install", "forge-lsp/tap/forge-lsp"],
-        linux:  ["brew", "install", "forge-lsp/tap/forge-lsp"],
-        win32:  ["scoop", "install", "forge-lsp/forge-lsp"],
+        darwin: ["brew", "install", "Nimblesite/tap/forge-lsp"],
+        linux:  ["brew", "install", "Nimblesite/tap/forge-lsp"],
+        win32:  ["scoop", "install", "Nimblesite/forge-lsp"],
     },
     "forge-sidecar-csharp": {
         all: ["dotnet", "tool", "update", "-g", "Forge.Sidecar.CSharp",
@@ -298,12 +298,12 @@ suggestions):
    - Abort activation on user cancel or install failure — never fall back
      to a degraded mode or older version.
 
-4. **Tap/bucket repo layout.** `forge-lsp/homebrew-tap` contains
-   `Formula/forge-lsp.rb`. `forge-lsp/scoop-bucket` contains
+4. **Tap/bucket repo layout.** `Nimblesite/homebrew-tap` contains
+   `Formula/forge-lsp.rb`. `Nimblesite/scoop-bucket` contains
    `bucket/forge-lsp.json`. Both are auto-updated by the release workflow
    using `BREW_SCOOP_PAT`. Manual edits are forbidden.
 
-5. **Required secrets on `forge-lsp/forge`:** `BREW_SCOOP_PAT` (PAT with
+5. **Required secrets on `Nimblesite/forge`:** `BREW_SCOOP_PAT` (PAT with
    `contents:write` on both tap repos), `NUGET_API_KEY` (push rights to
    `Forge.Sidecar.*` on nuget.org).
 
@@ -330,10 +330,10 @@ linking to `DISTRIBUTION-SPEC.md`.
 These must exist before the release workflow will succeed. Create them
 before merging the changes:
 
-- GitHub repo `forge-lsp/homebrew-tap` (empty, default branch `main`)
-- GitHub repo `forge-lsp/scoop-bucket` (empty, default branch `main`)
+- GitHub repo `Nimblesite/homebrew-tap` (empty, default branch `main`)
+- GitHub repo `Nimblesite/scoop-bucket` (empty, default branch `main`)
 - PAT with `contents:write` on both repos → add as `BREW_SCOOP_PAT` secret
-  on `forge-lsp/forge`
+  on `Nimblesite/forge`
 - NuGet.org account + API key with push rights to `Forge.Sidecar.*` →
   add as `NUGET_API_KEY` secret
 - Reserve package IDs `Forge.Sidecar.CSharp` and `Forge.Sidecar.FSharp` on
@@ -366,7 +366,7 @@ before merging the changes:
    - Observe: `release` workflow succeeds, GitHub release created,
      `homebrew-tap` and `scoop-bucket` forks receive commits, nupkgs
      appear on nuget.org
-   - On a clean macOS VM: `brew install forge-lsp/tap/forge-lsp` + both
+   - On a clean macOS VM: `brew install Nimblesite/tap/forge-lsp` + both
      `dotnet tool install` commands → VS Code extension activates cleanly
    - On a clean Windows VM: same via scoop
 

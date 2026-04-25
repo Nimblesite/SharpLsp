@@ -27,9 +27,11 @@ window     notifications       GetDiagnostics()
 
 1. **Document change** — editor sends `textDocument/didChange`, Rust host updates VFS and tree-sitter
 2. **Debounce** — changes are coalesced over a 150ms window (configurable)
-3. **Dispatch** — Rust host sends a `workspace/diagnostics` request to the appropriate sidecar
-4. **Analysis** — Roslyn or FCS runs full semantic analysis on the affected scope
+3. **Dispatch** — Rust host sends a `workspace/diagnostics` request to the C# sidecar
+4. **Analysis** — Roslyn runs full semantic analysis on the affected scope
 5. **Publish** — results are mapped to LSP `Diagnostic` objects and pushed to the editor
+
+> **Note:** Diagnostics are currently C# only. F# diagnostics via FCS are not yet implemented.
 
 ## Analysis Scope
 

@@ -12,28 +12,41 @@ use super::{dump_cmd, tool_discovery};
 /// Parameters for inspecting a managed object.
 #[derive(Debug, Deserialize)]
 pub struct InspectObjectParams {
+    /// Path to the dump file.
     pub dump_path: String,
+    /// Hex address of the object to inspect.
     pub object_address: String,
 }
 
 /// Full inspection result for a managed object.
 #[derive(Debug, Serialize)]
 pub struct ObjectInspection {
+    /// Hex address of the inspected object.
     pub address: String,
+    /// Fully-qualified type name.
     pub type_name: String,
+    /// Shallow size in bytes.
     pub size_bytes: u64,
+    /// Fields on the object.
     pub fields: Vec<ObjectField>,
+    /// GC generation (e.g. `Gen0`, `Gen2`, `LOH`).
     pub generation: String,
+    /// Whether the object is pinned in memory.
     pub is_pinned: bool,
 }
 
 /// A single field on a managed object.
 #[derive(Debug, Clone, Serialize)]
 pub struct ObjectField {
+    /// Field name.
     pub name: String,
+    /// Fully-qualified type of the field.
     pub type_name: String,
+    /// String representation of the field value.
     pub value: String,
+    /// Whether the field holds a reference type.
     pub is_reference: bool,
+    /// Hex address of the referenced object, if non-null.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference_address: Option<String>,
 }

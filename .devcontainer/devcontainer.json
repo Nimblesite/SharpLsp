@@ -22,6 +22,6 @@
       }
     }
   },
-  "postCreateCommand": "rustup component add clippy rustfmt && cd editors/vscode && npm install",
+  "postCreateCommand": "make setup",
   "remoteUser": "vscode"
 }

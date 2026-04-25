@@ -9,46 +9,61 @@ use super::{dump_cmd, tool_discovery};
 /// Parameters for heap analysis.
 #[derive(Debug, Deserialize)]
 pub struct AnalyzeHeapParams {
+    /// Path to the dump file.
     pub dump_path: String,
+    /// Maximum number of types to return.
     #[serde(default = "default_limit")]
     pub limit: usize,
+    /// Optional substring filter for type names.
     pub type_filter: Option<String>,
 }
 
 /// Heap statistics result.
 #[derive(Debug, Serialize)]
 pub struct HeapStats {
+    /// Total object count across all types.
     pub total_objects: u64,
+    /// Total heap size in bytes across all types.
     pub total_size_bytes: u64,
+    /// Per-type breakdown.
     pub types: Vec<HeapTypeInfo>,
 }
 
 /// Per-type heap statistics.
 #[derive(Debug, Clone, Serialize)]
 pub struct HeapTypeInfo {
+    /// Fully-qualified type name.
     pub type_name: String,
+    /// Number of instances on the heap.
     pub count: u64,
+    /// Total size in bytes for all instances.
     pub total_size_bytes: u64,
 }
 
 /// Parameters for GC root analysis.
 #[derive(Debug, Deserialize)]
 pub struct FindGcRootsParams {
+    /// Path to the dump file.
     pub dump_path: String,
+    /// Hex address of the object to trace.
     pub object_address: String,
 }
 
 /// A node in a GC root chain.
 #[derive(Debug, Clone, Serialize)]
 pub struct GcRootNode {
+    /// Hex address of this node.
     pub address: String,
+    /// Fully-qualified type name.
     pub type_name: String,
+    /// Kind of root (e.g. `Root`, `Reference`).
     pub root_kind: String,
 }
 
 /// A chain from an object to its GC root.
 #[derive(Debug, Serialize)]
 pub struct GcRootChain {
+    /// Ordered list of nodes from object to GC root.
     pub roots: Vec<GcRootNode>,
 }
 
@@ -74,7 +89,7 @@ pub async fn analyze_heap(params: AnalyzeHeapParams) -> Result<HeapStats> {
     }
 
     // Sort by total size descending.
-    types.sort_by(|a, b| b.total_size_bytes.cmp(&a.total_size_bytes));
+    types.sort_by_key(|t| std::cmp::Reverse(t.total_size_bytes));
 
     // Apply limit.
     types.truncate(params.limit);
@@ -135,6 +150,7 @@ fn parse_dumpheap_stat(output: &str) -> Vec<HeapTypeInfo> {
         .collect()
 }
 
+/// Parse a single `dumpheap -stat` output line into type info.
 fn parse_dumpheap_stat_line(line: &str) -> Option<HeapTypeInfo> {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.starts_with("MT") || trimmed.starts_with("Total") {
@@ -227,6 +243,7 @@ fn parse_gcroot_output(output: &str) -> Vec<GcRootChain> {
     chains
 }
 
+/// Default maximum number of types to return.
 fn default_limit() -> usize {
     50
 }

@@ -102,7 +102,7 @@ impl ForgeExtension {
             format!(
                 "{SERVER_BINARY} not found on PATH. \
                  Install Forge v{EXPECTED_VERSION} via `make install` \
-                 or download from https://github.com/forge-lsp/forge/releases"
+                 or download from https://github.com/Nimblesite/forge/releases"
             )
         })?;
 
@@ -226,7 +226,7 @@ mod tests {
         let error_msg = format!(
             "{SERVER_BINARY} not found on PATH. \
              Install Forge v{EXPECTED_VERSION} via `make install` \
-             or download from https://github.com/forge-lsp/forge/releases"
+             or download from https://github.com/Nimblesite/forge/releases"
         );
         assert!(
             error_msg.contains(EXPECTED_VERSION),

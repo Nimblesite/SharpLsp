@@ -40,6 +40,115 @@ type LocationResult =
 type LocationListResult =
     { [<Key(0)>] Locations: LocationResult array }
 
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type ReferencesRequest =
+    { [<Key(0)>] FilePath: string
+      [<Key(1)>] Line: int
+      [<Key(2)>] Character: int
+      [<Key(3)>] IncludeDeclaration: bool }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type DocumentHighlightResult =
+    { [<Key(0)>] StartLine: int
+      [<Key(1)>] StartCharacter: int
+      [<Key(2)>] EndLine: int
+      [<Key(3)>] EndCharacter: int
+      [<Key(4)>] Kind: int }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type DocumentHighlightListResult =
+    { [<Key(0)>] Highlights: DocumentHighlightResult array }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type InlayHintRequest =
+    { [<Key(0)>] FilePath: string
+      [<Key(1)>] StartLine: int
+      [<Key(2)>] EndLine: int }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type RangeRequest =
+    { [<Key(0)>] FilePath: string
+      [<Key(1)>] StartLine: int
+      [<Key(2)>] StartCharacter: int
+      [<Key(3)>] EndLine: int
+      [<Key(4)>] EndCharacter: int }
+
+// ── Code Action Types (wire-compatible with C# sidecar) ─────────
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type CodeActionRequest =
+    { [<Key(0)>] FilePath: string
+      [<Key(1)>] StartLine: int
+      [<Key(2)>] StartCharacter: int
+      [<Key(3)>] EndLine: int
+      [<Key(4)>] EndCharacter: int }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type CodeActionItemResult =
+    { [<Key(0)>] Id: int
+      [<Key(1)>] Title: string
+      [<Key(2)>] Kind: string
+      [<Key(3)>] IsPreferred: bool }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type CodeActionResolveRequest =
+    { [<Key(0)>] Id: int }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type TextEditResult =
+    { [<Key(0)>] StartLine: int
+      [<Key(1)>] StartCharacter: int
+      [<Key(2)>] EndLine: int
+      [<Key(3)>] EndCharacter: int
+      [<Key(4)>] NewText: string }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type DocumentEditResult =
+    { [<Key(0)>] FilePath: string
+      [<Key(1)>] Edits: TextEditResult array }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type WorkspaceEditResult =
+    { [<Key(0)>] DocumentChanges: DocumentEditResult array }
+
+// ── Diagnostics Types (wire-compatible with C# sidecar) ─────────
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type DiagnosticResult =
+    { [<Key(0)>] FilePath: string
+      [<Key(1)>] StartLine: int
+      [<Key(2)>] StartCharacter: int
+      [<Key(3)>] EndLine: int
+      [<Key(4)>] EndCharacter: int
+      [<Key(5)>] Message: string
+      [<Key(6)>] Severity: string
+      [<Key(7)>] Code: string }
+
+// ── Formatting Preview Types ────────────────────────────────────
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type FormattingPreviewResult =
+    { [<Key(0)>] Original: string
+      [<Key(1)>] Formatted: string }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type SemanticTokensResult =
+    { [<Key(0)>] Data: int array }
+
 module private Helpers =
     /// Convert a FSharpWorkspace.DefinitionLocation to a LocationResult.
     let toLocationResult (loc: FSharpWorkspace.DefinitionLocation) : LocationResult =
@@ -93,6 +202,7 @@ type FSharpSidecar() =
     inherit SidecarHost()
 
     let workspace = FSharpWorkspace.create ()
+    let codeFixState = FSharpCodeFixes.createState ()
 
     do
         base.Register("workspace/open", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
@@ -142,3 +252,219 @@ type FSharpSidecar() =
         base.Register("textDocument/typeDefinition", Helpers.locationOptionHandler workspace FSharpWorkspace.getTypeDefinition)
         base.Register("textDocument/declaration", Helpers.locationOptionHandler workspace FSharpWorkspace.getDeclaration)
         base.Register("textDocument/implementation", Helpers.locationListHandler workspace FSharpWorkspace.getImplementations)
+
+        // References
+        base.Register("textDocument/references", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<ReferencesRequest>(payload, cancellationToken = ct)
+                    let! results =
+                        FSharpReferences.getReferences
+                            workspace request.FilePath request.Line
+                            request.Character request.IncludeDeclaration
+                    let locations =
+                        results
+                        |> List.map Helpers.toLocationResult
+                        |> Array.ofList
+                    return Helpers.serializeOk { Locations = locations } ct
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Document highlights
+        base.Register("textDocument/documentHighlight", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
+                    let! results =
+                        FSharpReferences.getDocumentHighlights
+                            workspace request.FilePath request.Line request.Character
+                    let highlights =
+                        results
+                        |> List.map (fun h ->
+                            { DocumentHighlightResult.StartLine = h.StartLine
+                              StartCharacter = h.StartCharacter
+                              EndLine = h.EndLine
+                              EndCharacter = h.EndCharacter
+                              Kind = h.Kind })
+                        |> Array.ofList
+                    return Helpers.serializeOk { Highlights = highlights } ct
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Formatting via Fantomas
+        base.Register("textDocument/formatting", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
+                    let! edits = FSharpFeatures.formatDocument request.FilePath
+                    let bytes = MessagePackSerializer.Serialize(edits, cancellationToken = ct)
+                    return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Range formatting via Fantomas
+        base.Register("textDocument/rangeFormatting", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<RangeRequest>(payload, cancellationToken = ct)
+                    let! edits = FSharpFeatures.formatRange request.FilePath request.StartLine request.StartCharacter request.EndLine request.EndCharacter
+                    let bytes = MessagePackSerializer.Serialize(edits, cancellationToken = ct)
+                    return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Semantic tokens
+        base.Register("textDocument/semanticTokens/full", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
+                    let! data = FSharpFeatures.getSemanticTokens workspace request.FilePath
+                    let bytes = MessagePackSerializer.Serialize({ Data = data }, cancellationToken = ct)
+                    return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Semantic tokens range
+        base.Register("textDocument/semanticTokens/range", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<RangeRequest>(payload, cancellationToken = ct)
+                    let! data = FSharpFeatures.getSemanticTokensRange workspace request.FilePath request.StartLine request.EndLine
+                    let bytes = MessagePackSerializer.Serialize({ Data = data }, cancellationToken = ct)
+                    return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Code actions (F# code fixes via FCS diagnostics)
+        base.Register("textDocument/codeAction", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<CodeActionRequest>(payload, cancellationToken = ct)
+                    let! actions =
+                        FSharpCodeFixes.getCodeActions
+                            codeFixState workspace
+                            request.FilePath
+                            request.StartLine request.StartCharacter
+                            request.EndLine request.EndCharacter
+                    let results =
+                        actions
+                        |> List.map (fun a ->
+                            { Id = a.Id; Title = a.Title
+                              Kind = a.Kind; IsPreferred = a.IsPreferred })
+                        |> Array.ofList
+                    return Helpers.serializeOk results ct
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Code action resolve
+        base.Register("codeAction/resolve", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            try
+                let request = MessagePackSerializer.Deserialize<CodeActionResolveRequest>(payload, cancellationToken = ct)
+                match FSharpCodeFixes.resolveCodeAction codeFixState request.Id with
+                | Some edit ->
+                    let result =
+                        { DocumentChanges =
+                            edit.DocumentChanges
+                            |> List.map (fun dc ->
+                                { FilePath = dc.FilePath
+                                  Edits =
+                                    dc.Edits
+                                    |> List.map (fun e ->
+                                        { StartLine = e.StartLine
+                                          StartCharacter = e.StartCharacter
+                                          EndLine = e.EndLine
+                                          EndCharacter = e.EndCharacter
+                                          NewText = e.NewText })
+                                    |> Array.ofList })
+                            |> Array.ofList }
+                    Task.FromResult<ByteResult>(Helpers.serializeOk result ct)
+                | None ->
+                    let empty = { DocumentChanges = [||] }
+                    Task.FromResult<ByteResult>(Helpers.serializeOk empty ct)
+            with ex ->
+                Task.FromResult<ByteResult>(ByteResult.Failure(ex.Message))))
+
+        // Inlay hints
+        base.Register("textDocument/inlayHint", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<InlayHintRequest>(payload, cancellationToken = ct)
+                    let! hints = FSharpFeatures.getInlayHints workspace request.FilePath request.StartLine request.EndLine
+                    let bytes = MessagePackSerializer.Serialize(hints |> List.toArray, cancellationToken = ct)
+                    return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Diagnostics (FCS compiler errors + FSharpLint warnings)
+        base.Register("workspace/diagnostics", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let filePath = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
+                    let mutable results = ResizeArray<DiagnosticResult>()
+                    // FCS compiler diagnostics.
+                    if workspace.IsLoaded then
+                        let source = System.IO.File.ReadAllText(filePath)
+                        let sourceText = FSharp.Compiler.Text.SourceText.ofString source
+                        let! _parse, checkAnswer =
+                            workspace.Checker.ParseAndCheckFileInProject(
+                                filePath, 0, sourceText, workspace.ProjectOptions.Value)
+                        match checkAnswer with
+                        | FSharp.Compiler.CodeAnalysis.FSharpCheckFileAnswer.Succeeded check ->
+                            for d in check.Diagnostics do
+                                let severity =
+                                    match d.Severity with
+                                    | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Error -> "Error"
+                                    | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Warning -> "Warning"
+                                    | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Info -> "Info"
+                                    | _ -> "Hint"
+                                let r = d.Range
+                                results.Add(
+                                    { FilePath = filePath
+                                      StartLine = r.StartLine - 1
+                                      StartCharacter = r.StartColumn
+                                      EndLine = r.EndLine - 1
+                                      EndCharacter = r.EndColumn
+                                      Message = d.Message
+                                      Severity = severity
+                                      Code = $"FS{d.ErrorNumber:D4}" })
+                        | FSharp.Compiler.CodeAnalysis.FSharpCheckFileAnswer.Aborted -> ()
+                    // FSharpLint diagnostics.
+                    let lintDiags = FSharpLinting.lintFile filePath
+                    for ld in lintDiags do
+                        results.Add(
+                            { FilePath = ld.FilePath
+                              StartLine = ld.StartLine
+                              StartCharacter = ld.StartCharacter
+                              EndLine = ld.EndLine
+                              EndCharacter = ld.EndCharacter
+                              Message = ld.Message
+                              Severity = ld.Severity
+                              Code = ld.Code })
+                    return Helpers.serializeOk (results.ToArray()) ct
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Formatting preview (Fantomas diff)
+        base.Register("textDocument/formattingPreview", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
+                    let! preview = FSharpFeatures.formatPreview request.FilePath
+                    match preview with
+                    | Some result ->
+                        return Helpers.serializeOk { Original = result.Original; Formatted = result.Formatted } ct
+                    | None ->
+                        let bytes = [| 0xC0uy |]
+                        return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))

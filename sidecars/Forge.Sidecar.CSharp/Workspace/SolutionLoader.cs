@@ -3,14 +3,10 @@ using Outcome;
 namespace Forge.Sidecar.CSharp.Workspace;
 
 /// <summary>
-/// Discovers .sln or .csproj files from a workspace root.
+/// Discovers .sln, .slnx, or .csproj files from a workspace root.
 /// </summary>
 internal static class SolutionLoader
 {
-    /// <summary>
-    /// Find a solution or project file to open.
-    /// Priority: explicit path > .sln in root > .csproj in root > recursive.
-    /// </summary>
     public static Result<string?, string> FindSolutionOrProject(string workspacePath)
     {
         try
@@ -34,15 +30,15 @@ internal static class SolutionLoader
 
     private static string? FindInRootDirectory(string workspacePath)
     {
-        var slnFiles = Directory.GetFiles(workspacePath, "*.sln", SearchOption.TopDirectoryOnly);
-        if (slnFiles.Length is 1)
+        var solutionFiles = EnumerateSolutionFiles(workspacePath, SearchOption.TopDirectoryOnly);
+        if (solutionFiles.Length is 1)
         {
-            return slnFiles[0];
+            return solutionFiles[0];
         }
 
-        if (slnFiles.Length > 1)
+        if (solutionFiles.Length > 1)
         {
-            return PickBestSolution(slnFiles, workspacePath);
+            return PickBestSolution(solutionFiles, workspacePath);
         }
 
         var csprojFiles = Directory.GetFiles(
@@ -53,11 +49,11 @@ internal static class SolutionLoader
         return csprojFiles.Length > 0 ? csprojFiles[0] : null;
     }
 
-    private static string PickBestSolution(string[] slnFiles, string workspacePath)
+    private static string PickBestSolution(string[] solutionFiles, string workspacePath)
     {
         var dirName = Path.GetFileName(workspacePath);
         var match = Array.Find(
-            slnFiles,
+            solutionFiles,
             s =>
                 string.Equals(
                     Path.GetFileNameWithoutExtension(s),
@@ -65,7 +61,7 @@ internal static class SolutionLoader
                     StringComparison.OrdinalIgnoreCase
                 )
         );
-        return match ?? slnFiles[0];
+        return match ?? solutionFiles[0];
     }
 
     private static string? FindRecursiveMatch(string workspacePath)
@@ -75,15 +71,15 @@ internal static class SolutionLoader
             return null;
         }
 
-        var slnFiles = Directory.GetFiles(workspacePath, "*.sln", SearchOption.AllDirectories);
-        if (slnFiles.Length is 1)
+        var solutionFiles = EnumerateSolutionFiles(workspacePath, SearchOption.AllDirectories);
+        if (solutionFiles.Length is 1)
         {
-            return slnFiles[0];
+            return solutionFiles[0];
         }
 
-        // Multiple .sln files: ambiguous. Return null so the caller can
+        // Multiple solution files: ambiguous. Return null so the caller can
         // ask the user to specify which solution to load.
-        if (slnFiles.Length > 1)
+        if (solutionFiles.Length > 1)
         {
             return null;
         }
@@ -94,5 +90,26 @@ internal static class SolutionLoader
             SearchOption.AllDirectories
         );
         return csprojFiles.Length is 1 ? csprojFiles[0] : null;
+    }
+
+    // Enumerate both .sln and .slnx explicitly. The "*.sln" glob matches .slnx
+    // on Windows (8.3 short-name behavior) but not on macOS/Linux, so a single
+    // pattern is not portable.
+    private static string[] EnumerateSolutionFiles(string path, SearchOption option)
+    {
+        var sln = Directory.GetFiles(path, "*.sln", option);
+        var slnx = Directory.GetFiles(path, "*.slnx", option);
+        if (sln.Length == 0)
+        {
+            return slnx;
+        }
+        if (slnx.Length == 0)
+        {
+            return sln;
+        }
+        var combined = new string[sln.Length + slnx.Length];
+        Array.Copy(sln, combined, sln.Length);
+        Array.Copy(slnx, 0, combined, sln.Length, slnx.Length);
+        return combined;
     }
 }

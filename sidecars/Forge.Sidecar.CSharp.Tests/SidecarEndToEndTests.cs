@@ -2,6 +2,7 @@ using System.Net.Sockets;
 using Forge.Sidecar.Common.Ipc;
 using Forge.Sidecar.Common.Messages;
 using MessagePack;
+using Microsoft.Build.Locator;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
 #pragma warning disable CA1515 // Types can be internal
@@ -82,13 +83,13 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
         }
         """;
 
-    private static bool _msBuildRegistered;
-    private readonly CSharpSidecar _sidecar = new();
+    private static readonly Lock MsBuildRegistrationLock = new();
     private readonly string _socketPath = Path.Combine(
         Path.GetTempPath(),
         $"forge-csharp-e2e-{Guid.NewGuid():N}.sock"
     );
 
+    private CSharpSidecar? _sidecar;
     private FramedTransport? _transport;
     private int _nextId;
 
@@ -133,11 +134,8 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
             File.Delete(_socketPath);
         }
 
-        if (!_msBuildRegistered)
-        {
-            Microsoft.Build.Locator.MSBuildLocator.RegisterDefaults();
-            _msBuildRegistered = true;
-        }
+        EnsureMsBuildRegistered();
+        _sidecar = new CSharpSidecar();
 
         _ = Task.Run(async () => await _sidecar.RunAsync(_socketPath).ConfigureAwait(false));
 
@@ -177,7 +175,10 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
             await _transport.DisposeAsync().ConfigureAwait(false);
         }
 
-        await _sidecar.DisposeAsync().ConfigureAwait(false);
+        if (_sidecar is not null)
+        {
+            await _sidecar.DisposeAsync().ConfigureAwait(false);
+        }
 
         try
         {
@@ -217,6 +218,17 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
         );
         File.WriteAllText(Path.Combine(dir, "Program.cs"), TestSource);
         return dir;
+    }
+
+    private static void EnsureMsBuildRegistered()
+    {
+        lock (MsBuildRegistrationLock)
+        {
+            if (!MSBuildLocator.IsRegistered)
+            {
+                MSBuildLocator.RegisterDefaults();
+            }
+        }
     }
 }
 

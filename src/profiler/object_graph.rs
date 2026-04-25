@@ -5,14 +5,16 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::debug;
 
 use super::{dump_cmd, tool_discovery};
 
+/// Default maximum traversal depth for the object graph.
 fn default_max_depth() -> usize {
     5
 }
 
+/// Default maximum number of nodes in the object graph.
 fn default_max_nodes() -> usize {
     100
 }
@@ -20,45 +22,65 @@ fn default_max_nodes() -> usize {
 /// Parameters for building an object graph.
 #[derive(Debug, Deserialize)]
 pub struct GetObjectGraphParams {
+    /// Path to the dump file.
     pub dump_path: String,
-    /// Starting object address (hex). If omitted, requires explicit address.
+    /// Starting object address (hex).
     pub root_address: String,
+    /// Maximum traversal depth.
     #[serde(default = "default_max_depth")]
     pub max_depth: usize,
+    /// Maximum number of nodes to include.
     #[serde(default = "default_max_nodes")]
     pub max_nodes: usize,
+    /// Optional substring filter for type names.
     pub type_filter: Option<String>,
 }
 
 /// Result of an object graph query.
 #[derive(Debug, Serialize)]
 pub struct ObjectGraphResult {
+    /// Nodes discovered during traversal.
     pub nodes: Vec<ObjectGraphNode>,
+    /// Directed edges representing object references.
     pub edges: Vec<ObjectGraphEdge>,
+    /// Summary statistics for the traversal.
     pub stats: ObjectGraphStats,
 }
 
 /// A node in the object retention graph.
 #[derive(Debug, Clone, Serialize)]
 pub struct ObjectGraphNode {
+    /// Hex address used as the node identifier.
     pub id: String,
+    /// Fully-qualified type name.
     pub type_name: String,
+    /// Short display name derived from the type.
     pub display_name: String,
+    /// Shallow size in bytes.
     pub size_bytes: u64,
+    /// Retained (inclusive) size in bytes.
     pub retained_size_bytes: u64,
+    /// Number of instances represented by this node.
     pub instance_count: u64,
+    /// Whether this node is a GC root.
     pub is_root: bool,
+    /// Kind of GC root if applicable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub root_kind: Option<String>,
+    /// Depth from the starting address.
     pub depth: usize,
 }
 
 /// A directed edge in the object graph (from holder to held object).
 #[derive(Debug, Clone, Serialize)]
 pub struct ObjectGraphEdge {
+    /// Address of the holding object.
     pub from: String,
+    /// Address of the held object.
     pub to: String,
+    /// Name of the field holding the reference.
     pub field_name: String,
+    /// Strength of the reference.
     pub reference_kind: ReferenceKind,
 }
 
@@ -66,15 +88,20 @@ pub struct ObjectGraphEdge {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum ReferenceKind {
+    /// A strong (normal) object reference.
     Strong,
 }
 
 /// Summary statistics for a graph traversal.
 #[derive(Debug, Serialize)]
 pub struct ObjectGraphStats {
+    /// Total number of nodes visited.
     pub total_nodes_traversed: usize,
+    /// Total number of edges recorded.
     pub total_edges_traversed: usize,
+    /// Deepest depth reached during traversal.
     pub max_depth_reached: usize,
+    /// Whether the traversal was cut short by the node limit.
     pub truncated: bool,
 }
 
@@ -82,14 +109,6 @@ pub struct ObjectGraphStats {
 pub async fn get_object_graph(params: GetObjectGraphParams) -> Result<ObjectGraphResult> {
     let tool = tool_discovery::require_dump()?;
     dump_cmd::validate_dump_path(&params.dump_path)?;
-
-    info!(
-        dump = %params.dump_path,
-        root = %params.root_address,
-        max_depth = params.max_depth,
-        max_nodes = params.max_nodes,
-        "Building object graph"
-    );
 
     let mut nodes: HashMap<String, ObjectGraphNode> = HashMap::new();
     let mut edges: Vec<ObjectGraphEdge> = Vec::new();
@@ -109,7 +128,7 @@ pub async fn get_object_graph(params: GetObjectGraphParams) -> Result<ObjectGrap
             break;
         }
 
-        visited.insert(address.clone());
+        let _ = visited.insert(address.clone());
         max_depth_reached = max_depth_reached.max(depth);
 
         let dumpobj_output = dump_cmd::run(tool, &params.dump_path, &format!("dumpobj {address}"))
@@ -145,7 +164,7 @@ pub async fn get_object_graph(params: GetObjectGraphParams) -> Result<ObjectGrap
                 }
             }
 
-            nodes.insert(address.clone(), node);
+            let _ = nodes.insert(address.clone(), node);
         }
     }
 
@@ -175,8 +194,11 @@ pub async fn get_object_graph(params: GetObjectGraphParams) -> Result<ObjectGrap
     })
 }
 
+/// Intermediate result from parsing `dumpobj` output.
 struct ParsedNode {
+    /// The graph node, if parsing succeeded.
     node: Option<ObjectGraphNode>,
+    /// Outgoing references as `(field_name, address)` pairs.
     references: Vec<(String, String)>,
 }
 

@@ -23,7 +23,8 @@ pub fn document_symbols(tree: &Tree, source: &str) -> Vec<DocumentSymbol> {
     reparent_file_scoped_members(symbols)
 }
 
-fn collect_symbols(node: Node, source: &[u8]) -> Vec<DocumentSymbol> {
+/// Recursively collect document symbols from tree-sitter child nodes.
+fn collect_symbols(node: Node<'_>, source: &[u8]) -> Vec<DocumentSymbol> {
     let mut symbols = Vec::new();
 
     let mut cursor = node.walk();
@@ -71,7 +72,8 @@ fn find_variable_declarator_name<'a>(node: Node<'a>, source: &[u8]) -> Option<(S
     None
 }
 
-fn node_to_symbol(node: Node, source: &[u8]) -> Option<DocumentSymbol> {
+/// Convert a tree-sitter node to an LSP `DocumentSymbol` if it represents a declaration.
+fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<DocumentSymbol> {
     let kind = match node.kind() {
         "class_declaration" | "record_declaration" => SymbolKind::CLASS,
         "struct_declaration" => SymbolKind::STRUCT,
@@ -170,7 +172,8 @@ pub fn folding_ranges(tree: &Tree, _source: &str) -> Vec<FoldingRange> {
     ranges
 }
 
-fn collect_folding(node: Node, ranges: &mut Vec<FoldingRange>) {
+/// Recursively collect folding ranges from tree-sitter nodes.
+fn collect_folding(node: Node<'_>, ranges: &mut Vec<FoldingRange>) {
     let kind = match node.kind() {
         // Blocks / braces
         "class_declaration"
@@ -223,6 +226,7 @@ pub fn selection_ranges(tree: &Tree, _source: &str, positions: &[Position]) -> V
         .collect()
 }
 
+/// Build a nested selection range chain from innermost node to root.
 fn build_selection_range(tree: &Tree, position: Position) -> SelectionRange {
     let point = lsp_pos_to_ts_point(position);
 
@@ -326,7 +330,8 @@ fn lsp_pos_to_ts_point(position: Position) -> Point {
     }
 }
 
-fn ts_range_to_lsp(node: Node) -> Range {
+/// Convert a tree-sitter node's range to an LSP `Range`.
+fn ts_range_to_lsp(node: Node<'_>) -> Range {
     Range {
         start: ts_point_to_lsp_pos(node.start_position()),
         end: ts_point_to_lsp_pos(node.end_position()),

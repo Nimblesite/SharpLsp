@@ -14,9 +14,12 @@ use super::tool_discovery;
 /// Parameters for starting counter monitoring.
 #[derive(Debug, Deserialize)]
 pub struct StartCountersParams {
+    /// Target process ID.
     pub pid: u32,
+    /// Event provider names to subscribe to.
     #[serde(default = "default_providers")]
     pub providers: Vec<String>,
+    /// Refresh interval in seconds.
     #[serde(default = "default_refresh_interval")]
     pub refresh_interval: u32,
 }
@@ -24,23 +27,31 @@ pub struct StartCountersParams {
 /// Result of starting counter monitoring.
 #[derive(Debug, Serialize)]
 pub struct StartCountersResult {
+    /// Unique identifier for this monitoring session.
     pub session_id: String,
 }
 
 /// A single counter value update.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CounterValue {
+    /// Counter provider name (e.g. `System.Runtime`).
     pub provider: String,
+    /// Raw counter name.
     pub name: String,
+    /// Human-readable counter name.
     pub display_name: String,
+    /// Current counter value.
     pub value: f64,
+    /// Unit of measurement (e.g. `MB`, `%`).
     pub unit: String,
 }
 
 /// Notification payload for counter updates.
 #[derive(Debug, Serialize)]
 pub struct CounterUpdateParams {
+    /// Session that produced these updates.
     pub session_id: String,
+    /// Counter values in this update batch.
     pub counters: Vec<CounterValue>,
 }
 
@@ -93,7 +104,7 @@ pub fn stop(session_id: &str) -> Result<()> {
 
 /// Spawn a background thread to read counter output and send notifications.
 fn spawn_counter_reader(session_id: String, sender: crossbeam_channel::Sender<Message>) {
-    std::thread::spawn(move || {
+    let _handle = std::thread::spawn(move || {
         let store = session::store();
         let stdout = {
             let Some(mut entry) = store.sessions().get_mut(&session_id) else {
@@ -182,10 +193,12 @@ fn send_counter_notification(
     Ok(())
 }
 
+/// Default event providers for counter monitoring.
 fn default_providers() -> Vec<String> {
     vec!["System.Runtime".to_string()]
 }
 
+/// Default refresh interval in seconds.
 fn default_refresh_interval() -> u32 {
     1
 }

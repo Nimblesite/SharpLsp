@@ -26,7 +26,7 @@ Forge exists because .NET developers deserve world-class tooling that is not gat
 
 - **Correctness over cleverness:** Semantic analysis is delegated to the official compilers via managed sidecar processes. We do not reimplement type checkers.
 
-- **Crush the incumbents:** Not approximate parity. Not a lightweight alternative. Full feature-for-feature superiority. Every refactoring Rider has. Every code fix Visual Studio has. Every diagnostic, every navigation feature, every formatting option.
+- **Crush the incumbents:** Not approximate parity. Not a lightweight alternative. Full feature-for-feature superiority. Every refactoring Rider has. Every code fix Visual Studio has. Every diagnostic, every navigation feature.
 
 ### 1.2 Competitive Position
 
@@ -58,7 +58,7 @@ Forge uses a three-tier architecture: a Rust host process handles the LSP protoc
 
 - Long-running .NET process hosting [Microsoft.CodeAnalysis](https://www.nuget.org/packages/Microsoft.CodeAnalysis) v5.3.0+
 - [MSBuildWorkspace](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.msbuild.msbuildworkspace) for project/solution loading via design-time builds
-- Full Roslyn API surface: [CompletionService](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice), [SymbolFinder](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.findusages.symbolfinder), [Renamer](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.rename.renamer), CodeFixProviders, [Formatter](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.formatting.formatter), [Classifier](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.classification.classifier)
+- Full Roslyn API surface: [CompletionService](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice), [SymbolFinder](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.findusages.symbolfinder), [Renamer](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.rename.renamer), CodeFixProviders, [Classifier](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.classification.classifier)
 - Incremental compilation via Roslyn's immutable snapshot model (Solution → Project[] → Document[])
 - Custom RPC interface over named pipes / Unix domain sockets with [MessagePack](https://msgpack.org/) serialization
 
@@ -67,7 +67,7 @@ Forge uses a three-tier architecture: a Rust host process handles the LSP protoc
 - Long-running .NET process hosting [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) v43.12+
 - [FSharpChecker](https://fsharp.github.io/fsharp-compiler-docs/reference/fsharp-compiler-codeanalysis-fsharpchecker.html) with incremental build caching (MRU caches for parse/check results)
 - [Ionide.ProjInfo](https://github.com/ionide/proj-info) for project cracking (MSBuild evaluation for F# projects)
-- [Fantomas](https://github.com/fsprojects/fantomas) for formatting, [FSharpLint](https://github.com/fsprojects/FSharpLint) for linting
+- [FSharpLint](https://github.com/fsprojects/FSharpLint) for linting
 - Same RPC interface and transport as C# sidecar for architectural symmetry
 
 ### 2.2 IPC Transport Protocol
@@ -260,7 +260,6 @@ This is editor-agnostic by design. One set of binaries serves VS Code, Zed, Neov
 |---|---|---|
 | [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) | 43.12.201 | F# compiler services (parsing, type checking, IDE features) |
 | [Ionide.ProjInfo](https://github.com/ionide/proj-info) | latest | F# project cracking (MSBuild evaluation) |
-| [Fantomas](https://github.com/fsprojects/fantomas) | latest | F# code formatting |
 | [FSharpLint.Core](https://github.com/fsprojects/FSharpLint) | latest | F# linting diagnostics |
 | [FSharp.Analyzers.SDK](https://github.com/ionide/FSharp.Analyzers.SDK) | latest | Third-party F# analyzer support |
 | [MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp) | latest | IPC serialization |
@@ -302,7 +301,9 @@ This section specifies every feature Forge will implement, mapped to the LSP pro
 
 ### 4.3 Diagnostics & Analysis
 
-See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) for the full diagnostics specification, including solution-wide analysis (default on), project filtering, background analysis strategy, and competitive analysis.
+Forge uses the LSP 3.17 **pull-diagnostics + workspace-refresh** model (`textDocument/diagnostic`, `workspace/diagnostic`, `workspace/diagnostic/refresh`), mirroring `Microsoft.CodeAnalysis.LanguageServer` (the engine behind C# Dev Kit). The Rust host never proactively pushes errors during workspace load — that is the only architecture that produces correct diagnostics while NuGet restore, source generators, and cross-project `CompilationReference`s are still resolving. A NuGet restore gate runs before `MSBuildWorkspace.OpenSolutionAsync` to eliminate the largest class of phantom CS0246s.
+
+See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) for the full specification, including the pull + refresh cycle, the NuGet restore gate, project filtering, and the truth guarantees Forge makes (and doesn't make) about diagnostic completeness during workspace load.
 
 ### 4.4 Code Actions & Refactoring
 
@@ -335,17 +336,12 @@ This is where Forge must match Rider's 2,200+ inspections and 60+ refactorings. 
 
 ### 4.5 Formatting
 
-While some code for formatting exists and it will become a feature in future. Formatting shall be delegated to CSharpier/Fantomas until it becomes a priority at a later stage.
-No work to be done on formatting at this point in time.
+Forge does **not** provide document formatting. Use dedicated formatters:
 
-| Feature | LSP Method | C# API | F# API | Priority |
-|---|---|---|---|---|
-| Document formatting | `textDocument/formatting` | [Formatter.FormatAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.formatting.formatter.formatasync) | [Fantomas.FormatDocumentAsync()](https://github.com/fsprojects/fantomas) | P0 |
-| Range formatting | `textDocument/rangeFormatting` | Formatter.FormatAsync(span) | Fantomas range formatting | P0 |
-| On-type formatting | `textDocument/onTypeFormatting` | Roslyn on-type formatting | Fantomas on-type (limited) | P1 |
-| .editorconfig support | N/A (configuration) | Full [.editorconfig](https://editorconfig.org/) parsing | Fantomas .editorconfig | P0 |
-| Format on save | N/A (editor-side) | Server-side formatting | Server-side formatting | P0 |
-| Format on paste | `textDocument/onTypeFormatting` | Roslyn paste formatting | Fantomas paste formatting | P2 |
+- **C#**: [CSharpier](https://csharpier.com/) — the community-standard opinionated C# formatter
+- **F#**: [Fantomas](https://github.com/fsprojects/fantomas) via the [Ionide](https://ionide.io/) extension — the standard F# formatter
+
+These tools are excellent at what they do and there is no reason to duplicate their work inside an LSP server.
 
 ### 4.6 Semantic Highlighting
 
@@ -397,7 +393,9 @@ No work to be done on formatting at this point in time.
 | NuGet uninstall package | Custom: `forge/nuget/uninstall` | `dotnet remove <project> package` + sidecar reload | P2 |
 | Multi-TFM selection | Custom: `forge/targetFramework` | Active TFM switching per project | P1 |
 | File watching & reload | `workspace/didChangeWatchedFiles` | [notify](https://crates.io/crates/notify) crate + sidecar reload | P0 |
-| Workspace diagnostics | `workspace/diagnostic` | Solution-wide error analysis | P1 |
+| Workspace diagnostics (pull) | `workspace/diagnostic` + `workspace/diagnostic/refresh` | Solution-wide error analysis via LSP 3.17 pull model + 2000ms-debounced refresh; primary diagnostic path (see [DIAGNOSTICS-SPEC §1.1](DIAGNOSTICS-SPEC.md#11-the-pull--refresh-cycle)) | P0 |
+| NuGet restore gate | (internal, before `workspace/open`) | `dotnet restore` if `obj/project.assets.json` is stale; eliminates phantom CS0246 for NuGet types ([DIAGNOSTICS-SPEC §6](DIAGNOSTICS-SPEC.md#6-nuget-restore-gate)) | P0 |
+| Project init complete | Custom: `workspace/projectInitializationComplete` | Notification fired once per workspace open after restore + `MSBuildWorkspace.OpenSolutionAsync`; matches Roslyn LSP contract | P0 |
 | Configuration | `workspace/didChangeConfiguration` | [.editorconfig](https://editorconfig.org/) + forge.toml | P0 |
 
 ### 4.11 F#-Specific Features
@@ -468,7 +466,7 @@ F# has unique language features that require dedicated support beyond what the s
 - [salsa](https://salsa-rs.github.io/salsa/) database for incremental caching of semantic results
 - Request coalescing and cancellation
 
-### Phase 3: Code Actions, Refactoring & Formatting (Months 9–14)
+### Phase 3: Code Actions & Refactoring (Months 9–14)
 
 **Goal:** Feature parity with C# Dev Kit for code actions. Approach Rider's refactoring depth.
 
@@ -479,9 +477,6 @@ F# has unique language features that require dedicated support beyond what the s
 - [FSAC](https://github.com/fsharp/FsAutoComplete) code fixes and refactorings for F#
 - Extract method, extract variable, inline, move type, rename file
 - Generate constructor, equals/hashcode, interface implementation, overrides
-- Document formatting ([Roslyn Formatter](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.formatting.formatter) + [Fantomas](https://github.com/fsprojects/fantomas))
-- Range formatting and on-type formatting
-- [.editorconfig](https://editorconfig.org/) full support for both languages
 - Inlay hints (type inference, parameter names) for both languages
 - Call hierarchy and type hierarchy
 - Code lens (reference count, implementation count)
@@ -643,16 +638,7 @@ See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) § Competitive Analysis for the f
 
 ### 9.5 Formatting & Style
 
-| Feature | VS | CDK | R | Priority | Phase |
-|---|---|---|---|---|---|
-| Document formatting | ✓ | ✓ | ✓ | P0 | 3 |
-| Range formatting | ✓ | ✓ | ✓ | P0 | 3 |
-| On-type formatting | ✓ | ✓ | ✓ | P1 | 3 |
-| Format on save | ✓ | ✓ | ✓ | P0 | 3 |
-| Format on paste | ✓ | ✗ | ✓ | P2 | 4 |
-| .editorconfig full support | ✓ | ✓ | ✓ | P0 | 3 |
-| Code cleanup profiles | ✓ | ✗ | ✓ | P2 | 4 |
-| Fantomas F# formatting | ✗ | ✗ | ✗ | P0 | 3 |
+Forge does **not** provide formatting. Use [CSharpier](https://csharpier.com/) for C# and [Fantomas](https://github.com/fsprojects/fantomas) (via [Ionide](https://ionide.io/)) for F#.
 
 ### 9.6 Semantic Highlighting & Visual Features
 
@@ -754,6 +740,23 @@ These are features no single incumbent offers today. This is where Forge stops p
 | 1.0 Release | All P0, P1, P2 features. Performance targets met. 5+ editors verified | Month 20 |
 | Community adoption | 1,000+ GitHub stars, 100+ daily active users | Month 24 |
 | Feature superiority | Features no incumbent has (cross-language nav, AI actions, architecture analysis) | Month 24+ |
+
+## 11. Distribution
+
+Forge is distributed via three channels:
+
+- **`forge-lsp`** — Homebrew (macOS/Linux) and Scoop (Windows), from GitHub release assets.
+- **`Forge.Sidecar.CSharp`** — dotnet global tool on NuGet.org.
+- **`Forge.Sidecar.FSharp`** — dotnet global tool on NuGet.org.
+
+Editor extensions MUST verify all three binary versions on activation by
+spawning each with `--version` and comparing against the extension's own
+version. Extensions are forbidden from downloading binaries directly;
+all installation goes through `brew`, `scoop`, or `dotnet tool`.
+
+See [DISTRIBUTION-SPEC.md](DISTRIBUTION-SPEC.md) for the full distribution
+specification including version invariants, release workflow, and the
+editor extension contract.
 
 ---
 

@@ -1,4 +1,4 @@
-# agent-pmo:3140e31
+# agent-pmo:2efd847
 name: PR
 
 on:
@@ -16,10 +16,10 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  rust:
-    name: Rust
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -28,32 +28,6 @@ jobs:
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
-
-      - name: Lint
-        run: make lint-rust PROFILE=debug
-
-  zed:
-    name: Zed
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Lint
-        run: make lint-zed
-
-  dotnet:
-    name: .NET
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -65,85 +39,50 @@ jobs:
           key: ${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}
           restore-keys: ${{ runner.os }}-nuget-
 
-      - name: Restore tools
-        run: dotnet tool restore
-
-      - name: Format
-        run: dotnet csharpier check sidecars/
-
-      - name: Lint
-        run: make lint-dotnet
-
-  vscode:
-    name: VS Code
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: editors/vscode/package-lock.json
 
-      - run: npm ci --prefix editors/vscode
+      - name: Install dependencies
+        run: |
+          dotnet tool restore
+          npm ci --prefix editors/vscode
 
-      - name: Format
+      - name: Rust
+        run: make lint-rust PROFILE=debug
+
+      - name: Zed
+        run: make lint-zed
+
+      - name: .NET format
+        run: dotnet csharpier check sidecars/
+
+      - name: .NET lint
+        run: make lint-dotnet
+
+      - name: Sidecar dotnet pack (smoke test)
+        run: |
+          dotnet pack sidecars/Forge.Sidecar.CSharp/Forge.Sidecar.CSharp.csproj \
+            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+          dotnet pack sidecars/Forge.Sidecar.FSharp/Forge.Sidecar.FSharp.fsproj \
+            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+          ls -la /tmp/nupkg-smoke/*.nupkg
+
+      - name: VS Code format
         run: cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'
 
-      - name: Lint
+      - name: VS Code lint
         run: make lint-vsix
 
-  # screenshots:
-  #   name: Screenshots
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
-  #         cache: npm
-  #         cache-dependency-path: editors/vscode/package-lock.json
-
-  #     - name: Install extension deps
-  #       working-directory: editors/vscode
-  #       run: npm ci
-
-  #     - name: Install Playwright browsers
-  #       working-directory: editors/vscode
-  #       run: npx playwright install --with-deps chromium
-
-  #     - name: Install VS Code CLI
-  #       run: |
-  #         curl -fsSL "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64" -o /tmp/vscode-cli.tar.gz
-  #         tar -xzf /tmp/vscode-cli.tar.gz -C /usr/local/bin
-
-  #     - name: Capture screenshots
-  #       working-directory: editors/vscode
-  #       run: npm run screenshots
-
-  #     - name: Upload screenshots
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: extension-screenshots
-  #         path: website/src/assets/screenshots/
-  #         if-no-files-found: warn
-
-  test:
-    name: Test
-    needs: [rust, zed, dotnet, vscode]
+  test-rust:
+    name: Test Rust
+    needs: [lint]
     runs-on: ubuntu-latest
-    # TIMEOUT EXCEPTION: Rust + .NET + VS Code E2E suites with coverage instrumentation
-    # across 3 sidecars and xvfb-driven extension host exceed the 10-minute default.
-    timeout-minutes: 20
-    permissions:
-      contents: write
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -159,27 +98,138 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Install .NET diagnostic tools
+        run: |
+          dotnet tool install -g dotnet-trace
+          dotnet tool install -g dotnet-counters
+          dotnet tool install -g dotnet-dump
+
+      - name: Test Rust with coverage
+        run: make test-rust
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-rust
+          path: |
+            target/coverage-rust.json
+            coverage-thresholds.json
+
+  test-dotnet:
+    name: Test .NET
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test .NET sidecars with coverage
+        run: make test-dotnet
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-dotnet
+          path: coverage-thresholds.json
+
+  test-zed:
+    name: Test Zed
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: zed
+
+      - uses: taiki-e/install-action@nextest
+
+      - name: Test Zed extension
+        run: make test-zed
+
+  test-vsix:
+    name: Test VS Code
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: editors/vscode/package-lock.json
 
-      - name: Install diagnostic tools
-        run: |
-          dotnet tool install -g dotnet-trace &
-          dotnet tool install -g dotnet-counters &
-          dotnet tool install -g dotnet-dump &
-          wait
-
       - name: Install VS Code extension deps
         run: npm ci --prefix editors/vscode
 
-      - name: Test (build + coverage + threshold enforcement)
-        run: make test-rust test-zed test-dotnet
-
-      - name: Test VS Code extension (requires virtual display)
+      - name: Test VS Code extension with coverage
         run: xvfb-run -a make test-vsix
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-vsix
+          path: coverage-thresholds.json
+
+  coverage:
+    name: Ratchet Coverage
+    needs: [test-rust, test-dotnet, test-vsix]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: coverage-artifacts
+
+      - name: Merge ratcheted thresholds
+        run: |
+          # Each test job may have ratcheted its own thresholds up.
+          # Merge by taking the maximum threshold for each project key.
+          BASE="coverage-thresholds.json"
+          for artifact_dir in coverage-artifacts/coverage-*/; do
+            ARTIFACT="${artifact_dir}coverage-thresholds.json"
+            if [ -f "$ARTIFACT" ]; then
+              # For each project key, take the higher threshold
+              jq -s '
+                .[0] as $base | .[1] as $new |
+                $base | to_entries | map(
+                  if .value | type == "object" then
+                    .key as $k |
+                    .value.line_percent as $bp |
+                    ($new[$k].line_percent // $bp) as $np |
+                    .value.line_percent = (if $np > $bp then $np else $bp end)
+                  else .
+                  end
+                ) | from_entries
+              ' "$BASE" "$ARTIFACT" > tmp-merged.json
+              mv tmp-merged.json "$BASE"
+            fi
+          done
 
       - name: Commit ratcheted thresholds
         run: |

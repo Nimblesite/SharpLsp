@@ -387,6 +387,7 @@ The extension is responsible ONLY for:
 2. Rendering HTML/CSS/JS for the UI
 3. Forwarding webview messages to LSP custom requests
 4. Displaying LSP responses in the webview
+5. **Reactive re-render on external edits.** The panel subscribes to the shared `projectDependencies` signal (see [VSCODE-REACTIVITY-SPEC.md](./VSCODE-REACTIVITY-SPEC.md)). When the csproj or `Directory.Packages.props` changes on disk, the panel reloads installed packages from the LSP automatically — no user refresh required. The Install/Remove button reflects the current file state at all times.
 
 The extension MUST NOT:
 - Execute `dotnet` CLI commands directly

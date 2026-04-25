@@ -9,8 +9,11 @@ use super::tool_discovery;
 /// A discovered .NET process.
 #[derive(Debug, Serialize)]
 pub struct DotNetProcess {
+    /// Process ID.
     pub pid: u32,
+    /// Process name.
     pub name: String,
+    /// Full command line used to launch the process.
     pub command_line: String,
 }
 

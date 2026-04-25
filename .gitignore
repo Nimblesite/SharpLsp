@@ -1,41 +1,113 @@
-# Rust
-/target
-
-# VS Code extension
-editors/vscode/node_modules/
-editors/vscode/out/
-editors/vscode/dist/
-editors/vscode/bin/
-editors/vscode/*.vsix
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
+# =============================================================================
+# UNIVERSAL
+# =============================================================================
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# Forge runtime
-forge.toml
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
 
-# .NET
+# Portfolio-wide tooling
+.too_many_cooks/
+.commandtree/
+.playwright-mcp/
+coordination/
+logs/
+nohup.out
+
+# Coverage artifacts (all languages)
+coverage/
+lcov.info
+*.profraw
+*.profdata
+htmlcov/
+.coverage
+coverage.xml
+coverage.out
+coverage-summary.json
+TestResults/
+mutants.out/
+
+# Secrets / local overrides
+.env
+.env.local
+.env.*.local
+*.local
+*.secret
+*.pem
+*.key
+!*.pub.key
+
+# Temporary
+tmp/
+temp/
+scratch/
+
+# =============================================================================
+# RUST
+# =============================================================================
+/target
+editors/zed/target/
+
+# =============================================================================
+# TYPESCRIPT / NODE
+# =============================================================================
+node_modules/
+dist/
+out/
+*.vsix
+*.tgz
+.npm/
+.cache/
+.vscode-test/
+.vscode-test-web/
+.nyc_output/
+
+# =============================================================================
+# C# / .NET
+# =============================================================================
 bin/
 obj/
+publish/
+artifacts/
+*.user
+*.userosscache
+*.suo
+*.vs/
+.vs/
+project.lock.json
+*.nupkg
+*.snupkg
+*.TargetFrameworkMonikers
+*.dotCover
 
-.commandtree/
+# =============================================================================
+# F#
+# =============================================================================
+.ionide/
+
+# =============================================================================
+# FORGE-SPECIFIC
+# =============================================================================
+forge.toml
 forge.vsix
-.vscode-test/
-node_modules/
-editors/zed/target/
-.too_many_cooks/
-.playwright-mcp/
-logs/
-
-editors/vscode/coverage/
 
 # Screenshot test artifacts at root
 /*.png
@@ -43,3 +115,6 @@ forge-zed-extension.tar.gz
 
 editors/rider/.intellijPlatform/
 forge-rider.zip
+
+
+.forge/profiles/

@@ -1,0 +1,140 @@
+import * as vscode from 'vscode';
+import { info } from './log';
+
+let fsiTerminal: vscode.Terminal | undefined;
+
+/** Start F# Interactive and optionally send selected text. */
+function sendToFsi(): void {
+  const editor = vscode.window.activeTextEditor;
+  if (editor?.document.languageId !== 'fsharp') {
+    void vscode.window.showWarningMessage('No F# file is active.');
+    return;
+  }
+
+  const selection = editor.selection;
+  const text = selection.isEmpty
+    ? editor.document.lineAt(selection.active.line).text
+    : editor.document.getText(selection);
+
+  if (fsiTerminal === undefined || fsiTerminal.exitStatus !== undefined) {
+    fsiTerminal = vscode.window.createTerminal({
+      name: 'F# Interactive',
+      shellPath: 'dotnet',
+      shellArgs: ['fsi'],
+    });
+  }
+
+  fsiTerminal.show(true);
+  fsiTerminal.sendText(text + ';;');
+  info(`Sent to FSI: ${text.substring(0, 50)}...`);
+}
+
+/** Generate a .fsi signature file for the active F# file. */
+async function generateSignatureFile(): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (editor?.document.languageId !== 'fsharp') {
+    void vscode.window.showWarningMessage('No F# file is active.');
+    return;
+  }
+
+  const fsPath = editor.document.uri.fsPath;
+  if (!fsPath.endsWith('.fs')) {
+    void vscode.window.showWarningMessage('Only .fs files can generate .fsi signatures.');
+    return;
+  }
+
+  const fsiPath = fsPath.replace(/\.fs$/, '.fsi');
+  const content = editor.document.getText();
+  const signature = extractSignature(content);
+
+  const uri = vscode.Uri.file(fsiPath);
+  const edit = new vscode.WorkspaceEdit();
+  edit.createFile(uri, { overwrite: true });
+  edit.insert(uri, new vscode.Position(0, 0), signature);
+  await vscode.workspace.applyEdit(edit);
+  await vscode.window.showTextDocument(uri);
+  info(`Generated signature file: ${fsiPath}`);
+}
+
+/** Extract a basic signature from F# source code. */
+function extractSignature(source: string): string {
+  const lines = source.split('\n');
+  const sigLines: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('module ') || trimmed.startsWith('namespace ')) {
+      sigLines.push(line);
+    } else if (trimmed.startsWith('type ')) {
+      sigLines.push(line);
+    } else if (trimmed.startsWith('let ') && !trimmed.startsWith('let private')) {
+      // Convert let binding to val signature.
+      const match = /^(\s*)let\s+(\w+)/.exec(line);
+      if (match !== null) {
+        sigLines.push(`${String(match[1])}val ${String(match[2])} : 'a`);
+      }
+    } else if (trimmed.startsWith('val ') || trimmed.startsWith('member ')) {
+      sigLines.push(line);
+    } else if (trimmed === '') {
+      sigLines.push('');
+    }
+  }
+
+  return sigLines.join('\n') + '\n';
+}
+
+/** Send entire file to FSI via #load. */
+function sendFileToFsi(): void {
+  const editor = vscode.window.activeTextEditor;
+  if (editor?.document.languageId !== 'fsharp') {
+    void vscode.window.showWarningMessage('No F# file is active.');
+    return;
+  }
+
+  if (fsiTerminal === undefined || fsiTerminal.exitStatus !== undefined) {
+    fsiTerminal = vscode.window.createTerminal({
+      name: 'F# Interactive',
+      shellPath: 'dotnet',
+      shellArgs: ['fsi'],
+    });
+  }
+
+  fsiTerminal.show(true);
+  fsiTerminal.sendText(`#load @"${editor.document.uri.fsPath}";;`);
+  info(`Loaded ${editor.document.fileName} in FSI`);
+}
+
+/** Start a fresh FSI session. */
+function startFsi(): void {
+  if (fsiTerminal !== undefined) {
+    fsiTerminal.dispose();
+    fsiTerminal = undefined;
+  }
+  fsiTerminal = vscode.window.createTerminal({
+    name: 'F# Interactive',
+    shellPath: 'dotnet',
+    shellArgs: ['fsi'],
+  });
+  fsiTerminal.show();
+  info('Started fresh FSI session');
+}
+
+/** Register FSI commands. */
+export function registerFsiCommands(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forge.fsi.send', sendToFsi),
+    vscode.commands.registerCommand('forge.fsi.sendFile', sendFileToFsi),
+    vscode.commands.registerCommand('forge.fsi.start', startFsi),
+    vscode.commands.registerCommand('forge.fsi.generateSignature', generateSignatureFile),
+  );
+
+  context.subscriptions.push(
+    vscode.window.onDidCloseTerminal((terminal) => {
+      if (terminal === fsiTerminal) {
+        fsiTerminal = undefined;
+      }
+    }),
+  );
+
+  info('FSI commands registered');
+}

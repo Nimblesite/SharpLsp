@@ -74,6 +74,77 @@ make package-rider        # requires JDK 21 (brew install openjdk@21)
 
 Then in Rider: **Settings → Plugins → ⚙ → Install Plugin from Disk…** and pick `forge-rider.zip`. Restart. The plugin attaches `forge-lsp` over LSP for `.cs/.csx/.fs/.fsx/.fsi` and adds a **Forge Solution** tool window that mirrors the VS Code solution explorer (projects, NuGet packages, project references, namespaces, types, members — all via the same `forge/*` custom LSP requests).
 
+### Neovim
+
+```lua
+local lspconfig = require('lspconfig')
+local configs = require('lspconfig.configs')
+
+if not configs.forge_lsp then
+  configs.forge_lsp = {
+    default_config = {
+      cmd = { "forge-lsp" },
+      filetypes = { "cs", "fsharp" },
+      root_dir = lspconfig.util.root_pattern("*.sln", "*.csproj", "*.fsproj"),
+    },
+  }
+end
+
+lspconfig.forge_lsp.setup({})
+```
+
+### Helix
+
+Add to your `languages.toml`:
+
+```toml
+[[language]]
+name = "c-sharp"
+language-servers = ["forge-lsp"]
+
+[[language]]
+name = "fsharp"
+language-servers = ["forge-lsp"]
+
+[language-server.forge-lsp]
+command = "forge-lsp"
+```
+
+### Emacs
+
+With **lsp-mode**:
+
+```elisp
+(lsp-register-client
+  (make-lsp-client
+    :new-connection (lsp-stdio-connection '("forge-lsp"))
+    :major-modes '(csharp-mode fsharp-mode)
+    :server-id 'forge-lsp))
+```
+
+With **eglot**:
+
+```elisp
+(add-to-list 'eglot-server-programs
+             '((csharp-mode fsharp-mode) . ("forge-lsp")))
+```
+
+### Sublime Text
+
+Install the [LSP](https://packagecontrol.io/packages/LSP) package, then add a custom client in **Settings > Package Settings > LSP > Settings**:
+
+```json
+{
+  "clients": {
+    "forge-lsp": {
+      "enabled": true,
+      "command": ["forge-lsp"],
+      "selector": "source.cs | source.fsharp"
+    }
+  }
+}
+```
+
 ## Architecture
 
 Three-tier architecture:

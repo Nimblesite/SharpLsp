@@ -5,6 +5,11 @@ edition = "2021"
 description = "Forge: The .NET Language Server Platform"
 license = "MIT"
 
+[features]
+# Sequestered formatting module (Roslyn + Fantomas). Disabled by default.
+# Use CSharpier for C# and Fantomas via Ionide for F# instead.
+formatting = []
+
 [dependencies]
 # LSP
 lsp-server = "0.7"
@@ -57,6 +62,8 @@ expect_used          = "deny"
 panic                = "deny"
 todo                 = "deny"
 unimplemented        = "deny"
+unreachable          = "deny"
+missing_docs_in_private_items = "deny"
 # Implicit panics from out-of-bounds indexing — use .get() instead
 indexing_slicing     = "deny"
 # Silent lossy type conversions via `as` — use .into()/.try_into() instead
@@ -92,6 +99,18 @@ rest_pat_in_fully_bound_structs = "deny"
 clone_on_ref_ptr     = "deny"
 
 [workspace.lints.rust]
-# Dead code must be removed, not left to rot
-dead_code            = "deny"
-unused_variables     = "deny"
+unsafe_code = "deny"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+unused_imports = "deny"
+dead_code = "deny"
+unused_variables = "deny"
+unused_mut = "deny"
+unused_assignments = "deny"
+unused_results = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+elided_lifetimes_in_paths = "deny"
+future_incompatible = { level = "deny", priority = -1 }
+nonstandard_style = { level = "deny", priority = -1 }
+rust_2018_idioms = { level = "deny", priority = -1 }

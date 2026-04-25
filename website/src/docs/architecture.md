@@ -33,8 +33,9 @@ A long-running .NET 10 process providing:
 
 A separate .NET 10 process for F# support:
 
-- FSharp.Compiler.Service (`FSharpChecker`) for type checking, hover, and semantic analysis
-- MessagePack serialization over the same IPC transport as the C# sidecar
+- FSharpChecker for type checking and analysis
+- Ionide.ProjInfo for project system integration
+- FSharpLint for additional diagnostics
 
 ## IPC Protocol
 

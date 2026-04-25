@@ -34,6 +34,14 @@ pub fn handle_stop_trace(req: Request) -> Result<serde_json::Value> {
     Ok(serde_json::to_value(result)?)
 }
 
+/// Handle `forge/profiler/convertTrace`.
+pub fn handle_convert_trace(req: Request) -> Result<serde_json::Value> {
+    info!("Handling forge/profiler/convertTrace");
+    let params: trace::ConvertTraceParams = serde_json::from_value(req.params)?;
+    let result = trace::convert(&params)?;
+    Ok(serde_json::to_value(result)?)
+}
+
 /// Handle `forge/profiler/startCounters`.
 pub fn handle_start_counters(
     req: Request,
@@ -123,5 +131,6 @@ pub fn handle_get_object_graph(
 /// Wire type for stopping a profiler session (trace or counters).
 #[derive(serde::Deserialize)]
 struct StopSessionParams {
+    /// Identifier of the session to stop.
     session_id: String,
 }
