@@ -51,14 +51,14 @@ public static class SolutionFileReader
     {
         return string.IsNullOrWhiteSpace(path)
             ? throw new ArgumentException("Solution path is required.", nameof(path))
-            : System.IO.Path.GetFullPath(path);
+            : Path.GetFullPath(path);
     }
 
     private static string? ValidateSupportedFile(string fullPath)
     {
         return !File.Exists(fullPath) ? $"Solution file does not exist: {fullPath}"
             : IsSolutionFile(fullPath) ? null
-            : $"Unsupported solution file extension '{System.IO.Path.GetExtension(fullPath)}'. "
+            : $"Unsupported solution file extension '{Path.GetExtension(fullPath)}'. "
                 + "Expected .sln or .slnx.";
     }
 
@@ -192,25 +192,22 @@ public static class SolutionFileReader
     private static string ProjectNameFromPath(string path)
     {
         var normalized = NormalizeSeparators(path);
-        return System.IO.Path.GetFileNameWithoutExtension(normalized) ?? normalized;
+        return Path.GetFileNameWithoutExtension(normalized) ?? normalized;
     }
 
     private static string ResolveSolutionPath(string solutionPath, string relativePath)
     {
-        if (System.IO.Path.IsPathRooted(relativePath))
+        if (Path.IsPathRooted(relativePath))
         {
-            return System.IO.Path.GetFullPath(relativePath);
+            return Path.GetFullPath(relativePath);
         }
 
-        var solutionDir =
-            System.IO.Path.GetDirectoryName(solutionPath) ?? Directory.GetCurrentDirectory();
-        return System.IO.Path.GetFullPath(
-            System.IO.Path.Combine(solutionDir, NormalizeSeparators(relativePath))
-        );
+        var solutionDir = Path.GetDirectoryName(solutionPath) ?? Directory.GetCurrentDirectory();
+        return Path.GetFullPath(Path.Combine(solutionDir, NormalizeSeparators(relativePath)));
     }
 
     private static string NormalizeSeparators(string path)
     {
-        return path.Replace('\\', System.IO.Path.DirectorySeparatorChar);
+        return path.Replace('\\', Path.DirectorySeparatorChar);
     }
 }

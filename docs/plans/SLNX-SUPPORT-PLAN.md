@@ -1,6 +1,6 @@
 # SLNX Support Plan
 
-**Status:** Planned
+**Status:** Implemented with one deferred follow-up
 **Last Updated:** 2026-04-26
 **Related specs:** `docs/specs/forge-spec.md`, `docs/specs/SOLUTION-EXPLORER-SPEC.md`, `docs/specs/RIDER-PLUGIN-SPEC.md`
 
@@ -53,9 +53,9 @@ symbol extraction.
   - Package targets `net8.0` and `net472`; Forge sidecars target `net10.0`, so
     the package is compatible.
 
-## Current Forge State
+## Starting Forge State Before This Plan
 
-Forge already has partial `.slnx` support in the C# sidecar:
+Forge already had partial `.slnx` support in the C# sidecar:
 
 - `sidecars/Forge.Sidecar.CSharp/Workspace/SolutionLoader.cs` discovers
   `.slnx` alongside `.sln`.
@@ -66,7 +66,7 @@ Forge already has partial `.slnx` support in the C# sidecar:
 - `sidecars/Forge.Sidecar.CSharp.Tests/WorkspaceManagerTests.cs` covers opening
   a minimal `.slnx` and recursively discovering one.
 
-The remaining gaps are wider than the sidecar loader:
+The initial gaps were wider than the sidecar loader:
 
 - `editors/vscode/src/solution.ts` only discovers `**/*.sln`, strips only the
   `.sln` suffix, and shows `.sln`-only messages.
@@ -269,27 +269,32 @@ where both are supported. Keep `.slnx` limitations explicit.
 
 ## TODO
 
-- [ ] Update `docs/specs/forge-spec.md` project-system text to say `.sln/.slnx`.
-- [ ] Update `docs/specs/SOLUTION-EXPLORER-SPEC.md` request examples and architecture diagram for `.sln/.slnx`.
-- [ ] Add `Microsoft.VisualStudio.SolutionPersistence` direct package reference to the sidecar project that owns solution parsing.
-- [ ] Add `SolutionFileModel`, `SolutionProjectEntry`, `SolutionFolderEntry`, and `SolutionItemEntry` DTOs in `Forge.Sidecar.Common`.
-- [ ] Implement `solution/read` using `SolutionSerializers.GetSerializerByMoniker`.
-- [ ] Add sidecar tests for `.sln`, flat `.slnx`, nested-folder `.slnx`, solution-items `.slnx`, and malformed `.slnx`.
-- [ ] Change `src/main.rs` and `src/workspace_symbols.rs` so `forge/workspaceSymbols` requests the sidecar solution model.
-- [ ] Remove or quarantine the manual legacy `.sln` parser in `src/workspace_symbols.rs`.
-- [ ] Add Rust E2E coverage for `forge/workspaceSymbols` against a real `.slnx`.
-- [ ] Update VS Code activation events to include `workspaceContains:**/*.slnx`.
-- [ ] Update VS Code solution discovery to find both `.sln` and `.slnx`.
-- [ ] Update VS Code messages, welcome text, comments, and state names from `.sln`-only wording to solution-file wording.
-- [ ] Add VS Code tests for single `.slnx`, multiple `.slnx`, and mixed `.sln` plus `.slnx` selection.
-- [ ] Include `.slnx` in VS Code solution/project refresh watchers where solution reload is expected.
-- [ ] Update VS Code scaffolding solution lookup to use selected `.sln/.slnx` paths.
-- [ ] Update Rider default solution discovery to include `.slnx`.
-- [ ] Include `.slnx` in Rider VFS refresh triggers.
-- [ ] Update Rider `.sln`-only UI text to `.sln/.slnx` or "solution".
-- [ ] Update Zed slash command help/completion to mention `.slnx`.
-- [ ] Add a Zed `.slnx` parsing path only if the extension cannot call Forge LSP for `forge/workspaceSymbols`.
-- [ ] Fix F# sidecar `workspace/open` so explicit `.sln` and `.slnx` paths load `.fsproj` entries from the selected solution.
-- [ ] Add F# sidecar tests for explicit `.slnx` with one `.fsproj`.
+- [x] Update `docs/specs/forge-spec.md` project-system text to say `.sln/.slnx`.
+- [x] Update `docs/specs/SOLUTION-EXPLORER-SPEC.md` request examples and architecture diagram for `.sln/.slnx`.
+- [x] Add `Microsoft.VisualStudio.SolutionPersistence` direct package reference to the sidecar project that owns solution parsing.
+- [x] Add `SolutionFileModel`, `SolutionProjectEntry`, `SolutionFolderEntry`, and `SolutionItemEntry` DTOs in `Forge.Sidecar.Common`.
+- [x] Implement `solution/read` using `SolutionSerializers.GetSerializerByMoniker`.
+- [x] Add sidecar tests for `.sln`, flat `.slnx`, nested-folder `.slnx`, solution-items `.slnx`, and malformed `.slnx`.
+- [x] Change `src/main.rs` and `src/workspace_symbols.rs` so `forge/workspaceSymbols` requests the sidecar solution model.
+- [x] Remove or quarantine the manual legacy `.sln` parser in `src/workspace_symbols.rs`.
+- [x] Add Rust E2E coverage for `forge/workspaceSymbols` against a real `.slnx`.
+- [x] Update VS Code activation events to include `workspaceContains:**/*.slnx`.
+- [x] Update VS Code solution discovery to find both `.sln` and `.slnx`.
+- [x] Update VS Code messages, welcome text, comments, and state names from `.sln`-only wording to solution-file wording.
+- [x] Add VS Code tests for single `.slnx`, multiple `.slnx`, and mixed `.sln` plus `.slnx` selection.
+- [x] Include `.slnx` in VS Code solution/project refresh watchers where solution reload is expected.
+- [x] Update VS Code scaffolding solution lookup to use selected `.sln/.slnx` paths.
+- [x] Update Rider default solution discovery to include `.slnx`.
+- [x] Include `.slnx` in Rider VFS refresh triggers.
+- [x] Update Rider `.sln`-only UI text to `.sln/.slnx` or "solution".
+- [x] Update Zed slash command help/completion to mention `.slnx`.
+- [x] Add a Zed `.slnx` parsing path only if the extension cannot call Forge LSP for `forge/workspaceSymbols`.
+- [x] Fix F# sidecar `workspace/open` so explicit `.sln` and `.slnx` paths load `.fsproj` entries from the selected solution.
+- [x] Add F# sidecar tests for explicit `.slnx` with one `.fsproj`.
 - [ ] Add mixed C#/F# `.slnx` full-stack coverage after F# multi-project loading is ready.
-- [ ] Verify `dotnet build <solution>.slnx` in CI fixtures uses SDK `9.0.200+` or skip with a clear version guard.
+- [x] Verify `dotnet build <solution>.slnx` in CI fixtures uses SDK `9.0.200+` or skip with a clear version guard.
+
+Deferred note: mixed C#/F# full-stack `.slnx` coverage remains gated on the
+F# sidecar moving from single-project state to multi-project workspace state.
+Current CI and release workflows use `actions/setup-dotnet` with `10.0.x`, which
+satisfies the `.slnx` CLI minimum of SDK `9.0.200`.
