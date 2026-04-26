@@ -1,4 +1,5 @@
 using Forge.Sidecar.Common;
+using Forge.Sidecar.Common.Solutions;
 using Forge.Sidecar.CSharp.Workspace;
 using MessagePack;
 using Outcome;
@@ -16,6 +17,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
     {
         Register("workspace/open", HandleWorkspaceOpenAsync);
         Register("workspace/status", HandleWorkspaceStatusAsync);
+        Register("solution/read", HandleSolutionReadAsync);
         Register("workspace/diagnostics", HandleDiagnosticsAsync);
         Register("workspace/diagnostics/all", HandleAllDiagnosticsAsync);
         Register("textDocument/didChange", HandleDidChangeAsync);
@@ -404,6 +406,23 @@ internal sealed partial class CSharpSidecar : SidecarHost
         catch (Exception ex)
         {
             return Task.FromResult(ByteResult.Failure(ex.Message));
+        }
+    }
+
+    private static async Task<ByteResult> HandleSolutionReadAsync(
+        byte[] payload,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            var path = MessagePackSerializer.Deserialize<string>(payload, cancellationToken: ct);
+            var result = await SolutionFileReader.ReadAsync(path, ct).ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
         }
     }
 

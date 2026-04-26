@@ -18,4 +18,5 @@ dead_code = "deny"
 unused_variables = "deny"
 
 [dependencies]
+quick-xml = "0.38"
 zed_extension_api = "0.7"

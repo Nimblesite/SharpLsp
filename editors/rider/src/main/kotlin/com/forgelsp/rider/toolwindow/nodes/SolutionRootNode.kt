@@ -7,7 +7,7 @@ import com.intellij.ui.ColoredTreeCellRenderer
 import java.nio.file.Path
 
 /**
- * Top-level node for a solution (.sln) file. Loads the full list of
+ * Top-level node for a solution file. Loads the full list of
  * projects via `forge/workspaceSymbols` the first time it's expanded.
  */
 class SolutionRootNode(
@@ -18,7 +18,7 @@ class SolutionRootNode(
 
     override fun render(renderer: ColoredTreeCellRenderer) {
         renderer.icon = AllIcons.Nodes.Module
-        val label = solutionPath?.fileName?.toString() ?: "(no .sln found)"
+        val label = solutionPath?.fileName?.toString() ?: "(no .sln/.slnx found)"
         renderer.append("Solution: ")
         renderer.append(label)
     }
@@ -28,8 +28,8 @@ class SolutionRootNode(
             callback(
                 listOf(
                     ErrorNode(
-                        "No .sln found in project root. " +
-                            "Open a folder containing a .sln file to see the tree.",
+                        "No .sln or .slnx found in project root. " +
+                            "Open a folder containing one solution file to see the tree.",
                     ),
                 ),
             )

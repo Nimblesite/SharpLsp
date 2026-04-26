@@ -64,7 +64,7 @@ make package-zed                  # stages target/zed-extension/ + forge-zed-ext
 
 Then in Zed: command palette → `zed: install dev extension` → pick `target/zed-extension/` (absolute path). Zed builds the wasm and loads it. Re-run `make package-zed` and hit **Rebuild** to iterate.
 
-Full `forge-lsp` (hover, completions, go-to-def, diagnostics, …) works in Zed over stdio. The `/forge-tree <Solution.sln>` slash command renders the solution tree in the assistant. A sidebar Solution Explorer is not possible — Zed's extension API has no panel/tree-view/webview contribution point.
+Full `forge-lsp` (hover, completions, go-to-def, diagnostics, …) works in Zed over stdio. The `/forge-tree <Solution.sln|Solution.slnx>` slash command renders the solution tree in the assistant. A sidebar Solution Explorer is not possible — Zed's extension API has no panel/tree-view/webview contribution point.
 
 ### JetBrains Rider
 
@@ -85,7 +85,7 @@ if not configs.forge_lsp then
     default_config = {
       cmd = { "forge-lsp" },
       filetypes = { "cs", "fsharp" },
-      root_dir = lspconfig.util.root_pattern("*.sln", "*.csproj", "*.fsproj"),
+      root_dir = lspconfig.util.root_pattern("*.sln", "*.slnx", "*.csproj", "*.fsproj"),
     },
   }
 end

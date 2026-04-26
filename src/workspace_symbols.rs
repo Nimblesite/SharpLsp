@@ -1,16 +1,18 @@
 //! Custom `forge/workspaceSymbols` request handler.
 //!
 //! Walks all `.cs` / `.fs` files discovered via `.csproj` / `.fsproj` files
-//! referenced by a `.sln`, parses each with tree-sitter, and returns the
+//! referenced by a `.sln` or `.slnx`, parses each with tree-sitter, and returns the
 //! full code hierarchy grouped by project and namespace.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use tree_sitter::Node;
 
+use crate::sidecar::manager::SidecarManager;
 use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::utils::usize_to_u32;
 use crate::vfs::Vfs;
@@ -18,7 +20,7 @@ use crate::vfs::Vfs;
 /// Request params for `forge/workspaceSymbols`.
 #[derive(Debug, Deserialize)]
 pub struct WorkspaceSymbolsParams {
-    /// Path to the `.sln` file to scan.
+    /// Path to the `.sln` or `.slnx` file to scan.
     pub solution: String,
 }
 
@@ -27,19 +29,19 @@ pub struct WorkspaceSymbolsParams {
 pub struct WorkspaceSymbolsResponse {
     /// Projects discovered in the solution.
     pub projects: Vec<ProjectNode>,
-    /// Virtual solution folders from the `.sln`.
+    /// Virtual solution folders from the solution file.
     #[serde(rename = "solutionFolders")]
     pub solution_folders: Vec<SolutionFolderNode>,
 }
 
-/// A solution folder (virtual grouping in .sln).
+/// A solution folder (virtual grouping in a solution file).
 #[derive(Debug, Serialize)]
 pub struct SolutionFolderNode {
     /// Display name of the folder.
     pub name: String,
-    /// Unique GUID from the `.sln`.
+    /// Stable solution-folder identity from the sidecar model.
     pub guid: String,
-    /// GUID of the parent folder, if nested.
+    /// Stable identity of the parent folder, if nested.
     #[serde(rename = "parentGuid")]
     pub parent_guid: Option<String>,
 }
@@ -102,20 +104,95 @@ pub struct SymbolPosition {
     pub character: u32,
 }
 
+/// Sidecar DTO returned by `solution/read`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SolutionFileModel {
+    /// Absolute path to the solution file.
+    path: String,
+    /// Solution format: `sln` or `slnx`.
+    format: String,
+    /// Projects in declaration order.
+    projects: Vec<SolutionProjectEntry>,
+    /// Solution folders in declaration order.
+    folders: Vec<SolutionFolderEntry>,
+    /// Solution item files that are not project nodes.
+    files: Vec<SolutionItemEntry>,
+}
+
+/// Sidecar DTO for a project entry in the solution model.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SolutionProjectEntry {
+    /// Project display name.
+    display_name: String,
+    /// Absolute project path.
+    path: String,
+    /// Original solution-relative project path.
+    relative_path: String,
+    /// Project type name, GUID, or extension.
+    project_type: String,
+    /// Stable identity from the solution model.
+    identity: String,
+    /// Parent solution folder display name.
+    parent_folder: Option<String>,
+    /// Parent solution folder path.
+    parent_folder_path: Option<String>,
+    /// Zero-based project declaration order.
+    declaration_order: usize,
+}
+
+/// Sidecar DTO for a virtual solution folder.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SolutionFolderEntry {
+    /// Folder display name.
+    name: String,
+    /// Slash-delimited folder path.
+    path: String,
+    /// Stable identity from the solution model.
+    identity: String,
+    /// Parent folder path, if nested.
+    parent_path: Option<String>,
+    /// Parent folder name, if nested.
+    parent_name: Option<String>,
+    /// Zero-based folder declaration order.
+    declaration_order: usize,
+}
+
+/// Sidecar DTO for a solution item file.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SolutionItemEntry {
+    /// Absolute file path.
+    path: String,
+    /// Original solution-relative file path.
+    relative_path: String,
+    /// Parent folder name.
+    parent_folder: Option<String>,
+    /// Parent folder path.
+    parent_folder_path: Option<String>,
+    /// Zero-based file declaration order.
+    declaration_order: usize,
+}
+
 /// Handle the `forge/workspaceSymbols` request.
 pub fn handle(
     params: &WorkspaceSymbolsParams,
     parsers: &TsParsers,
     vfs: &Vfs,
+    runtime: &tokio::runtime::Runtime,
+    solution_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<WorkspaceSymbolsResponse> {
-    let sln_path = Path::new(&params.solution);
-    let sln_data = discover_solution(sln_path)?;
+    let sln_data = read_solution(params, runtime, solution_sidecar)?;
 
     info!(
-        "forge/workspaceSymbols: {} projects, {} folders from {}",
+        "forge/workspaceSymbols: {} projects, {} folders, {} files from {} ({})",
         sln_data.projects.len(),
         sln_data.folders.len(),
-        sln_path.display()
+        sln_data.file_count,
+        sln_data.path,
+        sln_data.format
     );
 
     let project_nodes: Vec<ProjectNode> = sln_data
@@ -123,17 +200,7 @@ pub fn handle(
         .iter()
         .filter_map(|proj| {
             let mut node = build_project_node(proj, parsers, vfs).ok()?;
-            // Resolve parent folder name from nesting.
-            if let Some(guid) = &proj.guid {
-                if let Some(parent_guid) = sln_data.nesting.get(guid) {
-                    let parent_name = sln_data
-                        .folders
-                        .iter()
-                        .find(|f| &f.guid == parent_guid)
-                        .map(|f| f.name.clone());
-                    node.parent_folder = parent_name;
-                }
-            }
+            node.parent_folder.clone_from(&proj.parent_folder);
             Some(node)
         })
         .collect();
@@ -146,164 +213,189 @@ pub fn handle(
 
 /// Parsed solution data: projects, folders, and nesting hierarchy.
 struct SolutionData {
-    /// Project entries discovered in the `.sln`.
+    /// Absolute solution path.
+    path: String,
+    /// Solution format.
+    format: String,
+    /// Project entries discovered in the solution.
     projects: Vec<ProjectInfo>,
     /// Solution folder entries.
     folders: Vec<SolutionFolderNode>,
-    /// Maps project/folder GUID to parent folder GUID.
-    nesting: std::collections::HashMap<String, String>,
+    /// Number of solution item files ignored for project tree purposes.
+    file_count: usize,
 }
 
-/// Well-known type GUID for solution folders in `.sln` files.
-const SOLUTION_FOLDER_GUID: &str = "2150E333-8FDC-42A3-9474-1A3956D46DE8";
-
-/// Discover projects, folders, and nesting from a `.sln` file.
-fn discover_solution(sln_path: &Path) -> Result<SolutionData> {
-    let sln_dir = sln_path.parent().context("sln has no parent")?;
-    let content = std::fs::read_to_string(sln_path)
-        .with_context(|| format!("read {}", sln_path.display()))?;
-
-    let mut projects = Vec::new();
-    let mut folders = Vec::new();
-    let mut nesting = std::collections::HashMap::new();
-
-    // Parse projects and solution folders.
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if !trimmed.starts_with("Project(") {
-            continue;
-        }
-
-        if let Some((type_guid, name, path, proj_guid)) = parse_project_line(trimmed) {
-            if type_guid.to_uppercase() == SOLUTION_FOLDER_GUID {
-                folders.push(SolutionFolderNode {
-                    name,
-                    guid: proj_guid.clone(),
-                    parent_guid: None,
-                });
-            } else if path.ends_with(".csproj") || path.ends_with(".fsproj") {
-                let normalized = path.replace('\\', "/");
-                let full_path = sln_dir.join(&normalized);
-                if full_path.exists() {
-                    let proj_name = Path::new(&normalized)
-                        .file_stem()
-                        .map_or_else(|| normalized.clone(), |s| s.to_string_lossy().to_string());
-                    projects.push(ProjectInfo {
-                        name: proj_name,
-                        path: full_path.to_string_lossy().to_string(),
-                        guid: Some(proj_guid),
-                    });
-                }
-            }
-        }
-    }
-
-    // Parse NestedProjects section for folder hierarchy.
-    let mut in_nested = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.contains("GlobalSection(NestedProjects)") {
-            in_nested = true;
-            continue;
-        }
-        if in_nested && trimmed == "EndGlobalSection" {
-            break;
-        }
-        if in_nested {
-            // Format: {CHILD-GUID} = {PARENT-GUID}
-            if let Some((child, parent)) = parse_nested_line(trimmed) {
-                let _ = nesting.insert(child, parent);
-            }
-        }
-    }
-
-    // Set parent_guid on folders.
-    for folder in &mut folders {
-        folder.parent_guid = nesting.get(&folder.guid).cloned();
-    }
-
+/// Read solution structure from the sidecar-owned solution model.
+fn read_solution(
+    params: &WorkspaceSymbolsParams,
+    runtime: &tokio::runtime::Runtime,
+    solution_sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<SolutionData> {
+    let model = request_solution_model(&params.solution, runtime, solution_sidecar)?;
+    let projects = model_projects(&model);
+    let folders = model_folders(&model.folders);
+    let file_count = solution_item_count(&model.files);
     Ok(SolutionData {
+        path: model.path,
+        format: model.format,
         projects,
         folders,
-        nesting,
+        file_count,
     })
 }
 
-/// Parse a `Project(...)` line into (`type_guid`, `name`, `path`, `proj_guid`).
-fn parse_project_line(line: &str) -> Option<(String, String, String, String)> {
-    // Project("{TYPE-GUID}") = "Name", "Path", "{PROJ-GUID}"
-    let after_paren = line.strip_prefix("Project(\"")?;
-    let type_end = after_paren.find('"')?;
-    let type_guid = after_paren[..type_end].to_string();
-    let rest = &after_paren[type_end..];
-
-    let parts: Vec<&str> = rest.split(',').collect();
-    if parts.len() < 3 {
-        return None;
-    }
-
-    let name = parts
-        .first()?
-        .split('=')
-        .nth(1)?
-        .trim()
-        .trim_matches('"')
-        .to_string();
-    let path = parts.get(1)?.trim().trim_matches('"').to_string();
-    let guid = parts
-        .get(2)?
-        .trim()
-        .trim_matches('"')
-        .trim_matches('{')
-        .trim_matches('}')
-        .to_string();
-
-    Some((type_guid, name, path, format!("{{{guid}}}")))
+/// Ask the sidecar to read a solution file with the official serializers.
+fn request_solution_model(
+    solution: &str,
+    runtime: &tokio::runtime::Runtime,
+    solution_sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<SolutionFileModel> {
+    let sidecar = solution_sidecar.context("forge/workspaceSymbols requires a sidecar")?;
+    let payload = rmp_serde::to_vec(solution).context("serialize solution/read request")?;
+    let response = runtime
+        .block_on(sidecar.request("solution/read", payload))
+        .context("sidecar solution/read request")?;
+    rmp_serde::from_slice(&response).context("deserialize solution/read response")
 }
 
-/// Parse a `NestedProjects` line into (`child_guid`, `parent_guid`).
-fn parse_nested_line(line: &str) -> Option<(String, String)> {
-    let parts: Vec<&str> = line.split('=').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    let child = parts.first()?.trim().to_string();
-    let parent = parts.get(1)?.trim().to_string();
-    if child.starts_with('{') && parent.starts_with('{') {
-        Some((child, parent))
-    } else {
-        None
+/// Convert sidecar project entries to workspace-symbol project info.
+fn model_projects(model: &SolutionFileModel) -> Vec<ProjectInfo> {
+    let mut projects: Vec<ProjectInfo> = model
+        .projects
+        .iter()
+        .filter(|project| is_dotnet_project(project))
+        .map(|project| project_info(project, &model.folders))
+        .collect();
+    projects.sort_by(|left, right| {
+        left.declaration_order
+            .cmp(&right.declaration_order)
+            .then_with(|| left.identity.cmp(&right.identity))
+    });
+    projects
+}
+
+/// Convert a sidecar project DTO to local project info.
+fn project_info(project: &SolutionProjectEntry, folders: &[SolutionFolderEntry]) -> ProjectInfo {
+    ProjectInfo {
+        name: project_name(project),
+        path: project.path.clone(),
+        identity: project.identity.clone(),
+        parent_folder: parent_folder_name(project, folders),
+        declaration_order: project.declaration_order,
     }
 }
 
-/// Parse a .sln `Project(...)` line to extract the relative path.
-#[cfg(test)]
-fn extract_project_path(line: &str) -> Option<String> {
-    let trimmed = line.trim();
-    if !trimmed.starts_with("Project(") {
-        return None;
+/// Resolve a project display name, falling back to the project file stem.
+fn project_name(project: &SolutionProjectEntry) -> String {
+    if !project.display_name.is_empty() {
+        return project.display_name.clone();
     }
 
-    // Format: Project("{GUID}") = "Name", "Path.csproj", "{GUID}"
-    let parts: Vec<&str> = trimmed.split(',').collect();
-    let path_part = parts.get(1)?.trim().trim_matches('"');
-
-    if path_part.ends_with(".csproj") || path_part.ends_with(".fsproj") {
-        // Normalize backslashes to forward slashes.
-        Some(path_part.replace('\\', "/"))
-    } else {
-        None
-    }
+    Path::new(&project.path).file_stem().map_or_else(
+        || project.relative_path.clone(),
+        |stem| stem.to_string_lossy().to_string(),
+    )
 }
 
-/// Intermediate representation of a project discovered in a `.sln`.
+/// Resolve a project's parent solution-folder name.
+fn parent_folder_name(
+    project: &SolutionProjectEntry,
+    folders: &[SolutionFolderEntry],
+) -> Option<String> {
+    project.parent_folder.clone().or_else(|| {
+        let parent_path = project.parent_folder_path.as_ref()?;
+        folders
+            .iter()
+            .find(|folder| folder.path == *parent_path)
+            .map(|folder| folder.name.clone())
+    })
+}
+
+/// Convert sidecar folder entries to workspace-symbol folder nodes.
+fn model_folders(folders: &[SolutionFolderEntry]) -> Vec<SolutionFolderNode> {
+    let mut ordered: Vec<&SolutionFolderEntry> = folders.iter().collect();
+    ordered.sort_by_key(|folder| folder.declaration_order);
+    ordered
+        .into_iter()
+        .map(|folder| SolutionFolderNode {
+            name: folder.name.clone(),
+            guid: folder.identity.clone(),
+            parent_guid: parent_folder_identity(folder, folders),
+        })
+        .collect()
+}
+
+/// Resolve a parent folder identity from a slash-delimited folder path.
+fn parent_folder_identity(
+    folder: &SolutionFolderEntry,
+    folders: &[SolutionFolderEntry],
+) -> Option<String> {
+    folder
+        .parent_path
+        .as_ref()
+        .and_then(|parent_path| {
+            folders
+                .iter()
+                .find(|candidate| candidate.path == *parent_path)
+                .map(|parent| parent.identity.clone())
+        })
+        .or_else(|| {
+            let parent_name = folder.parent_name.as_ref()?;
+            folders
+                .iter()
+                .find(|candidate| candidate.name == *parent_name)
+                .map(|parent| parent.identity.clone())
+        })
+}
+
+/// Count solution item files while touching every field in the sidecar DTO.
+fn solution_item_count(files: &[SolutionItemEntry]) -> usize {
+    files
+        .iter()
+        .filter(|file| {
+            !file.path.is_empty()
+                || !file.relative_path.is_empty()
+                || file.parent_folder.is_some()
+                || file.parent_folder_path.is_some()
+                || file.declaration_order > 0
+        })
+        .count()
+}
+
+/// Check whether the sidecar project entry is a C# or F# project.
+fn is_dotnet_project(project: &SolutionProjectEntry) -> bool {
+    is_dotnet_project_path(&project.path)
+        || is_dotnet_project_path(&project.relative_path)
+        || is_dotnet_project_type(&project.project_type)
+}
+
+/// Check whether a path points at a C# or F# project file.
+fn is_dotnet_project_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("csproj") || extension.eq_ignore_ascii_case("fsproj")
+        })
+}
+
+/// Check whether a project type marker identifies a C# or F# project.
+fn is_dotnet_project_type(project_type: &str) -> bool {
+    project_type.eq_ignore_ascii_case(".csproj") || project_type.eq_ignore_ascii_case(".fsproj")
+}
+
+/// Intermediate representation of a project discovered in a solution.
 struct ProjectInfo {
     /// Project name.
     name: String,
     /// Absolute path to the project file.
     path: String,
-    /// GUID from the solution file.
-    guid: Option<String>,
+    /// Stable identity from the solution model.
+    identity: String,
+    /// Name of the parent solution folder, if any.
+    parent_folder: Option<String>,
+    /// Zero-based declaration order from the solution model.
+    declaration_order: usize,
 }
 
 /// Build a `ProjectNode` by finding and parsing all source files.
@@ -328,7 +420,7 @@ fn build_project_node(
         name: project.name.clone(),
         path: project.path.clone(),
         symbols,
-        parent_folder: None,
+        parent_folder: project.parent_folder.clone(),
     })
 }
 
@@ -598,36 +690,6 @@ mod tests {
         }
     }
 
-    // ── extract_project_path ──
-
-    #[test]
-    fn extract_project_path_csproj() {
-        let line = r#"Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyApp", "src\MyApp\MyApp.csproj", "{GUID}""#;
-        let result = extract_project_path(line).unwrap();
-        assert_eq!(result, "src/MyApp/MyApp.csproj");
-    }
-
-    #[test]
-    fn extract_project_path_fsproj() {
-        let line = r#"Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MyLib", "lib\MyLib\MyLib.fsproj", "{GUID}""#;
-        let result = extract_project_path(line).unwrap();
-        assert_eq!(result, "lib/MyLib/MyLib.fsproj");
-    }
-
-    #[test]
-    fn extract_project_path_non_project_line() {
-        assert!(extract_project_path("Global").is_none());
-        assert!(extract_project_path("").is_none());
-        assert!(extract_project_path("  EndProject").is_none());
-    }
-
-    #[test]
-    fn extract_project_path_solution_folder() {
-        // Solution folders have a path like "SolutionFolder" — no .csproj/.fsproj
-        let line = r#"Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{GUID}""#;
-        assert!(extract_project_path(line).is_none());
-    }
-
     // ── is_source_file ──
 
     #[test]
@@ -763,43 +825,5 @@ mod tests {
         assert_eq!(files.len(), 2, "must recurse into subdirs");
         assert!(files.iter().any(|f| f.ends_with("Nested.cs")));
         assert!(files.iter().any(|f| f.ends_with("Root.cs")));
-    }
-
-    // ── parse_project_line ──
-
-    #[test]
-    fn parse_project_line_returns_parts() {
-        let line = r#"Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyApp", "src/MyApp.csproj", "{11111111-1111-1111-1111-111111111111}""#;
-        let result = parse_project_line(line);
-        assert!(result.is_some());
-        let (type_guid, name, path, proj_guid) = result.unwrap();
-        assert!(type_guid.contains("FAE04EC0"));
-        assert_eq!(name, "MyApp");
-        assert_eq!(path, "src/MyApp.csproj");
-        assert!(proj_guid.contains("11111111"));
-    }
-
-    #[test]
-    fn parse_project_line_returns_none_for_invalid() {
-        assert!(parse_project_line("not a project line").is_none());
-        assert!(parse_project_line("Project(\"only-one-part\")").is_none());
-    }
-
-    // ── parse_nested_line ──
-
-    #[test]
-    fn parse_nested_line_valid() {
-        let line = "{CHILD-GUID} = {PARENT-GUID}";
-        let result = parse_nested_line(line);
-        assert!(result.is_some());
-        let (child, parent) = result.unwrap();
-        assert_eq!(child, "{CHILD-GUID}");
-        assert_eq!(parent, "{PARENT-GUID}");
-    }
-
-    #[test]
-    fn parse_nested_line_invalid_returns_none() {
-        assert!(parse_nested_line("no equals sign here").is_none());
-        assert!(parse_nested_line("no-brace = no-brace").is_none());
     }
 }

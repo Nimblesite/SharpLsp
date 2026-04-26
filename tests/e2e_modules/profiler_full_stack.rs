@@ -45,7 +45,10 @@ pub fn build_profile_target() -> std::path::PathBuf {
                     .saturating_add(jitter);
                 std::thread::sleep(Duration::from_millis(backoff_ms));
             }
-            assert!(built, "ProfileTarget build failed after retries: {last_stderr}");
+            assert!(
+                built,
+                "ProfileTarget build failed after retries: {last_stderr}"
+            );
             binary
         })
         .clone()

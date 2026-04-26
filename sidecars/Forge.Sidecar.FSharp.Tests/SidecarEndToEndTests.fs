@@ -105,6 +105,7 @@ type SidecarFixture() =
     let mutable transport: FramedTransport option = None
     let mutable nextId = 0
 
+    member _.Dir = dir
     member _.Src = Path.Combine(dir, "Library.fs")
     member _.NextId() = Interlocked.Increment(&nextId)
 
@@ -158,6 +159,24 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         let! r = fixture.Send("workspace/status", [||])
         Assert.Null(r.Error)
         Assert.Equal("loaded", deserialize<string>(r.Payload))
+    }
+
+    [<Fact>]
+    member _.``workspace open accepts explicit slnx with fsproj``() = task {
+        let slnxPath = Path.Combine(fixture.Dir, "TestProject.slnx")
+        File.WriteAllText(
+            slnxPath,
+            """<Solution>
+  <Project Path="TestProject.fsproj" />
+</Solution>""")
+
+        let! openResult =
+            fixture.Send("workspace/open", MessagePackSerializer.Serialize(slnxPath))
+
+        Assert.Null(openResult.Error)
+        let! hoverResult = fixture.Send("textDocument/hover", posPayload fixture.Src 6 4)
+        Assert.Null(hoverResult.Error)
+        Assert.NotEqual<byte>([| 0xC0uy |], hoverResult.Payload)
     }
 
     [<Fact>]

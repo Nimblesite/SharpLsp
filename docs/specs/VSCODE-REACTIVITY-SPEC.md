@@ -44,7 +44,7 @@ The extension maintains these **global signals** (module-level exports). Every U
 | Signal | Module | Purpose |
 |--------|--------|---------|
 | `client` | [state.ts](../../editors/vscode/src/state.ts) | Active LSP LanguageClient |
-| `solutionPath` | [state.ts](../../editors/vscode/src/state.ts) | Absolute path of the loaded `.sln` file |
+| `solutionPath` | [state.ts](../../editors/vscode/src/state.ts) | Absolute path of the loaded `.sln` or `.slnx` file |
 | `symbolsState` | [state.ts](../../editors/vscode/src/state.ts) | `empty \| loaded \| error` union of workspace symbols |
 | `sortOrder` | [state.ts](../../editors/vscode/src/state.ts) | Solution Explorer sort cycle |
 | `projectDependencies` | [project-deps-store.ts](../../editors/vscode/src/project-deps-store.ts) | `Map<projectPath, ProjectDependencies>` — PackageReferences & ProjectReferences per csproj/fsproj |
