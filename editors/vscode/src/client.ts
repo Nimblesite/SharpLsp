@@ -2,9 +2,14 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { type ExtensionContext, type Disposable, window } from 'vscode';
 import {
+  CloseAction,
+  ErrorAction,
+  type CloseHandlerResult,
+  type ErrorHandlerResult,
   type Executable,
   LanguageClient,
   type LanguageClientOptions,
+  type Message,
   type ServerOptions,
   TransportKind,
   State,
@@ -51,6 +56,7 @@ export async function start(
     ],
     outputChannel: log.output(),
     traceOutputChannel: log.trace(),
+    errorHandler: makeErrorHandler(statusBar),
   };
 
   const client = new LanguageClient(EXTENSION_ID, EXTENSION_NAME, serverOptions, clientOptions);
@@ -84,6 +90,63 @@ function wireStatusBar(
     }
   });
   context.subscriptions.push(listener);
+}
+
+/**
+ * Custom error handler that restarts forge-lsp with exponential backoff.
+ *
+ * The default vscode-languageclient handler shows an error notification
+ * on every unexpected close, including the transient kills that happen
+ * when VS Code restarts the extension host or when a dev workflow
+ * replaces the binary on disk. This handler:
+ *
+ *   - Suppresses the modal error dialog on close (uses `handled: true`)
+ *   - Allows up to MAX_RESTARTS automatic restarts
+ *   - After MAX_RESTARTS, stops and shows one actionable message
+ */
+function makeErrorHandler(statusBar: ForgeStatusBar): {
+  error(error: Error, message: Message | undefined, count: number | undefined): ErrorHandlerResult;
+  closed(): CloseHandlerResult;
+} {
+  const MAX_RESTARTS = 5;
+  let restartCount = 0;
+
+  return {
+    error(
+      _error: Error,
+      _message: Message | undefined,
+      count: number | undefined,
+    ): ErrorHandlerResult {
+      if ((count ?? 0) <= 3) {
+        return { action: ErrorAction.Continue };
+      }
+      return { action: ErrorAction.Shutdown };
+    },
+
+    closed(): CloseHandlerResult {
+      restartCount += 1;
+      if (restartCount <= MAX_RESTARTS) {
+        log.info(
+          `forge-lsp closed unexpectedly (restart ${String(restartCount)}/${String(MAX_RESTARTS)})`,
+        );
+        return { action: CloseAction.Restart, handled: true };
+      }
+      log.error(`forge-lsp closed ${String(MAX_RESTARTS)} times — giving up`);
+      statusBar.setState(ServerState.Error);
+      void window
+        .showErrorMessage(
+          'Forge: language server failed to start after multiple attempts. Check the Forge output channel for details.',
+          'Show Output',
+        )
+        .then((choice) => {
+          if (choice === 'Show Output') {
+            log.output().show();
+          }
+        });
+      restartCount = 0;
+      return { action: CloseAction.DoNotRestart, handled: true };
+    },
+  };
 }
 
 /**

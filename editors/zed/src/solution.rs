@@ -1,13 +1,16 @@
-//! Parse .sln files to extract project entries.
+//! Parse .sln and .slnx files to extract project entries.
 
-/// A project entry extracted from a .sln file.
+use quick_xml::events::{BytesStart, Event};
+use quick_xml::Reader;
+
+/// A project entry extracted from a solution file.
 #[derive(Debug, Clone)]
 pub struct SolutionProject {
     pub name: String,
     pub relative_path: String,
 }
 
-/// Parse a .sln file's text content and extract project entries.
+/// Parse a solution file's text content and extract project entries.
 ///
 /// The .sln format declares projects as:
 /// ```text
@@ -18,11 +21,85 @@ pub struct SolutionProject {
 /// Only .csproj and .fsproj entries are returned (solution folders are
 /// excluded).
 pub fn parse_solution(content: &str, sln_path: &str) -> Vec<SolutionProject> {
+    if sln_path.to_lowercase().ends_with(".slnx") {
+        return parse_slnx_solution(content, sln_path);
+    }
+
     let sln_dir = parent_dir(sln_path);
     content
         .lines()
         .filter_map(|line| parse_project_line(line, &sln_dir))
         .collect()
+}
+
+fn parse_slnx_solution(content: &str, sln_path: &str) -> Vec<SolutionProject> {
+    let sln_dir = parent_dir(sln_path);
+    let mut reader = Reader::from_str(content);
+    reader.config_mut().trim_text(true);
+    let mut projects = Vec::new();
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Empty(element)) | Ok(Event::Start(element))
+                if is_project_element(&element) =>
+            {
+                if let Some(project) = parse_slnx_project(&reader, &element, &sln_dir) {
+                    projects.push(project);
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => return Vec::new(),
+            _ => {}
+        }
+    }
+
+    projects
+}
+
+fn parse_slnx_project(
+    reader: &Reader<&[u8]>,
+    element: &BytesStart<'_>,
+    sln_dir: &str,
+) -> Option<SolutionProject> {
+    let raw_path = attribute_value(reader, element, b"Path")?;
+    if !is_dotnet_project(&raw_path) {
+        return None;
+    }
+
+    let normalized = normalize_path(&raw_path);
+    Some(SolutionProject {
+        name: project_name_from_path(&normalized),
+        relative_path: join_paths(sln_dir, &normalized),
+    })
+}
+
+fn is_project_element(element: &BytesStart<'_>) -> bool {
+    element.name().as_ref() == b"Project"
+}
+
+fn attribute_value(
+    reader: &Reader<&[u8]>,
+    element: &BytesStart<'_>,
+    name: &[u8],
+) -> Option<String> {
+    element
+        .attributes()
+        .flatten()
+        .find(|attr| attr.key.as_ref() == name)
+        .and_then(|attr| {
+            attr.decode_and_unescape_value(reader.decoder())
+                .ok()
+                .map(|value| value.into_owned())
+        })
+}
+
+fn project_name_from_path(path: &str) -> String {
+    let file_name = path.rsplit('/').next().unwrap_or(path);
+    let lower = file_name.to_lowercase();
+    if lower.ends_with(".csproj") || lower.ends_with(".fsproj") {
+        return file_name[..file_name.len() - ".csproj".len()].to_string();
+    }
+    file_name.to_string()
 }
 
 /// Extract a single project entry from a `Project(...)` line.
@@ -134,6 +211,41 @@ EndGlobal
     #[test]
     fn parse_empty_content_returns_empty() {
         let projects = parse_solution("", "empty.sln");
+        assert!(projects.is_empty());
+    }
+
+    #[test]
+    fn parse_slnx_extracts_dotnet_projects_only() {
+        let content = r#"
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MyApp/MyApp.csproj" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="tests/MyApp.Tests/MyApp.Tests.csproj" />
+  <Project Path="tools/tool.txt" />
+</Solution>
+"#;
+        let projects = parse_solution(content, "MySolution.slnx");
+        assert_eq!(projects.len(), 2);
+        assert_eq!(projects[0].name, "MyApp");
+        assert_eq!(projects[0].relative_path, "src/MyApp/MyApp.csproj");
+        assert_eq!(projects[1].name, "MyApp.Tests");
+    }
+
+    #[test]
+    fn parse_slnx_handles_nested_solution_path() {
+        let content = r#"<Solution><Project Path="src\FSharpLib\FSharpLib.fsproj" /></Solution>"#;
+        let projects = parse_solution(content, "repo/MySolution.slnx");
+        assert_eq!(
+            projects[0].relative_path,
+            "repo/src/FSharpLib/FSharpLib.fsproj"
+        );
+    }
+
+    #[test]
+    fn parse_slnx_malformed_xml_returns_empty() {
+        let projects = parse_solution("<Solution><Project", "MySolution.slnx");
         assert!(projects.is_empty());
     }
 }

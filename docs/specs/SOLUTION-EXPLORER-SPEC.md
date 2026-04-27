@@ -2,11 +2,11 @@
 
 **Status:** Active
 **Owner:** Forge LSP
-**Last Updated:** 2026-03-21
+**Last Updated:** 2026-04-26
 
 ## Overview
 
-The Solution Explorer is a VS Code tree view that displays the full code hierarchy of a .NET solution: solutions, projects, namespaces, types, and members. It is powered by a custom LSP request (`forge/workspaceSymbols`) backed by tree-sitter parsing in the Rust host.
+The Solution Explorer is a VS Code tree view that displays the full code hierarchy of a .NET solution: solutions, projects, namespaces, types, and members. It accepts legacy `.sln` and XML `.slnx` solution files. It is powered by a custom LSP request (`forge/workspaceSymbols`) backed by the sidecar `solution/read` model and tree-sitter parsing in the Rust host.
 
 See [LSP-ARCHITECTURE-SPEC.md](specs/LSP-ARCHITECTURE-SPEC.md) for shared LSP architecture.
 
@@ -16,24 +16,35 @@ See [LSP-ARCHITECTURE-SPEC.md](specs/LSP-ARCHITECTURE-SPEC.md) for shared LSP ar
 VS Code Tree View
   └── SolutionExplorerProvider (TypeScript)
         └── forge/workspaceSymbols request
-              └── Rust Host (tree-sitter parsing)
-                    └── .sln → .csproj/.fsproj → .cs/.fs files
+              └── Rust Host
+                    ├── solution/read sidecar request
+                    │     └── .sln/.slnx → projects, folders, solution items
+                    └── tree-sitter parsing
+                          └── .csproj/.fsproj → .cs/.fs files
 ```
 
 ### Request: `forge/workspaceSymbols`
 
 **Params:**
 ```json
-{ "solution": "/path/to/Solution.sln" }
+{ "solution": "/path/to/Solution.slnx" }
 ```
 
 **Response:**
 ```json
 {
+  "solutionFolders": [
+    {
+      "name": "src",
+      "guid": "/src/",
+      "parentGuid": null
+    }
+  ],
   "projects": [
     {
       "name": "ProjectName",
       "path": "/absolute/path/to/Project.csproj",
+      "parentFolder": "src",
       "symbols": [
         {
           "file": "/absolute/path/to/File.cs",
@@ -85,7 +96,7 @@ VS Code Tree View
 
 | Node | Icon | Color |
 |------|------|-------|
-| Solution (.sln) | `package` | `terminal.ansiGreen` |
+| Solution (.sln/.slnx) | `package` | `terminal.ansiGreen` |
 | Project (.csproj/.fsproj) | `project` | `terminal.ansiCyan` |
 
 ### Access Modifier Extraction
@@ -152,7 +163,7 @@ Within each access group, symbols are sorted alphabetically.
 ### Sort Scope
 
 - Sorting applies recursively to namespace children, type children, and nested members
-- Project order within a solution is preserved (follows .sln declaration order)
+- Project order within a solution is preserved (follows `.sln` or `.slnx` declaration order)
 - Sorting is client-side only — the LSP response is cached and re-sorted without a new request
 
 ### Context Key
@@ -352,7 +363,7 @@ Right-clicking a solution or project node shows **Build** and **Rebuild** action
 | Group | `2_build@2` |
 
 **Build Behavior:**
-- On solution: runs `dotnet build <solution.sln>` with configured extra args
+- On solution: runs `dotnet build <solution.sln|solution.slnx>` with configured extra args
 - On project: runs `dotnet build <project.csproj>` with configured extra args
 - Output appears in VS Code terminal
 - Progress notification shown during build
@@ -486,4 +497,4 @@ Clicking a symbol node opens the file and navigates to the symbol's declaration 
 | `editors/vscode/src/extension.ts` | Command registration, tree view creation |
 | `editors/vscode/src/constants.ts` | Command and view ID constants |
 | `editors/vscode/package.json` | VS Code contribution points |
-| `src/workspace_symbols.rs` | Rust handler: .sln parsing, tree-sitter symbol extraction |
+| `src/workspace_symbols.rs` | Rust handler: sidecar solution model routing, tree-sitter symbol extraction |

@@ -75,12 +75,61 @@ EndGlobal"#,
     (tmp, sln_path)
 }
 
+/// Create a temp .slnx + .csproj + .cs workspace for workspaceSymbols tests.
+fn create_workspace_symbols_slnx_fixture() -> (tempfile::TempDir, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("SlnxLib");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("SlnxLib.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        proj_dir.join("SlnxModel.cs"),
+        "namespace SlnxLib;\npublic class SlnxModel { public void Run() {} }\n",
+    )
+    .unwrap();
+
+    std::fs::write(
+        tmp.path().join("Test.slnx"),
+        r#"<Solution>
+  <Folder Name="/src/">
+    <Project Path="SlnxLib/SlnxLib.csproj" />
+  </Folder>
+</Solution>"#,
+    )
+    .unwrap();
+
+    let slnx_path = tmp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("Test.slnx")
+        .to_string_lossy()
+        .to_string();
+    (tmp, slnx_path)
+}
+
+/// Initialize LSP with a workspace root so sidecar-backed solution parsing is available.
+fn initialize_workspace_symbols_client(client: &mut LspClient, tmp: &tempfile::TempDir) {
+    let root = tmp.path().canonicalize().unwrap();
+    let root_uri = format!("file://{}", root.display());
+    let _ = client.initialize_with_root(json!(root_uri));
+}
+
 #[test]
 fn test_workspace_symbols_returns_project_with_symbols() {
-    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+    let (tmp, sln_path) = create_workspace_symbols_fixture();
 
     let mut client = LspClient::start();
-    let _ = client.initialize();
+    initialize_workspace_symbols_client(&mut client, &tmp);
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
     assert!(resp.get("error").is_none(), "must not error: {resp}");
@@ -103,6 +152,28 @@ fn test_workspace_symbols_returns_project_with_symbols() {
 }
 
 #[test]
+fn test_workspace_symbols_returns_project_from_real_slnx() {
+    let (tmp, slnx_path) = create_workspace_symbols_slnx_fixture();
+
+    let mut client = LspClient::start();
+    initialize_workspace_symbols_client(&mut client, &tmp);
+
+    let resp = client.request("forge/workspaceSymbols", json!({ "solution": slnx_path }));
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+
+    let projects = resp["result"]["projects"].as_array().unwrap();
+    assert_eq!(projects.len(), 1, "must find one project from slnx");
+    assert_eq!(projects[0]["name"], "SlnxLib");
+    assert_eq!(projects[0]["parentFolder"], "src");
+
+    let file_symbols = projects[0]["symbols"].as_array().unwrap();
+    assert!(!file_symbols.is_empty(), "slnx project must have symbols");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
 fn test_workspace_symbols_extracts_all_symbol_kinds() {
     fn collect_kinds(syms: &[Value]) -> Vec<String> {
         let mut kinds = Vec::new();
@@ -115,10 +186,10 @@ fn test_workspace_symbols_extracts_all_symbol_kinds() {
         kinds
     }
 
-    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+    let (tmp, sln_path) = create_workspace_symbols_fixture();
 
     let mut client = LspClient::start();
-    let _ = client.initialize();
+    initialize_workspace_symbols_client(&mut client, &tmp);
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
     assert!(resp.get("error").is_none(), "must not error: {resp}");
@@ -167,10 +238,10 @@ fn test_workspace_symbols_symbol_ranges_valid() {
         }
     }
 
-    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+    let (tmp, sln_path) = create_workspace_symbols_fixture();
 
     let mut client = LspClient::start();
-    let _ = client.initialize();
+    initialize_workspace_symbols_client(&mut client, &tmp);
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
     let file_symbols = &resp["result"]["projects"][0]["symbols"][0]["symbols"];
@@ -197,10 +268,10 @@ fn test_workspace_symbols_access_modifiers() {
         None
     }
 
-    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+    let (tmp, sln_path) = create_workspace_symbols_fixture();
 
     let mut client = LspClient::start();
-    let _ = client.initialize();
+    initialize_workspace_symbols_client(&mut client, &tmp);
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
 
@@ -220,8 +291,9 @@ fn test_workspace_symbols_access_modifiers() {
 
 #[test]
 fn test_workspace_symbols_nonexistent_solution() {
+    let tmp = tempfile::tempdir().unwrap();
     let mut client = LspClient::start();
-    let _ = client.initialize();
+    initialize_workspace_symbols_client(&mut client, &tmp);
 
     let resp = client.request(
         "forge/workspaceSymbols",
@@ -238,10 +310,10 @@ fn test_workspace_symbols_nonexistent_solution() {
 
 #[test]
 fn test_workspace_symbols_file_scoped_namespace_reparenting() {
-    let (_tmp, sln_path) = create_workspace_symbols_fixture();
+    let (tmp, sln_path) = create_workspace_symbols_fixture();
 
     let mut client = LspClient::start();
-    let _ = client.initialize();
+    initialize_workspace_symbols_client(&mut client, &tmp);
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
     let syms = resp["result"]["projects"][0]["symbols"][0]["symbols"]
@@ -320,10 +392,10 @@ EndGlobal"#,
 
 #[test]
 fn test_workspace_symbols_with_nested_solution_folders() {
-    let (_tmp, sln_path) = create_nested_workspace();
+    let (tmp, sln_path) = create_nested_workspace();
 
     let mut client = LspClient::start();
-    let _ = client.initialize();
+    initialize_workspace_symbols_client(&mut client, &tmp);
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
     assert!(
@@ -398,7 +470,7 @@ EndGlobal"#,
         .to_string();
 
     let mut client = LspClient::start();
-    let _ = client.initialize();
+    initialize_workspace_symbols_client(&mut client, &tmp);
 
     let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
     assert!(

@@ -3,12 +3,14 @@ module Forge.Sidecar.FSharp.FSharpWorkspace
 
 open System
 open System.IO
+open System.Threading
 open System.Xml.Linq
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Text
 open FSharp.Compiler.Tokenization
+open Forge.Sidecar.Common.Solutions
 open Forge.Sidecar.FSharp.Hover
 
 /// Definition result: file path + start line/col + end line/col (0-based).
@@ -44,16 +46,55 @@ let private parseFsprojSourceFiles (fsprojPath: string) : string array =
         | Some attr -> Some(Path.GetFullPath(Path.Combine(projDir, string attr.Value))))
     |> Seq.toArray
 
-/// Load a project from a path (finds .fsproj).
-let loadProject (state: FSharpWorkspaceState) (path: string) =
-    try
-        let fsprojFiles =
-            Directory.GetFiles(path, "*.fsproj", SearchOption.AllDirectories)
-        if fsprojFiles.Length = 0 then
-            eprintfn $"No .fsproj found in {path}"
-            System.Threading.Tasks.Task.FromResult(Error "No .fsproj found")
+let private isFsprojPath (path: string) =
+    path.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase)
+
+let private isSolutionPath (path: string) =
+    path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
+    || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase)
+
+let private outcomeError (result: Outcome.Result<SolutionFileModel, string>) =
+    result.Match((fun _ -> String.Empty), (fun err -> err))
+
+let private outcomeValue (result: Outcome.Result<SolutionFileModel, string>) : SolutionFileModel =
+    result.Match((fun value -> value), (fun err -> invalidOp err))
+
+let private fsprojFilesFromSolution (path: string) (ct: CancellationToken) =
+    task {
+        let! readResult = SolutionFileReader.ReadAsync(path, ct)
+        if readResult.IsError then
+            return Error(outcomeError readResult)
         else
-            let fsprojPath = fsprojFiles[0]
+            let model = outcomeValue readResult
+            let fsprojs =
+                model.Projects
+                |> Seq.filter (fun (project: SolutionProjectEntry) -> isFsprojPath project.Path)
+                |> Seq.map (fun (project: SolutionProjectEntry) -> project.Path)
+                |> Seq.toArray
+            return Ok fsprojs
+    }
+
+let private discoverFsprojFiles (path: string) (ct: CancellationToken) =
+    task {
+        let fullPath = Path.GetFullPath(path)
+        if File.Exists(fullPath) && isFsprojPath fullPath then
+            return Ok [| fullPath |]
+        elif File.Exists(fullPath) && isSolutionPath fullPath then
+            return! fsprojFilesFromSolution fullPath ct
+        elif Directory.Exists(fullPath) then
+            return Ok(Directory.GetFiles(fullPath, "*.fsproj", SearchOption.AllDirectories))
+        else
+            return Error $"Path does not exist: {path}"
+    }
+
+let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string array) =
+    if fsprojFiles.Length = 0 then
+        Error "No .fsproj found"
+    else
+        try
+            let fsprojPath = Array.head fsprojFiles
+            if fsprojFiles.Length > 1 then
+                eprintfn $"F# workspace found {fsprojFiles.Length} projects; loading {fsprojPath}"
             let sourceFiles = parseFsprojSourceFiles fsprojPath
             // Build compiler options with framework refs from the runtime dir.
             let runtimeDir =
@@ -87,10 +128,37 @@ let loadProject (state: FSharpWorkspaceState) (path: string) =
             state.IsLoaded <- true
             let fileList = String.Join(", ", sourceFiles |> Array.map Path.GetFileName)
             eprintfn $"F# workspace loaded from {fsprojPath} with files: [{fileList}]"
-            System.Threading.Tasks.Task.FromResult(Ok())
-    with ex ->
-        eprintfn $"F# workspace load failed: {ex.Message}"
-        System.Threading.Tasks.Task.FromResult(Error ex.Message)
+            Ok()
+        with ex ->
+            Error ex.Message
+
+/// Load a project from a path, explicit solution, or workspace directory.
+let loadProjectWithCancellation
+    (state: FSharpWorkspaceState)
+    (path: string)
+    (ct: CancellationToken)
+    =
+    task {
+        try
+            let! discovered = discoverFsprojFiles path ct
+            match discovered with
+            | Error msg ->
+                eprintfn $"{msg}"
+                return Error msg
+            | Ok fsprojFiles ->
+                match loadFirstProject state fsprojFiles with
+                | Ok () -> return Ok()
+                | Error msg ->
+                    eprintfn $"F# workspace load failed: {msg}"
+                    return Error msg
+        with ex ->
+            eprintfn $"F# workspace load failed: {ex.Message}"
+            return Error ex.Message
+    }
+
+/// Load a project from a path (finds .fsproj).
+let loadProject (state: FSharpWorkspaceState) (path: string) =
+    loadProjectWithCancellation state path CancellationToken.None
 
 /// Extract hover from FSharpCheckFileResults.
 let private extractToolTip

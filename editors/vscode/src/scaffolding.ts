@@ -3,6 +3,8 @@ import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { info } from './log';
+import { findSolutions } from './solution.js';
+import * as state from './state.js';
 
 const PROJECT_TEMPLATES = [
   { label: 'Console App', template: 'console' },
@@ -171,24 +173,44 @@ async function addProjectToSolution(): Promise<void> {
     return;
   }
 
-  const slnFiles = await vscode.workspace.findFiles('**/*.sln', '**/node_modules/**');
-  if (slnFiles.length === 0) {
-    void vscode.window.showWarningMessage('No .sln file found.');
-    return;
-  }
-
-  const sln = slnFiles[0]?.fsPath;
-  if (sln === undefined) {
+  const solutionPath = await pickSolutionFile();
+  if (solutionPath === undefined) {
     return;
   }
 
   try {
-    await runDotnet(['sln', sln, 'add', pick.uri.fsPath], path.dirname(sln));
+    await runDotnet(['sln', solutionPath, 'add', pick.uri.fsPath], path.dirname(solutionPath));
     void vscode.window.showInformationMessage(`Added ${pick.label} to solution`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     void vscode.window.showErrorMessage(`Failed: ${message}`);
   }
+}
+
+async function pickSolutionFile(): Promise<string | undefined> {
+  const selected = state.solutionPath.value;
+  if (selected !== undefined) {
+    return selected;
+  }
+
+  const solutions = await findSolutions();
+  if (solutions.length === 0) {
+    void vscode.window.showWarningMessage('No .sln or .slnx file found.');
+    return undefined;
+  }
+  if (solutions.length === 1) {
+    return solutions[0]?.path;
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    solutions.map((solution) => ({
+      label: solution.name,
+      description: solution.path,
+      path: solution.path,
+    })),
+    { placeHolder: 'Select solution file' },
+  );
+  return picked?.path;
 }
 
 function generateFileContent(type: string, name: string): string {

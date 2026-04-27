@@ -25,7 +25,6 @@ const PING_INTERVAL: Duration = Duration::from_secs(5);
 const PING_TIMEOUT: Duration = Duration::from_secs(2);
 /// How long to wait for the sidecar READY signal.
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
-
 /// Manages a single sidecar process (C# or F#).
 pub struct SidecarManager {
     /// Display name for logging.
@@ -169,6 +168,7 @@ impl SidecarManager {
 
         let mut child = Command::new(&self.spawn_command)
             .args(&self.spawn_args)
+            .kill_on_drop(true)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit())
             .spawn()
@@ -268,21 +268,23 @@ impl SidecarManager {
     /// Gracefully shut down the sidecar.
     pub async fn shutdown(&self) {
         info!(sidecar = %self.name, "Shutting down sidecar");
+        if let Ok(mut transport_guard) = self.transport.try_lock() {
+            if let Some(transport) = transport_guard.as_mut() {
+                let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+                let payload = rmp_serde::to_vec("shutdown").unwrap_or_default();
+                let envelope = Envelope::request(id, "shutdown", payload);
+                let _ = tokio::time::timeout(Duration::from_secs(1), async {
+                    transport.write_envelope(&envelope).await?;
+                    transport.read_envelope().await
+                })
+                .await;
+            }
+            *transport_guard = None;
+        }
 
-        // Try graceful shutdown via IPC.
-        let shutdown_payload = rmp_serde::to_vec("shutdown").unwrap_or_default();
-        let _ = tokio::time::timeout(
-            Duration::from_secs(5),
-            self.request("shutdown", shutdown_payload),
-        )
-        .await;
-
-        // Kill if still running.
         if let Some(mut child) = self.child.lock().await.take() {
             let _ = child.kill().await;
         }
-
-        *self.transport.lock().await = None;
     }
 }
 
@@ -430,6 +432,7 @@ fn fxhash(bytes: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
     use std::path::PathBuf;
 
     #[test]
@@ -500,5 +503,116 @@ mod tests {
             "expected socket_path to contain 'forge-fsharp', got: {}",
             mgr.socket_path
         );
+    }
+
+    #[test]
+    fn find_on_path_finds_dotnet() -> Result<()> {
+        let path = find_on_path("dotnet").context("dotnet must be available for sidecar tests")?;
+        assert!(path.is_file());
+        Ok(())
+    }
+
+    #[test]
+    fn find_on_path_returns_none_for_missing_command() {
+        let command = format!("forge-missing-command-{}", std::process::id());
+        assert!(find_on_path(&command).is_none());
+    }
+
+    #[test]
+    fn sidecar_launch_prefers_path_tool() {
+        let (command, args) = sidecar_launch(
+            "dotnet",
+            "unused-sidecar-dir",
+            "Unused.Sidecar",
+            "/tmp/forge-test.sock",
+        );
+        assert_eq!(command, "dotnet");
+        assert_eq!(args, vec!["/tmp/forge-test.sock"]);
+    }
+
+    #[test]
+    fn sidecar_launch_falls_back_to_dotnet_run() {
+        let name = format!("Forge.Missing.Sidecar.{}", std::process::id());
+        let command_name = format!("forge-missing-sidecar-{}", std::process::id());
+        let subdir = format!("missing-sidecar-dir-{}", std::process::id());
+
+        let (command, args) = sidecar_launch(&command_name, &subdir, &name, "/tmp/forge-test.sock");
+
+        assert_eq!(command, "dotnet");
+        assert_eq!(
+            args,
+            vec![
+                "run".to_string(),
+                "--project".to_string(),
+                format!("sidecars/{name}"),
+                "--".to_string(),
+                "/tmp/forge-test.sock".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn sidecar_launch_uses_legacy_installed_sidecar() -> Result<()> {
+        let subdir = format!("sidecar-test-{}", std::process::id());
+        let name = format!("Forge.Sidecar.Test{}", std::process::id());
+        let exe = create_vsix_sidecar(&subdir, &name)?;
+
+        let (command, args) = sidecar_launch(
+            "forge-missing-installed-sidecar",
+            &subdir,
+            &name,
+            "/tmp/forge-test.sock",
+        );
+
+        assert_eq!(PathBuf::from(command), exe);
+        assert_eq!(args, vec!["/tmp/forge-test.sock"]);
+
+        remove_vsix_sidecar(&subdir, &name)?;
+        Ok(())
+    }
+
+    #[test]
+    fn installed_sidecar_exe_returns_none_for_missing_sidecar() {
+        let subdir = format!("sidecar-missing-{}", std::process::id());
+        let name = format!("Forge.Sidecar.Missing{}", std::process::id());
+        assert!(installed_sidecar_exe(&subdir, &name).is_none());
+    }
+
+    fn create_vsix_sidecar(subdir: &str, name: &str) -> Result<PathBuf> {
+        let exe_dir = std::env::current_exe()
+            .context("current test executable")?
+            .parent()
+            .context("test executable directory")?
+            .to_path_buf();
+        let exe = exe_dir.join(subdir).join(sidecar_exe_name(name));
+        let parent = exe.parent().context("sidecar executable parent")?;
+        std::fs::create_dir_all(parent).context("create sidecar test directory")?;
+        std::fs::write(&exe, b"").context("write sidecar test executable")?;
+        Ok(exe)
+    }
+
+    fn remove_vsix_sidecar(subdir: &str, name: &str) -> Result<()> {
+        let exe_dir = std::env::current_exe()
+            .context("current test executable")?
+            .parent()
+            .context("test executable directory")?
+            .to_path_buf();
+        let dir = exe_dir.join(subdir);
+        let exe = dir.join(sidecar_exe_name(name));
+        if exe.exists() {
+            std::fs::remove_file(exe).context("remove sidecar test executable")?;
+        }
+        if dir.exists() {
+            std::fs::remove_dir(dir).context("remove sidecar test directory")?;
+        }
+        Ok(())
+    }
+
+    fn sidecar_exe_name(name: &str) -> String {
+        if cfg!(windows) {
+            format!("{name}.exe")
+        } else {
+            name.to_string()
+        }
     }
 }

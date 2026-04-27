@@ -154,7 +154,7 @@ users can tell it apart.
 
 Top-level nodes, in order:
 
-1. **Solution root** — the `.sln` file discovered in the project root (or
+1. **Solution root** — the `.sln` or `.slnx` file discovered in the project root (or
    picked via a right-click action if multiple).
 2. **Projects** — one node per `.csproj` / `.fsproj` in the solution. Each
    project node has three children:
@@ -193,7 +193,7 @@ Top-level nodes, in order:
 
 ### 6.5 Auto-refresh
 
-The tool window subscribes to VFS events for `.sln`, `.csproj`, `.fsproj`,
+The tool window subscribes to VFS events for `.sln`, `.slnx`, `.csproj`, `.fsproj`,
 `Directory.Build.props`, `Directory.Packages.props`. Any change re-fires
 the appropriate subtree load — no full reload. Debounced 300 ms so a
 multi-file save burst doesn't thrash.
@@ -235,7 +235,7 @@ Stored in project-level `workspace.xml` via `PersistentStateComponent`.
 ### 9.2 Integration tests
 
 Rider's test framework (`BasePlatformTestCase`) loads a test project with
-a real `.sln` + one `.csproj`, spawns a fake stdio server that echoes
+a real `.sln` or `.slnx` plus one `.csproj`, spawns a fake stdio server that echoes
 canned JSON responses, and asserts:
 
 - The tool window populates within 5 s of project open.
@@ -249,7 +249,7 @@ A manual dev-loop test, run from `make test-rider`:
 
 1. `make install` — binaries in `~/.local/bin` and `~/.local/lib/forge`.
 2. `./gradlew runIde` — boots a sandboxed Rider instance with the plugin.
-3. Open `examples/HelloForge.sln`.
+3. Open `examples/HelloForge.sln` or `examples/HelloForge.slnx`.
 4. Assert the Forge Solution tool window renders the project tree.
 
 ## 10. Editor Support Matrix (updated)

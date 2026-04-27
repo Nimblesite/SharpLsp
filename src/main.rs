@@ -579,7 +579,15 @@ fn handle_request(
             connection,
             vfs,
         ),
-        _ => handle_custom_request(req, parsers, vfs, connection, runtime),
+        _ => handle_custom_request(
+            req,
+            parsers,
+            vfs,
+            connection,
+            runtime,
+            csharp_sidecar,
+            fsharp_sidecar,
+        ),
     };
 
     let resp = match result {
@@ -646,9 +654,17 @@ fn handle_custom_request(
     vfs: &Vfs,
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     match req.method.as_str() {
-        "forge/workspaceSymbols" => handle_workspace_symbols(req, parsers, vfs),
+        "forge/workspaceSymbols" => handle_workspace_symbols(
+            req,
+            parsers,
+            vfs,
+            runtime,
+            csharp_sidecar.or(fsharp_sidecar),
+        ),
         "forge/sortMembers" => handle_sort_members(req, parsers),
         // NuGet package management
         "forge/nuget/targets" => nuget::handlers::handle_targets(req),
@@ -744,10 +760,10 @@ fn extract_document_uri(req: &Request) -> Option<Uri> {
 
 // ── Solution Loading ─────────────────────────────────────────────
 
-/// Handle `forge/loadSolution` — reload sidecars with an explicit .sln path.
+/// Handle `forge/loadSolution` — reload sidecars with an explicit solution file path.
 ///
 /// The extension sends this when the user selects a solution. Without it,
-/// the sidecar receives only the workspace root and picks an arbitrary .sln
+/// the sidecar receives only the workspace root and picks an arbitrary solution
 /// from recursive search, which breaks hover/definition/etc.
 fn handle_load_solution(
     req: Request,
@@ -809,9 +825,11 @@ fn handle_workspace_symbols(
     req: Request,
     parsers: &TsParsers,
     vfs: &Vfs,
+    runtime: &tokio::runtime::Runtime,
+    solution_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     let params: workspace_symbols::WorkspaceSymbolsParams = serde_json::from_value(req.params)?;
-    let response = workspace_symbols::handle(&params, parsers, vfs)?;
+    let response = workspace_symbols::handle(&params, parsers, vfs, runtime, solution_sidecar)?;
     Ok(serde_json::to_value(response)?)
 }
 

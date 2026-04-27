@@ -343,6 +343,10 @@ suite('Extension Activation & Configuration', () => {
       'Should activate on .sln files',
     );
     assert.ok(
+      events.some((e: string) => e.includes('*.slnx')),
+      'Should activate on .slnx files',
+    );
+    assert.ok(
       events.some((e: string) => e.includes('*.csproj')),
       'Should activate on .csproj files',
     );

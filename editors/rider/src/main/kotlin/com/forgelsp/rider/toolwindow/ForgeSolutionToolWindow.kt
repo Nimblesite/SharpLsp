@@ -209,8 +209,9 @@ class ForgeSolutionToolWindow(
         connection.subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
             override fun after(events: List<VFileEvent>) {
                 val relevant = events.any { event ->
-                    val p = event.path
+                    val p = event.path.lowercase()
                     p.endsWith(".sln") ||
+                        p.endsWith(".slnx") ||
                         p.endsWith(".csproj") ||
                         p.endsWith(".fsproj") ||
                         p.endsWith("Directory.Build.props") ||
@@ -228,14 +229,19 @@ class ForgeSolutionToolWindow(
 
     companion object {
         /**
-         * Best-effort: find a `.sln` in the project base directory.
+         * Best-effort: find a `.sln` or `.slnx` in the project base directory.
          * If there are zero or multiple, the Solution root node will
          * render a clear "pick a solution" message instead of a tree.
          */
         fun findDefaultSolution(project: Project): Path? {
             val basePath = project.basePath ?: return null
             val base = java.io.File(basePath)
-            val slns = base.listFiles { f -> f.extension.equals("sln", ignoreCase = true) }
+            val slns = base.listFiles { f ->
+                f.isFile && (
+                    f.extension.equals("sln", ignoreCase = true) ||
+                        f.extension.equals("slnx", ignoreCase = true)
+                    )
+            }
                 ?: return null
             return slns.singleOrNull()?.toPath()
         }
