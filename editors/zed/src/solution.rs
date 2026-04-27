@@ -40,11 +40,11 @@ fn parse_slnx_solution(content: &str, sln_path: &str) -> Vec<SolutionProject> {
 
     loop {
         match reader.read_event() {
-            Ok(Event::Empty(element)) | Ok(Event::Start(element)) => {
-                if is_project_element(&element) {
-                    if let Some(project) = parse_slnx_project(&reader, &element, &sln_dir) {
-                        projects.push(project);
-                    }
+            Ok(Event::Empty(element)) | Ok(Event::Start(element))
+                if is_project_element(&element) =>
+            {
+                if let Some(project) = parse_slnx_project(&reader, &element, &sln_dir) {
+                    projects.push(project);
                 }
             }
             Ok(Event::Eof) => break,
