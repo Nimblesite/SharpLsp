@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using Forge.Sidecar.Common.Ipc;
 using Forge.Sidecar.Common.Messages;
+using Forge.Sidecar.Common.Solutions;
 using MessagePack;
 using Microsoft.Build.Locator;
 
@@ -250,6 +251,28 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
         var r = await fixture.SendAsync("workspace/status", []);
         Assert.Null(r.Error);
         Assert.Equal("loaded", MessagePackSerializer.Deserialize<string>(r.Payload));
+    }
+
+    [Fact]
+    public async Task Solution_read_returns_slnx_model()
+    {
+        var slnxPath = Path.Combine(fixture.TempDir, "TestProject.slnx");
+        await File.WriteAllTextAsync(
+            slnxPath,
+            """
+            <Solution>
+              <Project Path="TestProject.csproj" />
+            </Solution>
+            """
+        );
+
+        var r = await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(slnxPath));
+
+        Assert.Null(r.Error);
+        var model = MessagePackSerializer.Deserialize<SolutionFileModel>(r.Payload);
+        Assert.Equal("slnx", model.Format);
+        var project = Assert.Single(model.Projects);
+        Assert.Equal("TestProject", project.DisplayName);
     }
 
     [Fact]

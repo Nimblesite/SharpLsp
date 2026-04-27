@@ -11,7 +11,7 @@ The open-source .NET Language Server — C# and F# intelligence for every editor
 - **Document Symbols** — Fast outline via tree-sitter
 - **Code Folding** — Syntax-aware region folding
 - **F# Support** — First-class F# via FSharp.Compiler.Service
-- **Solution Explorer** — Tree view of your .sln, projects, and symbols
+- **Solution Explorer** — Tree view of your .sln/.slnx, projects, and symbols
 - **Profiler** — Built-in .NET profiling, counter monitoring, and memory analysis
 
 ## Profiler

@@ -13,7 +13,7 @@ import com.intellij.openapi.components.Storage
  *    Null / blank means auto-detect (~/.local/bin/forge-lsp then $PATH).
  *  - `logLevel`  — env var passed as RUST_LOG to forge-lsp.
  *  - `autoLoadSolution` — whether to send `forge/loadSolution` on project
- *    open if we can find a single .sln in the project root.
+ *    open if we can find a single .sln or .slnx in the project root.
  */
 @Service(Service.Level.PROJECT)
 @State(

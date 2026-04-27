@@ -114,8 +114,9 @@ The project system is the hardest engineering problem in .NET tooling. [MSBuild]
 
 - **C# projects:** [MSBuildWorkspace](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.msbuild.msbuildworkspace) ([Microsoft.CodeAnalysis.Workspaces.MSBuild](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Workspaces.MSBuild) + [Microsoft.Build.Locator](https://github.com/microsoft/MSBuildLocator)) performs design-time builds to extract source files, references, and compiler options.
 - **F# projects:** [Ionide.ProjInfo](https://github.com/ionide/proj-info) performs MSBuild evaluation with F#-specific handling (file ordering, which is semantically significant in F#).
-- **Mixed solutions:** Both sidecars load their respective projects from the same .sln file. Cross-language project references are resolved via binary reference (compiled DLL), not source-level.
-- **File watching:** The Rust host watches .csproj, .fsproj, .sln, Directory.Build.props, Directory.Packages.props, NuGet.config, and global.json for changes. On change, the affected sidecar is notified to reload the project model.
+- **Mixed solutions:** Both sidecars load their respective projects from the same `.sln` or `.slnx` solution file. Cross-language project references are resolved via binary reference (compiled DLL), not source-level.
+- **Solution files:** Forge treats legacy `.sln` and XML `.slnx` as first-class solution inputs. Shared sidecar code reads both formats through `Microsoft.VisualStudio.SolutionPersistence` and exposes a neutral `solution/read` DTO so host/editor code does not parse solution text.
+- **File watching:** The Rust host watches .csproj, .fsproj, .sln, .slnx, Directory.Build.props, Directory.Packages.props, NuGet.config, and global.json for changes. On change, the affected sidecar is notified to reload the project model.
 - **Multi-targeting:** Projects targeting multiple TFMs (e.g., `net8.0;net48;netstandard2.0`) present multiple analysis contexts. Forge exposes a custom LSP extension for users to select the active TFM, defaulting to the first.
 
 ### 2.6 Binary Layout & Installation
@@ -519,7 +520,7 @@ F# has unique language features that require dedicated support beyond what the s
 | Risk | Impact | Likelihood | Mitigation |
 |---|---|---|---|
 | Roslyn Features APIs are internal | High | High | Use reflection for internal APIs. Contribute upstream PRs to make critical APIs public. Monitor Roslyn releases for API surface changes. |
-| MSBuild evaluation complexity | High | Certain | Leverage MSBuildWorkspace (proven by [OmniSharp](https://github.com/OmniSharp/omnisharp-roslyn)). Build comprehensive test suite against real-world .sln files. Handle failure gracefully with partial project loading. |
+| MSBuild evaluation complexity | High | Certain | Leverage MSBuildWorkspace (proven by [OmniSharp](https://github.com/OmniSharp/omnisharp-roslyn)). Build comprehensive test suite against real-world `.sln` and `.slnx` files. Handle failure gracefully with partial project loading. |
 | Memory pressure in large solutions | High | Medium | Implement per-project sidecar pooling. Add memory budget enforcement with cache eviction. Consider separate sidecar instances per project in extreme cases. |
 | F# tree-sitter grammar incomplete | Medium | Medium | Fall back to FCS for any syntax feature where tree-sitter produces incorrect results. Contribute upstream to improve the grammar. |
 | Roslyn version coupling | Medium | Certain | Pin Roslyn version per Forge release. Test against multiple Roslyn versions in CI. Abstract sidecar RPC to isolate version dependencies. |

@@ -12,6 +12,7 @@ import {
   teardownLspTestSuite,
   waitForDocumentSymbols,
 } from './test-helpers';
+import { toSolutionSelections } from '../../solution';
 
 suite('Solution Explorer & Workspace Symbols', () => {
   let tmpDir: string;
@@ -432,22 +433,49 @@ public record UserDto(string Name, int Age);`;
 
   // ── Solution File Discovery ──────────────────────────────────
 
-  test('detects .sln files in workspace via glob', async function () {
+  test('detects .sln and .slnx files in workspace via glob', async function () {
     this.timeout(10_000);
 
-    // Create a .sln file in the temp directory.
+    // Create solution files in the temp directory.
     const slnPath = path.join(tmpDir, 'TestSolution.sln');
+    const slnxPath = path.join(tmpDir, 'TestSolution.slnx');
     fs.writeFileSync(
       slnPath,
       'Microsoft Visual Studio Solution File, Format Version 12.00\nGlobal\nEndGlobal',
     );
+    fs.writeFileSync(slnxPath, '<Solution />');
 
     // Use vscode's findFiles to verify it can be discovered.
-    const uris = await vscode.workspace.findFiles('**/*.sln', '**/node_modules/**', 50);
+    const uris = await vscode.workspace.findFiles('**/*.{sln,slnx}', '**/node_modules/**', 50);
 
     // We can't guarantee tmpDir is inside the workspace folder,
     // but we can verify the API works and returns results.
     assert.ok(Array.isArray(uris), 'findFiles should return an array');
+  });
+
+  test('solution selections preserve single .slnx filename', () => {
+    const selections = toSolutionSelections(['/repo/App.slnx']);
+
+    assert.equal(selections.length, 1);
+    assert.equal(selections[0]?.name, 'App.slnx');
+  });
+
+  test('solution selections keep multiple .slnx files distinct', () => {
+    const selections = toSolutionSelections(['/repo/B.slnx', '/repo/A.slnx']);
+
+    assert.deepEqual(
+      selections.map((selection) => selection.name),
+      ['A.slnx', 'B.slnx'],
+    );
+  });
+
+  test('solution selections keep mixed .sln and .slnx filenames distinct', () => {
+    const selections = toSolutionSelections(['/repo/App.slnx', '/repo/App.sln']);
+
+    assert.deepEqual(
+      selections.map((selection) => selection.name),
+      ['App.sln', 'App.slnx'],
+    );
   });
 
   // ── Real LSP roundtrip with record types ─────────────────────

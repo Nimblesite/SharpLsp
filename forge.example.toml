@@ -11,7 +11,7 @@ debounce_ms = 150
 [csharp]
 # Enable C# language support
 enabled = true
-# Path to .sln file (auto-detected if empty)
+# Path to .sln or .slnx file (auto-detected if empty)
 solution_path = ""
 
 [fsharp]

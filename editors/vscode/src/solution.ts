@@ -4,19 +4,19 @@ import * as log from './log.js';
 
 /** Result of solution discovery. */
 export interface SolutionSelection {
-  /** Absolute path to the chosen .sln file. */
+  /** Absolute path to the chosen solution file. */
   readonly path: string;
-  /** Display name (filename without extension). */
+  /** Display name including extension. */
   readonly name: string;
 }
 
-/** Discover .sln files in the workspace and let the user pick if needed. */
+/** Discover .sln/.slnx files in the workspace and let the user pick if needed. */
 export async function selectSolution(): Promise<SolutionSelection | undefined> {
   const solutions = await findSolutions();
 
   if (solutions.length === 0) {
-    log.info('No .sln files found in workspace.');
-    window.showInformationMessage('Forge: No .sln files found in this workspace.');
+    log.info('No solution files found in workspace.');
+    window.showInformationMessage('Forge: No .sln or .slnx files found in this workspace.');
     return undefined;
   }
 
@@ -55,21 +55,28 @@ export async function promptUserSelection(
   return picked.solution;
 }
 
-/** Find all .sln files across workspace folders. */
+/** Find all .sln/.slnx files across workspace folders. */
 export async function findSolutions(): Promise<SolutionSelection[]> {
   const folders = workspace.workspaceFolders;
   if (folders === undefined || folders.length === 0) {
     return [];
   }
 
-  const pattern = '**/*.sln';
+  const pattern = '**/*.{sln,slnx}';
   const excludePattern = '**/node_modules/**';
   const uris = await workspace.findFiles(pattern, excludePattern, 50);
 
-  return uris
-    .map((uri) => ({
-      path: uri.fsPath,
-      name: path.basename(uri.fsPath, '.sln'),
+  return toSolutionSelections(uris.map((uri) => uri.fsPath));
+}
+
+/** Build sorted solution selections from absolute file paths. */
+export function toSolutionSelections(paths: readonly string[]): SolutionSelection[] {
+  return paths
+    .map((solutionPath) => ({
+      path: solutionPath,
+      name: path.basename(solutionPath),
     }))
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .sort(
+      (left, right) => left.name.localeCompare(right.name) || left.path.localeCompare(right.path),
+    );
 }

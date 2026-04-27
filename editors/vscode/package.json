@@ -34,6 +34,7 @@
   "activationEvents": [
     "onStartupFinished",
     "workspaceContains:**/*.sln",
+    "workspaceContains:**/*.slnx",
     "workspaceContains:**/*.csproj",
     "workspaceContains:**/*.fsproj"
   ],
@@ -330,7 +331,7 @@
     "viewsWelcome": [
       {
         "view": "forge.solutionExplorer",
-        "contents": "No .sln files found in this workspace."
+        "contents": "No .sln or .slnx files found in this workspace."
       }
     ],
     "commands": [

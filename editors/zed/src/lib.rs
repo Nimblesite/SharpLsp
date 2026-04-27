@@ -57,8 +57,8 @@ impl zed::Extension for ForgeExtension {
     ) -> zed::Result<Vec<zed::SlashCommandArgumentCompletion>> {
         match command.name.as_str() {
             SLASH_CMD_TREE => Ok(vec![zed::SlashCommandArgumentCompletion {
-                label: "path/to/Solution.sln".to_string(),
-                new_text: "Solution.sln".to_string(),
+                label: "path/to/Solution.slnx".to_string(),
+                new_text: "Solution.slnx".to_string(),
                 run_command: false,
             }]),
             _ => Ok(vec![]),
@@ -131,7 +131,7 @@ fn run_tree_command(
 
     let sln_path = args
         .first()
-        .ok_or("Usage: /forge-tree <path/to/Solution.sln>")?;
+        .ok_or("Usage: /forge-tree <path/to/Solution.sln|Solution.slnx>")?;
 
     let sln_content = wt
         .read_text_file(sln_path)

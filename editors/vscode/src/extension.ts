@@ -441,9 +441,10 @@ async function confirmAndRemoveDependency(
 
 const REFRESH_DEBOUNCE_MS = 1_000;
 const RELEVANT_LANGUAGES = new Set(['csharp', 'fsharp']);
+const SOLUTION_FILE_GLOB = '**/*.{sln,slnx}';
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** Re-fetch workspace symbols when a C#/F# file changes. */
+/** Re-fetch workspace symbols when source or solution files change. */
 function wireDocumentChangeRefresh(context: ExtensionContext): void {
   context.subscriptions.push(
     workspace.onDidChangeTextDocument((event) => {
@@ -457,6 +458,29 @@ function wireDocumentChangeRefresh(context: ExtensionContext): void {
       }, REFRESH_DEBOUNCE_MS);
     }),
   );
+  const solutionWatcher = workspace.createFileSystemWatcher(SOLUTION_FILE_GLOB);
+  context.subscriptions.push(
+    solutionWatcher,
+    solutionWatcher.onDidChange((uri) => {
+      scheduleSolutionRefresh(uri.fsPath);
+    }),
+    solutionWatcher.onDidCreate((uri) => {
+      scheduleSolutionRefresh(uri.fsPath);
+    }),
+    solutionWatcher.onDidDelete((uri) => {
+      scheduleSolutionRefresh(uri.fsPath);
+    }),
+  );
+  log.traceInfo(`Solution file watcher active: ${SOLUTION_FILE_GLOB}`);
+}
+
+function scheduleSolutionRefresh(solutionFilePath: string): void {
+  log.traceInfo(`Solution file changed: ${solutionFilePath}`);
+  if (debounceTimer !== undefined) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    log.traceInfo('Debounced solution tree refresh triggered');
+    void explorerProvider?.refresh();
+  }, REFRESH_DEBOUNCE_MS);
 }
 
 /** Select a solution (auto or user-picked) and load it into the explorer. */
@@ -484,7 +508,7 @@ async function loadSolution(selected: solution.SolutionSelection): Promise<void>
 
   // Tell the LSP server to reload sidecars with this specific solution.
   // Without this, the sidecar uses the workspace root and may pick the
-  // wrong .sln when multiple exist — breaking hover, definition, etc.
+  // wrong solution when multiple exist — breaking hover, definition, etc.
   if (lspClient !== undefined) {
     try {
       await lspClient.sendRequest('forge/loadSolution', {

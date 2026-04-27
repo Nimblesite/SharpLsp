@@ -12,5 +12,5 @@ languages = ["C#", "F#"]
 
 [slash_commands.forge-tree]
 description = "Display the .NET solution tree: projects, dependencies, and references"
-tooltip_text = "Parse a .sln file and show its project structure"
+tooltip_text = "Parse a .sln or .slnx file and show its project structure"
 requires_argument = true

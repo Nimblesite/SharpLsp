@@ -6,6 +6,7 @@ open System
 open System.Threading
 open System.Threading.Tasks
 open Forge.Sidecar.Common
+open Forge.Sidecar.Common.Solutions
 open MessagePack
 
 type ByteResult = Outcome.Result<byte[], string>
@@ -209,12 +210,26 @@ type FSharpSidecar() =
             task {
                 try
                     let path = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
-                    let! result = FSharpWorkspace.loadProject workspace path
+                    let! result = FSharpWorkspace.loadProjectWithCancellation workspace path ct
                     match result with
                     | Ok () ->
                         return Helpers.serializeOk "ok" ct
                     | Error msg ->
                         return ByteResult.Failure(msg)
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        base.Register("solution/read", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let path = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
+                    let! result = SolutionFileReader.ReadAsync(path, ct)
+                    if result.IsError then
+                        return ByteResult.Failure(result.Match((fun _ -> String.Empty), (fun err -> err)))
+                    else
+                        let model = result.Match((fun value -> value), (fun err -> invalidOp err))
+                        return Helpers.serializeOk model ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)
             }))

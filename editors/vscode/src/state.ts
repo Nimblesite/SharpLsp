@@ -21,11 +21,19 @@ export const SORT_CYCLE: Record<SortOrder, SortOrder> = {
 
 export interface WorkspaceSymbolsResponse {
   readonly projects: ProjectNode[];
+  readonly solutionFolders?: SolutionFolderNode[];
+}
+
+export interface SolutionFolderNode {
+  readonly name: string;
+  readonly guid: string;
+  readonly parentGuid: string | null;
 }
 
 export interface ProjectNode {
   readonly name: string;
   readonly path: string;
+  readonly parentFolder?: string | null;
   readonly symbols: FileSymbol[];
 }
 
@@ -68,7 +76,7 @@ const RETRY_DELAY_MS = 2_000;
 /** The active LSP language client. */
 export const client = new Signal<LanguageClient | undefined>(undefined);
 
-/** Path to the currently loaded .sln file. */
+/** Path to the currently loaded solution file. */
 export const solutionPath = new Signal<string | undefined>(undefined);
 
 /** Current sort order for the solution explorer tree. */
@@ -86,10 +94,10 @@ export function cycleSortOrder(): void {
   sortOrder.value = next;
 }
 
-/** Load a solution path and fetch workspace symbols. */
-export async function loadSolution(slnPath: string): Promise<void> {
-  log.traceInfo(`Loading solution into state: ${slnPath}`);
-  solutionPath.value = slnPath;
+/** Load a solution file path and fetch workspace symbols. */
+export async function loadSolution(solutionFilePath: string): Promise<void> {
+  log.traceInfo(`Loading solution into state: ${solutionFilePath}`);
+  solutionPath.value = solutionFilePath;
   await refresh();
 }
 
