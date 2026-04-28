@@ -11,10 +11,10 @@ layout: layouts/base.njk
     </div>
     <h1>{{ title }}</h1>
     <div class="article-author">
-      <img src="/assets/images/forge-avatar.png" alt="{{ author | default('Forge Team') }}" onerror="this.style.display='none'">
+      <img src="{{ authorImage | default('/assets/images/forge-avatar.png') }}" alt="{{ author | default('Forge Team') }}" onerror="this.style.display='none'">
       <div>
         <p>{{ author | default("Forge Team") }}</p>
-        <small>Principal Distributed Systems Engineer</small>
+        <small>{{ authorRole | default("Principal Distributed Systems Engineer") }}</small>
       </div>
     </div>
   </header>

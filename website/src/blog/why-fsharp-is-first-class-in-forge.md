@@ -4,6 +4,10 @@ title: "Why F# Is First-Class in Forge"
 description: "Forge treats F# as a first-class .NET language by designing the LSP around a dedicated FSharp.Compiler.Service sidecar, not a later C#-only bolt-on."
 date: 2026-04-26
 author: Forge Contributors
+authorRole: F# Language Engineer
+authorImage: https://lh3.googleusercontent.com/aida-public/AB6AXuAD67SpD-iAx0p3uV9exHCxuwOCzRb4-DL71Un7bMvBZAhwFrV5QujQLJAj7RY1FW-p4m-0uhYkk9PSxb7WJUOqXt25VH6AtubFss0CAMR3Yw9k0n876VF5g0PJXLF0V45EbGUjr7sUPnCLpJC73GhMMZLUuD43uYczJM1_e9IZSX-rZb87fMAJ03X3HR6kzzFuBpQ80EW3hRgYm54AILhIIO2T5pWPyjljM0PWc13wW6tYobl3bdo6v_PSS6a2MMwmRwZTRD5uSw
+image: https://lh3.googleusercontent.com/aida-public/AB6AXuD3cenwQpbnyBBi929ng2j1r3C0jyseH8LD8FljraY1UsoybKPdgLyJelH3xTgzcaGIDXvP2SOhX7iipv-AaBtDsMqb1v2Quoza3LNm6nEFcoZNRdiGglQU0ZFZjVmkrA7CKrOC7jXhWuR0smaSe5IMksK2UsIompgrn0Yzm2ANJ-Gla-6Ey4-DB7KlbjjNZ6Z4DElKRlX1RQsg2AFYrKjI6gewCnbGUycXtZIeJ6YIvoNyZwH5WZgcuYGi__KGyLSc08QHoLeVVg
+imageAlt: Close up of mechanical keyboard with glowing keys in dark environment
 tags:
   - posts
   - fsharp

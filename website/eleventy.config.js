@@ -6,13 +6,23 @@ import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pluginLayouts = join(__dirname, "node_modules/eleventy-plugin-techdoc/templates/layouts");
+const pluginPages = join(__dirname, "node_modules/eleventy-plugin-techdoc/templates/pages");
 const localLayouts = join(__dirname, "src/_includes/layouts");
+const localOverrides = join(__dirname, "src/_includes/overrides");
 
 // Patch plugin layouts with local overrides before Eleventy registers virtual templates
 for (const file of ["base.njk", "blog.njk", "docs.njk", "prose.njk"]) {
   const local = join(localLayouts, file);
   if (existsSync(local)) {
     writeFileSync(join(pluginLayouts, file), readFileSync(local, "utf-8"));
+  }
+}
+
+// Patch plugin page templates (tags, categories) with blog-grid style overrides
+for (const file of ["tags-pages.njk", "categories-pages.njk"]) {
+  const local = join(localOverrides, file);
+  if (existsSync(local)) {
+    writeFileSync(join(pluginPages, "blog", file), readFileSync(local, "utf-8"));
   }
 }
 

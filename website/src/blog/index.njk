@@ -3,6 +3,7 @@ layout: layouts/base.njk
 title: Engineering Blog
 permalink: /blog/
 ---
+{% from "partials/post-card.njk" import postCard %}
 <div class="blog-container">
   <header class="blog-header">
     <h1>Engineering Blog</h1>
@@ -11,10 +12,10 @@ permalink: /blog/
 
   <div class="blog-filter">
     <ul class="filter-list">
-      <li><button class="filter-chip filter-chip-active" type="button">All</button></li>
-      <li><button class="filter-chip" type="button">Releases</button></li>
-      <li><button class="filter-chip" type="button">Tutorials</button></li>
-      <li><button class="filter-chip" type="button">Engineering</button></li>
+      <li><a class="filter-chip filter-chip-active" href="/blog/">All</a></li>
+      <li><a class="filter-chip" href="/blog/categories/architecture/">Architecture</a></li>
+      <li><a class="filter-chip" href="/blog/categories/diagnostics/">Diagnostics</a></li>
+      <li><a class="filter-chip" href="/blog/categories/fsharp/">F#</a></li>
     </ul>
     <div class="search-box">
       <span class="material-symbols-outlined" aria-hidden="true">search</span>
@@ -22,55 +23,15 @@ permalink: /blog/
     </div>
   </div>
 
-  {%- set postCollection = collections.posts | reverse -%}
+  {%- set postCollection = collections.posts -%}
   {%- if postCollection | length > 0 -%}
   <section class="blog-grid">
     {%- for post in postCollection -%}
-    {%- set isFeatured = loop.index === 1 -%}
-    <article class="post-card{% if isFeatured %} post-card-featured{% endif %}">
-      <div class="post-media{% if not post.data.image %} post-media-symbol{% endif %}">
-        {%- if post.data.image -%}
-        <img src="{{ post.data.image }}" alt="{{ post.data.title }}" loading="lazy">
-        {%- else -%}
-        <span class="material-symbols-outlined" aria-hidden="true">article</span>
-        {%- endif -%}
-      </div>
-      <div class="post-body">
-        {%- if post.data.tags -%}
-        <div class="post-tags">
-          {%- for tag in post.data.tags -%}
-          {%- if tag != 'post' and tag != 'posts' -%}
-          <a href="/blog/tags/{{ tag | slugify }}/" class="tag{% if loop.first %} tag-active{% endif %}">{{ tag }}</a>
-          {%- endif -%}
-          {%- endfor -%}
-        </div>
-        {%- endif -%}
-        <h2 class="post-title"><a href="{{ post.url }}">{{ post.data.title }}</a></h2>
-        {%- if post.data.excerpt or post.data.description -%}
-        <p class="post-excerpt">{{ post.data.excerpt | default(post.data.description) }}</p>
-        {%- endif -%}
-        <div class="post-meta">
-          <div class="post-author">
-            <strong>{{ post.data.author | default("Forge Team") | truncate(2, false, "") | upper }}</strong>
-            <div>
-              <span>{{ post.data.author | default("Forge Team") }}</span>
-              <small>{{ post.date | dateFormat }}</small>
-            </div>
-          </div>
-          {%- if isFeatured -%}
-          <span class="read-time">8 min read</span>
-          {%- endif -%}
-        </div>
-      </div>
-    </article>
+    {{ postCard(post, loop.first) }}
     {%- endfor -%}
   </section>
-
   <div class="load-row">
-    <button class="load-button" type="button">
-      Load More Articles
-      <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
-    </button>
+    <button class="load-button" type="button">Load More Articles <span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button>
   </div>
   {%- else -%}
   <p class="blog-empty">No posts yet. Check back soon.</p>

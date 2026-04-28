@@ -1,0 +1,30 @@
+---
+pagination:
+  data: collections.categoryList
+  size: 1
+  alias: category
+permalink: /blog/categories/{{ category | slugify }}/
+layout: layouts/base.njk
+eleventyComputed:
+  title: "{{ category | capitalize }}"
+  description: "All blog posts in the {{ category }} category."
+---
+{% from "partials/post-card.njk" import postCard %}
+{% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
+<div class="blog-container">
+  <header class="blog-header">
+    <h1>{{ category | capitalize }}</h1>
+    <p class="blog-subtitle"><a href="{{ langPrefix }}/blog/categories/">← All categories</a></p>
+  </header>
+
+  {%- set catPosts = collections.postsByCategory[category] -%}
+  {%- if catPosts | length > 0 -%}
+  <section class="blog-grid">
+    {%- for post in catPosts -%}
+    {{ postCard(post, loop.first) }}
+    {%- endfor -%}
+  </section>
+  {%- else -%}
+  <p class="blog-empty">No posts in this category yet.</p>
+  {%- endif -%}
+</div>
