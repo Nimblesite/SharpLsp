@@ -25,5 +25,23 @@ layout: layouts/base.njk
     </div>
   </aside>
 
-  {% include "partials/prose-body.njk" %}
+  <article class="prose">
+    {{ content | safe }}
+
+    <section class="related-panel">
+      <h2>Related Documentation</h2>
+      <div class="related-grid">
+        <a href="/docs/architecture/">
+          <span>Architecture</span>
+          <strong>How Forge Works</strong>
+          <small>The three-tier Rust host + .NET sidecar architecture explained.</small>
+        </a>
+        <a href="/docs/editors/">
+          <span>Setup</span>
+          <strong>Editor Setup</strong>
+          <small>Configure Forge for VS Code, Neovim, Helix, Emacs, Zed, and more.</small>
+        </a>
+      </div>
+    </section>
+  </article>
 </div>

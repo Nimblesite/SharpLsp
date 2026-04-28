@@ -18,13 +18,10 @@ layout: layouts/base.njk
       </div>
     </div>
   </header>
-  {% else %}
-  <h1>{{ title }}</h1>
   {% endif %}
 
   {{ content | safe }}
 
-  {% if date %}
   <section class="related-panel">
     <h2>Related Documentation</h2>
     <div class="related-grid">
@@ -40,5 +37,4 @@ layout: layouts/base.njk
       </a>
     </div>
   </section>
-  {% endif %}
 </article>
