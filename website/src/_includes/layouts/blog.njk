@@ -2,26 +2,6 @@
 layout: layouts/base.njk
 ---
 
-{% block head %}
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "BlogPosting",
-  "headline": "{{ title }}",
-  "description": "{{ description | default(site.description) }}",
-  "author": { "@type": "Person", "name": "{{ author | default('Forge Team') }}" },
-  "publisher": { "@type": "Organization", "name": "{{ site.name }}" },
-  "datePublished": "{{ date | dateToRfc3339 }}",
-  "mainEntityOfPage": { "@type": "WebPage", "@id": "{{ site.url }}{{ page.url }}" },
-  "inLanguage": "{{ lang | default('en') }}"{% if tags %},
-  "keywords": "{{ tags | join(', ') }}"{% endif %}{% if category %},
-  "articleSection": "{{ category }}"{% endif %}
-}
-</script>
-{% endblock %}
-
-{% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
-
 <article class="prose">
   <header class="article-header">
     <div class="article-kicker">

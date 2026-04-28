@@ -25,7 +25,5 @@ layout: layouts/base.njk
     </div>
   </aside>
 
-  <article class="prose">
-    {{ content | safe }}
-  </article>
+  {% include "partials/prose-body.njk" %}
 </div>
