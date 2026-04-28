@@ -39,7 +39,6 @@ static void AllocationWork(CancellationToken ct)
         var buf = new byte[1024 * 4];
         buf[0] = 1;
         _ = string.Join(",", Enumerable.Range(0, 128).Select(i => $"item-{i}"));
-        Thread.Sleep(1);
     }
 }
 
@@ -47,10 +46,7 @@ static void AllocationWork(CancellationToken ct)
 static void RecursiveWork(CancellationToken ct)
 {
     while (!ct.IsCancellationRequested)
-    {
         Fibonacci(28);
-        Thread.Sleep(5);
-    }
 }
 
 static long Fibonacci(int n) => n <= 1 ? n : Fibonacci(n - 1) + Fibonacci(n - 2);

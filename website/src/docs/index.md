@@ -8,27 +8,54 @@ eleventyNavigation:
 
 # Getting Started
 
-Forge is an open-source .NET Language Server Protocol (LSP) implementation built in Rust. It provides full C# and F# language support across any editor that supports LSP.
+Forge is an open-source .NET Language Server Protocol (LSP) implementation built in Rust. One server provides C# and F# language support across editors that speak LSP.
 
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (latest stable)
 - [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- An LSP-compatible editor (VS Code, Neovim, Emacs, Helix, Zed, etc.)
+- Node 20 for building the VS Code extension
+- An LSP-compatible editor, or the Forge VS Code, Zed, or Rider extension
 
 ## Installation
 
-### From Source
+### Build From Source
 
 ```bash
 git clone https://github.com/MelbourneDeveloper/forge.git
 cd forge
-cargo build --release
+make install
 ```
+
+`make install` installs `forge-lsp` to `~/.local/bin` and stages the sidecars under `~/.local/lib/forge`.
 
 ### VS Code Extension
 
-Install the Forge extension from the VS Code marketplace, or install the `.vsix` file directly.
+Build and install the local VSIX:
+
+```bash
+make build-vsix
+code --install-extension forge.vsix
+```
+
+### Zed Extension
+
+Zed builds extensions from source, so package the staged extension tree first:
+
+```bash
+rustup target add wasm32-wasip1
+make package-zed
+```
+
+In Zed, run `zed: install dev extension` and choose `target/zed-extension/`.
+
+### Rider Plugin
+
+```bash
+make package-rider
+```
+
+In Rider, install `forge-rider.zip` from **Settings -> Plugins -> Install Plugin from Disk**.
 
 ## Architecture Overview
 
@@ -36,7 +63,7 @@ Forge uses a three-tier architecture:
 
 | Tier | Component | Role |
 |------|-----------|------|
-| **1** | Rust LSP Host | LSP connection, VFS, tree-sitter parsing, salsa cache |
+| **1** | Rust LSP Host | LSP connection, VFS, tree-sitter parsing, request routing |
 | **2** | C# Sidecar | Roslyn-powered completions, diagnostics, refactoring |
 | **3** | F# Sidecar | FSharp.Compiler.Service, FSharpLint diagnostics |
 
@@ -45,4 +72,4 @@ The Rust host handles all LSP communication and syntax-level operations. Semanti
 ## Next Steps
 
 - [Architecture](/docs/architecture/) — deep dive into the three-tier design
-- [Editor Setup](/docs/editors/) — configure your editor to use Forge
+- [Editor Setup](/docs/editors/) — configure your editor or extension to use Forge

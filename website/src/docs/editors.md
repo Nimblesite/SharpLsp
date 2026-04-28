@@ -12,9 +12,35 @@ Forge works with any editor that supports the Language Server Protocol. Below ar
 
 ## VS Code
 
-Install the Forge extension from the marketplace or from the `.vsix` file in the repository.
+Build and install the Forge extension from the repository:
 
-The extension automatically manages the Forge LSP server lifecycle.
+```sh
+make build-vsix
+code --install-extension forge.vsix
+```
+
+The extension manages the Forge LSP server lifecycle and provides the Solution Explorer, profiler, NuGet browser, test lens, and editor status integration.
+
+## Zed
+
+Forge ships a Zed extension that attaches `forge-lsp` over stdio for `.cs`, `.csx`, `.fs`, `.fsx`, and `.fsi` files. Zed compiles extensions from source at install time, so the repo's `make package-zed` target stages a self-contained source tree.
+
+```sh
+rustup target add wasm32-wasip1
+make package-zed
+```
+
+Then in Zed: command palette -> `zed: install dev extension` -> pick `target/zed-extension/`. Hover, completions, go-to-definition, and diagnostics all work through the language server. The `/forge-tree <Solution.sln|Solution.slnx>` slash command renders the solution tree in the assistant panel.
+
+## JetBrains Rider
+
+Build the plugin package:
+
+```sh
+make package-rider
+```
+
+Then in Rider: **Settings -> Plugins -> Install Plugin from Disk** and pick `forge-rider.zip`. Restart Rider. The plugin attaches `forge-lsp` over LSP for C# and F# files and adds a **Forge Solution** tool window backed by the same custom LSP requests as VS Code.
 
 ## Neovim
 
@@ -29,7 +55,7 @@ if not configs.forge_lsp then
     default_config = {
       cmd = { "forge-lsp" },
       filetypes = { "cs", "fsharp" },
-      root_dir = lspconfig.util.root_pattern("*.sln", "*.csproj", "*.fsproj"),
+      root_dir = lspconfig.util.root_pattern("*.sln", "*.slnx", "*.csproj", "*.fsproj"),
     },
   }
 end
@@ -88,14 +114,3 @@ Install the [LSP](https://packagecontrol.io/packages/LSP) package, then add a cu
   }
 }
 ```
-
-## Zed
-
-Forge ships a Zed extension that attaches `forge-lsp` over stdio for `.cs`, `.csx`, `.fs`, `.fsx`, and `.fsi` files. Zed compiles extensions from source at install time, so the repo's `make package-zed` target stages a self-contained source tree.
-
-```sh
-rustup target add wasm32-wasip1   # one-off
-make package-zed                  # stages target/zed-extension/
-```
-
-Then in Zed: command palette → `zed: install dev extension` → pick `target/zed-extension/`. Hover, completions, go-to-definition, and diagnostics all work. The `/forge-tree <Solution.sln>` slash command renders the solution tree in the assistant panel.
