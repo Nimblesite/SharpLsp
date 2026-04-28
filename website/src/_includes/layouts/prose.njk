@@ -2,6 +2,11 @@
 layout: layouts/base.njk
 ---
 
+{% if page.url.startsWith('/docs/') or page.url.startsWith('/zh/docs/') %}
+<div class="docs-layout">
+  {{ content | safe }}
+</div>
+{% else %}
 <article class="prose">
   {% if date %}
   <header class="article-header">
@@ -10,31 +15,10 @@ layout: layouts/base.njk
       <time datetime="{{ date | isoDate }}">{{ date | dateFormat }}</time>
     </div>
     <h1>{{ title }}</h1>
-    <div class="article-author">
-      <img src="{{ authorImage | default('/assets/images/forge-avatar.png') }}" alt="{{ author | default('Forge Team') }}" onerror="this.style.display='none'">
-      <div>
-        <p>{{ author | default("Forge Team") }}</p>
-        <small>{{ authorRole | default("Principal Distributed Systems Engineer") }}</small>
-      </div>
-    </div>
+    {% include "partials/article-author.njk" %}
   </header>
   {% endif %}
 
   {{ content | safe }}
-
-  <section class="related-panel">
-    <h2>Related Documentation</h2>
-    <div class="related-grid">
-      <a href="/docs/architecture/">
-        <span>Architecture</span>
-        <strong>How Forge Works</strong>
-        <small>The three-tier Rust host + .NET sidecar architecture explained.</small>
-      </a>
-      <a href="/docs/editors/">
-        <span>Setup</span>
-        <strong>Editor Setup</strong>
-        <small>Configure Forge for VS Code, Neovim, Helix, Emacs, Zed, and more.</small>
-      </a>
-    </div>
-  </section>
 </article>
+{% endif %}

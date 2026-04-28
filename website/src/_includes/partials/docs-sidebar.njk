@@ -1,0 +1,20 @@
+{% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
+<aside class="sidebar" id="docs-sidebar">
+  <div class="sidebar-section">
+    <h4>Documentation</h4>
+    <ul>
+      <li><a href="{{ langPrefix }}/docs/" {% if page.url == langPrefix + '/docs/' %}class="active"{% endif %}>Getting Started</a></li>
+      <li><a href="{{ langPrefix }}/docs/architecture/" {% if page.url == langPrefix + '/docs/architecture/' %}class="active"{% endif %}>Architecture</a></li>
+      <li><a href="{{ langPrefix }}/docs/editors/" {% if page.url == langPrefix + '/docs/editors/' %}class="active"{% endif %}>Editor Setup</a></li>
+      <li><a href="{{ langPrefix }}/docs/configuration/" {% if page.url == langPrefix + '/docs/configuration/' %}class="active"{% endif %}>Configuration</a></li>
+      <li><a href="{{ langPrefix }}/docs/completions/" {% if page.url == langPrefix + '/docs/completions/' %}class="active"{% endif %}>Code Completions</a></li>
+      <li><a href="{{ langPrefix }}/docs/diagnostics/" {% if page.url == langPrefix + '/docs/diagnostics/' %}class="active"{% endif %}>Diagnostics</a></li>
+      <li><a href="{{ langPrefix }}/docs/hover/" {% if page.url == langPrefix + '/docs/hover/' %}class="active"{% endif %}>Hover &amp; Quick Info</a></li>
+      <li><a href="{{ langPrefix }}/docs/go-to-definition/" {% if page.url == langPrefix + '/docs/go-to-definition/' %}class="active"{% endif %}>Go to Definition</a></li>
+      <li><a href="{{ langPrefix }}/docs/refactoring/" {% if page.url == langPrefix + '/docs/refactoring/' %}class="active"{% endif %}>Refactoring &amp; Code Actions</a></li>
+      <li><a href="{{ langPrefix }}/docs/context-menus/" {% if page.url == langPrefix + '/docs/context-menus/' %}class="active"{% endif %}>Context Menus</a></li>
+      <li><a href="{{ langPrefix }}/docs/nuget/" {% if page.url == langPrefix + '/docs/nuget/' %}class="active"{% endif %}>NuGet Package Manager</a></li>
+      <li><a href="{{ langPrefix }}/docs/profiler/" {% if page.url == langPrefix + '/docs/profiler/' %}class="active"{% endif %}>Profiler</a></li>
+    </ul>
+  </div>
+</aside>

@@ -797,9 +797,47 @@ img {
   font: 700 48px/1.1 var(--font-heading);
   margin: 0 0 24px;
 }
+.author-profile {
+  align-items: center;
+  display: flex;
+  gap: 24px;
+  margin-top: 24px;
+}
+.author-avatar {
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  filter: grayscale(1);
+  flex: 0 0 80px;
+  height: 80px;
+  object-fit: cover;
+  opacity: 0.85;
+  transition: filter 0.2s ease, opacity 0.2s ease;
+  width: 80px;
+}
+.author-avatar:hover {
+  filter: grayscale(0);
+  opacity: 1;
+}
+.author-profile h1 {
+  font: 700 36px/1.1 var(--font-heading);
+  margin: 0 0 6px;
+}
+.author-role {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+.author-website {
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+}
 .article-author {
   align-items: center;
   border-top: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+  transition: opacity 0.15s ease;
   display: flex;
   gap: 16px;
   padding-top: 24px;
@@ -815,9 +853,23 @@ img {
   transition: filter 0.2s ease, opacity 0.2s ease;
   width: 48px;
 }
-.article-author img:hover {
+.article-author:hover {
+  opacity: 0.8;
+}
+.article-author:hover img {
   filter: grayscale(0);
   opacity: 1;
+}
+.article-author p {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0;
+}
+.article-author small {
+  color: var(--text-muted);
+  font-size: 14px;
 }
 .article-author p {
   color: var(--text);
@@ -1237,8 +1289,28 @@ th {
 }
 .post-author {
   align-items: center;
+  color: inherit;
   display: flex;
   gap: 12px;
+  text-decoration: none;
+}
+.post-author:hover span {
+  color: var(--primary-container);
+}
+.post-author img {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  filter: grayscale(1);
+  height: 32px;
+  margin: 0;
+  object-fit: cover;
+  opacity: 0.8;
+  transition: filter 0.2s ease, opacity 0.2s ease;
+  width: 32px;
+}
+.post-author:hover img {
+  filter: grayscale(0);
+  opacity: 1;
 }
 .post-author div {
   display: flex;
@@ -1248,6 +1320,7 @@ th {
 .post-author span {
   color: #fff;
   font-size: 14px;
+  transition: color 0.15s ease;
 }
 .read-time {
   color: var(--outline);

@@ -11,7 +11,7 @@ const localLayouts = join(__dirname, "src/_includes/layouts");
 const localOverrides = join(__dirname, "src/_includes/overrides");
 
 // Patch plugin layouts with local overrides before Eleventy registers virtual templates
-for (const file of ["base.njk", "blog.njk", "docs.njk", "prose.njk"]) {
+for (const file of ["base.njk", "blog.njk", "docs.njk", "prose.njk", "author.njk"]) {
   const local = join(localLayouts, file);
   if (existsSync(local)) {
     writeFileSync(join(pluginLayouts, file), readFileSync(local, "utf-8"));

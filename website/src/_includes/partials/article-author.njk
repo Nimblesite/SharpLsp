@@ -1,0 +1,7 @@
+<a class="article-author" href="/author/{{ author | default('forge-contributors') | slugify }}/">
+  <img src="{{ authorImage | default('/assets/images/forge-avatar.png') }}" alt="{{ author | default('Forge Team') }}" onerror="this.style.display='none'">
+  <div>
+    <p>{{ author | default("Forge Team") }}</p>
+    <small>{{ authorRole | default("Principal Distributed Systems Engineer") }}</small>
+  </div>
+</a>

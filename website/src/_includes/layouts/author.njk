@@ -1,0 +1,32 @@
+---
+layout: layouts/base.njk
+---
+{% from "partials/post-card.njk" import postCard %}
+
+<article class="prose">
+  <header class="article-header">
+    <div class="article-kicker"><span>Author</span></div>
+    <div class="author-profile">
+      <img src="{{ authorImage | default('/assets/images/forge-avatar.png') }}" alt="{{ title }}" class="author-avatar">
+      <div>
+        <h1>{{ title }}</h1>
+        <p class="author-role">{{ authorRole }}</p>
+        {% if authorWebsite %}<a href="{{ authorWebsite }}" class="author-website" target="_blank" rel="noopener">{{ authorWebsite | replace("https://", "") }}</a>{% endif %}
+      </div>
+    </div>
+  </header>
+  {{ content | safe }}
+</article>
+
+<div class="blog-container">
+  {% set matchedPosts = [] %}
+  {% for post in collections.posts %}
+    {% if post.data.author == title or (post.data.author | slugify) == authorSlug %}
+      {% set matchedPosts = (matchedPosts.push(post), matchedPosts) %}
+    {% endif %}
+  {% endfor %}
+  {% set displayPosts = matchedPosts if matchedPosts | length > 0 else collections.posts %}
+  <section class="blog-grid">
+    {% for post in displayPosts %}{{ postCard(post, loop.first) }}{% endfor %}
+  </section>
+</div>

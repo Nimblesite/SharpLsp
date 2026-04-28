@@ -3,7 +3,7 @@ layout: layouts/blog.njk
 title: "Introducing Forge: The .NET LSP Built in Rust"
 description: "Forge is an open-source, editor-agnostic Language Server for C# and F# — built in Rust, powered by Roslyn and FSharp.Compiler.Service. No licenses. No lock-in. Every editor."
 date: 2026-03-20
-author: Forge Team
+author: Christian Findlay
 authorRole: Principal Distributed Systems Engineer
 authorImage: https://lh3.googleusercontent.com/aida-public/AB6AXuAD67SpD-iAx0p3uV9exHCxuwOCzRb4-DL71Un7bMvBZAhwFrV5QujQLJAj7RY1FW-p4m-0uhYkk9PSxb7WJUOqXt25VH6AtubFss0CAMR3Yw9k0n876VF5g0PJXLF0V45EbGUjr7sUPnCLpJC73GhMMZLUuD43uYczJM1_e9IZSX-rZb87fMAJ03X3HR6kzzFuBpQ80EW3hRgYm54AILhIIO2T5pWPyjljM0PWc13wW6tYobl3bdo6v_PSS6a2MMwmRwZTRD5uSw
 image: https://lh3.googleusercontent.com/aida-public/AB6AXuBfJIzTeEimCRpV7GypvE1-TXYJhys7tNurDcizpqmeweIvgYAcGvDfJQMYkyK8GyeWzwh8Zf7x9reGpMg9Qb5Snty4u71Sp-8QQwpR1BNC6lgWfhWBktHSVVny_citH4Fs0Hd_MXsisvkjehtT4VfMSsacixiXdPKANztS2iyRo8aD0Zr7gHpA-cdLY5EEH631LhDuiFqhABX7OP5HNINOKcOSg92feCyhshx7Zjq-pydM0cQAxEDZrO59FGzdqriM_ZcT_3Dd9Q
