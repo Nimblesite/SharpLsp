@@ -1,15 +1,14 @@
 ---
 layout: layouts/base.njk
-title: "SharpLsp - The Future of .NET Tooling"
+title: "SharpLsp - Open Source C# and F# Language Server for VS Code, Zed, and More"
 ---
 
 <section class="masthead">
-  <div class="badge"><span class="status-dot"></span>v1.0.4 Now Available</div>
-  <h1 class="title">The Future of <span>.NET Tooling</span></h1>
+  <div class="badge"><span class="status-dot"></span>Open Source · MIT License</div>
+  <h1 class="title">One <span>.NET Language Server</span>. Every Editor.</h1>
   <p class="lede">
-    Engineered in Rust for uncompromising speed. SharpLsp is a high-performance
-    workspace designed for developers who value precision and productivity
-    over bloat.
+    SharpLsp is an open-source C# and F# language server built in Rust. Full Roslyn-powered IntelliSense,
+    diagnostics, go-to-definition, and refactoring — in VS Code, Zed, or any LSP-compatible editor.
   </p>
   <div class="button-row">
     <a class="button button-primary" href="/docs/">Get Started</a>
@@ -22,34 +21,43 @@ title: "SharpLsp - The Future of .NET Tooling"
 
 <section class="panel">
   <div class="card-grid card-grid-three">
-    <article class="metric-card">
-      <span class="material-symbols-outlined card-icon" aria-hidden="true">bolt</span>
-      <h2>&lt;3s</h2>
-      <p>Cold Start</p>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">terminal</span>
+      <h2>VS Code &amp; Zed Support</h2>
+      <p>Full Roslyn completions, diagnostics, go-to-definition, and inlay hints. Neovim, Helix, and Emacs support coming soon.</p>
     </article>
-    <article class="metric-card">
-      <span class="material-symbols-outlined card-icon" aria-hidden="true">speed</span>
-      <h2>&lt;100ms</h2>
-      <p>Completions</p>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">functions</span>
+      <h2>F# as a First-Class Citizen</h2>
+      <p>F# language server backed by FSharp.Compiler.Service. The same feature depth as C# — not an afterthought.</p>
     </article>
-    <article class="metric-card">
-      <span class="material-symbols-outlined card-icon" aria-hidden="true">extension_off</span>
-      <h2>0</h2>
-      <p>Proprietary Dependencies</p>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">lock_open</span>
+      <h2>No Subscriptions. No Lock-in.</h2>
+      <p>MIT licensed. Works in VSCodium, Open VSX, and any LSP-compatible editor. No Microsoft account required.</p>
     </article>
   </div>
 </section>
 
 <section class="ecosystem-strip">
-  <p class="ecosystem-label">Built for</p>
-  <span class="ecosystem-logo" aria-hidden="true">.NET</span>
-  <span class="ecosystem-name">.NET</span>
+  <p class="ecosystem-label">Available now</p>
+  <span class="ecosystem-name">VS Code</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name">Zed</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name">Rider</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Neovim <small>soon</small></span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Helix <small>soon</small></span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Emacs <small>soon</small></span>
 </section>
 
 <section class="band">
   <div class="copy-block">
-    <h2>One LSP. Every Editor.</h2>
-    <p>Full Roslyn-powered completions, diagnostics, hover docs, and go-to-definition — in VS Code, Neovim, Helix, or any LSP-compatible editor.</p>
+    <h2>The Open-Source Alternative to C# Dev Kit</h2>
+    <p>C# Dev Kit is closed-source, not available on VSCodium or Open VSX, and requires a Visual Studio Professional or Enterprise subscription for organizational use. SharpLsp is MIT-licensed, works in every editor, and has no license restrictions — ever.</p>
   </div>
 
   <div class="screenshot-frame">
@@ -66,29 +74,51 @@ title: "SharpLsp - The Future of .NET Tooling"
   <div class="card-grid card-grid-three">
     <article class="feature-card">
       <span class="material-symbols-outlined icon-box" aria-hidden="true">explore</span>
-      <h2>Smart Navigation</h2>
-      <p>Instant symbol resolution and definition lookup, powered by an optimized semantic index.</p>
+      <h2>Go-to-Definition</h2>
+      <p>Jump to symbol definitions across your entire solution — including into decompiled NuGet packages and BCL source.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">psychology</span>
+      <h2>Completions &amp; Hover Docs</h2>
+      <p>Roslyn-powered IntelliSense with full XML doc comments, signature help, and overload resolution.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">build</span>
+      <h2>Code Actions &amp; Refactoring</h2>
+      <p>Rename symbol, extract method, generate constructor, fix-all diagnostics — all via standard LSP code actions.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">format_paint</span>
+      <h2>Formatting</h2>
+      <p>C# formatting via Roslyn. F# formatting via Fantomas. EditorConfig respected. Works in every editor.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">error</span>
+      <h2>Real-time Diagnostics</h2>
+      <p>Roslyn compiler errors and warnings as you type. No separate build step required to see errors inline.</p>
     </article>
     <article class="feature-card">
       <span class="material-symbols-outlined icon-box" aria-hidden="true">view_in_ar</span>
       <h2>NuGet Integration</h2>
-      <p>Seamless dependency management directly from the command palette or UI.</p>
+      <p>Search, install, and update NuGet packages without leaving your editor or running CLI commands.</p>
     </article>
-    <article class="feature-card">
-      <span class="material-symbols-outlined icon-box" aria-hidden="true">analytics</span>
-      <h2>Real-time Profiling</h2>
-      <p>Built-in allocation tracking and CPU profiling without context switching.</p>
-    </article>
+  </div>
+</section>
+
+<section class="band">
+  <div class="copy-block">
+    <h2>Ditch Visual Studio. Keep Your Editor.</h2>
+    <p>Visual Studio is Windows-only and forces you into a heavyweight IDE. SharpLsp brings the same Roslyn language intelligence to VS Code, Zed, and more — on Windows, macOS, and Linux. No IDE required.</p>
   </div>
 </section>
 
 <section class="cta">
   <div class="copy-block">
-    <h2>Ready to sharpen up?</h2>
-    <p>Join the open-source community shaping the next generation of .NET tooling.</p>
+    <h2>C# and F# in your editor. No compromises.</h2>
+    <p>Set up SharpLsp in VS Code or Zed with one install command. MIT licensed. Open source forever.</p>
   </div>
   <div class="button-row">
-    <a class="button button-primary" href="/docs/">Download SharpLsp</a>
+    <a class="button button-primary" href="/docs/">Install SharpLsp</a>
     <a class="button button-secondary" href="/docs/">Read the Docs</a>
   </div>
 </section>

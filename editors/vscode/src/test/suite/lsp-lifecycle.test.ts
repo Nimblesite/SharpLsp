@@ -30,7 +30,7 @@ suite('LSP Lifecycle', () => {
 
   // ── Restart ──────────────────────────────────────────────────
 
-  test('forge.restartServer restarts the LSP server', async function () {
+  test('sharplsp.restartServer restarts the LSP server', async function () {
     this.timeout(60_000);
 
     // Open a file to ensure server is running.
@@ -42,22 +42,22 @@ suite('LSP Lifecycle', () => {
     await waitForDocumentSymbols(uri);
 
     // Restart the server.
-    await vscode.commands.executeCommand('forge.restartServer');
+    await vscode.commands.executeCommand('sharplsp.restartServer');
 
     // After restart, the server should come back and respond again.
     const symbols = await waitForDocumentSymbols(uri, 30_000);
     assert.ok(symbols.length > 0, 'Server should respond to symbols after restart');
   });
 
-  test('forge.showOutput command executes without error', async function () {
+  test('sharplsp.showOutput command executes without error', async function () {
     this.timeout(5_000);
     // Should not throw.
-    await vscode.commands.executeCommand('forge.showOutput');
+    await vscode.commands.executeCommand('sharplsp.showOutput');
   });
 
-  test('forge.showTraceOutput command executes without error', async function () {
+  test('sharplsp.showTraceOutput command executes without error', async function () {
     this.timeout(5_000);
-    await vscode.commands.executeCommand('forge.showTraceOutput');
+    await vscode.commands.executeCommand('sharplsp.showTraceOutput');
   });
 
   // ── Status Bar ───────────────────────────────────────────────
@@ -168,11 +168,11 @@ suite('LSP Lifecycle', () => {
     await waitForDocumentSymbols(uri);
 
     // First restart.
-    await vscode.commands.executeCommand('forge.restartServer');
+    await vscode.commands.executeCommand('sharplsp.restartServer');
     await waitForDocumentSymbols(uri, 30_000);
 
     // Second restart.
-    await vscode.commands.executeCommand('forge.restartServer');
+    await vscode.commands.executeCommand('sharplsp.restartServer');
     const symbols = await waitForDocumentSymbols(uri, 30_000);
     assert.ok(symbols.length > 0, 'Server should respond after double restart');
   });
@@ -190,7 +190,7 @@ suite('LSP Lifecycle', () => {
     );
     await waitForDocumentSymbols(uri1);
 
-    await vscode.commands.executeCommand('forge.restartServer');
+    await vscode.commands.executeCommand('sharplsp.restartServer');
 
     // After restart, open a NEW file.
     await closeAllEditors();

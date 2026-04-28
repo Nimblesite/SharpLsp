@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="192" viewBox="0 0 640 192" fill="none">
+  <defs>
+    <style>
+      .word { fill: #e5e2e1; font: 700 54px "Space Grotesk", Inter, Arial, sans-serif; letter-spacing: 0; }
+      .caption { fill: #bacbb9; font: 500 22px Inter, Arial, sans-serif; letter-spacing: 0; }
+    </style>
+  </defs>
+  <rect width="640" height="192" rx="24" fill="#0d0d0d"/>
+  <g transform="translate(40 32)">
+    <rect width="128" height="128" rx="16" fill="#00e676"/>
+    <path d="M46 26L36 102" stroke="#003918" stroke-width="8" stroke-linecap="square" opacity="0.42"/>
+    <path d="M84 26L74 102" stroke="#003918" stroke-width="8" stroke-linecap="square" opacity="0.42"/>
+    <path d="M32 53H96" stroke="#003918" stroke-width="8" stroke-linecap="square" opacity="0.42"/>
+    <path d="M27 77H91" stroke="#003918" stroke-width="8" stroke-linecap="square" opacity="0.42"/>
+    <path d="M35 40L19 64L35 88" stroke="#003918" stroke-width="9" stroke-linecap="square" stroke-linejoin="miter"/>
+    <path d="M93 40L109 64L93 88" stroke="#003918" stroke-width="9" stroke-linecap="square" stroke-linejoin="miter"/>
+    <path d="M65 22H96L76 56H99L48 108L63 70H39L65 22Z" fill="#003918"/>
+  </g>
+  <text x="208" y="82" class="word">SharpLsp</text>
+  <text x="210" y="122" class="caption">Sharp code bolt</text>
+</svg>

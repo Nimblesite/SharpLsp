@@ -224,7 +224,7 @@ export async function closeAllEditors(): Promise<void> {
 /**
  * Standard setup for an LSP test suite:
  *   - Creates a temp directory
- *   - Activates the Forge extension
+ *   - Activates the SharpLsp extension
  *   - Waits until the server responds to a documentSymbol request
  */
 export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{

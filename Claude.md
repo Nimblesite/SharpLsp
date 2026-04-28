@@ -3,7 +3,7 @@
 ⚠️ KILLING A VSCODE PROCESS - EVEN IN THE BROWSER WILL BE MET WITH INSTANT, EXTREME VIOLENCE!
 ⚠️ DO NOT ASK THE USER QUESTIONS. USE YOUR JUDGMENT ⚠️
 
-Forge is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
+SharpLsp is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
 
 **Overall aim #1: FIX THE .NET DEVELOPER EXPERIENCE.**
 Crush Visual Studio, Rider, and C# Dev Kit. Full feature-for-feature superiority. Zero proprietary dependencies. Zero licenses. Zero vendor lock-in.
@@ -95,7 +95,7 @@ All documentation lives in `docs/`.
 - `docs/specs/` — **Specifications**: describe **how functionality works**. Source of truth for feature behavior, protocols, and architecture. Naming: `[COMPONENT]-[FEATURE]-SPEC.md`
 - `docs/plans/` — **Implementation plans**: describe **how we are going to build it**. Each plan includes TODO checklists tracking progress toward the corresponding spec. Naming: `[COMPONENT]-[FEATURE]-PLAN.md`
 
-`docs/specs/FORGE-SPEC.md` is the **full technical specification** for the project. Always read the relevant spec before working on a feature, and update the corresponding plan's TODOs as work progresses.
+`docs/specs/SHARPLSP-SPEC.md` is the **full technical specification** for the project. Always read the relevant spec before working on a feature, and update the corresponding plan's TODOs as work progresses.
 
 ## Spec IDs
 
@@ -121,7 +121,7 @@ IPC: MessagePack over named pipes (Windows) / Unix domain sockets (Linux, macOS)
 
 C# and F# are equal first-class citizens. F# is NOT a second-class bolt-on.
 
-See `docs/specs/FORGE-SPEC.md` for the full technical specification.
+See `docs/specs/SHARPLSP-SPEC.md` for the full technical specification.
 
 ## Code Structure
 

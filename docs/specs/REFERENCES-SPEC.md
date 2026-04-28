@@ -198,7 +198,7 @@ References may be returned incrementally via partial results (`partialResult` to
 | Position is whitespace or comment | Return `null` (no references) |
 | Sidecar not ready / loading | Return `null` with `window/showMessage` notification |
 | Symbol resolution fails | Return `null` |
-| Sidecar crashes during request | Return `null`, trigger crash recovery (see FORGE-SPEC §5) |
+| Sidecar crashes during request | Return `null`, trigger crash recovery (see SHARPLSP-SPEC §5) |
 | No references found (only declaration) | Return `[]` (empty array) if `includeDeclaration` is false; `[declaration]` if true |
 
 Reference requests MUST NOT block, hang, or return errors to the client. On any failure, return `null`.

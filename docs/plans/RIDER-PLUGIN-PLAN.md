@@ -163,9 +163,9 @@ only — Community editions are not supported.
 
 ### Phase 6: Settings
 
-- [ ] `ForgeSettings` — `PersistentStateComponent<ForgeSettings.State>`,
+- [ ] `SharpLspSettings` — `PersistentStateComponent<SharpLspSettings.State>`,
       project-level, stored in `workspace.xml`
-- [ ] `ForgeSettingsConfigurable` registered at `Settings → Tools → SharpLsp`
+- [ ] `SharpLspSettingsConfigurable` registered at `Settings → Tools → SharpLsp`
 - [ ] Fields: server path, log level, auto-load solution
 - [ ] `SharpLspLspServerDescriptor` reads settings when building the command
       line

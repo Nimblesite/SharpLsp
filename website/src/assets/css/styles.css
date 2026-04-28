@@ -439,6 +439,22 @@ img {
   font-size: 0.95rem;
   font-weight: 500;
 }
+.ecosystem-sep {
+  color: var(--border-strong);
+  font-size: 1rem;
+  user-select: none;
+}
+.ecosystem-name.coming-soon {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+.ecosystem-name.coming-soon small {
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  margin-left: 3px;
+  text-transform: uppercase;
+  vertical-align: super;
+}
 .band {
   background: var(--surface-lowest);
   padding: 50px 24px 56px;

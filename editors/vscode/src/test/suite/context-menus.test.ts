@@ -4,9 +4,9 @@
  * Covers:
  *   - Package.json menu contribution correctness (when clauses, groups)
  *   - contextValue set correctly for all node types
- *   - forge.copyQualifiedName: builds Namespace.Class.Member correctly
- *   - forge.copyName: copies unqualified name
- *   - forge.revealInExplorer: runs without error, nodes have symbolUri
+ *   - sharplsp.copyQualifiedName: builds Namespace.Class.Member correctly
+ *   - sharplsp.copyName: copies unqualified name
+ *   - sharplsp.revealInExplorer: runs without error, nodes have symbolUri
  */
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -15,7 +15,7 @@ import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
-  openForgePanel,
+  openSharpLspPanel,
   pollUntilResult,
   setupLspTestSuite,
   takeScreenshot,
@@ -137,18 +137,18 @@ suite('Context Menu — Package.json Contributions', () => {
   // ── Command registration ──────────────────────────────────────
 
   for (const cmd of [
-    'forge.copyQualifiedName',
-    'forge.copyName',
-    'forge.revealInExplorer',
-    'forge.sortMembers',
-    'forge.openProjectFile',
-    'forge.build',
-    'forge.rebuild',
-    'forge.clean',
-    'forge.addProjectReference',
-    'forge.nuget.addFromExplorer',
-    'forge.removeNuGetPackage',
-    'forge.removeProjectReference',
+    'sharplsp.copyQualifiedName',
+    'sharplsp.copyName',
+    'sharplsp.revealInExplorer',
+    'sharplsp.sortMembers',
+    'sharplsp.openProjectFile',
+    'sharplsp.build',
+    'sharplsp.rebuild',
+    'sharplsp.clean',
+    'sharplsp.addProjectReference',
+    'sharplsp.nuget.addFromExplorer',
+    'sharplsp.removeNuGetPackage',
+    'sharplsp.removeProjectReference',
   ]) {
     test(`${cmd} command is registered`, async () => {
       const cmds = await vscode.commands.getCommands(true);
@@ -159,13 +159,13 @@ suite('Context Menu — Package.json Contributions', () => {
   // ── sortMembers when clause ───────────────────────────────────
 
   test('sortMembers menu entry exists in view/item/context', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.sortMembers');
-    assert.ok(entry, 'forge.sortMembers must have a view/item/context menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.sortMembers');
+    assert.ok(entry, 'sharplsp.sortMembers must have a view/item/context menu entry');
   });
 
   test('sortMembers when clause scopes to class/struct/interface/enum/record', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.sortMembers');
-    assert.ok(entry, 'forge.sortMembers must have a menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.sortMembers');
+    assert.ok(entry, 'sharplsp.sortMembers must have a menu entry');
     const when = entry.when;
     assert.ok(when.includes('class'), `sortMembers when clause must include 'class': ${when}`);
     assert.ok(
@@ -175,14 +175,14 @@ suite('Context Menu — Package.json Contributions', () => {
     assert.ok(when.includes('enum'), `sortMembers when clause must include 'enum': ${when}`);
     assert.ok(when.includes('record'), `sortMembers when clause must include 'record': ${when}`);
     assert.ok(
-      when.includes('forge.solutionExplorer'),
-      'sortMembers must be scoped to forge.solutionExplorer view',
+      when.includes('sharplsp.solutionExplorer'),
+      'sortMembers must be scoped to sharplsp.solutionExplorer view',
     );
   });
 
   test('sortMembers when clause does NOT include method or property', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.sortMembers');
-    assert.ok(entry, 'forge.sortMembers must have a menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.sortMembers');
+    assert.ok(entry, 'sharplsp.sortMembers must have a menu entry');
     const when = entry.when;
     // The pattern should only match type-level nodes (class, struct, etc.)
     // It must NOT be a catch-all for all symbol nodes.
@@ -192,37 +192,37 @@ suite('Context Menu — Package.json Contributions', () => {
   });
 
   test('sortMembers is scoped to solutionExplorer view', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.sortMembers');
-    assert.ok(entry, 'forge.sortMembers must have a menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.sortMembers');
+    assert.ok(entry, 'sharplsp.sortMembers must have a menu entry');
     assert.ok(
-      entry.when.includes('forge.solutionExplorer'),
-      "sortMembers when clause must include 'forge.solutionExplorer'",
+      entry.when.includes('sharplsp.solutionExplorer'),
+      "sortMembers when clause must include 'sharplsp.solutionExplorer'",
     );
   });
 
   // ── copyQualifiedName when clause ────────────────────────────
 
   test('copyQualifiedName menu entry exists', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.copyQualifiedName');
-    assert.ok(entry, 'forge.copyQualifiedName must have a view/item/context menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.copyQualifiedName');
+    assert.ok(entry, 'sharplsp.copyQualifiedName must have a view/item/context menu entry');
   });
 
   test('copyQualifiedName when clause scopes to symbol nodes', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.copyQualifiedName');
-    assert.ok(entry, 'forge.copyQualifiedName must have a menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.copyQualifiedName');
+    assert.ok(entry, 'sharplsp.copyQualifiedName must have a menu entry');
     assert.ok(
       entry.when.includes('symbol'),
       "copyQualifiedName when clause must reference 'symbol'",
     );
     assert.ok(
-      entry.when.includes('forge.solutionExplorer'),
+      entry.when.includes('sharplsp.solutionExplorer'),
       'copyQualifiedName must be scoped to solutionExplorer view',
     );
   });
 
   test('copyQualifiedName is in a copy/paste group', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.copyQualifiedName');
-    assert.ok(entry, 'forge.copyQualifiedName must have a menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.copyQualifiedName');
+    assert.ok(entry, 'sharplsp.copyQualifiedName must have a menu entry');
     const g = entry.group;
     assert.ok(
       g.includes('cutcopypaste') || g.includes('copy') || g.startsWith('9'),
@@ -233,23 +233,23 @@ suite('Context Menu — Package.json Contributions', () => {
   // ── copyName when clause ──────────────────────────────────────
 
   test('copyName menu entry exists', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.copyName');
-    assert.ok(entry, 'forge.copyName must have a view/item/context menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.copyName');
+    assert.ok(entry, 'sharplsp.copyName must have a view/item/context menu entry');
   });
 
   test('copyName when clause covers symbol nodes', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.copyName');
-    assert.ok(entry, 'forge.copyName must have a menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.copyName');
+    assert.ok(entry, 'sharplsp.copyName must have a menu entry');
     assert.ok(entry.when.includes('symbol'), "copyName when clause must reference 'symbol'");
     assert.ok(
-      entry.when.includes('forge.solutionExplorer'),
+      entry.when.includes('sharplsp.solutionExplorer'),
       'copyName must be scoped to solutionExplorer view',
     );
   });
 
   test('copyName when clause covers solution and project nodes', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.copyName');
-    assert.ok(entry, 'forge.copyName must have a menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.copyName');
+    assert.ok(entry, 'sharplsp.copyName must have a menu entry');
     const when = entry.when;
     // copyName should appear on solution and project nodes too
     assert.ok(
@@ -259,8 +259,8 @@ suite('Context Menu — Package.json Contributions', () => {
   });
 
   test('copyName is in a copy/paste group', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.copyName');
-    assert.ok(entry, 'forge.copyName must have a menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.copyName');
+    assert.ok(entry, 'sharplsp.copyName must have a menu entry');
     const g = entry.group;
     assert.ok(
       g.includes('cutcopypaste') || g.includes('copy') || g.startsWith('9'),
@@ -271,19 +271,19 @@ suite('Context Menu — Package.json Contributions', () => {
   // ── revealInExplorer when clause ─────────────────────────────
 
   test('revealInExplorer menu entry exists', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.revealInExplorer');
-    assert.ok(entry, 'forge.revealInExplorer must have a view/item/context menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.revealInExplorer');
+    assert.ok(entry, 'sharplsp.revealInExplorer must have a view/item/context menu entry');
   });
 
   test('revealInExplorer when clause scopes to symbol nodes', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.revealInExplorer');
-    assert.ok(entry, 'forge.revealInExplorer must have a menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.revealInExplorer');
+    assert.ok(entry, 'sharplsp.revealInExplorer must have a menu entry');
     assert.ok(
       entry.when.includes('symbol'),
       "revealInExplorer when clause must reference 'symbol'",
     );
     assert.ok(
-      entry.when.includes('forge.solutionExplorer'),
+      entry.when.includes('sharplsp.solutionExplorer'),
       'revealInExplorer must be scoped to solutionExplorer view',
     );
   });
@@ -291,8 +291,8 @@ suite('Context Menu — Package.json Contributions', () => {
   // ── sortMembers group ─────────────────────────────────────────
 
   test('sortMembers is in a modification group', () => {
-    const entry = menuEntries().find((m) => m.command === 'forge.sortMembers');
-    assert.ok(entry, 'forge.sortMembers must have a menu entry');
+    const entry = menuEntries().find((m) => m.command === 'sharplsp.sortMembers');
+    assert.ok(entry, 'sharplsp.sortMembers must have a menu entry');
     const g = entry.group;
     assert.ok(
       g.includes('modification') || g.startsWith('1'),
@@ -364,7 +364,7 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
       'solution',
       "Solution node must have contextValue 'solution'",
     );
-    await openForgePanel();
+    await openSharpLspPanel();
     await takeScreenshot('vscode-solution-explorer-context-menu.png');
   });
 
@@ -583,7 +583,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     assert.ok(classNode, 'OuterClass must be in the tree');
 
     await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('forge.copyQualifiedName', classNode);
+    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', classNode);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -604,7 +604,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     assert.ok(methodNode, 'OuterMethod must be in the tree');
 
     await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('forge.copyQualifiedName', methodNode);
+    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', methodNode);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -623,7 +623,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     assert.ok(propNode, 'OuterProp must be in the tree');
 
     await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('forge.copyQualifiedName', propNode);
+    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', propNode);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -639,7 +639,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     assert.ok(ifaceNode, 'IService must be in the tree');
 
     await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('forge.copyQualifiedName', ifaceNode);
+    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', ifaceNode);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -658,7 +658,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     assert.ok(innerNode, 'InnerClass must be in the tree');
 
     await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('forge.copyQualifiedName', innerNode);
+    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', innerNode);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -677,7 +677,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     assert.ok(innerMethodNode, 'InnerMethod must be in the tree');
 
     await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('forge.copyQualifiedName', innerMethodNode);
+    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', innerMethodNode);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -694,7 +694,7 @@ suite('Context Menu — Copy Qualified Name', () => {
     assert.ok(classNode, 'OuterClass must be in the tree');
 
     await vscode.env.clipboard.writeText('');
-    await vscode.commands.executeCommand('forge.copyQualifiedName', classNode);
+    await vscode.commands.executeCommand('sharplsp.copyQualifiedName', classNode);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -753,7 +753,7 @@ suite('Context Menu — Copy Name', () => {
     assert.ok(node, 'AllTypesClass node must exist');
 
     await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('forge.copyName', node);
+    await vscode.commands.executeCommand('sharplsp.copyName', node);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -769,7 +769,7 @@ suite('Context Menu — Copy Name', () => {
     assert.ok(node, 'Execute method node must exist');
 
     await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('forge.copyName', node);
+    await vscode.commands.executeCommand('sharplsp.copyName', node);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -782,7 +782,7 @@ suite('Context Menu — Copy Name', () => {
     assert.ok(node, 'IRunner node must exist');
 
     await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('forge.copyName', node);
+    await vscode.commands.executeCommand('sharplsp.copyName', node);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -798,7 +798,7 @@ suite('Context Menu — Copy Name', () => {
     assert.ok(node, 'Label property node must exist');
 
     await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('forge.copyName', node);
+    await vscode.commands.executeCommand('sharplsp.copyName', node);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -811,7 +811,7 @@ suite('Context Menu — Copy Name', () => {
     assert.ok(node, 'MyEnum node must exist');
 
     await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('forge.copyName', node);
+    await vscode.commands.executeCommand('sharplsp.copyName', node);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -824,7 +824,7 @@ suite('Context Menu — Copy Name', () => {
     assert.ok(node, 'MyPoint struct node must exist');
 
     await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('forge.copyName', node);
+    await vscode.commands.executeCommand('sharplsp.copyName', node);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -837,7 +837,7 @@ suite('Context Menu — Copy Name', () => {
     assert.ok(node, 'AllTypesClass node must exist');
 
     await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('forge.copyName', node);
+    await vscode.commands.executeCommand('sharplsp.copyName', node);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -852,7 +852,7 @@ suite('Context Menu — Copy Name', () => {
     assert.ok(slnNode, 'Solution node must exist');
 
     await vscode.env.clipboard.writeText('BEFORE');
-    await vscode.commands.executeCommand('forge.copyName', slnNode);
+    await vscode.commands.executeCommand('sharplsp.copyName', slnNode);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const text = await vscode.env.clipboard.readText();
@@ -969,7 +969,7 @@ suite('Context Menu — Reveal in File Explorer', () => {
     assert.ok(node, 'RevealClass node must be in the tree');
 
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.revealInExplorer', node);
+      await vscode.commands.executeCommand('sharplsp.revealInExplorer', node);
     }, 'revealInExplorer must not throw for a class node with symbolUri');
   });
 
@@ -982,7 +982,7 @@ suite('Context Menu — Reveal in File Explorer', () => {
     assert.ok(node, 'RevealMethod node must be in the tree');
 
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.revealInExplorer', node);
+      await vscode.commands.executeCommand('sharplsp.revealInExplorer', node);
     }, 'revealInExplorer must not throw for a method node');
   });
 
@@ -995,7 +995,7 @@ suite('Context Menu — Reveal in File Explorer', () => {
       contextValue: 'symbol.class',
     };
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.revealInExplorer', mockNode);
+      await vscode.commands.executeCommand('sharplsp.revealInExplorer', mockNode);
     }, 'revealInExplorer must handle missing symbolUri without throwing');
   });
 
@@ -1261,23 +1261,23 @@ suite('Context Menu — Project Node Commands Execute', () => {
     await closeAllEditors();
   });
 
-  test('forge.openProjectFile executes without error on a project node', async function () {
+  test('sharplsp.openProjectFile executes without error on a project node', async function () {
     this.timeout(10_000);
     const projectNode = findByContext(provider.getChildren(), 'project');
     assert.ok(projectNode, 'Project node must exist');
 
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.openProjectFile', projectNode);
+      await vscode.commands.executeCommand('sharplsp.openProjectFile', projectNode);
     }, 'openProjectFile must not throw when tapped on a project node');
   });
 
-  test('forge.openProjectFile opens the .csproj file in the editor', async function () {
+  test('sharplsp.openProjectFile opens the .csproj file in the editor', async function () {
     this.timeout(10_000);
     const projectNode = findByContext(provider.getChildren(), 'project');
     assert.ok(projectNode, 'Project node must exist');
     assert.strictEqual(projectNode.contextValue, 'project', "Project node must have contextValue 'project'");
 
-    await vscode.commands.executeCommand('forge.openProjectFile', projectNode);
+    await vscode.commands.executeCommand('sharplsp.openProjectFile', projectNode);
 
     // The LSP trace output channel can grab focus right after the command
     // completes, so check `visibleTextEditors` (which includes our doc even
@@ -1303,32 +1303,32 @@ suite('Context Menu — Project Node Commands Execute', () => {
     const children = provider.getChildren();
     assert.ok(children !== undefined && children.length > 0, 'Solution Explorer must have nodes');
     assert.ok(findByContext(children, 'project'), 'Project node must still be in tree');
-    await openForgePanel();
+    await openSharpLspPanel();
     await takeScreenshot('vscode-context-menu-open-project.png');
   });
 
-  test('forge.build executes without error', async function () {
+  test('sharplsp.build executes without error', async function () {
     this.timeout(10_000);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.build');
-    }, 'forge.build must not throw');
+      await vscode.commands.executeCommand('sharplsp.build');
+    }, 'sharplsp.build must not throw');
   });
 
-  test('forge.rebuild executes without error', async function () {
+  test('sharplsp.rebuild executes without error', async function () {
     this.timeout(10_000);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.rebuild');
-    }, 'forge.rebuild must not throw');
+      await vscode.commands.executeCommand('sharplsp.rebuild');
+    }, 'sharplsp.rebuild must not throw');
   });
 
-  test('forge.clean executes without error', async function () {
+  test('sharplsp.clean executes without error', async function () {
     this.timeout(10_000);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.clean');
-    }, 'forge.clean must not throw');
+      await vscode.commands.executeCommand('sharplsp.clean');
+    }, 'sharplsp.clean must not throw');
   });
 
-  test('forge.openProjectFile handles node without projectFilePath gracefully', async function () {
+  test('sharplsp.openProjectFile handles node without projectFilePath gracefully', async function () {
     this.timeout(5_000);
     const mockNode = {
       projectFilePath: undefined,
@@ -1336,11 +1336,11 @@ suite('Context Menu — Project Node Commands Execute', () => {
       contextValue: 'project',
     };
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.openProjectFile', mockNode);
+      await vscode.commands.executeCommand('sharplsp.openProjectFile', mockNode);
     }, 'openProjectFile must handle missing projectFilePath without throwing');
   });
 
-  test('forge.addProjectReference handles node without projectFilePath gracefully', async function () {
+  test('sharplsp.addProjectReference handles node without projectFilePath gracefully', async function () {
     this.timeout(5_000);
     const mockNode = {
       projectFilePath: undefined,
@@ -1348,11 +1348,11 @@ suite('Context Menu — Project Node Commands Execute', () => {
       contextValue: 'dependencyFolder',
     };
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.addProjectReference', mockNode);
+      await vscode.commands.executeCommand('sharplsp.addProjectReference', mockNode);
     }, 'addProjectReference must handle missing projectFilePath without throwing');
   });
 
-  test('forge.nuget.addFromExplorer handles node without projectFilePath gracefully', async function () {
+  test('sharplsp.nuget.addFromExplorer handles node without projectFilePath gracefully', async function () {
     this.timeout(5_000);
     const mockNode = {
       projectFilePath: undefined,
@@ -1360,7 +1360,7 @@ suite('Context Menu — Project Node Commands Execute', () => {
       contextValue: 'dependencyFolder',
     };
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.nuget.addFromExplorer', mockNode);
+      await vscode.commands.executeCommand('sharplsp.nuget.addFromExplorer', mockNode);
     }, 'nuget.addFromExplorer must handle missing projectFilePath without throwing');
   });
 });

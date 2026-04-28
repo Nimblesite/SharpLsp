@@ -1,19 +1,19 @@
 {
   "_agent_pmo": "2efd847",
   "default_threshold": 90,
-  "forge-lsp": {
+  "sharplsp-lsp": {
     "line_percent": 92.39
   },
   "vscode-extension": {
     "line_percent": 82.27
   },
-  "forge-sidecar-csharp": {
+  "sharplsp-sidecar-csharp": {
     "line_percent": 87.31
   },
-  "forge-sidecar-fsharp": {
+  "sharplsp-sidecar-fsharp": {
     "line_percent": 80.48
   },
-  "forge-sidecar-common": {
+  "sharplsp-sidecar-common": {
     "line_percent": 80.09
   }
 }

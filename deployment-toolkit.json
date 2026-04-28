@@ -1,74 +1,74 @@
 {
   "manifestVersion": 1,
   "product": {
-    "id": "forge",
-    "displayName": "Forge",
+    "id": "sharplsp",
+    "displayName": "SharpLsp",
     "version": "0.1.0",
-    "repository": "https://github.com/Nimblesite/forge"
+    "repository": "https://github.com/Nimblesite/SharpLsp"
   },
   "components": [
     {
-      "id": "forge-lsp",
+      "id": "sharplsp-lsp",
       "kind": "lsp",
       "language": "rust",
-      "binaryName": "forge-lsp",
+      "binaryName": "sharplsp-lsp",
       "expectedVersion": "${PRODUCT_VERSION}",
       "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "win32-x64"],
       "sources": ["user-setting", "env", "path", "pkgmgr"],
-      "userSetting": "forge.lspPath",
-      "env": { "pathVar": "FORGE_LSP_PATH", "dirVar": "FORGE_BINARY_DIR" },
+      "userSetting": "sharplsp.lspPath",
+      "env": { "pathVar": "SHARPLSP_LSP_PATH", "dirVar": "SHARPLSP_BINARY_DIR" },
       "pkgmgr": {
-        "brew": "nimblesite/tap/forge-lsp",
-        "scoop": "nimblesite/forge-lsp"
+        "brew": "nimblesite/tap/sharplsp-lsp",
+        "scoop": "nimblesite/sharplsp-lsp"
       },
       "verifyStartup": true,
       "versionCheckStrategy": "version-flag",
       "required": true
     },
     {
-      "id": "forge-sidecar-csharp",
+      "id": "sharplsp-sidecar-csharp",
       "kind": "sidecar",
       "language": "dotnet",
-      "binaryName": "forge-sidecar-csharp",
+      "binaryName": "sharplsp-sidecar-csharp",
       "expectedVersion": "${PRODUCT_VERSION}",
       "platforms": ["all"],
       "sources": ["user-setting", "env", "path", "dotnet-tool"],
-      "userSetting": "forge.csharpSidecarPath",
-      "env": { "pathVar": "FORGE_CSHARP_SIDECAR_PATH" },
-      "dotnetTool": { "package": "Forge.Sidecar.CSharp", "command": "forge-sidecar-csharp" },
+      "userSetting": "sharplsp.csharpSidecarPath",
+      "env": { "pathVar": "SHARPLSP_CSHARP_SIDECAR_PATH" },
+      "dotnetTool": { "package": "SharpLsp.Sidecar.CSharp", "command": "sharplsp-sidecar-csharp" },
       "verifyStartup": true,
       "versionCheckStrategy": "version-flag",
       "required": true
     },
     {
-      "id": "forge-sidecar-fsharp",
+      "id": "sharplsp-sidecar-fsharp",
       "kind": "sidecar",
       "language": "dotnet",
-      "binaryName": "forge-sidecar-fsharp",
+      "binaryName": "sharplsp-sidecar-fsharp",
       "expectedVersion": "${PRODUCT_VERSION}",
       "platforms": ["all"],
       "sources": ["user-setting", "env", "path", "dotnet-tool"],
-      "userSetting": "forge.fsharpSidecarPath",
-      "env": { "pathVar": "FORGE_FSHARP_SIDECAR_PATH" },
-      "dotnetTool": { "package": "Forge.Sidecar.FSharp", "command": "forge-sidecar-fsharp" },
+      "userSetting": "sharplsp.fsharpSidecarPath",
+      "env": { "pathVar": "SHARPLSP_FSHARP_SIDECAR_PATH" },
+      "dotnetTool": { "package": "SharpLsp.Sidecar.FSharp", "command": "sharplsp-sidecar-fsharp" },
       "verifyStartup": true,
       "versionCheckStrategy": "version-flag",
       "required": false
     },
     {
-      "id": "forge-vscode",
+      "id": "sharplsp-vscode",
       "kind": "extension-vscode",
       "language": "typescript",
       "platforms": ["all"]
     },
     {
-      "id": "forge-zed",
+      "id": "sharplsp-zed",
       "kind": "extension-zed",
       "language": "rust",
       "platforms": ["all"]
     },
     {
-      "id": "forge-rider",
+      "id": "sharplsp-rider",
       "kind": "extension-jetbrains",
       "language": "kotlin",
       "platforms": ["all"]
@@ -77,17 +77,17 @@
   "hosts": {
     "vscode": {
       "artifact": "vsix-fat",
-      "activationVerifies": ["forge-lsp", "forge-sidecar-csharp", "forge-sidecar-fsharp"],
+      "activationVerifies": ["sharplsp-lsp", "sharplsp-sidecar-csharp", "sharplsp-sidecar-fsharp"],
       "onMismatch": "prompt-pkgmgr"
     },
     "jetbrains": {
       "artifact": "intellij-jar",
-      "activationVerifies": ["forge-lsp", "forge-sidecar-csharp"],
+      "activationVerifies": ["sharplsp-lsp", "sharplsp-sidecar-csharp"],
       "onMismatch": "prompt-pkgmgr"
     },
     "zed": {
       "artifact": "zed-wasm",
-      "activationVerifies": ["forge-lsp"],
+      "activationVerifies": ["sharplsp-lsp"],
       "onMismatch": "error"
     },
     "cli": { "artifact": "archive" },

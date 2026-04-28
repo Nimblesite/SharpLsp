@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120" fill="none">
+  <defs>
+    <style>
+      .bg { fill: #0d0d0d; }
+      .panel { fill: #1a1a1a; stroke: #262626; stroke-width: 2; }
+      .panel-light { fill: #f4f1f1; stroke: #e1dddd; stroke-width: 2; }
+      .ink { fill: #e5e2e1; }
+      .muted { fill: #bacbb9; }
+      .dark-ink { fill: #1a1a1a; }
+      .dark-muted { fill: #354b3a; }
+      .green { fill: #00e676; }
+      .green-soft { fill: #75ff9e; }
+      .stroke-ink { stroke: #e5e2e1; }
+      .stroke-muted { stroke: #bacbb9; }
+      .stroke-dark { stroke: #1a1a1a; }
+      .stroke-green { stroke: #00e676; }
+      .stroke-green-soft { stroke: #75ff9e; }
+      .label { font: 600 18px Inter, Arial, sans-serif; letter-spacing: 0; }
+      .title { font: 700 40px "Space Grotesk", Inter, Arial, sans-serif; letter-spacing: 0; }
+      .caption { font: 500 15px Inter, Arial, sans-serif; letter-spacing: 0; }
+      .word { font: 700 34px "Space Grotesk", Inter, Arial, sans-serif; letter-spacing: 0; }
+      .mono { font: 700 42px "Cascadia Code", "SF Mono", Consolas, monospace; letter-spacing: 0; }
+      .small-mono { font: 700 24px "Cascadia Code", "SF Mono", Consolas, monospace; letter-spacing: 0; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="1120"/>
+  <text x="64" y="86" class="title ink">SharpLsp logo options</text>
+  <text x="64" y="122" class="caption muted">Flat SVG concepts using the supplied High-Tech Developer System palette.</text>
+
+  <g transform="translate(64 176)">
+    <rect class="panel" width="440" height="250" rx="16"/>
+    <g transform="translate(34 36)">
+      <rect x="0" y="0" width="112" height="112" rx="14" class="green"/>
+      <path d="M40 23L31 89" stroke="#003918" stroke-width="7" stroke-linecap="square" opacity="0.42"/>
+      <path d="M73 23L64 89" stroke="#003918" stroke-width="7" stroke-linecap="square" opacity="0.42"/>
+      <path d="M28 46H84" stroke="#003918" stroke-width="7" stroke-linecap="square" opacity="0.42"/>
+      <path d="M24 67H80" stroke="#003918" stroke-width="7" stroke-linecap="square" opacity="0.42"/>
+      <path d="M30 35L16 56L30 77" stroke="#003918" stroke-width="8" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M82 35L96 56L82 77" stroke="#003918" stroke-width="8" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M57 19H84L66 49H86L42 94L55 61H34L57 19Z" fill="#003918"/>
+      <text x="140" y="47" class="word ink">SharpLsp</text>
+      <text x="140" y="84" class="caption muted">Sharp code bolt</text>
+    </g>
+    <text x="34" y="202" class="caption muted">Combines #, code brackets, and lightning into one compact developer-tool mark.</text>
+  </g>
+
+  <g transform="translate(580 176)">
+    <rect class="panel" width="440" height="250" rx="16"/>
+    <g transform="translate(34 36)">
+      <rect x="0" y="0" width="112" height="112" rx="14" class="green"/>
+      <path d="M35 25H84L62 52H85L36 88L55 61H31L35 25Z" fill="#003918"/>
+      <text x="140" y="47" class="word ink">SharpLsp</text>
+      <text x="140" y="84" class="caption muted">Sharp signal</text>
+    </g>
+    <text x="34" y="202" class="caption muted">Fastest-looking option. Compact enough for favicons and marketplace icons.</text>
+  </g>
+
+  <g transform="translate(1096 176)">
+    <rect class="panel" width="440" height="250" rx="16"/>
+    <g transform="translate(34 36)">
+      <rect x="0" y="0" width="112" height="112" rx="14" class="green"/>
+      <path d="M33 76V36H73" stroke="#003918" stroke-width="10" stroke-linecap="square"/>
+      <path d="M53 76V56H86" stroke="#003918" stroke-width="10" stroke-linecap="square"/>
+      <circle cx="33" cy="36" r="8" fill="#003918"/>
+      <circle cx="73" cy="36" r="8" fill="#003918"/>
+      <circle cx="53" cy="56" r="8" fill="#003918"/>
+      <circle cx="86" cy="56" r="8" fill="#003918"/>
+      <circle cx="33" cy="76" r="8" fill="#003918"/>
+      <text x="140" y="47" class="word ink">SharpLsp</text>
+      <text x="140" y="84" class="caption muted">Protocol graph</text>
+    </g>
+    <text x="34" y="202" class="caption muted">Represents language-server routing without literal editor branding.</text>
+  </g>
+
+  <g transform="translate(64 486)">
+    <rect class="panel" width="440" height="250" rx="16"/>
+    <g transform="translate(34 36)">
+      <rect x="0" y="0" width="112" height="112" rx="14" class="green"/>
+      <path d="M30 36H83L68 55H87L31 86L49 64H28L30 36Z" fill="#003918"/>
+      <path d="M28 29H88" stroke="#003918" stroke-width="8" stroke-linecap="square"/>
+      <text x="140" y="47" class="word ink">SharpLsp</text>
+      <text x="140" y="84" class="caption muted">Compiler edge</text>
+    </g>
+    <text x="34" y="202" class="caption muted">More angular and aggressive. Good fit for "uncompromising speed".</text>
+  </g>
+
+  <g transform="translate(580 486)">
+    <rect class="panel" width="440" height="250" rx="16"/>
+    <g transform="translate(34 36)">
+      <rect x="0" y="0" width="112" height="112" rx="14" class="green"/>
+      <path d="M30 34L18 56L30 78" stroke="#003918" stroke-width="9" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M82 34L94 56L82 78" stroke="#003918" stroke-width="9" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M64 25L46 87" stroke="#003918" stroke-width="8" stroke-linecap="square"/>
+      <text x="140" y="47" class="word ink">SharpLsp</text>
+      <text x="140" y="84" class="caption muted">Code brackets</text>
+    </g>
+    <text x="34" y="202" class="caption muted">Conservative developer-tool mark. Very legible at nav size.</text>
+  </g>
+
+  <g transform="translate(1096 486)">
+    <rect class="panel" width="440" height="250" rx="16"/>
+    <g transform="translate(34 36)">
+      <rect x="0" y="0" width="112" height="112" rx="14" class="green"/>
+      <text x="23" y="73" class="mono dark-ink">#</text>
+      <path d="M66 32H88V54H66V76H44V54H22V32H44V10H66V32Z" fill="#003918" opacity="0.18"/>
+      <text x="140" y="47" class="word ink">SharpLsp</text>
+      <text x="140" y="84" class="caption muted">Sharp hash</text>
+    </g>
+    <text x="34" y="202" class="caption muted">Most name-literal option. Strong C# signal, weaker F# and LSP signal.</text>
+  </g>
+
+  <g transform="translate(64 808)">
+    <text x="0" y="0" class="label muted">Small-size checks</text>
+    <g transform="translate(0 34)">
+      <rect width="216" height="132" rx="12" class="panel"/>
+      <rect x="24" y="24" width="32" height="32" rx="4" class="green"/>
+      <path d="M35 30L32 50" stroke="#003918" stroke-width="2.4" stroke-linecap="square" opacity="0.42"/>
+      <path d="M44 30L41 50" stroke="#003918" stroke-width="2.4" stroke-linecap="square" opacity="0.42"/>
+      <path d="M31 37H48" stroke="#003918" stroke-width="2.4" stroke-linecap="square" opacity="0.42"/>
+      <path d="M30 43H47" stroke="#003918" stroke-width="2.4" stroke-linecap="square" opacity="0.42"/>
+      <path d="M32 34L28 40L32 46" stroke="#003918" stroke-width="2.6" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M48 34L52 40L48 46" stroke="#003918" stroke-width="2.6" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M40 29H48L43 38H50L36 52L40 42H34L40 29Z" fill="#003918"/>
+      <rect x="72" y="24" width="32" height="32" rx="4" class="green"/>
+      <path d="M82 32H98L91 41H99L82 50L88 43H80L82 32Z" fill="#003918"/>
+      <rect x="120" y="24" width="32" height="32" rx="4" class="green"/>
+      <path d="M130 47V34H143" stroke="#003918" stroke-width="3.5" stroke-linecap="square"/>
+      <path d="M137 47V40H147" stroke="#003918" stroke-width="3.5" stroke-linecap="square"/>
+      <circle cx="130" cy="34" r="2.5" fill="#003918"/>
+      <circle cx="143" cy="34" r="2.5" fill="#003918"/>
+      <circle cx="137" cy="40" r="2.5" fill="#003918"/>
+      <circle cx="147" cy="40" r="2.5" fill="#003918"/>
+      <circle cx="130" cy="47" r="2.5" fill="#003918"/>
+      <text x="24" y="96" class="small-mono ink">32px</text>
+    </g>
+  </g>
+
+  <g transform="translate(344 808)">
+    <text x="0" y="0" class="label muted">Light mode checks</text>
+    <g transform="translate(0 34)">
+      <rect width="448" height="132" rx="12" class="panel-light"/>
+      <rect x="24" y="24" width="72" height="72" rx="10" class="green"/>
+      <path d="M50 39L44 81" stroke="#003918" stroke-width="5" stroke-linecap="square" opacity="0.42"/>
+      <path d="M71 39L65 81" stroke="#003918" stroke-width="5" stroke-linecap="square" opacity="0.42"/>
+      <path d="M42 54H78" stroke="#003918" stroke-width="5" stroke-linecap="square" opacity="0.42"/>
+      <path d="M39 68H75" stroke="#003918" stroke-width="5" stroke-linecap="square" opacity="0.42"/>
+      <path d="M44 47L35 60L44 73" stroke="#003918" stroke-width="5.5" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M76 47L85 60L76 73" stroke="#003918" stroke-width="5.5" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M61 36H78L67 55H80L51 84L60 62H46L61 36Z" fill="#003918"/>
+      <text x="116" y="56" class="word dark-ink">SharpLsp</text>
+      <text x="116" y="88" class="caption dark-muted">Sharp code bolt</text>
+    </g>
+  </g>
+
+  <g transform="translate(856 808)">
+    <text x="0" y="0" class="label muted">Recommended short list</text>
+    <g transform="translate(0 34)">
+      <rect width="680" height="132" rx="12" class="panel"/>
+      <text x="28" y="44" class="caption ink">1. Sharp code bolt: combined #, brackets, lightning.</text>
+      <text x="28" y="74" class="caption ink">2. Sharp signal: strongest speed/performance-only mark.</text>
+      <text x="28" y="104" class="caption ink">3. Protocol graph: best unique LSP concept.</text>
+    </g>
+  </g>
+</svg>

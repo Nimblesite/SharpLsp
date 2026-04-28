@@ -233,7 +233,7 @@ The Rust host SHOULD cache the most recent result per document per method and re
 | Symbol resolution fails | Return `null` |
 | Symbol is in metadata (no source, Phase 2) | Return `null` |
 | Symbol is in metadata (Phase 3+) | Return decompiled source location |
-| Sidecar crashes during request | Return `null`, trigger crash recovery (see FORGE-SPEC §5) |
+| Sidecar crashes during request | Return `null`, trigger crash recovery (see SHARPLSP-SPEC §5) |
 | Multiple partial definitions | Return `Location[]` with all partial sites |
 
 Definition requests MUST NOT block, hang, or return errors to the client. On any failure, return `null`.

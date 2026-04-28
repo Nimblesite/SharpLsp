@@ -63,7 +63,7 @@ No sidecar, no webview, no MessagePack on the Rider side. The plugin is
   ├── gradle/wrapper/               (generated)
   ├── gradlew, gradlew.bat          (generated)
   └── src/main/
-      ├── kotlin/com/forgelsp/rider/
+      ├── kotlin/com/sharplsp/rider/
       │   ├── lsp/SharpLspLspServerSupportProvider.kt
       │   ├── lsp/SharpLspLspServerDescriptor.kt
       │   ├── lsp/SharpLspLsp4jServer.kt
@@ -142,7 +142,7 @@ drift** — the Rust server is the source of truth.
   <toolWindow id="SharpLspSolution"
               anchor="left"
               icon="/icons/sharplsp.svg"
-              factoryClass="com.forgelsp.rider.toolwindow.SharpLspSolutionToolWindowFactory"/>
+              factoryClass="com.sharplsp.rider.toolwindow.SharpLspSolutionToolWindowFactory"/>
 </extensions>
 ```
 
@@ -249,7 +249,7 @@ A manual dev-loop test, run from `make test-rider`:
 
 1. `make install` — binaries in `~/.local/bin` and `~/.local/lib/sharplsp`.
 2. `./gradlew runIde` — boots a sandboxed Rider instance with the plugin.
-3. Open `examples/HelloForge.sln` or `examples/HelloForge.slnx`.
+3. Open `examples/HelloSharpLsp.sln` or `examples/HelloSharpLsp.slnx`.
 4. Assert the SharpLsp Solution tool window renders the project tree.
 
 ## 10. Editor Support Matrix (updated)

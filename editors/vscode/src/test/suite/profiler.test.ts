@@ -8,7 +8,7 @@ import {
   pollUntilResult,
   setupLspTestSuite,
   teardownLspTestSuite,
-  openForgePanelProfiler,
+  openSharpLspPanelProfiler,
   takeScreenshot,
 } from './test-helpers';
 
@@ -65,18 +65,18 @@ suite('Profiler', () => {
   // ── Command Registration ─────────────────────────────────────
 
   for (const cmd of [
-    'forge.profiler.refresh',
-    'forge.profiler.listProcesses',
-    'forge.profiler.startTrace',
-    'forge.profiler.stopTrace',
-    'forge.profiler.startCounters',
-    'forge.profiler.stopCounters',
-    'forge.profiler.collectDump',
-    'forge.profiler.analyzeHeap',
-    'forge.profiler.diffSnapshots',
-    'forge.profiler.detectLeaks',
-    'forge.profiler.showObjectGraph',
-    'forge.profiler.inspectObject',
+    'sharplsp.profiler.refresh',
+    'sharplsp.profiler.listProcesses',
+    'sharplsp.profiler.startTrace',
+    'sharplsp.profiler.stopTrace',
+    'sharplsp.profiler.startCounters',
+    'sharplsp.profiler.stopCounters',
+    'sharplsp.profiler.collectDump',
+    'sharplsp.profiler.analyzeHeap',
+    'sharplsp.profiler.diffSnapshots',
+    'sharplsp.profiler.detectLeaks',
+    'sharplsp.profiler.showObjectGraph',
+    'sharplsp.profiler.inspectObject',
   ]) {
     test(`${cmd} command is registered`, async () => {
       const allCommands = await vscode.commands.getCommands(true);
@@ -90,9 +90,9 @@ suite('Profiler', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, 'Extension should exist');
     const views = ext.packageJSON.contributes?.views ?? {};
-    const forgeViews: { id: string; name: string }[] = views['forge-explorer'] ?? [];
-    const profilerView = forgeViews.find((v) => v.id === 'forge.profiler');
-    assert.ok(profilerView, 'Should contribute forge.profiler view');
+    const sharplspViews: { id: string; name: string }[] = views['sharplsp-explorer'] ?? [];
+    const profilerView = sharplspViews.find((v) => v.id === 'sharplsp.profiler');
+    assert.ok(profilerView, 'Should contribute sharplsp.profiler view');
     assert.strictEqual(profilerView.name, 'Profiler');
   });
 
@@ -158,7 +158,7 @@ suite('Profiler', () => {
       const second = findByLabel(afterTwo, 'Trace: PID 99999');
       assert.ok(second, 'Second trace session must appear in tree view');
       // Load fixture solution so Solution Explorer is populated in the screenshot.
-      if (process.env['FORGE_SCREENSHOTS']) {
+      if (process.env['SHARPLSP_SCREENSHOTS']) {
         const ext2 = vscode.extensions.getExtension(EXTENSION_ID);
         const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
         if (api2?.explorerProvider) {
@@ -173,7 +173,7 @@ suite('Profiler', () => {
           }
         }
       }
-      await openForgePanelProfiler();
+      await openSharpLspPanelProfiler();
       await takeScreenshot('vscode-profiler-page.png');
 
       // Remove sessions and verify they disappear.
@@ -261,11 +261,11 @@ suite('Profiler', () => {
     // Verify the analyzeHeap command exists and can be invoked
     // (it will return immediately since no LSP client is picking a file).
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.profiler.collectDump');
+      await vscode.commands.executeCommand('sharplsp.profiler.collectDump');
     }, 'collectDump command must not throw when no process is available');
 
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.profiler.analyzeHeap');
+      await vscode.commands.executeCommand('sharplsp.profiler.analyzeHeap');
     }, 'analyzeHeap command must not throw when no dump file is selected');
 
     // Simulate a dump collection flow: add a session, verify tree, remove.
@@ -327,10 +327,10 @@ suite('Profiler', () => {
 
   // ── Refresh command ──────────────────────────────────────────
 
-  test('forge.profiler.refresh executes without error', async function () {
+  test('sharplsp.profiler.refresh executes without error', async function () {
     this.timeout(5_000);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.profiler.refresh');
+      await vscode.commands.executeCommand('sharplsp.profiler.refresh');
     }, 'profiler.refresh command should not throw');
   });
 
@@ -340,28 +340,28 @@ suite('Profiler', () => {
     this.timeout(5_000);
     await assert.doesNotReject(async () => {
       // The command opens a file dialog; without a client it returns early.
-      await vscode.commands.executeCommand('forge.profiler.diffSnapshots');
+      await vscode.commands.executeCommand('sharplsp.profiler.diffSnapshots');
     }, 'diffSnapshots must not throw when no file is selected');
   });
 
   test('detectLeaks command does not throw when user cancels', async function () {
     this.timeout(5_000);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.profiler.detectLeaks');
+      await vscode.commands.executeCommand('sharplsp.profiler.detectLeaks');
     }, 'detectLeaks must not throw when user cancels the workflow');
   });
 
   test('showObjectGraph command does not throw when cancelled', async function () {
     this.timeout(5_000);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.profiler.showObjectGraph');
+      await vscode.commands.executeCommand('sharplsp.profiler.showObjectGraph');
     }, 'showObjectGraph must not throw when no file is selected');
   });
 
   test('inspectObject command does not throw when cancelled', async function () {
     this.timeout(5_000);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.profiler.inspectObject');
+      await vscode.commands.executeCommand('sharplsp.profiler.inspectObject');
     }, 'inspectObject must not throw when no file is selected');
   });
 
@@ -372,8 +372,8 @@ suite('Profiler', () => {
     assert.ok(ext, 'Extension must exist');
     const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
     assert.ok(
-      commands.some((c) => c.command === 'forge.profiler.diffSnapshots'),
-      'package.json must declare forge.profiler.diffSnapshots',
+      commands.some((c) => c.command === 'sharplsp.profiler.diffSnapshots'),
+      'package.json must declare sharplsp.profiler.diffSnapshots',
     );
   });
 
@@ -382,8 +382,8 @@ suite('Profiler', () => {
     assert.ok(ext, 'Extension must exist');
     const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
     assert.ok(
-      commands.some((c) => c.command === 'forge.profiler.detectLeaks'),
-      'package.json must declare forge.profiler.detectLeaks',
+      commands.some((c) => c.command === 'sharplsp.profiler.detectLeaks'),
+      'package.json must declare sharplsp.profiler.detectLeaks',
     );
   });
 
@@ -392,8 +392,8 @@ suite('Profiler', () => {
     assert.ok(ext, 'Extension must exist');
     const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
     assert.ok(
-      commands.some((c) => c.command === 'forge.profiler.showObjectGraph'),
-      'package.json must declare forge.profiler.showObjectGraph',
+      commands.some((c) => c.command === 'sharplsp.profiler.showObjectGraph'),
+      'package.json must declare sharplsp.profiler.showObjectGraph',
     );
   });
 
@@ -402,8 +402,8 @@ suite('Profiler', () => {
     assert.ok(ext, 'Extension must exist');
     const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
     assert.ok(
-      commands.some((c) => c.command === 'forge.profiler.inspectObject'),
-      'package.json must declare forge.profiler.inspectObject',
+      commands.some((c) => c.command === 'sharplsp.profiler.inspectObject'),
+      'package.json must declare sharplsp.profiler.inspectObject',
     );
   });
 

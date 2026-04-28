@@ -171,7 +171,7 @@ The Rust host SHOULD cache the most recent hover result per document and return 
 | Sidecar not ready / loading | Return `null` with `window/showMessage` notification |
 | Symbol resolution fails | Return `null` |
 | XML documentation unavailable | Return signature without documentation section |
-| Sidecar crashes during hover | Return `null`, trigger crash recovery (see FORGE-SPEC §5) |
+| Sidecar crashes during hover | Return `null`, trigger crash recovery (see SHARPLSP-SPEC §5) |
 
 Hover MUST NOT block, hang, or return errors to the client. On any failure, return `null`.
 

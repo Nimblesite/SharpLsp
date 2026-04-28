@@ -6,7 +6,7 @@ import {
   EXTENSION_ID,
   closeAllEditors,
   openCSharpFile,
-  openForgePanel,
+  openSharpLspPanel,
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
@@ -36,23 +36,23 @@ suite('Solution Explorer & Workspace Symbols', () => {
 
   // ── Command Registration ─────────────────────────────────────
 
-  test('forge.selectSolution command is registered', async () => {
+  test('sharplsp.selectSolution command is registered', async () => {
     const allCommands = await vscode.commands.getCommands(true);
     assert.ok(
-      allCommands.includes('forge.selectSolution'),
-      'forge.selectSolution should be registered',
+      allCommands.includes('sharplsp.selectSolution'),
+      'sharplsp.selectSolution should be registered',
     );
   });
 
-  test('forge.refreshExplorer command is registered', async () => {
+  test('sharplsp.refreshExplorer command is registered', async () => {
     const allCommands = await vscode.commands.getCommands(true);
     assert.ok(
-      allCommands.includes('forge.refreshExplorer'),
-      'forge.refreshExplorer should be registered',
+      allCommands.includes('sharplsp.refreshExplorer'),
+      'sharplsp.refreshExplorer should be registered',
     );
   });
 
-  for (const cmd of ['forge.sortNatural', 'forge.sortAlphabetical', 'forge.sortAccessibility']) {
+  for (const cmd of ['sharplsp.sortNatural', 'sharplsp.sortAlphabetical', 'sharplsp.sortAccessibility']) {
     test(`${cmd} command is registered`, async () => {
       const allCommands = await vscode.commands.getCommands(true);
       assert.ok(allCommands.includes(cmd), `${cmd} should be registered`);
@@ -61,28 +61,28 @@ suite('Solution Explorer & Workspace Symbols', () => {
 
   // ── Package Contributions ────────────────────────────────────
 
-  test('extension contributes forge-explorer view container', () => {
+  test('extension contributes sharplsp-explorer view container', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, 'Extension should exist');
     const containers = ext.packageJSON.contributes?.viewsContainers?.activitybar ?? [];
-    const forge = containers.find((c: { id: string }) => c.id === 'forge-explorer');
-    assert.ok(forge, 'Should contribute forge-explorer view container');
-    assert.strictEqual(forge.title, 'Forge');
+    const container = containers.find((c: { id: string }) => c.id === 'sharplsp-explorer');
+    assert.ok(container, 'Should contribute sharplsp-explorer view container');
+    assert.strictEqual(container.title, 'SharpLsp');
   });
 
   test('extension contributes solutionExplorer view', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, 'Extension should exist');
     const views = ext.packageJSON.contributes?.views ?? {};
-    const forgeViews: { id: string; name: string }[] = views['forge-explorer'] ?? [];
-    const explorer = forgeViews.find((v) => v.id === 'forge.solutionExplorer');
-    assert.ok(explorer, 'Should contribute forge.solutionExplorer view');
+    const sharplspViews: { id: string; name: string }[] = views['sharplsp-explorer'] ?? [];
+    const explorer = sharplspViews.find((v) => v.id === 'sharplsp.solutionExplorer');
+    assert.ok(explorer, 'Should contribute sharplsp.solutionExplorer view');
     assert.strictEqual(explorer.name, 'Solution Explorer');
   });
 
-  // ── forge/workspaceSymbols via Real LSP ──────────────────────
+  // ── sharplsp/workspaceSymbols via Real LSP ──────────────────────
 
-  test('forge/workspaceSymbols returns project hierarchy from real .sln', async function () {
+  test('sharplsp/workspaceSymbols returns project hierarchy from real .sln', async function () {
     this.timeout(30_000);
 
     // Create a mini solution structure in tmpDir.
@@ -219,9 +219,9 @@ EndGlobal`,
     assert.ok(ifaceAdd, 'ICalculator interface must have Add method declaration');
     assert.strictEqual(ifaceAdd.kind, vscode.SymbolKind.Method, 'Interface Add must be a Method symbol');
 
-    await openForgePanel();
+    await openSharpLspPanel();
     // Refresh the tree view so the UI renders the loaded solution before screenshotting.
-    await vscode.commands.executeCommand('forge.refreshExplorer');
+    await vscode.commands.executeCommand('sharplsp.refreshExplorer');
     await new Promise((r) => setTimeout(r, 2000));
     await takeScreenshot('solution-explorer.png');
 
@@ -470,12 +470,12 @@ public record UserDto(string Name, int Age);`;
     assert.ok(dto, 'UserDto must be INSIDE namespace');
   });
 
-  // ── forge.refreshExplorer command ────────────────────────────
+  // ── sharplsp.refreshExplorer command ────────────────────────────
 
-  test('forge.refreshExplorer executes without error', async function () {
+  test('sharplsp.refreshExplorer executes without error', async function () {
     this.timeout(5_000);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.refreshExplorer');
+      await vscode.commands.executeCommand('sharplsp.refreshExplorer');
     }, 'refreshExplorer command should not throw');
   });
 
@@ -796,7 +796,7 @@ public class EventSource
     assert.ok(
       hasBuffer,
       "After unsaved rename 'DiskVersion' → 'BufferVersion', tree must show " +
-        "'BufferVersion' — BUG: forge/workspaceSymbols reads from disk " +
+        "'BufferVersion' — BUG: sharplsp/workspaceSymbols reads from disk " +
         'instead of VFS, so it shows stale disk content',
     );
   });

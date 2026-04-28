@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   closeAllEditors,
-  openForgePanel,
+  openSharpLspPanel,
   replaceDocumentContent,
   setupLspTestSuite,
   takeScreenshot,
@@ -88,15 +88,15 @@ suite('Diagnostics / Problems Panel', () => {
     const error = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
     assert.ok(error, 'Must have at least one error-level diagnostic');
     assert.ok(error.message.length > 0, 'Error diagnostic must have a message');
-    assert.ok(error.source === 'forge-csharp', "Error source must be 'forge-csharp'");
+    assert.ok(error.source === 'sharplsp-csharp', "Error source must be 'sharplsp-csharp'");
     assert.ok(error.range.start.line >= 0, 'Error must have a valid start line');
     assert.ok(error.range.end.character >= 0, 'Error must have a valid end character');
     // The error is on line 4 (0-indexed): "return "not an int""
     assert.strictEqual(error.range.start.line, 4, 'Type error must be on line 4 (the return statement)');
     assert.ok(error.message.toLowerCase().includes('string') || error.message.toLowerCase().includes('cannot'), "Error message must describe the type mismatch");
     // Load fixture solution so Solution Explorer is populated in the screenshot.
-    if (process.env['FORGE_SCREENSHOTS']) {
-      const ext2 = vscode.extensions.getExtension('forge-lsp.forge');
+    if (process.env['SHARPLSP_SCREENSHOTS']) {
+      const ext2 = vscode.extensions.getExtension('sharplsp.sharp-lsp');
       const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
       if (api2?.explorerProvider) {
         const slnPath2 = path.join(workspaceRoot, 'TestFixtures.sln');
@@ -111,7 +111,7 @@ suite('Diagnostics / Problems Panel', () => {
     // Open Problems panel so diagnostics are visible in the screenshot.
     await vscode.commands.executeCommand('workbench.actions.view.problems');
     await new Promise((r) => setTimeout(r, 1000));
-    await openForgePanel();
+    await openSharpLspPanel();
     await takeScreenshot('vscode-diagnostics-page.png');
   });
 
@@ -204,7 +204,7 @@ suite('Diagnostics / Problems Panel', () => {
     assert.ok(error.range.start.character >= 0, 'Range start character must be valid');
     assert.ok(error.range.end.line >= error.range.start.line, 'Range end line must be >= start');
     assert.ok(error.range.end.character >= 0, 'Range end character must be valid');
-    assert.ok(error.source === 'forge-csharp', "Diagnostic source must be 'forge-csharp'");
+    assert.ok(error.source === 'sharplsp-csharp', "Diagnostic source must be 'sharplsp-csharp'");
     assert.ok(error.message.includes('string') || error.message.includes('int'), "Error message must reference the mismatched type");
     assert.ok(typeof error.code === 'string' || typeof error.code === 'number' || error.code !== undefined, 'Diagnostic must have a code');
     // All diagnostics must have a source

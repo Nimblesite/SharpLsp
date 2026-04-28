@@ -102,7 +102,7 @@ dotnet_diagnostic.CA1054.severity = error       # URI 参数不应为字符串
 | 变量 | 描述 |
 |----------|-------------|
 | `SHARPLSP_LOG` | 覆盖日志级别（例如，`SHARPLSP_LOG=debug`）|
-| `FORGE_CONFIG` | 覆盖 `sharplsp.toml` 路径 |
+| `SHARPLSP_CONFIG` | 覆盖 `sharplsp.toml` 路径 |
 | `SHARPLSP_DOTNET_ROOT` | 覆盖用于 MSBuild 发现的 .NET SDK 根目录 |
 
 ## 禁用功能

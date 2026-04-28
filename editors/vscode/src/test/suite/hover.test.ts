@@ -112,7 +112,7 @@ suite('Hover / Quick Info', () => {
     await vscode.commands.executeCommand('editor.action.triggerSuggest');
     // Wait for widget to appear — no other commands that could dismiss it.
     await new Promise((r) => setTimeout(r, 2500));
-    // No openForgePanel() — the completion dropdown IS the feature; keep editor visible.
+    // No openSharpLspPanel() — the completion dropdown IS the feature; keep editor visible.
     await takeScreenshot('vscode-completions-page.png');
 
     // Dismiss suggestion widget then switch back to HoverMulti.cs for go-to-definition.

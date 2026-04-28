@@ -210,7 +210,7 @@ suite('Extension Activation & Configuration', () => {
         }
       }
     }
-    // Close any bottom panel, open Forge sidebar — shows Rust host + Roslyn sidecar in action.
+    // Close any bottom panel, open SharpLsp sidebar — shows Rust host + Roslyn sidecar in action.
     await vscode.commands.executeCommand('workbench.action.closePanel');
     await openSharpLspPanel();
     await new Promise((r) => setTimeout(r, 1_000));
@@ -358,7 +358,7 @@ suite('Extension Activation & Configuration', () => {
     }
   });
 
-  test("all commands have a category of 'Forge'", () => {
+  test("all commands have a category of 'SharpLsp'", () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext);
     const cmds: { command: string; category?: string }[] =
@@ -366,8 +366,8 @@ suite('Extension Activation & Configuration', () => {
     for (const cmd of cmds) {
       assert.strictEqual(
         cmd.category,
-        'Forge',
-        `Command ${cmd.command} should have category 'Forge'`,
+        'SharpLsp',
+        `Command ${cmd.command} should have category 'SharpLsp'`,
       );
     }
   });
