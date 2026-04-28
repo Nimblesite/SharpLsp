@@ -362,16 +362,36 @@ suite('LSP Integration — Fixture Files', () => {
     this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
     const uri = vscode.Uri.file(path.join(fixtureDir, 'Calculator.cs'));
     const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
+    const editor = await vscode.window.showTextDocument(doc);
 
     const ranges = await waitForFoldingRanges(uri);
     assert.ok(ranges.length >= 5, `Expected ≥5 folding ranges, got ${ranges.length}`);
 
+    // Must have both region and non-region (method/class body) folding ranges
     const regionRanges = ranges.filter((r) => r.kind === vscode.FoldingRangeKind.Region);
-    assert.ok(
-      regionRanges.length >= 2,
-      `Expected ≥2 region folding ranges (#region), got ${regionRanges.length}`,
-    );
+    assert.ok(regionRanges.length >= 2, `Expected ≥2 #region ranges, got ${regionRanges.length}`);
+    // Body ranges have undefined kind (not Region, not Comment, not Imports)
+    const bodyRanges = ranges.filter((r) => r.kind === undefined || r.kind === null);
+    assert.ok(bodyRanges.length >= 3, `Expected ≥3 body folding ranges (class/method bodies), got ${bodyRanges.length}. All kinds: ${JSON.stringify(ranges.map((r) => r.kind))}`);
+
+    // Each region range must span at least 2 lines
+    for (const r of regionRanges) {
+      assert.ok(r.end > r.start, `Region range must span >1 line: ${r.start}–${r.end}`);
+    }
+
+    // The #region Arithmetic range must cover the Add, Subtract, Divide methods
+    const arithmeticRegion = regionRanges.find((r) => r.start === 14); // 0-indexed line 14 = "#region Arithmetic"
+    assert.ok(arithmeticRegion, 'Must have #region Arithmetic folding range at line 14');
+
+    // Fold everything and assert visible lines dropped drastically
+    const linesBefore = editor.visibleRanges.reduce((sum, r) => sum + r.end.line - r.start.line + 1, 0);
+    assert.ok(linesBefore > 10, `File must have >10 visible lines before folding, got ${linesBefore}`);
+    await vscode.commands.executeCommand('editor.foldAll');
+    await new Promise((r) => setTimeout(r, 800));
+    const linesAfter = editor.visibleRanges.reduce((sum, r) => sum + r.end.line - r.start.line + 1, 0);
+    assert.ok(linesAfter < linesBefore, `Folding must reduce visible lines: before=${linesBefore} after=${linesAfter}`);
+    assert.ok(linesAfter <= 5, `After foldAll, should have ≤5 visible lines, got ${linesAfter}`);
+
     await openForgePanel();
     await takeScreenshot('code-folding.png');
   });

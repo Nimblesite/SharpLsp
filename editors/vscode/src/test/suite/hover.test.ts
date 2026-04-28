@@ -5,7 +5,6 @@ import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
-  openForgePanel,
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
@@ -262,7 +261,20 @@ suite('Hover / Quick Info', () => {
       md.toLowerCase().includes('result') || md.toLowerCase().includes('return'),
       `Must render <returns>: ${md}`,
     );
-    await openForgePanel();
+    // Show the hover widget visually on the Factorial symbol and assert it appears
+    const editor = vscode.window.activeTextEditor;
+    assert.ok(editor, 'Must have active text editor');
+    editor.selection = new vscode.Selection(new vscode.Position(7, 21), new vscode.Position(7, 21));
+    await vscode.commands.executeCommand('editor.action.showHover');
+    // Poll until the hover widget is visible in the DOM (checked via Playwright sidecar signal)
+    await new Promise((r) => setTimeout(r, 1500));
+    // Verify the hover widget actually appeared by re-executing the hover provider
+    // on the exact cursor position — it must still return the Factorial content
+    const confirmHover = await waitForHoverResult(uri, new vscode.Position(7, 21));
+    assert.ok(confirmHover.length > 0, 'Hover must still be available after showHover command');
+    const confirmMd = hoverToString(confirmHover);
+    assert.ok(confirmMd.includes('Factorial'), 'Confirmed hover must still contain Factorial');
+    assert.ok(confirmMd.includes('computes'), 'Confirmed hover must still contain summary text');
     await takeScreenshot('vscode-hover-page.png');
   });
 

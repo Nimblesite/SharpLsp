@@ -274,12 +274,24 @@ export function teardownLspTestSuite(tmpDir: string): void {
 const SCREENSHOT_OUT_DIR = path.resolve(__dirname, '../../../../../website/src/assets/screenshots');
 
 /**
- * Open the Forge activity bar panel (Solution Explorer) so it's visible in screenshots.
+ * Open the Forge activity bar panel (shows Solution Explorer + Profiler).
  * Only does anything when FORGE_SCREENSHOTS=1 is set.
  */
 export async function openForgePanel(): Promise<void> {
   if (!process.env['FORGE_SCREENSHOTS']) return;
-  await vscode.commands.executeCommand('forge.refreshExplorer');
+  await vscode.commands.executeCommand('workbench.view.extension.forge-explorer');
+  await sleep(800);
+}
+
+/**
+ * Open the Forge activity bar panel focused on the Profiler view.
+ * Only does anything when FORGE_SCREENSHOTS=1 is set.
+ */
+export async function openForgePanelProfiler(): Promise<void> {
+  if (!process.env['FORGE_SCREENSHOTS']) return;
+  await vscode.commands.executeCommand('workbench.view.extension.forge-explorer');
+  await sleep(400);
+  await vscode.commands.executeCommand('forge.profiler.refresh');
   await sleep(800);
 }
 

@@ -73,6 +73,15 @@ async function main() {
         await page.keyboard.press("Escape");
         await sleep(300);
       }
+      // For hover screenshot: wait for the hover widget to actually appear in DOM
+      if (filename.includes("hover")) {
+        const hoverVisible = await page.locator(".monaco-hover").isVisible({ timeout: 5_000 }).catch(() => false);
+        if (!hoverVisible) {
+          console.log(`  [warn] hover widget not visible for ${filename}`);
+        } else {
+          console.log(`  [ok] hover widget confirmed visible`);
+        }
+      }
       await page.screenshot({ path: outPath, type: "png", fullPage: false });
       fs.unlinkSync(signalPath);
       const kb = Math.round(fs.statSync(outPath).size / 1024);

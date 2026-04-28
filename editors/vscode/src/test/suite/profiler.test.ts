@@ -5,7 +5,7 @@ import {
   closeAllEditors,
   setupLspTestSuite,
   teardownLspTestSuite,
-  openForgePanel,
+  openForgePanelProfiler,
   takeScreenshot,
 } from './test-helpers';
 
@@ -152,6 +152,8 @@ suite('Profiler', () => {
       const afterTwo = provider.getChildren();
       const second = findByLabel(afterTwo, 'Trace: PID 99999');
       assert.ok(second, 'Second trace session must appear in tree view');
+      await openForgePanelProfiler();
+      await takeScreenshot('vscode-profiler-page.png');
 
       // Remove sessions and verify they disappear.
       provider.removeSession('test-trace-002');
