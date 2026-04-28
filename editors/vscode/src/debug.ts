@@ -219,8 +219,8 @@ function findEntryProject(rootPath: string): ProjectEntry | undefined {
 
 /** Walk up from `startPath` to `stopPath` looking for the nearest .csproj/.fsproj. */
 function findProjectFile(startPath: string, stopPath: string): ProjectEntry | undefined {
-  let current = startPath;
-  while (true) {
+  let current: string | undefined = startPath;
+  while (current !== undefined) {
     try {
       const files = fs.readdirSync(current);
       const proj = files.find((f) => f.endsWith('.csproj') || f.endsWith('.fsproj'));
@@ -228,14 +228,13 @@ function findProjectFile(startPath: string, stopPath: string): ProjectEntry | un
         return projectEntryFromFile(path.join(current, proj));
       }
     } catch {
-      // Unreadable directory — stop.
       return undefined;
     }
     if (current === stopPath) return undefined;
     const parent = path.dirname(current);
-    if (parent === current) return undefined;
-    current = parent;
+    current = parent === current ? undefined : parent;
   }
+  return undefined;
 }
 
 function projectEntryFromFile(projFile: string): ProjectEntry {
@@ -284,13 +283,12 @@ function debugCurrentProject(): void {
   // a subfolder project (e.g. tests/fixtures/ProfileTarget/Program.cs) finds
   // that project's .csproj rather than looking only at the workspace root.
   const activeDir = vscode.window.activeTextEditor?.document.uri.fsPath;
-  const searchStart =
-    activeDir !== undefined ? path.dirname(activeDir) : folder.uri.fsPath;
+  const searchStart = activeDir !== undefined ? path.dirname(activeDir) : folder.uri.fsPath;
 
   const entry = findProjectFile(searchStart, folder.uri.fsPath);
   if (entry === undefined) {
     void vscode.window.showWarningMessage(
-      'No .csproj or .fsproj found in this file\'s directory tree.',
+      "No .csproj or .fsproj found in this file's directory tree.",
     );
     return;
   }

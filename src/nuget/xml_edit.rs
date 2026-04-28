@@ -352,14 +352,29 @@ fn create_item_group_with(
 /// Remove the first line matching `<{tag} ... Include="{package_id}" ...>`.
 fn remove_entry(original: &str, package_id: &str, element: PackageElement) -> String {
     let tag = element.tag();
-    let needle = format!("Include=\"{package_id}\"");
+    let open_needle = format!("Include=\"{package_id}\"");
+    let close_tag = format!("</{tag}>");
     let lines: Vec<&str> = original.lines().collect();
     let mut keep: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut removing = false;
     let mut removed = false;
     for line in &lines {
         let trimmed = line.trim_start();
-        if !removed && trimmed.starts_with(&format!("<{tag}")) && line.contains(&needle) {
+        if !removing && trimmed.starts_with(&format!("<{tag}")) && line.contains(&open_needle) {
+            // Self-closing (`/>`) — single line, done.
+            if trimmed.contains("/>") {
+                removed = true;
+                continue;
+            }
+            // Multi-line element: skip until we find the closing tag.
+            removing = true;
             removed = true;
+            continue;
+        }
+        if removing {
+            if trimmed.starts_with(&close_tag) {
+                removing = false;
+            }
             continue;
         }
         keep.push(line);
