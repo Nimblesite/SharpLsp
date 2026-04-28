@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { DEBUG_TYPE } from './constants';
+import { DEBUG_TYPE, CMD_DEBUG_PROGRAM } from './constants';
 import { info } from './log';
 
 interface LaunchProfile {
@@ -214,19 +214,41 @@ interface ProjectEntry {
 }
 
 function findEntryProject(rootPath: string): ProjectEntry | undefined {
-  try {
-    const files = fs.readdirSync(rootPath);
-    const csproj = files.find((f) => f.endsWith('.csproj') || f.endsWith('.fsproj'));
-    if (csproj === undefined) {
+  return findProjectFile(rootPath, rootPath);
+}
+
+/** Walk up from `startPath` to `stopPath` looking for the nearest .csproj/.fsproj. */
+function findProjectFile(startPath: string, stopPath: string): ProjectEntry | undefined {
+  let current = startPath;
+  while (true) {
+    try {
+      const files = fs.readdirSync(current);
+      const proj = files.find((f) => f.endsWith('.csproj') || f.endsWith('.fsproj'));
+      if (proj !== undefined) {
+        return projectEntryFromFile(path.join(current, proj));
+      }
+    } catch {
+      // Unreadable directory — stop.
       return undefined;
     }
-
-    const projectName = path.basename(csproj, path.extname(csproj));
-    const dll = path.join(rootPath, 'bin', 'Debug', 'net9.0', `${projectName}.dll`);
-    return { dll, cwd: rootPath };
-  } catch {
-    return undefined;
+    if (current === stopPath) return undefined;
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
   }
+}
+
+function projectEntryFromFile(projFile: string): ProjectEntry {
+  const dir = path.dirname(projFile);
+  const name = path.basename(projFile, path.extname(projFile));
+  // Prefer net10.0, fall back to net9.0, then net8.0.
+  const tfms = ['net10.0', 'net9.0', 'net8.0'];
+  for (const tfm of tfms) {
+    const dll = path.join(dir, 'bin', 'Debug', tfm, `${name}.dll`);
+    if (fs.existsSync(dll)) return { dll, cwd: dir };
+  }
+  // Not built yet — return net10.0 path so the error message is meaningful.
+  return { dll: path.join(dir, 'bin', 'Debug', 'net10.0', `${name}.dll`), cwd: dir };
 }
 
 /**
@@ -239,5 +261,57 @@ export function registerDebugAdapter(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.debug.registerDebugAdapterDescriptorFactory(DEBUG_TYPE, new ForgeDebugAdapterFactory()),
   );
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_DEBUG_PROGRAM, () => {
+      debugCurrentProject();
+    }),
+  );
   info('Debug adapter registered for forge-coreclr');
+}
+
+/**
+ * Launch a debug session for the project containing the active editor file,
+ * or the first project in the workspace if no editor is open.
+ */
+function debugCurrentProject(): void {
+  const folder = resolveWorkspaceFolder();
+  if (folder === undefined) {
+    void vscode.window.showWarningMessage('No workspace folder open.');
+    return;
+  }
+
+  // Start search from the active file's directory so that right-clicking inside
+  // a subfolder project (e.g. tests/fixtures/ProfileTarget/Program.cs) finds
+  // that project's .csproj rather than looking only at the workspace root.
+  const activeDir = vscode.window.activeTextEditor?.document.uri.fsPath;
+  const searchStart =
+    activeDir !== undefined ? path.dirname(activeDir) : folder.uri.fsPath;
+
+  const entry = findProjectFile(searchStart, folder.uri.fsPath);
+  if (entry === undefined) {
+    void vscode.window.showWarningMessage(
+      'No .csproj or .fsproj found in this file\'s directory tree.',
+    );
+    return;
+  }
+
+  const config: vscode.DebugConfiguration = {
+    type: DEBUG_TYPE,
+    request: 'launch',
+    name: 'Debug Program',
+    program: entry.dll,
+    cwd: entry.cwd,
+    justMyCode: true,
+  };
+
+  void vscode.debug.startDebugging(folder, config);
+}
+
+function resolveWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
+  const activeFile = vscode.window.activeTextEditor?.document.uri;
+  if (activeFile !== undefined) {
+    const folder = vscode.workspace.getWorkspaceFolder(activeFile);
+    if (folder !== undefined) return folder;
+  }
+  return vscode.workspace.workspaceFolders?.[0];
 }

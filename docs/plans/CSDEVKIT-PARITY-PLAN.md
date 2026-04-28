@@ -85,7 +85,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Convert between string forms | Yes | Yes | **DONE** |
 | Encapsulate field | Yes | Yes | **DONE** |
 | Use var / explicit type | Yes | Yes | **DONE** |
-| Rename symbol | Yes | No | **MISSING** |
+| Rename symbol (all code elements) | Yes | No | **MISSING** |
 | Sort members | No | Yes | **SUPERIOR** |
 | All Roslyn quick fixes | Yes | Yes | **DONE** |
 | All Roslyn refactorings | Yes | Yes | **DONE** |
@@ -226,6 +226,14 @@ These are the features users hit within the first 5 minutes. Without them, Forge
   - [x] Auto-add using directive on completion commit
   - [x] Show unimported type completions with (import) label
 
+- [ ] **P1.6: Rename Symbol (P0 parity blocker)** — see [RENAME-SPEC.md](../specs/RENAME-SPEC.md)
+  - [ ] `textDocument/prepareRename` and `textDocument/rename`
+  - [ ] C# Roslyn `Renamer.RenameSymbolAsync`
+  - [ ] F# compiler-service rename/symbol-use pipeline
+  - [ ] WorkspaceEdit conversion and cancellation
+  - [ ] Full code-element coverage: types, enums, enum members, methods/functions, constructors, properties/indexers, fields/events, variables, parameters, namespaces/modules, generic parameters, aliases, F# record fields, F# DU cases, and F# active patterns
+  - [ ] Coarse e2e coverage for every code-element category
+
 ### Priority 2 -- Essential Features (Weeks 7-14)
 
 Features users expect within the first day of use.
@@ -362,14 +370,14 @@ Features where we go beyond what C# Dev Kit offers.
 
 | Priority | Feature Count | Weeks | Impact |
 |----------|--------------|-------|--------|
-| P1 - Critical | 5 tracks — **4 DONE**, 1 partial | 1-6 | Code actions, semantic tokens, inlay hints, formatting all shipped |
+| P1 - Critical | 6 tracks — **4 DONE**, 1 partial, 1 missing | 1-6 | Code actions, semantic tokens, inlay hints, formatting shipped; rename still missing |
 | P2 - Essential | 4 tracks, ~35 items | 7-14 | Makes Forge viable for daily use |
 | P3 - Quality of Life | 5 tracks — **2 DONE**, 3 remaining | 15-20 | Workspace symbols + code lens shipped |
 | P4 - Surpass | 6 tracks — **2 DONE**, 4 remaining | 21+ | Call hierarchy + type hierarchy shipped |
 
-**Remaining gaps: ~40 items across P2-P4.**
+**Remaining gaps: ~40 items across P1-P4.**
 
-The biggest remaining gaps are **debugging** (P2.1), **test explorer** (P2.2), and **rename** (not yet implemented). P1 is essentially complete. P2 is the current priority.
+The biggest remaining gaps are **rename** (P0 parity blocker), **debugging** (P2.1), and **test explorer** (P2.2). P2 remains the next broad feature area, but rename is the critical refactoring gap inside P1.
 
 ### What Forge Already Wins On
 

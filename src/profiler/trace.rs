@@ -322,8 +322,10 @@ fn ensure_output_dir(path: &str) -> Result<()> {
 }
 
 /// Default trace profile.
+// cpu-sampling produces call-stack frames visible in speedscope.
+// gc-collect only emits GC heap events which speedscope renders as empty profiles.
 fn default_profile() -> String {
-    "gc-collect".to_string()
+    "cpu-sampling".to_string()
 }
 
 /// Default output format.

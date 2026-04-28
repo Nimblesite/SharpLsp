@@ -578,7 +578,10 @@ export function registerCommands(
     if (lsp === undefined) return;
     const name = processName ?? provider.processNameFor(pid);
     try {
-      const result = await lsp.sendRequest<StartTraceResult>('forge/profiler/startTrace', { pid });
+      const result = await lsp.sendRequest<StartTraceResult>('forge/profiler/startTrace', {
+        pid,
+        profile: 'cpu-sampling',
+      });
       provider.addSession(result.session_id, 'Trace', pid, result.output_path, name);
       statusBar.update(provider.sessionCount);
       const who = name !== undefined ? `${name} (PID ${String(pid)})` : `PID ${String(pid)}`;

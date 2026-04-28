@@ -431,6 +431,76 @@ fn nuget_install_and_uninstall_package() {
     client.shutdown_and_exit();
 }
 
+#[test]
+fn nuget_uninstall_removes_multiline_package_reference_children() {
+    let workspace = TempDir::new().unwrap();
+    let props = workspace.path().join("Directory.Build.props");
+    std::fs::write(
+        &props,
+        r#"<Project>
+  <ItemGroup>
+    <PackageReference Include="Outcome" Version="1.0.0" />
+    <PackageReference Include="Exhaustion" Version="1.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>
+"#,
+    )
+    .unwrap();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "forge/nuget/uninstall",
+        json!({
+            "target": {
+                "id": props.to_str().unwrap(),
+                "kind": "buildProps",
+                "displayName": "Directory.Build.props",
+                "path": props.to_str().unwrap(),
+            },
+            "packageId": "Exhaustion",
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_none(),
+        "uninstall should succeed: {resp}"
+    );
+    assert_eq!(
+        resp["result"]["success"].as_bool(),
+        Some(true),
+        "uninstall should report success"
+    );
+
+    let text_after = std::fs::read_to_string(&props).unwrap();
+    assert!(
+        text_after.contains("<PackageReference Include=\"Outcome\" Version=\"1.0.0\" />"),
+        "unrelated package should remain: {text_after}"
+    );
+    assert!(
+        !text_after.contains("Exhaustion"),
+        "removed package opening element should be gone: {text_after}"
+    );
+    assert!(
+        !text_after.contains("<PrivateAssets>"),
+        "removed package child elements should be gone: {text_after}"
+    );
+    assert!(
+        !text_after.contains("<IncludeAssets>"),
+        "removed package child elements should be gone: {text_after}"
+    );
+    assert!(
+        !text_after.contains("</PackageReference>"),
+        "removed package closing element should be gone: {text_after}"
+    );
+
+    client.shutdown_and_exit();
+}
+
 // ── Error handling ──────────────────────────────────────────────
 
 #[test]
