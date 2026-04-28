@@ -180,8 +180,39 @@ EndGlobal`,
     const nameProp = calcClass.children?.find((s) => s.name === 'Name');
     assert.ok(nameProp, 'Should find Name property in Calculator');
     assert.strictEqual(nameProp.kind, vscode.SymbolKind.Property);
+
+    // Load the solution into the Solution Explorer tree and wait for it to populate.
+    const api = ext.exports as {
+      explorerProvider?: {
+        loadSolution(p: string): Promise<void>;
+        getChildren(element?: unknown): { label?: string | { label: string }; children?: unknown[] }[] | undefined;
+      };
+    } | undefined;
+    assert.ok(api?.explorerProvider, 'Extension must export explorerProvider');
+
+    await api.explorerProvider.loadSolution(slnPath);
+
+    // Wait for tree to show the solution node.
+    const treeNodes = await pollUntilResult(
+      async () => api.explorerProvider!.getChildren() ?? [],
+      (nodes) => nodes.length > 0,
+      10_000,
+    );
+    assert.ok(treeNodes.length > 0, 'Solution Explorer must show at least one node after loadSolution');
+
+    function nodeLabel(n: { label?: string | { label: string } }): string {
+      return typeof n.label === 'string' ? n.label : (n.label?.label ?? '');
+    }
+    const slnNode = treeNodes.find((n) => nodeLabel(n).includes('MyApp'));
+    assert.ok(slnNode, 'Solution Explorer must show MyApp solution or project node');
+
     await openForgePanel();
+    // Refresh the tree view so the UI renders the loaded solution before screenshotting.
+    await vscode.commands.executeCommand('forge.refreshExplorer');
+    await new Promise((r) => setTimeout(r, 2000));
     await takeScreenshot('solution-explorer.png');
+
+    api.explorerProvider.getChildren; // keep reference
   });
 
   test('LSP parses multiple classes in the same file', async function () {

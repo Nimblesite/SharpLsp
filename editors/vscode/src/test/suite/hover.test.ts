@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  openForgePanel,
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
@@ -83,6 +84,40 @@ suite('Hover / Quick Info', () => {
     assert.ok(fieldHover.length > 0, 'Must return hover for field');
     const fieldMd = hoverToString(fieldHover);
     assert.ok(fieldMd.includes('_count'), "Field hover must contain '_count'");
+
+    // Trigger completions at the Add method body to capture completions screenshot.
+    const activeEditor = vscode.window.activeTextEditor;
+    assert.ok(activeEditor, 'Must have active text editor');
+    // Position cursor inside Add method body (line 6 is "public int Add..." — go to line 7 which is return statement area)
+    activeEditor.selection = new vscode.Selection(new vscode.Position(6, 22), new vscode.Position(6, 22));
+    await vscode.commands.executeCommand('editor.action.triggerSuggest');
+    await new Promise((r) => setTimeout(r, 1500));
+    // Verify completions returned via LSP.
+    const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
+      'vscode.executeCompletionItemProvider',
+      uri,
+      new vscode.Position(6, 22),
+    );
+    assert.ok(completions, 'Must get completions');
+    assert.ok(completions.items.length > 0, 'Must have at least one completion item');
+    await openForgePanel();
+    await takeScreenshot('vscode-completions-page.png');
+
+    // Dismiss suggestion widget then trigger go-to-definition on "Add" method.
+    await vscode.commands.executeCommand('hideSuggestWidget');
+    await new Promise((r) => setTimeout(r, 300));
+    // Position on "Add" method name (line 6, char 20).
+    activeEditor.selection = new vscode.Selection(new vscode.Position(6, 20), new vscode.Position(6, 20));
+    const definitions = await vscode.commands.executeCommand<vscode.Location[]>(
+      'vscode.executeDefinitionProvider',
+      uri,
+      new vscode.Position(6, 20),
+    );
+    assert.ok(definitions, 'Must get definitions');
+    assert.ok(definitions.length > 0, 'Must have at least one definition location');
+    assert.ok(definitions[0]!.uri.fsPath.endsWith('.cs'), 'Definition must point to a .cs file');
+    await openForgePanel();
+    await takeScreenshot('vscode-go-to-definition-page.png');
   });
 
   // ── Hover Range ─────────────────────────────────────────────────
@@ -275,6 +310,7 @@ suite('Hover / Quick Info', () => {
     const confirmMd = hoverToString(confirmHover);
     assert.ok(confirmMd.includes('Factorial'), 'Confirmed hover must still contain Factorial');
     assert.ok(confirmMd.includes('computes'), 'Confirmed hover must still contain summary text');
+    // Screenshot with hover tooltip visible (no Forge panel — tooltip is the feature)
     await takeScreenshot('vscode-hover-page.png');
   });
 

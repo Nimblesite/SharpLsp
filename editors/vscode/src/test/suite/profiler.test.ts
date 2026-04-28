@@ -1,8 +1,11 @@
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  pollUntilResult,
   setupLspTestSuite,
   teardownLspTestSuite,
   openForgePanelProfiler,
@@ -41,11 +44,13 @@ function findByLabel(nodes: ProfilerTreeNode[], substring: string): ProfilerTree
 
 suite('Profiler', () => {
   let tmpDir: string;
+  let fixtureDir: string;
 
   suiteSetup(async function () {
     this.timeout(60_000);
     const result = await setupLspTestSuite('profiler-');
     tmpDir = result.tmpDir;
+    fixtureDir = path.resolve(__dirname, '../../../test-fixtures/workspace');
   });
 
   suiteTeardown(async () => {
@@ -152,6 +157,22 @@ suite('Profiler', () => {
       const afterTwo = provider.getChildren();
       const second = findByLabel(afterTwo, 'Trace: PID 99999');
       assert.ok(second, 'Second trace session must appear in tree view');
+      // Load fixture solution so Solution Explorer is populated in the screenshot.
+      if (process.env['FORGE_SCREENSHOTS']) {
+        const ext2 = vscode.extensions.getExtension(EXTENSION_ID);
+        const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+        if (api2?.explorerProvider) {
+          const slnPath = path.join(fixtureDir, 'TestFixtures.sln');
+          if (fs.existsSync(slnPath)) {
+            await api2.explorerProvider.loadSolution(slnPath);
+            await pollUntilResult(
+              async () => api2.explorerProvider!.getChildren() ?? [],
+              (nodes) => nodes.length > 0,
+              8_000,
+            );
+          }
+        }
+      }
       await openForgePanelProfiler();
       await takeScreenshot('vscode-profiler-page.png');
 
@@ -289,13 +310,15 @@ suite('Profiler', () => {
       const headerOne = findByLabel(afterOne, 'Active Sessions (1)');
       assert.ok(headerOne, 'Active Sessions header must show count of 1');
 
-      // Remove last session, verify empty state.
+      // Remove last session, verify no active sessions remain.
       provider.removeSession('dump-counters-001');
       const afterAll = provider.getChildren();
 
-      // With no sessions and no processes, should show placeholder.
-      const empty = findByLabel(afterAll, 'No .NET processes found');
-      assert.ok(empty, 'Tree must show placeholder when no sessions and no processes');
+      // After removing all sessions, no Active Sessions header should appear.
+      const noHeader = findByLabel(afterAll, 'Active Sessions');
+      assert.strictEqual(noHeader, undefined, 'Active Sessions header must be gone when no sessions remain');
+      // Session count must be 0.
+      assert.strictEqual(provider.sessionCount, 0, 'Session count must be 0 after removing all sessions');
     } finally {
       provider.removeSession('dump-trace-001');
       provider.removeSession('dump-counters-001');

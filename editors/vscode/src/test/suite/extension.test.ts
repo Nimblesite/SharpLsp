@@ -169,6 +169,8 @@ suite('Extension Activation & Configuration', () => {
     // Verify server is back.
     const symbols = await waitForDocumentSymbols(uri, 30_000);
     assert.ok(symbols.length > 0, 'Server should respond after restart');
+    await openForgePanel();
+    await takeScreenshot('vscode-architecture-page.png');
   });
 
   // ── C# Language Configuration ──────────────────────────────

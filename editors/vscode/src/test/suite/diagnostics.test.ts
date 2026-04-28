@@ -88,6 +88,20 @@ suite('Diagnostics / Problems Panel', () => {
     const error = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
     assert.ok(error, 'Must have at least one error-level diagnostic');
     assert.ok(error.message.length > 0, 'Error diagnostic must have a message');
+    // Load fixture solution so Solution Explorer is populated in the screenshot.
+    if (process.env['FORGE_SCREENSHOTS']) {
+      const ext2 = vscode.extensions.getExtension('forge-lsp.forge');
+      const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+      if (api2?.explorerProvider) {
+        const slnPath2 = path.join(workspaceRoot, 'TestFixtures.sln');
+        await api2.explorerProvider.loadSolution(slnPath2);
+        let waited2 = 0;
+        while ((api2.explorerProvider.getChildren() ?? []).length === 0 && waited2 < 8000) {
+          await new Promise((r) => setTimeout(r, 200));
+          waited2 += 200;
+        }
+      }
+    }
     await openForgePanel();
     await takeScreenshot('vscode-diagnostics-page.png');
   });
