@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { type ExtensionContext, type Disposable, window } from 'vscode';
+import { type ExtensionContext, type Disposable, window, workspace } from 'vscode';
 import {
   CloseAction,
   ErrorAction,
@@ -159,7 +159,7 @@ function makeErrorHandler(statusBar: ForgeStatusBar): {
  *   4. Binary name on `$PATH` (client resolves via shell)
  */
 function resolveServerPath(context: ExtensionContext): string | undefined {
-  const configured = config.serverPath();
+  const configured = expandPath(config.serverPath());
   if (configured !== '' && fs.existsSync(configured)) {
     return configured;
   }
@@ -176,6 +176,20 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
     return bundled;
   }
 
+  // Dev fallback: look for a Cargo debug build two levels above the extension dir.
+  // Extension lives at <repo>/editors/vscode, so ../../target/debug/<binary> is the repo build.
+  const devBuild = path.join(context.extensionPath, '..', '..', 'target', 'debug', binaryName);
+  if (fs.existsSync(devBuild)) {
+    return devBuild;
+  }
+
   // Fall back to PATH — the language client resolves the command via the shell.
   return binaryName;
+}
+
+/** Expand ${workspaceFolder} in a user-configured path. */
+function expandPath(raw: string): string {
+  if (!raw.includes('${workspaceFolder}')) return raw;
+  const folder = workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+  return raw.replace('${workspaceFolder}', folder);
 }

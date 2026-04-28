@@ -318,7 +318,7 @@ This is where Forge must match Rider's 2,200+ inspections and 60+ refactorings. 
 | Extract variable/constant | `textDocument/codeAction` | IntroduceVariableCodeRefactoring | Custom implementation | P0 |
 | Extract interface | `textDocument/codeAction` | ExtractInterfaceRefactoring | Custom implementation | P1 |
 | Inline variable/method | `textDocument/codeAction` | InlineMethodRefactoring | Custom implementation | P1 |
-| Rename symbol | `textDocument/rename` | [Renamer.RenameSymbolAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.rename.renamer.renamesymbolasync) | FCS rename support | P0 |
+| Rename symbol | See [RENAME-SPEC.md](RENAME-SPEC.md) | [Renamer.RenameSymbolAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.rename.renamer.renamesymbolasync) | FCS rename support | P0 |
 | Rename file to match type | `textDocument/codeAction` | Custom (sync filename ↔ type) | Custom (sync filename ↔ module) | P1 |
 | Move type to file | `textDocument/codeAction` | MoveTypeRefactoring | Custom implementation | P1 |
 | Generate constructor | `textDocument/codeAction` | GenerateConstructor fix | Custom implementation | P0 |
@@ -462,7 +462,7 @@ F# has unique language features that require dedicated support beyond what the s
 - Go to definition, declaration, type definition, implementation for both languages
 - Find all references, document highlights for both languages
 - Compiler diagnostics (real-time squiggles) for both languages
-- Rename symbol for both languages
+- Rename symbol for every renameable C# and F# code element (see [RENAME-SPEC.md](RENAME-SPEC.md))
 - Full semantic tokens (classification) for both languages
 - [salsa](https://salsa-rs.github.io/salsa/) database for incremental caching of semantic results
 - Request coalescing and cancellation
@@ -608,7 +608,7 @@ See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) § Competitive Analysis for the f
 | Extract interface | ✓ | ✓ | ✓ | P1 | 3 |
 | Extract superclass | ✓ | ✗ | ✓ | P2 | 4 |
 | Inline variable / method / constant | ✓ | ✓ | ✓ | P1 | 3 |
-| Rename symbol (all references) | ✓ | ✓ | ✓ | P0 | 2 |
+| Rename symbol (all code elements and references) | ✓ | ✓ | ✓ | P0 | 2 |
 | Rename file to match type | ✓ | ✓ | ✓ | P1 | 3 |
 | Move type to file | ✓ | ✓ | ✓ | P1 | 3 |
 | Move type to namespace | ✓ | ✗ | ✓ | P2 | 4 |
