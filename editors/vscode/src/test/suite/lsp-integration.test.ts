@@ -5,6 +5,7 @@ import {
   closeAllEditors,
   openCSharpFile,
   openForgePanel,
+  pollUntilResult,
   setupLspTestSuite,
   takeScreenshot,
   teardownLspTestSuite,
@@ -472,7 +473,9 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
   });
 
   test('code actions returned for unused variable', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+    this.timeout(120_000);
+    // Use a file inside the real workspace fixture project so Roslyn can analyze it.
+    const fixtureDir2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
     const content = `namespace RefactorDemo
 {
     public class Refactor
@@ -483,18 +486,32 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
         }
     }
 }`;
-    const { uri } = await openCSharpFile(tmpDir, 'Refactor.cs', content);
+    // Write the file into the fixture workspace so it's part of TestFixtures.csproj.
+    const fs2 = await import('node:fs');
+    const path2 = await import('node:path');
+    const refactorPath = path2.join(fixtureDir2, 'Refactor.cs');
+    fs2.writeFileSync(refactorPath, content, 'utf8');
+    const uri = vscode.Uri.file(refactorPath);
+    const doc = await vscode.workspace.openTextDocument(uri);
+    await vscode.window.showTextDocument(doc);
     await waitForDocumentSymbols(uri);
-    await new Promise((r) => setTimeout(r, 2_000));
 
+    // Wait for Roslyn sidecar to load — poll code actions until non-empty.
     const range = new vscode.Range(new vscode.Position(6, 12), new vscode.Position(6, 18));
-    const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
-      'vscode.executeCodeActionProvider',
-      uri,
-      range,
+    const actions = await pollUntilResult(
+      async () => {
+        const result = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+          'vscode.executeCodeActionProvider',
+          uri,
+          range,
+        );
+        return result ?? [];
+      },
+      (acts) => acts.length > 0,
+      90_000,
+      2_000,
     );
 
-    assert.ok(actions !== undefined, 'Must return code actions');
     assert.ok(actions.length > 0, 'Must have at least one code action for unused variable');
 
     // Trigger the lightbulb in the editor so it's visible in the screenshot.
@@ -502,7 +519,21 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
     assert.ok(editor, 'Must have active editor');
     editor.selection = new vscode.Selection(new vscode.Position(6, 18), new vscode.Position(6, 18));
     await vscode.commands.executeCommand('editor.action.quickFix');
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 2000));
+    // Load fixture solution so Forge panel shows Solution Explorer.
+    if (process.env['FORGE_SCREENSHOTS']) {
+      const ext2 = vscode.extensions.getExtension('forge-lsp.forge');
+      const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+      if (api2?.explorerProvider) {
+        const ws2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        await api2.explorerProvider.loadSolution(`${ws2}/TestFixtures.sln`);
+        let w = 0;
+        while ((api2.explorerProvider.getChildren() ?? []).length === 0 && w < 5000) {
+          await new Promise((r) => setTimeout(r, 200)); w += 200;
+        }
+      }
+    }
+    await openForgePanel();
     await takeScreenshot('vscode-refactoring.png');
   });
 });

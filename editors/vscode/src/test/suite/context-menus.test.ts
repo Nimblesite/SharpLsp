@@ -358,7 +358,9 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
       'solution',
       "Solution node must have contextValue 'solution'",
     );
-    await openForgePanel();
+    // Focus specifically the Solution Explorer tree view, not just the container.
+    await vscode.commands.executeCommand('forge-explorer.focus');
+    await new Promise((r) => setTimeout(r, 1500));
     await takeScreenshot('vscode-solution-explorer-context-menu.png');
   });
 
