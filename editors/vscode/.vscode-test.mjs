@@ -13,9 +13,9 @@ export default defineConfig({
       },
       launchArgs: [
         "--disable-extensions",
-        "--remote-debugging-port=9229",
+        `--remote-debugging-port=${process.env.FORGE_SCREENSHOT_CDP_PORT ?? "9229"}`,
         "--disable-workspace-trust",
-        `--user-data-dir=${process.env.TMPDIR ?? "/tmp"}forge-test-userdata`,
+        `--user-data-dir=${process.env.FORGE_TEST_USER_DATA_DIR ?? `${process.env.TMPDIR ?? "/tmp"}forge-test-userdata`}`,
       ],
     },
   ],

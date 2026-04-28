@@ -406,21 +406,10 @@ suite('LSP Integration — Fixture Files', () => {
     assert.ok(linesAfter < linesBefore, `Folding must reduce visible lines: before=${linesBefore} after=${linesAfter}`);
     assert.ok(linesAfter <= 5, `After foldAll, should have ≤5 visible lines, got ${linesAfter}`);
 
-    // Load fixture solution so Solution Explorer is populated in the screenshot.
-    if (process.env['FORGE_SCREENSHOTS']) {
-      const ext2 = vscode.extensions.getExtension('forge-lsp.forge');
-      const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
-      if (api2?.explorerProvider) {
-        const slnPath2 = path.join(fixtureDir, 'TestFixtures.sln');
-        await api2.explorerProvider.loadSolution(slnPath2);
-        let waited2 = 0;
-        while ((api2.explorerProvider.getChildren() ?? []).length === 0 && waited2 < 8000) {
-          await new Promise((r) => setTimeout(r, 200));
-          waited2 += 200;
-        }
-      }
-    }
-    await openForgePanel();
+    // Keep the editor focused so the folded regions are clearly visible.
+    // Close the bottom panel to maximise the editor view in the screenshot.
+    await vscode.commands.executeCommand('workbench.action.closePanel');
+    await new Promise((r) => setTimeout(r, 500));
     await takeScreenshot('code-folding.png');
   });
 
@@ -438,21 +427,10 @@ suite('LSP Integration — Fixture Files', () => {
     assert.ok(names.includes('AnotherInner'), 'Should find AnotherInner');
     assert.ok(names.includes('InnerMethod'), 'Should find InnerMethod');
     assert.ok(names.includes('OuterMethod'), 'Should find OuterMethod');
-    // Load fixture solution so Solution Explorer is populated in the screenshot.
-    if (process.env['FORGE_SCREENSHOTS']) {
-      const ext2 = vscode.extensions.getExtension('forge-lsp.forge');
-      const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
-      if (api2?.explorerProvider) {
-        const slnPath2 = path.join(fixtureDir, 'TestFixtures.sln');
-        await api2.explorerProvider.loadSolution(slnPath2);
-        let waited2 = 0;
-        while ((api2.explorerProvider.getChildren() ?? []).length === 0 && waited2 < 8000) {
-          await new Promise((r) => setTimeout(r, 200));
-          waited2 += 200;
-        }
-      }
-    }
-    await openForgePanel();
+    // Keep editor focused so nested class structure is visible.
+    // Close the bottom panel to maximise the editor view.
+    await vscode.commands.executeCommand('workbench.action.closePanel');
+    await new Promise((r) => setTimeout(r, 500));
     await takeScreenshot('nested-classes.png');
   });
 

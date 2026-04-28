@@ -205,7 +205,9 @@ suite('Extension Activation & Configuration', () => {
         }
       }
     }
-    await openForgePanel();
+    // Show the Forge output channel so the screenshot captures log output.
+    await vscode.commands.executeCommand('forge.showOutput');
+    await new Promise((r) => setTimeout(r, 1500));
     await takeScreenshot('vscode-architecture-page.png');
   });
 

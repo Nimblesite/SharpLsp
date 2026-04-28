@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
 const outputDir = path.resolve(repoRoot, "website/src/assets/screenshots");
-const CDP_PORT = 9229;
+const CDP_PORT = Number.parseInt(process.env.FORGE_SCREENSHOT_CDP_PORT ?? "9229", 10);
 const POLL_MS = 200;
 const TIMEOUT_MS = 600_000; // 10 min — wait for all tests to finish
 

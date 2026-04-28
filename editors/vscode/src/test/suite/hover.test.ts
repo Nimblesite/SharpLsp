@@ -116,8 +116,12 @@ suite('Hover / Quick Info', () => {
     assert.ok(definitions.length > 0, 'Must have at least one definition location');
     assert.ok(definitions[0]!.uri.fsPath.endsWith('.cs'), 'Definition must point to a .cs file');
     // Trigger peek definition so the widget is visible in the screenshot.
+    // Ensure cursor is on the Add method call before peeking.
+    activeEditor.selection = new vscode.Selection(new vscode.Position(6, 20), new vscode.Position(6, 20));
+    await new Promise((r) => setTimeout(r, 300));
     await vscode.commands.executeCommand('editor.action.peekDefinition');
-    await new Promise((r) => setTimeout(r, 1500));
+    // Wait longer for the peek widget to fully render in the DOM.
+    await new Promise((r) => setTimeout(r, 2500));
     await takeScreenshot('vscode-go-to-definition-page.png');
   });
 
