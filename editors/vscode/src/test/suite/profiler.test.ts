@@ -5,6 +5,8 @@ import {
   closeAllEditors,
   setupLspTestSuite,
   teardownLspTestSuite,
+  openForgePanel,
+  takeScreenshot,
 } from './test-helpers';
 
 interface ProfilerTreeNode {

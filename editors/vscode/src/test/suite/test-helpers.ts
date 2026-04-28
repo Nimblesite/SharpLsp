@@ -274,6 +274,16 @@ export function teardownLspTestSuite(tmpDir: string): void {
 const SCREENSHOT_OUT_DIR = path.resolve(__dirname, '../../../../../website/src/assets/screenshots');
 
 /**
+ * Open the Forge activity bar panel (Solution Explorer) so it's visible in screenshots.
+ * Only does anything when FORGE_SCREENSHOTS=1 is set.
+ */
+export async function openForgePanel(): Promise<void> {
+  if (!process.env['FORGE_SCREENSHOTS']) return;
+  await vscode.commands.executeCommand('forge.refreshExplorer');
+  await sleep(800);
+}
+
+/**
  * Signal the Playwright sidecar (screenshots/sidecar.mjs) to take a screenshot
  * of the VS Code window via CDP. Writes a .signal file and waits for the PNG.
  * Call this after assertions prove the feature is live and visible.

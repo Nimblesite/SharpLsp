@@ -11,7 +11,12 @@ export default defineConfig({
         timeout: 60_000,
         bail: true,
       },
-      launchArgs: ["--disable-extensions", "--remote-debugging-port=9229"],
+      launchArgs: [
+        "--disable-extensions",
+        "--remote-debugging-port=9229",
+        "--disable-workspace-trust",
+        `--user-data-dir=${process.env.TMPDIR ?? "/tmp"}forge-test-userdata`,
+      ],
     },
   ],
   coverage: {

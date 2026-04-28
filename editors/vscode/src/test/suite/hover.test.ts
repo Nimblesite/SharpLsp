@@ -5,9 +5,11 @@ import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  openForgePanel,
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
+  takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
   waitForHoverResult,
@@ -260,6 +262,8 @@ suite('Hover / Quick Info', () => {
       md.toLowerCase().includes('result') || md.toLowerCase().includes('return'),
       `Must render <returns>: ${md}`,
     );
+    await openForgePanel();
+    await takeScreenshot('vscode-hover-page.png');
   });
 
   // ── [Obsolete] deprecation ────────────────────────────────────

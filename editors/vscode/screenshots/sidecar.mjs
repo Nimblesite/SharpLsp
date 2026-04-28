@@ -61,6 +61,18 @@ async function main() {
       const signalPath = path.join(outputDir, signal);
       const outPath = path.join(outputDir, filename);
       console.log(`  [signal] taking screenshot → ${filename}`);
+      // Close secondary sidebar (Copilot/Chat panel) if visible
+      const secondarySidebar = page.locator(".part.auxiliarybar");
+      if (await secondarySidebar.isVisible({ timeout: 500 }).catch(() => false)) {
+        await page.keyboard.press("Meta+Alt+b");
+        await sleep(400);
+      }
+      // Dismiss any notifications
+      const notification = page.locator(".notifications-toasts");
+      if (await notification.isVisible({ timeout: 500 }).catch(() => false)) {
+        await page.keyboard.press("Escape");
+        await sleep(300);
+      }
       await page.screenshot({ path: outPath, type: "png", fullPage: false });
       fs.unlinkSync(signalPath);
       const kb = Math.round(fs.statSync(outPath).size / 1024);

@@ -4,7 +4,9 @@ import * as vscode from 'vscode';
 import {
   closeAllEditors,
   openCSharpFile,
+  openForgePanel,
   setupLspTestSuite,
+  takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
   waitForFoldingRanges,
@@ -352,6 +354,8 @@ suite('LSP Integration — Fixture Files', () => {
     assert.ok(names.includes('Divide'), 'Should find Divide method');
     assert.ok(names.includes('ICalculator'), 'Should find ICalculator interface');
     assert.ok(names.includes('Operation'), 'Should find Operation enum');
+    await openForgePanel();
+    await takeScreenshot('vscode-getting-started-page.png');
   });
 
   test('Calculator.cs has folding ranges for regions', async function () {
@@ -368,6 +372,8 @@ suite('LSP Integration — Fixture Files', () => {
       regionRanges.length >= 2,
       `Expected ≥2 region folding ranges (#region), got ${regionRanges.length}`,
     );
+    await openForgePanel();
+    await takeScreenshot('code-folding.png');
   });
 
   test('Nested.cs returns nested class hierarchy', async function () {
@@ -384,6 +390,8 @@ suite('LSP Integration — Fixture Files', () => {
     assert.ok(names.includes('AnotherInner'), 'Should find AnotherInner');
     assert.ok(names.includes('InnerMethod'), 'Should find InnerMethod');
     assert.ok(names.includes('OuterMethod'), 'Should find OuterMethod');
+    await openForgePanel();
+    await takeScreenshot('nested-classes.png');
   });
 
   test('Empty.cs returns no symbols', async function () {

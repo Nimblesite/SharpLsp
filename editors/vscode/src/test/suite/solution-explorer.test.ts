@@ -6,9 +6,11 @@ import {
   EXTENSION_ID,
   closeAllEditors,
   openCSharpFile,
+  openForgePanel,
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
+  takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
 } from './test-helpers';
@@ -178,6 +180,8 @@ EndGlobal`,
     const nameProp = calcClass.children?.find((s) => s.name === 'Name');
     assert.ok(nameProp, 'Should find Name property in Calculator');
     assert.strictEqual(nameProp.kind, vscode.SymbolKind.Property);
+    await openForgePanel();
+    await takeScreenshot('solution-explorer.png');
   });
 
   test('LSP parses multiple classes in the same file', async function () {
