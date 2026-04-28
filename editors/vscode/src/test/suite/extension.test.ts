@@ -4,7 +4,9 @@ import {
   EXTENSION_ID,
   closeAllEditors,
   openCSharpFile,
+  openForgePanel,
   setupLspTestSuite,
+  takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
 } from './test-helpers';
@@ -82,11 +84,13 @@ suite('Extension Activation & Configuration', () => {
 
   // ── Configuration ────────────────────────────────────────────
 
-  test('forge.server.path setting is contributed', () => {
+  test('forge.server.path setting is contributed', async () => {
     const config = vscode.workspace.getConfiguration('forge');
     const inspect = config.inspect<string>('server.path');
     assert.ok(inspect, 'server.path setting should be inspectable');
     assert.strictEqual(inspect.defaultValue, '', 'Default server.path should be empty string');
+    await openForgePanel();
+    await takeScreenshot('vscode-configuration-page.png');
   });
 
   test('forge.server.extraArgs setting is contributed', () => {
@@ -118,12 +122,14 @@ suite('Extension Activation & Configuration', () => {
     assert.strictEqual(ext.packageJSON.displayName, 'Forge', "Display name should be 'Forge'");
   });
 
-  test('extension contributes csharp language', () => {
+  test('extension contributes csharp language', async () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, 'Extension should exist');
     const languages: { id: string }[] = ext.packageJSON.contributes?.languages ?? [];
     const csharp = languages.find((l) => l.id === 'csharp');
     assert.ok(csharp, 'Should contribute csharp language');
+    await openForgePanel();
+    await takeScreenshot('vscode-editors-page.png');
   });
 
   test('extension contributes fsharp language', () => {

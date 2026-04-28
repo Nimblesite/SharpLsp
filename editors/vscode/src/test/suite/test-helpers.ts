@@ -280,7 +280,7 @@ const SCREENSHOT_OUT_DIR = path.resolve(__dirname, '../../../../../website/src/a
 export async function openForgePanel(): Promise<void> {
   if (!process.env['FORGE_SCREENSHOTS']) return;
   await vscode.commands.executeCommand('workbench.view.extension.forge-explorer');
-  await sleep(800);
+  await sleep(1500);
 }
 
 /**
@@ -290,9 +290,9 @@ export async function openForgePanel(): Promise<void> {
 export async function openForgePanelProfiler(): Promise<void> {
   if (!process.env['FORGE_SCREENSHOTS']) return;
   await vscode.commands.executeCommand('workbench.view.extension.forge-explorer');
-  await sleep(400);
+  await sleep(600);
   await vscode.commands.executeCommand('forge.profiler.refresh');
-  await sleep(800);
+  await sleep(1200);
 }
 
 /**

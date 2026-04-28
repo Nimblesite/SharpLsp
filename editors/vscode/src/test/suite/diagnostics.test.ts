@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   closeAllEditors,
+  openForgePanel,
   replaceDocumentContent,
   setupLspTestSuite,
   takeScreenshot,
@@ -87,6 +88,7 @@ suite('Diagnostics / Problems Panel', () => {
     const error = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
     assert.ok(error, 'Must have at least one error-level diagnostic');
     assert.ok(error.message.length > 0, 'Error diagnostic must have a message');
+    await openForgePanel();
     await takeScreenshot('vscode-diagnostics-page.png');
   });
 
