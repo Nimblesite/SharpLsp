@@ -473,6 +473,62 @@ suite('LSP Integration — Fixture Files', () => {
   });
 });
 
+// ── Code Actions / Refactoring ────────────────────────────────────
+
+suite('LSP Integration — Code Actions & Refactoring', () => {
+  let tmpDir: string;
+
+  suiteSetup(async function () {
+    this.timeout(60_000);
+    const result = await setupLspTestSuite('refactor-');
+    tmpDir = result.tmpDir;
+  });
+
+  suiteTeardown(async () => {
+    await closeAllEditors();
+    teardownLspTestSuite(tmpDir);
+  });
+
+  teardown(async () => {
+    await closeAllEditors();
+  });
+
+  test('code actions returned for unused variable', async function () {
+    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+    const content = `namespace RefactorDemo
+{
+    public class Refactor
+    {
+        public void Run()
+        {
+            string unused = "hello";
+        }
+    }
+}`;
+    const { uri } = await openCSharpFile(tmpDir, 'Refactor.cs', content);
+    await waitForDocumentSymbols(uri);
+    await new Promise((r) => setTimeout(r, 2_000));
+
+    const range = new vscode.Range(new vscode.Position(6, 12), new vscode.Position(6, 18));
+    const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      'vscode.executeCodeActionProvider',
+      uri,
+      range,
+    );
+
+    assert.ok(actions !== undefined, 'Must return code actions');
+    assert.ok(actions.length > 0, 'Must have at least one code action for unused variable');
+
+    // Trigger the lightbulb in the editor so it's visible in the screenshot.
+    const editor = vscode.window.activeTextEditor;
+    assert.ok(editor, 'Must have active editor');
+    editor.selection = new vscode.Selection(new vscode.Position(6, 18), new vscode.Position(6, 18));
+    await vscode.commands.executeCommand('editor.action.quickFix');
+    await new Promise((r) => setTimeout(r, 1500));
+    await takeScreenshot('vscode-refactoring.png');
+  });
+});
+
 // ── Helpers ──────────────────────────────────────────────────────
 
 function flattenSymbolNames(symbols: vscode.DocumentSymbol[]): string[] {

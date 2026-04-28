@@ -73,13 +73,40 @@ async function main() {
         await page.keyboard.press("Escape");
         await sleep(300);
       }
-      // For hover screenshot: wait for the hover widget to actually appear in DOM
+      // For hover screenshot: wait for hover widget
       if (filename.includes("hover")) {
         const hoverVisible = await page.locator(".monaco-hover").isVisible({ timeout: 5_000 }).catch(() => false);
         if (!hoverVisible) {
           console.log(`  [warn] hover widget not visible for ${filename}`);
         } else {
           console.log(`  [ok] hover widget confirmed visible`);
+        }
+      }
+      // For completions screenshot: wait for suggest widget to appear
+      if (filename.includes("completions")) {
+        const suggestVisible = await page.locator(".editor-widget.suggest-widget").isVisible({ timeout: 5_000 }).catch(() => false);
+        if (!suggestVisible) {
+          console.log(`  [warn] suggest widget not visible for ${filename}`);
+        } else {
+          console.log(`  [ok] suggest widget confirmed visible`);
+        }
+      }
+      // For go-to-definition screenshot: wait for peek definition widget
+      if (filename.includes("go-to-definition")) {
+        const peekVisible = await page.locator(".peekview-widget").isVisible({ timeout: 5_000 }).catch(() => false);
+        if (!peekVisible) {
+          console.log(`  [warn] peek widget not visible for ${filename}`);
+        } else {
+          console.log(`  [ok] peek widget confirmed visible`);
+        }
+      }
+      // For refactoring screenshot: wait for context menu / lightbulb widget
+      if (filename.includes("refactoring")) {
+        const menuVisible = await page.locator(".context-view.monaco-component").isVisible({ timeout: 5_000 }).catch(() => false);
+        if (!menuVisible) {
+          console.log(`  [warn] code action menu not visible for ${filename}`);
+        } else {
+          console.log(`  [ok] code action menu confirmed visible`);
         }
       }
       await page.screenshot({ path: outPath, type: "png", fullPage: false });

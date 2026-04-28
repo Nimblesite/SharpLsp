@@ -84,14 +84,7 @@ suite('Hover / Quick Info', () => {
     const fieldMd = hoverToString(fieldHover);
     assert.ok(fieldMd.includes('_count'), "Field hover must contain '_count'");
 
-    // Trigger completions at the Add method body to capture completions screenshot.
-    const activeEditor = vscode.window.activeTextEditor;
-    assert.ok(activeEditor, 'Must have active text editor');
-    // Position cursor inside Add method body (line 6 is "public int Add..." — go to line 7 which is return statement area)
-    activeEditor.selection = new vscode.Selection(new vscode.Position(6, 22), new vscode.Position(6, 22));
-    await vscode.commands.executeCommand('editor.action.triggerSuggest');
-    await new Promise((r) => setTimeout(r, 1500));
-    // Verify completions returned via LSP.
+    // Verify completions via LSP API first (background, doesn't affect widget state).
     const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
       'vscode.executeCompletionItemProvider',
       uri,
@@ -99,13 +92,20 @@ suite('Hover / Quick Info', () => {
     );
     assert.ok(completions, 'Must get completions');
     assert.ok(completions.items.length > 0, 'Must have at least one completion item');
+
+    // Now trigger the visible suggest widget and screenshot immediately while it's open.
+    const activeEditor = vscode.window.activeTextEditor;
+    assert.ok(activeEditor, 'Must have active text editor');
+    activeEditor.selection = new vscode.Selection(new vscode.Position(6, 22), new vscode.Position(6, 22));
+    await vscode.commands.executeCommand('editor.action.triggerSuggest');
+    // Wait for widget to appear — no other commands that could dismiss it.
+    await new Promise((r) => setTimeout(r, 2500));
     // No openForgePanel() — the completion dropdown IS the feature; keep editor visible.
     await takeScreenshot('vscode-completions-page.png');
 
-    // Dismiss suggestion widget then trigger go-to-definition on "Add" method.
+    // Dismiss suggestion widget then verify go-to-definition via LSP API.
     await vscode.commands.executeCommand('hideSuggestWidget');
     await new Promise((r) => setTimeout(r, 300));
-    // Position on "Add" method name (line 6, char 20).
     activeEditor.selection = new vscode.Selection(new vscode.Position(6, 20), new vscode.Position(6, 20));
     const definitions = await vscode.commands.executeCommand<vscode.Location[]>(
       'vscode.executeDefinitionProvider',
@@ -115,7 +115,9 @@ suite('Hover / Quick Info', () => {
     assert.ok(definitions, 'Must get definitions');
     assert.ok(definitions.length > 0, 'Must have at least one definition location');
     assert.ok(definitions[0]!.uri.fsPath.endsWith('.cs'), 'Definition must point to a .cs file');
-    // No openForgePanel() — peek definition widget needs the editor visible.
+    // Trigger peek definition so the widget is visible in the screenshot.
+    await vscode.commands.executeCommand('editor.action.peekDefinition');
+    await new Promise((r) => setTimeout(r, 1500));
     await takeScreenshot('vscode-go-to-definition-page.png');
   });
 

@@ -7,6 +7,7 @@ import { NuGetBrowserPanel } from '../../nuget-browser.js';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  openForgePanel,
   pollUntilResult,
   setupLspTestSuite,
   takeScreenshot,
@@ -219,6 +220,11 @@ suite('NuGet Browser', () => {
     return api.getLspClient;
   }
 
+  async function takeNuGetScreenshot(filename: string): Promise<void> {
+    await openForgePanel();
+    await takeScreenshot(filename);
+  }
+
   /**
    * BUG REGRESSION: Browse tab was empty on initial panel load because
    * the constructor only called loadInstalledPackages() without ever
@@ -244,7 +250,7 @@ suite('NuGet Browser', () => {
         count > 0,
         `Browse tab must be populated after initial load (got ${count.toString()} results)`,
       );
-      await takeScreenshot('vscode-nuget-browse.png');
+      await takeNuGetScreenshot('vscode-nuget-browse.png');
     } finally {
       panel.dispose();
     }
@@ -296,7 +302,7 @@ suite('NuGet Browser', () => {
         'Newtonsoft.Json',
         'Selecting an installed package must set selectedPackage',
       );
-      await takeScreenshot('vscode-nuget-installed.png');
+      await takeNuGetScreenshot('vscode-nuget-installed.png');
     } finally {
       panel.dispose();
     }
@@ -426,6 +432,7 @@ suite('NuGet Browser', () => {
       });
 
       assert.ok(panel.getSearchResultsCount() > 0, "Search for 'Serilog' must return results");
+      await takeNuGetScreenshot('vscode-nuget-search.png');
     } finally {
       panel.dispose();
     }
@@ -610,6 +617,7 @@ suite('NuGet Browser', () => {
         html.includes('class="package-icon-img"'),
         'Details panel must render an <img> with class package-icon-img when iconUrl is present',
       );
+      await takeNuGetScreenshot('vscode-nuget-package-details.png');
     } finally {
       panel.dispose();
     }
