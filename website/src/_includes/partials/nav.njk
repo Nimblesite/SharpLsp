@@ -1,0 +1,44 @@
+<nav class="nav">
+  <a href="{% if lang and lang != defaultLanguage %}/{{ lang }}/{% else %}/{% endif %}" class="logo">
+    <span class="material-symbols-outlined" aria-hidden="true">terminal</span>{{ site.name | default(site.title) }}
+  </a>
+
+  <ul class="nav-links">
+    <li><a class="nav-link {% if page.url.startsWith('/docs/') %}active{% endif %}" href="/docs/">Docs</a></li>
+    <li><a class="nav-link {% if page.url == '/blog/' or page.url.startsWith('/blog/') %}active{% endif %}" href="/blog/">Blog</a></li>
+    <li><a class="nav-link" href="https://github.com/MelbourneDeveloper/forge">GitHub</a></li>
+  </ul>
+
+  <div class="nav-actions">
+    <a class="search-link" href="/search/" aria-label="Search"><span class="material-symbols-outlined" aria-hidden="true">search</span></a>
+    <a class="nav-button" href="/docs/">Get Started</a>
+
+    {% if techdocOptions.features.i18n and (supportedLanguages | length) > 1 %}
+    <div class="language-switcher">
+      <button class="language-btn" aria-label="Select language" aria-expanded="false">
+        <span>{% if languages and languages[lang | default('en')] %}{{ languages[lang | default('en')].nativeName }}{% else %}{{ lang | default('en') | upper }}{% endif %}</span>
+      </button>
+      <ul class="language-dropdown" role="menu">
+        {% for langCode in supportedLanguages %}
+        <li role="menuitem">
+          <a href="{{ page.url | altLangUrl(lang | default('en'), langCode) }}" class="{% if (lang | default('en')) == langCode %}active{% endif %}" lang="{{ langCode }}">
+            {% if languages and languages[langCode] %}{{ languages[langCode].nativeName }}{% else %}{{ langCode | upper }}{% endif %}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if techdocOptions.features.darkMode %}
+    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
+      <span class="theme-icon-light">☀</span>
+      <span class="theme-icon-dark">☾</span>
+    </button>
+    {% endif %}
+
+    <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-label="Toggle menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
