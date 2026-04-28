@@ -1,0 +1,58 @@
+---
+layout: layouts/base.njk
+---
+
+{% block head %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "{{ title }}",
+  "description": "{{ description | default(site.description) }}",
+  "author": { "@type": "Person", "name": "{{ author | default('Forge Team') }}" },
+  "publisher": { "@type": "Organization", "name": "{{ site.name }}" },
+  "datePublished": "{{ date | dateToRfc3339 }}",
+  "mainEntityOfPage": { "@type": "WebPage", "@id": "{{ site.url }}{{ page.url }}" },
+  "inLanguage": "{{ lang | default('en') }}"{% if tags %},
+  "keywords": "{{ tags | join(', ') }}"{% endif %}{% if category %},
+  "articleSection": "{{ category }}"{% endif %}
+}
+</script>
+{% endblock %}
+
+{% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
+
+<article class="prose">
+  <header class="article-header">
+    <div class="article-kicker">
+      <span>{{ category | default("Engineering") | capitalize }}</span>
+      <time datetime="{{ date | isoDate }}">{{ date | dateFormat }}</time>
+    </div>
+    <h1>{{ title }}</h1>
+    <div class="article-author">
+      <img src="/assets/images/forge-avatar.png" alt="{{ author | default('Forge Team') }}" onerror="this.style.display='none'">
+      <div>
+        <p>{{ author | default("Forge Team") }}</p>
+        <small>Principal Distributed Systems Engineer</small>
+      </div>
+    </div>
+  </header>
+
+  {{ content | safe }}
+
+  <section class="related-panel">
+    <h2>Related Documentation</h2>
+    <div class="related-grid">
+      <a href="/docs/architecture/">
+        <span>Architecture</span>
+        <strong>How Forge Works</strong>
+        <small>The three-tier Rust host + .NET sidecar architecture explained.</small>
+      </a>
+      <a href="/docs/editors/">
+        <span>Setup</span>
+        <strong>Editor Setup</strong>
+        <small>Configure Forge for VS Code, Neovim, Helix, Emacs, Zed, and more.</small>
+      </a>
+    </div>
+  </section>
+</article>

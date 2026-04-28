@@ -1,13 +1,28 @@
 import { HtmlBasePlugin } from "@11ty/eleventy";
 import techdoc from "eleventy-plugin-techdoc";
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pluginLayouts = join(__dirname, "node_modules/eleventy-plugin-techdoc/templates/layouts");
+const localLayouts = join(__dirname, "src/_includes/layouts");
+
+// Patch plugin layouts with local overrides before Eleventy registers virtual templates
+for (const file of ["base.njk", "blog.njk", "docs.njk", "prose.njk"]) {
+  const local = join(localLayouts, file);
+  if (existsSync(local)) {
+    writeFileSync(join(pluginLayouts, file), readFileSync(local, "utf-8"));
+  }
+}
 
 export default function (eleventyConfig) {
   eleventyConfig.addPlugin(techdoc, {
     site: {
       name: "Forge",
       url: "https://forge-lsp.dev",
-      description:
-        "Open-source .NET LSP for C# and F#. One server, every editor.",
+      description: "Open-source .NET LSP for C# and F#. One server, every editor.",
+      stylesheet: "/assets/css/styles.css",
     },
     features: {
       blog: true,

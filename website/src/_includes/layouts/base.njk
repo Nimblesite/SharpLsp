@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="{{ lang | default('en') }}">
+<head>
+  <script>
+    (function() {
+      var theme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Primary Meta Tags -->
+  <title>{{ title | default(site.title) }}</title>
+  <meta name="title" content="{{ title | default(site.title) }}">
+  <meta name="description" content="{{ description | default(site.description) }}">
+  {% if site.author %}<meta name="author" content="{{ site.author }}">{% endif %}
+  {% if site.keywords %}<meta name="keywords" content="{{ site.keywords }}">{% endif %}
+  <meta name="robots" content="index, follow">
+  <meta name="generator" content="Eleventy + techdoc">
+  <meta name="theme-color" content="{{ site.themeColor | default('#0066cc') }}">
+
+  <!-- Canonical URL -->
+  <link rel="canonical" href="{{ site.url }}{{ page.url }}">
+
+  <!-- RSS Feed -->
+  <link rel="alternate" type="application/atom+xml" title="{{ site.title }} Feed" href="{{ site.url }}/feed.xml">
+
+  <!-- Hreflang for language alternates -->
+  {% for langCode in supportedLanguages %}
+  <link rel="alternate" hreflang="{{ langCode }}" href="{{ site.url }}{{ page.url | altLangUrl(lang | default('en'), langCode) }}">
+  {% endfor %}
+  <link rel="alternate" hreflang="x-default" href="{{ site.url }}{{ page.url | altLangUrl(lang | default('en'), defaultLanguage) }}">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="{% if page.url.startsWith('/blog/') and page.url != '/blog/' %}article{% else %}website{% endif %}">
+  <meta property="og:url" content="{{ site.url }}{{ page.url }}">
+  <meta property="og:title" content="{{ title | default(site.title) }}">
+  <meta property="og:description" content="{{ description | default(site.description) }}">
+  <meta property="og:site_name" content="{{ site.title }}">
+  <meta property="og:locale" content="{{ (lang | default('en')) | toOgLocale }}">
+  {% for langCode in supportedLanguages %}{% if langCode != (lang | default('en')) %}
+  <meta property="og:locale:alternate" content="{{ langCode | toOgLocale }}">
+  {% endif %}{% endfor %}
+  {% if site.ogImage %}
+  <meta property="og:image" content="{{ site.url }}{{ site.ogImage }}">
+  <meta property="og:image:width" content="{{ site.ogImageWidth | default('1200') }}">
+  <meta property="og:image:height" content="{{ site.ogImageHeight | default('630') }}">
+  {% endif %}
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="{{ site.url }}{{ page.url }}">
+  <meta name="twitter:title" content="{{ title | default(site.title) }}">
+  <meta name="twitter:description" content="{{ description | default(site.description) }}">
+  {% if site.twitterSite %}<meta name="twitter:site" content="{{ site.twitterSite }}">{% endif %}
+  {% if site.twitterCreator %}<meta name="twitter:creator" content="{{ site.twitterCreator }}">{% endif %}
+  {% if site.ogImage %}<meta name="twitter:image" content="{{ site.url }}{{ site.ogImage }}">{% endif %}
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "{{ site.url }}/#website",
+        "url": "{{ site.url }}/",
+        "name": "{{ site.title }}",
+        "description": "{{ site.description }}",
+        "inLanguage": "{{ lang | default('en') }}"{% if site.searchUrl %},
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": "{{ site.searchUrl }}?q={search_term_string}",
+          "query-input": "required name=search_term_string"
+        }{% endif %}
+      },
+      {
+        "@type": "{% if page.url.startsWith('/docs/') %}TechArticle{% elif page.url.startsWith('/blog/') and page.url != '/blog/' %}BlogPosting{% else %}WebPage{% endif %}",
+        "@id": "{{ site.url }}{{ page.url }}#webpage",
+        "url": "{{ site.url }}{{ page.url }}",
+        "name": "{{ title | default(site.title) }}",
+        "description": "{{ description | default(site.description) }}",
+        "isPartOf": { "@id": "{{ site.url }}/#website" },
+        "inLanguage": "{{ lang | default('en') }}"{% if page.date %},
+        "datePublished": "{{ page.date | isoDate }}"{% endif %}{% if author %},
+        "author": {
+          "@type": "Person",
+          "name": "{{ author }}"
+        }{% endif %}
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "{{ site.url }}{{ page.url }}#breadcrumb",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "{{ site.url }}/"
+          }{% if page.url != '/' %},
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "{{ title | default('Page') }}",
+            "item": "{{ site.url }}{{ page.url }}"
+          }{% endif %}
+        ]
+      }{% if site.organization %},
+      {
+        "@type": "Organization",
+        "@id": "{{ site.url }}/#organization",
+        "name": "{{ site.organization.name | default(site.title) }}",
+        "url": "{{ site.url }}"{% if site.organization.logo %},
+        "logo": {
+          "@type": "ImageObject",
+          "url": "{{ site.url }}{{ site.organization.logo }}"
+        }{% endif %}{% if site.organization.sameAs %},
+        "sameAs": {{ site.organization.sameAs | dump | safe }}{% endif %}
+      }{% endif %}
+    ]
+  }
+  </script>
+
+  <!-- Theme structural CSS (no colors) -->
+  <link rel="stylesheet" href="/techdoc/css/reset.css">
+  <link rel="stylesheet" href="/techdoc/css/layout.css">
+  <link rel="stylesheet" href="/techdoc/css/utilities.css">
+
+  <!-- Site styles -->
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header class="site-header">
+    {% include "partials/nav.njk" %}
+  </header>
+
+  <main id="main-content">
+    {% block content %}{{ content | safe }}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-content">
+      {% if navigation.footer %}
+      <div class="footer-grid">
+        {% set currentLang = lang | default('en') %}
+        {% for section in navigation.footer %}
+        <div class="footer-section">
+          <h3>{{ section.title }}</h3>
+          <ul>
+            {% for item in section.items %}
+            {% set footerUrl = item.url %}
+            {% if item.url.startsWith('/') and currentLang != defaultLanguage %}
+              {% set footerUrl = item.url | altLangUrl('en', currentLang) %}
+            {% endif %}
+            <li><a href="{{ footerUrl }}">{{ item.text }}</a></li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="footer-bottom">
+        <p>&copy; {% year %} {{ site.name | default(site.title) }}</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Theme JS -->
+  <script src="/techdoc/js/main.js" type="module"></script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

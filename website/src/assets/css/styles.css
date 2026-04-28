@@ -1215,10 +1215,13 @@ th {
   margin: 0;
 }
 .blog-empty,
-.post-list,
 .category-grid,
 .tag-cloud,
 .taxonomy-grid {
+  display: grid;
+  gap: 18px;
+}
+.post-list {
   display: grid;
   gap: 18px;
 }
@@ -1231,6 +1234,25 @@ th {
 }
 .tag-count {
   color: var(--text-muted);
+}
+.post-author {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+.post-author div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.post-author span {
+  color: #fff;
+  font-size: 14px;
+}
+.read-time {
+  color: var(--outline);
+  font-family: var(--font-code);
+  font-size: 14px;
 }
 @media (min-width: 701px) {
   .nav-links {

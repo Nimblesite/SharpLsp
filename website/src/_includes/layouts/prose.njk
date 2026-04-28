@@ -1,0 +1,9 @@
+---
+layout: layouts/base.njk
+---
+
+<article class="prose">
+  {% block prose_header %}{% endblock %}
+  {{ content | safe }}
+  {% block prose_footer %}{% endblock %}
+</article>
