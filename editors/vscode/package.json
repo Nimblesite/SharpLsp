@@ -1,11 +1,11 @@
 {
-  "name": "forge",
-  "displayName": "Forge",
+  "name": "sharp-lsp",
+  "displayName": "SharpLsp",
   "description": "The open-source .NET Language Server — C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in.",
   "version": "0.1.0",
-  "publisher": "forge-lsp",
+  "publisher": "sharplsp",
   "license": "MIT",
-  "icon": "icons/forge.png",
+  "icon": "icons/sharplsp.png",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -29,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Nimblesite/forge"
+    "url": "https://github.com/Nimblesite/SharpLsp"
   },
   "activationEvents": [
     "onStartupFinished",
@@ -68,26 +68,26 @@
       }
     ],
     "configuration": {
-      "title": "Forge",
+      "title": "SharpLsp",
       "properties": {
-        "forge.server.path": {
+        "sharplsp.server.path": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `forge-lsp` binary. Leave empty to use the system-installed binary from `~/.local/bin/` or `$PATH`.",
+          "markdownDescription": "Absolute path to the `sharplsp` binary. Leave empty to use the system-installed binary from `~/.local/bin/` or `$PATH`.",
           "scope": "machine-overridable",
           "order": 0
         },
-        "forge.server.extraArgs": {
+        "sharplsp.server.extraArgs": {
           "type": "array",
           "items": {
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Extra arguments passed to the `forge-lsp` process.",
+          "markdownDescription": "Extra arguments passed to the `sharplsp` process.",
           "scope": "machine-overridable",
           "order": 1
         },
-        "forge.trace.server": {
+        "sharplsp.trace.server": {
           "type": "string",
           "enum": [
             "off",
@@ -95,11 +95,11 @@
             "verbose"
           ],
           "default": "off",
-          "description": "Trace LSP communication between VS Code and the Forge server.",
+          "description": "Trace LSP communication between VS Code and the SharpLsp server.",
           "scope": "window",
           "order": 2
         },
-        "forge.logging.level": {
+        "sharplsp.logging.level": {
           "type": "string",
           "enum": [
             "error",
@@ -109,60 +109,60 @@
             "trace"
           ],
           "default": "info",
-          "markdownDescription": "Log level for the Forge server (maps to `RUST_LOG`).",
+          "markdownDescription": "Log level for the SharpLsp server (maps to `RUST_LOG`).",
           "scope": "window",
           "order": 3
         },
-        "forge.debug.netcoredbgPath": {
+        "sharplsp.debug.netcoredbgPath": {
           "type": "string",
           "default": "",
           "description": "Path to netcoredbg executable. Leave empty for auto-detection.",
           "scope": "machine",
           "order": 20
         },
-        "forge.inlayHints.parameterNames": {
+        "sharplsp.inlayHints.parameterNames": {
           "type": "boolean",
           "default": true,
           "description": "Show parameter name hints in method calls.",
           "scope": "resource",
           "order": 5
         },
-        "forge.inlayHints.typeInference": {
+        "sharplsp.inlayHints.typeInference": {
           "type": "boolean",
           "default": true,
           "description": "Show type inference hints for var declarations and lambdas.",
           "scope": "resource",
           "order": 6
         },
-        "forge.inlayHints.pipelineTypes": {
+        "sharplsp.inlayHints.pipelineTypes": {
           "type": "boolean",
           "default": true,
           "description": "Show type hints for F# pipeline operators.",
           "scope": "resource",
           "order": 7
         },
-        "forge.nuget.includePrerelease": {
+        "sharplsp.nuget.includePrerelease": {
           "type": "boolean",
           "default": false,
           "description": "Include prerelease versions in NuGet package search results.",
           "scope": "resource",
           "order": 15
         },
-        "forge.hotReload.onSave": {
+        "sharplsp.hotReload.onSave": {
           "type": "boolean",
           "default": false,
           "description": "Automatically start hot reload on file save when a dotnet watch session is active.",
           "scope": "resource",
           "order": 16
         },
-        "forge.testLens.enabled": {
+        "sharplsp.testLens.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Show pass/fail status, Run Test, and Debug Test lenses above test methods.",
           "scope": "resource",
           "order": 17
         },
-        "forge.memberSortOrder.hierarchy": {
+        "sharplsp.memberSortOrder.hierarchy": {
           "type": "array",
           "items": {
             "type": "string",
@@ -181,7 +181,7 @@
           "scope": "resource",
           "order": 10
         },
-        "forge.memberSortOrder.accessibilityOrder": {
+        "sharplsp.memberSortOrder.accessibilityOrder": {
           "type": "array",
           "items": {
             "type": "string"
@@ -198,7 +198,7 @@
           "scope": "resource",
           "order": 11
         },
-        "forge.memberSortOrder.categoryOrder": {
+        "sharplsp.memberSortOrder.categoryOrder": {
           "type": "array",
           "items": {
             "type": "string"
@@ -228,8 +228,8 @@
     },
     "debuggers": [
       {
-        "type": "forge-coreclr",
-        "label": "Forge .NET Debugger",
+        "type": "sharplsp-coreclr",
+        "label": "SharpLsp .NET Debugger",
         "languages": [
           "csharp",
           "fsharp"
@@ -281,10 +281,10 @@
         },
         "configurationSnippets": [
           {
-            "label": "Forge: Launch .NET Project",
-            "description": "Launch a .NET project with Forge debugger",
+            "label": "SharpLsp: Launch .NET Project",
+            "description": "Launch a .NET project with SharpLsp debugger",
             "body": {
-              "type": "forge-coreclr",
+              "type": "sharplsp-coreclr",
               "request": "launch",
               "name": "Launch .NET Project",
               "program": "${workspaceFolder}/bin/Debug/net9.0/${workspaceFolderBasename}.dll",
@@ -293,10 +293,10 @@
             }
           },
           {
-            "label": "Forge: Attach to .NET Process",
+            "label": "SharpLsp: Attach to .NET Process",
             "description": "Attach to a running .NET process",
             "body": {
-              "type": "forge-coreclr",
+              "type": "sharplsp-coreclr",
               "request": "attach",
               "name": "Attach to Process",
               "processId": 0
@@ -308,21 +308,21 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "forge-explorer",
-          "title": "Forge",
-          "icon": "icons/forge-activity.svg"
+          "id": "sharplsp-explorer",
+          "title": "SharpLsp",
+          "icon": "icons/sharplsp-activity.svg"
         }
       ]
     },
     "views": {
-      "forge-explorer": [
+      "sharplsp-explorer": [
         {
-          "id": "forge.solutionExplorer",
+          "id": "sharplsp.solutionExplorer",
           "name": "Solution Explorer",
-          "icon": "icons/forge.svg"
+          "icon": "icons/sharplsp.svg"
         },
         {
-          "id": "forge.profiler",
+          "id": "sharplsp.profiler",
           "name": "Profiler",
           "icon": "$(pulse)"
         }
@@ -330,572 +330,572 @@
     },
     "viewsWelcome": [
       {
-        "view": "forge.solutionExplorer",
+        "view": "sharplsp.solutionExplorer",
         "contents": "No .sln or .slnx files found in this workspace."
       }
     ],
     "commands": [
       {
-        "command": "forge.restartServer",
+        "command": "sharplsp.restartServer",
         "title": "Restart Language Server",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.showOutput",
+        "command": "sharplsp.showOutput",
         "title": "Show Output Channel",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.showTraceOutput",
+        "command": "sharplsp.showTraceOutput",
         "title": "Show Trace Output",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.selectSolution",
+        "command": "sharplsp.selectSolution",
         "title": "Select Solution",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(folder-opened)"
       },
       {
-        "command": "forge.openSolution",
+        "command": "sharplsp.openSolution",
         "title": "Open Solution",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.refreshExplorer",
+        "command": "sharplsp.refreshExplorer",
         "title": "Refresh Explorer",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(refresh)"
       },
       {
-        "command": "forge.sortNatural",
+        "command": "sharplsp.sortNatural",
         "title": "Sort: Source Order",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(list-ordered)"
       },
       {
-        "command": "forge.sortAlphabetical",
+        "command": "sharplsp.sortAlphabetical",
         "title": "Sort: Alphabetical",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(case-sensitive)"
       },
       {
-        "command": "forge.sortAccessibility",
+        "command": "sharplsp.sortAccessibility",
         "title": "Sort: Accessibility",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(shield)"
       },
       {
-        "command": "forge.removeNuGetPackage",
+        "command": "sharplsp.removeNuGetPackage",
         "title": "Remove Package",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(trash)"
       },
       {
-        "command": "forge.removeProjectReference",
+        "command": "sharplsp.removeProjectReference",
         "title": "Remove Project Reference",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(trash)"
       },
       {
-        "command": "forge.browseNuGetPackages",
+        "command": "sharplsp.browseNuGetPackages",
         "title": "Browse NuGet Packages",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(package)"
       },
       {
-        "command": "forge.sortMembers",
+        "command": "sharplsp.sortMembers",
         "title": "Sort Members",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(list-ordered)"
       },
       {
-        "command": "forge.copyQualifiedName",
+        "command": "sharplsp.copyQualifiedName",
         "title": "Copy Qualified Name",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.copyName",
+        "command": "sharplsp.copyName",
         "title": "Copy Name",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.revealInExplorer",
+        "command": "sharplsp.revealInExplorer",
         "title": "Reveal in File Explorer",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(go-to-file)"
       },
       {
-        "command": "forge.profiler.listProcesses",
+        "command": "sharplsp.profiler.listProcesses",
         "title": "List .NET Processes",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.profiler.startTrace",
+        "command": "sharplsp.profiler.startTrace",
         "title": "Start Performance Trace",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(record)"
       },
       {
-        "command": "forge.profiler.stopTrace",
+        "command": "sharplsp.profiler.stopTrace",
         "title": "Stop Performance Trace",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(debug-stop)"
       },
       {
-        "command": "forge.profiler.startCounters",
+        "command": "sharplsp.profiler.startCounters",
         "title": "Start Counter Monitoring",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(pulse)"
       },
       {
-        "command": "forge.profiler.stopCounters",
+        "command": "sharplsp.profiler.stopCounters",
         "title": "Stop Counter Monitoring",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(debug-stop)"
       },
       {
-        "command": "forge.profiler.collectDump",
+        "command": "sharplsp.profiler.collectDump",
         "title": "Collect Memory Dump",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(database)"
       },
       {
-        "command": "forge.profiler.analyzeHeap",
+        "command": "sharplsp.profiler.analyzeHeap",
         "title": "Analyze Heap Dump",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(graph)"
       },
       {
-        "command": "forge.profiler.refresh",
+        "command": "sharplsp.profiler.refresh",
         "title": "Refresh Profiler",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(refresh)"
       },
       {
-        "command": "forge.profiler.diffSnapshots",
+        "command": "sharplsp.profiler.diffSnapshots",
         "title": "Compare Heap Snapshots",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(diff)"
       },
       {
-        "command": "forge.profiler.detectLeaks",
+        "command": "sharplsp.profiler.detectLeaks",
         "title": "Detect Memory Leaks",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(warning)"
       },
       {
-        "command": "forge.profiler.showObjectGraph",
+        "command": "sharplsp.profiler.showObjectGraph",
         "title": "Show Object Retention Graph",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(type-hierarchy)"
       },
       {
-        "command": "forge.profiler.inspectObject",
+        "command": "sharplsp.profiler.inspectObject",
         "title": "Inspect Object",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(search)"
       },
       {
-        "command": "forge.profiler.openTrace",
+        "command": "sharplsp.profiler.openTrace",
         "title": "Open Trace File…",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(folder-opened)"
       },
       {
-        "command": "forge.profiler.convertTrace",
+        "command": "sharplsp.profiler.convertTrace",
         "title": "Convert .nettrace to SpeedScope",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(file-binary)"
       },
       {
-        "command": "forge.profiler.stopSession",
+        "command": "sharplsp.profiler.stopSession",
         "title": "Stop Session",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(debug-stop)"
       },
       {
-        "command": "forge.profiler.revealOutput",
+        "command": "sharplsp.profiler.revealOutput",
         "title": "Reveal Output File in Finder",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(go-to-file)"
       },
       {
-        "command": "forge.profiler.copyOutputPath",
+        "command": "sharplsp.profiler.copyOutputPath",
         "title": "Copy Output Path",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.profiler.showCountersPanel",
+        "command": "sharplsp.profiler.showCountersPanel",
         "title": "Show Live Counters Panel",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(preview)"
       },
       {
-        "command": "forge.profiler.traceProcess",
+        "command": "sharplsp.profiler.traceProcess",
         "title": "Start Trace on This Process",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(record)"
       },
       {
-        "command": "forge.profiler.countersProcess",
+        "command": "sharplsp.profiler.countersProcess",
         "title": "Start Counters on This Process",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(pulse)"
       },
       {
-        "command": "forge.profiler.dumpProcess",
+        "command": "sharplsp.profiler.dumpProcess",
         "title": "Collect Memory Dump of This Process",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(database)"
       },
       {
-        "command": "forge.profiler.copyPid",
+        "command": "sharplsp.profiler.copyPid",
         "title": "Copy PID",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.build",
+        "command": "sharplsp.build",
         "title": "Build",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(tools)"
       },
       {
-        "command": "forge.rebuild",
+        "command": "sharplsp.rebuild",
         "title": "Rebuild",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.clean",
+        "command": "sharplsp.clean",
         "title": "Clean",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.nuget.add",
+        "command": "sharplsp.nuget.add",
         "title": "Add NuGet Package",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(package)"
       },
       {
-        "command": "forge.nuget.update",
+        "command": "sharplsp.nuget.update",
         "title": "Update NuGet Package",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.newProject",
+        "command": "sharplsp.newProject",
         "title": "New Project",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(new-folder)"
       },
       {
-        "command": "forge.newFile",
+        "command": "sharplsp.newFile",
         "title": "New File (Class/Interface/Enum/Struct/Record)",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(new-file)"
       },
       {
-        "command": "forge.addProjectToSolution",
+        "command": "sharplsp.addProjectToSolution",
         "title": "Add Project to Solution",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.nuget.restore",
+        "command": "sharplsp.nuget.restore",
         "title": "Restore NuGet Packages",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(sync)"
       },
       {
-        "command": "forge.openProjectFile",
+        "command": "sharplsp.openProjectFile",
         "title": "Open Project File",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(go-to-file)"
       },
       {
-        "command": "forge.addProjectReference",
+        "command": "sharplsp.addProjectReference",
         "title": "Add Project Reference",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(add)"
       },
       {
-        "command": "forge.nuget.addFromExplorer",
+        "command": "sharplsp.nuget.addFromExplorer",
         "title": "Add NuGet Package",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(package)"
       },
       {
-        "command": "forge.fsi.send",
+        "command": "sharplsp.fsi.send",
         "title": "F# Interactive: Send Selection",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(play)"
       },
       {
-        "command": "forge.fsi.sendFile",
+        "command": "sharplsp.fsi.sendFile",
         "title": "F# Interactive: Load File",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.fsi.start",
+        "command": "sharplsp.fsi.start",
         "title": "F# Interactive: Start New Session",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.fsi.generateSignature",
+        "command": "sharplsp.fsi.generateSignature",
         "title": "F#: Generate Signature File (.fsi)",
-        "category": "Forge"
+        "category": "SharpLsp"
       },
       {
-        "command": "forge.hotReload.start",
+        "command": "sharplsp.hotReload.start",
         "title": "Start Hot Reload (dotnet watch)",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(flame)"
       },
       {
-        "command": "forge.hotReload.stop",
+        "command": "sharplsp.hotReload.stop",
         "title": "Stop Hot Reload",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(debug-stop)"
       },
       {
-        "command": "forge.hotReload.toggle",
+        "command": "sharplsp.hotReload.toggle",
         "title": "Toggle Hot Reload",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(flame)"
       },
       {
-        "command": "forge.test.runAtCursor",
+        "command": "sharplsp.test.runAtCursor",
         "title": "Run Test at Cursor",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(play)"
       },
       {
-        "command": "forge.test.debugAtCursor",
+        "command": "sharplsp.test.debugAtCursor",
         "title": "Debug Test at Cursor",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(bug)"
       },
       {
-        "command": "forge.debugProgram",
+        "command": "sharplsp.debugProgram",
         "title": "Debug Program",
-        "category": "Forge",
+        "category": "SharpLsp",
         "icon": "$(debug-alt)"
       }
     ],
     "menus": {
       "editor/context": [
         {
-          "command": "forge.debugProgram",
+          "command": "sharplsp.debugProgram",
           "when": "editorLangId == csharp || editorLangId == fsharp",
           "group": "navigation@1"
         }
       ],
       "view/title": [
         {
-          "command": "forge.selectSolution",
-          "when": "view == forge.solutionExplorer",
+          "command": "sharplsp.selectSolution",
+          "when": "view == sharplsp.solutionExplorer",
           "group": "navigation"
         },
         {
-          "command": "forge.refreshExplorer",
-          "when": "view == forge.solutionExplorer",
+          "command": "sharplsp.refreshExplorer",
+          "when": "view == sharplsp.solutionExplorer",
           "group": "navigation"
         },
         {
-          "command": "forge.sortNatural",
-          "when": "view == forge.solutionExplorer && forge.sortOrder == natural",
+          "command": "sharplsp.sortNatural",
+          "when": "view == sharplsp.solutionExplorer && sharplsp.sortOrder == natural",
           "group": "navigation"
         },
         {
-          "command": "forge.sortAlphabetical",
-          "when": "view == forge.solutionExplorer && forge.sortOrder == alphabetical",
+          "command": "sharplsp.sortAlphabetical",
+          "when": "view == sharplsp.solutionExplorer && sharplsp.sortOrder == alphabetical",
           "group": "navigation"
         },
         {
-          "command": "forge.sortAccessibility",
-          "when": "view == forge.solutionExplorer && forge.sortOrder == accessibility",
+          "command": "sharplsp.sortAccessibility",
+          "when": "view == sharplsp.solutionExplorer && sharplsp.sortOrder == accessibility",
           "group": "navigation"
         },
         {
-          "command": "forge.profiler.refresh",
-          "when": "view == forge.profiler",
+          "command": "sharplsp.profiler.refresh",
+          "when": "view == sharplsp.profiler",
           "group": "navigation@1"
         },
         {
-          "command": "forge.profiler.openTrace",
-          "when": "view == forge.profiler",
+          "command": "sharplsp.profiler.openTrace",
+          "when": "view == sharplsp.profiler",
           "group": "navigation@2"
         },
         {
-          "command": "forge.profiler.startTrace",
-          "when": "view == forge.profiler",
+          "command": "sharplsp.profiler.startTrace",
+          "when": "view == sharplsp.profiler",
           "group": "overflow@1"
         },
         {
-          "command": "forge.profiler.startCounters",
-          "when": "view == forge.profiler",
+          "command": "sharplsp.profiler.startCounters",
+          "when": "view == sharplsp.profiler",
           "group": "overflow@2"
         },
         {
-          "command": "forge.profiler.collectDump",
-          "when": "view == forge.profiler",
+          "command": "sharplsp.profiler.collectDump",
+          "when": "view == sharplsp.profiler",
           "group": "overflow@3"
         },
         {
-          "command": "forge.profiler.convertTrace",
-          "when": "view == forge.profiler",
+          "command": "sharplsp.profiler.convertTrace",
+          "when": "view == sharplsp.profiler",
           "group": "overflow@4"
         },
         {
-          "command": "forge.profiler.analyzeHeap",
-          "when": "view == forge.profiler",
+          "command": "sharplsp.profiler.analyzeHeap",
+          "when": "view == sharplsp.profiler",
           "group": "overflow@5"
         },
         {
-          "command": "forge.profiler.diffSnapshots",
-          "when": "view == forge.profiler",
+          "command": "sharplsp.profiler.diffSnapshots",
+          "when": "view == sharplsp.profiler",
           "group": "overflow@6"
         },
         {
-          "command": "forge.profiler.detectLeaks",
-          "when": "view == forge.profiler",
+          "command": "sharplsp.profiler.detectLeaks",
+          "when": "view == sharplsp.profiler",
           "group": "overflow@7"
         }
       ],
       "debug/toolbar": [
         {
-          "command": "forge.hotReload.toggle",
-          "when": "debugType == forge-coreclr && !forge.hotReloadRunning",
+          "command": "sharplsp.hotReload.toggle",
+          "when": "debugType == sharplsp-coreclr && !sharplsp.hotReloadRunning",
           "group": "navigation"
         },
         {
-          "command": "forge.hotReload.stop",
-          "when": "debugType == forge-coreclr && forge.hotReloadRunning",
+          "command": "sharplsp.hotReload.stop",
+          "when": "debugType == sharplsp-coreclr && sharplsp.hotReloadRunning",
           "group": "navigation"
         }
       ],
       "view/item/context": [
         {
-          "command": "forge.sortMembers",
-          "when": "view == forge.solutionExplorer && viewItem =~ /^symbol\\.(class|struct|interface|enum|record)$/",
+          "command": "sharplsp.sortMembers",
+          "when": "view == sharplsp.solutionExplorer && viewItem =~ /^symbol\\.(class|struct|interface|enum|record)$/",
           "group": "1_modification"
         },
         {
-          "command": "forge.revealInExplorer",
-          "when": "view == forge.solutionExplorer && viewItem =~ /^symbol\\./",
+          "command": "sharplsp.revealInExplorer",
+          "when": "view == sharplsp.solutionExplorer && viewItem =~ /^symbol\\./",
           "group": "3_open"
         },
         {
-          "command": "forge.removeNuGetPackage",
-          "when": "view == forge.solutionExplorer && viewItem == nugetPackage",
+          "command": "sharplsp.removeNuGetPackage",
+          "when": "view == sharplsp.solutionExplorer && viewItem == nugetPackage",
           "group": "7_modification"
         },
         {
-          "command": "forge.removeProjectReference",
-          "when": "view == forge.solutionExplorer && viewItem == projectReference",
+          "command": "sharplsp.removeProjectReference",
+          "when": "view == sharplsp.solutionExplorer && viewItem == projectReference",
           "group": "7_modification"
         },
         {
-          "command": "forge.openProjectFile",
-          "when": "view == forge.solutionExplorer && viewItem == project",
+          "command": "sharplsp.openProjectFile",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
           "group": "3_open"
         },
         {
-          "command": "forge.browseNuGetPackages",
-          "when": "view == forge.solutionExplorer && viewItem == project",
+          "command": "sharplsp.browseNuGetPackages",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
           "group": "5_dependencies"
         },
         {
-          "command": "forge.build",
-          "when": "view == forge.solutionExplorer && viewItem == project",
+          "command": "sharplsp.build",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
           "group": "2_build"
         },
         {
-          "command": "forge.rebuild",
-          "when": "view == forge.solutionExplorer && viewItem == project",
+          "command": "sharplsp.rebuild",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
           "group": "2_build"
         },
         {
-          "command": "forge.clean",
-          "when": "view == forge.solutionExplorer && viewItem == project",
+          "command": "sharplsp.clean",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
           "group": "2_build"
         },
         {
-          "command": "forge.addProjectReference",
-          "when": "view == forge.solutionExplorer && viewItem == dependencyFolder",
+          "command": "sharplsp.addProjectReference",
+          "when": "view == sharplsp.solutionExplorer && viewItem == dependencyFolder",
           "group": "1_add"
         },
         {
-          "command": "forge.nuget.addFromExplorer",
-          "when": "view == forge.solutionExplorer && viewItem == dependencyFolder",
+          "command": "sharplsp.nuget.addFromExplorer",
+          "when": "view == sharplsp.solutionExplorer && viewItem == dependencyFolder",
           "group": "1_add"
         },
         {
-          "command": "forge.copyQualifiedName",
-          "when": "view == forge.solutionExplorer && viewItem =~ /^symbol\\./",
+          "command": "sharplsp.copyQualifiedName",
+          "when": "view == sharplsp.solutionExplorer && viewItem =~ /^symbol\\./",
           "group": "9_cutcopypaste"
         },
         {
-          "command": "forge.copyName",
-          "when": "view == forge.solutionExplorer && viewItem =~ /^(symbol\\.|solution$|project$)/",
+          "command": "sharplsp.copyName",
+          "when": "view == sharplsp.solutionExplorer && viewItem =~ /^(symbol\\.|solution$|project$)/",
           "group": "9_cutcopypaste"
         },
         {
-          "command": "forge.profiler.stopSession",
-          "when": "view == forge.profiler && viewItem == profiler-session-trace",
+          "command": "sharplsp.profiler.stopSession",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
           "group": "inline@1"
         },
         {
-          "command": "forge.profiler.stopSession",
-          "when": "view == forge.profiler && viewItem == profiler-session-trace",
+          "command": "sharplsp.profiler.stopSession",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
           "group": "1_stop@1"
         },
         {
-          "command": "forge.profiler.revealOutput",
-          "when": "view == forge.profiler && viewItem == profiler-session-trace",
+          "command": "sharplsp.profiler.revealOutput",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
           "group": "2_open@1"
         },
         {
-          "command": "forge.profiler.copyOutputPath",
-          "when": "view == forge.profiler && viewItem == profiler-session-trace",
+          "command": "sharplsp.profiler.copyOutputPath",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
           "group": "9_copy@1"
         },
         {
-          "command": "forge.profiler.showCountersPanel",
-          "when": "view == forge.profiler && viewItem == profiler-session-counters",
+          "command": "sharplsp.profiler.showCountersPanel",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-counters",
           "group": "inline@1"
         },
         {
-          "command": "forge.profiler.showCountersPanel",
-          "when": "view == forge.profiler && viewItem == profiler-session-counters",
+          "command": "sharplsp.profiler.showCountersPanel",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-counters",
           "group": "1_show@1"
         },
         {
-          "command": "forge.profiler.stopCounters",
-          "when": "view == forge.profiler && viewItem == profiler-session-counters",
+          "command": "sharplsp.profiler.stopCounters",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-counters",
           "group": "1_show@2"
         },
         {
-          "command": "forge.profiler.traceProcess",
-          "when": "view == forge.profiler && viewItem == profiler-process",
+          "command": "sharplsp.profiler.traceProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
           "group": "inline@1"
         },
         {
-          "command": "forge.profiler.traceProcess",
-          "when": "view == forge.profiler && viewItem == profiler-process",
+          "command": "sharplsp.profiler.traceProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
           "group": "1_profile@1"
         },
         {
-          "command": "forge.profiler.countersProcess",
-          "when": "view == forge.profiler && viewItem == profiler-process",
+          "command": "sharplsp.profiler.countersProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
           "group": "1_profile@2"
         },
         {
-          "command": "forge.profiler.dumpProcess",
-          "when": "view == forge.profiler && viewItem == profiler-process",
+          "command": "sharplsp.profiler.dumpProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
           "group": "1_profile@3"
         },
         {
-          "command": "forge.profiler.copyPid",
-          "when": "view == forge.profiler && viewItem == profiler-process",
+          "command": "sharplsp.profiler.copyPid",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
           "group": "9_copy@1"
         }
       ]

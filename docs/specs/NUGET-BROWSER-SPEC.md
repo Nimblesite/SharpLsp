@@ -1,10 +1,10 @@
 # NuGet Browser Specification
 
-**Parent:** [FORGE-SPEC.md](FORGE-SPEC.md)
+**Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
 ## 1. Overview
 
-Forge provides a built-in NuGet package manager UI accessible from the Solution Explorer. Users can search, browse, install, update, and remove NuGet packages for any project in the solution. The UI is a webview panel rendered by the editor extension, but **all NuGet operations are routed through the LSP server** via custom requests. The extension NEVER talks directly to nuget.org or the dotnet CLI.
+SharpLsp provides a built-in NuGet package manager UI accessible from the Solution Explorer. Users can search, browse, install, update, and remove NuGet packages for any project in the solution. The UI is a webview panel rendered by the editor extension, but **all NuGet operations are routed through the LSP server** via custom requests. The extension NEVER talks directly to nuget.org or the dotnet CLI.
 
 **Priority:** P2 (Phase 4 - Essential Features)
 
@@ -57,7 +57,7 @@ A target is one of:
 | `buildProps` | `/repo/Directory.Build.props` | **Direct XML edit** — NOT `dotnet add` | `dotnet add` does not support props files. The Rust host edits the `<ItemGroup><PackageReference .../></ItemGroup>` block directly, preserving formatting. Requires follow-up `dotnet restore` at the props file's directory. |
 | `buildProps` | `/repo/src/Directory.Packages.props` | Central Package Management | When CPM is enabled (`ManagePackageVersionsCentrally=true`), version lives in `Directory.Packages.props` as `<PackageVersion>`, and the `<PackageReference>` in the csproj has no `Version=`. The host must detect CPM and route accordingly. |
 
-#### 3.0.2 `forge/nuget/targets`
+#### 3.0.2 `sharplsp/nuget/targets`
 
 Enumerate all valid install targets in the currently open solution/workspace.
 
@@ -100,13 +100,13 @@ interface NuGetTarget {
 - A **target dropdown** is rendered in the panel header, to the **right of the tabs, left of the search box**.
 - The dropdown lists projects first (grouped under a "Projects" header), then props files (grouped under a "Build Props" header).
 - Changing the target:
-  1. Re-fires `forge/nuget/installed` for the new target.
+  1. Re-fires `sharplsp/nuget/installed` for the new target.
   2. Re-fires the current search so `isInstalled` flags reflect the new target.
   3. Clears the details panel selection if the previously-selected package no longer makes sense.
 - When CPM is enabled, installing to a `project` target MUST transparently update `Directory.Packages.props` (add/update `<PackageVersion>`) AND the csproj (`<PackageReference>` without a version). The host handles this — the UI does not care.
 - When CPM is enabled AND the user explicitly picks the `Directory.Packages.props` target, the operation is a pure version-management edit (add/update `<PackageVersion>` only; no `<PackageReference>` is touched).
 
-### 3.1 `forge/nuget/search`
+### 3.1 `sharplsp/nuget/search`
 
 Search nuget.org for packages matching a query.
 
@@ -152,7 +152,7 @@ interface NuGetPackageInfo {
 - HTTP GET to `https://azuresearch-usnc.nuget.org/query?q={query}&prerelease={prerelease}&take={take}&skip={skip}`
 - Cache search results for 60s to avoid hammering the API
 
-### 3.2 `forge/nuget/versions`
+### 3.2 `sharplsp/nuget/versions`
 
 Get all available versions for a specific package.
 
@@ -176,7 +176,7 @@ interface NuGetVersionsResponse {
 - HTTP GET to `https://api.nuget.org/v3-flatcontainer/{id}/index.json`
 - Return versions in reverse chronological order (newest first)
 
-### 3.3 `forge/nuget/installed`
+### 3.3 `sharplsp/nuget/installed`
 
 List installed packages for a target.
 
@@ -206,7 +206,7 @@ interface InstalledPackageInfo {
 - Executes `dotnet list <projectPath> package --format json`
 - Parses JSON output to extract installed packages across all target frameworks
 
-### 3.4 `forge/nuget/install`
+### 3.4 `sharplsp/nuget/install`
 
 Install or update a NuGet package against a chosen target (see § 3.0).
 
@@ -214,7 +214,7 @@ Install or update a NuGet package against a chosen target (see § 3.0).
 
 ```typescript
 interface NuGetInstallParams {
-    target: NuGetTarget;     // Full target descriptor from forge/nuget/targets
+    target: NuGetTarget;     // Full target descriptor from sharplsp/nuget/targets
     packageId: string;
     version: string;
 }
@@ -241,7 +241,7 @@ interface NuGetInstallResponse {
 - On success, trigger sidecar workspace reload for every project that transitively imports the modified file.
 - Return `modifiedFiles` so the UI can show a toast like `Updated Directory.Build.props`.
 
-### 3.5 `forge/nuget/uninstall`
+### 3.5 `sharplsp/nuget/uninstall`
 
 Remove a NuGet package from a target.
 
@@ -280,12 +280,12 @@ Every LSP round trip MUST show a spinner at a location that tells the user *what
 
 | Operation | Spinner location | Extra UI |
 |-----------|------------------|----------|
-| `forge/nuget/targets` (initial) | Target dropdown shows a centered spinner in place of its label. | Tabs / search disabled. |
-| `forge/nuget/installed` | Inline spinner row at the top of the package list under the "Installed" tab. | Cached stale list stays visible underneath. |
-| `forge/nuget/search` | Spinner inside the search box (right edge, replacing the search icon) AND a skeleton-list in the results area on first search. | Debounce 250 ms before firing. |
-| `forge/nuget/versions` | Spinner next to the version dropdown in the details panel. | Dropdown disabled until resolved. |
-| `forge/nuget/install` / `update` | Spinner replaces the Install button label ("Installing…" + spinner). Details panel shows a progress strip. | Global non-blocking toast: `Installing <id> <version> into <target.displayName>…` |
-| `forge/nuget/uninstall` | Spinner replaces the Uninstall button label. | Global toast. |
+| `sharplsp/nuget/targets` (initial) | Target dropdown shows a centered spinner in place of its label. | Tabs / search disabled. |
+| `sharplsp/nuget/installed` | Inline spinner row at the top of the package list under the "Installed" tab. | Cached stale list stays visible underneath. |
+| `sharplsp/nuget/search` | Spinner inside the search box (right edge, replacing the search icon) AND a skeleton-list in the results area on first search. | Debounce 250 ms before firing. |
+| `sharplsp/nuget/versions` | Spinner next to the version dropdown in the details panel. | Dropdown disabled until resolved. |
+| `sharplsp/nuget/install` / `update` | Spinner replaces the Install button label ("Installing…" + spinner). Details panel shows a progress strip. | Global non-blocking toast: `Installing <id> <version> into <target.displayName>…` |
+| `sharplsp/nuget/uninstall` | Spinner replaces the Uninstall button label. | Global toast. |
 
 ### 3A.2 Optimistic UI
 
@@ -306,9 +306,9 @@ Every spinner-bearing operation MUST be cancellable. When the user switches targ
 
 - **< 100 ms**: optimistic UI update is visible (§ 3A.2 step 1).
 - **< 500 ms**: spinner + toast visible (§ 3A.1).
-- **Host-side fast path**: for `kind: "project"` without CPM, the host MUST edit the csproj XML directly to add the `<PackageReference>` first, *then* fire `dotnet restore` in the background. The LSP `install` response returns as soon as the XML edit is committed (typically < 50 ms). The subsequent restore is reported via a separate `forge/nuget/restoreProgress` notification (see § 3.6) so the UI can keep its spinner until restore finishes, without blocking the user from clicking Install on the next package.
+- **Host-side fast path**: for `kind: "project"` without CPM, the host MUST edit the csproj XML directly to add the `<PackageReference>` first, *then* fire `dotnet restore` in the background. The LSP `install` response returns as soon as the XML edit is committed (typically < 50 ms). The subsequent restore is reported via a separate `sharplsp/nuget/restoreProgress` notification (see § 3.6) so the UI can keep its spinner until restore finishes, without blocking the user from clicking Install on the next package.
 
-### 3.6 `forge/nuget/restoreProgress` (server → client notification)
+### 3.6 `sharplsp/nuget/restoreProgress` (server → client notification)
 
 ```typescript
 interface NuGetRestoreProgress {
@@ -401,7 +401,7 @@ The extension MUST NOT:
 User clicks "Install" in webview
   -> webview postMessage({ command: "install", data: { packageId, version } })
   -> extension receives message
-  -> extension sends LSP request: forge/nuget/install { projectPath, packageId, version }
+  -> extension sends LSP request: sharplsp/nuget/install { projectPath, packageId, version }
   -> Rust host executes dotnet add ...
   -> Rust host returns { success: true, message: "..." }
   -> extension forwards result to webview
@@ -424,7 +424,7 @@ Every target below is **end-to-end, user-perceived** — measured from click to 
 
 | Operation | First paint (spinner/optimistic) | LSP response | Full completion | Method |
 |-----------|----------------------------------|--------------|-----------------|--------|
-| Open panel | < 50 ms | `forge/nuget/targets` < 300 ms | < 1 s | Targets cached per workspace; refresh in background. |
+| Open panel | < 50 ms | `sharplsp/nuget/targets` < 300 ms | < 1 s | Targets cached per workspace; refresh in background. |
 | Search | < 50 ms (spinner) | < 500 ms p95 | < 500 ms p95 | HTTP GET with 60 s cache; 250 ms debounce before firing. |
 | List installed | < 50 ms (spinner over stale cache) | < 300 ms from cache, < 2 s cold | < 2 s | `dotnet list` cold; subsequent calls served from in-memory cache keyed by target + csproj mtime. |
 | Version list | < 50 ms (spinner) | < 500 ms | < 500 ms | HTTP GET with 5 min cache. |
@@ -439,22 +439,22 @@ Every target below is **end-to-end, user-perceived** — measured from click to 
 
 ### 7.1 Rust LSP Host Tests (E2E)
 
-- [ ] `forge/nuget/targets` enumerates all `.csproj`, `.fsproj`, `Directory.Build.props`, `Directory.Packages.props` in workspace
-- [ ] `forge/nuget/targets` detects Central Package Management
-- [ ] `forge/nuget/search` returns packages for known query
-- [ ] `forge/nuget/search` with empty query returns popular packages
-- [ ] `forge/nuget/search` marks installed packages correctly for a project target
-- [ ] `forge/nuget/search` marks installed packages correctly for a `Directory.Build.props` target
-- [ ] `forge/nuget/versions` returns version list for known package
-- [ ] `forge/nuget/installed` returns installed packages for a project target
-- [ ] `forge/nuget/installed` returns installed packages for a `Directory.Build.props` target
-- [ ] `forge/nuget/install` (project, no CPM) edits csproj XML and returns in < 150 ms, then fires restore in background
-- [ ] `forge/nuget/install` (project, CPM) updates `Directory.Packages.props` + csproj correctly
-- [ ] `forge/nuget/install` (buildProps) edits `Directory.Build.props` XML preserving formatting
-- [ ] `forge/nuget/install` (Directory.Packages.props) writes `<PackageVersion>` not `<PackageReference>`
-- [ ] `forge/nuget/uninstall` removes from a project target
-- [ ] `forge/nuget/uninstall` removes from a `Directory.Build.props` target
-- [ ] `forge/nuget/restoreProgress` notifications are emitted for each phase
+- [ ] `sharplsp/nuget/targets` enumerates all `.csproj`, `.fsproj`, `Directory.Build.props`, `Directory.Packages.props` in workspace
+- [ ] `sharplsp/nuget/targets` detects Central Package Management
+- [ ] `sharplsp/nuget/search` returns packages for known query
+- [ ] `sharplsp/nuget/search` with empty query returns popular packages
+- [ ] `sharplsp/nuget/search` marks installed packages correctly for a project target
+- [ ] `sharplsp/nuget/search` marks installed packages correctly for a `Directory.Build.props` target
+- [ ] `sharplsp/nuget/versions` returns version list for known package
+- [ ] `sharplsp/nuget/installed` returns installed packages for a project target
+- [ ] `sharplsp/nuget/installed` returns installed packages for a `Directory.Build.props` target
+- [ ] `sharplsp/nuget/install` (project, no CPM) edits csproj XML and returns in < 150 ms, then fires restore in background
+- [ ] `sharplsp/nuget/install` (project, CPM) updates `Directory.Packages.props` + csproj correctly
+- [ ] `sharplsp/nuget/install` (buildProps) edits `Directory.Build.props` XML preserving formatting
+- [ ] `sharplsp/nuget/install` (Directory.Packages.props) writes `<PackageVersion>` not `<PackageReference>`
+- [ ] `sharplsp/nuget/uninstall` removes from a project target
+- [ ] `sharplsp/nuget/uninstall` removes from a `Directory.Build.props` target
+- [ ] `sharplsp/nuget/restoreProgress` notifications are emitted for each phase
 - [ ] `$/cancelRequest` during a running `dotnet` child kills the child
 - [ ] Error handling: invalid target path returns error
 - [ ] Error handling: nonexistent package returns error
@@ -464,10 +464,10 @@ Every target below is **end-to-end, user-perceived** — measured from click to 
 
 - [ ] NuGet browser panel opens from command
 - [ ] Panel reuses existing instance (singleton)
-- [ ] Panel sends `forge/nuget/targets` on open
+- [ ] Panel sends `sharplsp/nuget/targets` on open
 - [ ] Target dropdown renders projects AND props files grouped
 - [ ] Target dropdown defaults to last-used target from workspaceState
-- [ ] Changing target re-fires `forge/nuget/installed` and the current search
+- [ ] Changing target re-fires `sharplsp/nuget/installed` and the current search
 - [ ] Install button is disabled until a target is selected
 - [ ] Spinner appears in the search box within 50 ms of typing
 - [ ] Spinner appears on the Install button within 100 ms of click

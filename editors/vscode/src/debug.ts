@@ -19,7 +19,7 @@ interface LaunchSettings {
  * Provides automatic launch configurations by discovering .csproj files
  * and integrating launchSettings.json profiles.
  */
-export class ForgeLaunchProvider implements vscode.DebugConfigurationProvider {
+export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider {
   public resolveDebugConfiguration(
     folder: vscode.WorkspaceFolder | undefined,
     config: vscode.DebugConfiguration,
@@ -104,7 +104,7 @@ export class ForgeLaunchProvider implements vscode.DebugConfigurationProvider {
 /**
  * Spawns netcoredbg as the debug adapter process.
  */
-export class ForgeDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
+export class SharpLspDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
   public createDebugAdapterDescriptor(
     _session: vscode.DebugSession,
   ): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
@@ -177,7 +177,7 @@ function isLaunchSettings(value: unknown): value is LaunchSettings {
 
 function findNetcoredbg(): string | undefined {
   // Check user setting first.
-  const configured = vscode.workspace.getConfiguration('forge').get<string>('debug.netcoredbgPath');
+  const configured = vscode.workspace.getConfiguration('sharplsp').get<string>('debug.netcoredbgPath');
   if (configured !== undefined && configured.length > 0 && fs.existsSync(configured)) {
     return configured;
   }
@@ -255,17 +255,17 @@ function projectEntryFromFile(projFile: string): ProjectEntry {
  */
 export function registerDebugAdapter(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
-    vscode.debug.registerDebugConfigurationProvider(DEBUG_TYPE, new ForgeLaunchProvider()),
+    vscode.debug.registerDebugConfigurationProvider(DEBUG_TYPE, new SharpLspLaunchProvider()),
   );
   context.subscriptions.push(
-    vscode.debug.registerDebugAdapterDescriptorFactory(DEBUG_TYPE, new ForgeDebugAdapterFactory()),
+    vscode.debug.registerDebugAdapterDescriptorFactory(DEBUG_TYPE, new SharpLspDebugAdapterFactory()),
   );
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_DEBUG_PROGRAM, () => {
       debugCurrentProject();
     }),
   );
-  info('Debug adapter registered for forge-coreclr');
+  info('Debug adapter registered for sharplsp-coreclr');
 }
 
 /**

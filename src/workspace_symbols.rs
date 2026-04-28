@@ -1,4 +1,4 @@
-//! Custom `forge/workspaceSymbols` request handler.
+//! Custom `sharplsp/workspaceSymbols` request handler.
 //!
 //! Walks all `.cs` / `.fs` files discovered via `.csproj` / `.fsproj` files
 //! referenced by a `.sln` or `.slnx`, parses each with tree-sitter, and returns the
@@ -17,14 +17,14 @@ use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::utils::usize_to_u32;
 use crate::vfs::Vfs;
 
-/// Request params for `forge/workspaceSymbols`.
+/// Request params for `sharplsp/workspaceSymbols`.
 #[derive(Debug, Deserialize)]
 pub struct WorkspaceSymbolsParams {
     /// Path to the `.sln` or `.slnx` file to scan.
     pub solution: String,
 }
 
-/// Full response for `forge/workspaceSymbols`.
+/// Full response for `sharplsp/workspaceSymbols`.
 #[derive(Debug, Serialize)]
 pub struct WorkspaceSymbolsResponse {
     /// Projects discovered in the solution.
@@ -176,7 +176,7 @@ struct SolutionItemEntry {
     declaration_order: usize,
 }
 
-/// Handle the `forge/workspaceSymbols` request.
+/// Handle the `sharplsp/workspaceSymbols` request.
 pub fn handle(
     params: &WorkspaceSymbolsParams,
     parsers: &TsParsers,
@@ -187,7 +187,7 @@ pub fn handle(
     let sln_data = read_solution(params, runtime, solution_sidecar)?;
 
     info!(
-        "forge/workspaceSymbols: {} projects, {} folders, {} files from {} ({})",
+        "sharplsp/workspaceSymbols: {} projects, {} folders, {} files from {} ({})",
         sln_data.projects.len(),
         sln_data.folders.len(),
         sln_data.file_count,
@@ -250,7 +250,7 @@ fn request_solution_model(
     runtime: &tokio::runtime::Runtime,
     solution_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<SolutionFileModel> {
-    let sidecar = solution_sidecar.context("forge/workspaceSymbols requires a sidecar")?;
+    let sidecar = solution_sidecar.context("sharplsp/workspaceSymbols requires a sidecar")?;
     let payload = rmp_serde::to_vec(solution).context("serialize solution/read request")?;
     let response = runtime
         .block_on(sidecar.request("solution/read", payload))

@@ -8,17 +8,17 @@ eleventyNavigation:
 
 # Editor Setup
 
-![Forge editor support](/assets/screenshots/vscode-editors-page.png)
+![SharpLsp editor support](/assets/screenshots/vscode-editors-page.png)
 
-Forge is editor-agnostic at the LSP layer. The VS Code extension is the primary supported surface. Neovim and Zed support are coming soon.
+SharpLsp is editor-agnostic at the LSP layer. The VS Code extension is the primary supported surface. Neovim and Zed support are coming soon.
 
 **Prerequisite:** [.NET 10.0 SDK](https://dotnet.microsoft.com/download) installed and `dotnet` on your PATH.
 
 ## VS Code
 
-Install the Forge extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=forge-lsp.forge). The extension ships with the `forge-lsp` binary and both sidecars bundled inside the VSIX — no Rust toolchain or separate binary install required.
+Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sharplsp-lsp.sharplsp). The extension ships with the `sharplsp-lsp` binary and both sidecars bundled inside the VSIX — no Rust toolchain or separate binary install required.
 
-The extension automatically manages the `forge-lsp` server lifecycle and provides the Solution Explorer, profiler, NuGet browser, test lens, and editor status integration. No additional configuration is required.
+The extension automatically manages the `sharplsp-lsp` server lifecycle and provides the Solution Explorer, profiler, NuGet browser, test lens, and editor status integration. No additional configuration is required.
 
 ## Neovim
 

@@ -16,11 +16,11 @@ suite('Config Module — Direct Function Tests', () => {
     try {
       await wsConfig.update(
         'server.path',
-        '/tmp/fake-forge-lsp',
+        '/tmp/fake-sharplsp-lsp',
         vscode.ConfigurationTarget.Workspace,
       );
       const result = config.serverPath();
-      assert.strictEqual(result, '/tmp/fake-forge-lsp');
+      assert.strictEqual(result, '/tmp/fake-sharplsp-lsp');
     } finally {
       await wsConfig.update('server.path', original, vscode.ConfigurationTarget.Workspace);
     }
@@ -84,9 +84,9 @@ suite('Config Module — Direct Function Tests', () => {
   });
 
   // ── section() (internal, tested via all the above) ───────────
-  test("all config functions read from the 'forge' section", () => {
+  test("all config functions read from the 'sharplsp' section", () => {
     const wsConfig = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    assert.ok(wsConfig, 'forge config section must be accessible');
+    assert.ok(wsConfig, 'sharplsp config section must be accessible');
   });
 
   // ── Edge cases ───────────────────────────────────────────────

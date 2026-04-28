@@ -12,11 +12,11 @@ eleventyNavigation:
 
 # NuGet Package Manager
 
-Forge includes a built-in NuGet package browser panel for VS Code, powered by the sidecar and the official NuGet API. Install, remove, and inspect packages without leaving the extension.
+SharpLsp includes a built-in NuGet package browser panel for VS Code, powered by the sidecar and the official NuGet API. Install, remove, and inspect packages without leaving the extension.
 
 ## Opening the NuGet Browser
 
-Right-click a project node in the **Solution Explorer** and select **Browse NuGet Packages**, or run the command `Forge: Browse NuGet Packages` from the Command Palette.
+Right-click a project node in the **Solution Explorer** and select **Browse NuGet Packages**, or run the command `SharpLsp: Browse NuGet Packages` from the Command Palette.
 
 ## Browse Tab
 

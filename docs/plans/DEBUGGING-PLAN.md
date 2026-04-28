@@ -1,6 +1,6 @@
 # DEBUGGING-PLAN
 
-**Forge Debugging Implementation Plan**
+**SharpLsp Debugging Implementation Plan**
 
 *March 2026 | DRAFT*
 
@@ -22,22 +22,22 @@ Goal: Ship a production-quality debugging experience for all editors using netco
 - [ ] Implement adapter subprocess lifecycle: spawn, stdout/stderr capture, crash detection, restart with exponential backoff
 - [ ] Add DAP session registry to `DapRouter` (keyed by session ID)
 - [ ] Wire DAP listen socket into the LSP host's tokio runtime (separate port or stdio multiplexed)
-- [ ] Add `forge/debugAdapterInfo` LSP extension to report active adapter version and capabilities
-- [ ] Intercept `initialize` response: augment capability flags for Forge-emulated features (logpoints, DebuggerDisplay, async stacks)
+- [ ] Add `sharplsp/debugAdapterInfo` LSP extension to report active adapter version and capabilities
+- [ ] Intercept `initialize` response: augment capability flags for SharpLsp-emulated features (logpoints, DebuggerDisplay, async stacks)
 
 ### 4.2 netcoredbg Bundling and Distribution
 
 - [ ] Add netcoredbg to CI release pipeline for all platform targets
 - [ ] Platform targets: `linux-x64`, `linux-arm64`, `win-x64`, `win-arm64`, `osx-x64`
-- [ ] Add Forge CI job: build netcoredbg from source for `osx-arm64` (Apple Silicon — Samsung does not ship official ARM64 macOS binaries)
-- [ ] Add Forge CI job: build netcoredbg for Alpine/musl (`linux-musl-x64`, `linux-musl-arm64`) with patched stack size pre-reservation to work around dotnet/runtime#103741
+- [ ] Add SharpLsp CI job: build netcoredbg from source for `osx-arm64` (Apple Silicon — Samsung does not ship official ARM64 macOS binaries)
+- [ ] Add SharpLsp CI job: build netcoredbg for Alpine/musl (`linux-musl-x64`, `linux-musl-arm64`) with patched stack size pre-reservation to work around dotnet/runtime#103741
 - [ ] Version-pin netcoredbg `3.1.3-1062` in CI config; document upgrade cadence and testing requirement
 - [ ] Implement first-run auto-download if bundled binary absent (SHA-256 hash verification mandatory)
-- [ ] Add `forge/debugAdapterStatus` notification for download progress display
+- [ ] Add `sharplsp/debugAdapterStatus` notification for download progress display
 
 ### 4.3 Launch and Attach
 
-- [ ] Implement `launch` request handler: construct netcoredbg argv from Forge launch config schema
+- [ ] Implement `launch` request handler: construct netcoredbg argv from SharpLsp launch config schema
 - [ ] Implement `attach` request handler: PID-based attach with retry on `0x80070057` (issue #205 workaround — 3 retries, 500ms backoff)
 - [ ] Implement attach-by-process-name: resolve name → PID via `/proc` (Linux) / `sysctl`+`ps` (macOS) / `Process.GetProcessesByName` (.NET helper in C# sidecar)
 - [ ] Implement `sourceFileMap` path remapping in `stackTrace` responses
@@ -46,7 +46,7 @@ Goal: Ship a production-quality debugging experience for all editors using netco
 - [ ] Implement `justMyCode` launch flag forwarding to netcoredbg
 - [ ] Add `requireExactSource` support
 - [ ] E2E test: launch console app, hit breakpoint, inspect variable, step, continue, terminate (Linux x64)
-- [ ] E2E test: launch console app on macOS ARM64 (Forge-built netcoredbg)
+- [ ] E2E test: launch console app on macOS ARM64 (SharpLsp-built netcoredbg)
 - [ ] E2E test: launch ASP.NET app, hit breakpoint on request handler
 - [ ] E2E test: attach to running `dotnet run` process by PID
 - [ ] E2E test: attach by process name resolves to correct PID
@@ -59,7 +59,7 @@ Goal: Ship a production-quality debugging experience for all editors using netco
 - [ ] Implement hit-count breakpoint forwarding (`hitCondition` with `>`, `>=`, `==`, `%` operators)
 - [ ] Implement logpoint emulation in DapRouter:
   - [ ] Detect `logMessage` field in `SourceBreakpoint`
-  - [ ] Rewrite as conditional breakpoint: `System.Diagnostics.Debug.WriteLine($"[Forge logpoint] {interpolated_msg}"); false`
+  - [ ] Rewrite as conditional breakpoint: `System.Diagnostics.Debug.WriteLine($"[SharpLsp logpoint] {interpolated_msg}"); false`
   - [ ] Capture debug output channel; surface as DAP `output` event with `category: "stdout"`
   - [ ] E2E test: logpoint fires correct message and does not pause execution
   - [ ] E2E test: logpoint with `{expression}` placeholder evaluates expression correctly
@@ -118,11 +118,11 @@ Goal: Ship a production-quality debugging experience for all editors using netco
 
 ### 4.9 Hot Reload
 
-- [ ] Implement `forge/hotReload` custom notification handler in DapRouter
+- [ ] Implement `sharplsp/hotReload` custom notification handler in DapRouter
 - [ ] Integrate with VFS: watch for document saves during active debug session
 - [ ] C# sidecar: implement delta computation via Roslyn `WatchHotReloadService.GetUpdatesAsync`
 - [ ] DapRouter: deliver delta to target process via DAP `evaluate` injection (call `MetadataUpdater.ApplyUpdate` via expression evaluation)
-- [ ] Surface `forge/hotReloadResult` notification to editor: success + changed methods list, or rejected changes + reason
+- [ ] Surface `sharplsp/hotReloadResult` notification to editor: success + changed methods list, or rejected changes + reason
 - [ ] E2E test: edit method body while paused → continue → new behavior observed without restart
 - [ ] E2E test: unsupported edit (method signature change) → user sees clear rejection message with rude edit type
 
@@ -147,18 +147,18 @@ Goal: Ship a production-quality debugging experience for all editors using netco
 
 ### 4.12 Test Debugging Integration
 
-- [ ] Implement `forge/testDebug` custom request handler
+- [ ] Implement `sharplsp/testDebug` custom request handler
 - [ ] Build DAP launch config for test host: `dotnet test --no-build` with `VSTEST_HOST_DEBUG=1`
 - [ ] Resolve test host child process PID (watch for child process creation event)
 - [ ] Wire test filter (class/method) into `dotnet test --filter` argument
-- [ ] E2E test: breakpoint inside xUnit test method, `forge/testDebug` → breakpoint hit
+- [ ] E2E test: breakpoint inside xUnit test method, `sharplsp/testDebug` → breakpoint hit
 - [ ] E2E test: breakpoint inside NUnit test method
 - [ ] E2E test: breakpoint inside Expecto test function (F#)
 
 ### 4.13 Phase 4 Quality Gates
 
 - [ ] All P1 breakpoint types work reliably on Linux x64
-- [ ] All P1 breakpoint types work reliably on macOS ARM64 (Forge-built netcoredbg)
+- [ ] All P1 breakpoint types work reliably on macOS ARM64 (SharpLsp-built netcoredbg)
 - [ ] All P1 breakpoint types work reliably on Windows x64
 - [ ] Logpoint emulation verified on all platforms — fires message, never pauses
 - [ ] Async stack enrichment: `MoveNext` frames replaced with logical frames in ≥90% of test cases
@@ -170,7 +170,7 @@ Goal: Ship a production-quality debugging experience for all editors using netco
 
 ---
 
-## Phase 5 — Forge Debug Sidecar (Months 21–26)
+## Phase 5 — SharpLsp Debug Sidecar (Months 21–26)
 
 Goal: Replace netcoredbg with a C# Tier 4 sidecar achieving full vsdbg parity. Close all gaps documented in DEBUGGING-SPEC §7.
 
@@ -178,7 +178,7 @@ Goal: Replace netcoredbg with a C# Tier 4 sidecar achieving full vsdbg parity. C
 
 ### 5.1 Debug Sidecar Bootstrap
 
-- [ ] Create `sidecar/debug/` — new C# project (`Forge.Debug.Sidecar`), .NET 9, nullable enabled
+- [ ] Create `sidecar/debug/` — new C# project (`SharpLsp.Debug.Sidecar`), .NET 9, nullable enabled
 - [ ] Add `ClrDebug` 0.3.4+ NuGet dependency (managed ICorDebug wrappers; source-generated COM interop on .NET 8+)
 - [ ] Add `Microsoft.Diagnostics.DbgShim` 9.0.661903+ NuGet dependency
 - [ ] Add `Microsoft.Diagnostics.NETCore.Client` 9.0.661903+ NuGet dependency
@@ -226,7 +226,7 @@ Goal: Replace netcoredbg with a C# Tier 4 sidecar achieving full vsdbg parity. C
 
 - [ ] Implement `stackTrace` via `ICorDebugThread` → `ICorDebugChain` → `ICorDebugFrame` full traversal
 - [ ] Implement full async logical stack: direct heap traversal for continuation chains via `ICorDebugProcess::ReadMemory` (faster than Phase 4 Roslyn model approach)
-- [ ] Implement parallel stacks: enumerate all threads, build frame graphs, expose as `forge/parallelStacks` custom event
+- [ ] Implement parallel stacks: enumerate all threads, build frame graphs, expose as `sharplsp/parallelStacks` custom event
 - [ ] **Implement restart frame**: `ICorDebugILFrame::CanSetIP` check → `ICorDebugILFrame::SetIP` to first IL offset
 - [ ] Implement `restartFrame` DAP request handler
 - [ ] E2E test: 5-level async chain — logical stack shows all 5 caller frames
@@ -283,7 +283,7 @@ Goal: Replace netcoredbg with a C# Tier 4 sidecar achieving full vsdbg parity. C
 - [ ] F# discriminated union: native DU-aware formatting via FCS sidecar (not just display string — full structural expansion)
 - [ ] F# mailbox processor: expose message queue depth as pseudo-variable in variables panel
 - [ ] Smart Step Into for F# pipelines: implement `stepIn` with `targetId` (DAP `supportsStepInTargetsRequest`)
-- [ ] Contribute `StateMachineMethod` PDB table emission to dotnet/fsharp (or maintain Forge-local patch)
+- [ ] Contribute `StateMachineMethod` PDB table emission to dotnet/fsharp (or maintain SharpLsp-local patch)
 - [ ] E2E test: `task { }` async chain — full logical stack with no `MoveNext` frames
 - [ ] E2E test: F# watch expression `List.length myList` evaluates correctly
 - [ ] E2E test: Smart Step Into on `list |> List.map f |> List.filter g` — user selects `f` or `g`
@@ -292,7 +292,7 @@ Goal: Replace netcoredbg with a C# Tier 4 sidecar achieving full vsdbg parity. C
 
 - [ ] Implement SSH tunnel management in DapRouter: connect, upload binary, start adapter, forward port
 - [ ] Implement `sourceFileMap` path remapping for remote paths
-- [ ] Implement remote binary upload with progress reporting via `forge/debugAdapterStatus`
+- [ ] Implement remote binary upload with progress reporting via `sharplsp/debugAdapterStatus`
 - [ ] E2E test: debug .NET app running in Linux Docker container from macOS host
 
 ### 5.12 Phase 5 Quality Gates

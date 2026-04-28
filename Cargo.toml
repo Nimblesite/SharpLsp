@@ -1,9 +1,11 @@
 [package]
-name = "forge-lsp"
+name = "sharplsp-lsp"
 version = "0.1.0"
 edition = "2021"
-description = "Forge: The .NET Language Server Platform"
+description = "SharpLsp: The .NET Language Server Platform"
 license = "MIT"
+homepage = "https://github.com/Nimblesite/SharpLsp"
+repository = "https://github.com/Nimblesite/SharpLsp"
 
 [features]
 # Sequestered formatting module (Roslyn + Fantomas). Disabled by default.

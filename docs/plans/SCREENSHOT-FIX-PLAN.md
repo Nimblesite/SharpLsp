@@ -17,7 +17,7 @@ All Zed screenshots show plain code only — Zed cannot trigger features program
 
 ## Root Cause Analysis
 
-The capture script (`editors/vscode/screenshots/capture.mjs`) uses `code serve-web` with Playwright. The Forge VSIX is installed to `~/.vscode-server/extensions/` and the extension DOES activate (status bar shows "Forge" and "C#"). The LSP sidecar IS running.
+The capture script (`editors/vscode/screenshots/capture.mjs`) uses `code serve-web` with Playwright. The SharpLsp VSIX is installed to `~/.vscode-server/extensions/` and the extension DOES activate (status bar shows "SharpLsp" and "C#"). The LSP sidecar IS running.
 
 However:
 
@@ -37,8 +37,8 @@ Mouse hover over code tokens (verified correct element targeting via Playwright 
 
 **Fix**: Same as hover — verify the sidecar loads the test workspace and returns definition locations.
 
-### Profiler — Forge sidebar not accessible
-The Forge activity bar icon (`forge-explorer`) is not visible in `code serve-web`. The extension contributes views but they may not render in the web UI. The capture function tries to click the "Forge" tab and "Profiler" tree item but neither is found.
+### Profiler — SharpLsp sidebar not accessible
+The SharpLsp activity bar icon (`sharplsp-explorer`) is not visible in `code serve-web`. The extension contributes views but they may not render in the web UI. The capture function tries to click the "SharpLsp" tab and "Profiler" tree item but neither is found.
 
 **Fix**: Check if VS Code web supports `viewsContainers` and `views` contributed by extensions. May need a different approach for the profiler screenshot.
 
@@ -52,8 +52,8 @@ The test workspace at `editors/vscode/test-fixtures/workspace/` now contains:
 ## Capture Script
 
 `editors/vscode/screenshots/capture.mjs` handles:
-1. Installing the Forge VSIX to both desktop and serve-web extensions directories
-2. Writing workspace settings with `forge.server.path` pointing to `target/release/forge-lsp`
+1. Installing the SharpLsp VSIX to both desktop and serve-web extensions directories
+2. Writing workspace settings with `sharplsp.server.path` pointing to `target/release/sharplsp-lsp`
 3. Launching `code serve-web` and connecting via Playwright
 4. Per-screenshot capture functions that trigger features
 5. 30-second wait for LSP sidecar initialization

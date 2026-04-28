@@ -1,16 +1,16 @@
 {
-  "title": "Forge",
-  "name": "Forge",
+  "title": "SharpLsp",
+  "name": "SharpLsp",
   "description": "Open-source .NET LSP for C# and F#. One server, every editor.",
-  "url": "https://forge-lsp.dev",
-  "author": "Forge Contributors",
+  "url": "https://sharplsp.dev",
+  "author": "SharpLsp Contributors",
   "stylesheet": "/assets/css/styles.css",
   "favicon": "/assets/favicon.svg",
   "themeColor": "#19d078",
   "organization": {
-    "name": "Forge",
+    "name": "SharpLsp",
     "sameAs": [
-      "https://github.com/MelbourneDeveloper/forge"
+      "https://github.com/Nimblesite/SharpLsp"
     ]
   }
 }

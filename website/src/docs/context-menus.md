@@ -6,13 +6,13 @@ eleventyNavigation:
   order: 9
 ---
 
-![Forge Solution Explorer in VS Code](/assets/screenshots/solution-explorer.png)
+![SharpLsp Solution Explorer in VS Code](/assets/screenshots/solution-explorer.png)
 
 *Right-click any node in the Solution Explorer for context-aware actions.*
 
 # Context Menus
 
-Forge adds rich context menus throughout VS Code — in the Solution Explorer tree, the editor, and the Problems panel. Every action is scoped precisely to the node type it applies to.
+SharpLsp adds rich context menus throughout VS Code — in the Solution Explorer tree, the editor, and the Problems panel. Every action is scoped precisely to the node type it applies to.
 
 ## Solution Explorer Context Menu
 

@@ -1,6 +1,6 @@
 ---
 layout: layouts/base.njk
-title: "Forge - 每款编辑器的完整 .NET 开发体验"
+title: "SharpLsp - 每款编辑器的完整 .NET 开发体验"
 lang: zh
 ---
 
@@ -12,7 +12,7 @@ lang: zh
   </p>
   <div class="button-row">
     <a class="button button-primary" href="/zh/docs/">快速入门</a>
-    <a class="button button-secondary" href="https://github.com/MelbourneDeveloper/forge">
+    <a class="button button-secondary" href="https://github.com/Nimblesite/SharpLsp">
       <span class="material-symbols-outlined" aria-hidden="true">code</span>
       查看 GitHub
     </a>
@@ -42,7 +42,7 @@ lang: zh
 <section class="band">
   <div class="copy-block">
     <h2>任意编辑器，同一工具链</h2>
-    <p>安装一次 Forge，即可在您喜欢的任何编辑器中获得完整的 .NET 开发体验——C# 和 F# 同等支持。无需 Visual Studio，无需 Rider 许可证，无供应商锁定。</p>
+    <p>安装一次 SharpLsp，即可在您喜欢的任何编辑器中获得完整的 .NET 开发体验——C# 和 F# 同等支持。无需 Visual Studio，无需 Rider 许可证，无供应商锁定。</p>
   </div>
 
   <div class="window">
@@ -52,7 +52,7 @@ lang: zh
         <span class="window-dot window-dot-yellow"></span>
         <span class="window-dot window-dot-green"></span>
       </div>
-      <div class="window-title">Program.cs — Forge</div>
+      <div class="window-title">Program.cs — SharpLsp</div>
       <div class="window-tools" aria-hidden="true">
         <span class="material-symbols-outlined">play_arrow</span>
         <span class="material-symbols-outlined">bug_report</span>
@@ -61,7 +61,7 @@ lang: zh
     <pre class="code-pane"><code><span class="token-keyword">using</span> System;
 <span class="token-keyword">using</span> System.Diagnostics;
 
-<span class="token-keyword">namespace</span> Forge.Demo
+<span class="token-keyword">namespace</span> SharpLsp.Demo
 {
     <span class="token-keyword">public class</span> Program
     {
@@ -69,7 +69,7 @@ lang: zh
         {
             <span class="token-type">var</span> sw = Stopwatch.StartNew();
 
-            Console.WriteLine(<span class="token-string">"Initializing Forge workspace..."</span>);
+            Console.WriteLine(<span class="token-string">"Initializing SharpLsp workspace..."</span>);
 
             <span class="token-type">var</span> parser = <span class="token-keyword">new</span> FastSyntaxParser();
             parser.AnalyzeProject();

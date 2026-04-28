@@ -7,9 +7,9 @@ eleventyNavigation:
   order: 1
 ---
 
-# Getting Started with Forge
+# Getting Started with SharpLsp
 
-Forge 是一款开源、编辑器无关的 .NET 语言服务器，为 VS Code、Neovim、Helix、Emacs、Zed 及任何支持 LSP 的编辑器提供完整的 C# 和 F# 开发体验。安装一次服务器，随处享受完整的 .NET 工具链。
+SharpLsp 是一款开源、编辑器无关的 .NET 语言服务器，为 VS Code、Neovim、Helix、Emacs、Zed 及任何支持 LSP 的编辑器提供完整的 C# 和 F# 开发体验。安装一次服务器，随处享受完整的 .NET 工具链。
 
 <img src="/assets/screenshots/vscode-getting-started-page.png" alt="" aria-hidden="true" style="position:absolute;width:1px;height:1px;opacity:0;margin:0;border:0;">
 
@@ -30,25 +30,25 @@ Forge 是一款开源、编辑器无关的 .NET 语言服务器，为 VS Code、
 
 ### VS Code
 
-从 VS Code Marketplace 安装 Forge 扩展，或从源码构建：
+从 VS Code Marketplace 安装 SharpLsp 扩展，或从源码构建：
 
 ```sh
 make build-vsix
-code --install-extension forge.vsix
+code --install-extension sharplsp.vsix
 ```
 
-扩展会自动管理 Forge LSP 服务器的生命周期，无需额外配置。
+扩展会自动管理 SharpLsp LSP 服务器的生命周期，无需额外配置。
 
 ### 其他编辑器
 
-从 [GitHub Releases 页面](https://github.com/MelbourneDeveloper/forge/releases) 下载 `forge-lsp` 二进制文件并放入 PATH，然后参阅[编辑器配置](/zh/docs/editors/)指南。
+从 [GitHub Releases 页面](https://github.com/Nimblesite/SharpLsp/releases) 下载 `sharplsp-lsp` 二进制文件并放入 PATH，然后参阅[编辑器配置](/zh/docs/editors/)指南。
 
 ## 基本用法
 
 <div class="usage-grid">
   <section class="usage-card">
     <h3><span class="material-symbols-outlined" aria-hidden="true">folder_open</span>打开解决方案</h3>
-    <p>打开包含 <code>.sln</code>、<code>.slnx</code>、<code>.csproj</code> 或 <code>.fsproj</code> 文件的目录，Forge 将自动检测并加载项目。</p>
+    <p>打开包含 <code>.sln</code>、<code>.slnx</code>、<code>.csproj</code> 或 <code>.fsproj</code> 文件的目录，SharpLsp 将自动检测并加载项目。</p>
   </section>
   <section class="usage-card">
     <h3><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>开始开发</h3>

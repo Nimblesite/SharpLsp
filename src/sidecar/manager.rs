@@ -73,15 +73,15 @@ impl SidecarManager {
     /// Create a manager for the C# sidecar.
     pub fn csharp(workspace_root: &Path) -> Self {
         let socket_path = format!(
-            "{}/forge-csharp-{:x}.sock",
+            "{}/sharplsp-csharp-{:x}.sock",
             std::env::temp_dir().display(),
             fxhash(workspace_root.to_string_lossy().as_bytes())
         );
 
         let (command, args) = sidecar_launch(
-            "forge-sidecar-csharp",
+            "sharplsp-sidecar-csharp",
             "sidecar-csharp",
-            "Forge.Sidecar.CSharp",
+            "SharpLsp.Sidecar.CSharp",
             &socket_path,
         );
         Self::new("C# (Roslyn)", &command, args, &socket_path)
@@ -90,15 +90,15 @@ impl SidecarManager {
     /// Create a manager for the F# sidecar.
     pub fn fsharp(workspace_root: &Path) -> Self {
         let socket_path = format!(
-            "{}/forge-fsharp-{:x}.sock",
+            "{}/sharplsp-fsharp-{:x}.sock",
             std::env::temp_dir().display(),
             fxhash(workspace_root.to_string_lossy().as_bytes())
         );
 
         let (command, args) = sidecar_launch(
-            "forge-sidecar-fsharp",
+            "sharplsp-sidecar-fsharp",
             "sidecar-fsharp",
-            "Forge.Sidecar.FSharp",
+            "SharpLsp.Sidecar.FSharp",
             &socket_path,
         );
         Self::new("F# (FCS)", &command, args, &socket_path)
@@ -320,7 +320,7 @@ async fn health_loop(sidecar: Arc<SidecarManager>) -> ! {
 /// Resolve sidecar launch command and arguments.
 ///
 /// Resolution order:
-///   1. `dotnet tool` shim on `PATH` (e.g. `forge-sidecar-csharp`).
+///   1. `dotnet tool` shim on `PATH` (e.g. `sharplsp-sidecar-csharp`).
 ///      This is the production distribution path.
 ///   2. Legacy installed layouts (VSIX bundle, `make install`, dev target).
 ///      Kept as a transitional fallback while the distribution spec
@@ -385,9 +385,9 @@ fn find_on_path(command: &str) -> Option<std::path::PathBuf> {
 ///
 /// Searches three layouts in priority order:
 ///   1. VSIX bundle:    `<exe_dir>/<subdir>/<name>[.exe]`
-///   2. `make install`: `<exe_dir>/../lib/forge/<subdir>/<name>[.exe]`
+///   2. `make install`: `<exe_dir>/../lib/sharplsp/<subdir>/<name>[.exe]`
 ///   3. Dev build:      `<exe_dir>/../<subdir>/<name>[.exe]`
-///      (e.g. `target/sidecar-csharp/` next to `target/release/forge-lsp`,
+///      (e.g. `target/sidecar-csharp/` next to `target/release/sharplsp-lsp`,
 ///      where `make build-dotnet` writes the published sidecar output)
 fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf> {
     let current = std::env::current_exe().ok()?;
@@ -404,10 +404,10 @@ fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf>
         return Some(vsix);
     }
 
-    // 2. make install layout: ../lib/forge/<subdir>/
+    // 2. make install layout: ../lib/sharplsp/<subdir>/
     let installed = exe_dir
         .parent()?
-        .join("lib/forge")
+        .join("lib/sharplsp")
         .join(subdir)
         .join(&exe_name);
     if installed.exists() {
@@ -480,11 +480,11 @@ mod tests {
     }
 
     #[test]
-    fn csharp_socket_path_contains_forge_csharp() {
+    fn csharp_socket_path_contains_sharplsp_csharp() {
         let mgr = SidecarManager::csharp(&PathBuf::from("/workspace"));
         assert!(
-            mgr.socket_path.contains("forge-csharp"),
-            "expected socket_path to contain 'forge-csharp', got: {}",
+            mgr.socket_path.contains("sharplsp-csharp"),
+            "expected socket_path to contain 'sharplsp-csharp', got: {}",
             mgr.socket_path
         );
     }
@@ -496,11 +496,11 @@ mod tests {
     }
 
     #[test]
-    fn fsharp_socket_path_contains_forge_fsharp() {
+    fn fsharp_socket_path_contains_sharplsp_fsharp() {
         let mgr = SidecarManager::fsharp(&PathBuf::from("/workspace"));
         assert!(
-            mgr.socket_path.contains("forge-fsharp"),
-            "expected socket_path to contain 'forge-fsharp', got: {}",
+            mgr.socket_path.contains("sharplsp-fsharp"),
+            "expected socket_path to contain 'sharplsp-fsharp', got: {}",
             mgr.socket_path
         );
     }
@@ -514,7 +514,7 @@ mod tests {
 
     #[test]
     fn find_on_path_returns_none_for_missing_command() {
-        let command = format!("forge-missing-command-{}", std::process::id());
+        let command = format!("sharplsp-missing-command-{}", std::process::id());
         assert!(find_on_path(&command).is_none());
     }
 
@@ -524,19 +524,20 @@ mod tests {
             "dotnet",
             "unused-sidecar-dir",
             "Unused.Sidecar",
-            "/tmp/forge-test.sock",
+            "/tmp/sharplsp-test.sock",
         );
         assert_eq!(command, "dotnet");
-        assert_eq!(args, vec!["/tmp/forge-test.sock"]);
+        assert_eq!(args, vec!["/tmp/sharplsp-test.sock"]);
     }
 
     #[test]
     fn sidecar_launch_falls_back_to_dotnet_run() {
-        let name = format!("Forge.Missing.Sidecar.{}", std::process::id());
-        let command_name = format!("forge-missing-sidecar-{}", std::process::id());
+        let name = format!("SharpLsp.Missing.Sidecar.{}", std::process::id());
+        let command_name = format!("sharplsp-missing-sidecar-{}", std::process::id());
         let subdir = format!("missing-sidecar-dir-{}", std::process::id());
 
-        let (command, args) = sidecar_launch(&command_name, &subdir, &name, "/tmp/forge-test.sock");
+        let (command, args) =
+            sidecar_launch(&command_name, &subdir, &name, "/tmp/sharplsp-test.sock");
 
         assert_eq!(command, "dotnet");
         assert_eq!(
@@ -546,7 +547,7 @@ mod tests {
                 "--project".to_string(),
                 format!("sidecars/{name}"),
                 "--".to_string(),
-                "/tmp/forge-test.sock".to_string(),
+                "/tmp/sharplsp-test.sock".to_string(),
             ]
         );
     }
@@ -554,18 +555,18 @@ mod tests {
     #[test]
     fn sidecar_launch_uses_legacy_installed_sidecar() -> Result<()> {
         let subdir = format!("sidecar-test-{}", std::process::id());
-        let name = format!("Forge.Sidecar.Test{}", std::process::id());
+        let name = format!("SharpLsp.Sidecar.Test{}", std::process::id());
         let exe = create_vsix_sidecar(&subdir, &name)?;
 
         let (command, args) = sidecar_launch(
-            "forge-missing-installed-sidecar",
+            "sharplsp-missing-installed-sidecar",
             &subdir,
             &name,
-            "/tmp/forge-test.sock",
+            "/tmp/sharplsp-test.sock",
         );
 
         assert_eq!(PathBuf::from(command), exe);
-        assert_eq!(args, vec!["/tmp/forge-test.sock"]);
+        assert_eq!(args, vec!["/tmp/sharplsp-test.sock"]);
 
         remove_vsix_sidecar(&subdir, &name)?;
         Ok(())
@@ -574,7 +575,7 @@ mod tests {
     #[test]
     fn installed_sidecar_exe_returns_none_for_missing_sidecar() {
         let subdir = format!("sidecar-missing-{}", std::process::id());
-        let name = format!("Forge.Sidecar.Missing{}", std::process::id());
+        let name = format!("SharpLsp.Sidecar.Missing{}", std::process::id());
         assert!(installed_sidecar_exe(&subdir, &name).is_none());
     }
 

@@ -64,7 +64,7 @@ export class HeapDiffPanel {
   ) {
     const id = ++HeapDiffPanel.panelCounter;
     this.panel = vscode.window.createWebviewPanel(
-      'forgeHeapDiff',
+      'sharplspHeapDiff',
       `Heap Diff #${String(id)}`,
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
@@ -105,7 +105,7 @@ export class HeapDiffPanel {
     const pane = new HeapDiffPanel(baselinePath, comparisonPath, context, client);
 
     try {
-      const result = await client.sendRequest<HeapDiffResult>('forge/profiler/diffHeapSnapshots', {
+      const result = await client.sendRequest<HeapDiffResult>('sharplsp/profiler/diffHeapSnapshots', {
         baseline_dump_path: baselinePath,
         comparison_dump_path: comparisonPath,
       });

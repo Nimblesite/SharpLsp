@@ -18,7 +18,7 @@ export interface CachedTestResult {
  * Discovers tests via `dotnet test --list-tests` and runs them via `dotnet test --filter`.
  * Supports xUnit, NUnit, MSTest, Expecto, and FsCheck.
  */
-export class ForgeTestController {
+export class SharpLspTestController {
   private readonly controller: vscode.TestController;
   private readonly runProfiles: vscode.TestRunProfile[] = [];
   private readonly results = new Map<string, CachedTestResult>();
@@ -43,7 +43,7 @@ export class ForgeTestController {
   }
 
   constructor() {
-    this.controller = vscode.tests.createTestController('forge.testController', 'Forge Tests');
+    this.controller = vscode.tests.createTestController('sharplsp.testController', 'SharpLsp Tests');
 
     this.runProfiles.push(
       this.controller.createRunProfile(
@@ -231,7 +231,7 @@ export class ForgeTestController {
         return;
       }
 
-      const resultsDir = path.join(folder.uri.fsPath, '.forge-coverage');
+      const resultsDir = path.join(folder.uri.fsPath, '.sharplsp-coverage');
       const filterArgs = buildFilterArgs(tests);
       const args = [
         'test',
@@ -283,7 +283,7 @@ export class ForgeTestController {
       }
 
       if (debug) {
-        const terminal = vscode.window.createTerminal('Forge Test Debug');
+        const terminal = vscode.window.createTerminal('SharpLsp Test Debug');
         terminal.show();
         terminal.sendText(`dotnet test --filter "FullyQualifiedName=${testId}"`);
         return { passed: true };
@@ -439,8 +439,8 @@ function loadDetailedCoverage(fileCoverage: vscode.FileCoverage): vscode.FileCov
 /**
  * Register the test controller.
  */
-export function registerTestExplorer(context: vscode.ExtensionContext): ForgeTestController {
-  const controller = new ForgeTestController();
+export function registerTestExplorer(context: vscode.ExtensionContext): SharpLspTestController {
+  const controller = new SharpLspTestController();
   context.subscriptions.push({
     dispose: () => {
       controller.dispose();

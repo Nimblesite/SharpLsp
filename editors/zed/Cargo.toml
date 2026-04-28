@@ -1,12 +1,12 @@
 [package]
-name = "forge-zed"
+name = "sharplsp-zed"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Forge Zed extension — .NET LSP integration for C# and F#"
+description = "SharpLsp Zed extension — .NET LSP integration for C# and F#"
 publish = false
 
-# Standalone workspace — not part of the root forge-lsp workspace.
+# Standalone workspace — not part of the root sharplsp-lsp workspace.
 # Zed extensions compile to wasm32-wasip1 which is a different target.
 [workspace]
 

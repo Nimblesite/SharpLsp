@@ -1,9 +1,9 @@
 ---
 layout: layouts/blog.njk
 title: "Pull Diagnostics Without Phantom Errors"
-description: "Forge uses LSP 3.17 pull diagnostics and workspace refresh so C# errors converge with Roslyn state instead of pushing stale false positives during solution load."
+description: "SharpLsp uses LSP 3.17 pull diagnostics and workspace refresh so C# errors converge with Roslyn state instead of pushing stale false positives during solution load."
 date: 2026-04-27
-author: Forge Contributors
+author: SharpLsp Contributors
 authorRole: Compiler Tooling Engineer
 authorImage: https://lh3.googleusercontent.com/aida-public/AB6AXuAD67SpD-iAx0p3uV9exHCxuwOCzRb4-DL71Un7bMvBZAhwFrV5QujQLJAj7RY1FW-p4m-0uhYkk9PSxb7WJUOqXt25VH6AtubFss0CAMR3Yw9k0n876VF5g0PJXLF0V45EbGUjr7sUPnCLpJC73GhMMZLUuD43uYczJM1_e9IZSX-rZb87fMAJ03X3HR6kzzFuBpQ80EW3hRgYm54AILhIIO2T5pWPyjljM0PWc13wW6tYobl3bdo6v_PSS6a2MMwmRwZTRD5uSw
 image: https://lh3.googleusercontent.com/aida-public/AB6AXuB7bTHMNvp7mgUyeQRUCpkBLXp9ovJMYxmIAYvQU60SnHp1n2PQj8s9oXZIqqeOQSrkEqAmY2ASQP3x81STf0MJ2dbD7balX0kCQK2wr08Uh-eti-c-OdE-SZl5UpJpd5el9uHjVFr_ETKbSObnNdR55aj9wYjkUqDPSHPcQfRJGiS44c5U2ncvKir7gBG2ZpIO8w5nef05SAbf_LGAnxlDMmD_Tw0YiUTu586LXkt_LdIit6GY3SzbS8gxN15-RUmTn1207Z3Zww
@@ -14,12 +14,12 @@ tags:
   - csharp
   - lsp
 category: diagnostics
-excerpt: "Diagnostics are only useful if developers can trust them. Forge's diagnostic design starts there."
+excerpt: "Diagnostics are only useful if developers can trust them. SharpLsp's diagnostic design starts there."
 ---
 
-Diagnostics are the developer feedback loop. If the Problems panel lies, people stop trusting it. Forge's diagnostic architecture is built around that constraint: report what the compiler knows, invalidate aggressively when the workspace changes, and avoid pretending a half-loaded solution is complete.
+Diagnostics are the developer feedback loop. If the Problems panel lies, people stop trusting it. SharpLsp's diagnostic architecture is built around that constraint: report what the compiler knows, invalidate aggressively when the workspace changes, and avoid pretending a half-loaded solution is complete.
 
-Forge implements diagnostics around the [LSP 3.17 diagnostic model](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_diagnostic): editors pull diagnostic reports, and the server sends workspace refresh notifications when cached results should be discarded.
+SharpLsp implements diagnostics around the [LSP 3.17 diagnostic model](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_diagnostic): editors pull diagnostic reports, and the server sends workspace refresh notifications when cached results should be discarded.
 
 ## Why Push Diagnostics Are Risky During Load
 
@@ -27,11 +27,11 @@ Large .NET solutions do not become semantically complete all at once. A workspac
 
 If a language server pushes diagnostics too early, users can see false `CS0246` or `CS0234` errors for types that resolve correctly once the workspace finishes loading. The editor did not fail. The server asserted too soon.
 
-Forge avoids that failure mode. It does not need to proactively claim that every file has errors at a specific instant during workspace load.
+SharpLsp avoids that failure mode. It does not need to proactively claim that every file has errors at a specific instant during workspace load.
 
 ## The Pull + Refresh Loop
 
-Forge's intended diagnostic flow is:
+SharpLsp's intended diagnostic flow is:
 
 1. The editor opens a solution or document.
 2. The Rust LSP host tracks document state and routes semantic requests to the sidecar.
@@ -45,13 +45,13 @@ That gives the editor a cacheable protocol without stale authority. The server c
 
 ## The NuGet Restore Gate
 
-NuGet restore is one of the biggest sources of phantom diagnostics in .NET tooling. Missing assets can make perfectly valid code look broken. Forge's diagnostic spec treats restore state as part of correctness, not a background convenience.
+NuGet restore is one of the biggest sources of phantom diagnostics in .NET tooling. Missing assets can make perfectly valid code look broken. SharpLsp's diagnostic spec treats restore state as part of correctness, not a background convenience.
 
-Before creating the Roslyn workspace for a solution, Forge's design includes a restore gate for stale `project.assets.json` state. The goal is not to hide real compiler errors. The goal is to prevent diagnostics from being computed against a workspace that cannot possibly know its package references yet.
+Before creating the Roslyn workspace for a solution, SharpLsp's design includes a restore gate for stale `project.assets.json` state. The goal is not to hide real compiler errors. The goal is to prevent diagnostics from being computed against a workspace that cannot possibly know its package references yet.
 
 ## Solution-Wide Diagnostics Still Matter
 
-Avoiding false positives does not mean limiting diagnostics to open files. Forge is designed for solution-wide diagnostics because build breaks usually cross file and project boundaries.
+Avoiding false positives does not mean limiting diagnostics to open files. SharpLsp is designed for solution-wide diagnostics because build breaks usually cross file and project boundaries.
 
 The important distinction is timing and invalidation:
 
@@ -63,6 +63,6 @@ This is more disciplined than a one-shot eager scan. It is also friendlier to la
 
 ## What Users Should Expect in the Alpha
 
-Forge is still alpha software. The VS Code extension is the main proving ground, and the diagnostics path is being tightened around real Roslyn behavior, not mock project graphs.
+SharpLsp is still alpha software. The VS Code extension is the main proving ground, and the diagnostics path is being tightened around real Roslyn behavior, not mock project graphs.
 
-The target is straightforward: when Forge shows a C# diagnostic, it should reflect Roslyn's current understanding of the workspace. When Roslyn's understanding changes, Forge should make the editor ask again. That is how a .NET LSP earns trust.
+The target is straightforward: when SharpLsp shows a C# diagnostic, it should reflect Roslyn's current understanding of the workspace. When Roslyn's understanding changes, SharpLsp should make the editor ask again. That is how a .NET LSP earns trust.

@@ -57,7 +57,7 @@ export class ObjectGraphPanel {
   private constructor(dumpPath: string, rootAddress: string, context: vscode.ExtensionContext) {
     this.panelId = `graph-${String(++ObjectGraphPanel.panelCounter)}`;
     this.panel = vscode.window.createWebviewPanel(
-      'forgeObjectGraph',
+      'sharplspObjectGraph',
       `Object Graph: ${rootAddress}`,
       vscode.ViewColumn.Beside,
       {
@@ -90,7 +90,7 @@ export class ObjectGraphPanel {
     ObjectGraphPanel.panels.set(pane.panelId, pane);
 
     try {
-      const result = await client.sendRequest<ObjectGraphResult>('forge/profiler/getObjectGraph', {
+      const result = await client.sendRequest<ObjectGraphResult>('sharplsp/profiler/getObjectGraph', {
         dump_path: dumpPath,
         root_address: rootAddress,
       });

@@ -3,13 +3,13 @@ import { execFile } from 'child_process';
 import { CMD_BUILD, CMD_REBUILD, CMD_CLEAN } from './constants';
 import { info } from './log';
 
-const diagnosticCollection = vscode.languages.createDiagnosticCollection('forge-build');
+const diagnosticCollection = vscode.languages.createDiagnosticCollection('sharplsp-build');
 
 /**
  * Provides build tasks for dotnet build/rebuild/clean.
  */
-export class ForgeBuildTaskProvider implements vscode.TaskProvider {
-  public static readonly Type = 'forge-build';
+export class SharpLspBuildTaskProvider implements vscode.TaskProvider {
+  public static readonly Type = 'sharplsp-build';
 
   public provideTasks(): vscode.Task[] {
     return [
@@ -34,10 +34,10 @@ function createBuildTask(command: string, label: string): vscode.Task {
 
   const execution = new vscode.ShellExecution('dotnet', [dotnetCommand, ...args]);
   const task = new vscode.Task(
-    { type: ForgeBuildTaskProvider.Type, command },
+    { type: SharpLspBuildTaskProvider.Type, command },
     vscode.TaskScope.Workspace,
     label,
-    'Forge',
+    'SharpLsp',
     execution,
     '$msCompile',
   );
@@ -121,7 +121,7 @@ export function registerBuildCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(diagnosticCollection);
 
   context.subscriptions.push(
-    vscode.tasks.registerTaskProvider(ForgeBuildTaskProvider.Type, new ForgeBuildTaskProvider()),
+    vscode.tasks.registerTaskProvider(SharpLspBuildTaskProvider.Type, new SharpLspBuildTaskProvider()),
   );
 
   context.subscriptions.push(
@@ -152,8 +152,8 @@ export function registerBuildCommands(context: vscode.ExtensionContext): void {
 function runDotnetCommand(command: string, extraArgs: string[] = []): void {
   try {
     const terminal =
-      vscode.window.terminals.find((t) => t.name === 'Forge Build') ??
-      vscode.window.createTerminal('Forge Build');
+      vscode.window.terminals.find((t) => t.name === 'SharpLsp Build') ??
+      vscode.window.createTerminal('SharpLsp Build');
     terminal.show(true);
     terminal.sendText(`dotnet ${command} ${extraArgs.join(' ')}`.trim());
   } catch (err) {

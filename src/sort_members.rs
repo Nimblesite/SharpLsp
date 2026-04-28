@@ -1,4 +1,4 @@
-//! Custom `forge/sortMembers` request handler.
+//! Custom `sharplsp/sortMembers` request handler.
 //!
 //! Reorders members of a type declaration (class, struct, interface, enum,
 //! record) in-place using tree-sitter. Sort hierarchy is configurable:
@@ -14,7 +14,7 @@ use tree_sitter::Node;
 use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::utils::{uri_to_path, usize_to_u32};
 
-/// Request params for `forge/sortMembers`.
+/// Request params for `sharplsp/sortMembers`.
 #[derive(Debug, Deserialize)]
 pub struct SortMembersParams {
     /// Document URI to sort.
@@ -57,7 +57,7 @@ pub struct SortConfig {
     pub category_order: Vec<String>,
 }
 
-/// Response for `forge/sortMembers`.
+/// Response for `sharplsp/sortMembers`.
 #[derive(Debug, Serialize)]
 pub struct SortMembersResponse {
     /// Text edits that reorder the members.
@@ -92,7 +92,7 @@ pub struct EditPosition {
     pub character: u32,
 }
 
-/// Handle the `forge/sortMembers` request.
+/// Handle the `sharplsp/sortMembers` request.
 pub fn handle(params: &SortMembersParams, parsers: &TsParsers) -> Result<SortMembersResponse> {
     let file_path = uri_to_path(&params.uri)?;
     let source =
@@ -112,12 +112,12 @@ pub fn handle(params: &SortMembersParams, parsers: &TsParsers) -> Result<SortMem
 
     let sorted = sort_member_infos(&members, &params.sort_config);
     if sorted == members.iter().map(|m| m.index).collect::<Vec<_>>() {
-        info!("forge/sortMembers: already sorted");
+        info!("sharplsp/sortMembers: already sorted");
         return Ok(SortMembersResponse { edits: vec![] });
     }
 
     let edits = build_edits(&members, &sorted, &source, &params.sort_config);
-    info!("forge/sortMembers: {} edits generated", edits.len());
+    info!("sharplsp/sortMembers: {} edits generated", edits.len());
     Ok(SortMembersResponse { edits })
 }
 

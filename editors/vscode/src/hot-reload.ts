@@ -33,7 +33,7 @@ function startHotReload(): void {
   }
 
   watchTerminal = vscode.window.createTerminal({
-    name: 'Forge Hot Reload',
+    name: 'SharpLsp Hot Reload',
     cwd: folder,
   });
   watchTerminal.show();
@@ -59,7 +59,7 @@ function stopHotReload(): void {
 function updateStatusBar(): void {
   void vscode.commands.executeCommand(
     'setContext',
-    'forge.hotReloadRunning',
+    'sharplsp.hotReloadRunning',
     watchTerminal !== undefined,
   );
   if (statusBarItem === undefined) return;
@@ -75,7 +75,7 @@ function showRunningStatus(): void {
   if (statusBarItem === undefined) return;
   statusBarItem.text = '$(flame) Hot Reload';
   statusBarItem.tooltip = 'Hot Reload is active -- click to stop';
-  statusBarItem.command = 'forge.hotReload.stop';
+  statusBarItem.command = 'sharplsp.hotReload.stop';
   statusBarItem.color = undefined;
   statusBarItem.show();
 }
@@ -85,7 +85,7 @@ function showStoppedStatus(): void {
   if (statusBarItem === undefined) return;
   statusBarItem.text = '$(circle-outline) Hot Reload';
   statusBarItem.tooltip = 'Hot Reload is stopped -- click to start';
-  statusBarItem.command = 'forge.hotReload.start';
+  statusBarItem.command = 'sharplsp.hotReload.start';
   statusBarItem.color = new vscode.ThemeColor('disabledForeground');
   statusBarItem.show();
 }
@@ -142,13 +142,13 @@ export function registerHotReloadCommands(context: vscode.ExtensionContext): voi
   context.subscriptions.push(statusBarItem);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forge.hotReload.start', startHotReload),
+    vscode.commands.registerCommand('sharplsp.hotReload.start', startHotReload),
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand('forge.hotReload.stop', stopHotReload),
+    vscode.commands.registerCommand('sharplsp.hotReload.stop', stopHotReload),
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand('forge.hotReload.toggle', toggleHotReload),
+    vscode.commands.registerCommand('sharplsp.hotReload.toggle', toggleHotReload),
   );
 
   wireTerminalClose(context);

@@ -10,7 +10,7 @@ eleventyExcludeFromCollections: true
 
 # Diagnostics
 
-Forge routes C# compiler errors, warnings, and Roslyn analyzer diagnostics through the C# sidecar. The current website shows the VS Code extension state; F# diagnostics are still in progress.
+SharpLsp routes C# compiler errors, warnings, and Roslyn analyzer diagnostics through the C# sidecar. The current website shows the VS Code extension state; F# diagnostics are still in progress.
 
 ## How It Works
 
@@ -37,7 +37,7 @@ window     notifications       GetDiagnostics()
 | Open files only | ✗ | Only documents currently open in the editor |
 | Per-project filter | ✗ | Specific projects matched by name pattern |
 
-Solution-wide analysis is part of the Forge direction. The alpha extension is still being hardened, so treat diagnostics behavior as active development rather than a beta stability guarantee.
+Solution-wide analysis is part of the SharpLsp direction. The alpha extension is still being hardened, so treat diagnostics behavior as active development rather than a beta stability guarantee.
 
 ## Diagnostic Categories
 
@@ -64,7 +64,7 @@ Diagnostics are pushed in three situations:
 ## Configuration
 
 ```toml
-# forge.toml
+# sharplsp.toml
 [diagnostics]
 # Run Roslyn analyzers (not just compiler errors)
 analyzers_enabled = true

@@ -242,10 +242,10 @@ async function runDotnet(args: string[], cwd: string): Promise<string> {
 
 /** Register scaffolding commands. */
 export function registerScaffoldingCommands(context: vscode.ExtensionContext): void {
-  context.subscriptions.push(vscode.commands.registerCommand('forge.newProject', newProject));
-  context.subscriptions.push(vscode.commands.registerCommand('forge.newFile', newFile));
+  context.subscriptions.push(vscode.commands.registerCommand('sharplsp.newProject', newProject));
+  context.subscriptions.push(vscode.commands.registerCommand('sharplsp.newFile', newFile));
   context.subscriptions.push(
-    vscode.commands.registerCommand('forge.addProjectToSolution', addProjectToSolution),
+    vscode.commands.registerCommand('sharplsp.addProjectToSolution', addProjectToSolution),
   );
   info('Scaffolding commands registered');
 }

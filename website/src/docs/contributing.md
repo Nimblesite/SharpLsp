@@ -8,7 +8,7 @@ eleventyNavigation:
 
 # Contributing & Building from Source
 
-This page is for contributors who want to build Forge from source. If you just want to use Forge, install the VS Code extension — it ships with everything bundled.
+This page is for contributors who want to build SharpLsp from source. If you just want to use SharpLsp, install the VS Code extension — it ships with everything bundled.
 
 ## Prerequisites
 
@@ -43,12 +43,12 @@ cd editors/vscode && npm install && npm run compile
 ## Repository Structure
 
 ```
-forge/
+sharplsp/
 ├── src/                  # Rust LSP host
 ├── sidecars/
-│   ├── Forge.Sidecar.FSharp/   # F# sidecar (FSharp.Compiler.Service)
-│   ├── Forge.Sidecar.CSharp/   # C# sidecar (Roslyn)
-│   └── Forge.Sidecar.Common/   # Shared sidecar code
+│   ├── SharpLsp.Sidecar.FSharp/   # F# sidecar (FSharp.Compiler.Service)
+│   ├── SharpLsp.Sidecar.CSharp/   # C# sidecar (Roslyn)
+│   └── SharpLsp.Sidecar.Common/   # Shared sidecar code
 ├── editors/
 │   ├── vscode/           # VS Code extension (TypeScript)
 │   └── zed/              # Zed extension (Rust → wasm32-wasip1)

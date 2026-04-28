@@ -2,11 +2,11 @@
  * Code lens provider that shows pass/fail indicators above test methods.
  *
  * Scans C# and F# files for test attributes and displays the last known
- * test result from {@link ForgeTestController} as an inline code lens.
+ * test result from {@link SharpLspTestController} as an inline code lens.
  */
 
 import * as vscode from 'vscode';
-import { type CachedTestResult, type ForgeTestController } from './testing.js';
+import { type CachedTestResult, type SharpLspTestController } from './testing.js';
 import { CMD_TEST_RUN_AT_CURSOR, CMD_TEST_DEBUG_AT_CURSOR } from './constants.js';
 import { info } from './log.js';
 
@@ -25,7 +25,7 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
   public readonly onDidChangeCodeLenses = this.changeEmitter.event;
   private readonly disposables: vscode.Disposable[] = [];
 
-  constructor(private readonly testController: ForgeTestController) {
+  constructor(private readonly testController: SharpLspTestController) {
     this.disposables.push(
       testController.onResultsChanged(() => {
         this.changeEmitter.fire();
@@ -33,7 +33,7 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
     );
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration('forge.testLens.enabled')) {
+        if (e.affectsConfiguration('sharplsp.testLens.enabled')) {
           this.changeEmitter.fire();
         }
       }),
@@ -52,7 +52,7 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
     _token: vscode.CancellationToken,
   ): vscode.CodeLens[] {
     const enabled = vscode.workspace
-      .getConfiguration('forge.testLens')
+      .getConfiguration('sharplsp.testLens')
       .get<boolean>('enabled', true);
     if (!enabled) {
       return [];
@@ -286,7 +286,7 @@ function formatDuration(duration: number | undefined): string {
  */
 export function registerTestStatusLens(
   context: vscode.ExtensionContext,
-  testController: ForgeTestController,
+  testController: SharpLspTestController,
 ): TestStatusLensProvider {
   const provider = new TestStatusLensProvider(testController);
 
@@ -321,7 +321,7 @@ export function registerTestStatusLens(
 }
 
 async function runTestByMethodName(
-  testController: ForgeTestController,
+  testController: SharpLspTestController,
   methodName: string,
   debug: boolean,
 ): Promise<void> {

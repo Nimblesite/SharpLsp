@@ -2,36 +2,36 @@ use super::*;
 
 // ── CLI version flag ─────────────────────────────────────────────
 
-/// `forge-lsp --version` prints "forge-lsp X.Y.Z" and exits 0.
+/// `sharplsp-lsp --version` prints "sharplsp-lsp X.Y.Z" and exits 0.
 ///
 /// Editor extensions rely on this exact format to detect version mismatches.
 /// If this test fails, every extension (VS Code, Zed, etc.) will break.
 #[test]
 fn version_flag_prints_correct_format_and_exits_zero() {
-    let output = Command::new(env!("CARGO_BIN_EXE_forge-lsp"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sharplsp-lsp"))
         .arg("--version")
         .output()
-        .expect("failed to run forge-lsp --version");
+        .expect("failed to run sharplsp-lsp --version");
 
     assert!(
         output.status.success(),
-        "forge-lsp --version must exit with code 0, got: {}",
+        "sharplsp-lsp --version must exit with code 0, got: {}",
         output.status,
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let trimmed = stdout.trim();
 
-    // Format: "forge-lsp X.Y.Z"
+    // Format: "sharplsp-lsp X.Y.Z"
     let parts: Vec<&str> = trimmed.split_whitespace().collect();
     assert_eq!(
         parts.len(),
         2,
-        "Expected exactly 2 tokens ('forge-lsp X.Y.Z'), got: {trimmed:?}",
+        "Expected exactly 2 tokens ('sharplsp-lsp X.Y.Z'), got: {trimmed:?}",
     );
     assert_eq!(
-        parts[0], "forge-lsp",
-        "First token must be 'forge-lsp', got: {:?}",
+        parts[0], "sharplsp-lsp",
+        "First token must be 'sharplsp-lsp', got: {:?}",
         parts[0],
     );
 

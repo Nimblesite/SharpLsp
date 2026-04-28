@@ -6,17 +6,17 @@ eleventyNavigation:
   order: 1
 ---
 
-# Getting Started with Forge
+# Getting Started with SharpLsp
 
-Forge is an open-source Language Server Protocol (LSP) implementation for .NET (C# + F#), built in Rust. One server, every editor. Full feature parity with Visual Studio, Rider, and C# Dev Kit — zero proprietary dependencies, zero licenses, zero vendor lock-in.
+SharpLsp is an open-source Language Server Protocol (LSP) implementation for .NET (C# + F#), built in Rust. One server, every editor. Full feature parity with Visual Studio, Rider, and C# Dev Kit — zero proprietary dependencies, zero licenses, zero vendor lock-in.
 
 ## Install
 
 ### VS Code
 
-Install the Forge extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=forge-lsp.forge).
+Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sharplsp-lsp.sharplsp).
 
-The extension ships with the `forge-lsp` binary and both sidecars bundled inside the VSIX. No Rust toolchain. No separate binary install. Open a `.sln` or `.csproj` and Forge starts automatically.
+The extension ships with the `sharplsp-lsp` binary and both sidecars bundled inside the VSIX. No Rust toolchain. No separate binary install. Open a `.sln` or `.csproj` and SharpLsp starts automatically.
 
 <section class="callout">
   <h2><span class="material-symbols-outlined" aria-hidden="true">deployed_code</span>Prerequisite</h2>

@@ -35,7 +35,7 @@ The remaining work covers F# sidecar navigation, metadata/decompiled source navi
 
 ### IPC Messages
 
-- [x] Define `PositionRequest` MessagePack type in `Forge.Sidecar.Common` (shared with hover)
+- [x] Define `PositionRequest` MessagePack type in `SharpLsp.Sidecar.Common` (shared with hover)
 - [x] Define `LocationResult` MessagePack response type (single location)
 - [x] Define `LocationListResult` MessagePack response type (multi-location)
 - [x] Register `textDocument/definition` method in IPC message router
@@ -111,7 +111,7 @@ The remaining work covers F# sidecar navigation, metadata/decompiled source navi
 ### C# Sidecar (Roslyn) — Metadata Navigation
 
 - [x] Integrate ICSharpCode.Decompiler v9.1.0 for metadata symbol navigation — `MetadataNavigator.cs`
-- [x] Decompile containing type to temporary file on definition request — writes to `{tempdir}/forge-decompiled/{type}.cs`
+- [x] Decompile containing type to temporary file on definition request — writes to `{tempdir}/sharplsp-decompiled/{type}.cs`
 - [x] Cache decompiled sources keyed by `(assemblyPath, typeFullName)` in `ConcurrentDictionary` — avoids repeated decompilation
 - [x] Fallback in `DefinitionResolver`: when `ToAllSourceLocations` returns empty, calls `MetadataNavigator.ResolveMetadataSymbol`
 - [x] Symbol position search in decompiled source using kind-specific patterns (method, property, field, type)

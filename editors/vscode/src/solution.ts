@@ -16,7 +16,7 @@ export async function selectSolution(): Promise<SolutionSelection | undefined> {
 
   if (solutions.length === 0) {
     log.info('No solution files found in workspace.');
-    window.showInformationMessage('Forge: No .sln or .slnx files found in this workspace.');
+    window.showInformationMessage('SharpLsp: No .sln or .slnx files found in this workspace.');
     return undefined;
   }
 
@@ -43,7 +43,7 @@ export async function promptUserSelection(
 
   const picked = await window.showQuickPick(items, {
     placeHolder: 'Select a solution to open',
-    title: 'Forge: Multiple solutions found',
+    title: 'SharpLsp: Multiple solutions found',
   });
 
   if (picked === undefined) {

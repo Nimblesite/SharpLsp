@@ -1,12 +1,12 @@
 # Rename Specification
 
-**Parent:** [forge-spec.md](forge-spec.md)
+**Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
 ## [RENAME-OVERVIEW] Overview
 
-Rename is a P0 semantic refactoring. Forge MUST implement `textDocument/prepareRename` and `textDocument/rename` for every renameable C# and F# code element, not just top-level types. A rename is incomplete until it updates every semantic reference in the loaded solution and returns a standards-compliant LSP `WorkspaceEdit`.
+Rename is a P0 semantic refactoring. SharpLsp MUST implement `textDocument/prepareRename` and `textDocument/rename` for every renameable C# and F# code element, not just top-level types. A rename is incomplete until it updates every semantic reference in the loaded solution and returns a standards-compliant LSP `WorkspaceEdit`.
 
-Rename is not a generic code action. Editors invoke it through the dedicated LSP rename flow, and Forge MUST advertise `renameProvider` only when both prepare and execute paths are available for the language.
+Rename is not a generic code action. Editors invoke it through the dedicated LSP rename flow, and SharpLsp MUST advertise `renameProvider` only when both prepare and execute paths are available for the language.
 
 ## [RENAME-PROTOCOL] LSP Protocol
 
@@ -26,7 +26,7 @@ result: Range | { range: Range; placeholder: string } | null
 
 - Return the exact identifier range that will be renamed.
 - Return the current symbol name as `placeholder`.
-- Return `null` when the position is whitespace, trivia, a keyword that is not a renameable symbol, metadata-only source, generated source that cannot be edited, or a symbol kind Forge does not yet support.
+- Return `null` when the position is whitespace, trivia, a keyword that is not a renameable symbol, metadata-only source, generated source that cannot be edited, or a symbol kind SharpLsp does not yet support.
 
 ### [RENAME-PROTOCOL-EXECUTE] textDocument/rename
 
@@ -50,7 +50,7 @@ result: WorkspaceEdit | null
 
 ## [RENAME-COVERAGE] Code Element Coverage
 
-Forge MUST support rename for these code element categories before rename is marked complete:
+SharpLsp MUST support rename for these code element categories before rename is marked complete:
 
 | Category | Required symbols |
 |---|---|

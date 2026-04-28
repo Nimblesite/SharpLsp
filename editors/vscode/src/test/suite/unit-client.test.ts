@@ -7,7 +7,7 @@ import { SERVER_BINARY, SERVER_BINARY_WIN, CONFIG_SECTION } from '../../constant
 import {
   EXTENSION_ID,
   LSP_RESPONSE_TIMEOUT_MS,
-  findForgeBinary,
+  findSharpLspBinary,
   openCSharpFile,
   waitForDocumentSymbols,
   closeAllEditors,
@@ -16,16 +16,16 @@ import {
 } from './test-helpers.js';
 
 suite('Client Module — Binary Resolution Logic', () => {
-  test("SERVER_BINARY is 'forge-lsp' on non-Windows", function () {
+  test("SERVER_BINARY is 'sharplsp-lsp' on non-Windows", function () {
     if (process.platform === 'win32') {
       this.skip();
       return;
     }
-    assert.strictEqual(SERVER_BINARY, 'forge-lsp');
+    assert.strictEqual(SERVER_BINARY, 'sharplsp-lsp');
   });
 
-  test("SERVER_BINARY_WIN is 'forge-lsp.exe'", () => {
-    assert.strictEqual(SERVER_BINARY_WIN, 'forge-lsp.exe');
+  test("SERVER_BINARY_WIN is 'sharplsp-lsp.exe'", () => {
+    assert.strictEqual(SERVER_BINARY_WIN, 'sharplsp-lsp.exe');
   });
 
   test('platform detection yields correct binary name', () => {
@@ -37,16 +37,16 @@ suite('Client Module — Binary Resolution Logic', () => {
     }
   });
 
-  test('findForgeBinary() returns a string or undefined', () => {
-    const result = findForgeBinary();
+  test('findSharpLspBinary() returns a string or undefined', () => {
+    const result = findSharpLspBinary();
     assert.ok(
       result === undefined || typeof result === 'string',
       'Must return string or undefined',
     );
   });
 
-  test('if findForgeBinary() returns a path, it exists on disk', () => {
-    const result = findForgeBinary();
+  test('if findSharpLspBinary() returns a path, it exists on disk', () => {
+    const result = findSharpLspBinary();
     if (result && !result.includes(path.sep)) {
       return;
     }
@@ -104,7 +104,7 @@ suite('Client Module — LSP Client Created by Extension', () => {
   test('extension exposes active language client after activation', () => {
     const extId = EXTENSION_ID as string;
     const ext = vscode.extensions.getExtension(
-      `forge-lsp.${extId === 'forge-lsp' ? 'forge' : extId}`,
+      `sharplsp.${extId === 'sharplsp' ? 'sharp-lsp' : extId}`,
     );
     assert.ok(
       ext === undefined || ext.isActive,
@@ -157,11 +157,11 @@ suite('Client Module — Error Path: Missing Binary', () => {
     try {
       await wsConfig.update(
         'server.path',
-        '/nonexistent/path/forge-lsp',
+        '/nonexistent/path/sharplsp-lsp',
         vscode.ConfigurationTarget.Workspace,
       );
       const configured = config.serverPath();
-      assert.strictEqual(configured, '/nonexistent/path/forge-lsp');
+      assert.strictEqual(configured, '/nonexistent/path/sharplsp-lsp');
       assert.ok(!fs.existsSync(configured), 'This path must not exist for the test to be valid');
     } finally {
       await wsConfig.update('server.path', original, vscode.ConfigurationTarget.Workspace);

@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 
 // ── Constants ────────────────────────────────────────────────────
 
-export const EXTENSION_ID = 'forge-lsp.forge';
+export const EXTENSION_ID = 'sharplsp.sharp-lsp';
 export const SERVER_START_TIMEOUT_MS = 30_000;
 export const LSP_RESPONSE_TIMEOUT_MS = 15_000;
 export const POLL_INTERVAL_MS = 100;
@@ -12,20 +12,20 @@ export const POLL_INTERVAL_MS = 100;
 // ── Binary Discovery ─────────────────────────────────────────────
 
 /**
- * Find the forge-lsp binary.
+ * Find the sharplsp-lsp binary.
  *
  * Priority:
- *   1. `FORGE_EXECUTABLE_PATH` env var
- *   2. `target/release/forge-lsp` relative to repo root
- *   3. `target/debug/forge-lsp` relative to repo root
+ *   1. `SHARPLSP_EXECUTABLE_PATH` env var
+ *   2. `target/release/sharplsp-lsp` relative to repo root
+ *   3. `target/debug/sharplsp-lsp` relative to repo root
  */
-export function findForgeBinary(): string | undefined {
-  const envPath = process.env['FORGE_EXECUTABLE_PATH'];
+export function findSharpLspBinary(): string | undefined {
+  const envPath = process.env['SHARPLSP_EXECUTABLE_PATH'];
   if (envPath && fs.existsSync(envPath)) {
     return envPath;
   }
 
-  const binaryName = process.platform === 'win32' ? 'forge-lsp.exe' : 'forge-lsp';
+  const binaryName = process.platform === 'win32' ? 'sharplsp-lsp.exe' : 'sharplsp-lsp';
 
   // __dirname at runtime: editors/vscode/out/test/suite/
   // Repo root: 5 levels up
@@ -229,13 +229,13 @@ export async function closeAllEditors(): Promise<void> {
  */
 export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
   tmpDir: string;
-  forgeBinary: string | undefined;
+  sharplspBinary: string | undefined;
 }> {
   const tmpDir = fs.mkdtempSync(
-    path.join(process.env['TMPDIR'] ?? '/tmp', `forge-test-${tmpDirPrefix}`),
+    path.join(process.env['TMPDIR'] ?? '/tmp', `sharplsp-test-${tmpDirPrefix}`),
   );
 
-  const forgeBinary = findForgeBinary();
+  const sharplspBinary = findSharpLspBinary();
 
   // Activate the extension by opening a C# file.
   const probeContent = 'namespace Probe { class Probe { } }\n';
@@ -257,7 +257,7 @@ export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
 
   await closeAllEditors();
 
-  return { tmpDir, forgeBinary };
+  return { tmpDir, sharplspBinary };
 }
 
 /** Remove the temp directory created by `setupLspTestSuite`. */
@@ -274,24 +274,24 @@ export function teardownLspTestSuite(tmpDir: string): void {
 const SCREENSHOT_OUT_DIR = path.resolve(__dirname, '../../../../../website/src/assets/screenshots');
 
 /**
- * Open the Forge activity bar panel (shows Solution Explorer + Profiler).
- * Only does anything when FORGE_SCREENSHOTS=1 is set.
+ * Open the SharpLsp activity bar panel (shows Solution Explorer + Profiler).
+ * Only does anything when SHARPLSP_SCREENSHOTS=1 is set.
  */
-export async function openForgePanel(): Promise<void> {
-  if (!process.env['FORGE_SCREENSHOTS']) return;
-  await vscode.commands.executeCommand('workbench.view.extension.forge-explorer');
+export async function openSharpLspPanel(): Promise<void> {
+  if (!process.env['SHARPLSP_SCREENSHOTS']) return;
+  await vscode.commands.executeCommand('workbench.view.extension.sharplsp-explorer');
   await sleep(1500);
 }
 
 /**
- * Open the Forge activity bar panel focused on the Profiler view.
- * Only does anything when FORGE_SCREENSHOTS=1 is set.
+ * Open the SharpLsp activity bar panel focused on the Profiler view.
+ * Only does anything when SHARPLSP_SCREENSHOTS=1 is set.
  */
-export async function openForgePanelProfiler(): Promise<void> {
-  if (!process.env['FORGE_SCREENSHOTS']) return;
-  await vscode.commands.executeCommand('workbench.view.extension.forge-explorer');
+export async function openSharpLspPanelProfiler(): Promise<void> {
+  if (!process.env['SHARPLSP_SCREENSHOTS']) return;
+  await vscode.commands.executeCommand('workbench.view.extension.sharplsp-explorer');
   await sleep(600);
-  await vscode.commands.executeCommand('forge.profiler.refresh');
+  await vscode.commands.executeCommand('sharplsp.profiler.refresh');
   await sleep(1200);
 }
 
@@ -299,10 +299,10 @@ export async function openForgePanelProfiler(): Promise<void> {
  * Signal the Playwright sidecar (screenshots/sidecar.mjs) to take a screenshot
  * of the VS Code window via CDP. Writes a .signal file and waits for the PNG.
  * Call this after assertions prove the feature is live and visible.
- * Only runs when FORGE_SCREENSHOTS=1 is set.
+ * Only runs when SHARPLSP_SCREENSHOTS=1 is set.
  */
 export async function takeScreenshot(filename: string): Promise<void> {
-  if (!process.env['FORGE_SCREENSHOTS']) return;
+  if (!process.env['SHARPLSP_SCREENSHOTS']) return;
   fs.mkdirSync(SCREENSHOT_OUT_DIR, { recursive: true });
   const tempFilename = `${filename}.tmp-${process.pid.toString()}.png`;
   const signalPath = path.join(SCREENSHOT_OUT_DIR, `${tempFilename}.signal`);

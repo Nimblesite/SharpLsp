@@ -76,8 +76,8 @@ pub fn request_in_background(
 /// Determine the diagnostic source tag based on the document language.
 fn source_tag_for_uri(uri: &Uri) -> String {
     match crate::tree_sitter_parse::LangId::from_uri(uri) {
-        Some(crate::tree_sitter_parse::LangId::FSharp) => "forge-fsharp".to_string(),
-        _ => "forge-csharp".to_string(),
+        Some(crate::tree_sitter_parse::LangId::FSharp) => "sharplsp-fsharp".to_string(),
+        _ => "sharplsp-csharp".to_string(),
     }
 }
 
@@ -158,9 +158,9 @@ async fn verify_error_files(
     for file_path in error_files {
         let source_tag = match std::path::Path::new(file_path.as_str()).extension() {
             Some(ext) if ext.eq_ignore_ascii_case("fs") || ext.eq_ignore_ascii_case("fsx") => {
-                "forge-fsharp"
+                "sharplsp-fsharp"
             }
-            _ => "forge-csharp",
+            _ => "sharplsp-csharp",
         };
 
         // Skip the disk-resync step for documents the editor has open. The
@@ -244,7 +244,7 @@ pub async fn fetch_from_sidecar(
     sidecar: &SidecarManager,
     file_path: &str,
 ) -> Result<Vec<Diagnostic>> {
-    fetch(sidecar, file_path, "forge-csharp").await
+    fetch(sidecar, file_path, "sharplsp-csharp").await
 }
 
 /// Fetch diagnostics from the sidecar for a single file.
@@ -288,7 +288,7 @@ async fn fetch_all(
                 path,
                 diags
                     .into_iter()
-                    .map(|d| to_lsp_diagnostic(d, "forge-csharp"))
+                    .map(|d| to_lsp_diagnostic(d, "sharplsp-csharp"))
                     .collect(),
             )
         })
@@ -392,7 +392,7 @@ mod tests {
             code: "CS0219".to_string(),
         };
 
-        let diag = to_lsp_diagnostic(input, "forge-csharp");
+        let diag = to_lsp_diagnostic(input, "sharplsp-csharp");
 
         assert_eq!(diag.range.start, Position::new(10, 4));
         assert_eq!(diag.range.end, Position::new(10, 20));
@@ -401,7 +401,7 @@ mod tests {
             diag.code,
             Some(NumberOrString::String("CS0219".to_string()))
         );
-        assert_eq!(diag.source, Some("forge-csharp".to_string()));
+        assert_eq!(diag.source, Some("sharplsp-csharp".to_string()));
         assert_eq!(diag.message, "Unused variable");
     }
 

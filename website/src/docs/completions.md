@@ -12,7 +12,7 @@ eleventyNavigation:
 
 # Code Completions
 
-Forge provides C# code completions through Roslyn. Completions are routed through the C# sidecar, keeping the Rust host free for fast syntax operations.
+SharpLsp provides C# code completions through Roslyn. Completions are routed through the C# sidecar, keeping the Rust host free for fast syntax operations.
 
 ## Performance Targets
 
@@ -63,7 +63,7 @@ var json = JsonSerializer.Serialize(obj);
 
 ## LSP Protocol
 
-Forge advertises:
+SharpLsp advertises:
 
 ```json
 {

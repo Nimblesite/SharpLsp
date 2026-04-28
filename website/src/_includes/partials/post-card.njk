@@ -22,14 +22,14 @@
     <p class="post-excerpt">{{ post.data.excerpt | default(post.data.description) }}</p>
     {% endif %}
     <div class="post-meta">
-      <a class="post-author" href="/author/{{ post.data.author | default('forge-team') | slugify }}/">
+      <a class="post-author" href="/author/{{ post.data.author | default('sharplsp-team') | slugify }}/">
         {% if post.data.authorImage %}
-        <img src="{{ post.data.authorImage }}" alt="{{ post.data.author | default('Forge Team') }}">
+        <img src="{{ post.data.authorImage }}" alt="{{ post.data.author | default('SharpLsp Team') }}">
         {% else %}
         <strong>{{ post.data.author | default("FO") | truncate(2, false, "") | upper }}</strong>
         {% endif %}
         <div>
-          <span>{{ post.data.author | default("Forge Team") }}</span>
+          <span>{{ post.data.author | default("SharpLsp Team") }}</span>
           <small>{{ post.date | dateFormat }}</small>
         </div>
       </a>

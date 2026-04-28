@@ -1,4 +1,4 @@
-//! Request and response types for `forge/nuget/*` LSP custom requests.
+//! Request and response types for `sharplsp/nuget/*` LSP custom requests.
 //!
 //! All parameter types accept both a full `target: NuGetTarget` and a legacy
 //! `projectPath: string` for backwards compatibility with older clients.
@@ -71,11 +71,11 @@ impl NuGetTarget {
     }
 }
 
-// ── forge/nuget/targets ─────────────────────────────────────────
+// ── sharplsp/nuget/targets ─────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Parameters for the `forge/nuget/targets` request.
+/// Parameters for the `sharplsp/nuget/targets` request.
 pub struct TargetsParams {
     /// Absolute path to the workspace root directory.
     pub workspace_root: String,
@@ -83,7 +83,7 @@ pub struct TargetsParams {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-/// Response for the `forge/nuget/targets` request.
+/// Response for the `sharplsp/nuget/targets` request.
 pub struct TargetsResponse {
     /// All discovered install targets (projects and props files).
     pub targets: Vec<NuGetTarget>,
@@ -96,7 +96,7 @@ pub struct TargetsResponse {
     pub cpm_file: Option<String>,
 }
 
-// ── forge/nuget/search ──────────────────────────────────────────
+// ── sharplsp/nuget/search ──────────────────────────────────────────
 
 /// Legacy-compat target spec: accept either a full `target` or a bare `projectPath`.
 ///
@@ -130,7 +130,7 @@ fn default_take() -> u32 {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-/// Response for the `forge/nuget/search` request.
+/// Response for the `sharplsp/nuget/search` request.
 pub struct SearchResponse {
     /// Matching packages for the current page.
     pub packages: Vec<PackageInfo>,
@@ -173,11 +173,11 @@ pub struct PackageInfo {
     pub installed_version: Option<String>,
 }
 
-// ── forge/nuget/versions ────────────────────────────────────────
+// ── sharplsp/nuget/versions ────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Parameters for the `forge/nuget/versions` request.
+/// Parameters for the `sharplsp/nuget/versions` request.
 pub struct VersionsParams {
     /// Package identifier to fetch versions for.
     pub package_id: String,
@@ -185,17 +185,17 @@ pub struct VersionsParams {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-/// Response for the `forge/nuget/versions` request.
+/// Response for the `sharplsp/nuget/versions` request.
 pub struct VersionsResponse {
     /// All available versions, newest first.
     pub versions: Vec<String>,
 }
 
-// ── forge/nuget/installed ───────────────────────────────────────
+// ── sharplsp/nuget/installed ───────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Parameters for the `forge/nuget/installed` request.
+/// Parameters for the `sharplsp/nuget/installed` request.
 pub struct InstalledParams {
     /// Full target specification (preferred).
     #[serde(default)]
@@ -207,7 +207,7 @@ pub struct InstalledParams {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-/// Response for the `forge/nuget/installed` request.
+/// Response for the `sharplsp/nuget/installed` request.
 pub struct InstalledResponse {
     /// Packages currently referenced in the target file.
     pub packages: Vec<InstalledPackageInfo>,
@@ -225,11 +225,11 @@ pub struct InstalledPackageInfo {
     pub resolved_version: String,
 }
 
-// ── forge/nuget/install ─────────────────────────────────────────
+// ── sharplsp/nuget/install ─────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Parameters for the `forge/nuget/install` request.
+/// Parameters for the `sharplsp/nuget/install` request.
 pub struct InstallParams {
     /// Full target specification (preferred).
     #[serde(default)]
@@ -245,7 +245,7 @@ pub struct InstallParams {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-/// Response for the `forge/nuget/install` request.
+/// Response for the `sharplsp/nuget/install` request.
 pub struct InstallResponse {
     /// Whether the install operation succeeded.
     pub success: bool,
@@ -256,11 +256,11 @@ pub struct InstallResponse {
     pub modified_files: Vec<String>,
 }
 
-// ── forge/nuget/uninstall ───────────────────────────────────────
+// ── sharplsp/nuget/uninstall ───────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// Parameters for the `forge/nuget/uninstall` request.
+/// Parameters for the `sharplsp/nuget/uninstall` request.
 pub struct UninstallParams {
     /// Full target specification (preferred).
     #[serde(default)]
@@ -274,7 +274,7 @@ pub struct UninstallParams {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-/// Response for the `forge/nuget/uninstall` request.
+/// Response for the `sharplsp/nuget/uninstall` request.
 pub struct UninstallResponse {
     /// Whether the uninstall operation succeeded.
     pub success: bool,
@@ -285,9 +285,9 @@ pub struct UninstallResponse {
     pub modified_files: Vec<String>,
 }
 
-// ── forge/nuget/restoreProgress (server → client notification) ──
+// ── sharplsp/nuget/restoreProgress (server → client notification) ──
 
-/// Parameters for the `forge/nuget/restoreProgress` notification.
+/// Parameters for the `sharplsp/nuget/restoreProgress` notification.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RestoreProgressParams {

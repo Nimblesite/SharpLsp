@@ -1,10 +1,10 @@
 # Go to Definition Specification
 
-**Parent:** [FORGE-SPEC.md](FORGE-SPEC.md)
+**Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
 ## 1. Overview
 
-Go to Definition navigates the user from a symbol usage to its declaration site. Forge implements `textDocument/definition` ([LSP 3.17 §3.17.4](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition)), `textDocument/typeDefinition` ([§3.17.7](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_typeDefinition)), `textDocument/declaration` ([§3.17.3](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_declaration)), and `textDocument/implementation` ([§3.17.8](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_implementation)) for both C# and F# as equal first-class citizens.
+Go to Definition navigates the user from a symbol usage to its declaration site. SharpLsp implements `textDocument/definition` ([LSP 3.17 §3.17.4](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition)), `textDocument/typeDefinition` ([§3.17.7](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_typeDefinition)), `textDocument/declaration` ([§3.17.3](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_declaration)), and `textDocument/implementation` ([§3.17.8](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_implementation)) for both C# and F# as equal first-class citizens.
 
 All four navigation methods are **P0** (launch blocker) and target Phase 2 delivery.
 
@@ -144,7 +144,7 @@ The Rust host MAY use tree-sitter to pre-validate the position (e.g., reject whi
 When a symbol's definition is in metadata (referenced assembly, NuGet package) rather than source:
 
 1. **Phase 2 (MVP):** Return `null` — no navigation for metadata symbols.
-2. **Phase 3 (P1):** Use [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile the containing type, write it to a temporary file, and return a `Location` pointing to the decompiled source. Use the custom `forge/decompileSource` method to serve decompiled content on demand.
+2. **Phase 3 (P1):** Use [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile the containing type, write it to a temporary file, and return a `Location` pointing to the decompiled source. Use the custom `sharplsp/decompileSource` method to serve decompiled content on demand.
 
 ## 5. F# Implementation (FCS)
 
@@ -287,7 +287,7 @@ public class LocationListResult
 
 ## 11. Competitive Parity Matrix
 
-| Feature | VS | CDK | Rider | Forge Target | Priority |
+| Feature | VS | CDK | Rider | SharpLsp Target | Priority |
 |---|---|---|---|---|---|
 | Go to definition (in-source) | ✓ | ✓ | ✓ | ✓ | P0 |
 | Go to definition (metadata) | ✓ | ✓ | ✓ | ✓ | P1 |

@@ -101,7 +101,7 @@ fn test_profiler_happy_path_trace_lifecycle() {
     let _ = client.initialize();
 
     // 1. listProcesses must include our target PID.
-    let resp = client.request("forge/profiler/listProcesses", json!({}));
+    let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
     let processes = resp["result"].as_array().expect("result must be array");
     let found = processes
         .iter()
@@ -117,7 +117,7 @@ fn test_profiler_happy_path_trace_lifecycle() {
     let trace_path_str = trace_path.to_string_lossy().to_string();
 
     let resp = client.request(
-        "forge/profiler/startTrace",
+        "sharplsp/profiler/startTrace",
         json!({
             "pid": target_pid,
             "profile": "gc-collect",
@@ -144,7 +144,7 @@ fn test_profiler_happy_path_trace_lifecycle() {
 
     // 4. stopTrace.
     let resp = client.request(
-        "forge/profiler/stopTrace",
+        "sharplsp/profiler/stopTrace",
         json!({ "session_id": session_id }),
     );
     assert!(
@@ -191,7 +191,7 @@ fn test_profiler_happy_path_counter_lifecycle() {
 
     // 1. startCounters on the target.
     let resp = client.request(
-        "forge/profiler/startCounters",
+        "sharplsp/profiler/startCounters",
         json!({
             "pid": target_pid,
             "providers": ["System.Runtime"],
@@ -212,7 +212,7 @@ fn test_profiler_happy_path_counter_lifecycle() {
 
     // 3. stopCounters — must succeed cleanly.
     let resp = client.request(
-        "forge/profiler/stopCounters",
+        "sharplsp/profiler/stopCounters",
         json!({ "session_id": session_id }),
     );
     assert!(
@@ -222,7 +222,7 @@ fn test_profiler_happy_path_counter_lifecycle() {
 
     // 4. Double-stop must error.
     let resp = client.request(
-        "forge/profiler/stopCounters",
+        "sharplsp/profiler/stopCounters",
         json!({ "session_id": session_id }),
     );
     assert!(
@@ -251,7 +251,7 @@ fn test_profiler_happy_path_dump_and_analyze() {
     let dump_path_str = dump_path.to_string_lossy().to_string();
 
     let (resp, notifications) = client.request_collecting_notifications(
-        "forge/profiler/collectDump",
+        "sharplsp/profiler/collectDump",
         json!({
             "pid": target_pid,
             "dump_type": "Heap",
@@ -289,7 +289,7 @@ fn test_profiler_happy_path_dump_and_analyze() {
 
     // 2. analyzeHeap on the dump.
     let resp = client.request(
-        "forge/profiler/analyzeHeap",
+        "sharplsp/profiler/analyzeHeap",
         json!({
             "dump_path": dump_path_str,
             "limit": 20,
@@ -363,7 +363,7 @@ fn test_profiler_inspect_object_from_dump() {
         .to_string();
 
     let resp = client.request(
-        "forge/profiler/collectDump",
+        "sharplsp/profiler/collectDump",
         json!({
             "pid": target_pid,
             "dump_type": "Heap",
@@ -377,7 +377,7 @@ fn test_profiler_inspect_object_from_dump() {
 
     // 2. Get a real object address from analyzeHeap (find System.String).
     let resp = client.request(
-        "forge/profiler/analyzeHeap",
+        "sharplsp/profiler/analyzeHeap",
         json!({
             "dump_path": &dump_path,
             "type_filter": "String",
@@ -400,7 +400,7 @@ fn test_profiler_inspect_object_from_dump() {
     //    get one from analyzeHeap (it returns stats not addresses),
     //    test the error path for a well-formed but nonexistent address.
     let resp = client.request(
-        "forge/profiler/inspectObject",
+        "sharplsp/profiler/inspectObject",
         json!({
             "dump_path": &dump_path,
             "object_address": "0x0000000000000001",

@@ -8,7 +8,7 @@
 > webview must NEVER reimplement it.**
 
 The mockups include the following elements **that VS Code already provides**.
-A Forge webview panel **must not** render any of them:
+A SharpLsp webview panel **must not** render any of them:
 
 - ❌ **Activity Bar** — the leftmost icon column (folder, search, layers, settings, avatar). VS Code has this. Don't draw it.
 - ❌ **Status Bar** — the blue bar at the bottom showing git branch, ready state, encoding (`main*`, `Ready`, `UTF-8`, `NuGet v6.8.0`). VS Code has this. Don't draw it.

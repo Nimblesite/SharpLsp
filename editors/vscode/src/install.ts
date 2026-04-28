@@ -1,9 +1,9 @@
 /**
  * Binary version checking and package-manager-driven installation.
  *
- * Forge binaries are installed via platform package managers:
- * - forge-lsp: Homebrew (macOS/Linux), Scoop (Windows)
- * - forge-sidecar-csharp / forge-sidecar-fsharp: dotnet global tools
+ * SharpLsp binaries are installed via platform package managers:
+ * - sharplsp-lsp: Homebrew (macOS/Linux), Scoop (Windows)
+ * - sharplsp-sidecar-csharp / sharplsp-sidecar-fsharp: dotnet global tools
  *
  * The extension NEVER downloads binaries directly over HTTPS.
  * All installation goes through brew, scoop, or dotnet tool.
@@ -40,12 +40,12 @@ function hasVersionString(value: unknown): value is { version: string } {
 
 /** Expected version — read from the extension's package.json via VS Code API. */
 function expectedVersion(): string {
-  const ext = extensions.getExtension('forge-lsp.forge');
+  const ext = extensions.getExtension('sharplsp.sharp-lsp');
   if (ext === undefined) {
-    throw new Error('Forge extension not found — cannot determine expected version');
+    throw new Error('SharpLsp extension not found — cannot determine expected version');
   }
   if (!hasVersionString(ext.packageJSON)) {
-    throw new Error('Forge extension package.json has no version string');
+    throw new Error('SharpLsp extension package.json has no version string');
   }
   return ext.packageJSON.version;
 }
@@ -87,29 +87,29 @@ function isCommandAvailable(command: string): boolean {
   }
 }
 
-/** Get the package manager for forge-lsp based on platform. */
-function forgeLspPackageManager(): string {
+/** Get the package manager for sharplsp-lsp based on platform. */
+function sharplspLspPackageManager(): string {
   return os.platform() === 'win32' ? 'scoop' : 'brew';
 }
 
-/** Get the install command for forge-lsp based on platform. */
-function forgeLspInstallArgs(): readonly string[] {
+/** Get the install command for sharplsp-lsp based on platform. */
+function sharplspLspInstallArgs(): readonly string[] {
   if (os.platform() === 'win32') {
-    return ['scoop', 'install', 'Nimblesite/forge-lsp'];
+    return ['scoop', 'install', 'Nimblesite/sharplsp-lsp'];
   }
-  return ['brew', 'install', 'Nimblesite/tap/forge-lsp'];
+  return ['brew', 'install', 'Nimblesite/tap/sharplsp-lsp'];
 }
 
-/** Get the update command for forge-lsp based on platform. */
-function forgeLspUpdateArgs(): readonly string[] {
+/** Get the update command for sharplsp-lsp based on platform. */
+function sharplspLspUpdateArgs(): readonly string[] {
   if (os.platform() === 'win32') {
-    return ['scoop', 'update', 'forge-lsp'];
+    return ['scoop', 'update', 'sharplsp-lsp'];
   }
-  return ['brew', 'upgrade', 'Nimblesite/tap/forge-lsp'];
+  return ['brew', 'upgrade', 'Nimblesite/tap/sharplsp-lsp'];
 }
 
-function forgeLspCommand(): string {
-  const envPath = process.env.FORGE_EXECUTABLE_PATH;
+function sharplspLspCommand(): string {
+  const envPath = process.env.SHARPLSP_EXECUTABLE_PATH;
   return envPath === undefined || envPath === '' ? SERVER_BINARY : envPath;
 }
 
@@ -117,27 +117,27 @@ function forgeLspCommand(): string {
 function binaryComponents(_version: string): readonly BinaryComponent[] {
   return [
     {
-      name: 'forge-lsp',
-      command: forgeLspCommand(),
-      versionPrefix: 'forge-lsp',
+      name: 'sharplsp-lsp',
+      command: sharplspLspCommand(),
+      versionPrefix: 'sharplsp-lsp',
       getInstallArgs: () => {
-        const installed = getInstalledVersion(forgeLspCommand(), 'forge-lsp');
-        if (installed === undefined) return [...forgeLspInstallArgs()];
-        return [...forgeLspUpdateArgs()];
+        const installed = getInstalledVersion(sharplspLspCommand(), 'sharplsp-lsp');
+        if (installed === undefined) return [...sharplspLspInstallArgs()];
+        return [...sharplspLspUpdateArgs()];
       },
-      getPackageManager: forgeLspPackageManager,
+      getPackageManager: sharplspLspPackageManager,
       installUrl: os.platform() === 'win32' ? 'https://scoop.sh' : 'https://brew.sh',
     },
     {
-      name: 'forge-sidecar-csharp',
-      command: 'forge-sidecar-csharp',
-      versionPrefix: 'forge-sidecar-csharp',
+      name: 'sharplsp-sidecar-csharp',
+      command: 'sharplsp-sidecar-csharp',
+      versionPrefix: 'sharplsp-sidecar-csharp',
       getInstallArgs: (v: string) => [
         'dotnet',
         'tool',
         'update',
         '-g',
-        'Forge.Sidecar.CSharp',
+        'SharpLsp.Sidecar.CSharp',
         '--version',
         v,
       ],
@@ -145,15 +145,15 @@ function binaryComponents(_version: string): readonly BinaryComponent[] {
       installUrl: 'https://dotnet.microsoft.com/download',
     },
     {
-      name: 'forge-sidecar-fsharp',
-      command: 'forge-sidecar-fsharp',
-      versionPrefix: 'forge-sidecar-fsharp',
+      name: 'sharplsp-sidecar-fsharp',
+      command: 'sharplsp-sidecar-fsharp',
+      versionPrefix: 'sharplsp-sidecar-fsharp',
       getInstallArgs: (v: string) => [
         'dotnet',
         'tool',
         'update',
         '-g',
-        'Forge.Sidecar.FSharp',
+        'SharpLsp.Sidecar.FSharp',
         '--version',
         v,
       ],
@@ -164,7 +164,7 @@ function binaryComponents(_version: string): readonly BinaryComponent[] {
 }
 
 /**
- * Run a package manager command, streaming output to the Forge output channel.
+ * Run a package manager command, streaming output to the SharpLsp output channel.
  * Returns true on success, false on failure.
  */
 async function runInstallCommand(args: readonly string[]): Promise<boolean> {
@@ -216,7 +216,7 @@ async function ensureComponent(component: BinaryComponent, version: string): Pro
   const pm = component.getPackageManager();
   if (!isCommandAvailable(pm)) {
     const action = await window.showErrorMessage(
-      `Forge requires '${pm}' to install ${component.name}, but it was not found on PATH. Install it from ${component.installUrl} and restart VS Code.`,
+      `SharpLsp requires '${pm}' to install ${component.name}, but it was not found on PATH. Install it from ${component.installUrl} and restart VS Code.`,
       { modal: true },
       'OK',
     );
@@ -228,7 +228,7 @@ async function ensureComponent(component: BinaryComponent, version: string): Pro
   const installArgs = component.getInstallArgs(version);
   const commandStr = installArgs.join(' ');
   const choice = await window.showInformationMessage(
-    `Forge needs to install ${component.name} v${version}. Run \`${commandStr}\`?`,
+    `SharpLsp needs to install ${component.name} v${version}. Run \`${commandStr}\`?`,
     { modal: true },
     'Install',
     'Cancel',
@@ -243,7 +243,7 @@ async function ensureComponent(component: BinaryComponent, version: string): Pro
   const success = await runInstallCommand(installArgs);
   if (!success) {
     void window.showErrorMessage(
-      `Failed to install ${component.name}. Check the Forge output channel for details.`,
+      `Failed to install ${component.name}. Check the SharpLsp output channel for details.`,
     );
     return false;
   }
@@ -262,7 +262,7 @@ async function ensureComponent(component: BinaryComponent, version: string): Pro
 }
 
 /**
- * Ensure all Forge binaries are installed at the expected version.
+ * Ensure all SharpLsp binaries are installed at the expected version.
  *
  * Each binary is checked by spawning it with --version and comparing
  * the output to the version in package.json. If any binary is missing
@@ -276,17 +276,17 @@ export async function ensureBinaries(configuredPath: string): Promise<InstallRes
   const version = expectedVersion();
   const components = binaryComponents(version);
 
-  // If the user configured a custom path, check it first (forge-lsp only).
+  // If the user configured a custom path, check it first (sharplsp-lsp only).
   if (configuredPath.length > 0) {
-    const installed = getInstalledVersion(configuredPath, 'forge-lsp');
+    const installed = getInstalledVersion(configuredPath, 'sharplsp-lsp');
     if (installed === version) {
       log.info(`Using configured binary: ${configuredPath} (v${version})`);
       // Still need to check sidecars.
       for (const component of components) {
-        if (component.name === 'forge-lsp') continue;
+        if (component.name === 'sharplsp-lsp') continue;
         const ok = await ensureComponent(component, version);
         if (!ok) {
-          throw new Error(`Forge activation aborted: ${component.name} v${version} is required.`);
+          throw new Error(`SharpLsp activation aborted: ${component.name} v${version} is required.`);
         }
       }
       return { serverPath: configuredPath };
@@ -294,17 +294,17 @@ export async function ensureBinaries(configuredPath: string): Promise<InstallRes
     log.info(`Configured binary version mismatch: expected ${version}, got ${String(installed)}`);
   }
 
-  // Check all components sequentially: forge-lsp, then C# sidecar, then F# sidecar.
+  // Check all components sequentially: sharplsp-lsp, then C# sidecar, then F# sidecar.
   for (const component of components) {
     const ok = await ensureComponent(component, version);
     if (!ok) {
-      const msg = `Forge activation aborted: ${component.name} v${version} is required.`;
+      const msg = `SharpLsp activation aborted: ${component.name} v${version} is required.`;
       void window.showErrorMessage(msg);
       throw new Error(msg);
     }
   }
 
-  return { serverPath: forgeLspCommand() };
+  return { serverPath: sharplspLspCommand() };
 }
 
 /**
@@ -318,11 +318,11 @@ export function describeBinaryStatus(configuredPath: string): {
   const expected = expectedVersion();
 
   if (configuredPath.length > 0) {
-    const installed = getInstalledVersion(configuredPath, 'forge-lsp');
+    const installed = getInstalledVersion(configuredPath, 'sharplsp-lsp');
     return { expected, found: installed, location: configuredPath };
   }
 
-  const command = forgeLspCommand();
-  const installed = getInstalledVersion(command, 'forge-lsp');
+  const command = sharplspLspCommand();
+  const installed = getInstalledVersion(command, 'sharplsp-lsp');
   return { expected, found: installed, location: command };
 }

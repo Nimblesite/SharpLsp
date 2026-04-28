@@ -10,7 +10,7 @@ import { type LanguageClient } from 'vscode-languageclient/node';
 import { fetchTargets } from './lsp.js';
 import { type NuGetTarget } from './types.js';
 
-export const LAST_TARGET_KEY = 'forge.nuget.lastTargetId';
+export const LAST_TARGET_KEY = 'sharplsp.nuget.lastTargetId';
 
 export interface LoadTargetsResult {
   targets: NuGetTarget[];

@@ -1,10 +1,10 @@
 # Find All References & Document Highlights Specification
 
-**Parent:** [FORGE-SPEC.md](FORGE-SPEC.md)
+**Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
 ## 1. Overview
 
-Find All References locates every usage of a symbol across the entire solution. Document Highlights locates usages within the current document only (used for read/write highlighting on cursor move). Forge implements `textDocument/references` ([LSP 3.17 §3.17.10](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references)) and `textDocument/documentHighlight` ([LSP 3.17 §3.17.5](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight)) for both C# and F# as equal first-class citizens.
+Find All References locates every usage of a symbol across the entire solution. Document Highlights locates usages within the current document only (used for read/write highlighting on cursor move). SharpLsp implements `textDocument/references` ([LSP 3.17 §3.17.10](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references)) and `textDocument/documentHighlight` ([LSP 3.17 §3.17.5](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight)) for both C# and F# as equal first-class citizens.
 
 Both methods are **P0** (launch blocker) and target Phase 2 delivery.
 
@@ -261,7 +261,7 @@ public class DocumentHighlightListResult
 
 ## 11. Competitive Parity Matrix
 
-| Feature | VS | CDK | Rider | Forge Target | Priority |
+| Feature | VS | CDK | Rider | SharpLsp Target | Priority |
 |---|---|---|---|---|---|
 | Find all references (in-source) | Y | Y | Y | Y | P0 |
 | Find all references (metadata) | Y | N | Y | Y (P1) | P1 |

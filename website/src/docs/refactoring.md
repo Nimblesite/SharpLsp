@@ -12,7 +12,7 @@ eleventyNavigation:
 
 # Refactoring & Code Actions
 
-Forge routes code actions through Roslyn. When the cursor is on a supported symbol, diagnostic, or selection, VS Code can show a lightbulb offering quick fixes and refactorings sourced from Roslyn.
+SharpLsp routes code actions through Roslyn. When the cursor is on a supported symbol, diagnostic, or selection, VS Code can show a lightbulb offering quick fixes and refactorings sourced from Roslyn.
 
 ## Triggering Code Actions
 
@@ -22,7 +22,7 @@ Forge routes code actions through Roslyn. When the cursor is on a supported symb
 
 ## Available Actions
 
-Forge is building toward broad Roslyn code action coverage, including:
+SharpLsp is building toward broad Roslyn code action coverage, including:
 
 | Category | Examples |
 |----------|---------|

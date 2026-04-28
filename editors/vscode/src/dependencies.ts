@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile);
 // Note: removeNuGetPackage still uses direct CLI here because it's called
 // from the solution explorer context menu where the LSP client may not
 // be readily available. The NuGet browser panel uses LSP exclusively
-// via forge/nuget/* custom requests.
+// via sharplsp/nuget/* custom requests.
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,

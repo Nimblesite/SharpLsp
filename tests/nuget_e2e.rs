@@ -1,6 +1,6 @@
-//! End-to-end tests for `forge/nuget/*` LSP custom requests.
+//! End-to-end tests for `sharplsp/nuget/*` LSP custom requests.
 //!
-//! Tests spawn the `forge-lsp` binary and communicate over stdio JSON-RPC,
+//! Tests spawn the `sharplsp-lsp` binary and communicate over stdio JSON-RPC,
 //! exactly like a real LSP client.
 
 #![expect(
@@ -48,12 +48,12 @@ struct LspClient {
 
 impl LspClient {
     fn start() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_forge-lsp"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_sharplsp-lsp"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("failed to spawn forge-lsp");
+            .expect("failed to spawn sharplsp-lsp");
         let stdin = child.stdin.take().expect("no stdin");
         let stdout = child.stdout.take().expect("no stdout");
         Self {
@@ -166,7 +166,7 @@ fn isolated_nuget_project() -> (TempDir, String) {
     (tmp, dst_str)
 }
 
-// ── forge/nuget/search ──────────────────────────────────────────
+// ── sharplsp/nuget/search ──────────────────────────────────────────
 
 #[test]
 fn nuget_search_returns_packages_for_known_query() {
@@ -174,7 +174,7 @@ fn nuget_search_returns_packages_for_known_query() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/search",
+        "sharplsp/nuget/search",
         json!({
             "query": "Newtonsoft.Json",
             "projectPath": nuget_test_project(),
@@ -207,7 +207,7 @@ fn nuget_search_empty_query_returns_popular_packages() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/search",
+        "sharplsp/nuget/search",
         json!({
             "query": "",
             "projectPath": nuget_test_project(),
@@ -249,7 +249,7 @@ fn nuget_search_marks_installed_packages() {
 
     // The fixture project has Newtonsoft.Json installed.
     let resp = client.request(
-        "forge/nuget/search",
+        "sharplsp/nuget/search",
         json!({
             "query": "Newtonsoft.Json",
             "projectPath": nuget_test_project(),
@@ -279,7 +279,7 @@ fn nuget_search_marks_installed_packages() {
     client.shutdown_and_exit();
 }
 
-// ── forge/nuget/versions ────────────────────────────────────────
+// ── sharplsp/nuget/versions ────────────────────────────────────────
 
 #[test]
 fn nuget_versions_returns_version_list() {
@@ -287,7 +287,7 @@ fn nuget_versions_returns_version_list() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/versions",
+        "sharplsp/nuget/versions",
         json!({ "packageId": "Newtonsoft.Json" }),
     );
 
@@ -316,7 +316,7 @@ fn nuget_versions_returns_version_list() {
     client.shutdown_and_exit();
 }
 
-// ── forge/nuget/installed ───────────────────────────────────────
+// ── sharplsp/nuget/installed ───────────────────────────────────────
 
 #[test]
 fn nuget_installed_returns_packages_for_test_project() {
@@ -324,7 +324,7 @@ fn nuget_installed_returns_packages_for_test_project() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/installed",
+        "sharplsp/nuget/installed",
         json!({ "projectPath": nuget_test_project() }),
     );
 
@@ -349,7 +349,7 @@ fn nuget_installed_returns_packages_for_test_project() {
     client.shutdown_and_exit();
 }
 
-// ── forge/nuget/install + uninstall ─────────────────────────────
+// ── sharplsp/nuget/install + uninstall ─────────────────────────────
 
 #[test]
 fn nuget_install_and_uninstall_package() {
@@ -362,7 +362,7 @@ fn nuget_install_and_uninstall_package() {
 
     // Install a small package that isn't already in the fixture.
     let install_resp = client.request(
-        "forge/nuget/install",
+        "sharplsp/nuget/install",
         json!({
             "projectPath": project,
             "packageId": "Microsoft.Extensions.Logging.Abstractions",
@@ -385,7 +385,10 @@ fn nuget_install_and_uninstall_package() {
     );
 
     // Verify it shows up in installed list.
-    let installed = client.request("forge/nuget/installed", json!({ "projectPath": project }));
+    let installed = client.request(
+        "sharplsp/nuget/installed",
+        json!({ "projectPath": project }),
+    );
     let packages = installed["result"]["packages"]
         .as_array()
         .expect("installed packages");
@@ -398,7 +401,7 @@ fn nuget_install_and_uninstall_package() {
 
     // Uninstall it.
     let uninstall_resp = client.request(
-        "forge/nuget/uninstall",
+        "sharplsp/nuget/uninstall",
         json!({
             "projectPath": project,
             "packageId": "Microsoft.Extensions.Logging.Abstractions",
@@ -416,8 +419,10 @@ fn nuget_install_and_uninstall_package() {
     );
 
     // Verify it's gone from installed list.
-    let installed_after =
-        client.request("forge/nuget/installed", json!({ "projectPath": project }));
+    let installed_after = client.request(
+        "sharplsp/nuget/installed",
+        json!({ "projectPath": project }),
+    );
     let packages_after = installed_after["result"]["packages"]
         .as_array()
         .expect("installed packages after");
@@ -454,7 +459,7 @@ fn nuget_uninstall_removes_multiline_package_reference_children() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/uninstall",
+        "sharplsp/nuget/uninstall",
         json!({
             "target": {
                 "id": props.to_str().unwrap(),
@@ -509,7 +514,7 @@ fn nuget_installed_invalid_project_path_returns_error() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/installed",
+        "sharplsp/nuget/installed",
         json!({ "projectPath": "/nonexistent/path/Fake.csproj" }),
     );
 
@@ -527,7 +532,7 @@ fn nuget_versions_nonexistent_package_returns_error() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/versions",
+        "sharplsp/nuget/versions",
         json!({ "packageId": "ThisPackageDoesNotExist_XYZ_12345" }),
     );
 
@@ -545,7 +550,7 @@ fn nuget_install_invalid_project_returns_error() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/install",
+        "sharplsp/nuget/install",
         json!({
             "projectPath": "/nonexistent/Fake.csproj",
             "packageId": "Newtonsoft.Json",
@@ -574,7 +579,7 @@ fn nuget_uninstall_invalid_project_returns_error() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/uninstall",
+        "sharplsp/nuget/uninstall",
         json!({
             "projectPath": "/nonexistent/Fake.csproj",
             "packageId": "Newtonsoft.Json",
@@ -609,8 +614,8 @@ fn nuget_search_cache_returns_consistent_results() {
         "skip": 0,
     });
 
-    let resp1 = client.request("forge/nuget/search", params.clone());
-    let resp2 = client.request("forge/nuget/search", params);
+    let resp1 = client.request("sharplsp/nuget/search", params.clone());
+    let resp2 = client.request("sharplsp/nuget/search", params);
 
     assert!(resp1.get("error").is_none(), "first search should succeed");
     assert!(resp2.get("error").is_none(), "second search should succeed");
@@ -696,7 +701,7 @@ fn nuget_targets_enumerates_cpm_workspace() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/targets",
+        "sharplsp/nuget/targets",
         json!({ "workspaceRoot": workspace.path().to_str().unwrap() }),
     );
 
@@ -761,7 +766,7 @@ fn nuget_targets_nonexistent_root_returns_error() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/targets",
+        "sharplsp/nuget/targets",
         json!({ "workspaceRoot": "/nonexistent/workspace/xyz" }),
     );
 
@@ -783,7 +788,7 @@ fn nuget_installed_on_build_props_target_scrapes_xml() {
     // Pass a full `target` object with kind=buildProps — exercises the
     // list_props_packages path instead of shelling out to `dotnet list`.
     let resp = client.request(
-        "forge/nuget/installed",
+        "sharplsp/nuget/installed",
         json!({
             "target": {
                 "id": props_path.to_str().unwrap(),
@@ -823,7 +828,7 @@ fn nuget_install_cpm_writes_project_and_props() {
     //   1. add a versionless <PackageReference> to the csproj
     //   2. add a <PackageVersion> to Directory.Packages.props
     let resp = client.request(
-        "forge/nuget/install",
+        "sharplsp/nuget/install",
         json!({
             "target": {
                 "id": csproj.to_str().unwrap(),
@@ -870,7 +875,7 @@ fn nuget_install_cpm_writes_project_and_props() {
 
     // No-op re-install leaves everything untouched (but still succeeds).
     let resp2 = client.request(
-        "forge/nuget/install",
+        "sharplsp/nuget/install",
         json!({
             "target": {
                 "id": csproj.to_str().unwrap(),
@@ -905,7 +910,7 @@ fn nuget_install_on_build_props_target_edits_props_file() {
 
     // Install directly into a Directory.Build.props (kind=buildProps).
     let resp = client.request(
-        "forge/nuget/install",
+        "sharplsp/nuget/install",
         json!({
             "target": {
                 "id": build_props.to_str().unwrap(),
@@ -940,7 +945,7 @@ fn nuget_install_on_build_props_target_edits_props_file() {
 
     // Uninstall it again — exercises remove_package happy path on a props file.
     let uninstall = client.request(
-        "forge/nuget/uninstall",
+        "sharplsp/nuget/uninstall",
         json!({
             "target": {
                 "id": build_props.to_str().unwrap(),
@@ -970,7 +975,7 @@ fn nuget_install_on_build_props_target_edits_props_file() {
     // Second uninstall is a no-op (package not present) — still a non-error
     // response, but `success=false` so the caller knows nothing changed.
     let noop = client.request(
-        "forge/nuget/uninstall",
+        "sharplsp/nuget/uninstall",
         json!({
             "target": {
                 "id": build_props.to_str().unwrap(),
@@ -1010,7 +1015,7 @@ fn nuget_install_non_cpm_inserts_version_into_versionless_reference() {
     // Newtonsoft.Json already in BARE_CSPROJ without a Version — install
     // should replace the element by inserting the Version attribute.
     let resp = client.request(
-        "forge/nuget/install",
+        "sharplsp/nuget/install",
         json!({
             "projectPath": csproj.to_str().unwrap(),
             "packageId": "Newtonsoft.Json",
@@ -1063,7 +1068,7 @@ fn nuget_install_cpm_strips_version_from_existing_reference() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/install",
+        "sharplsp/nuget/install",
         json!({
             "projectPath": csproj.to_str().unwrap(),
             "packageId": "Newtonsoft.Json",
@@ -1110,7 +1115,7 @@ fn nuget_install_creates_item_group_when_none_exists() {
     client.initialize();
 
     let resp = client.request(
-        "forge/nuget/install",
+        "sharplsp/nuget/install",
         json!({
             "projectPath": csproj.to_str().unwrap(),
             "packageId": "Serilog",
@@ -1150,7 +1155,7 @@ fn nuget_search_with_fsproj_project_path_hits_fsharp_branch() {
 
     // Note: deliberately omit `take` so `default_take` is exercised.
     let resp = client.request(
-        "forge/nuget/search",
+        "sharplsp/nuget/search",
         json!({
             "query": "Serilog",
             "projectPath": fsproj.to_str().unwrap(),
@@ -1177,7 +1182,7 @@ fn nuget_install_missing_params_returns_error() {
 
     // Neither target nor projectPath — resolve_target should bail.
     let resp = client.request(
-        "forge/nuget/install",
+        "sharplsp/nuget/install",
         json!({
             "packageId": "Serilog",
             "version": "3.1.1",

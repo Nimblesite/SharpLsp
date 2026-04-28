@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Wire envelope for sidecar IPC.
-/// Matches `Forge.Sidecar.Common.Messages.Envelope` (`MessagePack` keyed).
+/// Matches `SharpLsp.Sidecar.Common.Messages.Envelope` (`MessagePack` keyed).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Envelope {
     /// Request/response correlation ID. `None` for notifications.

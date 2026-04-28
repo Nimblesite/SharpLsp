@@ -9,9 +9,9 @@ eleventyNavigation:
 
 # 架构
 
-![VS Code 中的 Forge 架构相关输出](/assets/screenshots/vscode-architecture-page.png)
+![VS Code 中的 SharpLsp 架构相关输出](/assets/screenshots/vscode-architecture-page.png)
 
-Forge 基于三层架构构建，将快速语法操作与丰富语义分析的关注点分离。
+SharpLsp 基于三层架构构建，将快速语法操作与丰富语义分析的关注点分离。
 
 ## 第一层 — Rust LSP 宿主
 

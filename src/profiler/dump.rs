@@ -42,7 +42,7 @@ pub async fn collect(
 
     let output_path = params
         .output_path
-        .unwrap_or_else(|| format!(".forge/profiles/dump-{}.dmp", params.pid));
+        .unwrap_or_else(|| format!(".sharplsp/profiles/dump-{}.dmp", params.pid));
 
     ensure_output_dir(&output_path)?;
 

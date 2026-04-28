@@ -1,10 +1,10 @@
 # Hover / Quick Info Specification
 
-**Parent:** [FORGE-SPEC.md](FORGE-SPEC.md)
+**Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
 ## 1. Overview
 
-Hover (Quick Info) provides rich tooltip information when the user hovers over a symbol or keyword. Forge implements `textDocument/hover` ([LSP 3.17 §3.17.5](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover)) for both C# and F# as equal first-class citizens.
+Hover (Quick Info) provides rich tooltip information when the user hovers over a symbol or keyword. SharpLsp implements `textDocument/hover` ([LSP 3.17 §3.17.5](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover)) for both C# and F# as equal first-class citizens.
 
 This feature is **P0** (launch blocker) and targets Phase 2 delivery.
 
@@ -36,7 +36,7 @@ interface Hover {
 - `contents` — Markdown-formatted string containing the symbol signature, documentation, and metadata.
 - `range` — The range of the hovered token. Editors use this to highlight the symbol while the tooltip is visible.
 
-Forge MUST return `MarkupContent` with `kind: "markdown"`. Plain-text fallback is not supported — all LSP 3.17 clients support Markdown.
+SharpLsp MUST return `MarkupContent` with `kind: "markdown"`. Plain-text fallback is not supported — all LSP 3.17 clients support Markdown.
 
 ## 3. Request Routing
 
@@ -195,7 +195,7 @@ Tree item tooltips are resolved via `resolveTreeItem()`, which calls `vscode.exe
 
 ## 10. Competitive Parity Matrix
 
-| Feature | VS | CDK | Rider | Forge Target | Priority |
+| Feature | VS | CDK | Rider | SharpLsp Target | Priority |
 |---|---|---|---|---|---|
 | Basic symbol hover | ✓ | ✓ | ✓ | ✓ | P0 |
 | XML doc rendering | ✓ | ✓ | ✓ | ✓ | P0 |

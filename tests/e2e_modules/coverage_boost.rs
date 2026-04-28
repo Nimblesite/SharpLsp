@@ -275,16 +275,16 @@ let result = add 1 2
     client.wait_with_timeout();
 }
 
-// ── forge/loadSolution without sidecars ──────────────────────────────
+// ── sharplsp/loadSolution without sidecars ──────────────────────────────
 
 #[test]
 fn test_load_solution_without_sidecar_returns_success() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
-    // forge/loadSolution with no sidecar — must return { success: true }.
+    // sharplsp/loadSolution with no sidecar — must return { success: true }.
     let resp = client.request(
-        "forge/loadSolution",
+        "sharplsp/loadSolution",
         json!({ "solutionPath": "/tmp/test.sln" }),
     );
 
@@ -292,12 +292,12 @@ fn test_load_solution_without_sidecar_returns_success() {
     assert!(resp.get("id").is_some(), "must have request id");
     assert!(
         resp.get("error").is_none(),
-        "forge/loadSolution must not error: {resp}"
+        "sharplsp/loadSolution must not error: {resp}"
     );
     let result = &resp["result"];
     assert!(
         result["success"].as_bool().unwrap_or(false),
-        "forge/loadSolution must return success: true"
+        "sharplsp/loadSolution must return success: true"
     );
 
     client.shutdown_and_exit();

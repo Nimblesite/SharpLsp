@@ -1,6 +1,6 @@
-# Forge Formatting (Sequestered)
+# SharpLsp Formatting (Sequestered)
 
-Forge does **not** provide document formatting as an LSP feature. The recommended formatters are:
+SharpLsp does **not** provide document formatting as an LSP feature. The recommended formatters are:
 
 - **C#**: [CSharpier](https://csharpier.com/) -- the community-standard opinionated C# formatter
 - **F#**: [Fantomas](https://github.com/fsprojects/fantomas) via the [Ionide](https://ionide.io/) extension -- the standard F# formatter
@@ -11,18 +11,18 @@ These tools are excellent at what they do. There is no reason to duplicate their
 
 The codebase contains a complete but **disabled** formatting implementation using Roslyn's `Formatter` API (C#) and Fantomas (F#). This code is sequestered -- not wired into the LSP server -- and excluded from code coverage.
 
-It may become the foundation for a built-in Forge formatter in the future, but there are no plans for this right now.
+It may become the foundation for a built-in SharpLsp formatter in the future, but there are no plans for this right now.
 
 ## Where The Code Lives
 
 | Component | File(s) | Engine |
 |-----------|---------|--------|
 | Rust LSP handler | `src/formatting.rs` | Routes to sidecar (gated behind `cfg(feature = "formatting")`) |
-| C# sidecar resolver | `sidecars/Forge.Sidecar.CSharp/Workspace/FormattingResolver.cs` | Roslyn `Formatter.FormatAsync()` |
-| C# sidecar handlers | `sidecars/Forge.Sidecar.CSharp/CSharpSidecar.Features.cs` (formatting methods) | Delegates to resolver |
-| C# workspace manager | `sidecars/Forge.Sidecar.CSharp/Workspace/WorkspaceManager.Features.cs` (formatting methods) | Delegates to resolver |
-| F# features | `sidecars/Forge.Sidecar.FSharp/FSharpFeatures.fs` (formatting section) | Fantomas `CodeFormatter` |
-| F# sidecar handlers | `sidecars/Forge.Sidecar.FSharp/FSharpSidecar.fs` (formatting registrations) | Delegates to features |
+| C# sidecar resolver | `sidecars/SharpLsp.Sidecar.CSharp/Workspace/FormattingResolver.cs` | Roslyn `Formatter.FormatAsync()` |
+| C# sidecar handlers | `sidecars/SharpLsp.Sidecar.CSharp/CSharpSidecar.Features.cs` (formatting methods) | Delegates to resolver |
+| C# workspace manager | `sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.Features.cs` (formatting methods) | Delegates to resolver |
+| F# features | `sidecars/SharpLsp.Sidecar.FSharp/FSharpFeatures.fs` (formatting section) | Fantomas `CodeFormatter` |
+| F# sidecar handlers | `sidecars/SharpLsp.Sidecar.FSharp/FSharpSidecar.fs` (formatting registrations) | Delegates to features |
 
 ## How It's Disabled
 

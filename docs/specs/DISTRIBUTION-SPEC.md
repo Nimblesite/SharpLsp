@@ -1,15 +1,15 @@
 # Distribution Specification
 
-This document is the canonical specification for how Forge is distributed.
+This document is the canonical specification for how SharpLsp is distributed.
 All statements below are normative requirements, not suggestions.
 
 ## 1. Three Channels, No Alternatives
 
 | Component | Channel | Package ID |
 |-----------|---------|------------|
-| `forge-lsp` | Homebrew (macOS/Linux), Scoop (Windows) | `Nimblesite/tap/forge-lsp` / `Nimblesite/forge-lsp` |
-| C# sidecar | dotnet global tool on NuGet.org | `Forge.Sidecar.CSharp` |
-| F# sidecar | dotnet global tool on NuGet.org | `Forge.Sidecar.FSharp` |
+| `sharplsp-lsp` | Homebrew (macOS/Linux), Scoop (Windows) | `Nimblesite/tap/sharplsp-lsp` / `Nimblesite/sharplsp-lsp` |
+| C# sidecar | dotnet global tool on NuGet.org | `SharpLsp.Sidecar.CSharp` |
+| F# sidecar | dotnet global tool on NuGet.org | `SharpLsp.Sidecar.FSharp` |
 
 Sidecars are **framework-dependent** dotnet tools. `SelfContained=true` is
 forbidden in sidecar `.csproj`/`.fsproj` files. Users install the .NET
@@ -45,9 +45,9 @@ Any editor extension (VS Code today, Zed/JetBrains/Neovim in the future) MUST:
 
 | Binary | Command | Expected stdout |
 |--------|---------|-----------------|
-| `forge-lsp` | `forge-lsp --version` | `forge-lsp <semver>` |
-| C# sidecar | `forge-sidecar-csharp --version` | `forge-sidecar-csharp <semver>` |
-| F# sidecar | `forge-sidecar-fsharp --version` | `forge-sidecar-fsharp <semver>` |
+| `sharplsp-lsp` | `sharplsp-lsp --version` | `sharplsp-lsp <semver>` |
+| C# sidecar | `sharplsp-sidecar-csharp --version` | `sharplsp-sidecar-csharp <semver>` |
+| F# sidecar | `sharplsp-sidecar-fsharp --version` | `sharplsp-sidecar-fsharp <semver>` |
 
 ### Package manager presence
 
@@ -55,7 +55,7 @@ Before running any install command, check that the required package manager
 is available on PATH. If missing, show a modal with a link to the install
 page and abort. Do not offer to install package managers automatically.
 
-| Platform | forge-lsp PM | Sidecar PM | PM install URL |
+| Platform | sharplsp-lsp PM | Sidecar PM | PM install URL |
 |----------|-------------|-----------|----------------|
 | macOS | `brew` | `dotnet` | brew.sh / dotnet.microsoft.com |
 | Linux | `brew` | `dotnet` | brew.sh / dotnet.microsoft.com |
@@ -63,8 +63,8 @@ page and abort. Do not offer to install package managers automatically.
 
 ## 4. Tap/Bucket Repo Layout
 
-- `Nimblesite/homebrew-tap` contains `Formula/forge-lsp.rb`
-- `Nimblesite/scoop-bucket` contains `bucket/forge-lsp.json`
+- `Nimblesite/homebrew-tap` contains `Formula/sharplsp-lsp.rb`
+- `Nimblesite/scoop-bucket` contains `bucket/sharplsp-lsp.json`
 - Both are auto-updated by the release workflow using `BREW_SCOOP_PAT`
 - Manual edits are forbidden
 
@@ -72,11 +72,11 @@ page and abort. Do not offer to install package managers automatically.
 
 Tag-triggered (`v*`). Three jobs:
 
-1. **`build-forge-lsp`** — matrix: 4 targets (linux-x64, macOS-arm64,
+1. **`build-sharplsp-lsp`** — matrix: 4 targets (linux-x64, macOS-arm64,
    macOS-x64, win-x64). Single binary per archive (no sidecars bundled).
 2. **`pack-sidecars`** — single ubuntu job. `dotnet pack` both sidecars
    as framework-dependent tools. Produces 2 nupkgs.
-3. **`release`** — sequential steps: create GitHub release with forge-lsp
+3. **`release`** — sequential steps: create GitHub release with sharplsp-lsp
    archives, push nupkgs to NuGet.org, update Homebrew tap, update Scoop
    bucket.
 
@@ -84,8 +84,8 @@ Tag-triggered (`v*`). Three jobs:
 
 | Secret | Purpose | Scope |
 |--------|---------|-------|
-| `BREW_SCOOP_PAT` | PAT with `contents:write` on `Nimblesite/homebrew-tap` and `Nimblesite/scoop-bucket` | `Nimblesite/forge` |
-| `NUGET_API_KEY` | Push rights to `Forge.Sidecar.*` on nuget.org | `Nimblesite/forge` |
+| `BREW_SCOOP_PAT` | PAT with `contents:write` on `Nimblesite/homebrew-tap` and `Nimblesite/scoop-bucket` | `Nimblesite/SharpLsp` |
+| `NUGET_API_KEY` | Push rights to `SharpLsp.Sidecar.*` on nuget.org | `Nimblesite/SharpLsp` |
 
 ## 7. CI Smoke Test
 

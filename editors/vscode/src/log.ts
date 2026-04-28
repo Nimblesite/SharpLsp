@@ -7,7 +7,7 @@ import { OUTPUT_CHANNEL_NAME, TRACE_CHANNEL_NAME } from './constants.js';
 let outputChannel: OutputChannel | undefined;
 let traceChannel: OutputChannel | undefined;
 
-const LOG_FILE = path.join(os.tmpdir(), 'forge-vscode.log');
+const LOG_FILE = path.join(os.tmpdir(), 'sharplsp-vscode.log');
 let logStream: fs.WriteStream | undefined;
 
 /** Get or create the file log stream. */

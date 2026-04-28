@@ -17,12 +17,12 @@ Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 
 ### Rust binary
 
-- [x] `forge-lsp --version` prints `forge-lsp <semver>`
+- [x] `sharplsp-lsp --version` prints `sharplsp-lsp <semver>`
 - [x] E2E test validates version output format
 
 ### Release workflow (`.github/workflows/release.yml`)
 
-- [x] Job: `build-forge-lsp` — matrix build, single binary archives (no sidecars)
+- [x] Job: `build-sharplsp-lsp` — matrix build, single binary archives (no sidecars)
 - [x] Job: `pack-sidecars` — framework-dependent `dotnet pack`, 2 nupkgs
 - [x] Job: `release` — GitHub release, NuGet publish, Homebrew tap, Scoop bucket
 - [ ] Test with a `v*-rc*` tag on a fork
@@ -42,7 +42,7 @@ Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 
 ### Makefile
 
-- [x] Add `install-rust` target (copies forge-lsp to `$PREFIX/bin`)
+- [x] Add `install-rust` target (copies sharplsp-lsp to `$PREFIX/bin`)
 - [x] Add `install-sidecars` target (dotnet tool install from local nupkgs)
 - [x] Keep `install-binaries` as alias for both
 - [x] Verify `test-vsix` still works with new install layout — `make test-vsix` stages binaries at `$(PREFIX)` and runs tests with coverage; all passing
@@ -51,7 +51,7 @@ Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 
 - [x] Create `docs/specs/DISTRIBUTION-SPEC.md`
 - [x] Create `docs/plans/DISTRIBUTION-PLAN.md`
-- [x] Add Distribution section to `docs/specs/FORGE-SPEC.md`
+- [x] Add Distribution section to `docs/specs/SHARPLSP-SPEC.md`
 
 ### External prerequisites (manual, pre-merge)
 
@@ -59,7 +59,7 @@ Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 - [ ] Create GitHub repo `Nimblesite/scoop-bucket` (empty, default branch `main`)
 - [ ] Create PAT with `contents:write` on both repos → add as `BREW_SCOOP_PAT`
 - [ ] Create NuGet.org API key → add as `NUGET_API_KEY`
-- [ ] Reserve `Forge.Sidecar.CSharp` and `Forge.Sidecar.FSharp` on nuget.org
+- [ ] Reserve `SharpLsp.Sidecar.CSharp` and `SharpLsp.Sidecar.FSharp` on nuget.org
 
 ### Verification
 

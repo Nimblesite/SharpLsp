@@ -2,7 +2,7 @@
   "main": [
     { "text": "Docs", "url": "/docs/", "i18nKey": "nav.docs" },
     { "text": "Blog", "url": "/blog/", "i18nKey": "nav.blog" },
-    { "text": "GitHub", "url": "https://github.com/MelbourneDeveloper/forge", "external": true }
+    { "text": "GitHub", "url": "https://github.com/Nimblesite/SharpLsp", "external": true }
   ],
   "footer": [
     {
@@ -35,8 +35,8 @@
       "title": "Community",
       "i18nKey": "footer.community",
       "items": [
-        { "text": "GitHub", "url": "https://github.com/MelbourneDeveloper/forge", "i18nKey": "footer.github" },
-        { "text": "Issues", "url": "https://github.com/MelbourneDeveloper/forge/issues", "i18nKey": "footer.issues" },
+        { "text": "GitHub", "url": "https://github.com/Nimblesite/SharpLsp", "i18nKey": "footer.github" },
+        { "text": "Issues", "url": "https://github.com/Nimblesite/SharpLsp/issues", "i18nKey": "footer.issues" },
         { "text": "Blog", "url": "/blog/", "i18nKey": "footer.blog" }
       ]
     }

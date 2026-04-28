@@ -1,10 +1,10 @@
 # DIAGNOSTICS-SPEC
 
-Diagnostics are the core feedback loop for developers. Forge must surface all compiler errors, warnings, and analyzer diagnostics across the entire solution in real-time, matching Visual Studio's Solution-Wide Error Analysis (SWEA) from day one — **without ever lying about compilation state**.
+Diagnostics are the core feedback loop for developers. SharpLsp must surface all compiler errors, warnings, and analyzer diagnostics across the entire solution in real-time, matching Visual Studio's Solution-Wide Error Analysis (SWEA) from day one — **without ever lying about compilation state**.
 
 ## 1. Architecture
 
-Forge uses the **LSP 3.17 pull-diagnostics model with workspace refresh**, mirroring `Microsoft.CodeAnalysis.LanguageServer` (the engine behind C# Dev Kit). This is the only architecture that produces correct diagnostics during workspace load.
+SharpLsp uses the **LSP 3.17 pull-diagnostics model with workspace refresh**, mirroring `Microsoft.CodeAnalysis.LanguageServer` (the engine behind C# Dev Kit). This is the only architecture that produces correct diagnostics during workspace load.
 
 ```
 Editor ←→ Rust LSP Host ←→ C#/F# Sidecar (Roslyn / FCS)
@@ -17,7 +17,7 @@ Editor ←→ Rust LSP Host ←→ C#/F# Sidecar (Roslyn / FCS)
 
 ### 1.1 The Pull + Refresh Cycle
 
-**Forge never proactively asserts diagnostics.** It does not push errors during workspace load, because at that moment Roslyn cannot tell the truth — NuGet may be restoring, source generators are lazy, cross-project `CompilationReference`s are still resolving. Pushing during this window produces phantom CS0246/CS0234 errors that contradict `dotnet build`. Forge does not lie.
+**SharpLsp never proactively asserts diagnostics.** It does not push errors during workspace load, because at that moment Roslyn cannot tell the truth — NuGet may be restoring, source generators are lazy, cross-project `CompilationReference`s are still resolving. Pushing during this window produces phantom CS0246/CS0234 errors that contradict `dotnet build`. SharpLsp does not lie.
 
 Instead:
 
@@ -28,7 +28,7 @@ Instead:
 5. **Result identity**: response carries `resultId = "{project_version}:{doc_version}:{global_state_version}"`. If the editor's `previousResultId` matches, the server returns `DiagnosticReport.Unchanged` (per LSP 3.17) and skips re-computation.
 6. **Refresh on change**: any sidecar-side `WorkspaceChanged` event (`ProjectAdded`, `ProjectReloaded`, `SolutionChanged`, `DocumentChanged`, restore completion) bumps `global_state_version` and emits a `diagnostics/refresh` IPC notification. Rust host coalesces these via a 2000ms debounced batch (matching Roslyn LSP's `AsyncBatchingWorkQueue`) and sends LSP `workspace/diagnostic/refresh` to the editor. The editor re-pulls — diagnostics converge to truth.
 
-This is the **only** way to give correct diagnostics during multi-second workspace loads. OmniSharp (event-driven push) and Roslyn LSP (pull + refresh) both refuse to assert correctness at any single instant; they converge via invalidation. Forge does the same.
+This is the **only** way to give correct diagnostics during multi-second workspace loads. OmniSharp (event-driven push) and Roslyn LSP (pull + refresh) both refuse to assert correctness at any single instant; they converge via invalidation. SharpLsp does the same.
 
 ### 1.2 Why no eager solution scan
 
@@ -37,7 +37,7 @@ Earlier versions of this spec described a one-shot solution-wide scan on workspa
 - The eager scan iterates `Solution.Projects` and calls `GetCompilationAsync()` on each. The first compilation a consumer project produces — before its dependencies have been cached as `CompilationReference`s — is missing types and emits phantom CS0246s. Topological iteration only partially mitigates this; source generators and NuGet restore still produce wrong-then-right state transitions during load.
 - The verification pass tried to repair stale diagnostics by sending `textDocument/didChange` with the same disk text and re-fetching. Roslyn's `WithDocumentText` creates a new immutable `Solution` snapshot, but it does not re-run source generators, re-resolve NuGet, or rebuild metadata references — the underlying compilation is still incomplete, so the same phantom errors come back. It was a band-aid on the wrong premise.
 
-The pull model removes the failure mode entirely: there is no moment at which Forge proactively claims a file has errors. The editor asks; Forge answers with whatever Roslyn currently knows. When Roslyn learns more, the `global_state_version` bumps and the editor re-asks.
+The pull model removes the failure mode entirely: there is no moment at which SharpLsp proactively claims a file has errors. The editor asks; SharpLsp answers with whatever Roslyn currently knows. When Roslyn learns more, the `global_state_version` bumps and the editor re-asks.
 
 ### 1.3 Analysis Scope
 
@@ -47,12 +47,12 @@ The pull model removes the failure mode entirely: there is no moment at which Fo
 | **Open files only** | Editor only pulls `textDocument/diagnostic` for documents it has opened | Optional | Editors that don't issue `workspace/diagnostic` |
 | **Per-project filter** | `workspace/diagnostic` partial-result handler restricts to filtered projects | Optional | Focus analysis on active development targets |
 
-Solution-wide analysis is the default because developers need to see errors **everywhere**. The C# Dev Kit limitation is not that it lacks SWEA semantically — it serves `workspace/diagnostic` — but that VS Code's UI doesn't surface workspace diagnostics until the file is opened. Forge's VS Code extension explicitly drives the workspace pull and renders results in the Problems panel before files are opened. This is the SWEA win.
+Solution-wide analysis is the default because developers need to see errors **everywhere**. The C# Dev Kit limitation is not that it lacks SWEA semantically — it serves `workspace/diagnostic` — but that VS Code's UI doesn't surface workspace diagnostics until the file is opened. SharpLsp's VS Code extension explicitly drives the workspace pull and renders results in the Problems panel before files are opened. This is the SWEA win.
 
 ## 2. Configuration
 
 ```toml
-# forge.toml
+# sharplsp.toml
 [diagnostics]
 # Run Roslyn/FCS analyzers (not just compiler diagnostics)
 analyzers_enabled = true
@@ -137,12 +137,12 @@ Live diagnostics flow through the **pull + refresh cycle** described in §1.1:
   "diagnosticProvider": {
     "interFileDependencies": true,
     "workspaceDiagnostics": true,
-    "identifier": "forge"
+    "identifier": "sharplsp"
   }
 }
 ```
 
-`workspaceDiagnostics: true` is mandatory — it is how the editor knows it can ask Forge for solution-wide errors. `identifier: "forge"` lets the editor distinguish Forge's diagnostics from other servers.
+`workspaceDiagnostics: true` is mandatory — it is how the editor knows it can ask SharpLsp for solution-wide errors. `identifier: "sharplsp"` lets the editor distinguish SharpLsp's diagnostics from other servers.
 
 ### 4.2 Pull Model (PRIMARY: `textDocument/diagnostic`, `workspace/diagnostic`)
 
@@ -170,7 +170,7 @@ Per-document request:
         "range": { "start": { "line": 10, "character": 4 }, "end": { "line": 10, "character": 20 } },
         "severity": 1,
         "code": "CS0029",
-        "source": "forge-csharp",
+        "source": "sharplsp-csharp",
         "message": "Cannot implicitly convert type 'string' to 'int'"
       }
     ]
@@ -209,7 +209,7 @@ Refresh triggers (sidecar → host IPC notification `diagnostics/refresh` carryi
 
 Push exists only as a fallback for editors that do not advertise `textDocument.diagnostic.dynamicRegistration` (i.e. older LSP clients that predate 3.17 pull). When push is the only option, the host treats every refresh trigger as a per-document publish, reusing the same per-document analysis pipeline.
 
-Forge's VS Code extension always negotiates pull. Push fallback exists for editor coverage (some Vim plugins, older Eclipse JDT-LSP-style clients), not as the canonical path.
+SharpLsp's VS Code extension always negotiates pull. Push fallback exists for editor coverage (some Vim plugins, older Eclipse JDT-LSP-style clients), not as the canonical path.
 
 ### 4.4 Severity Mapping
 
@@ -283,7 +283,7 @@ Sidecar → host notification fired exactly once after NuGet restore + `MSBuildW
 
 ## 6. NuGet Restore Gate
 
-Phantom CS0246 for NuGet types is the most common false-positive class. Forge mirrors `Microsoft.CodeAnalysis.LanguageServer.HostWorkspace.ProjectDependencyHelper`:
+Phantom CS0246 for NuGet types is the most common false-positive class. SharpLsp mirrors `Microsoft.CodeAnalysis.LanguageServer.HostWorkspace.ProjectDependencyHelper`:
 
 1. Before calling `MSBuildWorkspace.OpenSolutionAsync`, the sidecar inspects each project's `obj/project.assets.json`.
 2. If `assets.json` is missing, older than the `.csproj`, or its `PackageReference` set differs from the `.csproj`, the sidecar shells `dotnet restore <path>` via a `DotnetCliHelper` equivalent. Restore progress is reported via LSP `$/progress` (work-done token established at workspace open).
@@ -309,7 +309,7 @@ Without this gate, the editor's first pull happens against a workspace with unre
 
 **Legend:** VS = Visual Studio, CDK = C# Dev Kit, R = Rider. ✓ = incumbent has this feature.
 
-| Feature | VS | CDK | R | Forge | Priority | Phase |
+| Feature | VS | CDK | R | SharpLsp | Priority | Phase |
 |---|---|---|---|---|---|---|
 | Compiler errors and warnings | ✓ | ✓ | ✓ | **P0** | P0 | 2 |
 | Roslyn analyzer diagnostics | ✓ | ✓ | ✓ | **P0** | P0 | 2 |
@@ -326,9 +326,9 @@ Without this gate, the editor's first pull happens against a workspace with unre
 
 Key differentiators:
 
-- **SWEA surfaced in Problems panel without opening files.** C# Dev Kit's underlying server (`Microsoft.CodeAnalysis.LanguageServer`) implements `workspace/diagnostic` correctly — the gap is the VS Code extension UX, which doesn't drive the workspace pull. Forge's extension does, so SWEA actually works for the user.
-- **Pull + refresh from day one.** Forge ships LSP 3.17 pull diagnostics as the primary path. OmniSharp uses event-driven push (correct semantics, but every editor sees the convergence flicker). Forge uses pull, so editors with cached `previousResultId`s avoid the flicker entirely.
-- **No phantom errors.** Forge's NuGet restore gate (§6) and pull-only model (§1.1) eliminate the false-positive class that haunts every other LSP-based .NET tool.
+- **SWEA surfaced in Problems panel without opening files.** C# Dev Kit's underlying server (`Microsoft.CodeAnalysis.LanguageServer`) implements `workspace/diagnostic` correctly — the gap is the VS Code extension UX, which doesn't drive the workspace pull. SharpLsp's extension does, so SWEA actually works for the user.
+- **Pull + refresh from day one.** SharpLsp ships LSP 3.17 pull diagnostics as the primary path. OmniSharp uses event-driven push (correct semantics, but every editor sees the convergence flicker). SharpLsp uses pull, so editors with cached `previousResultId`s avoid the flicker entirely.
+- **No phantom errors.** SharpLsp's NuGet restore gate (§6) and pull-only model (§1.1) eliminate the false-positive class that haunts every other LSP-based .NET tool.
 
 ## 9. Background Analysis Strategy
 
@@ -360,7 +360,7 @@ Roslyn's `Compilation` is immutable — there is no incremental analyzer state t
 
 ## 10. Truth Guarantees (No False Positives)
 
-**Forge does not lie.** Every diagnostic shown to the developer must reflect Roslyn's current best understanding of the workspace.
+**SharpLsp does not lie.** Every diagnostic shown to the developer must reflect Roslyn's current best understanding of the workspace.
 
 ### 10.1 What we promise
 
@@ -375,4 +375,4 @@ Roslyn's `Compilation` is immutable — there is no incremental analyzer state t
 
 ### 10.3 Why the previous "verification pass" is gone
 
-Earlier revisions of this spec mandated a low-priority verification pass that re-checked files with errors and cleared false positives. **It has been deleted.** The pass was based on a wrong premise: it assumed re-sending `textDocument/didChange` with the same disk text would cause Roslyn to re-resolve missing references. It does not — `Solution.WithDocumentText` invalidates only the per-document syntax tree, not the metadata-reference graph or the generator-driver state. The pass therefore re-fetched the same phantom errors. The pull + refresh model removes the pass's reason to exist: Forge no longer asserts diagnostics until the editor pulls, so there is nothing stale to repair.
+Earlier revisions of this spec mandated a low-priority verification pass that re-checked files with errors and cleared false positives. **It has been deleted.** The pass was based on a wrong premise: it assumed re-sending `textDocument/didChange` with the same disk text would cause Roslyn to re-resolve missing references. It does not — `Solution.WithDocumentText` invalidates only the per-document syntax tree, not the metadata-reference graph or the generator-driver state. The pass therefore re-fetched the same phantom errors. The pull + refresh model removes the pass's reason to exist: SharpLsp no longer asserts diagnostics until the editor pulls, so there is nothing stale to repair.

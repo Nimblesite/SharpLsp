@@ -8,7 +8,7 @@
 
 ## 1. Goal
 
-Every UI surface in the Forge VSCode extension — webview panels, tree views, status bars, code lenses — must be a **pure projection of reactive state**. When the underlying data changes (whether by user action, LSP notification, file-system event, or another tool editing files on disk), **every surface reading that data must update automatically**, with no explicit refresh call from the user or from Claude.
+Every UI surface in the SharpLsp VSCode extension — webview panels, tree views, status bars, code lenses — must be a **pure projection of reactive state**. When the underlying data changes (whether by user action, LSP notification, file-system event, or another tool editing files on disk), **every surface reading that data must update automatically**, with no explicit refresh call from the user or from Claude.
 
 A UI surface that requires the user to click Refresh, reopen a panel, or toggle focus to see current data is **broken** and must be fixed.
 
@@ -86,7 +86,7 @@ The tree's Dependencies → Packages node reads the parsed package list from `pr
 `NuGetBrowserPanel` subscribes to:
 - `projectDependencies` → reload installed packages via LSP (picks up external csproj edits)
 
-The Install/Remove button label is driven by the csproj content as surfaced through `projectDependencies` plus the LSP's `forge/nuget/installed` response. Editing the csproj on disk must flip the button without any user action.
+The Install/Remove button label is driven by the csproj content as surfaced through `projectDependencies` plus the LSP's `sharplsp/nuget/installed` response. Editing the csproj on disk must flip the button without any user action.
 
 ## 6. DRY: one renderer, one icon
 

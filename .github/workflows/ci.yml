@@ -64,9 +64,9 @@ jobs:
 
       - name: Sidecar dotnet pack (smoke test)
         run: |
-          dotnet pack sidecars/Forge.Sidecar.CSharp/Forge.Sidecar.CSharp.csproj \
+          dotnet pack sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
             -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-          dotnet pack sidecars/Forge.Sidecar.FSharp/Forge.Sidecar.FSharp.fsproj \
+          dotnet pack sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
             -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
           ls -la /tmp/nupkg-smoke/*.nupkg
 

@@ -1,16 +1,16 @@
-id = "forge"
-name = "Forge"
+id = "sharplsp"
+name = "SharpLsp"
 description = "The open-source .NET Language Server — C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in."
 version = "0.1.0"
 schema_version = 1
-authors = ["Forge LSP <forge-lsp@users.noreply.github.com>"]
-repository = "https://github.com/Nimblesite/forge"
+authors = ["SharpLsp <sharplsp@users.noreply.github.com>"]
+repository = "https://github.com/Nimblesite/SharpLsp"
 
-[language_servers.forge-lsp]
-name = "Forge"
+[language_servers.sharplsp-lsp]
+name = "SharpLsp"
 languages = ["C#", "F#"]
 
-[slash_commands.forge-tree]
+[slash_commands.sharplsp-tree]
 description = "Display the .NET solution tree: projects, dependencies, and references"
 tooltip_text = "Parse a .sln or .slnx file and show its project structure"
 requires_argument = true

@@ -122,10 +122,10 @@ function startFsi(): void {
 /** Register FSI commands. */
 export function registerFsiCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand('forge.fsi.send', sendToFsi),
-    vscode.commands.registerCommand('forge.fsi.sendFile', sendFileToFsi),
-    vscode.commands.registerCommand('forge.fsi.start', startFsi),
-    vscode.commands.registerCommand('forge.fsi.generateSignature', generateSignatureFile),
+    vscode.commands.registerCommand('sharplsp.fsi.send', sendToFsi),
+    vscode.commands.registerCommand('sharplsp.fsi.sendFile', sendFileToFsi),
+    vscode.commands.registerCommand('sharplsp.fsi.start', startFsi),
+    vscode.commands.registerCommand('sharplsp.fsi.generateSignature', generateSignatureFile),
   );
 
   context.subscriptions.push(

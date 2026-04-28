@@ -35,7 +35,7 @@ const COLORS: Record<ServerState, ThemeColor | undefined> = {
   [ServerState.Error]: new ThemeColor('statusBarItem.errorForeground'),
 };
 
-export class ForgeStatusBar implements Disposable {
+export class SharpLspStatusBar implements Disposable {
   private readonly item: StatusBarItem;
 
   constructor() {

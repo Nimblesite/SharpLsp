@@ -10,11 +10,11 @@ eleventyExcludeFromCollections: true
 
 # Hover and Quick Info
 
-Hover over C# symbols to see type signatures and documentation from the Roslyn sidecar. F# hover support is part of the Forge direction, but the current website screenshots reflect the VS Code extension's active alpha state.
+Hover over C# symbols to see type signatures and documentation from the Roslyn sidecar. F# hover support is part of the SharpLsp direction, but the current website screenshots reflect the VS Code extension's active alpha state.
 
 ## What You See
 
-When you hover a symbol, Forge returns a Markdown-rendered tooltip containing:
+When you hover a symbol, SharpLsp returns a Markdown-rendered tooltip containing:
 
 | Section | Content |
 |---------|---------|
@@ -61,7 +61,7 @@ var result = Enumerable.Range(0, 10).Select(x => x * x).ToList();
 
 ## F# Hover
 
-F# hover is part of the Forge roadmap and sidecar architecture. The current website does not present it as beta-ready.
+F# hover is part of the SharpLsp roadmap and sidecar architecture. The current website does not present it as beta-ready.
 
 ## Solution Explorer Hover
 
@@ -95,4 +95,4 @@ A cache hit returns in under 1ms. Stale hover requests for superseded document v
 
 ## Error Handling
 
-Hover never returns errors or blocks the editor. On any failure — sidecar not ready, symbol resolution failure, IPC timeout — Forge returns `null` (no tooltip). Sidecar crashes trigger automatic recovery within 3 seconds.
+Hover never returns errors or blocks the editor. On any failure — sidecar not ready, symbol resolution failure, IPC timeout — SharpLsp returns `null` (no tooltip). Sidecar crashes trigger automatic recovery within 3 seconds.

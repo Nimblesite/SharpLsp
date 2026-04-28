@@ -13,7 +13,7 @@ eleventyNavigation:
 
 # 代码补全
 
-Forge 通过 Roslyn 为 C# 提供代码补全。补全请求通过 C# sidecar 路由，使 Rust 宿主专注于快速语法操作。
+SharpLsp 通过 Roslyn 为 C# 提供代码补全。补全请求通过 C# sidecar 路由，使 Rust 宿主专注于快速语法操作。
 
 ## 性能目标
 
@@ -65,7 +65,7 @@ var json = JsonSerializer.Serialize(obj);
 ## 配置
 
 ```toml
-# forge.toml
+# sharplsp.toml
 [completions]
 # 显示未引用程序集中的类型（需要 NuGet 还原）
 import_completions = true
@@ -79,7 +79,7 @@ min_trigger_length = 0
 
 ## LSP 协议
 
-Forge 广播：
+SharpLsp 广播：
 
 ```json
 {

@@ -17,16 +17,16 @@ import {
 
 suite('Constants', () => {
   test('EXTENSION_ID is the publisher.name identifier', () => {
-    assert.strictEqual(EXTENSION_ID, 'forge-lsp');
+    assert.strictEqual(EXTENSION_ID, 'sharplsp');
     assert.ok(EXTENSION_ID.length > 0, 'Must not be empty');
   });
 
   test('EXTENSION_NAME is the display name', () => {
-    assert.strictEqual(EXTENSION_NAME, 'Forge');
+    assert.strictEqual(EXTENSION_NAME, 'SharpLsp');
   });
 
   test('OUTPUT_CHANNEL_NAME is human-readable', () => {
-    assert.strictEqual(OUTPUT_CHANNEL_NAME, 'Forge');
+    assert.strictEqual(OUTPUT_CHANNEL_NAME, 'SharpLsp');
     assert.ok(
       !OUTPUT_CHANNEL_NAME.includes('lsp'),
       'Channel name should be user-facing, not internal',
@@ -34,7 +34,7 @@ suite('Constants', () => {
   });
 
   test('TRACE_CHANNEL_NAME is distinct from the main channel', () => {
-    assert.strictEqual(TRACE_CHANNEL_NAME, 'Forge Trace');
+    assert.strictEqual(TRACE_CHANNEL_NAME, 'SharpLsp Trace');
     assert.notStrictEqual(
       TRACE_CHANNEL_NAME,
       OUTPUT_CHANNEL_NAME,
@@ -43,12 +43,12 @@ suite('Constants', () => {
   });
 
   test('SERVER_BINARY is the unix binary name', () => {
-    assert.strictEqual(SERVER_BINARY, 'forge-lsp');
+    assert.strictEqual(SERVER_BINARY, 'sharplsp-lsp');
     assert.ok(!SERVER_BINARY.includes('.exe'), 'Unix binary should not have .exe');
   });
 
   test('SERVER_BINARY_WIN is the windows binary name', () => {
-    assert.strictEqual(SERVER_BINARY_WIN, 'forge-lsp.exe');
+    assert.strictEqual(SERVER_BINARY_WIN, 'sharplsp-lsp.exe');
     assert.ok(SERVER_BINARY_WIN.endsWith('.exe'), 'Windows binary must end with .exe');
   });
 
@@ -61,7 +61,7 @@ suite('Constants', () => {
   });
 
   test('CONFIG_SECTION is the top-level config key', () => {
-    assert.strictEqual(CONFIG_SECTION, 'forge');
+    assert.strictEqual(CONFIG_SECTION, 'sharplsp');
   });
 
   test('CONFIG_SERVER_PATH is the server.path setting key', () => {
@@ -79,19 +79,19 @@ suite('Constants', () => {
     assert.ok(CONFIG_LOGGING_LEVEL.startsWith('logging.'));
   });
 
-  test('CMD_RESTART_SERVER follows forge.* command pattern', () => {
-    assert.strictEqual(CMD_RESTART_SERVER, 'forge.restartServer');
-    assert.ok(CMD_RESTART_SERVER.startsWith('forge.'));
+  test('CMD_RESTART_SERVER follows sharplsp.* command pattern', () => {
+    assert.strictEqual(CMD_RESTART_SERVER, 'sharplsp.restartServer');
+    assert.ok(CMD_RESTART_SERVER.startsWith('sharplsp.'));
   });
 
-  test('CMD_SHOW_OUTPUT follows forge.* command pattern', () => {
-    assert.strictEqual(CMD_SHOW_OUTPUT, 'forge.showOutput');
-    assert.ok(CMD_SHOW_OUTPUT.startsWith('forge.'));
+  test('CMD_SHOW_OUTPUT follows sharplsp.* command pattern', () => {
+    assert.strictEqual(CMD_SHOW_OUTPUT, 'sharplsp.showOutput');
+    assert.ok(CMD_SHOW_OUTPUT.startsWith('sharplsp.'));
   });
 
-  test('CMD_SHOW_TRACE follows forge.* command pattern', () => {
-    assert.strictEqual(CMD_SHOW_TRACE, 'forge.showTraceOutput');
-    assert.ok(CMD_SHOW_TRACE.startsWith('forge.'));
+  test('CMD_SHOW_TRACE follows sharplsp.* command pattern', () => {
+    assert.strictEqual(CMD_SHOW_TRACE, 'sharplsp.showTraceOutput');
+    assert.ok(CMD_SHOW_TRACE.startsWith('sharplsp.'));
   });
 
   test('all command constants are unique', () => {

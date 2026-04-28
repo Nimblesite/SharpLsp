@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import {
   closeAllEditors,
   openCSharpFile,
-  openForgePanel,
+  openSharpLspPanel,
   pollUntilResult,
   setupLspTestSuite,
   takeScreenshot,
@@ -357,8 +357,8 @@ suite('LSP Integration — Fixture Files', () => {
     assert.ok(names.includes('Operation'), 'Should find Operation enum');
 
     // Load fixture solution so Solution Explorer is populated in the screenshot.
-    if (process.env['FORGE_SCREENSHOTS']) {
-      const ext2 = vscode.extensions.getExtension('forge-lsp.forge');
+    if (process.env['SHARPLSP_SCREENSHOTS']) {
+      const ext2 = vscode.extensions.getExtension('sharplsp.sharp-lsp');
       const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
       if (api2?.explorerProvider) {
         const slnPath = path.join(fixtureDir, 'TestFixtures.sln');
@@ -371,7 +371,7 @@ suite('LSP Integration — Fixture Files', () => {
         }
       }
     }
-    await openForgePanel();
+    await openSharpLspPanel();
     await takeScreenshot('vscode-getting-started-page.png');
   });
 
@@ -514,9 +514,9 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
 
     assert.ok(actions.length > 0, 'Must have at least one code action for unused variable');
 
-    // Load fixture solution so Forge panel shows Solution Explorer.
-    if (process.env['FORGE_SCREENSHOTS']) {
-      const ext2 = vscode.extensions.getExtension('forge-lsp.forge');
+    // Load fixture solution so SharpLsp panel shows Solution Explorer.
+    if (process.env['SHARPLSP_SCREENSHOTS']) {
+      const ext2 = vscode.extensions.getExtension('sharplsp.sharp-lsp');
       const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
       if (api2?.explorerProvider) {
         const ws2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
@@ -527,7 +527,7 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
         }
       }
     }
-    await openForgePanel();
+    await openSharpLspPanel();
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri), { preview: false });
 
     // Trigger the lightbulb in the editor so it's visible in the screenshot.

@@ -143,7 +143,7 @@ async function tryFetch(lsp: LanguageClient, solution: string, attempt: number):
   }
 
   try {
-    const response = await lsp.sendRequest<WorkspaceSymbolsResponse>('forge/workspaceSymbols', {
+    const response = await lsp.sendRequest<WorkspaceSymbolsResponse>('sharplsp/workspaceSymbols', {
       solution,
     });
     logSymbolCounts(response);

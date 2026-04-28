@@ -384,8 +384,8 @@ EndGlobal"#,
                     );
                     assert_eq!(
                         diag["source"].as_str().unwrap(),
-                        "forge-csharp",
-                        "source must be forge-csharp",
+                        "sharplsp-csharp",
+                        "source must be sharplsp-csharp",
                     );
                     break;
                 }

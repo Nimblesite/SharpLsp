@@ -2,19 +2,19 @@
 
 Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit, then surpass it.
 
-## Gap Analysis: Forge vs C# Dev Kit
+## Gap Analysis: SharpLsp vs C# Dev Kit
 
 ### Legend
-- **DONE** = Forge has this fully working
-- **PARTIAL** = Forge has some support but incomplete
-- **MISSING** = Forge doesn't have this at all
-- **SUPERIOR** = Forge already exceeds C# Dev Kit here
+- **DONE** = SharpLsp has this fully working
+- **PARTIAL** = SharpLsp has some support but incomplete
+- **MISSING** = SharpLsp doesn't have this at all
+- **SUPERIOR** = SharpLsp already exceeds C# Dev Kit here
 
 ---
 
 ### Solution Explorer / Project Management
 
-| Feature | C# Dev Kit | Forge | Status |
+| Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | Solution tree view | Yes | Yes | **DONE** |
 | Auto-detect .sln files | Yes | Yes | **DONE** |
@@ -38,7 +38,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 ### Code Intelligence
 
-| Feature | C# Dev Kit | Forge | Status |
+| Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | Auto-completion | Yes | Yes | **DONE** |
 | Completion resolve | Yes | Yes | **DONE** |
@@ -54,7 +54,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 ### Code Navigation
 
-| Feature | C# Dev Kit | Forge | Status |
+| Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | Go to definition | Yes | Yes | **DONE** |
 | Go to declaration | Yes | Yes | **DONE** |
@@ -70,7 +70,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 ### Code Actions & Refactorings
 
-| Feature | C# Dev Kit | Forge | Status |
+| Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | Add missing usings | Yes | Yes | **DONE** |
 | Organize usings | Yes | Yes | **DONE** |
@@ -92,7 +92,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 ### Formatting
 
-| Feature | C# Dev Kit | Forge | Status |
+| Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | Document formatting | Yes | Disabled (prefer CSharpier/Fantomas) | **PARTIAL** |
 | Range formatting | Yes | Disabled (prefer CSharpier/Fantomas) | **PARTIAL** |
@@ -102,7 +102,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 ### Diagnostics
 
-| Feature | C# Dev Kit | Forge | Status |
+| Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | Compiler diagnostics (per-document pull) | Yes | Yes | **DONE** |
 | LSP 3.17 pull diagnostics (`textDocument/diagnostic`) | Yes | Yes (handlers wired; `previousResultId`/`unchanged` reporting in [DIAGNOSTICS-PLAN Phase 5](DIAGNOSTICS-PLAN.md#phase-5-pull-diagnostics--refresh-cycle-p0--primary-path)) | **PARTIAL** |
@@ -110,14 +110,14 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | `workspace/diagnostic/refresh` (debounced workspace event → editor re-pull) | Yes (2000ms `AsyncBatchingWorkQueue`) | In [Phase 5](DIAGNOSTICS-PLAN.md#phase-5-pull-diagnostics--refresh-cycle-p0--primary-path) (matches Roslyn LSP 2000ms debounce) | **MISSING** |
 | NuGet restore gate before workspace open | Yes (`ProjectDependencyHelper`) | In [Phase 5.6](DIAGNOSTICS-PLAN.md#phase-56-nuget-restore-gate-p0); critical for eliminating phantom CS0246 | **MISSING** |
 | `workspace/projectInitializationComplete` notification | Yes | In [Phase 5.6](DIAGNOSTICS-PLAN.md#phase-56-nuget-restore-gate-p0) | **MISSING** |
-| Solution-wide analysis surfaced in Problems panel without opening files | UX gap (server supports it; extension doesn't drive the pull) | Yes (Forge VS Code extension drives `workspace/diagnostic` pull) | **DIFFERENTIATOR** |
+| Solution-wide analysis surfaced in Problems panel without opening files | UX gap (server supports it; extension doesn't drive the pull) | Yes (SharpLsp VS Code extension drives `workspace/diagnostic` pull) | **DIFFERENTIATOR** |
 | No phantom CS0246 during workspace load | Yes (because pull-only + restore gate) | Yes (after [Phase 5](DIAGNOSTICS-PLAN.md#phase-5-pull-diagnostics--refresh-cycle-p0--primary-path) + [5.6](DIAGNOSTICS-PLAN.md#phase-56-nuget-restore-gate-p0); previous push+verification model removed because it lied) | **IN PROGRESS** |
 | Roslyn analyzer diagnostics | Yes | Partial | **PARTIAL** |
 | EditorConfig diagnostic config | Yes | Partial | **PARTIAL** |
 
 ### Test Explorer
 
-| Feature | C# Dev Kit | Forge | Status |
+| Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | Test discovery (xUnit, NUnit, MSTest) | Yes | No | **MISSING** |
 | Run tests from editor | Yes | No | **MISSING** |
@@ -129,7 +129,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 ### Debugging
 
-| Feature | C# Dev Kit | Forge | Status |
+| Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | F5 launch with auto-config | Yes | No | **MISSING** |
 | Dynamic launch configs | Yes | No | **MISSING** |
@@ -147,9 +147,9 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 See [NUGET-BROWSER-SPEC.md](../specs/NUGET-BROWSER-SPEC.md) and [NUGET-BROWSER-PLAN.md](NUGET-BROWSER-PLAN.md) for full details.
 
-All NuGet operations route through LSP custom requests (`forge/nuget/*`). The extension is a thin UI shell only.
+All NuGet operations route through LSP custom requests (`sharplsp/nuget/*`). The extension is a thin UI shell only.
 
-| Feature | C# Dev Kit | Forge | Status |
+| Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | Search & add packages | Yes | Partial (UI exists, needs LSP backend) | **IN PROGRESS** |
 | Update packages | Yes | Partial (UI exists, needs LSP backend) | **IN PROGRESS** |
@@ -160,17 +160,17 @@ All NuGet operations route through LSP custom requests (`forge/nuget/*`). The ex
 
 ### Project Scaffolding
 
-| Feature | C# Dev Kit | Forge | Status |
+| Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | New Project from template | Yes | No | **MISSING** |
 | New File from template (class, interface, etc.) | Yes | No | **MISSING** |
 
-### Features Where Forge is Already Superior
+### Features Where SharpLsp is Already Superior
 
 | Feature | Notes |
 |---------|-------|
 | F# as first-class citizen | C# Dev Kit has zero F# support |
-| Solution Explorer depth | Forge shows namespaces, types, members; Dev Kit shows only files |
+| Solution Explorer depth | SharpLsp shows namespaces, types, members; Dev Kit shows only files |
 | Remove NuGet/project refs | Dev Kit tree is read-only |
 | Sort members command | Not available in Dev Kit |
 | .NET Profiler integration | Full EventPipe, counters, heap analysis -- Dev Kit has nothing |
@@ -184,7 +184,7 @@ All NuGet operations route through LSP custom requests (`forge/nuget/*`). The ex
 
 ### Priority 1 -- Critical Parity (Weeks 1-6)
 
-These are the features users hit within the first 5 minutes. Without them, Forge feels broken.
+These are the features users hit within the first 5 minutes. Without them, SharpLsp feels broken.
 
 - [x] **P1.1: Code Actions & Quick Fixes**
   - [x] Wire up Roslyn `CodeFixProvider` pipeline through sidecar IPC
@@ -274,16 +274,16 @@ Features users expect within the first day of use.
   - [ ] Build task provider for tasks.json integration
 
 - [x] **P2.4: NuGet Package Management** — see [NUGET-BROWSER-PLAN.md](NUGET-BROWSER-PLAN.md) (core complete)
-  - [x] Implement `forge/nuget/search` LSP handler (Rust host)
-  - [x] Implement `forge/nuget/versions` LSP handler (Rust host)
-  - [x] Implement `forge/nuget/installed` LSP handler (Rust host)
-  - [x] Implement `forge/nuget/install` LSP handler (Rust host, XML fast-path)
-  - [x] Implement `forge/nuget/uninstall` LSP handler (Rust host, XML fast-path)
+  - [x] Implement `sharplsp/nuget/search` LSP handler (Rust host)
+  - [x] Implement `sharplsp/nuget/versions` LSP handler (Rust host)
+  - [x] Implement `sharplsp/nuget/installed` LSP handler (Rust host)
+  - [x] Implement `sharplsp/nuget/install` LSP handler (Rust host, XML fast-path)
+  - [x] Implement `sharplsp/nuget/uninstall` LSP handler (Rust host, XML fast-path)
   - [x] Refactor extension NuGet browser to use LSP requests (remove direct CLI/HTTP)
   - [x] Fix NuGet browser UI to match design spec (Material icons, no emoji, no duplicate settings)
   - [x] Add Dependencies section to details panel
   - [x] Add automated VSIX tests for NuGet browser
-  - [x] Add E2E Rust tests for all forge/nuget/* handlers
+  - [x] Add E2E Rust tests for all sharplsp/nuget/* handlers
   - [ ] Prerelease version toggle
   - [ ] NuGet restore command
   - [ ] Auto-restore on project load
@@ -293,11 +293,11 @@ Features users expect within the first day of use.
 Features that make the daily experience smooth.
 
 - [ ] **P3.1: Project Scaffolding**
-  - [ ] "Forge: New Project" command using `dotnet new` templates
+  - [ ] "SharpLsp: New Project" command using `dotnet new` templates
   - [ ] Template selection quick pick (console, web, classlib, test, etc.)
-  - [ ] "Forge: New File" command (class, interface, enum, struct, record)
+  - [ ] "SharpLsp: New File" command (class, interface, enum, struct, record)
   - [ ] Auto-add file to project
-  - [ ] "Forge: Add Project to Solution" command
+  - [ ] "SharpLsp: Add Project to Solution" command
 
 - [ ] **P3.2: Hot Reload**
   - [ ] Integrate `dotnet watch` for hot reload during debug
@@ -371,7 +371,7 @@ Features where we go beyond what C# Dev Kit offers.
 | Priority | Feature Count | Weeks | Impact |
 |----------|--------------|-------|--------|
 | P1 - Critical | 6 tracks — **4 DONE**, 1 partial, 1 missing | 1-6 | Code actions, semantic tokens, inlay hints, formatting shipped; rename still missing |
-| P2 - Essential | 4 tracks, ~35 items | 7-14 | Makes Forge viable for daily use |
+| P2 - Essential | 4 tracks, ~35 items | 7-14 | Makes SharpLsp viable for daily use |
 | P3 - Quality of Life | 5 tracks — **2 DONE**, 3 remaining | 15-20 | Workspace symbols + code lens shipped |
 | P4 - Surpass | 6 tracks — **2 DONE**, 4 remaining | 21+ | Call hierarchy + type hierarchy shipped |
 
@@ -379,9 +379,9 @@ Features where we go beyond what C# Dev Kit offers.
 
 The biggest remaining gaps are **rename** (P0 parity blocker), **debugging** (P2.1), and **test explorer** (P2.2). P2 remains the next broad feature area, but rename is the critical refactoring gap inside P1.
 
-### What Forge Already Wins On
+### What SharpLsp Already Wins On
 
-Even today, Forge beats C# Dev Kit on:
+Even today, SharpLsp beats C# Dev Kit on:
 1. **F# support** -- Dev Kit has literally zero
 2. **Solution Explorer depth** -- members, namespaces, sort modes
 3. **Profiler** -- full EventPipe/counter/heap integration

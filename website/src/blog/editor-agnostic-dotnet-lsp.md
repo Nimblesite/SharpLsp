@@ -1,9 +1,9 @@
 ---
 layout: layouts/blog.njk
 title: "Why .NET Needs an Editor-Agnostic LSP"
-description: "Forge is building an open-source .NET LSP for C# and F# so language tooling can work across VS Code, Zed, Neovim, Helix, Emacs, Rider, and more."
+description: "SharpLsp is building an open-source .NET LSP for C# and F# so language tooling can work across VS Code, Zed, Neovim, Helix, Emacs, Rider, and more."
 date: 2026-04-28
-author: Forge Contributors
+author: SharpLsp Contributors
 authorRole: Core Infrastructure Engineer
 authorImage: https://lh3.googleusercontent.com/aida-public/AB6AXuAD67SpD-iAx0p3uV9exHCxuwOCzRb4-DL71Un7bMvBZAhwFrV5QujQLJAj7RY1FW-p4m-0uhYkk9PSxb7WJUOqXt25VH6AtubFss0CAMR3Yw9k0n876VF5g0PJXLF0V45EbGUjr7sUPnCLpJC73GhMMZLUuD43uYczJM1_e9IZSX-rZb87fMAJ03X3HR6kzzFuBpQ80EW3hRgYm54AILhIIO2T5pWPyjljM0PWc13wW6tYobl3bdo6v_PSS6a2MMwmRwZTRD5uSw
 image: https://lh3.googleusercontent.com/aida-public/AB6AXuB6A4g4VZvPbeGvA96FtH4Vz1sAjGwmq8Xuq2xjZ9IIJ3JzSPSMrZezt9xD_xVgy34QifKOOdms6i3qB_Z_Micj_gu8HByTVRnacUPTjnOQdFop_H_FE6LUhZbBViIT7I_XWpyEUr-Xr6_NoWkRg5eztpK8oII0ACtN66zzUMWube0gk_7fFI-N40az_T_RrVPUpWifu1lH8L3YTo-WTBaBFLhKszKS0vGdzuZvgOqUzCjUgWqFaInkXxl1JP65mVDkhDSieGxRQQ
@@ -16,9 +16,9 @@ category: architecture
 excerpt: "A .NET language server should be a platform capability, not a feature trapped inside one editor."
 ---
 
-Forge is an open-source .NET language server for C# and F#. The point is not to make one more VS Code extension. The point is to make the .NET development experience portable across every editor that can speak the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/).
+SharpLsp is an open-source .NET language server for C# and F#. The point is not to make one more VS Code extension. The point is to make the .NET development experience portable across every editor that can speak the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/).
 
-The current Forge alpha uses VS Code as the primary working surface because it gives us a fast way to test real workflows: solution loading, C# completions, hover, go-to-definition, diagnostics, NuGet commands, profiler commands, and debugger integration. But the architecture is not VS Code-shaped. VS Code is a client. Forge is the language tooling platform behind it.
+The current SharpLsp alpha uses VS Code as the primary working surface because it gives us a fast way to test real workflows: solution loading, C# completions, hover, go-to-definition, diagnostics, NuGet commands, profiler commands, and debugger integration. But the architecture is not VS Code-shaped. VS Code is a client. SharpLsp is the language tooling platform behind it.
 
 ## The Problem Is Coupling
 
@@ -31,11 +31,11 @@ That matters because editor coupling creates operational friction:
 - Extension code becomes the place where language behavior leaks, forks, and diverges.
 - F# support is easy to postpone when the product is optimized around C# in one host.
 
-Forge treats the editor as a shell around a shared language service. The LSP server owns the behavior. Editor extensions should stay thin.
+SharpLsp treats the editor as a shell around a shared language service. The LSP server owns the behavior. Editor extensions should stay thin.
 
-## What "Editor-Agnostic" Means in Forge
+## What "Editor-Agnostic" Means in SharpLsp
 
-Forge is built around one installed `forge-lsp` binary. Editor clients find it on `PATH` and launch it over standard input/output. The same server handles C#, F#, solution discovery, semantic requests, diagnostics, and custom Forge requests.
+SharpLsp is built around one installed `sharplsp-lsp` binary. Editor clients find it on `PATH` and launch it over standard input/output. The same server handles C#, F#, solution discovery, semantic requests, diagnostics, and custom SharpLsp requests.
 
 The repository already reflects that split:
 
@@ -44,13 +44,13 @@ The repository already reflects that split:
 - The F# sidecar hosts [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/) for semantic F# features.
 - Editor extensions expose native UI affordances while calling into the same server behavior.
 
-This is why the VS Code extension can provide a Solution Explorer and profiler view while the same `forge-lsp` can still serve editors that only support standard LSP capabilities.
+This is why the VS Code extension can provide a Solution Explorer and profiler view while the same `sharplsp-lsp` can still serve editors that only support standard LSP capabilities.
 
 ## Why Rust in the Host
 
 The Rust process is responsible for the hot path: protocol handling, document state, cancellation, syntax-level routing, and process supervision. Those jobs need predictable latency and careful concurrency. Rust is a practical fit for that work.
 
-Forge does not try to rewrite the C# or F# compilers in Rust. Correct semantic behavior belongs to the official compiler stacks. The host routes requests to Roslyn and FSharp.Compiler.Service when the answer depends on symbols, types, project references, analyzers, or compiler services.
+SharpLsp does not try to rewrite the C# or F# compilers in Rust. Correct semantic behavior belongs to the official compiler stacks. The host routes requests to Roslyn and FSharp.Compiler.Service when the answer depends on symbols, types, project references, analyzers, or compiler services.
 
 That split keeps the server fast without pretending compiler correctness can be approximated.
 
@@ -59,7 +59,7 @@ That split keeps the server fast without pretending compiler correctness can be 
 An editor-agnostic .NET LSP creates one integration point for features that normally fragment by editor:
 
 - C# and F# language intelligence from the same installed server
-- Solution and project understanding through shared Forge requests
+- Solution and project understanding through shared SharpLsp requests
 - NuGet workflows that do not live only in a webview implementation
 - Profiler and debugger commands that can grow beyond one extension host
 - Consistent diagnostics and navigation semantics across editors
@@ -68,6 +68,6 @@ The alpha is still focused on making the VS Code path solid first. That is the r
 
 ## The Standard Is Simple
 
-Forge should be judged by whether it makes real .NET work better: opening a solution, navigating code, fixing errors, managing packages, profiling a running process, and debugging without being forced into a proprietary toolchain.
+SharpLsp should be judged by whether it makes real .NET work better: opening a solution, navigating code, fixing errors, managing packages, profiling a running process, and debugging without being forced into a proprietary toolchain.
 
 The editor should be a preference. The language tooling should be infrastructure.

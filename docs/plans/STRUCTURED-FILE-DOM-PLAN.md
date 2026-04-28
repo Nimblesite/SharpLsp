@@ -1,6 +1,6 @@
 # Structured File DOM Rewrite Plan
 
-**Related issue:** [#4 — NuGet XML editing is line-oriented — must use a real XML DOM](https://github.com/Nimblesite/forge/issues/4)
+**Related issue:** [#4 — NuGet XML editing is line-oriented — must use a real XML DOM](https://github.com/Nimblesite/sharplsp/issues/4)
 
 **CLAUDE.md rule:** _"NEVER hand-manipulate structured files. XML/JSON/TOML/YAML/solution files MUST be loaded into a proper document model, mutated via the DOM/AST, and serialized back. Line splicing, regex replacement, or string concatenation on structured files is ILLEGAL."_
 
@@ -32,7 +32,7 @@ No `std::fs::write` of concatenated strings. No `.replace()` / `.splice()` / `.l
 - **What:** When scaffolding a new `.cs` file, splices `<Compile Include="..." />` into the `.csproj` by finding `</ItemGroup>` with `.lastIndexOf()` and concatenating strings.
 - **Why broken:** Fails if `</ItemGroup>` appears in a comment, in a string literal inside a property value, or if the project has multiple `<ItemGroup>` blocks (it always picks the last one regardless of what's in it). Doesn't understand SDK-style projects where `<Compile>` is globbed by default and should **not** be added explicitly.
 
-#### V3 — `sidecars/Forge.Sidecar.FSharp/FSharpFileOrder.fs` lines 158-184 (`generateReorderEdit`)
+#### V3 — `sidecars/SharpLsp.Sidecar.FSharp/FSharpFileOrder.fs` lines 158-184 (`generateReorderEdit`)
 - **What:** Reorders `<Compile Include="...">` elements in `.fsproj` by reading the file as lines, matching `.Contains("Include=\"{name}\"")` on trimmed lines, building a new array, and `String.Join("\n", ...)`-ing it back together.
 - **Why broken:** File order matters in F# (compilation order is semantic). A corrupted reorder can break the whole project. Fails on multi-line `<Compile>` elements (with `<Link>` children, conditions, copy metadata), comments between elements, and attribute-wrapped elements. Also silently drops `\r` on CRLF files by splitting on `\n`.
 
@@ -41,8 +41,8 @@ No `std::fs::write` of concatenated strings. No `.replace()` / `.splice()` / `.l
 - `editors/vscode/src/dependencies.ts` — **READ-ONLY** inspection using `fast-xml-parser`. OK, leave as-is.
 - `editors/vscode/src/testing.ts` Cobertura parser — **READ-ONLY** using `fast-xml-parser`. OK.
 - `editors/vscode/src/debug.ts` `readLaunchProfiles` — **READ-ONLY** using `JSON.parse`. OK.
-- `sidecars/Forge.Sidecar.CSharp/Workspace/MetadataNavigator.cs` — writes to temp `.cs` files for decompiled source, line-based search for symbol position. **Transient cache**, not a structured project file. OK.
-- `sidecars/Forge.Sidecar.FSharp/FSharpWorkspace.fs` line 37 `parseFsprojSourceFiles` — already uses `XDocument.Load`. OK.
+- `sidecars/SharpLsp.Sidecar.CSharp/Workspace/MetadataNavigator.cs` — writes to temp `.cs` files for decompiled source, line-based search for symbol position. **Transient cache**, not a structured project file. OK.
+- `sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs` line 37 `parseFsprojSourceFiles` — already uses `XDocument.Load`. OK.
 - `scripts/check-coverage.sh` — uses `jq`. OK.
 
 ## Design
@@ -57,11 +57,11 @@ Add to the C# sidecar (also available to F# sidecar for `.fsproj` — same MSBui
 
 | Method | Purpose | Replaces |
 |---|---|---|
-| `forge/project/addPackage` | Add `<PackageReference>` (and `<PackageVersion>` in CPM `Directory.Packages.props` if needed) | `xml_edit::add_package` |
-| `forge/project/removePackage` | Remove a `<PackageReference>` element **and all its children** | `xml_edit::remove_package` — fixes issue #4 |
-| `forge/project/updatePackageVersion` | Update the `Version=` attribute on a `<PackageReference>` or `<PackageVersion>` | `xml_edit::upsert` version-replace path |
-| `forge/project/addCompileItem` | Add `<Compile Include="..." />` (only if the project is not SDK-style or has explicit compile lists) | `scaffolding.ts autoAddFileToProject` |
-| `forge/project/reorderCompileItems` | Reorder `<Compile>` entries in an .fsproj | `FSharpFileOrder.fs generateReorderEdit` |
+| `sharplsp/project/addPackage` | Add `<PackageReference>` (and `<PackageVersion>` in CPM `Directory.Packages.props` if needed) | `xml_edit::add_package` |
+| `sharplsp/project/removePackage` | Remove a `<PackageReference>` element **and all its children** | `xml_edit::remove_package` — fixes issue #4 |
+| `sharplsp/project/updatePackageVersion` | Update the `Version=` attribute on a `<PackageReference>` or `<PackageVersion>` | `xml_edit::upsert` version-replace path |
+| `sharplsp/project/addCompileItem` | Add `<Compile Include="..." />` (only if the project is not SDK-style or has explicit compile lists) | `scaffolding.ts autoAddFileToProject` |
+| `sharplsp/project/reorderCompileItems` | Reorder `<Compile>` entries in an .fsproj | `FSharpFileOrder.fs generateReorderEdit` |
 
 All five operations share the same pattern inside the sidecar:
 
@@ -85,7 +85,7 @@ project.Save(path);                                   // trivia-preserving write
 
 ### TypeScript client changes
 
-- `editors/vscode/src/scaffolding.ts autoAddFileToProject` — delete the fs-based splicing. Call `forge/project/addCompileItem` via the LSP client instead. If the project is SDK-style and the file is already globbed, the sidecar returns a no-op result and the extension does nothing.
+- `editors/vscode/src/scaffolding.ts autoAddFileToProject` — delete the fs-based splicing. Call `sharplsp/project/addCompileItem` via the LSP client instead. If the project is SDK-style and the file is already globbed, the sidecar returns a no-op result and the extension does nothing.
 - `editors/vscode/src/dependencies.ts` — no change (read-only).
 
 ### F# sidecar changes
@@ -97,14 +97,14 @@ project.Save(path);                                   // trivia-preserving write
 
 ### Phase 1 — Introduce the sidecar API (no caller switches yet)
 
-- [ ] Add `Forge.Sidecar.Common` IPC message types: `AddPackageRequest`, `RemovePackageRequest`, `UpdatePackageVersionRequest`, `AddCompileItemRequest`, `ReorderCompileItemsRequest`, and a unified `ProjectEditResult { modified: bool, message: string }`.
-- [ ] Implement handlers in `sidecars/Forge.Sidecar.CSharp/Workspace/ProjectEditor.cs` using `ProjectRootElement`:
+- [ ] Add `SharpLsp.Sidecar.Common` IPC message types: `AddPackageRequest`, `RemovePackageRequest`, `UpdatePackageVersionRequest`, `AddCompileItemRequest`, `ReorderCompileItemsRequest`, and a unified `ProjectEditResult { modified: bool, message: string }`.
+- [ ] Implement handlers in `sidecars/SharpLsp.Sidecar.CSharp/Workspace/ProjectEditor.cs` using `ProjectRootElement`:
   - [ ] `AddPackage` — find/create `<ItemGroup>`, add `<PackageReference Include="X" Version="Y" />`; handle CPM (`Directory.Packages.props`) variant that adds `<PackageVersion>`.
   - [ ] `RemovePackage` — find matching `<PackageReference>`/`<PackageVersion>` element and call `.Parent.RemoveChild(el)` (removes the whole subtree, fixing issue #4).
   - [ ] `UpdatePackageVersion` — set `.SetAttributeValue("Version", newVersion)`.
   - [ ] `AddCompileItem` — detect SDK-style + default `Compile` globs; no-op if already globbed; else add `<Compile Include="..." />`.
-- [ ] Register IPC methods in `sidecars/Forge.Sidecar.CSharp/Program.cs` router.
-- [ ] Mirror the handlers in `sidecars/Forge.Sidecar.FSharp` so `.fsproj` edits go to the F# sidecar (which still uses `Microsoft.Build.Construction` — it's language-agnostic).
+- [ ] Register IPC methods in `sidecars/SharpLsp.Sidecar.CSharp/Program.cs` router.
+- [ ] Mirror the handlers in `sidecars/SharpLsp.Sidecar.FSharp` so `.fsproj` edits go to the F# sidecar (which still uses `Microsoft.Build.Construction` — it's language-agnostic).
 - [ ] Add `ReorderCompileItems` handler: list `<Compile>` children of their parent `<ItemGroup>`, reorder using `.InsertBeforeChild`/`.InsertAfterChild`.
 - [ ] Unit tests for each handler covering the exact scenarios the line-based code broke on:
   - [ ] `<PackageReference>` with `<PrivateAssets>`/`<IncludeAssets>` children (issue #4)
@@ -126,7 +126,7 @@ project.Save(path);                                   // trivia-preserving write
 
 ### Phase 3 — Switch scaffolding.ts to the sidecar
 
-- [ ] `editors/vscode/src/scaffolding.ts autoAddFileToProject` — replace the file-system splicing with a call to the new `forge/project/addCompileItem` LSP custom request.
+- [ ] `editors/vscode/src/scaffolding.ts autoAddFileToProject` — replace the file-system splicing with a call to the new `sharplsp/project/addCompileItem` LSP custom request.
 - [ ] Delete the `fs.readFileSync`/`fs.writeFileSync` path and the `lastIndexOf('</ItemGroup>')` code.
 - [ ] Add a VSCode test that scaffolds a new `.cs` file into a project with a comment containing `</ItemGroup>` to prove the old bug is gone.
 - [ ] Add a test for SDK-style projects that have default `Compile` globs — the no-op path.
@@ -148,7 +148,7 @@ project.Save(path);                                   // trivia-preserving write
   - `std::fs::write(.*\.(csproj|fsproj|props|targets))`
   - `String.Join.*lines` on `*proj` content
 - [ ] Fail CI if any of these appear outside a well-known allowlist (e.g. tests that write fixture files into `tmp`).
-- [ ] Document in `docs/specs/FORGE-SPEC.md` that structured file edits go through the sidecar.
+- [ ] Document in `docs/specs/SHARPLSP-SPEC.md` that structured file edits go through the sidecar.
 
 ## Acceptance Criteria
 
@@ -164,4 +164,4 @@ project.Save(path);                                   // trivia-preserving write
 
 - Rewriting the read-only parsers (`dependencies.ts`, `testing.ts` Cobertura, `debug.ts` launch settings). They already use real parsers.
 - Changing the MSBuild graph evaluation model (we use `ProjectRootElement`, not `Project`).
-- Touching the `.sln` file format — not currently edited by Forge, but if that changes, must use the same rule (`Microsoft.VisualStudio.SolutionPersistence` or `SolutionFile`).
+- Touching the `.sln` file format — not currently edited by SharpLsp, but if that changes, must use the same rule (`Microsoft.VisualStudio.SolutionPersistence` or `SolutionFile`).

@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn push_global_tool_root_deduplicates_roots() {
         let mut roots = Vec::new();
-        let home = PathBuf::from("/tmp/forge-home");
+        let home = PathBuf::from("/tmp/sharplsp-home");
 
         push_global_tool_root(&mut roots, &home);
         push_global_tool_root(&mut roots, &home);
@@ -265,7 +265,7 @@ mod tests {
         assert_eq!(roots.len(), 1);
         assert_eq!(
             roots.first().map(PathBuf::as_path),
-            Some(Path::new("/tmp/forge-home/.dotnet/tools"))
+            Some(Path::new("/tmp/sharplsp-home/.dotnet/tools"))
         );
     }
 }

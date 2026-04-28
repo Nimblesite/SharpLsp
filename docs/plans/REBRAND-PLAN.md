@@ -20,13 +20,11 @@ namespace, package name, string literal, log message, comment, or URL.
 
 ---
 
-## Phase 1 — Rust Host
-
-- [ ] `Cargo.toml` root: `name = "forge-lsp"` → `name = "sharplsp-lsp"`, update `description`, homepage, repository URLs
-- [ ] `editors/zed/Cargo.toml`: `name = "forge-zed"` → `name = "sharplsp-zed"`, update `description` and comment
-- [ ] `src/main.rs`: all `"forge-lsp"` log strings, log dir (`forge-lsp-logs` → `sharplsp-lsp-logs`), log file (`forge-lsp.log` → `sharplsp-lsp.log`), startup/shutdown messages
-- [ ] `src/config.rs`: `CONFIG_FILE_NAME` constant → `"sharplsp.toml"`, all test fixture references to `forge.toml`
-- [ ] `src/main.rs` (LSP custom methods): every `"forge/*"` method name → `"sharplsp/*"` — full list:
+- [x] `Cargo.toml` root: `name = "forge-lsp"` → `name = "sharplsp-lsp"`, update `description`, homepage, repository URLs
+- [x] `editors/zed/Cargo.toml`: `name = "forge-zed"` → `name = "sharplsp-zed"`, update `description` and comment
+- [x] `src/main.rs`: all `"forge-lsp"` log strings, log dir (`forge-lsp-logs` → `sharplsp-lsp-logs`), log file (`forge-lsp.log` → `sharplsp-lsp.log`), startup/shutdown messages
+- [x] `src/config.rs`: `CONFIG_FILE_NAME` constant → `"sharplsp.toml"`, all test fixture references to `forge.toml`
+- [x] `src/main.rs` (LSP custom methods): every `"forge/*"` method name → `"sharplsp/*"` — full list:
   - `forge/loadSolution` → `sharplsp/loadSolution`
   - `forge/workspaceSymbols` → `sharplsp/workspaceSymbols`
   - `forge/sortMembers` → `sharplsp/sortMembers`
@@ -46,13 +44,10 @@ namespace, package name, string literal, log message, comment, or URL.
   - `forge/profiler/allocations` → `sharplsp/profiler/allocations`
   - `forge/profiler/inspectObject` → `sharplsp/profiler/inspectObject`
   - (any additional `forge/*` methods discovered during search)
-- [ ] `src/diagnostics.rs`: diagnostic source strings `"forge-fsharp"` → `"sharplsp-fsharp"`, `"forge-csharp"` → `"sharplsp-csharp"`
-- [ ] `src/sort_members.rs` and any other handler files: log messages referencing `forge/`
-- [ ] All remaining `src/**/*.rs` files: grep for `"forge"` (case-insensitive), fix every occurrence
+- [x] `src/diagnostics.rs`: diagnostic source strings `"forge-fsharp"` → `"sharplsp-fsharp"`, `"forge-csharp"` → `"sharplsp-csharp"`
+- [x] `src/sort_members.rs` and any other handler files: log messages referencing `forge/`
+- [x] All remaining `src/**/*.rs` files: grep for `"forge"` (case-insensitive), fix every occurrence
 
----
-
-## Phase 2 — .NET Sidecars
 
 ### Directory / file renames (move, don't copy)
 

@@ -145,7 +145,7 @@ export class ProfilerTreeProvider implements vscode.TreeDataProvider<ProfilerTre
     if (this.client === undefined) return;
     try {
       const result = await this.client.sendRequest<DotNetProcess[]>(
-        'forge/profiler/listProcesses',
+        'sharplsp/profiler/listProcesses',
         {},
       );
       this.processes = result;
@@ -347,7 +347,7 @@ class CounterWebviewPanel {
     context: vscode.ExtensionContext,
   ) {
     this.panel = vscode.window.createWebviewPanel(
-      'forgeCounters',
+      'sharplspCounters',
       `Counters: PID ${String(pid)}`,
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
@@ -508,7 +508,7 @@ export class ProfilerStatusBar {
 // ── Process Picker ────────────────────────────────────────────────
 
 async function pickProcess(client: LanguageClient): Promise<DotNetProcess | undefined> {
-  const processes = await client.sendRequest<DotNetProcess[]>('forge/profiler/listProcesses', {});
+  const processes = await client.sendRequest<DotNetProcess[]>('sharplsp/profiler/listProcesses', {});
 
   if (processes.length === 0) {
     void vscode.window.showInformationMessage('No .NET processes found.');
@@ -545,7 +545,7 @@ export function registerCommands(
 
   /** Wire up the counterUpdate notification handler once a client exists. */
   function wireCounterNotifications(client: LanguageClient): void {
-    client.onNotification('forge/profiler/counterUpdate', (params: CounterUpdateParams) => {
+    client.onNotification('sharplsp/profiler/counterUpdate', (params: CounterUpdateParams) => {
       const panel = counterPanels.get(params.session_id);
       if (panel !== undefined) {
         panel.pushUpdate(params.counters);
@@ -578,7 +578,7 @@ export function registerCommands(
     if (lsp === undefined) return;
     const name = processName ?? provider.processNameFor(pid);
     try {
-      const result = await lsp.sendRequest<StartTraceResult>('forge/profiler/startTrace', { pid });
+      const result = await lsp.sendRequest<StartTraceResult>('sharplsp/profiler/startTrace', { pid });
       provider.addSession(result.session_id, 'Trace', pid, result.output_path, name);
       statusBar.update(provider.sessionCount);
       const who = name !== undefined ? `${name} (PID ${String(pid)})` : `PID ${String(pid)}`;
@@ -595,7 +595,7 @@ export function registerCommands(
     const lsp = getClient();
     if (lsp === undefined) return undefined;
     try {
-      const result = await lsp.sendRequest<StopTraceResult>('forge/profiler/stopTrace', {
+      const result = await lsp.sendRequest<StopTraceResult>('sharplsp/profiler/stopTrace', {
         session_id: sessionId,
       });
       provider.removeSession(sessionId);
@@ -648,7 +648,7 @@ export function registerCommands(
     if (lsp === undefined) return;
     const name = processName ?? provider.processNameFor(pid);
     try {
-      const result = await lsp.sendRequest<StartCountersResult>('forge/profiler/startCounters', {
+      const result = await lsp.sendRequest<StartCountersResult>('sharplsp/profiler/startCounters', {
         pid,
       });
       provider.addSession(result.session_id, 'Counters', pid, undefined, name);
@@ -671,7 +671,7 @@ export function registerCommands(
     const lsp = getClient();
     if (lsp === undefined) return;
     try {
-      await lsp.sendRequest('forge/profiler/stopCounters', { session_id: sessionId });
+      await lsp.sendRequest('sharplsp/profiler/stopCounters', { session_id: sessionId });
       provider.removeSession(sessionId);
       statusBar.update(provider.sessionCount);
       const panel = counterPanels.get(sessionId);
@@ -806,7 +806,7 @@ export function registerCommands(
       const file = picked?.[0];
       if (file === undefined) return;
       try {
-        const result = await lsp.sendRequest<ConvertTraceResult>('forge/profiler/convertTrace', {
+        const result = await lsp.sendRequest<ConvertTraceResult>('sharplsp/profiler/convertTrace', {
           input_path: file.fsPath,
           format: 'speedscope',
         });
@@ -827,7 +827,7 @@ export function registerCommands(
         placeHolder: 'Select dump type',
       });
       if (dumpType === undefined) return;
-      const result = await lsp.sendRequest<CollectDumpResult>('forge/profiler/collectDump', {
+      const result = await lsp.sendRequest<CollectDumpResult>('sharplsp/profiler/collectDump', {
         pid,
         dump_type: dumpType,
       });
@@ -871,7 +871,7 @@ export function registerCommands(
         if (selectedFile === undefined) return;
 
         const dumpPath = selectedFile.fsPath;
-        const result = await lsp.sendRequest<HeapStats>('forge/profiler/analyzeHeap', {
+        const result = await lsp.sendRequest<HeapStats>('sharplsp/profiler/analyzeHeap', {
           dump_path: dumpPath,
         });
 
@@ -953,7 +953,7 @@ export function registerCommands(
             is_reference: boolean;
             reference_address?: string;
           }[];
-        }>('forge/profiler/inspectObject', {
+        }>('sharplsp/profiler/inspectObject', {
           dump_path: dumpFile.fsPath,
           object_address: address.trim(),
         });
@@ -991,7 +991,7 @@ export function registerCommands(
 
 /**
  * Open a trace file. Converts `.nettrace` to SpeedScope JSON on the fly via
- * `forge/profiler/convertTrace` when needed. The LSP client may be unavailable
+ * `sharplsp/profiler/convertTrace` when needed. The LSP client may be unavailable
  * if the extension hasn't finished activating — in that case we just surface
  * the file path to the user.
  */
@@ -1008,7 +1008,7 @@ async function openTraceFile(client: LanguageClient | undefined, filePath: strin
       return;
     }
     try {
-      const result = await client.sendRequest<ConvertTraceResult>('forge/profiler/convertTrace', {
+      const result = await client.sendRequest<ConvertTraceResult>('sharplsp/profiler/convertTrace', {
         input_path: filePath,
         format: 'speedscope',
       });

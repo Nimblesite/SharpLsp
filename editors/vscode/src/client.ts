@@ -17,17 +17,17 @@ import {
 import { EXTENSION_ID, EXTENSION_NAME, SERVER_BINARY, SERVER_BINARY_WIN } from './constants.js';
 import * as config from './config.js';
 import * as log from './log.js';
-import { type ForgeStatusBar, ServerState } from './status.js';
+import { type SharpLspStatusBar, ServerState } from './status.js';
 
 /** Create, start, and return a new `LanguageClient`. */
 export async function start(
   context: ExtensionContext,
-  statusBar: ForgeStatusBar,
+  statusBar: SharpLspStatusBar,
 ): Promise<LanguageClient | undefined> {
   const serverPath = resolveServerPath(context);
   if (serverPath === undefined) {
     const msg =
-      'Forge LSP binary not found. Install via `cargo install forge-lsp` or set `forge.server.path`.';
+      'SharpLsp binary not found. Install via `cargo install sharplsp-lsp` or set `sharplsp.server.path`.';
     log.info(msg);
     window.showErrorMessage(msg);
     statusBar.setState(ServerState.Error);
@@ -71,7 +71,7 @@ export async function start(
 /** Wire client state changes to the status bar indicator. */
 function wireStatusBar(
   client: LanguageClient,
-  statusBar: ForgeStatusBar,
+  statusBar: SharpLspStatusBar,
   context: ExtensionContext,
 ): void {
   const listener: Disposable = client.onDidChangeState((event) => {
@@ -93,7 +93,7 @@ function wireStatusBar(
 }
 
 /**
- * Custom error handler that restarts forge-lsp with exponential backoff.
+ * Custom error handler that restarts sharplsp-lsp with exponential backoff.
  *
  * The default vscode-languageclient handler shows an error notification
  * on every unexpected close, including the transient kills that happen
@@ -104,7 +104,7 @@ function wireStatusBar(
  *   - Allows up to MAX_RESTARTS automatic restarts
  *   - After MAX_RESTARTS, stops and shows one actionable message
  */
-function makeErrorHandler(statusBar: ForgeStatusBar): {
+function makeErrorHandler(statusBar: SharpLspStatusBar): {
   error(error: Error, message: Message | undefined, count: number | undefined): ErrorHandlerResult;
   closed(): CloseHandlerResult;
 } {
@@ -127,15 +127,15 @@ function makeErrorHandler(statusBar: ForgeStatusBar): {
       restartCount += 1;
       if (restartCount <= MAX_RESTARTS) {
         log.info(
-          `forge-lsp closed unexpectedly (restart ${String(restartCount)}/${String(MAX_RESTARTS)})`,
+          `sharplsp-lsp closed unexpectedly (restart ${String(restartCount)}/${String(MAX_RESTARTS)})`,
         );
         return { action: CloseAction.Restart, handled: true };
       }
-      log.error(`forge-lsp closed ${String(MAX_RESTARTS)} times — giving up`);
+      log.error(`sharplsp-lsp closed ${String(MAX_RESTARTS)} times — giving up`);
       statusBar.setState(ServerState.Error);
       void window
         .showErrorMessage(
-          'Forge: language server failed to start after multiple attempts. Check the Forge output channel for details.',
+          'SharpLsp: language server failed to start after multiple attempts. Check the SharpLsp output channel for details.',
           'Show Output',
         )
         .then((choice) => {
@@ -150,11 +150,11 @@ function makeErrorHandler(statusBar: ForgeStatusBar): {
 }
 
 /**
- * Resolve the forge-lsp binary path.
+ * Resolve the sharplsp-lsp binary path.
  *
  * Priority:
- *   1. User-configured `forge.server.path`
- *   2. `FORGE_EXECUTABLE_PATH` for test and development runs
+ *   1. User-configured `sharplsp.server.path`
+ *   2. `SHARPLSP_EXECUTABLE_PATH` for test and development runs
  *   3. Bundled binary in `<extension>/bin/`
  *   4. Binary name on `$PATH` (client resolves via shell)
  */
@@ -164,7 +164,7 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
     return configured;
   }
 
-  const envPath = process.env.FORGE_EXECUTABLE_PATH;
+  const envPath = process.env.SHARPLSP_EXECUTABLE_PATH;
   if (envPath !== undefined && envPath !== '' && fs.existsSync(envPath)) {
     return envPath;
   }
