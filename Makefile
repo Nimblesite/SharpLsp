@@ -1,12 +1,12 @@
-# Forge build system
+# SharpLsp build system
 #
 # Public targets:
 #   make                     build everything (release)
 #   make PROFILE=debug       build everything (debug)
 #   make ci                  lint → test → build
 #   make install-vsix        clean → build → deploy → install VS Code extension
-#   make install-binaries    build + install forge-lsp + sidecars to PATH
-#   make install-rust        build + install forge-lsp only
+#   make install-binaries    build + install sharplsp-lsp + sidecars to PATH
+#   make install-rust        build + install sharplsp-lsp only
 #   make install-sidecars    build + install sidecars only
 #   make test                run all tests with coverage
 #   make screenshots         capture all website screenshots from real VS Code
@@ -24,24 +24,24 @@ DOTNET_CFG   = $(if $(filter release,$(PROFILE)),Release,Debug)
 
 VSCODE_DIR   = editors/vscode
 ZED_DIR      = editors/zed
-SIDECAR_CS   = sidecars/Forge.Sidecar.CSharp
-SIDECAR_FS   = sidecars/Forge.Sidecar.FSharp
-SIDECAR_SLN  = sidecars/Forge.Sidecars.sln
+SIDECAR_CS   = sidecars/SharpLsp.Sidecar.CSharp
+SIDECAR_FS   = sidecars/SharpLsp.Sidecar.FSharp
+SIDECAR_SLN  = sidecars/SharpLsp.Sidecars.sln
 
-BINARY          = target/$(PROFILE)/forge-lsp
+BINARY          = target/$(PROFILE)/sharplsp-lsp
 SIDECAR_CS_OUT  = target/sidecar-csharp
 SIDECAR_FS_OUT  = target/sidecar-fsharp
-ZED_WASM        = $(ZED_DIR)/target/wasm32-wasip1/$(PROFILE)/forge_zed.wasm
-VSIX            = forge.vsix
+ZED_WASM        = $(ZED_DIR)/target/wasm32-wasip1/$(PROFILE)/sharplsp_zed.wasm
+VSIX            = sharplsp.vsix
 ZED_PKG_DIR     = target/zed-extension
-ZED_PKG_TAR     = forge-zed-extension.tar.gz
+ZED_PKG_TAR     = sharplsp-zed-extension.tar.gz
 RIDER_DIR       = editors/rider
-RIDER_ZIP_SRC   = $(RIDER_DIR)/build/distributions/forge-rider-0.1.0.zip
-RIDER_ZIP       = forge-rider.zip
+RIDER_ZIP_SRC   = $(RIDER_DIR)/build/distributions/sharplsp-rider-0.1.0.zip
+RIDER_ZIP       = sharplsp-rider.zip
 
 PREFIX  ?= $(HOME)/.local
 BINDIR   = $(PREFIX)/bin
-LIBDIR   = $(PREFIX)/lib/forge
+LIBDIR   = $(PREFIX)/lib/sharplsp
 CHECK_COV = scripts/check-coverage.sh
 
 .PHONY: build ci \
@@ -72,17 +72,17 @@ install-vsix: _kill clean _build-rust _build-dotnet _build-vsix _uninstall-vsix 
 	@echo ""
 	@echo "==> VS Code extension installed."
 
-# ── Public: install forge-lsp + sidecars ─────────────────────────
+# ── Public: install sharplsp-lsp + sidecars ──────────────────────
 
 install-binaries: _kill _build-rust _build-dotnet _deploy-rust _deploy-sidecars
 	@echo ""
 	@echo "==> All binaries installed:"
-	@echo "    $(BINDIR)/forge-lsp"
-	@echo "    forge-sidecar-csharp (dotnet tool)"
-	@echo "    forge-sidecar-fsharp (dotnet tool)"
+	@echo "    $(BINDIR)/sharplsp-lsp"
+	@echo "    sharplsp-sidecar-csharp (dotnet tool)"
+	@echo "    sharplsp-sidecar-fsharp (dotnet tool)"
 
 install-rust: _build-rust _kill _deploy-rust
-	@echo "==> Installed: $(BINDIR)/forge-lsp"
+	@echo "==> Installed: $(BINDIR)/sharplsp-lsp"
 
 install-sidecars: _build-dotnet _kill _deploy-sidecars
 	@echo "==> Sidecars installed."
@@ -100,9 +100,9 @@ test: build test-rust test-zed test-vsix test-dotnet
 test-rust: _build-dotnet _stage-sidecars
 	@echo "==> Pre-building ProfileTarget fixture..."
 	dotnet build tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
-	@echo "==> Running forge-lsp tests with coverage..."
+	@echo "==> Running sharplsp-lsp tests with coverage..."
 	cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast
-	@$(CHECK_COV) forge-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
+	@$(CHECK_COV) sharplsp-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
 test-zed:
 	@echo "==> Running Zed tests..."
@@ -110,7 +110,7 @@ test-zed:
 
 test-vsix: _build-rust _build-dotnet _build-vsix _deploy-rust
 	@echo "==> Running VS Code extension tests..."
-	cd $(VSCODE_DIR) && PATH="$(abspath $(BINDIR)):$$PATH" FORGE_EXECUTABLE_PATH="$(abspath $(BINARY))" npm test -- --coverage
+	cd $(VSCODE_DIR) && PATH="$(abspath $(BINDIR)):$$PATH" SHARPLSP_EXECUTABLE_PATH="$(abspath $(BINARY))" npm test -- --coverage
 	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
 
 test-dotnet: _build-dotnet
@@ -129,21 +129,21 @@ test-dotnet: _build-dotnet
 	   done | sort -rn | head -1) ; \
 	   $(CHECK_COV) "$$label" "$$(echo "$${pct:-0} * 100" | bc 2>/dev/null || echo 0)" ; \
 	 } ; \
-	 _check_cov Forge.Sidecar.CSharp forge-sidecar-csharp ; \
-	 _check_cov Forge.Sidecar.FSharp forge-sidecar-fsharp ; \
-	 _check_cov Forge.Sidecar.Common forge-sidecar-common ; \
+	 _check_cov SharpLsp.Sidecar.CSharp sharplsp-sidecar-csharp ; \
+	 _check_cov SharpLsp.Sidecar.FSharp sharplsp-sidecar-fsharp ; \
+	 _check_cov SharpLsp.Sidecar.Common sharplsp-sidecar-common ; \
 	 exit $$TEST_EXIT
 
 # ── Website screenshots ──────────────────────────────────────────
 
 screenshots: _build-rust _build-dotnet _build-vsix
 	@echo "==> Capturing all website screenshots from real VS Code..."
-	cd $(VSCODE_DIR) && FORGE_EXECUTABLE_PATH="$(abspath $(BINARY))" npm run screenshots
+	cd $(VSCODE_DIR) && SHARPLSP_EXECUTABLE_PATH="$(abspath $(BINARY))" npm run screenshots
 
 screenshot: _build-rust _build-dotnet _build-vsix
 	@test -n "$(NAME)" || { echo "ERROR: use make screenshot NAME=diagnostics" >&2; exit 1; }
 	@echo "==> Capturing website screenshot: $(NAME)"
-	cd $(VSCODE_DIR) && FORGE_EXECUTABLE_PATH="$(abspath $(BINARY))" npm run screenshots -- "$(NAME)"
+	cd $(VSCODE_DIR) && SHARPLSP_EXECUTABLE_PATH="$(abspath $(BINARY))" npm run screenshots -- "$(NAME)"
 
 # ── Lint ─────────────────────────────────────────────────────────
 
@@ -185,14 +185,14 @@ fmt-dotnet:
 # ── Build primitives (private) ────────────────────────────────────
 
 _build-rust:
-	@echo "==> Building forge-lsp ($(PROFILE))..."
+	@echo "==> Building sharplsp-lsp ($(PROFILE))..."
 	cargo build $(CARGO_FLAG)
 	@test -f $(BINARY) || { echo "ERROR: $(BINARY) not found" >&2; exit 1; }
 
 _build-dotnet:
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
-	dotnet publish $(SIDECAR_CS)/Forge.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --output $(SIDECAR_CS_OUT)
-	dotnet publish $(SIDECAR_FS)/Forge.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --output $(SIDECAR_FS_OUT)
+	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --output $(SIDECAR_CS_OUT)
+	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --output $(SIDECAR_FS_OUT)
 
 _build-vsix:
 	@echo "==> Bundling + packaging VS Code extension..."
@@ -219,24 +219,24 @@ _build-rider:
 # ── Deploy primitives (private) ───────────────────────────────────
 
 _deploy-rust:
-	@echo "==> Installing forge-lsp to $(BINDIR)/..."
+	@echo "==> Installing sharplsp-lsp to $(BINDIR)/..."
 	mkdir -p $(BINDIR)
-	cp $(BINARY) $(BINDIR)/forge-lsp
-	chmod +x $(BINDIR)/forge-lsp
+	cp $(BINARY) $(BINDIR)/sharplsp-lsp
+	chmod +x $(BINDIR)/sharplsp-lsp
 
 _deploy-sidecars:
 	@echo "==> Packing + installing sidecar tools..."
-	-dotnet tool uninstall -g Forge.Sidecar.CSharp 2>/dev/null || true
-	-dotnet tool uninstall -g Forge.Sidecar.FSharp 2>/dev/null || true
+	-dotnet tool uninstall -g SharpLsp.Sidecar.CSharp 2>/dev/null || true
+	-dotnet tool uninstall -g SharpLsp.Sidecar.FSharp 2>/dev/null || true
 	rm -rf target/nupkgs
-	dotnet pack $(SIDECAR_CS)/Forge.Sidecar.CSharp.csproj -p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
-	dotnet pack $(SIDECAR_FS)/Forge.Sidecar.FSharp.fsproj -p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
-	dotnet tool install -g Forge.Sidecar.CSharp --version 0.0.0-local --add-source target/nupkgs
-	dotnet tool install -g Forge.Sidecar.FSharp --version 0.0.0-local --add-source target/nupkgs
+	dotnet pack $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj -p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
+	dotnet pack $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj -p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
+	dotnet tool install -g SharpLsp.Sidecar.CSharp --version 0.0.0-local --add-source target/nupkgs
+	dotnet tool install -g SharpLsp.Sidecar.FSharp --version 0.0.0-local --add-source target/nupkgs
 
 _uninstall-vsix:
-	@echo "==> Uninstalling existing Forge extension..."
-	-code --uninstall-extension forge-lsp.forge 2>/dev/null || true
+	@echo "==> Uninstalling existing SharpLsp extension..."
+	-code --uninstall-extension sharplsp.sharp-lsp 2>/dev/null || true
 
 _install-vsix:
 	@echo "==> Installing $(VSIX)..."
@@ -251,9 +251,9 @@ _stage-sidecars:
 	@cp -r $(SIDECAR_FS_OUT)/. target/llvm-cov-target/debug/sidecar-fsharp/
 
 _kill:
-	@echo "==> Killing stale forge processes..."
-	-@pkill -9 -f 'forge-lsp' 2>/dev/null || true
-	-@pkill -9 -f 'Forge\.Sidecar\.' 2>/dev/null || true
+	@echo "==> Killing stale sharplsp processes..."
+	-@pkill -9 -f 'sharplsp-lsp' 2>/dev/null || true
+	-@pkill -9 -f 'SharpLsp\.Sidecar\.' 2>/dev/null || true
 	@sleep 0.5
 
 # ── Clean ─────────────────────────────────────────────────────────

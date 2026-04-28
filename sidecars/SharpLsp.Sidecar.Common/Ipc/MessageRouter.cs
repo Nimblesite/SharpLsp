@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
-using SharpLsp.Sidecar.Common.Messages;
 using MessagePack;
+using SharpLsp.Sidecar.Common.Messages;
 using ByteResult = Outcome.Result<byte[], string>;
 
 namespace SharpLsp.Sidecar.Common.Ipc;

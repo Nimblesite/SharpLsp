@@ -108,7 +108,10 @@ suite('Hover / Quick Info', () => {
     completionEditor.revealRange(new vscode.Range(completionPosition, completionPosition));
     await new Promise((r) => setTimeout(r, 300));
     assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), completionUri.toString());
-    assert.ok(completionEditor.selection.active.isEqual(completionPosition), 'Completion cursor must be after this.');
+    assert.ok(
+      completionEditor.selection.active.isEqual(completionPosition),
+      'Completion cursor must be after this.',
+    );
     await vscode.commands.executeCommand('editor.action.triggerSuggest');
     // Wait for widget to appear — no other commands that could dismiss it.
     await new Promise((r) => setTimeout(r, 2500));
@@ -119,9 +122,12 @@ suite('Hover / Quick Info', () => {
     await vscode.commands.executeCommand('hideSuggestWidget');
     await new Promise((r) => setTimeout(r, 300));
 
-    const goToEditor = await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(completionUri), {
-      preview: false,
-    });
+    const goToEditor = await vscode.window.showTextDocument(
+      await vscode.workspace.openTextDocument(completionUri),
+      {
+        preview: false,
+      },
+    );
     assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), completionUri.toString());
 
     // Verify definition via LSP on the `Add` call site in CompletionShot.cs.
@@ -139,7 +145,10 @@ suite('Hover / Quick Info', () => {
     // Trigger peek definition on the call-site reference.
     goToEditor.selection = new vscode.Selection(definitionPosition, definitionPosition);
     goToEditor.revealRange(new vscode.Range(definitionPosition, definitionPosition));
-    assert.ok(goToEditor.selection.active.isEqual(definitionPosition), 'Definition cursor must be on Add');
+    assert.ok(
+      goToEditor.selection.active.isEqual(definitionPosition),
+      'Definition cursor must be on Add',
+    );
     await new Promise((r) => setTimeout(r, 300));
     await vscode.commands.executeCommand('editor.action.peekDefinition');
     await new Promise((r) => setTimeout(r, 3000));

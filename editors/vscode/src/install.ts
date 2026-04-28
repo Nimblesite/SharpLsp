@@ -286,7 +286,9 @@ export async function ensureBinaries(configuredPath: string): Promise<InstallRes
         if (component.name === 'sharplsp-lsp') continue;
         const ok = await ensureComponent(component, version);
         if (!ok) {
-          throw new Error(`SharpLsp activation aborted: ${component.name} v${version} is required.`);
+          throw new Error(
+            `SharpLsp activation aborted: ${component.name} v${version} is required.`,
+          );
         }
       }
       return { serverPath: configuredPath };

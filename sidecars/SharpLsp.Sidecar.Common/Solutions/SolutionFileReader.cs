@@ -1,6 +1,9 @@
 using Microsoft.VisualStudio.SolutionPersistence.Model;
 using Microsoft.VisualStudio.SolutionPersistence.Serializer;
-using SolutionReadResult = Outcome.Result<SharpLsp.Sidecar.Common.Solutions.SolutionFileModel, string>;
+using SolutionReadResult = Outcome.Result<
+    SharpLsp.Sidecar.Common.Solutions.SolutionFileModel,
+    string
+>;
 
 namespace SharpLsp.Sidecar.Common.Solutions;
 

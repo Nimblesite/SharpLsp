@@ -1,7 +1,7 @@
 using System.Net.Sockets;
+using MessagePack;
 using SharpLsp.Sidecar.Common.Ipc;
 using SharpLsp.Sidecar.Common.Messages;
-using MessagePack;
 using ByteResult = Outcome.Result<byte[], string>;
 
 namespace SharpLsp.Sidecar.Common;

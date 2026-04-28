@@ -43,7 +43,10 @@ export class SharpLspTestController {
   }
 
   constructor() {
-    this.controller = vscode.tests.createTestController('sharplsp.testController', 'SharpLsp Tests');
+    this.controller = vscode.tests.createTestController(
+      'sharplsp.testController',
+      'SharpLsp Tests',
+    );
 
     this.runProfiles.push(
       this.controller.createRunProfile(

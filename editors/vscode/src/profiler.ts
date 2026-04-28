@@ -508,7 +508,10 @@ export class ProfilerStatusBar {
 // ── Process Picker ────────────────────────────────────────────────
 
 async function pickProcess(client: LanguageClient): Promise<DotNetProcess | undefined> {
-  const processes = await client.sendRequest<DotNetProcess[]>('sharplsp/profiler/listProcesses', {});
+  const processes = await client.sendRequest<DotNetProcess[]>(
+    'sharplsp/profiler/listProcesses',
+    {},
+  );
 
   if (processes.length === 0) {
     void vscode.window.showInformationMessage('No .NET processes found.');
@@ -578,7 +581,9 @@ export function registerCommands(
     if (lsp === undefined) return;
     const name = processName ?? provider.processNameFor(pid);
     try {
-      const result = await lsp.sendRequest<StartTraceResult>('sharplsp/profiler/startTrace', { pid });
+      const result = await lsp.sendRequest<StartTraceResult>('sharplsp/profiler/startTrace', {
+        pid,
+      });
       provider.addSession(result.session_id, 'Trace', pid, result.output_path, name);
       statusBar.update(provider.sessionCount);
       const who = name !== undefined ? `${name} (PID ${String(pid)})` : `PID ${String(pid)}`;
@@ -1008,10 +1013,13 @@ async function openTraceFile(client: LanguageClient | undefined, filePath: strin
       return;
     }
     try {
-      const result = await client.sendRequest<ConvertTraceResult>('sharplsp/profiler/convertTrace', {
-        input_path: filePath,
-        format: 'speedscope',
-      });
+      const result = await client.sendRequest<ConvertTraceResult>(
+        'sharplsp/profiler/convertTrace',
+        {
+          input_path: filePath,
+          format: 'speedscope',
+        },
+      );
       await openSpeedScope(result.output_path);
     } catch (err: unknown) {
       void vscode.window.showErrorMessage(`Failed to convert trace: ${getErrorMessage(err)}`);

@@ -359,7 +359,14 @@ suite('LSP Integration — Fixture Files', () => {
     // Load fixture solution so Solution Explorer is populated in the screenshot.
     if (process.env['SHARPLSP_SCREENSHOTS']) {
       const ext2 = vscode.extensions.getExtension('sharplsp.sharp-lsp');
-      const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+      const api2 = ext2?.exports as
+        | {
+            explorerProvider?: {
+              loadSolution(p: string): Promise<void>;
+              getChildren(e?: unknown): unknown[] | undefined;
+            };
+          }
+        | undefined;
       if (api2?.explorerProvider) {
         const slnPath = path.join(fixtureDir, 'TestFixtures.sln');
         await api2.explorerProvider.loadSolution(slnPath);
@@ -396,15 +403,30 @@ suite('LSP Integration — Fixture Files', () => {
     // The #region Arithmetic range must exist (start line varies by LSP implementation)
     // Log all region ranges to aid debugging
     console.log('Region ranges:', regionRanges.map((r) => `${r.start}–${r.end}`).join(', '));
-    assert.ok(regionRanges.length >= 2, 'Must have at least 2 region folding ranges (Arithmetic + State)');
+    assert.ok(
+      regionRanges.length >= 2,
+      'Must have at least 2 region folding ranges (Arithmetic + State)',
+    );
 
     // Fold everything and assert visible lines dropped drastically
-    const linesBefore = editor.visibleRanges.reduce((sum, r) => sum + r.end.line - r.start.line + 1, 0);
-    assert.ok(linesBefore > 10, `File must have >10 visible lines before folding, got ${linesBefore}`);
+    const linesBefore = editor.visibleRanges.reduce(
+      (sum, r) => sum + r.end.line - r.start.line + 1,
+      0,
+    );
+    assert.ok(
+      linesBefore > 10,
+      `File must have >10 visible lines before folding, got ${linesBefore}`,
+    );
     await vscode.commands.executeCommand('editor.foldAll');
     await new Promise((r) => setTimeout(r, 800));
-    const linesAfter = editor.visibleRanges.reduce((sum, r) => sum + r.end.line - r.start.line + 1, 0);
-    assert.ok(linesAfter < linesBefore, `Folding must reduce visible lines: before=${linesBefore} after=${linesAfter}`);
+    const linesAfter = editor.visibleRanges.reduce(
+      (sum, r) => sum + r.end.line - r.start.line + 1,
+      0,
+    );
+    assert.ok(
+      linesAfter < linesBefore,
+      `Folding must reduce visible lines: before=${linesBefore} after=${linesAfter}`,
+    );
     assert.ok(linesAfter <= 5, `After foldAll, should have ≤5 visible lines, got ${linesAfter}`);
 
     // Keep the editor focused so the folded regions are clearly visible.
@@ -517,18 +539,28 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
     // Load fixture solution so SharpLsp panel shows Solution Explorer.
     if (process.env['SHARPLSP_SCREENSHOTS']) {
       const ext2 = vscode.extensions.getExtension('sharplsp.sharp-lsp');
-      const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+      const api2 = ext2?.exports as
+        | {
+            explorerProvider?: {
+              loadSolution(p: string): Promise<void>;
+              getChildren(e?: unknown): unknown[] | undefined;
+            };
+          }
+        | undefined;
       if (api2?.explorerProvider) {
         const ws2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
         await api2.explorerProvider.loadSolution(`${ws2}/TestFixtures.sln`);
         let w = 0;
         while ((api2.explorerProvider.getChildren() ?? []).length === 0 && w < 5000) {
-          await new Promise((r) => setTimeout(r, 200)); w += 200;
+          await new Promise((r) => setTimeout(r, 200));
+          w += 200;
         }
       }
     }
     await openSharpLspPanel();
-    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri), { preview: false });
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri), {
+      preview: false,
+    });
 
     // Trigger the lightbulb in the editor so it's visible in the screenshot.
     const editor = vscode.window.activeTextEditor;

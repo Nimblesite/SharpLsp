@@ -1,6 +1,6 @@
 using System.Reflection;
-using SharpLsp.Sidecar.CSharp;
 using Microsoft.Build.Locator;
+using SharpLsp.Sidecar.CSharp;
 
 if (args.Length > 0 && args[0] == "--version")
 {

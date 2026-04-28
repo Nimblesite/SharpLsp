@@ -105,10 +105,13 @@ export class HeapDiffPanel {
     const pane = new HeapDiffPanel(baselinePath, comparisonPath, context, client);
 
     try {
-      const result = await client.sendRequest<HeapDiffResult>('sharplsp/profiler/diffHeapSnapshots', {
-        baseline_dump_path: baselinePath,
-        comparison_dump_path: comparisonPath,
-      });
+      const result = await client.sendRequest<HeapDiffResult>(
+        'sharplsp/profiler/diffHeapSnapshots',
+        {
+          baseline_dump_path: baselinePath,
+          comparison_dump_path: comparisonPath,
+        },
+      );
       pane.render(result, baselinePath, comparisonPath);
     } catch (err: unknown) {
       pane.showError(getErrorMessage(err));

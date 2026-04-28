@@ -71,7 +71,10 @@ suite('Extension Activation & Configuration', () => {
 
   test('sharplsp.showOutput command is registered', async () => {
     const allCommands = await vscode.commands.getCommands(true);
-    assert.ok(allCommands.includes('sharplsp.showOutput'), 'sharplsp.showOutput should be registered');
+    assert.ok(
+      allCommands.includes('sharplsp.showOutput'),
+      'sharplsp.showOutput should be registered',
+    );
   });
 
   test('sharplsp.showTraceOutput command is registered', async () => {
@@ -123,7 +126,11 @@ suite('Extension Activation & Configuration', () => {
   test('extension has correct display name', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, 'Extension should exist');
-    assert.strictEqual(ext.packageJSON.displayName, 'SharpLsp', "Display name should be 'SharpLsp'");
+    assert.strictEqual(
+      ext.packageJSON.displayName,
+      'SharpLsp',
+      "Display name should be 'SharpLsp'",
+    );
   });
 
   test('extension contributes csharp language', async function () {
@@ -134,20 +141,36 @@ suite('Extension Activation & Configuration', () => {
     const csharp = languages.find((l) => l.id === 'csharp');
     assert.ok(csharp, 'Should contribute csharp language');
     // Open a C# file and an F# file in split editor, with SharpLsp panel showing solution.
-    const { uri: csUri } = await openCSharpFile(tmpDir, 'editors-shot.cs', `namespace Demo\n{\n    public class Calculator\n    {\n        public int Add(int a, int b) => a + b;\n    }\n}`);
+    const { uri: csUri } = await openCSharpFile(
+      tmpDir,
+      'editors-shot.cs',
+      `namespace Demo\n{\n    public class Calculator\n    {\n        public int Add(int a, int b) => a + b;\n    }\n}`,
+    );
     await waitForDocumentSymbols(csUri);
     await vscode.commands.executeCommand('workbench.action.splitEditorRight');
-    await openCSharpFile(tmpDir, 'editors-shot.fs', 'module Demo\n\nlet greet name = sprintf "Hello, %s!" name\n');
+    await openCSharpFile(
+      tmpDir,
+      'editors-shot.fs',
+      'module Demo\n\nlet greet name = sprintf "Hello, %s!" name\n',
+    );
     await new Promise((r) => setTimeout(r, 800));
     // Load fixture solution so Solution Explorer shows content.
     if (process.env['SHARPLSP_SCREENSHOTS']) {
-      const api2 = ext.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+      const api2 = ext.exports as
+        | {
+            explorerProvider?: {
+              loadSolution(p: string): Promise<void>;
+              getChildren(e?: unknown): unknown[] | undefined;
+            };
+          }
+        | undefined;
       if (api2?.explorerProvider) {
         const ws2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
         await api2.explorerProvider.loadSolution(`${ws2}/TestFixtures.sln`);
         let w = 0;
         while ((api2.explorerProvider.getChildren() ?? []).length === 0 && w < 8000) {
-          await new Promise((r) => setTimeout(r, 200)); w += 200;
+          await new Promise((r) => setTimeout(r, 200));
+          w += 200;
         }
       }
     }
@@ -196,7 +219,14 @@ suite('Extension Activation & Configuration', () => {
     // Open Calculator.cs from the fixture workspace so a real file is visible.
     if (process.env['SHARPLSP_SCREENSHOTS']) {
       const ext2 = vscode.extensions.getExtension(EXTENSION_ID);
-      const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+      const api2 = ext2?.exports as
+        | {
+            explorerProvider?: {
+              loadSolution(p: string): Promise<void>;
+              getChildren(e?: unknown): unknown[] | undefined;
+            };
+          }
+        | undefined;
       const ws2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
       const calcUri = vscode.Uri.file(`${ws2}/Calculator.cs`);
       const calcDoc = await vscode.workspace.openTextDocument(calcUri);
@@ -206,7 +236,8 @@ suite('Extension Activation & Configuration', () => {
         await api2.explorerProvider.loadSolution(`${ws2}/TestFixtures.sln`);
         let w = 0;
         while ((api2.explorerProvider.getChildren() ?? []).length === 0 && w < 8000) {
-          await new Promise((r) => setTimeout(r, 200)); w += 200;
+          await new Promise((r) => setTimeout(r, 200));
+          w += 200;
         }
       }
     }

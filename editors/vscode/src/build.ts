@@ -121,7 +121,10 @@ export function registerBuildCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(diagnosticCollection);
 
   context.subscriptions.push(
-    vscode.tasks.registerTaskProvider(SharpLspBuildTaskProvider.Type, new SharpLspBuildTaskProvider()),
+    vscode.tasks.registerTaskProvider(
+      SharpLspBuildTaskProvider.Type,
+      new SharpLspBuildTaskProvider(),
+    ),
   );
 
   context.subscriptions.push(

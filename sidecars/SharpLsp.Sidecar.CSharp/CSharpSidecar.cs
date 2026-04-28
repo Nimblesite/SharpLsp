@@ -1,8 +1,8 @@
+using MessagePack;
+using Outcome;
 using SharpLsp.Sidecar.Common;
 using SharpLsp.Sidecar.Common.Solutions;
 using SharpLsp.Sidecar.CSharp.Workspace;
-using MessagePack;
-using Outcome;
 using ByteResult = Outcome.Result<byte[], string>;
 
 namespace SharpLsp.Sidecar.CSharp;

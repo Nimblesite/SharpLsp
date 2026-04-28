@@ -90,10 +90,13 @@ export class ObjectGraphPanel {
     ObjectGraphPanel.panels.set(pane.panelId, pane);
 
     try {
-      const result = await client.sendRequest<ObjectGraphResult>('sharplsp/profiler/getObjectGraph', {
-        dump_path: dumpPath,
-        root_address: rootAddress,
-      });
+      const result = await client.sendRequest<ObjectGraphResult>(
+        'sharplsp/profiler/getObjectGraph',
+        {
+          dump_path: dumpPath,
+          root_address: rootAddress,
+        },
+      );
       pane.render(result);
     } catch (err: unknown) {
       pane.showError(getErrorMessage(err));

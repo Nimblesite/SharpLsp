@@ -1,5 +1,5 @@
-using SharpLsp.Sidecar.Common.Messages;
 using MessagePack;
+using SharpLsp.Sidecar.Common.Messages;
 
 namespace SharpLsp.Sidecar.Common.Tests;
 

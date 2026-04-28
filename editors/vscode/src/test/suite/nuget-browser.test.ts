@@ -246,10 +246,19 @@ suite('NuGet Browser', () => {
     try {
       await panel.waitForInitialLoad();
       const count = panel.getSearchResultsCount();
-      assert.ok(count > 0, `Browse tab must be populated after initial load (got ${count.toString()} results)`);
-      assert.ok(count >= 5, `Browse tab must show at least 5 popular packages, got ${count.toString()}`);
+      assert.ok(
+        count > 0,
+        `Browse tab must be populated after initial load (got ${count.toString()} results)`,
+      );
+      assert.ok(
+        count >= 5,
+        `Browse tab must show at least 5 popular packages, got ${count.toString()}`,
+      );
       const html = panel.getRenderedHtml();
-      assert.ok(html.includes('package-list') || html.includes('package-item') || html.includes('NuGet'), 'Browse HTML must contain package list markup');
+      assert.ok(
+        html.includes('package-list') || html.includes('package-item') || html.includes('NuGet'),
+        'Browse HTML must contain package list markup',
+      );
       assert.ok(html.length > 500, 'Browse HTML must have substantial content');
       await takeNuGetScreenshot('vscode-nuget-browse.png');
     } finally {
@@ -298,12 +307,26 @@ suite('NuGet Browser', () => {
         data: { packageId: 'Newtonsoft.Json' },
       });
 
-      assert.strictEqual(panel.getSelectedPackageId(), 'Newtonsoft.Json', 'Selecting an installed package must set selectedPackage');
+      assert.strictEqual(
+        panel.getSelectedPackageId(),
+        'Newtonsoft.Json',
+        'Selecting an installed package must set selectedPackage',
+      );
       const installedHtml = panel.getRenderedHtml();
-      assert.ok(installedHtml.includes('Newtonsoft.Json'), 'Installed tab HTML must show Newtonsoft.Json');
-      assert.ok(installedHtml.includes('Remove') || installedHtml.includes('uninstall'), 'Installed package must show Remove button');
+      assert.ok(
+        installedHtml.includes('Newtonsoft.Json'),
+        'Installed tab HTML must show Newtonsoft.Json',
+      );
+      assert.ok(
+        installedHtml.includes('Remove') || installedHtml.includes('uninstall'),
+        'Installed package must show Remove button',
+      );
       assert.ok(installedHtml.includes('13.0'), 'Installed package must show version number');
-      assert.ok(installedHtml.toLowerCase().includes('james newton') || installedHtml.toLowerCase().includes('newtonsoft'), 'Package details must show author or description');
+      assert.ok(
+        installedHtml.toLowerCase().includes('james newton') ||
+          installedHtml.toLowerCase().includes('newtonsoft'),
+        'Package details must show author or description',
+      );
       await takeNuGetScreenshot('vscode-nuget-installed.png');
     } finally {
       panel.dispose();

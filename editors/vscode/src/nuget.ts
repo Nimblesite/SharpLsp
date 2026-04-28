@@ -213,7 +213,9 @@ async function runDotnet(args: string[]): Promise<string> {
  * Register NuGet commands.
  */
 export function registerNuGetCommands(context: vscode.ExtensionContext): void {
-  context.subscriptions.push(vscode.commands.registerCommand('sharplsp.nuget.add', addNuGetPackage));
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sharplsp.nuget.add', addNuGetPackage),
+  );
   context.subscriptions.push(
     vscode.commands.registerCommand('sharplsp.nuget.update', updateNuGetPackage),
   );

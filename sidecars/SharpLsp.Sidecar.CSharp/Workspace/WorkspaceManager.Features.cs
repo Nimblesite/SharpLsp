@@ -10,7 +10,10 @@ using InlayHintsResult = Outcome.Result<
     System.Collections.Generic.List<SharpLsp.Sidecar.CSharp.InlayHintResult>,
     string
 >;
-using SemanticTokensResultType = Outcome.Result<SharpLsp.Sidecar.CSharp.SemanticTokensResult, string>;
+using SemanticTokensResultType = Outcome.Result<
+    SharpLsp.Sidecar.CSharp.SemanticTokensResult,
+    string
+>;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 

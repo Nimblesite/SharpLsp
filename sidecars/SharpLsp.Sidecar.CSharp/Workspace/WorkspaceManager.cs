@@ -1,8 +1,8 @@
-using SharpLsp.Sidecar.CSharp.Hover;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 using Outcome;
+using SharpLsp.Sidecar.CSharp.Hover;
 using AllDiagnosticsResult = Outcome.Result<
     System.Collections.Generic.Dictionary<
         string,
@@ -23,7 +23,10 @@ using DiagnosticsResult = Outcome.Result<
     System.Collections.Generic.List<SharpLsp.Sidecar.CSharp.DiagnosticResult>,
     string
 >;
-using HighlightsResult = Outcome.Result<SharpLsp.Sidecar.CSharp.DocumentHighlightListResult, string>;
+using HighlightsResult = Outcome.Result<
+    SharpLsp.Sidecar.CSharp.DocumentHighlightListResult,
+    string
+>;
 using HoverQueryResult = Outcome.Result<SharpLsp.Sidecar.CSharp.HoverResult?, string>;
 using ImplementationsResult = Outcome.Result<SharpLsp.Sidecar.CSharp.LocationListResult, string>;
 using ReferencesResult = Outcome.Result<SharpLsp.Sidecar.CSharp.LocationListResult, string>;

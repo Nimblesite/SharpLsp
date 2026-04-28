@@ -1,9 +1,9 @@
 using System.Net.Sockets;
+using MessagePack;
+using Microsoft.Build.Locator;
 using SharpLsp.Sidecar.Common.Ipc;
 using SharpLsp.Sidecar.Common.Messages;
 using SharpLsp.Sidecar.Common.Solutions;
-using MessagePack;
-using Microsoft.Build.Locator;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
 #pragma warning disable CA1515 // Types can be internal

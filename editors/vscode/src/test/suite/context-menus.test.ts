@@ -343,7 +343,11 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
   suiteTeardown(async () => {
     // Remove the temp file added to the fixture workspace.
     const allTypesPath = path.join(fixtureDir, 'AllTypesCtx.cs');
-    try { fs.rmSync(allTypesPath, { force: true }); } catch { /* best-effort */ }
+    try {
+      fs.rmSync(allTypesPath, { force: true });
+    } catch {
+      /* best-effort */
+    }
     provider.clear();
     await closeAllEditors();
     teardownLspTestSuite(tmpDir);
@@ -1275,7 +1279,11 @@ suite('Context Menu — Project Node Commands Execute', () => {
     this.timeout(10_000);
     const projectNode = findByContext(provider.getChildren(), 'project');
     assert.ok(projectNode, 'Project node must exist');
-    assert.strictEqual(projectNode.contextValue, 'project', "Project node must have contextValue 'project'");
+    assert.strictEqual(
+      projectNode.contextValue,
+      'project',
+      "Project node must have contextValue 'project'",
+    );
 
     await vscode.commands.executeCommand('sharplsp.openProjectFile', projectNode);
 

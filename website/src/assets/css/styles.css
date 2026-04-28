@@ -718,6 +718,12 @@ img {
   gap: 32px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+.author-posts .blog-grid {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  justify-items: center;
+  max-width: 1080px;
+  margin: 0 auto;
+}
 .post-card {
   background: var(--surface-low);
   border: 1px solid var(--border);

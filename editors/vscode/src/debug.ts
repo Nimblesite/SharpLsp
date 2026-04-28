@@ -177,7 +177,9 @@ function isLaunchSettings(value: unknown): value is LaunchSettings {
 
 function findNetcoredbg(): string | undefined {
   // Check user setting first.
-  const configured = vscode.workspace.getConfiguration('sharplsp').get<string>('debug.netcoredbgPath');
+  const configured = vscode.workspace
+    .getConfiguration('sharplsp')
+    .get<string>('debug.netcoredbgPath');
   if (configured !== undefined && configured.length > 0 && fs.existsSync(configured)) {
     return configured;
   }
@@ -258,7 +260,10 @@ export function registerDebugAdapter(context: vscode.ExtensionContext): void {
     vscode.debug.registerDebugConfigurationProvider(DEBUG_TYPE, new SharpLspLaunchProvider()),
   );
   context.subscriptions.push(
-    vscode.debug.registerDebugAdapterDescriptorFactory(DEBUG_TYPE, new SharpLspDebugAdapterFactory()),
+    vscode.debug.registerDebugAdapterDescriptorFactory(
+      DEBUG_TYPE,
+      new SharpLspDebugAdapterFactory(),
+    ),
   );
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_DEBUG_PROGRAM, () => {

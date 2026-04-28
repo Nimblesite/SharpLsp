@@ -160,7 +160,14 @@ suite('Profiler', () => {
       // Load fixture solution so Solution Explorer is populated in the screenshot.
       if (process.env['SHARPLSP_SCREENSHOTS']) {
         const ext2 = vscode.extensions.getExtension(EXTENSION_ID);
-        const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+        const api2 = ext2?.exports as
+          | {
+              explorerProvider?: {
+                loadSolution(p: string): Promise<void>;
+                getChildren(e?: unknown): unknown[] | undefined;
+              };
+            }
+          | undefined;
         if (api2?.explorerProvider) {
           const slnPath = path.join(fixtureDir, 'TestFixtures.sln');
           if (fs.existsSync(slnPath)) {
@@ -316,9 +323,17 @@ suite('Profiler', () => {
 
       // After removing all sessions, no Active Sessions header should appear.
       const noHeader = findByLabel(afterAll, 'Active Sessions');
-      assert.strictEqual(noHeader, undefined, 'Active Sessions header must be gone when no sessions remain');
+      assert.strictEqual(
+        noHeader,
+        undefined,
+        'Active Sessions header must be gone when no sessions remain',
+      );
       // Session count must be 0.
-      assert.strictEqual(provider.sessionCount, 0, 'Session count must be 0 after removing all sessions');
+      assert.strictEqual(
+        provider.sessionCount,
+        0,
+        'Session count must be 0 after removing all sessions',
+      );
     } finally {
       provider.removeSession('dump-trace-001');
       provider.removeSession('dump-counters-001');

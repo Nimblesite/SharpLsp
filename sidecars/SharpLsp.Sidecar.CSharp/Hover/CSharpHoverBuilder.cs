@@ -1,7 +1,7 @@
-using SharpLsp.Sidecar.Common.Hover;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using SharpLsp.Sidecar.Common.Hover;
 using HoverQueryResult = Outcome.Result<SharpLsp.Sidecar.CSharp.HoverResult?, string>;
 
 namespace SharpLsp.Sidecar.CSharp.Hover;

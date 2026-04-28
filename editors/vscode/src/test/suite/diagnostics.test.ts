@@ -92,12 +92,27 @@ suite('Diagnostics / Problems Panel', () => {
     assert.ok(error.range.start.line >= 0, 'Error must have a valid start line');
     assert.ok(error.range.end.character >= 0, 'Error must have a valid end character');
     // The error is on line 4 (0-indexed): "return "not an int""
-    assert.strictEqual(error.range.start.line, 4, 'Type error must be on line 4 (the return statement)');
-    assert.ok(error.message.toLowerCase().includes('string') || error.message.toLowerCase().includes('cannot'), "Error message must describe the type mismatch");
+    assert.strictEqual(
+      error.range.start.line,
+      4,
+      'Type error must be on line 4 (the return statement)',
+    );
+    assert.ok(
+      error.message.toLowerCase().includes('string') ||
+        error.message.toLowerCase().includes('cannot'),
+      'Error message must describe the type mismatch',
+    );
     // Load fixture solution so Solution Explorer is populated in the screenshot.
     if (process.env['SHARPLSP_SCREENSHOTS']) {
       const ext2 = vscode.extensions.getExtension('sharplsp.sharp-lsp');
-      const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+      const api2 = ext2?.exports as
+        | {
+            explorerProvider?: {
+              loadSolution(p: string): Promise<void>;
+              getChildren(e?: unknown): unknown[] | undefined;
+            };
+          }
+        | undefined;
       if (api2?.explorerProvider) {
         const slnPath2 = path.join(workspaceRoot, 'TestFixtures.sln');
         await api2.explorerProvider.loadSolution(slnPath2);
@@ -205,8 +220,14 @@ suite('Diagnostics / Problems Panel', () => {
     assert.ok(error.range.end.line >= error.range.start.line, 'Range end line must be >= start');
     assert.ok(error.range.end.character >= 0, 'Range end character must be valid');
     assert.ok(error.source === 'sharplsp-csharp', "Diagnostic source must be 'sharplsp-csharp'");
-    assert.ok(error.message.includes('string') || error.message.includes('int'), "Error message must reference the mismatched type");
-    assert.ok(typeof error.code === 'string' || typeof error.code === 'number' || error.code !== undefined, 'Diagnostic must have a code');
+    assert.ok(
+      error.message.includes('string') || error.message.includes('int'),
+      'Error message must reference the mismatched type',
+    );
+    assert.ok(
+      typeof error.code === 'string' || typeof error.code === 'number' || error.code !== undefined,
+      'Diagnostic must have a code',
+    );
     // All diagnostics must have a source
     for (const d of diagnostics) {
       assert.ok(d.source, `Every diagnostic must have a source, got undefined for: ${d.message}`);
