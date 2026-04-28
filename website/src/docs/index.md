@@ -6,46 +6,56 @@ eleventyNavigation:
   order: 1
 ---
 
-# Getting Started
+# Getting Started with Forge
 
-![Forge active in VS Code](/assets/screenshots/vscode-getting-started-page.png)
+Forge is an ultra-fast, open-source Language Server Protocol (LSP)
+implementation for .NET, engineered entirely in Rust. It delivers
+sub-millisecond syntax response paths and a minimal memory footprint,
+redefining the C# developer experience.
 
-Forge is an open-source .NET Language Server Protocol (LSP) implementation built in Rust. The current extension is alpha and approaching beta, with VS Code as the primary working editor surface.
-
-## Prerequisites
-
-- [Rust](https://rustup.rs/) (latest stable)
-- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- VS Code for the current extension experience
-- An LSP-compatible editor if you are experimenting with the raw language server
+<section class="callout">
+  <h2><span class="material-symbols-outlined" aria-hidden="true">fact_check</span>Prerequisites</h2>
+  <ul class="requirement-list">
+    <li>
+      <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
+      <div>
+        <h3>Rust Toolchain</h3>
+        <p>Requires Rust 1.75.0 or later. We recommend installing via <code>rustup</code>.</p>
+      </div>
+    </li>
+    <li>
+      <span class="material-symbols-outlined" aria-hidden="true">deployed_code</span>
+      <div>
+        <h3>.NET 10.0 SDK</h3>
+        <p>Required for project parsing and MSBuild integration. Ensure the SDK is in your PATH.</p>
+      </div>
+    </li>
+  </ul>
+</section>
 
 ## Installation
 
-### From Source
+Install the Forge CLI directly from crates.io using Cargo:
 
 ```bash
-git clone https://github.com/MelbourneDeveloper/forge.git
-cd forge
-cargo build --release
+$ cargo install forge-cli
 ```
 
-### VS Code Extension
+## Basic Usage
 
-Install the Forge extension from the VS Code marketplace, or install the `.vsix` file directly.
+<div class="usage-grid">
+  <section class="usage-card">
+    <h3><span class="material-symbols-outlined" aria-hidden="true">folder_open</span>Initialize Workspace</h3>
+    <p>Generate a <code>forge.toml</code> configuration file in the root of your existing .NET solution.</p>
 
-## Architecture Overview
+    <pre><code>$ forge init .</code></pre>
+  </section>
+  <section class="usage-card">
+    <h3><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>Start Server</h3>
+    <p>Launch the LSP server. Typically, your editor will run this command automatically.</p>
 
-Forge uses a three-tier architecture:
+    <pre><code>$ forge dev --watch</code></pre>
+  </section>
+</div>
 
-| Tier | Component | Role |
-|------|-----------|------|
-| **1** | Rust LSP Host | LSP connection, VFS, tree-sitter parsing, salsa cache |
-| **2** | C# Sidecar | Roslyn-powered completions, diagnostics, refactoring |
-| **3** | F# Sidecar | FSharp.Compiler.Service, FSharpLint diagnostics |
-
-The Rust host handles all LSP communication and syntax-level operations. Semantic operations are delegated to the appropriate .NET sidecar process over IPC.
-
-## Next Steps
-
-- [Architecture](/docs/architecture/) — deep dive into the three-tier design
-- [Editor Setup](/docs/editors/) — configure your editor to use Forge
+<p class="next-link"><a href="/docs/architecture/">Next: Architecture <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>

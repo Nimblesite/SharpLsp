@@ -7,46 +7,56 @@ eleventyNavigation:
   order: 1
 ---
 
-# 快速入门
+# Getting Started with Forge
 
-![VS Code 中运行的 Forge](/assets/screenshots/vscode-getting-started-page.png)
+Forge is an ultra-fast, open-source Language Server Protocol (LSP)
+implementation for .NET, engineered entirely in Rust. It delivers
+sub-millisecond syntax response paths and a minimal memory footprint,
+redefining the C# developer experience.
 
-Forge 是一个使用 Rust 构建的开源 .NET 语言服务器协议（LSP）实现。当前扩展仍处于 alpha、接近 beta 阶段，VS Code 是主要可用和测试界面。
+<section class="callout">
+  <h2><span class="material-symbols-outlined" aria-hidden="true">fact_check</span>Prerequisites</h2>
+  <ul class="requirement-list">
+    <li>
+      <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
+      <div>
+        <h3>Rust Toolchain</h3>
+        <p>Requires Rust 1.75.0 or later. We recommend installing via <code>rustup</code>.</p>
+      </div>
+    </li>
+    <li>
+      <span class="material-symbols-outlined" aria-hidden="true">deployed_code</span>
+      <div>
+        <h3>.NET 10.0 SDK</h3>
+        <p>Required for project parsing and MSBuild integration. Ensure the SDK is in your PATH.</p>
+      </div>
+    </li>
+  </ul>
+</section>
 
-## 前置要求
+## Installation
 
-- [Rust](https://rustup.rs/)（最新稳定版）
-- [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) 或更高版本
-- 当前扩展体验需要 VS Code
-- 如果你正在试验原始语言服务器，则需要支持 LSP 的编辑器
-
-## 安装
-
-### 从源码构建
+Install the Forge CLI directly from crates.io using Cargo:
 
 ```bash
-git clone https://github.com/MelbourneDeveloper/forge.git
-cd forge
-cargo build --release
+$ cargo install forge-cli
 ```
 
-### VS Code 扩展
+## Basic Usage
 
-从 VS Code 应用商店安装 Forge 扩展，或直接安装 `.vsix` 文件。
+<div class="usage-grid">
+  <section class="usage-card">
+    <h3><span class="material-symbols-outlined" aria-hidden="true">folder_open</span>Initialize Workspace</h3>
+    <p>Generate a <code>forge.toml</code> configuration file in the root of your existing .NET solution.</p>
 
-## 架构概览
+    <pre><code>$ forge init .</code></pre>
+  </section>
+  <section class="usage-card">
+    <h3><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>Start Server</h3>
+    <p>Launch the LSP server. Typically, your editor will run this command automatically.</p>
 
-Forge 采用三层架构：
+    <pre><code>$ forge dev --watch</code></pre>
+  </section>
+</div>
 
-| 层级 | 组件 | 职责 |
-|------|-----------|------|
-| **1** | Rust LSP 宿主 | LSP 连接、VFS、tree-sitter 解析、salsa 缓存 |
-| **2** | C# Sidecar | 由 Roslyn 驱动的代码补全、诊断、重构 |
-| **3** | F# Sidecar | FSharp.Compiler.Service、FSharpLint 诊断 |
-
-Rust 宿主处理所有 LSP 通信和语法级操作。语义操作通过 IPC 委托给相应的 .NET sidecar 进程。
-
-## 下一步
-
-- [架构](/zh/docs/architecture/) — 深入了解三层设计
-- [编辑器配置](/zh/docs/editors/) — 配置你的编辑器以使用 Forge
+<p class="next-link"><a href="/zh/docs/architecture/">Next: Architecture <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>

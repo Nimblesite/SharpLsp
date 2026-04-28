@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Forge - Blog</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-background": "#e5e2e1",
+                        "secondary-fixed": "#e5e2e1",
+                        "surface-variant": "#353534",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "on-primary-fixed": "#00210b",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "surface-container-low": "#1c1b1b",
+                        "surface-container-high": "#2a2a2a",
+                        "inverse-surface": "#e5e2e1",
+                        "tertiary": "#e7e4e3",
+                        "background": "#131313",
+                        "error-container": "#93000a",
+                        "surface-bright": "#3a3939",
+                        "on-primary-container": "#00612e",
+                        "secondary-container": "#474746",
+                        "on-surface-variant": "#bacbb9",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "tertiary-container": "#cac8c7",
+                        "on-tertiary-fixed": "#1b1c1c",
+                        "on-secondary-container": "#b7b5b4",
+                        "on-error-container": "#ffdad6",
+                        "primary-container": "#00e676",
+                        "primary": "#75ff9e",
+                        "on-tertiary": "#303030",
+                        "on-primary-fixed-variant": "#005226",
+                        "error": "#ffb4ab",
+                        "tertiary-fixed": "#e4e2e1",
+                        "primary-fixed-dim": "#00e475",
+                        "outline": "#859585",
+                        "on-error": "#690005",
+                        "secondary": "#c8c6c5",
+                        "outline-variant": "#3b4a3d",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "inverse-primary": "#006d35",
+                        "on-tertiary-container": "#545453",
+                        "primary-fixed": "#62ff96",
+                        "on-primary": "#003918",
+                        "on-surface": "#e5e2e1",
+                        "surface-container-lowest": "#0e0e0e",
+                        "inverse-on-surface": "#313030",
+                        "surface-container-highest": "#353534",
+                        "surface-dim": "#131313",
+                        "on-secondary": "#313030",
+                        "surface-tint": "#00e475",
+                        "surface": "#131313",
+                        "surface-container": "#201f1f",
+                        "on-secondary-fixed-variant": "#474746"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "container-max": "1440px",
+                        "margin": "24px",
+                        "unit": "4px",
+                        "density": "compact"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "headline-xl": ["Space Grotesk"],
+                        "code-md": ["monospace"],
+                        "headline-lg": ["Space Grotesk"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "400" }],
+                        "label-caps": ["12px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-xl": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "code-md": ["14px", { "lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "450" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-family: 'Material Symbols Outlined';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col">
+<!-- TopNavBar -->
+<header class="bg-[#0D0D0D]/80 backdrop-blur-md sticky top-0 z-50 border-b border-[#262626] shadow-[0_8px_32px_rgba(0,0,0,0.5)] font-['Space_Grotesk'] tracking-tight">
+<div class="flex justify-between items-center h-16 w-full px-6 max-w-7xl mx-auto">
+<div class="flex items-center gap-2">
+<a class="text-2xl font-bold tracking-tighter text-white flex items-center gap-2" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">terminal</span>
+                    Forge
+                </a>
+</div>
+<nav class="hidden md:flex items-center gap-8">
+<a class="text-neutral-400 font-medium hover:text-white transition-colors hover:bg-[#1A1A1A] rounded-md px-3 py-2 active:scale-95 duration-150" href="#">Docs</a>
+<a class="text-neutral-400 font-medium hover:text-white transition-colors hover:bg-[#1A1A1A] rounded-md px-3 py-2 active:scale-95 duration-150" href="#">Changelog</a>
+<a class="text-[#00E676] font-semibold border-b-2 border-[#00E676] pb-1 hover:bg-[#1A1A1A] rounded-md px-3 active:scale-95 duration-150" href="#">Blog</a>
+<a class="text-neutral-400 font-medium hover:text-white transition-colors hover:bg-[#1A1A1A] rounded-md px-3 py-2 active:scale-95 duration-150" href="#">Pricing</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="text-neutral-400 hover:text-white transition-colors hidden md:block">
+<span class="material-symbols-outlined">search</span>
+</button>
+<a class="text-neutral-400 font-medium hover:text-white transition-colors hidden md:block" href="#">Sign In</a>
+<a class="bg-[#00E676] text-black px-4 py-2 rounded-md font-semibold active:scale-95 transition-transform duration-150 hidden md:block" href="#">Get Started</a>
+<button class="md:hidden text-white">
+<span class="material-symbols-outlined">menu</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex-grow flex flex-col w-full max-w-container-max mx-auto px-margin py-12 gap-12">
+<!-- Header Section -->
+<section class="flex flex-col gap-6 w-full max-w-4xl">
+<h1 class="font-headline-xl text-headline-xl text-white">Engineering Blog</h1>
+<p class="font-body-md text-body-md text-secondary max-w-2xl">
+                Deep dives into systems architecture, performance tuning, and the technical decisions behind Forge. Built by engineers, for engineers.
+            </p>
+</section>
+<!-- Filters & Search -->
+<section class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 w-full border-b border-[#262626] pb-6">
+<div class="flex flex-wrap gap-4">
+<button class="bg-primary-container text-on-primary-container px-4 py-2 rounded-full font-label-caps text-label-caps uppercase tracking-widest border border-primary-container">All</button>
+<button class="bg-surface-container-high text-on-surface px-4 py-2 rounded-full font-label-caps text-label-caps uppercase tracking-widest border border-outline-variant hover:border-outline transition-colors">Releases</button>
+<button class="bg-surface-container-high text-on-surface px-4 py-2 rounded-full font-label-caps text-label-caps uppercase tracking-widest border border-outline-variant hover:border-outline transition-colors">Tutorials</button>
+<button class="bg-surface-container-high text-on-surface px-4 py-2 rounded-full font-label-caps text-label-caps uppercase tracking-widest border border-outline-variant hover:border-outline transition-colors">Engineering</button>
+</div>
+<div class="relative w-full md:w-auto">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full md:w-64 bg-[#050505] border border-outline-variant rounded-md py-2 pl-10 pr-4 text-white focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all font-body-sm text-body-sm" placeholder="Search articles..." type="text"/>
+</div>
+</section>
+<!-- Blog Grid -->
+<section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+<!-- Featured Card (Spans 2 cols on lg) -->
+<article class="col-span-1 md:col-span-2 lg:col-span-2 bg-[#1A1A1A] border border-[#262626] rounded-xl overflow-hidden flex flex-col group hover:border-[#3a3939] transition-colors relative">
+<div class="w-full h-64 md:h-80 relative overflow-hidden bg-surface-container-low">
+<img alt="Abstract server rack with glowing green fiber optic cables in dark data center" class="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500 opacity-80 mix-blend-screen" data-alt="Abstract server rack with glowing green fiber optic cables in dark data center" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBfJIzTeEimCRpV7GypvE1-TXYJhys7tNurDcizpqmeweIvgYAcGvDfJQMYkyK8GyeWzwh8Zf7x9reGpMg9Qb5Snty4u71Sp-8QQwpR1BNC6lgWfhWBktHSVVny_citH4Fs0Hd_MXsisvkjehtT4VfMSsacixiXdPKANztS2iyRo8aD0Zr7gHpA-cdLY5EEH631LhDuiFqhABX7OP5HNINOKcOSg92feCyhshx7Zjq-pydM0cQAxEDZrO59FGzdqriM_ZcT_3Dd9Q"/>
+<div class="absolute inset-0 bg-gradient-to-t from-[#1A1A1A] to-transparent"></div>
+</div>
+<div class="p-6 md:p-8 flex flex-col gap-4 flex-grow relative z-10 -mt-16">
+<div class="flex gap-2">
+<span class="bg-[#050505] text-white border border-[#262626] px-2 py-1 rounded-DEFAULT font-label-caps text-label-caps uppercase">Architecture</span>
+<span class="bg-[#050505] text-[#00E676] border border-[#262626] px-2 py-1 rounded-DEFAULT font-label-caps text-label-caps uppercase">New</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-white group-hover:text-primary-container transition-colors">Scaling the Forge Message Broker to 1M Events per Second</h2>
+<p class="font-body-md text-body-md text-secondary line-clamp-3">
+                        A detailed look into how we rewrote our core messaging infrastructure using Rust and a custom ring buffer architecture to achieve sub-millisecond latency at massive scale.
+                    </p>
+<div class="mt-auto pt-6 flex items-center justify-between border-t border-[#262626]">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center border border-[#262626]">
+<span class="font-label-caps text-label-caps text-white">JD</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-sm text-body-sm text-white">Jane Doe</span>
+<span class="font-label-caps text-[10px] text-tertiary-fixed-dim">Oct 24, 2024</span>
+</div>
+</div>
+<span class="font-code-md text-code-md text-outline">8 min read</span>
+</div>
+</div>
+</article>
+<!-- Card 2 -->
+<article class="bg-[#1A1A1A] border border-[#262626] rounded-xl overflow-hidden flex flex-col group hover:border-[#3a3939] transition-colors">
+<div class="w-full h-48 relative overflow-hidden bg-surface-container-low">
+<img alt="Close up of mechanical keyboard with glowing RGB keys in a dark coding environment" class="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500 opacity-60" data-alt="Close up of mechanical keyboard with glowing RGB keys in a dark coding environment" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD3cenwQpbnyBBi929ng2j1r3C0jyseH8LD8FljraY1UsoybKPdgLyJelH3xTgzcaGIDXvP2SOhX7iipv-AaBtDsMqb1v2Quoza3LNm6nEFcoZNRdiGglQU0ZFZjVmkrA7CKrOC7jXhWuR0smaSe5IMksK2UsIompgrn0Yzm2ANJ-Gla-6Ey4-DB7KlbjjNZ6Z4DElKRlX1RQsg2AFYrKjI6gewCnbGUycXtZIeJ6YIvoNyZwH5WZgcuYGi__KGyLSc08QHoLeVVg"/>
+</div>
+<div class="p-6 flex flex-col gap-4 flex-grow border-t border-[#262626]">
+<div class="flex gap-2">
+<span class="bg-[#050505] text-white border border-[#262626] px-2 py-1 rounded-DEFAULT font-label-caps text-label-caps uppercase">Tutorial</span>
+</div>
+<h3 class="font-headline-lg text-[24px] leading-tight text-white group-hover:text-primary-container transition-colors font-semibold">Implementing Zero-Downtime Deployments</h3>
+<p class="font-body-sm text-body-sm text-secondary line-clamp-3">
+                        Learn how to leverage Forge's routing layer to perform blue-green deployments without dropping a single active connection.
+                    </p>
+<div class="mt-auto pt-4 flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-body-sm text-body-sm text-white">Alex Chen</span>
+<span class="font-label-caps text-[10px] text-tertiary-fixed-dim">Oct 18, 2024</span>
+</div>
+</div>
+</div>
+</article>
+<!-- Card 3 -->
+<article class="bg-[#1A1A1A] border border-[#262626] rounded-xl overflow-hidden flex flex-col group hover:border-[#3a3939] transition-colors">
+<div class="w-full h-48 relative overflow-hidden bg-surface-container-low">
+<img alt="Abstract dark geometric code visualization with glowing green nodes" class="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500 opacity-60" data-alt="Abstract dark geometric code visualization with glowing green nodes" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB7bTHMNvp7mgUyeQRUCpkBLXp9ovJMYxmIAYvQU60SnHp1n2PQj8s9oXZIqqeOQSrkEqAmY2ASQP3x81STf0MJ2dbD7balX0kCQK2wr08Uh-eti-c-OdE-SZl5UpJpd5el9uHjVFr_ETKbSObnNdR55aj9wYjkUqDPSHPcQfRJGiS44c5U2ncvKir7gBG2ZpIO8w5nef05SAbf_LGAnxlDMmD_Tw0YiUTu586LXkt_LdIit6GY3SzbS8gxN15-RUmTn1207Z3Zww"/>
+</div>
+<div class="p-6 flex flex-col gap-4 flex-grow border-t border-[#262626]">
+<div class="flex gap-2">
+<span class="bg-[#050505] text-white border border-[#262626] px-2 py-1 rounded-DEFAULT font-label-caps text-label-caps uppercase">Release</span>
+</div>
+<h3 class="font-headline-lg text-[24px] leading-tight text-white group-hover:text-primary-container transition-colors font-semibold">Forge v2.4: The Observability Update</h3>
+<p class="font-body-sm text-body-sm text-secondary line-clamp-3">
+                        Introducing native distributed tracing, improved Prometheus metrics, and a new structured logging format for better debugging.
+                    </p>
+<div class="mt-auto pt-4 flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-body-sm text-body-sm text-white">Sarah Jenkins</span>
+<span class="font-label-caps text-[10px] text-tertiary-fixed-dim">Oct 12, 2024</span>
+</div>
+</div>
+</div>
+</article>
+<!-- Card 4 -->
+<article class="bg-[#1A1A1A] border border-[#262626] rounded-xl overflow-hidden flex flex-col group hover:border-[#3a3939] transition-colors">
+<div class="w-full h-48 relative overflow-hidden bg-surface-container-low">
+<div class="absolute inset-0 bg-gradient-to-br from-surface-container-high to-[#050505] flex items-center justify-center">
+<span class="material-symbols-outlined text-outline-variant text-6xl">security</span>
+</div>
+</div>
+<div class="p-6 flex flex-col gap-4 flex-grow border-t border-[#262626]">
+<div class="flex gap-2">
+<span class="bg-[#050505] text-white border border-[#262626] px-2 py-1 rounded-DEFAULT font-label-caps text-label-caps uppercase">Security</span>
+</div>
+<h3 class="font-headline-lg text-[24px] leading-tight text-white group-hover:text-primary-container transition-colors font-semibold">Securing Internal APIs with mTLS</h3>
+<p class="font-body-sm text-body-sm text-secondary line-clamp-3">
+                        A practical guide to configuring mutual TLS between microservices using Forge's built-in certificate authority.
+                    </p>
+<div class="mt-auto pt-4 flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-body-sm text-body-sm text-white">David Kim</span>
+<span class="font-label-caps text-[10px] text-tertiary-fixed-dim">Sep 28, 2024</span>
+</div>
+</div>
+</div>
+</article>
+<!-- Card 5 -->
+<article class="bg-[#1A1A1A] border border-[#262626] rounded-xl overflow-hidden flex flex-col group hover:border-[#3a3939] transition-colors">
+<div class="w-full h-48 relative overflow-hidden bg-surface-container-low">
+<img alt="Green binary code raining down a black screen in a matrix style" class="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500 opacity-60" data-alt="Green binary code raining down a black screen in a matrix style" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB6A4g4VZvPbeGvA96FtH4Vz1sAjGwmq8Xuq2xjZ9IIJ3JzSPSMrZezt9xD_xVgy34QifKOOdms6i3qB_Z_Micj_gu8HByTVRnacUPTjnOQdFop_H_FE6LUhZbBViIT7I_XWpyEUr-Xr6_NoWkRg5eztpK8oII0ACtN66zzUMWube0gk_7fFI-N40az_T_RrVPUpWifu1lH8L3YTo-WTBaBFLhKszKS0vGdzuZvgOqUzCjUgWqFaInkXxl1JP65mVDkhDSieGxRQQ"/>
+</div>
+<div class="p-6 flex flex-col gap-4 flex-grow border-t border-[#262626]">
+<div class="flex gap-2">
+<span class="bg-[#050505] text-white border border-[#262626] px-2 py-1 rounded-DEFAULT font-label-caps text-label-caps uppercase">Engineering</span>
+</div>
+<h3 class="font-headline-lg text-[24px] leading-tight text-white group-hover:text-primary-container transition-colors font-semibold">Why We Chose gRPC for Internal Comm</h3>
+<p class="font-body-sm text-body-sm text-secondary line-clamp-3">
+                        Evaluating the performance trade-offs between REST, GraphQL, and gRPC for our high-throughput internal microservices.
+                    </p>
+<div class="mt-auto pt-4 flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-body-sm text-body-sm text-white">Elena Rossi</span>
+<span class="font-label-caps text-[10px] text-tertiary-fixed-dim">Sep 15, 2024</span>
+</div>
+</div>
+</div>
+</article>
+</section>
+<!-- Load More -->
+<div class="w-full flex justify-center mt-8">
+<button class="bg-transparent text-white border border-[#262626] hover:border-primary-container hover:text-primary-container px-6 py-3 rounded-md font-body-md text-body-md transition-colors flex items-center gap-2">
+                Load More Articles
+                <span class="material-symbols-outlined text-[18px]">expand_more</span>
+</button>
+</div>
+</main>
+<!-- Footer -->
+<footer class="bg-[#0D0D0D] border-t border-[#262626] font-['Space_Grotesk'] text-sm uppercase tracking-widest text-[#00E676] w-full py-12 mt-auto">
+<div class="flex flex-col md:flex-row justify-between items-center gap-8 max-w-7xl mx-auto px-6">
+<div class="text-lg font-black text-white">
+                Forge
+            </div>
+<nav class="flex flex-wrap justify-center gap-6">
+<a class="text-neutral-500 hover:text-[#00E676] transition-colors underline underline-offset-4 opacity-80 hover:opacity-100" href="#">Privacy</a>
+<a class="text-neutral-500 hover:text-[#00E676] transition-colors underline underline-offset-4 opacity-80 hover:opacity-100" href="#">Terms</a>
+<a class="text-neutral-500 hover:text-[#00E676] transition-colors underline underline-offset-4 opacity-80 hover:opacity-100" href="#">GitHub</a>
+<a class="text-neutral-500 hover:text-[#00E676] transition-colors underline underline-offset-4 opacity-80 hover:opacity-100" href="#">Status</a>
+<a class="text-neutral-500 hover:text-[#00E676] transition-colors underline underline-offset-4 opacity-80 hover:opacity-100" href="#">Twitter</a>
+</nav>
+<div class="text-neutral-500 text-xs">
+                © 2024 Forge Technologies Inc. Built for precision.
+            </div>
+</div>
+</footer>
+</body></html>
