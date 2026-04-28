@@ -210,15 +210,11 @@ suite('Extension Activation & Configuration', () => {
         }
       }
     }
-    // Show the Forge Output channel then maximize it so the LSP log fills the editor area.
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.showOutput');
-    }, 'forge.showOutput must not throw before architecture screenshot');
-    await new Promise((r) => setTimeout(r, 500));
-    await vscode.commands.executeCommand('workbench.action.toggleMaximizedPanel');
-    await new Promise((r) => setTimeout(r, 1_500));
+    // Close any bottom panel, open Forge sidebar — shows Rust host + Roslyn sidecar in action.
+    await vscode.commands.executeCommand('workbench.action.closePanel');
+    await openForgePanel();
+    await new Promise((r) => setTimeout(r, 1_000));
     await takeScreenshot('vscode-architecture-page.png');
-    await vscode.commands.executeCommand('workbench.action.toggleMaximizedPanel');
   });
 
   // ── C# Language Configuration ──────────────────────────────

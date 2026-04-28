@@ -1,0 +1,88 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2]:
+    - /url: "#main-content"
+  - banner [ref=e3]:
+    - navigation [ref=e4]:
+      - link "Forge" [ref=e5]:
+        - /url: /forge/
+      - button "Toggle menu" [ref=e7] [cursor=pointer]
+  - main [ref=e11]:
+    - generic [ref=e12]:
+      - generic [ref=e13]: v1.0.4 Now Available
+      - heading "The Future of .NET Tooling" [level=1] [ref=e15]
+      - paragraph [ref=e16]: Engineered in Rust for uncompromising speed. Forge is a high-performance workspace designed for developers who value precision and productivity over bloat.
+      - generic [ref=e17]:
+        - link "Get Started" [ref=e18]:
+          - /url: /forge/docs/
+        - link "View on GitHub" [ref=e19]:
+          - /url: https://github.com/MelbourneDeveloper/forge
+          - generic [ref=e20]: code
+          - text: View on GitHub
+    - generic [ref=e22]:
+      - article [ref=e23]:
+        - generic [ref=e24]: bolt
+        - heading "<3s" [level=2] [ref=e25]
+        - paragraph [ref=e26]: Cold Start
+      - article [ref=e27]:
+        - generic [ref=e28]: speed
+        - heading "<100ms" [level=2] [ref=e29]
+        - paragraph [ref=e30]: Completions
+      - article [ref=e31]:
+        - generic [ref=e32]: extension_off
+        - heading "0" [level=2] [ref=e33]
+        - paragraph [ref=e34]: Proprietary Dependencies
+    - generic [ref=e35]:
+      - generic [ref=e36]:
+        - heading "Uncompromising Performance" [level=2] [ref=e37]
+        - paragraph [ref=e38]: Write, debug, and profile your .NET code in a pure, native environment.
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - generic [ref=e45]: Program.cs — Forge
+          - generic [ref=e46]:
+            - generic [ref=e47]: play_arrow
+            - generic [ref=e48]: bug_report
+        - code [ref=e50]: "using System; using System.Diagnostics; namespace Forge.Demo { public class Program { public static void Main() { var sw = Stopwatch.StartNew(); Console.WriteLine(\"Initializing Forge workspace...\"); // Zero-allocation parsing var parser = new FastSyntaxParser(); parser.AnalyzeProject(); sw.Stop(); Console.WriteLine($\"Ready in {sw.ElapsedMilliseconds}ms\"); } } }"
+    - generic [ref=e52]:
+      - article [ref=e53]:
+        - generic [ref=e54]: explore
+        - heading "Smart Navigation" [level=2] [ref=e55]
+        - paragraph [ref=e56]: Instant symbol resolution and definition lookup, powered by an optimized semantic index.
+      - article [ref=e57]:
+        - generic [ref=e58]: view_in_ar
+        - heading "NuGet Integration" [level=2] [ref=e59]
+        - paragraph [ref=e60]: Seamless dependency management directly from the command palette or UI.
+      - article [ref=e61]:
+        - generic [ref=e62]: analytics
+        - heading "Real-time Profiling" [level=2] [ref=e63]
+        - paragraph [ref=e64]: Built-in allocation tracking and CPU profiling without context switching.
+    - generic [ref=e65]:
+      - generic [ref=e66]:
+        - heading "Ready to forge ahead?" [level=2] [ref=e67]
+        - paragraph [ref=e68]: Join the open-source community shaping the next generation of .NET tooling.
+      - generic [ref=e69]:
+        - link "Download Forge" [ref=e70]:
+          - /url: /forge/docs/
+        - link "Read the Docs" [ref=e71]:
+          - /url: /forge/docs/
+  - contentinfo [ref=e72]:
+    - generic [ref=e73]:
+      - generic [ref=e74]:
+        - link "Documentation" [ref=e75]:
+          - /url: /forge/docs/
+        - link "Changelog" [ref=e76]:
+          - /url: /forge/blog/
+        - link "Community" [ref=e77]:
+          - /url: https://github.com/MelbourneDeveloper/forge
+        - link "Security" [ref=e78]:
+          - /url: https://github.com/MelbourneDeveloper/forge/security
+      - generic [ref=e79]:
+        - strong [ref=e80]: Forge
+        - paragraph [ref=e81]:
+          - text: © 2026
+          - link "NIMBLESITE" [ref=e82]:
+            - /url: https://nimblesite.co
+          - text: . Open-source under MIT License.
+```

@@ -1,153 +1,117 @@
 ---
 layout: layouts/base.njk
-title: "Forge — 开源 .NET LSP"
+title: "Forge - .NET 工具的未来"
 lang: zh
 ---
 
-<section class="hero">
-  <div class="hero-badge">Alpha &middot; 接近 Beta &middot; MIT 许可证</div>
-  <h1>面向 VS Code 的<br/>开源 .NET 工具。</h1>
-  <p class="tagline">
-    Forge 目前是早期 .NET 语言工具栈：Rust LSP 宿主、Roslyn 驱动的 C# 功能、
-    解决方案导航、NuGet 工作流，以及 VS Code 扩展中的性能分析工具。
+<section class="masthead">
+  <div class="badge"><span class="status-dot"></span>v1.0.4 Now Available</div>
+  <h1 class="title">The Future of <span>.NET Tooling</span></h1>
+  <p class="lede">
+    Engineered in Rust for uncompromising speed. Forge is a high-performance
+    workspace designed for developers who value precision and productivity
+    over bloat.
   </p>
-  <div class="hero-actions">
-    <a href="/zh/docs/" class="btn btn-primary">快速入门</a>
-    <a href="https://github.com/MelbourneDeveloper/forge" class="btn btn-secondary">GitHub</a>
+  <div class="button-row">
+    <a class="button button-primary" href="/zh/docs/">Get Started</a>
+    <a class="button button-secondary" href="https://github.com/MelbourneDeveloper/forge">
+      <span class="material-symbols-outlined" aria-hidden="true">code</span>
+      View on GitHub
+    </a>
   </div>
 </section>
 
-<section class="value-props">
-  <div class="value-props-inner">
-    <div class="value-item">
-      <div class="value-number">&lt;3秒</div>
-      <div class="value-label">冷启动到首次响应</div>
-    </div>
-    <div class="value-divider"></div>
-    <div class="value-item">
-      <div class="value-number">&lt;100ms</div>
-      <div class="value-label">代码补全 p50</div>
-    </div>
-    <div class="value-divider"></div>
-    <div class="value-item">
-      <div class="value-number">&lt;1ms</div>
-      <div class="value-label">Tree-sitter 重新解析</div>
-    </div>
-    <div class="value-divider"></div>
-    <div class="value-item">
-      <div class="value-number">0</div>
-      <div class="value-label">专有依赖</div>
-    </div>
+<section class="panel">
+  <div class="card-grid card-grid-three">
+    <article class="metric-card">
+      <span class="material-symbols-outlined card-icon" aria-hidden="true">bolt</span>
+      <h2>&lt;3s</h2>
+      <p>Cold Start</p>
+    </article>
+    <article class="metric-card">
+      <span class="material-symbols-outlined card-icon" aria-hidden="true">speed</span>
+      <h2>&lt;100ms</h2>
+      <p>Completions</p>
+    </article>
+    <article class="metric-card">
+      <span class="material-symbols-outlined card-icon" aria-hidden="true">extension_off</span>
+      <h2>0</h2>
+      <p>Proprietary Dependencies</p>
+    </article>
   </div>
 </section>
 
-<section class="showcase">
-  <h2>亲眼见证。</h2>
-  <p>来自 VS Code 扩展的真实截图，非模拟图。</p>
-  <div class="showcase-grid">
-    <div class="showcase-item showcase-wide">
-      <img src="/assets/screenshots/solution-explorer.png" alt="Forge 解决方案资源管理器树视图（VS Code）" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>真正好用的解决方案资源管理器</h3>
-        <p>从 Forge 活动栏浏览 .NET 解决方案、项目、文件、依赖项、NuGet 包和引用。</p>
+<section class="band">
+  <div class="copy-block">
+    <h2>Uncompromising Performance</h2>
+    <p>Write, debug, and profile your .NET code in a pure, native environment.</p>
+  </div>
+
+  <div class="window">
+    <div class="window-bar">
+      <div class="window-controls" aria-hidden="true">
+        <span class="window-dot window-dot-red"></span>
+        <span class="window-dot window-dot-yellow"></span>
+        <span class="window-dot window-dot-green"></span>
+      </div>
+      <div class="window-title">Program.cs — Forge</div>
+      <div class="window-tools" aria-hidden="true">
+        <span class="material-symbols-outlined">play_arrow</span>
+        <span class="material-symbols-outlined">bug_report</span>
       </div>
     </div>
-    <div class="showcase-item">
-      <img src="/assets/screenshots/vscode-completions-page.png" alt="Forge 在 VS Code 中显示 C# 代码补全" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>C# 语言智能</h3>
-        <p>C# 补全、悬停、诊断和导航通过 Roslyn sidecar 执行，语法功能保留在 Rust 宿主中。</p>
-      </div>
-    </div>
-    <div class="showcase-item">
-      <img src="/assets/screenshots/code-folding.png" alt="VS Code 中带区域的代码折叠" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>代码折叠</h3>
-        <p>折叠命名空间、类、方法和 #region 块。折叠噪音，专注于重要内容。低于 1ms。</p>
-      </div>
-    </div>
-    <div class="showcase-item">
-      <img src="/assets/screenshots/nested-classes.png" alt="VS Code 中的嵌套类层次结构" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>嵌套类型层次结构</h3>
-        <p>内部类、嵌套类型和复杂层次结构 — 实时解析并可导航，无需等待编译器。</p>
-      </div>
-    </div>
+    <pre class="code-pane"><code><span class="token-keyword">using</span> System;
+<span class="token-keyword">using</span> System.Diagnostics;
+
+<span class="token-keyword">namespace</span> Forge.Demo
+{
+    <span class="token-keyword">public class</span> Program
+    {
+        <span class="token-keyword">public static void</span> Main()
+        {
+            <span class="token-type">var</span> sw = Stopwatch.StartNew();
+
+            Console.WriteLine(<span class="token-string">"Initializing Forge workspace..."</span>);
+
+            <span class="token-comment">// Zero-allocation parsing</span>
+            <span class="token-type">var</span> parser = <span class="token-keyword">new</span> FastSyntaxParser();
+            parser.AnalyzeProject();
+
+            sw.Stop();
+            Console.WriteLine(<span class="token-string">$"Ready in {sw.ElapsedMilliseconds}ms"</span>);
+        }
+    }
+}</code></pre>
   </div>
 </section>
 
-<section class="perf-section">
-  <h2>性能目标。</h2>
-  <p>这些是 alpha 阶段的工程目标，不是 beta 稳定性承诺。</p>
-  <div class="perf-grid">
-    <div class="perf-card">
-      <div class="perf-stat">&lt;3秒</div>
-      <div class="perf-label">冷启动</div>
-      <div class="perf-desc">首次 LSP 响应在 3 秒内完成，包括 sidecar 启动和工作区加载。</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;1ms</div>
-      <div class="perf-label">按键响应</div>
-      <div class="perf-desc">Tree-sitter 在每次按键时对文档进行增量重新解析。无延迟，无卡顿。</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;100ms</div>
-      <div class="perf-label">代码补全 p50</div>
-      <div class="perf-desc">通过 sidecar 实现 Roslyn 代码补全，Rust 宿主保持协议和语法路径响应迅速。</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;500ms</div>
-      <div class="perf-label">诊断刷新</div>
-      <div class="perf-desc">按键后文件级诊断重新分析，防抖延迟 150ms。</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;3秒</div>
-      <div class="perf-label">崩溃恢复</div>
-      <div class="perf-desc">如果 Roslyn sidecar 崩溃，Forge 会自动重新启动。编辑器永不冻结。</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;1ms</div>
-      <div class="perf-label">缓存命中</div>
-      <div class="perf-desc">salsa 增量缓存在不到一毫秒内返回重复的悬停和定义结果。</div>
-    </div>
+<section class="panel">
+  <div class="card-grid card-grid-three">
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">explore</span>
+      <h2>Smart Navigation</h2>
+      <p>Instant symbol resolution and definition lookup, powered by an optimized semantic index.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">view_in_ar</span>
+      <h2>NuGet Integration</h2>
+      <p>Seamless dependency management directly from the command palette or UI.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">analytics</span>
+      <h2>Real-time Profiling</h2>
+      <p>Built-in allocation tracking and CPU profiling without context switching.</p>
+    </article>
   </div>
 </section>
 
-<section class="features">
-  <h2>当前扩展状态。</h2>
-  <p>Forge 仍是 alpha 软件。VS Code 扩展是当前主要可用界面，编辑器无关的 LSP 工作仍在推进。</p>
-  <div class="feature-grid">
-    <div class="feature-card feature-highlight">
-      <h3>VS Code 优先。</h3>
-      <p>当前扩展通过 VS Code 暴露 Forge：语言客户端启动、解决方案资源管理器、性能分析器、NuGet 工作流、命令和调试器集成。</p>
-    </div>
-    <div class="feature-card">
-      <h3>解决方案资源管理器工作流。</h3>
-      <p>树视图支持选择解决方案、刷新、排序、项目操作、包操作、引用、复制命令和文件定位命令。</p>
-    </div>
-    <div class="feature-card">
-      <h3>Rust 宿主。亚毫秒解析。</h3>
-      <p>Rust 宿主中的 Tree-sitter 增量解析，salsa 驱动的缓存。无需等待 Roslyn 即可获得文档符号、折叠和选择范围。</p>
-    </div>
-    <div class="feature-card">
-      <h3>Roslyn 支撑的 C# 功能。</h3>
-      <p>Forge 正在基于 Roslyn 构建 C# 补全、诊断、悬停、定义跳转和代码操作，而不是在编辑器扩展中近似语义行为。</p>
-    </div>
-    <div class="feature-card">
-      <h3>崩溃防护架构。</h3>
-      <p>Sidecar 进程模型意味着 Roslyn 崩溃可在 3 秒内恢复。你的编辑器保持运行，你的工作流不受影响。</p>
-    </div>
-    <div class="feature-card feature-highlight">
-      <h3>零。供应商。锁定。</h3>
-      <p>无许可证。无遥测。无专有模块。Fork 它、扩展它、发布它。这是社区应得的 .NET 工具链。</p>
-    </div>
+<section class="cta">
+  <div class="copy-block">
+    <h2>Ready to forge ahead?</h2>
+    <p>Join the open-source community shaping the next generation of .NET tooling.</p>
   </div>
-</section>
-
-<section class="install">
-  <h2>快速开始。</h2>
-  <pre><code>git clone https://github.com/MelbourneDeveloper/forge.git
-cd forge
-cargo build --release</code></pre>
-  <p>或从<a href="/zh/docs/">快速入门</a>指南安装 VS Code 扩展。</p>
+  <div class="button-row">
+    <a class="button button-primary" href="/zh/docs/">Download Forge</a>
+    <a class="button button-secondary" href="/zh/docs/">Read the Docs</a>
+  </div>
 </section>

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Forge Documentation - Getting Started</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "background": "#131313",
+                        "surface-container-lowest": "#0e0e0e",
+                        "surface-container": "#201f1f",
+                        "on-surface": "#e5e2e1",
+                        "on-secondary-container": "#b7b5b4",
+                        "inverse-primary": "#006d35",
+                        "primary-fixed-dim": "#00e475",
+                        "on-primary": "#003918",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "secondary": "#c8c6c5",
+                        "error-container": "#93000a",
+                        "on-primary-fixed": "#00210b",
+                        "secondary-fixed": "#e5e2e1",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-low": "#1c1b1b",
+                        "on-tertiary": "#303030",
+                        "surface-tint": "#00e475",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "surface-variant": "#353534",
+                        "surface": "#131313",
+                        "on-secondary": "#313030",
+                        "primary-fixed": "#62ff96",
+                        "surface-container-high": "#2a2a2a",
+                        "primary": "#75ff9e",
+                        "surface-dim": "#131313",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "surface-container-highest": "#353534",
+                        "surface-bright": "#3a3939",
+                        "outline": "#859585",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "on-tertiary-fixed": "#1b1c1c",
+                        "on-surface-variant": "#bacbb9",
+                        "error": "#ffb4ab",
+                        "tertiary-fixed": "#e4e2e1",
+                        "tertiary-container": "#cac8c7",
+                        "on-error": "#690005",
+                        "inverse-surface": "#e5e2e1",
+                        "on-primary-container": "#00612e",
+                        "inverse-on-surface": "#313030",
+                        "secondary-container": "#474746",
+                        "tertiary": "#e7e4e3",
+                        "primary-container": "#00e676",
+                        "outline-variant": "#3b4a3d",
+                        "on-secondary-fixed-variant": "#474746",
+                        "on-primary-fixed-variant": "#005226",
+                        "on-background": "#e5e2e1",
+                        "on-tertiary-container": "#545453"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    fontFamily: {
+                        "code-md": ["monospace"],
+                        "headline-lg": ["Space Grotesk"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-xl": ["Space Grotesk"],
+                        "label-caps": ["Inter"]
+                    },
+                    fontSize: {
+                        "code-md": ["14px", { lineHeight: "1.6", letterSpacing: "0", fontWeight: "450" }],
+                        "headline-lg": ["32px", { lineHeight: "1.2", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "body-sm": ["14px", { lineHeight: "1.5", letterSpacing: "0", fontWeight: "400" }],
+                        "body-md": ["16px", { lineHeight: "1.6", letterSpacing: "0", fontWeight: "400" }],
+                        "headline-xl": ["48px", { lineHeight: "1.1", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "label-caps": ["12px", { lineHeight: "1", letterSpacing: "0.05em", fontWeight: "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-background font-body-md text-body-md antialiased min-h-screen flex flex-col">
+<!-- TopNavBar -->
+<nav class="fixed top-0 w-full z-50 border-b border-[#262626] bg-[#0D0D0D]/80 backdrop-blur-xl shadow-2xl shadow-black/50">
+<div class="flex items-center justify-between px-6 h-14 w-full">
+<div class="flex items-center gap-8">
+<a class="text-xl font-bold tracking-tighter text-white font-headline-lg" href="#">Forge</a>
+<div class="hidden md:flex items-center gap-6 h-full font-['Space_Grotesk'] text-sm tracking-tight">
+<a class="text-[#00E676] border-b-2 border-[#00E676] pb-1 hover:bg-[#1A1A1A] transition-all duration-200 h-full flex items-center active:scale-95 transition-transform" href="#">Docs</a>
+<a class="text-gray-400 hover:text-white transition-colors hover:bg-[#1A1A1A] transition-all duration-200 h-full flex items-center active:scale-95 transition-transform" href="#">API</a>
+<a class="text-gray-400 hover:text-white transition-colors hover:bg-[#1A1A1A] transition-all duration-200 h-full flex items-center active:scale-95 transition-transform" href="#">GitHub</a>
+<a class="text-gray-400 hover:text-white transition-colors hover:bg-[#1A1A1A] transition-all duration-200 h-full flex items-center active:scale-95 transition-transform" href="#">Changelog</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-gray-400 hover:text-white transition-colors hover:bg-[#1A1A1A] transition-all duration-200 p-2 rounded-DEFAULT active:scale-95 transition-transform">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+</button>
+<button class="text-gray-400 hover:text-white transition-colors hover:bg-[#1A1A1A] transition-all duration-200 p-2 rounded-DEFAULT active:scale-95 transition-transform">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">terminal</span>
+</button>
+</div>
+</div>
+</nav>
+<div class="flex flex-1 pt-14">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-14 h-[calc(100vh-3.5rem)] w-64 border-r border-[#262626] bg-[#0D0D0D] hidden md:flex flex-col py-6 gap-2 font-['Space_Grotesk'] text-sm antialiased overflow-y-auto">
+<div class="px-6 pb-4 border-b border-[#262626] mb-2">
+<h2 class="text-white font-bold">Forge v1.0.4</h2>
+<p class="text-gray-400 text-xs mt-1">Developer Toolchain</p>
+<button class="mt-4 w-full bg-[#1A1A1A] border border-[#262626] text-white py-1.5 rounded-DEFAULT hover:bg-[#262626] transition-colors text-xs font-semibold">Upgrade Plan</button>
+</div>
+<div class="flex-1 overflow-y-auto">
+<nav class="flex flex-col gap-1">
+<a class="flex items-center gap-3 bg-[#1A1A1A] text-[#00E676] border-r-2 border-[#00E676] py-2 px-4 hover:bg-[#1A1A1A]/50 transition-colors active:translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined text-[18px]">rocket_launch</span>
+                        Getting Started
+                    </a>
+<a class="flex items-center gap-3 text-gray-400 py-2 px-4 hover:text-white hover:bg-[#1A1A1A]/50 transition-colors active:translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined text-[18px]">account_tree</span>
+                        Architecture
+                    </a>
+<a class="flex items-center gap-3 text-gray-400 py-2 px-4 hover:text-white hover:bg-[#1A1A1A]/50 transition-colors active:translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined text-[18px]">code_blocks</span>
+                        Editor Setup
+                    </a>
+<a class="flex items-center gap-3 text-gray-400 py-2 px-4 hover:text-white hover:bg-[#1A1A1A]/50 transition-colors active:translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined text-[18px]">terminal</span>
+                        CLI Reference
+                    </a>
+<a class="flex items-center gap-3 text-gray-400 py-2 px-4 hover:text-white hover:bg-[#1A1A1A]/50 transition-colors active:translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined text-[18px]">speed</span>
+                        Performance
+                    </a>
+</nav>
+</div>
+<div class="px-4 pt-4 border-t border-[#262626] mt-auto">
+<a class="flex items-center gap-3 text-gray-400 py-2 px-2 hover:text-white hover:bg-[#1A1A1A]/50 transition-colors rounded-DEFAULT" href="#">
+<span class="material-symbols-outlined text-[18px]">help</span>
+                    Support
+                </a>
+<a class="flex items-center gap-3 text-gray-400 py-2 px-2 hover:text-white hover:bg-[#1A1A1A]/50 transition-colors rounded-DEFAULT" href="#">
+<span class="material-symbols-outlined text-[18px]">chat_bubble</span>
+                    Feedback
+                </a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 md:ml-64 p-8 lg:p-12 max-w-4xl xl:max-w-5xl mx-auto w-full">
+<header class="mb-12">
+<div class="flex items-center gap-3 mb-4">
+<span class="font-label-caps text-label-caps bg-surface-container-high text-primary-container px-2 py-1 rounded-DEFAULT border border-[#262626]">DOCS</span>
+<span class="text-on-secondary-container text-sm">/</span>
+<span class="text-on-surface text-sm">Getting Started</span>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-white tracking-tight mb-4">Getting Started with Forge</h1>
+<p class="text-on-secondary-container font-body-md text-body-md max-w-2xl leading-relaxed">
+                    Forge is an ultra-fast, open-source Language Server Protocol (LSP) implementation for .NET, engineered entirely in Rust. It delivers sub-millisecond response times and minimal memory footprint, redefining the C# developer experience.
+                </p>
+</header>
+<section class="mb-12 bg-[#1A1A1A] border border-[#262626] rounded-xl overflow-hidden p-6 relative">
+<div class="absolute top-0 left-0 w-1 h-full bg-primary-container"></div>
+<h2 class="font-headline-lg text-headline-lg text-white mb-6 flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container">fact_check</span>
+                    Prerequisites
+                </h2>
+<ul class="space-y-4">
+<li class="flex items-start gap-4 p-4 bg-surface-container-lowest rounded-lg border border-[#262626]">
+<div class="mt-1 bg-[#1A1A1A] p-2 rounded-md border border-[#262626]">
+<img alt="Rust Logo" class="w-6 h-6 invert opacity-80" data-alt="Rust programming language logo icon monochrome white" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDAmU89t3COqgQaY4f74GOSYCueoxh0QuThzAIM3zyxiT7jotIjcEE0rBKNDOw_7D6n8_JvDGyOiQ_-7o_5yKQZiE9O4HQlf4BcEw_Fk_zu6S9hKwKyVcJBuDcFx-pGq05OYDkoHhPHTjuE6MnU979x4P7pajlSHMdxoQeTHESjYJ3AtKIqKDrMEjrB9YJc-HThBocUb4TxBSEYJDgnDqnKvudiRHDTJg3AXnyRioRB26YR8Z5jFohU0voH3r7NsZ6C6DHBUm-_bA"/>
+</div>
+<div>
+<h3 class="text-white font-semibold mb-1">Rust Toolchain</h3>
+<p class="text-on-secondary-container text-sm">Requires Rust 1.75.0 or later. We recommend installing via <code class="font-code-md text-code-md bg-surface-container px-1 py-0.5 rounded text-primary-container">rustup</code>.</p>
+</div>
+</li>
+<li class="flex items-start gap-4 p-4 bg-surface-container-lowest rounded-lg border border-[#262626]">
+<div class="mt-1 bg-[#1A1A1A] p-2 rounded-md border border-[#262626]">
+<span class="material-symbols-outlined text-gray-400">deployed_code</span>
+</div>
+<div>
+<h3 class="text-white font-semibold mb-1">.NET 10.0 SDK</h3>
+<p class="text-on-secondary-container text-sm">Required for project parsing and MSBuild integration. Ensure the SDK is in your PATH.</p>
+</div>
+</li>
+</ul>
+</section>
+<section class="mb-12">
+<h2 class="font-headline-lg text-headline-lg text-white mb-6 border-b border-[#262626] pb-2">Installation</h2>
+<p class="text-on-secondary-container mb-4">Install the Forge CLI directly from crates.io using Cargo:</p>
+<div class="bg-[#262626] rounded-lg border border-[#333] overflow-hidden group">
+<div class="flex items-center justify-between px-4 py-2 bg-[#1A1A1A] border-b border-[#333]">
+<span class="text-xs text-gray-400 font-code-md">bash</span>
+<button class="text-gray-400 hover:text-white transition-colors" title="Copy code">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+</button>
+</div>
+<div class="p-4 overflow-x-auto">
+<pre class="font-code-md text-code-md text-gray-300"><span class="text-primary-container">$</span> cargo install forge-cli</pre>
+</div>
+</div>
+</section>
+<section class="mb-12">
+<h2 class="font-headline-lg text-headline-lg text-white mb-6 border-b border-[#262626] pb-2">Basic Usage</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- Init Card -->
+<div class="bg-[#1A1A1A] border border-[#262626] rounded-xl p-6 flex flex-col">
+<h3 class="text-white font-semibold mb-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container text-[20px]">folder_open</span>
+                            Initialize Workspace
+                        </h3>
+<p class="text-sm text-on-secondary-container mb-4 flex-1">
+                            Generate a <code class="font-code-md text-code-md bg-surface-container px-1 py-0.5 rounded text-white">forge.toml</code> configuration file in the root of your existing .NET solution.
+                        </p>
+<div class="bg-[#262626] rounded-lg border border-[#333] overflow-hidden mt-auto">
+<div class="p-3 overflow-x-auto">
+<pre class="font-code-md text-code-md text-gray-300 text-sm"><span class="text-primary-container">$</span> forge init .</pre>
+</div>
+</div>
+</div>
+<!-- Dev Card -->
+<div class="bg-[#1A1A1A] border border-[#262626] rounded-xl p-6 flex flex-col">
+<h3 class="text-white font-semibold mb-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container text-[20px]">play_arrow</span>
+                            Start Server
+                        </h3>
+<p class="text-sm text-on-secondary-container mb-4 flex-1">
+                            Launch the LSP server. Typically, your editor (VS Code, Neovim) will run this command automatically.
+                        </p>
+<div class="bg-[#262626] rounded-lg border border-[#333] overflow-hidden mt-auto">
+<div class="p-3 overflow-x-auto">
+<pre class="font-code-md text-code-md text-gray-300 text-sm"><span class="text-primary-container">$</span> forge dev --watch</pre>
+</div>
+</div>
+</div>
+</div>
+</section>
+<div class="flex justify-between items-center mt-16 pt-8 border-t border-[#262626]">
+<div></div>
+<a class="flex items-center gap-2 text-white hover:text-primary-container transition-colors group" href="#">
+<span class="text-sm font-semibold">Next: Architecture</span>
+<span class="material-symbols-outlined group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</a>
+</div>
+</main>
+</div>
+</body></html>

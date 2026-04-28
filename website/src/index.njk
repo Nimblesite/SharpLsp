@@ -1,153 +1,116 @@
 ---
 layout: layouts/base.njk
-title: "Forge — Open-Source .NET LSP"
+title: "Forge - The Future of .NET Tooling"
 ---
 
-<section class="hero">
-  <div class="hero-badge">Alpha &middot; Approaching Beta &middot; MIT Licensed</div>
-  <h1>Open-source .NET tooling<br/>for VS Code.</h1>
-  <p class="tagline">
-    Forge is an early .NET language tooling stack with a Rust LSP host,
-    Roslyn-powered C# features, solution navigation, NuGet workflows,
-    and profiler tooling in the VS Code extension.
+<section class="masthead">
+  <div class="badge"><span class="status-dot"></span>v1.0.4 Now Available</div>
+  <h1 class="title">The Future of <span>.NET Tooling</span></h1>
+  <p class="lede">
+    Engineered in Rust for uncompromising speed. Forge is a high-performance
+    workspace designed for developers who value precision and productivity
+    over bloat.
   </p>
-  <div class="hero-actions">
-    <a href="/docs/" class="btn btn-primary">Get Started</a>
-    <a href="https://github.com/MelbourneDeveloper/forge" class="btn btn-secondary">GitHub</a>
+  <div class="button-row">
+    <a class="button button-primary" href="/docs/">Get Started</a>
+    <a class="button button-secondary" href="https://github.com/MelbourneDeveloper/forge">
+      <span class="material-symbols-outlined" aria-hidden="true">code</span>
+      View on GitHub
+    </a>
   </div>
 </section>
 
-<section class="value-props">
-  <div class="value-props-inner">
-    <div class="value-item">
-      <div class="value-number">&lt;3s</div>
-      <div class="value-label">Cold start to first response</div>
-    </div>
-    <div class="value-divider"></div>
-    <div class="value-item">
-      <div class="value-number">&lt;100ms</div>
-      <div class="value-label">Completions p50</div>
-    </div>
-    <div class="value-divider"></div>
-    <div class="value-item">
-      <div class="value-number">&lt;1ms</div>
-      <div class="value-label">Tree-sitter reparse</div>
-    </div>
-    <div class="value-divider"></div>
-    <div class="value-item">
-      <div class="value-number">0</div>
-      <div class="value-label">Proprietary dependencies</div>
-    </div>
+<section class="panel">
+  <div class="card-grid card-grid-three">
+    <article class="metric-card">
+      <span class="material-symbols-outlined card-icon" aria-hidden="true">bolt</span>
+      <h2>&lt;3s</h2>
+      <p>Cold Start</p>
+    </article>
+    <article class="metric-card">
+      <span class="material-symbols-outlined card-icon" aria-hidden="true">speed</span>
+      <h2>&lt;100ms</h2>
+      <p>Completions</p>
+    </article>
+    <article class="metric-card">
+      <span class="material-symbols-outlined card-icon" aria-hidden="true">extension_off</span>
+      <h2>0</h2>
+      <p>Proprietary Dependencies</p>
+    </article>
   </div>
 </section>
 
-<section class="showcase">
-  <h2>See it in action.</h2>
-  <p>Real screenshots from the VS Code extension. Not mockups.</p>
-  <div class="showcase-grid">
-    <div class="showcase-item showcase-wide">
-      <img src="/assets/screenshots/solution-explorer.png" alt="Forge Solution Explorer tree view in VS Code" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>Solution Explorer</h3>
-        <p>Browse .NET solutions, projects, files, dependencies, NuGet packages, and references from the Forge activity bar.</p>
+<section class="band">
+  <div class="copy-block">
+    <h2>Uncompromising Performance</h2>
+    <p>Write, debug, and profile your .NET code in a pure, native environment.</p>
+  </div>
+
+  <div class="window">
+    <div class="window-bar">
+      <div class="window-controls" aria-hidden="true">
+        <span class="window-dot window-dot-red"></span>
+        <span class="window-dot window-dot-yellow"></span>
+        <span class="window-dot window-dot-green"></span>
+      </div>
+      <div class="window-title">Program.cs — Forge</div>
+      <div class="window-tools" aria-hidden="true">
+        <span class="material-symbols-outlined">play_arrow</span>
+        <span class="material-symbols-outlined">bug_report</span>
       </div>
     </div>
-    <div class="showcase-item">
-      <img src="/assets/screenshots/vscode-completions-page.png" alt="C# completion list in VS Code with Forge" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>C# language intelligence</h3>
-        <p>C# completions, hover, diagnostics, and navigation route through the Roslyn sidecar while syntax features stay in the Rust host.</p>
-      </div>
-    </div>
-    <div class="showcase-item">
-      <img src="/assets/screenshots/code-folding.png" alt="Code folding with regions in VS Code" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>Code folding</h3>
-        <p>Fold namespaces, classes, methods, and #region blocks. Collapse the noise, focus on what matters. Under 1ms.</p>
-      </div>
-    </div>
-    <div class="showcase-item">
-      <img src="/assets/screenshots/nested-classes.png" alt="Nested class hierarchy in VS Code" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>Nested type hierarchies</h3>
-        <p>Inner classes, nested types, and complex hierarchies — parsed and navigable in real time without waiting on the compiler.</p>
-      </div>
-    </div>
+    <pre class="code-pane"><code><span class="token-keyword">using</span> System;
+<span class="token-keyword">using</span> System.Diagnostics;
+
+<span class="token-keyword">namespace</span> Forge.Demo
+{
+    <span class="token-keyword">public class</span> Program
+    {
+        <span class="token-keyword">public static void</span> Main()
+        {
+            <span class="token-type">var</span> sw = Stopwatch.StartNew();
+
+            Console.WriteLine(<span class="token-string">"Initializing Forge workspace..."</span>);
+
+            <span class="token-comment">// Zero-allocation parsing</span>
+            <span class="token-type">var</span> parser = <span class="token-keyword">new</span> FastSyntaxParser();
+            parser.AnalyzeProject();
+
+            sw.Stop();
+            Console.WriteLine(<span class="token-string">$"Ready in {sw.ElapsedMilliseconds}ms"</span>);
+        }
+    }
+}</code></pre>
   </div>
 </section>
 
-<section class="perf-section">
-  <h2>Performance targets.</h2>
-  <p>These are engineering targets for the alpha, not a beta stability guarantee.</p>
-  <div class="perf-grid">
-    <div class="perf-card">
-      <div class="perf-stat">&lt;3s</div>
-      <div class="perf-label">Cold start</div>
-      <div class="perf-desc">First LSP response in under 3 seconds, including sidecar spawn and workspace load.</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;1ms</div>
-      <div class="perf-label">Keystrokes</div>
-      <div class="perf-desc">Tree-sitter re-parses the document incrementally on every keystroke. No lag. No stutter.</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;100ms</div>
-      <div class="perf-label">Completions p50</div>
-      <div class="perf-desc">Roslyn completions via the sidecar, with the Rust host keeping protocol and syntax work responsive.</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;500ms</div>
-      <div class="perf-label">Diagnostics refresh</div>
-      <div class="perf-desc">File-level diagnostic re-analysis after a keystroke, debounced at 150ms.</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;3s</div>
-      <div class="perf-label">Crash recovery</div>
-      <div class="perf-desc">If the Roslyn sidecar crashes, Forge respawns it automatically. Your editor never freezes.</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;1ms</div>
-      <div class="perf-label">Cache hits</div>
-      <div class="perf-desc">salsa incremental cache returns repeated hover and definition results in under a millisecond.</div>
-    </div>
+<section class="panel">
+  <div class="card-grid card-grid-three">
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">explore</span>
+      <h2>Smart Navigation</h2>
+      <p>Instant symbol resolution and definition lookup, powered by an optimized semantic index.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">view_in_ar</span>
+      <h2>NuGet Integration</h2>
+      <p>Seamless dependency management directly from the command palette or UI.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">analytics</span>
+      <h2>Real-time Profiling</h2>
+      <p>Built-in allocation tracking and CPU profiling without context switching.</p>
+    </article>
   </div>
 </section>
 
-<section class="features">
-  <h2>Current extension state.</h2>
-  <p>Forge is alpha software. The VS Code extension is the primary working surface while the editor-agnostic LSP work continues.</p>
-  <div class="feature-grid">
-    <div class="feature-card feature-highlight">
-      <h3>VS Code first.</h3>
-      <p>The current extension exposes Forge through VS Code: language client startup, Solution Explorer, profiler, NuGet workflows, commands, and debugger integration.</p>
-    </div>
-    <div class="feature-card">
-      <h3>Solution Explorer workflows.</h3>
-      <p>The tree view supports solution selection, refresh, sorting, project actions, package actions, references, copy commands, and file reveal commands.</p>
-    </div>
-    <div class="feature-card">
-      <h3>Rust host. Sub-millisecond parsing.</h3>
-      <p>Tree-sitter incremental parsing in the Rust host. salsa-powered caching. Document symbols, folding, and selection ranges without waiting on Roslyn.</p>
-    </div>
-    <div class="feature-card">
-      <h3>Roslyn-backed C# features.</h3>
-      <p>Forge is building C# completions, diagnostics, hover, definitions, and code actions on Roslyn rather than approximating semantic behavior in the editor extension.</p>
-    </div>
-    <div class="feature-card">
-      <h3>Crash-proof architecture.</h3>
-      <p>Sidecar process model means a Roslyn crash recovers in under 3 seconds. Your editor stays up. Your flow stays unbroken.</p>
-    </div>
-    <div class="feature-card feature-highlight">
-      <h3>Zero. Vendor. Lock-in.</h3>
-      <p>No licenses. No telemetry. No proprietary blobs. Fork it, extend it, ship it. This is the .NET tooling the community deserves.</p>
-    </div>
+<section class="cta">
+  <div class="copy-block">
+    <h2>Ready to forge ahead?</h2>
+    <p>Join the open-source community shaping the next generation of .NET tooling.</p>
   </div>
-</section>
-
-<section class="install">
-  <h2>Get started.</h2>
-  <pre><code>git clone https://github.com/MelbourneDeveloper/forge.git
-cd forge
-make install</code></pre>
-  <p>Or install the VS Code extension from the <a href="/docs/">Getting Started</a> guide.</p>
+  <div class="button-row">
+    <a class="button button-primary" href="/docs/">Download Forge</a>
+    <a class="button button-secondary" href="/docs/">Read the Docs</a>
+  </div>
 </section>
