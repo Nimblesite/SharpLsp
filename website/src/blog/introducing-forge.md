@@ -1,70 +1,149 @@
 ---
 layout: layouts/blog.njk
-title: "Scaling the Forge Message Broker to 1M Events per Second"
-description: "The architectural shifts and low-level Rust optimizations required to push Forge past the 1,000,000 EPS threshold on commodity hardware."
-date: 2024-10-24
-author: Jane Doe
+title: "Introducing Forge: The .NET LSP Built in Rust"
+description: "Forge is an open-source, editor-agnostic Language Server for C# and F# — built in Rust, powered by Roslyn and FSharp.Compiler.Service. No licenses. No lock-in. Every editor."
+date: 2026-03-20
+author: Forge Team
 tags:
   - posts
-  - systems-engineering
+  - announcement
   - rust
-category: systems engineering
-excerpt: "A detailed look into how we rewrote our core messaging infrastructure using Rust and a custom ring buffer architecture to achieve sub-millisecond latency at massive scale."
+  - csharp
+  - fsharp
+category: announcement
+excerpt: "We are done waiting for Microsoft to fix .NET tooling. Forge is our answer: a Rust-hosted LSP server that delivers first-class C# and F# support in every editor, with zero proprietary dependencies."
 ---
 
-When we initially designed Forge, our internal message broker, the target was modest: handle 50,000 events per second with sub-10ms latency. As our microservices ecosystem exploded, that number quickly became a bottleneck. This post details the architectural shifts and low-level Rust optimizations required to push Forge past the 1,000,000 EPS threshold on commodity hardware.
+We are done waiting.
 
-## The Bottleneck: Lock Contention
+Visual Studio is Windows-only and monolithic. Rider requires a paid license. C# Dev Kit is VS Code-only, closed-source, and treats F# as a non-entity. If you use Neovim, Helix, Emacs, or Zed — you are a second-class citizen in your own ecosystem.
 
-Our initial v1 architecture relied heavily on standard `RwLock` primitives for managing partition state. While conceptually simple, profiling revealed catastrophic thread contention under heavy load. The CPU was spending more time context-switching and managing locks than actually moving bytes.
+Forge is our answer. An open-source, editor-agnostic Language Server for C# and F# — built in Rust, powered by [Roslyn](https://github.com/dotnet/roslyn) and [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/). MIT licensed. Zero proprietary dependencies. One install that serves every editor on the machine.
+
+## What We Have Built
+
+Forge is not a promise. It is working software. The VS Code extension is the first editor integration, but the architecture is deliberately editor-agnostic from day one — a single `forge-lsp` binary on `$PATH` that any LSP-capable editor can launch.
+
+### Solution Explorer
+
+The first thing you see is a proper Solution Explorer. Not a file tree. A `.sln`-aware hierarchy that understands projects, namespaces, and types — the way Visual Studio does, but available in every editor.
 
 <figure class="article-figure">
-  <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-ap6VjPSfkymYONTBORgR7-FYubfHcxGVY5iSBkAQ99o2PmogkQ2_rkuS_pQ7OgoDGPTIB30Bbt3FKiCMeDtrg651pxOm1-Zc1JrQZ939G9Jw__mXYo2cLADu8-DzVP51_FV12tAWWaYQjmyCnD3XGhxx-HY2p8lNn7OCVWAN6tx2L-wa911fh_E6_5tLDie-qWhaMlujautjMm_GJTy03xEW1CYvvVfzukhtwTUPBCzcpj9INJrNdpdBX0EYhPDWbAjPozmtgQ" alt="Abstract technical diagram showing green data flows through network nodes">
-  <figcaption>Figure 1: Lock contention profiling in Forge v1 vs v2.</figcaption>
+  <img src="/assets/screenshots/solution-explorer.png" alt="Forge Solution Explorer showing MyApp.sln with project and namespace tree in VS Code">
+  <figcaption>Solution Explorer rendering a real .sln file with full project and type hierarchy.</figcaption>
 </figure>
 
-## Moving to Lock-Free Data Structures
+The sidebar also shows code folding that collapses entire namespaces in a single click — the kind of structural view that makes navigating large files bearable.
 
-The solution was entirely ripping out the shared mutable state. We transitioned to a lock-free ring buffer implementation for the core event ingestion pipeline. Using atomic operations provided a massive throughput boost, allowing threads to enqueue and dequeue events concurrently without blocking.
+<figure class="article-figure">
+  <img src="/assets/screenshots/code-folding.png" alt="Code folding showing collapsed namespace with 60 lines of code visible in one view">
+  <figcaption>Code folding powered by tree-sitter — sub-millisecond, no compiler needed.</figcaption>
+</figure>
 
-```rust
-use std::sync::atomic::{AtomicUsize, Ordering};
+### Completions
 
-pub struct RingBuffer<T> {
-    buffer: Vec<T>,
-    head: AtomicUsize,
-    tail: AtomicUsize,
-    capacity: usize,
-}
+Completions pull from the full Roslyn semantic model. That means import suggestions, extension methods, and full type context — not just the symbols already in scope.
 
-impl<T> RingBuffer<T> {
-    pub fn push(&mut self, item: T) -> Result<(), T> {
-        let current_tail = self.tail.load(Ordering::Relaxed);
-        let next_tail = (current_tail + 1) % self.capacity;
+<figure class="article-figure">
+  <img src="/assets/screenshots/vscode-completions-page.png" alt="Forge completion list showing Add, Count, and other members with full semantic context">
+  <figcaption>Semantic completions powered by Roslyn's CompletionService — the same engine behind Visual Studio.</figcaption>
+</figure>
 
-        if next_tail == self.head.load(Ordering::Acquire) {
-            return Err(item);
-        }
+### Hover and XML Doc
 
-        self.buffer[current_tail] = item;
-        self.tail.store(next_tail, Ordering::Release);
-        Ok(())
-    }
-}
-```
+Hover shows the full signature, XML documentation, and parameter descriptions. The Profiler panel in the sidebar is visible in every screenshot — Forge surfaces all running .NET processes so you always know what is executing.
 
-By enforcing strict memory ordering (`Acquire`/`Release` semantics), we ensure data visibility across threads without the heavy cost of mutexes. This single change yielded a 400% increase in baseline throughput.
+<figure class="article-figure">
+  <img src="/assets/screenshots/vscode-hover-page.png" alt="Hover tooltip showing Factorial method signature with full XML documentation and parameter descriptions">
+  <figcaption>Hover rendering XML doc comments with parameter and return value documentation.</figcaption>
+</figure>
 
-## Zero-Copy Networking with io_uring
+### Go to Definition
 
-Getting data into memory fast is only half the battle; writing it to disk and pushing it back to network sockets is where latency spikes hide. We bypassed the standard epoll-based async runtimes in favor of direct `io_uring` integration for disk I/O and socket operations.
+Go to Definition works across the full solution graph, including nested types and members inside other classes. The breadcrumb bar tracks where you are at all times.
 
-<aside class="article-note">
-  <span class="material-symbols-outlined" aria-hidden="true">lightbulb</span>
-  <div>
-    <h3>Architecture Note</h3>
-    <p>Integrating io_uring required bypassing standard Tokio primitives. We built a custom reactor tailored specifically for Forge's I/O patterns, sacrificing general-purpose utility for raw speed.</p>
-  </div>
-</aside>
+<figure class="article-figure">
+  <img src="/assets/screenshots/vscode-go-to-definition-page.png" alt="Go to definition navigating to a method implementation with breadcrumb showing full type path">
+  <figcaption>Go to Definition navigating through a multi-level type hierarchy.</figcaption>
+</figure>
 
-The results speak for themselves. The 99th percentile latency dropped from 12ms to 1.8ms under 80% peak load. The system now easily sustains 1.2M EPS before hitting network interface card (NIC) saturation.
+The Solution Explorer handles deeply nested class structures correctly — inner classes, nested namespaces, all of it reflected accurately in the tree.
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/nested-classes.png" alt="Nested classes in the solution explorer showing Outer, Inner, and AnotherInner with reference counts">
+  <figcaption>Reference counts and nested type support in the Solution Explorer.</figcaption>
+</figure>
+
+### Diagnostics
+
+Diagnostics come from the real Roslyn compiler — not approximations. Forge uses the [LSP 3.17 pull-diagnostics model](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_diagnostic) to avoid the phantom errors that plague other tooling during workspace load. A NuGet restore gate runs before MSBuildWorkspace opens the solution, eliminating the largest class of false CS0246s.
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/vscode-diagnostics-page.png" alt="Diagnostics panel showing real Roslyn compiler errors with file and line references">
+  <figcaption>Real Roslyn diagnostics, pulled on demand, never pushed prematurely.</figcaption>
+</figure>
+
+### Quick Fixes and Refactoring
+
+Code actions come from Roslyn's own CodeFixProviders and CodeRefactoringProviders — the same providers that power Visual Studio. Remove unused variable, rename, extract method — all of it is there because we are calling the same APIs.
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/vscode-refactoring.png" alt="Quick fix lightbulb showing Remove unused variable, Fix, and Explain options">
+  <figcaption>Roslyn-powered quick fixes surfaced directly in the editor action menu.</figcaption>
+</figure>
+
+### Project Context Menu
+
+Right-clicking a project in the Solution Explorer gives you build, rebuild, clean, NuGet browsing, and project reference management — all wired up and working.
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/vscode-context-menu-open-project.png" alt="Project context menu showing Build, Rebuild, Clean, Browse NuGet Packages, Add Project Reference options">
+  <figcaption>Project-level actions directly from the Solution Explorer context menu.</figcaption>
+</figure>
+
+### NuGet Management
+
+The NuGet panel is a full package browser. Search, browse available packages, see what is installed, inspect package details — all without leaving the editor or touching the terminal.
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/vscode-nuget-search.png" alt="NuGet browser showing search results for Serilog packages with download counts">
+  <figcaption>NuGet package search pulling live results from nuget.org.</figcaption>
+</figure>
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/vscode-nuget-installed.png" alt="NuGet installed packages panel showing Newtonsoft.Json with description and version">
+  <figcaption>Installed packages tab showing what is in the active project.</figcaption>
+</figure>
+
+<figure class="article-figure">
+  <img src="/assets/screenshots/vscode-nuget-package-details.png" alt="NuGet package detail panel for Newtonsoft.Json showing license, project URL, and version">
+  <figcaption>Package details with license, metadata, and install/remove actions.</figcaption>
+</figure>
+
+## The Architecture
+
+Forge is a three-tier system. The Rust host owns the LSP connection, the virtual file system, and all syntax-level work via [tree-sitter](https://tree-sitter.github.io/tree-sitter/). Two long-running .NET sidecar processes handle semantic analysis — one for C# via Roslyn, one for F# via FSharp.Compiler.Service.
+
+This is not a compromise. It is the correct design. We do not reimplement type checkers. We call the official compilers. Correctness follows from that decision, not from trying to approximate what Roslyn already knows.
+
+The IPC between Rust and the sidecars uses MessagePack over Unix domain sockets (named pipes on Windows), framed with a 4-byte little-endian length prefix. Round-trip overhead target: under 500µs, excluding compiler work.
+
+Syntax-only requests — document symbols, folding ranges, selection ranges — are handled entirely in the Rust host using tree-sitter. They return in under 5ms regardless of solution size. Semantic requests go to the sidecars and are coalesced with a 150ms debounce window. Stale in-flight requests are cancelled when superseded.
+
+**All Forge binaries live in one central location on the machine.** `forge-lsp` on `$PATH` is all any editor needs. Editor extensions are thin clients that launch the system binary — they contain zero bundled executables. One install serves VS Code, Neovim, Helix, Zed, and every other LSP-capable editor simultaneously.
+
+## F# Is Not a Second-Class Citizen
+
+Every other .NET tool either ignores F# or treats it as an afterthought. Forge does not. C# and F# share the same infrastructure tier. They hit the same feature targets. They are tested to the same standard.
+
+The F# sidecar runs [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) with [Ionide.ProjInfo](https://github.com/ionide/proj-info) for project cracking and [FSharpLint](https://github.com/fsprojects/FSharpLint) for linting. F#-specific features — pipeline hints, union case generation, record stubs, computation expression completions, file ordering awareness — are on the roadmap as first-priority items, not future nice-to-haves.
+
+## What Is Next
+
+Phase 2 is underway: full semantic analysis for both languages. That means completions, hover, go-to-definition, find-references, diagnostics, rename, and semantic tokens — all working against real MSBuildWorkspace-loaded solutions.
+
+After that: code actions and refactoring (Phase 3), test discovery and debugging (Phase 4), and eventually features no other tool has — cross-language navigation between C# and F# projects, architecture analysis, AI-assisted code actions via MCP (Phase 5).
+
+The full roadmap is in the [technical specification](/docs/specs/forge-spec.md). The code is on [GitHub](https://github.com/MelbourneDeveloper/forge).
+
+Forge exists because .NET developers deserve world-class tooling that is not gated behind proprietary licenses, vendor lock-in, or single-editor coupling. We are building it. Come help.
