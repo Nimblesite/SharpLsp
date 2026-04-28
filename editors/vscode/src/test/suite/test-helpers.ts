@@ -269,6 +269,34 @@ export function teardownLspTestSuite(tmpDir: string): void {
   }
 }
 
+// ── Screenshots ──────────────────────────────────────────────────
+
+const SCREENSHOT_OUT_DIR = path.resolve(__dirname, '../../../../../website/src/assets/screenshots');
+
+/**
+ * Signal the Playwright sidecar (screenshots/sidecar.mjs) to take a screenshot
+ * of the VS Code window via CDP. Writes a .signal file and waits for the PNG.
+ * Call this after assertions prove the feature is live and visible.
+ * Only runs when FORGE_SCREENSHOTS=1 is set.
+ */
+export async function takeScreenshot(filename: string): Promise<void> {
+  if (!process.env['FORGE_SCREENSHOTS']) return;
+  fs.mkdirSync(SCREENSHOT_OUT_DIR, { recursive: true });
+  const signalPath = path.join(SCREENSHOT_OUT_DIR, `${filename}.signal`);
+  const outPath = path.join(SCREENSHOT_OUT_DIR, filename);
+  if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
+  fs.writeFileSync(signalPath, 'ready', 'utf8');
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(outPath)) {
+      console.log(`[screenshot] ${filename}`);
+      return;
+    }
+    await sleep(100);
+  }
+  throw new Error(`Sidecar did not write ${filename} within 15s`);
+}
+
 // ── Utilities ────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {

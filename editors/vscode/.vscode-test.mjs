@@ -11,7 +11,7 @@ export default defineConfig({
         timeout: 60_000,
         bail: true,
       },
-      launchArgs: ["--disable-extensions"],
+      launchArgs: ["--disable-extensions", "--remote-debugging-port=9229"],
     },
   ],
   coverage: {
