@@ -672,9 +672,22 @@
         "title": "Debug Test at Cursor",
         "category": "Forge",
         "icon": "$(bug)"
+      },
+      {
+        "command": "forge.debugProgram",
+        "title": "Debug Program",
+        "category": "Forge",
+        "icon": "$(debug-alt)"
       }
     ],
     "menus": {
+      "editor/context": [
+        {
+          "command": "forge.debugProgram",
+          "when": "editorLangId == csharp || editorLangId == fsharp",
+          "group": "navigation@1"
+        }
+      ],
       "view/title": [
         {
           "command": "forge.selectSolution",

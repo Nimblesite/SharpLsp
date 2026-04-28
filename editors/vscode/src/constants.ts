@@ -74,6 +74,7 @@ export const CMD_FSI_GENERATE_SIGNATURE = 'forge.fsi.generateSignature';
 
 // Debug
 export const DEBUG_TYPE = 'forge-coreclr';
+export const CMD_DEBUG_PROGRAM = 'forge.debugProgram';
 
 // Test Explorer
 export const CMD_TEST_RUN = 'forge.test.run';

@@ -322,8 +322,10 @@ fn ensure_output_dir(path: &str) -> Result<()> {
 }
 
 /// Default trace profile.
+// dotnet-sampled-thread-time works on all platforms and produces call-stack frames
+// visible in speedscope. cpu-sampling is Linux-only and fails on macOS.
 fn default_profile() -> String {
-    "gc-collect".to_string()
+    "dotnet-sampled-thread-time".to_string()
 }
 
 /// Default output format.
@@ -334,6 +336,22 @@ fn default_format() -> String {
 /// Default trace duration in seconds.
 fn default_duration() -> u32 {
     30
+}
+
+#[cfg(test)]
+mod default_profile_tests {
+    use super::default_profile;
+
+    #[test]
+    fn default_profile_is_valid_on_macos() {
+        // cpu-sampling is Linux-only; dotnet-sampled-thread-time works everywhere.
+        let profile = default_profile();
+        assert_ne!(
+            profile, "cpu-sampling",
+            "cpu-sampling is Linux-only and fails on macOS with 'does not apply to dotnet-trace collect'"
+        );
+        assert_eq!(profile, "dotnet-sampled-thread-time");
+    }
 }
 
 #[cfg(test)]
