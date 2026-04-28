@@ -42,44 +42,17 @@ title: "Forge - The Future of .NET Tooling"
 
 <section class="band">
   <div class="copy-block">
-    <h2>Uncompromising Performance</h2>
-    <p>Write, debug, and profile your .NET code in a pure, native environment.</p>
+    <h2>One LSP. Every Editor.</h2>
+    <p>Full Roslyn-powered completions, diagnostics, hover docs, and go-to-definition — in VS Code, Neovim, Helix, or any LSP-compatible editor.</p>
   </div>
 
-  <div class="window">
-    <div class="window-bar">
-      <div class="window-controls" aria-hidden="true">
-        <span class="window-dot window-dot-red"></span>
-        <span class="window-dot window-dot-yellow"></span>
-        <span class="window-dot window-dot-green"></span>
-      </div>
-      <div class="window-title">Program.cs — Forge</div>
-      <div class="window-tools" aria-hidden="true">
-        <span class="material-symbols-outlined">play_arrow</span>
-        <span class="material-symbols-outlined">bug_report</span>
-      </div>
-    </div>
-    <pre class="code-pane"><code><span class="token-keyword">using</span> System;
-<span class="token-keyword">using</span> System.Diagnostics;
-
-<span class="token-keyword">namespace</span> Forge.Demo
-{
-    <span class="token-keyword">public class</span> Program
-    {
-        <span class="token-keyword">public static void</span> Main()
-        {
-            <span class="token-type">var</span> sw = Stopwatch.StartNew();
-
-            Console.WriteLine(<span class="token-string">"Initializing Forge workspace..."</span>);
-
-            <span class="token-type">var</span> parser = <span class="token-keyword">new</span> FastSyntaxParser();
-            parser.AnalyzeProject();
-
-            sw.Stop();
-            Console.WriteLine(<span class="token-string">$"Ready in {sw.ElapsedMilliseconds}ms"</span>);
-        }
-    }
-}</code></pre>
+  <div class="screenshot-frame">
+    <img
+      src="/assets/screenshots/vscode-hover-page.png"
+      alt="Forge LSP showing hover documentation and solution explorer in VS Code"
+      width="720"
+      loading="eager"
+    />
   </div>
 </section>
 

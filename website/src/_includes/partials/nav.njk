@@ -3,15 +3,16 @@
     <span class="material-symbols-outlined" aria-hidden="true">terminal</span>{{ site.name | default(site.title) }}
   </a>
 
+  {% set lp = "/" + lang + "/" if lang and lang != defaultLanguage else "/" %}
   <ul class="nav-links">
-    <li><a class="nav-link {% if page.url.startsWith('/docs/') %}active{% endif %}" href="/docs/">Docs</a></li>
-    <li><a class="nav-link {% if page.url == '/blog/' or page.url.startsWith('/blog/') %}active{% endif %}" href="/blog/">Blog</a></li>
+    <li><a class="nav-link {% if page.url.startsWith('/docs/') or page.url.startsWith('/' + lang + '/docs/') %}active{% endif %}" href="{{ lp }}docs/">{{ "nav.docs" | t(lang) | default("Docs") }}</a></li>
+    <li><a class="nav-link {% if page.url.startsWith('/blog/') or page.url.startsWith('/' + lang + '/blog/') %}active{% endif %}" href="{{ lp }}blog/">{{ "nav.blog" | t(lang) | default("Blog") }}</a></li>
     <li><a class="nav-link" href="https://github.com/MelbourneDeveloper/forge">GitHub</a></li>
   </ul>
 
   <div class="nav-actions">
     <a class="search-link" href="/search/" aria-label="Search"><span class="material-symbols-outlined" aria-hidden="true">search</span></a>
-    <a class="nav-button" href="/docs/">Get Started</a>
+    <a class="nav-button" href="{{ lp }}docs/">{{ "docs.gettingStarted" | t(lang) | default("Get Started") }}</a>
 
     {% if techdocOptions.features.i18n and (supportedLanguages | length) > 1 %}
     <div class="language-switcher">
