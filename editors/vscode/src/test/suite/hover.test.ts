@@ -5,7 +5,6 @@ import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
-  openForgePanel,
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
@@ -100,7 +99,7 @@ suite('Hover / Quick Info', () => {
     );
     assert.ok(completions, 'Must get completions');
     assert.ok(completions.items.length > 0, 'Must have at least one completion item');
-    await openForgePanel();
+    // No openForgePanel() — the completion dropdown IS the feature; keep editor visible.
     await takeScreenshot('vscode-completions-page.png');
 
     // Dismiss suggestion widget then trigger go-to-definition on "Add" method.
@@ -116,7 +115,7 @@ suite('Hover / Quick Info', () => {
     assert.ok(definitions, 'Must get definitions');
     assert.ok(definitions.length > 0, 'Must have at least one definition location');
     assert.ok(definitions[0]!.uri.fsPath.endsWith('.cs'), 'Definition must point to a .cs file');
-    await openForgePanel();
+    // No openForgePanel() — peek definition widget needs the editor visible.
     await takeScreenshot('vscode-go-to-definition-page.png');
   });
 
@@ -296,21 +295,14 @@ suite('Hover / Quick Info', () => {
       md.toLowerCase().includes('result') || md.toLowerCase().includes('return'),
       `Must render <returns>: ${md}`,
     );
-    // Show the hover widget visually on the Factorial symbol and assert it appears
+    // Position cursor on Factorial and trigger the hover widget visually.
     const editor = vscode.window.activeTextEditor;
     assert.ok(editor, 'Must have active text editor');
     editor.selection = new vscode.Selection(new vscode.Position(7, 21), new vscode.Position(7, 21));
     await vscode.commands.executeCommand('editor.action.showHover');
-    // Poll until the hover widget is visible in the DOM (checked via Playwright sidecar signal)
-    await new Promise((r) => setTimeout(r, 1500));
-    // Verify the hover widget actually appeared by re-executing the hover provider
-    // on the exact cursor position — it must still return the Factorial content
-    const confirmHover = await waitForHoverResult(uri, new vscode.Position(7, 21));
-    assert.ok(confirmHover.length > 0, 'Hover must still be available after showHover command');
-    const confirmMd = hoverToString(confirmHover);
-    assert.ok(confirmMd.includes('Factorial'), 'Confirmed hover must still contain Factorial');
-    assert.ok(confirmMd.includes('computes'), 'Confirmed hover must still contain summary text');
-    // Screenshot with hover tooltip visible (no Forge panel — tooltip is the feature)
+    // Wait for the hover widget to render in the DOM before screenshotting.
+    await new Promise((r) => setTimeout(r, 2000));
+    // Screenshot with hover tooltip visible — sidecar waits for .monaco-hover to appear.
     await takeScreenshot('vscode-hover-page.png');
   });
 
