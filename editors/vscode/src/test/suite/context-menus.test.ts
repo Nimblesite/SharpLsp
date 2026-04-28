@@ -15,8 +15,10 @@ import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  openForgePanel,
   pollUntilResult,
   setupLspTestSuite,
+  takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
 } from './test-helpers';
@@ -345,7 +347,8 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
     await closeAllEditors();
   });
 
-  test("solution node has contextValue 'solution'", () => {
+  test("solution node has contextValue 'solution'", async function () {
+    this.timeout(10_000);
     const roots = provider.getChildren();
     assert.ok(roots !== undefined && roots.length > 0, 'Tree must have roots');
     const sln = roots[0];
@@ -355,6 +358,8 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
       'solution',
       "Solution node must have contextValue 'solution'",
     );
+    await openForgePanel();
+    await takeScreenshot('vscode-solution-explorer-context-menu.png');
   });
 
   test("project node has contextValue 'project'", () => {
@@ -1279,6 +1284,8 @@ suite('Context Menu — Project Node Commands Execute', () => {
         .map((editor) => editor.document.fileName)
         .join(', ')}`,
     );
+    await openForgePanel();
+    await takeScreenshot('vscode-context-menu-open-project.png');
   });
 
   test('forge.build executes without error', async function () {

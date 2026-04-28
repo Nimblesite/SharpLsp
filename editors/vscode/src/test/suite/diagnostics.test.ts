@@ -102,6 +102,9 @@ suite('Diagnostics / Problems Panel', () => {
         }
       }
     }
+    // Open Problems panel so diagnostics are visible in the screenshot.
+    await vscode.commands.executeCommand('workbench.actions.view.problems');
+    await new Promise((r) => setTimeout(r, 1000));
     await openForgePanel();
     await takeScreenshot('vscode-diagnostics-page.png');
   });

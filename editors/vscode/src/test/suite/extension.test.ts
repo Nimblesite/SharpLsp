@@ -84,13 +84,17 @@ suite('Extension Activation & Configuration', () => {
 
   // ── Configuration ────────────────────────────────────────────
 
-  test('forge.server.path setting is contributed', async () => {
+  test('forge.server.path setting is contributed', async function () {
+    this.timeout(15_000);
     const config = vscode.workspace.getConfiguration('forge');
     const inspect = config.inspect<string>('server.path');
     assert.ok(inspect, 'server.path setting should be inspectable');
     assert.strictEqual(inspect.defaultValue, '', 'Default server.path should be empty string');
-    await openForgePanel();
+    // Open Settings UI filtered to forge so the screenshot shows real config options.
+    await vscode.commands.executeCommand('workbench.action.openSettings', 'forge');
+    await new Promise((r) => setTimeout(r, 1500));
     await takeScreenshot('vscode-configuration-page.png');
+    await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
   });
 
   test('forge.server.extraArgs setting is contributed', () => {
@@ -122,12 +126,31 @@ suite('Extension Activation & Configuration', () => {
     assert.strictEqual(ext.packageJSON.displayName, 'Forge', "Display name should be 'Forge'");
   });
 
-  test('extension contributes csharp language', async () => {
+  test('extension contributes csharp language', async function () {
+    this.timeout(30_000);
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, 'Extension should exist');
     const languages: { id: string }[] = ext.packageJSON.contributes?.languages ?? [];
     const csharp = languages.find((l) => l.id === 'csharp');
     assert.ok(csharp, 'Should contribute csharp language');
+    // Open a C# file and an F# file in split editor, with Forge panel showing solution.
+    const { uri: csUri } = await openCSharpFile(tmpDir, 'editors-shot.cs', `namespace Demo\n{\n    public class Calculator\n    {\n        public int Add(int a, int b) => a + b;\n    }\n}`);
+    await waitForDocumentSymbols(csUri);
+    await vscode.commands.executeCommand('workbench.action.splitEditorRight');
+    await openCSharpFile(tmpDir, 'editors-shot.fs', 'module Demo\n\nlet greet name = sprintf "Hello, %s!" name\n');
+    await new Promise((r) => setTimeout(r, 800));
+    // Load fixture solution so Solution Explorer shows content.
+    if (process.env['FORGE_SCREENSHOTS']) {
+      const api2 = ext.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+      if (api2?.explorerProvider) {
+        const ws2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        await api2.explorerProvider.loadSolution(`${ws2}/TestFixtures.sln`);
+        let w = 0;
+        while ((api2.explorerProvider.getChildren() ?? []).length === 0 && w < 8000) {
+          await new Promise((r) => setTimeout(r, 200)); w += 200;
+        }
+      }
+    }
     await openForgePanel();
     await takeScreenshot('vscode-editors-page.png');
   });
@@ -169,6 +192,19 @@ suite('Extension Activation & Configuration', () => {
     // Verify server is back.
     const symbols = await waitForDocumentSymbols(uri, 30_000);
     assert.ok(symbols.length > 0, 'Server should respond after restart');
+    // Load fixture solution + open Forge panel to show architecture in screenshot.
+    if (process.env['FORGE_SCREENSHOTS']) {
+      const ext2 = vscode.extensions.getExtension(EXTENSION_ID);
+      const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+      if (api2?.explorerProvider) {
+        const ws2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        await api2.explorerProvider.loadSolution(`${ws2}/TestFixtures.sln`);
+        let w = 0;
+        while ((api2.explorerProvider.getChildren() ?? []).length === 0 && w < 8000) {
+          await new Promise((r) => setTimeout(r, 200)); w += 200;
+        }
+      }
+    }
     await openForgePanel();
     await takeScreenshot('vscode-architecture-page.png');
   });

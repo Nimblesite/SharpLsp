@@ -9,6 +9,7 @@ import {
   closeAllEditors,
   pollUntilResult,
   setupLspTestSuite,
+  takeScreenshot,
   teardownLspTestSuite,
 } from './test-helpers';
 
@@ -243,6 +244,7 @@ suite('NuGet Browser', () => {
         count > 0,
         `Browse tab must be populated after initial load (got ${count.toString()} results)`,
       );
+      await takeScreenshot('vscode-nuget-browse.png');
     } finally {
       panel.dispose();
     }
@@ -294,6 +296,7 @@ suite('NuGet Browser', () => {
         'Newtonsoft.Json',
         'Selecting an installed package must set selectedPackage',
       );
+      await takeScreenshot('vscode-nuget-installed.png');
     } finally {
       panel.dispose();
     }
