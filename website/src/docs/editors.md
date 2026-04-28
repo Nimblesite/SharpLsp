@@ -8,6 +8,8 @@ eleventyNavigation:
 
 # Editor Setup
 
+![Forge editor support](/assets/screenshots/vscode-editors-page.png)
+
 Forge works with any editor that supports the Language Server Protocol. Below are setup instructions for popular editors.
 
 ## VS Code

@@ -8,6 +8,8 @@ eleventyNavigation:
 
 # Configuration
 
+![Forge workspace configuration](/assets/screenshots/vscode-configuration-page.png)
+
 Forge is configured via a `forge.toml` file placed at the root of your workspace (alongside your `.sln` or root `.csproj`). All settings have sensible defaults — the file is optional.
 
 `forge.toml` uses `deny_unknown_fields` — any key not listed below will cause a parse error at startup.

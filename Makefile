@@ -9,6 +9,8 @@
 #   make install-rust        build + install forge-lsp only
 #   make install-sidecars    build + install sidecars only
 #   make test                run all tests with coverage
+#   make screenshots         capture all website screenshots from real VS Code
+#   make screenshot NAME=x   capture one website screenshot from real VS Code
 #   make lint                lint all languages
 #   make fmt                 format all languages
 #   make clean               remove build artifacts
@@ -44,7 +46,7 @@ CHECK_COV = scripts/check-coverage.sh
 
 .PHONY: build ci \
         install-vsix install-binaries install-rust install-sidecars \
-        test lint fmt clean setup \
+        test screenshots screenshot lint fmt clean setup \
         lint-rust lint-zed lint-dotnet lint-vsix \
         test-rust test-zed test-dotnet test-vsix \
         fmt-rust fmt-zed fmt-dotnet fmt-vsix \
@@ -131,6 +133,17 @@ test-dotnet: _build-dotnet
 	 _check_cov Forge.Sidecar.FSharp forge-sidecar-fsharp ; \
 	 _check_cov Forge.Sidecar.Common forge-sidecar-common ; \
 	 exit $$TEST_EXIT
+
+# ── Website screenshots ──────────────────────────────────────────
+
+screenshots: _build-rust _build-dotnet _build-vsix
+	@echo "==> Capturing all website screenshots from real VS Code..."
+	cd $(VSCODE_DIR) && FORGE_EXECUTABLE_PATH="$(abspath $(BINARY))" npm run screenshots
+
+screenshot: _build-rust _build-dotnet _build-vsix
+	@test -n "$(NAME)" || { echo "ERROR: use make screenshot NAME=diagnostics" >&2; exit 1; }
+	@echo "==> Capturing website screenshot: $(NAME)"
+	cd $(VSCODE_DIR) && FORGE_EXECUTABLE_PATH="$(abspath $(BINARY))" npm run screenshots -- "$(NAME)"
 
 # ── Lint ─────────────────────────────────────────────────────────
 

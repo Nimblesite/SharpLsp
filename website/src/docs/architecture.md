@@ -8,6 +8,8 @@ eleventyNavigation:
 
 # Architecture
 
+![Forge architecture in VS Code](/assets/screenshots/vscode-architecture-page.png)
+
 Forge is built on a three-tier architecture that separates concerns between fast syntax operations and rich semantic analysis.
 
 ## Tier 1 — Rust LSP Host
