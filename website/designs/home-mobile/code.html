@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Forge OS - Mobile Home</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&amp;family=Space+Grotesk:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "error": "#ffb4ab",
+                        "on-error-container": "#ffdad6",
+                        "inverse-on-surface": "#313030",
+                        "surface-dim": "#131313",
+                        "tertiary": "#e7e4e3",
+                        "surface": "#131313",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "primary-fixed-dim": "#00e475",
+                        "on-tertiary": "#303030",
+                        "secondary-container": "#474746",
+                        "on-tertiary-container": "#545453",
+                        "on-error": "#690005",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "error-container": "#93000a",
+                        "on-background": "#e5e2e1",
+                        "on-primary-fixed-variant": "#005226",
+                        "surface-container": "#201f1f",
+                        "on-secondary-container": "#b7b5b4",
+                        "surface-container-highest": "#353534",
+                        "on-primary": "#003918",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "outline-variant": "#3b4a3d",
+                        "surface-container-high": "#2a2a2a",
+                        "secondary-fixed": "#e5e2e1",
+                        "on-tertiary-fixed": "#1b1c1c",
+                        "surface-tint": "#00e475",
+                        "background": "#131313",
+                        "inverse-primary": "#006d35",
+                        "outline": "#859585",
+                        "primary-container": "#00e676",
+                        "on-secondary": "#313030",
+                        "secondary": "#c8c6c5",
+                        "primary-fixed": "#62ff96",
+                        "tertiary-container": "#cac8c7",
+                        "on-surface": "#e5e2e1",
+                        "on-primary-container": "#00612e",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "tertiary-fixed": "#e4e2e1",
+                        "surface-variant": "#353534",
+                        "surface-container-low": "#1c1b1b",
+                        "surface-bright": "#3a3939",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-primary-fixed": "#00210b",
+                        "on-surface-variant": "#bacbb9",
+                        "inverse-surface": "#e5e2e1",
+                        "on-secondary-fixed-variant": "#474746",
+                        "primary": "#75ff9e"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "density": "compact",
+                        "container-max": "1440px",
+                        "unit": "4px",
+                        "margin": "24px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "headline-lg": ["Space Grotesk"],
+                        "code-md": ["monospace"],
+                        "headline-xl": ["Space Grotesk"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["12px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "code-md": ["14px", { "lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "450" }],
+                        "headline-xl": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-sm": ["14px", { "lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
+        .pt-safe { padding-top: env(safe-area-inset-top, 20px); }
+        /* Hide scrollbar for clean mobile feel */
+        ::-webkit-scrollbar { display: none; }
+        html { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Subtle glow for code block */
+        .code-glow {
+            box-shadow: inset 0 0 40px rgba(0, 230, 118, 0.05), 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface antialiased pt-14 pb-16 md:pb-0 flex flex-col min-h-screen">
+<!-- Shared Component: TopAppBar -->
+<header class="fixed top-0 w-full z-50 border-b border-[#262626] bg-[#0D0D0D]/80 backdrop-blur-xl shadow-2xl shadow-black/50 flex justify-between items-center px-4 h-14 pt-safe">
+<div class="flex items-center gap-3">
+<button class="text-[#00E676] active:scale-95 duration-100 hover:bg-[#1A1A1A] transition-colors p-1 rounded">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<span class="text-[#00E676] font-black text-xl tracking-widest font-['Space_Grotesk']">FORGE</span>
+</div>
+<div>
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center border border-[#262626] overflow-hidden">
+<span class="material-symbols-outlined text-on-surface-variant text-sm">person</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow flex flex-col px-gutter py-margin gap-8 overflow-y-auto">
+<!-- Hero Section -->
+<section class="flex flex-col gap-6 pt-4">
+<div class="flex flex-col gap-3">
+<div class="inline-flex items-center gap-2 self-start px-3 py-1.5 rounded bg-surface-container border border-[#262626]">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="font-label-caps text-label-caps text-on-surface">FORGE V2.0 LIVE</span>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-on-surface">The Future of <br/><span class="text-primary-container">.NET Tooling</span></h1>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                    Experience unprecedented speed and clarity. Forge is the terminal-first IDE designed for power users who demand performance.
+                </p>
+</div>
+<div class="flex flex-col gap-3 w-full mt-2">
+<button class="w-full h-12 bg-primary-container text-on-primary-container font-label-caps text-label-caps rounded flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-[0_0_15px_rgba(0,230,118,0.3)]">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">download</span>
+                    DOWNLOAD FORGE
+                </button>
+<button class="w-full h-12 bg-transparent border border-[#262626] text-on-surface font-label-caps text-label-caps rounded flex items-center justify-center gap-2 active:scale-95 transition-transform hover:bg-surface-container">
+<span class="material-symbols-outlined text-sm">terminal</span>
+                    VIEW DOCUMENTATION
+                </button>
+</div>
+</section>
+<!-- Vertical Metrics -->
+<section class="flex flex-col gap-3 border-y border-[#262626] py-6">
+<div class="flex justify-between items-center bg-surface-container p-4 rounded border border-[#262626]">
+<span class="font-label-caps text-label-caps text-on-surface-variant">STARTUP TIME</span>
+<span class="font-headline-lg text-headline-lg text-primary-container text-2xl">&lt;3s</span>
+</div>
+<div class="flex justify-between items-center bg-surface-container p-4 rounded border border-[#262626]">
+<span class="font-label-caps text-label-caps text-on-surface-variant">UI LATENCY</span>
+<span class="font-headline-lg text-headline-lg text-primary-container text-2xl">&lt;100ms</span>
+</div>
+<div class="flex justify-between items-center bg-surface-container p-4 rounded border border-[#262626]">
+<span class="font-label-caps text-label-caps text-on-surface-variant">TELEMETRY</span>
+<span class="font-headline-lg text-headline-lg text-primary-container text-2xl">0</span>
+</div>
+</section>
+<!-- Simplified Code Preview -->
+<section class="flex flex-col gap-4">
+<h2 class="font-headline-lg text-headline-lg text-xl text-on-surface">Built for Speed</h2>
+<div class="rounded-lg bg-[#050505] border border-[#262626] overflow-hidden code-glow">
+<div class="flex justify-between items-center px-4 py-2 border-b border-[#262626] bg-[#1A1A1A]">
+<div class="flex gap-2">
+<div class="w-3 h-3 rounded-full bg-surface-variant"></div>
+<div class="w-3 h-3 rounded-full bg-surface-variant"></div>
+<div class="w-3 h-3 rounded-full bg-surface-variant"></div>
+</div>
+<span class="font-label-caps text-label-caps text-on-surface-variant text-[10px]">Program.cs</span>
+<button class="text-on-surface-variant hover:text-primary-container transition-colors">
+<span class="material-symbols-outlined text-sm">content_copy</span>
+</button>
+</div>
+<div class="p-4 overflow-x-auto">
+<pre class="font-code-md text-code-md text-on-surface"><code class="language-csharp"><span class="text-secondary">using</span> Forge.Core;
+
+<span class="text-secondary">var</span> builder = ForgeApp.CreateBuilder(args);
+builder.Services.AddHighPerformanceNetworking();
+
+<span class="text-secondary">var</span> app = builder.Build();
+app.MapFastEndpoint(<span class="text-primary-container">"/api/v1/data"</span>, () =&gt; 
+    <span class="text-primary-container">Results</span>.Ok(<span class="text-secondary">new</span> { Status = <span class="text-primary-container">"Optimal"</span> })
+);
+
+app.Run();</code></pre>
+</div>
+</div>
+</section>
+<!-- Feature Cards Column -->
+<section class="flex flex-col gap-4 pb-8">
+<h2 class="font-headline-lg text-headline-lg text-xl text-on-surface mb-2">Core Capabilities</h2>
+<div class="bg-[#1A1A1A] border border-[#262626] rounded-lg p-5 flex flex-col gap-3">
+<div class="w-10 h-10 rounded bg-surface-container flex items-center justify-center border border-[#262626] text-primary-container mb-2">
+<span class="material-symbols-outlined">explore</span>
+</div>
+<h3 class="font-headline-lg text-headline-lg text-lg text-on-surface">Smart Navigation</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                    Jump to definition, find all references, and navigate complex codebases with zero lag indexing.
+                </p>
+</div>
+<div class="bg-[#1A1A1A] border border-[#262626] rounded-lg p-5 flex flex-col gap-3">
+<div class="w-10 h-10 rounded bg-surface-container flex items-center justify-center border border-[#262626] text-primary-container mb-2">
+<span class="material-symbols-outlined">extension</span>
+</div>
+<h3 class="font-headline-lg text-headline-lg text-lg text-on-surface">NuGet Integration</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                    Manage packages directly from the command palette. Instant resolution and minimal payload.
+                </p>
+</div>
+<div class="bg-[#1A1A1A] border border-[#262626] rounded-lg p-5 flex flex-col gap-3">
+<div class="w-10 h-10 rounded bg-surface-container flex items-center justify-center border border-[#262626] text-primary-container mb-2">
+<span class="material-symbols-outlined">speed</span>
+</div>
+<h3 class="font-headline-lg text-headline-lg text-lg text-on-surface">Real-time Profiling</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                    Identify bottlenecks instantly with our built-in allocations tracker and CPU flame graphs.
+                </p>
+</div>
+</section>
+</main>
+<!-- Shared Component: BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 w-full border-t border-[#262626] bg-[#0D0D0D]/90 backdrop-blur-lg shadow-[0_-4px_12px_rgba(0,0,0,0.5)] flex justify-around items-center h-16 pb-safe z-50">
+<button class="text-[#00E676] flex flex-col items-center gap-1 active:translate-y-0.5 transition-transform">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-['Space_Grotesk'] text-[10px] font-bold uppercase">Home</span>
+</button>
+<button class="text-neutral-500 flex flex-col items-center gap-1 active:translate-y-0.5 transition-transform hover:text-white">
+<span class="material-symbols-outlined">insights</span>
+<span class="font-['Space_Grotesk'] text-[10px] font-bold uppercase">Metrics</span>
+</button>
+<button class="text-neutral-500 flex flex-col items-center gap-1 active:translate-y-0.5 transition-transform hover:text-white">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-['Space_Grotesk'] text-[10px] font-bold uppercase">Build</span>
+</button>
+<button class="text-neutral-500 flex flex-col items-center gap-1 active:translate-y-0.5 transition-transform hover:text-white">
+<span class="material-symbols-outlined">list_alt</span>
+<span class="font-['Space_Grotesk'] text-[10px] font-bold uppercase">Logs</span>
+</button>
+</nav>
+</body></html>

@@ -1,22 +1,20 @@
 ---
 layout: layouts/base.njk
-title: "Forge - .NET 工具的未来"
+title: "Forge - 每款编辑器的完整 .NET 开发体验"
 lang: zh
 ---
 
 <section class="masthead">
   <div class="badge"><span class="status-dot"></span>v1.0.4 Now Available</div>
-  <h1 class="title">The Future of <span>.NET Tooling</span></h1>
+  <h1 class="title">每款编辑器的<span>完整 .NET 开发</span>体验</h1>
   <p class="lede">
-    Engineered in Rust for uncompromising speed. Forge is a high-performance
-    workspace designed for developers who value precision and productivity
-    over bloat.
+    一款开源语言服务器，提供完整的 C# 和 F# 智能体验——代码补全、诊断、重构、NuGet 管理、性能分析和调试——支持 VS Code、Neovim、Helix、Emacs、Zed 及所有兼容 LSP 的编辑器。无专有锁定，无需许可证。
   </p>
   <div class="button-row">
-    <a class="button button-primary" href="/zh/docs/">Get Started</a>
+    <a class="button button-primary" href="/zh/docs/">快速入门</a>
     <a class="button button-secondary" href="https://github.com/MelbourneDeveloper/forge">
       <span class="material-symbols-outlined" aria-hidden="true">code</span>
-      View on GitHub
+      查看 GitHub
     </a>
   </div>
 </section>
@@ -26,25 +24,25 @@ lang: zh
     <article class="metric-card">
       <span class="material-symbols-outlined card-icon" aria-hidden="true">bolt</span>
       <h2>&lt;3s</h2>
-      <p>Cold Start</p>
+      <p>冷启动时间</p>
     </article>
     <article class="metric-card">
       <span class="material-symbols-outlined card-icon" aria-hidden="true">speed</span>
       <h2>&lt;100ms</h2>
-      <p>Completions</p>
+      <p>代码补全 p50</p>
     </article>
     <article class="metric-card">
       <span class="material-symbols-outlined card-icon" aria-hidden="true">extension_off</span>
       <h2>0</h2>
-      <p>Proprietary Dependencies</p>
+      <p>专有依赖</p>
     </article>
   </div>
 </section>
 
 <section class="band">
   <div class="copy-block">
-    <h2>Uncompromising Performance</h2>
-    <p>Write, debug, and profile your .NET code in a pure, native environment.</p>
+    <h2>任意编辑器，同一工具链</h2>
+    <p>安装一次 Forge，即可在您喜欢的任何编辑器中获得完整的 .NET 开发体验——C# 和 F# 同等支持。无需 Visual Studio，无需 Rider 许可证，无供应商锁定。</p>
   </div>
 
   <div class="window">
@@ -73,7 +71,6 @@ lang: zh
 
             Console.WriteLine(<span class="token-string">"Initializing Forge workspace..."</span>);
 
-            <span class="token-comment">// Zero-allocation parsing</span>
             <span class="token-type">var</span> parser = <span class="token-keyword">new</span> FastSyntaxParser();
             parser.AnalyzeProject();
 
@@ -89,29 +86,44 @@ lang: zh
   <div class="card-grid card-grid-three">
     <article class="feature-card">
       <span class="material-symbols-outlined icon-box" aria-hidden="true">explore</span>
-      <h2>Smart Navigation</h2>
-      <p>Instant symbol resolution and definition lookup, powered by an optimized semantic index.</p>
+      <h2>完整语言智能</h2>
+      <p>Roslyn 驱动的 C# 和 FCS 驱动的 F# 代码补全、悬停提示、跳转到定义、查找引用和重命名——与编译器精度一致。</p>
     </article>
     <article class="feature-card">
       <span class="material-symbols-outlined icon-box" aria-hidden="true">view_in_ar</span>
-      <h2>NuGet Integration</h2>
-      <p>Seamless dependency management directly from the command palette or UI.</p>
+      <h2>NuGet 集成</h2>
+      <p>无需离开编辑器即可浏览、安装和更新 NuGet 包，通过标准 LSP 命令在所有支持的编辑器中可用。</p>
     </article>
     <article class="feature-card">
       <span class="material-symbols-outlined icon-box" aria-hidden="true">analytics</span>
-      <h2>Real-time Profiling</h2>
-      <p>Built-in allocation tracking and CPU profiling without context switching.</p>
+      <h2>内置性能分析器</h2>
+      <p>内存分配追踪和 CPU 性能分析直接集成到编辑器工作流中，无需切换到独立工具。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">code_blocks</span>
+      <h2>F# 一等公民</h2>
+      <p>通过专用的 FSharp.Compiler.Service sidecar 提供完整 F# 支持，不是附加功能，F# 特性有独立的验收标准和测试覆盖。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">build</span>
+      <h2>重构与代码操作</h2>
+      <p>Roslyn 驱动的代码操作：提取方法、重命名、整理导入、批量修复建议——与闭源替代品同等质量。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">search</span>
+      <h2>解决方案资源管理器</h2>
+      <p>在编辑器内浏览完整的 .sln 或 .slnx 解决方案树、管理项目并深入查看依赖关系。</p>
     </article>
   </div>
 </section>
 
 <section class="cta">
   <div class="copy-block">
-    <h2>Ready to forge ahead?</h2>
-    <p>Join the open-source community shaping the next generation of .NET tooling.</p>
+    <h2>.NET 开发者应得的工具。</h2>
+    <p>开源，MIT 许可，无专有依赖。加入社区，共同打造真正跨编辑器的 .NET 开发体验。</p>
   </div>
   <div class="button-row">
-    <a class="button button-primary" href="/zh/docs/">Download Forge</a>
-    <a class="button button-secondary" href="/zh/docs/">Read the Docs</a>
+    <a class="button button-primary" href="/zh/docs/">快速入门</a>
+    <a class="button button-secondary" href="/zh/docs/editors/">编辑器配置</a>
   </div>
 </section>

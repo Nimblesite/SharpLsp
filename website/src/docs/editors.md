@@ -10,29 +10,32 @@ eleventyNavigation:
 
 ![Forge editor support](/assets/screenshots/vscode-editors-page.png)
 
-Forge is editor-agnostic at the LSP layer, but the current alpha website reflects the VS Code extension. Other editor integrations exist in the repository or are experimental.
+Forge is editor-agnostic at the LSP layer. The VS Code extension is the primary supported surface. All other editors connect to the same `forge-lsp` binary over standard input/output.
+
+**Prerequisite for all editors:** [.NET 10.0 SDK](https://dotnet.microsoft.com/download) installed and `dotnet` on your PATH.
 
 ## VS Code
 
-Build and install the Forge extension from the repository:
+Install the Forge extension from the VS Code Marketplace, or build from source:
 
 ```sh
 make build-vsix
 code --install-extension forge.vsix
 ```
 
-The extension manages the Forge LSP server lifecycle and provides the Solution Explorer, profiler, NuGet browser, test lens, and editor status integration.
+The extension automatically manages the `forge-lsp` server lifecycle and provides the Solution Explorer, profiler, NuGet browser, test lens, and editor status integration. No additional configuration is required.
 
 ## Zed
 
-The repository contains a Zed extension that attaches `forge-lsp` over stdio for `.cs`, `.csx`, `.fs`, `.fsx`, and `.fsi` files. Treat this as experimental while the VS Code extension is being hardened.
+The repository contains a Zed extension that attaches `forge-lsp` over stdio for `.cs`, `.csx`, `.fs`, `.fsx`, and `.fsi` files. This is a developer build — you need the Rust toolchain installed to compile the Zed extension package, but **not** to use Forge itself.
 
 ```sh
-rustup target add wasm32-wasip1
 make package-zed
 ```
 
-Then in Zed: command palette -> `zed: install dev extension` -> pick `target/zed-extension/`. The `/forge-tree <Solution.sln|Solution.slnx>` slash command renders solution data in the assistant panel.
+Then in Zed: command palette → `zed: install dev extension` → pick `target/zed-extension/`. The `/forge-tree <Solution.sln|Solution.slnx>` slash command renders solution data in the assistant panel.
+
+> **Note:** The Zed integration is experimental while the VS Code extension is the primary tested surface.
 
 ## JetBrains Rider
 

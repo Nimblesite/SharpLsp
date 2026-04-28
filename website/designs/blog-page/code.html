@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Scaling the Forge Message Broker to 1M Events per Second - DevTerminal</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;450;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-background": "#e5e2e1",
+                        "on-secondary-container": "#b7b5b4",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "primary": "#75ff9e",
+                        "error": "#ffb4ab",
+                        "surface-dim": "#131313",
+                        "outline-variant": "#3b4a3d",
+                        "on-surface": "#e5e2e1",
+                        "on-primary-fixed-variant": "#005226",
+                        "tertiary-container": "#cac8c7",
+                        "surface-container-high": "#2a2a2a",
+                        "on-tertiary": "#303030",
+                        "tertiary-fixed": "#e4e2e1",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "secondary-container": "#474746",
+                        "on-surface-variant": "#bacbb9",
+                        "on-error": "#690005",
+                        "inverse-surface": "#e5e2e1",
+                        "secondary-fixed": "#e5e2e1",
+                        "on-tertiary-container": "#545453",
+                        "secondary": "#c8c6c5",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "surface-variant": "#353534",
+                        "surface-container-low": "#1c1b1b",
+                        "outline": "#859585",
+                        "on-primary-fixed": "#00210b",
+                        "on-primary": "#003918",
+                        "tertiary": "#e7e4e3",
+                        "inverse-primary": "#006d35",
+                        "surface-bright": "#3a3939",
+                        "primary-fixed-dim": "#00e475",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-primary-container": "#00612e",
+                        "on-error-container": "#ffdad6",
+                        "error-container": "#93000a",
+                        "primary-fixed": "#62ff96",
+                        "background": "#131313",
+                        "surface-tint": "#00e475",
+                        "inverse-on-surface": "#313030",
+                        "surface-container-highest": "#353534",
+                        "on-secondary-fixed-variant": "#474746",
+                        "surface": "#131313",
+                        "surface-container": "#201f1f",
+                        "on-secondary": "#313030",
+                        "primary-container": "#00e676",
+                        "on-tertiary-fixed": "#1b1c1c"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "density": "compact",
+                        "margin": "24px",
+                        "container-max": "1440px",
+                        "unit": "4px",
+                        "gutter": "16px"
+                    },
+                    "fontFamily": {
+                        "headline-xl": ["Space Grotesk"],
+                        "label-caps": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "code-md": ["monospace"],
+                        "headline-lg": ["Space Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-xl": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-caps": ["12px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "400" }],
+                        "code-md": ["14px", { "lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "450" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md antialiased selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopNavBar -->
+<nav class="fixed top-0 w-full z-50 border-b border-[#262626] bg-[#0D0D0D]/80 backdrop-blur-xl shadow-2xl shadow-black/50">
+<div class="flex justify-between items-center h-14 px-6 max-w-full mx-auto">
+<div class="flex items-center gap-8">
+<a class="text-xl font-bold tracking-tighter text-[#00E676] font-['Space_Grotesk']" href="#">DevTerminal</a>
+<div class="hidden md:flex items-center gap-6 font-['Space_Grotesk'] text-sm tracking-tight">
+<a class="text-[#00E676] border-b-2 border-[#00E676] pb-1" href="#">Articles</a>
+<a class="text-gray-400 hover:text-white transition-colors hover:bg-[#262626] hover:text-[#00E676] transition-all px-2 py-1 rounded" href="#">Documentation</a>
+<a class="text-gray-400 hover:text-white transition-colors hover:bg-[#262626] hover:text-[#00E676] transition-all px-2 py-1 rounded" href="#">Benchmarks</a>
+<a class="text-gray-400 hover:text-white transition-colors hover:bg-[#262626] hover:text-[#00E676] transition-all px-2 py-1 rounded" href="#">Changelog</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 text-gray-400">
+<button class="hover:text-[#00E676] transition-colors p-1 rounded hover:bg-[#262626]">
+<span class="material-symbols-outlined" data-icon="rss_feed">rss_feed</span>
+</button>
+<button class="hover:text-[#00E676] transition-colors p-1 rounded hover:bg-[#262626]">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+</button>
+</div>
+<button class="bg-primary-container text-black font-label-caps text-label-caps px-4 py-2 rounded font-semibold hover:bg-primary-fixed-dim transition-colors active:scale-95 duration-200">
+                    Subscribe
+                </button>
+</div>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-grow pt-24 pb-16 px-6 sm:px-8 max-w-4xl mx-auto w-full">
+<!-- Article Header -->
+<header class="mb-12">
+<div class="flex items-center gap-3 mb-6">
+<span class="bg-surface-container-high text-on-surface px-2 py-1 rounded text-label-caps font-label-caps uppercase border border-[#262626]">Systems Engineering</span>
+<span class="text-on-secondary-container text-body-sm font-body-sm">Oct 24, 2024</span>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-on-background mb-6">Scaling the Forge Message Broker to 1M Events per Second</h1>
+<div class="flex items-center gap-4 border-t border-[#262626] pt-6">
+<img alt="Jane Doe Profile" class="w-12 h-12 rounded-full border-2 border-[#262626] object-cover grayscale opacity-80 hover:grayscale-0 hover:opacity-100 transition-all" data-alt="close-up portrait of a female software engineer in low light cyberpunk environment with green neon reflections" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAD67SpD-iAx0p3uV9exHCxuwOCzRb4-DL71Un7bMvBZAhwFrV5QujQLJAj7RY1FW-p4m-0uhYkk9PSxb7WJUOqXt25VH6AtubFss0CAMR3Yw9k0n876VF5g0PJXLF0V45EbGUjr7sUPnCLpJC73GhMMZLUuD43uYczJM1_e9IZSX-rZb87fMAJ03X3HR6kzzFuBpQ80EW3hRgYm54AILhIIO2T5pWPyjljM0PWc13wW6tYobl3bdo6v_PSS6a2MMwmRwZTRD5uSw"/>
+<div>
+<p class="font-body-md text-body-md font-semibold text-on-background">Jane Doe</p>
+<p class="font-body-sm text-body-sm text-on-secondary-container">Principal Distributed Systems Engineer</p>
+</div>
+</div>
+</header>
+<!-- Article Body -->
+<article class="prose prose-invert prose-emerald max-w-none">
+<p class="font-body-md text-body-md text-on-surface mb-6 text-lg leading-relaxed">
+                When we initially designed Forge, our internal message broker, the target was modest: handle 50,000 events per second with sub-10ms latency. As our microservices ecosystem exploded, that number quickly became a bottleneck. This post details the architectural shifts and low-level Rust optimizations required to push Forge past the 1,000,000 EPS threshold on commodity hardware.
+            </p>
+<h2 class="font-headline-lg text-headline-lg text-on-background mt-12 mb-6 pb-2 border-b border-[#262626]">The Bottleneck: Lock Contention</h2>
+<p class="font-body-md text-body-md text-on-surface mb-6">
+                Our initial v1 architecture relied heavily on standard <code>RwLock</code> primitives for managing partition state. While conceptually simple, profiling revealed catastrophic thread contention under heavy load. The CPU was spending more time context-switching and managing locks than actually moving bytes.
+            </p>
+<!-- Image/Diagram Placeholder -->
+<div class="my-8 rounded border border-[#262626] bg-[#1A1A1A] p-2 overflow-hidden shadow-2xl shadow-black/50">
+<img alt="Architecture Diagram" class="w-full h-auto rounded opacity-80 mix-blend-screen" data-alt="abstract dark technical diagram showing glowing green data flows through network nodes on a dark grey background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-ap6VjPSfkymYONTBORgR7-FYubfHcxGVY5iSBkAQ99o2PmogkQ2_rkuS_pQ7OgoDGPTIB30Bbt3FKiCMeDtrg651pxOm1-Zc1JrQZ939G9Jw__mXYo2cLADu8-DzVP51_FV12tAWWaYQjmyCnD3XGhxx-HY2p8lNn7OCVWAN6tx2L-wa911fh_E6_5tLDie-qWhaMlujautjMm_GJTy03xEW1CYvvVfzukhtwTUPBCzcpj9INJrNdpdBX0EYhPDWbAjPozmtgQ"/>
+<p class="text-center font-body-sm text-body-sm text-on-secondary-container mt-2">Figure 1: Lock contention profiling in Forge v1 vs v2.</p>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-on-background mt-12 mb-6 pb-2 border-b border-[#262626]">Moving to Lock-Free Data Structures</h2>
+<p class="font-body-md text-body-md text-on-surface mb-6">
+                The solution was entirely ripping out the shared mutable state. We transitioned to a lock-free ring buffer implementation for the core event ingestion pipeline. Using atomic operations provided a massive throughput boost, allowing threads to enqueue and dequeue events concurrently without blocking.
+            </p>
+<!-- Code Block -->
+<div class="relative bg-[#262626] rounded-xl border border-[#3b4a3d] my-8 overflow-hidden">
+<div class="flex items-center justify-between px-4 py-2 bg-surface-container-high border-b border-[#3b4a3d]">
+<span class="font-label-caps text-label-caps text-on-secondary-container uppercase">Rust</span>
+<button class="text-on-secondary-container hover:text-primary-container transition-colors" title="Copy code">
+<span class="material-symbols-outlined text-[18px]" data-icon="content_copy">content_copy</span>
+</button>
+</div>
+<div class="p-4 overflow-x-auto">
+<pre class="font-code-md text-code-md text-on-surface leading-relaxed"><code class="language-rust">
+<span class="text-[#ffb4ab]">use</span> std::sync::atomic::{AtomicUsize, Ordering};
+
+<span class="text-[#ffb4ab]">pub struct</span> <span class="text-primary-fixed">RingBuffer</span>&lt;T&gt; {
+    buffer: Vec&lt;T&gt;,
+    head: AtomicUsize,
+    tail: AtomicUsize,
+    capacity: <span class="text-primary">usize</span>,
+}
+
+<span class="text-[#ffb4ab]">impl</span>&lt;T&gt; <span class="text-primary-fixed">RingBuffer</span>&lt;T&gt; {
+    <span class="text-[#ffb4ab]">pub fn</span> <span class="text-surface-tint">push</span>(&amp;<span class="text-[#ffb4ab]">mut</span> self, item: T) -&gt; <span class="text-primary">Result</span>&lt;(), T&gt; {
+        <span class="text-[#ffb4ab]">let</span> current_tail = self.tail.load(Ordering::Relaxed);
+        <span class="text-[#ffb4ab]">let</span> next_tail = (current_tail + 1) % self.capacity;
+
+        <span class="text-[#ffb4ab]">if</span> next_tail == self.head.load(Ordering::Acquire) {
+            <span class="text-[#b7b5b4]">// Buffer is full</span>
+            <span class="text-[#ffb4ab]">return</span> <span class="text-primary">Err</span>(item);
+        }
+
+        self.buffer[current_tail] = item;
+        self.tail.store(next_tail, Ordering::Release);
+        <span class="text-primary">Ok</span>(())
+    }
+}
+</code>
+</pre>
+</div>
+</div>
+<p class="font-body-md text-body-md text-on-surface mb-6">
+                By enforcing strict memory ordering (<code>Acquire</code>/<code>Release</code> semantics), we ensure data visibility across threads without the heavy cost of mutexes. This single change yielded a 400% increase in baseline throughput.
+            </p>
+<h2 class="font-headline-lg text-headline-lg text-on-background mt-12 mb-6 pb-2 border-b border-[#262626]">Zero-Copy Networking with io_uring</h2>
+<p class="font-body-md text-body-md text-on-surface mb-6">
+                Getting data into memory fast is only half the battle; writing it to disk and pushing it back to network sockets is where latency spikes hide. We bypassed the standard epoll-based async runtimes in favor of direct <code>io_uring</code> integration for disk I/O and socket operations. 
+            </p>
+<!-- Note/Callout -->
+<div class="bg-surface-container-high border-l-4 border-primary-container p-4 rounded-r my-8 flex gap-4">
+<span class="material-symbols-outlined text-primary-container" data-icon="lightbulb">lightbulb</span>
+<div>
+<h4 class="font-body-md text-body-md font-semibold text-on-background mb-1">Architecture Note</h4>
+<p class="font-body-sm text-body-sm text-on-secondary-container">
+                        Integrating io_uring required bypassing standard Tokio primitives. We built a custom reactor tailored specifically for Forge's I/O patterns, sacrificing general-purpose utility for raw speed.
+                    </p>
+</div>
+</div>
+<p class="font-body-md text-body-md text-on-surface mb-6">
+                The results speak for themselves. The 99th percentile latency dropped from 12ms to 1.8ms under 80% peak load. The system now easily sustains 1.2M EPS before hitting network interface card (NIC) saturation.
+            </p>
+</article>
+<!-- Related Articles -->
+<section class="mt-20 pt-10 border-t border-[#262626]">
+<h3 class="font-headline-lg text-headline-lg text-on-background mb-8">Related Documentation</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- Card 1 -->
+<a class="bg-[#1A1A1A] border border-[#262626] rounded-xl p-6 hover:border-primary-container/50 transition-colors group" href="#">
+<div class="flex justify-between items-start mb-4">
+<span class="text-label-caps font-label-caps text-on-secondary-container uppercase tracking-widest">Tutorial</span>
+<span class="material-symbols-outlined text-on-secondary-container group-hover:text-primary-container transition-colors" data-icon="arrow_outward">arrow_outward</span>
+</div>
+<h4 class="font-body-md text-body-md font-semibold text-on-background mb-2">Implementing Zero-Copy in Rust</h4>
+<p class="font-body-sm text-body-sm text-on-secondary-container line-clamp-2">A deep dive into bypassing kernel buffers for high-performance network applications.</p>
+</a>
+<!-- Card 2 -->
+<a class="bg-[#1A1A1A] border border-[#262626] rounded-xl p-6 hover:border-primary-container/50 transition-colors group" href="#">
+<div class="flex justify-between items-start mb-4">
+<span class="text-label-caps font-label-caps text-on-secondary-container uppercase tracking-widest">Benchmark</span>
+<span class="material-symbols-outlined text-on-secondary-container group-hover:text-primary-container transition-colors" data-icon="arrow_outward">arrow_outward</span>
+</div>
+<h4 class="font-body-md text-body-md font-semibold text-on-background mb-2">Forge vs. Kafka: 2024 Performance Report</h4>
+<p class="font-body-sm text-body-sm text-on-secondary-container line-clamp-2">Head-to-head comparison on commodity hardware focusing on tail latencies.</p>
+</a>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="w-full border-t border-[#262626] py-12 bg-[#0D0D0D]">
+<div class="max-w-7xl mx-auto px-8 flex flex-col md:flex-row justify-between items-center gap-6">
+<div class="text-lg font-black text-white font-['Space_Grotesk']">
+                DevTerminal
+            </div>
+<div class="flex flex-wrap justify-center gap-6 font-['Space_Grotesk'] text-xs uppercase tracking-widest text-gray-500">
+<a class="hover:text-[#00E676] underline underline-offset-4 transition-colors" href="#">Open Source</a>
+<a class="hover:text-[#00E676] underline underline-offset-4 transition-colors" href="#">Privacy Policy</a>
+<a class="hover:text-[#00E676] underline underline-offset-4 transition-colors" href="#">Security</a>
+<a class="hover:text-[#00E676] underline underline-offset-4 transition-colors" href="#">Status</a>
+</div>
+<div class="text-[#00E676] font-['Space_Grotesk'] text-xs uppercase tracking-widest opacity-80 hover:opacity-100 transition-opacity">
+                © 2024 DevTerminal Engineering. Built with Precision.
+            </div>
+</div>
+</footer>
+</body></html>

@@ -9,53 +9,50 @@ eleventyNavigation:
 
 # Getting Started with Forge
 
-Forge is an ultra-fast, open-source Language Server Protocol (LSP)
-implementation for .NET, engineered entirely in Rust. It delivers
-sub-millisecond syntax response paths and a minimal memory footprint,
-redefining the C# developer experience.
+Forge 是一款开源、编辑器无关的 .NET 语言服务器，为 VS Code、Neovim、Helix、Emacs、Zed 及任何支持 LSP 的编辑器提供完整的 C# 和 F# 开发体验。安装一次服务器，随处享受完整的 .NET 工具链。
+
+<img src="/assets/screenshots/vscode-getting-started-page.png" alt="" aria-hidden="true" style="position:absolute;width:1px;height:1px;opacity:0;margin:0;border:0;">
 
 <section class="callout">
-  <h2><span class="material-symbols-outlined" aria-hidden="true">fact_check</span>Prerequisites</h2>
+  <h2><span class="material-symbols-outlined" aria-hidden="true">fact_check</span>前提条件</h2>
   <ul class="requirement-list">
-    <li>
-      <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
-      <div>
-        <h3>Rust Toolchain</h3>
-        <p>Requires Rust 1.75.0 or later. We recommend installing via <code>rustup</code>.</p>
-      </div>
-    </li>
     <li>
       <span class="material-symbols-outlined" aria-hidden="true">deployed_code</span>
       <div>
         <h3>.NET 10.0 SDK</h3>
-        <p>Required for project parsing and MSBuild integration. Ensure the SDK is in your PATH.</p>
+        <p>用于项目加载、MSBuild 集成和语义分析。请从 <a href="https://dotnet.microsoft.com/download">microsoft.com/download</a> 下载，并确保 <code>dotnet</code> 在您的 PATH 中。</p>
       </div>
     </li>
   </ul>
 </section>
 
-## Installation
+## 安装
 
-Install the Forge CLI directly from crates.io using Cargo:
+### VS Code
 
-```bash
-$ cargo install forge-cli
+从 VS Code Marketplace 安装 Forge 扩展，或从源码构建：
+
+```sh
+make build-vsix
+code --install-extension forge.vsix
 ```
 
-## Basic Usage
+扩展会自动管理 Forge LSP 服务器的生命周期，无需额外配置。
+
+### 其他编辑器
+
+从 [GitHub Releases 页面](https://github.com/MelbourneDeveloper/forge/releases) 下载 `forge-lsp` 二进制文件并放入 PATH，然后参阅[编辑器配置](/zh/docs/editors/)指南。
+
+## 基本用法
 
 <div class="usage-grid">
   <section class="usage-card">
-    <h3><span class="material-symbols-outlined" aria-hidden="true">folder_open</span>Initialize Workspace</h3>
-    <p>Generate a <code>forge.toml</code> configuration file in the root of your existing .NET solution.</p>
-
-    <pre><code>$ forge init .</code></pre>
+    <h3><span class="material-symbols-outlined" aria-hidden="true">folder_open</span>打开解决方案</h3>
+    <p>打开包含 <code>.sln</code>、<code>.slnx</code>、<code>.csproj</code> 或 <code>.fsproj</code> 文件的目录，Forge 将自动检测并加载项目。</p>
   </section>
   <section class="usage-card">
-    <h3><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>Start Server</h3>
-    <p>Launch the LSP server. Typically, your editor will run this command automatically.</p>
-
-    <pre><code>$ forge dev --watch</code></pre>
+    <h3><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>开始开发</h3>
+    <p>代码补全、诊断、跳转到定义、悬停提示、重构、NuGet 管理和性能分析功能立即可用，无需额外配置。</p>
   </section>
 </div>
 
