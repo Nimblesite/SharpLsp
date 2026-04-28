@@ -207,6 +207,35 @@ async function main() {
           console.log(`  [ok] solution explorer context menu confirmed visible`);
         }
       }
+      // For context-menu-open-project: inject a fake project context menu over the project row.
+      if (filename.includes("context-menu-open-project")) {
+        await hidePanel(page);
+        const projectRow = page
+          .locator(".part.sidebar .monaco-list-row")
+          .filter({ hasText: /\.csproj/ })
+          .first();
+        if (await projectRow.isVisible({ timeout: 3_000 }).catch(() => false)) {
+          const box = await projectRow.boundingBox();
+          if (box) {
+            const x = box.x + Math.min(24, box.width / 2);
+            const y = box.y + box.height / 2;
+            await injectSolutionExplorerMenu(page, x, y, [
+              "Open Project File",
+              "Build",
+              "Rebuild",
+              "Clean",
+              "-",
+              "Browse NuGet Packages",
+              "-",
+              "Add Project Reference",
+              "Copy Name",
+            ]);
+            console.log(`  [ok] injected project context menu for ${filename}`);
+          }
+        } else {
+          console.log(`  [warn] project row not visible for ${filename}`);
+        }
+      }
       // For refactoring screenshot: wait for context menu / lightbulb widget
       if (filename.includes("refactoring")) {
         const menuVisible = await page.locator(".context-view.monaco-component").isVisible({ timeout: 5_000 }).catch(() => false);

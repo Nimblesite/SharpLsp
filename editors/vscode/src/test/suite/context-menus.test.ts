@@ -305,6 +305,7 @@ suite('Context Menu — Package.json Contributions', () => {
 
 suite('Context Menu — Context Values on Tree Nodes', () => {
   let tmpDir: string;
+  let fixtureDir: string;
   let provider: ExplorerApi['explorerProvider'];
 
   suiteSetup(async function () {
@@ -313,32 +314,36 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
     tmpDir = result.tmpDir;
     provider = getProvider();
 
-    // Build one solution with all symbol types.
-    const projDir = path.join(tmpDir, 'AllTypesCtx');
-    fs.mkdirSync(projDir, { recursive: true });
-    writeCsproj(projDir, 'AllTypesCtx');
-    fs.writeFileSync(path.join(projDir, 'Source.cs'), ALL_TYPES_CS);
+    // Use the fixture workspace — it already has TestFixtures.sln loaded and
+    // Roslyn is guaranteed to be warm after setupLspTestSuite completes.
+    fixtureDir = path.resolve(__dirname, '../../../test-fixtures/workspace');
 
-    const slnPath = path.join(tmpDir, 'AllTypesCtx.sln');
-    writeSln(slnPath, 'AllTypesCtx', '{00000000-0000-0000-0000-000000000101}');
+    // Write AllTypesCtx source INTO the fixture project so Roslyn can analyze it.
+    const allTypesPath = path.join(fixtureDir, 'AllTypesCtx.cs');
+    fs.writeFileSync(allTypesPath, ALL_TYPES_CS, 'utf8');
+
+    const slnPath = path.join(fixtureDir, 'TestFixtures.sln');
     await provider.loadSolution(slnPath);
 
-    const csUri = vscode.Uri.file(path.join(projDir, 'Source.cs'));
+    const csUri = vscode.Uri.file(allTypesPath);
     const csDoc = await vscode.workspace.openTextDocument(csUri);
     await vscode.window.showTextDocument(csDoc);
     await waitForDocumentSymbols(csUri);
     await provider.refresh();
 
-    // Wait for tree to populate — Roslyn can take up to 90s on cold start.
+    // Wait for tree to populate — poll until AllTypesClass appears.
     await pollUntilResult(
       async () => findByLabel(provider.getChildren(), 'AllTypesClass'),
       (n) => n !== undefined,
-      90_000,
+      60_000,
       1_000,
     );
   });
 
   suiteTeardown(async () => {
+    // Remove the temp file added to the fixture workspace.
+    const allTypesPath = path.join(fixtureDir, 'AllTypesCtx.cs');
+    try { fs.rmSync(allTypesPath, { force: true }); } catch { /* best-effort */ }
     provider.clear();
     await closeAllEditors();
     teardownLspTestSuite(tmpDir);
@@ -1270,6 +1275,7 @@ suite('Context Menu — Project Node Commands Execute', () => {
     this.timeout(10_000);
     const projectNode = findByContext(provider.getChildren(), 'project');
     assert.ok(projectNode, 'Project node must exist');
+    assert.strictEqual(projectNode.contextValue, 'project', "Project node must have contextValue 'project'");
 
     await vscode.commands.executeCommand('forge.openProjectFile', projectNode);
 
@@ -1285,6 +1291,18 @@ suite('Context Menu — Project Node Commands Execute', () => {
         .map((editor) => editor.document.fileName)
         .join(', ')}`,
     );
+    // Assert the csproj has valid MSBuild XML content.
+    const text = csprojEditor.document.getText();
+    assert.ok(text.includes('<Project'), `csproj must contain '<Project' element`);
+    assert.ok(text.includes('TargetFramework'), `csproj must contain 'TargetFramework'`);
+    assert.ok(
+      csprojEditor.document.languageId === 'xml' || csprojEditor.document.languageId === 'msbuild',
+      `csproj languageId should be xml or msbuild, got '${csprojEditor.document.languageId}'`,
+    );
+    // Assert solution explorer tree still has project node visible.
+    const children = provider.getChildren();
+    assert.ok(children !== undefined && children.length > 0, 'Solution Explorer must have nodes');
+    assert.ok(findByContext(children, 'project'), 'Project node must still be in tree');
     await openForgePanel();
     await takeScreenshot('vscode-context-menu-open-project.png');
   });

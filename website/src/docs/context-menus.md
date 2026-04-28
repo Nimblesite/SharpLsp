@@ -48,6 +48,8 @@ Runs `dotnet build`, `dotnet build --no-incremental`, or `dotnet clean` on the s
 
 ### Open Project File
 
+![Open Project File — .csproj open in editor](/assets/screenshots/vscode-context-menu-open-project.png)
+
 Opens the `.csproj` or `.fsproj` file in the editor.
 
 ### Browse NuGet Packages

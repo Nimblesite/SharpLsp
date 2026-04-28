@@ -192,12 +192,17 @@ suite('Extension Activation & Configuration', () => {
     // Verify server is back.
     const symbols = await waitForDocumentSymbols(uri, 30_000);
     assert.ok(symbols.length > 0, 'Server should respond after restart');
-    // Load fixture solution + open Forge panel to show architecture in screenshot.
+
+    // Open Calculator.cs from the fixture workspace so a real file is visible.
     if (process.env['FORGE_SCREENSHOTS']) {
       const ext2 = vscode.extensions.getExtension(EXTENSION_ID);
       const api2 = ext2?.exports as { explorerProvider?: { loadSolution(p: string): Promise<void>; getChildren(e?: unknown): unknown[] | undefined } } | undefined;
+      const ws2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+      const calcUri = vscode.Uri.file(`${ws2}/Calculator.cs`);
+      const calcDoc = await vscode.workspace.openTextDocument(calcUri);
+      await vscode.window.showTextDocument(calcDoc, { preview: false });
+      await waitForDocumentSymbols(calcUri);
       if (api2?.explorerProvider) {
-        const ws2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
         await api2.explorerProvider.loadSolution(`${ws2}/TestFixtures.sln`);
         let w = 0;
         while ((api2.explorerProvider.getChildren() ?? []).length === 0 && w < 8000) {
@@ -205,11 +210,15 @@ suite('Extension Activation & Configuration', () => {
         }
       }
     }
-    // Open Forge panel first so Solution Explorer is visible, then show output channel.
-    await openForgePanel();
-    await vscode.commands.executeCommand('forge.showOutput');
-    await new Promise((r) => setTimeout(r, 1500));
+    // Show the Forge Output channel then maximize it so the LSP log fills the editor area.
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('forge.showOutput');
+    }, 'forge.showOutput must not throw before architecture screenshot');
+    await new Promise((r) => setTimeout(r, 500));
+    await vscode.commands.executeCommand('workbench.action.toggleMaximizedPanel');
+    await new Promise((r) => setTimeout(r, 1_500));
     await takeScreenshot('vscode-architecture-page.png');
+    await vscode.commands.executeCommand('workbench.action.toggleMaximizedPanel');
   });
 
   // ── C# Language Configuration ──────────────────────────────
