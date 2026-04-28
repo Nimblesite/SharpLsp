@@ -4,17 +4,13 @@ title: Profiler
 eleventyExcludeFromCollections: true
 ---
 
-**VS Code**
 ![Profiler in VS Code](/assets/screenshots/vscode-profiler-page.png)
 
-**Zed**
-![Profiler in Zed](/assets/screenshots/zed-profiler-page.png)
-
-*Built-in profiler wrapping dotnet-trace, dotnet-counters, and dotnet-dump — zero context switching.*
+*Profiler workflows exposed by the alpha VS Code extension.*
 
 # Profiler
 
-Forge integrates the standard .NET diagnostic CLI tools directly into your editor. No terminal juggling, no separate GUIs. Trace performance, monitor live counters, collect memory dumps, diff heap snapshots, and visualize object retention graphs without leaving your code.
+Forge integrates .NET diagnostics workflows into VS Code. The extension exposes commands for process discovery, traces, counters, dumps, heap analysis, and related file actions while the profiler experience is being hardened for beta.
 
 ## Prerequisites
 

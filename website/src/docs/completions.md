@@ -8,11 +8,11 @@ eleventyNavigation:
 
 ![Code completions in VS Code](/assets/screenshots/vscode-completions-page.png)
 
-*Full IntelliSense completions powered by Roslyn — same engine as Visual Studio.*
+*C# completions powered by Roslyn in the alpha VS Code extension.*
 
 # Code Completions
 
-Forge provides IntelliSense-quality code completions for C#, powered by the full Roslyn API. Completions are routed through the C# sidecar, keeping the Rust host free for fast syntax operations.
+Forge provides C# code completions through Roslyn. Completions are routed through the C# sidecar, keeping the Rust host free for fast syntax operations.
 
 ## Performance Targets
 
@@ -24,7 +24,7 @@ Forge provides IntelliSense-quality code completions for C#, powered by the full
 
 ## C# Completions (Roslyn)
 
-The C# sidecar uses Roslyn's `CompletionService` to generate completions. This gives identical results to Visual Studio — the same engine, the same APIs, zero approximation.
+The C# sidecar uses Roslyn's `CompletionService` to generate completions, so the feature is built on the same compiler platform used by the wider .NET tooling ecosystem.
 
 ### What Gets Completed
 
@@ -75,4 +75,3 @@ Forge advertises:
 ```
 
 `completionItem/resolve` is supported — full documentation and additional edits (e.g., import insertion) are added on resolve, keeping the initial list fast.
-

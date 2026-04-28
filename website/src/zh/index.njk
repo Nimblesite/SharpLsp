@@ -5,11 +5,11 @@ lang: zh
 ---
 
 <section class="hero">
-  <div class="hero-badge">开源 &middot; MIT 许可证</div>
-  <h1>Visual Studio 扼杀的<br/>.NET LSP。</h1>
+  <div class="hero-badge">Alpha &middot; 接近 Beta &middot; MIT 许可证</div>
+  <h1>面向 VS Code 的<br/>开源 .NET 工具。</h1>
   <p class="tagline">
-    一个语言服务器。每一款编辑器。由 Roslyn 驱动的完整 C# 智能感知
-    — 使用 Rust 构建，速度快得让专有工具相形见绌。
+    Forge 目前是早期 .NET 语言工具栈：Rust LSP 宿主、Roslyn 驱动的 C# 功能、
+    解决方案导航、NuGet 工作流，以及 VS Code 扩展中的性能分析工具。
   </p>
   <div class="hero-actions">
     <a href="/zh/docs/" class="btn btn-primary">快速入门</a>
@@ -46,17 +46,17 @@ lang: zh
   <p>来自 VS Code 扩展的真实截图，非模拟图。</p>
   <div class="showcase-grid">
     <div class="showcase-item showcase-wide">
-      <img src="/assets/screenshots/split-editor.png" alt="Forge 解决方案资源管理器树视图（VS Code）" loading="lazy" />
+      <img src="/assets/screenshots/solution-explorer.png" alt="Forge 解决方案资源管理器树视图（VS Code）" loading="lazy" />
       <div class="showcase-caption">
         <h3>真正好用的解决方案资源管理器</h3>
-        <p>在树视图中浏览整个 .NET 解决方案 — 项目、文件和依赖项 — 远超 C# Dev Kit 的能力。右键单击即可删除包、复制限定名称并即时导航。</p>
+        <p>从 Forge 活动栏浏览 .NET 解决方案、项目、文件、依赖项、NuGet 包和引用。</p>
       </div>
     </div>
     <div class="showcase-item">
-      <img src="/assets/screenshots/editor-overview.png" alt="Forge LSP 驱动的 VS Code C# 编辑" loading="lazy" />
+      <img src="/assets/screenshots/vscode-completions-page.png" alt="Forge 在 VS Code 中显示 C# 代码补全" loading="lazy" />
       <div class="showcase-caption">
-        <h3>完整的 C# 智能感知</h3>
-        <p>类、接口、枚举、区域、XML 文档注释 — 全部由 Rust 宿主中的 tree-sitter 以亚毫秒速度解析。</p>
+        <h3>C# 语言智能</h3>
+        <p>C# 补全、悬停、诊断和导航通过 Roslyn sidecar 执行，语法功能保留在 Rust 宿主中。</p>
       </div>
     </div>
     <div class="showcase-item">
@@ -77,8 +77,8 @@ lang: zh
 </section>
 
 <section class="perf-section">
-  <h2>性能就是核心特性。</h2>
-  <p>Forge 以 Rust 为优先构建。关键路径从不触及 .NET。</p>
+  <h2>性能目标。</h2>
+  <p>这些是 alpha 阶段的工程目标，不是 beta 稳定性承诺。</p>
   <div class="perf-grid">
     <div class="perf-card">
       <div class="perf-stat">&lt;3秒</div>
@@ -93,7 +93,7 @@ lang: zh
     <div class="perf-card">
       <div class="perf-stat">&lt;100ms</div>
       <div class="perf-label">代码补全 p50</div>
-      <div class="perf-desc">通过 sidecar 实现 Roslyn 代码补全。与 Visual Studio 相同的引擎 — 更快的往返速度。</div>
+      <div class="perf-desc">通过 sidecar 实现 Roslyn 代码补全，Rust 宿主保持协议和语法路径响应迅速。</div>
     </div>
     <div class="perf-card">
       <div class="perf-stat">&lt;500ms</div>
@@ -114,24 +114,24 @@ lang: zh
 </section>
 
 <section class="features">
-  <h2>与众不同。</h2>
-  <p>这不是另一个半成品扩展，而是对 .NET 开发工具的全新重构。</p>
+  <h2>当前扩展状态。</h2>
+  <p>Forge 仍是 alpha 软件。VS Code 扩展是当前主要可用界面，编辑器无关的 LSP 工作仍在推进。</p>
   <div class="feature-grid">
     <div class="feature-card feature-highlight">
-      <h3>你的编辑器。你的规则。</h3>
-      <p>VS Code、Neovim、Emacs、Helix — Forge 遵循 LSP 3.17，因此可以在任何地方运行。Zed 支持即将到来。不要再让微软决定你在哪里写代码。</p>
+      <h3>VS Code 优先。</h3>
+      <p>当前扩展通过 VS Code 暴露 Forge：语言客户端启动、解决方案资源管理器、性能分析器、NuGet 工作流、命令和调试器集成。</p>
     </div>
     <div class="feature-card">
-      <h3>超强解决方案资源管理器。</h3>
-      <p>显示整个解决方案的树视图 — 项目、文件、NuGet 包、引用 — 配有 C# Dev Kit 没有的右键菜单操作。删除包、复制限定名称，即时导航。</p>
+      <h3>解决方案资源管理器工作流。</h3>
+      <p>树视图支持选择解决方案、刷新、排序、项目操作、包操作、引用、复制命令和文件定位命令。</p>
     </div>
     <div class="feature-card">
       <h3>Rust 宿主。亚毫秒解析。</h3>
       <p>Rust 宿主中的 Tree-sitter 增量解析，salsa 驱动的缓存。无需等待 Roslyn 即可获得文档符号、折叠和选择范围。</p>
     </div>
     <div class="feature-card">
-      <h3>完整的 Roslyn。零妥协。</h3>
-      <p>代码补全、诊断、悬停、跳转到定义 — 完整的 Roslyn API。与 Visual Studio 相同的引擎，没有任何锁定。</p>
+      <h3>Roslyn 支撑的 C# 功能。</h3>
+      <p>Forge 正在基于 Roslyn 构建 C# 补全、诊断、悬停、定义跳转和代码操作，而不是在编辑器扩展中近似语义行为。</p>
     </div>
     <div class="feature-card">
       <h3>崩溃防护架构。</h3>

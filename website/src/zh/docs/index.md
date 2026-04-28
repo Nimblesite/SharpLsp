@@ -9,13 +9,16 @@ eleventyNavigation:
 
 # 快速入门
 
-Forge 是一个使用 Rust 构建的开源 .NET 语言服务器协议（LSP）实现。它为支持 LSP 的任何编辑器提供完整的 C# 和 F# 语言支持。
+![VS Code 中运行的 Forge](/assets/screenshots/vscode-getting-started-page.png)
+
+Forge 是一个使用 Rust 构建的开源 .NET 语言服务器协议（LSP）实现。当前扩展仍处于 alpha、接近 beta 阶段，VS Code 是主要可用和测试界面。
 
 ## 前置要求
 
 - [Rust](https://rustup.rs/)（最新稳定版）
 - [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) 或更高版本
-- 支持 LSP 的编辑器（VS Code、Neovim、Emacs、Helix、Zed 等）
+- 当前扩展体验需要 VS Code
+- 如果你正在试验原始语言服务器，则需要支持 LSP 的编辑器
 
 ## 安装
 

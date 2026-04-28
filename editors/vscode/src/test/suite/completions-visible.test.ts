@@ -1,8 +1,9 @@
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   closeAllEditors,
-  openCSharpFile,
   setupLspTestSuite,
   teardownLspTestSuite,
   waitForDocumentSymbols,
@@ -10,11 +11,15 @@ import {
 
 suite('Visible Completions', () => {
   let tmpDir: string;
+  let workspaceRoot: string;
 
   suiteSetup(async function () {
     this.timeout(60_000);
     const result = await setupLspTestSuite('visible-completions-');
     tmpDir = result.tmpDir;
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    assert.ok(ws, 'Workspace folder must be available');
+    workspaceRoot = ws;
   });
 
   suiteTeardown(async () => {
@@ -29,30 +34,17 @@ suite('Visible Completions', () => {
   test('screenshot completion site offers real instance members', async function () {
     this.timeout(90_000);
 
-    const source = [
-      'namespace CompletionShot',
-      '{',
-      '    public class Calculator',
-      '    {',
-      '        private int _count;',
-      '        public string Name { get; set; }',
-      '        public int Add(int a, int b) { return a + b; }',
-      '        public int Use()',
-      '        {',
-      '            return this.',
-      '        }',
-      '    }',
-      '}',
-      '',
-    ].join('\n');
-
-    const { uri } = await openCSharpFile(tmpDir, 'CompletionShot.cs', source);
+    const filePath = path.join(workspaceRoot, 'CompletionShot.cs');
+    assert.ok(fs.existsSync(filePath), 'CompletionShot.cs fixture must exist');
+    const uri = vscode.Uri.file(filePath);
+    const document = await vscode.workspace.openTextDocument(uri);
+    await vscode.window.showTextDocument(document);
     await waitForDocumentSymbols(uri, 30_000);
 
     const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
       'vscode.executeCompletionItemProvider',
       uri,
-      new vscode.Position(9, 24),
+      new vscode.Position(11, 24),
     );
 
     assert.ok(completions, 'Member-access completion request must return a completion list');

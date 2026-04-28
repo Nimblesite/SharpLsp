@@ -5,17 +5,13 @@ lang: zh
 eleventyExcludeFromCollections: true
 ---
 
-**VS Code**
 ![VS Code 中的跳转到定义](/assets/screenshots/vscode-go-to-definition-page.png)
 
-**Zed**
-![Zed 中的跳转到定义](/assets/screenshots/zed-go-to-definition-page.png)
-
-*导航到任何符号定义、类型定义、声明或实现 — 所有四种 LSP 导航方法均已完整实现。*
+*Alpha 版 VS Code 扩展中的 C# 定义导航。*
 
 # 跳转到定义
 
-Forge 实现了 LSP 3.17 中的完整定义导航请求家族，通过 Roslyn sidecar 覆盖所有 C# 导航场景。
+Forge 正在基于 Roslyn sidecar 构建 LSP 定义导航请求家族。当前扩展展示 VS Code 工作流，边界情况仍在继续加固。
 
 ## 导航方法
 
@@ -26,7 +22,7 @@ Forge 实现了 LSP 3.17 中的完整定义导航请求家族，通过 Roslyn si
 | `textDocument/declaration` | — | 导航到接口/抽象声明 |
 | `textDocument/implementation` | `Ctrl+Shift+F12` | 导航到所有具体实现 |
 
-所有四种方法均为 **P0**（发布阻断项）并已完整实现（C#）。
+定义导航是 Forge 的发布阻断领域。Alpha 阶段请针对你依赖的具体操作和项目结构验证行为。
 
 ## C# 导航（Roslyn）
 
@@ -74,16 +70,3 @@ Roslyn 通过 `SemanticModel.GetSymbolInfo()` 解析符号，并从 `ISymbol.Loc
 | 定义延迟（p95） | <250ms |
 | 缓存定义 | <1ms |
 | 查找实现（100 个实现） | <500ms |
-
-## 竞品对比
-
-| 功能 | Visual Studio | C# Dev Kit | Rider | **Forge** |
-|---------|:---:|:---:|:---:|:---:|
-| 跳转到定义（源码） | ✓ | ✓ | ✓ | ✓ |
-| 跳转到定义（元数据） | ✓ | ✓ | ✓ | ✓ |
-| 跳转到类型定义 | ✓ | ✓ | ✓ | ✓ |
-| 跳转到声明 | ✓ | ✓ | ✓ | ✓ |
-| 跳转到实现 | ✓ | ✓ | ✓ | ✓ |
-| 分部类导航 | ✓ | ✓ | ✓ | ✓ |
-| 反编译源码 | ✓ | ✓ | ✓ | ✓ |
-| 速览定义 | ✓ | ✓ | ✓ | ✓ |

@@ -304,13 +304,16 @@ export async function openForgePanelProfiler(): Promise<void> {
 export async function takeScreenshot(filename: string): Promise<void> {
   if (!process.env['FORGE_SCREENSHOTS']) return;
   fs.mkdirSync(SCREENSHOT_OUT_DIR, { recursive: true });
-  const signalPath = path.join(SCREENSHOT_OUT_DIR, `${filename}.signal`);
+  const tempFilename = `${filename}.tmp-${process.pid.toString()}.png`;
+  const signalPath = path.join(SCREENSHOT_OUT_DIR, `${tempFilename}.signal`);
   const outPath = path.join(SCREENSHOT_OUT_DIR, filename);
-  if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
-  fs.writeFileSync(signalPath, 'ready', 'utf8');
+  const tempPath = path.join(SCREENSHOT_OUT_DIR, tempFilename);
+  if (fs.existsSync(tempPath)) fs.rmSync(tempPath, { force: true });
+  fs.writeFileSync(signalPath, filename, 'utf8');
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
-    if (fs.existsSync(outPath)) {
+    if (fs.existsSync(tempPath)) {
+      fs.renameSync(tempPath, outPath);
       console.log(`[screenshot] ${filename}`);
       return;
     }

@@ -514,12 +514,6 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
 
     assert.ok(actions.length > 0, 'Must have at least one code action for unused variable');
 
-    // Trigger the lightbulb in the editor so it's visible in the screenshot.
-    const editor = vscode.window.activeTextEditor;
-    assert.ok(editor, 'Must have active editor');
-    editor.selection = new vscode.Selection(new vscode.Position(6, 18), new vscode.Position(6, 18));
-    await vscode.commands.executeCommand('editor.action.quickFix');
-    await new Promise((r) => setTimeout(r, 2000));
     // Load fixture solution so Forge panel shows Solution Explorer.
     if (process.env['FORGE_SCREENSHOTS']) {
       const ext2 = vscode.extensions.getExtension('forge-lsp.forge');
@@ -534,6 +528,15 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
       }
     }
     await openForgePanel();
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri), { preview: false });
+
+    // Trigger the lightbulb in the editor so it's visible in the screenshot.
+    const editor = vscode.window.activeTextEditor;
+    assert.ok(editor, 'Must have active editor');
+    editor.selection = new vscode.Selection(new vscode.Position(6, 18), new vscode.Position(6, 18));
+    editor.revealRange(new vscode.Range(new vscode.Position(6, 18), new vscode.Position(6, 18)));
+    await vscode.commands.executeCommand('editor.action.quickFix');
+    await new Promise((r) => setTimeout(r, 2000));
     await takeScreenshot('vscode-refactoring.png');
   });
 });

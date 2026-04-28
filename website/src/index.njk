@@ -4,12 +4,12 @@ title: "Forge — Open-Source .NET LSP"
 ---
 
 <section class="hero">
-  <div class="hero-badge">Open Source &middot; MIT Licensed</div>
-  <h1>The .NET LSP that<br/>killed Visual Studio.</h1>
+  <div class="hero-badge">Alpha &middot; Approaching Beta &middot; MIT Licensed</div>
+  <h1>Open-source .NET tooling<br/>for VS Code.</h1>
   <p class="tagline">
-    One language server. Every editor. Full F# and C# intelligence
-    powered by FCS and Roslyn — built in Rust for speed that makes
-    proprietary tools feel broken.
+    Forge is an early .NET language tooling stack with a Rust LSP host,
+    Roslyn-powered C# features, solution navigation, NuGet workflows,
+    and profiler tooling in the VS Code extension.
   </p>
   <div class="hero-actions">
     <a href="/docs/" class="btn btn-primary">Get Started</a>
@@ -48,15 +48,15 @@ title: "Forge — Open-Source .NET LSP"
     <div class="showcase-item showcase-wide">
       <img src="/assets/screenshots/solution-explorer.png" alt="Forge Solution Explorer tree view in VS Code" loading="lazy" />
       <div class="showcase-caption">
-        <h3>Solution Explorer that works</h3>
-        <p>Browse your entire .NET solution — projects, files, and dependencies — in a tree view that C# Dev Kit can't match. Right-click to remove packages, copy qualified names, and navigate instantly.</p>
+        <h3>Solution Explorer</h3>
+        <p>Browse .NET solutions, projects, files, dependencies, NuGet packages, and references from the Forge activity bar.</p>
       </div>
     </div>
     <div class="showcase-item">
-      <img src="/assets/screenshots/split-editor.png" alt="F# and C# split editor in VS Code with Forge LSP" loading="lazy" />
+      <img src="/assets/screenshots/vscode-completions-page.png" alt="C# completion list in VS Code with Forge" loading="lazy" />
       <div class="showcase-caption">
-        <h3>Full F# and C# intelligence</h3>
-        <p>Modules, types, discriminated unions, classes, interfaces, enums, regions, XML doc comments — all parsed by tree-sitter in the Rust host at sub-millisecond speeds.</p>
+        <h3>C# language intelligence</h3>
+        <p>C# completions, hover, diagnostics, and navigation route through the Roslyn sidecar while syntax features stay in the Rust host.</p>
       </div>
     </div>
     <div class="showcase-item">
@@ -77,8 +77,8 @@ title: "Forge — Open-Source .NET LSP"
 </section>
 
 <section class="perf-section">
-  <h2>Performance is the feature.</h2>
-  <p>Forge is built Rust-first. The hot path never touches .NET.</p>
+  <h2>Performance targets.</h2>
+  <p>These are engineering targets for the alpha, not a beta stability guarantee.</p>
   <div class="perf-grid">
     <div class="perf-card">
       <div class="perf-stat">&lt;3s</div>
@@ -93,7 +93,7 @@ title: "Forge — Open-Source .NET LSP"
     <div class="perf-card">
       <div class="perf-stat">&lt;100ms</div>
       <div class="perf-label">Completions p50</div>
-      <div class="perf-desc">Roslyn completions via the sidecar. Same engine as Visual Studio — faster round-trip.</div>
+      <div class="perf-desc">Roslyn completions via the sidecar, with the Rust host keeping protocol and syntax work responsive.</div>
     </div>
     <div class="perf-card">
       <div class="perf-stat">&lt;500ms</div>
@@ -114,24 +114,24 @@ title: "Forge — Open-Source .NET LSP"
 </section>
 
 <section class="features">
-  <h2>Built different.</h2>
-  <p>Not another half-baked extension. A ground-up reimagining of .NET developer tooling.</p>
+  <h2>Current extension state.</h2>
+  <p>Forge is alpha software. The VS Code extension is the primary working surface while the editor-agnostic LSP work continues.</p>
   <div class="feature-grid">
     <div class="feature-card feature-highlight">
-      <h3>Your editor. Your rules.</h3>
-      <p>VS Code, Zed, Rider, Neovim, Emacs, Helix — Forge speaks LSP 3.17, so it works across editors. Stop letting Microsoft decide where you write code.</p>
+      <h3>VS Code first.</h3>
+      <p>The current extension exposes Forge through VS Code: language client startup, Solution Explorer, profiler, NuGet workflows, commands, and debugger integration.</p>
     </div>
     <div class="feature-card">
-      <h3>Solution Explorer that slaps.</h3>
-      <p>A tree view that shows your whole solution — projects, files, NuGet packages, references — with right-click actions C# Dev Kit doesn't have. VS Code and Rider get native tool windows; Zed gets the same data through the Forge assistant command.</p>
+      <h3>Solution Explorer workflows.</h3>
+      <p>The tree view supports solution selection, refresh, sorting, project actions, package actions, references, copy commands, and file reveal commands.</p>
     </div>
     <div class="feature-card">
       <h3>Rust host. Sub-millisecond parsing.</h3>
       <p>Tree-sitter incremental parsing in the Rust host. salsa-powered caching. Document symbols, folding, and selection ranges without waiting on Roslyn.</p>
     </div>
     <div class="feature-card">
-      <h3>Full Roslyn. No compromises.</h3>
-      <p>Completions, diagnostics, hover, go-to-definition — the complete Roslyn API. Same engine as Visual Studio, none of the lock-in.</p>
+      <h3>Roslyn-backed C# features.</h3>
+      <p>Forge is building C# completions, diagnostics, hover, definitions, and code actions on Roslyn rather than approximating semantic behavior in the editor extension.</p>
     </div>
     <div class="feature-card">
       <h3>Crash-proof architecture.</h3>

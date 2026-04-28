@@ -8,11 +8,11 @@ eleventyNavigation:
 
 ![NuGet Package Browser — browse tab](/assets/screenshots/vscode-nuget-browse.png)
 
-*Full NuGet package management inside VS Code — search, install, remove, and track installed packages.*
+*NuGet package workflows inside the alpha VS Code extension.*
 
 # NuGet Package Manager
 
-Forge includes a built-in NuGet package browser panel, powered by the Roslyn sidecar and the official NuGet API. Install, remove, and inspect packages without leaving your editor.
+Forge includes a built-in NuGet package browser panel for VS Code, powered by the sidecar and the official NuGet API. Install, remove, and inspect packages without leaving the extension.
 
 ## Opening the NuGet Browser
 
@@ -38,7 +38,7 @@ Selecting a package shows its description, icon, current version, and an **Insta
 
 ## Reactivity
 
-The NuGet panel is fully reactive. If you (or a tool) edits the `.csproj` on disk — adding or removing a `<PackageReference>` — the panel updates instantly with no manual refresh.
+The NuGet panel is intended to react to project changes on disk. In the alpha, validate install and remove behavior against your project before relying on it for critical workflows.
 
 ## Performance Targets
 

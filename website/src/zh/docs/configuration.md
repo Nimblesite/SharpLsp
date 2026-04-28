@@ -9,6 +9,8 @@ eleventyNavigation:
 
 # 配置
 
+![VS Code 中的 Forge 工作区配置](/assets/screenshots/vscode-configuration-page.png)
+
 Forge 通过放置在工作区根目录（与 `.sln` 或根 `.csproj` 同级）的 `forge.toml` 文件进行配置。所有设置都有合理的默认值 — 该文件是可选的。
 
 ## forge.toml 参考

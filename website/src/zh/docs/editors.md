@@ -9,7 +9,9 @@ eleventyNavigation:
 
 # 编辑器配置
 
-Forge 适用于任何支持语言服务器协议的编辑器。以下是主流编辑器的配置说明。
+![VS Code 中的 Forge 编辑器支持](/assets/screenshots/vscode-editors-page.png)
+
+Forge 在 LSP 层面以编辑器无关为目标，但当前 alpha 网站反映的是 VS Code 扩展。其他编辑器集成存在于仓库中或仍处于实验阶段。
 
 ## VS Code
 
@@ -56,4 +58,4 @@ command = "forge-lsp"
 
 ## Zed
 
-Forge 对 Zed 的支持正在规划中。请查看仓库以获取最新状态。
+仓库中包含 Zed 集成，但当前主要可用和测试界面仍是 VS Code。

@@ -308,7 +308,7 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
   let provider: ExplorerApi['explorerProvider'];
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(120_000);
     const result = await setupLspTestSuite('ctx-val-');
     tmpDir = result.tmpDir;
     provider = getProvider();
@@ -329,11 +329,12 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
     await waitForDocumentSymbols(csUri);
     await provider.refresh();
 
-    // Wait for tree to populate.
+    // Wait for tree to populate — Roslyn can take up to 90s on cold start.
     await pollUntilResult(
       async () => findByLabel(provider.getChildren(), 'AllTypesClass'),
       (n) => n !== undefined,
-      15_000,
+      90_000,
+      1_000,
     );
   });
 
@@ -358,9 +359,7 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
       'solution',
       "Solution node must have contextValue 'solution'",
     );
-    // Focus specifically the Solution Explorer tree view, not just the container.
-    await vscode.commands.executeCommand('forge-explorer.focus');
-    await new Promise((r) => setTimeout(r, 1500));
+    await openForgePanel();
     await takeScreenshot('vscode-solution-explorer-context-menu.png');
   });
 

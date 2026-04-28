@@ -4,17 +4,13 @@ title: Hover and Quick Info
 eleventyExcludeFromCollections: true
 ---
 
-**VS Code**
 ![Hover in VS Code](/assets/screenshots/vscode-hover-page.png)
 
-**Zed**
-![Hover in Zed](/assets/screenshots/zed-hover-page.png)
-
-*Hover shows full XML documentation, type signatures, and nullability annotations.*
+*C# hover information in the alpha VS Code extension.*
 
 # Hover and Quick Info
 
-Hover over any symbol to see its full type signature, XML documentation, parameter descriptions, nullability annotations, and deprecation notices. Forge implements `textDocument/hover` (LSP 3.17) for both C# and F# as equal first-class citizens.
+Hover over C# symbols to see type signatures and documentation from the Roslyn sidecar. F# hover support is part of the Forge direction, but the current website screenshots reflect the VS Code extension's active alpha state.
 
 ## What You See
 
@@ -63,32 +59,9 @@ var result = Enumerable.Range(0, 10).Select(x => x * x).ToList();
 //   count: The number of sequential integers to generate.
 ```
 
-## F# Hover (FSharp.Compiler.Service)
+## F# Hover
 
-The F# sidecar resolves symbols via `FSharpCheckFileResults.GetToolTip()` and renders the `ToolTipElement` structure into Markdown. XML documentation is rendered through the same shared `XmlDocRenderer` used by the C# sidecar.
-
-### F#-Specific Cases
-
-| Hover Target | Behavior |
-|--------------|---------|
-| Discriminated union cases | Shows case fields with types |
-| Record fields | Shows field type and containing record |
-| Pipeline operators (`\|>`, `>>`) | Shows inferred function types |
-| Active patterns | Shows the pattern signature and documentation |
-| Computation expression keywords (`let!`, `do!`, `return!`) | Shows the CE builder method |
-| Type providers | Shows the provided type and its properties |
-| Measure types | Shows the unit of measure annotation |
-
-### Example
-
-```fsharp
-let result = [1..10] |> List.map (fun x -> x * x) |> List.sum
-//                       ↑ hover shows:
-// val map: mapping: ('T -> 'U) -> list: 'T list -> 'U list
-// Builds a new collection whose elements are the results
-// of applying the given function to each of the elements
-// of the collection.
-```
+F# hover is part of the Forge roadmap and sidecar architecture. The current website does not present it as beta-ready.
 
 ## Solution Explorer Hover
 
@@ -123,16 +96,3 @@ A cache hit returns in under 1ms. Stale hover requests for superseded document v
 ## Error Handling
 
 Hover never returns errors or blocks the editor. On any failure — sidecar not ready, symbol resolution failure, IPC timeout — Forge returns `null` (no tooltip). Sidecar crashes trigger automatic recovery within 3 seconds.
-
-## Competitive Comparison
-
-| Feature | Visual Studio | C# Dev Kit | Rider | **Forge** |
-|---------|:---:|:---:|:---:|:---:|
-| Basic symbol hover | ✓ | ✓ | ✓ | ✓ |
-| XML documentation | ✓ | ✓ | ✓ | ✓ |
-| `var` inferred type | ✓ | ✓ | ✓ | ✓ |
-| NuGet XML docs | ✓ | ✓ | ✓ | ✓ |
-| Exception documentation | ✓ | ✗ | ✓ | ✓ |
-| Nullable annotation display | ✓ | ✓ | ✓ | ✓ |
-| Deprecation warnings | ✓ | ✓ | ✓ | ✓ |
-

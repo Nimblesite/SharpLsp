@@ -8,11 +8,11 @@ eleventyNavigation:
 
 ![Code actions lightbulb in VS Code](/assets/screenshots/vscode-refactoring.png)
 
-*Roslyn-powered code actions and refactorings — the same engine as Visual Studio.*
+*Roslyn-powered code actions in the alpha VS Code extension.*
 
 # Refactoring & Code Actions
 
-Forge exposes the full Roslyn code action pipeline. When the cursor is on a symbol, a diagnostic, or a selection, VS Code shows a lightbulb (💡) offering quick fixes and refactorings sourced directly from Roslyn.
+Forge routes code actions through Roslyn. When the cursor is on a supported symbol, diagnostic, or selection, VS Code can show a lightbulb offering quick fixes and refactorings sourced from Roslyn.
 
 ## Triggering Code Actions
 
@@ -22,7 +22,7 @@ Forge exposes the full Roslyn code action pipeline. When the cursor is on a symb
 
 ## Available Actions
 
-Forge exposes every code action Roslyn provides, including:
+Forge is building toward broad Roslyn code action coverage, including:
 
 | Category | Examples |
 |----------|---------|

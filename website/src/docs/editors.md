@@ -10,7 +10,7 @@ eleventyNavigation:
 
 ![Forge editor support](/assets/screenshots/vscode-editors-page.png)
 
-Forge works with any editor that supports the Language Server Protocol. Below are setup instructions for popular editors.
+Forge is editor-agnostic at the LSP layer, but the current alpha website reflects the VS Code extension. Other editor integrations exist in the repository or are experimental.
 
 ## VS Code
 
@@ -25,14 +25,14 @@ The extension manages the Forge LSP server lifecycle and provides the Solution E
 
 ## Zed
 
-Forge ships a Zed extension that attaches `forge-lsp` over stdio for `.cs`, `.csx`, `.fs`, `.fsx`, and `.fsi` files. Zed compiles extensions from source at install time, so the repo's `make package-zed` target stages a self-contained source tree.
+The repository contains a Zed extension that attaches `forge-lsp` over stdio for `.cs`, `.csx`, `.fs`, `.fsx`, and `.fsi` files. Treat this as experimental while the VS Code extension is being hardened.
 
 ```sh
 rustup target add wasm32-wasip1
 make package-zed
 ```
 
-Then in Zed: command palette -> `zed: install dev extension` -> pick `target/zed-extension/`. Hover, completions, go-to-definition, and diagnostics all work through the language server. The `/forge-tree <Solution.sln|Solution.slnx>` slash command renders the solution tree in the assistant panel.
+Then in Zed: command palette -> `zed: install dev extension` -> pick `target/zed-extension/`. The `/forge-tree <Solution.sln|Solution.slnx>` slash command renders solution data in the assistant panel.
 
 ## JetBrains Rider
 
@@ -42,7 +42,7 @@ Build the plugin package:
 make package-rider
 ```
 
-Then in Rider: **Settings -> Plugins -> Install Plugin from Disk** and pick `forge-rider.zip`. Restart Rider. The plugin attaches `forge-lsp` over LSP for C# and F# files and adds a **Forge Solution** tool window backed by the same custom LSP requests as VS Code.
+Then in Rider: **Settings -> Plugins -> Install Plugin from Disk** and pick `forge-rider.zip`. Restart Rider. The Rider integration is experimental while the VS Code extension remains the primary tested surface.
 
 ## Neovim
 

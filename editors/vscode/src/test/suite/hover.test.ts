@@ -84,44 +84,65 @@ suite('Hover / Quick Info', () => {
     const fieldMd = hoverToString(fieldHover);
     assert.ok(fieldMd.includes('_count'), "Field hover must contain '_count'");
 
-    // Verify completions via LSP API first (background, doesn't affect widget state).
+    const { uri: completionUri } = await openFixture('CompletionShot.cs');
+    await waitForDocumentSymbols(completionUri);
     const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
       'vscode.executeCompletionItemProvider',
-      uri,
-      new vscode.Position(6, 22),
+      completionUri,
+      new vscode.Position(11, 24),
     );
     assert.ok(completions, 'Must get completions');
     assert.ok(completions.items.length > 0, 'Must have at least one completion item');
+    const completionLabels = new Set(completions.items.map((item) => item.label.toString()));
+    assert.ok(completionLabels.has('Name'), "Completions must contain property 'Name'");
+    assert.ok(completionLabels.has('Add'), "Completions must contain method 'Add'");
+    assert.ok(completionLabels.has('_count'), "Completions must contain field '_count'");
 
     // Now trigger the visible suggest widget and screenshot immediately while it's open.
-    const activeEditor = vscode.window.activeTextEditor;
-    assert.ok(activeEditor, 'Must have active text editor');
-    activeEditor.selection = new vscode.Selection(new vscode.Position(6, 22), new vscode.Position(6, 22));
+    const completionEditor = await vscode.window.showTextDocument(
+      await vscode.workspace.openTextDocument(completionUri),
+      { preview: false },
+    );
+    const completionPosition = new vscode.Position(11, 24);
+    completionEditor.selection = new vscode.Selection(completionPosition, completionPosition);
+    completionEditor.revealRange(new vscode.Range(completionPosition, completionPosition));
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), completionUri.toString());
+    assert.ok(completionEditor.selection.active.isEqual(completionPosition), 'Completion cursor must be after this.');
     await vscode.commands.executeCommand('editor.action.triggerSuggest');
     // Wait for widget to appear — no other commands that could dismiss it.
     await new Promise((r) => setTimeout(r, 2500));
     // No openForgePanel() — the completion dropdown IS the feature; keep editor visible.
     await takeScreenshot('vscode-completions-page.png');
 
-    // Dismiss suggestion widget then verify go-to-definition via LSP API.
+    // Dismiss suggestion widget then switch back to HoverMulti.cs for go-to-definition.
     await vscode.commands.executeCommand('hideSuggestWidget');
     await new Promise((r) => setTimeout(r, 300));
-    activeEditor.selection = new vscode.Selection(new vscode.Position(6, 20), new vscode.Position(6, 20));
+
+    const goToEditor = await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(completionUri), {
+      preview: false,
+    });
+    assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), completionUri.toString());
+
+    // Verify definition via LSP on the `Add` call site in CompletionShot.cs.
+    const definitionPosition = new vscode.Position(10, 26);
     const definitions = await vscode.commands.executeCommand<vscode.Location[]>(
       'vscode.executeDefinitionProvider',
-      uri,
-      new vscode.Position(6, 20),
+      completionUri,
+      definitionPosition,
     );
-    assert.ok(definitions, 'Must get definitions');
+    assert.ok(definitions, 'Must get definitions for Add method');
     assert.ok(definitions.length > 0, 'Must have at least one definition location');
     assert.ok(definitions[0]!.uri.fsPath.endsWith('.cs'), 'Definition must point to a .cs file');
-    // Trigger peek definition so the widget is visible in the screenshot.
-    // Ensure cursor is on the Add method call before peeking.
-    activeEditor.selection = new vscode.Selection(new vscode.Position(6, 20), new vscode.Position(6, 20));
+    assert.ok(definitions[0]!.range.start.line >= 0, 'Definition must have valid line');
+
+    // Trigger peek definition on the call-site reference.
+    goToEditor.selection = new vscode.Selection(definitionPosition, definitionPosition);
+    goToEditor.revealRange(new vscode.Range(definitionPosition, definitionPosition));
+    assert.ok(goToEditor.selection.active.isEqual(definitionPosition), 'Definition cursor must be on Add');
     await new Promise((r) => setTimeout(r, 300));
     await vscode.commands.executeCommand('editor.action.peekDefinition');
-    // Wait longer for the peek widget to fully render in the DOM.
-    await new Promise((r) => setTimeout(r, 2500));
+    await new Promise((r) => setTimeout(r, 3000));
     await takeScreenshot('vscode-go-to-definition-page.png');
   });
 

@@ -5,17 +5,13 @@ lang: zh
 eleventyExcludeFromCollections: true
 ---
 
-**VS Code**
 ![VS Code 中的性能分析器](/assets/screenshots/vscode-profiler-page.png)
 
-**Zed**
-![Zed 中的性能分析器](/assets/screenshots/zed-profiler-page.png)
-
-*内置分析器封装了 dotnet-trace、dotnet-counters 和 dotnet-dump — 零上下文切换。*
+*Alpha 版 VS Code 扩展中的性能分析工作流。*
 
 # 性能分析器
 
-Forge 将标准 .NET 诊断 CLI 工具直接集成到你的编辑器中。无需终端切换，无需单独的 GUI。追踪性能、监控实时计数器、收集内存转储、对比堆快照并可视化对象保留图，无需离开你的代码。
+Forge 将 .NET 诊断工作流集成到 VS Code 中。扩展提供进程发现、追踪、计数器、转储、堆分析及相关文件操作命令，性能分析体验仍在为 beta 阶段继续加固。
 
 ## 前置要求
 

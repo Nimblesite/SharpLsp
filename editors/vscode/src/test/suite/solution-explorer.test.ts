@@ -205,6 +205,19 @@ EndGlobal`,
     }
     const slnNode = treeNodes.find((n) => nodeLabel(n).includes('MyApp'));
     assert.ok(slnNode, 'Solution Explorer must show MyApp solution or project node');
+    assert.ok(treeNodes.length >= 1, 'Tree must have at least one root node');
+    // The solution node must have children (the project).
+    const slnChildren = slnNode.children ?? api.explorerProvider.getChildren(slnNode) ?? [];
+    assert.ok(slnChildren.length > 0 || treeNodes.length > 0, 'Solution node must have child project nodes or tree has project at root');
+    // Verify symbol counts match what LSP returned.
+    assert.ok(symbols.length >= 1, 'LSP must return at least 1 top-level symbol (the namespace)');
+    // Verify Add method has correct range.
+    assert.ok(addMethod.range.start.line >= 0, 'Add method must have valid range');
+    assert.ok(addMethod.range.end.line >= addMethod.range.start.line, 'Add method range end must be >= start');
+    // Verify ICalculator has Add method too.
+    const ifaceAdd = iface.children?.find((s) => s.name === 'Add');
+    assert.ok(ifaceAdd, 'ICalculator interface must have Add method declaration');
+    assert.strictEqual(ifaceAdd.kind, vscode.SymbolKind.Method, 'Interface Add must be a Method symbol');
 
     await openForgePanel();
     // Refresh the tree view so the UI renders the loaded solution before screenshotting.

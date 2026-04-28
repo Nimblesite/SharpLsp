@@ -6,7 +6,7 @@ eleventyNavigation:
   order: 9
 ---
 
-![Solution Explorer context menu](/assets/screenshots/vscode-solution-explorer-context-menu.png)
+![Forge Solution Explorer in VS Code](/assets/screenshots/solution-explorer.png)
 
 *Right-click any node in the Solution Explorer for context-aware actions.*
 
@@ -15,8 +15,6 @@ eleventyNavigation:
 Forge adds rich context menus throughout VS Code — in the Solution Explorer tree, the editor, and the Problems panel. Every action is scoped precisely to the node type it applies to.
 
 ## Solution Explorer Context Menu
-
-![Open project file from context menu](/assets/screenshots/vscode-context-menu-open-project.png)
 
 Right-clicking a node in the Solution Explorer shows actions appropriate to that node:
 

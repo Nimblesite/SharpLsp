@@ -10,13 +10,14 @@ eleventyNavigation:
 
 ![Forge active in VS Code](/assets/screenshots/vscode-getting-started-page.png)
 
-Forge is an open-source .NET Language Server Protocol (LSP) implementation built in Rust. One server provides C# and F# language support across editors that speak LSP.
+Forge is an open-source .NET Language Server Protocol (LSP) implementation built in Rust. The current extension is alpha and approaching beta, with VS Code as the primary working editor surface.
 
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (latest stable)
 - [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- An LSP-compatible editor (VS Code, Neovim, Emacs, Helix, Zed, etc.)
+- VS Code for the current extension experience
+- An LSP-compatible editor if you are experimenting with the raw language server
 
 ## Installation
 

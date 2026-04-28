@@ -5,17 +5,13 @@ lang: zh
 eleventyExcludeFromCollections: true
 ---
 
-**VS Code**
 ![VS Code 中的诊断](/assets/screenshots/vscode-diagnostics-page.png)
 
-**Zed**
-![Zed 中的诊断](/assets/screenshots/zed-diagnostics-page.png)
-
-*整个解决方案的实时 Roslyn 诊断 — 不仅仅是打开的文件。*
+*Alpha 版 VS Code 扩展中的 Roslyn 诊断。*
 
 # 诊断
 
-Forge 为整个解决方案（不仅仅是打开的文件）提供实时 C# 编译器错误、警告和 Roslyn 分析器诊断。解决方案范围的分析**默认开启**，这是 C# Dev Kit 缺乏的第一功能，也是开发者为大型解决方案选择 Visual Studio 或 Rider 的主要原因。
+Forge 通过 C# sidecar 路由 C# 编译器错误、警告和 Roslyn 分析器诊断。当前网站展示的是 VS Code 扩展状态；F# 诊断仍在开发中。
 
 ## 工作原理
 
@@ -115,16 +111,3 @@ project_filter = ["MyApp.Core", "MyApp.Api", "MyApp.Tests.*"]
 | Warning | 2 — 警告 |
 | Info | 3 — 信息 |
 | Hidden | 4 — 提示 |
-
-## 竞品对比
-
-| 功能 | Visual Studio | C# Dev Kit | Rider | **Forge** |
-|---------|:---:|:---:|:---:|:---:|
-| 编译器错误和警告 | ✓ | ✓ | ✓ | ✓ |
-| Roslyn 分析器诊断 | ✓ | ✓ | ✓ | ✓ |
-| 解决方案范围分析（默认开启） | ✓ | ✗ | ✓ | **✓** |
-| 未使用 using 检测 | ✓ | ✓ | ✓ | ✓ |
-| 可空引用分析 | ✓ | ✓ | ✓ | ✓ |
-| 第三方 NuGet 分析器 | ✓ | ✓ | ✓ | ✓ |
-
-解决方案范围的分析在 Forge 中默认开启。C# Dev Kit 根本不支持它。这一个差异使 Forge 成为任何多项目解决方案的正确选择。
