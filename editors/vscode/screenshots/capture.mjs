@@ -8,10 +8,10 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const vscodeDir = path.resolve(__dirname, "..");
-const screenshotCdpPort = process.env.FORGE_SCREENSHOT_CDP_PORT ?? "9239";
+const screenshotCdpPort = process.env.SHARPLSP_SCREENSHOT_CDP_PORT ?? "9239";
 const userDataDir =
-  process.env.FORGE_TEST_USER_DATA_DIR ??
-  path.join(process.env.TMPDIR ?? "/tmp", `forge-screenshot-userdata-${process.pid}`);
+  process.env.SHARPLSP_TEST_USER_DATA_DIR ??
+  path.join(process.env.TMPDIR ?? "/tmp", `sharplsp-screenshot-userdata-${process.pid}`);
 
 function run(command, args, options = {}) {
   const child = spawn(command, args, {
