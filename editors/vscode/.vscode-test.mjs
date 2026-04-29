@@ -21,7 +21,7 @@ export default defineConfig({
     },
   ],
   coverage: {
-    exclude: ['dist/**'],
+    exclude: ['**/dist/**', '**/node_modules/**', '**/.vscode-test/**'],
     reporter: ['text-summary', 'html', 'json-summary'],
   },
 });

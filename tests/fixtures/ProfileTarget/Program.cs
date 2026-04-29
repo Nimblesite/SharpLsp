@@ -76,6 +76,8 @@ static void DeepCallStack(CancellationToken ct)
         ParseDocument(BuildLargeJsonPayload(64));
 }
 
+static long Fibonacci(int n) => n <= 1 ? n : Fibonacci(n - 1) + Fibonacci(n - 2);
+
 static void ParseDocument(string text) => TokenizeText(text);
 static void TokenizeText(string text) => CountTokens(text);
 static void CountTokens(string text) => SumCharValues(text);

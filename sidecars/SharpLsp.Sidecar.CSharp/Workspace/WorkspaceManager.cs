@@ -659,7 +659,7 @@ internal sealed partial class WorkspaceManager : IDisposable
                 )
                 .ConfigureAwait(false);
 
-            if (symbol is null or Microsoft.CodeAnalysis.INamespaceSymbol)
+            if (symbol is null or INamespaceSymbol)
             {
                 return new PrepareRenameQueryResult.Ok<PrepareRenameResult, string>(
                     new PrepareRenameResult { CanRename = false }
@@ -757,10 +757,7 @@ internal sealed partial class WorkspaceManager : IDisposable
                     var rawNewText = await newDoc.GetTextAsync(ct).ConfigureAwait(false);
                     // Normalize to the same SourceText subtype so GetTextChanges
                     // produces granular diffs rather than a single whole-document replacement.
-                    var newText = Microsoft.CodeAnalysis.Text.SourceText.From(
-                        rawNewText.ToString(),
-                        oldText.Encoding
-                    );
+                    var newText = SourceText.From(rawNewText.ToString(), oldText.Encoding);
                     var textChanges = newText.GetTextChanges(oldText);
                     var edits = textChanges
                         .Select(change =>
