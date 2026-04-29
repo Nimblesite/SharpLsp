@@ -925,7 +925,6 @@
     "pretest": "npm run compile-tests",
     "test": "vscode-test --coverage",
     "test:run": "node out/test/runTest.js",
-    "screenshots": "node screenshots/capture.mjs",
     "package": "vsce package --no-dependencies",
     "vscode:prepublish": "node esbuild.mjs --production"
   },
