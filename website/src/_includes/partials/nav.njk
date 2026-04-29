@@ -1,6 +1,6 @@
 <nav class="nav">
   <a href="{% if lang and lang != defaultLanguage %}/{{ lang }}/{% else %}/{% endif %}" class="logo">
-    <span class="material-symbols-outlined" aria-hidden="true">terminal</span>{{ site.name | default(site.title) }}
+    <img class="logo-mark" src="/assets/favicon.svg" alt="" width="24" height="24">{{ site.name | default(site.title) }}
   </a>
 
   {% set lp = "/" + lang + "/" if lang and lang != defaultLanguage else "/" %}

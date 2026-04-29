@@ -49,6 +49,15 @@ export default function (eleventyConfig) {
   eleventyConfig.addPlugin(HtmlBasePlugin);
   eleventyConfig.addPassthroughCopy("src/assets");
 
+  // Build a map of author name -> author page data, keyed by the author's title field
+  eleventyConfig.addCollection("authorsByName", (api) => {
+    const map = {};
+    api.getFilteredByGlob("src/author/*.md").forEach((page) => {
+      if (page.data.title) map[page.data.title] = page.data;
+    });
+    return map;
+  });
+
   eleventyConfig.addTransform("nimblesite-footer", function (content) {
     if (!this.page.outputPath?.endsWith(".html")) {
       return content;

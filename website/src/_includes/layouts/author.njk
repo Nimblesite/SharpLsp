@@ -1,13 +1,12 @@
 ---
 layout: layouts/base.njk
 ---
-{% from "partials/post-card.njk" import postCard %}
 
 <article class="prose">
   <header class="article-header">
     <div class="article-kicker"><span>Author</span></div>
     <div class="author-profile">
-      <img src="{{ authorImage | default('/assets/images/sharplsp-avatar.png') }}" alt="{{ title }}" class="author-avatar">
+      <img src="{{ authorImage | default('/assets/images/sharplsp-logo.svg') }}" alt="{{ title }}" class="author-avatar">
       <div>
         <h1>{{ title }}</h1>
         <p class="author-role">{{ authorRole }}</p>
@@ -27,6 +26,9 @@ layout: layouts/base.njk
   {% endfor %}
   {% set displayPosts = matchedPosts if matchedPosts | length > 0 else collections.posts %}
   <section class="blog-grid">
-    {% for post in displayPosts %}{{ postCard(post, loop.first) }}{% endfor %}
+    {% for post in displayPosts %}
+    {% set currentPost = post %}{% set featuredPost = loop.first %}
+    {% include "partials/post-card.njk" %}
+    {% endfor %}
   </section>
 </div>

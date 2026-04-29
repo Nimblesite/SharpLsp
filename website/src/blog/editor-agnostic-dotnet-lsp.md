@@ -3,9 +3,7 @@ layout: layouts/blog.njk
 title: "Why .NET Needs an Editor-Agnostic LSP"
 description: "SharpLsp is building an open-source .NET LSP for C# and F# so language tooling can work across VS Code, Zed, Neovim, Helix, Emacs, Rider, and more."
 date: 2026-04-28
-author: SharpLsp Contributors
-authorRole: Core Infrastructure Engineer
-authorImage: https://lh3.googleusercontent.com/aida-public/AB6AXuAD67SpD-iAx0p3uV9exHCxuwOCzRb4-DL71Un7bMvBZAhwFrV5QujQLJAj7RY1FW-p4m-0uhYkk9PSxb7WJUOqXt25VH6AtubFss0CAMR3Yw9k0n876VF5g0PJXLF0V45EbGUjr7sUPnCLpJC73GhMMZLUuD43uYczJM1_e9IZSX-rZb87fMAJ03X3HR6kzzFuBpQ80EW3hRgYm54AILhIIO2T5pWPyjljM0PWc13wW6tYobl3bdo6v_PSS6a2MMwmRwZTRD5uSw
+author: SharpLsp Team
 image: /assets/images/blog/editor-agnostic-dotnet-lsp.png
 imageAlt: Multiple editor windows connected to one central language server core
 tags:

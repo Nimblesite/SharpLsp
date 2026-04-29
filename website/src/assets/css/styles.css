@@ -145,10 +145,11 @@ img {
   gap: 8px;
   line-height: 1;
 }
-.logo .material-symbols-outlined {
-  color: var(--text);
-  font-size: 22px;
-  font-variation-settings: "FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24;
+.logo-mark {
+  border-radius: 4px;
+  flex: 0 0 auto;
+  height: 24px;
+  width: 24px;
 }
 .nav-links,
 .footer-grid,
@@ -1459,8 +1460,9 @@ th {
     color: var(--primary-container);
     font-size: 18px;
   }
-  .logo .material-symbols-outlined {
-    color: var(--primary-container);
+  .logo-mark {
+    height: 22px;
+    width: 22px;
   }
   .search-link,
   .nav-button,

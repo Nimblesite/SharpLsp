@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-  <!-- Anvil top -->
-  <path d="M4 12 L5 10 L19 10 L20 12 L21 12 L21 14 L3 14 L3 12 Z" fill="currentColor"/>
-  <!-- Anvil base -->
-  <rect x="5" y="14" width="14" height="2" rx="0.5" fill="currentColor" opacity="0.8"/>
-  <!-- Anvil foot -->
-  <rect x="6" y="16" width="12" height="2" rx="0.5" fill="currentColor" opacity="0.6"/>
-  <!-- Flame -->
-  <path d="M12 4 C12 4, 8 8, 8 10 C8 11, 9 12.5, 10.5 13.5 C9.5 12.5, 10 11, 11 10 C11 10, 10.5 12, 11.5 13 C11.5 13, 12 11.5, 12 9.5 C12 11.5, 12.5 13, 12.5 13 C13.5 12, 13 10, 13 10 C14 11, 14.5 12.5, 13.5 13.5 C15 12.5, 16 11, 16 10 C16 8, 12 4, 12 4Z" fill="currentColor"/>
-</svg>
+../../../docs/designs/logo/vsix-activity-bar.svg

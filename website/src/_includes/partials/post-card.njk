@@ -1,40 +1,38 @@
-{% macro postCard(post, featured) %}
-<article class="post-card{% if featured %} post-card-featured{% endif %}">
-  <a class="post-media{% if not post.data.image %} post-media-symbol{% endif %}" href="{{ post.url }}" aria-label="{{ post.data.title }}">
-    {% if post.data.image %}
-    <img src="{{ post.data.image }}" alt="{{ post.data.imageAlt | default(post.data.title) }}" loading="lazy">
+{# Expects: currentPost, featuredPost #}
+{% set _authorName = currentPost.data.author | default("SharpLsp Team") %}
+{% set _authorData = collections.authorsByName[_authorName] %}
+{% set _authorImage = _authorData.authorImage | default('/assets/images/sharplsp-logo.svg') %}
+<article class="post-card{% if featuredPost %} post-card-featured{% endif %}">
+  <a class="post-media{% if not currentPost.data.image %} post-media-symbol{% endif %}" href="{{ currentPost.url }}" aria-label="{{ currentPost.data.title }}">
+    {% if currentPost.data.image %}
+    <img src="{{ currentPost.data.image }}" alt="{{ currentPost.data.imageAlt | default(currentPost.data.title) }}" loading="lazy">
     {% else %}
     <span class="material-symbols-outlined" aria-hidden="true">article</span>
     {% endif %}
   </a>
   <div class="post-body">
-    {% if post.data.tags %}
+    {% if currentPost.data.tags %}
     <div class="post-tags">
-      {%- for tag in post.data.tags -%}
+      {%- for tag in currentPost.data.tags -%}
       {%- if tag != 'post' and tag != 'posts' -%}
       <a href="/blog/tags/{{ tag | slugify }}/" class="tag">{{ tag }}</a>
       {%- endif -%}
       {%- endfor -%}
     </div>
     {% endif %}
-    <h2 class="post-title"><a href="{{ post.url }}">{{ post.data.title }}</a></h2>
-    {% if post.data.excerpt or post.data.description %}
-    <p class="post-excerpt">{{ post.data.excerpt | default(post.data.description) }}</p>
+    <h2 class="post-title"><a href="{{ currentPost.url }}">{{ currentPost.data.title }}</a></h2>
+    {% if currentPost.data.excerpt or currentPost.data.description %}
+    <p class="post-excerpt">{{ currentPost.data.excerpt | default(currentPost.data.description) }}</p>
     {% endif %}
     <div class="post-meta">
-      <a class="post-author" href="/author/{{ post.data.author | default('sharplsp-team') | slugify }}/">
-        {% if post.data.authorImage %}
-        <img src="{{ post.data.authorImage }}" alt="{{ post.data.author | default('SharpLsp Team') }}">
-        {% else %}
-        <strong>{{ post.data.author | default("FO") | truncate(2, false, "") | upper }}</strong>
-        {% endif %}
+      <a class="post-author" href="/author/{{ _authorName | slugify }}/">
+        <img src="{{ _authorImage }}" alt="{{ _authorName }}">
         <div>
-          <span>{{ post.data.author | default("SharpLsp Team") }}</span>
-          <small>{{ post.date | dateFormat }}</small>
+          <span>{{ _authorName }}</span>
+          <small>{{ currentPost.date | dateFormat }}</small>
         </div>
       </a>
-      {% if featured %}<span class="read-time">8 min read</span>{% endif %}
+      {% if featuredPost %}<span class="read-time">8 min read</span>{% endif %}
     </div>
   </div>
 </article>
-{% endmacro %}

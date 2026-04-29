@@ -9,7 +9,6 @@ eleventyComputed:
   title: "{{ category | capitalize }}"
   description: "All blog posts in the {{ category }} category."
 ---
-{% from "partials/post-card.njk" import postCard %}
 {% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
 <div class="blog-container">
   <header class="blog-header">
@@ -21,7 +20,8 @@ eleventyComputed:
   {%- if catPosts | length > 0 -%}
   <section class="blog-grid">
     {%- for post in catPosts -%}
-    {{ postCard(post, loop.first) }}
+    {% set currentPost = post %}{% set featuredPost = loop.first %}
+    {% include "partials/post-card.njk" %}
     {%- endfor -%}
   </section>
   {%- else -%}

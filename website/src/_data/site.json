@@ -3,7 +3,7 @@
   "name": "SharpLsp",
   "description": "Open-source .NET LSP for C# and F#. One server, every editor.",
   "url": "https://sharplsp.dev",
-  "author": "SharpLsp Contributors",
+  "author": "SharpLsp Team",
   "stylesheet": "/assets/css/styles.css",
   "favicon": "/assets/favicon.svg",
   "themeColor": "#19d078",

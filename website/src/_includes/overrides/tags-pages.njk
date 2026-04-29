@@ -9,7 +9,6 @@ eleventyComputed:
   title: "Posts tagged '{{ tag }}'"
   description: "All blog posts tagged with {{ tag }}."
 ---
-{% from "partials/post-card.njk" import postCard %}
 {% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
 <div class="blog-container">
   <header class="blog-header">
@@ -21,7 +20,8 @@ eleventyComputed:
   {%- if tagPosts | length > 0 -%}
   <section class="blog-grid">
     {%- for post in tagPosts -%}
-    {{ postCard(post, loop.first) }}
+    {% set currentPost = post %}{% set featuredPost = loop.first %}
+    {% include "partials/post-card.njk" %}
     {%- endfor -%}
   </section>
   {%- else -%}

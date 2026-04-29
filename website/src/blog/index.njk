@@ -3,7 +3,6 @@ layout: layouts/base.njk
 title: Engineering Blog
 permalink: /blog/
 ---
-{% from "partials/post-card.njk" import postCard %}
 <div class="blog-container">
   <header class="blog-header">
     <h1>Engineering Blog</h1>
@@ -27,7 +26,8 @@ permalink: /blog/
   {%- if postCollection | length > 0 -%}
   <section class="blog-grid">
     {%- for post in postCollection -%}
-    {{ postCard(post, loop.first) }}
+    {% set currentPost = post %}{% set featuredPost = loop.first %}
+    {% include "partials/post-card.njk" %}
     {%- endfor -%}
   </section>
   <div class="load-row">

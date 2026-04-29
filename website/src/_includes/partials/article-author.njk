@@ -1,7 +1,11 @@
-<a class="article-author" href="/author/{{ author | default('sharplsp-contributors') | slugify }}/">
-  <img src="{{ authorImage | default('/assets/images/sharplsp-avatar.png') }}" alt="{{ author | default('SharpLsp Team') }}" onerror="this.style.display='none'">
+{% set authorName = author | default("SharpLsp Team") %}
+{% set authorData = collections.authorsByName[authorName] %}
+{% set resolvedImage = authorData.authorImage | default('/assets/images/sharplsp-logo.svg') %}
+{% set resolvedRole = authorData.authorRole | default("Nimblesite Engineering") %}
+<a class="article-author" href="/author/{{ authorName | slugify }}/">
+  <img src="{{ resolvedImage }}" alt="{{ authorName }}" onerror="this.style.display='none'">
   <div>
-    <p>{{ author | default("SharpLsp Team") }}</p>
-    <small>{{ authorRole | default("Principal Distributed Systems Engineer") }}</small>
+    <p>{{ authorName }}</p>
+    <small>{{ resolvedRole }}</small>
   </div>
 </a>

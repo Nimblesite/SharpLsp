@@ -3,9 +3,7 @@ layout: layouts/blog.njk
 title: "Why F# Is First-Class in SharpLsp"
 description: "SharpLsp treats F# as a first-class .NET language by designing the LSP around a dedicated FSharp.Compiler.Service sidecar, not a later C#-only bolt-on."
 date: 2026-04-26
-author: SharpLsp Contributors
-authorRole: F# Language Engineer
-authorImage: https://lh3.googleusercontent.com/aida-public/AB6AXuAD67SpD-iAx0p3uV9exHCxuwOCzRb4-DL71Un7bMvBZAhwFrV5QujQLJAj7RY1FW-p4m-0uhYkk9PSxb7WJUOqXt25VH6AtubFss0CAMR3Yw9k0n876VF5g0PJXLF0V45EbGUjr7sUPnCLpJC73GhMMZLUuD43uYczJM1_e9IZSX-rZb87fMAJ03X3HR6kzzFuBpQ80EW3hRgYm54AILhIIO2T5pWPyjljM0PWc13wW6tYobl3bdo6v_PSS6a2MMwmRwZTRD5uSw
+author: SharpLsp Team
 image: /assets/images/blog/why-fsharp-is-first-class-in-sharplsp.png
 imageAlt: Functional programming pipelines and compiler service modules on a circuit board
 tags:
