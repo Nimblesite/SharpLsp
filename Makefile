@@ -56,7 +56,6 @@ CHECK_COV = scripts/check-coverage.sh
         _build-rust _build-dotnet _build-vsix _build-zed _build-rider \
         _stage-vsix-binary _stage-sidecars \
         test-rust _test-rust _test-vsix _test-dotnet _test-website \
-        _stage-test-binary \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
         _package-vsix \
@@ -133,30 +132,21 @@ ci: lint test build
 test: _test-rust _test-vsix _test-dotnet _test-website
 	@echo "==> All tests passed."
 
-TEST_BINARY_DIR = target/test-binary
-TEST_BINARY     = $(TEST_BINARY_DIR)/sharplsp
-
 # Public alias — CI and developers call this.
 test-rust: _test-rust
 
 _test-rust: _build-dotnet _stage-sidecars
 	@echo "==> Pre-building ProfileTarget fixture..."
 	dotnet build tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
-	@echo "==> Building instrumented sharplsp binary (llvm-cov)..."
-	cargo llvm-cov nextest --no-run
-	@echo "==> Staging instrumented binary to stable path..."
-	@mkdir -p $(TEST_BINARY_DIR)
-	cp target/llvm-cov-target/debug/sharplsp $(TEST_BINARY)
-	chmod +x $(TEST_BINARY)
 	@echo "==> Running sharplsp tests with coverage..."
-	SHARPLSP_EXECUTABLE_PATH="$(abspath $(TEST_BINARY))" \
 	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
 	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
-		cargo llvm-cov nextest --no-clean --json --output-path target/coverage-rust.json --fail-fast --test-threads $(RUST_TEST_THREADS)
+		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast --test-threads $(RUST_TEST_THREADS)
 	@$(CHECK_COV) sharplsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
 _test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
 	@echo "==> Running VS Code extension tests..."
+	$(MAKE) _stage-vsix-binary
 	cd $(VSCODE_DIR) && \
 		env -u SHARPLSP_EXECUTABLE_PATH \
 			-u SHARPLSP_LSP_PATH \
