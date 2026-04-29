@@ -770,11 +770,9 @@ pub fn notify_did_change(
         return;
     };
     let sidecar = Arc::clone(sidecar);
-    drop(runtime.spawn(async move {
-        if let Err(err) = sidecar.request("textDocument/didChange", payload).await {
-            debug!("Sidecar didChange failed: {err:#}");
-        }
-    }));
+    if let Err(err) = runtime.block_on(sidecar.request("textDocument/didChange", payload)) {
+        debug!("Sidecar didChange failed: {err:#}");
+    }
 }
 
 /// Sidecar notification payload for document content changes.
