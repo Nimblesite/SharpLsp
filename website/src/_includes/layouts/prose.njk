@@ -16,6 +16,11 @@ layout: layouts/base.njk
     </div>
     <h1>{{ title }}</h1>
     {% include "partials/article-author.njk" %}
+    {% if image %}
+    <div class="article-hero">
+      <img src="{{ image }}" alt="{{ imageAlt | default(title) }}" loading="eager">
+    </div>
+    {% endif %}
   </header>
   {% endif %}
 

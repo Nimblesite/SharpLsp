@@ -149,9 +149,11 @@ lint: build lint-rust lint-zed lint-vsix lint-dotnet
 	@echo "==> All lints passed."
 
 lint-rust:
+	cargo fmt --check
 	cargo clippy $(CARGO_FLAG) --all-targets -- -D warnings
 
 lint-zed:
+	cargo fmt --manifest-path $(ZED_DIR)/Cargo.toml --check
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
 lint-vsix:

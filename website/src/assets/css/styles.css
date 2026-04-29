@@ -900,6 +900,16 @@ img {
   color: var(--text-muted);
   font-size: 14px;
 }
+.article-hero {
+  border-radius: 8px;
+  margin-top: 32px;
+  overflow: hidden;
+}
+.article-hero img {
+  display: block;
+  height: auto;
+  width: 100%;
+}
 .prose h1 {
   color: var(--text);
   font: 700 48px/1.1 var(--font-heading);
