@@ -1,8 +1,14 @@
 {% set authorName = author | default("SharpLsp Team") %}
-{% set authorData = collections.authorsByName[authorName] %}
+{% set currentLang = lang | default(defaultLanguage) %}
+{% set defaultAuthorData = collections.authorsByName[authorName] %}
+{% set defaultAuthorSlug = defaultAuthorData.authorSlug | default(authorName | slugify) %}
+{% set localizedAuthorData = collections.authorsByNameByLang[currentLang + ":" + authorName] | default(collections.authorsByNameByLang[currentLang + ":" + defaultAuthorSlug]) %}
+{% set authorData = localizedAuthorData | default(defaultAuthorData) %}
+{% set authorSlug = authorData.authorSlug | default(defaultAuthorSlug) %}
+{% set langPrefix = "/" + currentLang if currentLang and currentLang != defaultLanguage else "" %}
 {% set resolvedImage = authorData.authorImage | default('/assets/images/sharplsp-logo.svg') %}
 {% set resolvedRole = authorData.authorRole | default("Nimblesite Engineering") %}
-<a class="article-author" href="/author/{{ authorName | slugify }}/">
+<a class="article-author" href="{{ langPrefix }}/author/{{ authorSlug }}/">
   <img src="{{ resolvedImage }}" alt="{{ authorName }}" onerror="this.style.display='none'">
   <div>
     <p>{{ authorName }}</p>

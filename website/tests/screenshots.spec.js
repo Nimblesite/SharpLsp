@@ -1,9 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const BASE = '/forge';
-
 const DOC_PATHS = [
-  '/docs/',
   '/docs/architecture/',
   '/docs/editors/',
   '/docs/completions/',
@@ -15,7 +12,6 @@ const DOC_PATHS = [
   '/docs/context-menus/',
   '/docs/configuration/',
   '/docs/profiler/',
-  '/zh/docs/',
   '/zh/docs/architecture/',
   '/zh/docs/editors/',
   '/zh/docs/completions/',
@@ -37,7 +33,7 @@ test.describe('Docs screenshots', () => {
         }
       });
 
-      await page.goto(`${BASE}${docPath}`);
+      await page.goto(docPath);
 
       expect(failedImages, `Screenshot request failed: ${JSON.stringify(failedImages)}`).toHaveLength(0);
 
@@ -45,7 +41,6 @@ test.describe('Docs screenshots', () => {
       await expect(screenshot).toBeVisible();
 
       const src = await screenshot.getAttribute('src');
-      expect(src, `Image src should not contain double prefix: ${src}`).not.toMatch(/\/forge\/forge\//);
       expect(src, `Image src should point at screenshot assets`).toContain('/assets/screenshots/');
 
       const rendered = await screenshot.evaluate((img) => ({

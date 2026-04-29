@@ -4,8 +4,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!toggle || !navLinks) return;
 
   toggle.addEventListener('click', () => {
-    const expanded = toggle.getAttribute('aria-expanded') === 'true';
-    toggle.setAttribute('aria-expanded', String(!expanded));
     navLinks.classList.toggle('open');
   });
 });

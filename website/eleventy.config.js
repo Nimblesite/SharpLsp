@@ -58,6 +58,20 @@ export default function (eleventyConfig) {
     return map;
   });
 
+  eleventyConfig.addCollection("authorsByNameByLang", (api) => {
+    const map = {};
+    const pages = [
+      ...api.getFilteredByGlob("src/author/*.md"),
+      ...api.getFilteredByGlob("src/*/author/*.md"),
+    ];
+    pages.forEach((page) => {
+      const pageLang = page.data.lang || "en";
+      if (page.data.title) map[`${pageLang}:${page.data.title}`] = page.data;
+      if (page.data.authorSlug) map[`${pageLang}:${page.data.authorSlug}`] = page.data;
+    });
+    return map;
+  });
+
   eleventyConfig.addTransform("nimblesite-footer", function (content) {
     if (!this.page.outputPath?.endsWith(".html")) {
       return content;

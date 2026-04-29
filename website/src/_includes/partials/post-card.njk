@@ -1,6 +1,12 @@
 {# Expects: currentPost, featuredPost #}
 {% set _authorName = currentPost.data.author | default("SharpLsp Team") %}
-{% set _authorData = collections.authorsByName[_authorName] %}
+{% set _postLang = currentPost.data.lang | default(defaultLanguage) %}
+{% set _defaultAuthorData = collections.authorsByName[_authorName] %}
+{% set _defaultAuthorSlug = _defaultAuthorData.authorSlug | default(_authorName | slugify) %}
+{% set _localizedAuthorData = collections.authorsByNameByLang[_postLang + ":" + _authorName] | default(collections.authorsByNameByLang[_postLang + ":" + _defaultAuthorSlug]) %}
+{% set _authorData = _localizedAuthorData | default(_defaultAuthorData) %}
+{% set _authorSlug = _authorData.authorSlug | default(_defaultAuthorSlug) %}
+{% set _langPrefix = "/" + _postLang if _postLang and _postLang != defaultLanguage else "" %}
 {% set _authorImage = _authorData.authorImage | default('/assets/images/sharplsp-logo.svg') %}
 <article class="post-card{% if featuredPost %} post-card-featured{% endif %}">
   <a class="post-media{% if not currentPost.data.image %} post-media-symbol{% endif %}" href="{{ currentPost.url }}" aria-label="{{ currentPost.data.title }}">
@@ -15,7 +21,7 @@
     <div class="post-tags">
       {%- for tag in currentPost.data.tags -%}
       {%- if tag != 'post' and tag != 'posts' -%}
-      <a href="/blog/tags/{{ tag | slugify }}/" class="tag">{{ tag }}</a>
+      <a href="{{ _langPrefix }}/blog/tags/{{ tag | slugify }}/" class="tag">{{ tag }}</a>
       {%- endif -%}
       {%- endfor -%}
     </div>
@@ -25,14 +31,14 @@
     <p class="post-excerpt">{{ currentPost.data.excerpt | default(currentPost.data.description) }}</p>
     {% endif %}
     <div class="post-meta">
-      <a class="post-author" href="/author/{{ _authorName | slugify }}/">
+      <a class="post-author" href="{{ _langPrefix }}/author/{{ _authorSlug }}/">
         <img src="{{ _authorImage }}" alt="{{ _authorName }}">
         <div>
           <span>{{ _authorName }}</span>
           <small>{{ currentPost.date | dateFormat }}</small>
         </div>
       </a>
-      {% if featuredPost %}<span class="read-time">8 min read</span>{% endif %}
+      {% if featuredPost %}<span class="read-time">{% if _postLang == "zh" %}8 分钟阅读{% else %}8 min read{% endif %}</span>{% endif %}
     </div>
   </div>
 </article>

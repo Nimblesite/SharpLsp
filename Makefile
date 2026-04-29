@@ -94,7 +94,7 @@ ci: lint test build
 
 # ── Tests ────────────────────────────────────────────────────────
 
-test: test-rust test-vsix test-dotnet
+test: test-rust test-vsix test-dotnet test-website
 	@echo "==> All tests passed."
 
 test-rust: _build-dotnet _stage-sidecars
@@ -131,6 +131,10 @@ test-dotnet: _build-dotnet
 	 _check_cov SharpLsp.Sidecar.CSharp sharplsp-sidecar-csharp ; \
 	 _check_cov SharpLsp.Sidecar.FSharp sharplsp-sidecar-fsharp ; \
 	 _check_cov SharpLsp.Sidecar.Common sharplsp-sidecar-common
+
+test-website:
+	@echo "==> Running website Playwright tests..."
+	cd website && npm ci && npx playwright install --with-deps chromium && npx playwright test
 
 # ── Website screenshots ──────────────────────────────────────────
 
