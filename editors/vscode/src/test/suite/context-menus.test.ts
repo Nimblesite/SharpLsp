@@ -422,18 +422,25 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
   });
 
   test("method node has contextValue 'symbol.method'", () => {
-    const node = findByContext(provider.getChildren(), 'symbol.method');
-    assert.ok(node, 'A symbol.method node must exist in the tree');
-    const lbl = nodeLabel(node);
-    assert.ok(
-      lbl.includes('Execute') || lbl.includes('Run'),
-      `Expected Execute or Run method, got '${lbl}'`,
+    const allTypesClass = findNode(
+      provider.getChildren(),
+      (n) => nodeLabel(n).includes('AllTypesClass') && n.contextValue === 'symbol.class',
     );
+    assert.ok(allTypesClass, 'AllTypesClass must exist in the tree');
+    const node = findByContext(allTypesClass.children, 'symbol.method');
+    assert.ok(node, 'A symbol.method node must exist under AllTypesClass');
+    const lbl = nodeLabel(node);
+    assert.ok(lbl.includes('Execute'), `Expected Execute method, got '${lbl}'`);
   });
 
   test("property node has contextValue 'symbol.property'", () => {
-    const node = findByContext(provider.getChildren(), 'symbol.property');
-    assert.ok(node, 'A symbol.property node must exist in the tree');
+    const allTypesClass = findNode(
+      provider.getChildren(),
+      (n) => nodeLabel(n).includes('AllTypesClass') && n.contextValue === 'symbol.class',
+    );
+    assert.ok(allTypesClass, 'AllTypesClass must exist in the tree');
+    const node = findByContext(allTypesClass.children, 'symbol.property');
+    assert.ok(node, 'A symbol.property node must exist under AllTypesClass');
     assert.ok(
       nodeLabel(node).includes('Label'),
       `Expected Label property, got '${nodeLabel(node)}'`,
