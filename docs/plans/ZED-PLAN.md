@@ -122,7 +122,7 @@ Requires `rustup target add wasm32-wasip1` for WASM builds.
 
 ### Phase 3: Settings and Configuration
 
-- [ ] Read `sharplsp.server.path` from Zed settings for custom binary location
+- [ ] Read `sharplsp.lspPath` from Zed settings for custom binary location
 - [ ] Read `sharplsp.logging.level` from Zed settings for RUST_LOG
 - [ ] Pass extra CLI args to sharplsp-lsp from settings
 - [ ] Send initialization options (solution path) to sharplsp-lsp

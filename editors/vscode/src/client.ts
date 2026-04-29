@@ -27,7 +27,7 @@ export async function start(
   const serverPath = resolveServerPath(context);
   if (serverPath === undefined) {
     const msg =
-      'SharpLsp binary not found. Install via `cargo install sharplsp-lsp` or set `sharplsp.server.path`.';
+      'SharpLsp binary not found. Install via `cargo install sharplsp-lsp` or set `sharplsp.lspPath`.';
     log.info(msg);
     window.showErrorMessage(msg);
     statusBar.setState(ServerState.Error);
@@ -153,10 +153,11 @@ function makeErrorHandler(statusBar: SharpLspStatusBar): {
  * Resolve the sharplsp-lsp binary path.
  *
  * Priority:
- *   1. User-configured `sharplsp.server.path`
+ *   1. User-configured `sharplsp.lspPath`
  *   2. `SHARPLSP_EXECUTABLE_PATH` for test and development runs
- *   3. Bundled binary in `<extension>/bin/`
- *   4. Binary name on `$PATH` (client resolves via shell)
+ *   3. Bundled binary in `<extension>/bin/<platform>/`
+ *   4. Legacy bundled binary in `<extension>/bin/`
+ *   5. Binary name on `$PATH` (client resolves via shell)
  */
 function resolveServerPath(context: ExtensionContext): string | undefined {
   const configured = expandPath(config.serverPath());
@@ -170,10 +171,16 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
   }
 
   const binaryName = process.platform === 'win32' ? SERVER_BINARY_WIN : SERVER_BINARY;
+  const platform = detectRuntimePlatform();
 
-  const bundled = path.join(context.extensionPath, 'bin', binaryName);
+  const bundled = path.join(context.extensionPath, 'bin', platform, binaryName);
   if (fs.existsSync(bundled)) {
     return bundled;
+  }
+
+  const legacyBundled = path.join(context.extensionPath, 'bin', binaryName);
+  if (fs.existsSync(legacyBundled)) {
+    return legacyBundled;
   }
 
   // Dev fallback: look for a Cargo debug build two levels above the extension dir.
@@ -185,6 +192,16 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
 
   // Fall back to PATH — the language client resolves the command via the shell.
   return binaryName;
+}
+
+function detectRuntimePlatform(): string {
+  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64';
+  if (process.platform === 'darwin') return 'darwin-x64';
+  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64';
+  if (process.platform === 'linux') return 'linux-x64';
+  if (process.platform === 'win32' && process.arch === 'arm64') return 'win32-arm64';
+  if (process.platform === 'win32') return 'win32-x64';
+  return 'linux-x64';
 }
 
 /** Expand ${workspaceFolder} in a user-configured path. */

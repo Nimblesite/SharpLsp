@@ -1,222 +1,243 @@
 # agent-pmo:2efd847
 name: PR
-
-on:
+'on':
   pull_request:
-    branches: [main]
-
+    branches:
+    - main
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: "${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
-
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-
 jobs:
+  validate-manifest:
+    name: Validate Shipwright Manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - name: Validate shipwright.json
+      shell: bash
+      run: |-
+        set -euo pipefail
+        tmp="$(mktemp -d)"
+        npm install --prefix "$tmp" @nimblesite/shipwright-validate-manifest@0.1.0
+        "$tmp/node_modules/.bin/shipwright-validate-manifest" \
+          --schema .github/shipwright/deployment-toolkit.schema.json \
+          shipwright.json editors/vscode/shipwright.json
   lint:
     name: Lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - uses: Swatinem/rust-cache@v2
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}
-          restore-keys: ${{ runner.os }}-nuget-
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: editors/vscode/package-lock.json
-
-      - name: Install dependencies
-        run: |
-          dotnet tool restore
-          npm ci --prefix editors/vscode
-
-      - name: Rust
-        run: make lint-rust PROFILE=debug
-
-      - name: Zed
-        run: make lint-zed
-
-      - name: .NET format
-        run: dotnet csharpier check sidecars/
-
-      - name: .NET lint
-        run: make lint-dotnet
-
-      - name: Sidecar dotnet pack (smoke test)
-        run: |
-          dotnet pack sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
-            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-          dotnet pack sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
-            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-          ls -la /tmp/nupkg-smoke/*.nupkg
-
-      - name: VS Code format
-        run: cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'
-
-      - name: VS Code lint
-        run: make lint-vsix
-
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy, rustfmt
+    - uses: Swatinem/rust-cache@v2
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - uses: actions/cache@v4
+      with:
+        path: "~/.nuget/packages"
+        key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props')
+          }}"
+        restore-keys: "${{ runner.os }}-nuget-"
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: npm
+        cache-dependency-path: editors/vscode/package-lock.json
+    - name: Install dependencies
+      run: |
+        dotnet tool restore
+        npm ci --prefix editors/vscode
+    - name: Rust
+      run: make lint-rust PROFILE=debug
+    - name: Zed
+      run: make lint-zed
+    - name: ".NET format"
+      run: dotnet csharpier check sidecars/
+    - name: ".NET lint"
+      run: make lint-dotnet
+    - name: Sidecar dotnet pack (smoke test)
+      run: |
+        dotnet pack sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
+          -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+        dotnet pack sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
+          -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+        ls -la /tmp/nupkg-smoke/*.nupkg
+    - name: VS Code format
+      run: cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'
+    - name: VS Code lint
+      run: make lint-vsix
   test-rust:
     name: Test Rust
-    needs: [lint]
+    needs:
+    - lint
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-
-      - uses: Swatinem/rust-cache@v2
-
-      - uses: taiki-e/install-action@cargo-llvm-cov
-
-      - uses: taiki-e/install-action@nextest
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Install .NET diagnostic tools
-        run: |
-          dotnet tool install -g dotnet-trace
-          dotnet tool install -g dotnet-counters
-          dotnet tool install -g dotnet-dump
-
-      - name: Test Rust with coverage
-        run: make test-rust
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-rust
-          path: |
-            target/coverage-rust.json
-            coverage-thresholds.json
-
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: llvm-tools-preview
+    - uses: Swatinem/rust-cache@v2
+    - uses: taiki-e/install-action@cargo-llvm-cov
+    - uses: taiki-e/install-action@nextest
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    - name: Install .NET diagnostic tools
+      run: |
+        dotnet tool install -g dotnet-trace
+        dotnet tool install -g dotnet-counters
+        dotnet tool install -g dotnet-dump
+    - name: Test Rust with coverage
+      run: make test-rust
+    - name: Build release binary
+      run: cargo build --release --bin sharplsp-lsp
+    - name: Verify sharplsp-lsp version contract
+      shell: bash
+      run: |-
+        set -euo pipefail
+        VERSION="$(cargo metadata --no-deps --format-version 1 | node -e 'const fs=require("node:fs"); const meta=JSON.parse(fs.readFileSync(0,"utf8")); const pkg=meta.packages.find((item)=>item.name==="sharplsp-lsp"); if(!pkg) throw new Error("sharplsp-lsp package missing"); process.stdout.write(pkg.version);')"
+        ./target/release/sharplsp-lsp --version | grep -Fx "sharplsp-lsp ${VERSION}"
+        ./target/release/sharplsp-lsp --version --json | VERSION="${VERSION}" node -e 'const fs=require("node:fs"); const actual=JSON.parse(fs.readFileSync(0,"utf8")); const expected={name:"sharplsp-lsp",version:process.env.VERSION,kind:"lsp",language:"rust",product:"sharplsp"}; for (const [key,value] of Object.entries(expected)) { if (actual[key] !== value) throw new Error(`${key}: expected ${value}, got ${actual[key]}`); }'
+    - name: Upload coverage
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-rust
+        path: |
+          target/coverage-rust.json
+          coverage-thresholds.json
   test-dotnet:
     name: Test .NET
-    needs: [lint]
+    needs:
+    - lint
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Test .NET sidecars with coverage
-        run: make test-dotnet
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-dotnet
-          path: coverage-thresholds.json
-
+    - uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Test .NET sidecars with coverage
+      run: make test-dotnet
+    - name: Verify sidecar version flags
+      shell: bash
+      run: |-
+        set -euo pipefail
+        CS_VERSION="$(dotnet msbuild sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj -getProperty:Version -nologo)"
+        FS_VERSION="$(dotnet msbuild sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj -getProperty:Version -nologo)"
+        target/sidecar-csharp/SharpLsp.Sidecar.CSharp --version | grep -Fx "sharplsp-sidecar-csharp ${CS_VERSION}"
+        target/sidecar-fsharp/SharpLsp.Sidecar.FSharp --version | grep -Fx "sharplsp-sidecar-fsharp ${FS_VERSION}"
+    - name: Upload coverage
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-dotnet
+        path: coverage-thresholds.json
   test-vsix:
     name: Test VS Code
-    needs: [lint]
+    needs:
+    - lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: editors/vscode/package-lock.json
-
-      - name: Install VS Code extension deps
-        run: npm ci --prefix editors/vscode
-
-      - name: Test VS Code extension with coverage
-        run: xvfb-run -a make test-vsix
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-vsix
-          path: coverage-thresholds.json
-
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: npm
+        cache-dependency-path: editors/vscode/package-lock.json
+    - name: Install VS Code extension deps
+      run: npm ci --prefix editors/vscode
+    - name: Remove PATH-installed SharpLsp binaries
+      shell: bash
+      run: |-
+        set -euo pipefail
+        for binary in sharplsp-lsp sharplsp-sidecar-csharp sharplsp-sidecar-fsharp forge-lsp forge-sidecar-csharp; do
+          resolved="$(command -v "$binary" || true)"
+          if [ -n "$resolved" ]; then
+            rm -f "$resolved"
+          fi
+        done
+    - name: Test VS Code extension with coverage
+      run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR
+        -u FORGE_LSP_PATH -u FORGE_BINARY_DIR xvfb-run -a make test-vsix
+    - name: Verify VSIX contains platform binary
+      shell: bash
+      run: |-
+        set -euo pipefail
+        platform="$(node -e 'process.stdout.write(`${process.platform}-${process.arch}`)')"
+        unzip -l sharplsp.vsix | grep -F "bin/${platform}/sharplsp-lsp"
+    - name: Upload coverage
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-vsix
+        path: coverage-thresholds.json
   coverage:
     name: Ratchet Coverage
-    needs: [test-rust, test-dotnet, test-vsix]
+    needs:
+    - test-rust
+    - test-dotnet
+    - test-vsix
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download all coverage artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: coverage-artifacts
-
-      - name: Merge ratcheted thresholds
-        run: |
-          # Each test job may have ratcheted its own thresholds up.
-          # Merge by taking the maximum threshold for each project key.
-          BASE="coverage-thresholds.json"
-          for artifact_dir in coverage-artifacts/coverage-*/; do
-            ARTIFACT="${artifact_dir}coverage-thresholds.json"
-            if [ -f "$ARTIFACT" ]; then
-              # For each project key, take the higher threshold
-              jq -s '
-                .[0] as $base | .[1] as $new |
-                $base | to_entries | map(
-                  if .value | type == "object" then
-                    .key as $k |
-                    .value.line_percent as $bp |
-                    ($new[$k].line_percent // $bp) as $np |
-                    .value.line_percent = (if $np > $bp then $np else $bp end)
-                  else .
-                  end
-                ) | from_entries
-              ' "$BASE" "$ARTIFACT" > tmp-merged.json
-              mv tmp-merged.json "$BASE"
-            fi
-          done
-
-      - name: Commit ratcheted thresholds
-        run: |
-          git diff --quiet coverage-thresholds.json && exit 0
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add coverage-thresholds.json
-          git commit -m "ci: ratchet coverage threshold"
-          git push
+    - uses: actions/checkout@v4
+      with:
+        token: "${{ secrets.GITHUB_TOKEN }}"
+    - name: Download all coverage artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: coverage-artifacts
+    - name: Merge ratcheted thresholds
+      run: |
+        # Each test job may have ratcheted its own thresholds up.
+        # Merge by taking the maximum threshold for each project key.
+        BASE="coverage-thresholds.json"
+        for artifact_dir in coverage-artifacts/coverage-*/; do
+          ARTIFACT="${artifact_dir}coverage-thresholds.json"
+          if [ -f "$ARTIFACT" ]; then
+            # For each project key, take the higher threshold
+            jq -s '
+              .[0] as $base | .[1] as $new |
+              $base | to_entries | map(
+                if .value | type == "object" then
+                  .key as $k |
+                  .value.line_percent as $bp |
+                  ($new[$k].line_percent // $bp) as $np |
+                  .value.line_percent = (if $np > $bp then $np else $bp end)
+                else .
+                end
+              ) | from_entries
+            ' "$BASE" "$ARTIFACT" > tmp-merged.json
+            mv tmp-merged.json "$BASE"
+          fi
+        done
+    - name: Commit ratcheted thresholds
+      run: |
+        git diff --quiet coverage-thresholds.json && exit 0
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add coverage-thresholds.json
+        git commit -m "ci: ratchet coverage threshold"
+        git push

@@ -1,0 +1,395 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nimblesite.dev/schemas/deployment-toolkit/v1.json",
+  "title": "Nimblesite deployment-toolkit product manifest",
+  "description": "Authoritative per-product manifest declaring components, bundling, version contracts, and host policies. Lives at repo root of every product as `deployment-toolkit.json`.",
+  "type": "object",
+  "required": [
+    "manifestVersion",
+    "product",
+    "components"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "manifestVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Increment on breaking changes."
+    },
+    "product": {
+      "type": "object",
+      "required": [
+        "id",
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+          "description": "Stable product identifier. kebab-case."
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string",
+          "description": "The expected product version this manifest targets. Stamped from tag at release time.",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        },
+        "repository": {
+          "type": "string",
+          "format": "uri"
+        },
+        "homepage": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Every deployable unit of the product: CLIs, LSPs, MCPs, sidecars, IDE extensions, assets.",
+      "items": {
+        "$ref": "#/$defs/component"
+      }
+    },
+    "hosts": {
+      "type": "object",
+      "description": "Per-host policy bundle. A host that is absent is unsupported by the product.",
+      "additionalProperties": false,
+      "properties": {
+        "vscode": {
+          "$ref": "#/$defs/hostPolicy"
+        },
+        "jetbrains": {
+          "$ref": "#/$defs/hostPolicy"
+        },
+        "zed": {
+          "$ref": "#/$defs/hostPolicy"
+        },
+        "cli": {
+          "$ref": "#/$defs/hostPolicy"
+        },
+        "pkgmgr": {
+          "$ref": "#/$defs/hostPolicy"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "component": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+          "description": "Component id, unique within the product."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "cli",
+            "lsp",
+            "mcp",
+            "sidecar",
+            "dap",
+            "tool",
+            "extension-vscode",
+            "extension-jetbrains",
+            "extension-zed",
+            "asset"
+          ]
+        },
+        "language": {
+          "type": "string",
+          "enum": [
+            "rust",
+            "dotnet",
+            "dart",
+            "typescript",
+            "kotlin",
+            "javascript"
+          ]
+        },
+        "binaryName": {
+          "type": "string",
+          "description": "argv[0] of the binary or npm bin / dotnet tool command."
+        },
+        "expectedVersion": {
+          "type": "string",
+          "description": "semver string or ${PRODUCT_VERSION}. When set, host must verify this value against binary --version output."
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "darwin-arm64",
+              "darwin-x64",
+              "linux-x64",
+              "linux-arm64",
+              "win32-x64",
+              "win32-arm64",
+              "all"
+            ]
+          },
+          "description": "Platforms this component ships for. `all` means platform-agnostic (Node, dotnet tool, jar)."
+        },
+        "bundled": {
+          "type": "object",
+          "description": "If set, this component is bundled inside an IDE extension artifact.",
+          "required": [
+            "bundlePath"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "bundlePath": {
+              "type": "string",
+              "description": "Path template relative to extension root, e.g. `bin/${platform}/${binaryName}${exe}`."
+            },
+            "perPlatformArtifact": {
+              "type": "boolean",
+              "default": true,
+              "description": "True = one artifact per platform (VSIX --target). False = single fat artifact."
+            }
+          }
+        },
+        "sources": {
+          "type": "array",
+          "description": "Ordered discovery chain the host must follow. Earlier = higher priority.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "user-setting",
+              "env",
+              "path",
+              "bundled",
+              "pkgmgr",
+              "dotnet-tool",
+              "npm-global",
+              "cargo-bin",
+              "github-release",
+              "lsp-initialize"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "userSetting": {
+          "type": "string",
+          "description": "IDE settings key (e.g. `deslop.binaryPath`)."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "pathVar": {
+              "type": "string",
+              "description": "e.g. DESLOP_BINARY_PATH"
+            },
+            "dirVar": {
+              "type": "string",
+              "description": "e.g. DESLOP_BINARY_DIR"
+            }
+          }
+        },
+        "pkgmgr": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "brew": {
+              "type": "string"
+            },
+            "scoop": {
+              "type": "string"
+            },
+            "apt": {
+              "type": "string"
+            },
+            "winget": {
+              "type": "string"
+            }
+          }
+        },
+        "dotnetTool": {
+          "type": "object",
+          "required": [
+            "package"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "package": {
+              "type": "string"
+            },
+            "command": {
+              "type": "string"
+            }
+          }
+        },
+        "npm": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "package": {
+              "type": "string"
+            },
+            "bin": {
+              "type": "string"
+            }
+          }
+        },
+        "githubRelease": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repo": {
+              "type": "string",
+              "pattern": "^[^/]+/[^/]+$"
+            },
+            "assetPattern": {
+              "type": "string",
+              "description": "e.g. `basilisk-${version}-${platform}.tar.gz`"
+            },
+            "checksum": {
+              "type": "boolean",
+              "default": true
+            },
+            "cosign": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
+        "verifyStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Host must call --version (or initialize) before allowing the component to serve."
+        },
+        "versionCheckStrategy": {
+          "type": "string",
+          "enum": [
+            "version-flag",
+            "version-flag-json",
+            "lsp-initialize"
+          ],
+          "default": "version-flag"
+        },
+        "required": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, failure to resolve + verify blocks activation."
+        },
+        "asset": {
+          "type": "object",
+          "description": "Only for kind=asset. Non-executable payload.",
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            },
+            "bundle": {
+              "type": "boolean"
+            },
+            "contentHash": {
+              "type": "boolean"
+            },
+            "downloadOnFirstUse": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "asset"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "asset"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "cli",
+                  "lsp",
+                  "mcp",
+                  "sidecar",
+                  "dap",
+                  "tool"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "binaryName",
+              "expectedVersion",
+              "sources"
+            ]
+          }
+        }
+      ]
+    },
+    "hostPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifact": {
+          "type": "string",
+          "enum": [
+            "vsix-per-platform",
+            "vsix-fat",
+            "intellij-jar",
+            "zed-wasm",
+            "archive",
+            "brew-formula",
+            "scoop-manifest",
+            "nuget",
+            "pub"
+          ]
+        },
+        "activationVerifies": {
+          "type": "array",
+          "description": "Component ids whose version the host must verify at activation.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "onMismatch": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "prompt-reinstall",
+            "prompt-pkgmgr"
+          ],
+          "default": "error"
+        }
+      }
+    }
+  }
+}

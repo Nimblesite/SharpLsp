@@ -64,9 +64,9 @@ suite('Constants', () => {
     assert.strictEqual(CONFIG_SECTION, 'sharplsp');
   });
 
-  test('CONFIG_SERVER_PATH is the server.path setting key', () => {
-    assert.strictEqual(CONFIG_SERVER_PATH, 'server.path');
-    assert.ok(CONFIG_SERVER_PATH.startsWith('server.'));
+  test('CONFIG_SERVER_PATH is the lspPath setting key', () => {
+    assert.strictEqual(CONFIG_SERVER_PATH, 'lspPath');
+    assert.ok(CONFIG_SERVER_PATH.endsWith('Path'));
   });
 
   test('CONFIG_SERVER_EXTRA_ARGS is the server.extraArgs setting key', () => {

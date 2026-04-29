@@ -16,8 +16,8 @@ export const POLL_INTERVAL_MS = 100;
  *
  * Priority:
  *   1. `SHARPLSP_EXECUTABLE_PATH` env var
- *   2. `target/release/sharplsp-lsp` relative to repo root
- *   3. `target/debug/sharplsp-lsp` relative to repo root
+ *   2. Bundled binary under `bin/<platform>/`
+ *   3. Legacy bundled binary under `bin/`
  */
 export function findSharpLspBinary(): string | undefined {
   const envPath = process.env['SHARPLSP_EXECUTABLE_PATH'];
@@ -26,22 +26,32 @@ export function findSharpLspBinary(): string | undefined {
   }
 
   const binaryName = process.platform === 'win32' ? 'sharplsp-lsp.exe' : 'sharplsp-lsp';
+  const platform = detectRuntimePlatform();
 
   // __dirname at runtime: editors/vscode/out/test/suite/
-  // Repo root: 5 levels up
-  const repoRoot = path.resolve(__dirname, '../../../../..');
+  const extensionRoot = path.resolve(__dirname, '../../..');
 
-  const release = path.join(repoRoot, 'target', 'release', binaryName);
-  if (fs.existsSync(release)) {
-    return release;
+  const bundled = path.join(extensionRoot, 'bin', platform, binaryName);
+  if (fs.existsSync(bundled)) {
+    return bundled;
   }
 
-  const debug = path.join(repoRoot, 'target', 'debug', binaryName);
-  if (fs.existsSync(debug)) {
-    return debug;
+  const legacyBundled = path.join(extensionRoot, 'bin', binaryName);
+  if (fs.existsSync(legacyBundled)) {
+    return legacyBundled;
   }
 
   return undefined;
+}
+
+function detectRuntimePlatform(): string {
+  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64';
+  if (process.platform === 'darwin') return 'darwin-x64';
+  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64';
+  if (process.platform === 'linux') return 'linux-x64';
+  if (process.platform === 'win32' && process.arch === 'arm64') return 'win32-arm64';
+  if (process.platform === 'win32') return 'win32-x64';
+  return 'linux-x64';
 }
 
 // ── Polling ──────────────────────────────────────────────────────

@@ -13,17 +13,36 @@
       "language": "rust",
       "binaryName": "sharplsp-lsp",
       "expectedVersion": "${PRODUCT_VERSION}",
-      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "win32-x64"],
-      "sources": ["user-setting", "env", "path", "pkgmgr"],
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-x64",
+        "linux-arm64",
+        "win32-x64"
+      ],
+      "sources": [
+        "user-setting",
+        "env",
+        "bundled",
+        "path",
+        "pkgmgr"
+      ],
       "userSetting": "sharplsp.lspPath",
-      "env": { "pathVar": "SHARPLSP_LSP_PATH", "dirVar": "SHARPLSP_BINARY_DIR" },
+      "env": {
+        "pathVar": "SHARPLSP_LSP_PATH",
+        "dirVar": "SHARPLSP_BINARY_DIR"
+      },
       "pkgmgr": {
         "brew": "nimblesite/tap/sharplsp-lsp",
         "scoop": "nimblesite/sharplsp-lsp"
       },
       "verifyStartup": true,
       "versionCheckStrategy": "version-flag",
-      "required": true
+      "required": true,
+      "bundled": {
+        "bundlePath": "bin/${platform}/sharplsp-lsp${exe}",
+        "perPlatformArtifact": true
+      }
     },
     {
       "id": "sharplsp-sidecar-csharp",
@@ -31,11 +50,23 @@
       "language": "dotnet",
       "binaryName": "sharplsp-sidecar-csharp",
       "expectedVersion": "${PRODUCT_VERSION}",
-      "platforms": ["all"],
-      "sources": ["user-setting", "env", "path", "dotnet-tool"],
+      "platforms": [
+        "all"
+      ],
+      "sources": [
+        "user-setting",
+        "env",
+        "path",
+        "dotnet-tool"
+      ],
       "userSetting": "sharplsp.csharpSidecarPath",
-      "env": { "pathVar": "SHARPLSP_CSHARP_SIDECAR_PATH" },
-      "dotnetTool": { "package": "SharpLsp.Sidecar.CSharp", "command": "sharplsp-sidecar-csharp" },
+      "env": {
+        "pathVar": "SHARPLSP_CSHARP_SIDECAR_PATH"
+      },
+      "dotnetTool": {
+        "package": "SharpLsp.Sidecar.CSharp",
+        "command": "sharplsp-sidecar-csharp"
+      },
       "verifyStartup": true,
       "versionCheckStrategy": "version-flag",
       "required": true
@@ -46,11 +77,23 @@
       "language": "dotnet",
       "binaryName": "sharplsp-sidecar-fsharp",
       "expectedVersion": "${PRODUCT_VERSION}",
-      "platforms": ["all"],
-      "sources": ["user-setting", "env", "path", "dotnet-tool"],
+      "platforms": [
+        "all"
+      ],
+      "sources": [
+        "user-setting",
+        "env",
+        "path",
+        "dotnet-tool"
+      ],
       "userSetting": "sharplsp.fsharpSidecarPath",
-      "env": { "pathVar": "SHARPLSP_FSHARP_SIDECAR_PATH" },
-      "dotnetTool": { "package": "SharpLsp.Sidecar.FSharp", "command": "sharplsp-sidecar-fsharp" },
+      "env": {
+        "pathVar": "SHARPLSP_FSHARP_SIDECAR_PATH"
+      },
+      "dotnetTool": {
+        "package": "SharpLsp.Sidecar.FSharp",
+        "command": "sharplsp-sidecar-fsharp"
+      },
       "verifyStartup": true,
       "versionCheckStrategy": "version-flag",
       "required": false
@@ -59,38 +102,57 @@
       "id": "sharplsp-vscode",
       "kind": "extension-vscode",
       "language": "typescript",
-      "platforms": ["all"]
+      "platforms": [
+        "all"
+      ]
     },
     {
       "id": "sharplsp-zed",
       "kind": "extension-zed",
       "language": "rust",
-      "platforms": ["all"]
+      "platforms": [
+        "all"
+      ]
     },
     {
       "id": "sharplsp-rider",
       "kind": "extension-jetbrains",
       "language": "kotlin",
-      "platforms": ["all"]
+      "platforms": [
+        "all"
+      ]
     }
   ],
   "hosts": {
     "vscode": {
-      "artifact": "vsix-fat",
-      "activationVerifies": ["sharplsp-lsp", "sharplsp-sidecar-csharp", "sharplsp-sidecar-fsharp"],
+      "artifact": "vsix-per-platform",
+      "activationVerifies": [
+        "sharplsp-lsp",
+        "sharplsp-sidecar-csharp",
+        "sharplsp-sidecar-fsharp"
+      ],
       "onMismatch": "prompt-pkgmgr"
     },
     "jetbrains": {
       "artifact": "intellij-jar",
-      "activationVerifies": ["sharplsp-lsp", "sharplsp-sidecar-csharp"],
+      "activationVerifies": [
+        "sharplsp-lsp",
+        "sharplsp-sidecar-csharp"
+      ],
       "onMismatch": "prompt-pkgmgr"
     },
     "zed": {
       "artifact": "zed-wasm",
-      "activationVerifies": ["sharplsp-lsp"],
+      "activationVerifies": [
+        "sharplsp-lsp"
+      ],
       "onMismatch": "error"
     },
-    "cli": { "artifact": "archive" },
-    "pkgmgr": { "artifact": "brew-formula" }
+    "cli": {
+      "artifact": "archive"
+    },
+    "pkgmgr": {
+      "artifact": "brew-formula"
+    }
   }
 }

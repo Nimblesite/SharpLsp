@@ -12,17 +12,17 @@ suite('Config Module — Direct Function Tests', () => {
 
   test('serverPath() returns the configured value when set', async () => {
     const wsConfig = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    const original = wsConfig.get<string>('server.path');
+    const original = wsConfig.get<string>('lspPath');
     try {
       await wsConfig.update(
-        'server.path',
+        'lspPath',
         '/tmp/fake-sharplsp-lsp',
         vscode.ConfigurationTarget.Workspace,
       );
       const result = config.serverPath();
       assert.strictEqual(result, '/tmp/fake-sharplsp-lsp');
     } finally {
-      await wsConfig.update('server.path', original, vscode.ConfigurationTarget.Workspace);
+      await wsConfig.update('lspPath', original, vscode.ConfigurationTarget.Workspace);
     }
   });
 

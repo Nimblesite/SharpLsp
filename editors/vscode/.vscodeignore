@@ -1,8 +1,0 @@
-**/*
-!dist/extension.js
-!language-configuration/*.json
-!icons/sharplsp.png
-!icons/sharplsp.svg
-!icons/sharplsp-activity.svg
-!package.json
-!LICENSE

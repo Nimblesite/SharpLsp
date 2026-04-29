@@ -153,10 +153,10 @@ suite('Client Module — LSP Client Created by Extension', () => {
 suite('Client Module — Error Path: Missing Binary', () => {
   test('configured path that does not exist falls through', async () => {
     const wsConfig = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    const original = wsConfig.get<string>('server.path');
+    const original = wsConfig.get<string>('lspPath');
     try {
       await wsConfig.update(
-        'server.path',
+        'lspPath',
         '/nonexistent/path/sharplsp-lsp',
         vscode.ConfigurationTarget.Workspace,
       );
@@ -164,7 +164,7 @@ suite('Client Module — Error Path: Missing Binary', () => {
       assert.strictEqual(configured, '/nonexistent/path/sharplsp-lsp');
       assert.ok(!fs.existsSync(configured), 'This path must not exist for the test to be valid');
     } finally {
-      await wsConfig.update('server.path', original, vscode.ConfigurationTarget.Workspace);
+      await wsConfig.update('lspPath', original, vscode.ConfigurationTarget.Workspace);
     }
   });
 
@@ -177,10 +177,11 @@ suite('Client Module — Error Path: Missing Binary', () => {
 
   test('bundled binary path construction is correct', () => {
     const binaryName = process.platform === 'win32' ? SERVER_BINARY_WIN : SERVER_BINARY;
-    const fakePath = path.join('/fake/extension/path', 'bin', binaryName);
+    const platform = detectRuntimePlatform();
+    const fakePath = path.join('/fake/extension/path', 'bin', platform, binaryName);
     assert.ok(
-      fakePath.endsWith(path.join('bin', binaryName)),
-      'Bundled path should end with bin/<binary>',
+      fakePath.endsWith(path.join('bin', platform, binaryName)),
+      'Bundled path should end with bin/<platform>/<binary>',
     );
   });
 
@@ -192,3 +193,13 @@ suite('Client Module — Error Path: Missing Binary', () => {
     );
   });
 });
+
+function detectRuntimePlatform(): string {
+  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64';
+  if (process.platform === 'darwin') return 'darwin-x64';
+  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64';
+  if (process.platform === 'linux') return 'linux-x64';
+  if (process.platform === 'win32' && process.arch === 'arm64') return 'win32-arm64';
+  if (process.platform === 'win32') return 'win32-x64';
+  return 'linux-x64';
+}

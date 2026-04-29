@@ -78,9 +78,29 @@ fn error_code_i32(code: lsp_server::ErrorCode) -> i32 {
 }
 
 fn main() -> ExitCode {
-    if std::env::args().any(|a| a == "--version") {
-        println!("sharplsp-lsp {}", env!("CARGO_PKG_VERSION"));
-        return ExitCode::SUCCESS;
+    // Implements [SWR-VERSION-RUST] — Shipwright binary version contract.
+    let spec = shipwright::VersionSpec {
+        name: "sharplsp-lsp",
+        version: env!("CARGO_PKG_VERSION"),
+        kind: shipwright_manifest::ExecutableKind::Lsp,
+        language: shipwright_manifest::Language::Rust,
+        product: Some("sharplsp"),
+        capabilities: &[],
+        build: shipwright::BuildInfo {
+            git_sha: option_env!("GIT_SHA"),
+            git_dirty: None,
+            build_time: option_env!("BUILD_TIME"),
+            target: Some(env!("TARGET")),
+            toolchain: None,
+        },
+    };
+    match shipwright::dispatch(std::env::args(), std::io::stdout(), &spec) {
+        Ok(true) => return ExitCode::SUCCESS,
+        Ok(false) => {}
+        Err(e) => {
+            eprintln!("version dispatch error: {e}");
+            return ExitCode::FAILURE;
+        }
     }
 
     let log_dir = std::env::temp_dir().join("sharplsp-lsp-logs");

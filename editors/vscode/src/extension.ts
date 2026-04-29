@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { type ExtensionContext, commands, window, workspace } from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
@@ -120,10 +121,24 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   log.info('step 10b: initProjectDepsStore');
   initProjectDepsStore(context);
 
-  log.info('step 11: client.start (await)');
+  log.info('step 11: activateDeploymentToolkit');
+  const manifestPath = path.join(context.extensionPath, 'shipwright.json');
+  const { activateDeploymentToolkit } = await import('@nimblesite/shipwright-vscode');
+  const deployResult = await activateDeploymentToolkit(context, { manifestPath });
+  if (!deployResult.ok) {
+    const blocking = deployResult.diagnostics.filter((d) => d.blocking);
+    const msg =
+      blocking.length > 0
+        ? (blocking[0]?.message ?? 'Binary resolution failed')
+        : 'Binary resolution failed';
+    log.error(`Deployment toolkit: ${msg}`);
+    statusBar.setState(ServerState.Error);
+    return { explorerProvider, profilerProvider, getLspClient: () => undefined };
+  }
+  log.info('step 11b: client.start (await)');
   try {
     lspClient = await client.start(context, statusBar);
-    log.info('step 11: client.start returned');
+    log.info('step 11b: client.start returned');
   } catch (err: unknown) {
     const msg = getErrorMessage(err);
     log.error(`Failed to start server: ${msg}`);

@@ -33,6 +33,8 @@ SIDECAR_CS_OUT  = target/sidecar-csharp
 SIDECAR_FS_OUT  = target/sidecar-fsharp
 ZED_WASM        = $(ZED_DIR)/target/wasm32-wasip1/$(PROFILE)/sharplsp_zed.wasm
 VSIX            = sharplsp.vsix
+VSIX_PLATFORM   = $(shell node -e "process.stdout.write(process.platform + '-' + process.arch)")
+VSIX_BINARY     = $(VSCODE_DIR)/bin/$(VSIX_PLATFORM)/sharplsp-lsp
 ZED_PKG_DIR     = target/zed-extension
 ZED_PKG_TAR     = sharplsp-zed-extension.tar.gz
 RIDER_DIR       = editors/rider
@@ -51,7 +53,7 @@ CHECK_COV = scripts/check-coverage.sh
         test-rust test-zed test-dotnet test-vsix \
         fmt-rust fmt-zed fmt-dotnet fmt-vsix \
         _build-rust _build-dotnet _build-vsix _build-zed _build-rider \
-        _kill _clean-rider _stage-sidecars \
+        _kill _clean-rider _stage-sidecars _stage-vsix-binary \
         _deploy-rust _deploy-sidecars _uninstall-vsix _install-vsix
 
 # ── Default ───────────────────────────────────────────────────────
@@ -108,9 +110,11 @@ test-zed:
 	@echo "==> Running Zed tests..."
 	cargo nextest run --manifest-path $(ZED_DIR)/Cargo.toml --fail-fast
 
-test-vsix: _build-rust _build-dotnet _build-vsix _deploy-rust
+test-vsix: _build-rust _build-dotnet _build-vsix
 	@echo "==> Running VS Code extension tests..."
-	cd $(VSCODE_DIR) && PATH="$(abspath $(BINDIR)):$$PATH" SHARPLSP_EXECUTABLE_PATH="$(abspath $(BINARY))" npm test -- --coverage
+	$(MAKE) _stage-vsix-binary
+	cd $(VSCODE_DIR) && env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR -u FORGE_LSP_PATH -u FORGE_BINARY_DIR npm test -- --coverage
+	rm -rf $(VSCODE_DIR)/bin
 	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
 
 test-dotnet: _build-dotnet
@@ -198,10 +202,18 @@ _build-dotnet:
 	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --output $(SIDECAR_CS_OUT)
 	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --output $(SIDECAR_FS_OUT)
 
-_build-vsix:
+_build-vsix: _stage-vsix-binary
 	@echo "==> Bundling + packaging VS Code extension..."
 	npm run build --prefix $(VSCODE_DIR)
 	cd $(VSCODE_DIR) && npx @vscode/vsce package --no-dependencies -o ../../$(VSIX)
+	rm -rf $(VSCODE_DIR)/bin
+
+_stage-vsix-binary: _build-rust
+	@echo "==> Staging sharplsp-lsp for VSIX ($(VSIX_PLATFORM))..."
+	rm -rf $(VSCODE_DIR)/bin
+	mkdir -p $(dir $(VSIX_BINARY))
+	cp $(BINARY) $(VSIX_BINARY)
+	chmod +x $(VSIX_BINARY)
 
 _build-zed:
 	@echo "==> Building Zed extension..."

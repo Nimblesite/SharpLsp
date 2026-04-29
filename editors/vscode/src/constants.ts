@@ -8,7 +8,7 @@ export const SERVER_BINARY = 'sharplsp-lsp';
 export const SERVER_BINARY_WIN = 'sharplsp-lsp.exe';
 
 export const CONFIG_SECTION = 'sharplsp';
-export const CONFIG_SERVER_PATH = 'server.path';
+export const CONFIG_SERVER_PATH = 'lspPath';
 export const CONFIG_SERVER_EXTRA_ARGS = 'server.extraArgs';
 export const CONFIG_LOGGING_LEVEL = 'logging.level';
 

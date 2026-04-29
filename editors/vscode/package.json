@@ -7,7 +7,7 @@
   "license": "MIT",
   "icon": "icons/sharplsp.png",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.99.0"
   },
   "categories": [
     "Programming Languages"
@@ -70,12 +70,26 @@
     "configuration": {
       "title": "SharpLsp",
       "properties": {
-        "sharplsp.server.path": {
+        "sharplsp.lspPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `sharplsp` binary. Leave empty to use the system-installed binary from `~/.local/bin/` or `$PATH`.",
+          "markdownDescription": "Absolute path to the `sharplsp-lsp` binary. Leave empty to let Shipwright resolve the bundled binary, environment variables, package manager installation, or `$PATH`.",
           "scope": "machine-overridable",
           "order": 0
+        },
+        "sharplsp.csharpSidecarPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Absolute path to the `sharplsp-sidecar-csharp` binary. Leave empty to let Shipwright resolve the sidecar from environment variables, package manager installation, or `$PATH`.",
+          "scope": "machine-overridable",
+          "order": 1
+        },
+        "sharplsp.fsharpSidecarPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Absolute path to the `sharplsp-sidecar-fsharp` binary. Leave empty to let Shipwright resolve the sidecar from environment variables, package manager installation, or `$PATH`.",
+          "scope": "machine-overridable",
+          "order": 2
         },
         "sharplsp.server.extraArgs": {
           "type": "array",
@@ -85,7 +99,7 @@
           "default": [],
           "markdownDescription": "Extra arguments passed to the `sharplsp` process.",
           "scope": "machine-overridable",
-          "order": 1
+          "order": 3
         },
         "sharplsp.trace.server": {
           "type": "string",
@@ -97,7 +111,7 @@
           "default": "off",
           "description": "Trace LSP communication between VS Code and the SharpLsp server.",
           "scope": "window",
-          "order": 2
+          "order": 4
         },
         "sharplsp.logging.level": {
           "type": "string",
@@ -111,7 +125,7 @@
           "default": "info",
           "markdownDescription": "Log level for the SharpLsp server (maps to `RUST_LOG`).",
           "scope": "window",
-          "order": 3
+          "order": 5
         },
         "sharplsp.debug.netcoredbgPath": {
           "type": "string",
@@ -916,6 +930,7 @@
     "vscode:prepublish": "node esbuild.mjs --production"
   },
   "dependencies": {
+    "@nimblesite/shipwright-vscode": "^0.1.0",
     "fast-xml-parser": "^5.6.0",
     "vscode-languageclient": "^9.0.1"
   },
@@ -936,5 +951,13 @@
     "playwright": "^1.58.2",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.57.1"
-  }
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "icons/",
+    "language-configuration/",
+    "shipwright.json",
+    "LICENSE"
+  ]
 }

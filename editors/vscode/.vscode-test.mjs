@@ -5,4 +5,7 @@ export default defineConfig({
   extensionDevelopmentPath: '.',
   workspaceFolder: 'test-fixtures/workspace',
   launchArgs: ['--disable-extensions'],
+  coverage: {
+    reporter: ['text-summary', 'html', 'json-summary'],
+  },
 });

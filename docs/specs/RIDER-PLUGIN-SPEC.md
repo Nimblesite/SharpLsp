@@ -82,7 +82,7 @@ No sidecar, no webview, no MessagePack on the Rider side. The plugin is
   Gradle.
 - **Binary resolution:** the plugin does **not** bundle `sharplsp-lsp`. It
   resolves the binary identically to the VS Code extension:
-  1. `sharplsp.server.path` setting (per-project, stored in workspace.xml)
+  1. `sharplsp.lspPath` setting (per-project, stored in workspace.xml)
   2. `~/.local/bin/sharplsp-lsp`
   3. Anything on `$PATH`
   4. Clear error with install instructions if none found

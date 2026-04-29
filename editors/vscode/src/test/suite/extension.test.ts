@@ -87,12 +87,12 @@ suite('Extension Activation & Configuration', () => {
 
   // ── Configuration ────────────────────────────────────────────
 
-  test('sharplsp.server.path setting is contributed', async function () {
+  test('sharplsp.lspPath setting is contributed', async function () {
     this.timeout(15_000);
     const config = vscode.workspace.getConfiguration('sharplsp');
-    const inspect = config.inspect<string>('server.path');
-    assert.ok(inspect, 'server.path setting should be inspectable');
-    assert.strictEqual(inspect.defaultValue, '', 'Default server.path should be empty string');
+    const inspect = config.inspect<string>('lspPath');
+    assert.ok(inspect, 'lspPath setting should be inspectable');
+    assert.strictEqual(inspect.defaultValue, '', 'Default lspPath should be empty string');
     // Open Settings UI filtered to sharplsp so the screenshot shows real config options.
     await vscode.commands.executeCommand('workbench.action.openSettings', 'sharplsp');
     await new Promise((r) => setTimeout(r, 1500));
@@ -357,7 +357,9 @@ suite('Extension Activation & Configuration', () => {
       `Should contribute at least 4 config properties, got ${keys.length}`,
     );
     for (const required of [
-      'sharplsp.server.path',
+      'sharplsp.lspPath',
+      'sharplsp.csharpSidecarPath',
+      'sharplsp.fsharpSidecarPath',
       'sharplsp.server.extraArgs',
       'sharplsp.trace.server',
       'sharplsp.logging.level',
