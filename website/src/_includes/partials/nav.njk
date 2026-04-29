@@ -4,26 +4,37 @@
   </a>
 
   {% set lp = "/" + lang + "/" if lang and lang != defaultLanguage else "/" %}
+  {% set hasLocalizedDocs = lang and lang != defaultLanguage and collections[lang + "Docs"] and (collections[lang + "Docs"] | length) > 0 %}
+  {% set docsRoot = lp + "docs/" if not lang or lang == defaultLanguage or hasLocalizedDocs else "/docs/" %}
   <ul class="nav-links">
-    <li><a class="nav-link {% if page.url.startsWith('/docs/') or page.url.startsWith('/' + lang + '/docs/') %}active{% endif %}" href="{{ lp }}docs/">{{ "nav.docs" | t(lang) | default("Docs") }}</a></li>
+    <li><a class="nav-link {% if page.url.startsWith('/docs/') or page.url.startsWith('/' + lang + '/docs/') %}active{% endif %}" href="{{ docsRoot }}">{{ "nav.docs" | t(lang) | default("Docs") }}</a></li>
     <li><a class="nav-link {% if page.url.startsWith('/blog/') or page.url.startsWith('/' + lang + '/blog/') %}active{% endif %}" href="{{ lp }}blog/">{{ "nav.blog" | t(lang) | default("Blog") }}</a></li>
     <li><a class="nav-link" href="https://github.com/Nimblesite/SharpLsp">GitHub</a></li>
   </ul>
 
   <div class="nav-actions">
     <a class="search-link" href="/search/" aria-label="Search"><span class="material-symbols-outlined" aria-hidden="true">search</span></a>
-    <a class="nav-button" href="{{ lp }}docs/">{{ "docs.gettingStarted" | t(lang) | default("Get Started") }}</a>
+    <a class="nav-button" href="{{ docsRoot }}">{{ "docs.gettingStarted" | t(lang) | default("Get Started") }}</a>
 
     {% if techdocOptions.features.i18n and (supportedLanguages | length) > 1 %}
+    {% set currentLangCode = lang | default('en') %}
+    {% set currentLanguage = languages[currentLangCode] if languages and languages[currentLangCode] else null %}
     <div class="language-switcher">
       <button class="language-btn" aria-label="Select language" aria-expanded="false">
-        <span>{% if languages and languages[lang | default('en')] %}{{ languages[lang | default('en')].nativeName }}{% else %}{{ lang | default('en') | upper }}{% endif %}</span>
+        <span class="language-label">
+          {% if currentLanguage and currentLanguage.flag %}<span class="language-flag" aria-hidden="true">{{ currentLanguage.flag }}</span>{% endif %}
+          <span>{% if currentLanguage %}{{ currentLanguage.nativeName }}{% else %}{{ currentLangCode | upper }}{% endif %}</span>
+        </span>
       </button>
       <ul class="language-dropdown" role="menu">
         {% for langCode in supportedLanguages %}
+        {% set targetLanguage = languages[langCode] if languages and languages[langCode] else null %}
         <li role="menuitem">
           <a href="{{ page.url | altLangUrl(lang | default('en'), langCode) }}" class="{% if (lang | default('en')) == langCode %}active{% endif %}" lang="{{ langCode }}">
-            {% if languages and languages[langCode] %}{{ languages[langCode].nativeName }}{% else %}{{ langCode | upper }}{% endif %}
+            <span class="language-label">
+              {% if targetLanguage and targetLanguage.flag %}<span class="language-flag" aria-hidden="true">{{ targetLanguage.flag }}</span>{% endif %}
+              <span>{% if targetLanguage %}{{ targetLanguage.nativeName }}{% else %}{{ langCode | upper }}{% endif %}</span>
+            </span>
           </a>
         </li>
         {% endfor %}

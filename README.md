@@ -2,13 +2,13 @@
 
 <p align="center">
   <strong>Open-source, editor-agnostic .NET language tooling for C# and F#.</strong><br>
-  One LSP server, every editor, no proprietary toolchain lock-in.
+  The same C# and F# experience in VS Code today, with more editors on the way.
 </p>
 
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:24px 0;">
   <section style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:16px;background:var(--surface-low,transparent);">
-    <h3 style="margin-top:0;">One Server</h3>
-    <p style="margin-bottom:0;">A single <code>sharplsp-lsp</code> process speaks standard LSP over stdio and serves every editor client.</p>
+    <h3 style="margin-top:0;">Any Editor</h3>
+    <p style="margin-bottom:0;">Use the editor you already like. SharpLsp provides the same C# and F# intelligence behind the scenes.</p>
   </section>
   <section style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:16px;background:var(--surface-low,transparent);">
     <h3 style="margin-top:0;">C# + F#</h3>
@@ -20,7 +20,7 @@
   </section>
 </div>
 
-SharpLsp is building the .NET development stack that should already exist: Visual Studio/Rider-grade language intelligence, solution awareness, diagnostics, refactoring, package management, debugging, and profiling through one open server.
+SharpLsp is building the .NET development stack that should already exist: Visual Studio/Rider-grade language intelligence, solution awareness, diagnostics, refactoring, package management, debugging, and profiling without forcing every developer into the same IDE.
 
 ## Why This Exists
 
@@ -28,7 +28,7 @@ SharpLsp is building the .NET development stack that should already exist: Visua
 
 - **Visual Studio** still sets the benchmark for .NET tooling, but it is Windows-only.
 - **C# Dev Kit** is tied to VS Code, carries enterprise licensing constraints, and does not replace Visual Studio's profiler or performance tooling.
-- **Rider** is excellent, but its .NET intelligence lives inside Rider instead of a reusable LSP server.
+- **Rider** is excellent, but its .NET intelligence lives inside Rider and cannot be reused by the rest of your team's editors.
 - **F#** too often trails behind C# instead of receiving equal first-class tooling.
 - **Neovim, Zed, Helix, Emacs, and other editors** are left stitching together partial community workflows.
 
@@ -38,7 +38,7 @@ SharpLsp treats language tooling as infrastructure. The editor should be a prefe
 
 SharpLsp is split into three parts:
 
-- **Rust LSP host**: owns JSON-RPC, stdio transport, request routing, virtual files, tree-sitter syntax work, and sidecar lifecycle.
+- **Rust host**: owns editor communication, request routing, virtual files, tree-sitter syntax work, and sidecar lifecycle.
 - **C# sidecar**: hosts Roslyn for semantic C# features.
 - **F# sidecar**: hosts FSharp.Compiler.Service for semantic F# features.
 
@@ -48,7 +48,7 @@ That split keeps the editor protocol fast and portable while letting the .NET co
 
 ### VS Code
 
-Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sharplsp.sharp-lsp). The extension ships with the `sharplsp-lsp` binary and both sidecars — no Rust toolchain or separate install required.
+Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sharplsp.sharp-lsp). The extension ships with the SharpLsp engine and both sidecars — no Rust toolchain or separate install required.
 
 ### Neovim & Zed
 
@@ -58,7 +58,7 @@ Neovim and Zed support are coming soon.
 
 Full documentation is available at [sharplsp.dev/docs](https://sharplsp.dev/docs).
 
-For the full argument behind the project, read [Why .NET Needs an Editor-Agnostic LSP](https://sharplsp.dev/blog/editor-agnostic-dotnet-lsp/).
+For the full argument behind the project, read [Why .NET Needs Editor-Agnostic Tooling](https://sharplsp.dev/blog/editor-agnostic-dotnet-lsp/).
 
 ## Contributing
 

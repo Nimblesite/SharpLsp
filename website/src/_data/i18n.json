@@ -84,5 +84,48 @@
       "issues": "问题反馈",
       "blog": "博客"
     }
+  },
+  "ja": {
+    "blog": {
+      "back": "ブログへ戻る",
+      "title": "ブログ",
+      "subtitle": "最新記事とアップデート",
+      "tags": "タグ",
+      "categories": "カテゴリー",
+      "empty": "ブログ記事はまだありません。しばらくしてからご確認ください。"
+    },
+    "nav": {
+      "docs": "ドキュメント",
+      "blog": "ブログ"
+    },
+    "docs": {
+      "title": "ドキュメント",
+      "gettingStarted": "はじめに",
+      "architecture": "アーキテクチャ",
+      "editorSetup": "エディター設定",
+      "configuration": "設定",
+      "codeCompletions": "コード補完",
+      "diagnostics": "診断",
+      "hover": "ホバーとクイック情報",
+      "goToDefinition": "定義へ移動",
+      "refactoring": "リファクタリングとコードアクション",
+      "contextMenus": "コンテキストメニュー",
+      "nuget": "NuGet パッケージマネージャー",
+      "profiler": "プロファイラー"
+    },
+    "footer": {
+      "documentation": "ドキュメント",
+      "features": "機能",
+      "resources": "リソース",
+      "community": "コミュニティ",
+      "gettingStarted": "はじめに",
+      "architecture": "アーキテクチャ",
+      "editorSetup": "エディター設定",
+      "configuration": "設定",
+      "codeCompletions": "コード補完",
+      "github": "GitHub",
+      "issues": "Issue",
+      "blog": "ブログ"
+    }
   }
 }

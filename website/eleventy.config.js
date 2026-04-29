@@ -42,7 +42,7 @@ export default function (eleventyConfig) {
     },
     i18n: {
       defaultLanguage: 'en',
-      languages: ['en', 'zh'],
+      languages: ['en', 'zh', 'ja'],
     },
   });
 

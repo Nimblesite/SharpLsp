@@ -234,6 +234,16 @@ img {
   border-color: var(--outline);
   color: var(--text);
 }
+.language-label {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+.language-flag {
+  font-size: 15px;
+  line-height: 1;
+}
 .language-dropdown {
   background: var(--nav-surface);
   border: 1px solid var(--border-strong);
@@ -242,7 +252,7 @@ img {
   display: none;
   list-style: none;
   margin: 4px 0 0;
-  min-width: 120px;
+  min-width: 148px;
   padding: 4px 0;
   position: absolute;
   right: 0;
@@ -253,8 +263,9 @@ img {
   display: block;
 }
 .language-dropdown li a {
+  align-items: center;
   color: var(--text-muted);
-  display: block;
+  display: flex;
   font-size: 13px;
   padding: 8px 14px;
 }
