@@ -13,8 +13,41 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
+  set-version:
+    name: Stamp version and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Stamp Cargo.toml
+        run: sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+
+      - name: Stamp package.json
+        run: |
+          jq --arg v "$VERSION" '.version = $v' editors/vscode/package.json > /tmp/pkg.json
+          mv /tmp/pkg.json editors/vscode/package.json
+
+      - name: Commit and push version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml editors/vscode/package.json
+          git diff --cached --quiet || git commit -m "chore: stamp version ${VERSION}"
+          git push origin HEAD:refs/heads/${GITHUB_REF_NAME}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-vsix:
     name: Build VSIX (${{ matrix.platform }})
+    needs: set-version
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -47,6 +80,8 @@ jobs:
             can_execute: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -80,6 +115,10 @@ jobs:
         shell: bash
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
+      - name: Package VSIX
+        shell: bash
+        run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target }} VERSION="$VERSION"
+
       - name: Verify binary version
         if: ${{ matrix.can_execute }}
         shell: bash
@@ -90,10 +129,6 @@ jobs:
           binary="target/${{ matrix.rust_target }}/release/sharplsp${exe}"
           "$binary" --version | grep -Fx "sharplsp ${VERSION}"
 
-      - name: Package VSIX
-        shell: bash
-        run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target }} VERSION="$VERSION"
-
       - name: Verify VSIX contains platform binary
         shell: bash
         run: |-
@@ -103,7 +138,7 @@ jobs:
           unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" \
             | grep -F "bin/${{ matrix.platform }}/sharplsp${exe}"
 
-      - name: Package binary archive (tar.gz)
+      - name: Package binary archive
         if: runner.os != 'Windows'
         shell: bash
         run: |-
@@ -125,24 +160,25 @@ jobs:
           New-Item -ItemType Directory -Path "dist-archive" -Force
           Move-Item "$staging.zip" "dist-archive/"
 
-      - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: vsix-${{ matrix.platform }}
           path: dist/*.vsix
 
-      - name: Upload binary archive artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: archive-${{ matrix.rust_target }}
           path: dist-archive/*
 
   pack-sidecars:
     name: Pack sidecars
+    needs: set-version
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -154,26 +190,18 @@ jobs:
       - name: Pack sidecars
         run: make _pack-sidecars VERSION="$VERSION"
 
-      - name: Upload nupkg artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: sidecar-nupkgs
           path: nupkgs/*.nupkg
 
   release:
-    name: Release & Publish
+    name: Create GitHub Release
     needs: [build-vsix, pack-sidecars]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
@@ -183,19 +211,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
             --title "SharpLsp ${{ github.ref_name }}" \
             --generate-notes \
-            artifacts/*.tar.gz artifacts/*.zip artifacts/*.vsix || \
-          gh release create "${{ github.ref_name }}" \
-            --title "SharpLsp ${{ github.ref_name }}" \
-            --generate-notes \
-            artifacts/*.vsix
-
-      - name: Push to NuGet.org
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: |
-          dotnet nuget push artifacts/*.nupkg \
-            --api-key "$NUGET_API_KEY" \
-            --source https://api.nuget.org/v3/index.json \
-            --skip-duplicate
+            artifacts/*.tar.gz artifacts/*.zip artifacts/*.vsix artifacts/*.nupkg
