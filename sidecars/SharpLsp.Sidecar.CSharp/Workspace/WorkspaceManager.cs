@@ -29,7 +29,10 @@ using HighlightsResult = Outcome.Result<
 >;
 using HoverQueryResult = Outcome.Result<SharpLsp.Sidecar.CSharp.HoverResult?, string>;
 using ImplementationsResult = Outcome.Result<SharpLsp.Sidecar.CSharp.LocationListResult, string>;
-using PrepareRenameQueryResult = Outcome.Result<SharpLsp.Sidecar.CSharp.PrepareRenameResult, string>;
+using PrepareRenameQueryResult = Outcome.Result<
+    SharpLsp.Sidecar.CSharp.PrepareRenameResult,
+    string
+>;
 using ReferencesResult = Outcome.Result<SharpLsp.Sidecar.CSharp.LocationListResult, string>;
 using RenameEditResult = Outcome.Result<SharpLsp.Sidecar.CSharp.WorkspaceEditResult, string>;
 using ResolveResult = Outcome.Result<SharpLsp.Sidecar.CSharp.WorkspaceEditResult, string>;
@@ -648,8 +651,12 @@ internal sealed partial class WorkspaceManager : IDisposable
 
             var text = await document.GetTextAsync(ct).ConfigureAwait(false);
             var position = text.Lines[line].Start + character;
-            var symbol = await Microsoft.CodeAnalysis.FindSymbols.SymbolFinder
-                .FindSymbolAtPositionAsync(document, position, ct)
+            var symbol = await Microsoft
+                .CodeAnalysis.FindSymbols.SymbolFinder.FindSymbolAtPositionAsync(
+                    document,
+                    position,
+                    ct
+                )
                 .ConfigureAwait(false);
 
             if (symbol is null or Microsoft.CodeAnalysis.INamespaceSymbol)
@@ -708,8 +715,12 @@ internal sealed partial class WorkspaceManager : IDisposable
 
             var text = await document.GetTextAsync(ct).ConfigureAwait(false);
             var position = text.Lines[line].Start + character;
-            var symbol = await Microsoft.CodeAnalysis.FindSymbols.SymbolFinder
-                .FindSymbolAtPositionAsync(document, position, ct)
+            var symbol = await Microsoft
+                .CodeAnalysis.FindSymbols.SymbolFinder.FindSymbolAtPositionAsync(
+                    document,
+                    position,
+                    ct
+                )
                 .ConfigureAwait(false);
 
             if (symbol is null)
@@ -719,8 +730,14 @@ internal sealed partial class WorkspaceManager : IDisposable
                 );
             }
 
-            var renamedSolution = await Microsoft.CodeAnalysis.Rename.Renamer
-                .RenameSymbolAsync(_solution, symbol, new Microsoft.CodeAnalysis.Rename.SymbolRenameOptions(), newName, ct)
+            var renamedSolution = await Microsoft
+                .CodeAnalysis.Rename.Renamer.RenameSymbolAsync(
+                    _solution,
+                    symbol,
+                    new Microsoft.CodeAnalysis.Rename.SymbolRenameOptions(),
+                    newName,
+                    ct
+                )
                 .ConfigureAwait(false);
 
             var changes = renamedSolution.GetChanges(_solution);
