@@ -126,4 +126,36 @@ test.describe('Desktop nav (sanity check)', () => {
     const navLinks = page.locator('.nav-links');
     await expect(navLinks).toBeVisible();
   });
+
+  test('Japanese routes are available', async ({ page }) => {
+    const japanesePaths = [
+      '/ja/',
+      '/ja/docs/',
+      '/ja/blog/',
+      '/ja/blog/editor-agnostic-dotnet-lsp/',
+      '/ja/author/sharplsp-team/',
+    ];
+
+    for (const path of japanesePaths) {
+      const response = await page.goto(path);
+      expect(response?.status(), `${path} should return 200`).toBe(200);
+      await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+    }
+  });
+
+  test('language switcher shows flags and opens Japanese root', async ({ page }) => {
+    await page.goto('/');
+
+    await page.locator('.language-btn').click();
+
+    await expect(page.locator('.language-dropdown a[lang="en"]')).toContainText('🇺🇸');
+    await expect(page.locator('.language-dropdown a[lang="zh"]')).toContainText('🇨🇳');
+    await expect(page.locator('.language-dropdown a[lang="ja"]')).toContainText('🇯🇵');
+
+    await page.locator('.language-dropdown a[lang="ja"]').click();
+
+    await expect(page).toHaveURL(/\/ja\/$/);
+    await expect(page.locator('h1')).toContainText('SharpLsp');
+    await expect(page.locator('.nav-links a[href="/ja/docs/"]')).toBeVisible();
+  });
 });

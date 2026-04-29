@@ -164,8 +164,8 @@ fn parse_dumpheap_stat_line(line: &str) -> Option<HeapTypeInfo> {
     }
 
     // First token is MT (hex address), skip it.
-    let count: u64 = parts.get(1)?.parse().ok()?;
-    let total_size: u64 = parts.get(2)?.parse().ok()?;
+    let count = parse_dumpheap_number(parts.get(1)?)?;
+    let total_size = parse_dumpheap_number(parts.get(2)?)?;
     let type_name = parts.get(3..)?.join(" ");
 
     Some(HeapTypeInfo {
@@ -173,6 +173,15 @@ fn parse_dumpheap_stat_line(line: &str) -> Option<HeapTypeInfo> {
         count,
         total_size_bytes: total_size,
     })
+}
+
+/// Parse SOS numeric columns, which may include thousands separators.
+fn parse_dumpheap_number(token: &str) -> Option<u64> {
+    let normalized = token.replace(',', "");
+    if normalized.is_empty() {
+        return None;
+    }
+    normalized.parse().ok()
 }
 
 /// Parse `gcroot` output into root chains.
@@ -267,6 +276,15 @@ mod tests {
         assert_eq!(info.type_name, "System.String");
         assert_eq!(info.count, 1500);
         assert_eq!(info.total_size_bytes, 48000);
+    }
+
+    #[test]
+    fn test_parse_dumpheap_stat_line_with_thousands_separators() {
+        let line = "00010e2789f0 14,029  1,087,112 System.String";
+        let info = parse_dumpheap_stat_line(line).unwrap();
+        assert_eq!(info.type_name, "System.String");
+        assert_eq!(info.count, 14029);
+        assert_eq!(info.total_size_bytes, 1_087_112);
     }
 
     #[test]

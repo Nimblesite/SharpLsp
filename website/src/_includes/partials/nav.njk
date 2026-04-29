@@ -4,8 +4,7 @@
   </a>
 
   {% set lp = "/" + lang + "/" if lang and lang != defaultLanguage else "/" %}
-  {% set hasLocalizedDocs = lang and lang != defaultLanguage and collections[lang + "Docs"] and (collections[lang + "Docs"] | length) > 0 %}
-  {% set docsRoot = lp + "docs/" if not lang or lang == defaultLanguage or hasLocalizedDocs else "/docs/" %}
+  {% set docsRoot = lp + "docs/" %}
   <ul class="nav-links">
     <li><a class="nav-link {% if page.url.startsWith('/docs/') or page.url.startsWith('/' + lang + '/docs/') %}active{% endif %}" href="{{ docsRoot }}">{{ "nav.docs" | t(lang) | default("Docs") }}</a></li>
     <li><a class="nav-link {% if page.url.startsWith('/blog/') or page.url.startsWith('/' + lang + '/blog/') %}active{% endif %}" href="{{ lp }}blog/">{{ "nav.blog" | t(lang) | default("Blog") }}</a></li>
@@ -13,7 +12,6 @@
   </ul>
 
   <div class="nav-actions">
-    <a class="search-link" href="/search/" aria-label="Search"><span class="material-symbols-outlined" aria-hidden="true">search</span></a>
     <a class="nav-button" href="{{ docsRoot }}">{{ "docs.gettingStarted" | t(lang) | default("Get Started") }}</a>
 
     {% if techdocOptions.features.i18n and (supportedLanguages | length) > 1 %}

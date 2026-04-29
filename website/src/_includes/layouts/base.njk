@@ -152,16 +152,23 @@
       {% if navigation.footer %}
       <div class="footer-grid">
         {% set currentLang = lang | default('en') %}
+        {% set hasLocalizedDocs = currentLang != defaultLanguage and collections[currentLang + "Docs"] and (collections[currentLang + "Docs"] | length) > 0 %}
         {% for section in navigation.footer %}
         <div class="footer-section">
-          <h3>{{ section.title }}</h3>
+          <h3>{% if section.i18nKey %}{{ section.i18nKey | t(currentLang) }}{% else %}{{ section.title }}{% endif %}</h3>
           <ul>
             {% for item in section.items %}
             {% set footerUrl = item.url %}
             {% if item.url.startsWith('/') and currentLang != defaultLanguage %}
-              {% set footerUrl = item.url | altLangUrl('en', currentLang) %}
+              {% if item.url == '/docs/' %}
+                {% set footerUrl = item.url | altLangUrl('en', currentLang) %}
+              {% elif item.url.startsWith('/docs/') and not hasLocalizedDocs %}
+                {% set footerUrl = item.url %}
+              {% else %}
+                {% set footerUrl = item.url | altLangUrl('en', currentLang) %}
+              {% endif %}
             {% endif %}
-            <li><a href="{{ footerUrl }}">{{ item.text }}</a></li>
+            <li><a href="{{ footerUrl }}">{% if item.i18nKey %}{{ item.i18nKey | t(currentLang) }}{% else %}{{ item.text }}{% endif %}</a></li>
             {% endfor %}
           </ul>
         </div>

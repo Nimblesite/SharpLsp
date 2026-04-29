@@ -191,17 +191,6 @@ img {
   display: flex;
   gap: 16px;
 }
-.search-link {
-  align-items: center;
-  color: var(--text-muted);
-  display: inline-flex;
-}
-.search-link:hover {
-  color: var(--text);
-}
-.search-link .material-symbols-outlined {
-  font-size: 22px;
-}
 .nav-button {
   background: var(--primary-container);
   border-radius: 4px;
@@ -1475,7 +1464,6 @@ th {
     height: 22px;
     width: 22px;
   }
-  .search-link,
   .nav-button,
   .language-switcher,
   .theme-toggle {
