@@ -13,8 +13,47 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
+  prepare:
+    name: Stamp Versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: taiki-e/install-action@cargo-binstall
+
+      - name: Install cargo-set-version
+        run: cargo binstall --no-confirm cargo-set-version
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp Cargo.toml version
+        run: cargo set-version ${{ steps.version.outputs.version }}
+
+      - name: Stamp package.json version
+        run: npm version --no-git-tag-version ${{ steps.version.outputs.version }}
+        working-directory: editors/vscode
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stamped-source
+          path: |
+            Cargo.toml
+            Cargo.lock
+            editors/vscode/package.json
+
   build-vsix:
     name: Build VSIX (${{ matrix.platform }})
+    needs: prepare
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -48,6 +87,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Apply stamped versions
+        uses: actions/download-artifact@v4
+        with:
+          name: stamped-source
+          path: .
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_target }}
@@ -80,37 +125,29 @@ jobs:
           echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
           echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> "$GITHUB_ENV"
 
-      - name: Extract version from tag
-        shell: bash
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
-      - name: Stamp versions
+      - name: Set platform variables
         shell: bash
         run: |
-          perl -i -pe 's/^version = ".*"/version = "'"${VERSION}"'"/' Cargo.toml
-          jq --arg v "$VERSION" '.version = $v' editors/vscode/package.json > /tmp/pkg.json
-          mv /tmp/pkg.json editors/vscode/package.json
+          exe=""
+          if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
+          echo "EXE=${exe}" >> "$GITHUB_ENV"
 
       - name: Package VSIX
         shell: bash
-        run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target }} VERSION="$VERSION"
+        run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target }} VERSION="${{ needs.prepare.outputs.version }}"
 
       - name: Verify binary version
         if: ${{ matrix.can_execute }}
         shell: bash
         run: |
           set -euo pipefail
-          exe=""
-          if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
-          "target/${{ matrix.rust_target }}/release/sharplsp${exe}" --version | grep -Fx "sharplsp ${VERSION}"
+          "target/${{ matrix.rust_target }}/release/sharplsp${EXE}" --version | grep -Fx "sharplsp ${{ needs.prepare.outputs.version }}"
 
       - name: Verify VSIX contains all binaries
         shell: bash
         run: |
           set -euo pipefail
-          exe=""
-          if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
-          unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/${{ matrix.platform }}/sharplsp${exe}"
+          unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/${{ matrix.platform }}/sharplsp${EXE}"
           unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/all/sharplsp-sidecar-csharp"
           unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/all/sharplsp-sidecar-fsharp"
 
@@ -128,6 +165,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: vsix-*
           merge-multiple: true
 
       - name: Create GitHub release

@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use tokio::io::AsyncBufReadExt;
-use tokio::net::UnixStream;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
@@ -72,11 +71,7 @@ impl SidecarManager {
 
     /// Create a manager for the C# sidecar.
     pub fn csharp(workspace_root: &Path) -> Self {
-        let socket_path = format!(
-            "{}/sharplsp-csharp-{:x}.sock",
-            std::env::temp_dir().display(),
-            fxhash(workspace_root.to_string_lossy().as_bytes())
-        );
+        let socket_path = ipc_path("sharplsp-csharp", workspace_root);
 
         let (command, args) = sidecar_launch(
             "sharplsp-sidecar-csharp",
@@ -89,11 +84,7 @@ impl SidecarManager {
 
     /// Create a manager for the F# sidecar.
     pub fn fsharp(workspace_root: &Path) -> Self {
-        let socket_path = format!(
-            "{}/sharplsp-fsharp-{:x}.sock",
-            std::env::temp_dir().display(),
-            fxhash(workspace_root.to_string_lossy().as_bytes())
-        );
+        let socket_path = ipc_path("sharplsp-fsharp", workspace_root);
 
         let (command, args) = sidecar_launch(
             "sharplsp-sidecar-fsharp",
@@ -163,7 +154,8 @@ impl SidecarManager {
     async fn spawn_process(&self) -> Result<(Child, FramedTransport)> {
         info!(sidecar = %self.name, "Spawning sidecar");
 
-        // Clean up stale socket.
+        // Clean up stale socket (Unix only).
+        #[cfg(unix)]
         let _ = tokio::fs::remove_file(&self.socket_path).await;
 
         info!(
@@ -188,12 +180,7 @@ impl SidecarManager {
 
         let socket_path = self.wait_for_ready(&mut child).await?;
 
-        // Connect to the sidecar's Unix socket.
-        let stream = UnixStream::connect(&socket_path)
-            .await
-            .with_context(|| format!("connect to sidecar socket: {socket_path}"))?;
-
-        let transport = FramedTransport::new(stream);
+        let transport = connect_transport(&socket_path).await?;
         Ok((child, transport))
     }
 
@@ -489,6 +476,44 @@ fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf>
     }
 }
 
+/// Build a platform-appropriate IPC path for a sidecar.
+#[cfg(unix)]
+fn ipc_path(name: &str, workspace_root: &Path) -> String {
+    format!(
+        "{}/{}-{:x}.sock",
+        std::env::temp_dir().display(),
+        name,
+        fxhash(workspace_root.to_string_lossy().as_bytes())
+    )
+}
+
+#[cfg(windows)]
+fn ipc_path(name: &str, workspace_root: &Path) -> String {
+    format!(
+        r"\\.\pipe\{}-{:x}",
+        name,
+        fxhash(workspace_root.to_string_lossy().as_bytes())
+    )
+}
+
+/// Connect to the sidecar IPC endpoint and return a `FramedTransport`.
+#[cfg(unix)]
+async fn connect_transport(path: &str) -> Result<FramedTransport> {
+    let stream = tokio::net::UnixStream::connect(path)
+        .await
+        .with_context(|| format!("connect to sidecar socket: {path}"))?;
+    Ok(FramedTransport::new(stream))
+}
+
+#[cfg(windows)]
+async fn connect_transport(path: &str) -> Result<FramedTransport> {
+    use tokio::net::windows::named_pipe::ClientOptions;
+    let pipe = ClientOptions::new()
+        .open(path)
+        .with_context(|| format!("connect to sidecar named pipe: {path}"))?;
+    Ok(FramedTransport::new(pipe))
+}
+
 /// Simple FNV-style hash for generating short socket names.
 fn fxhash(bytes: &[u8]) -> u32 {
     let mut hash: u32 = 0x811c_9dc5;
@@ -508,6 +533,38 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use std::path::PathBuf;
+
+    /// On Unix, `ipc_path` must produce a `.sock` path containing the sidecar name.
+    #[cfg(unix)]
+    #[test]
+    fn ipc_path_unix_ends_with_sock_and_contains_name() {
+        let path = ipc_path("sharplsp-csharp", &PathBuf::from("/some/workspace"));
+        assert!(
+            std::path::Path::new(&path)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("sock")),
+            "expected path ending in '.sock', got: {path}"
+        );
+        assert!(
+            path.contains("sharplsp-csharp"),
+            "expected path to contain 'sharplsp-csharp', got: {path}"
+        );
+    }
+
+    /// On Windows, `ipc_path` must produce a named-pipe path starting with `\\.\pipe\`.
+    #[cfg(windows)]
+    #[test]
+    fn ipc_path_windows_starts_with_pipe_prefix_and_contains_name() {
+        let path = ipc_path("sharplsp-fsharp", &PathBuf::from(r"C:\workspace"));
+        assert!(
+            path.starts_with(r"\\.\pipe\"),
+            r"expected path starting with '\\.\pipe\', got: {path}"
+        );
+        assert!(
+            path.contains("sharplsp-fsharp"),
+            "expected path to contain 'sharplsp-fsharp', got: {path}"
+        );
+    }
 
     #[test]
     fn fxhash_is_deterministic() {
