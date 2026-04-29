@@ -56,10 +56,11 @@ CHECK_COV = scripts/check-coverage.sh
         _build-rust _build-dotnet _build-vsix _build-zed _build-rider \
         _stage-vsix-binary _stage-sidecars \
         test-rust _test-rust _test-vsix _test-dotnet _test-website \
+        _stage-test-binary \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
         _package-vsix \
-        _deploy-rust _deploy-sidecars \
+        _deploy-rust _deploy-sidecars _pack-sidecars \
         _install-vsix _uninstall-vsix _install-binaries _install-rust _install-sidecars \
         _kill _clean-rider
 
@@ -81,8 +82,8 @@ _build-rust:
 
 _build-dotnet:
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
-	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
-	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
+	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --output $(SIDECAR_CS_OUT)
+	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --output $(SIDECAR_FS_OUT)
 
 _build-vsix: _stage-vsix-binary
 	@echo "==> Packaging VS Code extension (host: $(HOST_PLATFORM))..."
@@ -107,20 +108,12 @@ _build-rider:
 	@test -f $(RIDER_ZIP_SRC) || { echo "ERROR: $(RIDER_ZIP_SRC) not found" >&2; exit 1; }
 	cp $(RIDER_ZIP_SRC) $(RIDER_ZIP)
 
-_stage-vsix-binary: _build-rust _build-dotnet
-	@echo "==> Staging required VSIX binaries ($(HOST_PLATFORM))..."
+_stage-vsix-binary: _build-rust
+	@echo "==> Staging sharplsp binary for VSIX ($(HOST_PLATFORM))..."
 	rm -rf $(VSCODE_DIR)/bin
-	mkdir -p $(dir $(HOST_VSIX_BIN)) $(VSCODE_DIR)/bin/all
+	mkdir -p $(dir $(HOST_VSIX_BIN))
 	cp $(BINARY) $(HOST_VSIX_BIN)
 	chmod +x $(HOST_VSIX_BIN)
-	cp -r $(SIDECAR_CS_OUT)/. $(VSCODE_DIR)/bin/all/
-	cp -r $(SIDECAR_FS_OUT)/. $(VSCODE_DIR)/bin/all/
-	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.CSharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp 2>/dev/null || true
-	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.FSharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
-	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
 
 _stage-sidecars:
 	@mkdir -p target/debug/sidecar-csharp target/debug/sidecar-fsharp
@@ -140,30 +133,42 @@ ci: lint test build
 test: _test-rust _test-vsix _test-dotnet _test-website
 	@echo "==> All tests passed."
 
+TEST_BINARY_DIR = target/test-binary
+TEST_BINARY     = $(TEST_BINARY_DIR)/sharplsp
+
 # Public alias — CI and developers call this.
 test-rust: _test-rust
 
-_test-rust: _build-dotnet _stage-sidecars
+_test-rust: _build-rust _build-dotnet _stage-sidecars _stage-test-binary
 	@echo "==> Pre-building ProfileTarget fixture..."
 	dotnet build tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
 	@echo "==> Running sharplsp tests with coverage..."
+	cargo llvm-cov nextest --no-run
+	SHARPLSP_EXECUTABLE_PATH="$(abspath $(TEST_BINARY))" \
 	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
 	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
-		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --no-fail-fast --test-threads $(RUST_TEST_THREADS)
+		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast --test-threads $(RUST_TEST_THREADS)
 	@$(CHECK_COV) sharplsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
+
+# Stage sharplsp binary to a stable location that is never wiped during builds.
+# tests use SHARPLSP_EXECUTABLE_PATH → this path, not the llvm-cov instrumented binary.
+_stage-test-binary: _build-rust
+	@echo "==> Staging sharplsp binary for tests..."
+	@mkdir -p $(TEST_BINARY_DIR)
+	cp $(BINARY) $(TEST_BINARY)
+	chmod +x $(TEST_BINARY)
 
 _test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
 	@echo "==> Running VS Code extension tests..."
-	$(MAKE) _stage-vsix-binary
 	cd $(VSCODE_DIR) && \
 		env -u SHARPLSP_EXECUTABLE_PATH \
 			-u SHARPLSP_LSP_PATH \
-				-u SHARPLSP_BINARY_DIR \
-				-u SHARPLSP_CSHARP_SIDECAR_PATH \
-				-u SHARPLSP_FSHARP_SIDECAR_PATH \
-				-u FORGE_LSP_PATH \
-				-u FORGE_BINARY_DIR \
-				npm test -- --coverage; \
+			-u SHARPLSP_BINARY_DIR \
+			-u FORGE_LSP_PATH \
+			-u FORGE_BINARY_DIR \
+			SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
+			SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
+			npm test -- --coverage; \
 	status=$$?; \
 	rm -rf "$(abspath $(VSCODE_DIR))/bin"; \
 	exit $$status
@@ -275,30 +280,34 @@ package-vsix-win32-x64 package-vsix-win32-arm64:
 	$(eval EXE       := $(if $(filter win32-%,$(VSIX_PLAT)),.exe,))
 	@echo "==> Building sharplsp for $(RUST_TARGET)..."
 	cargo build --release --target $(RUST_TARGET)
-	$(MAKE) _build-dotnet DOTNET_CFG=Release VERSION=$(VERSION)
 	$(MAKE) _package-vsix VSIX_PLAT=$(VSIX_PLAT) RUST_TARGET=$(RUST_TARGET) EXE=$(EXE) VERSION=$(VERSION)
 
 _package-vsix:
 	@echo "==> Packaging VSIX for $(VSIX_PLAT)..."
-	rm -rf $(VSCODE_DIR)/bin/$(VSIX_PLAT) $(VSCODE_DIR)/bin/all
-	mkdir -p $(VSCODE_DIR)/bin/$(VSIX_PLAT) $(VSCODE_DIR)/bin/all
+	rm -rf $(VSCODE_DIR)/bin
+	mkdir -p $(VSCODE_DIR)/bin/$(VSIX_PLAT)
 	cp target/$(RUST_TARGET)/release/sharplsp$(EXE) $(VSCODE_DIR)/bin/$(VSIX_PLAT)/sharplsp$(EXE)
 	chmod +x $(VSCODE_DIR)/bin/$(VSIX_PLAT)/sharplsp$(EXE) 2>/dev/null || true
-	cp -r $(SIDECAR_CS_OUT)/. $(VSCODE_DIR)/bin/all/
-	cp -r $(SIDECAR_FS_OUT)/. $(VSCODE_DIR)/bin/all/
-	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.CSharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp 2>/dev/null || true
-	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.FSharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
-	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p dist
 	cd $(VSCODE_DIR) && npx @vscode/vsce package --no-dependencies \
 		--target $(VSIX_PLAT) \
+		$(if $(VERSION),--packageVersion $(VERSION),) \
 		-o ../../dist/sharplsp-$(VSIX_PLAT).vsix
 	rm -rf $(VSCODE_DIR)/bin
 	@echo "==> dist/sharplsp-$(VSIX_PLAT).vsix ready."
+
+# ── Pack sidecars (private) ───────────────────────────────────────
+# Produces versioned nupkgs in nupkgs/. Used by the release workflow.
+# VERSION must be set: make _pack-sidecars VERSION=1.2.3
+
+_pack-sidecars:
+	@test -n "$(VERSION)" || { echo "ERROR: VERSION is required" >&2; exit 1; }
+	@echo "==> Packing sidecars at version $(VERSION)..."
+	rm -rf nupkgs
+	dotnet pack $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj -p:PackageVersion=$(VERSION) -c Release -o nupkgs
+	dotnet pack $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj -p:PackageVersion=$(VERSION) -c Release -o nupkgs
+	@echo "==> nupkgs/ ready."
 
 # ── Deploy (private) ─────────────────────────────────────────────
 
@@ -309,16 +318,14 @@ _deploy-rust:
 	chmod +x $(BINDIR)/sharplsp
 
 _deploy-sidecars:
-	@echo "==> Installing sidecars to $(BINDIR)/..."
-	mkdir -p $(BINDIR)
-	cp -r $(SIDECAR_CS_OUT)/. $(BINDIR)/
-	cp -r $(SIDECAR_FS_OUT)/. $(BINDIR)/
-	@mv $(BINDIR)/SharpLsp.Sidecar.CSharp \
-		$(BINDIR)/sharplsp-sidecar-csharp 2>/dev/null || true
-	@mv $(BINDIR)/SharpLsp.Sidecar.FSharp \
-		$(BINDIR)/sharplsp-sidecar-fsharp 2>/dev/null || true
-	chmod +x $(BINDIR)/sharplsp-sidecar-csharp \
-		$(BINDIR)/sharplsp-sidecar-fsharp 2>/dev/null || true
+	@echo "==> Packing + installing sidecar tools..."
+	-dotnet tool uninstall -g SharpLsp.Sidecar.CSharp 2>/dev/null || true
+	-dotnet tool uninstall -g SharpLsp.Sidecar.FSharp 2>/dev/null || true
+	rm -rf target/nupkgs
+	dotnet pack $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj -p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
+	dotnet pack $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj -p:PackageVersion=0.0.0-local -c $(DOTNET_CFG) -o target/nupkgs
+	dotnet tool install -g SharpLsp.Sidecar.CSharp --version 0.0.0-local --add-source target/nupkgs
+	dotnet tool install -g SharpLsp.Sidecar.FSharp --version 0.0.0-local --add-source target/nupkgs
 
 # ── Install (private) ─────────────────────────────────────────────
 
@@ -334,8 +341,8 @@ _uninstall-vsix:
 _install-binaries: _kill _build-rust _build-dotnet _deploy-rust _deploy-sidecars
 	@echo "==> All binaries installed:"
 	@echo "    $(BINDIR)/sharplsp"
-	@echo "    $(BINDIR)/sharplsp-sidecar-csharp"
-	@echo "    $(BINDIR)/sharplsp-sidecar-fsharp"
+	@echo "    sharplsp-sidecar-csharp (dotnet tool)"
+	@echo "    sharplsp-sidecar-fsharp (dotnet tool)"
 
 _install-rust: _build-rust _kill _deploy-rust
 	@echo "==> Installed: $(BINDIR)/sharplsp"
