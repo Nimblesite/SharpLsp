@@ -53,6 +53,13 @@ export function traceInfo(message: string): void {
   fileLog('TRACE', message);
 }
 
+/** Log a warning message to the main output channel + file. */
+export function warn(message: string): void {
+  const ts = new Date().toISOString();
+  output().appendLine(`[${ts}] WARN: ${message}`);
+  fileLog('WARN', message);
+}
+
 /** Log an error message to the main output channel + file. */
 export function error(message: string): void {
   const ts = new Date().toISOString();

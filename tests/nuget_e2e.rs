@@ -48,12 +48,12 @@ struct LspClient {
 
 impl LspClient {
     fn start() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_sharplsp-lsp"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_sharplsp"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("failed to spawn sharplsp-lsp");
+            .expect("failed to spawn sharplsp");
         let stdin = child.stdin.take().expect("no stdin");
         let stdout = child.stdout.take().expect("no stdout");
         Self {

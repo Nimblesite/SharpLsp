@@ -16,16 +16,16 @@ import {
 } from './test-helpers.js';
 
 suite('Client Module — Binary Resolution Logic', () => {
-  test("SERVER_BINARY is 'sharplsp-lsp' on non-Windows", function () {
+  test("SERVER_BINARY is 'sharplsp' on non-Windows", function () {
     if (process.platform === 'win32') {
       this.skip();
       return;
     }
-    assert.strictEqual(SERVER_BINARY, 'sharplsp-lsp');
+    assert.strictEqual(SERVER_BINARY, 'sharplsp');
   });
 
-  test("SERVER_BINARY_WIN is 'sharplsp-lsp.exe'", () => {
-    assert.strictEqual(SERVER_BINARY_WIN, 'sharplsp-lsp.exe');
+  test("SERVER_BINARY_WIN is 'sharplsp.exe'", () => {
+    assert.strictEqual(SERVER_BINARY_WIN, 'sharplsp.exe');
   });
 
   test('platform detection yields correct binary name', () => {

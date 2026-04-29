@@ -27,7 +27,7 @@ export async function start(
   const serverPath = resolveServerPath(context);
   if (serverPath === undefined) {
     const msg =
-      'SharpLsp binary not found. Install via `cargo install sharplsp-lsp` or set `sharplsp.lspPath`.';
+      'SharpLsp binary not found. Install via `cargo install sharplsp` or set `sharplsp.lspPath`.';
     log.info(msg);
     window.showErrorMessage(msg);
     statusBar.setState(ServerState.Error);

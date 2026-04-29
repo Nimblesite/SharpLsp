@@ -28,13 +28,13 @@ SIDECAR_CS   = sidecars/SharpLsp.Sidecar.CSharp
 SIDECAR_FS   = sidecars/SharpLsp.Sidecar.FSharp
 SIDECAR_SLN  = sidecars/SharpLsp.Sidecars.sln
 
-BINARY          = target/$(PROFILE)/sharplsp-lsp
+BINARY          = target/$(PROFILE)/sharplsp
 SIDECAR_CS_OUT  = target/sidecar-csharp
 SIDECAR_FS_OUT  = target/sidecar-fsharp
 ZED_WASM        = $(ZED_DIR)/target/wasm32-wasip1/$(PROFILE)/sharplsp_zed.wasm
 VSIX            = sharplsp.vsix
 VSIX_PLATFORM   = $(shell node -e "process.stdout.write(process.platform + '-' + process.arch)")
-VSIX_BINARY     = $(VSCODE_DIR)/bin/$(VSIX_PLATFORM)/sharplsp-lsp
+VSIX_BINARY     = $(VSCODE_DIR)/bin/$(VSIX_PLATFORM)/sharplsp
 ZED_PKG_DIR     = target/zed-extension
 ZED_PKG_TAR     = sharplsp-zed-extension.tar.gz
 RIDER_DIR       = editors/rider
@@ -247,8 +247,8 @@ _build-rider:
 _deploy-rust:
 	@echo "==> Installing sharplsp-lsp to $(BINDIR)/..."
 	mkdir -p $(BINDIR)
-	cp $(BINARY) $(BINDIR)/sharplsp-lsp
-	chmod +x $(BINDIR)/sharplsp-lsp
+	cp $(BINARY) $(BINDIR)/sharplsp
+	chmod +x $(BINDIR)/sharplsp
 
 _deploy-sidecars:
 	@echo "==> Packing + installing sidecar tools..."
@@ -278,7 +278,7 @@ _stage-sidecars:
 
 _kill:
 	@echo "==> Killing stale sharplsp processes..."
-	-@pkill -9 -f 'sharplsp-lsp' 2>/dev/null || true
+	-@pkill -9 -f 'sharplsp' 2>/dev/null || true
 	-@pkill -9 -f 'SharpLsp\.Sidecar\.' 2>/dev/null || true
 	@sleep 0.5
 

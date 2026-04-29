@@ -95,7 +95,7 @@ pub struct LspClient {
 }
 
 impl LspClient {
-    /// Spawn the sharplsp-lsp binary (stderr suppressed for fast tests).
+    /// Spawn the sharplsp binary (stderr suppressed for fast tests).
     pub fn start() -> Self {
         Self::spawn(Stdio::null())
     }
@@ -106,12 +106,12 @@ impl LspClient {
     }
 
     pub fn spawn(stderr: Stdio) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_sharplsp-lsp"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_sharplsp"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(stderr)
             .spawn()
-            .expect("failed to spawn sharplsp-lsp");
+            .expect("failed to spawn sharplsp");
         let stdin = child.stdin.take().expect("no stdin");
         let stdout = child.stdout.take().expect("no stdout");
         let reader = BufReader::new(stdout);

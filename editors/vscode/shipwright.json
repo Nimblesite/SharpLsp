@@ -11,7 +11,7 @@
       "id": "sharplsp-lsp",
       "kind": "lsp",
       "language": "rust",
-      "binaryName": "sharplsp-lsp",
+      "binaryName": "sharplsp",
       "expectedVersion": "${PRODUCT_VERSION}",
       "platforms": [
         "darwin-arm64",
@@ -41,7 +41,7 @@
       "versionCheckStrategy": "version-flag",
       "required": true,
       "bundled": {
-        "bundlePath": "bin/${platform}/sharplsp-lsp${exe}",
+        "bundlePath": "bin/${platform}/sharplsp${exe}",
         "perPlatformArtifact": true
       }
     },

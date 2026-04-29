@@ -4,12 +4,12 @@ mod tree;
 
 use zed_extension_api::{self as zed};
 
-/// SharpLsp Zed extension — provides sharplsp-lsp for C# and F# development.
+/// SharpLsp Zed extension — provides sharplsp for C# and F# development.
 struct SharpLspExtension {
     cached_binary_path: Option<String>,
 }
 
-const SERVER_BINARY: &str = "sharplsp-lsp";
+const SERVER_BINARY: &str = "sharplsp";
 const EXPECTED_VERSION: &str = env!("CARGO_PKG_VERSION");
 const SLASH_CMD_TREE: &str = "sharplsp-tree";
 
@@ -83,14 +83,14 @@ zed::register_extension!(SharpLspExtension);
 // ── Server binary resolution ────────────────────────────────────
 
 impl SharpLspExtension {
-    /// Resolve the sharplsp-lsp binary path.
+    /// Resolve the sharplsp binary path.
     ///
     /// Priority:
     ///   1. Cached path from a previous successful resolution
     ///   2. Binary on `$PATH` (via worktree.which)
     ///
     /// NOTE: The Zed extension API (WASM sandbox) does not support running
-    /// subprocesses, so we cannot execute `sharplsp-lsp --version` to verify
+    /// subprocesses, so we cannot execute `sharplsp --version` to verify
     /// the binary version matches the extension version. Version validation
     /// relies on the LSP server reporting its version during initialization.
     fn resolve_binary(&mut self, worktree: &zed::Worktree) -> zed::Result<String> {
@@ -111,7 +111,7 @@ impl SharpLspExtension {
     }
 }
 
-/// Build environment variables for the sharplsp-lsp server process.
+/// Build environment variables for the sharplsp server process.
 fn build_server_env(worktree: &zed::Worktree) -> Vec<(String, String)> {
     let mut env: Vec<(String, String)> = worktree.shell_env();
     let has_rust_log = env.iter().any(|(key, _)| key == "RUST_LOG");
@@ -216,8 +216,8 @@ mod tests {
     }
 
     #[test]
-    fn server_binary_name_is_sharplsp_lsp() {
-        assert_eq!(SERVER_BINARY, "sharplsp-lsp");
+    fn server_binary_name_is_sharplsp() {
+        assert_eq!(SERVER_BINARY, "sharplsp");
     }
 
     #[test]

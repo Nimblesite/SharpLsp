@@ -125,15 +125,24 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   const manifestPath = path.join(context.extensionPath, 'shipwright.json');
   const { activateDeploymentToolkit } = await import('@nimblesite/shipwright-vscode');
   const deployResult = await activateDeploymentToolkit(context, { manifestPath });
-  if (!deployResult.ok) {
-    const blocking = deployResult.diagnostics.filter((d) => d.blocking);
-    const msg =
-      blocking.length > 0
-        ? (blocking[0]?.message ?? 'Binary resolution failed')
-        : 'Binary resolution failed';
-    log.error(`Deployment toolkit: ${msg}`);
+  // Only halt activation if the LSP binary itself is unresolvable.
+  // Sidecar failures degrade gracefully — LSP still starts.
+  const lspBlocking = deployResult.diagnostics.filter(
+    (d) => d.blocking && d.componentId === 'sharplsp-lsp',
+  );
+  if (lspBlocking.length > 0) {
+    const msg = lspBlocking[0]?.message ?? 'LSP binary not found';
+    log.error(`Deployment toolkit (LSP binary): ${msg}`);
     statusBar.setState(ServerState.Error);
     return { explorerProvider, profilerProvider, getLspClient: () => undefined };
+  }
+  if (!deployResult.ok) {
+    const nonLspBlocking = deployResult.diagnostics.filter(
+      (d) => d.blocking && d.componentId !== 'sharplsp-lsp',
+    );
+    for (const diag of nonLspBlocking) {
+      log.warn(`Deployment toolkit (non-fatal): [${diag.componentId}] ${diag.message}`);
+    }
   }
   log.info('step 11b: client.start (await)');
   try {

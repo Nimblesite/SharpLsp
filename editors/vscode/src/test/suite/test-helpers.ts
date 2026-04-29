@@ -25,7 +25,7 @@ export function findSharpLspBinary(): string | undefined {
     return envPath;
   }
 
-  const binaryName = process.platform === 'win32' ? 'sharplsp-lsp.exe' : 'sharplsp-lsp';
+  const binaryName = process.platform === 'win32' ? 'sharplsp.exe' : 'sharplsp';
   const platform = detectRuntimePlatform();
 
   // __dirname at runtime: editors/vscode/out/test/suite/

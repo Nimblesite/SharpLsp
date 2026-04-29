@@ -23,7 +23,7 @@ suite('Bundled binary resolution', () => {
     const ext = vscode.extensions.getExtension(extensionId);
     assert.ok(ext !== undefined, `${extensionId} must be loaded in the VS Code test host`);
 
-    const binaryName = process.platform === 'win32' ? 'sharplsp-lsp.exe' : 'sharplsp-lsp';
+    const binaryName = process.platform === 'win32' ? 'sharplsp.exe' : 'sharplsp';
     const bundledBin = path.join(ext.extensionPath, 'bin', platform, binaryName);
     assert.ok(fs.existsSync(bundledBin), `Bundled binary must exist at ${bundledBin}`);
 
