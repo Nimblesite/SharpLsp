@@ -140,6 +140,13 @@ test.describe('Desktop nav (sanity check)', () => {
       const response = await page.goto(path);
       expect(response?.status(), `${path} should return 200`).toBe(200);
       await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
+
+      if (path === '/ja/docs/') {
+        await expect(page.locator('body')).toContainText('SharpLsp 日本語ドキュメント');
+        await expect(page.locator('body')).toContainText('.NET 10.0 SDK');
+        await expect(page.locator('body')).not.toContainText('準備中');
+        await expect(page.locator('body')).not.toContainText('英語ドキュメント');
+      }
     }
   });
 
