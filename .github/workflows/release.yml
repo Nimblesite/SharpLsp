@@ -68,8 +68,8 @@ jobs:
         with:
           name: sidecar-bins
           path: |-
-            target/sidecar-csharp/**
-            target/sidecar-fsharp/**
+            target/sidecar-csharp
+            target/sidecar-fsharp
   build-vsix:
     name: Build VSIX (${{ matrix.platform }})
     needs:
@@ -150,9 +150,7 @@ jobs:
           path: target
       - name: Package VSIX
         shell: bash
-        run: >-
-          make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target }}
-          VERSION="$VERSION" USE_STAGED_SIDECARS=1
+        run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target }} VERSION="$VERSION" USE_STAGED_SIDECARS=1
       - name: Verify binary version
         if: ${{ matrix.can_execute }}
         shell: bash
@@ -220,4 +218,4 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "SharpLsp ${{ github.ref_name }}" \
             --generate-notes \
-            artifacts/*.tar.gz artifacts/*.zip artifacts/*.vsix artifacts/*.nupkg
+            artifacts/*.tar.gz artifacts/*.zip artifacts/*.vsix
