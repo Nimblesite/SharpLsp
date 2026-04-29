@@ -47,8 +47,7 @@ jobs:
     - uses: actions/cache@v4
       with:
         path: "~/.nuget/packages"
-        key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props')
-          }}"
+        key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}"
         restore-keys: "${{ runner.os }}-nuget-"
     - uses: actions/setup-node@v4
       with:
@@ -59,25 +58,25 @@ jobs:
       run: |
         dotnet tool restore
         npm ci --prefix editors/vscode
-    - name: Rust
-      run: make lint-rust PROFILE=debug
-    - name: Zed
-      run: make lint-zed
-    - name: ".NET format"
+    - name: Lint (Rust)
+      run: make _lint-rust PROFILE=debug
+    - name: Lint (Zed)
+      run: make _lint-zed
+    - name: Format check (.NET)
       run: dotnet csharpier check sidecars/
-    - name: ".NET lint"
-      run: make lint-dotnet
-    - name: Sidecar dotnet pack (smoke test)
+    - name: Lint (.NET)
+      run: make _lint-dotnet
+    - name: Sidecar pack smoke test
       run: |
         dotnet pack sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
           -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
         dotnet pack sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
           -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
         ls -la /tmp/nupkg-smoke/*.nupkg
-    - name: VS Code format
+    - name: Format check (VS Code)
       run: cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'
-    - name: VS Code lint
-      run: make lint-vsix
+    - name: Lint (VS Code)
+      run: make _lint-vsix
   test-rust:
     name: Test Rust
     needs:
@@ -104,7 +103,7 @@ jobs:
         dotnet tool install -g dotnet-counters
         dotnet tool install -g dotnet-dump
     - name: Test Rust with coverage
-      run: make test-rust
+      run: make _test-rust
     - name: Build release binary
       run: cargo build --release --bin sharplsp
     - name: Verify sharplsp version contract
@@ -133,7 +132,7 @@ jobs:
       with:
         dotnet-version: 10.0.x
     - name: Test .NET sidecars with coverage
-      run: make test-dotnet
+      run: make _test-dotnet
     - name: Verify sidecar version flags
       shell: bash
       run: |-
@@ -179,7 +178,7 @@ jobs:
         done
     - name: Test VS Code extension with coverage
       run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR
-        xvfb-run -a make test-vsix
+        xvfb-run -a make _test-vsix
     - name: Verify VSIX contains platform binary
       shell: bash
       run: |-
@@ -211,13 +210,10 @@ jobs:
         path: coverage-artifacts
     - name: Merge ratcheted thresholds
       run: |
-        # Each test job may have ratcheted its own thresholds up.
-        # Merge by taking the maximum threshold for each project key.
         BASE="coverage-thresholds.json"
         for artifact_dir in coverage-artifacts/coverage-*/; do
           ARTIFACT="${artifact_dir}coverage-thresholds.json"
           if [ -f "$ARTIFACT" ]; then
-            # For each project key, take the higher threshold
             jq -s '
               .[0] as $base | .[1] as $new |
               $base | to_entries | map(

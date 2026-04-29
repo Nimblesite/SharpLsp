@@ -13,8 +13,6 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  # Build per-platform VSIXs — follows the same pattern as publish-vsix.yml.
-  # Each VSIX bundles the platform-native sharplsp binary inside bin/<platform>/.
   build-vsix:
     name: Build VSIX (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
@@ -26,21 +24,27 @@ jobs:
           - platform: linux-x64
             os: ubuntu-latest
             rust_target: x86_64-unknown-linux-gnu
-            artifact: sharplsp
-            archive: tar.gz
             can_execute: true
+          - platform: linux-arm64
+            os: ubuntu-latest
+            rust_target: aarch64-unknown-linux-gnu
+            can_execute: false
           - platform: darwin-arm64
             os: macos-15
             rust_target: aarch64-apple-darwin
-            artifact: sharplsp
-            archive: tar.gz
+            can_execute: true
+          - platform: darwin-x64
+            os: macos-13
+            rust_target: x86_64-apple-darwin
             can_execute: true
           - platform: win32-x64
             os: windows-latest
             rust_target: x86_64-pc-windows-msvc
-            artifact: sharplsp.exe
-            archive: zip
             can_execute: true
+          - platform: win32-arm64
+            os: windows-latest
+            rust_target: aarch64-pc-windows-msvc
+            can_execute: false
     steps:
       - uses: actions/checkout@v4
 
@@ -58,43 +62,23 @@ jobs:
           cache: npm
           cache-dependency-path: editors/vscode/package-lock.json
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
       - name: Install VS Code extension dependencies
         run: npm ci --prefix editors/vscode
 
-      - name: Validate Shipwright manifest shape
+      - name: Install Linux ARM64 cross linker
+        if: matrix.rust_target == 'aarch64-unknown-linux-gnu'
         shell: bash
         run: |-
           set -euo pipefail
-          node --input-type=module <<'NODE'
-          import { readFile } from 'node:fs/promises';
-          const manifest = JSON.parse(await readFile('editors/vscode/shipwright.json', 'utf8'));
-          const pkg = JSON.parse(await readFile('editors/vscode/package.json', 'utf8'));
-          const props = pkg.contributes.configuration.properties;
-          const lsp = manifest.components.find((c) => c.id === 'sharplsp');
-          if (!lsp) throw new Error('sharplsp component missing');
-          if (!lsp.sources.includes('bundled')) throw new Error('sharplsp bundled source missing');
-          if (lsp.bundled?.bundlePath !== 'bin/${platform}/sharplsp${exe}') {
-            throw new Error('unexpected sharplsp bundled bundlePath');
-          }
-          if (manifest.hosts?.vscode?.artifact !== 'vsix-per-platform') {
-            throw new Error('vscode host must use vsix-per-platform artifact');
-          }
-          for (const component of manifest.components.filter((c) => c.userSetting)) {
-            if (!props[component.userSetting]) throw new Error(`missing VS Code setting ${component.userSetting}`);
-          }
-          NODE
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> "$GITHUB_ENV"
 
       - name: Extract version from tag
         shell: bash
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
-      - name: Build sharplsp
-        shell: bash
-        run: cargo build --release --target "${{ matrix.rust_target }}"
 
       - name: Verify binary version
         if: ${{ matrix.can_execute }}
@@ -106,25 +90,9 @@ jobs:
           binary="target/${{ matrix.rust_target }}/release/sharplsp${exe}"
           "$binary" --version | grep -Fx "sharplsp ${VERSION}"
 
-      - name: Stage platform binary
-        shell: bash
-        run: |-
-          set -euo pipefail
-          exe=""
-          if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
-          rm -rf editors/vscode/bin
-          mkdir -p "editors/vscode/bin/${{ matrix.platform }}"
-          cp "target/${{ matrix.rust_target }}/release/sharplsp${exe}" \
-            "editors/vscode/bin/${{ matrix.platform }}/sharplsp${exe}"
-
       - name: Package VSIX
         shell: bash
-        run: |-
-          set -euo pipefail
-          mkdir -p dist
-          cd editors/vscode
-          npx @vscode/vsce package --no-dependencies --target "${{ matrix.platform }}" \
-            -o "../../dist/sharplsp-${{ matrix.platform }}.vsix"
+        run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target }} VERSION="$VERSION"
 
       - name: Verify VSIX contains platform binary
         shell: bash
@@ -136,23 +104,23 @@ jobs:
             | grep -F "bin/${{ matrix.platform }}/sharplsp${exe}"
 
       - name: Package binary archive (tar.gz)
-        if: matrix.archive == 'tar.gz'
+        if: runner.os != 'Windows'
         shell: bash
         run: |-
           STAGING="sharplsp-${GITHUB_REF_NAME}-${{ matrix.rust_target }}"
           mkdir -p "$STAGING"
-          cp "target/${{ matrix.rust_target }}/release/${{ matrix.artifact }}" "$STAGING/"
+          cp "target/${{ matrix.rust_target }}/release/sharplsp" "$STAGING/"
           tar czf "$STAGING.tar.gz" "$STAGING"
           mkdir -p dist-archive
           mv "$STAGING.tar.gz" dist-archive/
 
       - name: Package binary archive (zip)
-        if: matrix.archive == 'zip'
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |-
           $staging = "sharplsp-$env:GITHUB_REF_NAME-${{ matrix.rust_target }}"
           New-Item -ItemType Directory -Path "$staging" -Force
-          Copy-Item "target/${{ matrix.rust_target }}/release/${{ matrix.artifact }}" "$staging/"
+          Copy-Item "target/${{ matrix.rust_target }}/release/sharplsp.exe" "$staging/"
           Compress-Archive -Path "$staging" -DestinationPath "$staging.zip"
           New-Item -ItemType Directory -Path "dist-archive" -Force
           Move-Item "$staging.zip" "dist-archive/"
@@ -169,7 +137,6 @@ jobs:
           name: archive-${{ matrix.rust_target }}
           path: dist-archive/*
 
-  # Pack sidecars as framework-dependent dotnet tools.
   pack-sidecars:
     name: Pack sidecars
     runs-on: ubuntu-latest
@@ -182,22 +149,10 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Extract version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
-      - name: Pack C# sidecar
-        run: |
-          dotnet pack sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
-            -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
-            -c Release \
-            -o nupkgs
-
-      - name: Pack F# sidecar
-        run: |
-          dotnet pack sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
-            -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
-            -c Release \
-            -o nupkgs
+      - name: Pack sidecars
+        run: make _pack-sidecars VERSION="$VERSION"
 
       - name: Upload nupkg artifacts
         uses: actions/upload-artifact@v4
@@ -205,8 +160,6 @@ jobs:
           name: sidecar-nupkgs
           path: nupkgs/*.nupkg
 
-  # Create GitHub release and publish NuGet packages.
-  # Does NOT publish to VS Code Marketplace — manual step.
   release:
     name: Release & Publish
     needs: [build-vsix, pack-sidecars]
@@ -218,10 +171,6 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-
-      - name: Extract version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4

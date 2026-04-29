@@ -34,10 +34,15 @@ export async function start(
     return undefined;
   }
 
+  const launchPath = prepareLaunchBinary(context, serverPath);
+
   log.info(`Server binary: ${serverPath}`);
+  if (launchPath !== serverPath) {
+    log.info(`Server launch binary: ${launchPath}`);
+  }
 
   const run: Executable = {
-    command: serverPath,
+    command: launchPath,
     args: [...config.serverExtraArgs()],
     transport: TransportKind.stdio,
     options: {
@@ -192,6 +197,45 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
 
   // Fall back to PATH — the language client resolves the command via the shell.
   return binaryName;
+}
+
+function prepareLaunchBinary(context: ExtensionContext, serverPath: string): string {
+  if (!isBundledServerPath(context, serverPath)) {
+    return serverPath;
+  }
+
+  const platform = detectRuntimePlatform();
+  const cachePath = path.join(
+    context.globalStorageUri.fsPath,
+    'bin',
+    platform,
+    path.basename(serverPath),
+  );
+
+  try {
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.copyFileSync(serverPath, cachePath);
+    if (process.platform !== 'win32') {
+      fs.chmodSync(cachePath, 0o755);
+    }
+    return cachePath;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.warn(`Failed to prepare stable launch binary: ${message}`);
+    return serverPath;
+  }
+}
+
+function isBundledServerPath(context: ExtensionContext, serverPath: string): boolean {
+  if (!path.isAbsolute(serverPath)) {
+    return false;
+  }
+
+  const bundledRoot = path.resolve(context.extensionPath, 'bin');
+  const resolvedServerPath = path.resolve(serverPath);
+  return (
+    resolvedServerPath === bundledRoot || resolvedServerPath.startsWith(`${bundledRoot}${path.sep}`)
+  );
 }
 
 function detectRuntimePlatform(): string {

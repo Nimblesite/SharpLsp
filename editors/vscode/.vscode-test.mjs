@@ -21,6 +21,7 @@ export default defineConfig({
     },
   ],
   coverage: {
+    exclude: ['dist/**'],
     reporter: ['text-summary', 'html', 'json-summary'],
   },
 });
