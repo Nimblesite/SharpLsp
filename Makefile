@@ -275,9 +275,9 @@ endif
 	node -e " \
 		const fs = require('fs'); \
 		const p = '$(VSCODE_DIR)/package-lock.json'; \
-		const j = JSON.parse(fs.readFileSync(p,'utf8')); \
+		const j = JSON.parse(fs.readFileSync(p, 'utf8')); \
 		j.version = '$(VERSION)'; \
-		j.packages[''].version = '$(VERSION)'; \
+		if (j.packages && j.packages['']) j.packages[''].version = '$(VERSION)'; \
 		fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n'); \
 	"
 	node -e " \
