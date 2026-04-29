@@ -154,12 +154,21 @@ test-website:
 
 screenshots: _build-rust _build-dotnet _build-vsix
 	@echo "==> Capturing all website screenshots from real VS Code..."
-	cd $(VSCODE_DIR) && SHARPLSP_EXECUTABLE_PATH="$(abspath $(BINARY))" npm run screenshots
-
-screenshot: _build-rust _build-dotnet _build-vsix
-	@test -n "$(NAME)" || { echo "ERROR: use make screenshot NAME=diagnostics" >&2; exit 1; }
-	@echo "==> Capturing website screenshot: $(NAME)"
-	cd $(VSCODE_DIR) && SHARPLSP_EXECUTABLE_PATH="$(abspath $(BINARY))" npm run screenshots -- "$(NAME)"
+	$(MAKE) _stage-vsix-binary
+	(cd $(VSCODE_DIR) && node src/test/suite/screenshot-watcher.mjs) & \
+	WATCHER_PID=$$!; \
+	cd $(VSCODE_DIR) && \
+		env -u SHARPLSP_EXECUTABLE_PATH \
+			-u SHARPLSP_LSP_PATH \
+			-u SHARPLSP_BINARY_DIR \
+			SHARPLSP_SCREENSHOTS=1 \
+			SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
+			SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
+			npm test -- --coverage; \
+	STATUS=$$?; \
+	kill $$WATCHER_PID 2>/dev/null || true; \
+	rm -rf "$(abspath $(VSCODE_DIR))/bin"; \
+	exit $$STATUS
 
 # ── Lint ─────────────────────────────────────────────────────────
 
