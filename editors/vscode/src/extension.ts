@@ -57,6 +57,17 @@ let statusBar: SharpLspStatusBar | undefined;
 let explorerProvider: SolutionExplorerProvider | undefined;
 let profilerProvider: profiler.ProfilerTreeProvider | undefined;
 
+interface DeploymentDiagnostic {
+  readonly componentId: string;
+  readonly resolution: {
+    readonly path?: string | null;
+  };
+}
+
+interface DeploymentResult {
+  readonly diagnostics: readonly DeploymentDiagnostic[];
+}
+
 export async function activate(context: ExtensionContext): Promise<SharpLspExtensionApi> {
   // FIRST line: synchronous file log so we always know activate() ran,
   // even if every subsequent line throws.
@@ -136,7 +147,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   }
   log.info('step 11b: client.start (await)');
   try {
-    lspClient = await client.start(context, statusBar);
+    lspClient = await client.start(context, statusBar, deploymentPaths(deployResult));
     log.info('step 11b: client.start returned');
   } catch (err: unknown) {
     const msg = getErrorMessage(err);
@@ -167,6 +178,27 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     profilerProvider,
     getLspClient: () => lspClient,
   };
+}
+
+function deploymentPaths(deployResult: DeploymentResult): client.DeploymentPaths {
+  const serverPath = resolvedComponentPath(deployResult, 'sharplsp');
+  const csharpSidecarPath = resolvedComponentPath(deployResult, 'sharplsp-sidecar-csharp');
+  const fsharpSidecarPath = resolvedComponentPath(deployResult, 'sharplsp-sidecar-fsharp');
+  return {
+    ...(serverPath !== undefined ? { serverPath } : {}),
+    ...(csharpSidecarPath !== undefined ? { csharpSidecarPath } : {}),
+    ...(fsharpSidecarPath !== undefined ? { fsharpSidecarPath } : {}),
+  };
+}
+
+function resolvedComponentPath(
+  deployResult: DeploymentResult,
+  componentId: string,
+): string | undefined {
+  const resolvedPath = deployResult.diagnostics.find(
+    (diagnostic) => diagnostic.componentId === componentId,
+  )?.resolution.path;
+  return typeof resolvedPath === 'string' && resolvedPath !== '' ? resolvedPath : undefined;
 }
 
 export async function deactivate(): Promise<void> {

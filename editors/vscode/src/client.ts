@@ -19,12 +19,19 @@ import * as config from './config.js';
 import * as log from './log.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
 
+export interface DeploymentPaths {
+  readonly serverPath?: string;
+  readonly csharpSidecarPath?: string;
+  readonly fsharpSidecarPath?: string;
+}
+
 /** Create, start, and return a new `LanguageClient`. */
 export async function start(
   context: ExtensionContext,
   statusBar: SharpLspStatusBar,
+  deploymentPaths: DeploymentPaths = {},
 ): Promise<LanguageClient | undefined> {
-  const serverPath = resolveServerPath(context);
+  const serverPath = deploymentPaths.serverPath ?? resolveServerPath(context);
   if (serverPath === undefined) {
     const msg =
       'SharpLsp binary not found. Install via `cargo install sharplsp` or set `sharplsp.lspPath`.';
@@ -46,7 +53,7 @@ export async function start(
     args: [...config.serverExtraArgs()],
     transport: TransportKind.stdio,
     options: {
-      env: { ...process.env, RUST_LOG: config.loggingLevel() },
+      env: { ...process.env, RUST_LOG: config.loggingLevel(), ...sidecarEnv(deploymentPaths) },
     },
   };
 
@@ -71,6 +78,17 @@ export async function start(
   statusBar.setState(ServerState.Starting);
   await client.start();
   return client;
+}
+
+function sidecarEnv(deploymentPaths: DeploymentPaths): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (deploymentPaths.csharpSidecarPath !== undefined) {
+    env.SHARPLSP_CSHARP_SIDECAR_PATH = deploymentPaths.csharpSidecarPath;
+  }
+  if (deploymentPaths.fsharpSidecarPath !== undefined) {
+    env.SHARPLSP_FSHARP_SIDECAR_PATH = deploymentPaths.fsharpSidecarPath;
+  }
+  return env;
 }
 
 /** Wire client state changes to the status bar indicator. */

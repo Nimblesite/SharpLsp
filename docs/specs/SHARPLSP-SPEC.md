@@ -152,12 +152,13 @@ bin/<platform>/sharplsp.exe    (Windows)
 
 **Sidecar install locations:**
 
-Sidecars are framework-dependent dotnet global tools. They are NOT bundled in the VSIX.
+Sidecars are required framework-dependent .NET executables. Every VSIX bundles them
+under `bin/all/`; users do not install sidecars separately.
 
-| Artifact | Install mechanism | Package ID |
+| Artifact | VSIX path | Resolver sources |
 |---|---|---|
-| C# sidecar | `dotnet tool install -g SharpLsp.Sidecar.CSharp` | `SharpLsp.Sidecar.CSharp` on NuGet.org |
-| F# sidecar | `dotnet tool install -g SharpLsp.Sidecar.FSharp` | `SharpLsp.Sidecar.FSharp` on NuGet.org |
+| C# sidecar | `bin/all/sharplsp-sidecar-csharp` | user setting, environment variable, bundled, PATH |
+| F# sidecar | `bin/all/sharplsp-sidecar-fsharp` | user setting, environment variable, bundled, PATH |
 
 **Version checking (`--version` flag):**
 
@@ -176,10 +177,12 @@ sharplsp-sidecar-fsharp 0.1.0
 
 Extensions use this to verify the correct version is active before starting.
 
-**Sidecar resolution by the Rust host (two-step fallback):**
+**Sidecar distribution:**
 
-1. **dotnet global tool:** `sharplsp-sidecar-csharp` resolved from PATH (installed via `dotnet tool install -g`)
-2. **Dev build:** `dotnet run --project sidecars/SharpLsp.Sidecar.CSharp` — requires CWD = repo root
+Both sidecars are required framework-dependent .NET assemblies. Every VSIX bundles
+`sharplsp-sidecar-csharp` and `sharplsp-sidecar-fsharp` under `bin/all/`. They require
+.NET 10 on the host machine. Missing .NET 10, a missing sidecar, or a failed sidecar
+version probe is an activation failure.
 
 ### 2.7 Editor Extension Binary Strategy
 
@@ -190,17 +193,17 @@ Binary resolution is handled exclusively by `@nimblesite/shipwright-vscode` (`ac
 On activation, the VS Code extension follows this sequence:
 
 1. **Shipwright resolves `sharplsp`:** Checks user setting → env vars → bundled binary → PATH → pkgmgr. The bundled binary is the default path — it always exists in a valid VSIX install.
-2. **Shipwright resolves sidecars:** Checks user setting → env vars → PATH (`dotnet tool` install). Sidecar failures degrade gracefully; the LSP server still starts.
-3. **Version verification:** Shipwright probes each resolved binary with `--version` and compares against the manifest's `expectedVersion`. On mismatch, prompts the user with the correct install command.
+2. **Shipwright resolves sidecars:** Checks user setting → env vars → bundled `bin/all/` sidecar → PATH. Bundled sidecars are the default for VSIX installs.
+3. **Version verification:** Shipwright probes each resolved binary with `--version` and compares against the manifest's `expectedVersion`.
 4. **Start LSP client:** Pass the resolved `sharplsp` path to `LanguageClient`. Never hardcode a path.
 
-**CRITICAL — Failure must NEVER lock up the editor:**
+**CRITICAL — Missing required components fail activation:**
 
-When any step above fails — version mismatch, binary not found, download failed, `--version` returns garbage — the extension MUST:
+When any required component step above fails — version mismatch, binary not found, missing
+.NET 10, or `--version` returns garbage — the extension MUST:
 
-- Show a clear, user-facing error message explaining what happened and how to fix it (e.g., "SharpLsp: sharplsp v0.1.0 required but v0.0.9 found. Run `make install` or update the extension.")
-- Deactivate gracefully — dispose all resources, unregister providers, stop any pending operations
-- NEVER throw an unhandled exception that propagates to the editor host process
+- Show a clear, user-facing error message explaining what happened and how to fix it (e.g., "SharpLsp: sharplsp v0.1.0 required but v0.0.9 found.")
+- Crash activation instead of starting without C# or F# support
 - NEVER block the editor's main thread or event loop waiting for a binary that will never arrive
 - NEVER leave the extension in a half-initialized zombie state where it eats CPU or holds locks
 
@@ -703,7 +706,7 @@ SharpLsp does **not** provide formatting. Use [CSharpier](https://csharpier.com/
 | Add/remove project reference | ✓ | ✓ | ✓ | P2 | 4 |
 | File watching & auto-reload | ✓ | ✓ | ✓ | P0 | 2 |
 | Configuration via sharplsp.toml | ✗ | ✗ | ✗ | P0 | 1 |
-| Global tool installation (dotnet tool) | ✗ | ✗ | ✗ | P0 | 1 |
+| Bundled required sidecars in VSIX | ✓ | ✗ | ✓ | P0 | 1 |
 
 ### 9.9 F#-Specific Features
 
@@ -753,11 +756,13 @@ These are features no single incumbent offers today. This is where SharpLsp stop
 
 ## 11. Distribution
 
-SharpLsp is distributed as per-platform VSIXs with the `sharplsp` binary bundled inside each one. Installing the VS Code extension is all a user needs — zero additional steps for the LSP server.
+SharpLsp is distributed as per-platform VSIXs with the `sharplsp` binary and both
+required sidecars bundled inside each one. Installing the VS Code extension is all
+a user needs.
 
 - **`sharplsp`** — bundled inside each per-platform VSIX (`bin/<platform>/sharplsp[.exe]`). Also available via Homebrew (macOS/Linux) and Scoop (Windows) for users who want it on PATH.
-- **`SharpLsp.Sidecar.CSharp`** — dotnet global tool on NuGet.org (`dotnet tool install -g SharpLsp.Sidecar.CSharp`).
-- **`SharpLsp.Sidecar.FSharp`** — dotnet global tool on NuGet.org (`dotnet tool install -g SharpLsp.Sidecar.FSharp`).
+- **`sharplsp-sidecar-csharp`** — bundled inside every VSIX at `bin/all/sharplsp-sidecar-csharp`.
+- **`sharplsp-sidecar-fsharp`** — bundled inside every VSIX at `bin/all/sharplsp-sidecar-fsharp`.
 
 Binary resolution is handled by `@nimblesite/shipwright-vscode`. The bundled
 binary is the default resolution source. The `sharplsp.lspPath` setting
