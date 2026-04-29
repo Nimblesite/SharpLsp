@@ -166,13 +166,25 @@ impl SidecarManager {
         // Clean up stale socket.
         let _ = tokio::fs::remove_file(&self.socket_path).await;
 
+        info!(
+            sidecar = %self.name,
+            command = %self.spawn_command,
+            args = ?self.spawn_args,
+            socket = %self.socket_path,
+            "Spawning sidecar process"
+        );
         let mut child = Command::new(&self.spawn_command)
             .args(&self.spawn_args)
             .kill_on_drop(true)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit())
             .spawn()
-            .with_context(|| format!("failed to spawn {} sidecar", self.name))?;
+            .with_context(|| {
+                format!(
+                    "failed to spawn {} sidecar: command={:?} args={:?}",
+                    self.name, self.spawn_command, self.spawn_args
+                )
+            })?;
 
         let socket_path = self.wait_for_ready(&mut child).await?;
 
@@ -376,13 +388,21 @@ fn sidecar_launch(
 fn env_var_sidecar_override(subdir: &str) -> Option<std::path::PathBuf> {
     let kind = subdir.strip_prefix("sidecar-")?;
     let env_key = format!("SHARPLSP_{}_SIDECAR_PATH", kind.to_ascii_uppercase());
-    let val = std::env::var(&env_key).ok()?;
-    let path = std::path::PathBuf::from(&val);
-    if path.exists() {
-        Some(path)
-    } else {
-        warn!(env_key = %env_key, path = %val, "Env var sidecar override set but path does not exist");
-        None
+    match std::env::var(&env_key) {
+        Err(_) => {
+            debug!(env_key = %env_key, "Env var not set — skipping env-var override");
+            None
+        }
+        Ok(val) => {
+            let path = std::path::PathBuf::from(&val);
+            if path.exists() {
+                debug!(env_key = %env_key, path = %val, "Env var sidecar override resolved");
+                Some(path)
+            } else {
+                warn!(env_key = %env_key, path = %val, "Env var sidecar override set but path does not exist — skipping");
+                None
+            }
+        }
     }
 }
 
@@ -418,6 +438,8 @@ fn find_on_path(command: &str) -> Option<std::path::PathBuf> {
 fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf> {
     let current = std::env::current_exe().ok()?;
     let exe_dir = current.parent()?;
+    debug!(current_exe = %current.display(), exe_dir = %exe_dir.display(), "Resolving installed sidecar");
+
     let exe_name = if cfg!(windows) {
         format!("{name}.exe")
     } else {
@@ -426,7 +448,9 @@ fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf>
 
     // 1. VSIX layout: sidecar sits next to the binary.
     let vsix = exe_dir.join(subdir).join(&exe_name);
+    debug!(candidate = %vsix.display(), "Checking VSIX layout");
     if vsix.exists() {
+        debug!(path = %vsix.display(), "Found sidecar at VSIX layout");
         return Some(vsix);
     }
 
@@ -436,13 +460,27 @@ fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf>
         .join("lib/sharplsp")
         .join(subdir)
         .join(&exe_name);
+    debug!(candidate = %installed.display(), "Checking make-install layout");
     if installed.exists() {
+        debug!(path = %installed.display(), "Found sidecar at make-install layout");
         return Some(installed);
     }
 
     // 3. Dev-build layout: sibling of target/release or target/debug.
     let dev = exe_dir.parent()?.join(subdir).join(&exe_name);
-    dev.exists().then_some(dev)
+    debug!(candidate = %dev.display(), "Checking dev-build layout");
+    if dev.exists() {
+        debug!(path = %dev.display(), "Found sidecar at dev-build layout");
+        Some(dev)
+    } else {
+        warn!(
+            vsix = %vsix.display(),
+            installed = %installed.display(),
+            dev = %dev.display(),
+            "No installed sidecar found at any layout — falling back to dotnet run"
+        );
+        None
+    }
 }
 
 /// Simple FNV-style hash for generating short socket names.
