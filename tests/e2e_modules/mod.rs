@@ -109,13 +109,14 @@ impl LspClient {
     pub fn spawn(stderr: Stdio) -> Self {
         let binary = sharplsp_binary_path();
         let debug = launcher_debug(&binary);
+        let failure = format!("failed to spawn sharplsp\n{debug}");
         eprintln!("{debug}");
         let mut child = Command::new(&binary)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(stderr)
             .spawn()
-            .unwrap_or_else(|err| panic!("failed to spawn sharplsp\n{debug}\nerror: {err}"));
+            .expect(&failure);
         let stdin = child.stdin.take().expect("no stdin");
         let stdout = child.stdout.take().expect("no stdout");
         let reader = BufReader::new(stdout);
@@ -353,9 +354,10 @@ fn absolutize_binary_path(path: PathBuf) -> PathBuf {
 }
 
 fn launcher_debug(binary: &Path) -> String {
-    let cwd = std::env::current_dir()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|err| format!("unavailable ({err})"));
+    let cwd = std::env::current_dir().map_or_else(
+        |err| format!("unavailable ({err})"),
+        |path| path.display().to_string(),
+    );
     let raw = std::env::var("SHARPLSP_EXECUTABLE_PATH")
         .unwrap_or_else(|_| env!("CARGO_BIN_EXE_sharplsp").to_string());
     let metadata = launcher_metadata(binary);
@@ -367,9 +369,10 @@ fn launcher_debug(binary: &Path) -> String {
 }
 
 fn launcher_metadata(binary: &Path) -> String {
-    std::fs::metadata(binary)
-        .map(|meta| format!("is_file={} len={}", meta.is_file(), meta.len()))
-        .unwrap_or_else(|err| format!("metadata_error={err}"))
+    std::fs::metadata(binary).map_or_else(
+        |err| format!("metadata_error={err}"),
+        |meta| format!("is_file={} len={}", meta.is_file(), meta.len()),
+    )
 }
 
 /// Panic if `dotnet` CLI is not available. Tests MUST NOT silently skip.

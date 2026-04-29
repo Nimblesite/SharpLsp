@@ -346,29 +346,32 @@ fn sidecar_launch(
     name: &str,
     socket_path: &str,
 ) -> (String, Vec<String>) {
+    debug!(tool_command, subdir, name, socket_path, "Resolving sidecar launch command");
+
     // [SIDECAR-RESOLVE-ENV]: env var override takes absolute priority.
     if let Some(exe) = env_var_sidecar_override(subdir) {
-        info!(exe = %exe.display(), "Using env-var sidecar override");
+        info!(exe = %exe.display(), source = "env-var", "Sidecar resolved");
         return (
             exe.to_string_lossy().to_string(),
             vec![socket_path.to_string()],
         );
     }
 
-    if find_on_path(tool_command).is_some() {
-        info!(tool = %tool_command, "Using dotnet-tool sidecar from PATH");
+    if let Some(found) = find_on_path(tool_command) {
+        info!(tool = %tool_command, path = %found.display(), source = "PATH", "Sidecar resolved");
         return (tool_command.to_string(), vec![socket_path.to_string()]);
     }
+    debug!(tool_command, "Tool not found on PATH");
 
     if let Some(exe) = installed_sidecar_exe(subdir, name) {
-        info!(exe = %exe.display(), "Using legacy installed sidecar");
+        info!(exe = %exe.display(), source = "installed", "Sidecar resolved");
         return (
             exe.to_string_lossy().to_string(),
             vec![socket_path.to_string()],
         );
     }
 
-    info!(sidecar = %name, "Using dev sidecar (dotnet run)");
+    info!(sidecar = %name, source = "dotnet-run", "Sidecar resolved — using dev dotnet run");
     (
         "dotnet".to_string(),
         vec![
