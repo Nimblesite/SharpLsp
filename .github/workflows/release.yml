@@ -21,7 +21,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '24'
+        node-version: '20'
     - uses: taiki-e/install-action@cargo-binstall
     - name: Install cargo-set-version
       run: cargo binstall --no-confirm cargo-set-version
@@ -92,7 +92,7 @@ jobs:
         dotnet-version: 10.0.x
     - uses: actions/setup-node@v4
       with:
-        node-version: '24'
+        node-version: '20'
         cache: npm
         cache-dependency-path: editors/vscode/package-lock.json
     - name: Install VS Code extension dependencies
@@ -153,26 +153,3 @@ jobs:
           --title "SharpLsp ${{ github.ref_name }}" \
           --generate-notes \
           artifacts/*.vsix
-  publish-vsix:
-    name: Publish VSIXs to Marketplace
-    needs: release
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-    - uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-        pattern: vsix-*
-        merge-multiple: true
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '24'
-    - name: Install VSCE
-      run: npm install --global @vscode/vsce@3
-    - name: Publish VSIXs
-      shell: bash
-      env:
-        VSCE_PAT: "${{ secrets.VSCE_PAT }}"
-      run: |
-        set -euo pipefail
-        vsce publish --packagePath artifacts/*.vsix
