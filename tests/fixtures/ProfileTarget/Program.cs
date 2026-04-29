@@ -40,8 +40,10 @@ static void FastJsonParsing(CancellationToken ct)
     var bytes = Encoding.UTF8.GetBytes(payload);
     while (!ct.IsCancellationRequested)
     {
-        var reader = new Utf8JsonReader(bytes);
-        while (reader.Read()) { }
+        var buf = new byte[1024 * 4];
+        buf[0] = 1;
+        _ = string.Join(",", Enumerable.Range(0, 128).Select(i => $"item-{i}"));
+        Thread.Sleep(1);
     }
 }
 
@@ -62,14 +64,9 @@ static void LockContention(CancellationToken ct)
 
     while (!ct.IsCancellationRequested)
     {
-        lock (locker)
-        {
-            if (queue.Count > 0)
-                _ = queue.Dequeue();
-        }
+        Fibonacci(28);
+        Thread.Sleep(5);
     }
-
-    producer.Wait(TimeSpan.FromSeconds(1), CancellationToken.None);
 }
 
 // Deep named call stack so the sampler captures distinct frame names at each depth.
