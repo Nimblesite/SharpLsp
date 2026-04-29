@@ -66,11 +66,13 @@ fn native_process_list() -> Result<Vec<DotNetProcess>> {
 ///
 /// Header line is skipped (PID is non-numeric). Each subsequent line:
 /// `  1234  comm  /full/path/to/command args`
+#[cfg(not(windows))]
 fn parse_ps_output(output: &str) -> Vec<DotNetProcess> {
     output.lines().filter_map(parse_ps_line).collect()
 }
 
 /// Parse one line of `ps -eo pid,comm,command` output into a [`DotNetProcess`].
+#[cfg(not(windows))]
 fn parse_ps_line(line: &str) -> Option<DotNetProcess> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
@@ -135,6 +137,7 @@ fn parse_wmic_output(output: &str) -> Vec<DotNetProcess> {
 mod tests {
     use super::*;
 
+    #[cfg(not(windows))]
     #[test]
     fn test_parse_ps_output_typical() {
         let output = "\

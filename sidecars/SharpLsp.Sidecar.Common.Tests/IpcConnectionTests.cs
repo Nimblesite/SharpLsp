@@ -64,9 +64,9 @@ public sealed class IpcConnectionTests
         try
         {
             var result = IpcConnection.CreateListener(socketPath);
-            var ok = Assert.IsType<
-                Outcome.Result<IpcListener, string>.Ok<IpcListener, string>
-            >(result);
+            var ok = Assert.IsType<Outcome.Result<IpcListener, string>.Ok<IpcListener, string>>(
+                result
+            );
             await ok.Value.DisposeAsync().ConfigureAwait(true);
         }
         finally
@@ -81,16 +81,18 @@ public sealed class IpcConnectionTests
         var socketPath = IpcConnection.GenerateSocketPath($"roundtrip-{Guid.NewGuid():N}");
         try
         {
-            var listener = Assert.IsType<
-                Outcome.Result<IpcListener, string>.Ok<IpcListener, string>
-            >(IpcConnection.CreateListener(socketPath)).Value;
+            var listener = Assert
+                .IsType<Outcome.Result<IpcListener, string>.Ok<IpcListener, string>>(
+                    IpcConnection.CreateListener(socketPath)
+                )
+                .Value;
 
             await using var listenerLease = listener.ConfigureAwait(true);
             var acceptTask = listener.AcceptStreamAsync();
             var result = await IpcConnection.ConnectAsync(socketPath).ConfigureAwait(true);
-            var client = Assert.IsType<
-                Outcome.Result<Stream, string>.Ok<Stream, string>
-            >(result).Value;
+            var client = Assert
+                .IsType<Outcome.Result<Stream, string>.Ok<Stream, string>>(result)
+                .Value;
             await using var clientStream = client.ConfigureAwait(true);
             var server = await acceptTask.ConfigureAwait(true);
             await using var serverStream = server.ConfigureAwait(true);
@@ -113,11 +115,7 @@ public sealed class IpcConnectionTests
         var socketPath = IpcConnection.GenerateSocketPath($"noexist-{Guid.NewGuid():N}");
         var result = await IpcConnection.ConnectAsync(socketPath).ConfigureAwait(true);
         Assert.True(
-            result
-                is Outcome.Result<Stream, string>.Error<
-                    Stream,
-                    string
-                >,
+            result is Outcome.Result<Stream, string>.Error<Stream, string>,
             "ConnectAsync must fail when no listener exists"
         );
         DeleteSocketFileIfPresent(socketPath);

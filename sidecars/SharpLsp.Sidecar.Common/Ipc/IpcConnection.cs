@@ -1,12 +1,12 @@
+using System.Security.Cryptography;
+using System.Text;
+using ListenerResult = Outcome.Result<SharpLsp.Sidecar.Common.Ipc.IpcListener, string>;
+using StreamResult = Outcome.Result<System.IO.Stream, string>;
 #if WINDOWS
 using System.IO.Pipes;
 #else
 using System.Net.Sockets;
 #endif
-using System.Security.Cryptography;
-using System.Text;
-using ListenerResult = Outcome.Result<SharpLsp.Sidecar.Common.Ipc.IpcListener, string>;
-using StreamResult = Outcome.Result<System.IO.Stream, string>;
 
 namespace SharpLsp.Sidecar.Common.Ipc;
 
@@ -101,7 +101,6 @@ public sealed class IpcListener : IAsyncDisposable
         }
     }
 #endif
-
 }
 
 /// <summary>

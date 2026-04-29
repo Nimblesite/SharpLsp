@@ -84,9 +84,7 @@ public abstract class SidecarHost : IAsyncDisposable
         Console.WriteLine($"READY:{socketPath}");
         await Console.Out.FlushAsync().ConfigureAwait(false);
 
-        var stream = await _listener!
-            .AcceptStreamAsync(_shutdownCts.Token)
-            .ConfigureAwait(false);
+        var stream = await _listener!.AcceptStreamAsync(_shutdownCts.Token).ConfigureAwait(false);
         _transport = new FramedTransport(stream);
 
         await MessageLoopAsync().ConfigureAwait(false);

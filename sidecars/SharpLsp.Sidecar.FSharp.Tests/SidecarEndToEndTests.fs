@@ -122,10 +122,12 @@ type SidecarFixture() =
                     do! Task.Delay(50)
                     let! result = IpcConnection.ConnectAsync(sock)
                     let stream =
-                        result.Match((fun value -> value), (fun _ -> null))
-                    if not (isNull stream) then
-                        transport <- Some(new FramedTransport(stream))
+                        result.Match((fun value -> Some value), (fun _ -> None))
+                    match stream with
+                    | Some value ->
+                        transport <- Some(new FramedTransport(value))
                         ok <- true
+                    | None -> ()
             if not ok then failwith "Cannot connect to F# sidecar"
 
             let! resp = this.Send("workspace/open", MessagePackSerializer.Serialize(dir))
