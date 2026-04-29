@@ -12,7 +12,7 @@ export const POLL_INTERVAL_MS = 100;
 // ── Binary Discovery ─────────────────────────────────────────────
 
 /**
- * Find the sharplsp-lsp binary.
+ * Find the sharplsp binary.
  *
  * Priority:
  *   1. `SHARPLSP_EXECUTABLE_PATH` env var

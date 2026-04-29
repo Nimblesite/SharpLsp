@@ -4,8 +4,8 @@ export const EXTENSION_ID = 'sharplsp';
 export const EXTENSION_NAME = 'SharpLsp';
 export const OUTPUT_CHANNEL_NAME = 'SharpLsp';
 export const TRACE_CHANNEL_NAME = 'SharpLsp Trace';
-export const SERVER_BINARY = 'sharplsp-lsp';
-export const SERVER_BINARY_WIN = 'sharplsp-lsp.exe';
+export const SERVER_BINARY = 'sharplsp';
+export const SERVER_BINARY_WIN = 'sharplsp.exe';
 
 export const CONFIG_SECTION = 'sharplsp';
 export const CONFIG_SERVER_PATH = 'lspPath';

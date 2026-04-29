@@ -73,7 +73,7 @@
         "sharplsp.lspPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `sharplsp-lsp` binary. Leave empty to let Shipwright resolve the bundled binary, environment variables, package manager installation, or `$PATH`.",
+          "markdownDescription": "Absolute path to the `sharplsp` binary. Leave empty to let Shipwright resolve the bundled binary, environment variables, package manager installation, or `$PATH`.",
           "scope": "machine-overridable",
           "order": 0
         },

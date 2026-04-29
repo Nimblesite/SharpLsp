@@ -14,13 +14,9 @@ suite('Config Module — Direct Function Tests', () => {
     const wsConfig = vscode.workspace.getConfiguration(CONFIG_SECTION);
     const original = wsConfig.get<string>('lspPath');
     try {
-      await wsConfig.update(
-        'lspPath',
-        '/tmp/fake-sharplsp-lsp',
-        vscode.ConfigurationTarget.Workspace,
-      );
+      await wsConfig.update('lspPath', '/tmp/fake-sharplsp', vscode.ConfigurationTarget.Workspace);
       const result = config.serverPath();
-      assert.strictEqual(result, '/tmp/fake-sharplsp-lsp');
+      assert.strictEqual(result, '/tmp/fake-sharplsp');
     } finally {
       await wsConfig.update('lspPath', original, vscode.ConfigurationTarget.Workspace);
     }

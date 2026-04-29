@@ -67,11 +67,11 @@ export function describeBinaryStatus(configuredPath: string): {
   const expected = expectedVersion();
 
   if (configuredPath.length > 0) {
-    const installed = getInstalledVersion(configuredPath, 'sharplsp-lsp');
+    const installed = getInstalledVersion(configuredPath, 'sharplsp');
     return { expected, found: installed, location: configuredPath };
   }
 
   const command = sharplspLspCommand();
-  const installed = getInstalledVersion(command, 'sharplsp-lsp');
+  const installed = getInstalledVersion(command, 'sharplsp');
   return { expected, found: installed, location: command };
 }

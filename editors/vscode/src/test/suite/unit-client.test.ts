@@ -157,11 +157,11 @@ suite('Client Module — Error Path: Missing Binary', () => {
     try {
       await wsConfig.update(
         'lspPath',
-        '/nonexistent/path/sharplsp-lsp',
+        '/nonexistent/path/sharplsp',
         vscode.ConfigurationTarget.Workspace,
       );
       const configured = config.serverPath();
-      assert.strictEqual(configured, '/nonexistent/path/sharplsp-lsp');
+      assert.strictEqual(configured, '/nonexistent/path/sharplsp');
       assert.ok(!fs.existsSync(configured), 'This path must not exist for the test to be valid');
     } finally {
       await wsConfig.update('lspPath', original, vscode.ConfigurationTarget.Workspace);

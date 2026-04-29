@@ -53,7 +53,7 @@ The test workspace at `editors/vscode/test-fixtures/workspace/` now contains:
 
 `editors/vscode/screenshots/capture.mjs` handles:
 1. Installing the SharpLsp VSIX to both desktop and serve-web extensions directories
-2. Writing workspace settings with `sharplsp.lspPath` pointing to `target/release/sharplsp-lsp`
+2. Writing workspace settings with `sharplsp.lspPath` pointing to `target/release/sharplsp`
 3. Launching `code serve-web` and connecting via Playwright
 4. Per-screenshot capture functions that trigger features
 5. 30-second wait for LSP sidecar initialization

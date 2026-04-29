@@ -106,14 +106,14 @@ jobs:
     - name: Test Rust with coverage
       run: make test-rust
     - name: Build release binary
-      run: cargo build --release --bin sharplsp-lsp
-    - name: Verify sharplsp-lsp version contract
+      run: cargo build --release --bin sharplsp
+    - name: Verify sharplsp version contract
       shell: bash
       run: |-
         set -euo pipefail
-        VERSION="$(cargo metadata --no-deps --format-version 1 | node -e 'const fs=require("node:fs"); const meta=JSON.parse(fs.readFileSync(0,"utf8")); const pkg=meta.packages.find((item)=>item.name==="sharplsp-lsp"); if(!pkg) throw new Error("sharplsp-lsp package missing"); process.stdout.write(pkg.version);')"
-        ./target/release/sharplsp-lsp --version | grep -Fx "sharplsp-lsp ${VERSION}"
-        ./target/release/sharplsp-lsp --version --json | VERSION="${VERSION}" node -e 'const fs=require("node:fs"); const actual=JSON.parse(fs.readFileSync(0,"utf8")); const expected={name:"sharplsp-lsp",version:process.env.VERSION,kind:"lsp",language:"rust",product:"sharplsp"}; for (const [key,value] of Object.entries(expected)) { if (actual[key] !== value) throw new Error(`${key}: expected ${value}, got ${actual[key]}`); }'
+        VERSION="$(cargo metadata --no-deps --format-version 1 | node -e 'const fs=require("node:fs"); const meta=JSON.parse(fs.readFileSync(0,"utf8")); const pkg=meta.packages.find((item)=>item.name==="sharplsp"); if(!pkg) throw new Error("sharplsp package missing"); process.stdout.write(pkg.version);')"
+        ./target/release/sharplsp --version | grep -Fx "sharplsp ${VERSION}"
+        ./target/release/sharplsp --version --json | VERSION="${VERSION}" node -e 'const fs=require("node:fs"); const actual=JSON.parse(fs.readFileSync(0,"utf8")); const expected={name:"sharplsp",version:process.env.VERSION,kind:"lsp",language:"rust",product:"sharplsp"}; for (const [key,value] of Object.entries(expected)) { if (actual[key] !== value) throw new Error(`${key}: expected ${value}, got ${actual[key]}`); }'
     - name: Upload coverage
       uses: actions/upload-artifact@v4
       with:
@@ -171,7 +171,7 @@ jobs:
       shell: bash
       run: |-
         set -euo pipefail
-        for binary in sharplsp-lsp sharplsp-sidecar-csharp sharplsp-sidecar-fsharp; do
+        for binary in sharplsp sharplsp-sidecar-csharp sharplsp-sidecar-fsharp; do
           resolved="$(command -v "$binary" || true)"
           if [ -n "$resolved" ]; then
             rm -f "$resolved"
@@ -185,7 +185,7 @@ jobs:
       run: |-
         set -euo pipefail
         platform="$(node -e 'process.stdout.write(`${process.platform}-${process.arch}`)')"
-        unzip -l sharplsp.vsix | grep -F "bin/${platform}/sharplsp-lsp"
+        unzip -l sharplsp.vsix | grep -F "bin/${platform}/sharplsp"
     - name: Upload coverage
       uses: actions/upload-artifact@v4
       with:

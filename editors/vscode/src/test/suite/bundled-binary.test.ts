@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 
 const extensionId = 'sharplsp.sharp-lsp';
-const lspComponentId = 'sharplsp-lsp';
+const lspComponentId = 'sharplsp';
 const envVarsThatBypassBundledResolution = [
   'SHARPLSP_EXECUTABLE_PATH',
   'SHARPLSP_LSP_PATH',
@@ -15,7 +15,7 @@ const envVarsThatBypassBundledResolution = [
 const envVarsThatBypassBundledResolutionSet = new Set<string>(envVarsThatBypassBundledResolution);
 
 suite('Bundled binary resolution', () => {
-  test('sharplsp-lsp resolves from bundled source', async function () {
+  test('sharplsp resolves from bundled source', async function () {
     this.timeout(15_000);
 
     const { activateDeploymentToolkit } = await import('@nimblesite/shipwright-vscode');

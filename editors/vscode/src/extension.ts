@@ -128,7 +128,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   // Only halt activation if the LSP binary itself is unresolvable.
   // Sidecar failures degrade gracefully — LSP still starts.
   const lspBlocking = deployResult.diagnostics.filter(
-    (d) => d.blocking && d.componentId === 'sharplsp-lsp',
+    (d) => d.blocking && d.componentId === 'sharplsp',
   );
   if (lspBlocking.length > 0) {
     const msg = lspBlocking[0]?.message ?? 'LSP binary not found';
@@ -138,7 +138,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   }
   if (!deployResult.ok) {
     const nonLspBlocking = deployResult.diagnostics.filter(
-      (d) => d.blocking && d.componentId !== 'sharplsp-lsp',
+      (d) => d.blocking && d.componentId !== 'sharplsp',
     );
     for (const diag of nonLspBlocking) {
       log.warn(`Deployment toolkit (non-fatal): [${diag.componentId}] ${diag.message}`);

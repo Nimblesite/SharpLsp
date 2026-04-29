@@ -93,7 +93,7 @@ function wireStatusBar(
 }
 
 /**
- * Custom error handler that restarts sharplsp-lsp with exponential backoff.
+ * Custom error handler that restarts sharplsp with exponential backoff.
  *
  * The default vscode-languageclient handler shows an error notification
  * on every unexpected close, including the transient kills that happen
@@ -127,11 +127,11 @@ function makeErrorHandler(statusBar: SharpLspStatusBar): {
       restartCount += 1;
       if (restartCount <= MAX_RESTARTS) {
         log.info(
-          `sharplsp-lsp closed unexpectedly (restart ${String(restartCount)}/${String(MAX_RESTARTS)})`,
+          `sharplsp closed unexpectedly (restart ${String(restartCount)}/${String(MAX_RESTARTS)})`,
         );
         return { action: CloseAction.Restart, handled: true };
       }
-      log.error(`sharplsp-lsp closed ${String(MAX_RESTARTS)} times — giving up`);
+      log.error(`sharplsp closed ${String(MAX_RESTARTS)} times — giving up`);
       statusBar.setState(ServerState.Error);
       void window
         .showErrorMessage(
@@ -150,7 +150,7 @@ function makeErrorHandler(statusBar: SharpLspStatusBar): {
 }
 
 /**
- * Resolve the sharplsp-lsp binary path.
+ * Resolve the sharplsp binary path.
  *
  * Priority:
  *   1. User-configured `sharplsp.lspPath`

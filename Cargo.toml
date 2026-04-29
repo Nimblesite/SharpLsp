@@ -7,10 +7,6 @@ license = "MIT"
 homepage = "https://github.com/Nimblesite/SharpLsp"
 repository = "https://github.com/Nimblesite/SharpLsp"
 
-[[bin]]
-name = "sharplsp-lsp"
-path = "src/main.rs"
-
 [features]
 # Sequestered formatting module (Roslyn + Fantomas). Disabled by default.
 # Use CSharpier for C# and Fantomas via Ionide for F# instead.

@@ -106,7 +106,7 @@ impl LspClient {
     }
 
     pub fn spawn(stderr: Stdio) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_sharplsp-lsp"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_sharplsp"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(stderr)

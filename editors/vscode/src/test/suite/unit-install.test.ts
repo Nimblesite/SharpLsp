@@ -6,24 +6,24 @@ import { findSharpLspBinary } from './test-helpers.js';
 
 suite('Install Module — getInstalledVersion()', () => {
   test('returns undefined for nonexistent binary', () => {
-    const result = getInstalledVersion('/nonexistent/sharplsp-lsp', 'sharplsp-lsp');
+    const result = getInstalledVersion('/nonexistent/sharplsp', 'sharplsp');
     assert.strictEqual(result, undefined);
   });
 
   test('returns undefined for binary that outputs wrong format', () => {
     // Use 'echo' which outputs something but not the expected format.
-    const result = getInstalledVersion('echo', 'sharplsp-lsp');
+    const result = getInstalledVersion('echo', 'sharplsp');
     // echo with no args just outputs empty line — undefined.
     assert.strictEqual(result, undefined);
   });
 
-  test("parses 'sharplsp-lsp X.Y.Z' format correctly from real binary", function () {
+  test("parses 'sharplsp X.Y.Z' format correctly from real binary", function () {
     const binary = findSharpLspBinary();
     if (binary === undefined) {
       this.skip();
       return;
     }
-    const version = getInstalledVersion(binary, 'sharplsp-lsp');
+    const version = getInstalledVersion(binary, 'sharplsp');
     assert.ok(version !== undefined, `Expected a version string from ${binary}, got undefined`);
     // Must be a valid semver-ish format.
     const segments = version.split('.');
@@ -31,8 +31,8 @@ suite('Install Module — getInstalledVersion()', () => {
   });
 });
 
-suite('Install Module — sharplsp-lsp --version contract', () => {
-  test('sharplsp-lsp --version exits with code 0', function () {
+suite('Install Module — sharplsp --version contract', () => {
+  test('sharplsp --version exits with code 0', function () {
     const binary = findSharpLspBinary();
     if (binary === undefined) {
       this.skip();
@@ -44,7 +44,7 @@ suite('Install Module — sharplsp-lsp --version contract', () => {
     assert.strictEqual(result.status, 0, `--version must exit 0, got ${String(result.status)}`);
   });
 
-  test("sharplsp-lsp --version output is exactly 'sharplsp-lsp X.Y.Z'", function () {
+  test("sharplsp --version output is exactly 'sharplsp X.Y.Z'", function () {
     const binary = findSharpLspBinary();
     if (binary === undefined) {
       this.skip();
@@ -56,8 +56,8 @@ suite('Install Module — sharplsp-lsp --version contract', () => {
     });
     const trimmed = result.trim();
     const parts = trimmed.split(' ');
-    assert.strictEqual(parts.length, 2, `Expected 'sharplsp-lsp X.Y.Z', got: ${trimmed}`);
-    assert.strictEqual(parts[0], 'sharplsp-lsp');
+    assert.strictEqual(parts.length, 2, `Expected 'sharplsp X.Y.Z', got: ${trimmed}`);
+    assert.strictEqual(parts[0], 'sharplsp');
     // Verify version is numeric segments.
     const segments = (parts[1] ?? '').split('.');
     assert.ok(segments.length >= 2, `Version must have at least X.Y, got: ${parts[1]}`);
@@ -82,7 +82,7 @@ suite('Install Module — sharplsp-lsp --version contract', () => {
     const expected = raw.split(' ')[1];
 
     // Via our function.
-    const parsed = getInstalledVersion(binary, 'sharplsp-lsp');
+    const parsed = getInstalledVersion(binary, 'sharplsp');
 
     assert.strictEqual(parsed, expected, `getInstalledVersion must match raw --version output`);
   });
@@ -107,7 +107,7 @@ suite('Install Module — version mismatch handling', () => {
   });
 
   test('describeBinaryStatus reports undefined for nonexistent path', () => {
-    const status = describeBinaryStatus('/nonexistent/sharplsp-lsp');
+    const status = describeBinaryStatus('/nonexistent/sharplsp');
     // When configured path doesn't exist and standard path doesn't exist,
     // found should be undefined.
     if (!fs.existsSync(status.location)) {

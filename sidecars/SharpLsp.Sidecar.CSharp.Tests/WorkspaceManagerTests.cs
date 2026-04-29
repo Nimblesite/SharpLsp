@@ -116,7 +116,7 @@ public sealed class WorkspaceManagerTests : IDisposable
     [Fact]
     public async Task Open_discovers_slnx_via_recursive_scan()
     {
-        // Mirrors `sharplsp-lsp <workspace-root>` where the .slnx lives in a subdir.
+        // Mirrors `sharplsp <workspace-root>` where the .slnx lives in a subdir.
         var sub = Path.Combine(_root, "backend");
         Directory.CreateDirectory(sub);
         WriteSlnxWithSingleProject("namespace S; public class Baz {}\n", sub);

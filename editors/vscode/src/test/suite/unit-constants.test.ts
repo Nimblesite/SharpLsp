@@ -43,12 +43,12 @@ suite('Constants', () => {
   });
 
   test('SERVER_BINARY is the unix binary name', () => {
-    assert.strictEqual(SERVER_BINARY, 'sharplsp-lsp');
+    assert.strictEqual(SERVER_BINARY, 'sharplsp');
     assert.ok(!SERVER_BINARY.includes('.exe'), 'Unix binary should not have .exe');
   });
 
   test('SERVER_BINARY_WIN is the windows binary name', () => {
-    assert.strictEqual(SERVER_BINARY_WIN, 'sharplsp-lsp.exe');
+    assert.strictEqual(SERVER_BINARY_WIN, 'sharplsp.exe');
     assert.ok(SERVER_BINARY_WIN.endsWith('.exe'), 'Windows binary must end with .exe');
   });
 

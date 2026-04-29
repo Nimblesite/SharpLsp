@@ -6,7 +6,7 @@ license = "MIT"
 description = "SharpLsp Zed extension — .NET LSP integration for C# and F#"
 publish = false
 
-# Standalone workspace — not part of the root sharplsp-lsp workspace.
+# Standalone workspace — not part of the root sharplsp workspace.
 # Zed extensions compile to wasm32-wasip1 which is a different target.
 [workspace]
 

@@ -44,7 +44,7 @@ All commands are available from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift
 ## Requirements
 
 - .NET SDK 10.0+
-- `sharplsp-lsp` binary (built from source or downloaded from releases)
+- `sharplsp` binary (built from source or downloaded from releases)
 
 ## Configuration
 

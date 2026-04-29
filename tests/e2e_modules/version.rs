@@ -8,7 +8,7 @@ use super::*;
 /// If this test fails, every extension (VS Code, Zed, etc.) will break.
 #[test]
 fn version_flag_prints_correct_format_and_exits_zero() {
-    let output = Command::new(env!("CARGO_BIN_EXE_sharplsp-lsp"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sharplsp"))
         .arg("--version")
         .output()
         .expect("failed to run sharplsp --version");

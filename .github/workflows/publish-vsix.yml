@@ -72,11 +72,11 @@ jobs:
         const manifest = JSON.parse(await readFile('shipwright.json', 'utf8'));
         const pkg = JSON.parse(await readFile('editors/vscode/package.json', 'utf8'));
         const props = pkg.contributes.configuration.properties;
-        const lsp = manifest.components.find((component) => component.id === 'sharplsp-lsp');
-        if (!lsp) throw new Error('sharplsp-lsp component missing');
-        if (!lsp.sources.includes('bundled')) throw new Error('sharplsp-lsp bundled source missing');
-        if (lsp.bundled?.bundlePath !== 'bin/${platform}/sharplsp-lsp${exe}') {
-          throw new Error('unexpected sharplsp-lsp bundled bundlePath');
+        const lsp = manifest.components.find((component) => component.id === 'sharplsp');
+        if (!lsp) throw new Error('sharplsp component missing');
+        if (!lsp.sources.includes('bundled')) throw new Error('sharplsp bundled source missing');
+        if (lsp.bundled?.bundlePath !== 'bin/${platform}/sharplsp${exe}') {
+          throw new Error('unexpected sharplsp bundled bundlePath');
         }
         if (manifest.hosts?.vscode?.artifact !== 'vsix-per-platform') {
           throw new Error('vscode host must use vsix-per-platform artifact');
@@ -88,7 +88,7 @@ jobs:
     - name: Extract version from tag
       shell: bash
       run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-    - name: Build sharplsp-lsp
+    - name: Build sharplsp
       shell: bash
       run: cargo build --release --target "${{ matrix.rust_target }}"
     - name: Verify binary version
@@ -98,8 +98,8 @@ jobs:
         set -euo pipefail
         exe=""
         if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
-        binary="target/${{ matrix.rust_target }}/release/sharplsp-lsp${exe}"
-        "$binary" --version | grep -Fx "sharplsp-lsp ${VERSION}"
+        binary="target/${{ matrix.rust_target }}/release/sharplsp${exe}"
+        "$binary" --version | grep -Fx "sharplsp ${VERSION}"
     - name: Stage platform binary
       shell: bash
       run: |-
@@ -108,8 +108,8 @@ jobs:
         if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
         rm -rf editors/vscode/bin
         mkdir -p "editors/vscode/bin/${{ matrix.platform }}"
-        cp "target/${{ matrix.rust_target }}/release/sharplsp-lsp${exe}" \
-          "editors/vscode/bin/${{ matrix.platform }}/sharplsp-lsp${exe}"
+        cp "target/${{ matrix.rust_target }}/release/sharplsp${exe}" \
+          "editors/vscode/bin/${{ matrix.platform }}/sharplsp${exe}"
     - name: Package VSIX
       shell: bash
       run: |-
@@ -125,7 +125,7 @@ jobs:
         exe=""
         if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
         unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" \
-          | grep -F "bin/${{ matrix.platform }}/sharplsp-lsp${exe}"
+          | grep -F "bin/${{ matrix.platform }}/sharplsp${exe}"
     - uses: actions/upload-artifact@v4
       with:
         name: vsix-${{ matrix.platform }}

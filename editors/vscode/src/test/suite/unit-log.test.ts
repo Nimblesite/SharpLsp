@@ -300,7 +300,10 @@ suite('Log Module — Output Channels', () => {
 
   test('logFilePath() ends with sharplsp-vscode.log', () => {
     const p = log.logFilePath();
-    assert.ok(p.endsWith('sharplsp-vscode.log'), `logFilePath must end with sharplsp-vscode.log, got ${p}`);
+    assert.ok(
+      p.endsWith('sharplsp-vscode.log'),
+      `logFilePath must end with sharplsp-vscode.log, got ${p}`,
+    );
   });
 
   test('logFilePath() returns the same value on repeated calls', () => {

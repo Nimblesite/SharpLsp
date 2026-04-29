@@ -16,7 +16,7 @@ Core infrastructure improvements for the SharpLsp LSP host.
 
 ## Distribution
 
-- [ ] Global tool installation support (`dotnet tool install -g sharplsp-lsp`)
+- [ ] Global tool installation support (`dotnet tool install -g sharplsp`)
 - [ ] NuGet package manifest for dotnet tool packaging
 
 ## Incremental Computation

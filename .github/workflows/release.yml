@@ -13,9 +13,9 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  # Build sharplsp-lsp binary for each target platform (must be parallel — different OSes).
-  build-sharplsp-lsp:
-    name: Build sharplsp-lsp (${{ matrix.target }})
+  # Build sharplsp binary for each target platform (must be parallel — different OSes).
+  build-sharplsp:
+    name: Build sharplsp (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -24,19 +24,19 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: sharplsp-lsp
+            artifact: sharplsp
             archive: tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: sharplsp-lsp
+            artifact: sharplsp
             archive: tar.gz
           - os: macos-13
             target: x86_64-apple-darwin
-            artifact: sharplsp-lsp
+            artifact: sharplsp
             archive: tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: sharplsp-lsp.exe
+            artifact: sharplsp.exe
             archive: zip
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +55,7 @@ jobs:
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
         run: |
-          STAGING="sharplsp-lsp-${{ github.ref_name }}-${{ matrix.target }}"
+          STAGING="sharplsp-${{ github.ref_name }}-${{ matrix.target }}"
           mkdir -p "$STAGING"
           cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$STAGING/"
           tar czf "$STAGING.tar.gz" "$STAGING"
@@ -65,7 +65,7 @@ jobs:
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $staging = "sharplsp-lsp-${{ github.ref_name }}-${{ matrix.target }}"
+          $staging = "sharplsp-${{ github.ref_name }}-${{ matrix.target }}"
           New-Item -ItemType Directory -Path "$staging" -Force
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$staging/"
           Compress-Archive -Path "$staging" -DestinationPath "$staging.zip"
@@ -74,7 +74,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sharplsp-lsp-${{ matrix.target }}
+          name: sharplsp-${{ matrix.target }}
           path: ${{ env.ASSET }}
 
   # Pack sidecars as framework-dependent dotnet tools (runs parallel with build — different runner, cached dotnet).
@@ -118,7 +118,7 @@ jobs:
   # lightweight operations that share the same ubuntu environment.
   release:
     name: Release & Publish
-    needs: [build-sharplsp-lsp, pack-sidecars]
+    needs: [build-sharplsp, pack-sidecars]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -133,11 +133,11 @@ jobs:
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       # ── GitHub Release ──────────────────────────────────────────────
-      - name: Download sharplsp-lsp artifacts
+      - name: Download sharplsp artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts/sharplsp-lsp
-          pattern: sharplsp-lsp-*
+          path: artifacts/sharplsp
+          pattern: sharplsp-*
           merge-multiple: true
 
       - name: Create GitHub release
@@ -147,7 +147,7 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "SharpLsp ${{ github.ref_name }}" \
             --generate-notes \
-            artifacts/sharplsp-lsp/*
+            artifacts/sharplsp/*
 
       # ── NuGet Publish ───────────────────────────────────────────────
       - name: Download sidecar nupkgs
@@ -168,8 +168,8 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu; do
-            ARCHIVE="sharplsp-lsp-${TAG}-${target}.tar.gz"
-            SHA=$(sha256sum "artifacts/sharplsp-lsp/$ARCHIVE" | cut -d' ' -f1)
+            ARCHIVE="sharplsp-${TAG}-${target}.tar.gz"
+            SHA=$(sha256sum "artifacts/sharplsp/$ARCHIVE" | cut -d' ' -f1)
             echo "SHA_${target//-/_}=$SHA" >> "$GITHUB_ENV"
           done
 
@@ -186,8 +186,8 @@ jobs:
           VERSION="${{ steps.version.outputs.VERSION }}"
           BASE="https://github.com/Nimblesite/SharpLsp/releases/download/${TAG}"
           mkdir -p homebrew-tap/Formula
-          cat > homebrew-tap/Formula/sharplsp-lsp.rb << EOF
-          class SharplspLsp < Formula
+          cat > homebrew-tap/Formula/sharplsp.rb << EOF
+          class Sharplsp < Formula
             desc "Open-source .NET LSP server — C# and F# intelligence for every editor"
             homepage "https://github.com/Nimblesite/SharpLsp"
             license "MIT"
@@ -195,28 +195,28 @@ jobs:
 
             on_macos do
               on_arm do
-                url "${BASE}/sharplsp-lsp-${TAG}-aarch64-apple-darwin.tar.gz"
+                url "${BASE}/sharplsp-${TAG}-aarch64-apple-darwin.tar.gz"
                 sha256 "${SHA_aarch64_apple_darwin}"
               end
               on_intel do
-                url "${BASE}/sharplsp-lsp-${TAG}-x86_64-apple-darwin.tar.gz"
+                url "${BASE}/sharplsp-${TAG}-x86_64-apple-darwin.tar.gz"
                 sha256 "${SHA_x86_64_apple_darwin}"
               end
             end
 
             on_linux do
               on_intel do
-                url "${BASE}/sharplsp-lsp-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
+                url "${BASE}/sharplsp-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
                 sha256 "${SHA_x86_64_unknown_linux_gnu}"
               end
             end
 
             def install
-              bin.install "sharplsp-lsp"
+              bin.install "sharplsp"
             end
 
             test do
-              assert_match "sharplsp-lsp", shell_output("#{bin}/sharplsp-lsp --version")
+              assert_match "sharplsp", shell_output("#{bin}/sharplsp --version")
             end
           end
           EOF
@@ -226,16 +226,16 @@ jobs:
           cd homebrew-tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/sharplsp-lsp.rb
-          git commit -m "Update sharplsp-lsp to ${{ github.ref_name }}"
+          git add Formula/sharplsp.rb
+          git commit -m "Update sharplsp to ${{ github.ref_name }}"
           git push
 
       # ── Scoop Bucket ────────────────────────────────────────────────
       - name: Compute checksum for Scoop
         run: |
           TAG="${{ github.ref_name }}"
-          ARCHIVE="sharplsp-lsp-${TAG}-x86_64-pc-windows-msvc.zip"
-          SHA=$(sha256sum "artifacts/sharplsp-lsp/$ARCHIVE" | cut -d' ' -f1)
+          ARCHIVE="sharplsp-${TAG}-x86_64-pc-windows-msvc.zip"
+          SHA=$(sha256sum "artifacts/sharplsp/$ARCHIVE" | cut -d' ' -f1)
           echo "SHA_WIN=$SHA" >> "$GITHUB_ENV"
 
       - name: Checkout Scoop bucket
@@ -250,7 +250,7 @@ jobs:
           TAG="${{ github.ref_name }}"
           VERSION="${{ steps.version.outputs.VERSION }}"
           mkdir -p scoop-bucket/bucket
-          cat > scoop-bucket/bucket/sharplsp-lsp.json << EOF
+          cat > scoop-bucket/bucket/sharplsp.json << EOF
           {
             "version": "${VERSION}",
             "description": "Open-source .NET LSP server — C# and F# intelligence for every editor",
@@ -258,9 +258,9 @@ jobs:
             "license": "MIT",
             "architecture": {
               "64bit": {
-                "url": "https://github.com/Nimblesite/SharpLsp/releases/download/${TAG}/sharplsp-lsp-${TAG}-x86_64-pc-windows-msvc.zip",
+                "url": "https://github.com/Nimblesite/SharpLsp/releases/download/${TAG}/sharplsp-${TAG}-x86_64-pc-windows-msvc.zip",
                 "hash": "${SHA_WIN}",
-                "bin": "sharplsp-lsp.exe"
+                "bin": "sharplsp.exe"
               }
             },
             "checkver": {
@@ -269,7 +269,7 @@ jobs:
             "autoupdate": {
               "architecture": {
                 "64bit": {
-                  "url": "https://github.com/Nimblesite/SharpLsp/releases/download/v\$version/sharplsp-lsp-v\$version-x86_64-pc-windows-msvc.zip"
+                  "url": "https://github.com/Nimblesite/SharpLsp/releases/download/v\$version/sharplsp-v\$version-x86_64-pc-windows-msvc.zip"
                 }
               }
             }
@@ -281,6 +281,6 @@ jobs:
           cd scoop-bucket
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add bucket/sharplsp-lsp.json
-          git commit -m "Update sharplsp-lsp to ${{ github.ref_name }}"
+          git add bucket/sharplsp.json
+          git commit -m "Update sharplsp to ${{ github.ref_name }}"
           git push

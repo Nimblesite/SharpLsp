@@ -8,7 +8,7 @@
   },
   "components": [
     {
-      "id": "sharplsp-lsp",
+      "id": "sharplsp",
       "kind": "lsp",
       "language": "rust",
       "binaryName": "sharplsp",
@@ -34,8 +34,8 @@
         "dirVar": "SHARPLSP_BINARY_DIR"
       },
       "pkgmgr": {
-        "brew": "nimblesite/tap/sharplsp-lsp",
-        "scoop": "nimblesite/sharplsp-lsp"
+        "brew": "nimblesite/tap/sharplsp",
+        "scoop": "nimblesite/sharplsp"
       },
       "verifyStartup": true,
       "versionCheckStrategy": "version-flag",
@@ -128,7 +128,7 @@
     "vscode": {
       "artifact": "vsix-per-platform",
       "activationVerifies": [
-        "sharplsp-lsp",
+        "sharplsp",
         "sharplsp-sidecar-csharp",
         "sharplsp-sidecar-fsharp"
       ],
@@ -137,7 +137,7 @@
     "jetbrains": {
       "artifact": "intellij-jar",
       "activationVerifies": [
-        "sharplsp-lsp",
+        "sharplsp",
         "sharplsp-sidecar-csharp"
       ],
       "onMismatch": "prompt-pkgmgr"
@@ -145,7 +145,7 @@
     "zed": {
       "artifact": "zed-wasm",
       "activationVerifies": [
-        "sharplsp-lsp"
+        "sharplsp"
       ],
       "onMismatch": "error"
     },
