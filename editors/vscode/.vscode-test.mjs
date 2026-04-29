@@ -11,7 +11,11 @@ export default defineConfig({
   files: 'test-cli-runner.cjs',
   extensionDevelopmentPath: '.',
   workspaceFolder: 'test-fixtures/workspace',
-  launchArgs: ['--disable-extensions', `--user-data-dir=${testUserDataDir}`],
+  launchArgs: [
+    '--disable-extensions',
+    `--user-data-dir=${testUserDataDir}`,
+    ...(process.env.SHARPLSP_SCREENSHOTS ? ['--remote-debugging-port=9239'] : []),
+  ],
   coverage: {
     reporter: ['text-summary', 'html', 'json-summary'],
   },

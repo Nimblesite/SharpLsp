@@ -56,8 +56,8 @@ make package-rider
 local lspconfig = require('lspconfig')
 local configs = require('lspconfig.configs')
 
-if not configs.sharplsp_lsp then
-  configs.sharplsp_lsp = {
+if not configs.sharplsp then
+  configs.sharplsp = {
     default_config = {
       cmd = { "sharplsp" },
       filetypes = { "cs", "fsharp" },
@@ -66,7 +66,7 @@ if not configs.sharplsp_lsp then
   }
 end
 
-lspconfig.sharplsp_lsp.setup({})
+lspconfig.sharplsp.setup({})
 ```
 
 ## Helix

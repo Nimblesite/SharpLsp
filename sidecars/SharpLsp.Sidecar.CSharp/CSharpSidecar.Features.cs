@@ -160,4 +160,44 @@ internal sealed partial class CSharpSidecar
             return ByteResult.Failure(ex.Message);
         }
     }
+
+    // Implements [RENAME-PREPARE]
+    private async Task<ByteResult> HandlePrepareRenameAsync(byte[] payload, CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<PositionRequest>(
+                payload,
+                cancellationToken: ct
+            );
+            var result = await _workspace
+                .PrepareRenameAsync(request.FilePath, request.Line, request.Character, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+    // Implements [RENAME-APPLY]
+    private async Task<ByteResult> HandleRenameAsync(byte[] payload, CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<RenameRequest>(
+                payload,
+                cancellationToken: ct
+            );
+            var result = await _workspace
+                .RenameAsync(request.FilePath, request.Line, request.Character, request.NewName, ct)
+                .ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
 }

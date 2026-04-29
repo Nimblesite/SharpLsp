@@ -29,7 +29,9 @@ using HighlightsResult = Outcome.Result<
 >;
 using HoverQueryResult = Outcome.Result<SharpLsp.Sidecar.CSharp.HoverResult?, string>;
 using ImplementationsResult = Outcome.Result<SharpLsp.Sidecar.CSharp.LocationListResult, string>;
+using PrepareRenameQueryResult = Outcome.Result<SharpLsp.Sidecar.CSharp.PrepareRenameResult, string>;
 using ReferencesResult = Outcome.Result<SharpLsp.Sidecar.CSharp.LocationListResult, string>;
+using RenameEditResult = Outcome.Result<SharpLsp.Sidecar.CSharp.WorkspaceEditResult, string>;
 using ResolveResult = Outcome.Result<SharpLsp.Sidecar.CSharp.WorkspaceEditResult, string>;
 using VoidResult = Outcome.Result<Outcome.Unit, string>;
 
@@ -625,5 +627,159 @@ internal sealed partial class WorkspaceManager : IDisposable
             .OpenProjectAsync(target, cancellationToken: ct)
             .ConfigureAwait(false);
         return project.Solution;
+    }
+
+    // Implements [RENAME-PREPARE]
+    /// <summary>Check whether the symbol at the given position can be renamed.</summary>
+    public async Task<PrepareRenameQueryResult> PrepareRenameAsync(
+        string filePath,
+        int line,
+        int character,
+        CancellationToken ct = default
+    )
+    {
+        try
+        {
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
+            if (document is null)
+            {
+                return PrepareRenameQueryResult.Failure("Document not found");
+            }
+
+            var text = await document.GetTextAsync(ct).ConfigureAwait(false);
+            var position = text.Lines[line].Start + character;
+            var symbol = await Microsoft.CodeAnalysis.FindSymbols.SymbolFinder
+                .FindSymbolAtPositionAsync(document, position, ct)
+                .ConfigureAwait(false);
+
+            if (symbol is null or Microsoft.CodeAnalysis.INamespaceSymbol)
+            {
+                return new PrepareRenameQueryResult.Ok<PrepareRenameResult, string>(
+                    new PrepareRenameResult { CanRename = false }
+                );
+            }
+
+            var syntaxRoot = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
+            var token = syntaxRoot?.FindToken(position);
+            if (token is null || !token.Value.Span.Contains(position))
+            {
+                return new PrepareRenameQueryResult.Ok<PrepareRenameResult, string>(
+                    new PrepareRenameResult { CanRename = false }
+                );
+            }
+
+            var span = token.Value.Span;
+            var lineSpan = text.Lines.GetLinePositionSpan(span);
+            return new PrepareRenameQueryResult.Ok<PrepareRenameResult, string>(
+                new PrepareRenameResult
+                {
+                    CanRename = true,
+                    StartLine = lineSpan.Start.Line,
+                    StartCharacter = lineSpan.Start.Character,
+                    EndLine = lineSpan.End.Line,
+                    EndCharacter = lineSpan.End.Character,
+                    Placeholder = symbol.Name,
+                }
+            );
+        }
+        catch (Exception ex)
+        {
+            return PrepareRenameQueryResult.Failure(ex.Message);
+        }
+    }
+
+    // Implements [RENAME-APPLY]
+    /// <summary>Rename the symbol at the given position to <paramref name="newName"/>.</summary>
+    public async Task<RenameEditResult> RenameAsync(
+        string filePath,
+        int line,
+        int character,
+        string newName,
+        CancellationToken ct = default
+    )
+    {
+        try
+        {
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
+            if (document is null || _solution is null)
+            {
+                return RenameEditResult.Failure("Document or solution not available");
+            }
+
+            var text = await document.GetTextAsync(ct).ConfigureAwait(false);
+            var position = text.Lines[line].Start + character;
+            var symbol = await Microsoft.CodeAnalysis.FindSymbols.SymbolFinder
+                .FindSymbolAtPositionAsync(document, position, ct)
+                .ConfigureAwait(false);
+
+            if (symbol is null)
+            {
+                return new RenameEditResult.Ok<WorkspaceEditResult, string>(
+                    new WorkspaceEditResult()
+                );
+            }
+
+            var renamedSolution = await Microsoft.CodeAnalysis.Rename.Renamer
+                .RenameSymbolAsync(_solution, symbol, new Microsoft.CodeAnalysis.Rename.SymbolRenameOptions(), newName, ct)
+                .ConfigureAwait(false);
+
+            var changes = renamedSolution.GetChanges(_solution);
+            var documentChanges = new List<DocumentEditResult>();
+            foreach (var projectChange in changes.GetProjectChanges())
+            {
+                foreach (var docId in projectChange.GetChangedDocuments())
+                {
+                    var oldDoc = _solution.GetDocument(docId);
+                    var newDoc = renamedSolution.GetDocument(docId);
+                    if (oldDoc is null || newDoc is null)
+                    {
+                        continue;
+                    }
+
+                    var oldText = await oldDoc.GetTextAsync(ct).ConfigureAwait(false);
+                    var rawNewText = await newDoc.GetTextAsync(ct).ConfigureAwait(false);
+                    // Normalize to the same SourceText subtype so GetTextChanges
+                    // produces granular diffs rather than a single whole-document replacement.
+                    var newText = Microsoft.CodeAnalysis.Text.SourceText.From(
+                        rawNewText.ToString(),
+                        oldText.Encoding
+                    );
+                    var textChanges = newText.GetTextChanges(oldText);
+                    var edits = textChanges
+                        .Select(change =>
+                        {
+                            var changeSpan = oldText.Lines.GetLinePositionSpan(change.Span);
+                            return new TextEditResult
+                            {
+                                StartLine = changeSpan.Start.Line,
+                                StartCharacter = changeSpan.Start.Character,
+                                EndLine = changeSpan.End.Line,
+                                EndCharacter = changeSpan.End.Character,
+                                NewText = change.NewText ?? string.Empty,
+                            };
+                        })
+                        .ToList();
+
+                    if (edits.Count > 0)
+                    {
+                        documentChanges.Add(
+                            new DocumentEditResult
+                            {
+                                FilePath = oldDoc.FilePath ?? filePath,
+                                Edits = edits,
+                            }
+                        );
+                    }
+                }
+            }
+
+            return new RenameEditResult.Ok<WorkspaceEditResult, string>(
+                new WorkspaceEditResult { DocumentChanges = documentChanges }
+            );
+        }
+        catch (Exception ex)
+        {
+            return RenameEditResult.Failure(ex.Message);
+        }
     }
 }

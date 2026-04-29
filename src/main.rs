@@ -46,11 +46,11 @@ use lsp_types::{
         CodeActionRequest, CodeActionResolveRequest, CodeLensRequest, Completion,
         DocumentDiagnosticRequest, DocumentHighlightRequest, DocumentSymbolRequest,
         FoldingRangeRequest, GotoDeclaration, GotoDefinition, GotoImplementation,
-        GotoTypeDefinition, HoverRequest, InlayHintRequest, LinkedEditingRange, References,
-        Request as _, ResolveCompletionItem, SelectionRangeRequest, SemanticTokensFullDeltaRequest,
-        SemanticTokensFullRequest, SemanticTokensRangeRequest, Shutdown, TypeHierarchyPrepare,
-        TypeHierarchySubtypes, TypeHierarchySupertypes, WorkspaceDiagnosticRequest,
-        WorkspaceSymbolRequest,
+        GotoTypeDefinition, HoverRequest, InlayHintRequest, LinkedEditingRange,
+        PrepareRenameRequest, References, Rename, Request as _, ResolveCompletionItem,
+        SelectionRangeRequest, SemanticTokensFullDeltaRequest, SemanticTokensFullRequest,
+        SemanticTokensRangeRequest, Shutdown, TypeHierarchyPrepare, TypeHierarchySubtypes,
+        TypeHierarchySupertypes, WorkspaceDiagnosticRequest, WorkspaceSymbolRequest,
     },
     FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams, OneOf,
     SelectionRangeProviderCapability, ServerCapabilities, TextDocumentSyncCapability,
@@ -281,6 +281,10 @@ fn build_capabilities() -> ServerCapabilities {
         declaration_provider: Some(lsp_types::DeclarationCapability::Simple(true)),
         implementation_provider: Some(lsp_types::ImplementationProviderCapability::Simple(true)),
         references_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(OneOf::Right(lsp_types::RenameOptions {
+            prepare_provider: Some(true),
+            work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
+        })),
         document_highlight_provider: Some(OneOf::Left(true)),
         code_action_provider: Some(lsp_types::CodeActionProviderCapability::Options(
             lsp_types::CodeActionOptions {
@@ -546,6 +550,15 @@ fn handle_request(
         CodeLensRequest::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             code_lens::handle_code_lens(req, runtime, sidecar)
+        }
+        // Rename — Implements [RENAME-PREPARE] and [RENAME-APPLY]
+        PrepareRenameRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            semantic::handle_prepare_rename(req, runtime, sidecar)
+        }
+        Rename::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            semantic::handle_rename(req, runtime, sidecar)
         }
         // Call hierarchy
         CallHierarchyPrepare::METHOD => {

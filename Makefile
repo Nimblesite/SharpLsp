@@ -21,6 +21,7 @@ SHELL        := /bin/bash
 PROFILE     ?= release
 CARGO_FLAG   = $(if $(filter release,$(PROFILE)),--release,)
 DOTNET_CFG   = $(if $(filter release,$(PROFILE)),Release,Debug)
+RUST_TEST_THREADS ?= 4
 
 VSCODE_DIR   = editors/vscode
 ZED_DIR      = editors/zed
@@ -103,7 +104,9 @@ test-rust: _build-dotnet _stage-sidecars
 	@echo "==> Pre-building ProfileTarget fixture..."
 	dotnet build tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
 	@echo "==> Running sharplsp tests with coverage..."
-	cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast
+	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
+	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
+		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast --test-threads $(RUST_TEST_THREADS)
 	@$(CHECK_COV) sharplsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
 test-zed:
@@ -154,12 +157,21 @@ test-website:
 
 screenshots: _build-rust _build-dotnet _build-vsix
 	@echo "==> Capturing all website screenshots from real VS Code..."
-	cd $(VSCODE_DIR) && SHARPLSP_EXECUTABLE_PATH="$(abspath $(BINARY))" npm run screenshots
-
-screenshot: _build-rust _build-dotnet _build-vsix
-	@test -n "$(NAME)" || { echo "ERROR: use make screenshot NAME=diagnostics" >&2; exit 1; }
-	@echo "==> Capturing website screenshot: $(NAME)"
-	cd $(VSCODE_DIR) && SHARPLSP_EXECUTABLE_PATH="$(abspath $(BINARY))" npm run screenshots -- "$(NAME)"
+	$(MAKE) _stage-vsix-binary
+	(cd $(VSCODE_DIR) && node src/test/suite/screenshot-watcher.mjs) & \
+	WATCHER_PID=$$!; \
+	cd $(VSCODE_DIR) && \
+		env -u SHARPLSP_EXECUTABLE_PATH \
+			-u SHARPLSP_LSP_PATH \
+			-u SHARPLSP_BINARY_DIR \
+			SHARPLSP_SCREENSHOTS=1 \
+			SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
+			SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
+			npm test -- --coverage; \
+	STATUS=$$?; \
+	kill $$WATCHER_PID 2>/dev/null || true; \
+	rm -rf "$(abspath $(VSCODE_DIR))/bin"; \
+	exit $$STATUS
 
 # ── Lint ─────────────────────────────────────────────────────────
 

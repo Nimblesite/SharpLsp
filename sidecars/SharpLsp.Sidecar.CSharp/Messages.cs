@@ -432,3 +432,45 @@ internal sealed class TypeHierarchyItem
     [Key(6)]
     public int EndCharacter { get; set; }
 }
+
+// ── Rename Types ──────────────────────────────────────────────────
+
+// Implements [RENAME-PREPARE] and [RENAME-APPLY]
+
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class RenameRequest
+{
+    [Key(0)]
+    public string FilePath { get; set; } = "";
+
+    [Key(1)]
+    public int Line { get; init; }
+
+    [Key(2)]
+    public int Character { get; init; }
+
+    [Key(3)]
+    public string NewName { get; set; } = "";
+}
+
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class PrepareRenameResult
+{
+    [Key(0)]
+    public bool CanRename { get; init; }
+
+    [Key(1)]
+    public int StartLine { get; init; }
+
+    [Key(2)]
+    public int StartCharacter { get; init; }
+
+    [Key(3)]
+    public int EndLine { get; init; }
+
+    [Key(4)]
+    public int EndCharacter { get; init; }
+
+    [Key(5)]
+    public string Placeholder { get; set; } = "";
+}

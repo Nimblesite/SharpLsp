@@ -136,6 +136,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['out/', 'dist/', 'coverage/', 'node_modules/', '*.mjs', '*.cjs', '*.js'],
+    ignores: ['out/', 'dist/', 'coverage/', 'node_modules/', '**/*.mjs', '**/*.cjs', '**/*.js'],
   },
 );

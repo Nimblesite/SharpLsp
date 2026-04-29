@@ -10,7 +10,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::net::UnixStream;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use super::protocol::Envelope;
 use super::transport::FramedTransport;
@@ -334,6 +334,15 @@ fn sidecar_launch(
     name: &str,
     socket_path: &str,
 ) -> (String, Vec<String>) {
+    // [SIDECAR-RESOLVE-ENV]: env var override takes absolute priority.
+    if let Some(exe) = env_var_sidecar_override(subdir) {
+        info!(exe = %exe.display(), "Using env-var sidecar override");
+        return (
+            exe.to_string_lossy().to_string(),
+            vec![socket_path.to_string()],
+        );
+    }
+
     if find_on_path(tool_command).is_some() {
         info!(tool = %tool_command, "Using dotnet-tool sidecar from PATH");
         return (tool_command.to_string(), vec![socket_path.to_string()]);
@@ -358,6 +367,23 @@ fn sidecar_launch(
             socket_path.to_string(),
         ],
     )
+}
+
+/// Return the sidecar path from an env var override, if set.
+///
+/// Converts `sidecar-csharp` → `SHARPLSP_CSHARP_SIDECAR_PATH`,
+/// `sidecar-fsharp` → `SHARPLSP_FSHARP_SIDECAR_PATH`, etc.
+fn env_var_sidecar_override(subdir: &str) -> Option<std::path::PathBuf> {
+    let kind = subdir.strip_prefix("sidecar-")?;
+    let env_key = format!("SHARPLSP_{}_SIDECAR_PATH", kind.to_ascii_uppercase());
+    let val = std::env::var(&env_key).ok()?;
+    let path = std::path::PathBuf::from(&val);
+    if path.exists() {
+        Some(path)
+    } else {
+        warn!(env_key = %env_key, path = %val, "Env var sidecar override set but path does not exist");
+        None
+    }
 }
 
 /// Resolve a command name to its full path via the `PATH` environment
@@ -430,6 +456,10 @@ fn fxhash(bytes: &[u8]) -> u32 {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
 mod tests {
     use super::*;
     use anyhow::Result;
@@ -615,5 +645,35 @@ mod tests {
         } else {
             name.to_string()
         }
+    }
+
+    #[test]
+    fn sidecar_launch_uses_env_var_override() {
+        use std::fs;
+
+        let dir = std::env::temp_dir().join(format!("sharplsp-env-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("SharpLsp.Sidecar.CSharp");
+        fs::write(&exe, b"").unwrap();
+
+        // Implements [SIDECAR-RESOLVE-ENV]: SHARPLSP_CSHARP_SIDECAR_PATH overrides all other resolution.
+        std::env::set_var("SHARPLSP_CSHARP_SIDECAR_PATH", exe.to_str().unwrap());
+
+        let (command, args) = sidecar_launch(
+            "sharplsp-missing-tool",
+            "sidecar-csharp",
+            "SharpLsp.Sidecar.CSharp",
+            "/tmp/sharplsp-test-env.sock",
+        );
+
+        std::env::remove_var("SHARPLSP_CSHARP_SIDECAR_PATH");
+        let _ = fs::remove_file(&exe);
+
+        assert_eq!(
+            PathBuf::from(&command),
+            exe,
+            "sidecar_launch must use SHARPLSP_CSHARP_SIDECAR_PATH when set"
+        );
+        assert_eq!(args, vec!["/tmp/sharplsp-test-env.sock"]);
     }
 }

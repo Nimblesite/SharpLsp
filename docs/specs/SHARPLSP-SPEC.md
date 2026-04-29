@@ -121,36 +121,43 @@ The project system is the hardest engineering problem in .NET tooling. [MSBuild]
 
 ### 2.6 Binary Layout & Installation
 
-**ALL SharpLsp binaries live in ONE central location on the machine. NEVER inside an editor extension.** Every editor (VS Code, Zed, Neovim, Helix, etc.) finds `sharplsp` on `$PATH`. Extensions are thin clients that launch the system-installed binaries. **Extensions contain ZERO binaries.**
+**The `sharplsp` binary is bundled inside every per-platform VSIX.** A user who installs the VS Code extension gets a fully working LSP server with zero additional steps. Extensions are NOT thin clients that require a system-installed binary — the binary ships inside the extension.
 
-**Install locations (PREFIX defaults to `~/.local`):**
+**Per-platform VSIX layout:**
 
-| Artifact | Install Path | Purpose |
+Each platform gets its own VSIX. The `sharplsp` binary lives at:
+
+```
+bin/<platform>/sharplsp        (Unix)
+bin/<platform>/sharplsp.exe    (Windows)
+```
+
+| Platform | Binary path inside VSIX |
+|----------|------------------------|
+| `darwin-arm64` | `bin/darwin-arm64/sharplsp` |
+| `darwin-x64` | `bin/darwin-x64/sharplsp` |
+| `linux-x64` | `bin/linux-x64/sharplsp` |
+| `linux-arm64` | `bin/linux-arm64/sharplsp` |
+| `win32-x64` | `bin/win32-x64/sharplsp.exe` |
+| `win32-arm64` | `bin/win32-arm64/sharplsp.exe` |
+
+**Shipwright resolution order for `sharplsp`:**
+
+1. `sharplsp.lspPath` user setting — absolute path override
+2. `SHARPLSP_LSP_PATH` env var — CI and dev overrides
+3. `SHARPLSP_BINARY_DIR` env var — directory override
+4. **Bundled** (`bin/<platform>/sharplsp[.exe]` inside `extensionPath`) ← **default for all users**
+5. PATH — system-installed `sharplsp`
+6. Package manager — Homebrew (macOS/Linux), Scoop (Windows)
+
+**Sidecar install locations:**
+
+Sidecars are framework-dependent dotnet global tools. They are NOT bundled in the VSIX.
+
+| Artifact | Install mechanism | Package ID |
 |---|---|---|
-| `sharplsp` | `$(PREFIX)/bin/sharplsp` | Rust LSP server binary (MUST be on `$PATH`) |
-| C# sidecar | `$(PREFIX)/lib/sharplsp/sidecar-csharp/` | Self-contained single-file executable |
-| F# sidecar | `$(PREFIX)/lib/sharplsp/sidecar-fsharp/` | Self-contained single-file executable |
-
-```
-~/.local/
-├── bin/
-│   └── sharplsp                          (on $PATH)
-└── lib/sharplsp/
-    ├── sidecar-csharp/
-    │   └── SharpLsp.Sidecar.CSharp          (self-contained executable)
-    └── sidecar-fsharp/
-        └── SharpLsp.Sidecar.FSharp          (self-contained executable)
-```
-
-`$(PREFIX)/bin` MUST be on `$PATH`. This is non-negotiable.
-
-**Who installs binaries:**
-
-- **`make install`** — builds from source and copies to the standard locations above. Primary install for developers building from source.
-- **Editor extensions** — download pre-built binaries from GitHub releases and install to the same standard locations. This is the primary install path for end users.
-- **Manual download** — users can download release archives and extract to the standard locations.
-
-All three methods install to the SAME locations. One install serves every editor on the machine.
+| C# sidecar | `dotnet tool install -g SharpLsp.Sidecar.CSharp` | `SharpLsp.Sidecar.CSharp` on NuGet.org |
+| F# sidecar | `dotnet tool install -g SharpLsp.Sidecar.FSharp` | `SharpLsp.Sidecar.FSharp` on NuGet.org |
 
 **Version checking (`--version` flag):**
 
@@ -160,30 +167,32 @@ All three binaries support `--version` and print their version to stdout:
 $ sharplsp --version
 sharplsp 0.1.0
 
-$ SharpLsp.Sidecar.CSharp --version
+$ sharplsp-sidecar-csharp --version
 sharplsp-sidecar-csharp 0.1.0
 
-$ SharpLsp.Sidecar.FSharp --version
+$ sharplsp-sidecar-fsharp --version
 sharplsp-sidecar-fsharp 0.1.0
 ```
 
-Extensions use this to verify the correct version is installed before starting.
+Extensions use this to verify the correct version is active before starting.
 
 **Sidecar resolution by the Rust host (two-step fallback):**
 
-1. **Installed:** `<exe_dir>/../lib/sharplsp/sidecar-csharp/SharpLsp.Sidecar.CSharp` — launched directly as native executable (no `dotnet` required)
+1. **dotnet global tool:** `sharplsp-sidecar-csharp` resolved from PATH (installed via `dotnet tool install -g`)
 2. **Dev build:** `dotnet run --project sidecars/SharpLsp.Sidecar.CSharp` — requires CWD = repo root
 
 ### 2.7 Editor Extension Binary Strategy
 
-**Extensions contain NO binaries. Extensions are THIN CLIENTS.** They exist solely to integrate with the editor's UI and launch `sharplsp` from `$PATH`.
+**The VS Code extension bundles the `sharplsp` binary.** It ships as a per-platform VSIX with the correct pre-built binary for each OS/architecture combination. No system-level install is required for the LSP server.
 
-On activation, every editor extension follows this exact sequence:
+Binary resolution is handled exclusively by `@nimblesite/shipwright-vscode` (`activateDeploymentToolkit`). Extensions MUST NOT hand-roll binary resolution.
 
-1. **Version check:** Run `sharplsp --version` to check if sharplsp is installed and what version it is. The output format is `sharplsp X.Y.Z` — the version is always the second whitespace-delimited token. Extensions parse this deterministically.
-2. **Version match:** If the installed version matches the extension's expected version, start normally. Done.
-3. **Missing or outdated:** Download the correct platform-specific archive from the GitHub release matching the extension version. Install `sharplsp` to `$(PREFIX)/bin/` and sidecars to `$(PREFIX)/lib/sharplsp/`. Then start normally.
-4. **Download fails:** Surface an error to the user with maximum urgency. Do NOT silently degrade. Do NOT fall back to some partial mode. The extension CANNOT function without the binaries. Tell the user exactly what went wrong and how to fix it (manual download link, `make install` instructions, etc.).
+On activation, the VS Code extension follows this sequence:
+
+1. **Shipwright resolves `sharplsp`:** Checks user setting → env vars → bundled binary → PATH → pkgmgr. The bundled binary is the default path — it always exists in a valid VSIX install.
+2. **Shipwright resolves sidecars:** Checks user setting → env vars → PATH (`dotnet tool` install). Sidecar failures degrade gracefully; the LSP server still starts.
+3. **Version verification:** Shipwright probes each resolved binary with `--version` and compares against the manifest's `expectedVersion`. On mismatch, prompts the user with the correct install command.
+4. **Start LSP client:** Pass the resolved `sharplsp` path to `LanguageClient`. Never hardcode a path.
 
 **CRITICAL — Failure must NEVER lock up the editor:**
 
@@ -744,16 +753,15 @@ These are features no single incumbent offers today. This is where SharpLsp stop
 
 ## 11. Distribution
 
-SharpLsp is distributed via three channels:
+SharpLsp is distributed as per-platform VSIXs with the `sharplsp` binary bundled inside each one. Installing the VS Code extension is all a user needs — zero additional steps for the LSP server.
 
-- **`sharplsp`** — Homebrew (macOS/Linux) and Scoop (Windows), from GitHub release assets.
-- **`SharpLsp.Sidecar.CSharp`** — dotnet global tool on NuGet.org.
-- **`SharpLsp.Sidecar.FSharp`** — dotnet global tool on NuGet.org.
+- **`sharplsp`** — bundled inside each per-platform VSIX (`bin/<platform>/sharplsp[.exe]`). Also available via Homebrew (macOS/Linux) and Scoop (Windows) for users who want it on PATH.
+- **`SharpLsp.Sidecar.CSharp`** — dotnet global tool on NuGet.org (`dotnet tool install -g SharpLsp.Sidecar.CSharp`).
+- **`SharpLsp.Sidecar.FSharp`** — dotnet global tool on NuGet.org (`dotnet tool install -g SharpLsp.Sidecar.FSharp`).
 
-Editor extensions MUST verify all three binary versions on activation by
-spawning each with `--version` and comparing against the extension's own
-version. Extensions are forbidden from downloading binaries directly;
-all installation goes through `brew`, `scoop`, or `dotnet tool`.
+Binary resolution is handled by `@nimblesite/shipwright-vscode`. The bundled
+binary is the default resolution source. The `sharplsp.lspPath` setting
+overrides it for advanced users.
 
 See [DISTRIBUTION-SPEC.md](DISTRIBUTION-SPEC.md) for the full distribution
 specification including version invariants, release workflow, and the

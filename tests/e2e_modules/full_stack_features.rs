@@ -340,3 +340,150 @@ fn test_full_stack_call_hierarchy_incoming_calls() {
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
+
+// ── RENAME ────────────────────────────────────────────────────────
+
+// Implements [RENAME-PREPARE] and [RENAME-APPLY]
+
+#[test]
+fn test_full_stack_prepare_rename_returns_range() {
+    require_dotnet();
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    let _ = client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait for sidecar readiness.
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 14, Duration::from_secs(90));
+
+    // Position on "Calculator" class name — line 3, character 13 in test workspace source.
+    let resp = client.request(
+        "textDocument/prepareRename",
+        json!({
+            "textDocument": { "uri": file_uri },
+            "position": { "line": 3, "character": 13 }
+        }),
+    );
+
+    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
+    assert!(
+        resp.get("error").is_none(),
+        "prepareRename must not error: {resp}"
+    );
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "prepareRename must return a range for a renameable symbol, got null"
+    );
+    let range = if result["range"].is_object() {
+        &result["range"]
+    } else {
+        result
+    };
+    assert!(
+        range["start"].is_object() && range["end"].is_object(),
+        "prepareRename result must contain start/end positions, got: {result}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_full_stack_rename_renames_symbol_across_usages() {
+    require_dotnet();
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    let _ = client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 14, Duration::from_secs(90));
+
+    // Rename "Calculator" at line 3, character 13 to "MyCalculator".
+    let resp = client.request(
+        "textDocument/rename",
+        json!({
+            "textDocument": { "uri": file_uri },
+            "position": { "line": 3, "character": 13 },
+            "newName": "MyCalculator"
+        }),
+    );
+
+    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
+    assert!(resp.get("error").is_none(), "rename must not error: {resp}");
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "rename must return a WorkspaceEdit, got null"
+    );
+    let doc_changes = result["documentChanges"]
+        .as_array()
+        .expect("rename result must have documentChanges");
+    assert!(
+        !doc_changes.is_empty(),
+        "rename must produce at least one document change"
+    );
+    let edits = doc_changes[0]["edits"]
+        .as_array()
+        .expect("document change must have edits");
+    assert!(
+        !edits.is_empty(),
+        "rename must produce at least one text edit"
+    );
+    let has_rename = edits.iter().any(|e| {
+        e["newText"]
+            .as_str()
+            .is_some_and(|t| t.contains("MyCalculator"))
+    });
+    assert!(
+        has_rename,
+        "rename edits must contain 'MyCalculator' in newText"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_full_stack_rename_no_sidecar_returns_error_or_null() {
+    // Without a sidecar, rename must not crash the server.
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+    client.open_document(TEST_URI, "namespace T; public class Foo {}");
+
+    let resp = client.request(
+        "textDocument/rename",
+        json!({
+            "textDocument": { "uri": TEST_URI },
+            "position": { "line": 0, "character": 20 },
+            "newName": "Bar"
+        }),
+    );
+
+    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+#[test]
+fn test_full_stack_prepare_rename_no_sidecar_returns_null_or_error() {
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+    client.open_document(TEST_URI, "namespace T; public class Foo {}");
+
+    let resp = client.request(
+        "textDocument/prepareRename",
+        json!({
+            "textDocument": { "uri": TEST_URI },
+            "position": { "line": 0, "character": 20 }
+        }),
+    );
+
+    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}

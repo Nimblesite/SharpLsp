@@ -45,6 +45,8 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("textDocument/semanticTokens/full", HandleSemanticTokensFullAsync);
         Register("textDocument/semanticTokens/range", HandleSemanticTokensRangeAsync);
         Register("textDocument/inlayHint", HandleInlayHintAsync);
+        Register("textDocument/prepareRename", HandlePrepareRenameAsync);
+        Register("textDocument/rename", HandleRenameAsync);
     }
 
     private readonly WorkspaceManager _workspace = new();

@@ -106,6 +106,7 @@ interface ConvertTraceResult {
 export class ProfilerTreeItem extends vscode.TreeItem {
   public readonly nodeKind: string;
   public readonly processPid: number | undefined;
+  public readonly processName: string | undefined;
   public readonly sessionId: string | undefined;
   public readonly outputPath: string | undefined;
 
@@ -115,6 +116,7 @@ export class ProfilerTreeItem extends vscode.TreeItem {
     collapsible: vscode.TreeItemCollapsibleState,
     options?: {
       pid?: number;
+      processName?: string;
       sessionId?: string;
       outputPath?: string;
       contextValue?: string;
@@ -123,6 +125,7 @@ export class ProfilerTreeItem extends vscode.TreeItem {
     super(label, collapsible);
     this.nodeKind = nodeKind;
     this.processPid = options?.pid ?? undefined;
+    this.processName = options?.processName ?? undefined;
     this.sessionId = options?.sessionId ?? undefined;
     this.outputPath = options?.outputPath ?? undefined;
     if (options?.contextValue !== undefined) this.contextValue = options.contextValue;
@@ -310,7 +313,7 @@ function buildProcessNode(proc: DotNetProcess): ProfilerTreeItem {
     `${proc.name} (PID ${String(proc.pid)})`,
     'process',
     vscode.TreeItemCollapsibleState.None,
-    { pid: proc.pid, contextValue: 'profiler-process' },
+    { pid: proc.pid, processName: proc.name, contextValue: 'profiler-process' },
   );
   node.description = proc.command_line;
   node.iconPath = new vscode.ThemeIcon('terminal');
@@ -631,7 +634,7 @@ export function registerCommands(
     vscode.commands.registerCommand(CMD_PROFILER_TRACE_PROCESS, async (item?: ProfilerTreeItem) => {
       const pid = item?.processPid;
       if (pid === undefined) return;
-      await startTraceOn(pid);
+      await startTraceOn(pid, item?.processName);
     }),
   );
 
@@ -706,7 +709,7 @@ export function registerCommands(
       async (item?: ProfilerTreeItem) => {
         const pid = item?.processPid;
         if (pid === undefined) return;
-        await startCountersOn(pid);
+        await startCountersOn(pid, item?.processName);
       },
     ),
   );

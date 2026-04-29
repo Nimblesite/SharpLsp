@@ -29,7 +29,7 @@ function expectedVersion(): string {
   return ext.packageJSON.version;
 }
 
-function sharplspLspCommand(): string {
+function sharplspCommand(): string {
   const envPath = process.env.SHARPLSP_EXECUTABLE_PATH;
   return envPath === undefined || envPath === '' ? SERVER_BINARY : envPath;
 }
@@ -71,7 +71,7 @@ export function describeBinaryStatus(configuredPath: string): {
     return { expected, found: installed, location: configuredPath };
   }
 
-  const command = sharplspLspCommand();
+  const command = sharplspCommand();
   const installed = getInstalledVersion(command, 'sharplsp');
   return { expected, found: installed, location: command };
 }
