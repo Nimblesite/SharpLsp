@@ -1,39 +1,139 @@
 ---
 layout: layouts/base.njk
-title: "SharpLsp - 日本語"
+title: "SharpLsp — C# と F# のためのオープンソース .NET 言語サーバー"
+description: "SharpLsp は VS Code、Zed、Neovim、Helix、Emacs など、あらゆる LSP 対応エディターで動作するオープンソースの C# / F# 言語サーバーです。Roslyn による IntelliSense、診断、リファクタリング、NuGet 管理を MIT ライセンスで提供します。"
 lang: ja
 ---
 
 <section class="masthead">
-  <div class="badge"><span class="status-dot"></span>日本語版</div>
-  <h1 class="title">SharpLsp <span>日本語コンテンツ</span></h1>
+  <div class="badge"><span class="status-dot"></span>オープンソース · MIT ライセンス</div>
+  <h1 class="title">ひとつの <span>.NET 言語サーバー</span>。すべてのエディターへ。</h1>
   <p class="lede">
-    SharpLsp の日本語版を順次公開しています。最初の翻訳記事では、.NET にエディター非依存の LSP が必要な理由を説明します。
+    SharpLsp は Rust で構築されたオープンソースの C# / F# 言語サーバーです。Roslyn が提供する完全な IntelliSense、診断、定義ジャンプ、リファクタリングを VS Code、Zed、または LSP 対応のあらゆるエディターで利用できます。
   </p>
   <div class="button-row">
-    <a class="button button-primary" href="/ja/blog/editor-agnostic-dotnet-lsp/">記事を読む</a>
-    <a class="button button-secondary" href="/blog/editor-agnostic-dotnet-lsp/">English</a>
+    <a class="button button-primary" href="/docs/">はじめる</a>
+    <a class="button button-secondary" href="https://github.com/Nimblesite/SharpLsp">
+      <span class="material-symbols-outlined" aria-hidden="true">code</span>
+      GitHub で見る
+    </a>
   </div>
 </section>
 
 <section class="panel">
   <div class="card-grid card-grid-three">
     <article class="feature-card">
-      <span class="material-symbols-outlined icon-box" aria-hidden="true">language</span>
-      <h2>最初の翻訳記事</h2>
-      <p>.NET 言語ツールを 1 つのエディターに閉じ込めず、C# と F# をあらゆる LSP 対応エディターへ届けるための設計思想を紹介します。</p>
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">terminal</span>
+      <h2>VS Code・Zed 対応</h2>
+      <p>Roslyn による完全な補完、診断、定義ジャンプ、インレイヒントを提供します。Neovim、Helix、Emacs サポートも近日公開予定。</p>
     </article>
     <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">functions</span>
+      <h2>F# を一等市民として</h2>
+      <p>FSharp.Compiler.Service をバックエンドとする F# 言語サーバー。C# と同等の機能深度を提供します。後付けではありません。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">lock_open</span>
+      <h2>サブスクリプション不要。ロックインなし。</h2>
+      <p>MIT ライセンス。VSCodium、Open VSX、LSP 対応のあらゆるエディターで動作。Microsoft アカウント不要。</p>
+    </article>
+  </div>
+</section>
+
+<section class="ecosystem-strip">
+  <p class="ecosystem-label">現在利用可能</p>
+  <span class="ecosystem-name">VS Code</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name">Zed</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name">Rider</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Neovim <small>近日公開</small></span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Helix <small>近日公開</small></span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Emacs <small>近日公開</small></span>
+</section>
+
+<section class="band">
+  <div class="copy-block">
+    <h2>C# Dev Kit に代わるオープンソースの選択肢</h2>
+    <p>C# Dev Kit はクローズドソースで、VSCodium や Open VSX では使用できず、250 名を超える組織や年間売上 100 万ドル以上の企業には有料 Visual Studio サブスクリプションが必要です。SharpLsp は MIT ライセンスで、あらゆるエディターで動作し、ライセンス制限は永遠にありません。</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="card-grid card-grid-three">
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">explore</span>
+      <h2>定義へジャンプ</h2>
+      <p>ソリューション全体のシンボル定義、NuGet パッケージのデコンパイルされたソース、BCL のソースへもジャンプ可能。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">psychology</span>
+      <h2>補完とホバードキュメント</h2>
+      <p>Roslyn が提供する IntelliSense。XML ドキュメントコメント、シグネチャヘルプ、オーバーロード解決を完全サポート。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">build</span>
+      <h2>コードアクションとリファクタリング</h2>
+      <p>シンボルのリネーム、メソッドの抽出、コンストラクターの生成、診断の一括修正 — すべて標準 LSP コードアクション経由。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">format_paint</span>
+      <h2>フォーマット</h2>
+      <p>C# は Roslyn でフォーマット。F# は Fantomas でフォーマット。EditorConfig を尊重。すべてのエディターで動作。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">error</span>
+      <h2>リアルタイム診断</h2>
+      <p>Roslyn コンパイラーのエラーと警告をタイプしながら表示。別途ビルドステップは不要。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">view_in_ar</span>
+      <h2>NuGet 統合</h2>
+      <p>エディターを離れず、CLI コマンドを実行せずに NuGet パッケージを検索・インストール・更新できます。</p>
+    </article>
+  </div>
+</section>
+
+<section class="band">
+  <div class="copy-block">
+    <h2>Visual Studio を手放して、お好みのエディターを使い続けましょう。</h2>
+    <p>Visual Studio は Windows 専用で、重量級 IDE への依存を強います。SharpLsp は同じ Roslyn 言語インテリジェンスを VS Code、Zed、その他のエディターへ届けます — Windows、macOS、Linux で。IDE は不要です。</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="card-grid card-grid-three">
+    <article class="feature-card">
       <span class="material-symbols-outlined icon-box" aria-hidden="true">article</span>
-      <h2>ブログ</h2>
-      <p>日本語のブログ一覧から、翻訳済みの記事を確認できます。</p>
+      <h2>日本語ブログ</h2>
+      <p>翻訳済みの記事から SharpLsp の設計思想や .NET ツール事情を日本語で確認できます。</p>
       <p><a href="/ja/blog/">日本語ブログへ</a></p>
     </article>
     <article class="feature-card">
       <span class="material-symbols-outlined icon-box" aria-hidden="true">menu_book</span>
       <h2>ドキュメント</h2>
-      <p>ドキュメントの日本語化は次の作業です。現時点では英語版ドキュメントを参照してください。</p>
+      <p>インストール手順、エディター設定、補完・診断・ホバー・定義ジャンプの詳細を英語ドキュメントで確認できます。</p>
       <p><a href="/docs/">英語ドキュメントへ</a></p>
     </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">code</span>
+      <h2>オープンソース</h2>
+      <p>ソースコードは GitHub で公開。MIT ライセンス。クローズドコンポーネントなし。あらゆる規模の組織が商用利用可能。</p>
+      <p><a href="https://github.com/Nimblesite/SharpLsp">GitHub で見る</a></p>
+    </article>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="copy-block">
+    <h2>C# と F# を、あなたのエディターで。妥協なしで。</h2>
+    <p>VS Code または Zed に 1 コマンドでインストールできます。MIT ライセンス。永遠にオープンソース。</p>
+  </div>
+  <div class="button-row">
+    <a class="button button-primary" href="/docs/">SharpLsp をインストール</a>
+    <a class="button button-secondary" href="/docs/">ドキュメントを読む</a>
   </div>
 </section>

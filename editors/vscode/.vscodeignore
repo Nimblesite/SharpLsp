@@ -1,8 +1,8 @@
 **/*
 !dist/extension.js
 !language-configuration/*.json
-!icons/forge.png
-!icons/forge.svg
-!icons/forge-activity.svg
+!icons/sharplsp.png
+!icons/sharplsp.svg
+!icons/sharplsp-activity.svg
 !package.json
 !LICENSE

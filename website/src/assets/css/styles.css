@@ -423,9 +423,9 @@ img {
 }
 .ecosystem-logo {
   align-items: center;
-  background: #512bd4;
+  background: var(--surface-highest);
   border-radius: 6px;
-  color: #fff;
+  color: var(--primary-container);
   display: inline-flex;
   font-size: 0.72rem;
   font-weight: 800;
