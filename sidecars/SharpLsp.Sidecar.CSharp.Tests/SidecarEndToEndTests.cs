@@ -1,4 +1,3 @@
-using System.Net.Sockets;
 using MessagePack;
 using Microsoft.Build.Locator;
 using SharpLsp.Sidecar.Common.Ipc;
@@ -141,26 +140,20 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
 
         _ = Task.Run(async () => await _sidecar.RunAsync(_socketPath).ConfigureAwait(false));
 
-        Socket? client = null;
+        Stream? client = null;
         for (var i = 0; i < 200 && client is null; i++)
         {
             await Task.Delay(50).ConfigureAwait(false);
-            try
+            var result = await IpcConnection.ConnectAsync(_socketPath).ConfigureAwait(false);
+            if (result is Outcome.Result<Stream, string>.Ok<Stream, string> ok)
             {
-                var s = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-                await s.ConnectAsync(new UnixDomainSocketEndPoint(_socketPath))
-                    .ConfigureAwait(false);
-                client = s;
-            }
-            catch
-            {
-                // Retry until sidecar is listening
+                client = ok.Value;
             }
         }
 
         _transport = client is null
             ? throw new InvalidOperationException("Cannot connect to sidecar")
-            : new FramedTransport(new NetworkStream(client, ownsSocket: true));
+            : new FramedTransport(client);
 
         var payload = MessagePackSerializer.Serialize(TempDir);
         var resp = await SendAsync("workspace/open", payload).ConfigureAwait(false);

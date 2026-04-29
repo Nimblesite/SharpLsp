@@ -1,4 +1,4 @@
-# agent-pmo:2efd847
+---
 name: PR
 'on':
   pull_request:
@@ -51,7 +51,7 @@ jobs:
         restore-keys: "${{ runner.os }}-nuget-"
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '24'
         cache: npm
         cache-dependency-path: editors/vscode/package-lock.json
     - name: Install dependencies
@@ -96,7 +96,7 @@ jobs:
         dotnet-version: 10.0.x
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '24'
     - name: Install .NET diagnostic tools
       run: |
         dotnet tool install -g dotnet-trace
@@ -161,7 +161,7 @@ jobs:
         dotnet-version: 10.0.x
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '24'
         cache: npm
         cache-dependency-path: editors/vscode/package-lock.json
     - name: Install VS Code extension deps
@@ -177,8 +177,7 @@ jobs:
           fi
         done
     - name: Test VS Code extension with coverage
-      run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR
-        xvfb-run -a make _test-vsix
+      run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR xvfb-run -a make _test-vsix
     - name: Verify VSIX contains platform binary
       shell: bash
       run: |-

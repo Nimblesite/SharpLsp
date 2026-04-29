@@ -154,7 +154,33 @@ Tag-triggered (`v*`). Jobs:
 3. **`build-vsix`** — for each platform: stages `bin/<platform>/sharplsp[.exe]` + `bin/all/sharplsp-sidecar-*`, runs `vsce package --target <platform>`. Produces 6 per-platform `.vsix` files, each fully self-contained.
 4. **`release`** — creates GitHub release with all archives and VSIXs, updates Homebrew tap, updates Scoop bucket, publishes VSIXs to VS Code Marketplace.
 
-## 10. Required Secrets
+## 10. CI Toolchain Requirements
+
+### Node.js
+
+**Minimum: Node.js 20.x.x.** This is the minimum required by `@vscode/vsce` v3.x.
+
+Ground truth: https://github.com/microsoft/vscode-vsce
+
+All CI jobs that run `vsce package` or `vsce publish` MUST use `node-version: '20'` or higher. Do not upgrade beyond what vsce requires without checking the above URL first.
+
+### .NET
+
+**Required: .NET 10.** All sidecar publish steps use `dotnet publish --no-self-contained` targeting `net10.0`.
+
+### Rust
+
+Stable toolchain. Cross-compilation targets must be added via `dtolnay/rust-toolchain@stable` with explicit `targets:`.
+
+### Windows sidecar transport
+
+`tokio::net::UnixStream` is **unix-only** and MUST NOT be used unconditionally. All sidecar transport code MUST be gated:
+- `#[cfg(unix)]` — use `tokio::net::UnixStream`
+- `#[cfg(windows)]` — use TCP loopback (`127.0.0.1:0`) or `tokio::net::windows::named_pipe`
+
+Both the Rust host and the .NET sidecar MUST use the same transport on each platform. Win32 builds failing to compile due to `UnixStream` is a hard blocker.
+
+## 11. Required Secrets
 
 | Secret | Purpose |
 |---|---|
