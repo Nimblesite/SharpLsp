@@ -113,7 +113,18 @@ test-zed:
 test-vsix: _build-rust _build-dotnet _build-vsix
 	@echo "==> Running VS Code extension tests..."
 	$(MAKE) _stage-vsix-binary
-	cd $(VSCODE_DIR) && env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR -u FORGE_LSP_PATH -u FORGE_BINARY_DIR SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" npm test -- --coverage; status=$$?; rm -rf "$(abspath $(VSCODE_DIR))/bin"; exit $$status
+	cd $(VSCODE_DIR) && \
+		env -u SHARPLSP_EXECUTABLE_PATH \
+			-u SHARPLSP_LSP_PATH \
+			-u SHARPLSP_BINARY_DIR \
+			-u FORGE_LSP_PATH \
+			-u FORGE_BINARY_DIR \
+			SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
+			SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
+			npm test -- --coverage; \
+	status=$$?; \
+	rm -rf "$(abspath $(VSCODE_DIR))/bin"; \
+	exit $$status
 	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
 
 test-dotnet: _build-dotnet

@@ -1,6 +1,6 @@
 import { HtmlBasePlugin } from "@11ty/eleventy";
 import techdoc from "eleventy-plugin-techdoc";
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -9,6 +9,23 @@ const pluginLayouts = join(__dirname, "node_modules/eleventy-plugin-techdoc/temp
 const pluginPages = join(__dirname, "node_modules/eleventy-plugin-techdoc/templates/pages");
 const localLayouts = join(__dirname, "src/_includes/layouts");
 const localOverrides = join(__dirname, "src/_includes/overrides");
+const outputDir = join(__dirname, "_site");
+
+function removeOutputSymlinks(directory) {
+  if (!existsSync(directory)) {
+    return;
+  }
+
+  for (const entry of readdirSync(directory)) {
+    const path = join(directory, entry);
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) {
+      unlinkSync(path);
+    } else if (stat.isDirectory()) {
+      removeOutputSymlinks(path);
+    }
+  }
+}
 
 // Patch plugin layouts with local overrides before Eleventy registers virtual templates
 for (const file of ["base.njk", "blog.njk", "docs.njk", "prose.njk", "author.njk"]) {
@@ -27,6 +44,10 @@ for (const file of ["tags-pages.njk", "categories-pages.njk"]) {
 }
 
 export default function (eleventyConfig) {
+  eleventyConfig.on("eleventy.before", () => {
+    removeOutputSymlinks(outputDir);
+  });
+
   eleventyConfig.addPlugin(techdoc, {
     site: {
       name: "SharpLsp",

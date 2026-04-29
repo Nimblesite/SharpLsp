@@ -142,8 +142,10 @@ test.describe('Desktop nav (sanity check)', () => {
       await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
 
       if (path === '/ja/docs/') {
-        await expect(page.locator('body')).toContainText('SharpLsp 日本語ドキュメント');
+        await expect(page.locator('.prose h1')).toContainText('SharpLsp を始める');
+        await expect(page.locator('#docs-sidebar')).toBeVisible();
         await expect(page.locator('body')).toContainText('.NET 10.0 SDK');
+        await expect(page.locator('body')).toContainText('インストール');
         await expect(page.locator('body')).not.toContainText('準備中');
         await expect(page.locator('body')).not.toContainText('英語ドキュメント');
       }

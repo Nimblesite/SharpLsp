@@ -2,7 +2,7 @@
 layout: layouts/base.njk
 ---
 
-{% if page.url.startsWith('/docs/') or page.url.startsWith('/zh/docs/') %}
+{% if page.url.startsWith('/docs/') or page.url.startsWith('/zh/docs/') or page.url.startsWith('/ja/docs/') %}
 <div class="docs-layout">
   {{ content | safe }}
 </div>
