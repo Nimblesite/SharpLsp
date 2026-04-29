@@ -97,6 +97,10 @@ jobs:
           cache: npm
           cache-dependency-path: editors/vscode/package-lock.json
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
       - name: Install VS Code extension dependencies
         run: npm ci --prefix editors/vscode
 
@@ -129,7 +133,7 @@ jobs:
           binary="target/${{ matrix.rust_target }}/release/sharplsp${exe}"
           "$binary" --version | grep -Fx "sharplsp ${VERSION}"
 
-      - name: Verify VSIX contains platform binary
+      - name: Verify VSIX contains all binaries
         shell: bash
         run: |-
           set -euo pipefail
@@ -137,6 +141,10 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
           unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" \
             | grep -F "bin/${{ matrix.platform }}/sharplsp${exe}"
+          unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" \
+            | grep -F "bin/all/sharplsp-sidecar-csharp"
+          unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" \
+            | grep -F "bin/all/sharplsp-sidecar-fsharp"
 
       - name: Package binary archive
         if: runner.os != 'Windows'
@@ -170,34 +178,9 @@ jobs:
           name: archive-${{ matrix.rust_target }}
           path: dist-archive/*
 
-  pack-sidecars:
-    name: Pack sidecars
-    needs: set-version
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Extract version from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
-      - name: Pack sidecars
-        run: make _pack-sidecars VERSION="$VERSION"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: sidecar-nupkgs
-          path: nupkgs/*.nupkg
-
   release:
     name: Create GitHub Release
-    needs: [build-vsix, pack-sidecars]
+    needs: [build-vsix]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -214,4 +197,4 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "SharpLsp ${{ github.ref_name }}" \
             --generate-notes \
-            artifacts/*.tar.gz artifacts/*.zip artifacts/*.vsix artifacts/*.nupkg
+            artifacts/*.tar.gz artifacts/*.zip artifacts/*.vsix

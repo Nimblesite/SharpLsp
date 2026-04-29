@@ -271,14 +271,18 @@ package-vsix-win32-x64 package-vsix-win32-arm64:
 
 _package-vsix:
 	@echo "==> Packaging VSIX for $(VSIX_PLAT)..."
-	rm -rf $(VSCODE_DIR)/bin/$(VSIX_PLAT)
-	mkdir -p $(VSCODE_DIR)/bin/$(VSIX_PLAT)
+	rm -rf $(VSCODE_DIR)/bin/$(VSIX_PLAT) $(VSCODE_DIR)/bin/all
+	mkdir -p $(VSCODE_DIR)/bin/$(VSIX_PLAT) $(VSCODE_DIR)/bin/all
 	cp target/$(RUST_TARGET)/release/sharplsp$(EXE) $(VSCODE_DIR)/bin/$(VSIX_PLAT)/sharplsp$(EXE)
 	chmod +x $(VSCODE_DIR)/bin/$(VSIX_PLAT)/sharplsp$(EXE) 2>/dev/null || true
-	mkdir -p $(VSCODE_DIR)/bin/all
-	cp $(SIDECAR_CS_OUT)/SharpLsp.Sidecar.CSharp $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp
-	cp $(SIDECAR_FS_OUT)/SharpLsp.Sidecar.FSharp $(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp
-	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp $(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
+	cp -r $(SIDECAR_CS_OUT)/. $(VSCODE_DIR)/bin/all/
+	cp -r $(SIDECAR_FS_OUT)/. $(VSCODE_DIR)/bin/all/
+	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.CSharp \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp 2>/dev/null || true
+	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.FSharp \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
+	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p dist
 	cd $(VSCODE_DIR) && npx @vscode/vsce package --no-dependencies \
