@@ -10,7 +10,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::net::UnixStream;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use super::protocol::Envelope;
 use super::transport::FramedTransport;
@@ -73,15 +73,15 @@ impl SidecarManager {
     /// Create a manager for the C# sidecar.
     pub fn csharp(workspace_root: &Path) -> Self {
         let socket_path = format!(
-            "{}/forge-csharp-{:x}.sock",
+            "{}/sharplsp-csharp-{:x}.sock",
             std::env::temp_dir().display(),
             fxhash(workspace_root.to_string_lossy().as_bytes())
         );
 
         let (command, args) = sidecar_launch(
-            "forge-sidecar-csharp",
+            "sharplsp-sidecar-csharp",
             "sidecar-csharp",
-            "Forge.Sidecar.CSharp",
+            "SharpLsp.Sidecar.CSharp",
             &socket_path,
         );
         Self::new("C# (Roslyn)", &command, args, &socket_path)
@@ -90,15 +90,15 @@ impl SidecarManager {
     /// Create a manager for the F# sidecar.
     pub fn fsharp(workspace_root: &Path) -> Self {
         let socket_path = format!(
-            "{}/forge-fsharp-{:x}.sock",
+            "{}/sharplsp-fsharp-{:x}.sock",
             std::env::temp_dir().display(),
             fxhash(workspace_root.to_string_lossy().as_bytes())
         );
 
         let (command, args) = sidecar_launch(
-            "forge-sidecar-fsharp",
+            "sharplsp-sidecar-fsharp",
             "sidecar-fsharp",
-            "Forge.Sidecar.FSharp",
+            "SharpLsp.Sidecar.FSharp",
             &socket_path,
         );
         Self::new("F# (FCS)", &command, args, &socket_path)
@@ -166,13 +166,25 @@ impl SidecarManager {
         // Clean up stale socket.
         let _ = tokio::fs::remove_file(&self.socket_path).await;
 
+        info!(
+            sidecar = %self.name,
+            command = %self.spawn_command,
+            args = ?self.spawn_args,
+            socket = %self.socket_path,
+            "Spawning sidecar process"
+        );
         let mut child = Command::new(&self.spawn_command)
             .args(&self.spawn_args)
             .kill_on_drop(true)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit())
             .spawn()
-            .with_context(|| format!("failed to spawn {} sidecar", self.name))?;
+            .with_context(|| {
+                format!(
+                    "failed to spawn {} sidecar: command={:?} args={:?}",
+                    self.name, self.spawn_command, self.spawn_args
+                )
+            })?;
 
         let socket_path = self.wait_for_ready(&mut child).await?;
 
@@ -320,7 +332,7 @@ async fn health_loop(sidecar: Arc<SidecarManager>) -> ! {
 /// Resolve sidecar launch command and arguments.
 ///
 /// Resolution order:
-///   1. `dotnet tool` shim on `PATH` (e.g. `forge-sidecar-csharp`).
+///   1. `dotnet tool` shim on `PATH` (e.g. `sharplsp-sidecar-csharp`).
 ///      This is the production distribution path.
 ///   2. Legacy installed layouts (VSIX bundle, `make install`, dev target).
 ///      Kept as a transitional fallback while the distribution spec
@@ -334,20 +346,35 @@ fn sidecar_launch(
     name: &str,
     socket_path: &str,
 ) -> (String, Vec<String>) {
-    if find_on_path(tool_command).is_some() {
-        info!(tool = %tool_command, "Using dotnet-tool sidecar from PATH");
-        return (tool_command.to_string(), vec![socket_path.to_string()]);
-    }
+    debug!(
+        tool_command,
+        subdir, name, socket_path, "Resolving sidecar launch command"
+    );
 
-    if let Some(exe) = installed_sidecar_exe(subdir, name) {
-        info!(exe = %exe.display(), "Using legacy installed sidecar");
+    // [SIDECAR-RESOLVE-ENV]: env var override takes absolute priority.
+    if let Some(exe) = env_var_sidecar_override(subdir) {
+        info!(exe = %exe.display(), source = "env-var", "Sidecar resolved");
         return (
             exe.to_string_lossy().to_string(),
             vec![socket_path.to_string()],
         );
     }
 
-    info!(sidecar = %name, "Using dev sidecar (dotnet run)");
+    if let Some(found) = find_on_path(tool_command) {
+        info!(tool = %tool_command, path = %found.display(), source = "PATH", "Sidecar resolved");
+        return (tool_command.to_string(), vec![socket_path.to_string()]);
+    }
+    debug!(tool_command, "Tool not found on PATH");
+
+    if let Some(exe) = installed_sidecar_exe(subdir, name) {
+        info!(exe = %exe.display(), source = "installed", "Sidecar resolved");
+        return (
+            exe.to_string_lossy().to_string(),
+            vec![socket_path.to_string()],
+        );
+    }
+
+    info!(sidecar = %name, source = "dotnet-run", "Sidecar resolved — using dev dotnet run");
     (
         "dotnet".to_string(),
         vec![
@@ -358,6 +385,31 @@ fn sidecar_launch(
             socket_path.to_string(),
         ],
     )
+}
+
+/// Return the sidecar path from an env var override, if set.
+///
+/// Converts `sidecar-csharp` → `SHARPLSP_CSHARP_SIDECAR_PATH`,
+/// `sidecar-fsharp` → `SHARPLSP_FSHARP_SIDECAR_PATH`, etc.
+fn env_var_sidecar_override(subdir: &str) -> Option<std::path::PathBuf> {
+    let kind = subdir.strip_prefix("sidecar-")?;
+    let env_key = format!("SHARPLSP_{}_SIDECAR_PATH", kind.to_ascii_uppercase());
+    match std::env::var(&env_key) {
+        Err(_) => {
+            debug!(env_key = %env_key, "Env var not set — skipping env-var override");
+            None
+        }
+        Ok(val) => {
+            let path = std::path::PathBuf::from(&val);
+            if path.exists() {
+                debug!(env_key = %env_key, path = %val, "Env var sidecar override resolved");
+                Some(path)
+            } else {
+                warn!(env_key = %env_key, path = %val, "Env var sidecar override set but path does not exist — skipping");
+                None
+            }
+        }
+    }
 }
 
 /// Resolve a command name to its full path via the `PATH` environment
@@ -385,13 +437,15 @@ fn find_on_path(command: &str) -> Option<std::path::PathBuf> {
 ///
 /// Searches three layouts in priority order:
 ///   1. VSIX bundle:    `<exe_dir>/<subdir>/<name>[.exe]`
-///   2. `make install`: `<exe_dir>/../lib/forge/<subdir>/<name>[.exe]`
+///   2. `make install`: `<exe_dir>/../lib/sharplsp/<subdir>/<name>[.exe]`
 ///   3. Dev build:      `<exe_dir>/../<subdir>/<name>[.exe]`
-///      (e.g. `target/sidecar-csharp/` next to `target/release/forge-lsp`,
+///      (e.g. `target/sidecar-csharp/` next to `target/release/sharplsp`,
 ///      where `make build-dotnet` writes the published sidecar output)
 fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf> {
     let current = std::env::current_exe().ok()?;
     let exe_dir = current.parent()?;
+    debug!(current_exe = %current.display(), exe_dir = %exe_dir.display(), "Resolving installed sidecar");
+
     let exe_name = if cfg!(windows) {
         format!("{name}.exe")
     } else {
@@ -400,23 +454,39 @@ fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf>
 
     // 1. VSIX layout: sidecar sits next to the binary.
     let vsix = exe_dir.join(subdir).join(&exe_name);
+    debug!(candidate = %vsix.display(), "Checking VSIX layout");
     if vsix.exists() {
+        debug!(path = %vsix.display(), "Found sidecar at VSIX layout");
         return Some(vsix);
     }
 
-    // 2. make install layout: ../lib/forge/<subdir>/
+    // 2. make install layout: ../lib/sharplsp/<subdir>/
     let installed = exe_dir
         .parent()?
-        .join("lib/forge")
+        .join("lib/sharplsp")
         .join(subdir)
         .join(&exe_name);
+    debug!(candidate = %installed.display(), "Checking make-install layout");
     if installed.exists() {
+        debug!(path = %installed.display(), "Found sidecar at make-install layout");
         return Some(installed);
     }
 
     // 3. Dev-build layout: sibling of target/release or target/debug.
     let dev = exe_dir.parent()?.join(subdir).join(&exe_name);
-    dev.exists().then_some(dev)
+    debug!(candidate = %dev.display(), "Checking dev-build layout");
+    if dev.exists() {
+        debug!(path = %dev.display(), "Found sidecar at dev-build layout");
+        Some(dev)
+    } else {
+        warn!(
+            vsix = %vsix.display(),
+            installed = %installed.display(),
+            dev = %dev.display(),
+            "No installed sidecar found at any layout — falling back to dotnet run"
+        );
+        None
+    }
 }
 
 /// Simple FNV-style hash for generating short socket names.
@@ -430,6 +500,10 @@ fn fxhash(bytes: &[u8]) -> u32 {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
 mod tests {
     use super::*;
     use anyhow::Result;
@@ -480,11 +554,11 @@ mod tests {
     }
 
     #[test]
-    fn csharp_socket_path_contains_forge_csharp() {
+    fn csharp_socket_path_contains_sharplsp_csharp() {
         let mgr = SidecarManager::csharp(&PathBuf::from("/workspace"));
         assert!(
-            mgr.socket_path.contains("forge-csharp"),
-            "expected socket_path to contain 'forge-csharp', got: {}",
+            mgr.socket_path.contains("sharplsp-csharp"),
+            "expected socket_path to contain 'sharplsp-csharp', got: {}",
             mgr.socket_path
         );
     }
@@ -496,11 +570,11 @@ mod tests {
     }
 
     #[test]
-    fn fsharp_socket_path_contains_forge_fsharp() {
+    fn fsharp_socket_path_contains_sharplsp_fsharp() {
         let mgr = SidecarManager::fsharp(&PathBuf::from("/workspace"));
         assert!(
-            mgr.socket_path.contains("forge-fsharp"),
-            "expected socket_path to contain 'forge-fsharp', got: {}",
+            mgr.socket_path.contains("sharplsp-fsharp"),
+            "expected socket_path to contain 'sharplsp-fsharp', got: {}",
             mgr.socket_path
         );
     }
@@ -514,7 +588,7 @@ mod tests {
 
     #[test]
     fn find_on_path_returns_none_for_missing_command() {
-        let command = format!("forge-missing-command-{}", std::process::id());
+        let command = format!("sharplsp-missing-command-{}", std::process::id());
         assert!(find_on_path(&command).is_none());
     }
 
@@ -524,19 +598,20 @@ mod tests {
             "dotnet",
             "unused-sidecar-dir",
             "Unused.Sidecar",
-            "/tmp/forge-test.sock",
+            "/tmp/sharplsp-test.sock",
         );
         assert_eq!(command, "dotnet");
-        assert_eq!(args, vec!["/tmp/forge-test.sock"]);
+        assert_eq!(args, vec!["/tmp/sharplsp-test.sock"]);
     }
 
     #[test]
     fn sidecar_launch_falls_back_to_dotnet_run() {
-        let name = format!("Forge.Missing.Sidecar.{}", std::process::id());
-        let command_name = format!("forge-missing-sidecar-{}", std::process::id());
+        let name = format!("SharpLsp.Missing.Sidecar.{}", std::process::id());
+        let command_name = format!("sharplsp-missing-sidecar-{}", std::process::id());
         let subdir = format!("missing-sidecar-dir-{}", std::process::id());
 
-        let (command, args) = sidecar_launch(&command_name, &subdir, &name, "/tmp/forge-test.sock");
+        let (command, args) =
+            sidecar_launch(&command_name, &subdir, &name, "/tmp/sharplsp-test.sock");
 
         assert_eq!(command, "dotnet");
         assert_eq!(
@@ -546,7 +621,7 @@ mod tests {
                 "--project".to_string(),
                 format!("sidecars/{name}"),
                 "--".to_string(),
-                "/tmp/forge-test.sock".to_string(),
+                "/tmp/sharplsp-test.sock".to_string(),
             ]
         );
     }
@@ -554,18 +629,18 @@ mod tests {
     #[test]
     fn sidecar_launch_uses_legacy_installed_sidecar() -> Result<()> {
         let subdir = format!("sidecar-test-{}", std::process::id());
-        let name = format!("Forge.Sidecar.Test{}", std::process::id());
+        let name = format!("SharpLsp.Sidecar.Test{}", std::process::id());
         let exe = create_vsix_sidecar(&subdir, &name)?;
 
         let (command, args) = sidecar_launch(
-            "forge-missing-installed-sidecar",
+            "sharplsp-missing-installed-sidecar",
             &subdir,
             &name,
-            "/tmp/forge-test.sock",
+            "/tmp/sharplsp-test.sock",
         );
 
         assert_eq!(PathBuf::from(command), exe);
-        assert_eq!(args, vec!["/tmp/forge-test.sock"]);
+        assert_eq!(args, vec!["/tmp/sharplsp-test.sock"]);
 
         remove_vsix_sidecar(&subdir, &name)?;
         Ok(())
@@ -574,7 +649,7 @@ mod tests {
     #[test]
     fn installed_sidecar_exe_returns_none_for_missing_sidecar() {
         let subdir = format!("sidecar-missing-{}", std::process::id());
-        let name = format!("Forge.Sidecar.Missing{}", std::process::id());
+        let name = format!("SharpLsp.Sidecar.Missing{}", std::process::id());
         assert!(installed_sidecar_exe(&subdir, &name).is_none());
     }
 
@@ -614,5 +689,35 @@ mod tests {
         } else {
             name.to_string()
         }
+    }
+
+    #[test]
+    fn sidecar_launch_uses_env_var_override() {
+        use std::fs;
+
+        let dir = std::env::temp_dir().join(format!("sharplsp-env-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("SharpLsp.Sidecar.CSharp");
+        fs::write(&exe, b"").unwrap();
+
+        // Implements [SIDECAR-RESOLVE-ENV]: SHARPLSP_CSHARP_SIDECAR_PATH overrides all other resolution.
+        std::env::set_var("SHARPLSP_CSHARP_SIDECAR_PATH", exe.to_str().unwrap());
+
+        let (command, args) = sidecar_launch(
+            "sharplsp-missing-tool",
+            "sidecar-csharp",
+            "SharpLsp.Sidecar.CSharp",
+            "/tmp/sharplsp-test-env.sock",
+        );
+
+        std::env::remove_var("SHARPLSP_CSHARP_SIDECAR_PATH");
+        let _ = fs::remove_file(&exe);
+
+        assert_eq!(
+            PathBuf::from(&command),
+            exe,
+            "sidecar_launch must use SHARPLSP_CSHARP_SIDECAR_PATH when set"
+        );
+        assert_eq!(args, vec!["/tmp/sharplsp-test-env.sock"]);
     }
 }

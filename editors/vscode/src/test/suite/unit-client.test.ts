@@ -7,7 +7,7 @@ import { SERVER_BINARY, SERVER_BINARY_WIN, CONFIG_SECTION } from '../../constant
 import {
   EXTENSION_ID,
   LSP_RESPONSE_TIMEOUT_MS,
-  findForgeBinary,
+  findSharpLspBinary,
   openCSharpFile,
   waitForDocumentSymbols,
   closeAllEditors,
@@ -16,16 +16,16 @@ import {
 } from './test-helpers.js';
 
 suite('Client Module — Binary Resolution Logic', () => {
-  test("SERVER_BINARY is 'forge-lsp' on non-Windows", function () {
+  test("SERVER_BINARY is 'sharplsp' on non-Windows", function () {
     if (process.platform === 'win32') {
       this.skip();
       return;
     }
-    assert.strictEqual(SERVER_BINARY, 'forge-lsp');
+    assert.strictEqual(SERVER_BINARY, 'sharplsp');
   });
 
-  test("SERVER_BINARY_WIN is 'forge-lsp.exe'", () => {
-    assert.strictEqual(SERVER_BINARY_WIN, 'forge-lsp.exe');
+  test("SERVER_BINARY_WIN is 'sharplsp.exe'", () => {
+    assert.strictEqual(SERVER_BINARY_WIN, 'sharplsp.exe');
   });
 
   test('platform detection yields correct binary name', () => {
@@ -37,16 +37,16 @@ suite('Client Module — Binary Resolution Logic', () => {
     }
   });
 
-  test('findForgeBinary() returns a string or undefined', () => {
-    const result = findForgeBinary();
+  test('findSharpLspBinary() returns a string or undefined', () => {
+    const result = findSharpLspBinary();
     assert.ok(
       result === undefined || typeof result === 'string',
       'Must return string or undefined',
     );
   });
 
-  test('if findForgeBinary() returns a path, it exists on disk', () => {
-    const result = findForgeBinary();
+  test('if findSharpLspBinary() returns a path, it exists on disk', () => {
+    const result = findSharpLspBinary();
     if (result && !result.includes(path.sep)) {
       return;
     }
@@ -104,7 +104,7 @@ suite('Client Module — LSP Client Created by Extension', () => {
   test('extension exposes active language client after activation', () => {
     const extId = EXTENSION_ID as string;
     const ext = vscode.extensions.getExtension(
-      `forge-lsp.${extId === 'forge-lsp' ? 'forge' : extId}`,
+      `sharplsp.${extId === 'sharplsp' ? 'sharp-lsp' : extId}`,
     );
     assert.ok(
       ext === undefined || ext.isActive,
@@ -153,18 +153,18 @@ suite('Client Module — LSP Client Created by Extension', () => {
 suite('Client Module — Error Path: Missing Binary', () => {
   test('configured path that does not exist falls through', async () => {
     const wsConfig = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    const original = wsConfig.get<string>('server.path');
+    const original = wsConfig.get<string>('lspPath');
     try {
       await wsConfig.update(
-        'server.path',
-        '/nonexistent/path/forge-lsp',
+        'lspPath',
+        '/nonexistent/path/sharplsp',
         vscode.ConfigurationTarget.Workspace,
       );
       const configured = config.serverPath();
-      assert.strictEqual(configured, '/nonexistent/path/forge-lsp');
+      assert.strictEqual(configured, '/nonexistent/path/sharplsp');
       assert.ok(!fs.existsSync(configured), 'This path must not exist for the test to be valid');
     } finally {
-      await wsConfig.update('server.path', original, vscode.ConfigurationTarget.Workspace);
+      await wsConfig.update('lspPath', original, vscode.ConfigurationTarget.Workspace);
     }
   });
 
@@ -177,10 +177,11 @@ suite('Client Module — Error Path: Missing Binary', () => {
 
   test('bundled binary path construction is correct', () => {
     const binaryName = process.platform === 'win32' ? SERVER_BINARY_WIN : SERVER_BINARY;
-    const fakePath = path.join('/fake/extension/path', 'bin', binaryName);
+    const platform = detectRuntimePlatform();
+    const fakePath = path.join('/fake/extension/path', 'bin', platform, binaryName);
     assert.ok(
-      fakePath.endsWith(path.join('bin', binaryName)),
-      'Bundled path should end with bin/<binary>',
+      fakePath.endsWith(path.join('bin', platform, binaryName)),
+      'Bundled path should end with bin/<platform>/<binary>',
     );
   });
 
@@ -192,3 +193,13 @@ suite('Client Module — Error Path: Missing Binary', () => {
     );
   });
 });
+
+function detectRuntimePlatform(): string {
+  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64';
+  if (process.platform === 'darwin') return 'darwin-x64';
+  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64';
+  if (process.platform === 'linux') return 'linux-x64';
+  if (process.platform === 'win32' && process.arch === 'arm64') return 'win32-arm64';
+  if (process.platform === 'win32') return 'win32-x64';
+  return 'linux-x64';
+}

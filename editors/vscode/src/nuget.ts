@@ -153,7 +153,7 @@ export async function addNuGetPackageToProject(projectPath: string): Promise<voi
 
 function includePrerelease(): boolean {
   return (
-    vscode.workspace.getConfiguration('forge').get<boolean>('nuget.includePrerelease') ?? false
+    vscode.workspace.getConfiguration('sharplsp').get<boolean>('nuget.includePrerelease') ?? false
   );
 }
 
@@ -213,12 +213,14 @@ async function runDotnet(args: string[]): Promise<string> {
  * Register NuGet commands.
  */
 export function registerNuGetCommands(context: vscode.ExtensionContext): void {
-  context.subscriptions.push(vscode.commands.registerCommand('forge.nuget.add', addNuGetPackage));
   context.subscriptions.push(
-    vscode.commands.registerCommand('forge.nuget.update', updateNuGetPackage),
+    vscode.commands.registerCommand('sharplsp.nuget.add', addNuGetPackage),
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand('forge.nuget.restore', restorePackages),
+    vscode.commands.registerCommand('sharplsp.nuget.update', updateNuGetPackage),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sharplsp.nuget.restore', restorePackages),
   );
   info('NuGet commands registered');
 }

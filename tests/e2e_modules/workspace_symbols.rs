@@ -131,7 +131,7 @@ fn test_workspace_symbols_returns_project_with_symbols() {
     let mut client = LspClient::start();
     initialize_workspace_symbols_client(&mut client, &tmp);
 
-    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    let resp = client.request("sharplsp/workspaceSymbols", json!({ "solution": sln_path }));
     assert!(resp.get("error").is_none(), "must not error: {resp}");
 
     let projects = resp["result"]["projects"].as_array().unwrap();
@@ -158,7 +158,10 @@ fn test_workspace_symbols_returns_project_from_real_slnx() {
     let mut client = LspClient::start();
     initialize_workspace_symbols_client(&mut client, &tmp);
 
-    let resp = client.request("forge/workspaceSymbols", json!({ "solution": slnx_path }));
+    let resp = client.request(
+        "sharplsp/workspaceSymbols",
+        json!({ "solution": slnx_path }),
+    );
     assert!(resp.get("error").is_none(), "must not error: {resp}");
 
     let projects = resp["result"]["projects"].as_array().unwrap();
@@ -191,7 +194,7 @@ fn test_workspace_symbols_extracts_all_symbol_kinds() {
     let mut client = LspClient::start();
     initialize_workspace_symbols_client(&mut client, &tmp);
 
-    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    let resp = client.request("sharplsp/workspaceSymbols", json!({ "solution": sln_path }));
     assert!(resp.get("error").is_none(), "must not error: {resp}");
 
     let file_symbols = &resp["result"]["projects"][0]["symbols"][0]["symbols"];
@@ -243,7 +246,7 @@ fn test_workspace_symbols_symbol_ranges_valid() {
     let mut client = LspClient::start();
     initialize_workspace_symbols_client(&mut client, &tmp);
 
-    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    let resp = client.request("sharplsp/workspaceSymbols", json!({ "solution": sln_path }));
     let file_symbols = &resp["result"]["projects"][0]["symbols"][0]["symbols"];
 
     assert_ranges(file_symbols.as_array().unwrap());
@@ -273,7 +276,7 @@ fn test_workspace_symbols_access_modifiers() {
     let mut client = LspClient::start();
     initialize_workspace_symbols_client(&mut client, &tmp);
 
-    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    let resp = client.request("sharplsp/workspaceSymbols", json!({ "solution": sln_path }));
 
     let syms = resp["result"]["projects"][0]["symbols"][0]["symbols"]
         .as_array()
@@ -296,7 +299,7 @@ fn test_workspace_symbols_nonexistent_solution() {
     initialize_workspace_symbols_client(&mut client, &tmp);
 
     let resp = client.request(
-        "forge/workspaceSymbols",
+        "sharplsp/workspaceSymbols",
         json!({ "solution": "/nonexistent/path.sln" }),
     );
     assert!(
@@ -315,7 +318,7 @@ fn test_workspace_symbols_file_scoped_namespace_reparenting() {
     let mut client = LspClient::start();
     initialize_workspace_symbols_client(&mut client, &tmp);
 
-    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    let resp = client.request("sharplsp/workspaceSymbols", json!({ "solution": sln_path }));
     let syms = resp["result"]["projects"][0]["symbols"][0]["symbols"]
         .as_array()
         .unwrap();
@@ -397,7 +400,7 @@ fn test_workspace_symbols_with_nested_solution_folders() {
     let mut client = LspClient::start();
     initialize_workspace_symbols_client(&mut client, &tmp);
 
-    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    let resp = client.request("sharplsp/workspaceSymbols", json!({ "solution": sln_path }));
     assert!(
         resp.get("error").is_none(),
         "nested solution must not error: {resp}"
@@ -472,7 +475,7 @@ EndGlobal"#,
     let mut client = LspClient::start();
     initialize_workspace_symbols_client(&mut client, &tmp);
 
-    let resp = client.request("forge/workspaceSymbols", json!({ "solution": sln_path }));
+    let resp = client.request("sharplsp/workspaceSymbols", json!({ "solution": sln_path }));
     assert!(
         resp.get("error").is_none(),
         "multi-project solution must not error: {resp}"

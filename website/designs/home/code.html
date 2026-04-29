@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SharpLsp - The Future of .NET Tooling</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&amp;family=Space+Grotesk:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "background": "#131313",
+                        "on-secondary-container": "#b7b5b4",
+                        "on-surface": "#e5e2e1",
+                        "surface-container-lowest": "#0e0e0e",
+                        "surface-container": "#201f1f",
+                        "inverse-primary": "#006d35",
+                        "on-primary": "#003918",
+                        "primary-fixed-dim": "#00e475",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "secondary": "#c8c6c5",
+                        "error-container": "#93000a",
+                        "on-primary-fixed": "#00210b",
+                        "secondary-fixed": "#e5e2e1",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary": "#303030",
+                        "surface-container-low": "#1c1b1b",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "surface-tint": "#00e475",
+                        "surface-variant": "#353534",
+                        "surface": "#131313",
+                        "on-secondary": "#313030",
+                        "surface-container-high": "#2a2a2a",
+                        "primary": "#75ff9e",
+                        "primary-fixed": "#62ff96",
+                        "surface-dim": "#131313",
+                        "surface-container-highest": "#353534",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "outline": "#859585",
+                        "surface-bright": "#3a3939",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "on-tertiary-fixed": "#1b1c1c",
+                        "error": "#ffb4ab",
+                        "on-surface-variant": "#bacbb9",
+                        "inverse-surface": "#e5e2e1",
+                        "tertiary-container": "#cac8c7",
+                        "on-error": "#690005",
+                        "tertiary-fixed": "#e4e2e1",
+                        "on-primary-container": "#00612e",
+                        "inverse-on-surface": "#313030",
+                        "secondary-container": "#474746",
+                        "tertiary": "#e7e4e3",
+                        "primary-container": "#00e676",
+                        "outline-variant": "#3b4a3d",
+                        "on-secondary-fixed-variant": "#474746",
+                        "on-background": "#e5e2e1",
+                        "on-primary-fixed-variant": "#005226",
+                        "on-tertiary-container": "#545453"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "margin": "24px",
+                        "density": "compact",
+                        "container-max": "1440px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Space Grotesk", "sans-serif"],
+                        "code-md": ["monospace"],
+                        "label-caps": ["Inter", "sans-serif"],
+                        "headline-xl": ["Space Grotesk", "sans-serif"],
+                        "body-sm": ["Inter", "sans-serif"],
+                        "body-md": ["Inter", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "code-md": ["14px", {"lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "450"}],
+                        "label-caps": ["12px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "headline-xl": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-sm": ["14px", {"lineHeight": "1.5", "letterSpacing": "0", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "1.6", "letterSpacing": "0", "fontWeight": "400"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-panel {
+            background: rgba(26, 26, 26, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md font-body-md antialiased min-h-screen flex flex-col pt-20">
+<!-- TopNavBar Component -->
+<nav class="fixed top-0 w-full z-50 bg-zinc-950/80 backdrop-blur-xl border-b border-zinc-800/50 shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-200 ease-in-out">
+<div class="flex items-center justify-between px-6 py-4 max-w-7xl mx-auto w-full">
+<div class="flex items-center gap-8">
+<a class="text-2xl font-black tracking-tighter text-white font-['Space_Grotesk'] tracking-tight" href="#">SharpLsp</a>
+<div class="hidden md:flex items-center gap-6">
+<a class="text-zinc-400 font-medium transition-colors hover:text-emerald-400 hover:bg-zinc-900/50 rounded-sm px-3 py-2 font-['Space_Grotesk'] tracking-tight" href="#">Docs</a>
+<a class="text-zinc-400 font-medium transition-colors hover:text-emerald-400 hover:bg-zinc-900/50 rounded-sm px-3 py-2 font-['Space_Grotesk'] tracking-tight" href="#">Blog</a>
+<a class="text-zinc-400 font-medium transition-colors hover:text-emerald-400 hover:bg-zinc-900/50 rounded-sm px-3 py-2 font-['Space_Grotesk'] tracking-tight" href="#">GitHub</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-emerald-400 p-2 hover:bg-zinc-900/50 rounded-sm transition-colors">
+<span class="material-symbols-outlined">search</span>
+</button>
+<button class="bg-primary-container text-on-primary font-body-sm font-body-sm px-4 py-2 rounded font-semibold hover:opacity-90 transition-opacity">Get Started</button>
+</div>
+</div>
+</nav>
+<main class="flex-grow">
+<!-- Hero Section -->
+<section class="relative pt-32 pb-20 px-6 max-w-7xl mx-auto flex flex-col items-center text-center">
+<div class="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-background to-background"></div>
+<div class="inline-flex items-center gap-2 bg-surface-container-high border border-surface-variant rounded-full px-4 py-1.5 mb-8">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="text-on-surface-variant font-label-caps font-label-caps uppercase tracking-widest">v1.0.4 Now Available</span>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-on-surface max-w-4xl mx-auto mb-6">
+                The Future of <span class="text-primary-container">.NET Tooling</span>
+</h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-2xl mx-auto mb-10 text-lg">
+                Engineered in Rust for uncompromising speed. SharpLsp is a high-performance workspace designed for developers who value precision and productivity over bloat.
+            </p>
+<div class="flex flex-col sm:flex-row items-center gap-4">
+<button class="bg-primary-container text-on-primary font-body-sm font-body-sm px-8 py-3 rounded font-semibold shadow-[0_0_20px_rgba(0,230,118,0.2)] hover:shadow-[0_0_30px_rgba(0,230,118,0.4)] transition-all">
+                    Get Started
+                </button>
+<button class="bg-transparent border border-outline-variant text-on-surface font-body-sm font-body-sm px-8 py-3 rounded font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined" style="font-size: 20px;">code</span>
+                    View on GitHub
+                </button>
+</div>
+</section>
+<!-- Stats Section -->
+<section class="py-16 px-6 max-w-7xl mx-auto">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="bg-surface-container border border-surface-variant p-8 rounded-lg flex flex-col items-center text-center">
+<span class="material-symbols-outlined text-primary-container text-4xl mb-4">bolt</span>
+<h3 class="font-headline-lg text-headline-lg text-on-surface mb-2">&lt;3s</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Cold Start</p>
+</div>
+<div class="bg-surface-container border border-surface-variant p-8 rounded-lg flex flex-col items-center text-center">
+<span class="material-symbols-outlined text-primary-container text-4xl mb-4">speed</span>
+<h3 class="font-headline-lg text-headline-lg text-on-surface mb-2">&lt;100ms</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Completions</p>
+</div>
+<div class="bg-surface-container border border-surface-variant p-8 rounded-lg flex flex-col items-center text-center">
+<span class="material-symbols-outlined text-primary-container text-4xl mb-4">extension_off</span>
+<h3 class="font-headline-lg text-headline-lg text-on-surface mb-2">0</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Proprietary Dependencies</p>
+</div>
+</div>
+</section>
+<!-- Code Preview Section -->
+<section class="py-20 px-6 bg-surface-container-lowest">
+<div class="max-w-5xl mx-auto">
+<div class="mb-12 text-center">
+<h2 class="font-headline-lg text-headline-lg text-on-surface mb-4">Uncompromising Performance</h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-2xl mx-auto">Write, debug, and profile your .NET code in a pure, native environment.</p>
+</div>
+<div class="bg-[#1e1e1e] rounded-xl border border-surface-variant overflow-hidden shadow-2xl relative">
+<!-- Window Header -->
+<div class="bg-[#2d2d2d] border-b border-[#404040] px-4 py-3 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
+<div class="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
+<div class="w-3 h-3 rounded-full bg-[#27c93f]"></div>
+</div>
+<div class="text-[#858585] text-xs font-mono">Program.cs — SharpLsp</div>
+<div class="flex items-center gap-3 text-[#858585]">
+<span class="material-symbols-outlined text-sm">play_arrow</span>
+<span class="material-symbols-outlined text-sm">bug_report</span>
+</div>
+</div>
+<!-- Code Content -->
+<div class="p-6 overflow-x-auto">
+<pre class="font-code-md text-code-md text-[#d4d4d4]"><code><span class="text-[#569cd6]">using</span> System;
+<span class="text-[#569cd6]">using</span> System.Diagnostics;
+
+<span class="text-[#569cd6]">namespace</span> SharpLsp.Demo
+{
+    <span class="text-[#569cd6]">public class</span> Program
+    {
+        <span class="text-[#569cd6]">public static void</span> Main()
+        {
+            <span class="text-[#4ec9b0]">var</span> sw = Stopwatch.StartNew();
+            
+            Console.WriteLine(<span class="text-[#ce9178]">"Initializing SharpLsp workspace..."</span>);
+            
+            <span class="text-[#6a9955]">// Zero-allocation parsing</span>
+            <span class="text-[#4ec9b0]">var</span> parser = <span class="text-[#569cd6]">new</span> FastSyntaxParser();
+            parser.AnalyzeProject();
+            
+            sw.Stop();
+            Console.WriteLine(<span class="text-[#ce9178]">$"Ready in {sw.ElapsedMilliseconds}ms"</span>);
+        }
+    }
+}</code></pre>
+</div>
+</div>
+</div>
+</section>
+<!-- Feature Showcase -->
+<section class="py-24 px-6 max-w-7xl mx-auto">
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+<div class="bg-surface-container border border-surface-variant p-6 rounded-xl hover:border-primary-container transition-colors duration-300">
+<div class="w-12 h-12 bg-surface-variant rounded-lg flex items-center justify-center mb-6">
+<span class="material-symbols-outlined text-primary-container">explore</span>
+</div>
+<h3 class="font-headline-lg text-lg font-semibold text-on-surface mb-3">Smart Navigation</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Instant symbol resolution and definition lookup, powered by an optimized semantic index.</p>
+</div>
+<div class="bg-surface-container border border-surface-variant p-6 rounded-xl hover:border-primary-container transition-colors duration-300">
+<div class="w-12 h-12 bg-surface-variant rounded-lg flex items-center justify-center mb-6">
+<span class="material-symbols-outlined text-primary-container">view_in_ar</span>
+</div>
+<h3 class="font-headline-lg text-lg font-semibold text-on-surface mb-3">NuGet Integration</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Seamless dependency management directly from the command palette or UI.</p>
+</div>
+<div class="bg-surface-container border border-surface-variant p-6 rounded-xl hover:border-primary-container transition-colors duration-300">
+<div class="w-12 h-12 bg-surface-variant rounded-lg flex items-center justify-center mb-6">
+<span class="material-symbols-outlined text-primary-container">analytics</span>
+</div>
+<h3 class="font-headline-lg text-lg font-semibold text-on-surface mb-3">Real-time Profiling</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Built-in allocation tracking and CPU profiling without context switching.</p>
+</div>
+</div>
+</section>
+<!-- Call to Action -->
+<section class="py-24 px-6 border-t border-surface-variant bg-surface-container-lowest">
+<div class="max-w-4xl mx-auto text-center">
+<h2 class="font-headline-lg text-headline-lg text-on-surface mb-6">Ready to move ahead?</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mb-10">Join the open-source community shaping the next generation of .NET tooling.</p>
+<div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+<button class="bg-primary-container text-on-primary font-body-sm font-body-sm px-8 py-3 rounded font-semibold w-full sm:w-auto hover:opacity-90 transition-opacity">
+                        Download SharpLsp
+                    </button>
+<button class="bg-transparent border border-outline-variant text-on-surface font-body-sm font-body-sm px-8 py-3 rounded font-semibold w-full sm:w-auto hover:bg-surface-container transition-colors">
+                        Read the Docs
+                    </button>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer Component -->
+<footer class="w-full border-t border-zinc-800 bg-zinc-950 font-['Space_Grotesk'] text-sm uppercase tracking-widest opacity-80 hover:opacity-100 transition-opacity">
+<div class="max-w-7xl mx-auto px-8 py-12 flex flex-col md:flex-row justify-between items-center space-y-6 md:space-y-0">
+<div class="flex items-center gap-4">
+<span class="text-lg font-bold text-zinc-100">SharpLsp</span>
+<span class="text-zinc-500 normal-case tracking-normal">© 2024 SharpLsp. Open-source under MIT License.</span>
+</div>
+<div class="flex gap-6">
+<a class="text-zinc-500 hover:text-emerald-300 transition-colors" href="#">Documentation</a>
+<a class="text-zinc-500 hover:text-emerald-300 transition-colors" href="#">Changelog</a>
+<a class="text-zinc-500 hover:text-emerald-300 transition-colors" href="#">Community</a>
+<a class="text-zinc-500 hover:text-emerald-300 transition-colors" href="#">Security</a>
+</div>
+</div>
+</footer>
+</body></html>

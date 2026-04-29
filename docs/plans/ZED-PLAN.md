@@ -5,17 +5,17 @@
 
 ## Overview
 
-Zed extension for Forge — the open-source .NET LSP. Provides forge-lsp integration for C# and F# development in Zed, plus a solution tree slash command for AI-assisted workflows.
+Zed extension for SharpLsp — the open-source .NET LSP. Provides sharplsp integration for C# and F# development in Zed, plus a solution tree slash command for AI-assisted workflows.
 
 ## Architecture
 
 ```
 Zed Editor
-  └── Forge Extension (Rust → WASM)
+  └── SharpLsp Extension (Rust → WASM)
         ├── Language Server Adapter
-        │     └── forge-lsp binary (stdio JSON-RPC)
+        │     └── sharplsp binary (stdio JSON-RPC)
         └── Slash Commands
-              └── /forge-tree → .sln/.csproj/.fsproj parsing
+              └── /sharplsp-tree → .sln/.csproj/.fsproj parsing
 ```
 
 The extension compiles to `wasm32-wasip1` and runs in Zed's WASM sandbox. It cannot access the filesystem directly — all file reads go through the `Worktree` API.
@@ -27,7 +27,7 @@ The extension compiles to `wasm32-wasip1` and runs in Zed's WASM sandbox. It can
 | LSP client (C# + F#) | Done | `language_server_command()` in lib.rs |
 | Server binary resolution (PATH) | Done | `resolve_binary()` with caching |
 | Server environment (RUST_LOG) | Done | `build_server_env()` inherits shell env |
-| Solution tree (project structure) | Done | `/forge-tree` slash command |
+| Solution tree (project structure) | Done | `/sharplsp-tree` slash command |
 | Solution tree (NuGet packages) | Done | .csproj/.fsproj XML parsing |
 | Solution tree (project references) | Done | .csproj/.fsproj XML parsing |
 | Solution tree (symbol hierarchy) | Blocked | Requires Zed custom panel API |
@@ -41,7 +41,7 @@ The extension compiles to `wasm32-wasip1` and runs in Zed's WASM sandbox. It can
 | Select solution dialog | Partial | Slash command takes path argument |
 | Remove NuGet package | Blocked | Requires Zed command/UI API |
 | Remove project reference | Blocked | Requires Zed command/UI API |
-| Document symbols outline | Free | Zed outline panel + forge-lsp documentSymbol |
+| Document symbols outline | Free | Zed outline panel + sharplsp documentSymbol |
 | Semantic tokens | Free | Zed renders LSP semantic tokens natively |
 | Auto-refresh on file change | Free | Zed re-queries LSP on file change |
 
@@ -89,11 +89,11 @@ Requires `rustup target add wasm32-wasip1` for WASM builds.
 
 ## Key Decisions
 
-1. **Standalone workspace** — The Zed extension has its own `[workspace]` in Cargo.toml because it targets wasm32-wasip1, not the native target used by forge-lsp.
+1. **Standalone workspace** — The Zed extension has its own `[workspace]` in Cargo.toml because it targets wasm32-wasip1, not the native target used by sharplsp.
 
-2. **No grammar/highlights** — The extension does not bundle tree-sitter grammars or highlight queries. Users should install the existing C# Zed extension for syntax highlighting. Forge provides the language server, not the grammar.
+2. **No grammar/highlights** — The extension does not bundle tree-sitter grammars or highlight queries. Users should install the existing C# Zed extension for syntax highlighting. SharpLsp provides the language server, not the grammar.
 
-3. **Slash command for solution tree** — Since Zed lacks custom panels, the solution tree is exposed via `/forge-tree <path>` in the AI assistant. This injects solution structure as context for AI-assisted development.
+3. **Slash command for solution tree** — Since Zed lacks custom panels, the solution tree is exposed via `/sharplsp-tree <path>` in the AI assistant. This injects solution structure as context for AI-assisted development.
 
 4. **No serde dependency** — The extension uses only `zed_extension_api` (which re-exports `serde_json`). XML parsing of .csproj/.fsproj files uses simple string matching rather than a full XML parser, keeping the WASM binary small.
 
@@ -105,7 +105,7 @@ Requires `rustup target add wasm32-wasip1` for WASM builds.
 - [x] Cargo project setup (standalone workspace, cdylib)
 - [x] LSP server binary resolution (PATH lookup with caching)
 - [x] Server environment configuration (RUST_LOG from shell env)
-- [x] `/forge-tree` slash command
+- [x] `/sharplsp-tree` slash command
 - [x] .sln file parsing (project extraction, path normalization)
 - [x] .csproj/.fsproj parsing (NuGet packages, project references)
 - [x] Tree text formatting (box-drawing characters)
@@ -122,15 +122,15 @@ Requires `rustup target add wasm32-wasip1` for WASM builds.
 
 ### Phase 3: Settings and Configuration
 
-- [ ] Read `forge.server.path` from Zed settings for custom binary location
-- [ ] Read `forge.logging.level` from Zed settings for RUST_LOG
-- [ ] Pass extra CLI args to forge-lsp from settings
-- [ ] Send initialization options (solution path) to forge-lsp
+- [ ] Read `sharplsp.lspPath` from Zed settings for custom binary location
+- [ ] Read `sharplsp.logging.level` from Zed settings for RUST_LOG
+- [ ] Pass extra CLI args to sharplsp from settings
+- [ ] Send initialization options (solution path) to sharplsp
 - [ ] Workspace configuration passthrough from Zed settings
 
 ### Phase 4: Symbol Integration
 
-- [ ] `/forge-symbols` slash command — query `forge/workspaceSymbols` via LSP
+- [ ] `/sharplsp-symbols` slash command — query `sharplsp/workspaceSymbols` via LSP
   (blocked: slash commands cannot access LSP client in current Zed API)
 - [ ] Custom symbol labels via `labels_for_symbols()`
 - [ ] Custom completion labels via `labels_for_completions()`
@@ -173,4 +173,4 @@ Requires `rustup target add wasm32-wasip1` for WASM builds.
 - [ ] Debugger integration (DAP support via Zed's debugger API)
 - [ ] Snippet support for C# and F# common patterns
 - [ ] MCP server integration for AI-powered .NET workflows
-- [ ] Theme contributions (Forge-branded dark/light themes)
+- [ ] Theme contributions (SharpLsp-branded dark/light themes)

@@ -21,7 +21,7 @@ fn test_profiler_edge_double_stop_trace() {
         .to_string();
 
     let resp = client.request(
-        "forge/profiler/startTrace",
+        "sharplsp/profiler/startTrace",
         json!({
             "pid": target_pid,
             "output_path": trace_path,
@@ -37,7 +37,7 @@ fn test_profiler_edge_double_stop_trace() {
 
     // First stop: must succeed.
     let resp1 = client.request(
-        "forge/profiler/stopTrace",
+        "sharplsp/profiler/stopTrace",
         json!({ "session_id": session_id }),
     );
     assert!(
@@ -47,7 +47,7 @@ fn test_profiler_edge_double_stop_trace() {
 
     // Second stop: must error (session already stopped).
     let resp2 = client.request(
-        "forge/profiler/stopTrace",
+        "sharplsp/profiler/stopTrace",
         json!({ "session_id": session_id }),
     );
     assert!(
@@ -78,7 +78,7 @@ fn test_profiler_edge_trace_target_dies() {
         .to_string();
 
     let resp = client.request(
-        "forge/profiler/startTrace",
+        "sharplsp/profiler/startTrace",
         json!({
             "pid": target_pid,
             "output_path": trace_path,
@@ -97,7 +97,7 @@ fn test_profiler_edge_trace_target_dies() {
     // stopTrace must complete without hanging (server must not deadlock).
     let start = Instant::now();
     let resp = client.request(
-        "forge/profiler/stopTrace",
+        "sharplsp/profiler/stopTrace",
         json!({ "session_id": session_id }),
     );
     let elapsed = start.elapsed();
@@ -157,7 +157,7 @@ fn test_profiler_edge_start_trace_rejects_non_dotnet_pid() {
         .to_string();
 
     let resp = client.request(
-        "forge/profiler/startTrace",
+        "sharplsp/profiler/startTrace",
         json!({
             "pid": non_dotnet_pid,
             "output_path": trace_path,
@@ -195,7 +195,7 @@ fn test_profiler_edge_process_list_finds_target_by_name() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
-    let resp = client.request("forge/profiler/listProcesses", json!({}));
+    let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
     let processes = resp["result"].as_array().expect("result must be array");
 
     let entry = processes
@@ -242,7 +242,7 @@ fn test_profiler_edge_max_concurrent_sessions() {
             .to_string();
 
         let resp = client.request(
-            "forge/profiler/startTrace",
+            "sharplsp/profiler/startTrace",
             json!({
                 "pid": target_pid,
                 "output_path": trace_path,
@@ -262,7 +262,7 @@ fn test_profiler_edge_max_concurrent_sessions() {
         .to_string_lossy()
         .to_string();
     let resp = client.request(
-        "forge/profiler/startTrace",
+        "sharplsp/profiler/startTrace",
         json!({
             "pid": target_pid,
             "output_path": trace_path,
@@ -280,7 +280,7 @@ fn test_profiler_edge_max_concurrent_sessions() {
 
     // Clean up all sessions.
     for sid in &session_ids {
-        let _ = client.request("forge/profiler/stopTrace", json!({ "session_id": sid }));
+        let _ = client.request("sharplsp/profiler/stopTrace", json!({ "session_id": sid }));
     }
 
     client.shutdown_and_exit();
@@ -307,7 +307,7 @@ fn test_profiler_edge_analyze_heap_type_filter() {
         .to_string();
 
     let resp = client.request(
-        "forge/profiler/collectDump",
+        "sharplsp/profiler/collectDump",
         json!({
             "pid": target_pid,
             "dump_type": "Heap",
@@ -321,7 +321,7 @@ fn test_profiler_edge_analyze_heap_type_filter() {
 
     // Analyze with filter for "String".
     let resp = client.request(
-        "forge/profiler/analyzeHeap",
+        "sharplsp/profiler/analyzeHeap",
         json!({
             "dump_path": dump_path,
             "type_filter": "String",

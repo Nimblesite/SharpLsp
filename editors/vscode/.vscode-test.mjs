@@ -1,21 +1,27 @@
-// @ts-check
-import { defineConfig } from "@vscode/test-cli";
+import { defineConfig } from '@vscode/test-cli';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const configDir = fileURLToPath(new URL('.', import.meta.url));
+const testUserDataDir =
+  process.env.VSCODE_TEST_USER_DATA_DIR ??
+  path.join(configDir, '.vscode-test', `user-data-${process.pid}`);
 
 export default defineConfig({
   tests: [
     {
-      files: "out/test/suite/**/*.test.js",
-      workspaceFolder: "test-fixtures/workspace",
-      mocha: {
-        ui: "tdd",
-        timeout: 60_000,
-        bail: true,
-      },
-      launchArgs: ["--disable-extensions"],
+      files: 'test-cli-runner.cjs',
+      extensionDevelopmentPath: '.',
+      workspaceFolder: 'test-fixtures/workspace',
+      launchArgs: [
+        '--disable-extensions',
+        `--user-data-dir=${testUserDataDir}`,
+        ...(process.env.SHARPLSP_SCREENSHOTS ? ['--remote-debugging-port=9239'] : []),
+      ],
     },
   ],
   coverage: {
-    exclude: ["out/test/**"],
-    reporter: ["text", "text-summary", "json-summary", "html", "lcov"],
+    exclude: ['**/dist/**', '**/node_modules/**', '**/.vscode-test/**'],
+    reporter: ['text-summary', 'html', 'json-summary'],
   },
 });

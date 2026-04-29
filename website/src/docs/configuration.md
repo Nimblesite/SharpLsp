@@ -8,14 +8,16 @@ eleventyNavigation:
 
 # Configuration
 
-Forge is configured via a `forge.toml` file placed at the root of your workspace (alongside your `.sln` or root `.csproj`). All settings have sensible defaults — the file is optional.
+![SharpLsp workspace configuration](/assets/screenshots/vscode-configuration-page.png)
 
-`forge.toml` uses `deny_unknown_fields` — any key not listed below will cause a parse error at startup.
+SharpLsp is configured via a `sharplsp.toml` file placed at the root of your workspace (alongside your `.sln` or root `.csproj`). All settings have sensible defaults — the file is optional.
 
-## forge.toml Reference
+`sharplsp.toml` uses `deny_unknown_fields` — any key not listed below will cause a parse error at startup.
+
+## sharplsp.toml Reference
 
 ```toml
-# forge.toml — full configuration reference
+# sharplsp.toml — full configuration reference
 # Every key shown is optional; defaults are applied when omitted.
 
 # ─── Server ────────────────────────────────────────────────────────────────────
@@ -68,16 +70,16 @@ default_counter_providers = ["System.Runtime"]
 default_counter_interval = 1
 
 # Output directory for trace/dump files
-output_directory = ".forge/profiles"
+output_directory = ".sharplsp/profiles"
 ```
 
 ## File Location
 
-Forge searches for `forge.toml` by walking up the directory tree from the workspace root. The first `forge.toml` found is used. If none is found, all defaults apply.
+SharpLsp searches for `sharplsp.toml` by walking up the directory tree from the workspace root. The first `sharplsp.toml` found is used. If none is found, all defaults apply.
 
 ```
 my-solution/
-├── forge.toml          ← place it here
+├── sharplsp.toml          ← place it here
 ├── MyApp.sln
 ├── MyApp.Core/
 │   └── MyApp.Core.csproj

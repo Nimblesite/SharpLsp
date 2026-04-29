@@ -4,18 +4,18 @@ mod tree;
 
 use zed_extension_api::{self as zed};
 
-/// Forge Zed extension — provides forge-lsp for C# and F# development.
-struct ForgeExtension {
+/// SharpLsp Zed extension — provides sharplsp for C# and F# development.
+struct SharpLspExtension {
     cached_binary_path: Option<String>,
 }
 
-const SERVER_BINARY: &str = "forge-lsp";
+const SERVER_BINARY: &str = "sharplsp";
 const EXPECTED_VERSION: &str = env!("CARGO_PKG_VERSION");
-const SLASH_CMD_TREE: &str = "forge-tree";
+const SLASH_CMD_TREE: &str = "sharplsp-tree";
 
-impl zed::Extension for ForgeExtension {
+impl zed::Extension for SharpLspExtension {
     fn new() -> Self {
-        ForgeExtension {
+        SharpLspExtension {
             cached_binary_path: None,
         }
     }
@@ -78,19 +78,19 @@ impl zed::Extension for ForgeExtension {
     }
 }
 
-zed::register_extension!(ForgeExtension);
+zed::register_extension!(SharpLspExtension);
 
 // ── Server binary resolution ────────────────────────────────────
 
-impl ForgeExtension {
-    /// Resolve the forge-lsp binary path.
+impl SharpLspExtension {
+    /// Resolve the sharplsp binary path.
     ///
     /// Priority:
     ///   1. Cached path from a previous successful resolution
     ///   2. Binary on `$PATH` (via worktree.which)
     ///
     /// NOTE: The Zed extension API (WASM sandbox) does not support running
-    /// subprocesses, so we cannot execute `forge-lsp --version` to verify
+    /// subprocesses, so we cannot execute `sharplsp --version` to verify
     /// the binary version matches the extension version. Version validation
     /// relies on the LSP server reporting its version during initialization.
     fn resolve_binary(&mut self, worktree: &zed::Worktree) -> zed::Result<String> {
@@ -101,8 +101,8 @@ impl ForgeExtension {
         let path = worktree.which(SERVER_BINARY).ok_or_else(|| {
             format!(
                 "{SERVER_BINARY} not found on PATH. \
-                 Install Forge v{EXPECTED_VERSION} via `make install` \
-                 or download from https://github.com/Nimblesite/forge/releases"
+                 Install SharpLsp v{EXPECTED_VERSION} via `make install` \
+                 or download from https://github.com/Nimblesite/SharpLsp/releases"
             )
         })?;
 
@@ -111,7 +111,7 @@ impl ForgeExtension {
     }
 }
 
-/// Build environment variables for the forge-lsp server process.
+/// Build environment variables for the sharplsp server process.
 fn build_server_env(worktree: &zed::Worktree) -> Vec<(String, String)> {
     let mut env: Vec<(String, String)> = worktree.shell_env();
     let has_rust_log = env.iter().any(|(key, _)| key == "RUST_LOG");
@@ -121,7 +121,7 @@ fn build_server_env(worktree: &zed::Worktree) -> Vec<(String, String)> {
     env
 }
 
-// ── Slash command: forge-tree ───────────────────────────────────
+// ── Slash command: sharplsp-tree ───────────────────────────────────
 
 fn run_tree_command(
     args: Vec<String>,
@@ -131,7 +131,7 @@ fn run_tree_command(
 
     let sln_path = args
         .first()
-        .ok_or("Usage: /forge-tree <path/to/Solution.sln|Solution.slnx>")?;
+        .ok_or("Usage: /sharplsp-tree <path/to/Solution.sln|Solution.slnx>")?;
 
     let sln_content = wt
         .read_text_file(sln_path)
@@ -216,8 +216,8 @@ mod tests {
     }
 
     #[test]
-    fn server_binary_name_is_forge_lsp() {
-        assert_eq!(SERVER_BINARY, "forge-lsp");
+    fn server_binary_name_is_sharplsp() {
+        assert_eq!(SERVER_BINARY, "sharplsp");
     }
 
     #[test]
@@ -225,8 +225,8 @@ mod tests {
         // Simulate what resolve_binary returns when the binary is not found.
         let error_msg = format!(
             "{SERVER_BINARY} not found on PATH. \
-             Install Forge v{EXPECTED_VERSION} via `make install` \
-             or download from https://github.com/Nimblesite/forge/releases"
+             Install SharpLsp v{EXPECTED_VERSION} via `make install` \
+             or download from https://github.com/Nimblesite/SharpLsp/releases"
         );
         assert!(
             error_msg.contains(EXPECTED_VERSION),

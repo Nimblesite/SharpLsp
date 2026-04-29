@@ -80,7 +80,7 @@ export const client = new Signal<LanguageClient | undefined>(undefined);
 export const solutionPath = new Signal<string | undefined>(undefined);
 
 /** Current sort order for the solution explorer tree. */
-export const sortOrder = new Signal<SortOrder>(SortOrder.Natural);
+export const sortOrder = new Signal<SortOrder>(SortOrder.Alphabetical);
 
 /** Workspace symbols — empty, loaded, or error. */
 export const symbolsState = new Signal<SymbolsState>({ kind: 'empty' });
@@ -143,7 +143,7 @@ async function tryFetch(lsp: LanguageClient, solution: string, attempt: number):
   }
 
   try {
-    const response = await lsp.sendRequest<WorkspaceSymbolsResponse>('forge/workspaceSymbols', {
+    const response = await lsp.sendRequest<WorkspaceSymbolsResponse>('sharplsp/workspaceSymbols', {
       solution,
     });
     logSymbolCounts(response);

@@ -1,0 +1,20 @@
+{% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
+<aside class="sidebar" id="docs-sidebar">
+  <div class="sidebar-section">
+    <h4>{{ "docs.title" | t(lang) | default("Documentation") }}</h4>
+    <ul>
+      <li><a href="{{ langPrefix }}/docs/" {% if page.url == langPrefix + '/docs/' %}class="active"{% endif %}>{{ "docs.gettingStarted" | t(lang) | default("Getting Started") }}</a></li>
+      <li><a href="{{ langPrefix }}/docs/architecture/" {% if page.url == langPrefix + '/docs/architecture/' %}class="active"{% endif %}>{{ "docs.architecture" | t(lang) | default("Architecture") }}</a></li>
+      <li><a href="{{ langPrefix }}/docs/editors/" {% if page.url == langPrefix + '/docs/editors/' %}class="active"{% endif %}>{{ "docs.editorSetup" | t(lang) | default("Editor Setup") }}</a></li>
+      <li><a href="{{ langPrefix }}/docs/configuration/" {% if page.url == langPrefix + '/docs/configuration/' %}class="active"{% endif %}>{{ "docs.configuration" | t(lang) | default("Configuration") }}</a></li>
+      <li><a href="{{ langPrefix }}/docs/completions/" {% if page.url == langPrefix + '/docs/completions/' %}class="active"{% endif %}>{{ "docs.codeCompletions" | t(lang) | default("Code Completions") }}</a></li>
+      <li><a href="{{ langPrefix }}/docs/diagnostics/" {% if page.url == langPrefix + '/docs/diagnostics/' %}class="active"{% endif %}>{{ "docs.diagnostics" | t(lang) | default("Diagnostics") }}</a></li>
+      <li><a href="{{ langPrefix }}/docs/hover/" {% if page.url == langPrefix + '/docs/hover/' %}class="active"{% endif %}>{{ "docs.hover" | t(lang) | default("Hover &amp; Quick Info") }}</a></li>
+      <li><a href="{{ langPrefix }}/docs/go-to-definition/" {% if page.url == langPrefix + '/docs/go-to-definition/' %}class="active"{% endif %}>{{ "docs.goToDefinition" | t(lang) | default("Go to Definition") }}</a></li>
+      <li><a href="{{ langPrefix }}/docs/refactoring/" {% if page.url == langPrefix + '/docs/refactoring/' %}class="active"{% endif %}>{{ "docs.refactoring" | t(lang) | default("Refactoring &amp; Code Actions") }}</a></li>
+      <li><a href="{{ langPrefix }}/docs/context-menus/" {% if page.url == langPrefix + '/docs/context-menus/' %}class="active"{% endif %}>{{ "docs.contextMenus" | t(lang) | default("Context Menus") }}</a></li>
+      <li><a href="{{ langPrefix }}/docs/nuget/" {% if page.url == langPrefix + '/docs/nuget/' %}class="active"{% endif %}>{{ "docs.nuget" | t(lang) | default("NuGet Package Manager") }}</a></li>
+      <li><a href="{{ langPrefix }}/docs/profiler/" {% if page.url == langPrefix + '/docs/profiler/' %}class="active"{% endif %}>{{ "docs.profiler" | t(lang) | default("Profiler") }}</a></li>
+    </ul>
+  </div>
+</aside>

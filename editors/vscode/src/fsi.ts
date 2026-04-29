@@ -1,7 +1,15 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { info } from './log';
 
 let fsiTerminal: vscode.Terminal | undefined;
+
+function isFSharpSourceDocument(
+  document: vscode.TextDocument | undefined,
+): document is vscode.TextDocument {
+  return document?.uri.fsPath.endsWith('.fs') === true;
+}
 
 /** Start F# Interactive and optionally send selected text. */
 function sendToFsi(): void {
@@ -31,27 +39,19 @@ function sendToFsi(): void {
 
 /** Generate a .fsi signature file for the active F# file. */
 async function generateSignatureFile(): Promise<void> {
-  const editor = vscode.window.activeTextEditor;
-  if (editor?.document.languageId !== 'fsharp') {
+  const document = vscode.window.activeTextEditor?.document;
+  if (!isFSharpSourceDocument(document)) {
     void vscode.window.showWarningMessage('No F# file is active.');
     return;
   }
 
-  const fsPath = editor.document.uri.fsPath;
-  if (!fsPath.endsWith('.fs')) {
-    void vscode.window.showWarningMessage('Only .fs files can generate .fsi signatures.');
-    return;
-  }
-
-  const fsiPath = fsPath.replace(/\.fs$/, '.fsi');
-  const content = editor.document.getText();
+  const fsPath = document.uri.fsPath;
+  const fsiPath = path.join(path.dirname(fsPath), `${path.basename(fsPath, '.fs')}.fsi`);
+  const content = document.getText();
   const signature = extractSignature(content);
 
+  fs.writeFileSync(fsiPath, signature, 'utf8');
   const uri = vscode.Uri.file(fsiPath);
-  const edit = new vscode.WorkspaceEdit();
-  edit.createFile(uri, { overwrite: true });
-  edit.insert(uri, new vscode.Position(0, 0), signature);
-  await vscode.workspace.applyEdit(edit);
   await vscode.window.showTextDocument(uri);
   info(`Generated signature file: ${fsiPath}`);
 }
@@ -122,10 +122,10 @@ function startFsi(): void {
 /** Register FSI commands. */
 export function registerFsiCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand('forge.fsi.send', sendToFsi),
-    vscode.commands.registerCommand('forge.fsi.sendFile', sendFileToFsi),
-    vscode.commands.registerCommand('forge.fsi.start', startFsi),
-    vscode.commands.registerCommand('forge.fsi.generateSignature', generateSignatureFile),
+    vscode.commands.registerCommand('sharplsp.fsi.send', sendToFsi),
+    vscode.commands.registerCommand('sharplsp.fsi.sendFile', sendFileToFsi),
+    vscode.commands.registerCommand('sharplsp.fsi.start', startFsi),
+    vscode.commands.registerCommand('sharplsp.fsi.generateSignature', generateSignatureFile),
   );
 
   context.subscriptions.push(

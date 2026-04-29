@@ -2,17 +2,25 @@ import * as vscode from 'vscode';
 import { hotReloadOnSave } from './config.js';
 import { info } from './log.js';
 
+declare global {
+  var __sharplspHotReloadRunning: boolean | undefined;
+}
+
 let watchTerminal: vscode.Terminal | undefined;
 let statusBarItem: vscode.StatusBarItem | undefined;
 
+function setHotReloadRunning(running: boolean): void {
+  globalThis.__sharplspHotReloadRunning = running;
+}
+
 /** Whether a hot reload session is currently active. */
 export function isHotReloadRunning(): boolean {
-  return watchTerminal !== undefined;
+  return globalThis.__sharplspHotReloadRunning ?? false;
 }
 
 /** Toggle hot reload on/off. */
 function toggleHotReload(): void {
-  if (watchTerminal !== undefined) {
+  if (isHotReloadRunning()) {
     stopHotReload();
   } else {
     startHotReload();
@@ -21,23 +29,21 @@ function toggleHotReload(): void {
 
 /** Start dotnet watch for hot reload. */
 function startHotReload(): void {
-  if (watchTerminal !== undefined) {
+  if (isHotReloadRunning()) {
     void vscode.window.showWarningMessage('Hot Reload is already running.');
     return;
   }
 
-  const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (folder === undefined || folder === '') {
-    void vscode.window.showErrorMessage('No workspace folder open.');
-    return;
-  }
+  const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
 
   watchTerminal = vscode.window.createTerminal({
-    name: 'Forge Hot Reload',
+    name: 'SharpLsp Hot Reload',
     cwd: folder,
   });
   watchTerminal.show();
-  watchTerminal.sendText('dotnet watch run');
+  watchTerminal.sendText('dotnet watch --non-interactive build');
+  setHotReloadRunning(true);
+
   info('Hot Reload started via dotnet watch');
   updateStatusBar();
 }
@@ -51,6 +57,8 @@ function stopHotReload(): void {
 
   watchTerminal.dispose();
   watchTerminal = undefined;
+  setHotReloadRunning(false);
+
   info('Hot Reload stopped');
   updateStatusBar();
 }
@@ -59,11 +67,11 @@ function stopHotReload(): void {
 function updateStatusBar(): void {
   void vscode.commands.executeCommand(
     'setContext',
-    'forge.hotReloadRunning',
-    watchTerminal !== undefined,
+    'sharplsp.hotReloadRunning',
+    isHotReloadRunning(),
   );
   if (statusBarItem === undefined) return;
-  if (watchTerminal !== undefined) {
+  if (isHotReloadRunning()) {
     showRunningStatus();
   } else {
     showStoppedStatus();
@@ -75,7 +83,7 @@ function showRunningStatus(): void {
   if (statusBarItem === undefined) return;
   statusBarItem.text = '$(flame) Hot Reload';
   statusBarItem.tooltip = 'Hot Reload is active -- click to stop';
-  statusBarItem.command = 'forge.hotReload.stop';
+  statusBarItem.command = 'sharplsp.hotReload.stop';
   statusBarItem.color = undefined;
   statusBarItem.show();
 }
@@ -85,7 +93,7 @@ function showStoppedStatus(): void {
   if (statusBarItem === undefined) return;
   statusBarItem.text = '$(circle-outline) Hot Reload';
   statusBarItem.tooltip = 'Hot Reload is stopped -- click to start';
-  statusBarItem.command = 'forge.hotReload.start';
+  statusBarItem.command = 'sharplsp.hotReload.start';
   statusBarItem.color = new vscode.ThemeColor('disabledForeground');
   statusBarItem.show();
 }
@@ -116,6 +124,8 @@ function wireTerminalClose(context: vscode.ExtensionContext): void {
     vscode.window.onDidCloseTerminal((terminal) => {
       if (terminal === watchTerminal) {
         watchTerminal = undefined;
+        setHotReloadRunning(false);
+
         updateStatusBar();
       }
     }),
@@ -138,17 +148,18 @@ function wireOnSave(context: vscode.ExtensionContext): void {
 
 /** Register hot reload commands and lifecycle hooks. */
 export function registerHotReloadCommands(context: vscode.ExtensionContext): void {
+  setHotReloadRunning(false);
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   context.subscriptions.push(statusBarItem);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forge.hotReload.start', startHotReload),
+    vscode.commands.registerCommand('sharplsp.hotReload.start', startHotReload),
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand('forge.hotReload.stop', stopHotReload),
+    vscode.commands.registerCommand('sharplsp.hotReload.stop', stopHotReload),
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand('forge.hotReload.toggle', toggleHotReload),
+    vscode.commands.registerCommand('sharplsp.hotReload.toggle', toggleHotReload),
   );
 
   wireTerminalClose(context);

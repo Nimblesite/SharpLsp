@@ -8,94 +8,22 @@ eleventyNavigation:
 
 # Editor Setup
 
-Forge works with any editor that supports the Language Server Protocol. Below are setup instructions for popular editors.
+![SharpLsp editor support](/assets/screenshots/vscode-editors-page.png)
+
+SharpLsp is editor-agnostic at the LSP layer. The VS Code extension is the primary supported surface. Neovim and Zed support are coming soon.
+
+**Prerequisite:** [.NET 10.0 SDK](https://dotnet.microsoft.com/download) installed and `dotnet` on your PATH.
 
 ## VS Code
 
-Install the Forge extension from the marketplace or from the `.vsix` file in the repository.
+Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sharplsp.sharplsp). The extension ships with the `sharplsp` binary and both sidecars bundled inside the VSIX — no Rust toolchain or separate binary install required.
 
-The extension automatically manages the Forge LSP server lifecycle.
+The extension automatically manages the `sharplsp` server lifecycle and provides the Solution Explorer, profiler, NuGet browser, test lens, and editor status integration. No additional configuration is required.
 
 ## Neovim
 
-Register Forge as a custom LSP server using `nvim-lspconfig`:
-
-```lua
-local lspconfig = require('lspconfig')
-local configs = require('lspconfig.configs')
-
-if not configs.forge_lsp then
-  configs.forge_lsp = {
-    default_config = {
-      cmd = { "forge-lsp" },
-      filetypes = { "cs", "fsharp" },
-      root_dir = lspconfig.util.root_pattern("*.sln", "*.csproj", "*.fsproj"),
-    },
-  }
-end
-
-lspconfig.forge_lsp.setup({})
-```
-
-## Helix
-
-Add to your `languages.toml`:
-
-```toml
-[[language]]
-name = "c-sharp"
-language-servers = ["forge-lsp"]
-
-[[language]]
-name = "fsharp"
-language-servers = ["forge-lsp"]
-
-[language-server.forge-lsp]
-command = "forge-lsp"
-```
-
-## Emacs
-
-### lsp-mode
-
-```elisp
-(lsp-register-client
-  (make-lsp-client
-    :new-connection (lsp-stdio-connection '("forge-lsp"))
-    :major-modes '(csharp-mode fsharp-mode)
-    :server-id 'forge-lsp))
-```
-
-### eglot
-
-```elisp
-(add-to-list 'eglot-server-programs
-             '((csharp-mode fsharp-mode) . ("forge-lsp")))
-```
-
-## Sublime Text
-
-Install the [LSP](https://packagecontrol.io/packages/LSP) package, then add a custom client in **Settings > Package Settings > LSP > Settings**:
-
-```json
-{
-  "clients": {
-    "forge-lsp": {
-      "enabled": true,
-      "command": ["forge-lsp"],
-      "selector": "source.cs | source.fsharp"
-    }
-  }
-}
-```
+Coming soon.
 
 ## Zed
 
-Forge ships a Zed extension that attaches `forge-lsp` over stdio for `.cs`, `.csx`, `.fs`, `.fsx`, and `.fsi` files. Zed compiles extensions from source at install time, so the repo's `make package-zed` target stages a self-contained source tree.
-
-```sh
-rustup target add wasm32-wasip1   # one-off
-make package-zed                  # stages target/zed-extension/
-```
-
-Then in Zed: command palette → `zed: install dev extension` → pick `target/zed-extension/`. Hover, completions, go-to-definition, and diagnostics all work. The `/forge-tree <Solution.sln>` slash command renders the solution tree in the assistant panel.
+Coming soon.

@@ -68,14 +68,14 @@ intellijPlatform {
         }
 
         description =
-            "Forge LSP for Rider — the open-source .NET language server " +
-            "providing C# and F# intelligence powered by the forge-lsp " +
+            "SharpLsp for Rider — the open-source .NET language server " +
+            "providing C# and F# intelligence powered by the sharplsp " +
             "binary. Includes a Solution Explorer tool window mirroring " +
             "the VS Code experience."
 
         vendor {
-            name = "Forge LSP"
-            url = "https://github.com/Nimblesite/forge"
+            name = "SharpLsp"
+            url = "https://github.com/Nimblesite/SharpLsp"
         }
     }
 

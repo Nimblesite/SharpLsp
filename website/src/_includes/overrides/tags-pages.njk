@@ -1,0 +1,30 @@
+---
+pagination:
+  data: collections.tagList
+  size: 1
+  alias: tag
+permalink: /blog/tags/{{ tag | slugify }}/
+layout: layouts/base.njk
+eleventyComputed:
+  title: "Posts tagged '{{ tag }}'"
+  description: "All blog posts tagged with {{ tag }}."
+---
+{% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
+<div class="blog-container">
+  <header class="blog-header">
+    <h1>{{ tag }}</h1>
+    <p class="blog-subtitle"><a href="{{ langPrefix }}/blog/tags/">← All tags</a></p>
+  </header>
+
+  {%- set tagPosts = collections.postsByTag[tag] -%}
+  {%- if tagPosts | length > 0 -%}
+  <section class="blog-grid">
+    {%- for post in tagPosts -%}
+    {% set currentPost = post %}{% set featuredPost = loop.first %}
+    {% include "partials/post-card.njk" %}
+    {%- endfor -%}
+  </section>
+  {%- else -%}
+  <p class="blog-empty">No posts with this tag yet.</p>
+  {%- endif -%}
+</div>

@@ -80,11 +80,11 @@ export function revertOptimisticUninstall(
 
 /** Build the toast text for an optimistic install. */
 export function buildInstallToast(target: NuGetTarget, packageId: string, version: string): string {
-  return `Installing ${packageId} ${version} into ${target.displayName}…`;
+  return `Installing ${packageId} ${version} into ${target.displayName}...`;
 }
 
 export function buildUninstallToast(target: NuGetTarget, packageId: string): string {
-  return `Removing ${packageId} from ${target.displayName}…`;
+  return `Removing ${packageId} from ${target.displayName}...`;
 }
 
 /**

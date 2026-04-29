@@ -1,0 +1,189 @@
+/// F# file ordering analysis: detects dependency violations and suggests reordering.
+/// In F#, files must appear in dependency order in the .fsproj — a file cannot
+/// reference symbols defined in a file that comes after it in the compile list.
+module SharpLsp.Sidecar.FSharp.FSharpFileOrder
+
+open System.IO
+open System.Xml.Linq
+open FSharp.Compiler.CodeAnalysis
+open FSharp.Compiler.Text
+
+/// A detected file ordering issue.
+type FileOrderIssue =
+    { /// File that has the unresolved reference.
+      FilePath: string
+      /// 0-based line of the error.
+      Line: int
+      /// 0-based column of the error.
+      Character: int
+      /// The file that defines the missing symbol (comes later in order).
+      DependencyFile: string
+      /// Human-readable description.
+      Message: string }
+
+/// Parse .fsproj Compile entries and return full paths in order.
+let getCompileOrder (fsprojPath: string) : string array =
+    try
+        let doc = XDocument.Load(fsprojPath)
+        let projDir = Path.GetDirectoryName(fsprojPath) |> string
+        doc.Descendants(XName.Get("Compile"))
+        |> Seq.choose (fun el ->
+            el.Attribute(XName.Get("Include"))
+            |> Option.ofObj
+            |> Option.map (fun attr ->
+                Path.GetFullPath(Path.Combine(projDir, string attr.Value))))
+        |> Seq.toArray
+    with ex ->
+        eprintfn $"[F# FileOrder] Failed to parse .fsproj: {ex.Message}"
+        [||]
+
+/// Build a map of symbol name → defining file path from check results.
+let private collectDefinitions
+    (checker: FSharpChecker)
+    (options: FSharpProjectOptions)
+    (files: string array)
+    =
+    task {
+        let definitions = System.Collections.Generic.Dictionary<string, string>()
+        for filePath in files do
+            try
+                if File.Exists(filePath) then
+                    let source = File.ReadAllText(filePath)
+                    let sourceText = SourceText.ofString source
+                    let! _parse, checkAnswer =
+                        checker.ParseAndCheckFileInProject(filePath, 0, sourceText, options)
+                    match checkAnswer with
+                    | FSharpCheckFileAnswer.Succeeded check ->
+                        for su in check.GetAllUsesOfAllSymbolsInFile() do
+                            if su.IsFromDefinition then
+                                definitions[su.Symbol.DisplayName] <- filePath
+                    | FSharpCheckFileAnswer.Aborted -> ()
+            with _ -> ()
+        return definitions
+    }
+
+/// Collect undefined symbol errors from FCS check results for a file.
+let private collectUndefinedErrors
+    (checker: FSharpChecker)
+    (options: FSharpProjectOptions)
+    (filePath: string)
+    =
+    task {
+        try
+            if not (File.Exists(filePath)) then
+                return []
+            else
+                let source = File.ReadAllText(filePath)
+                let sourceText = SourceText.ofString source
+                let! parseResults, checkAnswer =
+                    checker.ParseAndCheckFileInProject(filePath, 0, sourceText, options)
+                match checkAnswer with
+                | FSharpCheckFileAnswer.Succeeded _check ->
+                    // FS0039 = value/constructor not defined
+                    let errors =
+                        parseResults.Diagnostics
+                        |> Array.filter (fun d ->
+                            d.ErrorNumber = 39 || d.ErrorNumber = 1)
+                        |> Array.map (fun d ->
+                            let r = d.Range
+                            (r.StartLine - 1, r.StartColumn, d.Message))
+                        |> Array.toList
+                    return errors
+                | FSharpCheckFileAnswer.Aborted -> return []
+        with _ -> return []
+    }
+
+/// Analyze file ordering and return detected issues.
+let analyzeFileOrder
+    (state: FSharpWorkspace.FSharpWorkspaceState)
+    (fsprojPath: string)
+    =
+    task {
+        try
+            if not state.IsLoaded then
+                return []
+            else
+                let files = getCompileOrder fsprojPath
+                if files.Length < 2 then return []
+                else
+                    let options = state.ProjectOptions.Value
+                    let! definitions = collectDefinitions state.Checker options files
+                    let fileIndex =
+                        files
+                        |> Array.mapi (fun i f -> f, i)
+                        |> dict
+                    let mutable issues = []
+                    for filePath in files do
+                        let! errors = collectUndefinedErrors state.Checker options filePath
+                        let currentIdx =
+                            match fileIndex.TryGetValue(filePath) with
+                            | true, idx -> idx
+                            | false, _ -> -1
+                        for (line, char, msg) in errors do
+                            // Extract symbol name from error message.
+                            let symbolName =
+                                msg.Split([| '\'' |])
+                                |> Array.tryItem 1
+                                |> Option.defaultValue ""
+                            match definitions.TryGetValue(symbolName) with
+                            | true, defFile when defFile <> filePath ->
+                                let defIdx =
+                                    match fileIndex.TryGetValue(defFile) with
+                                    | true, idx -> idx
+                                    | false, _ -> -1
+                                if defIdx > currentIdx && currentIdx >= 0 then
+                                    let issue =
+                                        { FilePath = filePath
+                                          Line = line
+                                          Character = char
+                                          DependencyFile = defFile
+                                          Message =
+                                            $"'{symbolName}' is defined in '{Path.GetFileName(defFile)}' which comes after '{Path.GetFileName(filePath)}' in the compile order. Move '{Path.GetFileName(defFile)}' before '{Path.GetFileName(filePath)}' in the .fsproj." }
+                                    issues <- issue :: issues
+                            | _ -> ()
+                    return issues |> List.rev
+        with ex ->
+            eprintfn $"[F# FileOrder] Exception: {ex.Message}"
+            return []
+    }
+
+/// Generate a .fsproj text edit that moves a dependency file before the current file.
+let generateReorderEdit
+    (fsprojPath: string)
+    (dependencyFile: string)
+    (beforeFile: string)
+    : {| FilePath: string; StartLine: int; StartCharacter: int
+         EndLine: int; EndCharacter: int; NewText: string |} option =
+    try
+        let lines = File.ReadAllLines(fsprojPath)
+        let depName = Path.GetFileName(dependencyFile)
+        let beforeName = Path.GetFileName(beforeFile)
+        let mutable depLineIdx = -1
+        let mutable beforeLineIdx = -1
+        for i in 0 .. lines.Length - 1 do
+            let trimmed = lines[i].Trim()
+            if trimmed.Contains($"Include=\"{depName}\"") then depLineIdx <- i
+            if trimmed.Contains($"Include=\"{beforeName}\"") then beforeLineIdx <- i
+        if depLineIdx >= 0 && beforeLineIdx >= 0 && depLineIdx > beforeLineIdx then
+            let depLine = lines[depLineIdx]
+            let remaining =
+                [| for i in 0 .. lines.Length - 1 do
+                    if i <> depLineIdx then yield lines[i] |]
+            let insertIdx =
+                if depLineIdx < beforeLineIdx then beforeLineIdx - 1
+                else beforeLineIdx
+            let newLines =
+                [| yield! remaining[.. insertIdx - 1]
+                   yield depLine
+                   yield! remaining[insertIdx ..] |]
+            let newText = System.String.Join("\n", newLines)
+            Some {| FilePath = fsprojPath
+                    StartLine = 0; StartCharacter = 0
+                    EndLine = lines.Length - 1
+                    EndCharacter = lines[lines.Length - 1].Length
+                    NewText = newText |}
+        else
+            None
+    with ex ->
+        eprintfn $"[F# FileOrder] Reorder edit failed: {ex.Message}"
+        None

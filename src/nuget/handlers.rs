@@ -1,4 +1,4 @@
-//! LSP custom request handlers for `forge/nuget/*` operations.
+//! LSP custom request handlers for `sharplsp/nuget/*` operations.
 //!
 //! All handlers follow: deserialize params -> delegate -> serialize result.
 
@@ -10,17 +10,17 @@ use tracing::{error, info};
 
 use super::{cli, search, targets, types, xml_edit};
 
-/// Handle `forge/nuget/targets` — enumerate projects and props files.
+/// Handle `sharplsp/nuget/targets` — enumerate projects and props files.
 pub fn handle_targets(req: Request) -> Result<serde_json::Value> {
-    info!("Handling forge/nuget/targets");
+    info!("Handling sharplsp/nuget/targets");
     let params: types::TargetsParams = serde_json::from_value(req.params)?;
     let response = targets::enumerate_targets(&params.workspace_root)?;
     Ok(serde_json::to_value(response)?)
 }
 
-/// Handle `forge/nuget/search`.
+/// Handle `sharplsp/nuget/search`.
 pub fn handle_search(req: Request, runtime: &tokio::runtime::Runtime) -> Result<serde_json::Value> {
-    info!("Handling forge/nuget/search");
+    info!("Handling sharplsp/nuget/search");
     let params: types::SearchParams = serde_json::from_value(req.params)?;
     let target = resolve_target(params.target, params.project_path.clone())?;
 
@@ -49,24 +49,24 @@ pub fn handle_search(req: Request, runtime: &tokio::runtime::Runtime) -> Result<
     Ok(serde_json::to_value(response)?)
 }
 
-/// Handle `forge/nuget/versions`.
+/// Handle `sharplsp/nuget/versions`.
 pub fn handle_versions(
     req: Request,
     runtime: &tokio::runtime::Runtime,
 ) -> Result<serde_json::Value> {
-    info!("Handling forge/nuget/versions");
+    info!("Handling sharplsp/nuget/versions");
     let params: types::VersionsParams = serde_json::from_value(req.params)?;
     let versions = runtime.block_on(search::fetch_versions(&params.package_id))?;
     let response = types::VersionsResponse { versions };
     Ok(serde_json::to_value(response)?)
 }
 
-/// Handle `forge/nuget/installed`.
+/// Handle `sharplsp/nuget/installed`.
 pub fn handle_installed(
     req: Request,
     runtime: &tokio::runtime::Runtime,
 ) -> Result<serde_json::Value> {
-    info!("Handling forge/nuget/installed");
+    info!("Handling sharplsp/nuget/installed");
     let params: types::InstalledParams = serde_json::from_value(req.params)?;
     let target = resolve_target(params.target, params.project_path)?;
     let packages = runtime.block_on(list_installed_for_target(&target))?;
@@ -74,13 +74,13 @@ pub fn handle_installed(
     Ok(serde_json::to_value(response)?)
 }
 
-/// Handle `forge/nuget/install` — fast-path XML edit + background restore.
+/// Handle `sharplsp/nuget/install` — fast-path XML edit + background restore.
 pub fn handle_install(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
 ) -> Result<serde_json::Value> {
-    info!("Handling forge/nuget/install");
+    info!("Handling sharplsp/nuget/install");
     let params: types::InstallParams = serde_json::from_value(req.params)?;
     let target = resolve_target(params.target, params.project_path.clone())?;
 
@@ -95,13 +95,13 @@ pub fn handle_install(
     Ok(serde_json::to_value(response)?)
 }
 
-/// Handle `forge/nuget/uninstall` — fast-path XML edit + background restore.
+/// Handle `sharplsp/nuget/uninstall` — fast-path XML edit + background restore.
 pub fn handle_uninstall(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
 ) -> Result<serde_json::Value> {
-    info!("Handling forge/nuget/uninstall");
+    info!("Handling sharplsp/nuget/uninstall");
     let params: types::UninstallParams = serde_json::from_value(req.params)?;
     let target = resolve_target(params.target, params.project_path.clone())?;
 
@@ -352,7 +352,7 @@ fn spawn_restore(
     }));
 }
 
-/// Send a `forge/nuget/restoreProgress` notification to the client.
+/// Send a `sharplsp/nuget/restoreProgress` notification to the client.
 fn send_restore_progress(
     sender: &Sender<Message>,
     target_id: &str,
@@ -372,7 +372,7 @@ fn send_restore_progress(
         }
     };
     let notif = Notification {
-        method: "forge/nuget/restoreProgress".to_string(),
+        method: "sharplsp/nuget/restoreProgress".to_string(),
         params: params_value,
     };
     if let Err(err) = sender.send(Message::Notification(notif)) {

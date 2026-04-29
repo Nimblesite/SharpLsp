@@ -1,6 +1,6 @@
-//! Configuration system for Forge LSP.
+//! Configuration system for `SharpLsp`.
 //!
-//! Loads settings from `forge.toml` found by walking up from the workspace root.
+//! Loads settings from `sharplsp.toml` found by walking up from the workspace root.
 //! Falls back to sensible defaults when no config file is present.
 
 use std::path::{Path, PathBuf};
@@ -9,10 +9,10 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use tracing::info;
 
-/// Top-level configuration loaded from `forge.toml`.
+/// Top-level configuration loaded from `sharplsp.toml`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct ForgeConfig {
+pub struct SharpLspConfig {
     /// General server settings.
     pub server: ServerConfig,
     /// C# sidecar configuration.
@@ -125,31 +125,31 @@ impl Default for ProfilerConfig {
             default_trace_format: "speedscope".to_string(),
             default_counter_providers: vec!["System.Runtime".to_string()],
             default_counter_interval: 1,
-            output_directory: ".forge/profiles".to_string(),
+            output_directory: ".sharplsp/profiles".to_string(),
         }
     }
 }
 
 /// The config file name we search for.
-const CONFIG_FILE_NAME: &str = "forge.toml";
+const CONFIG_FILE_NAME: &str = "sharplsp.toml";
 
-/// Load configuration by searching for `forge.toml` starting from `workspace_root`
+/// Load configuration by searching for `sharplsp.toml` starting from `workspace_root`
 /// and walking up to parent directories. Returns defaults if no file is found.
-pub fn load_config(workspace_root: &Path) -> Result<ForgeConfig> {
+pub fn load_config(workspace_root: &Path) -> Result<SharpLspConfig> {
     if let Some(path) = find_config_file(workspace_root) {
         info!("Loading configuration from {}", path.display());
         let content = std::fs::read_to_string(&path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        let config: ForgeConfig = toml::from_str(&content)
+        let config: SharpLspConfig = toml::from_str(&content)
             .with_context(|| format!("failed to parse {}", path.display()))?;
         Ok(config)
     } else {
-        info!("No forge.toml found, using default configuration");
-        Ok(ForgeConfig::default())
+        info!("No sharplsp.toml found, using default configuration");
+        Ok(SharpLspConfig::default())
     }
 }
 
-/// Walk up from `start` looking for `forge.toml`.
+/// Walk up from `start` looking for `sharplsp.toml`.
 fn find_config_file(start: &Path) -> Option<PathBuf> {
     let mut current = Some(start);
     while let Some(dir) = current {
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn test_default_config() {
-        let config = ForgeConfig::default();
+        let config = SharpLspConfig::default();
         assert_eq!(config.server.log_level, "info");
         assert_eq!(config.server.debounce_ms, 150);
         assert!(config.csharp.enabled);
@@ -183,13 +183,13 @@ mod tests {
         assert!(config.diagnostics.project_filter.is_empty());
         assert_eq!(config.profiler.max_concurrent_sessions, 5);
         assert_eq!(config.profiler.default_trace_duration, 30);
-        assert_eq!(config.profiler.output_directory, ".forge/profiles");
+        assert_eq!(config.profiler.output_directory, ".sharplsp/profiles");
     }
 
     #[test]
     fn test_parse_minimal_toml() {
         let toml_str = "";
-        let config: ForgeConfig = toml::from_str(toml_str).unwrap();
+        let config: SharpLspConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.server.debounce_ms, 150);
     }
 
@@ -207,7 +207,7 @@ solution_path = "MyApp.sln"
 solution_wide_analysis = true
 project_filter = ["MyApp.Core", "MyApp.Api"]
 "#;
-        let config: ForgeConfig = toml::from_str(toml_str).unwrap();
+        let config: SharpLspConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.server.log_level, "debug");
         assert_eq!(config.server.debounce_ms, 200);
         assert_eq!(config.csharp.solution_path, "MyApp.sln");
@@ -226,14 +226,14 @@ project_filter = ["MyApp.Core", "MyApp.Api"]
 [server]
 nonexistent_field = true
 ";
-        let result: std::result::Result<ForgeConfig, _> = toml::from_str(toml_str);
+        let result: std::result::Result<SharpLspConfig, _> = toml::from_str(toml_str);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_find_config_file_in_directory() {
         let temp = tempfile::tempdir().unwrap();
-        let config_path = temp.path().join("forge.toml");
+        let config_path = temp.path().join("sharplsp.toml");
         fs::write(&config_path, "[server]\nlog_level = \"trace\"\n").unwrap();
 
         let found = find_config_file(temp.path());
@@ -243,7 +243,7 @@ nonexistent_field = true
     #[test]
     fn test_find_config_file_walks_up() {
         let temp = tempfile::tempdir().unwrap();
-        let config_path = temp.path().join("forge.toml");
+        let config_path = temp.path().join("sharplsp.toml");
         fs::write(&config_path, "").unwrap();
 
         let subdir = temp.path().join("src").join("deep");
@@ -270,7 +270,7 @@ nonexistent_field = true
     #[test]
     fn test_load_config_from_file() {
         let temp = tempfile::tempdir().unwrap();
-        let config_path = temp.path().join("forge.toml");
+        let config_path = temp.path().join("sharplsp.toml");
         fs::write(
             &config_path,
             r#"

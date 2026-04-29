@@ -1,6 +1,6 @@
 # Design System
 
-Forge's visual identity and component guidelines. All colors were generated via random color wheel selection — zero hand-picked "designer" colors, zero LLM defaults.
+SharpLsp's visual identity and component guidelines. All colors were generated via random color wheel selection — zero hand-picked "designer" colors, zero LLM defaults.
 
 ## Color Palette
 

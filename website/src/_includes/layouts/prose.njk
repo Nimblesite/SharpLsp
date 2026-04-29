@@ -1,0 +1,29 @@
+---
+layout: layouts/base.njk
+---
+
+{% if page.url.startsWith('/docs/') or page.url.startsWith('/zh/docs/') or page.url.startsWith('/ja/docs/') %}
+<div class="docs-layout">
+  {{ content | safe }}
+</div>
+{% else %}
+<article class="prose">
+  {% if date %}
+  <header class="article-header">
+    <div class="article-kicker">
+      <span>{{ category | default("Engineering") | capitalize }}</span>
+      <time datetime="{{ date | isoDate }}">{{ date | dateFormat }}</time>
+    </div>
+    <h1>{{ title }}</h1>
+    {% include "partials/article-author.njk" %}
+    {% if image %}
+    <div class="article-hero">
+      <img src="{{ image }}" alt="{{ imageAlt | default(title) }}" loading="eager">
+    </div>
+    {% endif %}
+  </header>
+  {% endif %}
+
+  {{ content | safe }}
+</article>
+{% endif %}

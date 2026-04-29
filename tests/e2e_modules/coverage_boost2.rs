@@ -200,7 +200,7 @@ fn test_completely_unknown_request_returns_method_not_found_error() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
-    let resp = client.request("forge/nonExistentMethod", json!({"foo": "bar"}));
+    let resp = client.request("sharplsp/nonExistentMethod", json!({"foo": "bar"}));
 
     assert_eq!(resp["jsonrpc"], "2.0");
     assert!(

@@ -81,14 +81,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
-name = "forge-zed"
-version = "0.1.0"
-dependencies = [
- "quick-xml",
- "zed_extension_api",
-]
-
-[[package]]
 name = "form_urlencoded"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -481,6 +473,14 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "sharplsp-zed"
+version = "0.1.0"
+dependencies = [
+ "quick-xml",
+ "zed_extension_api",
 ]
 
 [[package]]

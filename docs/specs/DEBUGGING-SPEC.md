@@ -1,6 +1,6 @@
 # DEBUGGING-SPEC
 
-**Forge Debugging Technical Specification**
+**SharpLsp Debugging Technical Specification**
 
 *March 2026 | DRAFT*
 
@@ -8,7 +8,7 @@
 
 ## 1. Mission
 
-Forge must deliver a top-tier .NET debugging experience that is fully open-source, editor-agnostic, and license-free. Microsoft's proprietary `vsdbg` is explicitly forbidden by its license from use in any editor except Visual Studio, Visual Studio Code (Microsoft-signed binary), and Visual Studio for Mac. Forge must match or exceed the vsdbg experience using only open-source infrastructure.
+SharpLsp must deliver a top-tier .NET debugging experience that is fully open-source, editor-agnostic, and license-free. Microsoft's proprietary `vsdbg` is explicitly forbidden by its license from use in any editor except Visual Studio, Visual Studio Code (Microsoft-signed binary), and Visual Studio for Mac. SharpLsp must match or exceed the vsdbg experience using only open-source infrastructure.
 
 The benchmark is brutal: a developer coming from `vsdbg` must not feel degraded. Every mainstream debugging workflow must work. Gaps in open-source tooling that cannot be closed by configuration must be closed by engineering.
 
@@ -28,7 +28,7 @@ C# and F# are treated as equal first-class citizens. F# debugging is not an afte
 | **Mono SDB** | MIT | Mono | Yes (Mono only) | Incompatible with CoreCLR; not applicable |
 | **Rider debugger** (JetBrains) | Proprietary | Java + .NET | Yes | Not redistributable; IntelliJ-coupled |
 
-**Decision: netcoredbg is the primary debugger for Phase 4, with a parallel investment in a Forge-native C# Debug Sidecar (Tier 4) targeting full vsdbg parity in Phase 5.**
+**Decision: netcoredbg is the primary debugger for Phase 4, with a parallel investment in a SharpLsp-native C# Debug Sidecar (Tier 4) targeting full vsdbg parity in Phase 5.**
 
 ### 2.2 Why netcoredbg
 
@@ -68,18 +68,18 @@ netcoredbg has real, material gaps versus vsdbg. These are not cosmetic.
 
 ### 2.4 Why Not Stop at netcoredbg
 
-The Forge answer is a **two-phase approach**:
+The SharpLsp answer is a **two-phase approach**:
 
 1. **Phase 4**: Ship netcoredbg integration, closing the most impactful gaps via DapRouter-layer workarounds and upstream contributions
-2. **Phase 5**: Ship the Forge Debug Sidecar — a C# Tier 4 process built on `ClrDebug` + `ICorDebug` that achieves full vsdbg feature parity
+2. **Phase 5**: Ship the SharpLsp Debug Sidecar — a C# Tier 4 process built on `ClrDebug` + `ICorDebug` that achieves full vsdbg feature parity
 
 ### 2.5 SharpDbg — Watch and Contribute
 
-SharpDbg (MattParkerDev, MIT, C#) is the most promising long-term foundation for community .NET debugging. It already implements `[DebuggerDisplay]`, `[DebuggerTypeProxy]`, and `[DebuggerBrowsable]` — all absent in netcoredbg. It uses ClrDebug, the same foundation as the planned Forge Debug Sidecar.
+SharpDbg (MattParkerDev, MIT, C#) is the most promising long-term foundation for community .NET debugging. It already implements `[DebuggerDisplay]`, `[DebuggerTypeProxy]`, and `[DebuggerBrowsable]` — all absent in netcoredbg. It uses ClrDebug, the same foundation as the planned SharpLsp Debug Sidecar.
 
-**Forge's relationship with SharpDbg:**
+**SharpLsp's relationship with SharpDbg:**
 - Monitor SharpDbg for production readiness; evaluate as a Phase 5 foundation vs. building from scratch
-- Contribute upstream: any ICorDebug wrapper gaps discovered during Forge Debug Sidecar work
+- Contribute upstream: any ICorDebug wrapper gaps discovered during SharpLsp Debug Sidecar work
 - Do not fork SharpDbg; if it reaches production maturity before Phase 5, adopt rather than reinvent
 
 ---
@@ -96,7 +96,7 @@ SharpDbg (MattParkerDev, MIT, C#) is the most promising long-term foundation for
                             │ DAP 1.71.0 (JSON-RPC)
                             ▼
 ┌────────────────────────────────────────────────────────────────────┐
-│  Tier 1: Rust LSP/DAP Host (forge)                                │
+│  Tier 1: Rust LSP/DAP Host (sharplsp)                                │
 │  ┌──────────────────────────────────────────────────────────────┐ │
 │  │  DapRouter                                                   │ │
 │  │  - Proxies DAP to active debug adapter                       │ │
@@ -110,7 +110,7 @@ SharpDbg (MattParkerDev, MIT, C#) is the most promising long-term foundation for
           │                               │
           ▼ Phase 4                       ▼ Phase 5
 ┌─────────────────────┐       ┌──────────────────────────────────┐
-│  netcoredbg         │       │  Tier 4: Forge Debug Sidecar     │
+│  netcoredbg         │       │  Tier 4: SharpLsp Debug Sidecar     │
 │  (external process) │       │  (C# process)                    │
 │  DAP stdin/stdout   │       │  ClrDebug + ICorDebug + DbgShim  │
 │  MIT licensed       │       │  DAP stdin/stdout                │
@@ -131,7 +131,7 @@ The Rust host runs a `DapRouter` module responsible for:
 
 - **Adapter lifecycle**: spawning/monitoring netcoredbg (Phase 4) or the Debug Sidecar (Phase 5), auto-restart on crash with exponential backoff
 - **DAP proxy**: forwarding DAP messages between the editor and the active adapter with minimal latency overhead
-- **Capability augmentation**: intercepts DAP `initialize` responses to advertise capabilities the underlying adapter lacks but Forge implements at the proxy layer (logpoints, async stack enrichment, DebuggerDisplay)
+- **Capability augmentation**: intercepts DAP `initialize` responses to advertise capabilities the underlying adapter lacks but SharpLsp implements at the proxy layer (logpoints, async stack enrichment, DebuggerDisplay)
 - **Logpoint emulation**: translates DAP `setBreakpoints` logpoint requests into conditional breakpoints that evaluate + log + continue (Phase 4)
 - **Async stack enrichment**: post-processes `stackTrace` responses by reconstructing logical async frames using state-machine field analysis via the C# sidecar (Roslyn)
 - **DebuggerDisplay emulation**: in Phase 4, queries the C# sidecar to evaluate `[DebuggerDisplay]` format strings and rewrites `variables` responses with user-friendly display values
@@ -142,8 +142,8 @@ The Rust host runs a `DapRouter` module responsible for:
 
 netcoredbg is managed as an external subprocess:
 
-- **Distribution**: bundled with Forge release artifacts (platform-specific binary), or auto-downloaded on first debug launch if not present (with SHA-256 hash verification)
-- **Version pinning**: Forge pins a specific netcoredbg release (currently 3.1.3-1062) and upgrades on a tested cadence
+- **Distribution**: bundled with SharpLsp release artifacts (platform-specific binary), or auto-downloaded on first debug launch if not present (with SHA-256 hash verification)
+- **Version pinning**: SharpLsp pins a specific netcoredbg release (currently 3.1.3-1062) and upgrades on a tested cadence
 - **Transport**: DAP over stdin/stdout; DapRouter opens the child process and pipes JSON-RPC
 - **Launch modes**:
   - `launch`: spawn a new .NET process
@@ -155,13 +155,13 @@ netcoredbg is managed as an external subprocess:
 | Linux x64 | Official Samsung release binary | Full feature set including interop debugging |
 | Linux ARM64 | Official Samsung release binary | Full feature set |
 | macOS x64 | Official Samsung release binary | No interop/native debugging |
-| macOS ARM64 | Forge CI build from source | Samsung does not ship official ARM64 macOS binaries |
+| macOS ARM64 | SharpLsp CI build from source | Samsung does not ship official ARM64 macOS binaries |
 | Windows x64 | Official Samsung release binary | Full feature set |
 | Windows ARM64 | Official Samsung release binary | Full feature set |
-| Alpine/musl x64 | Forge CI musl-linked build | Workaround for SIGSEGV on musl — see §6.5 |
-| Alpine/musl ARM64 | Forge CI musl-linked build | Same musl workaround |
+| Alpine/musl x64 | SharpLsp CI musl-linked build | Workaround for SIGSEGV on musl — see §6.5 |
+| Alpine/musl ARM64 | SharpLsp CI musl-linked build | Same musl workaround |
 
-### 3.4 Forge Debug Sidecar (Phase 5)
+### 3.4 SharpLsp Debug Sidecar (Phase 5)
 
 A new C# process (Tier 4) that implements the full ICorDebug-based debugger natively:
 
@@ -178,7 +178,7 @@ A new C# process (Tier 4) that implements the full ICorDebug-based debugger nati
 
 ## 4. DAP Protocol
 
-Forge targets **DAP specification version 1.71.0**.
+SharpLsp targets **DAP specification version 1.71.0**.
 
 ### 4.1 Key Capabilities Used
 
@@ -216,8 +216,8 @@ Forge targets **DAP specification version 1.71.0**.
 |---|---|---|---|
 | Launch .NET app (console, web, etc.) | `launch` | P1 | Pass args, env, cwd, program |
 | Attach to running process by PID | `attach` | P1 | Known reliability issues in netcoredbg; fixed in Debug Sidecar |
-| Attach to running process by name | `attach` (processName) | P2 | Forge resolves name → PID |
-| Remote attach via SSH tunnel | `attach` (remote) | P2 | Forge manages SSH tunnel transparently |
+| Attach to running process by name | `attach` (processName) | P2 | SharpLsp resolves name → PID |
+| Remote attach via SSH tunnel | `attach` (remote) | P2 | SharpLsp manages SSH tunnel transparently |
 | Launch with environment variables | `launch` (env) | P1 | |
 | Launch with custom working directory | `launch` (cwd) | P1 | |
 | Launch browser for Blazor WASM | `launch` (browser) | P3 | Requires browser devtools bridge |
@@ -228,7 +228,7 @@ Forge targets **DAP specification version 1.71.0**.
 
 ```json
 {
-  "type": "forge",
+  "type": "sharplsp",
   "request": "launch",
   "program": "${workspaceFolder}/bin/Debug/net9.0/MyApp.dll",
   "args": [],
@@ -250,7 +250,7 @@ Forge targets **DAP specification version 1.71.0**.
 
 ```json
 {
-  "type": "forge",
+  "type": "sharplsp",
   "request": "attach",
   "processId": "${command:pickProcess}",
   "justMyCode": true
@@ -305,7 +305,7 @@ Output is captured from the debug output channel and surfaced as a DAP `output` 
 | Navigate to source from frame | `source` | P1 | |
 | Load symbols on demand | — | P2 | PDB loading, symbol server |
 | Decompiled source navigation | — | P2 | ICSharpCode.Decompiler in C# sidecar |
-| Parallel Stacks data | custom `forge/parallelStacks` | P2 | Phase 5: enumerate all thread stacks |
+| Parallel Stacks data | custom `sharplsp/parallelStacks` | P2 | Phase 5: enumerate all thread stacks |
 
 #### 5.4.1 Async Call Stack Reconstruction
 
@@ -332,7 +332,7 @@ F# `async { }` computation expressions and `task { }` resumable state machines r
 - `StateMachineMethod` table not emitted — debugger cannot map `MoveNext` frames to source without extra heuristics (dotnet/fsharp#12000)
 - `StateMachineHoistedLocalScopes` table not emitted — hoisted local variable scopes unavailable
 
-**Forge approach:**
+**SharpLsp approach:**
 - `task { }` (resumable state machines, F# 6+): use same async stack reconstruction as C# with type name pattern matching adjusted for F# compiler-generated names
 - `async { }` (legacy CPS-based): best-effort reconstruction; degrade gracefully to physical stack where continuation chains cannot be followed
 - Phase 5: contribute `StateMachineMethod` PDB table emission to dotnet/fsharp, or implement workaround via FCS symbol analysis
@@ -380,7 +380,7 @@ The Debug Sidecar achieves T3 by delegating expression compilation to the C# sid
 
 **F# discriminated union inspection (Phase 4):**
 
-F# DUs compile to class hierarchies in IL. Without F# semantic knowledge, debuggers show raw compiler-generated fields (`_tag`, `_value`, etc.). Forge addresses this via:
+F# DUs compile to class hierarchies in IL. Without F# semantic knowledge, debuggers show raw compiler-generated fields (`_tag`, `_value`, etc.). SharpLsp addresses this via:
 - Phase 4: DapRouter queries FCS sidecar to decode DU case names from the type's compiled representation, rewriting the variable display name to match F# syntax (e.g., `Some(42)`)
 - Phase 5: Debug Sidecar calls FCS sidecar for full DU-aware variable formatting
 
@@ -415,15 +415,15 @@ Configuration via `setExceptionBreakpoints` with `filterOptions` and `exceptionO
 
 ### 5.8 Hot Reload During Debug
 
-Hot Reload allows modifying method bodies at runtime without restarting the debug session. Forge uses `.NET Hot Reload` (`MetadataUpdater.ApplyUpdate`), not legacy Edit and Continue (`ICorDebugModule2::ApplyChanges`). This distinction is critical:
+Hot Reload allows modifying method bodies at runtime without restarting the debug session. SharpLsp uses `.NET Hot Reload` (`MetadataUpdater.ApplyUpdate`), not legacy Edit and Continue (`ICorDebugModule2::ApplyChanges`). This distinction is critical:
 
 - `MetadataUpdater.ApplyUpdate` is cross-platform (Linux, macOS, Windows) since .NET 6
 - Classic EnC via `ICorDebugModule2::ApplyChanges` requires the debugger to generate delta files; no open-source client generates these deltas for Linux/macOS targets (netcoredbg issue #214)
-- `MetadataUpdater.ApplyUpdate` and debugger-based EnC **cannot be used simultaneously** (documented limitation); Forge uses Hot Reload exclusively
+- `MetadataUpdater.ApplyUpdate` and debugger-based EnC **cannot be used simultaneously** (documented limitation); SharpLsp uses Hot Reload exclusively
 
 **Architecture:**
 
-1. Forge VFS monitors document changes during active debug session
+1. SharpLsp VFS monitors document changes during active debug session
 2. On save, C# sidecar computes delta: uses Roslyn `WatchHotReloadService` to generate metadata delta + IL delta + PDB delta as binary blobs
 3. DapRouter delivers the delta to the target process via DAP `evaluate` injection (Phase 4) or direct `MetadataUpdater.ApplyUpdate` call (Phase 5)
 4. The debug session continues without interruption; next method invocation uses new IL
@@ -442,7 +442,7 @@ Hot Reload allows modifying method bodies at runtime without restarting the debu
 | Modify lambda captured variables | No — requires restart |
 | Change inheritance hierarchy | No — requires restart |
 
-**Note on classic EnC (out of scope):** The .NET 8+ runtime supports EnC on Linux/macOS (dotnet/runtime#12409 closed Sept 2023). However, generating the delta files requires IDE tooling that no open-source project currently provides for non-Windows targets. If this gap is closed upstream, Forge will adopt it. Until then, Hot Reload is the cross-platform path.
+**Note on classic EnC (out of scope):** The .NET 8+ runtime supports EnC on Linux/macOS (dotnet/runtime#12409 closed Sept 2023). However, generating the delta files requires IDE tooling that no open-source project currently provides for non-Windows targets. If this gap is closed upstream, SharpLsp will adopt it. Until then, Hot Reload is the cross-platform path.
 
 ### 5.9 Multi-Process and Multi-Project Debugging
 
@@ -458,13 +458,13 @@ Hot Reload allows modifying method bodies at runtime without restarting the debu
 
 ### 5.10 Remote Debugging
 
-Forge manages SSH tunnel setup transparently. The debug adapter always runs locally (against a forwarded socket), avoiding the complexity of cross-machine DAP transport.
+SharpLsp manages SSH tunnel setup transparently. The debug adapter always runs locally (against a forwarded socket), avoiding the complexity of cross-machine DAP transport.
 
 | Step | Action |
 |---|---|
-| 1 | Forge SSH's to remote host, uploads netcoredbg or Debug Sidecar binary |
-| 2 | Forge starts the adapter on the remote host listening on a local port |
-| 3 | Forge creates an SSH local port-forward for that port |
+| 1 | SharpLsp SSH's to remote host, uploads netcoredbg or Debug Sidecar binary |
+| 2 | SharpLsp starts the adapter on the remote host listening on a local port |
+| 3 | SharpLsp creates an SSH local port-forward for that port |
 | 4 | DapRouter connects to the local end of the tunnel |
 | 5 | Source files are mapped from remote paths to local paths via `sourceFileMap` config |
 
@@ -472,7 +472,7 @@ Forge manages SSH tunnel setup transparently. The debug adapter always runs loca
 
 ```json
 {
-  "type": "forge",
+  "type": "sharplsp",
   "request": "attach",
   "processId": 1234,
   "remote": {
@@ -490,27 +490,27 @@ Forge manages SSH tunnel setup transparently. The debug adapter always runs loca
 
 | Feature | Protocol | Priority |
 |---|---|---|
-| Debug individual test | DAP + `forge/testDebug` | P1 |
-| Debug test with args/env override | DAP + `forge/testDebug` | P2 |
+| Debug individual test | DAP + `sharplsp/testDebug` | P1 |
+| Debug test with args/env override | DAP + `sharplsp/testDebug` | P2 |
 | Breakpoints inside test methods | Standard line breakpoints | P1 |
 | Just My Code in test context | launch config | P1 |
-| Debug entire test class/suite | DAP + `forge/testDebug` | P2 |
-| Expecto/FsCheck test debugging | DAP + `forge/testDebug` | P1 (F# parity) |
+| Debug entire test class/suite | DAP + `sharplsp/testDebug` | P2 |
+| Expecto/FsCheck test debugging | DAP + `sharplsp/testDebug` | P1 (F# parity) |
 
-**Test host process attach**: `dotnet test` spawns a separate test host process (`testhost.exe`/`dotnet-testhost`). Forge must attach to the child test host, not the parent `dotnet test` process. The `VSTEST_HOST_DEBUG=1` environment variable causes the test host to pause and wait for a debugger attach before executing tests. Forge sets this variable in the test debug launch and attaches to the waiting process.
+**Test host process attach**: `dotnet test` spawns a separate test host process (`testhost.exe`/`dotnet-testhost`). SharpLsp must attach to the child test host, not the parent `dotnet test` process. The `VSTEST_HOST_DEBUG=1` environment variable causes the test host to pause and wait for a debugger attach before executing tests. SharpLsp sets this variable in the test debug launch and attaches to the waiting process.
 
 ### 5.12 Diagnostic Tools Integration
 
-Debugging and diagnostics are complementary. Forge integrates the .NET diagnostic tools (all MIT, dotnet/diagnostics v9.0.661903+) alongside the debugger.
+Debugging and diagnostics are complementary. SharpLsp integrates the .NET diagnostic tools (all MIT, dotnet/diagnostics v9.0.661903+) alongside the debugger.
 
 | Feature | Tool | DAP Integration | Priority |
 |---|---|---|---|
-| CPU sampling profiler | `dotnet-trace` (EventPipe) | `forge/profileStart` custom event | P2 |
-| Memory allocation profiler | `dotnet-gcdump` + `dotnet-trace` | `forge/heapSnapshot` custom event | P2 |
-| GC heap snapshot | `dotnet-gcdump` | `forge/gcDump` custom event | P2 |
-| Live counters (CPU, GC, requests/sec) | `dotnet-counters` | `forge/counters` streaming event | P2 |
+| CPU sampling profiler | `dotnet-trace` (EventPipe) | `sharplsp/profileStart` custom event | P2 |
+| Memory allocation profiler | `dotnet-gcdump` + `dotnet-trace` | `sharplsp/heapSnapshot` custom event | P2 |
+| GC heap snapshot | `dotnet-gcdump` | `sharplsp/gcDump` custom event | P2 |
+| Live counters (CPU, GC, requests/sec) | `dotnet-counters` | `sharplsp/counters` streaming event | P2 |
 | Process dump on crash | `dotnet-dump` | Auto-triggered on unhandled exception | P3 |
-| Dump analysis | `dotnet-dump analyze` + SOS | `forge/analyzeDump` custom request | P3 |
+| Dump analysis | `dotnet-dump analyze` + SOS | `sharplsp/analyzeDump` custom request | P3 |
 
 These are exposed as DAP custom events/notifications, surfaced in the editor as a diagnostics panel alongside the debugger. See `PROFILER-SPEC.md` for full profiler specification.
 
@@ -533,15 +533,15 @@ The F# compiler does not emit the following PDB tables that debuggers rely on:
 | `LocalConstants` | Constant values not in PDB | Minor impact |
 | `DynamicLocalVariables` | Dynamic-typed locals lose type info | Minor impact |
 
-**Forge's approach:**
+**SharpLsp's approach:**
 - Phase 4: implement heuristic PDB mapping for F# state machines via FCS sidecar symbol analysis
-- Phase 5: contribute `StateMachineMethod` table emission to dotnet/fsharp; until accepted, maintain Forge-local patch or workaround
+- Phase 5: contribute `StateMachineMethod` table emission to dotnet/fsharp; until accepted, maintain SharpLsp-local patch or workaround
 
 ### 6.2 Computation Expression Stepping
 
 F# `async { }` desugars into CPS (continuation-passing style) library calls. Stepping behavior reflects the desugared form, not the source. This is documented as a known limitation.
 
-`task { }` (resumable state machines since F# 6) behaves significantly better due to inlining and more predictable PDB mapping. Prefer `task {}` over `async {}` in internal Forge test code.
+`task { }` (resumable state machines since F# 6) behaves significantly better due to inlining and more predictable PDB mapping. Prefer `task {}` over `async {}` in internal SharpLsp test code.
 
 **Smart Step Into (Phase 5)**: Uses DAP `stepIn` with `targetId` to let users choose which function to step into when F# pipelines or function composition calls multiple functions on one line.
 
@@ -549,14 +549,14 @@ F# `async { }` desugars into CPS (continuation-passing style) library calls. Ste
 
 DUs compile to class hierarchies. Without F# semantic knowledge, a variable `Some 42` displays as `FSharpOption`1 { Tag = 1, Value = 42 }` instead of `Some(42)`.
 
-Forge addresses this in three layers:
+SharpLsp addresses this in three layers:
 1. **Phase 4 DapRouter**: queries FCS sidecar for DU type metadata; rewrites `variables` response display values to F# syntax
 2. **Phase 5 Debug Sidecar**: native DU-aware `variables` formatting via FCS sidecar channel
 3. **Longer term**: contribute `[DebuggerDisplay]` attribute emission in F# compiler for DU cases
 
 ### 6.4 F# Mailbox Processor Debugging
 
-`MailboxProcessor<'Msg>` actors are a common F# pattern. Forge exposes:
+`MailboxProcessor<'Msg>` actors are a common F# pattern. SharpLsp exposes:
 - Current message queue depth as a pseudo-variable in the variables panel (Phase 5)
 - Ability to inspect pending messages (Phase 5, best-effort)
 
@@ -592,19 +592,19 @@ F# expression evaluation in the watch/immediate window:
 
 **Gap:** netcoredbg `attach` mode returns `0x80070057` error (issue #205).
 
-**Closure:** Forge contributes fix upstream. DapRouter implements retry with exponential backoff. Phase 5 Debug Sidecar uses `DbgShim.RegisterForRuntimeStartup` for reliable race-free attach.
+**Closure:** SharpLsp contributes fix upstream. DapRouter implements retry with exponential backoff. Phase 5 Debug Sidecar uses `DbgShim.RegisterForRuntimeStartup` for reliable race-free attach.
 
 ### 7.5 macOS ARM64 (Phase 4 fixed, Phase 5 native)
 
 **Gap:** Samsung does not ship macOS ARM64 binaries for netcoredbg.
 
-**Closure:** Forge CI builds netcoredbg from source for `darwin-arm64`. Phase 5 Debug Sidecar is managed .NET 9 code — no native compilation issues on ARM64.
+**Closure:** SharpLsp CI builds netcoredbg from source for `darwin-arm64`. Phase 5 Debug Sidecar is managed .NET 9 code — no native compilation issues on ARM64.
 
 ### 7.6 musl/Alpine (Phase 4 worked around, Phase 5 native)
 
 **Gap:** netcoredbg SIGSEGV on musl due to CoreCLR `EnsureStackSize` overrunning musl's fixed 1.5MB thread stack (dotnet/runtime#103741). This is a CoreCLR bug, not a netcoredbg bug.
 
-**Closure:** Forge CI maintains a musl-linked netcoredbg build with patched stack size pre-reservation. Contribute fix to dotnet/runtime. Phase 5 Debug Sidecar runs as managed code; the musl issue affects the C++ ICorDebug shim layer, which ClrDebug wraps but does not eliminate. Monitor dotnet/runtime#103741 for upstream fix.
+**Closure:** SharpLsp CI maintains a musl-linked netcoredbg build with patched stack size pre-reservation. Contribute fix to dotnet/runtime. Phase 5 Debug Sidecar runs as managed code; the musl issue affects the C++ ICorDebug shim layer, which ClrDebug wraps but does not eliminate. Monitor dotnet/runtime#103741 for upstream fix.
 
 ### 7.7 Logpoints (Phase 4 emulated, Phase 5 native)
 
@@ -616,7 +616,7 @@ F# expression evaluation in the watch/immediate window:
 
 **Gap:** .NET 8+ runtime supports EnC on Linux/macOS, but no open-source client generates delta files for these platforms.
 
-**Closure:** Forge uses Hot Reload (`MetadataUpdater.ApplyUpdate`) which is fully cross-platform. Classic EnC is explicitly out of scope until an upstream open-source delta generator exists. Forge will adopt immediately if/when that gap closes.
+**Closure:** SharpLsp uses Hot Reload (`MetadataUpdater.ApplyUpdate`) which is fully cross-platform. Classic EnC is explicitly out of scope until an upstream open-source delta generator exists. SharpLsp will adopt immediately if/when that gap closes.
 
 ### 7.9 Return Value Display (Phase 5)
 
@@ -640,11 +640,11 @@ F# expression evaluation in the watch/immediate window:
 
 ## 8. Security Considerations
 
-- The debug adapter runs as the same user as the target process; Forge does not elevate privileges
-- Remote debugging SSH keys are user-managed; Forge does not store credentials
+- The debug adapter runs as the same user as the target process; SharpLsp does not elevate privileges
+- Remote debugging SSH keys are user-managed; SharpLsp does not store credentials
 - Process attach is guarded by OS-level ptrace permissions (Linux) and entitlement checks (macOS)
-- Forge does not accept debug adapter connections from network interfaces (local sockets only)
-- `dotnet-dump` output may contain sensitive heap data; Forge stores dumps in user-specified paths only
+- SharpLsp does not accept debug adapter connections from network interfaces (local sockets only)
+- `dotnet-dump` output may contain sensitive heap data; SharpLsp stores dumps in user-specified paths only
 - `ICorDebugEval` expression evaluation executes arbitrary code in the debuggee — scope is limited to the current debug session; no cross-session execution
 
 ---
@@ -701,5 +701,5 @@ F# expression evaluation in the watch/immediate window:
 - [dotnet/runtime#12409 — Linux EnC support (closed)](https://github.com/dotnet/runtime/issues/12409)
 - [Samsung/netcoredbg#214 — Cross-platform EnC](https://github.com/Samsung/netcoredbg/issues/214)
 - [Samsung/netcoredbg#201 — musl SIGSEGV](https://github.com/Samsung/netcoredbg/issues/201)
-- [FORGE-SPEC.md](./FORGE-SPEC.md) — parent specification
+- [SHARPLSP-SPEC.md](./SHARPLSP-SPEC.md) — parent specification
 - [PROFILER-SPEC.md](./PROFILER-SPEC.md) — performance profiling specification

@@ -7,12 +7,14 @@ import { NuGetBrowserPanel } from '../../nuget-browser.js';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  openSharpLspPanel,
   pollUntilResult,
   setupLspTestSuite,
+  takeScreenshot,
   teardownLspTestSuite,
 } from './test-helpers';
 
-interface ForgeApiForNuGetTests {
+interface SharpLspApiForNuGetTests {
   readonly getLspClient: () => LanguageClient | undefined;
 }
 
@@ -43,11 +45,11 @@ suite('NuGet Browser', () => {
 
   // ── Command Registration ────────────────────────────────────
 
-  test('forge.browseNuGetPackages command is registered', async () => {
+  test('sharplsp.browseNuGetPackages command is registered', async () => {
     const allCommands = await vscode.commands.getCommands(true);
     assert.ok(
-      allCommands.includes('forge.browseNuGetPackages'),
-      'forge.browseNuGetPackages should be registered',
+      allCommands.includes('sharplsp.browseNuGetPackages'),
+      'sharplsp.browseNuGetPackages should be registered',
     );
   });
 
@@ -58,8 +60,8 @@ suite('NuGet Browser', () => {
     assert.ok(ext, 'Extension should exist');
     const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
     assert.ok(
-      commands.some((c) => c.command === 'forge.browseNuGetPackages'),
-      'package.json must declare forge.browseNuGetPackages',
+      commands.some((c) => c.command === 'sharplsp.browseNuGetPackages'),
+      'package.json must declare sharplsp.browseNuGetPackages',
     );
   });
 
@@ -68,8 +70,8 @@ suite('NuGet Browser', () => {
     assert.ok(ext, 'Extension should exist');
     const commands: { command: string }[] = ext.packageJSON.contributes?.commands ?? [];
     assert.ok(
-      commands.some((c) => c.command === 'forge.removeNuGetPackage'),
-      'package.json must declare forge.removeNuGetPackage',
+      commands.some((c) => c.command === 'sharplsp.removeNuGetPackage'),
+      'package.json must declare sharplsp.removeNuGetPackage',
     );
   });
 
@@ -86,14 +88,14 @@ suite('NuGet Browser', () => {
     // a real project file, but we can verify the command doesn't crash
     // when invoked without a valid node (it shows a warning message).
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.browseNuGetPackages');
+      await vscode.commands.executeCommand('sharplsp.browseNuGetPackages');
     }, 'browseNuGetPackages should not throw when no node is provided');
   });
 
   test('removeNuGetPackage command does not throw when cancelled', async function () {
     this.timeout(5_000);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.removeNuGetPackage');
+      await vscode.commands.executeCommand('sharplsp.removeNuGetPackage');
     }, 'removeNuGetPackage must not throw when no node is provided');
   });
 
@@ -115,7 +117,7 @@ suite('NuGet Browser', () => {
 
     // Check view/item/context menus for the browse command.
     const viewItemMenus: { command: string; when?: string }[] = menus['view/item/context'] ?? [];
-    const browseEntry = viewItemMenus.find((m) => m.command === 'forge.browseNuGetPackages');
+    const browseEntry = viewItemMenus.find((m) => m.command === 'sharplsp.browseNuGetPackages');
     assert.ok(browseEntry, 'browseNuGetPackages should be in view/item/context menu');
     // Verify it's scoped to project items.
     assert.ok(
@@ -126,21 +128,21 @@ suite('NuGet Browser', () => {
 
   // ── NuGet LSP request method names ──────────────────────────
 
-  test('NuGet LSP request methods follow forge/nuget/* convention', () => {
+  test('NuGet LSP request methods follow sharplsp/nuget/* convention', () => {
     const expectedMethods = [
-      'forge/nuget/search',
-      'forge/nuget/versions',
-      'forge/nuget/installed',
-      'forge/nuget/install',
-      'forge/nuget/uninstall',
+      'sharplsp/nuget/search',
+      'sharplsp/nuget/versions',
+      'sharplsp/nuget/installed',
+      'sharplsp/nuget/install',
+      'sharplsp/nuget/uninstall',
     ];
 
     // These are the methods the extension sends to the LSP server.
     // This test documents the API contract.
     for (const method of expectedMethods) {
       assert.ok(
-        method.startsWith('forge/nuget/'),
-        `Method ${method} should start with forge/nuget/`,
+        method.startsWith('sharplsp/nuget/'),
+        `Method ${method} should start with sharplsp/nuget/`,
       );
     }
   });
@@ -166,12 +168,12 @@ suite('NuGet Browser', () => {
     // These are the message commands the webview sends to the extension.
     // Each maps to a specific LSP request.
     const expectedCommands = [
-      'search', // -> forge/nuget/search
-      'selectPackage', // -> forge/nuget/versions
-      'install', // -> forge/nuget/install
-      'uninstall', // -> forge/nuget/uninstall
-      'changeVersion', // -> forge/nuget/install (with new version)
-      'switchTab', // -> forge/nuget/installed (for "installed" tab)
+      'search', // -> sharplsp/nuget/search
+      'selectPackage', // -> sharplsp/nuget/versions
+      'install', // -> sharplsp/nuget/install
+      'uninstall', // -> sharplsp/nuget/uninstall
+      'changeVersion', // -> sharplsp/nuget/install (with new version)
+      'switchTab', // -> sharplsp/nuget/installed (for "installed" tab)
       'openExternal', // -> vscode.env.openExternal
     ];
 
@@ -213,9 +215,14 @@ suite('NuGet Browser', () => {
   function getLspClientGetter(): () => LanguageClient | undefined {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, 'Extension must be active');
-    const api = ext.exports as ForgeApiForNuGetTests | undefined;
+    const api = ext.exports as SharpLspApiForNuGetTests | undefined;
     assert.ok(api?.getLspClient, 'Extension must export getLspClient');
     return api.getLspClient;
+  }
+
+  async function takeNuGetScreenshot(filename: string): Promise<void> {
+    await openSharpLspPanel();
+    await takeScreenshot(filename);
   }
 
   /**
@@ -243,6 +250,17 @@ suite('NuGet Browser', () => {
         count > 0,
         `Browse tab must be populated after initial load (got ${count.toString()} results)`,
       );
+      assert.ok(
+        count >= 5,
+        `Browse tab must show at least 5 popular packages, got ${count.toString()}`,
+      );
+      const html = panel.getRenderedHtml();
+      assert.ok(
+        html.includes('package-list') || html.includes('package-item') || html.includes('NuGet'),
+        'Browse HTML must contain package list markup',
+      );
+      assert.ok(html.length > 500, 'Browse HTML must have substantial content');
+      await takeNuGetScreenshot('vscode-nuget-browse.png');
     } finally {
       panel.dispose();
     }
@@ -294,6 +312,22 @@ suite('NuGet Browser', () => {
         'Newtonsoft.Json',
         'Selecting an installed package must set selectedPackage',
       );
+      const installedHtml = panel.getRenderedHtml();
+      assert.ok(
+        installedHtml.includes('Newtonsoft.Json'),
+        'Installed tab HTML must show Newtonsoft.Json',
+      );
+      assert.ok(
+        installedHtml.includes('Remove') || installedHtml.includes('uninstall'),
+        'Installed package must show Remove button',
+      );
+      assert.ok(installedHtml.includes('13.0'), 'Installed package must show version number');
+      assert.ok(
+        installedHtml.toLowerCase().includes('james newton') ||
+          installedHtml.toLowerCase().includes('newtonsoft'),
+        'Package details must show author or description',
+      );
+      await takeNuGetScreenshot('vscode-nuget-installed.png');
     } finally {
       panel.dispose();
     }
@@ -422,7 +456,13 @@ suite('NuGet Browser', () => {
         data: { query: 'Serilog' },
       });
 
-      assert.ok(panel.getSearchResultsCount() > 0, "Search for 'Serilog' must return results");
+      const searchCount = panel.getSearchResultsCount();
+      assert.ok(searchCount > 0, "Search for 'Serilog' must return results");
+      assert.ok(searchCount >= 3, `Search must return ≥3 results, got ${searchCount.toString()}`);
+      const searchHtml = panel.getRenderedHtml();
+      assert.ok(searchHtml.toLowerCase().includes('serilog'), "HTML must contain 'Serilog'");
+      assert.ok(searchHtml.length > 300, 'Search results HTML must have content');
+      await takeNuGetScreenshot('vscode-nuget-search.png');
     } finally {
       panel.dispose();
     }
@@ -607,6 +647,7 @@ suite('NuGet Browser', () => {
         html.includes('class="package-icon-img"'),
         'Details panel must render an <img> with class package-icon-img when iconUrl is present',
       );
+      await takeNuGetScreenshot('vscode-nuget-package-details.png');
     } finally {
       panel.dispose();
     }

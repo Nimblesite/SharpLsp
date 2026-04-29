@@ -8,13 +8,15 @@ eleventyNavigation:
 
 # Architecture
 
-Forge is built on a three-tier architecture that separates concerns between fast syntax operations and rich semantic analysis.
+![SharpLsp architecture in VS Code](/assets/screenshots/vscode-architecture-page.png)
+
+SharpLsp is built on a three-tier architecture that separates concerns between fast syntax operations and rich semantic analysis.
 
 ## Tier 1 — Rust LSP Host
 
 The host process handles:
 
-- **LSP protocol**: JSON-RPC over stdio, full LSP 3.17 compliance
+- **LSP protocol**: JSON-RPC over stdio, targeting LSP 3.17 behavior
 - **Virtual File System (VFS)**: In-memory file state with change tracking
 - **tree-sitter parsing**: Incremental C# parsing at sub-millisecond speeds (F# grammar integration is pending; F# syntax features route to the sidecar)
 - **salsa cache**: Incremental computation — only reprocess what changed
@@ -25,7 +27,7 @@ The host process handles:
 A long-running .NET 10 process providing:
 
 - MSBuildWorkspace for solution/project loading
-- Full Roslyn API: completions, diagnostics, code actions, refactoring
+- Roslyn-backed C# features: completions, diagnostics, code actions, refactoring
 - ICSharpCode.Decompiler for go-to-decompiled-source
 - MessagePack serialization over named pipes / Unix domain sockets
 

@@ -1,16 +1,22 @@
 {
-  "title": "Forge",
-  "name": "Forge",
-  "description": "Open-source .NET LSP for C# and F#. One server, every editor.",
-  "url": "https://forge-lsp.dev",
-  "author": "Forge Contributors",
+  "title": "SharpLsp",
+  "name": "SharpLsp",
+  "description": "Open-source .NET language server for C# and F#. Full Roslyn IntelliSense, diagnostics, refactoring, and NuGet management in VS Code, Zed, Neovim, and every LSP-compatible editor.",
+  "url": "https://sharplsp.dev",
+  "author": "SharpLsp Team",
   "stylesheet": "/assets/css/styles.css",
   "favicon": "/assets/favicon.svg",
   "themeColor": "#19d078",
+  "keywords": "C# language server, F# language server, .NET LSP, open source C# extension, OmniSharp alternative, C# Dev Kit alternative, Roslyn language server, FSharp.Compiler.Service, VS Code C#, Neovim .NET, Helix C#, Zed .NET",
+  "ogImage": "/assets/images/og-image.png",
+  "ogImageWidth": "1200",
+  "ogImageHeight": "630",
+  "searchUrl": "https://sharplsp.dev/blog",
   "organization": {
-    "name": "Forge",
+    "name": "SharpLsp",
+    "logo": "/assets/favicon.svg",
     "sameAs": [
-      "https://github.com/MelbourneDeveloper/forge"
+      "https://github.com/Nimblesite/SharpLsp"
     ]
   }
 }

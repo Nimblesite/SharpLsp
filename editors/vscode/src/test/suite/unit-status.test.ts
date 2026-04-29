@@ -1,11 +1,11 @@
 import * as assert from 'node:assert/strict';
-import { ForgeStatusBar, ServerState } from '../../status.js';
+import { SharpLspStatusBar, ServerState } from '../../status.js';
 
-suite('ForgeStatusBar — Construction', () => {
-  let statusBar: ForgeStatusBar;
+suite('SharpLspStatusBar — Construction', () => {
+  let statusBar: SharpLspStatusBar;
 
   setup(() => {
-    statusBar = new ForgeStatusBar();
+    statusBar = new SharpLspStatusBar();
   });
 
   teardown(() => {
@@ -13,28 +13,28 @@ suite('ForgeStatusBar — Construction', () => {
   });
 
   test('constructor creates a status bar item', () => {
-    assert.ok(statusBar, 'ForgeStatusBar should be constructable');
+    assert.ok(statusBar, 'SharpLspStatusBar should be constructable');
   });
 
   test('constructor does not throw', () => {
     assert.doesNotThrow(() => {
-      const sb = new ForgeStatusBar();
+      const sb = new SharpLspStatusBar();
       sb.dispose();
     });
   });
 
   test('multiple instances can coexist', () => {
-    const second = new ForgeStatusBar();
+    const second = new SharpLspStatusBar();
     assert.ok(second, 'Second instance should be constructable');
     second.dispose();
   });
 });
 
-suite('ForgeStatusBar — setState() State Transitions', () => {
-  let statusBar: ForgeStatusBar;
+suite('SharpLspStatusBar — setState() State Transitions', () => {
+  let statusBar: SharpLspStatusBar;
 
   setup(() => {
-    statusBar = new ForgeStatusBar();
+    statusBar = new SharpLspStatusBar();
   });
 
   teardown(() => {
@@ -151,7 +151,7 @@ suite('ForgeStatusBar — setState() State Transitions', () => {
   });
 });
 
-suite('ForgeStatusBar — ServerState Enum Values', () => {
+suite('SharpLspStatusBar — ServerState Enum Values', () => {
   test("ServerState.Starting is 'starting'", () => {
     assert.strictEqual(ServerState.Starting, 'starting');
   });
@@ -169,16 +169,16 @@ suite('ForgeStatusBar — ServerState Enum Values', () => {
   });
 });
 
-suite('ForgeStatusBar — dispose()', () => {
+suite('SharpLspStatusBar — dispose()', () => {
   test('dispose() does not throw', () => {
-    const sb = new ForgeStatusBar();
+    const sb = new SharpLspStatusBar();
     assert.doesNotThrow(() => {
       sb.dispose();
     });
   });
 
   test('dispose() can be called after setState', () => {
-    const sb = new ForgeStatusBar();
+    const sb = new SharpLspStatusBar();
     sb.setState(ServerState.Running);
     assert.doesNotThrow(() => {
       sb.dispose();
@@ -186,7 +186,7 @@ suite('ForgeStatusBar — dispose()', () => {
   });
 
   test('dispose() after Error state does not throw', () => {
-    const sb = new ForgeStatusBar();
+    const sb = new SharpLspStatusBar();
     sb.setState(ServerState.Error);
     assert.doesNotThrow(() => {
       sb.dispose();

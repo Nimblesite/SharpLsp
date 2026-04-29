@@ -20,7 +20,7 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 
 ### IPC Wire Types
 
-- [x] Define `ReferencesRequest` MessagePack type in `Forge.Sidecar.Common` (extends `PositionRequest` with `IncludeDeclaration`)
+- [x] Define `ReferencesRequest` MessagePack type in `SharpLsp.Sidecar.Common` (extends `PositionRequest` with `IncludeDeclaration`)
 - [x] Define `DocumentHighlightResult` MessagePack type with `StartLine`, `StartCharacter`, `EndLine`, `EndCharacter`, `Kind`
 - [x] Define `DocumentHighlightListResult` MessagePack type wrapping `List<DocumentHighlightResult>`
 - [x] Register `textDocument/references` method in IPC message router (C# sidecar)

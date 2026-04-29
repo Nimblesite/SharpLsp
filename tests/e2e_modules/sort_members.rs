@@ -36,7 +36,7 @@ fn test_sort_members_reorders_by_accessibility() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {
@@ -49,7 +49,7 @@ fn test_sort_members_reorders_by_accessibility() {
 
     assert!(
         resp.get("error").is_none(),
-        "forge/sortMembers must not error: {resp}",
+        "sharplsp/sortMembers must not error: {resp}",
     );
     let edits = resp["result"]["edits"].as_array().unwrap();
     assert!(!edits.is_empty(), "expected edits to reorder members");
@@ -77,7 +77,7 @@ fn test_sort_members_reorders_by_category() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {
@@ -116,7 +116,7 @@ fn test_sort_members_already_sorted_returns_no_edits() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {
@@ -145,7 +145,7 @@ fn test_sort_members_single_member_returns_no_edits() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {
@@ -174,7 +174,7 @@ fn test_sort_members_custom_hierarchy_category_first() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {
@@ -215,7 +215,7 @@ fn test_sort_members_interface_sorts_methods() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {
@@ -253,7 +253,7 @@ fn test_sort_members_enum_sorts_members() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {

@@ -2,11 +2,11 @@
 
 **Status:** Implemented with one deferred follow-up
 **Last Updated:** 2026-04-26
-**Related specs:** `docs/specs/forge-spec.md`, `docs/specs/SOLUTION-EXPLORER-SPEC.md`, `docs/specs/RIDER-PLUGIN-SPEC.md`
+**Related specs:** `docs/specs/SHARPLSP-SPEC.md`, `docs/specs/SOLUTION-EXPLORER-SPEC.md`, `docs/specs/RIDER-PLUGIN-SPEC.md`
 
 ## Goal
 
-Make `.slnx` a first-class solution format everywhere Forge accepts, discovers,
+Make `.slnx` a first-class solution format everywhere SharpLsp accepts, discovers,
 loads, watches, renders, or passes through a solution file. `.sln` and `.slnx`
 must have the same user-visible behavior: semantic features, diagnostics,
 Solution Explorer, explicit solution selection, editor activation, and project
@@ -14,7 +14,7 @@ reload should all work from either format.
 
 The implementation must not add another hand-written solution-file parser.
 Microsoft publishes the official shared model and serializers in
-`Microsoft.VisualStudio.SolutionPersistence`; Forge should use that model for
+`Microsoft.VisualStudio.SolutionPersistence`; SharpLsp should use that model for
 solution-file structure and keep Rust focused on LSP routing and tree-sitter
 symbol extraction.
 
@@ -50,20 +50,20 @@ symbol extraction.
     callers should pass the exact file path.
 - `https://www.nuget.org/packages/Microsoft.VisualStudio.SolutionPersistence/`
   - Current researched package version is `1.0.52`.
-  - Package targets `net8.0` and `net472`; Forge sidecars target `net10.0`, so
+  - Package targets `net8.0` and `net472`; SharpLsp sidecars target `net10.0`, so
     the package is compatible.
 
-## Starting Forge State Before This Plan
+## Starting SharpLsp State Before This Plan
 
-Forge already had partial `.slnx` support in the C# sidecar:
+SharpLsp already had partial `.slnx` support in the C# sidecar:
 
-- `sidecars/Forge.Sidecar.CSharp/Workspace/SolutionLoader.cs` discovers
+- `sidecars/SharpLsp.Sidecar.CSharp/Workspace/SolutionLoader.cs` discovers
   `.slnx` alongside `.sln`.
-- `sidecars/Forge.Sidecar.CSharp/Workspace/WorkspaceManager.cs` routes `.slnx`
+- `sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.cs` routes `.slnx`
   through `MSBuildWorkspace.OpenSolutionAsync`.
-- `sidecars/Forge.Sidecar.CSharp.Tests/SolutionLoaderTests.cs` covers `.slnx`
+- `sidecars/SharpLsp.Sidecar.CSharp.Tests/SolutionLoaderTests.cs` covers `.slnx`
   discovery cases.
-- `sidecars/Forge.Sidecar.CSharp.Tests/WorkspaceManagerTests.cs` covers opening
+- `sidecars/SharpLsp.Sidecar.CSharp.Tests/WorkspaceManagerTests.cs` covers opening
   a minimal `.slnx` and recursively discovering one.
 
 The initial gaps were wider than the sidecar loader:
@@ -73,9 +73,9 @@ The initial gaps were wider than the sidecar loader:
 - `editors/vscode/package.json` only activates on `workspaceContains:**/*.sln`
   for solution files.
 - `src/workspace_symbols.rs` parses legacy `.sln` text with line splitting and
-  cannot read `.slnx`; this breaks `forge/workspaceSymbols` and the Solution
+  cannot read `.slnx`; this breaks `sharplsp/workspaceSymbols` and the Solution
   Explorer tree for `.slnx`.
-- `sidecars/Forge.Sidecar.FSharp/FSharpWorkspace.fs` treats `workspace/open`
+- `sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs` treats `workspace/open`
   as a directory scan for the first `.fsproj`; explicit `.sln` or `.slnx` paths
   do not load the F# project set from the selected solution.
 - Rider and Zed extension code and docs say `.sln` only. Rider default discovery
@@ -89,13 +89,13 @@ The initial gaps were wider than the sidecar loader:
 
 ### Solution File Contract
 
-Forge will treat a "solution file" as either:
+SharpLsp will treat a "solution file" as either:
 
 - legacy `.sln`
 - XML `.slnx`
 
-When both formats exist, Forge must not silently choose one from a directory if
-the choice is ambiguous. Editor selection and `forge/loadSolution` must pass the
+When both formats exist, SharpLsp must not silently choose one from a directory if
+the choice is ambiguous. Editor selection and `sharplsp/loadSolution` must pass the
 exact chosen file path into the host and sidecars. This matches .NET CLI behavior
 and prevents stale or wrong solution loads during migration periods.
 
@@ -114,7 +114,7 @@ Proposed IPC method:
 |---|---|---|
 | `solution/read` | `{ path: string }` | `SolutionFileModel` |
 
-`SolutionFileModel` should be a neutral DTO owned by `Forge.Sidecar.Common`:
+`SolutionFileModel` should be a neutral DTO owned by `SharpLsp.Sidecar.Common`:
 
 ```csharp
 public sealed record SolutionFileModel(
@@ -146,7 +146,7 @@ a structured error without crashing the sidecar.
 
 ### Rust Host Changes
 
-`forge/workspaceSymbols` should stop owning solution-file parsing. It should:
+`sharplsp/workspaceSymbols` should stop owning solution-file parsing. It should:
 
 1. Deserialize `WorkspaceSymbolsParams.solution`.
 2. Ask `solution/read` for the selected solution model.
@@ -192,7 +192,7 @@ F#:
   visibly different.
 - Update `.sln`-only messages, welcome text, comments, and state names to
   "solution file" or `.sln/.slnx`.
-- Pass the selected exact path through `forge/loadSolution` unchanged.
+- Pass the selected exact path through `sharplsp/loadSolution` unchanged.
 - Ensure tree refresh and project dependency watchers include `.slnx` where
   solution reload is expected.
 - Update scaffolding paths that search for a solution file before calling
@@ -206,13 +206,13 @@ Rider:
 - Default discovery should include `.slnx`.
 - VFS refresh should include `.slnx`.
 - User-facing labels should say `.sln/.slnx` or "solution".
-- `forge/loadSolution` and `forge/workspaceSymbols` already accept a path; keep
+- `sharplsp/loadSolution` and `sharplsp/workspaceSymbols` already accept a path; keep
   the exact path selected by the IDE.
 
 Zed:
 
 - Slash command help and completion should mention `.slnx`.
-- Prefer routing `/forge-tree` through the LSP `forge/workspaceSymbols` once Zed
+- Prefer routing `/sharplsp-tree` through the LSP `sharplsp/workspaceSymbols` once Zed
   exposes client access from slash commands.
 - Until then, add a read-only XML parser for `.slnx` only if the Zed WASM
   sandbox prevents calling the sidecar. This parser must use a real XML parser
@@ -233,9 +233,9 @@ Required coverage:
   host to understand configuration defaults.
 - C# sidecar opens an explicit `.slnx` and semantic requests work afterward.
 - F# sidecar opens an explicit `.slnx` containing `.fsproj`.
-- `forge/workspaceSymbols` returns project/symbol hierarchy from a real `.slnx`.
+- `sharplsp/workspaceSymbols` returns project/symbol hierarchy from a real `.slnx`.
 - VS Code discovers one `.slnx`, multiple `.slnx`, and mixed `.sln` plus `.slnx`.
-- VS Code sends the exact selected `.slnx` path to `forge/loadSolution`.
+- VS Code sends the exact selected `.slnx` path to `sharplsp/loadSolution`.
 - Rider default discovery and refresh include `.slnx`.
 - Zed slash command accepts `.slnx` if local parsing remains in that extension.
 
@@ -245,11 +245,11 @@ Required coverage:
 
 Implement `solution/read` in the sidecar layer using
 `Microsoft.VisualStudio.SolutionPersistence`, with DTOs in
-`Forge.Sidecar.Common` and focused sidecar tests.
+`SharpLsp.Sidecar.Common` and focused sidecar tests.
 
 ### Phase 2 - Rust Workspace Symbols
 
-Route `forge/workspaceSymbols` through `solution/read`, then delete or
+Route `sharplsp/workspaceSymbols` through `solution/read`, then delete or
 deprecate the manual `.sln` parser path in `src/workspace_symbols.rs`.
 
 ### Phase 3 - Editor Discovery
@@ -269,15 +269,15 @@ where both are supported. Keep `.slnx` limitations explicit.
 
 ## TODO
 
-- [x] Update `docs/specs/forge-spec.md` project-system text to say `.sln/.slnx`.
+- [x] Update `docs/specs/SHARPLSP-SPEC.md` project-system text to say `.sln/.slnx`.
 - [x] Update `docs/specs/SOLUTION-EXPLORER-SPEC.md` request examples and architecture diagram for `.sln/.slnx`.
 - [x] Add `Microsoft.VisualStudio.SolutionPersistence` direct package reference to the sidecar project that owns solution parsing.
-- [x] Add `SolutionFileModel`, `SolutionProjectEntry`, `SolutionFolderEntry`, and `SolutionItemEntry` DTOs in `Forge.Sidecar.Common`.
+- [x] Add `SolutionFileModel`, `SolutionProjectEntry`, `SolutionFolderEntry`, and `SolutionItemEntry` DTOs in `SharpLsp.Sidecar.Common`.
 - [x] Implement `solution/read` using `SolutionSerializers.GetSerializerByMoniker`.
 - [x] Add sidecar tests for `.sln`, flat `.slnx`, nested-folder `.slnx`, solution-items `.slnx`, and malformed `.slnx`.
-- [x] Change `src/main.rs` and `src/workspace_symbols.rs` so `forge/workspaceSymbols` requests the sidecar solution model.
+- [x] Change `src/main.rs` and `src/workspace_symbols.rs` so `sharplsp/workspaceSymbols` requests the sidecar solution model.
 - [x] Remove or quarantine the manual legacy `.sln` parser in `src/workspace_symbols.rs`.
-- [x] Add Rust E2E coverage for `forge/workspaceSymbols` against a real `.slnx`.
+- [x] Add Rust E2E coverage for `sharplsp/workspaceSymbols` against a real `.slnx`.
 - [x] Update VS Code activation events to include `workspaceContains:**/*.slnx`.
 - [x] Update VS Code solution discovery to find both `.sln` and `.slnx`.
 - [x] Update VS Code messages, welcome text, comments, and state names from `.sln`-only wording to solution-file wording.
@@ -288,7 +288,7 @@ where both are supported. Keep `.slnx` limitations explicit.
 - [x] Include `.slnx` in Rider VFS refresh triggers.
 - [x] Update Rider `.sln`-only UI text to `.sln/.slnx` or "solution".
 - [x] Update Zed slash command help/completion to mention `.slnx`.
-- [x] Add a Zed `.slnx` parsing path only if the extension cannot call Forge LSP for `forge/workspaceSymbols`.
+- [x] Add a Zed `.slnx` parsing path only if the extension cannot call SharpLsp LSP for `sharplsp/workspaceSymbols`.
 - [x] Fix F# sidecar `workspace/open` so explicit `.sln` and `.slnx` paths load `.fsproj` entries from the selected solution.
 - [x] Add F# sidecar tests for explicit `.slnx` with one `.fsproj`.
 - [ ] Add mixed C#/F# `.slnx` full-stack coverage after F# multi-project loading is ready.

@@ -15,7 +15,7 @@ feature phase rather than batching at the end. Phases 9 and 10 are last.
 The Rider plugin is "done" when:
 
 1. Installing it into a fresh Rider loads cleanly with no errors.
-2. Opening a .NET solution shows the full Forge Solution tool window
+2. Opening a .NET solution shows the full SharpLsp Solution tool window
    populated within 5 s.
 3. Every top-level VS Code Solution Explorer feature has a working
    equivalent: project list, NuGet packages, project references,
@@ -32,16 +32,16 @@ plugin targeting Rider 2024.3, a `plugin.xml` that depends on
 `com.intellij.modules.lsp`, and just enough Kotlin stubs for
 `./gradlew buildPlugin` to produce a non-empty `build/distributions/*.zip`.
 
-**Phase 2 — LSP server integration.** Wire `ForgeLspServerSupportProvider`
+**Phase 2 — LSP server integration.** Wire `SharpLspLspServerSupportProvider`
 to the `platform.lsp.serverSupportProvider` extension point; have it start
-a `ForgeLspServerDescriptor` on any `.cs` / `.csx` / `.fs` / `.fsx` / `.fsi`
-file. The descriptor resolves `forge-lsp` with the same priority list as
+a `SharpLspLspServerDescriptor` on any `.cs` / `.csx` / `.fs` / `.fsx` / `.fsi`
+file. The descriptor resolves `sharplsp` with the same priority list as
 the VS Code extension (setting override → `~/.local/bin` → `$PATH`) and
-exposes a custom `ForgeLsp4jServer` subinterface of `LanguageServer` that
-declares `@JsonRequest("forge/...")` methods for every Forge custom
+exposes a custom `SharpLspLsp4jServer` subinterface of `LanguageServer` that
+declares `@JsonRequest("sharplsp/...")` methods for every SharpLsp custom
 endpoint we consume.
 
-**Phase 3 — Solution Explorer tool window.** `ForgeSolutionToolWindowFactory`
+**Phase 3 — Solution Explorer tool window.** `SharpLspSolutionToolWindowFactory`
 registered at the `toolWindow` extension point. The tree is a
 `StructureTreeModel` wrapped in an `AsyncTreeModel`, with one node class per
 hierarchy level: `SolutionRootNode`, `ProjectNode`, `DependenciesNode`,
@@ -53,7 +53,7 @@ LSP round-trip for that project's symbols. Loading placeholders use
 **Phase 4 — Navigation and actions.** Double-click opens the target file
 at the symbol's range via `OpenFileDescriptor`. A context menu exposes
 "Reveal in Explorer" / "Open csproj" / "Copy path" on project nodes and
-"Remove package" on NuGet leaves (which fires `forge/nuget/uninstall`,
+"Remove package" on NuGet leaves (which fires `sharplsp/nuget/uninstall`,
 already shipping on the Rust side). Toolbar: Refresh, Collapse All, filter
 text box.
 
@@ -64,16 +64,16 @@ subscribes to `VirtualFileManager.VFS_CHANGES`, filters events to
 subtree.
 
 **Phase 6 — Settings.** Project-level `PersistentStateComponent` stored in
-`workspace.xml`, plus a `Settings → Tools → Forge` panel with three knobs:
+`workspace.xml`, plus a `Settings → Tools → SharpLsp` panel with three knobs:
 server path override, log level (maps to `RUST_LOG`), auto-load solution on
-open. `ForgeLspServerDescriptor.createCommandLine()` reads these on every
+open. `SharpLspLspServerDescriptor.createCommandLine()` reads these on every
 server launch.
 
 **Phase 7 — Build infrastructure.** New Makefile targets: `build-rider`,
 `package-rider` (alias), `test-rider`, `lint-rider`, `clean-rider`. Wire
 `build-rider` into the top-level `build` and `test-rider` into `test`.
-Copy the produced plugin zip to the repo root as `forge-rider.zip` for
-parity with `forge.vsix` and `forge-zed-extension.tar.gz`. Gracefully skip
+Copy the produced plugin zip to the repo root as `sharplsp-rider.zip` for
+parity with `sharplsp.vsix` and `sharplsp-zed-extension.tar.gz`. Gracefully skip
 with a warning if no JVM is available so the rest of the repo still
 builds.
 
@@ -87,7 +87,7 @@ target: 80 % line coverage (excluding generated lsp4j glue).
 plugin zip as a release artifact alongside the VSIX.
 
 **Phase 10 — Docs.** Add Rider rows to `CSDEVKIT-PARITY-PLAN.md` and
-`FORGE-SPEC.md` editor matrix. Troubleshooting note: LSP is paid-tier
+`SHARPLSP-SPEC.md` editor matrix. Troubleshooting note: LSP is paid-tier
 only — Community editions are not supported.
 
 ## TODOs
@@ -95,7 +95,7 @@ only — Community editions are not supported.
 ### Phase 1: Gradle scaffold
 
 - [x] Create `editors/rider/` directory
-- [x] Write `settings.gradle.kts` — `rootProject.name = "forge-rider"`
+- [x] Write `settings.gradle.kts` — `rootProject.name = "sharplsp-rider"`
 - [x] Write `build.gradle.kts` using `org.jetbrains.intellij.platform` 2.14
 - [x] Write `gradle.properties` pinning platform version (Rider 2024.3)
 - [x] Write `src/main/resources/META-INF/plugin.xml` — depends on
@@ -108,25 +108,25 @@ only — Community editions are not supported.
 
 ### Phase 2: LSP server integration
 
-- [ ] `ForgeLspServerSupportProvider` implements
+- [ ] `SharpLspLspServerSupportProvider` implements
       `com.intellij.platform.lsp.api.LspServerSupportProvider`
-- [ ] `ForgeLspServerDescriptor` extends `ProjectWideLspServerDescriptor`
+- [ ] `SharpLspLspServerDescriptor` extends `ProjectWideLspServerDescriptor`
       and overrides:
     - [ ] `isSupportedFile(VirtualFile)` — `.cs`, `.csx`, `.fs`, `.fsx`, `.fsi`
-    - [ ] `createCommandLine()` — resolves `forge-lsp` via the same
+    - [ ] `createCommandLine()` — resolves `sharplsp` via the same
           priority list as the VS Code extension
-    - [ ] `lsp4jServerClass` — points at `ForgeLsp4jServer`
-- [ ] `ForgeLsp4jServer` interface with `@JsonRequest` methods for
-      `forge/workspaceSymbols`, `forge/nuget/installed`, `forge/nuget/targets`,
-      `forge/loadSolution`
+    - [ ] `lsp4jServerClass` — points at `SharpLspLsp4jServer`
+- [ ] `SharpLspLsp4jServer` interface with `@JsonRequest` methods for
+      `sharplsp/workspaceSymbols`, `sharplsp/nuget/installed`, `sharplsp/nuget/targets`,
+      `sharplsp/loadSolution`
 - [ ] DTO data classes matching the Rust JSON wire format exactly
 - [ ] Smoke test: open a `.cs` file in a dev Rider, verify the LSP status
-      bar shows "forge-lsp running"
+      bar shows "sharplsp running"
 
 ### Phase 3: Solution Explorer tool window
 
-- [ ] `ForgeSolutionToolWindowFactory` registered via `toolWindow` EP
-- [ ] `ForgeSolutionTreeModel` extends `StructureTreeModel` with
+- [ ] `SharpLspSolutionToolWindowFactory` registered via `toolWindow` EP
+- [ ] `SharpLspSolutionTreeModel` extends `StructureTreeModel` with
       `AsyncTreeModel` wrapping
 - [ ] Node hierarchy:
     - [ ] `SolutionRootNode` — displays .sln filename, loads projects lazily
@@ -150,7 +150,7 @@ only — Community editions are not supported.
     - [ ] `OpenProjectFileAction` on project nodes
     - [ ] `CopyPathAction` on any path-backed node
     - [ ] `RemoveNuGetPackageAction` on NuGet package leaves (fires
-          `forge/nuget/uninstall`)
+          `sharplsp/nuget/uninstall`)
 - [ ] Toolbar actions: Refresh, Collapse All, filter text box
 
 ### Phase 5: Auto-refresh on filesystem changes
@@ -163,17 +163,17 @@ only — Community editions are not supported.
 
 ### Phase 6: Settings
 
-- [ ] `ForgeSettings` — `PersistentStateComponent<ForgeSettings.State>`,
+- [ ] `SharpLspSettings` — `PersistentStateComponent<SharpLspSettings.State>`,
       project-level, stored in `workspace.xml`
-- [ ] `ForgeSettingsConfigurable` registered at `Settings → Tools → Forge`
+- [ ] `SharpLspSettingsConfigurable` registered at `Settings → Tools → SharpLsp`
 - [ ] Fields: server path, log level, auto-load solution
-- [ ] `ForgeLspServerDescriptor` reads settings when building the command
+- [ ] `SharpLspLspServerDescriptor` reads settings when building the command
       line
 
 ### Phase 7: Build infrastructure
 
 - [ ] Add `build-rider` Makefile target — calls `./gradlew buildPlugin`
-      and copies the zip to repo root as `forge-rider.zip` — **but only if**
+      and copies the zip to repo root as `sharplsp-rider.zip` — **but only if**
       the environment has a JVM; otherwise skip with a warning
 - [ ] Add `package-rider` Makefile target — alias for `build-rider` for
       naming symmetry with `package-zed`
@@ -206,6 +206,6 @@ only — Community editions are not supported.
 
 - [ ] `docs/specs/RIDER-PLUGIN-SPEC.md` — sibling (done in this change)
 - [ ] Add a row for Rider to the `CSDEVKIT-PARITY-PLAN.md` feature matrix
-- [ ] Update `docs/specs/FORGE-SPEC.md` editor matrix with Rider
+- [ ] Update `docs/specs/SHARPLSP-SPEC.md` editor matrix with Rider
 - [ ] Add a troubleshooting note: "LSP API is paid-tier only — Community
       editions are not supported"

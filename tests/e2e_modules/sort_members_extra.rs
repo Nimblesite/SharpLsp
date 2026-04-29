@@ -12,7 +12,7 @@ fn test_sort_members_invalid_range_returns_error() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {
@@ -42,7 +42,7 @@ fn test_sort_members_mixed_accessibility_and_category() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {
@@ -90,7 +90,7 @@ fn test_sort_members_struct_sorts_members() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {
@@ -126,7 +126,7 @@ fn test_sort_members_preserves_comments_and_attributes() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {
@@ -174,7 +174,7 @@ fn test_sort_members_inserts_blank_lines_between_groups() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {
@@ -215,7 +215,7 @@ fn test_sort_members_preserves_region_blocks() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/sortMembers",
+        "sharplsp/sortMembers",
         json!({
             "uri": uri,
             "range": {

@@ -55,7 +55,7 @@ pub fn build_profile_target() -> std::path::PathBuf {
 }
 
 /// Start the `ProfileTarget` process. Waits for `READY` on stdout before returning.
-pub fn start_profile_target(binary: &std::path::Path) -> Child {
+pub fn start_profile_target(binary: &std::path::Path) -> ProfileTargetProcess {
     let mut child = Command::new(binary)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -81,13 +81,83 @@ pub fn start_profile_target(binary: &std::path::Path) -> Child {
 
     // Detach stdout so we don't hold the pipe (child keeps running).
     let _ = child.stdout.take();
-    child
+    ProfileTargetProcess { child }
+}
+
+/// Running `ProfileTarget` fixture. Dropping it kills and reaps the child.
+#[derive(Debug)]
+pub struct ProfileTargetProcess {
+    child: Child,
+}
+
+impl ProfileTargetProcess {
+    /// Return the target process ID.
+    pub fn id(&self) -> u32 {
+        self.child.id()
+    }
+
+    /// Kill and reap the target process if it is still running.
+    pub fn stop(&mut self) {
+        if self.child.try_wait().ok().flatten().is_some() {
+            return;
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl Drop for ProfileTargetProcess {
+    fn drop(&mut self) {
+        self.stop();
+    }
 }
 
 /// Kill and reap the target process.
-pub fn stop_profile_target(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
+pub fn stop_profile_target(target: &mut ProfileTargetProcess) {
+    target.stop();
+}
+
+#[test]
+fn test_profile_target_drop_reaps_child_process() {
+    let binary = build_profile_target();
+    let target_pid = {
+        let target = start_profile_target(&binary);
+        target.id()
+    };
+
+    let exited = wait_for_process_exit(target_pid, Duration::from_secs(2));
+    if !exited {
+        kill_profile_target_pid(target_pid);
+    }
+    assert!(
+        exited,
+        "dropping ProfileTarget handle must terminate PID {target_pid}",
+    );
+}
+
+#[cfg(unix)]
+fn wait_for_process_exit(pid: u32, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if !process_exists(pid) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    !process_exists(pid)
+}
+
+#[cfg(unix)]
+fn process_exists(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(unix)]
+fn kill_profile_target_pid(pid: u32) {
+    let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
 }
 
 /// Full lifecycle: listProcesses → find our PID → startTrace → stopTrace → verify .nettrace file.
@@ -101,7 +171,7 @@ fn test_profiler_happy_path_trace_lifecycle() {
     let _ = client.initialize();
 
     // 1. listProcesses must include our target PID.
-    let resp = client.request("forge/profiler/listProcesses", json!({}));
+    let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
     let processes = resp["result"].as_array().expect("result must be array");
     let found = processes
         .iter()
@@ -117,7 +187,7 @@ fn test_profiler_happy_path_trace_lifecycle() {
     let trace_path_str = trace_path.to_string_lossy().to_string();
 
     let resp = client.request(
-        "forge/profiler/startTrace",
+        "sharplsp/profiler/startTrace",
         json!({
             "pid": target_pid,
             "profile": "gc-collect",
@@ -144,7 +214,7 @@ fn test_profiler_happy_path_trace_lifecycle() {
 
     // 4. stopTrace.
     let resp = client.request(
-        "forge/profiler/stopTrace",
+        "sharplsp/profiler/stopTrace",
         json!({ "session_id": session_id }),
     );
     assert!(
@@ -191,7 +261,7 @@ fn test_profiler_happy_path_counter_lifecycle() {
 
     // 1. startCounters on the target.
     let resp = client.request(
-        "forge/profiler/startCounters",
+        "sharplsp/profiler/startCounters",
         json!({
             "pid": target_pid,
             "providers": ["System.Runtime"],
@@ -212,7 +282,7 @@ fn test_profiler_happy_path_counter_lifecycle() {
 
     // 3. stopCounters — must succeed cleanly.
     let resp = client.request(
-        "forge/profiler/stopCounters",
+        "sharplsp/profiler/stopCounters",
         json!({ "session_id": session_id }),
     );
     assert!(
@@ -222,7 +292,7 @@ fn test_profiler_happy_path_counter_lifecycle() {
 
     // 4. Double-stop must error.
     let resp = client.request(
-        "forge/profiler/stopCounters",
+        "sharplsp/profiler/stopCounters",
         json!({ "session_id": session_id }),
     );
     assert!(
@@ -251,7 +321,7 @@ fn test_profiler_happy_path_dump_and_analyze() {
     let dump_path_str = dump_path.to_string_lossy().to_string();
 
     let (resp, notifications) = client.request_collecting_notifications(
-        "forge/profiler/collectDump",
+        "sharplsp/profiler/collectDump",
         json!({
             "pid": target_pid,
             "dump_type": "Heap",
@@ -289,7 +359,7 @@ fn test_profiler_happy_path_dump_and_analyze() {
 
     // 2. analyzeHeap on the dump.
     let resp = client.request(
-        "forge/profiler/analyzeHeap",
+        "sharplsp/profiler/analyzeHeap",
         json!({
             "dump_path": dump_path_str,
             "limit": 20,
@@ -363,7 +433,7 @@ fn test_profiler_inspect_object_from_dump() {
         .to_string();
 
     let resp = client.request(
-        "forge/profiler/collectDump",
+        "sharplsp/profiler/collectDump",
         json!({
             "pid": target_pid,
             "dump_type": "Heap",
@@ -377,7 +447,7 @@ fn test_profiler_inspect_object_from_dump() {
 
     // 2. Get a real object address from analyzeHeap (find System.String).
     let resp = client.request(
-        "forge/profiler/analyzeHeap",
+        "sharplsp/profiler/analyzeHeap",
         json!({
             "dump_path": &dump_path,
             "type_filter": "String",
@@ -400,7 +470,7 @@ fn test_profiler_inspect_object_from_dump() {
     //    get one from analyzeHeap (it returns stats not addresses),
     //    test the error path for a well-formed but nonexistent address.
     let resp = client.request(
-        "forge/profiler/inspectObject",
+        "sharplsp/profiler/inspectObject",
         json!({
             "dump_path": &dump_path,
             "object_address": "0x0000000000000001",

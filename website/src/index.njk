@@ -1,153 +1,131 @@
 ---
 layout: layouts/base.njk
-title: "Forge — Open-Source .NET LSP"
+title: "SharpLsp - Open Source C# and F# Language Server for VS Code, Zed, and More"
 ---
 
-<section class="hero">
-  <div class="hero-badge">Open Source &middot; MIT Licensed</div>
-  <h1>The .NET LSP that<br/>killed Visual Studio.</h1>
-  <p class="tagline">
-    One language server. Every editor. Full F# and C# intelligence
-    powered by FCS and Roslyn — built in Rust for speed that makes
-    proprietary tools feel broken.
+<section class="masthead">
+  <div class="platform-lockup" aria-label="Independent tooling for the .NET ecosystem">
+    <span class="dotnet-mark" role="img" aria-label=".NET logo">.NET</span>
+    <span class="platform-copy">
+      <strong>.NET ecosystem tooling</strong>
+      <small>Independent open source. Not affiliated with Microsoft.</small>
+    </span>
+  </div>
+  <div class="badge"><span class="status-dot"></span>Open Source · MIT License</div>
+  <h1 class="title">One <span>.NET Language Server</span>. Every Editor.</h1>
+  <p class="lede">
+    SharpLsp is an open-source C# and F# language server built in Rust. Full Roslyn-powered IntelliSense,
+    diagnostics, go-to-definition, and refactoring — in VS Code, Zed, or any LSP-compatible editor.
   </p>
-  <div class="hero-actions">
-    <a href="/docs/" class="btn btn-primary">Get Started</a>
-    <a href="https://github.com/MelbourneDeveloper/forge" class="btn btn-secondary">GitHub</a>
+  <div class="button-row">
+    <a class="button button-primary" href="/docs/">Get Started</a>
+    <a class="button button-secondary" href="https://github.com/Nimblesite/SharpLsp">
+      <span class="material-symbols-outlined" aria-hidden="true">code</span>
+      View on GitHub
+    </a>
   </div>
 </section>
 
-<section class="value-props">
-  <div class="value-props-inner">
-    <div class="value-item">
-      <div class="value-number">&lt;3s</div>
-      <div class="value-label">Cold start to first response</div>
-    </div>
-    <div class="value-divider"></div>
-    <div class="value-item">
-      <div class="value-number">&lt;100ms</div>
-      <div class="value-label">Completions p50</div>
-    </div>
-    <div class="value-divider"></div>
-    <div class="value-item">
-      <div class="value-number">&lt;1ms</div>
-      <div class="value-label">Tree-sitter reparse</div>
-    </div>
-    <div class="value-divider"></div>
-    <div class="value-item">
-      <div class="value-number">0</div>
-      <div class="value-label">Proprietary dependencies</div>
-    </div>
+<section class="panel">
+  <div class="card-grid card-grid-three">
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">terminal</span>
+      <h2>VS Code &amp; Zed Support</h2>
+      <p>Full Roslyn completions, diagnostics, go-to-definition, and inlay hints. Neovim, Helix, and Emacs support coming soon.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">functions</span>
+      <h2>F# as a First-Class Citizen</h2>
+      <p>F# language server backed by FSharp.Compiler.Service. The same feature depth as C# — not an afterthought.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">lock_open</span>
+      <h2>No Subscriptions. No Lock-in.</h2>
+      <p>MIT licensed. Works in VSCodium, Open VSX, and any LSP-compatible editor. No Microsoft account required.</p>
+    </article>
   </div>
 </section>
 
-<section class="showcase">
-  <h2>See it in action.</h2>
-  <p>Real screenshots from the VS Code extension. Not mockups.</p>
-  <div class="showcase-grid">
-    <div class="showcase-item showcase-wide">
-      <img src="/assets/screenshots/split-editor.png" alt="Forge Solution Explorer tree view in VS Code" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>Solution Explorer that works</h3>
-        <p>Browse your entire .NET solution — projects, files, and dependencies — in a tree view that C# Dev Kit can't match. Right-click to remove packages, copy qualified names, and navigate instantly.</p>
-      </div>
-    </div>
-    <div class="showcase-item">
-      <img src="/assets/screenshots/editor-overview.png" alt="F# and C# editing in VS Code with Forge LSP" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>Full F# and C# intelligence</h3>
-        <p>Modules, types, discriminated unions, classes, interfaces, enums, regions, XML doc comments — all parsed by tree-sitter in the Rust host at sub-millisecond speeds.</p>
-      </div>
-    </div>
-    <div class="showcase-item">
-      <img src="/assets/screenshots/code-folding.png" alt="Code folding with regions in VS Code" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>Code folding</h3>
-        <p>Fold namespaces, classes, methods, and #region blocks. Collapse the noise, focus on what matters. Under 1ms.</p>
-      </div>
-    </div>
-    <div class="showcase-item">
-      <img src="/assets/screenshots/nested-classes.png" alt="Nested class hierarchy in VS Code" loading="lazy" />
-      <div class="showcase-caption">
-        <h3>Nested type hierarchies</h3>
-        <p>Inner classes, nested types, and complex hierarchies — parsed and navigable in real time without waiting on the compiler.</p>
-      </div>
-    </div>
+<section class="ecosystem-strip">
+  <p class="ecosystem-label">Available now</p>
+  <span class="ecosystem-name">VS Code</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name">Zed</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name">Rider</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Neovim <small>soon</small></span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Helix <small>soon</small></span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Emacs <small>soon</small></span>
+</section>
+
+<section class="band">
+  <div class="copy-block">
+    <h2>The Open-Source Alternative to C# Dev Kit</h2>
+    <p>C# Dev Kit is closed-source, not available on VSCodium or Open VSX, and requires a Visual Studio Professional or Enterprise subscription for organizational use. SharpLsp is MIT-licensed, works in every editor, and has no license restrictions — ever.</p>
+  </div>
+
+  <div class="screenshot-frame">
+    <img
+      src="/assets/screenshots/vscode-hover-page.png"
+      alt="SharpLsp showing hover documentation and solution explorer in VS Code"
+      width="720"
+      loading="eager"
+    />
   </div>
 </section>
 
-<section class="perf-section">
-  <h2>Performance is the feature.</h2>
-  <p>Forge is built Rust-first. The hot path never touches .NET.</p>
-  <div class="perf-grid">
-    <div class="perf-card">
-      <div class="perf-stat">&lt;3s</div>
-      <div class="perf-label">Cold start</div>
-      <div class="perf-desc">First LSP response in under 3 seconds, including sidecar spawn and workspace load.</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;1ms</div>
-      <div class="perf-label">Keystrokes</div>
-      <div class="perf-desc">Tree-sitter re-parses the document incrementally on every keystroke. No lag. No stutter.</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;100ms</div>
-      <div class="perf-label">Completions p50</div>
-      <div class="perf-desc">Roslyn completions via the sidecar. Same engine as Visual Studio — faster round-trip.</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;500ms</div>
-      <div class="perf-label">Diagnostics refresh</div>
-      <div class="perf-desc">File-level diagnostic re-analysis after a keystroke, debounced at 150ms.</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;3s</div>
-      <div class="perf-label">Crash recovery</div>
-      <div class="perf-desc">If the Roslyn sidecar crashes, Forge respawns it automatically. Your editor never freezes.</div>
-    </div>
-    <div class="perf-card">
-      <div class="perf-stat">&lt;1ms</div>
-      <div class="perf-label">Cache hits</div>
-      <div class="perf-desc">salsa incremental cache returns repeated hover and definition results in under a millisecond.</div>
-    </div>
+<section class="panel">
+  <div class="card-grid card-grid-three">
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">explore</span>
+      <h2>Go-to-Definition</h2>
+      <p>Jump to symbol definitions across your entire solution — including into decompiled NuGet packages and BCL source.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">psychology</span>
+      <h2>Completions &amp; Hover Docs</h2>
+      <p>Roslyn-powered IntelliSense with full XML doc comments, signature help, and overload resolution.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">build</span>
+      <h2>Code Actions &amp; Refactoring</h2>
+      <p>Rename symbol, extract method, generate constructor, fix-all diagnostics — all via standard LSP code actions.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">format_paint</span>
+      <h2>Formatting</h2>
+      <p>C# formatting via Roslyn. F# formatting via Fantomas. EditorConfig respected. Works in every editor.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">error</span>
+      <h2>Real-time Diagnostics</h2>
+      <p>Roslyn compiler errors and warnings as you type. No separate build step required to see errors inline.</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">view_in_ar</span>
+      <h2>NuGet Integration</h2>
+      <p>Search, install, and update NuGet packages without leaving your editor or running CLI commands.</p>
+    </article>
   </div>
 </section>
 
-<section class="features">
-  <h2>Built different.</h2>
-  <p>Not another half-baked extension. A ground-up reimagining of .NET developer tooling.</p>
-  <div class="feature-grid">
-    <div class="feature-card feature-highlight">
-      <h3>Your editor. Your rules.</h3>
-      <p>VS Code, Neovim, Emacs, Helix — Forge speaks LSP 3.17, so it works everywhere. Zed support is coming. Stop letting Microsoft decide where you write code.</p>
-    </div>
-    <div class="feature-card">
-      <h3>Solution Explorer that slaps.</h3>
-      <p>A tree view that shows your whole solution — projects, files, NuGet packages, references — with right-click actions C# Dev Kit doesn't have. Remove packages. Copy qualified names. Navigate instantly.</p>
-    </div>
-    <div class="feature-card">
-      <h3>Rust host. Sub-millisecond parsing.</h3>
-      <p>Tree-sitter incremental parsing in the Rust host. salsa-powered caching. Document symbols, folding, and selection ranges without waiting on Roslyn.</p>
-    </div>
-    <div class="feature-card">
-      <h3>Full Roslyn. No compromises.</h3>
-      <p>Completions, diagnostics, hover, go-to-definition — the complete Roslyn API. Same engine as Visual Studio, none of the lock-in.</p>
-    </div>
-    <div class="feature-card">
-      <h3>Crash-proof architecture.</h3>
-      <p>Sidecar process model means a Roslyn crash recovers in under 3 seconds. Your editor stays up. Your flow stays unbroken.</p>
-    </div>
-    <div class="feature-card feature-highlight">
-      <h3>Zero. Vendor. Lock-in.</h3>
-      <p>No licenses. No telemetry. No proprietary blobs. Fork it, extend it, ship it. This is the .NET tooling the community deserves.</p>
-    </div>
+<section class="band">
+  <div class="copy-block">
+    <h2>Ditch Visual Studio. Keep Your Editor.</h2>
+    <p>Visual Studio is Windows-only and forces you into a heavyweight IDE. SharpLsp brings the same Roslyn language intelligence to VS Code, Zed, and more — on Windows, macOS, and Linux. No IDE required.</p>
   </div>
 </section>
 
-<section class="install">
-  <h2>Get started.</h2>
-  <pre><code>git clone https://github.com/MelbourneDeveloper/forge.git
-cd forge
-cargo build --release</code></pre>
-  <p>Or install the VS Code extension from the <a href="/docs/">Getting Started</a> guide.</p>
+<section class="cta">
+  <div class="copy-block">
+    <h2>C# and F# in your editor. No compromises.</h2>
+    <p>Set up SharpLsp in VS Code or Zed with one install command. MIT licensed. Open source forever.</p>
+  </div>
+  <div class="button-row">
+    <a class="button button-primary" href="/docs/">Install SharpLsp</a>
+    <a class="button button-secondary" href="/docs/">Read the Docs</a>
+  </div>
 </section>

@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 
 // ── Constants ────────────────────────────────────────────────────
 
-export const EXTENSION_ID = 'forge-lsp.forge';
+export const EXTENSION_ID = 'sharplsp.sharp-lsp';
 export const SERVER_START_TIMEOUT_MS = 30_000;
 export const LSP_RESPONSE_TIMEOUT_MS = 15_000;
 export const POLL_INTERVAL_MS = 100;
@@ -12,36 +12,46 @@ export const POLL_INTERVAL_MS = 100;
 // ── Binary Discovery ─────────────────────────────────────────────
 
 /**
- * Find the forge-lsp binary.
+ * Find the sharplsp binary.
  *
  * Priority:
- *   1. `FORGE_EXECUTABLE_PATH` env var
- *   2. `target/release/forge-lsp` relative to repo root
- *   3. `target/debug/forge-lsp` relative to repo root
+ *   1. `SHARPLSP_EXECUTABLE_PATH` env var
+ *   2. Bundled binary under `bin/<platform>/`
+ *   3. Legacy bundled binary under `bin/`
  */
-export function findForgeBinary(): string | undefined {
-  const envPath = process.env['FORGE_EXECUTABLE_PATH'];
+export function findSharpLspBinary(): string | undefined {
+  const envPath = process.env['SHARPLSP_EXECUTABLE_PATH'];
   if (envPath && fs.existsSync(envPath)) {
     return envPath;
   }
 
-  const binaryName = process.platform === 'win32' ? 'forge-lsp.exe' : 'forge-lsp';
+  const binaryName = process.platform === 'win32' ? 'sharplsp.exe' : 'sharplsp';
+  const platform = detectRuntimePlatform();
 
   // __dirname at runtime: editors/vscode/out/test/suite/
-  // Repo root: 5 levels up
-  const repoRoot = path.resolve(__dirname, '../../../../..');
+  const extensionRoot = path.resolve(__dirname, '../../..');
 
-  const release = path.join(repoRoot, 'target', 'release', binaryName);
-  if (fs.existsSync(release)) {
-    return release;
+  const bundled = path.join(extensionRoot, 'bin', platform, binaryName);
+  if (fs.existsSync(bundled)) {
+    return bundled;
   }
 
-  const debug = path.join(repoRoot, 'target', 'debug', binaryName);
-  if (fs.existsSync(debug)) {
-    return debug;
+  const legacyBundled = path.join(extensionRoot, 'bin', binaryName);
+  if (fs.existsSync(legacyBundled)) {
+    return legacyBundled;
   }
 
   return undefined;
+}
+
+function detectRuntimePlatform(): string {
+  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64';
+  if (process.platform === 'darwin') return 'darwin-x64';
+  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64';
+  if (process.platform === 'linux') return 'linux-x64';
+  if (process.platform === 'win32' && process.arch === 'arm64') return 'win32-arm64';
+  if (process.platform === 'win32') return 'win32-x64';
+  return 'linux-x64';
 }
 
 // ── Polling ──────────────────────────────────────────────────────
@@ -224,18 +234,18 @@ export async function closeAllEditors(): Promise<void> {
 /**
  * Standard setup for an LSP test suite:
  *   - Creates a temp directory
- *   - Activates the Forge extension
+ *   - Activates the SharpLsp extension
  *   - Waits until the server responds to a documentSymbol request
  */
 export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
   tmpDir: string;
-  forgeBinary: string | undefined;
+  sharplspBinary: string | undefined;
 }> {
   const tmpDir = fs.mkdtempSync(
-    path.join(process.env['TMPDIR'] ?? '/tmp', `forge-test-${tmpDirPrefix}`),
+    path.join(process.env['TMPDIR'] ?? '/tmp', `sharplsp-test-${tmpDirPrefix}`),
   );
 
-  const forgeBinary = findForgeBinary();
+  const sharplspBinary = findSharpLspBinary();
 
   // Activate the extension by opening a C# file.
   const probeContent = 'namespace Probe { class Probe { } }\n';
@@ -257,7 +267,7 @@ export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
 
   await closeAllEditors();
 
-  return { tmpDir, forgeBinary };
+  return { tmpDir, sharplspBinary };
 }
 
 /** Remove the temp directory created by `setupLspTestSuite`. */
@@ -267,6 +277,59 @@ export function teardownLspTestSuite(tmpDir: string): void {
   } catch {
     // Best-effort cleanup.
   }
+}
+
+// ── Screenshots ──────────────────────────────────────────────────
+
+const SCREENSHOT_OUT_DIR = path.resolve(__dirname, '../../../../../website/src/assets/screenshots');
+
+/**
+ * Open the SharpLsp activity bar panel (shows Solution Explorer + Profiler).
+ * Only does anything when SHARPLSP_SCREENSHOTS=1 is set.
+ */
+export async function openSharpLspPanel(): Promise<void> {
+  if (!process.env['SHARPLSP_SCREENSHOTS']) return;
+  await vscode.commands.executeCommand('workbench.view.extension.sharplsp-explorer');
+  await sleep(1500);
+}
+
+/**
+ * Open the SharpLsp activity bar panel focused on the Profiler view.
+ * Only does anything when SHARPLSP_SCREENSHOTS=1 is set.
+ */
+export async function openSharpLspPanelProfiler(): Promise<void> {
+  if (!process.env['SHARPLSP_SCREENSHOTS']) return;
+  await vscode.commands.executeCommand('workbench.view.extension.sharplsp-explorer');
+  await sleep(600);
+  await vscode.commands.executeCommand('sharplsp.profiler.refresh');
+  await sleep(1200);
+}
+
+/**
+ * Signal the Playwright sidecar (screenshots/sidecar.mjs) to take a screenshot
+ * of the VS Code window via CDP. Writes a .signal file and waits for the PNG.
+ * Call this after assertions prove the feature is live and visible.
+ * Only runs when SHARPLSP_SCREENSHOTS=1 is set.
+ */
+export async function takeScreenshot(filename: string): Promise<void> {
+  if (!process.env['SHARPLSP_SCREENSHOTS']) return;
+  fs.mkdirSync(SCREENSHOT_OUT_DIR, { recursive: true });
+  const tempFilename = `${filename}.tmp-${process.pid.toString()}.png`;
+  const signalPath = path.join(SCREENSHOT_OUT_DIR, `${tempFilename}.signal`);
+  const outPath = path.join(SCREENSHOT_OUT_DIR, filename);
+  const tempPath = path.join(SCREENSHOT_OUT_DIR, tempFilename);
+  if (fs.existsSync(tempPath)) fs.rmSync(tempPath, { force: true });
+  fs.writeFileSync(signalPath, filename, 'utf8');
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(tempPath)) {
+      fs.renameSync(tempPath, outPath);
+      console.log(`[screenshot] ${filename}`);
+      return;
+    }
+    await sleep(100);
+  }
+  throw new Error(`Sidecar did not write ${filename} within 15s`);
 }
 
 // ── Utilities ────────────────────────────────────────────────────

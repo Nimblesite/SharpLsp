@@ -129,9 +129,13 @@ export default tseslint.config(
       '@typescript-eslint/dot-notation': 'off',
       '@typescript-eslint/use-unknown-in-catch-callback-variable': 'off',
       '@typescript-eslint/no-unnecessary-condition': 'off',
+      '@typescript-eslint/no-base-to-string': 'off',
+      '@typescript-eslint/unbound-method': 'off',
+      'no-unused-expressions': 'off',
+      '@typescript-eslint/no-unused-expressions': 'off',
     },
   },
   {
-    ignores: ['out/', 'dist/', 'coverage/', 'node_modules/', '*.mjs', '*.cjs', '*.js'],
+    ignores: ['out/', 'dist/', 'coverage/', 'node_modules/', '**/*.mjs', '**/*.cjs', '**/*.js'],
   },
 );

@@ -178,13 +178,13 @@ fn parse_counter_line(line: &str) -> Option<CounterValue> {
     })
 }
 
-/// Send a `forge/profiler/counterUpdate` notification.
+/// Send a `sharplsp/profiler/counterUpdate` notification.
 fn send_counter_notification(
     sender: &crossbeam_channel::Sender<Message>,
     params: CounterUpdateParams,
 ) -> Result<()> {
     let notification = Notification {
-        method: "forge/profiler/counterUpdate".to_string(),
+        method: "sharplsp/profiler/counterUpdate".to_string(),
         params: serde_json::to_value(params).context("serialize counter update")?,
     };
     sender
@@ -303,7 +303,7 @@ mod tests {
         let msg = receiver.recv().unwrap();
         match msg {
             Message::Notification(n) => {
-                assert_eq!(n.method, "forge/profiler/counterUpdate");
+                assert_eq!(n.method, "sharplsp/profiler/counterUpdate");
                 let session_id = n.params.get("session_id").unwrap().as_str().unwrap();
                 assert_eq!(session_id, "test-session");
             }

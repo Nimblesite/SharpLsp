@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { workspace, window } from 'vscode';
+import { CancellationTokenSource, workspace, window } from 'vscode';
 import * as log from './log.js';
 
 /** Result of solution discovery. */
@@ -16,7 +16,7 @@ export async function selectSolution(): Promise<SolutionSelection | undefined> {
 
   if (solutions.length === 0) {
     log.info('No solution files found in workspace.');
-    window.showInformationMessage('Forge: No .sln or .slnx files found in this workspace.');
+    window.showInformationMessage('SharpLsp: No .sln or .slnx files found in this workspace.');
     return undefined;
   }
 
@@ -43,7 +43,7 @@ export async function promptUserSelection(
 
   const picked = await window.showQuickPick(items, {
     placeHolder: 'Select a solution to open',
-    title: 'Forge: Multiple solutions found',
+    title: 'SharpLsp: Multiple solutions found',
   });
 
   if (picked === undefined) {
@@ -63,10 +63,18 @@ export async function findSolutions(): Promise<SolutionSelection[]> {
   }
 
   const pattern = '**/*.{sln,slnx}';
-  const excludePattern = '**/node_modules/**';
-  const uris = await workspace.findFiles(pattern, excludePattern, 50);
-
-  return toSolutionSelections(uris.map((uri) => uri.fsPath));
+  const excludePattern = '**/{node_modules,bin,obj,target}/**';
+  const cts = new CancellationTokenSource();
+  const timer = setTimeout(() => {
+    cts.cancel();
+  }, 5_000);
+  try {
+    const uris = await workspace.findFiles(pattern, excludePattern, 50, cts.token);
+    return toSolutionSelections(uris.map((uri) => uri.fsPath));
+  } finally {
+    clearTimeout(timer);
+    cts.dispose();
+  }
 }
 
 /** Build sorted solution selections from absolute file paths. */

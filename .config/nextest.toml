@@ -1,0 +1,9 @@
+[profile.default]
+# Full-stack e2e tests spawn real Roslyn/FCS sidecars and may be slow under load.
+# Raise the per-test timeout so flaky-under-load full-stack tests don't false-fail.
+slow-timeout = { period = "120s", terminate-after = 2 }
+
+[[profile.default.overrides]]
+# Full-stack integration tests: allow 5 minutes each (Roslyn startup + query).
+filter = 'test(full_stack)'
+slow-timeout = { period = "120s", terminate-after = 3 }

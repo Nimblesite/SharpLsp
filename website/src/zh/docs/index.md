@@ -7,43 +7,53 @@ eleventyNavigation:
   order: 1
 ---
 
-# 快速入门
+# Getting Started with SharpLsp
 
-Forge 是一个使用 Rust 构建的开源 .NET 语言服务器协议（LSP）实现。它为支持 LSP 的任何编辑器提供完整的 C# 和 F# 语言支持。
+SharpLsp 是一款开源、编辑器无关的 .NET 语言服务器，为 VS Code、Neovim、Helix、Emacs、Zed 及任何支持 LSP 的编辑器提供完整的 C# 和 F# 开发体验。安装一次服务器，随处享受完整的 .NET 工具链。
 
-## 前置要求
+<img src="/assets/screenshots/vscode-getting-started-page.png" alt="" aria-hidden="true" style="position:absolute;width:1px;height:1px;opacity:0;margin:0;border:0;">
 
-- [Rust](https://rustup.rs/)（最新稳定版）
-- [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) 或更高版本
-- 支持 LSP 的编辑器（VS Code、Neovim、Emacs、Helix、Zed 等）
+<section class="callout">
+  <h2><span class="material-symbols-outlined" aria-hidden="true">fact_check</span>前提条件</h2>
+  <ul class="requirement-list">
+    <li>
+      <span class="material-symbols-outlined" aria-hidden="true">deployed_code</span>
+      <div>
+        <h3>.NET 10.0 SDK</h3>
+        <p>用于项目加载、MSBuild 集成和语义分析。请从 <a href="https://dotnet.microsoft.com/download">microsoft.com/download</a> 下载，并确保 <code>dotnet</code> 在您的 PATH 中。</p>
+      </div>
+    </li>
+  </ul>
+</section>
 
 ## 安装
 
-### 从源码构建
+### VS Code
 
-```bash
-git clone https://github.com/MelbourneDeveloper/forge.git
-cd forge
-cargo build --release
+从 VS Code Marketplace 安装 SharpLsp 扩展，或从源码构建：
+
+```sh
+make build-vsix
+code --install-extension sharplsp.vsix
 ```
 
-### VS Code 扩展
+扩展会自动管理 SharpLsp LSP 服务器的生命周期，无需额外配置。
 
-从 VS Code 应用商店安装 Forge 扩展，或直接安装 `.vsix` 文件。
+### 其他编辑器
 
-## 架构概览
+从 [GitHub Releases 页面](https://github.com/Nimblesite/SharpLsp/releases) 下载 `sharplsp` 二进制文件并放入 PATH，然后参阅[编辑器配置](/zh/docs/editors/)指南。
 
-Forge 采用三层架构：
+## 基本用法
 
-| 层级 | 组件 | 职责 |
-|------|-----------|------|
-| **1** | Rust LSP 宿主 | LSP 连接、VFS、tree-sitter 解析、salsa 缓存 |
-| **2** | C# Sidecar | 由 Roslyn 驱动的代码补全、诊断、重构 |
-| **3** | F# Sidecar | FSharp.Compiler.Service、FSharpLint 诊断 |
+<div class="usage-grid">
+  <section class="usage-card">
+    <h3><span class="material-symbols-outlined" aria-hidden="true">folder_open</span>打开解决方案</h3>
+    <p>打开包含 <code>.sln</code>、<code>.slnx</code>、<code>.csproj</code> 或 <code>.fsproj</code> 文件的目录，SharpLsp 将自动检测并加载项目。</p>
+  </section>
+  <section class="usage-card">
+    <h3><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>开始开发</h3>
+    <p>代码补全、诊断、跳转到定义、悬停提示、重构、NuGet 管理和性能分析功能立即可用，无需额外配置。</p>
+  </section>
+</div>
 
-Rust 宿主处理所有 LSP 通信和语法级操作。语义操作通过 IPC 委托给相应的 .NET sidecar 进程。
-
-## 下一步
-
-- [架构](/zh/docs/architecture/) — 深入了解三层设计
-- [编辑器配置](/zh/docs/editors/) — 配置你的编辑器以使用 Forge
+<p class="next-link"><a href="/zh/docs/architecture/">Next: Architecture <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>

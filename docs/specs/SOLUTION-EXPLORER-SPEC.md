@@ -1,12 +1,12 @@
 # Solution Explorer Specification
 
 **Status:** Active
-**Owner:** Forge LSP
+**Owner:** SharpLsp LSP
 **Last Updated:** 2026-04-26
 
 ## Overview
 
-The Solution Explorer is a VS Code tree view that displays the full code hierarchy of a .NET solution: solutions, projects, namespaces, types, and members. It accepts legacy `.sln` and XML `.slnx` solution files. It is powered by a custom LSP request (`forge/workspaceSymbols`) backed by the sidecar `solution/read` model and tree-sitter parsing in the Rust host.
+The Solution Explorer is a VS Code tree view that displays the full code hierarchy of a .NET solution: solutions, projects, namespaces, types, and members. It accepts legacy `.sln` and XML `.slnx` solution files. It is powered by a custom LSP request (`sharplsp/workspaceSymbols`) backed by the sidecar `solution/read` model and tree-sitter parsing in the Rust host.
 
 See [LSP-ARCHITECTURE-SPEC.md](specs/LSP-ARCHITECTURE-SPEC.md) for shared LSP architecture.
 
@@ -15,7 +15,7 @@ See [LSP-ARCHITECTURE-SPEC.md](specs/LSP-ARCHITECTURE-SPEC.md) for shared LSP ar
 ```
 VS Code Tree View
   └── SolutionExplorerProvider (TypeScript)
-        └── forge/workspaceSymbols request
+        └── sharplsp/workspaceSymbols request
               └── Rust Host
                     ├── solution/read sidecar request
                     │     └── .sln/.slnx → projects, folders, solution items
@@ -23,7 +23,7 @@ VS Code Tree View
                           └── .csproj/.fsproj → .cs/.fs files
 ```
 
-### Request: `forge/workspaceSymbols`
+### Request: `sharplsp/workspaceSymbols`
 
 **Params:**
 ```json
@@ -115,14 +115,14 @@ When no access modifier is present, `access` is `null`.
 ## Tree Hierarchy
 
 ```
-Solution (Forge.Sidecars.sln)
-  └── Project (Forge.Sidecar.Common)
-        ├── Namespace (Forge.Sidecar.Common.Messages)
+Solution (SharpLsp.Sidecars.sln)
+  └── Project (SharpLsp.Sidecar.Common)
+        ├── Namespace (SharpLsp.Sidecar.Common.Messages)
         │     ├── Class (Envelope)
         │     │     ├── Property (Id : uint?)
         │     │     └── Property (Method : string?)
         │     └── Class (SidecarHost)
-        └── Namespace (Forge.Sidecar.Common.Ipc)
+        └── Namespace (SharpLsp.Sidecar.Common.Ipc)
               └── Class (MessageRouter)
                     ├── Method (Register)
                     └── Method (HandleAsync)
@@ -168,17 +168,17 @@ Within each access group, symbols are sorted alphabetically.
 
 ### Context Key
 
-The current sort order is exposed via VS Code context key `forge.sortOrder` (values: `natural`, `alphabetical`, `accessibility`). This controls which toolbar icon is visible.
+The current sort order is exposed via VS Code context key `sharplsp.sortOrder` (values: `natural`, `alphabetical`, `accessibility`). This controls which toolbar icon is visible.
 
 ## Commands
 
 | Command | Title | Icon | When |
 |---------|-------|------|------|
-| `forge.selectSolution` | Select Solution | `$(folder-opened)` | Always |
-| `forge.refreshExplorer` | Refresh Explorer | `$(refresh)` | Always |
-| `forge.sortNatural` | Sort: Source Order | `$(list-ordered)` | `forge.sortOrder == natural` |
-| `forge.sortAlphabetical` | Sort: Alphabetical | `$(case-sensitive)` | `forge.sortOrder == alphabetical` |
-| `forge.sortAccessibility` | Sort: Accessibility | `$(shield)` | `forge.sortOrder == accessibility` |
+| `sharplsp.selectSolution` | Select Solution | `$(folder-opened)` | Always |
+| `sharplsp.refreshExplorer` | Refresh Explorer | `$(refresh)` | Always |
+| `sharplsp.sortNatural` | Sort: Source Order | `$(list-ordered)` | `sharplsp.sortOrder == natural` |
+| `sharplsp.sortAlphabetical` | Sort: Alphabetical | `$(case-sensitive)` | `sharplsp.sortOrder == alphabetical` |
+| `sharplsp.sortAccessibility` | Sort: Accessibility | `$(shield)` | `sharplsp.sortOrder == accessibility` |
 
 All three sort commands cycle to the next sort mode.
 
@@ -206,9 +206,9 @@ Right-clicking a type node (Class, Struct, Interface, Enum, Record) shows a **So
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.sortMembers` |
+| Command | `sharplsp.sortMembers` |
 | Title | Sort Members |
-| When | `view == forge.solutionExplorer && viewItem =~ /^symbol\.(class\|struct\|interface\|enum\|record)$/` |
+| When | `view == sharplsp.solutionExplorer && viewItem =~ /^symbol\.(class\|struct\|interface\|enum\|record)$/` |
 | Group | `1_modification` |
 
 #### Sort Hierarchy
@@ -240,11 +240,11 @@ The default sort hierarchy is **Accessibility → Category → Alphabetical**:
 
 #### Settings
 
-The sort hierarchy is configurable via the `forge.memberSortOrder` setting:
+The sort hierarchy is configurable via the `sharplsp.memberSortOrder` setting:
 
 ```json
 {
-  "forge.memberSortOrder": {
+  "sharplsp.memberSortOrder": {
     "hierarchy": ["accessibility", "category", "alphabetical"],
     "accessibilityOrder": [
       "public",
@@ -277,9 +277,9 @@ The sort hierarchy is configurable via the `forge.memberSortOrder` setting:
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `forge.memberSortOrder.hierarchy` | `string[]` | `["accessibility", "category", "alphabetical"]` | Sort tiebreaker order. Valid values: `accessibility`, `category`, `alphabetical` |
-| `forge.memberSortOrder.accessibilityOrder` | `string[]` | See above | Access modifier priority (first = highest) |
-| `forge.memberSortOrder.categoryOrder` | `string[]` | See above | Member kind priority (first = highest) |
+| `sharplsp.memberSortOrder.hierarchy` | `string[]` | `["accessibility", "category", "alphabetical"]` | Sort tiebreaker order. Valid values: `accessibility`, `category`, `alphabetical` |
+| `sharplsp.memberSortOrder.accessibilityOrder` | `string[]` | See above | Access modifier priority (first = highest) |
+| `sharplsp.memberSortOrder.categoryOrder` | `string[]` | See above | Member kind priority (first = highest) |
 
 #### Implementation
 
@@ -287,7 +287,7 @@ Sort Members is a **source-editing action** — it modifies the source file, not
 
 1. User right-clicks a type node → selects "Sort Members"
 2. Extension reads the type's `range` from the symbol data
-3. Extension sends a `forge/sortMembers` LSP request with the document URI and the type's range
+3. Extension sends a `sharplsp/sortMembers` LSP request with the document URI and the type's range
 4. Rust host uses tree-sitter to parse the type body, identify member declarations, and compute the sorted order
 5. Rust host returns a `TextEdit[]` that reorders the members
 6. Extension applies the edits via `workspace.applyEdit`
@@ -300,9 +300,9 @@ Right-clicking any symbol node shows a **Copy Qualified Name** action that copie
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.copyQualifiedName` |
+| Command | `sharplsp.copyQualifiedName` |
 | Title | Copy Qualified Name |
-| When | `view == forge.solutionExplorer && viewItem =~ /^symbol\./ ` |
+| When | `view == sharplsp.solutionExplorer && viewItem =~ /^symbol\./ ` |
 | Group | `9_cutcopypaste` |
 
 The qualified name is built by walking the tree from the node to the root, collecting namespace and type names.
@@ -313,9 +313,9 @@ Right-clicking any symbol, project, or solution node shows a **Copy Name** actio
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.copyName` |
+| Command | `sharplsp.copyName` |
 | Title | Copy Name |
-| When | `view == forge.solutionExplorer && viewItem =~ /^(symbol\.\|solution\|project)/ ` |
+| When | `view == sharplsp.solutionExplorer && viewItem =~ /^(symbol\.\|solution\|project)/ ` |
 | Group | `9_cutcopypaste` |
 
 ### Reveal in File Explorer
@@ -324,9 +324,9 @@ Right-clicking a symbol node shows a **Reveal in File Explorer** action that rev
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.revealInExplorer` |
+| Command | `sharplsp.revealInExplorer` |
 | Title | Reveal in File Explorer |
-| When | `view == forge.solutionExplorer && viewItem =~ /^symbol\./ ` |
+| When | `view == sharplsp.solutionExplorer && viewItem =~ /^symbol\./ ` |
 | Group | `3_open` |
 
 ### Collapse All Children
@@ -335,9 +335,9 @@ Right-clicking any collapsible node shows a **Collapse All Children** action tha
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.collapseChildren` |
+| Command | `sharplsp.collapseChildren` |
 | Title | Collapse All Children |
-| When | `view == forge.solutionExplorer` |
+| When | `view == sharplsp.solutionExplorer` |
 | Group | `inline` |
 
 ## Build, Run, and Debug Actions
@@ -350,16 +350,16 @@ Right-clicking a solution or project node shows **Build** and **Rebuild** action
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.build` |
+| Command | `sharplsp.build` |
 | Title | Build |
-| When | `view == forge.solutionExplorer && viewItem =~ /^(solution\|project)$/` |
+| When | `view == sharplsp.solutionExplorer && viewItem =~ /^(solution\|project)$/` |
 | Group | `2_build@1` |
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.rebuild` |
+| Command | `sharplsp.rebuild` |
 | Title | Rebuild |
-| When | `view == forge.solutionExplorer && viewItem =~ /^(solution\|project)$/` |
+| When | `view == sharplsp.solutionExplorer && viewItem =~ /^(solution\|project)$/` |
 | Group | `2_build@2` |
 
 **Build Behavior:**
@@ -374,16 +374,16 @@ Right-clicking a project node shows **Run** and **Debug** actions.
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.run` |
+| Command | `sharplsp.run` |
 | Title | Run |
-| When | `view == forge.solutionExplorer && viewItem == project` |
+| When | `view == sharplsp.solutionExplorer && viewItem == project` |
 | Group | `3_run@1` |
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.debug` |
+| Command | `sharplsp.debug` |
 | Title | Debug |
-| When | `view == forge.solutionExplorer && viewItem == project` |
+| When | `view == sharplsp.solutionExplorer && viewItem == project` |
 | Group | `3_run@2` |
 
 **Run Behavior:**
@@ -392,7 +392,7 @@ Right-clicking a project node shows **Run** and **Debug** actions.
 
 **Debug Behavior:**
 - Starts a debug session using VS Code's debug API
-- Uses the `forge` debug configuration type
+- Uses the `sharplsp` debug configuration type
 - Attaches debugger to the running process
 
 ### Configure Extra Arguments
@@ -401,28 +401,28 @@ Users can configure extra arguments for dotnet commands via context menu or sett
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.configureBuildArgs` |
+| Command | `sharplsp.configureBuildArgs` |
 | Title | Configure Build Arguments... |
-| When | `view == forge.solutionExplorer && viewItem =~ /^(solution\|project)$/` |
+| When | `view == sharplsp.solutionExplorer && viewItem =~ /^(solution\|project)$/` |
 | Group | `9_configure@1` |
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.configureRunArgs` |
+| Command | `sharplsp.configureRunArgs` |
 | Title | Configure Run Arguments... |
-| When | `view == forge.solutionExplorer && viewItem == project` |
+| When | `view == sharplsp.solutionExplorer && viewItem == project` |
 | Group | `9_configure@2` |
 
 **Configuration Storage:**
-- Per-project args stored in workspace state: `forge.buildArgs.${projectPath}` and `forge.runArgs.${projectPath}`
+- Per-project args stored in workspace state: `sharplsp.buildArgs.${projectPath}` and `sharplsp.runArgs.${projectPath}`
 - Global defaults configured via settings:
-  - `forge.build.extraArgs` — default args for all build operations
-  - `forge.run.extraArgs` — default args for all run operations  
-  - `forge.test.extraArgs` — default args for test operations
+  - `sharplsp.build.extraArgs` — default args for all build operations
+  - `sharplsp.run.extraArgs` — default args for all run operations  
+  - `sharplsp.test.extraArgs` — default args for test operations
 
 **Argument Precedence:**
 1. Per-project configured args (highest priority)
-2. Global setting `forge.*.extraArgs`
+2. Global setting `sharplsp.*.extraArgs`
 3. No extra args (lowest priority)
 
 ## Solution Management
@@ -433,7 +433,7 @@ Right-clicking a `.csproj` or `.fsproj` file in the VS Code file explorer shows 
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.addToSolution` |
+| Command | `sharplsp.addToSolution` |
 | Title | Add to Solution |
 | When | `resourceExtname == .csproj \|\| resourceExtname == .fsproj` |
 | Group | `2_solution@1` |
@@ -449,9 +449,9 @@ Right-clicking a project node in the Solution Explorer shows **Remove from Solut
 
 | Property | Value |
 |----------|-------|
-| Command | `forge.removeFromSolution` |
+| Command | `sharplsp.removeFromSolution` |
 | Title | Remove from Solution |
-| When | `view == forge.solutionExplorer && viewItem == project` |
+| When | `view == sharplsp.solutionExplorer && viewItem == project` |
 | Group | `7_modification@3` |
 
 **Behavior:**

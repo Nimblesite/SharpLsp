@@ -5,21 +5,17 @@ lang: zh
 eleventyExcludeFromCollections: true
 ---
 
-**VS Code**
 ![VS Code 中的悬停](/assets/screenshots/vscode-hover-page.png)
 
-**Zed**
-![Zed 中的悬停](/assets/screenshots/zed-hover-page.png)
-
-*悬停显示完整的 XML 文档、类型签名和可空性注释。*
+*Alpha 版 VS Code 扩展中的 C# 悬停信息。*
 
 # 悬停与快速信息
 
-将鼠标悬停在任何符号上，查看其完整的类型签名、XML 文档、参数描述、可空性注释和弃用通知。Forge 为 C# 和 F# 实现了 `textDocument/hover`（LSP 3.17），两者都是同等一流的公民。
+将鼠标悬停在 C# 符号上可查看来自 Roslyn sidecar 的类型签名和文档。F# 悬停支持属于 SharpLsp 的方向，但当前网站截图反映的是 VS Code 扩展的 alpha 状态。
 
 ## 显示内容
 
-当你悬停在符号上时，Forge 返回一个 Markdown 渲染的工具提示，包含：
+当你悬停在符号上时，SharpLsp 返回一个 Markdown 渲染的工具提示，包含：
 
 | 部分 | 内容 |
 |---------|---------|
@@ -64,30 +60,9 @@ var result = Enumerable.Range(0, 10).Select(x => x * x).ToList();
 //   count：要生成的连续整数数量。
 ```
 
-## F# 悬停（FSharp.Compiler.Service）
+## F# 悬停
 
-F# sidecar 通过 `FSharpCheckFileResults.GetToolTip()` 解析符号，并将 `ToolTipElement` 结构渲染为 Markdown。XML 文档通过与 C# sidecar 共用的 `XmlDocRenderer` 渲染。
-
-### F# 特有情况
-
-| 悬停目标 | 行为 |
-|--------------|---------|
-| 判别联合案例 | 显示带类型的案例字段 |
-| 记录字段 | 显示字段类型和包含记录 |
-| 管道运算符（`\|>`、`>>`）| 显示推断的函数类型 |
-| 活动模式 | 显示模式签名和文档 |
-| 计算表达式关键字（`let!`、`do!`、`return!`）| 显示 CE 构建器方法 |
-| 类型提供程序 | 显示提供的类型及其属性 |
-| 度量类型 | 显示度量单位注释 |
-
-### 示例
-
-```fsharp
-let result = [1..10] |> List.map (fun x -> x * x) |> List.sum
-//                       ↑ 悬停显示：
-// val map: mapping: ('T -> 'U) -> list: 'T list -> 'U list
-// 构建一个新集合，其元素是将给定函数应用于集合每个元素的结果。
-```
+F# 悬停属于 SharpLsp 的路线图和 sidecar 架构。当前网站不把它描述为 beta 就绪功能。
 
 ## 解决方案资源管理器悬停
 
@@ -121,16 +96,4 @@ let result = [1..10] |> List.map (fun x -> x * x) |> List.sum
 
 ## 错误处理
 
-悬停永远不会返回错误或阻塞编辑器。任何失败时 — sidecar 未就绪、符号解析失败、IPC 超时 — Forge 返回 `null`（无工具提示）。Sidecar 崩溃在 3 秒内触发自动恢复。
-
-## 竞品对比
-
-| 功能 | Visual Studio | C# Dev Kit | Rider | **Forge** |
-|---------|:---:|:---:|:---:|:---:|
-| 基本符号悬停 | ✓ | ✓ | ✓ | ✓ |
-| XML 文档 | ✓ | ✓ | ✓ | ✓ |
-| `var` 推断类型 | ✓ | ✓ | ✓ | ✓ |
-| NuGet XML 文档 | ✓ | ✓ | ✓ | ✓ |
-| 异常文档 | ✓ | ✗ | ✓ | ✓ |
-| 可空注释显示 | ✓ | ✓ | ✓ | ✓ |
-| 弃用警告 | ✓ | ✓ | ✓ | ✓ |
+悬停永远不会返回错误或阻塞编辑器。任何失败时 — sidecar 未就绪、符号解析失败、IPC 超时 — SharpLsp 返回 `null`（无工具提示）。Sidecar 崩溃在 3 秒内触发自动恢复。

@@ -31,7 +31,7 @@ export async function fetchTargets(
 ): Promise<LspResult<NuGetTargetsResponse>> {
   try {
     log.info(`nuget/lsp: fetchTargets workspace=${workspaceRoot}`);
-    const result = await lsp.sendRequest<NuGetTargetsResponse>('forge/nuget/targets', {
+    const result = await lsp.sendRequest<NuGetTargetsResponse>('sharplsp/nuget/targets', {
       workspaceRoot,
     });
     return ok(result);
@@ -48,7 +48,7 @@ export async function fetchInstalled(
 ): Promise<LspResult<NuGetInstalledResponse>> {
   try {
     log.info(`nuget/lsp: fetchInstalled target=${target.id}`);
-    const result = await lsp.sendRequest<NuGetInstalledResponse>('forge/nuget/installed', {
+    const result = await lsp.sendRequest<NuGetInstalledResponse>('sharplsp/nuget/installed', {
       target,
       projectPath: target.path,
     });
@@ -66,7 +66,7 @@ export async function searchPackages(
 ): Promise<LspResult<NuGetSearchResponse>> {
   try {
     log.info(`nuget/lsp: searchPackages target=${target.id} query="${query}"`);
-    const result = await lsp.sendRequest<NuGetSearchResponse>('forge/nuget/search', {
+    const result = await lsp.sendRequest<NuGetSearchResponse>('sharplsp/nuget/search', {
       query,
       target,
       projectPath: target.path,
@@ -85,7 +85,7 @@ export async function fetchVersions(
   packageId: string,
 ): Promise<LspResult<NuGetVersionsResponse>> {
   try {
-    const result = await lsp.sendRequest<NuGetVersionsResponse>('forge/nuget/versions', {
+    const result = await lsp.sendRequest<NuGetVersionsResponse>('sharplsp/nuget/versions', {
       packageId,
     });
     return ok(result);
@@ -102,7 +102,7 @@ export async function installPackage(
 ): Promise<LspResult<NuGetMutationResponse>> {
   try {
     log.info(`nuget/lsp: install ${packageId} v${version} into ${target.id}`);
-    const result = await lsp.sendRequest<NuGetMutationResponse>('forge/nuget/install', {
+    const result = await lsp.sendRequest<NuGetMutationResponse>('sharplsp/nuget/install', {
       target,
       projectPath: target.path,
       packageId,
@@ -121,7 +121,7 @@ export async function uninstallPackage(
 ): Promise<LspResult<NuGetMutationResponse>> {
   try {
     log.info(`nuget/lsp: uninstall ${packageId} from ${target.id}`);
-    const result = await lsp.sendRequest<NuGetMutationResponse>('forge/nuget/uninstall', {
+    const result = await lsp.sendRequest<NuGetMutationResponse>('sharplsp/nuget/uninstall', {
       target,
       projectPath: target.path,
       packageId,

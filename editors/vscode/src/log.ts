@@ -7,7 +7,7 @@ import { OUTPUT_CHANNEL_NAME, TRACE_CHANNEL_NAME } from './constants.js';
 let outputChannel: OutputChannel | undefined;
 let traceChannel: OutputChannel | undefined;
 
-const LOG_FILE = path.join(os.tmpdir(), 'forge-vscode.log');
+const LOG_FILE = path.join(os.tmpdir(), 'sharplsp-vscode.log');
 let logStream: fs.WriteStream | undefined;
 
 /** Get or create the file log stream. */
@@ -51,6 +51,13 @@ export function traceInfo(message: string): void {
   const ts = new Date().toISOString();
   trace().appendLine(`[${ts}] ${message}`);
   fileLog('TRACE', message);
+}
+
+/** Log a warning message to the main output channel + file. */
+export function warn(message: string): void {
+  const ts = new Date().toISOString();
+  output().appendLine(`[${ts}] WARN: ${message}`);
+  fileLog('WARN', message);
 }
 
 /** Log an error message to the main output channel + file. */

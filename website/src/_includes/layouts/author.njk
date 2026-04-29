@@ -1,0 +1,36 @@
+---
+layout: layouts/base.njk
+---
+
+<article class="prose">
+  <header class="article-header">
+    <div class="article-kicker"><span>{% if lang == "zh" %}作者{% else %}Author{% endif %}</span></div>
+    <div class="author-profile">
+      <img src="{{ authorImage | default('/assets/images/sharplsp-logo.svg') }}" alt="{{ title }}" class="author-avatar">
+      <div>
+        <h1>{{ title }}</h1>
+        <p class="author-role">{{ authorRole }}</p>
+        {% if authorWebsite %}<a href="{{ authorWebsite }}" class="author-website" target="_blank" rel="noopener">{{ authorWebsite | replace("https://", "") }}</a>{% endif %}
+      </div>
+    </div>
+  </header>
+  {{ content | safe }}
+</article>
+
+<div class="blog-container author-posts">
+  {% set currentLang = lang | default(defaultLanguage) %}
+  {% set authorPosts = collections[currentLang + "posts"] if currentLang != defaultLanguage else collections.posts %}
+  {% set matchedPosts = [] %}
+  {% for post in authorPosts %}
+    {% if post.data.author == title or (post.data.author | slugify) == authorSlug %}
+      {% set matchedPosts = (matchedPosts.push(post), matchedPosts) %}
+    {% endif %}
+  {% endfor %}
+  {% set displayPosts = matchedPosts if matchedPosts | length > 0 else authorPosts %}
+  <section class="blog-grid">
+    {% for post in displayPosts %}
+    {% set currentPost = post %}{% set featuredPost = loop.first %}
+    {% include "partials/post-card.njk" %}
+    {% endfor %}
+  </section>
+</div>

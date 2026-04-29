@@ -83,7 +83,7 @@ EndGlobal"#,
                     let msg_text = diag["message"].as_str().unwrap_or("");
                     if msg_text.contains("MissingType") || msg_text.contains("CS0246") {
                         found = true;
-                        assert_eq!(diag["source"].as_str().unwrap(), "forge-csharp",);
+                        assert_eq!(diag["source"].as_str().unwrap(), "sharplsp-csharp",);
                         assert!(
                             diag["severity"].as_u64().unwrap() <= 2,
                             "type error must be Error(1) or Warning(2)",
@@ -352,8 +352,8 @@ EndGlobal"#,
     );
     assert_eq!(
         bogus_diag["source"].as_str().unwrap(),
-        "forge-csharp",
-        "diagnostic source must be forge-csharp",
+        "sharplsp-csharp",
+        "diagnostic source must be sharplsp-csharp",
     );
 
     // ── Step 2: Close the broken file ───────────────────────────
@@ -422,7 +422,7 @@ public class Item
         errors.is_empty(),
         "After reopening with fixed source (BogusType -> int), pull \
          diagnostics must return zero Error-severity diagnostics. \
-         Stale errors: {errors:?}. Forge does not lie.",
+         Stale errors: {errors:?}. SharpLsp does not lie.",
     );
 
     // Assert no BogusType mentioned anywhere in any diagnostic.
@@ -538,8 +538,8 @@ public class Widget
                         .unwrap();
                     assert_eq!(
                         diag["source"].as_str().unwrap(),
-                        "forge-csharp",
-                        "source must be forge-csharp",
+                        "sharplsp-csharp",
+                        "source must be sharplsp-csharp",
                     );
                     assert_eq!(
                         diag["severity"].as_u64().unwrap(),
@@ -718,7 +718,7 @@ public class Stale
          was fixed on disk, but the error persists ({} diagnostics). \
          The verification pass must read from disk, send didChange to \
          update the sidecar compilation, and re-fetch diagnostics. \
-         Forge does not lie about compilation state. Diagnostics: {diags:?}",
+         SharpLsp does not lie about compilation state. Diagnostics: {diags:?}",
         diags.len(),
     );
 
@@ -884,7 +884,7 @@ EndGlobal
     std::fs::write(tmp.path().join("Test.sln"), sln).unwrap();
 
     // Restore and build the solution to confirm it compiles cleanly — this
-    // is ground truth. If dotnet build succeeds, Forge must not report
+    // is ground truth. If dotnet build succeeds, SharpLsp must not report
     // any errors.
     let restore = std::process::Command::new("dotnet")
         .args(["restore", "Test.sln", "--verbosity", "quiet"])
@@ -996,14 +996,14 @@ EndGlobal
 
     // ── Assert: NO false-positive type-not-found errors ──
     //
-    // The whole point of Forge is to NOT LIE TO THE USER. The solution
-    // builds cleanly via `dotnet build`. Forge must not publish errors
+    // The whole point of SharpLsp is to NOT LIE TO THE USER. The solution
+    // builds cleanly via `dotnet build`. SharpLsp must not publish errors
     // for types that the compiler resolves correctly.
     assert!(
         all_false_positives.is_empty(),
         "Solution-wide scan PUBLISHED false-positive type-not-found \
          errors to the editor. The solution builds cleanly via \
-         `dotnet build` — Forge must not lie about compilation state. \
+         `dotnet build` — SharpLsp must not lie about compilation state. \
          False positives by URI: {all_false_positives:?}\n\
          All publishDiagnostics notifications received: {all_publish_diags:?}",
     );
@@ -1093,8 +1093,8 @@ EndGlobal"#,
                     for diag in diags.iter().filter(|d| d["severity"].as_u64() == Some(1)) {
                         assert_eq!(
                             diag["source"].as_str().unwrap(),
-                            "forge-csharp",
-                            "source must be forge-csharp",
+                            "sharplsp-csharp",
+                            "source must be sharplsp-csharp",
                         );
                         assert!(
                             diag["message"].as_str().is_some_and(|m| !m.is_empty()),

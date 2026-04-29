@@ -5,17 +5,13 @@ lang: zh
 eleventyExcludeFromCollections: true
 ---
 
-**VS Code**
 ![VS Code 中的性能分析器](/assets/screenshots/vscode-profiler-page.png)
 
-**Zed**
-![Zed 中的性能分析器](/assets/screenshots/zed-profiler-page.png)
-
-*内置分析器封装了 dotnet-trace、dotnet-counters 和 dotnet-dump — 零上下文切换。*
+*Alpha 版 VS Code 扩展中的性能分析工作流。*
 
 # 性能分析器
 
-Forge 将标准 .NET 诊断 CLI 工具直接集成到你的编辑器中。无需终端切换，无需单独的 GUI。追踪性能、监控实时计数器、收集内存转储、对比堆快照并可视化对象保留图，无需离开你的代码。
+SharpLsp 将 .NET 诊断工作流集成到 VS Code 中。扩展提供进程发现、追踪、计数器、转储、堆分析及相关文件操作命令，性能分析体验仍在为 beta 阶段继续加固。
 
 ## 前置要求
 
@@ -27,11 +23,11 @@ dotnet tool install -g dotnet-counters
 dotnet tool install -g dotnet-dump
 ```
 
-Forge 通过 PATH 和 `dotnet tool list -g` 自动发现这些工具。如果工具缺失，命令会返回带有安装命令的可操作错误。
+SharpLsp 通过 PATH 和 `dotnet tool list -g` 自动发现这些工具。如果工具缺失，命令会返回带有安装命令的可操作错误。
 
 ## 分析器树视图
 
-Forge 侧边栏中的**分析器**面板显示：
+SharpLsp 侧边栏中的**分析器**面板显示：
 
 | 部分 | 内容 |
 |---------|---------|
@@ -46,21 +42,21 @@ Forge 侧边栏中的**分析器**面板显示：
 
 ### 开始追踪
 
-1. 在 Forge 侧边栏中打开**分析器**视图
-2. 从命令面板运行 `Forge: Start Trace`
+1. 在 SharpLsp 侧边栏中打开**分析器**视图
+2. 从命令面板运行 `SharpLsp: Start Trace`
 3. 从选择器中选择一个 .NET 进程
 4. 追踪会话出现在树视图中
 
 ### 停止追踪
 
-1. 从命令面板运行 `Forge: Stop Trace`
+1. 从命令面板运行 `SharpLsp: Stop Trace`
 2. 选择活动追踪会话
-3. Forge 将 `.nettrace` 转换为 SpeedScope 格式并自动在浏览器中打开
+3. SharpLsp 将 `.nettrace` 转换为 SpeedScope 格式并自动在浏览器中打开
 
 ### 配置
 
 ```toml
-# forge.toml
+# sharplsp.toml
 [profiler]
 default_profile = "cpu-sampling"   # cpu-sampling | gc-verbose | gc-collect | none
 default_format = "speedscope"      # speedscope | nettrace | chromium
@@ -74,7 +70,7 @@ max_sessions = 5
 
 ### 开始监控
 
-1. 从命令面板运行 `Forge: Start Counters`
+1. 从命令面板运行 `SharpLsp: Start Counters`
 2. 选择一个 .NET 进程
 3. 打开一个 webview 面板，显示实时更新的计数器值
 
@@ -87,7 +83,7 @@ max_sessions = 5
 | **值** | 当前值（格式化：字节、计数、百分比）|
 | **单位** | 测量单位 |
 
-计数器通过 `forge/profiler/counterUpdate` LSP 通知流式传输。运行 `Forge: Stop Counters` 结束会话。
+计数器通过 `sharplsp/profiler/counterUpdate` LSP 通知流式传输。运行 `SharpLsp: Stop Counters` 结束会话。
 
 ## 内存转储（dotnet-dump）
 
@@ -95,16 +91,16 @@ max_sessions = 5
 
 ### 收集转储
 
-1. 从命令面板运行 `Forge: Collect Dump`
+1. 从命令面板运行 `SharpLsp: Collect Dump`
 2. 选择一个 .NET 进程
 3. 选择转储类型：**堆**、**完整**或**迷你**
-4. Forge 报告输出路径和文件大小
+4. SharpLsp 报告输出路径和文件大小
 
 ### 分析堆
 
-1. 从命令面板运行 `Forge: Analyze Heap`
+1. 从命令面板运行 `SharpLsp: Analyze Heap`
 2. 选择一个 `.dmp` 文件
-3. Forge 运行 `dumpheap -stat` 并显示格式化表格：
+3. SharpLsp 运行 `dumpheap -stat` 并显示格式化表格：
 
 | 列 | 内容 |
 |--------|---------|
@@ -118,7 +114,7 @@ max_sessions = 5
 
 ### 比较快照
 
-1. 从命令面板运行 `Forge: Compare Heap Snapshots`
+1. 从命令面板运行 `SharpLsp: Compare Heap Snapshots`
 2. 选择**基线**转储文件（在运行可疑泄漏之前）
 3. 选择**对比**转储文件（在运行之后）
 4. 对比面板打开，显示：
@@ -136,7 +132,7 @@ max_sessions = 5
 
 ### 泄漏嫌疑表
 
-在完整对比上方，Forge 列出按严重性自动分类的**泄漏嫌疑项**：
+在完整对比上方，SharpLsp 列出按严重性自动分类的**泄漏嫌疑项**：
 
 | 严重性 | 标准 |
 |----------|----------|
@@ -150,10 +146,10 @@ max_sessions = 5
 
 自动运行引导式基线 → 运行 → 对比工作流。
 
-1. 运行 `Forge: Detect Memory Leaks`
-2. 选择一个 .NET 进程 — Forge 收集基线转储
+1. 运行 `SharpLsp: Detect Memory Leaks`
+2. 选择一个 .NET 进程 — SharpLsp 收集基线转储
 3. 在你的应用程序中**运行**可疑的泄漏路径
-4. Forge 收集对比转储并自动运行完整的堆对比
+4. SharpLsp 收集对比转储并自动运行完整的堆对比
 5. 对比面板打开，突出显示嫌疑项
 
 ## 对象保留图
@@ -162,7 +158,7 @@ max_sessions = 5
 
 ### 打开图
 
-1. 从命令面板运行 `Forge: Show Object Retention Graph`
+1. 从命令面板运行 `SharpLsp: Show Object Retention Graph`
 2. 选择一个 `.dmp` 文件
 3. 输入根对象地址（十六进制，例如 `00007ff812345678`）
 4. 交互式力导向图在 webview 面板中渲染
@@ -191,7 +187,7 @@ max_sessions = 5
 
 ### 对象检查
 
-1. 从命令面板运行 `Forge: Inspect Object`
+1. 从命令面板运行 `SharpLsp: Inspect Object`
 2. 选择一个 `.dmp` 文件并输入对象地址
 3. 文本面板显示对象的类型、大小、代和所有字段值（带引用地址）
 
@@ -199,18 +195,18 @@ max_sessions = 5
 
 | 命令 | 描述 |
 |---------|-------------|
-| `Forge: Refresh Profiler` | 刷新 .NET 进程列表 |
-| `Forge: List Processes` | 刷新并显示 .NET 进程 |
-| `Forge: Start Trace` | 开始对 .NET 进程进行性能追踪 |
-| `Forge: Stop Trace` | 停止活动追踪并在 SpeedScope 中打开 |
-| `Forge: Start Counters` | 开始实时计数器监控 |
-| `Forge: Stop Counters` | 停止计数器监控 |
-| `Forge: Collect Dump` | 捕获内存转储 |
-| `Forge: Analyze Heap` | 从转储文件分析堆统计信息 |
-| `Forge: Compare Heap Snapshots` | 对比两个堆转储以查找增长的类型 |
-| `Forge: Detect Memory Leaks` | 引导式基线 → 运行 → 对比工作流 |
-| `Forge: Show Object Retention Graph` | 交互式对象引用图 |
-| `Forge: Inspect Object` | 检查单个对象的字段和引用 |
+| `SharpLsp: Refresh Profiler` | 刷新 .NET 进程列表 |
+| `SharpLsp: List Processes` | 刷新并显示 .NET 进程 |
+| `SharpLsp: Start Trace` | 开始对 .NET 进程进行性能追踪 |
+| `SharpLsp: Stop Trace` | 停止活动追踪并在 SpeedScope 中打开 |
+| `SharpLsp: Start Counters` | 开始实时计数器监控 |
+| `SharpLsp: Stop Counters` | 停止计数器监控 |
+| `SharpLsp: Collect Dump` | 捕获内存转储 |
+| `SharpLsp: Analyze Heap` | 从转储文件分析堆统计信息 |
+| `SharpLsp: Compare Heap Snapshots` | 对比两个堆转储以查找增长的类型 |
+| `SharpLsp: Detect Memory Leaks` | 引导式基线 → 运行 → 对比工作流 |
+| `SharpLsp: Show Object Retention Graph` | 交互式对象引用图 |
+| `SharpLsp: Inspect Object` | 检查单个对象的字段和引用 |
 
 ## 性能目标
 

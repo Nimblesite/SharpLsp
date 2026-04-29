@@ -2,13 +2,13 @@ use super::*;
 
 // ── Profiler Tests ────────────────────────────────────────────────
 
-/// `forge/profiler/listProcesses` returns a JSON array or tool-not-found error.
+/// `sharplsp/profiler/listProcesses` returns a JSON array or tool-not-found error.
 #[test]
 fn test_profiler_list_processes() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
-    let resp = client.request("forge/profiler/listProcesses", json!({}));
+    let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
 
     if let Some(error) = resp.get("error") {
         // Tool not installed — acceptable in CI / dev without dotnet tools.
@@ -34,14 +34,17 @@ fn test_profiler_list_processes() {
     client.wait_with_timeout();
 }
 
-/// `forge/profiler/startTrace` returns an error for a non-existent PID
+/// `sharplsp/profiler/startTrace` returns an error for a non-existent PID
 /// (tool not found or attach failure — both acceptable, server must not crash).
 #[test]
 fn test_profiler_start_trace_invalid_pid() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
-    let resp = client.request("forge/profiler/startTrace", json!({ "pid": 999_999_999 }));
+    let resp = client.request(
+        "sharplsp/profiler/startTrace",
+        json!({ "pid": 999_999_999 }),
+    );
 
     // Either error or result is fine — just must not crash.
     assert!(
@@ -53,14 +56,14 @@ fn test_profiler_start_trace_invalid_pid() {
     client.wait_with_timeout();
 }
 
-/// `forge/profiler/stopTrace` errors for a non-existent session.
+/// `sharplsp/profiler/stopTrace` errors for a non-existent session.
 #[test]
 fn test_profiler_stop_trace_unknown_session() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/profiler/stopTrace",
+        "sharplsp/profiler/stopTrace",
         json!({ "session_id": "nonexistent-session-id" }),
     );
 
@@ -73,14 +76,14 @@ fn test_profiler_stop_trace_unknown_session() {
     client.wait_with_timeout();
 }
 
-/// `forge/profiler/stopCounters` errors for a non-existent session.
+/// `sharplsp/profiler/stopCounters` errors for a non-existent session.
 #[test]
 fn test_profiler_stop_counters_unknown_session() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/profiler/stopCounters",
+        "sharplsp/profiler/stopCounters",
         json!({ "session_id": "nonexistent-session-id" }),
     );
 
@@ -93,14 +96,14 @@ fn test_profiler_stop_counters_unknown_session() {
     client.wait_with_timeout();
 }
 
-/// `forge/profiler/analyzeHeap` errors for a nonexistent dump file.
+/// `sharplsp/profiler/analyzeHeap` errors for a nonexistent dump file.
 #[test]
 fn test_profiler_analyze_heap_missing_file() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/profiler/analyzeHeap",
+        "sharplsp/profiler/analyzeHeap",
         json!({ "dump_path": "/nonexistent/path/to/dump.dmp" }),
     );
 
@@ -113,14 +116,14 @@ fn test_profiler_analyze_heap_missing_file() {
     client.wait_with_timeout();
 }
 
-/// `forge/profiler/findGCRoots` errors for a nonexistent dump file.
+/// `sharplsp/profiler/findGCRoots` errors for a nonexistent dump file.
 #[test]
 fn test_profiler_find_gc_roots_missing_file() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/profiler/findGCRoots",
+        "sharplsp/profiler/findGCRoots",
         json!({
             "dump_path": "/nonexistent/path/to/dump.dmp",
             "object_address": "0x00007ff800001111"
@@ -138,7 +141,7 @@ fn test_profiler_find_gc_roots_missing_file() {
 
 // ── convertTrace: real dotnet-trace invocation ───────────────────
 
-/// `forge/profiler/convertTrace` on a real `.nettrace` file must return a
+/// `sharplsp/profiler/convertTrace` on a real `.nettrace` file must return a
 /// path that actually exists on disk.
 ///
 /// This test REPRODUCES and PROVES the fix for the bug where
@@ -153,7 +156,7 @@ fn test_profiler_find_gc_roots_missing_file() {
 fn test_profiler_convert_trace_real_file_roundtrip() {
     let Some(sample) = locate_nettrace_sample() else {
         eprintln!(
-            "skip: no real .nettrace sample available; run a trace once to populate .forge/profiles/"
+            "skip: no real .nettrace sample available; run a trace once to populate .sharplsp/profiles/"
         );
         return;
     };
@@ -173,7 +176,7 @@ fn test_profiler_convert_trace_real_file_roundtrip() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/profiler/convertTrace",
+        "sharplsp/profiler/convertTrace",
         json!({
             "input_path": input_path.to_str().unwrap(),
             "format": "speedscope",
@@ -251,7 +254,7 @@ fn test_profiler_convert_trace_does_not_write_doubled_suffix() {
     let mut client = LspClient::start();
     let _ = client.initialize();
     let resp = client.request(
-        "forge/profiler/convertTrace",
+        "sharplsp/profiler/convertTrace",
         json!({ "input_path": input_path.to_str().unwrap() }),
     );
     client.shutdown_and_exit();
@@ -276,7 +279,7 @@ fn test_profiler_convert_trace_does_not_write_doubled_suffix() {
 /// Locate a real `.nettrace` sample to seed the convertTrace test, or
 /// return None so the test skips gracefully on environments without one.
 ///
-/// Looks in `.forge/profiles/` (relative to the workspace root) for any
+/// Looks in `.sharplsp/profiles/` (relative to the workspace root) for any
 /// previously captured trace. This keeps the test self-contained without
 /// committing a binary fixture to the repo.
 fn has_dotnet_trace() -> bool {
@@ -289,7 +292,7 @@ fn has_dotnet_trace() -> bool {
 }
 
 fn locate_nettrace_sample() -> Option<std::path::PathBuf> {
-    let profiles_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".forge/profiles");
+    let profiles_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".sharplsp/profiles");
     let entries = std::fs::read_dir(profiles_dir).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
@@ -302,14 +305,14 @@ fn locate_nettrace_sample() -> Option<std::path::PathBuf> {
 
 // ── Profiler Performance Benchmarks ──────────────────────────────
 
-/// Benchmark: `forge/profiler/listProcesses` completes within 500ms.
+/// Benchmark: `sharplsp/profiler/listProcesses` completes within 500ms.
 #[test]
 fn test_profiler_list_processes_latency() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
     let start = Instant::now();
-    let resp = client.request("forge/profiler/listProcesses", json!({}));
+    let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
     let elapsed = start.elapsed();
 
     assert!(
@@ -325,14 +328,17 @@ fn test_profiler_list_processes_latency() {
     client.wait_with_timeout();
 }
 
-/// Benchmark: `forge/profiler/startTrace` responds within 1s (even for invalid PID).
+/// Benchmark: `sharplsp/profiler/startTrace` responds within 1s (even for invalid PID).
 #[test]
 fn test_profiler_start_trace_latency() {
     let mut client = LspClient::start();
     let _ = client.initialize();
 
     let start = Instant::now();
-    let resp = client.request("forge/profiler/startTrace", json!({ "pid": 999_999_999 }));
+    let resp = client.request(
+        "sharplsp/profiler/startTrace",
+        json!({ "pid": 999_999_999 }),
+    );
     let elapsed = start.elapsed();
 
     assert!(
@@ -356,7 +362,7 @@ fn test_profiler_counter_stop_latency() {
 
     let start = Instant::now();
     let resp = client.request(
-        "forge/profiler/stopCounters",
+        "sharplsp/profiler/stopCounters",
         json!({ "session_id": "bench-nonexistent" }),
     );
     let elapsed = start.elapsed();
@@ -374,7 +380,7 @@ fn test_profiler_counter_stop_latency() {
     client.wait_with_timeout();
 }
 
-/// Benchmark: `forge/profiler/analyzeHeap` error path responds within 5s.
+/// Benchmark: `sharplsp/profiler/analyzeHeap` error path responds within 5s.
 #[test]
 fn test_profiler_analyze_heap_latency() {
     let mut client = LspClient::start();
@@ -382,7 +388,7 @@ fn test_profiler_analyze_heap_latency() {
 
     let start = Instant::now();
     let resp = client.request(
-        "forge/profiler/analyzeHeap",
+        "sharplsp/profiler/analyzeHeap",
         json!({ "dump_path": "/nonexistent/benchmark.dmp" }),
     );
     let elapsed = start.elapsed();
@@ -400,7 +406,7 @@ fn test_profiler_analyze_heap_latency() {
     client.wait_with_timeout();
 }
 
-/// Benchmark: `forge/profiler/findGCRoots` error path responds within 10s.
+/// Benchmark: `sharplsp/profiler/findGCRoots` error path responds within 10s.
 #[test]
 fn test_profiler_find_gc_roots_latency() {
     let mut client = LspClient::start();
@@ -408,7 +414,7 @@ fn test_profiler_find_gc_roots_latency() {
 
     let start = Instant::now();
     let resp = client.request(
-        "forge/profiler/findGCRoots",
+        "sharplsp/profiler/findGCRoots",
         json!({
             "dump_path": "/nonexistent/benchmark.dmp",
             "object_address": "0x00007ff800001111"
@@ -438,7 +444,7 @@ fn test_profiler_inspect_object_missing_file() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/profiler/inspectObject",
+        "sharplsp/profiler/inspectObject",
         json!({
             "dump_path": "/nonexistent/path/to/dump.dmp",
             "object_address": "0x12345678",
@@ -461,7 +467,7 @@ fn test_profiler_diff_heap_snapshots_missing_baseline() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/profiler/diffHeapSnapshots",
+        "sharplsp/profiler/diffHeapSnapshots",
         json!({
             "baseline_dump_path": "/nonexistent/baseline.dmp",
             "comparison_dump_path": "/nonexistent/comparison.dmp",
@@ -488,7 +494,7 @@ fn test_profiler_diff_heap_snapshots_missing_comparison() {
     let baseline = tmp.path().to_string_lossy().to_string();
 
     let resp = client.request(
-        "forge/profiler/diffHeapSnapshots",
+        "sharplsp/profiler/diffHeapSnapshots",
         json!({
             "baseline_dump_path": baseline,
             "comparison_dump_path": "/nonexistent/comparison.dmp",
@@ -511,7 +517,7 @@ fn test_profiler_get_object_graph_missing_file() {
     let _ = client.initialize();
 
     let resp = client.request(
-        "forge/profiler/getObjectGraph",
+        "sharplsp/profiler/getObjectGraph",
         json!({
             "dump_path": "/nonexistent/path/to/dump.dmp",
             "root_address": "0x00007ff812345678",
@@ -535,7 +541,7 @@ fn test_profiler_diff_heap_snapshots_server_survives_error() {
 
     // Send bad request.
     let _ = client.request(
-        "forge/profiler/diffHeapSnapshots",
+        "sharplsp/profiler/diffHeapSnapshots",
         json!({
             "baseline_dump_path": "/no/such/file.dmp",
             "comparison_dump_path": "/no/such/file2.dmp",
@@ -567,7 +573,7 @@ fn test_profiler_diff_heap_snapshots_latency() {
 
     let start = std::time::Instant::now();
     let _ = client.request(
-        "forge/profiler/diffHeapSnapshots",
+        "sharplsp/profiler/diffHeapSnapshots",
         json!({
             "baseline_dump_path": "/nonexistent/baseline.dmp",
             "comparison_dump_path": "/nonexistent/comparison.dmp",
@@ -592,7 +598,7 @@ fn test_profiler_get_object_graph_latency() {
 
     let start = std::time::Instant::now();
     let _ = client.request(
-        "forge/profiler/getObjectGraph",
+        "sharplsp/profiler/getObjectGraph",
         json!({
             "dump_path": "/nonexistent/dump.dmp",
             "root_address": "0x00007ff812345678",

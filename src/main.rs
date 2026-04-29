@@ -1,4 +1,4 @@
-//! Forge LSP Server — main entry point.
+//! `SharpLsp` server — main entry point.
 //!
 //! Implements LSP 3.17 lifecycle over stdio using `lsp-server`.
 
@@ -46,11 +46,11 @@ use lsp_types::{
         CodeActionRequest, CodeActionResolveRequest, CodeLensRequest, Completion,
         DocumentDiagnosticRequest, DocumentHighlightRequest, DocumentSymbolRequest,
         FoldingRangeRequest, GotoDeclaration, GotoDefinition, GotoImplementation,
-        GotoTypeDefinition, HoverRequest, InlayHintRequest, LinkedEditingRange, References,
-        Request as _, ResolveCompletionItem, SelectionRangeRequest, SemanticTokensFullDeltaRequest,
-        SemanticTokensFullRequest, SemanticTokensRangeRequest, Shutdown, TypeHierarchyPrepare,
-        TypeHierarchySubtypes, TypeHierarchySupertypes, WorkspaceDiagnosticRequest,
-        WorkspaceSymbolRequest,
+        GotoTypeDefinition, HoverRequest, InlayHintRequest, LinkedEditingRange,
+        PrepareRenameRequest, References, Rename, Request as _, ResolveCompletionItem,
+        SelectionRangeRequest, SemanticTokensFullDeltaRequest, SemanticTokensFullRequest,
+        SemanticTokensRangeRequest, Shutdown, TypeHierarchyPrepare, TypeHierarchySubtypes,
+        TypeHierarchySupertypes, WorkspaceDiagnosticRequest, WorkspaceSymbolRequest,
     },
     FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams, OneOf,
     SelectionRangeProviderCapability, ServerCapabilities, TextDocumentSyncCapability,
@@ -78,13 +78,33 @@ fn error_code_i32(code: lsp_server::ErrorCode) -> i32 {
 }
 
 fn main() -> ExitCode {
-    if std::env::args().any(|a| a == "--version") {
-        println!("forge-lsp {}", env!("CARGO_PKG_VERSION"));
-        return ExitCode::SUCCESS;
+    // Implements [SWR-VERSION-RUST] — Shipwright binary version contract.
+    let spec = shipwright::VersionSpec {
+        name: "sharplsp",
+        version: env!("CARGO_PKG_VERSION"),
+        kind: shipwright_manifest::ExecutableKind::Lsp,
+        language: shipwright_manifest::Language::Rust,
+        product: Some("sharplsp"),
+        capabilities: &[],
+        build: shipwright::BuildInfo {
+            git_sha: option_env!("GIT_SHA"),
+            git_dirty: None,
+            build_time: option_env!("BUILD_TIME"),
+            target: Some(env!("TARGET")),
+            toolchain: None,
+        },
+    };
+    match shipwright::dispatch(std::env::args(), std::io::stdout(), &spec) {
+        Ok(true) => return ExitCode::SUCCESS,
+        Ok(false) => {}
+        Err(e) => {
+            eprintln!("version dispatch error: {e}");
+            return ExitCode::FAILURE;
+        }
     }
 
-    let log_dir = std::env::temp_dir().join("forge-lsp-logs");
-    let file_appender = tracing_appender::rolling::daily(&log_dir, "forge-lsp.log");
+    let log_dir = std::env::temp_dir().join("sharplsp-logs");
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "sharplsp.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
 
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
@@ -104,12 +124,12 @@ fn main() -> ExitCode {
         )
         .init();
 
-    info!(log_path = %log_dir.display(), "Forge LSP starting");
+    info!(log_path = %log_dir.display(), "SharpLsp LSP starting");
 
     match run_server() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            error!("Forge LSP exited with error: {e:#}");
+            error!("SharpLsp LSP exited with error: {e:#}");
             ExitCode::FAILURE
         }
     }
@@ -147,20 +167,20 @@ fn run_server() -> Result<()> {
             root.and_then(|uri| uri.as_str().strip_prefix("file://").map(PathBuf::from))
         });
 
-    let forge_config = if let Some(ref root) = workspace_root {
+    let sharplsp_config = if let Some(ref root) = workspace_root {
         config::load_config(root)?
     } else {
         info!("No workspace root — using default configuration");
-        config::ForgeConfig::default()
+        config::SharpLspConfig::default()
     };
 
     info!(
-        "Forge LSP initialized (log_level={}, debounce_ms={})",
-        forge_config.server.log_level, forge_config.server.debounce_ms
+        "SharpLsp LSP initialized (log_level={}, debounce_ms={})",
+        sharplsp_config.server.log_level, sharplsp_config.server.debounce_ms
     );
 
     // Apply profiler config.
-    profiler::session::set_max_sessions(forge_config.profiler.max_concurrent_sessions);
+    profiler::session::set_max_sessions(sharplsp_config.profiler.max_concurrent_sessions);
 
     // Create tokio runtime for async sidecar IPC.
     let runtime = tokio::runtime::Runtime::new().context("create tokio runtime")?;
@@ -170,7 +190,7 @@ fn run_server() -> Result<()> {
     let vfs = Arc::new(Vfs::new());
 
     // Initialize C# sidecar manager if enabled and workspace root is available.
-    let csharp_sidecar = if forge_config.csharp.enabled {
+    let csharp_sidecar = if sharplsp_config.csharp.enabled {
         workspace_root
             .as_ref()
             .map(|root| Arc::new(SidecarManager::csharp(root)))
@@ -179,7 +199,7 @@ fn run_server() -> Result<()> {
     };
 
     // Initialize F# sidecar manager if enabled and workspace root is available.
-    let fsharp_sidecar = if forge_config.fsharp.enabled {
+    let fsharp_sidecar = if sharplsp_config.fsharp.enabled {
         workspace_root
             .as_ref()
             .map(|root| Arc::new(SidecarManager::fsharp(root)))
@@ -194,7 +214,7 @@ fn run_server() -> Result<()> {
     start_sidecar(
         csharp_sidecar.as_ref(),
         workspace_root.as_ref(),
-        Some((&forge_config.diagnostics, &connection)),
+        Some((&sharplsp_config.diagnostics, &connection)),
         &runtime,
         Arc::clone(&vfs),
     );
@@ -209,7 +229,7 @@ fn run_server() -> Result<()> {
     main_loop(
         &connection,
         &runtime,
-        &forge_config,
+        &sharplsp_config,
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
         &vfs,
@@ -237,7 +257,7 @@ fn run_server() -> Result<()> {
     // allowing io_threads.join() to complete.
     drop(connection);
     io_threads.join()?;
-    info!("Forge LSP shut down cleanly");
+    info!("SharpLsp LSP shut down cleanly");
     Ok(())
 }
 
@@ -261,6 +281,10 @@ fn build_capabilities() -> ServerCapabilities {
         declaration_provider: Some(lsp_types::DeclarationCapability::Simple(true)),
         implementation_provider: Some(lsp_types::ImplementationProviderCapability::Simple(true)),
         references_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(OneOf::Right(lsp_types::RenameOptions {
+            prepare_provider: Some(true),
+            work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
+        })),
         document_highlight_provider: Some(OneOf::Left(true)),
         code_action_provider: Some(lsp_types::CodeActionProviderCapability::Options(
             lsp_types::CodeActionOptions {
@@ -363,7 +387,7 @@ fn start_sidecar(
 fn main_loop(
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
-    _forge_config: &config::ForgeConfig,
+    _sharplsp_config: &config::SharpLspConfig,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     vfs: &Arc<Vfs>,
@@ -527,6 +551,15 @@ fn handle_request(
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             code_lens::handle_code_lens(req, runtime, sidecar)
         }
+        // Rename — Implements [RENAME-PREPARE] and [RENAME-APPLY]
+        PrepareRenameRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            semantic::handle_prepare_rename(req, runtime, sidecar)
+        }
+        Rename::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            semantic::handle_rename(req, runtime, sidecar)
+        }
         // Call hierarchy
         CallHierarchyPrepare::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
@@ -571,7 +604,7 @@ fn handle_request(
         // Standard workspace/symbol
         WorkspaceSymbolRequest::METHOD => handle_standard_workspace_symbol(req, parsers, vfs),
         // Solution loading
-        "forge/loadSolution" => handle_load_solution(
+        "sharplsp/loadSolution" => handle_load_solution(
             req,
             runtime,
             csharp_sidecar,
@@ -658,44 +691,46 @@ fn handle_custom_request(
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     match req.method.as_str() {
-        "forge/workspaceSymbols" => handle_workspace_symbols(
+        "sharplsp/workspaceSymbols" => handle_workspace_symbols(
             req,
             parsers,
             vfs,
             runtime,
             csharp_sidecar.or(fsharp_sidecar),
         ),
-        "forge/sortMembers" => handle_sort_members(req, parsers),
+        "sharplsp/sortMembers" => handle_sort_members(req, parsers),
         // NuGet package management
-        "forge/nuget/targets" => nuget::handlers::handle_targets(req),
-        "forge/nuget/search" => nuget::handlers::handle_search(req, runtime),
-        "forge/nuget/versions" => nuget::handlers::handle_versions(req, runtime),
-        "forge/nuget/installed" => nuget::handlers::handle_installed(req, runtime),
-        "forge/nuget/install" => {
+        "sharplsp/nuget/targets" => nuget::handlers::handle_targets(req),
+        "sharplsp/nuget/search" => nuget::handlers::handle_search(req, runtime),
+        "sharplsp/nuget/versions" => nuget::handlers::handle_versions(req, runtime),
+        "sharplsp/nuget/installed" => nuget::handlers::handle_installed(req, runtime),
+        "sharplsp/nuget/install" => {
             nuget::handlers::handle_install(req, runtime, connection.sender.clone())
         }
-        "forge/nuget/uninstall" => {
+        "sharplsp/nuget/uninstall" => {
             nuget::handlers::handle_uninstall(req, runtime, connection.sender.clone())
         }
         // Profiler
-        "forge/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
-        "forge/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
-        "forge/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req),
-        "forge/profiler/convertTrace" => profiler::handlers::handle_convert_trace(req),
-        "forge/profiler/startCounters" => {
+        "sharplsp/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
+        "sharplsp/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
+        "sharplsp/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req),
+        "sharplsp/profiler/convertTrace" => profiler::handlers::handle_convert_trace(req),
+        "sharplsp/profiler/startCounters" => {
             profiler::handlers::handle_start_counters(req, connection.sender.clone())
         }
-        "forge/profiler/stopCounters" => profiler::handlers::handle_stop_counters(req),
-        "forge/profiler/collectDump" => {
+        "sharplsp/profiler/stopCounters" => profiler::handlers::handle_stop_counters(req),
+        "sharplsp/profiler/collectDump" => {
             profiler::handlers::handle_collect_dump(req, runtime, connection.sender.clone())
         }
-        "forge/profiler/analyzeHeap" => profiler::handlers::handle_analyze_heap(req, runtime),
-        "forge/profiler/findGCRoots" => profiler::handlers::handle_find_gc_roots(req, runtime),
-        "forge/profiler/inspectObject" => profiler::handlers::handle_inspect_object(req, runtime),
-        "forge/profiler/diffHeapSnapshots" => {
+        "sharplsp/profiler/analyzeHeap" => profiler::handlers::handle_analyze_heap(req, runtime),
+        "sharplsp/profiler/findGCRoots" => profiler::handlers::handle_find_gc_roots(req, runtime),
+        "sharplsp/profiler/inspectObject" => {
+            profiler::handlers::handle_inspect_object(req, runtime)
+        }
+        "sharplsp/profiler/diffHeapSnapshots" => {
             profiler::handlers::handle_diff_heap_snapshots(req, runtime)
         }
-        "forge/profiler/getObjectGraph" => {
+        "sharplsp/profiler/getObjectGraph" => {
             profiler::handlers::handle_get_object_graph(req, runtime)
         }
         _ => {
@@ -760,7 +795,7 @@ fn extract_document_uri(req: &Request) -> Option<Uri> {
 
 // ── Solution Loading ─────────────────────────────────────────────
 
-/// Handle `forge/loadSolution` — reload sidecars with an explicit solution file path.
+/// Handle `sharplsp/loadSolution` — reload sidecars with an explicit solution file path.
 ///
 /// The extension sends this when the user selects a solution. Without it,
 /// the sidecar receives only the workspace root and picks an arbitrary solution
@@ -777,7 +812,7 @@ fn handle_load_solution(
     let sln_path = params
         .get("solutionPath")
         .and_then(|v| v.as_str())
-        .context("forge/loadSolution requires { solutionPath: string }")?;
+        .context("sharplsp/loadSolution requires { solutionPath: string }")?;
 
     info!("Loading solution: {sln_path}");
 
@@ -820,7 +855,7 @@ fn handle_load_solution(
 
 // ── Custom Request Handling ───────────────────────────────────────
 
-/// Handle the custom `forge/workspaceSymbols` request.
+/// Handle the custom `sharplsp/workspaceSymbols` request.
 fn handle_workspace_symbols(
     req: Request,
     parsers: &TsParsers,
@@ -958,7 +993,7 @@ fn fuzzy_match_subsequence(name: &str, query: &str) -> bool {
     true
 }
 
-/// Handle the custom `forge/sortMembers` request.
+/// Handle the custom `sharplsp/sortMembers` request.
 fn handle_sort_members(req: Request, parsers: &TsParsers) -> Result<serde_json::Value> {
     let params: sort_members::SortMembersParams = serde_json::from_value(req.params)?;
     let response = sort_members::handle(&params, parsers)?;

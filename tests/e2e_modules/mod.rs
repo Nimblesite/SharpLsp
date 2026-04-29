@@ -70,6 +70,7 @@ pub use fixtures::*;
 pub use nav_helpers::*;
 
 use std::io::{BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::OnceLock;
@@ -95,7 +96,7 @@ pub struct LspClient {
 }
 
 impl LspClient {
-    /// Spawn the forge-lsp binary (stderr suppressed for fast tests).
+    /// Spawn the sharplsp binary (stderr suppressed for fast tests).
     pub fn start() -> Self {
         Self::spawn(Stdio::null())
     }
@@ -106,12 +107,16 @@ impl LspClient {
     }
 
     pub fn spawn(stderr: Stdio) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_forge-lsp"))
+        let binary = sharplsp_binary_path();
+        let debug = launcher_debug(&binary);
+        let failure = format!("failed to spawn sharplsp\n{debug}");
+        eprintln!("{debug}");
+        let mut child = Command::new(&binary)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(stderr)
             .spawn()
-            .expect("failed to spawn forge-lsp");
+            .expect(&failure);
         let stdin = child.stdin.take().expect("no stdin");
         let stdout = child.stdout.take().expect("no stdout");
         let reader = BufReader::new(stdout);
@@ -315,6 +320,59 @@ impl Drop for LspClient {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+fn sharplsp_binary_path() -> PathBuf {
+    static BINARY: OnceLock<PathBuf> = OnceLock::new();
+    BINARY.get_or_init(resolve_sharplsp_binary_path).clone()
+}
+
+fn resolve_sharplsp_binary_path() -> PathBuf {
+    std::env::var_os("SHARPLSP_EXECUTABLE_PATH")
+        .map(PathBuf::from)
+        .map_or_else(
+            || absolute_binary_path(env!("CARGO_BIN_EXE_sharplsp")),
+            absolutize_binary_path,
+        )
+}
+
+fn absolute_binary_path(path: &str) -> PathBuf {
+    absolutize_binary_path(PathBuf::from(path))
+}
+
+fn absolutize_binary_path(path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        return path;
+    }
+    let manifest_relative = Path::new(env!("CARGO_MANIFEST_DIR")).join(&path);
+    if manifest_relative.exists() {
+        return manifest_relative;
+    }
+    std::env::current_dir()
+        .expect("read current dir")
+        .join(path)
+}
+
+fn launcher_debug(binary: &Path) -> String {
+    let cwd = std::env::current_dir().map_or_else(
+        |err| format!("unavailable ({err})"),
+        |path| path.display().to_string(),
+    );
+    let raw = std::env::var("SHARPLSP_EXECUTABLE_PATH")
+        .unwrap_or_else(|_| env!("CARGO_BIN_EXE_sharplsp").to_string());
+    let metadata = launcher_metadata(binary);
+    format!(
+        "sharplsp launcher: raw={raw} resolved={} cwd={cwd} exists={} {metadata}",
+        binary.display(),
+        binary.exists(),
+    )
+}
+
+fn launcher_metadata(binary: &Path) -> String {
+    std::fs::metadata(binary).map_or_else(
+        |err| format!("metadata_error={err}"),
+        |meta| format!("is_file={} len={}", meta.is_file(), meta.len()),
+    )
 }
 
 /// Panic if `dotnet` CLI is not available. Tests MUST NOT silently skip.

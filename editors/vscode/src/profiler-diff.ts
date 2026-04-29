@@ -12,7 +12,7 @@ import { ObjectGraphPanel } from './profiler-graph.js';
 
 // ── LSP types ─────────────────────────────────────────────────────
 
-interface HeapTypeDiff {
+export interface HeapTypeDiff {
   readonly type_name: string;
   readonly baseline_count: number;
   readonly comparison_count: number;
@@ -23,7 +23,7 @@ interface HeapTypeDiff {
   readonly growth_percent: number;
 }
 
-interface LeakSuspect {
+export interface LeakSuspect {
   readonly type_name: string;
   readonly severity: 'high' | 'medium' | 'low';
   readonly reason: string;
@@ -31,7 +31,7 @@ interface LeakSuspect {
   readonly size_delta_bytes: number;
 }
 
-interface HeapDiffResult {
+export interface HeapDiffResult {
   readonly baseline_total_objects: number;
   readonly baseline_total_size_bytes: number;
   readonly comparison_total_objects: number;
@@ -64,7 +64,7 @@ export class HeapDiffPanel {
   ) {
     const id = ++HeapDiffPanel.panelCounter;
     this.panel = vscode.window.createWebviewPanel(
-      'forgeHeapDiff',
+      'sharplspHeapDiff',
       `Heap Diff #${String(id)}`,
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
@@ -105,10 +105,13 @@ export class HeapDiffPanel {
     const pane = new HeapDiffPanel(baselinePath, comparisonPath, context, client);
 
     try {
-      const result = await client.sendRequest<HeapDiffResult>('forge/profiler/diffHeapSnapshots', {
-        baseline_dump_path: baselinePath,
-        comparison_dump_path: comparisonPath,
-      });
+      const result = await client.sendRequest<HeapDiffResult>(
+        'sharplsp/profiler/diffHeapSnapshots',
+        {
+          baseline_dump_path: baselinePath,
+          comparison_dump_path: comparisonPath,
+        },
+      );
       pane.render(result, baselinePath, comparisonPath);
     } catch (err: unknown) {
       pane.showError(getErrorMessage(err));
@@ -128,7 +131,7 @@ export class HeapDiffPanel {
 
 // ── HTML builders ─────────────────────────────────────────────────
 
-function buildLoadingHtml(baselinePath: string, comparisonPath: string): string {
+export function buildLoadingHtml(baselinePath: string, comparisonPath: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -160,7 +163,7 @@ function buildLoadingHtml(baselinePath: string, comparisonPath: string): string 
 </html>`;
 }
 
-function buildErrorHtml(message: string): string {
+export function buildErrorHtml(message: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -181,7 +184,7 @@ function buildErrorHtml(message: string): string {
 </html>`;
 }
 
-function buildDiffHtml(
+export function buildDiffHtml(
   result: HeapDiffResult,
   baselinePath: string,
   comparisonPath: string,
@@ -397,11 +400,11 @@ ${
 </html>`;
 }
 
-function severityBadge(severity: 'high' | 'medium' | 'low'): string {
+export function severityBadge(severity: 'high' | 'medium' | 'low'): string {
   return `<span class="badge badge-${severity}">${severity}</span>`;
 }
 
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   const abs = Math.abs(bytes);
   const sign = bytes < 0 ? '-' : '';
   if (abs < 1024) return `${sign}${String(abs)} B`;
@@ -411,7 +414,7 @@ function formatBytes(bytes: number): string {
   return `${sign}${mb.toFixed(1)} MB`;
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

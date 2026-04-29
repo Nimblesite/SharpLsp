@@ -7,7 +7,7 @@
 
 All critical issues have been resolved:
 
-1. ~~**Extension talks directly to nuget.org and dotnet CLI**~~ - FIXED. All operations go through `forge/nuget/*` LSP custom requests. Extension is a thin UI shell.
+1. ~~**Extension talks directly to nuget.org and dotnet CLI**~~ - FIXED. All operations go through `sharplsp/nuget/*` LSP custom requests. Extension is a thin UI shell.
 2. ~~**UI uses emoji icons**~~ - FIXED. All icons replaced with Material Symbols Outlined spans.
 3. ~~**Duplicate settings cog**~~ - FIXED. Settings in header + sidebar bottom per design spec.
 4. ~~**Missing Dependencies section**~~ - FIXED. Dependencies section added to details panel.
@@ -19,15 +19,15 @@ All critical issues have been resolved:
 
 ## Phase 1: Rust LSP Host - NuGet Request Handlers
 
-Implement `forge/nuget/*` custom request handlers in the Rust LSP host. These wrap the dotnet CLI and nuget.org HTTP API.
+Implement `sharplsp/nuget/*` custom request handlers in the Rust LSP host. These wrap the dotnet CLI and nuget.org HTTP API.
 
 ### 1.1 Types & Module Structure
 
 - [x] Create `src/nuget/` module (mod.rs, types.rs, cache.rs, search.rs, cli.rs, handlers.rs)
 - [x] Define request/response types for all 5 endpoints (see spec section 3)
-- [x] Register `forge/nuget/*` routes in `handle_custom_request()` in `src/main.rs`
+- [x] Register `sharplsp/nuget/*` routes in `handle_custom_request()` in `src/main.rs`
 
-### 1.2 `forge/nuget/search` Handler
+### 1.2 `sharplsp/nuget/search` Handler
 
 - [x] HTTP GET to `https://azuresearch-usnc.nuget.org/query` with query params
 - [x] Parse NuGet v3 search API JSON response
@@ -36,26 +36,26 @@ Implement `forge/nuget/*` custom request handlers in the Rust LSP host. These wr
 - [x] Cache search results for 60s (avoid API hammering)
 - [x] Popular packages fallback when query is empty
 
-### 1.3 `forge/nuget/versions` Handler
+### 1.3 `sharplsp/nuget/versions` Handler
 
 - [x] HTTP GET to `https://api.nuget.org/v3-flatcontainer/{id}/index.json`
 - [x] Parse version list, return newest-first
 - [x] Cache version lists for 5 minutes
 
-### 1.4 `forge/nuget/installed` Handler
+### 1.4 `sharplsp/nuget/installed` Handler
 
 - [x] Execute `dotnet list <projectPath> package --format json`
 - [x] Parse JSON output, extract packages across all target frameworks
 - [x] Return `NuGetInstalledResponse`
 
-### 1.5 `forge/nuget/install` Handler
+### 1.5 `sharplsp/nuget/install` Handler
 
 - [x] Execute `dotnet add <projectPath> package <packageId> --version <version>`
 - [x] Parse stdout/stderr for success/failure
 - [ ] On success, notify sidecar to reload workspace (project file changed)
 - [x] Return `NuGetInstallResponse`
 
-### 1.6 `forge/nuget/uninstall` Handler
+### 1.6 `sharplsp/nuget/uninstall` Handler
 
 - [x] Execute `dotnet remove <projectPath> package <packageId>`
 - [x] Parse stdout/stderr for success/failure
@@ -64,13 +64,13 @@ Implement `forge/nuget/*` custom request handlers in the Rust LSP host. These wr
 
 ### 1.7 E2E Tests (Rust)
 
-- [x] Test `forge/nuget/search` returns results for "Newtonsoft"
-- [x] Test `forge/nuget/search` with empty query returns popular packages
-- [x] Test `forge/nuget/search` marks installed packages correctly
-- [x] Test `forge/nuget/versions` returns versions for "Newtonsoft.Json"
-- [x] Test `forge/nuget/installed` returns packages for test project
-- [x] Test `forge/nuget/install` adds package to test project
-- [x] Test `forge/nuget/uninstall` removes package from test project
+- [x] Test `sharplsp/nuget/search` returns results for "Newtonsoft"
+- [x] Test `sharplsp/nuget/search` with empty query returns popular packages
+- [x] Test `sharplsp/nuget/search` marks installed packages correctly
+- [x] Test `sharplsp/nuget/versions` returns versions for "Newtonsoft.Json"
+- [x] Test `sharplsp/nuget/installed` returns packages for test project
+- [x] Test `sharplsp/nuget/install` adds package to test project
+- [x] Test `sharplsp/nuget/uninstall` removes package from test project
 - [x] Test error handling: invalid project path
 - [x] Test error handling: nonexistent package ID
 
@@ -86,11 +86,11 @@ Gut the direct CLI/HTTP calls from the extension. Replace with LSP custom reques
 
 ### 2.2 Add LSP Request Wrappers
 
-- [x] Add `searchPackages(query, projectPath)` that sends `forge/nuget/search`
-- [x] Add `getVersions(packageId)` that sends `forge/nuget/versions`
-- [x] Add `getInstalledPackages(projectPath)` that sends `forge/nuget/installed`
-- [x] Add `installPackage(projectPath, packageId, version)` that sends `forge/nuget/install`
-- [x] Add `uninstallPackage(projectPath, packageId)` that sends `forge/nuget/uninstall`
+- [x] Add `searchPackages(query, projectPath)` that sends `sharplsp/nuget/search`
+- [x] Add `getVersions(packageId)` that sends `sharplsp/nuget/versions`
+- [x] Add `getInstalledPackages(projectPath)` that sends `sharplsp/nuget/installed`
+- [x] Add `installPackage(projectPath, packageId, version)` that sends `sharplsp/nuget/install`
+- [x] Add `uninstallPackage(projectPath, packageId)` that sends `sharplsp/nuget/uninstall`
 
 ### 2.3 Wire Up Message Handler
 
@@ -148,15 +148,15 @@ Fix the webview HTML/CSS to match `docs/designs/code.html` exactly.
 - [x] Test: panel opens from command
 - [x] Test: panel reuses existing instance (singleton)
 - [x] Test: panel disposes cleanly
-- [x] Test: panel sends `forge/nuget/installed` on open
+- [x] Test: panel sends `sharplsp/nuget/installed` on open
 
 ### 4.3 LSP Integration Tests
 
-- [x] Test: search sends `forge/nuget/search` with correct params
-- [x] Test: install sends `forge/nuget/install` with correct params
-- [x] Test: uninstall sends `forge/nuget/uninstall` with correct params
+- [x] Test: search sends `sharplsp/nuget/search` with correct params
+- [x] Test: install sends `sharplsp/nuget/install` with correct params
+- [x] Test: uninstall sends `sharplsp/nuget/uninstall` with correct params
 - [x] Test: version change sends uninstall + install sequence
-- [x] Test: tab switch to "installed" sends `forge/nuget/installed`
+- [x] Test: tab switch to "installed" sends `sharplsp/nuget/installed`
 
 ### 4.4 Error Handling Tests
 
@@ -165,7 +165,7 @@ Fix the webview HTML/CSS to match `docs/designs/code.html` exactly.
 
 ## Phase 5: Documentation Updates
 
-- [ ] Update `docs/specs/forge-spec.md` - expand `forge/nuget` row with all 5 endpoints
+- [ ] Update `docs/specs/SHARPLSP-SPEC.md` - expand `sharplsp/nuget` row with all 5 endpoints
 - [ ] Update `docs/plans/CSDEVKIT-PARITY-PLAN.md` - mark NuGet items as in-progress/done
 - [ ] Update `docs/plans/TODO.md` - update NuGet items
 
@@ -219,7 +219,7 @@ chrome inside the editor area. Both `docs/designs/DESIGN.md` § 0 and
 ### 6.3 Test Infrastructure
 
 - [x] Added `waitForInitialLoad()`, `getSearchResultsCount()`, `getInstalledPackageIds()`, `getSelectedPackageId()`, `getCurrentTab()`, `simulateWebviewMessage()` test accessors on `NuGetBrowserPanel`
-- [x] Added `getLspClient` to `ForgeExtensionApi` so tests can grab the real LSP client
+- [x] Added `getLspClient` to `SharpLspExtensionApi` so tests can grab the real LSP client
 - [x] Exported `WebviewMessage` interface for use in tests
 - [x] Test: `installed packages loaded from LSP on open` — regression check for LSP wiring
 - [x] Test: `search message populates searchResults` — regression check for search flow
@@ -236,12 +236,12 @@ chrome inside the editor area. Both `docs/designs/DESIGN.md` § 0 and
 
 This phase implements spec §§ 3.0, 3A, 3.4 (rewritten), 3.5 (rewritten), 3.6, and 6 (rewritten).
 
-### 8.1 Rust Host — `forge/nuget/targets` handler
+### 8.1 Rust Host — `sharplsp/nuget/targets` handler
 
 - [x] Add `NuGetTarget`, `NuGetTargetsParams`, `NuGetTargetsResponse` types in `src/nuget/types.rs`
 - [x] Implement workspace walker (`src/nuget/targets.rs`): find every `*.csproj`, `*.fsproj`, `Directory.Build.props`, `Directory.Packages.props` under the workspace root (bounded depth, skip `bin/obj/.git/node_modules/...`)
 - [x] Detect CPM by parsing nearest `Directory.Packages.props` for `<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>`
-- [x] Register `forge/nuget/targets` route in `handle_custom_request()`
+- [x] Register `sharplsp/nuget/targets` route in `handle_custom_request()`
 - [ ] Cache results keyed by workspace root + (dir mtimes); invalidate on file watcher events *(deferred — current walk is fast enough; revisit if profiling shows it as a hotspot)*
 - [x] Unit test: `enumerates_csproj_fsproj_and_props` — finds all target kinds, ignores `bin/obj`
 - [x] Unit test: `detects_cpm_enabled`
@@ -250,19 +250,19 @@ This phase implements spec §§ 3.0, 3A, 3.4 (rewritten), 3.5 (rewritten), 3.6, 
 
 ### 8.2 Rust Host — XML fast-path install / uninstall
 
-Goal: `forge/nuget/install` returns in < 150 ms by editing XML directly, then fires `dotnet restore` in a background task.
+Goal: `sharplsp/nuget/install` returns in < 150 ms by editing XML directly, then fires `dotnet restore` in a background task.
 
 - [x] Add `src/nuget/xml_edit.rs` with line-oriented XML edit helpers (deliberately NOT a round-trip XML writer — preserves byte-for-byte formatting, whitespace, comments, attribute ordering)
 - [x] `add_package(path, id, version, element)` covering all three element flavours: `<PackageReference Include="..." Version="..."/>`, `<PackageReference Include="..."/>` (CPM csproj), `<PackageVersion Include="..." Version="..."/>` (Directory.Packages.props)
 - [x] CPM-aware install: when a project has a sibling/ancestor `Directory.Packages.props`, the handler edits BOTH files (props gets `<PackageVersion>`, csproj gets `<PackageReference>` without `Version`)
 - [x] `remove_package(path, id, element)` counterpart with the same routing
-- [x] Rewrite `forge/nuget/install` handler (`handlers.rs`):
+- [x] Rewrite `sharplsp/nuget/install` handler (`handlers.rs`):
     - [x] Take `target: NuGetTarget` (with backwards-compat fallback to `projectPath: string` so existing tests still pass)
     - [x] Route by `target.kind` (Project / BuildProps) and CPM detection (`pick_install_element`)
     - [x] Commit XML edit synchronously via `xml_edit::add_package`
     - [x] Spawn `dotnet restore` as a **background** tokio task via `spawn_restore`
     - [x] Return `NuGetInstallResponse { success, message, modifiedFiles }` immediately after XML commit
-- [x] Rewrite `forge/nuget/uninstall` handler the same way
+- [x] Rewrite `sharplsp/nuget/uninstall` handler the same way
 - [x] Delete dead `cli::install_package` / `cli::uninstall_package` (the `dotnet add` / `dotnet remove` shells — replaced by XML fast-path)
 - [x] Unit test: `adds_new_reference_to_existing_item_group`
 - [x] Unit test: `updates_existing_version`
@@ -275,7 +275,7 @@ Goal: `forge/nuget/install` returns in < 150 ms by editing XML directly, then fi
 - [x] Unit test: `preserves_formatting_exactly_for_untouched_content` — comments and whitespace survive
 - [ ] E2E test against the live LSP binary measuring < 150 ms install latency *(deferred — covered transitively by the unit tests on `xml_edit::*`; full LSP-process latency benchmark belongs in a separate perf suite)*
 
-### 8.3 Rust Host — `forge/nuget/restoreProgress` notifications
+### 8.3 Rust Host — `sharplsp/nuget/restoreProgress` notifications
 
 - [x] Add `RestoreProgressParams` + `RestorePhase` enum in `src/nuget/types.rs`
 - [x] Background restore task in `handlers::spawn_restore` sends `started` → `restoring` → `succeeded` / `failed` notifications via the LSP `Sender<Message>` (plumbed through `handle_install` / `handle_uninstall` from `main.rs`)
@@ -291,21 +291,21 @@ Goal: `forge/nuget/install` returns in < 150 ms by editing XML directly, then fi
 
 ### 8.5 Rewire other handlers to take `target`
 
-- [x] `forge/nuget/search` params accept `target: NuGetTarget` (with backwards-compat `projectPath` fallback so existing tests still pass)
-- [x] `forge/nuget/installed` params accept `target` (same fallback)
+- [x] `sharplsp/nuget/search` params accept `target: NuGetTarget` (with backwards-compat `projectPath` fallback so existing tests still pass)
+- [x] `sharplsp/nuget/installed` params accept `target` (same fallback)
 - [x] `dotnet list` path only runs when `target.kind === "project"`; for `buildProps`, parse `<PackageReference>` / `<PackageVersion>` from the XML directly via `list_props_packages`
 - [x] All existing nuget e2e tests continue to pass without modification (the legacy `projectPath` field is still accepted)
 
 ### 8.6 Extension — Target dropdown UI
 
-- [x] Fetch targets on panel open via `forge/nuget/targets` (`nuget-browser/lsp.ts::fetchTargets`)
+- [x] Fetch targets on panel open via `sharplsp/nuget/targets` (`nuget-browser/lsp.ts::fetchTargets`)
 - [x] Render target dropdown in the panel header, between tabs and search box (`nuget-browser/html.ts::buildTargetDropdown`)
 - [x] Group as "Projects" / "Build Props" via `<optgroup>` with Material Symbols `account_tree` icon
-- [x] Persist last-used target per workspace via `ExtensionContext.workspaceState` (`LAST_TARGET_KEY = "forge.nuget.lastTargetId"`)
+- [x] Persist last-used target per workspace via `ExtensionContext.workspaceState` (`LAST_TARGET_KEY = "sharplsp.nuget.lastTargetId"`)
 - [x] Default to last-used target on open, fall back to the project path passed by the explorer, then to the first target
 - [x] On target change: clear caches, re-fire `installed` + current search (`handleChangeTarget`)
 - [x] Dropdown disabled while targets loading (visual spinner overlay)
-- [x] Fallback: if `forge/nuget/targets` returns nothing (or fails), synthesize a single project target from the initial project path so the user is never stuck without a target
+- [x] Fallback: if `sharplsp/nuget/targets` returns nothing (or fails), synthesize a single project target from the initial project path so the user is never stuck without a target
 - [x] Refresh button now triggers `installed + current search` for the active target (vs. the old behaviour of just re-running search)
 - [ ] VSIX test: dropdown renders all targets grouped *(deferred — these tests require a workspace fixture with multiple projects + a Directory.Build.props; the current `NuGetTest` fixture only has one csproj. Adding the multi-project fixture is a separate task.)*
 - [ ] VSIX test: dropdown defaults to last-used target *(same — needs multi-target fixture)*
@@ -316,15 +316,15 @@ Goal: `forge/nuget/install` returns in < 150 ms by editing XML directly, then fi
 Per spec § 3A.1 — every async operation shows a spinner. NO blank or frozen states, ever.
 
 - [x] Add reusable spinner CSS (`@keyframes spin` on Material Symbols `progress_activity` in `nuget-browser/css.ts`)
-- [x] Target dropdown spinner while `forge/nuget/targets` in flight (`target-spinner` overlay)
-- [x] Search box spinner (right edge) during `forge/nuget/search`
+- [x] Target dropdown spinner while `sharplsp/nuget/targets` in flight (`target-spinner` overlay)
+- [x] Search box spinner (right edge) during `sharplsp/nuget/search`
 - [x] Skeleton list placeholders on the first search (`skeletonList()` — six animated rows with pulse animation)
-- [x] Installed-list inline spinner row at top during `forge/nuget/installed`
-- [x] Version dropdown disabled + chevron swapped to spinner during `forge/nuget/versions`
-- [x] Install button spinner + "Installing…" label during `forge/nuget/install` (button disabled during the round-trip)
-- [x] Uninstall button spinner + "Removing…" label during `forge/nuget/uninstall`
+- [x] Installed-list inline spinner row at top during `sharplsp/nuget/installed`
+- [x] Version dropdown disabled + chevron swapped to spinner during `sharplsp/nuget/versions`
+- [x] Install button spinner + "Installing…" label during `sharplsp/nuget/install` (button disabled during the round-trip)
+- [x] Uninstall button spinner + "Removing…" label during `sharplsp/nuget/uninstall`
 - [x] Global toast: `Installing <id> <version> into <target.displayName>…` (`buildToast()`)
-- [x] Toast updates on `forge/nuget/restoreProgress` notifications (success → green tick, fail → red error)
+- [x] Toast updates on `sharplsp/nuget/restoreProgress` notifications (success → green tick, fail → red error)
 - [x] Toast auto-clears 2 s after success / 5 s after failure
 - [x] Centralized loading-key set (`LoadingKey` typed: `"targets" | "installed" | "search" | "versions" | install:* | uninstall:* | restore:*`) so future async ops slot in trivially
 - [ ] VSIX test: search spinner appears within 50 ms of typing *(deferred — VS Code's webview test harness doesn't expose render timing without a separate puppeteer-style harness; the regression risk is mitigated by `getActiveLoadingKeys()` test accessor which lets future tests assert the spinner key is present)*
@@ -347,7 +347,7 @@ Per spec § 3A.1 — every async operation shows a spinner. NO blank or frozen s
 
 ### 8.10 Restore progress routing
 
-- [x] Extension subscribes to `forge/nuget/restoreProgress` notifications via `lsp.onNotification` (`subscribeToRestoreProgress`)
+- [x] Extension subscribes to `sharplsp/nuget/restoreProgress` notifications via `lsp.onNotification` (`subscribeToRestoreProgress`)
 - [x] Notifications drive `loading.add/delete(restoreKey(targetId))` and update the toast
 - [x] Webview re-renders on every notification so the spinner / toast stays in sync
 - [ ] VSIX test: restore progress end-to-end updates the UI *(deferred — same harness limitation as above)*

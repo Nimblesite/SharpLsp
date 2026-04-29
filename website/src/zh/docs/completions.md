@@ -9,11 +9,11 @@ eleventyNavigation:
 
 ![VS Code 中的代码补全](/assets/screenshots/vscode-completions-page.png)
 
-*由 Roslyn 驱动的完整 IntelliSense 补全 — 与 Visual Studio 相同的引擎。*
+*Alpha 版 VS Code 扩展中由 Roslyn 驱动的 C# 补全。*
 
 # 代码补全
 
-Forge 为 C# 提供 IntelliSense 质量的代码补全，由完整的 Roslyn API 驱动。补全通过 C# sidecar 路由，使 Rust 宿主专注于快速语法操作。
+SharpLsp 通过 Roslyn 为 C# 提供代码补全。补全请求通过 C# sidecar 路由，使 Rust 宿主专注于快速语法操作。
 
 ## 性能目标
 
@@ -25,7 +25,7 @@ Forge 为 C# 提供 IntelliSense 质量的代码补全，由完整的 Roslyn API
 
 ## C# 补全（Roslyn）
 
-C# sidecar 使用 Roslyn 的 `CompletionService` 生成补全。这与 Visual Studio 提供完全相同的结果 — 相同的引擎，相同的 API，零近似。
+C# sidecar 使用 Roslyn 的 `CompletionService` 生成补全，因此该功能建立在 .NET 工具生态使用的同一编译器平台上。
 
 ### 补全内容
 
@@ -65,7 +65,7 @@ var json = JsonSerializer.Serialize(obj);
 ## 配置
 
 ```toml
-# forge.toml
+# sharplsp.toml
 [completions]
 # 显示未引用程序集中的类型（需要 NuGet 还原）
 import_completions = true
@@ -79,7 +79,7 @@ min_trigger_length = 0
 
 ## LSP 协议
 
-Forge 广播：
+SharpLsp 广播：
 
 ```json
 {

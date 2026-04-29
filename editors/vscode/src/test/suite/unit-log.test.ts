@@ -170,4 +170,165 @@ suite('Log Module — Output Channels', () => {
       log.info('after dispose and re-creation');
     });
   });
+
+  // ── warn() ───────────────────────────────────────────────────
+  test('warn() does not throw', () => {
+    assert.doesNotThrow(() => {
+      log.warn('test warning');
+    });
+  });
+
+  test('warn() can be called with an empty string', () => {
+    assert.doesNotThrow(() => {
+      log.warn('');
+    });
+  });
+
+  test('warn() can be called with special characters', () => {
+    assert.doesNotThrow(() => {
+      log.warn('Warn: ñ é — 日本語 🔥');
+    });
+  });
+
+  test('warn() can be called multiple times in succession', () => {
+    assert.doesNotThrow(() => {
+      for (let i = 0; i < 50; i++) {
+        log.warn(`Warning ${i}`);
+      }
+    });
+  });
+
+  test('warn() writes to the output channel (does not throw after output() is called)', () => {
+    const channel = log.output();
+    assert.ok(channel, 'Channel must exist before warn()');
+    assert.doesNotThrow(() => {
+      log.warn('after explicit output() call');
+    });
+  });
+
+  test('warn() works after dispose() and re-creation', () => {
+    log.warn('before dispose');
+    log.dispose();
+    assert.doesNotThrow(() => {
+      log.warn('after dispose and re-creation');
+    });
+  });
+
+  // ── error() ──────────────────────────────────────────────────
+  test('error() does not throw', () => {
+    assert.doesNotThrow(() => {
+      log.error('test error');
+    });
+  });
+
+  test('error() can be called with an empty string', () => {
+    assert.doesNotThrow(() => {
+      log.error('');
+    });
+  });
+
+  test('error() can be called with special characters', () => {
+    assert.doesNotThrow(() => {
+      log.error('Error: ñ é — 日本語 🔥');
+    });
+  });
+
+  test('error() can be called multiple times in succession', () => {
+    assert.doesNotThrow(() => {
+      for (let i = 0; i < 50; i++) {
+        log.error(`Error ${i}`);
+      }
+    });
+  });
+
+  test('error() works after dispose() and re-creation', () => {
+    log.error('before dispose');
+    log.dispose();
+    assert.doesNotThrow(() => {
+      log.error('after dispose and re-creation');
+    });
+  });
+
+  // ── traceInfo() ──────────────────────────────────────────────
+  test('traceInfo() does not throw', () => {
+    assert.doesNotThrow(() => {
+      log.traceInfo('test trace message');
+    });
+  });
+
+  test('traceInfo() can be called with an empty string', () => {
+    assert.doesNotThrow(() => {
+      log.traceInfo('');
+    });
+  });
+
+  test('traceInfo() can be called with special characters', () => {
+    assert.doesNotThrow(() => {
+      log.traceInfo('Trace: ñ é — 日本語 🔥');
+    });
+  });
+
+  test('traceInfo() can be called multiple times in succession', () => {
+    assert.doesNotThrow(() => {
+      for (let i = 0; i < 50; i++) {
+        log.traceInfo(`Trace ${i}`);
+      }
+    });
+  });
+
+  test('traceInfo() writes to the trace channel (does not throw after trace() is called)', () => {
+    const channel = log.trace();
+    assert.ok(channel, 'Trace channel must exist before traceInfo()');
+    assert.doesNotThrow(() => {
+      log.traceInfo('after explicit trace() call');
+    });
+  });
+
+  test('traceInfo() works after dispose() and re-creation', () => {
+    log.traceInfo('before dispose');
+    log.dispose();
+    assert.doesNotThrow(() => {
+      log.traceInfo('after dispose and re-creation');
+    });
+  });
+
+  // ── logFilePath() ─────────────────────────────────────────────
+  test('logFilePath() returns a non-empty string', () => {
+    const p = log.logFilePath();
+    assert.ok(typeof p === 'string' && p.length > 0, 'logFilePath must return a non-empty string');
+  });
+
+  test('logFilePath() ends with sharplsp-vscode.log', () => {
+    const p = log.logFilePath();
+    assert.ok(
+      p.endsWith('sharplsp-vscode.log'),
+      `logFilePath must end with sharplsp-vscode.log, got ${p}`,
+    );
+  });
+
+  test('logFilePath() returns the same value on repeated calls', () => {
+    const first = log.logFilePath();
+    const second = log.logFilePath();
+    assert.strictEqual(first, second, 'logFilePath must be stable');
+  });
+
+  // ── Mixed usage ───────────────────────────────────────────────
+  test('all log functions work together without throwing', () => {
+    assert.doesNotThrow(() => {
+      log.info('info message');
+      log.warn('warn message');
+      log.error('error message');
+      log.traceInfo('trace message');
+    });
+  });
+
+  test('all log functions work after fresh dispose/recreate cycle', () => {
+    log.dispose();
+    assert.doesNotThrow(() => {
+      log.info('info after recreate');
+      log.warn('warn after recreate');
+      log.error('error after recreate');
+      log.traceInfo('trace after recreate');
+    });
+  });
 });

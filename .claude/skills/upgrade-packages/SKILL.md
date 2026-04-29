@@ -23,7 +23,7 @@ Scan the repo for these package ecosystems:
 |---|---|---|
 | `Cargo.toml` (workspace) | Rust (cargo) | Repo root |
 | `package.json` / `package-lock.json` | Node.js (npm) | `editors/vscode/` |
-| `*.csproj` / `*.fsproj` / `Directory.Build.props` | C#/F# (.NET / NuGet) | `sidecars/Forge.Sidecars.sln` |
+| `*.csproj` / `*.fsproj` / `Directory.Build.props` | C#/F# (.NET / NuGet) | `sidecars/SharpLsp.Sidecars.sln` |
 
 ## Step 2 — List Outdated Packages
 
@@ -47,9 +47,9 @@ npm outdated --prefix editors/vscode
 
 ### C#/.NET (NuGet)
 ```bash
-dotnet list sidecars/Forge.Sidecars.sln package --outdated
+dotnet list sidecars/SharpLsp.Sidecars.sln package --outdated
 ```
-For transitive dependencies too: `dotnet list sidecars/Forge.Sidecars.sln package --outdated --include-transitive`
+For transitive dependencies too: `dotnet list sidecars/SharpLsp.Sidecars.sln package --outdated --include-transitive`
 
 **Read the docs:** https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-list-package
 
@@ -82,7 +82,7 @@ npx npm-check-updates -u --packageFile editors/vscode/package.json && npm instal
 
 ### C#/.NET (NuGet)
 ```bash
-dotnet outdated --upgrade sidecars/Forge.Sidecars.sln
+dotnet outdated --upgrade sidecars/SharpLsp.Sidecars.sln
 ```
 If `dotnet-outdated` tool is not installed: `dotnet tool install -g dotnet-outdated-tool`
 

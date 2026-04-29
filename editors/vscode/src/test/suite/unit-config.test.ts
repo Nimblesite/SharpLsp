@@ -12,17 +12,13 @@ suite('Config Module — Direct Function Tests', () => {
 
   test('serverPath() returns the configured value when set', async () => {
     const wsConfig = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    const original = wsConfig.get<string>('server.path');
+    const original = wsConfig.get<string>('lspPath');
     try {
-      await wsConfig.update(
-        'server.path',
-        '/tmp/fake-forge-lsp',
-        vscode.ConfigurationTarget.Workspace,
-      );
+      await wsConfig.update('lspPath', '/tmp/fake-sharplsp', vscode.ConfigurationTarget.Workspace);
       const result = config.serverPath();
-      assert.strictEqual(result, '/tmp/fake-forge-lsp');
+      assert.strictEqual(result, '/tmp/fake-sharplsp');
     } finally {
-      await wsConfig.update('server.path', original, vscode.ConfigurationTarget.Workspace);
+      await wsConfig.update('lspPath', original, vscode.ConfigurationTarget.Workspace);
     }
   });
 
@@ -84,9 +80,9 @@ suite('Config Module — Direct Function Tests', () => {
   });
 
   // ── section() (internal, tested via all the above) ───────────
-  test("all config functions read from the 'forge' section", () => {
+  test("all config functions read from the 'sharplsp' section", () => {
     const wsConfig = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    assert.ok(wsConfig, 'forge config section must be accessible');
+    assert.ok(wsConfig, 'sharplsp config section must be accessible');
   });
 
   // ── Edge cases ───────────────────────────────────────────────

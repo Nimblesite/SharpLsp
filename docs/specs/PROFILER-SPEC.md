@@ -1,10 +1,10 @@
 # Profiler Integration Specification
 
-**Parent:** [FORGE-SPEC.md](FORGE-SPEC.md)
+**Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
 ## 1. Overview
 
-Forge integrates .NET diagnostic tools (`dotnet-trace`, `dotnet-counters`, `dotnet-dump`) directly into the editor via LSP custom requests, giving developers a simple UI around the standard .NET diagnostics CLI. No external tools, no terminal juggling — profile, trace, and analyze memory leaks from your editor.
+SharpLsp integrates .NET diagnostic tools (`dotnet-trace`, `dotnet-counters`, `dotnet-dump`) directly into the editor via LSP custom requests, giving developers a simple UI around the standard .NET diagnostics CLI. No external tools, no terminal juggling — profile, trace, and analyze memory leaks from your editor.
 
 **Reference:** [dotnet-trace documentation](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-trace)
 
@@ -78,11 +78,11 @@ On startup (lazy, first use), the host locates diagnostic tools:
 
 ## 4. LSP Custom Requests
 
-All profiler requests use the `forge/` namespace.
+All profiler requests use the `sharplsp/` namespace.
 
 ### 4.1 Process Discovery
 
-**Method:** `forge/profiler/listProcesses`
+**Method:** `sharplsp/profiler/listProcesses`
 
 **Params:**
 ```typescript
@@ -104,7 +104,7 @@ Calls `dotnet-trace ps` and parses output. Returns all discoverable .NET process
 
 ### 4.2 Trace Session
 
-**Method:** `forge/profiler/startTrace`
+**Method:** `sharplsp/profiler/startTrace`
 
 **Params:**
 ```typescript
@@ -129,7 +129,7 @@ interface StartTraceResult {
 }
 ```
 
-**Method:** `forge/profiler/stopTrace`
+**Method:** `sharplsp/profiler/stopTrace`
 
 **Params:**
 ```typescript
@@ -149,9 +149,9 @@ interface StopTraceResult {
 
 ### 4.2.1 Trace File Conversion
 
-A `.nettrace` file is not directly viewable — it must be converted to SpeedScope JSON (or Chromium JSON) before it can be opened in a visualizer. Forge exposes an explicit conversion entrypoint so that any trace file on disk (including orphaned files from a previous session, a colleague's dump, or a CI artifact) can be opened in Forge without re-recording.
+A `.nettrace` file is not directly viewable — it must be converted to SpeedScope JSON (or Chromium JSON) before it can be opened in a visualizer. SharpLsp exposes an explicit conversion entrypoint so that any trace file on disk (including orphaned files from a previous session, a colleague's dump, or a CI artifact) can be opened in SharpLsp without re-recording.
 
-**Method:** `forge/profiler/convertTrace`
+**Method:** `sharplsp/profiler/convertTrace`
 
 **Params:**
 ```typescript
@@ -180,11 +180,11 @@ Invokes `dotnet-trace convert <input> --format <format>`. The resulting sibling 
 | `speedscope` | `<input>.speedscope.json` |
 | `chromium` | `<input>.chromium.json` |
 
-Stopping a trace session (`forge/profiler/stopTrace`) already runs this conversion automatically when the session produced data. `convertTrace` is for files where no live session exists — for example, when the editor was closed during recording, or when opening a `.nettrace` the user recorded elsewhere.
+Stopping a trace session (`sharplsp/profiler/stopTrace`) already runs this conversion automatically when the session produced data. `convertTrace` is for files where no live session exists — for example, when the editor was closed during recording, or when opening a `.nettrace` the user recorded elsewhere.
 
 ### 4.3 Counter Monitoring
 
-**Method:** `forge/profiler/startCounters`
+**Method:** `sharplsp/profiler/startCounters`
 
 **Params:**
 ```typescript
@@ -206,7 +206,7 @@ interface StartCountersResult {
 
 Counter values streamed via LSP notification:
 
-**Notification:** `forge/profiler/counterUpdate`
+**Notification:** `sharplsp/profiler/counterUpdate`
 
 ```typescript
 interface CounterUpdateParams {
@@ -223,7 +223,7 @@ interface CounterValue {
 }
 ```
 
-**Method:** `forge/profiler/stopCounters`
+**Method:** `sharplsp/profiler/stopCounters`
 
 **Params:**
 ```typescript
@@ -234,7 +234,7 @@ interface StopCountersParams {
 
 ### 4.4 Memory Dump Collection
 
-**Method:** `forge/profiler/collectDump`
+**Method:** `sharplsp/profiler/collectDump`
 
 **Params:**
 ```typescript
@@ -257,7 +257,7 @@ interface CollectDumpResult {
 
 ### 4.5 Memory Dump Analysis
 
-**Method:** `forge/profiler/analyzeHeap`
+**Method:** `sharplsp/profiler/analyzeHeap`
 
 **Params:**
 ```typescript
@@ -285,7 +285,7 @@ interface HeapTypeInfo {
 }
 ```
 
-**Method:** `forge/profiler/findGCRoots`
+**Method:** `sharplsp/profiler/findGCRoots`
 
 **Params:**
 ```typescript
@@ -319,12 +319,12 @@ Memory leak investigation follows a structured workflow exposed through the UI:
 
 | Step | Action | Tool |
 |------|--------|------|
-| 1 | Collect baseline heap dump | `forge/profiler/collectDump` |
+| 1 | Collect baseline heap dump | `sharplsp/profiler/collectDump` |
 | 2 | Exercise the suspected leak path | (user action) |
-| 3 | Collect second heap dump | `forge/profiler/collectDump` |
-| 4 | Compare heap stats between dumps | `forge/profiler/analyzeHeap` on both |
+| 3 | Collect second heap dump | `sharplsp/profiler/collectDump` |
+| 4 | Compare heap stats between dumps | `sharplsp/profiler/analyzeHeap` on both |
 | 5 | Identify growing types | Editor diff view of heap stats |
-| 6 | Trace GC roots of suspect objects | `forge/profiler/findGCRoots` |
+| 6 | Trace GC roots of suspect objects | `sharplsp/profiler/findGCRoots` |
 
 ### 5.2 Live Counter Monitoring for Leak Detection
 
@@ -341,11 +341,11 @@ The editor highlights counters that show sustained growth patterns.
 
 ### 5.3 Automated Leak Detection
 
-Forge automatically detects memory leaks by comparing two heap snapshots taken at different points in time. The user triggers "Baseline → Exercise → Compare" and Forge does the analysis automatically.
+SharpLsp automatically detects memory leaks by comparing two heap snapshots taken at different points in time. The user triggers "Baseline → Exercise → Compare" and SharpLsp does the analysis automatically.
 
 #### 5.3.1 Heap Snapshot Diffing
 
-**Method:** `forge/profiler/diffHeapSnapshots`
+**Method:** `sharplsp/profiler/diffHeapSnapshots`
 
 **Params:**
 ```typescript
@@ -398,7 +398,7 @@ interface LeakSuspect {
 
 #### 5.3.2 Leak Classification Heuristics
 
-Forge classifies leak suspects by combining snapshot diff data with heuristics:
+SharpLsp classifies leak suspects by combining snapshot diff data with heuristics:
 
 | Severity | Criteria |
 |----------|----------|
@@ -432,11 +432,11 @@ flowchart TD
 
 ## 5A. Object Graph Visualization
 
-Forge provides an interactive object retention graph that shows what objects exist in memory and what's holding on to them. This is the killer feature for memory leak investigation — you see the actual reference chains keeping objects alive.
+SharpLsp provides an interactive object retention graph that shows what objects exist in memory and what's holding on to them. This is the killer feature for memory leak investigation — you see the actual reference chains keeping objects alive.
 
 ### 5A.1 Object Graph Data Model
 
-**Method:** `forge/profiler/getObjectGraph`
+**Method:** `sharplsp/profiler/getObjectGraph`
 
 **Params:**
 ```typescript
@@ -504,7 +504,7 @@ interface ObjectGraphStats {
 
 ### 5A.2 Object Inspection
 
-**Method:** `forge/profiler/inspectObject`
+**Method:** `sharplsp/profiler/inspectObject`
 
 **Params:**
 ```typescript
@@ -625,7 +625,7 @@ graph TD
 
 ### 5A.5 Retention Path View
 
-For any selected object, Forge shows the complete chain from GC root to the object. This answers the question: **"Why isn't this being garbage collected?"**
+For any selected object, SharpLsp shows the complete chain from GC root to the object. This answers the question: **"Why isn't this being garbage collected?"**
 
 ```mermaid
 graph TD
@@ -690,12 +690,12 @@ Created  ──start──▶  Running  ──stop──▶  Stopped  ──clea
 
 - Each session gets a unique ID (UUID v4)
 - Sessions tracked in a `DashMap<String, ProfileSession>` on the Rust host
-- Maximum concurrent sessions: 5 (configurable via `forge.toml`)
+- Maximum concurrent sessions: 5 (configurable via `sharplsp.toml`)
 - Orphaned sessions (editor disconnect) cleaned up on LSP shutdown
 
 ### 6.2 Configuration
 
-`forge.toml` settings:
+`sharplsp.toml` settings:
 
 ```toml
 [profiler]
@@ -704,7 +704,7 @@ default_trace_duration = 30
 default_trace_format = "speedscope"
 default_counter_providers = ["System.Runtime"]
 default_counter_interval = 1
-output_directory = ".forge/profiles"
+output_directory = ".sharplsp/profiles"
 ```
 
 ## 7. Editor Integration
@@ -802,11 +802,11 @@ The overflow menu (`⋯`) holds picker-based workflows that don't need a visible
 
 ### 7.1.2 Trace File Opening
 
-Forge MUST let the user open a `.nettrace` **file** as a first-class action, not just as a side-effect of stopping a session. Users who find an orphaned `.nettrace` (e.g. because the editor was closed mid-recording) need a path forward.
+SharpLsp MUST let the user open a `.nettrace` **file** as a first-class action, not just as a side-effect of stopping a session. Users who find an orphaned `.nettrace` (e.g. because the editor was closed mid-recording) need a path forward.
 
-The `forge.profiler.openTrace` command:
+The `sharplsp.profiler.openTrace` command:
 1. Shows an open-file dialog filtering for `.nettrace`, `.speedscope.json`, and `.json` files.
-2. If the chosen file is `.nettrace`, invokes `forge/profiler/convertTrace` to produce a sibling `.speedscope.json`.
+2. If the chosen file is `.nettrace`, invokes `sharplsp/profiler/convertTrace` to produce a sibling `.speedscope.json`.
 3. Opens the resulting SpeedScope file in the external SpeedScope web viewer.
 
 Stopping a trace session uses the same pipeline, so the UX is consistent: every trace — freshly captured or loaded from disk — ends up in SpeedScope with one interaction.
@@ -815,27 +815,27 @@ Stopping a trace session uses the same pipeline, so the UX is consistent: every 
 
 | Command | Title |
 |---------|-------|
-| `forge.profiler.listProcesses` | Forge: List .NET Processes |
-| `forge.profiler.startTrace` | Forge: Start Performance Trace |
-| `forge.profiler.stopTrace` | Forge: Stop Performance Trace |
-| `forge.profiler.startCounters` | Forge: Start Counter Monitoring |
-| `forge.profiler.stopCounters` | Forge: Stop Counter Monitoring |
-| `forge.profiler.collectDump` | Forge: Collect Memory Dump |
-| `forge.profiler.analyzeHeap` | Forge: Analyze Heap Dump |
-| `forge.profiler.diffSnapshots` | Forge: Compare Heap Snapshots |
-| `forge.profiler.detectLeaks` | Forge: Detect Memory Leaks |
-| `forge.profiler.showObjectGraph` | Forge: Show Object Retention Graph |
-| `forge.profiler.inspectObject` | Forge: Inspect Object |
-| `forge.profiler.openTrace` | Forge: Open Trace File… |
-| `forge.profiler.convertTrace` | Forge: Convert .nettrace to SpeedScope |
-| `forge.profiler.stopSession` | Forge: Stop Session |
-| `forge.profiler.revealOutput` | Forge: Reveal Output File in Finder |
-| `forge.profiler.copyOutputPath` | Forge: Copy Output Path |
-| `forge.profiler.showCountersPanel` | Forge: Show Live Counters Panel |
-| `forge.profiler.traceProcess` | Forge: Start Trace on This Process |
-| `forge.profiler.countersProcess` | Forge: Start Counters on This Process |
-| `forge.profiler.dumpProcess` | Forge: Collect Memory Dump of This Process |
-| `forge.profiler.copyPid` | Forge: Copy PID |
+| `sharplsp.profiler.listProcesses` | SharpLsp: List .NET Processes |
+| `sharplsp.profiler.startTrace` | SharpLsp: Start Performance Trace |
+| `sharplsp.profiler.stopTrace` | SharpLsp: Stop Performance Trace |
+| `sharplsp.profiler.startCounters` | SharpLsp: Start Counter Monitoring |
+| `sharplsp.profiler.stopCounters` | SharpLsp: Stop Counter Monitoring |
+| `sharplsp.profiler.collectDump` | SharpLsp: Collect Memory Dump |
+| `sharplsp.profiler.analyzeHeap` | SharpLsp: Analyze Heap Dump |
+| `sharplsp.profiler.diffSnapshots` | SharpLsp: Compare Heap Snapshots |
+| `sharplsp.profiler.detectLeaks` | SharpLsp: Detect Memory Leaks |
+| `sharplsp.profiler.showObjectGraph` | SharpLsp: Show Object Retention Graph |
+| `sharplsp.profiler.inspectObject` | SharpLsp: Inspect Object |
+| `sharplsp.profiler.openTrace` | SharpLsp: Open Trace File… |
+| `sharplsp.profiler.convertTrace` | SharpLsp: Convert .nettrace to SpeedScope |
+| `sharplsp.profiler.stopSession` | SharpLsp: Stop Session |
+| `sharplsp.profiler.revealOutput` | SharpLsp: Reveal Output File in Finder |
+| `sharplsp.profiler.copyOutputPath` | SharpLsp: Copy Output Path |
+| `sharplsp.profiler.showCountersPanel` | SharpLsp: Show Live Counters Panel |
+| `sharplsp.profiler.traceProcess` | SharpLsp: Start Trace on This Process |
+| `sharplsp.profiler.countersProcess` | SharpLsp: Start Counters on This Process |
+| `sharplsp.profiler.dumpProcess` | SharpLsp: Collect Memory Dump of This Process |
+| `sharplsp.profiler.copyPid` | SharpLsp: Copy PID |
 
 ## 8. Performance Requirements
 
@@ -862,7 +862,7 @@ Stopping a trace session uses the same pipeline, so the UX is consistent: every 
 
 ## 10. Competitive Parity Matrix
 
-| Feature | VS | Rider | CDK | Forge Target | Priority |
+| Feature | VS | Rider | CDK | SharpLsp Target | Priority |
 |---------|----|----|-----|-------------|----------|
 | CPU trace collection | Yes | Yes | No | Yes | P0 |
 | Live performance counters | Yes (PerfView) | Yes | No | Yes | P0 |

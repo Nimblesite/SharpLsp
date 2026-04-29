@@ -14,7 +14,18 @@
     },
     "docs": {
       "title": "Documentation",
-      "gettingStarted": "Getting Started"
+      "gettingStarted": "Getting Started",
+      "architecture": "Architecture",
+      "editorSetup": "Editor Setup",
+      "configuration": "Configuration",
+      "codeCompletions": "Code Completions",
+      "diagnostics": "Diagnostics",
+      "hover": "Hover & Quick Info",
+      "goToDefinition": "Go to Definition",
+      "refactoring": "Refactoring & Code Actions",
+      "contextMenus": "Context Menus",
+      "nuget": "NuGet Package Manager",
+      "profiler": "Profiler"
     },
     "footer": {
       "documentation": "Documentation",
@@ -46,7 +57,18 @@
     },
     "docs": {
       "title": "文档",
-      "gettingStarted": "快速入门"
+      "gettingStarted": "快速入门",
+      "architecture": "架构",
+      "editorSetup": "编辑器配置",
+      "configuration": "配置",
+      "codeCompletions": "代码补全",
+      "diagnostics": "诊断",
+      "hover": "悬停与快速信息",
+      "goToDefinition": "跳转到定义",
+      "refactoring": "重构与代码操作",
+      "contextMenus": "上下文菜单",
+      "nuget": "NuGet 包管理器",
+      "profiler": "性能分析器"
     },
     "footer": {
       "documentation": "文档",
@@ -61,6 +83,49 @@
       "github": "GitHub",
       "issues": "问题反馈",
       "blog": "博客"
+    }
+  },
+  "ja": {
+    "blog": {
+      "back": "ブログへ戻る",
+      "title": "ブログ",
+      "subtitle": "最新記事とアップデート",
+      "tags": "タグ",
+      "categories": "カテゴリー",
+      "empty": "ブログ記事はまだありません。しばらくしてからご確認ください。"
+    },
+    "nav": {
+      "docs": "ドキュメント",
+      "blog": "ブログ"
+    },
+    "docs": {
+      "title": "ドキュメント",
+      "gettingStarted": "はじめに",
+      "architecture": "アーキテクチャ",
+      "editorSetup": "エディター設定",
+      "configuration": "設定",
+      "codeCompletions": "コード補完",
+      "diagnostics": "診断",
+      "hover": "ホバーとクイック情報",
+      "goToDefinition": "定義へ移動",
+      "refactoring": "リファクタリングとコードアクション",
+      "contextMenus": "コンテキストメニュー",
+      "nuget": "NuGet パッケージマネージャー",
+      "profiler": "プロファイラー"
+    },
+    "footer": {
+      "documentation": "ドキュメント",
+      "features": "機能",
+      "resources": "リソース",
+      "community": "コミュニティ",
+      "gettingStarted": "はじめに",
+      "architecture": "アーキテクチャ",
+      "editorSetup": "エディター設定",
+      "configuration": "設定",
+      "codeCompletions": "コード補完",
+      "github": "GitHub",
+      "issues": "Issue",
+      "blog": "ブログ"
     }
   }
 }

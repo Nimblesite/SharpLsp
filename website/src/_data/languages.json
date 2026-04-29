@@ -1,4 +1,17 @@
 {
-  "en": { "code": "en", "nativeName": "English" },
-  "zh": { "code": "zh", "nativeName": "中文" }
+  "en": {
+    "code": "en",
+    "nativeName": "English",
+    "flag": "🇺🇸"
+  },
+  "zh": {
+    "code": "zh",
+    "nativeName": "中文",
+    "flag": "🇨🇳"
+  },
+  "ja": {
+    "code": "ja",
+    "nativeName": "日本語",
+    "flag": "🇯🇵"
+  }
 }

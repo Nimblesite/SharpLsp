@@ -1,195 +1,68 @@
-# Forge
+# SharpLsp
 
-The open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
+<p align="center">
+  <strong>Open-source, editor-agnostic .NET language tooling for C# and F#.</strong><br>
+  The same C# and F# experience in VS Code today, with more editors on the way.
+</p>
 
-**Overall aim: Fix the .NET developer experience.**
-Full feature-for-feature superiority over Visual Studio, Rider, and C# Dev Kit. Zero proprietary dependencies. Zero licenses. Zero vendor lock-in.
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:24px 0;">
+  <section style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:16px;background:var(--surface-low,transparent);">
+    <h3 style="margin-top:0;">Any Editor</h3>
+    <p style="margin-bottom:0;">Use the editor you already like. SharpLsp provides the same C# and F# intelligence behind the scenes.</p>
+  </section>
+  <section style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:16px;background:var(--surface-low,transparent);">
+    <h3 style="margin-top:0;">C# + F#</h3>
+    <p style="margin-bottom:0;">Roslyn powers C# semantics. FSharp.Compiler.Service powers F#. F# is a first-class target, not a bolt-on.</p>
+  </section>
+  <section style="border:1px solid var(--border,#d0d7de);border-radius:8px;padding:16px;background:var(--surface-low,transparent);">
+    <h3 style="margin-top:0;">No Lock-In</h3>
+    <p style="margin-bottom:0;">MIT licensed. No per-seat licenses, no Windows VM requirement, no editor-specific language engine.</p>
+  </section>
+</div>
 
-## Getting Started
+SharpLsp is building the .NET development stack that should already exist: Visual Studio/Rider-grade language intelligence, solution awareness, diagnostics, refactoring, package management, debugging, and profiling without forcing every developer into the same IDE.
 
-### Recommended: Dev Container
+## Why This Exists
 
-The fastest way to get a working development environment is the included dev container. It comes pre-configured with Rust, .NET 10 SDK, Node 20, and all required tooling.
+.NET tooling is powerful, but the experience is fragmented:
 
-1. Install [Docker](https://www.docker.com/) and the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) for VS Code
-2. Open this repository in VS Code
-3. When prompted, click **Reopen in Container** (or run `Dev Containers: Reopen in Container` from the command palette)
-4. The container will build with Rust, .NET 10 SDK, Node 20, clippy, rustfmt, and the VS Code extension dependencies
+- **Visual Studio** still sets the benchmark for .NET tooling, but it is Windows-only.
+- **C# Dev Kit** is tied to VS Code, carries enterprise licensing constraints, and does not replace Visual Studio's profiler or performance tooling.
+- **Rider** is excellent, but its .NET intelligence lives inside Rider and cannot be reused by the rest of your team's editors.
+- **F#** too often trails behind C# instead of receiving equal first-class tooling.
+- **Neovim, Zed, Helix, Emacs, and other editors** are left stitching together partial community workflows.
 
-### Manual Setup
-
-If you prefer to develop locally:
-
-- **Rust** (stable, latest) with `clippy` and `rustfmt` components
-- **.NET 10 SDK** for sidecar development
-- **Node 20** for the VS Code extension
-
-```sh
-# Build the Rust LSP host
-cargo build
-
-# Run clippy lints
-cargo clippy
-
-# Run tests
-cargo test
-
-# Build the VS Code extension
-cd editors/vscode && npm install && npm run compile
-```
-
-## Install
-
-Install the LSP binary and sidecars once; every editor picks them up from `$PATH`.
-
-```sh
-make install        # forge-lsp → ~/.local/bin, sidecars → ~/.local/lib/forge
-```
-
-### VS Code
-
-```sh
-make build-vsix
-code --install-extension forge.vsix
-```
-
-### Zed
-
-Zed compiles extensions from source at install time, so `package-zed` stages a self-contained source tree you point Zed at.
-
-```sh
-rustup target add wasm32-wasip1   # one-off
-make package-zed                  # stages target/zed-extension/ + forge-zed-extension.tar.gz
-```
-
-Then in Zed: command palette → `zed: install dev extension` → pick `target/zed-extension/` (absolute path). Zed builds the wasm and loads it. Re-run `make package-zed` and hit **Rebuild** to iterate.
-
-Full `forge-lsp` (hover, completions, go-to-def, diagnostics, …) works in Zed over stdio. The `/forge-tree <Solution.sln|Solution.slnx>` slash command renders the solution tree in the assistant. A sidebar Solution Explorer is not possible — Zed's extension API has no panel/tree-view/webview contribution point.
-
-### JetBrains Rider
-
-```sh
-make package-rider        # requires JDK 21 (brew install openjdk@21)
-```
-
-Then in Rider: **Settings → Plugins → ⚙ → Install Plugin from Disk…** and pick `forge-rider.zip`. Restart. The plugin attaches `forge-lsp` over LSP for `.cs/.csx/.fs/.fsx/.fsi` and adds a **Forge Solution** tool window that mirrors the VS Code solution explorer (projects, NuGet packages, project references, namespaces, types, members — all via the same `forge/*` custom LSP requests).
-
-### Neovim
-
-```lua
-local lspconfig = require('lspconfig')
-local configs = require('lspconfig.configs')
-
-if not configs.forge_lsp then
-  configs.forge_lsp = {
-    default_config = {
-      cmd = { "forge-lsp" },
-      filetypes = { "cs", "fsharp" },
-      root_dir = lspconfig.util.root_pattern("*.sln", "*.slnx", "*.csproj", "*.fsproj"),
-    },
-  }
-end
-
-lspconfig.forge_lsp.setup({})
-```
-
-### Helix
-
-Add to your `languages.toml`:
-
-```toml
-[[language]]
-name = "c-sharp"
-language-servers = ["forge-lsp"]
-
-[[language]]
-name = "fsharp"
-language-servers = ["forge-lsp"]
-
-[language-server.forge-lsp]
-command = "forge-lsp"
-```
-
-### Emacs
-
-With **lsp-mode**:
-
-```elisp
-(lsp-register-client
-  (make-lsp-client
-    :new-connection (lsp-stdio-connection '("forge-lsp"))
-    :major-modes '(csharp-mode fsharp-mode)
-    :server-id 'forge-lsp))
-```
-
-With **eglot**:
-
-```elisp
-(add-to-list 'eglot-server-programs
-             '((csharp-mode fsharp-mode) . ("forge-lsp")))
-```
-
-### Sublime Text
-
-Install the [LSP](https://packagecontrol.io/packages/LSP) package, then add a custom client in **Settings > Package Settings > LSP > Settings**:
-
-```json
-{
-  "clients": {
-    "forge-lsp": {
-      "enabled": true,
-      "command": ["forge-lsp"],
-      "selector": "source.cs | source.fsharp"
-    }
-  }
-}
-```
+SharpLsp treats language tooling as infrastructure. The editor should be a preference, not the place where the .NET language engine is trapped.
 
 ## Architecture
 
-Three-tier architecture:
+SharpLsp is split into three parts:
 
-- **Tier 1 — Rust LSP Host**: LSP connection (JSON-RPC over stdio), VFS, tree-sitter incremental parsing (C#; F# grammar integration pending), salsa cache, request routing, sidecar lifecycle
-- **Tier 2 — C# Sidecar (Roslyn)**: Long-running .NET 10 process, MSBuildWorkspace, full Roslyn API (completions, diagnostics, refactorings, formatting), ICSharpCode.Decompiler for metadata navigation
-- **Tier 3 — F# Sidecar (FCS)**: Long-running .NET 10 process, FSharp.Compiler.Service for type checking, hover, and semantic requests
+- **Rust host**: owns editor communication, request routing, virtual files, tree-sitter syntax work, and sidecar lifecycle.
+- **C# sidecar**: hosts Roslyn for semantic C# features.
+- **F# sidecar**: hosts FSharp.Compiler.Service for semantic F# features.
 
-IPC: MessagePack over named pipes (Windows) / Unix domain sockets (Linux, macOS).
+That split keeps the editor protocol fast and portable while letting the .NET compilers do the semantic work they are built for.
 
-C# and F# are equal first-class citizens.
+## Install
 
-## Repository Structure
+### VS Code
 
-```
-forge/
-├── src/                  # Rust LSP host
-├── sidecars/
-│   ├── Forge.Sidecar.FSharp/   # F# sidecar (FSharp.Compiler.Service)
-│   ├── Forge.Sidecar.CSharp/   # C# sidecar (Roslyn)
-│   ├── Forge.Sidecar.Common/   # Shared sidecar code
-│   └── Forge.Sidecars.sln
-├── editors/
-│   ├── vscode/           # VS Code extension (TypeScript)
-│   └── zed/              # Zed extension (Rust → wasm32-wasip1)
-├── docs/
-│   ├── specs/            # Specifications — how functionality works
-│   ├── plans/            # Implementation plans — how we build it (with TODOs)
-│   └── DESIGN-SYSTEM.md
-├── examples/             # Example files for testing
-├── tests/                # E2E tests
-├── website/              # Project website
-├── .devcontainer/        # Dev container configuration
-└── forge.example.toml    # Example configuration
-```
+Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sharplsp.sharp-lsp). The extension ships with the SharpLsp engine and both sidecars — no Rust toolchain or separate install required.
+
+### Neovim & Zed
+
+Neovim and Zed support are coming soon.
 
 ## Documentation
 
-All documentation lives in `docs/`.
+Full documentation is available at [sharplsp.dev/docs](https://sharplsp.dev/docs).
 
-- **Specs** (`docs/specs/`): Specifications that describe **how functionality works**. These are the source of truth for feature behavior, protocols, and architecture. Naming convention: `[COMPONENT]-[FEATURE]-SPEC.md`.
+For the full argument behind the project, read [Why .NET Needs Editor-Agnostic Tooling](https://sharplsp.dev/blog/editor-agnostic-dotnet-lsp/).
 
-- **Plans** (`docs/plans/`): Implementation plans that describe **how we are going to build it**. Each plan includes TODO checklists tracking progress toward the spec. Naming convention: `[COMPONENT]-[FEATURE]-PLAN.md`.
+## Contributing
 
-The key spec is `docs/specs/FORGE-SPEC.md` — the full technical specification for the project.
+Want to build from source or contribute? See the [Contributing guide](https://sharplsp.dev/docs/contributing/).
 
 ## License
 

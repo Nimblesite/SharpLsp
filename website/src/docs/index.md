@@ -6,43 +6,27 @@ eleventyNavigation:
   order: 1
 ---
 
-# Getting Started
+# Getting Started with SharpLsp
 
-Forge is an open-source .NET Language Server Protocol (LSP) implementation built in Rust. It provides full C# and F# language support across any editor that supports LSP.
+SharpLsp is an open-source Language Server Protocol (LSP) implementation for .NET (C# + F#), built in Rust. One server, every editor. Full feature parity with Visual Studio, Rider, and C# Dev Kit — zero proprietary dependencies, zero licenses, zero vendor lock-in.
 
-## Prerequisites
+## Install
 
-- [Rust](https://rustup.rs/) (latest stable)
-- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- An LSP-compatible editor (VS Code, Neovim, Emacs, Helix, Zed, etc.)
+### VS Code
 
-## Installation
+Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sharplsp.sharplsp).
 
-### From Source
+The extension ships with the `sharplsp` binary and both sidecars bundled inside the VSIX. No Rust toolchain. No separate binary install. Open a `.sln` or `.csproj` and SharpLsp starts automatically.
 
-```bash
-git clone https://github.com/MelbourneDeveloper/forge.git
-cd forge
-cargo build --release
-```
+<section class="callout">
+  <h2><span class="material-symbols-outlined" aria-hidden="true">deployed_code</span>Prerequisite</h2>
+  <ul class="requirement-list">
+    <li><span class="material-symbols-outlined" aria-hidden="true">deployed_code</span><div><h3>.NET 10.0 SDK</h3><p>Required for project parsing and MSBuild integration. Ensure <code>dotnet</code> is on your PATH.</p></div></li>
+  </ul>
+</section>
 
-### VS Code Extension
+### Neovim & Zed
 
-Install the Forge extension from the VS Code marketplace, or install the `.vsix` file directly.
+Neovim and Zed support are coming soon.
 
-## Architecture Overview
-
-Forge uses a three-tier architecture:
-
-| Tier | Component | Role |
-|------|-----------|------|
-| **1** | Rust LSP Host | LSP connection, VFS, tree-sitter parsing, salsa cache |
-| **2** | C# Sidecar | Roslyn-powered completions, diagnostics, refactoring |
-| **3** | F# Sidecar | FSharp.Compiler.Service, FSharpLint diagnostics |
-
-The Rust host handles all LSP communication and syntax-level operations. Semantic operations are delegated to the appropriate .NET sidecar process over IPC.
-
-## Next Steps
-
-- [Architecture](/docs/architecture/) — deep dive into the three-tier design
-- [Editor Setup](/docs/editors/) — configure your editor to use Forge
+<p class="next-link"><a href="/docs/architecture/">Next: Architecture <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>

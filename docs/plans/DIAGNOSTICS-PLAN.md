@@ -14,7 +14,7 @@ The sidecar's per-document diagnostics path is correct and survives the pivot. T
 - [x] Map sidecar `DiagnosticResult` → LSP `Diagnostic` struct
   - Map severity: `"Error"` → 1, `"Warning"` → 2, `"Info"` → 3, `"Hidden"` → 4
   - Map code, message, range
-  - Set `source: "forge-csharp"`
+  - Set `source: "sharplsp-csharp"`
 - [x] On `textDocument/didOpen` / `textDocument/didChange` / `textDocument/didSave`: request diagnostics from sidecar (background task) — kept as the push fallback path
 - [x] Send `textDocument/publishDiagnostics` notification with mapped results — push fallback only; pull is primary (Phase 5)
 - [x] Clear diagnostics on `textDocument/didClose`
@@ -93,7 +93,7 @@ This is now the **primary** diagnostic pipeline. Pull is mandatory for editors t
 - [ ] **Delete** `request_solution_in_background` from `src/diagnostics.rs` (the eager-scan trigger)
 - [ ] **Delete** `verify_error_files`, `sync_text_to_sidecar` from `src/diagnostics.rs` (verification pass — see Phase 5.5)
 - [ ] Cancel in-flight per-document IPC pulls when editor sends a fresh pull for the same document
-- [ ] Server capability: add `diagnosticProvider.identifier = "forge"` so editors distinguish Forge's diagnostics
+- [ ] Server capability: add `diagnosticProvider.identifier = "sharplsp"` so editors distinguish SharpLsp's diagnostics
 
 ### C# Sidecar
 
@@ -120,7 +120,7 @@ This is now the **primary** diagnostic pipeline. Pull is mandatory for editors t
 
 ## Phase 5.5: Diagnostic Verification (P0) — REMOVED
 
-> ⚠️ **Removed by architecture pivot.** The verification pass re-sent `textDocument/didChange` with the same disk text and re-fetched diagnostics, expecting Roslyn to clear false positives. It does not work — `Solution.WithDocumentText` does not re-resolve metadata references or re-run source generators, so the same phantom errors come back. The pull + refresh model in Phase 5 removes the pass's reason to exist: Forge no longer asserts diagnostics until the editor pulls. See [DIAGNOSTICS-SPEC §10.3](../specs/DIAGNOSTICS-SPEC.md#103-why-the-previous-verification-pass-is-gone).
+> ⚠️ **Removed by architecture pivot.** The verification pass re-sent `textDocument/didChange` with the same disk text and re-fetched diagnostics, expecting Roslyn to clear false positives. It does not work — `Solution.WithDocumentText` does not re-resolve metadata references or re-run source generators, so the same phantom errors come back. The pull + refresh model in Phase 5 removes the pass's reason to exist: SharpLsp no longer asserts diagnostics until the editor pulls. See [DIAGNOSTICS-SPEC §10.3](../specs/DIAGNOSTICS-SPEC.md#103-why-the-previous-verification-pass-is-gone).
 
 Original tasks (kept here for traceability — every item is undone in Phase 5):
 
@@ -147,7 +147,7 @@ The single biggest source of phantom CS0246 is unresolved NuGet `<PackageReferen
 
 ### Rust LSP Host
 
-- [ ] On workspace open: create LSP `$/progress` work-done token (`workspace/forge-load`)
+- [ ] On workspace open: create LSP `$/progress` work-done token (`workspace/sharplsp-load`)
 - [ ] Forward sidecar restore progress (start, per-project status, end) via `$/progress` notifications
 - [ ] On `workspace/initializationComplete` from sidecar: send LSP `workspace/projectInitializationComplete` (custom notification, matches Roslyn LSP contract); end the work-done progress
 - [ ] Add `diagnostics.auto_restore_on_open` to `DiagnosticsConfig` (default true)
@@ -213,7 +213,7 @@ The single biggest source of phantom CS0246 is unresolved NuGet `<PackageReferen
 - [ ] **Rust host**: Debounced refresh queue (2000ms) → LSP `workspace/diagnostic/refresh`
 - [ ] **Rust host**: Delete `request_solution_in_background`, `verify_error_files`, `sync_text_to_sidecar`
 - [ ] **Rust host**: Cancel in-flight per-document IPC pulls when fresher pull arrives
-- [ ] **Rust host**: Server capability `diagnosticProvider.identifier = "forge"`
+- [ ] **Rust host**: Server capability `diagnosticProvider.identifier = "sharplsp"`
 - [ ] **C# sidecar**: Extend `workspace/diagnostics` IPC payload with `PreviousResultId`; response with `ResultId` + `Changed`
 - [ ] **C# sidecar**: Add `workspace/diagnostics/pull` handler with partial-response streaming
 - [ ] **C# sidecar**: Add `WorkspaceDiagnosticsCache` keyed on `(DocumentId, ProjectVersion, DocumentVersion, GlobalStateVersion)`

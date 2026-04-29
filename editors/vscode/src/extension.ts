@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { type ExtensionContext, commands, window, workspace } from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
@@ -30,7 +31,7 @@ import * as deps from './dependencies.js';
 import * as log from './log.js';
 import * as profiler from './profiler.js';
 import * as solution from './solution.js';
-import { ForgeStatusBar, ServerState } from './status.js';
+import { SharpLspStatusBar, ServerState } from './status.js';
 import { type ExplorerNode, SolutionExplorerProvider, buildQualifiedName } from './tree.js';
 import { NuGetBrowserPanel } from './nuget-browser.js';
 import { registerBuildCommands } from './build.js';
@@ -44,7 +45,7 @@ import { registerTestStatusLens } from './test-lens.js';
 import { initProjectDepsStore } from './project-deps-store.js';
 
 /** Public API exported from activate() for tests and other extensions. */
-export interface ForgeExtensionApi {
+export interface SharpLspExtensionApi {
   readonly explorerProvider: SolutionExplorerProvider;
   readonly profilerProvider: profiler.ProfilerTreeProvider;
   /** Get the active LSP client, if started. Used by tests. */
@@ -52,14 +53,14 @@ export interface ForgeExtensionApi {
 }
 
 let lspClient: LanguageClient | undefined;
-let statusBar: ForgeStatusBar | undefined;
+let statusBar: SharpLspStatusBar | undefined;
 let explorerProvider: SolutionExplorerProvider | undefined;
 let profilerProvider: profiler.ProfilerTreeProvider | undefined;
 
-export async function activate(context: ExtensionContext): Promise<ForgeExtensionApi> {
+export async function activate(context: ExtensionContext): Promise<SharpLspExtensionApi> {
   // FIRST line: synchronous file log so we always know activate() ran,
   // even if every subsequent line throws.
-  log.info('Forge activating…');
+  log.info('SharpLsp activating…');
   log.info(`File log: ${log.logFilePath()}`);
   try {
     return await activateInner(context);
@@ -73,9 +74,9 @@ export async function activate(context: ExtensionContext): Promise<ForgeExtensio
   }
 }
 
-async function activateInner(context: ExtensionContext): Promise<ForgeExtensionApi> {
-  log.info('step 1: ForgeStatusBar');
-  statusBar = new ForgeStatusBar();
+async function activateInner(context: ExtensionContext): Promise<SharpLspExtensionApi> {
+  log.info('step 1: SharpLspStatusBar');
+  statusBar = new SharpLspStatusBar();
   context.subscriptions.push(statusBar);
 
   log.info('step 2: SolutionExplorerProvider');
@@ -120,15 +121,38 @@ async function activateInner(context: ExtensionContext): Promise<ForgeExtensionA
   log.info('step 10b: initProjectDepsStore');
   initProjectDepsStore(context);
 
-  log.info('step 11: client.start (await)');
+  log.info('step 11: activateDeploymentToolkit');
+  const manifestPath = path.join(context.extensionPath, 'shipwright.json');
+  const { activateDeploymentToolkit } = await import('@nimblesite/shipwright-vscode');
+  const deployResult = await activateDeploymentToolkit(context, { manifestPath });
+  // Only halt activation if the LSP binary itself is unresolvable.
+  // Sidecar failures degrade gracefully — LSP still starts.
+  const lspBlocking = deployResult.diagnostics.filter(
+    (d) => d.blocking && d.componentId === 'sharplsp',
+  );
+  if (lspBlocking.length > 0) {
+    const msg = lspBlocking[0]?.message ?? 'LSP binary not found';
+    log.error(`Deployment toolkit (LSP binary): ${msg}`);
+    statusBar.setState(ServerState.Error);
+    return { explorerProvider, profilerProvider, getLspClient: () => undefined };
+  }
+  if (!deployResult.ok) {
+    const nonLspBlocking = deployResult.diagnostics.filter(
+      (d) => d.blocking && d.componentId !== 'sharplsp',
+    );
+    for (const diag of nonLspBlocking) {
+      log.warn(`Deployment toolkit (non-fatal): [${diag.componentId}] ${diag.message}`);
+    }
+  }
+  log.info('step 11b: client.start (await)');
   try {
     lspClient = await client.start(context, statusBar);
-    log.info('step 11: client.start returned');
+    log.info('step 11b: client.start returned');
   } catch (err: unknown) {
     const msg = getErrorMessage(err);
     log.error(`Failed to start server: ${msg}`);
     statusBar.setState(ServerState.Error);
-    void window.showErrorMessage(`Forge: Failed to start language server. ${msg}`);
+    void window.showErrorMessage(`SharpLsp: Failed to start language server. ${msg}`);
     return {
       explorerProvider,
       profilerProvider,
@@ -252,16 +276,14 @@ function browseNuGetPackages(node: ExplorerNode | undefined, context: ExtensionC
 
 function registerContextMenuCommands(context: ExtensionContext): void {
   context.subscriptions.push(
-    commands.registerCommand(CMD_COPY_QUALIFIED_NAME, (node: ExplorerNode) => {
+    commands.registerCommand(CMD_COPY_QUALIFIED_NAME, async (node: ExplorerNode) => {
       const name = buildQualifiedName(node);
-      void vscode.env.clipboard.writeText(name).then(() => {
-        void window.showInformationMessage(`Copied: ${name}`);
-      });
+      await vscode.env.clipboard.writeText(name);
+      void window.showInformationMessage(`Copied: ${name}`);
     }),
-    commands.registerCommand(CMD_COPY_NAME, (node: ExplorerNode) => {
-      void vscode.env.clipboard.writeText(node.sortName).then(() => {
-        void window.showInformationMessage(`Copied: ${node.sortName}`);
-      });
+    commands.registerCommand(CMD_COPY_NAME, async (node: ExplorerNode) => {
+      await vscode.env.clipboard.writeText(node.sortName);
+      void window.showInformationMessage(`Copied: ${node.sortName}`);
     }),
     commands.registerCommand(CMD_REVEAL_IN_EXPLORER, (node: ExplorerNode) => {
       if (node.symbolUri === undefined) return;
@@ -338,7 +360,7 @@ async function sortMembers(node: ExplorerNode): Promise<void> {
     return;
   }
 
-  const config = workspace.getConfiguration('forge.memberSortOrder');
+  const config = workspace.getConfiguration('sharplsp.memberSortOrder');
   const hierarchy = config.get<string[]>('hierarchy', [
     'accessibility',
     'category',
@@ -371,7 +393,7 @@ async function sortMembers(node: ExplorerNode): Promise<void> {
   ]);
 
   try {
-    const response = await lsp.sendRequest<SortMembersResponse | null>('forge/sortMembers', {
+    const response = await lsp.sendRequest<SortMembersResponse | null>('sharplsp/sortMembers', {
       uri: node.symbolUri,
       range: node.symbolRange,
       sortConfig: { hierarchy, accessibilityOrder, categoryOrder },
@@ -511,12 +533,12 @@ async function loadSolution(selected: solution.SolutionSelection): Promise<void>
   // wrong solution when multiple exist — breaking hover, definition, etc.
   if (lspClient !== undefined) {
     try {
-      await lspClient.sendRequest('forge/loadSolution', {
+      await lspClient.sendRequest('sharplsp/loadSolution', {
         solutionPath: selected.path,
       });
     } catch (err: unknown) {
       const msg = getErrorMessage(err);
-      log.error(`forge/loadSolution failed: ${msg}`);
+      log.error(`sharplsp/loadSolution failed: ${msg}`);
     }
   }
 

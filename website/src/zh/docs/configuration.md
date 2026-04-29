@@ -9,12 +9,14 @@ eleventyNavigation:
 
 # 配置
 
-Forge 通过放置在工作区根目录（与 `.sln` 或根 `.csproj` 同级）的 `forge.toml` 文件进行配置。所有设置都有合理的默认值 — 该文件是可选的。
+![VS Code 中的 SharpLsp 工作区配置](/assets/screenshots/vscode-configuration-page.png)
 
-## forge.toml 参考
+SharpLsp 通过放置在工作区根目录（与 `.sln` 或根 `.csproj` 同级）的 `sharplsp.toml` 文件进行配置。所有设置都有合理的默认值 — 该文件是可选的。
+
+## sharplsp.toml 参考
 
 ```toml
-# forge.toml — 完整配置参考
+# sharplsp.toml — 完整配置参考
 
 # ─── 诊断 ───────────────────────────────────────────────────────────────
 [diagnostics]
@@ -64,11 +66,11 @@ file = ""
 
 ## 文件位置
 
-Forge 从工作区根目录向上遍历目录树来查找 `forge.toml`。找到的第一个 `forge.toml` 将被使用。如果未找到，则应用所有默认值。
+SharpLsp 从工作区根目录向上遍历目录树来查找 `sharplsp.toml`。找到的第一个 `sharplsp.toml` 将被使用。如果未找到，则应用所有默认值。
 
 ```
 my-solution/
-├── forge.toml          ← 放在这里
+├── sharplsp.toml          ← 放在这里
 ├── MyApp.sln
 ├── MyApp.Core/
 │   └── MyApp.Core.csproj
@@ -78,7 +80,7 @@ my-solution/
 
 ## 热重载
 
-大多数设置可通过 `workspace/didChangeConfiguration` 热重载。对 `solution_wide_analysis`、`project_filter`、`min_severity` 和 `analyzers_enabled` 的更改无需重启 Forge 即可生效。
+大多数设置可通过 `workspace/didChangeConfiguration` 热重载。对 `solution_wide_analysis`、`project_filter`、`min_severity` 和 `analyzers_enabled` 的更改无需重启 SharpLsp 即可生效。
 
 需要重启的设置：
 - `[sidecar]` 设置
@@ -99,13 +101,13 @@ dotnet_diagnostic.CA1054.severity = error       # URI 参数不应为字符串
 
 | 变量 | 描述 |
 |----------|-------------|
-| `FORGE_LOG` | 覆盖日志级别（例如，`FORGE_LOG=debug`）|
-| `FORGE_CONFIG` | 覆盖 `forge.toml` 路径 |
-| `FORGE_DOTNET_ROOT` | 覆盖用于 MSBuild 发现的 .NET SDK 根目录 |
+| `SHARPLSP_LOG` | 覆盖日志级别（例如，`SHARPLSP_LOG=debug`）|
+| `SHARPLSP_CONFIG` | 覆盖 `sharplsp.toml` 路径 |
+| `SHARPLSP_DOTNET_ROOT` | 覆盖用于 MSBuild 发现的 .NET SDK 根目录 |
 
 ## 禁用功能
 
-在最小模式下运行 Forge（仅语法，无 sidecar）：
+在最小模式下运行 SharpLsp（仅语法，无 sidecar）：
 
 ```toml
 [diagnostics]
@@ -116,4 +118,4 @@ solution_wide_analysis = false
 import_completions = false
 ```
 
-这将禁用 sidecar 启动和所有语义操作。Forge 仍将以全速提供 tree-sitter 驱动的文档符号、折叠范围和选择范围。
+这将禁用 sidecar 启动和所有语义操作。SharpLsp 仍将以全速提供 tree-sitter 驱动的文档符号、折叠范围和选择范围。

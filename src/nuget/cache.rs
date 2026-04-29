@@ -72,7 +72,7 @@ pub fn http_client() -> reqwest::Client {
         return client.clone();
     }
     let client = reqwest::Client::builder()
-        .user_agent("forge-lsp")
+        .user_agent("sharplsp")
         .timeout(Duration::from_secs(10))
         .build()
         .unwrap_or_default();

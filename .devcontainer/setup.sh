@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "==> Post-create setup for Forge development..."
+echo "==> Post-create setup for SharpLsp development..."
 
 # Rust components
 rustup component add clippy rustfmt llvm-tools-preview

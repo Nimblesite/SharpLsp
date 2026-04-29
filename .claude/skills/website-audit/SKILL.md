@@ -31,7 +31,7 @@ Audit Progress:
 - Fix issues at the core where the static content templates are stored - not in the outputted HTML (e.g. `website/_site/`)
 - Never manually edit the generated website content directly
 
-The Forge website is in `website/` and uses Eleventy as the static site generator. Brand color: `#19d078` (green).
+The SharpLsp website is in `website/` and uses Eleventy as the static site generator. Brand color: `#19d078` (green).
 
 ## Step 1 — Read guidelines
 
@@ -51,7 +51,7 @@ Apply the guidance from the AI search article. Check:
 
 1. **Content quality** — Is content original, expert-level, and comprehensive? Flag thin or duplicated pages.
 2. **Clear structure** — Do pages use descriptive headings, lists, and concise answers to likely questions?
-3. **Entity clarity** — Are key terms, products, and concepts defined clearly so AI can extract them? (e.g., "Forge" as an open-source .NET LSP, "sidecar" as the Roslyn/FCS process)
+3. **Entity clarity** — Are key terms, products, and concepts defined clearly so AI can extract them? (e.g., "SharpLsp" as an open-source .NET LSP, "sidecar" as the Roslyn/FCS process)
 4. **Freshness signals** — Are dates, update timestamps, and authorship present?
 
 Fix issues directly in the source files. For each fix, note what changed and why.
@@ -101,7 +101,7 @@ Reference: [Structured data guidelines](https://developers.google.com/search/doc
 1. Check for existing JSON-LD `<script type="application/ld+json">` blocks.
 2. Verify the structured data matches the page content (no misleading markup).
 3. Add missing structured data where appropriate:
-   - **Organization** on the homepage (Forge as an open-source project)
+   - **Organization** on the homepage (SharpLsp as an open-source project)
    - **SoftwareApplication** for the LSP server
    - **BreadcrumbList** for navigation
    - **FAQ** for pages with question/answer content

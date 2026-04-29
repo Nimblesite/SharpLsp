@@ -4,8 +4,10 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   closeAllEditors,
+  openSharpLspPanel,
   replaceDocumentContent,
   setupLspTestSuite,
+  takeScreenshot,
   teardownLspTestSuite,
   waitForDiagnostics,
   waitForDiagnosticsCleared,
@@ -86,6 +88,46 @@ suite('Diagnostics / Problems Panel', () => {
     const error = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
     assert.ok(error, 'Must have at least one error-level diagnostic');
     assert.ok(error.message.length > 0, 'Error diagnostic must have a message');
+    assert.ok(error.source === 'sharplsp-csharp', "Error source must be 'sharplsp-csharp'");
+    assert.ok(error.range.start.line >= 0, 'Error must have a valid start line');
+    assert.ok(error.range.end.character >= 0, 'Error must have a valid end character');
+    // The error is on line 4 (0-indexed): "return "not an int""
+    assert.strictEqual(
+      error.range.start.line,
+      4,
+      'Type error must be on line 4 (the return statement)',
+    );
+    assert.ok(
+      error.message.toLowerCase().includes('string') ||
+        error.message.toLowerCase().includes('cannot'),
+      'Error message must describe the type mismatch',
+    );
+    // Load fixture solution so Solution Explorer is populated in the screenshot.
+    if (process.env['SHARPLSP_SCREENSHOTS']) {
+      const ext2 = vscode.extensions.getExtension('sharplsp.sharp-lsp');
+      const api2 = ext2?.exports as
+        | {
+            explorerProvider?: {
+              loadSolution(p: string): Promise<void>;
+              getChildren(e?: unknown): unknown[] | undefined;
+            };
+          }
+        | undefined;
+      if (api2?.explorerProvider) {
+        const slnPath2 = path.join(workspaceRoot, 'TestFixtures.sln');
+        await api2.explorerProvider.loadSolution(slnPath2);
+        let waited2 = 0;
+        while ((api2.explorerProvider.getChildren() ?? []).length === 0 && waited2 < 8000) {
+          await new Promise((r) => setTimeout(r, 200));
+          waited2 += 200;
+        }
+      }
+    }
+    // Open Problems panel so diagnostics are visible in the screenshot.
+    await vscode.commands.executeCommand('workbench.actions.view.problems');
+    await new Promise((r) => setTimeout(r, 1000));
+    await openSharpLspPanel();
+    await takeScreenshot('vscode-diagnostics-page.png');
   });
 
   test('file with missing type shows diagnostics', async function () {
@@ -175,7 +217,21 @@ suite('Diagnostics / Problems Panel', () => {
     assert.ok(error, 'Must have an error diagnostic');
     assert.ok(error.range.start.line >= 0, 'Range start line must be valid');
     assert.ok(error.range.start.character >= 0, 'Range start character must be valid');
-    assert.ok(error.source === 'forge-csharp', "Diagnostic source must be 'forge-csharp'");
+    assert.ok(error.range.end.line >= error.range.start.line, 'Range end line must be >= start');
+    assert.ok(error.range.end.character >= 0, 'Range end character must be valid');
+    assert.ok(error.source === 'sharplsp-csharp', "Diagnostic source must be 'sharplsp-csharp'");
+    assert.ok(
+      error.message.includes('string') || error.message.includes('int'),
+      'Error message must reference the mismatched type',
+    );
+    assert.ok(
+      typeof error.code === 'string' || typeof error.code === 'number' || error.code !== undefined,
+      'Diagnostic must have a code',
+    );
+    // All diagnostics must have a source
+    for (const d of diagnostics) {
+      assert.ok(d.source, `Every diagnostic must have a source, got undefined for: ${d.message}`);
+    }
   });
 
   // ── Close Clears ──────────────────────────────────────────────
@@ -203,10 +259,8 @@ suite('Diagnostics / Problems Panel', () => {
     // Now close the document.
     await closeAllEditors();
 
-    // Give the server a moment to process the close notification.
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    const after = vscode.languages.getDiagnostics(diagUri);
+    // Wait for the server to process the close notification and clear diagnostics.
+    const after = await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS * 2);
     assert.strictEqual(after.length, 0, 'Diagnostics must be empty after closing the document');
 
     // Re-open for suite teardown to restore content.

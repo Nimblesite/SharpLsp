@@ -1,1 +1,1 @@
-rootProject.name = "forge-rider"
+rootProject.name = "sharplsp-rider"

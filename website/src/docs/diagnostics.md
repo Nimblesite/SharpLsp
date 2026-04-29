@@ -4,17 +4,13 @@ title: Diagnostics
 eleventyExcludeFromCollections: true
 ---
 
-**VS Code**
 ![Diagnostics in VS Code](/assets/screenshots/vscode-diagnostics-page.png)
 
-**Zed**
-![Diagnostics in Zed](/assets/screenshots/zed-diagnostics-page.png)
-
-*Real-time Roslyn diagnostics across your entire solution — not just open files.*
+*Roslyn diagnostics in the alpha VS Code extension.*
 
 # Diagnostics
 
-Forge delivers real-time C# compiler errors, warnings, and Roslyn analyzer diagnostics for your entire solution — not just open files. Solution-wide analysis is **on by default**, which is the #1 feature C# Dev Kit lacks and the primary reason developers choose Visual Studio or Rider for large solutions.
+SharpLsp routes C# compiler errors, warnings, and Roslyn analyzer diagnostics through the C# sidecar. The current website shows the VS Code extension state; F# diagnostics are still in progress.
 
 ## How It Works
 
@@ -41,7 +37,7 @@ window     notifications       GetDiagnostics()
 | Open files only | ✗ | Only documents currently open in the editor |
 | Per-project filter | ✗ | Specific projects matched by name pattern |
 
-Solution-wide analysis catches errors in files you haven't opened — build breaks in other projects, missing method implementations, type mismatches across project boundaries.
+Solution-wide analysis is part of the SharpLsp direction. The alpha extension is still being hardened, so treat diagnostics behavior as active development rather than a beta stability guarantee.
 
 ## Diagnostic Categories
 
@@ -68,7 +64,7 @@ Diagnostics are pushed in three situations:
 ## Configuration
 
 ```toml
-# forge.toml
+# sharplsp.toml
 [diagnostics]
 # Run Roslyn analyzers (not just compiler errors)
 analyzers_enabled = true
@@ -106,17 +102,3 @@ project_filter = ["MyApp.Core", "MyApp.Api"]
 | Warning | 2 — Warning |
 | Info | 3 — Information |
 | Hidden | 4 — Hint |
-
-## Competitive Comparison
-
-| Feature | Visual Studio | C# Dev Kit | Rider | **Forge** |
-|---------|:---:|:---:|:---:|:---:|
-| Compiler errors and warnings | ✓ | ✓ | ✓ | ✓ |
-| Roslyn analyzer diagnostics | ✓ | ✓ | ✓ | ✓ |
-| Solution-wide analysis (default on) | ✓ | ✗ | ✓ | **✓** |
-| Unused using detection | ✓ | ✓ | ✓ | ✓ |
-| Nullable reference analysis | ✓ | ✓ | ✓ | ✓ |
-| Third-party NuGet analyzers | ✓ | ✓ | ✓ | ✓ |
-
-Solution-wide analysis is default-on in Forge. C# Dev Kit doesn't support it at all. This single difference makes Forge the correct choice for any multi-project solution.
-

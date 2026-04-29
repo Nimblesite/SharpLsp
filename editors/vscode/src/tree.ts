@@ -119,9 +119,9 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
 
   /** Set initial context key for sort order toolbar icon. */
   public initSortContext(): void {
-    void commands.executeCommand('setContext', 'forge.sortOrder', state.sortOrder.value);
+    void commands.executeCommand('setContext', 'sharplsp.sortOrder', state.sortOrder.value);
     state.sortOrder.subscribe((order) => {
-      void commands.executeCommand('setContext', 'forge.sortOrder', order);
+      void commands.executeCommand('setContext', 'sharplsp.sortOrder', order);
     });
   }
 

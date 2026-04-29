@@ -10,7 +10,7 @@ function section(): ReturnType<typeof workspace.getConfiguration> {
   return workspace.getConfiguration(CONFIG_SECTION);
 }
 
-/** User-configured path to the forge-lsp binary, or empty string. */
+/** User-configured path to the sharplsp binary, or empty string. */
 export function serverPath(): string {
   return section().get<string>(CONFIG_SERVER_PATH) ?? '';
 }

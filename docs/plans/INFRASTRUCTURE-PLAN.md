@@ -1,6 +1,6 @@
 # Infrastructure Plan
 
-Core infrastructure improvements for the Forge LSP host.
+Core infrastructure improvements for the SharpLsp LSP host.
 
 ## F# Tree-sitter Grammar
 
@@ -16,7 +16,7 @@ Core infrastructure improvements for the Forge LSP host.
 
 ## Distribution
 
-- [ ] Global tool installation support (`dotnet tool install -g forge-lsp`)
+- [ ] Global tool installation support (`dotnet tool install -g sharplsp`)
 - [ ] NuGet package manifest for dotnet tool packaging
 
 ## Incremental Computation

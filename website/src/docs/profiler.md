@@ -4,17 +4,13 @@ title: Profiler
 eleventyExcludeFromCollections: true
 ---
 
-**VS Code**
 ![Profiler in VS Code](/assets/screenshots/vscode-profiler-page.png)
 
-**Zed**
-![Profiler in Zed](/assets/screenshots/zed-profiler-page.png)
-
-*Built-in profiler wrapping dotnet-trace, dotnet-counters, and dotnet-dump — zero context switching.*
+*Profiler workflows exposed by the alpha VS Code extension.*
 
 # Profiler
 
-Forge integrates the standard .NET diagnostic CLI tools directly into your editor. No terminal juggling, no separate GUIs. Trace performance, monitor live counters, collect memory dumps, diff heap snapshots, and visualize object retention graphs without leaving your code.
+SharpLsp integrates .NET diagnostics workflows into VS Code. The extension exposes commands for process discovery, traces, counters, dumps, heap analysis, and related file actions while the profiler experience is being hardened for beta.
 
 ## Prerequisites
 
@@ -26,11 +22,11 @@ dotnet tool install -g dotnet-counters
 dotnet tool install -g dotnet-dump
 ```
 
-Forge auto-discovers these tools on PATH and via `dotnet tool list -g`. If a tool is missing, commands return an actionable error with the install command.
+SharpLsp auto-discovers these tools on PATH and via `dotnet tool list -g`. If a tool is missing, commands return an actionable error with the install command.
 
 ## Profiler Tree View
 
-The **Profiler** panel in the Forge sidebar shows:
+The **Profiler** panel in the SharpLsp sidebar shows:
 
 | Section | Content |
 |---------|---------|
@@ -45,21 +41,21 @@ Capture detailed performance traces and view them in SpeedScope.
 
 ### Start a Trace
 
-1. Open the **Profiler** view in the Forge sidebar
-2. Run `Forge: Start Trace` from the command palette
+1. Open the **Profiler** view in the SharpLsp sidebar
+2. Run `SharpLsp: Start Trace` from the command palette
 3. Select a .NET process from the picker
 4. The trace session appears in the tree view
 
 ### Stop a Trace
 
-1. Run `Forge: Stop Trace` from the command palette
+1. Run `SharpLsp: Stop Trace` from the command palette
 2. Select the active trace session
-3. Forge converts the `.nettrace` to SpeedScope format and opens it in your browser automatically
+3. SharpLsp converts the `.nettrace` to SpeedScope format and opens it in your browser automatically
 
 ### Configuration
 
 ```toml
-# forge.toml
+# sharplsp.toml
 [profiler]
 default_profile = "cpu-sampling"   # cpu-sampling | gc-verbose | gc-collect | none
 default_format = "speedscope"      # speedscope | nettrace | chromium
@@ -73,7 +69,7 @@ Monitor .NET performance counters in real time with a live-updating table.
 
 ### Start Monitoring
 
-1. Run `Forge: Start Counters` from the command palette
+1. Run `SharpLsp: Start Counters` from the command palette
 2. Select a .NET process
 3. A webview panel opens showing live counter values updating in real time
 
@@ -86,7 +82,7 @@ Monitor .NET performance counters in real time with a live-updating table.
 | **Value** | Current value (formatted: bytes, counts, percentages) |
 | **Unit** | Measurement unit |
 
-Counters stream via `forge/profiler/counterUpdate` LSP notifications. Run `Forge: Stop Counters` to end the session.
+Counters stream via `sharplsp/profiler/counterUpdate` LSP notifications. Run `SharpLsp: Stop Counters` to end the session.
 
 ## Memory Dumps (dotnet-dump)
 
@@ -94,16 +90,16 @@ Capture and analyze memory dumps to investigate leaks and high memory usage.
 
 ### Collect a Dump
 
-1. Run `Forge: Collect Dump` from the command palette
+1. Run `SharpLsp: Collect Dump` from the command palette
 2. Select a .NET process
 3. Choose dump type: **Heap**, **Full**, or **Mini**
-4. Forge reports the output path and file size
+4. SharpLsp reports the output path and file size
 
 ### Analyze Heap
 
-1. Run `Forge: Analyze Heap` from the command palette
+1. Run `SharpLsp: Analyze Heap` from the command palette
 2. Select a `.dmp` file
-3. Forge runs `dumpheap -stat` and displays a formatted table:
+3. SharpLsp runs `dumpheap -stat` and displays a formatted table:
 
 | Column | Content |
 |--------|---------|
@@ -117,7 +113,7 @@ Compare two heap dumps to identify growing types and memory leaks.
 
 ### Compare Snapshots
 
-1. Run `Forge: Compare Heap Snapshots` from the command palette
+1. Run `SharpLsp: Compare Heap Snapshots` from the command palette
 2. Select the **baseline** dump file (before exercising the suspected leak)
 3. Select the **comparison** dump file (after exercising)
 4. A diff panel opens showing:
@@ -135,7 +131,7 @@ Compare two heap dumps to identify growing types and memory leaks.
 
 ### Leak Suspects Table
 
-Above the full diff, Forge lists **leak suspects** automatically classified by severity:
+Above the full diff, SharpLsp lists **leak suspects** automatically classified by severity:
 
 | Severity | Criteria |
 |----------|----------|
@@ -149,10 +145,10 @@ Known leak-prone types (`EventHandler`, `CancellationTokenSource`, `Timer`, dele
 
 Run a guided baseline → exercise → compare workflow automatically.
 
-1. Run `Forge: Detect Memory Leaks`
-2. Select a .NET process — Forge collects the baseline dump
+1. Run `SharpLsp: Detect Memory Leaks`
+2. Select a .NET process — SharpLsp collects the baseline dump
 3. **Exercise** the suspected leak path in your application
-4. Forge collects the comparison dump and runs the full heap diff automatically
+4. SharpLsp collects the comparison dump and runs the full heap diff automatically
 5. The diff panel opens with suspects highlighted
 
 ## Object Retention Graph
@@ -161,7 +157,7 @@ Visualize what objects are alive in a dump and what is holding them in memory.
 
 ### Open the Graph
 
-1. Run `Forge: Show Object Retention Graph` from the command palette
+1. Run `SharpLsp: Show Object Retention Graph` from the command palette
 2. Select a `.dmp` file
 3. Enter the root object address (hex, e.g. `00007ff812345678`)
 4. An interactive force-directed graph renders in a webview panel
@@ -190,7 +186,7 @@ Dashed border = GC root. Dashed edge = weak reference.
 
 ### Object Inspection
 
-1. Run `Forge: Inspect Object` from the command palette
+1. Run `SharpLsp: Inspect Object` from the command palette
 2. Select a `.dmp` file and enter the object address
 3. A text panel shows the object's type, size, generation, and all field values with reference addresses
 
@@ -198,18 +194,18 @@ Dashed border = GC root. Dashed edge = weak reference.
 
 | Command | Description |
 |---------|-------------|
-| `Forge: Refresh Profiler` | Refresh the .NET process list |
-| `Forge: List Processes` | Refresh and show .NET processes |
-| `Forge: Start Trace` | Begin a performance trace on a .NET process |
-| `Forge: Stop Trace` | Stop an active trace and open in SpeedScope |
-| `Forge: Start Counters` | Start live counter monitoring |
-| `Forge: Stop Counters` | Stop counter monitoring |
-| `Forge: Collect Dump` | Capture a memory dump |
-| `Forge: Analyze Heap` | Analyze heap statistics from a dump file |
-| `Forge: Compare Heap Snapshots` | Diff two heap dumps to find growing types |
-| `Forge: Detect Memory Leaks` | Guided baseline → exercise → compare workflow |
-| `Forge: Show Object Retention Graph` | Interactive object reference graph |
-| `Forge: Inspect Object` | Inspect a single object's fields and references |
+| `SharpLsp: Refresh Profiler` | Refresh the .NET process list |
+| `SharpLsp: List Processes` | Refresh and show .NET processes |
+| `SharpLsp: Start Trace` | Begin a performance trace on a .NET process |
+| `SharpLsp: Stop Trace` | Stop an active trace and open in SpeedScope |
+| `SharpLsp: Start Counters` | Start live counter monitoring |
+| `SharpLsp: Stop Counters` | Stop counter monitoring |
+| `SharpLsp: Collect Dump` | Capture a memory dump |
+| `SharpLsp: Analyze Heap` | Analyze heap statistics from a dump file |
+| `SharpLsp: Compare Heap Snapshots` | Diff two heap dumps to find growing types |
+| `SharpLsp: Detect Memory Leaks` | Guided baseline → exercise → compare workflow |
+| `SharpLsp: Show Object Retention Graph` | Interactive object reference graph |
+| `SharpLsp: Inspect Object` | Inspect a single object's fields and references |
 
 ## Performance Targets
 

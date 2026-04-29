@@ -1,7 +1,7 @@
 use super::*;
 
 // ── Full-Stack tests for completion, documentHighlight, workspace/symbol,
-//    forge/loadSolution, and completionItem/resolve. ─────────────────────
+//    sharplsp/loadSolution, and completionItem/resolve. ─────────────────────
 
 // ── COMPLETION ────────────────────────────────────────────────────
 
@@ -335,7 +335,7 @@ fn test_full_stack_pull_diagnostics_document_returns_report() {
     client.wait_with_timeout();
 }
 
-// ── FORGE/LOAD SOLUTION ───────────────────────────────────────────
+// ── SHARPLSP/LOAD SOLUTION ────────────────────────────────────────
 
 #[test]
 fn test_full_stack_load_solution_with_sidecar() {
@@ -352,12 +352,12 @@ fn test_full_stack_load_solution_with_sidecar() {
     let root_path = root_uri.strip_prefix("file://").unwrap_or(&root_uri);
     let sln_path = format!("{root_path}/TestHover.sln");
 
-    let resp = client.request("forge/loadSolution", json!({ "solutionPath": sln_path }));
+    let resp = client.request("sharplsp/loadSolution", json!({ "solutionPath": sln_path }));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(
         resp.get("error").is_none(),
-        "forge/loadSolution must not error: {resp}"
+        "sharplsp/loadSolution must not error: {resp}"
     );
 
     client.shutdown_and_exit();
@@ -370,12 +370,12 @@ fn test_load_solution_missing_param_returns_error() {
     let _ = client.initialize();
 
     // Missing solutionPath — should return an error.
-    let resp = client.request("forge/loadSolution", json!({}));
+    let resp = client.request("sharplsp/loadSolution", json!({}));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(
         resp.get("error").is_some(),
-        "forge/loadSolution with missing param must return error: {resp}"
+        "sharplsp/loadSolution with missing param must return error: {resp}"
     );
 
     client.shutdown_and_exit();

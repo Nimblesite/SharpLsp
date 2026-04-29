@@ -210,7 +210,7 @@ export class NuGetBrowserPanel {
     if (lsp === undefined) return;
     try {
       this.restoreProgressDisposable = lsp.onNotification(
-        'forge/nuget/restoreProgress',
+        'sharplsp/nuget/restoreProgress',
         (params: RestoreProgressParams) => {
           this.handleRestoreProgress(params);
         },

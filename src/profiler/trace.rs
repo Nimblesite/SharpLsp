@@ -249,7 +249,7 @@ pub struct ConvertTraceResult {
     pub file_size_bytes: u64,
 }
 
-/// Public entry point for `forge/profiler/convertTrace`.
+/// Public entry point for `sharplsp/profiler/convertTrace`.
 ///
 /// Runs `dotnet-trace convert` and returns the path to the sibling output file
 /// that the tool produces. Unlike the private helper used by `stop`, this takes
@@ -309,7 +309,7 @@ fn derived_output_path(input_path: &str, format: &str) -> String {
 
 /// Default directory for trace output files.
 fn output_dir() -> &'static str {
-    ".forge/profiles"
+    ".sharplsp/profiles"
 }
 
 /// Create parent directories for the output path if they don't exist.
@@ -361,8 +361,8 @@ mod derived_output_path_tests {
     #[test]
     fn strips_nettrace_extension_for_speedscope() {
         assert_eq!(
-            derived_output_path(".forge/profiles/trace-21288.nettrace", "speedscope"),
-            ".forge/profiles/trace-21288.speedscope.json"
+            derived_output_path(".sharplsp/profiles/trace-21288.nettrace", "speedscope"),
+            ".sharplsp/profiles/trace-21288.speedscope.json"
         );
     }
 

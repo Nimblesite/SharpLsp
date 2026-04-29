@@ -17,27 +17,32 @@ import {
 import { EXTENSION_ID, EXTENSION_NAME, SERVER_BINARY, SERVER_BINARY_WIN } from './constants.js';
 import * as config from './config.js';
 import * as log from './log.js';
-import { type ForgeStatusBar, ServerState } from './status.js';
+import { type SharpLspStatusBar, ServerState } from './status.js';
 
 /** Create, start, and return a new `LanguageClient`. */
 export async function start(
   context: ExtensionContext,
-  statusBar: ForgeStatusBar,
+  statusBar: SharpLspStatusBar,
 ): Promise<LanguageClient | undefined> {
   const serverPath = resolveServerPath(context);
   if (serverPath === undefined) {
     const msg =
-      'Forge LSP binary not found. Install via `cargo install forge-lsp` or set `forge.server.path`.';
+      'SharpLsp binary not found. Install via `cargo install sharplsp` or set `sharplsp.lspPath`.';
     log.info(msg);
     window.showErrorMessage(msg);
     statusBar.setState(ServerState.Error);
     return undefined;
   }
 
+  const launchPath = prepareLaunchBinary(context, serverPath);
+
   log.info(`Server binary: ${serverPath}`);
+  if (launchPath !== serverPath) {
+    log.info(`Server launch binary: ${launchPath}`);
+  }
 
   const run: Executable = {
-    command: serverPath,
+    command: launchPath,
     args: [...config.serverExtraArgs()],
     transport: TransportKind.stdio,
     options: {
@@ -71,7 +76,7 @@ export async function start(
 /** Wire client state changes to the status bar indicator. */
 function wireStatusBar(
   client: LanguageClient,
-  statusBar: ForgeStatusBar,
+  statusBar: SharpLspStatusBar,
   context: ExtensionContext,
 ): void {
   const listener: Disposable = client.onDidChangeState((event) => {
@@ -93,7 +98,7 @@ function wireStatusBar(
 }
 
 /**
- * Custom error handler that restarts forge-lsp with exponential backoff.
+ * Custom error handler that restarts sharplsp with exponential backoff.
  *
  * The default vscode-languageclient handler shows an error notification
  * on every unexpected close, including the transient kills that happen
@@ -104,7 +109,7 @@ function wireStatusBar(
  *   - Allows up to MAX_RESTARTS automatic restarts
  *   - After MAX_RESTARTS, stops and shows one actionable message
  */
-function makeErrorHandler(statusBar: ForgeStatusBar): {
+function makeErrorHandler(statusBar: SharpLspStatusBar): {
   error(error: Error, message: Message | undefined, count: number | undefined): ErrorHandlerResult;
   closed(): CloseHandlerResult;
 } {
@@ -127,15 +132,15 @@ function makeErrorHandler(statusBar: ForgeStatusBar): {
       restartCount += 1;
       if (restartCount <= MAX_RESTARTS) {
         log.info(
-          `forge-lsp closed unexpectedly (restart ${String(restartCount)}/${String(MAX_RESTARTS)})`,
+          `sharplsp closed unexpectedly (restart ${String(restartCount)}/${String(MAX_RESTARTS)})`,
         );
         return { action: CloseAction.Restart, handled: true };
       }
-      log.error(`forge-lsp closed ${String(MAX_RESTARTS)} times — giving up`);
+      log.error(`sharplsp closed ${String(MAX_RESTARTS)} times — giving up`);
       statusBar.setState(ServerState.Error);
       void window
         .showErrorMessage(
-          'Forge: language server failed to start after multiple attempts. Check the Forge output channel for details.',
+          'SharpLsp: language server failed to start after multiple attempts. Check the SharpLsp output channel for details.',
           'Show Output',
         )
         .then((choice) => {
@@ -150,13 +155,14 @@ function makeErrorHandler(statusBar: ForgeStatusBar): {
 }
 
 /**
- * Resolve the forge-lsp binary path.
+ * Resolve the sharplsp binary path.
  *
  * Priority:
- *   1. User-configured `forge.server.path`
- *   2. `FORGE_EXECUTABLE_PATH` for test and development runs
- *   3. Bundled binary in `<extension>/bin/`
- *   4. Binary name on `$PATH` (client resolves via shell)
+ *   1. User-configured `sharplsp.lspPath`
+ *   2. `SHARPLSP_EXECUTABLE_PATH` for test and development runs
+ *   3. Bundled binary in `<extension>/bin/<platform>/`
+ *   4. Legacy bundled binary in `<extension>/bin/`
+ *   5. Binary name on `$PATH` (client resolves via shell)
  */
 function resolveServerPath(context: ExtensionContext): string | undefined {
   const configured = expandPath(config.serverPath());
@@ -164,16 +170,22 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
     return configured;
   }
 
-  const envPath = process.env.FORGE_EXECUTABLE_PATH;
+  const envPath = process.env.SHARPLSP_EXECUTABLE_PATH;
   if (envPath !== undefined && envPath !== '' && fs.existsSync(envPath)) {
     return envPath;
   }
 
   const binaryName = process.platform === 'win32' ? SERVER_BINARY_WIN : SERVER_BINARY;
+  const platform = detectRuntimePlatform();
 
-  const bundled = path.join(context.extensionPath, 'bin', binaryName);
+  const bundled = path.join(context.extensionPath, 'bin', platform, binaryName);
   if (fs.existsSync(bundled)) {
     return bundled;
+  }
+
+  const legacyBundled = path.join(context.extensionPath, 'bin', binaryName);
+  if (fs.existsSync(legacyBundled)) {
+    return legacyBundled;
   }
 
   // Dev fallback: look for a Cargo debug build two levels above the extension dir.
@@ -185,6 +197,55 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
 
   // Fall back to PATH — the language client resolves the command via the shell.
   return binaryName;
+}
+
+function prepareLaunchBinary(context: ExtensionContext, serverPath: string): string {
+  if (!isBundledServerPath(context, serverPath)) {
+    return serverPath;
+  }
+
+  const platform = detectRuntimePlatform();
+  const cachePath = path.join(
+    context.globalStorageUri.fsPath,
+    'bin',
+    platform,
+    path.basename(serverPath),
+  );
+
+  try {
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.copyFileSync(serverPath, cachePath);
+    if (process.platform !== 'win32') {
+      fs.chmodSync(cachePath, 0o755);
+    }
+    return cachePath;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.warn(`Failed to prepare stable launch binary: ${message}`);
+    return serverPath;
+  }
+}
+
+function isBundledServerPath(context: ExtensionContext, serverPath: string): boolean {
+  if (!path.isAbsolute(serverPath)) {
+    return false;
+  }
+
+  const bundledRoot = path.resolve(context.extensionPath, 'bin');
+  const resolvedServerPath = path.resolve(serverPath);
+  return (
+    resolvedServerPath === bundledRoot || resolvedServerPath.startsWith(`${bundledRoot}${path.sep}`)
+  );
+}
+
+function detectRuntimePlatform(): string {
+  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64';
+  if (process.platform === 'darwin') return 'darwin-x64';
+  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64';
+  if (process.platform === 'linux') return 'linux-x64';
+  if (process.platform === 'win32' && process.arch === 'arm64') return 'win32-arm64';
+  if (process.platform === 'win32') return 'win32-x64';
+  return 'linux-x64';
 }
 
 /** Expand ${workspaceFolder} in a user-configured path. */

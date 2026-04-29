@@ -4,7 +4,9 @@ import {
   EXTENSION_ID,
   closeAllEditors,
   openCSharpFile,
+  openSharpLspPanel,
   setupLspTestSuite,
+  takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
 } from './test-helpers';
@@ -59,52 +61,61 @@ suite('Extension Activation & Configuration', () => {
 
   // ── Commands ─────────────────────────────────────────────────
 
-  test('forge.restartServer command is registered', async () => {
+  test('sharplsp.restartServer command is registered', async () => {
     const allCommands = await vscode.commands.getCommands(true);
     assert.ok(
-      allCommands.includes('forge.restartServer'),
-      'forge.restartServer should be registered',
+      allCommands.includes('sharplsp.restartServer'),
+      'sharplsp.restartServer should be registered',
     );
   });
 
-  test('forge.showOutput command is registered', async () => {
-    const allCommands = await vscode.commands.getCommands(true);
-    assert.ok(allCommands.includes('forge.showOutput'), 'forge.showOutput should be registered');
-  });
-
-  test('forge.showTraceOutput command is registered', async () => {
+  test('sharplsp.showOutput command is registered', async () => {
     const allCommands = await vscode.commands.getCommands(true);
     assert.ok(
-      allCommands.includes('forge.showTraceOutput'),
-      'forge.showTraceOutput should be registered',
+      allCommands.includes('sharplsp.showOutput'),
+      'sharplsp.showOutput should be registered',
+    );
+  });
+
+  test('sharplsp.showTraceOutput command is registered', async () => {
+    const allCommands = await vscode.commands.getCommands(true);
+    assert.ok(
+      allCommands.includes('sharplsp.showTraceOutput'),
+      'sharplsp.showTraceOutput should be registered',
     );
   });
 
   // ── Configuration ────────────────────────────────────────────
 
-  test('forge.server.path setting is contributed', () => {
-    const config = vscode.workspace.getConfiguration('forge');
-    const inspect = config.inspect<string>('server.path');
-    assert.ok(inspect, 'server.path setting should be inspectable');
-    assert.strictEqual(inspect.defaultValue, '', 'Default server.path should be empty string');
+  test('sharplsp.lspPath setting is contributed', async function () {
+    this.timeout(15_000);
+    const config = vscode.workspace.getConfiguration('sharplsp');
+    const inspect = config.inspect<string>('lspPath');
+    assert.ok(inspect, 'lspPath setting should be inspectable');
+    assert.strictEqual(inspect.defaultValue, '', 'Default lspPath should be empty string');
+    // Open Settings UI filtered to sharplsp so the screenshot shows real config options.
+    await vscode.commands.executeCommand('workbench.action.openSettings', 'sharplsp');
+    await new Promise((r) => setTimeout(r, 1500));
+    await takeScreenshot('vscode-configuration-page.png');
+    await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
   });
 
-  test('forge.server.extraArgs setting is contributed', () => {
-    const config = vscode.workspace.getConfiguration('forge');
+  test('sharplsp.server.extraArgs setting is contributed', () => {
+    const config = vscode.workspace.getConfiguration('sharplsp');
     const inspect = config.inspect<string[]>('server.extraArgs');
     assert.ok(inspect, 'server.extraArgs setting should be inspectable');
     assert.deepStrictEqual(inspect.defaultValue, [], 'Default extraArgs should be empty array');
   });
 
-  test('forge.trace.server setting is contributed', () => {
-    const config = vscode.workspace.getConfiguration('forge');
+  test('sharplsp.trace.server setting is contributed', () => {
+    const config = vscode.workspace.getConfiguration('sharplsp');
     const inspect = config.inspect<string>('trace.server');
     assert.ok(inspect, 'trace.server setting should be inspectable');
     assert.strictEqual(inspect.defaultValue, 'off', 'Default trace level should be off');
   });
 
-  test('forge.logging.level setting is contributed', () => {
-    const config = vscode.workspace.getConfiguration('forge');
+  test('sharplsp.logging.level setting is contributed', () => {
+    const config = vscode.workspace.getConfiguration('sharplsp');
     const inspect = config.inspect<string>('logging.level');
     assert.ok(inspect, 'logging.level setting should be inspectable');
     assert.strictEqual(inspect.defaultValue, 'info', 'Default logging level should be info');
@@ -115,15 +126,56 @@ suite('Extension Activation & Configuration', () => {
   test('extension has correct display name', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, 'Extension should exist');
-    assert.strictEqual(ext.packageJSON.displayName, 'Forge', "Display name should be 'Forge'");
+    assert.strictEqual(
+      ext.packageJSON.displayName,
+      'SharpLsp',
+      "Display name should be 'SharpLsp'",
+    );
   });
 
-  test('extension contributes csharp language', () => {
+  test('extension contributes csharp language', async function () {
+    this.timeout(30_000);
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, 'Extension should exist');
     const languages: { id: string }[] = ext.packageJSON.contributes?.languages ?? [];
     const csharp = languages.find((l) => l.id === 'csharp');
     assert.ok(csharp, 'Should contribute csharp language');
+    // Open a C# file and an F# file in split editor, with SharpLsp panel showing solution.
+    const { uri: csUri } = await openCSharpFile(
+      tmpDir,
+      'editors-shot.cs',
+      `namespace Demo\n{\n    public class Calculator\n    {\n        public int Add(int a, int b) => a + b;\n    }\n}`,
+    );
+    await waitForDocumentSymbols(csUri);
+    await vscode.commands.executeCommand('workbench.action.splitEditorRight');
+    await openCSharpFile(
+      tmpDir,
+      'editors-shot.fs',
+      'module Demo\n\nlet greet name = sprintf "Hello, %s!" name\n',
+    );
+    await new Promise((r) => setTimeout(r, 800));
+    // Load fixture solution so Solution Explorer shows content.
+    if (process.env['SHARPLSP_SCREENSHOTS']) {
+      const api2 = ext.exports as
+        | {
+            explorerProvider?: {
+              loadSolution(p: string): Promise<void>;
+              getChildren(e?: unknown): unknown[] | undefined;
+            };
+          }
+        | undefined;
+      if (api2?.explorerProvider) {
+        const ws2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        await api2.explorerProvider.loadSolution(`${ws2}/TestFixtures.sln`);
+        let w = 0;
+        while ((api2.explorerProvider.getChildren() ?? []).length === 0 && w < 8000) {
+          await new Promise((r) => setTimeout(r, 200));
+          w += 200;
+        }
+      }
+    }
+    await openSharpLspPanel();
+    await takeScreenshot('vscode-editors-page.png');
   });
 
   test('extension contributes fsharp language', () => {
@@ -136,33 +188,64 @@ suite('Extension Activation & Configuration', () => {
 
   // ── Command Handler Invocation ─────────────────────────────
 
-  test('forge.showOutput executes without error', async function () {
+  test('sharplsp.showOutput executes without error', async function () {
     this.timeout(5_000);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.showOutput');
+      await vscode.commands.executeCommand('sharplsp.showOutput');
     }, 'showOutput command should not throw');
   });
 
-  test('forge.showTraceOutput executes without error', async function () {
+  test('sharplsp.showTraceOutput executes without error', async function () {
     this.timeout(5_000);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.showTraceOutput');
+      await vscode.commands.executeCommand('sharplsp.showTraceOutput');
     }, 'showTraceOutput command should not throw');
   });
 
-  test('forge.restartServer executes without error', async function () {
+  test('sharplsp.restartServer executes without error', async function () {
     this.timeout(60_000);
     // Ensure server is running first.
     const { uri } = await openCSharpFile(tmpDir, 'pre-restart.cs', 'class PreRestart { }');
     await waitForDocumentSymbols(uri);
 
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('forge.restartServer');
+      await vscode.commands.executeCommand('sharplsp.restartServer');
     }, 'restartServer command should not throw');
 
     // Verify server is back.
     const symbols = await waitForDocumentSymbols(uri, 30_000);
     assert.ok(symbols.length > 0, 'Server should respond after restart');
+
+    // Open Calculator.cs from the fixture workspace so a real file is visible.
+    if (process.env['SHARPLSP_SCREENSHOTS']) {
+      const ext2 = vscode.extensions.getExtension(EXTENSION_ID);
+      const api2 = ext2?.exports as
+        | {
+            explorerProvider?: {
+              loadSolution(p: string): Promise<void>;
+              getChildren(e?: unknown): unknown[] | undefined;
+            };
+          }
+        | undefined;
+      const ws2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+      const calcUri = vscode.Uri.file(`${ws2}/Calculator.cs`);
+      const calcDoc = await vscode.workspace.openTextDocument(calcUri);
+      await vscode.window.showTextDocument(calcDoc, { preview: false });
+      await waitForDocumentSymbols(calcUri);
+      if (api2?.explorerProvider) {
+        await api2.explorerProvider.loadSolution(`${ws2}/TestFixtures.sln`);
+        let w = 0;
+        while ((api2.explorerProvider.getChildren() ?? []).length === 0 && w < 8000) {
+          await new Promise((r) => setTimeout(r, 200));
+          w += 200;
+        }
+      }
+    }
+    // Close any bottom panel, open SharpLsp sidebar — shows Rust host + Roslyn sidecar in action.
+    await vscode.commands.executeCommand('workbench.action.closePanel');
+    await openSharpLspPanel();
+    await new Promise((r) => setTimeout(r, 1_000));
+    await takeScreenshot('vscode-architecture-page.png');
   });
 
   // ── C# Language Configuration ──────────────────────────────
@@ -242,23 +325,23 @@ suite('Extension Activation & Configuration', () => {
     const ids = cmds.map((c) => c.command);
     // Core commands that must always be present.
     for (const required of [
-      'forge.restartServer',
-      'forge.showOutput',
-      'forge.showTraceOutput',
-      'forge.selectSolution',
-      'forge.refreshExplorer',
-      'forge.sortNatural',
-      'forge.sortAlphabetical',
-      'forge.sortAccessibility',
-      'forge.build',
-      'forge.rebuild',
-      'forge.clean',
-      'forge.openProjectFile',
-      'forge.addProjectReference',
-      'forge.nuget.addFromExplorer',
-      'forge.nuget.add',
-      'forge.nuget.update',
-      'forge.nuget.restore',
+      'sharplsp.restartServer',
+      'sharplsp.showOutput',
+      'sharplsp.showTraceOutput',
+      'sharplsp.selectSolution',
+      'sharplsp.refreshExplorer',
+      'sharplsp.sortNatural',
+      'sharplsp.sortAlphabetical',
+      'sharplsp.sortAccessibility',
+      'sharplsp.build',
+      'sharplsp.rebuild',
+      'sharplsp.clean',
+      'sharplsp.openProjectFile',
+      'sharplsp.addProjectReference',
+      'sharplsp.nuget.addFromExplorer',
+      'sharplsp.nuget.add',
+      'sharplsp.nuget.update',
+      'sharplsp.nuget.restore',
     ]) {
       assert.ok(ids.includes(required), `Missing required command: ${required}`);
     }
@@ -274,10 +357,12 @@ suite('Extension Activation & Configuration', () => {
       `Should contribute at least 4 config properties, got ${keys.length}`,
     );
     for (const required of [
-      'forge.server.path',
-      'forge.server.extraArgs',
-      'forge.trace.server',
-      'forge.logging.level',
+      'sharplsp.lspPath',
+      'sharplsp.csharpSidecarPath',
+      'sharplsp.fsharpSidecarPath',
+      'sharplsp.server.extraArgs',
+      'sharplsp.trace.server',
+      'sharplsp.logging.level',
     ]) {
       assert.ok(keys.includes(required), `Missing required config property: ${required}`);
     }
@@ -306,7 +391,7 @@ suite('Extension Activation & Configuration', () => {
     }
   });
 
-  test("all commands have a category of 'Forge'", () => {
+  test("all commands have a category of 'SharpLsp'", () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext);
     const cmds: { command: string; category?: string }[] =
@@ -314,8 +399,8 @@ suite('Extension Activation & Configuration', () => {
     for (const cmd of cmds) {
       assert.strictEqual(
         cmd.category,
-        'Forge',
-        `Command ${cmd.command} should have category 'Forge'`,
+        'SharpLsp',
+        `Command ${cmd.command} should have category 'SharpLsp'`,
       );
     }
   });

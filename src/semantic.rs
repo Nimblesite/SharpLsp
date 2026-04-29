@@ -11,8 +11,9 @@ use lsp_server::Request;
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentHighlight,
     DocumentHighlightKind, DocumentHighlightParams, GotoDefinitionParams, GotoDefinitionResponse,
-    Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, Position, Range,
-    ReferenceParams, TextEdit, Uri,
+    Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, OneOf, Position,
+    PrepareRenameResponse, Range, ReferenceParams, RenameParams, TextDocumentPositionParams,
+    TextEdit, Uri, WorkspaceEdit,
 };
 use tracing::{debug, info, warn};
 
@@ -769,11 +770,9 @@ pub fn notify_did_change(
         return;
     };
     let sidecar = Arc::clone(sidecar);
-    drop(runtime.spawn(async move {
-        if let Err(err) = sidecar.request("textDocument/didChange", payload).await {
-            debug!("Sidecar didChange failed: {err:#}");
-        }
-    }));
+    if let Err(err) = runtime.block_on(sidecar.request("textDocument/didChange", payload)) {
+        debug!("Sidecar didChange failed: {err:#}");
+    }
 }
 
 /// Sidecar notification payload for document content changes.
@@ -913,4 +912,191 @@ struct SidecarDocumentHighlightResult {
 struct SidecarDocumentHighlightListResult {
     /// The resolved highlights.
     highlights: Vec<SidecarDocumentHighlightResult>,
+}
+
+// ── Rename ────────────────────────────────────────────────────────
+
+// Implements [RENAME-PREPARE]
+
+/// Handle `textDocument/prepareRename` via the sidecar.
+pub fn handle_prepare_rename(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    let Some(sidecar) = sidecar else {
+        return Ok(serde_json::Value::Null);
+    };
+
+    let params: TextDocumentPositionParams = serde_json::from_value(req.params)?;
+    let file_path = uri_to_path(&params.text_document.uri)?;
+    let request = SidecarPositionReq {
+        file_path,
+        line: params.position.line,
+        character: params.position.character,
+    };
+    let payload = rmp_serde::to_vec(&request)?;
+    let response_bytes =
+        runtime.block_on(sidecar.request("textDocument/prepareRename", payload))?;
+    let result: SidecarPrepareRenameResult = rmp_serde::from_slice(&response_bytes)?;
+
+    if !result.can_rename {
+        return Ok(serde_json::Value::Null);
+    }
+
+    let range = Range {
+        start: Position {
+            line: result.start_line,
+            character: result.start_character,
+        },
+        end: Position {
+            line: result.end_line,
+            character: result.end_character,
+        },
+    };
+    let response = PrepareRenameResponse::RangeWithPlaceholder {
+        range,
+        placeholder: result.placeholder,
+    };
+    Ok(serde_json::to_value(response)?)
+}
+
+// Implements [RENAME-APPLY]
+
+/// Handle `textDocument/rename` via the sidecar.
+pub fn handle_rename(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    let Some(sidecar) = sidecar else {
+        return Ok(serde_json::Value::Null);
+    };
+
+    let params: RenameParams = serde_json::from_value(req.params)?;
+    let file_path = uri_to_path(&params.text_document_position.text_document.uri)?;
+    let request = SidecarRenameRequest {
+        file_path,
+        line: params.text_document_position.position.line,
+        character: params.text_document_position.position.character,
+        new_name: params.new_name,
+    };
+    let payload = rmp_serde::to_vec(&request)?;
+    let response_bytes = runtime.block_on(sidecar.request("textDocument/rename", payload))?;
+    let result: SidecarWorkspaceEditResult = rmp_serde::from_slice(&response_bytes)?;
+
+    let document_changes: Vec<lsp_types::TextDocumentEdit> = result
+        .document_changes
+        .into_iter()
+        .filter_map(|doc_edit| {
+            let uri = path_to_uri(&doc_edit.file_path).ok()?;
+            let edits: Vec<OneOf<TextEdit, lsp_types::AnnotatedTextEdit>> = doc_edit
+                .edits
+                .into_iter()
+                .map(|e| {
+                    OneOf::Left(TextEdit {
+                        range: Range {
+                            start: Position {
+                                line: e.start_line,
+                                character: e.start_character,
+                            },
+                            end: Position {
+                                line: e.end_line,
+                                character: e.end_character,
+                            },
+                        },
+                        new_text: e.new_text,
+                    })
+                })
+                .collect();
+            Some(lsp_types::TextDocumentEdit {
+                text_document: lsp_types::OptionalVersionedTextDocumentIdentifier {
+                    uri,
+                    version: None,
+                },
+                edits,
+            })
+        })
+        .collect();
+
+    if document_changes.is_empty() {
+        return Ok(serde_json::Value::Null);
+    }
+
+    let workspace_edit = WorkspaceEdit {
+        document_changes: Some(lsp_types::DocumentChanges::Edits(document_changes)),
+        ..WorkspaceEdit::default()
+    };
+    Ok(serde_json::to_value(workspace_edit)?)
+}
+
+/// Convert a filesystem path to a `file://` URI.
+fn path_to_uri(path: &str) -> Result<Uri> {
+    let uri_str = if path.starts_with('/') {
+        format!("file://{path}")
+    } else {
+        format!("file:///{path}")
+    };
+    uri_str.parse::<Uri>().map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+/// Sidecar request to rename a symbol.
+#[derive(serde::Serialize)]
+struct SidecarRenameRequest {
+    /// Absolute path to the file containing the symbol.
+    file_path: String,
+    /// Zero-based line of the symbol.
+    line: u32,
+    /// Zero-based character offset of the symbol.
+    character: u32,
+    /// New name for the symbol.
+    new_name: String,
+}
+
+/// Sidecar response indicating whether a symbol is renameable.
+#[derive(serde::Deserialize)]
+struct SidecarPrepareRenameResult {
+    /// Whether the symbol at the position can be renamed.
+    can_rename: bool,
+    /// Start line of the symbol token.
+    start_line: u32,
+    /// Start character of the symbol token.
+    start_character: u32,
+    /// End line of the symbol token.
+    end_line: u32,
+    /// End character of the symbol token.
+    end_character: u32,
+    /// Current name of the symbol (used as the rename placeholder).
+    placeholder: String,
+}
+
+/// A single text replacement from the sidecar.
+#[derive(serde::Deserialize)]
+struct SidecarTextEditResult {
+    /// Start line of the range to replace.
+    start_line: u32,
+    /// Start character of the range to replace.
+    start_character: u32,
+    /// End line of the range to replace.
+    end_line: u32,
+    /// End character of the range to replace.
+    end_character: u32,
+    /// Replacement text.
+    new_text: String,
+}
+
+/// Edits to a single document from the sidecar.
+#[derive(serde::Deserialize)]
+struct SidecarDocumentEditResult {
+    /// Absolute path to the file.
+    file_path: String,
+    /// Text edits to apply.
+    edits: Vec<SidecarTextEditResult>,
+}
+
+/// A workspace-wide set of edits from the sidecar rename operation.
+#[derive(serde::Deserialize)]
+struct SidecarWorkspaceEditResult {
+    /// Per-document edits.
+    document_changes: Vec<SidecarDocumentEditResult>,
 }
