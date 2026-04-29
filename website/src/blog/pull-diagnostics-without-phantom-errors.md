@@ -6,8 +6,8 @@ date: 2026-04-27
 author: SharpLsp Contributors
 authorRole: Compiler Tooling Engineer
 authorImage: https://lh3.googleusercontent.com/aida-public/AB6AXuAD67SpD-iAx0p3uV9exHCxuwOCzRb4-DL71Un7bMvBZAhwFrV5QujQLJAj7RY1FW-p4m-0uhYkk9PSxb7WJUOqXt25VH6AtubFss0CAMR3Yw9k0n876VF5g0PJXLF0V45EbGUjr7sUPnCLpJC73GhMMZLUuD43uYczJM1_e9IZSX-rZb87fMAJ03X3HR6kzzFuBpQ80EW3hRgYm54AILhIIO2T5pWPyjljM0PWc13wW6tYobl3bdo6v_PSS6a2MMwmRwZTRD5uSw
-image: https://lh3.googleusercontent.com/aida-public/AB6AXuB7bTHMNvp7mgUyeQRUCpkBLXp9ovJMYxmIAYvQU60SnHp1n2PQj8s9oXZIqqeOQSrkEqAmY2ASQP3x81STf0MJ2dbD7balX0kCQK2wr08Uh-eti-c-OdE-SZl5UpJpd5el9uHjVFr_ETKbSObnNdR55aj9wYjkUqDPSHPcQfRJGiS44c5U2ncvKir7gBG2ZpIO8w5nef05SAbf_LGAnxlDMmD_Tw0YiUTu586LXkt_LdIit6GY3SzbS8gxN15-RUmTn1207Z3Zww
-imageAlt: Abstract dark geometric code visualization with glowing green nodes
+image: /assets/images/blog/pull-diagnostics-without-phantom-errors.png
+imageAlt: Compiler diagnostics flowing through filters that remove false error signals
 tags:
   - posts
   - diagnostics

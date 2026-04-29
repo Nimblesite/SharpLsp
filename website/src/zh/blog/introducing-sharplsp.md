@@ -4,6 +4,8 @@ title: SharpLsp 介绍
 lang: zh
 date: 2026-03-20
 author: SharpLsp 团队
+image: /assets/images/blog/introducing-sharplsp-zh.png
+imageAlt: 抽象语言服务器核心连接多个编辑器和开发工具节点
 tags: posts
 excerpt: 一个用 Rust 构建的开源 .NET LSP — 为每款编辑器带来一流的 C# 和 F# 支持。
 ---

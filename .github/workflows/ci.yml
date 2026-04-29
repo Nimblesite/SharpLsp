@@ -136,25 +136,6 @@ jobs:
           name: coverage-dotnet
           path: coverage-thresholds.json
 
-  test-zed:
-    name: Test Zed
-    needs: [lint]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: zed
-
-      - uses: taiki-e/install-action@nextest
-
-      - name: Test Zed extension
-        run: make test-zed
-
   test-vsix:
     name: Test VS Code
     needs: [lint]

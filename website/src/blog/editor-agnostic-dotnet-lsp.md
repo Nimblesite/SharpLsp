@@ -6,8 +6,8 @@ date: 2026-04-28
 author: SharpLsp Contributors
 authorRole: Core Infrastructure Engineer
 authorImage: https://lh3.googleusercontent.com/aida-public/AB6AXuAD67SpD-iAx0p3uV9exHCxuwOCzRb4-DL71Un7bMvBZAhwFrV5QujQLJAj7RY1FW-p4m-0uhYkk9PSxb7WJUOqXt25VH6AtubFss0CAMR3Yw9k0n876VF5g0PJXLF0V45EbGUjr7sUPnCLpJC73GhMMZLUuD43uYczJM1_e9IZSX-rZb87fMAJ03X3HR6kzzFuBpQ80EW3hRgYm54AILhIIO2T5pWPyjljM0PWc13wW6tYobl3bdo6v_PSS6a2MMwmRwZTRD5uSw
-image: https://lh3.googleusercontent.com/aida-public/AB6AXuB6A4g4VZvPbeGvA96FtH4Vz1sAjGwmq8Xuq2xjZ9IIJ3JzSPSMrZezt9xD_xVgy34QifKOOdms6i3qB_Z_Micj_gu8HByTVRnacUPTjnOQdFop_H_FE6LUhZbBViIT7I_XWpyEUr-Xr6_NoWkRg5eztpK8oII0ACtN66zzUMWube0gk_7fFI-N40az_T_RrVPUpWifu1lH8L3YTo-WTBaBFLhKszKS0vGdzuZvgOqUzCjUgWqFaInkXxl1JP65mVDkhDSieGxRQQ
-imageAlt: Green binary code on dark screen
+image: /assets/images/blog/editor-agnostic-dotnet-lsp.png
+imageAlt: Multiple editor windows connected to one central language server core
 tags:
   - posts
   - dotnet-lsp

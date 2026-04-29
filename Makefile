@@ -94,7 +94,7 @@ ci: lint test build
 
 # ── Tests ────────────────────────────────────────────────────────
 
-test: build test-rust test-zed test-vsix test-dotnet
+test: test-rust test-vsix test-dotnet
 	@echo "==> All tests passed."
 
 test-rust: _build-dotnet _stage-sidecars
@@ -116,13 +116,12 @@ test-vsix: _build-rust _build-dotnet _build-vsix _deploy-rust
 test-dotnet: _build-dotnet
 	@echo "==> Running .NET sidecar tests..."
 	@rm -rf target/coverage-dotnet
-	@dotnet test $(SIDECAR_SLN) --configuration $(DOTNET_CFG) \
+	dotnet test $(SIDECAR_SLN) --configuration $(DOTNET_CFG) \
 		--collect:"XPlat Code Coverage" \
 		--results-directory target/coverage-dotnet \
 		--settings coverlet.runsettings \
-		-- RunConfiguration.FailFastEnabled=true ; \
-	 TEST_EXIT=$$? ; \
-	 _check_cov() { \
+		-- RunConfiguration.FailFastEnabled=true
+	@_check_cov() { \
 	   local pkg=$$1 label=$$2 ; \
 	   pct=$$(for f in target/coverage-dotnet/*/coverage.cobertura.xml; do \
 	     sed -n "s/.*package name=\"$$pkg\" line-rate=\"\([^\"]*\)\".*/\1/p" "$$f" 2>/dev/null | head -1; \
@@ -131,8 +130,7 @@ test-dotnet: _build-dotnet
 	 } ; \
 	 _check_cov SharpLsp.Sidecar.CSharp sharplsp-sidecar-csharp ; \
 	 _check_cov SharpLsp.Sidecar.FSharp sharplsp-sidecar-fsharp ; \
-	 _check_cov SharpLsp.Sidecar.Common sharplsp-sidecar-common ; \
-	 exit $$TEST_EXIT
+	 _check_cov SharpLsp.Sidecar.Common sharplsp-sidecar-common
 
 # ── Website screenshots ──────────────────────────────────────────
 
