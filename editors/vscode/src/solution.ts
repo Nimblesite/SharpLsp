@@ -65,7 +65,9 @@ export async function findSolutions(): Promise<SolutionSelection[]> {
   const pattern = '**/*.{sln,slnx}';
   const excludePattern = '**/{node_modules,bin,obj,target}/**';
   const cts = new CancellationTokenSource();
-  const timer = setTimeout(() => cts.cancel(), 5_000);
+  const timer = setTimeout(() => {
+    cts.cancel();
+  }, 5_000);
   try {
     const uris = await workspace.findFiles(pattern, excludePattern, 50, cts.token);
     return toSolutionSelections(uris.map((uri) => uri.fsPath));

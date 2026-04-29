@@ -34,8 +34,12 @@ function sendToFsi(): void {
 /** Generate a .fsi signature file for the active F# file. */
 async function generateSignatureFile(): Promise<void> {
   const editor = vscode.window.activeTextEditor;
-  const fsPath = editor?.document.uri.fsPath;
-  if (editor === undefined || fsPath === undefined || !fsPath.endsWith('.fs')) {
+  if (editor === undefined) {
+    void vscode.window.showWarningMessage('No F# file is active.');
+    return;
+  }
+  const fsPath = editor.document.uri.fsPath;
+  if (!fsPath.endsWith('.fs')) {
     void vscode.window.showWarningMessage('No F# file is active.');
     return;
   }

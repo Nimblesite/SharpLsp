@@ -12,7 +12,7 @@ export function isHotReloadRunning(): boolean {
 
 /** Toggle hot reload on/off. */
 function toggleHotReload(): void {
-  if (watchTerminal !== undefined) {
+  if (isHotReloadRunning()) {
     stopHotReload();
   } else {
     startHotReload();
@@ -34,6 +34,7 @@ function startHotReload(): void {
   });
   watchTerminal.show();
   watchTerminal.sendText('dotnet watch --non-interactive build');
+
   info('Hot Reload started via dotnet watch');
   updateStatusBar();
 }
@@ -47,6 +48,7 @@ function stopHotReload(): void {
 
   watchTerminal.dispose();
   watchTerminal = undefined;
+
   info('Hot Reload stopped');
   updateStatusBar();
 }
@@ -56,10 +58,10 @@ function updateStatusBar(): void {
   void vscode.commands.executeCommand(
     'setContext',
     'sharplsp.hotReloadRunning',
-    watchTerminal !== undefined,
+    isHotReloadRunning(),
   );
   if (statusBarItem === undefined) return;
-  if (watchTerminal !== undefined) {
+  if (isHotReloadRunning()) {
     showRunningStatus();
   } else {
     showStoppedStatus();
@@ -112,6 +114,7 @@ function wireTerminalClose(context: vscode.ExtensionContext): void {
     vscode.window.onDidCloseTerminal((terminal) => {
       if (terminal === watchTerminal) {
         watchTerminal = undefined;
+
         updateStatusBar();
       }
     }),
