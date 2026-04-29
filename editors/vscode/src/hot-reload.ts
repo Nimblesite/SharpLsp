@@ -2,12 +2,20 @@ import * as vscode from 'vscode';
 import { hotReloadOnSave } from './config.js';
 import { info } from './log.js';
 
+declare global {
+  var __sharplspHotReloadRunning: boolean | undefined;
+}
+
 let watchTerminal: vscode.Terminal | undefined;
 let statusBarItem: vscode.StatusBarItem | undefined;
 
+function setHotReloadRunning(running: boolean): void {
+  globalThis.__sharplspHotReloadRunning = running;
+}
+
 /** Whether a hot reload session is currently active. */
 export function isHotReloadRunning(): boolean {
-  return watchTerminal !== undefined;
+  return globalThis.__sharplspHotReloadRunning ?? false;
 }
 
 /** Toggle hot reload on/off. */
@@ -21,7 +29,7 @@ function toggleHotReload(): void {
 
 /** Start dotnet watch for hot reload. */
 function startHotReload(): void {
-  if (watchTerminal !== undefined) {
+  if (isHotReloadRunning()) {
     void vscode.window.showWarningMessage('Hot Reload is already running.');
     return;
   }
@@ -34,6 +42,7 @@ function startHotReload(): void {
   });
   watchTerminal.show();
   watchTerminal.sendText('dotnet watch --non-interactive build');
+  setHotReloadRunning(true);
 
   info('Hot Reload started via dotnet watch');
   updateStatusBar();
@@ -48,6 +57,7 @@ function stopHotReload(): void {
 
   watchTerminal.dispose();
   watchTerminal = undefined;
+  setHotReloadRunning(false);
 
   info('Hot Reload stopped');
   updateStatusBar();
@@ -114,6 +124,7 @@ function wireTerminalClose(context: vscode.ExtensionContext): void {
     vscode.window.onDidCloseTerminal((terminal) => {
       if (terminal === watchTerminal) {
         watchTerminal = undefined;
+        setHotReloadRunning(false);
 
         updateStatusBar();
       }
@@ -137,6 +148,7 @@ function wireOnSave(context: vscode.ExtensionContext): void {
 
 /** Register hot reload commands and lifecycle hooks. */
 export function registerHotReloadCommands(context: vscode.ExtensionContext): void {
+  setHotReloadRunning(false);
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   context.subscriptions.push(statusBarItem);
 

@@ -5,6 +5,12 @@ import { info } from './log';
 
 let fsiTerminal: vscode.Terminal | undefined;
 
+function isFSharpSourceDocument(
+  document: vscode.TextDocument | undefined,
+): document is vscode.TextDocument {
+  return document?.uri.fsPath.endsWith('.fs') === true;
+}
+
 /** Start F# Interactive and optionally send selected text. */
 function sendToFsi(): void {
   const editor = vscode.window.activeTextEditor;
@@ -33,19 +39,15 @@ function sendToFsi(): void {
 
 /** Generate a .fsi signature file for the active F# file. */
 async function generateSignatureFile(): Promise<void> {
-  const editor = vscode.window.activeTextEditor;
-  if (editor === undefined) {
-    void vscode.window.showWarningMessage('No F# file is active.');
-    return;
-  }
-  const fsPath = editor.document.uri.fsPath;
-  if (!fsPath.endsWith('.fs')) {
+  const document = vscode.window.activeTextEditor?.document;
+  if (!isFSharpSourceDocument(document)) {
     void vscode.window.showWarningMessage('No F# file is active.');
     return;
   }
 
+  const fsPath = document.uri.fsPath;
   const fsiPath = path.join(path.dirname(fsPath), `${path.basename(fsPath, '.fs')}.fsi`);
-  const content = editor.document.getText();
+  const content = document.getText();
   const signature = extractSignature(content);
 
   fs.writeFileSync(fsiPath, signature, 'utf8');
