@@ -153,12 +153,14 @@ mod tests {
         assert_eq!(procs[1].pid, 5678);
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn test_parse_ps_output_empty() {
         let procs = parse_ps_output("");
         assert!(procs.is_empty());
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn test_parse_ps_line_no_command() {
         let proc = parse_ps_line("  999 Worker  ").unwrap();
