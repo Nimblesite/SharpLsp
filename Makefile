@@ -81,8 +81,8 @@ _build-rust:
 
 _build-dotnet:
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
-	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --output $(SIDECAR_CS_OUT)
-	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --output $(SIDECAR_FS_OUT)
+	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
+	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
 
 _build-vsix: _stage-vsix-binary
 	@echo "==> Packaging VS Code extension (host: $(HOST_PLATFORM))..."
@@ -107,12 +107,20 @@ _build-rider:
 	@test -f $(RIDER_ZIP_SRC) || { echo "ERROR: $(RIDER_ZIP_SRC) not found" >&2; exit 1; }
 	cp $(RIDER_ZIP_SRC) $(RIDER_ZIP)
 
-_stage-vsix-binary: _build-rust
-	@echo "==> Staging sharplsp binary for VSIX ($(HOST_PLATFORM))..."
+_stage-vsix-binary: _build-rust _build-dotnet
+	@echo "==> Staging required VSIX binaries ($(HOST_PLATFORM))..."
 	rm -rf $(VSCODE_DIR)/bin
-	mkdir -p $(dir $(HOST_VSIX_BIN))
+	mkdir -p $(dir $(HOST_VSIX_BIN)) $(VSCODE_DIR)/bin/all
 	cp $(BINARY) $(HOST_VSIX_BIN)
 	chmod +x $(HOST_VSIX_BIN)
+	cp -r $(SIDECAR_CS_OUT)/. $(VSCODE_DIR)/bin/all/
+	cp -r $(SIDECAR_FS_OUT)/. $(VSCODE_DIR)/bin/all/
+	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.CSharp \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp 2>/dev/null || true
+	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.FSharp \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
+	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
 
 _stage-sidecars:
 	@mkdir -p target/debug/sidecar-csharp target/debug/sidecar-fsharp
@@ -267,6 +275,9 @@ package-vsix-win32-x64 package-vsix-win32-arm64:
 	$(eval EXE       := $(if $(filter win32-%,$(VSIX_PLAT)),.exe,))
 	@echo "==> Building sharplsp for $(RUST_TARGET)..."
 	cargo build --release --target $(RUST_TARGET)
+	@if [ "$(USE_STAGED_SIDECARS)" != "1" ]; then \
+		$(MAKE) _build-dotnet DOTNET_CFG=Release VERSION=$(VERSION); \
+	fi
 	$(MAKE) _package-vsix VSIX_PLAT=$(VSIX_PLAT) RUST_TARGET=$(RUST_TARGET) EXE=$(EXE) VERSION=$(VERSION)
 
 _package-vsix:
