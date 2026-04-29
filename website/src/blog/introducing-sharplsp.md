@@ -18,9 +18,63 @@ excerpt: "We are done waiting for Microsoft to fix .NET tooling. SharpLsp is our
 
 We are done waiting.
 
-Visual Studio is Windows-only and monolithic. Rider requires a paid license. C# Dev Kit is VS Code-only, closed-source, and treats F# as a non-entity. If you use Neovim, Helix, Emacs, or Zed — you are a second-class citizen in your own ecosystem.
+The .NET developer experience outside of Windows is broken. Not theoretically — provably, in public, with 1,035 thumbs down on a single GitHub announcement and a retirement post that told Mac developers to run Windows in a VM. SharpLsp is the community's answer: an open-source, editor-agnostic Language Server for C# and F# — built in Rust, powered by [Roslyn](https://github.com/dotnet/roslyn) and [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/). MIT licensed. Zero proprietary dependencies. One install that serves every editor on the machine.
 
-SharpLsp is our answer. An open-source, editor-agnostic Language Server for C# and F# — built in Rust, powered by [Roslyn](https://github.com/dotnet/roslyn) and [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/). MIT licensed. Zero proprietary dependencies. One install that serves every editor on the machine.
+## The Situation Is Worse Than You Think
+
+Every option available to a .NET developer today has a disqualifying flaw. Not a quirk — a structural problem that cannot be patched away.
+
+### Visual Studio: Windows Only, Full Stop
+
+Visual Studio remains Windows-only. In August 2023, Microsoft announced the retirement of Visual Studio for Mac, effective August 31, 2024. The [official retirement post](https://devblogs.microsoft.com/visualstudio/visual-studio-for-mac-retirement-announcement/) listed the alternatives for Mac developers who need F#:
+
+> **"Visual Studio IDE running on Windows in a VM on Mac: This option will cover the broadest IDE needs such as legacy project support for Xamarin, F#, and remote development experiences on iOS by using a virtual machine (VM)."**
+
+That is not a workaround. That is Microsoft telling F# developers on Mac to run a foreign operating system inside their computer to write code in their language of choice. It was a clear signal: if you are on macOS or Linux and you use F#, you are not a priority.
+
+### C# Dev Kit: Closed Core, Enterprise Paywall, VS Code Only
+
+The replacement Microsoft offered was [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit). It shipped in 2023 to a hostile reception. In [GitHub issue #5276](https://github.com/dotnet/vscode-csharp/issues/5276) — the roadmap announcement where Microsoft revealed the extension would contain closed-source components — the community left **1,035 thumbs-down reactions against 87 thumbs-up**. That is a 12-to-1 rejection ratio on Microsoft's own repository.
+
+The comments were unambiguous. One developer wrote:
+
+> *"It's sad and short-sighted when Microsoft tries to jockey for power in the short-run (or reap rewards on existing market share) by making user-hostile decisions."* (245 👍)
+
+Another:
+
+> *"MS has gained a ton of goodwill from developers by building open source, it would be a shame for this to change and old habits come back in to play."* (178 👍)
+
+And a third, with 435 upvotes — the most-liked comment in the thread:
+
+> *"I feel like Microsoft has noticed the amount of installs the C# extension has and has to step (aka embrace) in... Will all these installs automatically switch to the closed-source part of the extension? I would rather see a new extension in the Visual Studio Marketplace... Luckily we still have Rider, so we have at least one IDE/Editor for C# that is not owned by Microsoft."*
+
+The closed-source core was not the only problem. The [C# Dev Kit license](https://marketplace.visualstudio.com/items/ms-dotnettools.csdevkit/license) contains a hard enterprise restriction:
+
+> *"If you are an Enterprise, your users may not use the Software to develop or test your applications, except for: (1) open source; and (2) education purposes."*
+
+An "Enterprise" is defined as any organization with more than 250 users **or** more than $1,000,000 USD in annual revenue. That means any profitable small business, any mid-sized team, any funded startup — all of them need a paid Visual Studio subscription to use C# Dev Kit commercially. The extension had 16 million installs. Most of those users do not know they need a commercial license.
+
+C# Dev Kit is also **VS Code only**. It will not work in Neovim, Helix, Emacs, Zed, or any other LSP-capable editor. And as one developer noted in the issue thread:
+
+> *"I assume that Microsoft won't make extensions for these editors."*
+
+They were right. Microsoft confirmed it — no change to debugger licensing, no support planned for non-VS Code editors.
+
+### OmniSharp: The Community's Orphan
+
+OmniSharp was the open-source workhorse that powered the old C# extension for years. It worked across editors, it was MIT licensed, and it was community-maintained. When Microsoft announced the transition to the new closed-source LSP host, community contributors noted that OmniSharp's primary developers were Microsoft employees — meaning the "community" project was staffed by one company. As one observer put it in the same thread:
+
+> *"We'll see how much love the open-source LSP server will get but I don't have much hope. This year, JoeRobich and 50Wliu have made the most commits and are both working at Microsoft."*
+
+OmniSharp's future is now tied to whether Microsoft's internal priorities align with keeping it alive. That is not independence. That is dependency with extra steps.
+
+### Rider: Excellent but Proprietary
+
+JetBrains Rider is the best IDE available for .NET outside of Visual Studio. That is a genuine compliment. But it requires a paid subscription, it is a closed-source product, and your workflow depends on JetBrains keeping it commercially viable. If they raise prices, change the licensing model, or discontinue it — you have no recourse. The community has no ownership.
+
+One developer in issue #5276 expressed exactly this concern:
+
+> *"Closed tools all get sunset eventually, then we'll have to port all our code. I've worked at places where my whole job was porting from some closed source language that's no longer supported. Better to do it on your own schedule than be forced to unexpectedly. At least with omnisharp there was a plan."*
 
 ## What We Have Built
 
@@ -134,11 +188,25 @@ Syntax-only requests — document symbols, folding ranges, selection ranges — 
 
 **All SharpLsp binaries live in one central location on the machine.** `sharplsp-lsp` on `$PATH` is all any editor needs. Editor extensions are thin clients that launch the system binary — they contain zero bundled executables. One install serves VS Code, Neovim, Helix, Zed, and every other LSP-capable editor simultaneously.
 
-## F# Is Not a Second-Class Citizen
+## F# Is Not an Afterthought
 
-Every other .NET tool either ignores F# or treats it as an afterthought. SharpLsp does not. C# and F# share the same infrastructure tier. They hit the same feature targets. They are tested to the same standard.
+Microsoft's retirement post told F# developers on Mac to run a Windows VM. C# Dev Kit has no F# support at all. OmniSharp's F# story has always been an afterthought. The community has accepted this for years because there was no alternative. SharpLsp refuses to accept it.
+
+C# and F# share the same infrastructure tier. They hit the same feature targets. They are tested to the same standard. F# is not a bolt-on — it is a first-class target from day one.
 
 The F# sidecar runs [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) with [Ionide.ProjInfo](https://github.com/ionide/proj-info) for project cracking and [FSharpLint](https://github.com/fsprojects/FSharpLint) for linting. F#-specific features — pipeline hints, union case generation, record stubs, computation expression completions, file ordering awareness — are on the roadmap as first-priority items, not future nice-to-haves.
+
+When we build a new feature, we build it for F# first.
+
+## Why Open Source Ownership Matters
+
+The community's frustration with the #5276 announcement was not just about open-source ideology. It was about control. As one developer wrote, with 99 upvotes:
+
+> *"This kind of rug pull with open source projects isn't welcome at all. I hope you fix this before it turns into a PR disaster. This kind of behavior makes me embarrassed to have an open source project relying 100% on .NET."*
+
+Closed tools get sunset. Licenses get changed. Companies pivot. The only durable answer for a developer ecosystem is tooling that the community owns — where the source code exists, where anyone can fork it, where no single company can change the terms of use overnight.
+
+SharpLsp is MIT licensed. The full source is on [GitHub](https://github.com/Nimblesite/SharpLsp). There are no closed-source components, no enterprise license restrictions, no Microsoft account requirements. No one needs permission to use it commercially. No organization of any size is excluded from using it. There is nothing to sign.
 
 ## What Is Next
 
