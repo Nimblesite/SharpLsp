@@ -21,7 +21,7 @@ SHELL        := /bin/bash
 PROFILE     ?= release
 CARGO_FLAG   = $(if $(filter release,$(PROFILE)),--release,)
 DOTNET_CFG   = $(if $(filter release,$(PROFILE)),Release,Debug)
-RUST_TEST_THREADS ?= 4
+RUST_TEST_THREADS ?= 1
 
 VSCODE_DIR   = editors/vscode
 ZED_DIR      = editors/zed
@@ -107,7 +107,7 @@ test-rust: _build-dotnet _stage-sidecars
 	cargo llvm-cov nextest --no-run
 	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
 	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
-		cargo llvm-cov nextest --no-clean --json --output-path target/coverage-rust.json --fail-fast --test-threads $(RUST_TEST_THREADS)
+		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast --test-threads $(RUST_TEST_THREADS)
 	@$(CHECK_COV) sharplsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
 test-zed:

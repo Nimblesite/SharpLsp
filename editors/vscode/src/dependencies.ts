@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import * as log from './log.js';
 import { getErrorMessage } from './utils.js';
 
@@ -74,13 +74,24 @@ export function parseProjectDependencies(projectPath: string): ProjectDependenci
 
 /** Parse project XML content into dependencies. Exported for testing. */
 export function parseProjectXml(content: string): ProjectDependencies {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- fast-xml-parser returns untyped output; XmlDocument mirrors the known csproj/fsproj structure
-  const doc: XmlDocument = xmlParser.parse(content);
-  const itemGroups = collectItemGroups(doc);
-  return {
-    nugetPackages: extractPackageReferences(itemGroups),
-    projectReferences: extractProjectReferences(itemGroups),
-  };
+  if (XMLValidator.validate(content) !== true) {
+    return emptyProjectDependencies();
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- fast-xml-parser returns untyped output; XmlDocument mirrors the known csproj/fsproj structure
+    const doc: XmlDocument = xmlParser.parse(content);
+    const itemGroups = collectItemGroups(doc);
+    return {
+      nugetPackages: extractPackageReferences(itemGroups),
+      projectReferences: extractProjectReferences(itemGroups),
+    };
+  } catch {
+    return emptyProjectDependencies();
+  }
+}
+
+function emptyProjectDependencies(): ProjectDependencies {
+  return { nugetPackages: [], projectReferences: [] };
 }
 
 function collectItemGroups(doc: XmlDocument): XmlItemGroup[] {

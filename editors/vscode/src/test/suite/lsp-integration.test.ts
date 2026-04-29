@@ -474,6 +474,151 @@ suite('LSP Integration — Fixture Files', () => {
   });
 });
 
+suite('LSP Integration — Real Semantic LSP', () => {
+  let tmpDir: string;
+  let fixtureDir: string;
+
+  suiteSetup(async function () {
+    this.timeout(60_000);
+    const result = await setupLspTestSuite('semantic-');
+    tmpDir = result.tmpDir;
+    fixtureDir = path.resolve(__dirname, '../../../test-fixtures/workspace');
+  });
+
+  suiteTeardown(async () => {
+    await closeAllEditors();
+    teardownLspTestSuite(tmpDir);
+  });
+
+  teardown(async () => {
+    await closeAllEditors();
+  });
+
+  test('returns Roslyn-backed completion items with concrete symbol kinds', async function () {
+    this.timeout(90_000);
+    const { uri } = await openWorkspaceFixture(fixtureDir, 'CompletionShot.cs');
+    await waitForDocumentSymbols(uri);
+
+    const completions = await pollUntilResult(
+      async () => {
+        const result = await vscode.commands.executeCommand<vscode.CompletionList>(
+          'vscode.executeCompletionItemProvider',
+          uri,
+          new vscode.Position(11, 24),
+        );
+        return result ?? new vscode.CompletionList();
+      },
+      (list) => list.items.some((item) => item.label.toString() === 'Add'),
+      90_000,
+      2_000,
+    );
+
+    const items = new Map(completions.items.map((item) => [item.label.toString(), item]));
+    assert.strictEqual(items.get('Name')?.kind, vscode.CompletionItemKind.Property);
+    assert.strictEqual(items.get('Add')?.kind, vscode.CompletionItemKind.Method);
+    assert.strictEqual(items.get('_count')?.kind, vscode.CompletionItemKind.Field);
+  });
+
+  test('resolves definition and references for a method call site', async function () {
+    this.timeout(90_000);
+    const { uri } = await openWorkspaceFixture(fixtureDir, 'CompletionShot.cs');
+    await waitForDocumentSymbols(uri);
+    const addCall = new vscode.Position(10, 26);
+
+    const definitions = await pollUntilResult(
+      async () => {
+        const result = await vscode.commands.executeCommand<vscode.Location[]>(
+          'vscode.executeDefinitionProvider',
+          uri,
+          addCall,
+        );
+        return result ?? [];
+      },
+      (locations) => locations.length > 0,
+      90_000,
+      2_000,
+    );
+
+    assert.ok(
+      definitions.some(
+        (location) => location.uri.toString() === uri.toString() && location.range.start.line === 6,
+      ),
+      'Add call must resolve to the Add method declaration',
+    );
+
+    const references = await pollUntilResult(
+      async () => {
+        const result = await vscode.commands.executeCommand<vscode.Location[]>(
+          'vscode.executeReferenceProvider',
+          uri,
+          addCall,
+        );
+        return result ?? [];
+      },
+      (locations) => locations.length > 0,
+      90_000,
+      2_000,
+    );
+
+    assert.ok(
+      references.some(
+        (location) =>
+          location.uri.toString() === uri.toString() && location.range.start.line === 10,
+      ),
+      'References must include the Add call site',
+    );
+  });
+
+  test('returns document highlights for a semantic symbol occurrence', async function () {
+    this.timeout(90_000);
+    const { uri } = await openWorkspaceFixture(fixtureDir, 'CompletionShot.cs');
+    await waitForDocumentSymbols(uri);
+
+    const highlights = await pollUntilResult(
+      async () => {
+        const result = await vscode.commands.executeCommand<vscode.DocumentHighlight[]>(
+          'vscode.executeDocumentHighlights',
+          uri,
+          new vscode.Position(10, 26),
+        );
+        return result ?? [];
+      },
+      (items) => items.length > 0,
+      90_000,
+      2_000,
+    );
+
+    assert.ok(
+      highlights.every((highlight) => highlight.range.start.line >= 0),
+      'Every document highlight must have a valid range',
+    );
+  });
+
+  test('returns parameter-name inlay hints for a real method call', async function () {
+    this.timeout(90_000);
+    const { doc, uri } = await openWorkspaceFixture(fixtureDir, 'CompletionShot.cs');
+    await waitForDocumentSymbols(uri);
+
+    const hints = await pollUntilResult(
+      async () => {
+        const result = await vscode.commands.executeCommand<vscode.InlayHint[]>(
+          'vscode.executeInlayHintProvider',
+          uri,
+          new vscode.Range(new vscode.Position(0, 0), new vscode.Position(doc.lineCount, 0)),
+        );
+        return result ?? [];
+      },
+      (items) => items.length >= 2,
+      90_000,
+      2_000,
+    );
+
+    const labels = hints.map(inlayHintLabelText).join(' ');
+    assert.match(labels, /\ba\b/, 'Inlay hints must include the first parameter name');
+    assert.match(labels, /\bb\b/, 'Inlay hints must include the second parameter name');
+  });
+});
+
 // ── Code Actions / Refactoring ────────────────────────────────────
 
 suite('LSP Integration — Code Actions & Refactoring', () => {
@@ -599,4 +744,21 @@ function findSymbol(
     if (found) return found;
   }
   return undefined;
+}
+
+async function openWorkspaceFixture(
+  fixtureDir: string,
+  name: string,
+): Promise<{ doc: vscode.TextDocument; uri: vscode.Uri }> {
+  const uri = vscode.Uri.file(path.join(fixtureDir, name));
+  const doc = await vscode.workspace.openTextDocument(uri);
+  await vscode.window.showTextDocument(doc);
+  return { doc, uri };
+}
+
+function inlayHintLabelText(hint: vscode.InlayHint): string {
+  if (typeof hint.label === 'string') {
+    return hint.label;
+  }
+  return hint.label.map((part) => part.value).join('');
 }

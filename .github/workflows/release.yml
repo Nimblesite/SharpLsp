@@ -13,71 +13,163 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  # Build sharplsp binary for each target platform (must be parallel — different OSes).
-  build-sharplsp:
-    name: Build sharplsp (${{ matrix.target }})
+  # Build per-platform VSIXs — follows the same pattern as publish-vsix.yml.
+  # Each VSIX bundles the platform-native sharplsp binary inside bin/<platform>/.
+  build-vsix:
+    name: Build VSIX (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+          - platform: linux-x64
+            os: ubuntu-latest
+            rust_target: x86_64-unknown-linux-gnu
             artifact: sharplsp
             archive: tar.gz
-          - os: macos-latest
-            target: aarch64-apple-darwin
+            can_execute: true
+          - platform: darwin-arm64
+            os: macos-15
+            rust_target: aarch64-apple-darwin
             artifact: sharplsp
             archive: tar.gz
-          - os: macos-13
-            target: x86_64-apple-darwin
-            artifact: sharplsp
-            archive: tar.gz
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
+            can_execute: true
+          - platform: win32-x64
+            os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
             artifact: sharplsp.exe
             archive: zip
+            can_execute: true
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.rust_target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: ${{ matrix.rust_target }}
 
-      - name: Build Rust LSP server
-        run: cargo build --release --target ${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
 
-      - name: Package (tar.gz)
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install VS Code extension dependencies
+        run: npm ci --prefix editors/vscode
+
+      - name: Validate Shipwright manifest shape
+        shell: bash
+        run: |-
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const manifest = JSON.parse(await readFile('editors/vscode/shipwright.json', 'utf8'));
+          const pkg = JSON.parse(await readFile('editors/vscode/package.json', 'utf8'));
+          const props = pkg.contributes.configuration.properties;
+          const lsp = manifest.components.find((c) => c.id === 'sharplsp');
+          if (!lsp) throw new Error('sharplsp component missing');
+          if (!lsp.sources.includes('bundled')) throw new Error('sharplsp bundled source missing');
+          if (lsp.bundled?.bundlePath !== 'bin/${platform}/sharplsp${exe}') {
+            throw new Error('unexpected sharplsp bundled bundlePath');
+          }
+          if (manifest.hosts?.vscode?.artifact !== 'vsix-per-platform') {
+            throw new Error('vscode host must use vsix-per-platform artifact');
+          }
+          for (const component of manifest.components.filter((c) => c.userSetting)) {
+            if (!props[component.userSetting]) throw new Error(`missing VS Code setting ${component.userSetting}`);
+          }
+          NODE
+
+      - name: Extract version from tag
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Build sharplsp
+        shell: bash
+        run: cargo build --release --target "${{ matrix.rust_target }}"
+
+      - name: Verify binary version
+        if: ${{ matrix.can_execute }}
+        shell: bash
+        run: |-
+          set -euo pipefail
+          exe=""
+          if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
+          binary="target/${{ matrix.rust_target }}/release/sharplsp${exe}"
+          "$binary" --version | grep -Fx "sharplsp ${VERSION}"
+
+      - name: Stage platform binary
+        shell: bash
+        run: |-
+          set -euo pipefail
+          exe=""
+          if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
+          rm -rf editors/vscode/bin
+          mkdir -p "editors/vscode/bin/${{ matrix.platform }}"
+          cp "target/${{ matrix.rust_target }}/release/sharplsp${exe}" \
+            "editors/vscode/bin/${{ matrix.platform }}/sharplsp${exe}"
+
+      - name: Package VSIX
+        shell: bash
+        run: |-
+          set -euo pipefail
+          mkdir -p dist
+          cd editors/vscode
+          npx @vscode/vsce package --no-dependencies --target "${{ matrix.platform }}" \
+            -o "../../dist/sharplsp-${{ matrix.platform }}.vsix"
+
+      - name: Verify VSIX contains platform binary
+        shell: bash
+        run: |-
+          set -euo pipefail
+          exe=""
+          if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
+          unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" \
+            | grep -F "bin/${{ matrix.platform }}/sharplsp${exe}"
+
+      - name: Package binary archive (tar.gz)
         if: matrix.archive == 'tar.gz'
-        run: |
-          STAGING="sharplsp-${{ github.ref_name }}-${{ matrix.target }}"
+        shell: bash
+        run: |-
+          STAGING="sharplsp-${GITHUB_REF_NAME}-${{ matrix.rust_target }}"
           mkdir -p "$STAGING"
-          cp "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$STAGING/"
+          cp "target/${{ matrix.rust_target }}/release/${{ matrix.artifact }}" "$STAGING/"
           tar czf "$STAGING.tar.gz" "$STAGING"
-          echo "ASSET=$STAGING.tar.gz" >> "$GITHUB_ENV"
+          mkdir -p dist-archive
+          mv "$STAGING.tar.gz" dist-archive/
 
-      - name: Package (zip)
+      - name: Package binary archive (zip)
         if: matrix.archive == 'zip'
         shell: pwsh
-        run: |
-          $staging = "sharplsp-${{ github.ref_name }}-${{ matrix.target }}"
+        run: |-
+          $staging = "sharplsp-$env:GITHUB_REF_NAME-${{ matrix.rust_target }}"
           New-Item -ItemType Directory -Path "$staging" -Force
-          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "$staging/"
+          Copy-Item "target/${{ matrix.rust_target }}/release/${{ matrix.artifact }}" "$staging/"
           Compress-Archive -Path "$staging" -DestinationPath "$staging.zip"
-          echo "ASSET=$staging.zip" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Path "dist-archive" -Force
+          Move-Item "$staging.zip" "dist-archive/"
 
-      - name: Upload artifact
+      - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sharplsp-${{ matrix.target }}
-          path: ${{ env.ASSET }}
+          name: vsix-${{ matrix.platform }}
+          path: dist/*.vsix
 
-  # Pack sidecars as framework-dependent dotnet tools (runs parallel with build — different runner, cached dotnet).
+      - name: Upload binary archive artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.rust_target }}
+          path: dist-archive/*
+
+  # Pack sidecars as framework-dependent dotnet tools.
   pack-sidecars:
     name: Pack sidecars
     runs-on: ubuntu-latest
@@ -113,12 +205,11 @@ jobs:
           name: sidecar-nupkgs
           path: nupkgs/*.nupkg
 
-  # Create GitHub release, publish NuGet packages, and update Homebrew/Scoop.
-  # Sequential steps in one job — no point spinning up 4 separate runners for
-  # lightweight operations that share the same ubuntu environment.
+  # Create GitHub release and publish NuGet packages.
+  # Does NOT publish to VS Code Marketplace — manual step.
   release:
     name: Release & Publish
-    needs: [build-sharplsp, pack-sidecars]
+    needs: [build-vsix, pack-sidecars]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -132,12 +223,10 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      # ── GitHub Release ──────────────────────────────────────────────
-      - name: Download sharplsp artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts/sharplsp
-          pattern: sharplsp-*
+          path: artifacts
           merge-multiple: true
 
       - name: Create GitHub release
@@ -147,140 +236,17 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "SharpLsp ${{ github.ref_name }}" \
             --generate-notes \
-            artifacts/sharplsp/*
-
-      # ── NuGet Publish ───────────────────────────────────────────────
-      - name: Download sidecar nupkgs
-        uses: actions/download-artifact@v4
-        with:
-          name: sidecar-nupkgs
-          path: nupkgs
+            artifacts/*.tar.gz artifacts/*.zip artifacts/*.vsix || \
+          gh release create "${{ github.ref_name }}" \
+            --title "SharpLsp ${{ github.ref_name }}" \
+            --generate-notes \
+            artifacts/*.vsix
 
       - name: Push to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
-          dotnet nuget push nupkgs/*.nupkg \
-            --api-key ${{ secrets.NUGET_API_KEY }} \
+          dotnet nuget push artifacts/*.nupkg \
+            --api-key "$NUGET_API_KEY" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
-
-      # ── Homebrew Tap ────────────────────────────────────────────────
-      - name: Compute checksums for Homebrew
-        run: |
-          TAG="${{ github.ref_name }}"
-          for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu; do
-            ARCHIVE="sharplsp-${TAG}-${target}.tar.gz"
-            SHA=$(sha256sum "artifacts/sharplsp/$ARCHIVE" | cut -d' ' -f1)
-            echo "SHA_${target//-/_}=$SHA" >> "$GITHUB_ENV"
-          done
-
-      - name: Checkout Homebrew tap
-        uses: actions/checkout@v4
-        with:
-          repository: Nimblesite/homebrew-tap
-          token: ${{ secrets.BREW_SCOOP_PAT }}
-          path: homebrew-tap
-
-      - name: Generate Homebrew formula
-        run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          BASE="https://github.com/Nimblesite/SharpLsp/releases/download/${TAG}"
-          mkdir -p homebrew-tap/Formula
-          cat > homebrew-tap/Formula/sharplsp.rb << EOF
-          class Sharplsp < Formula
-            desc "Open-source .NET LSP server — C# and F# intelligence for every editor"
-            homepage "https://github.com/Nimblesite/SharpLsp"
-            license "MIT"
-            version "${VERSION}"
-
-            on_macos do
-              on_arm do
-                url "${BASE}/sharplsp-${TAG}-aarch64-apple-darwin.tar.gz"
-                sha256 "${SHA_aarch64_apple_darwin}"
-              end
-              on_intel do
-                url "${BASE}/sharplsp-${TAG}-x86_64-apple-darwin.tar.gz"
-                sha256 "${SHA_x86_64_apple_darwin}"
-              end
-            end
-
-            on_linux do
-              on_intel do
-                url "${BASE}/sharplsp-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
-                sha256 "${SHA_x86_64_unknown_linux_gnu}"
-              end
-            end
-
-            def install
-              bin.install "sharplsp"
-            end
-
-            test do
-              assert_match "sharplsp", shell_output("#{bin}/sharplsp --version")
-            end
-          end
-          EOF
-
-      - name: Push Homebrew formula
-        run: |
-          cd homebrew-tap
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/sharplsp.rb
-          git commit -m "Update sharplsp to ${{ github.ref_name }}"
-          git push
-
-      # ── Scoop Bucket ────────────────────────────────────────────────
-      - name: Compute checksum for Scoop
-        run: |
-          TAG="${{ github.ref_name }}"
-          ARCHIVE="sharplsp-${TAG}-x86_64-pc-windows-msvc.zip"
-          SHA=$(sha256sum "artifacts/sharplsp/$ARCHIVE" | cut -d' ' -f1)
-          echo "SHA_WIN=$SHA" >> "$GITHUB_ENV"
-
-      - name: Checkout Scoop bucket
-        uses: actions/checkout@v4
-        with:
-          repository: Nimblesite/scoop-bucket
-          token: ${{ secrets.BREW_SCOOP_PAT }}
-          path: scoop-bucket
-
-      - name: Generate Scoop manifest
-        run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          mkdir -p scoop-bucket/bucket
-          cat > scoop-bucket/bucket/sharplsp.json << EOF
-          {
-            "version": "${VERSION}",
-            "description": "Open-source .NET LSP server — C# and F# intelligence for every editor",
-            "homepage": "https://github.com/Nimblesite/SharpLsp",
-            "license": "MIT",
-            "architecture": {
-              "64bit": {
-                "url": "https://github.com/Nimblesite/SharpLsp/releases/download/${TAG}/sharplsp-${TAG}-x86_64-pc-windows-msvc.zip",
-                "hash": "${SHA_WIN}",
-                "bin": "sharplsp.exe"
-              }
-            },
-            "checkver": {
-              "github": "https://github.com/Nimblesite/SharpLsp"
-            },
-            "autoupdate": {
-              "architecture": {
-                "64bit": {
-                  "url": "https://github.com/Nimblesite/SharpLsp/releases/download/v\$version/sharplsp-v\$version-x86_64-pc-windows-msvc.zip"
-                }
-              }
-            }
-          }
-          EOF
-
-      - name: Push Scoop manifest
-        run: |
-          cd scoop-bucket
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add bucket/sharplsp.json
-          git commit -m "Update sharplsp to ${{ github.ref_name }}"
-          git push
