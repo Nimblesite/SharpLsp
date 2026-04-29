@@ -56,42 +56,27 @@
   <!-- Bottom accent line -->
   <rect x="0" y="616" width="1200" height="2" fill="#00e676" opacity="0.18"/>
 
-  <!-- ── LOGO MARK (centred at ~x=140, y=280) ── -->
-  <g transform="translate(80, 215)" filter="url(#logoGlow)">
-    <!-- Outer diamond -->
+  <!-- ── LOGO MARK ── -->
+  <g transform="translate(80, 195)" filter="url(#logoGlow)">
     <polygon points="80,0 148,80 80,160 12,80" fill="none" stroke="#00e676" stroke-width="2.5" opacity="0.35"/>
-    <!-- Green filled diamond -->
     <polygon points="80,8 140,80 80,152 20,80" fill="#00e676"/>
-    <!-- Lightning bolt cut-out -->
     <polygon points="79,30 102,30 87,72 108,72 64,130 77,88 56,88" fill="#003918"/>
   </g>
 
   <!-- ── WORDMARK ── -->
-  <!-- "Sharp" in white -->
   <text
     x="236"
-    y="280"
+    y="260"
     font-family="'Space Grotesk', 'Inter', -apple-system, sans-serif"
     font-size="96"
     font-weight="700"
-    fill="#e5e2e1"
     letter-spacing="-3"
-  >Sharp</text>
-  <!-- "Lsp" in green -->
-  <text
-    x="610"
-    y="280"
-    font-family="'Space Grotesk', 'Inter', -apple-system, sans-serif"
-    font-size="96"
-    font-weight="700"
-    fill="#00e676"
-    letter-spacing="-3"
-  >Lsp</text>
+  ><tspan fill="#e5e2e1">Sharp</tspan><tspan fill="#00e676">Lsp</tspan></text>
 
   <!-- ── TAGLINE ── -->
   <text
     x="236"
-    y="336"
+    y="316"
     font-family="'Inter', -apple-system, sans-serif"
     font-size="28"
     font-weight="400"
@@ -99,26 +84,27 @@
     letter-spacing="0.3"
   >Open-source C# + F# language server. Every editor.</text>
 
-  <!-- ── FEATURE PILLS (bottom row) ── -->
-  <!-- Pill 1: Roslyn -->
-  <rect x="236" y="408" width="158" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
-  <text x="315" y="436" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">Roslyn</text>
+  <!-- ── DIVIDER ── -->
+  <line x1="236" y1="356" x2="1120" y2="356" stroke="#262626" stroke-width="1"/>
 
-  <!-- Pill 2: FSharp.Compiler.Service -->
-  <rect x="408" y="408" width="228" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
-  <text x="522" y="436" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">FSharp.Compiler.Service</text>
+  <!-- ── FEATURE PILLS ── -->
+  <rect x="236" y="386" width="158" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
+  <text x="315" y="414" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">Roslyn</text>
 
-  <!-- Pill 3: MIT License -->
-  <rect x="650" y="408" width="150" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
-  <text x="725" y="436" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#00e676" text-anchor="middle">MIT License</text>
+  <rect x="408" y="386" width="228" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
+  <text x="522" y="414" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">FSharp.Compiler.Service</text>
 
-  <!-- Pill 4: Rust -->
-  <rect x="814" y="408" width="100" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
-  <text x="864" y="436" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">Rust</text>
+  <rect x="650" y="386" width="150" height="44" rx="6" fill="#00e676" stroke="#00e676" stroke-width="1.5"/>
+  <text x="725" y="414" font-family="'Inter', sans-serif" font-size="18" font-weight="700" fill="#003918" text-anchor="middle">MIT License</text>
 
-  <!-- Pill 5: VS Code + Zed -->
-  <rect x="928" y="408" width="180" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
-  <text x="1018" y="436" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">VS Code · Zed</text>
+  <rect x="814" y="386" width="100" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
+  <text x="864" y="414" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">Rust</text>
+
+  <rect x="928" y="386" width="180" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
+  <text x="1018" y="414" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">VS Code · Zed</text>
+
+  <!-- ── EDITOR ECOSYSTEM ROW ── -->
+  <text x="236" y="484" font-family="'Inter', sans-serif" font-size="16" font-weight="500" fill="#859585" letter-spacing="0.5">Also: Neovim · Helix · Emacs · Rider — any LSP-compatible editor</text>
 
   <!-- ── URL BADGE (bottom right) ── -->
   <text
@@ -132,15 +118,16 @@
     letter-spacing="0.5"
   >sharplsp.dev</text>
 
-  <!-- ── STATUS DOT + badge (top right) ── -->
-  <circle cx="1128" cy="52" r="5" fill="#00e676"/>
+  <!-- ── STATUS DOT + badge (top right, right-anchored) ── -->
   <text
-    x="1142"
+    x="1170"
     y="57"
     font-family="'Inter', sans-serif"
-    font-size="16"
+    font-size="15"
     font-weight="600"
     fill="#b7b5b4"
-    letter-spacing="0.5"
-  >Open Source</text>
+    letter-spacing="0.4"
+    text-anchor="end"
+  >Open Source · MIT</text>
+  <circle cx="1178" cy="52" r="4.5" fill="#00e676"/>
 </svg>

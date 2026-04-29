@@ -8,7 +8,7 @@
   "favicon": "/assets/favicon.svg",
   "themeColor": "#19d078",
   "keywords": "C# language server, F# language server, .NET LSP, open source C# extension, OmniSharp alternative, C# Dev Kit alternative, Roslyn language server, FSharp.Compiler.Service, VS Code C#, Neovim .NET, Helix C#, Zed .NET",
-  "ogImage": "/assets/images/blog/introducing-sharplsp.png",
+  "ogImage": "/assets/images/og-image.png",
   "ogImageWidth": "1200",
   "ogImageHeight": "630",
   "searchUrl": "https://sharplsp.dev/blog",
