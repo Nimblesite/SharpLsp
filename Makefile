@@ -104,9 +104,10 @@ test-rust: _build-dotnet _stage-sidecars
 	@echo "==> Pre-building ProfileTarget fixture..."
 	dotnet build tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
 	@echo "==> Running sharplsp tests with coverage..."
+	cargo llvm-cov nextest --no-run
 	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
 	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
-		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast --test-threads $(RUST_TEST_THREADS)
+		cargo llvm-cov nextest --no-clean --json --output-path target/coverage-rust.json --fail-fast --test-threads $(RUST_TEST_THREADS)
 	@$(CHECK_COV) sharplsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
 test-zed:

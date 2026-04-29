@@ -346,7 +346,10 @@ fn sidecar_launch(
     name: &str,
     socket_path: &str,
 ) -> (String, Vec<String>) {
-    debug!(tool_command, subdir, name, socket_path, "Resolving sidecar launch command");
+    debug!(
+        tool_command,
+        subdir, name, socket_path, "Resolving sidecar launch command"
+    );
 
     // [SIDECAR-RESOLVE-ENV]: env var override takes absolute priority.
     if let Some(exe) = env_var_sidecar_override(subdir) {
