@@ -21,6 +21,10 @@
         "win32-x64",
         "win32-arm64"
       ],
+      "bundled": {
+        "bundlePath": "bin/${platform}/sharplsp${exe}",
+        "perPlatformArtifact": true
+      },
       "sources": [
         "user-setting",
         "env",
@@ -38,12 +42,7 @@
         "scoop": "nimblesite/sharplsp"
       },
       "verifyStartup": true,
-      "versionCheckStrategy": "version-flag",
-      "required": true,
-      "bundled": {
-        "bundlePath": "bin/${platform}/sharplsp${exe}",
-        "perPlatformArtifact": true
-      }
+      "versionCheckStrategy": "version-flag"
     },
     {
       "id": "sharplsp-sidecar-csharp",
@@ -54,23 +53,22 @@
       "platforms": [
         "all"
       ],
+      "bundled": {
+        "bundlePath": "bin/all/sharplsp-sidecar-csharp",
+        "perPlatformArtifact": false
+      },
       "sources": [
         "user-setting",
         "env",
-        "path",
-        "dotnet-tool"
+        "bundled",
+        "path"
       ],
       "userSetting": "sharplsp.csharpSidecarPath",
       "env": {
         "pathVar": "SHARPLSP_CSHARP_SIDECAR_PATH"
       },
-      "dotnetTool": {
-        "package": "SharpLsp.Sidecar.CSharp",
-        "command": "sharplsp-sidecar-csharp"
-      },
       "verifyStartup": true,
-      "versionCheckStrategy": "version-flag",
-      "required": true
+      "versionCheckStrategy": "version-flag"
     },
     {
       "id": "sharplsp-sidecar-fsharp",
@@ -81,23 +79,22 @@
       "platforms": [
         "all"
       ],
+      "bundled": {
+        "bundlePath": "bin/all/sharplsp-sidecar-fsharp",
+        "perPlatformArtifact": false
+      },
       "sources": [
         "user-setting",
         "env",
-        "path",
-        "dotnet-tool"
+        "bundled",
+        "path"
       ],
       "userSetting": "sharplsp.fsharpSidecarPath",
       "env": {
         "pathVar": "SHARPLSP_FSHARP_SIDECAR_PATH"
       },
-      "dotnetTool": {
-        "package": "SharpLsp.Sidecar.FSharp",
-        "command": "sharplsp-sidecar-fsharp"
-      },
       "verifyStartup": true,
-      "versionCheckStrategy": "version-flag",
-      "required": false
+      "versionCheckStrategy": "version-flag"
     },
     {
       "id": "sharplsp-vscode",
@@ -138,7 +135,8 @@
       "artifact": "intellij-jar",
       "activationVerifies": [
         "sharplsp",
-        "sharplsp-sidecar-csharp"
+        "sharplsp-sidecar-csharp",
+        "sharplsp-sidecar-fsharp"
       ],
       "onMismatch": "prompt-pkgmgr"
     },

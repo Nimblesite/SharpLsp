@@ -1,20 +1,80 @@
 name: Release
-
-on:
+'on':
   push:
-    tags: ['v*']
-
+    tags:
+      - v*
 permissions:
   contents: write
-
 env:
   CARGO_TERM_COLOR: always
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-
 jobs:
+  set-version:
+    name: Stamp version and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+      - name: Extract version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: Stamp Cargo.toml
+        run: sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+      - name: Stamp package.json
+        run: |
+          jq --arg v "$VERSION" '.version = $v' editors/vscode/package.json > /tmp/pkg.json
+          mv /tmp/pkg.json editors/vscode/package.json
+      - name: Commit and push version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml editors/vscode/package.json
+          git diff --cached --quiet || git commit -m "chore: stamp version ${VERSION}"
+          git push origin HEAD:refs/heads/${GITHUB_REF_NAME}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  publish-sidecars:
+    name: Publish sidecars
+    needs: set-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Extract version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: Publish sidecars
+        run: |-
+          dotnet publish sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
+            --configuration Release --no-self-contained -p:Version="$VERSION" -p:PackageVersion="$VERSION" --output target/sidecar-csharp
+          dotnet publish sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
+            --configuration Release --no-self-contained -p:Version="$VERSION" -p:PackageVersion="$VERSION" --output target/sidecar-fsharp
+      - name: Verify sidecar versions
+        run: >-
+          target/sidecar-csharp/SharpLsp.Sidecar.CSharp --version | grep -Fx
+          "sharplsp-sidecar-csharp ${VERSION}"
+
+          target/sidecar-fsharp/SharpLsp.Sidecar.FSharp --version | grep -Fx
+          "sharplsp-sidecar-fsharp ${VERSION}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-bins
+          path: |-
+            target/sidecar-csharp
+            target/sidecar-fsharp
   build-vsix:
     name: Build VSIX (${{ matrix.platform }})
+    needs:
+      - set-version
+      - publish-sidecars
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -47,39 +107,50 @@ jobs:
             can_execute: false
     steps:
       - uses: actions/checkout@v4
-
+        with:
+          ref: ${{ github.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_target }}
-
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.rust_target }}
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: editors/vscode/package-lock.json
-
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
       - name: Install VS Code extension dependencies
         run: npm ci --prefix editors/vscode
-
       - name: Install Linux ARM64 cross linker
         if: matrix.rust_target == 'aarch64-unknown-linux-gnu'
         shell: bash
-        run: |-
+        run: >-
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
-          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
-          echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> "$GITHUB_ENV"
 
+          sudo apt-get update
+
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >>
+          "$GITHUB_ENV"
+
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+
+          echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> "$GITHUB_ENV"
       - name: Extract version from tag
         shell: bash
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
+      - uses: actions/download-artifact@v4
+        with:
+          name: sidecar-bins
+          path: target
+      - name: Package VSIX
+        shell: bash
+        run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target }} VERSION="$VERSION" USE_STAGED_SIDECARS=1
       - name: Verify binary version
         if: ${{ matrix.can_execute }}
         shell: bash
@@ -89,12 +160,7 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
           binary="target/${{ matrix.rust_target }}/release/sharplsp${exe}"
           "$binary" --version | grep -Fx "sharplsp ${VERSION}"
-
-      - name: Package VSIX
-        shell: bash
-        run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target }} VERSION="$VERSION"
-
-      - name: Verify VSIX contains platform binary
+      - name: Verify VSIX contains all binaries
         shell: bash
         run: |-
           set -euo pipefail
@@ -102,8 +168,11 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
           unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" \
             | grep -F "bin/${{ matrix.platform }}/sharplsp${exe}"
-
-      - name: Package binary archive (tar.gz)
+          unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" \
+            | grep -F "bin/all/sharplsp-sidecar-csharp"
+          unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" \
+            | grep -F "bin/all/sharplsp-sidecar-fsharp"
+      - name: Package binary archive
         if: runner.os != 'Windows'
         shell: bash
         run: |-
@@ -113,7 +182,6 @@ jobs:
           tar czf "$STAGING.tar.gz" "$STAGING"
           mkdir -p dist-archive
           mv "$STAGING.tar.gz" dist-archive/
-
       - name: Package binary archive (zip)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -124,78 +192,30 @@ jobs:
           Compress-Archive -Path "$staging" -DestinationPath "$staging.zip"
           New-Item -ItemType Directory -Path "dist-archive" -Force
           Move-Item "$staging.zip" "dist-archive/"
-
-      - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: vsix-${{ matrix.platform }}
           path: dist/*.vsix
-
-      - name: Upload binary archive artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: archive-${{ matrix.rust_target }}
           path: dist-archive/*
-
-  pack-sidecars:
-    name: Pack sidecars
+  release:
+    name: Create GitHub Release
+    needs: build-vsix
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Extract version from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
-      - name: Pack sidecars
-        run: make _pack-sidecars VERSION="$VERSION"
-
-      - name: Upload nupkg artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: sidecar-nupkgs
-          path: nupkgs/*.nupkg
-
-  release:
-    name: Release & Publish
-    needs: [build-vsix, pack-sidecars]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
-
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
             --title "SharpLsp ${{ github.ref_name }}" \
             --generate-notes \
-            artifacts/*.tar.gz artifacts/*.zip artifacts/*.vsix || \
-          gh release create "${{ github.ref_name }}" \
-            --title "SharpLsp ${{ github.ref_name }}" \
-            --generate-notes \
-            artifacts/*.vsix
-
-      - name: Push to NuGet.org
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: |
-          dotnet nuget push artifacts/*.nupkg \
-            --api-key "$NUGET_API_KEY" \
-            --source https://api.nuget.org/v3/index.json \
-            --skip-duplicate
+            artifacts/*.tar.gz artifacts/*.zip artifacts/*.vsix

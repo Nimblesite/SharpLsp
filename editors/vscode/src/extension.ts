@@ -125,24 +125,14 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   const manifestPath = path.join(context.extensionPath, 'shipwright.json');
   const { activateDeploymentToolkit } = await import('@nimblesite/shipwright-vscode');
   const deployResult = await activateDeploymentToolkit(context, { manifestPath });
-  // Only halt activation if the LSP binary itself is unresolvable.
-  // Sidecar failures degrade gracefully — LSP still starts.
-  const lspBlocking = deployResult.diagnostics.filter(
-    (d) => d.blocking && d.componentId === 'sharplsp',
-  );
-  if (lspBlocking.length > 0) {
-    const msg = lspBlocking[0]?.message ?? 'LSP binary not found';
-    log.error(`Deployment toolkit (LSP binary): ${msg}`);
-    statusBar.setState(ServerState.Error);
-    return { explorerProvider, profilerProvider, getLspClient: () => undefined };
-  }
-  if (!deployResult.ok) {
-    const nonLspBlocking = deployResult.diagnostics.filter(
-      (d) => d.blocking && d.componentId !== 'sharplsp',
-    );
-    for (const diag of nonLspBlocking) {
-      log.warn(`Deployment toolkit (non-fatal): [${diag.componentId}] ${diag.message}`);
+  const blockingDiagnostics = deployResult.diagnostics.filter((diagnostic) => diagnostic.blocking);
+  if (blockingDiagnostics.length > 0) {
+    for (const diagnostic of blockingDiagnostics) {
+      log.error(`Deployment toolkit (${diagnostic.componentId}): ${diagnostic.message}`);
     }
+    statusBar.setState(ServerState.Error);
+    const msg = blockingDiagnostics.map((diagnostic) => diagnostic.message).join(' ');
+    throw new Error(msg);
   }
   log.info('step 11b: client.start (await)');
   try {

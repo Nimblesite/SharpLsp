@@ -80,14 +80,14 @@
         "sharplsp.csharpSidecarPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `sharplsp-sidecar-csharp` binary. Leave empty to let Shipwright resolve the sidecar from environment variables, package manager installation, or `$PATH`.",
+          "markdownDescription": "Absolute path to the `sharplsp-sidecar-csharp` binary. Leave empty to let Shipwright resolve the bundled sidecar, environment variable, or `$PATH`.",
           "scope": "machine-overridable",
           "order": 1
         },
         "sharplsp.fsharpSidecarPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `sharplsp-sidecar-fsharp` binary. Leave empty to let Shipwright resolve the sidecar from environment variables, package manager installation, or `$PATH`.",
+          "markdownDescription": "Absolute path to the `sharplsp-sidecar-fsharp` binary. Leave empty to let Shipwright resolve the bundled sidecar, environment variable, or `$PATH`.",
           "scope": "machine-overridable",
           "order": 2
         },
