@@ -87,7 +87,7 @@ jobs:
       - name: Stamp versions
         shell: bash
         run: |
-          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          perl -i -pe 's/^version = ".*"/version = "'"${VERSION}"'"/' Cargo.toml
           jq --arg v "$VERSION" '.version = $v' editors/vscode/package.json > /tmp/pkg.json
           mv /tmp/pkg.json editors/vscode/package.json
 
