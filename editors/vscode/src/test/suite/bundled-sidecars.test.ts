@@ -45,7 +45,11 @@ suite('Bundled sidecar resolution', () => {
     assert.ok(ext !== undefined, `${extensionId} must be loaded in the VS Code test host`);
 
     for (const name of envVarsThatBypassSidecarResolution) {
-      assert.strictEqual(process.env[name], undefined, `${name} must be unset in bundled sidecar tests`);
+      assert.strictEqual(
+        process.env[name],
+        undefined,
+        `${name} must be unset in bundled sidecar tests`,
+      );
     }
 
     const result = await activateDeploymentToolkit(ext, {
@@ -56,20 +60,24 @@ suite('Bundled sidecar resolution', () => {
       timeoutMs: 5_000,
     });
 
-    const csharpDiag = result.diagnostics.find(
-      (d) => d.componentId === 'sharplsp-sidecar-csharp',
-    );
-    const fsharpDiag = result.diagnostics.find(
-      (d) => d.componentId === 'sharplsp-sidecar-fsharp',
-    );
+    const csharpDiag = result.diagnostics.find((d) => d.componentId === 'sharplsp-sidecar-csharp');
+    const fsharpDiag = result.diagnostics.find((d) => d.componentId === 'sharplsp-sidecar-fsharp');
 
     assert.ok(csharpDiag !== undefined, 'sharplsp-sidecar-csharp diagnostic must be present');
     assert.strictEqual(csharpDiag.resolution.status, 'ok', 'C# sidecar must resolve successfully');
-    assert.strictEqual(csharpDiag.resolution.source, 'bundled', 'C# sidecar must resolve from bundled, not PATH');
+    assert.strictEqual(
+      csharpDiag.resolution.source,
+      'bundled',
+      'C# sidecar must resolve from bundled, not PATH',
+    );
 
     assert.ok(fsharpDiag !== undefined, 'sharplsp-sidecar-fsharp diagnostic must be present');
     assert.strictEqual(fsharpDiag.resolution.status, 'ok', 'F# sidecar must resolve successfully');
-    assert.strictEqual(fsharpDiag.resolution.source, 'bundled', 'F# sidecar must resolve from bundled, not PATH');
+    assert.strictEqual(
+      fsharpDiag.resolution.source,
+      'bundled',
+      'F# sidecar must resolve from bundled, not PATH',
+    );
   });
 });
 
