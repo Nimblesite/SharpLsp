@@ -48,6 +48,13 @@ export default function (eleventyConfig) {
 
   eleventyConfig.addPlugin(HtmlBasePlugin);
   eleventyConfig.addPassthroughCopy("src/assets");
+  eleventyConfig.addPassthroughCopy("src/favicon.ico");
+  eleventyConfig.addPassthroughCopy("src/favicon.svg");
+  eleventyConfig.addPassthroughCopy("src/favicon-16x16.png");
+  eleventyConfig.addPassthroughCopy("src/favicon-32x32.png");
+  eleventyConfig.addPassthroughCopy("src/apple-touch-icon.png");
+  eleventyConfig.addPassthroughCopy("src/android-chrome-192x192.png");
+  eleventyConfig.addPassthroughCopy("src/android-chrome-512x512.png");
 
   // Build a map of author name -> author page data, keyed by the author's title field
   eleventyConfig.addCollection("authorsByName", (api) => {
