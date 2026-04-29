@@ -320,6 +320,46 @@ img {
   padding: 78px 24px 24px;
   text-align: center;
 }
+.platform-lockup {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface-high) 74%, transparent);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  display: inline-flex;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 10px 14px 10px 10px;
+  text-align: left;
+}
+.dotnet-mark {
+  align-items: center;
+  background: #512bd4;
+  border-radius: 8px;
+  box-shadow: 0 0 28px rgba(81, 43, 212, 0.34);
+  color: #ffffff;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font: 800 22px/1 var(--font-heading);
+  height: 50px;
+  justify-content: center;
+  letter-spacing: 0;
+  width: 82px;
+}
+.platform-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.platform-copy strong {
+  color: var(--text);
+  font: 700 14px/1.25 var(--font-heading);
+}
+.platform-copy small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  max-width: 290px;
+}
 .badge {
   align-items: center;
   background: var(--surface-highest);
@@ -1499,6 +1539,15 @@ th {
     min-height: auto;
     padding: 34px 13px 12px;
     text-align: left;
+  }
+  .platform-lockup {
+    align-self: stretch;
+    gap: 12px;
+  }
+  .dotnet-mark {
+    font-size: 19px;
+    height: 44px;
+    width: 70px;
   }
   .title {
     font-size: 32px;

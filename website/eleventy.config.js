@@ -29,9 +29,9 @@ for (const file of ["tags-pages.njk", "categories-pages.njk"]) {
 export default function (eleventyConfig) {
   eleventyConfig.addPlugin(techdoc, {
     site: {
-      name: "Forge",
-      url: "https://forge-lsp.dev",
-      description: "Open-source .NET LSP for C# and F#. One server, every editor.",
+      name: "SharpLsp",
+      url: "https://sharplsp.dev",
+      description: "Open-source .NET language server for C# and F#. One server, every editor.",
       stylesheet: "/assets/css/styles.css",
     },
     features: {

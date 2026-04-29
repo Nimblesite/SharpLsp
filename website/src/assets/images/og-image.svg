@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <!-- Background gradient -->
+    <radialGradient id="bgGlow" cx="50%" cy="0%" r="65%" fx="50%" fy="0%">
+      <stop offset="0%" stop-color="#00e676" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#131313" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Logo glow -->
+    <filter id="logoGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Grid line clip -->
+    <clipPath id="mainClip">
+      <rect width="1200" height="630"/>
+    </clipPath>
+  </defs>
+
+  <!-- Base background -->
+  <rect width="1200" height="630" fill="#131313"/>
+
+  <!-- Radial glow from top centre -->
+  <rect width="1200" height="630" fill="url(#bgGlow)"/>
+
+  <!-- Subtle grid lines -->
+  <g clip-path="url(#mainClip)" opacity="0.045">
+    <!-- Vertical lines -->
+    <line x1="100" y1="0" x2="100" y2="630" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="200" y1="0" x2="200" y2="630" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="300" y1="0" x2="300" y2="630" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="400" y1="0" x2="400" y2="630" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="500" y1="0" x2="500" y2="630" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="600" y1="0" x2="600" y2="630" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="700" y1="0" x2="700" y2="630" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="800" y1="0" x2="800" y2="630" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="900" y1="0" x2="900" y2="630" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="1000" y1="0" x2="1000" y2="630" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="1100" y1="0" x2="1100" y2="630" stroke="#e5e2e1" stroke-width="1"/>
+    <!-- Horizontal lines -->
+    <line x1="0" y1="90" x2="1200" y2="90" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="0" y1="180" x2="1200" y2="180" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="0" y1="270" x2="1200" y2="270" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="0" y1="360" x2="1200" y2="360" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="0" y1="450" x2="1200" y2="450" stroke="#e5e2e1" stroke-width="1"/>
+    <line x1="0" y1="540" x2="1200" y2="540" stroke="#e5e2e1" stroke-width="1"/>
+  </g>
+
+  <!-- Top-left accent bar -->
+  <rect x="0" y="0" width="4" height="630" fill="#00e676" opacity="0.6"/>
+
+  <!-- Bottom accent line -->
+  <rect x="0" y="616" width="1200" height="2" fill="#00e676" opacity="0.18"/>
+
+  <!-- ── LOGO MARK (centred at ~x=140, y=280) ── -->
+  <g transform="translate(80, 215)" filter="url(#logoGlow)">
+    <!-- Outer diamond -->
+    <polygon points="80,0 148,80 80,160 12,80" fill="none" stroke="#00e676" stroke-width="2.5" opacity="0.35"/>
+    <!-- Green filled diamond -->
+    <polygon points="80,8 140,80 80,152 20,80" fill="#00e676"/>
+    <!-- Lightning bolt cut-out -->
+    <polygon points="79,30 102,30 87,72 108,72 64,130 77,88 56,88" fill="#003918"/>
+  </g>
+
+  <!-- ── WORDMARK ── -->
+  <!-- "Sharp" in white -->
+  <text
+    x="236"
+    y="280"
+    font-family="'Space Grotesk', 'Inter', -apple-system, sans-serif"
+    font-size="96"
+    font-weight="700"
+    fill="#e5e2e1"
+    letter-spacing="-3"
+  >Sharp</text>
+  <!-- "Lsp" in green -->
+  <text
+    x="610"
+    y="280"
+    font-family="'Space Grotesk', 'Inter', -apple-system, sans-serif"
+    font-size="96"
+    font-weight="700"
+    fill="#00e676"
+    letter-spacing="-3"
+  >Lsp</text>
+
+  <!-- ── TAGLINE ── -->
+  <text
+    x="236"
+    y="336"
+    font-family="'Inter', -apple-system, sans-serif"
+    font-size="28"
+    font-weight="400"
+    fill="#b7b5b4"
+    letter-spacing="0.3"
+  >Open-source C# + F# language server. Every editor.</text>
+
+  <!-- ── FEATURE PILLS (bottom row) ── -->
+  <!-- Pill 1: Roslyn -->
+  <rect x="236" y="408" width="158" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
+  <text x="315" y="436" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">Roslyn</text>
+
+  <!-- Pill 2: FSharp.Compiler.Service -->
+  <rect x="408" y="408" width="228" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
+  <text x="522" y="436" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">FSharp.Compiler.Service</text>
+
+  <!-- Pill 3: MIT License -->
+  <rect x="650" y="408" width="150" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
+  <text x="725" y="436" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#00e676" text-anchor="middle">MIT License</text>
+
+  <!-- Pill 4: Rust -->
+  <rect x="814" y="408" width="100" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
+  <text x="864" y="436" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">Rust</text>
+
+  <!-- Pill 5: VS Code + Zed -->
+  <rect x="928" y="408" width="180" height="44" rx="6" fill="#1c1b1b" stroke="#3b4a3d" stroke-width="1.5"/>
+  <text x="1018" y="436" font-family="'Inter', sans-serif" font-size="18" font-weight="600" fill="#e5e2e1" text-anchor="middle">VS Code · Zed</text>
+
+  <!-- ── URL BADGE (bottom right) ── -->
+  <text
+    x="1168"
+    y="598"
+    font-family="'Inter', sans-serif"
+    font-size="18"
+    font-weight="600"
+    fill="#859585"
+    text-anchor="end"
+    letter-spacing="0.5"
+  >sharplsp.dev</text>
+
+  <!-- ── STATUS DOT + badge (top right) ── -->
+  <circle cx="1128" cy="52" r="5" fill="#00e676"/>
+  <text
+    x="1142"
+    y="57"
+    font-family="'Inter', sans-serif"
+    font-size="16"
+    font-weight="600"
+    fill="#b7b5b4"
+    letter-spacing="0.5"
+  >Open Source</text>
+</svg>

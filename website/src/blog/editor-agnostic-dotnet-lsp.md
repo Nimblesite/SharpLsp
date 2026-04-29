@@ -32,7 +32,7 @@ Read that again. The official Microsoft recommendation for F# developers on Mac 
 
 When Microsoft retired Visual Studio for Mac, they pointed developers at [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) as the alternative. But the community verdict has not been kind.
 
-C# Dev Kit currently has a **2.9 out of 5 star rating** on the VS Marketplace — from Microsoft's own first-party extension. Recent reviews tell the story:
+C# Dev Kit currently has a **[low user rating](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) on the VS Marketplace** — from Microsoft's own first-party extension. Recent reviews tell the story:
 
 > "That just not works out of the box or after basic tinkering. Especially on macOS or Linux... Connection to LSP server just crashes and throws errors." — DKchshv, March 2026
 
@@ -98,7 +98,7 @@ An editor-agnostic .NET LSP means:
 - **Consistent diagnostics and navigation semantics** whether you are in VS Code, Zed, Neovim, or Helix
 - **F# treated as the language it is** — not deferred until after C# is "done"
 
-The .NET ecosystem is too good to be held hostage to Windows, or to a 2.9-star extension, or to a single commercial IDE vendor.
+The .NET ecosystem is too good to be held hostage to Windows, or to a low-rated first-party extension, or to a single commercial IDE vendor.
 
 ## The Standard Is Simple
 

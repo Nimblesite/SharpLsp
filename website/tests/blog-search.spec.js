@@ -18,10 +18,10 @@ test.describe('Blog search', () => {
 
     expect(initialCount).toBeGreaterThan(1);
 
-    await search.fill('phantom');
+    await search.fill('diagnostic accuracy');
 
     await expect(visibleCards).toHaveCount(1);
-    await expect(visibleCards.first().locator('.post-title')).toContainText('Pull Diagnostics Without Phantom Errors');
+    await expect(visibleCards.first().locator('.post-title')).toContainText('Diagnostic Accuracy: Errors You Can Trust');
     await expect(page.getByText('Why .NET Needs an Editor-Agnostic LSP')).not.toBeVisible();
 
     await search.fill('');

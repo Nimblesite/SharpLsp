@@ -33,7 +33,7 @@ Microsoft は 2024 年 8 月に [Visual Studio for Mac を廃止](https://devblo
 
 Microsoft は Visual Studio for Mac を廃止したとき、代替として [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) を示しました。しかし、コミュニティの評価は厳しいものです。
 
-C# Dev Kit は記事執筆時点で VS Marketplace において **5 点満点中 2.9 点**です。Microsoft 自身のファーストパーティ拡張が、この評価です。最近のレビューは状況をよく表しています。
+C# Dev Kit は [VS Marketplace において低いユーザー評価](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit)を受けています。Microsoft 自身のファーストパーティ拡張が、この評価です。最近のレビューは状況をよく表しています。
 
 > 「そのままでは動かないし、基本的な調整をしても動かない。特に macOS や Linux では... LSP サーバーへの接続がクラッシュしてエラーを投げる。」 — DKchshv、2026 年 3 月
 

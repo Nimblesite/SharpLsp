@@ -252,16 +252,14 @@ function browseNuGetPackages(node: ExplorerNode | undefined, context: ExtensionC
 
 function registerContextMenuCommands(context: ExtensionContext): void {
   context.subscriptions.push(
-    commands.registerCommand(CMD_COPY_QUALIFIED_NAME, (node: ExplorerNode) => {
+    commands.registerCommand(CMD_COPY_QUALIFIED_NAME, async (node: ExplorerNode) => {
       const name = buildQualifiedName(node);
-      void vscode.env.clipboard.writeText(name).then(() => {
-        void window.showInformationMessage(`Copied: ${name}`);
-      });
+      await vscode.env.clipboard.writeText(name);
+      void window.showInformationMessage(`Copied: ${name}`);
     }),
-    commands.registerCommand(CMD_COPY_NAME, (node: ExplorerNode) => {
-      void vscode.env.clipboard.writeText(node.sortName).then(() => {
-        void window.showInformationMessage(`Copied: ${node.sortName}`);
-      });
+    commands.registerCommand(CMD_COPY_NAME, async (node: ExplorerNode) => {
+      await vscode.env.clipboard.writeText(node.sortName);
+      void window.showInformationMessage(`Copied: ${node.sortName}`);
     }),
     commands.registerCommand(CMD_REVEAL_IN_EXPLORER, (node: ExplorerNode) => {
       if (node.symbolUri === undefined) return;

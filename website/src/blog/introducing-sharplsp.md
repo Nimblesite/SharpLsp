@@ -18,7 +18,7 @@ excerpt: "We are done waiting for Microsoft to fix .NET tooling. SharpLsp is our
 
 We are done waiting.
 
-The .NET developer experience outside of Windows is broken. Not theoretically — provably, in public, with a 12-to-1 community rejection of Microsoft's closed-source tooling announcement and a retirement post that told Mac developers to run Windows in a VM. SharpLsp is the community's answer: an open-source, editor-agnostic Language Server for C# and F# — built in Rust, powered by [Roslyn](https://github.com/dotnet/roslyn) and [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/). MIT licensed. Zero proprietary dependencies. One install that serves every editor on the machine.
+The .NET developer experience outside of Windows is broken. Not theoretically — provably, in public, with a [12-to-1 community rejection](https://github.com/dotnet/vscode-csharp/issues/5276) of Microsoft's closed-source tooling announcement and a retirement post that told Mac developers to run Windows in a VM. SharpLsp is the community's answer: an open-source, editor-agnostic Language Server for C# and F# — built in Rust, powered by [Roslyn](https://github.com/dotnet/roslyn) and [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/). MIT licensed. Zero proprietary dependencies. One install that serves every editor on the machine.
 
 ## The Situation Is Worse Than You Think
 
