@@ -41,15 +41,10 @@ export async function start(
     return undefined;
   }
 
-  const launchPath = prepareLaunchBinary(context, serverPath);
-
   log.info(`Server binary: ${serverPath}`);
-  if (launchPath !== serverPath) {
-    log.info(`Server launch binary: ${launchPath}`);
-  }
 
   const run: Executable = {
-    command: launchPath,
+    command: serverPath,
     args: [...config.serverExtraArgs()],
     transport: TransportKind.stdio,
     options: {
@@ -217,54 +212,6 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
   return binaryName;
 }
 
-function prepareLaunchBinary(context: ExtensionContext, serverPath: string): string {
-  if (!isBundledServerPath(context, serverPath)) {
-    return serverPath;
-  }
-
-  const platform = detectRuntimePlatform();
-  const cachePath = path.join(
-    context.globalStorageUri.fsPath,
-    'bin',
-    platform,
-    path.basename(serverPath),
-  );
-
-  try {
-    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.copyFileSync(serverPath, cachePath);
-    if (process.platform !== 'win32') {
-      fs.chmodSync(cachePath, 0o755);
-    }
-    return cachePath;
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    log.warn(`Failed to prepare stable launch binary: ${message}`);
-    return serverPath;
-  }
-}
-
-function isBundledServerPath(context: ExtensionContext, serverPath: string): boolean {
-  if (!path.isAbsolute(serverPath)) {
-    return false;
-  }
-
-  const bundledRoot = path.resolve(context.extensionPath, 'bin');
-  const resolvedServerPath = path.resolve(serverPath);
-  return (
-    resolvedServerPath === bundledRoot || resolvedServerPath.startsWith(`${bundledRoot}${path.sep}`)
-  );
-}
-
-function detectRuntimePlatform(): string {
-  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64';
-  if (process.platform === 'darwin') return 'darwin-x64';
-  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64';
-  if (process.platform === 'linux') return 'linux-x64';
-  if (process.platform === 'win32' && process.arch === 'arm64') return 'win32-arm64';
-  if (process.platform === 'win32') return 'win32-x64';
-  return 'linux-x64';
-}
 
 /** Expand ${workspaceFolder} in a user-configured path. */
 function expandPath(raw: string): string {

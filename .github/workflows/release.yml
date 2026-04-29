@@ -28,6 +28,23 @@ jobs:
       run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
     - name: Stamp all manifest versions
       run: make _stamp-version VERSION=${{ steps.version.outputs.version }}
+    - name: Commit and push stamped versions
+      shell: bash
+      run: |
+        set -euo pipefail
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add \
+          Cargo.toml \
+          Cargo.lock \
+          editors/vscode/package.json \
+          editors/vscode/package-lock.json \
+          editors/vscode/shipwright.json \
+          shipwright.json \
+          editors/zed/Cargo.toml \
+          editors/zed/extension.toml
+        git diff --cached --quiet || git commit -m "chore: stamp version ${{ steps.version.outputs.version }}"
+        git push origin HEAD:refs/heads/main
     - uses: actions/upload-artifact@v4
       with:
         name: stamped-source
