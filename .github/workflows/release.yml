@@ -22,18 +22,12 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
-    - uses: taiki-e/install-action@cargo-binstall
-    - name: Install cargo-set-version
-      run: cargo binstall --no-confirm cargo-set-version
     - name: Extract version from tag
       id: version
       shell: bash
       run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-    - name: Stamp Cargo.toml version
-      run: cargo set-version ${{ steps.version.outputs.version }}
-    - name: Stamp package.json version
-      run: npm version --no-git-tag-version ${{ steps.version.outputs.version }}
-      working-directory: editors/vscode
+    - name: Stamp all manifest versions
+      run: make _stamp-version VERSION=${{ steps.version.outputs.version }}
     - uses: actions/upload-artifact@v4
       with:
         name: stamped-source
@@ -41,6 +35,11 @@ jobs:
           Cargo.toml
           Cargo.lock
           editors/vscode/package.json
+          editors/vscode/package-lock.json
+          editors/vscode/shipwright.json
+          shipwright.json
+          editors/zed/Cargo.toml
+          editors/zed/extension.toml
   build-vsix:
     name: Build VSIX (${{ matrix.platform }})
     needs: prepare

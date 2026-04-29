@@ -10,12 +10,14 @@
 #   make clean                        remove build artifacts
 #   make setup                        install toolchain dependencies
 #   make screenshots                  capture website screenshots from real VS Code
-#   make package-vsix-linux-x64       build + package VSIX for linux-x64
-#   make package-vsix-linux-arm64     build + package VSIX for linux-arm64
-#   make package-vsix-darwin-arm64    build + package VSIX for darwin-arm64
-#   make package-vsix-darwin-x64      build + package VSIX for darwin-x64
-#   make package-vsix-win32-x64       build + package VSIX for win32-x64
-#   make package-vsix-win32-arm64     build + package VSIX for win32-arm64
+#   make package-vsix-linux-x64 VERSION=x.y.z       build + package VSIX for linux-x64
+#   make package-vsix-linux-arm64 VERSION=x.y.z     build + package VSIX for linux-arm64
+#   make package-vsix-darwin-arm64 VERSION=x.y.z    build + package VSIX for darwin-arm64
+#   make package-vsix-darwin-x64 VERSION=x.y.z      build + package VSIX for darwin-x64
+#   make package-vsix-win32-x64 VERSION=x.y.z       build + package VSIX for win32-x64
+#   make package-vsix-win32-arm64 VERSION=x.y.z     build + package VSIX for win32-arm64
+#
+#   VERSION is required for all package-vsix-* targets.
 
 SHELL       := /bin/bash
 .SHELLFLAGS := -eo pipefail -c
@@ -38,7 +40,7 @@ SIDECAR_FS_OUT = target/sidecar-fsharp
 ZED_WASM       = $(ZED_DIR)/target/wasm32-wasip1/$(PROFILE)/sharplsp_zed.wasm
 ZED_PKG_DIR    = target/zed-extension
 ZED_PKG_TAR    = sharplsp-zed-extension.tar.gz
-RIDER_ZIP_SRC  = $(RIDER_DIR)/build/distributions/sharplsp-rider-0.1.0.zip
+RIDER_ZIP_SRC  = $(RIDER_DIR)/build/distributions/sharplsp-rider-$(if $(VERSION),$(VERSION),0.0.0).zip
 RIDER_ZIP      = sharplsp-rider.zip
 
 # Host platform for local VSIX dev builds
@@ -53,6 +55,7 @@ CHECK_COV = scripts/check-coverage.sh
         package-vsix-linux-x64 package-vsix-linux-arm64 \
         package-vsix-darwin-arm64 package-vsix-darwin-x64 \
         package-vsix-win32-x64 package-vsix-win32-arm64 \
+        _stamp-version \
         _build-rust _build-dotnet _build-vsix _build-zed _build-rider \
         _stage-vsix-binary _stage-sidecars \
         test-rust _test-rust _test-vsix _test-dotnet _test-website \
@@ -250,16 +253,60 @@ screenshots: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
 	rm -rf "$(abspath $(VSCODE_DIR))/bin"; \
 	exit $$STATUS
 
+# ── Version stamping ─────────────────────────────────────────────
+# Rewrites the version field in all manifest files before any build.
+# VERSION is required — fails immediately if not set.
+
+_stamp-version:
+ifndef VERSION
+	$(error VERSION is required — e.g. make package-vsix-darwin-arm64 VERSION=0.3.0)
+endif
+	@echo "==> Stamping version $(VERSION) into all manifests..."
+	sed -i.bak 's/^version = "[^"]*"/version = "$(VERSION)"/' Cargo.toml
+	sed -i.bak 's/^version = "[^"]*"/version = "$(VERSION)"/' $(ZED_DIR)/Cargo.toml
+	sed -i.bak 's/^version = "[^"]*"/version = "$(VERSION)"/' $(ZED_DIR)/extension.toml
+	node -e " \
+		const fs = require('fs'); \
+		const p = '$(VSCODE_DIR)/package.json'; \
+		const j = JSON.parse(fs.readFileSync(p,'utf8')); \
+		j.version = '$(VERSION)'; \
+		fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n'); \
+	"
+	node -e " \
+		const fs = require('fs'); \
+		const p = '$(VSCODE_DIR)/package-lock.json'; \
+		const j = JSON.parse(fs.readFileSync(p,'utf8')); \
+		j.version = '$(VERSION)'; \
+		j.packages[''].version = '$(VERSION)'; \
+		fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n'); \
+	"
+	node -e " \
+		const fs = require('fs'); \
+		const p = '$(VSCODE_DIR)/shipwright.json'; \
+		const j = JSON.parse(fs.readFileSync(p,'utf8')); \
+		j.product.version = '$(VERSION)'; \
+		fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n'); \
+	"
+	node -e " \
+		const fs = require('fs'); \
+		const p = 'shipwright.json'; \
+		const j = JSON.parse(fs.readFileSync(p,'utf8')); \
+		j.product.version = '$(VERSION)'; \
+		fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n'); \
+	"
+	@find . -name '*.bak' -maxdepth 3 -delete 2>/dev/null || true
+	@echo "==> Version $(VERSION) stamped."
+
 # ── Package VSIX (per platform) ───────────────────────────────────
 # Builds the Rust binary for the given target triple, stages it, and packages
 # a platform-specific VSIX into dist/.
 #
 # Usage:
-#   make package-vsix-linux-x64
-#   make package-vsix-darwin-arm64 RUST_TARGET=aarch64-apple-darwin VERSION=1.2.3
+#   make package-vsix-darwin-arm64 VERSION=0.3.0
+#   make package-vsix-darwin-arm64 RUST_TARGET=aarch64-apple-darwin VERSION=0.3.0
 #
+# VERSION is required and is stamped into all manifests before building.
 # RUST_TARGET defaults to the canonical triple for each platform.
-# VERSION is optional; omit it for local dev builds.
 
 package-vsix-linux-x64:   RUST_TARGET ?= x86_64-unknown-linux-gnu
 package-vsix-linux-arm64:  RUST_TARGET ?= aarch64-unknown-linux-gnu
@@ -270,7 +317,7 @@ package-vsix-win32-arm64:  RUST_TARGET ?= aarch64-pc-windows-msvc
 
 package-vsix-linux-x64 package-vsix-linux-arm64 \
 package-vsix-darwin-arm64 package-vsix-darwin-x64 \
-package-vsix-win32-x64 package-vsix-win32-arm64:
+package-vsix-win32-x64 package-vsix-win32-arm64: _stamp-version
 	$(eval VSIX_PLAT := $(subst package-vsix-,,$@))
 	$(eval EXE       := $(if $(filter win32-%,$(VSIX_PLAT)),.exe,))
 	@echo "==> Building sharplsp for $(RUST_TARGET)..."
