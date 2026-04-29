@@ -275,9 +275,7 @@ package-vsix-win32-x64 package-vsix-win32-arm64:
 	$(eval EXE       := $(if $(filter win32-%,$(VSIX_PLAT)),.exe,))
 	@echo "==> Building sharplsp for $(RUST_TARGET)..."
 	cargo build --release --target $(RUST_TARGET)
-	@if [ "$(USE_STAGED_SIDECARS)" != "1" ]; then \
-		$(MAKE) _build-dotnet DOTNET_CFG=Release VERSION=$(VERSION); \
-	fi
+	$(MAKE) _build-dotnet DOTNET_CFG=Release VERSION=$(VERSION)
 	$(MAKE) _package-vsix VSIX_PLAT=$(VSIX_PLAT) RUST_TARGET=$(RUST_TARGET) EXE=$(EXE) VERSION=$(VERSION)
 
 _package-vsix:
