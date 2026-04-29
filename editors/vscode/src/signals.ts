@@ -32,7 +32,7 @@ export class Signal<T> implements Trackable {
   public set value(next: T) {
     if (Object.is(this.current, next)) return;
     this.current = next;
-    for (const listener of this.listeners) {
+    for (const listener of [...this.listeners]) {
       listener(next);
     }
   }
@@ -57,7 +57,7 @@ export class Signal<T> implements Trackable {
 
   /** Force-notify listeners even if value is Object.is-equal (for mutable collections). */
   public notify(): void {
-    for (const listener of this.listeners) {
+    for (const listener of [...this.listeners]) {
       listener(this.current);
     }
   }
@@ -80,9 +80,11 @@ function trackRead(signal: Trackable): void {
 export function effect(fn: () => void): () => void {
   let disposers: (() => void)[] = [];
   let disposed = false;
+  let running = false;
 
   const run = (): void => {
-    if (disposed) return;
+    if (disposed || running) return;
+    running = true;
     for (const d of disposers) d();
     disposers = [];
     const deps = new Set<Trackable>();
@@ -92,6 +94,7 @@ export function effect(fn: () => void): () => void {
       fn();
     } finally {
       activeTracker = prev;
+      running = false;
     }
     for (const dep of deps) {
       disposers.push(

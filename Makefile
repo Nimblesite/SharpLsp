@@ -141,7 +141,7 @@ _test-rust: _build-dotnet _stage-sidecars
 	@echo "==> Running sharplsp tests with coverage..."
 	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
 	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
-		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast --test-threads $(RUST_TEST_THREADS)
+		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --no-fail-fast --test-threads $(RUST_TEST_THREADS)
 	@$(CHECK_COV) sharplsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
 _test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary

@@ -26,18 +26,14 @@ function startHotReload(): void {
     return;
   }
 
-  const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (folder === undefined || folder === '') {
-    void vscode.window.showErrorMessage('No workspace folder open.');
-    return;
-  }
+  const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
 
   watchTerminal = vscode.window.createTerminal({
     name: 'SharpLsp Hot Reload',
     cwd: folder,
   });
   watchTerminal.show();
-  watchTerminal.sendText('dotnet watch run');
+  watchTerminal.sendText('dotnet watch --non-interactive build');
   info('Hot Reload started via dotnet watch');
   updateStatusBar();
 }

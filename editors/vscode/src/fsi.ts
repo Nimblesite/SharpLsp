@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { info } from './log';
 
@@ -32,26 +34,18 @@ function sendToFsi(): void {
 /** Generate a .fsi signature file for the active F# file. */
 async function generateSignatureFile(): Promise<void> {
   const editor = vscode.window.activeTextEditor;
-  if (editor?.document.languageId !== 'fsharp') {
+  const fsPath = editor?.document.uri.fsPath;
+  if (editor === undefined || fsPath === undefined || !fsPath.endsWith('.fs')) {
     void vscode.window.showWarningMessage('No F# file is active.');
     return;
   }
 
-  const fsPath = editor.document.uri.fsPath;
-  if (!fsPath.endsWith('.fs')) {
-    void vscode.window.showWarningMessage('Only .fs files can generate .fsi signatures.');
-    return;
-  }
-
-  const fsiPath = fsPath.replace(/\.fs$/, '.fsi');
+  const fsiPath = path.join(path.dirname(fsPath), `${path.basename(fsPath, '.fs')}.fsi`);
   const content = editor.document.getText();
   const signature = extractSignature(content);
 
+  fs.writeFileSync(fsiPath, signature, 'utf8');
   const uri = vscode.Uri.file(fsiPath);
-  const edit = new vscode.WorkspaceEdit();
-  edit.createFile(uri, { overwrite: true });
-  edit.insert(uri, new vscode.Position(0, 0), signature);
-  await vscode.workspace.applyEdit(edit);
   await vscode.window.showTextDocument(uri);
   info(`Generated signature file: ${fsiPath}`);
 }
