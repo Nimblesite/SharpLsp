@@ -11,7 +11,7 @@ eleventyNavigation:
 
 ![VS Code 中的 SharpLsp 编辑器支持](/assets/screenshots/vscode-editors-page.png)
 
-SharpLsp 在 LSP 层面以编辑器无关为目标。VS Code 扩展是主要支持的界面，其他所有编辑器通过标准输入/输出连接到同一个 `sharplsp-lsp` 二进制文件。
+SharpLsp 在 LSP 层面以编辑器无关为目标。VS Code 扩展是主要支持的界面，其他所有编辑器通过标准输入/输出连接到同一个 `sharplsp` 二进制文件。
 
 **所有编辑器的前提条件：** 安装 [.NET 10.0 SDK](https://dotnet.microsoft.com/download) 并确保 `dotnet` 在 PATH 中。
 
@@ -24,11 +24,11 @@ make build-vsix
 code --install-extension sharplsp.vsix
 ```
 
-扩展会自动管理 `sharplsp-lsp` 服务器生命周期，提供解决方案资源管理器、性能分析器、NuGet 浏览器、测试视图和编辑器状态集成。无需额外配置。
+扩展会自动管理 `sharplsp` 服务器生命周期，提供解决方案资源管理器、性能分析器、NuGet 浏览器、测试视图和编辑器状态集成。无需额外配置。
 
 ## Zed
 
-仓库中包含 Zed 扩展，通过 stdio 将 `sharplsp-lsp` 连接到 `.cs`、`.csx`、`.fs`、`.fsx` 和 `.fsi` 文件。这是开发者构建步骤——您需要 Rust 工具链来编译 Zed 扩展包，但**不需要**它来使用 SharpLsp 本身。
+仓库中包含 Zed 扩展，通过 stdio 将 `sharplsp` 连接到 `.cs`、`.csx`、`.fs`、`.fsx` 和 `.fsi` 文件。这是开发者构建步骤——您需要 Rust 工具链来编译 Zed 扩展包，但**不需要**它来使用 SharpLsp 本身。
 
 ```sh
 make package-zed
@@ -59,7 +59,7 @@ local configs = require('lspconfig.configs')
 if not configs.sharplsp_lsp then
   configs.sharplsp_lsp = {
     default_config = {
-      cmd = { "sharplsp-lsp" },
+      cmd = { "sharplsp" },
       filetypes = { "cs", "fsharp" },
       root_dir = lspconfig.util.root_pattern("*.sln", "*.slnx", "*.csproj", "*.fsproj"),
     },
@@ -76,14 +76,14 @@ lspconfig.sharplsp_lsp.setup({})
 ```toml
 [[language]]
 name = "c-sharp"
-language-servers = ["sharplsp-lsp"]
+language-servers = ["sharplsp"]
 
 [[language]]
 name = "fsharp"
-language-servers = ["sharplsp-lsp"]
+language-servers = ["sharplsp"]
 
-[language-server.sharplsp-lsp]
-command = "sharplsp-lsp"
+[language-server.sharplsp]
+command = "sharplsp"
 ```
 
 ## Emacs
@@ -93,16 +93,16 @@ command = "sharplsp-lsp"
 ```elisp
 (lsp-register-client
   (make-lsp-client
-    :new-connection (lsp-stdio-connection '("sharplsp-lsp"))
+    :new-connection (lsp-stdio-connection '("sharplsp"))
     :major-modes '(csharp-mode fsharp-mode)
-    :server-id 'sharplsp-lsp))
+    :server-id 'sharplsp))
 ```
 
 ### eglot
 
 ```elisp
 (add-to-list 'eglot-server-programs
-             '((csharp-mode fsharp-mode) . ("sharplsp-lsp")))
+             '((csharp-mode fsharp-mode) . ("sharplsp")))
 ```
 
 ## Sublime Text
@@ -112,9 +112,9 @@ command = "sharplsp-lsp"
 ```json
 {
   "clients": {
-    "sharplsp-lsp": {
+    "sharplsp": {
       "enabled": true,
-      "command": ["sharplsp-lsp"],
+      "command": ["sharplsp"],
       "selector": "source.cs | source.fsharp"
     }
   }

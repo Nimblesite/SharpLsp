@@ -1,10 +1,19 @@
 //! Heap analysis via `dotnet-dump analyze` with scripted commands.
 
-use anyhow::{Context, Result};
+use std::path::Path;
+use std::time::Duration;
+
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
 use super::{dump_cmd, tool_discovery};
+
+/// Number of attempts for transiently empty SOS `dumpheap` output.
+const HEAP_ANALYSIS_ATTEMPTS: usize = 3;
+
+/// Delay between heap-analysis retries.
+const HEAP_ANALYSIS_RETRY_DELAY: Duration = Duration::from_millis(250);
 
 /// Parameters for heap analysis.
 #[derive(Debug, Deserialize)]
@@ -74,13 +83,7 @@ pub async fn analyze_heap(params: AnalyzeHeapParams) -> Result<HeapStats> {
 
     info!(dump = %params.dump_path, "Analyzing heap statistics");
 
-    // Run `dumpheap -stat` via dotnet-dump analyze with piped commands.
-    let output = dump_cmd::run(tool, &params.dump_path, "dumpheap -stat")
-        .await
-        .context("failed to run dotnet-dump analyze")?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut types = parse_dumpheap_stat(&stdout);
+    let mut types = parse_dumpheap_stat_with_retry(tool, &params.dump_path).await?;
 
     // Apply type filter if specified.
     if let Some(ref filter) = params.type_filter {
@@ -109,6 +112,36 @@ pub async fn analyze_heap(params: AnalyzeHeapParams) -> Result<HeapStats> {
         total_size_bytes,
         types,
     })
+}
+
+/// Run `dumpheap -stat` until SOS returns parseable heap rows.
+async fn parse_dumpheap_stat_with_retry(tool: &Path, dump_path: &str) -> Result<Vec<HeapTypeInfo>> {
+    let mut last_stdout = String::new();
+    for attempt in 1..=HEAP_ANALYSIS_ATTEMPTS {
+        last_stdout = collect_dumpheap_stat(tool, dump_path).await?;
+        let types = parse_dumpheap_stat(&last_stdout);
+        if !types.is_empty() {
+            return Ok(types);
+        }
+        if attempt < HEAP_ANALYSIS_ATTEMPTS {
+            tokio::time::sleep(HEAP_ANALYSIS_RETRY_DELAY).await;
+        }
+    }
+    bail!(
+        "dotnet-dump dumpheap -stat returned no heap rows after {HEAP_ANALYSIS_ATTEMPTS} attempts. Last output:\n{last_stdout}"
+    )
+}
+
+/// Collect raw `dumpheap -stat` output from `dotnet-dump analyze`.
+async fn collect_dumpheap_stat(tool: &Path, dump_path: &str) -> Result<String> {
+    let output = dump_cmd::run(tool, dump_path, "dumpheap -stat")
+        .await
+        .context("failed to run dotnet-dump analyze")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("dotnet-dump analyze failed: {stderr}");
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Find GC roots for a specific object address.

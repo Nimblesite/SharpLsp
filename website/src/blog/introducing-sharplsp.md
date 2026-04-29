@@ -98,7 +98,7 @@ The broader point is not that Rider is bad. It is that a proprietary IDE is not 
 
 ## What We Have Built
 
-SharpLsp is not a promise. It is working software. The VS Code extension is the first editor integration, but the architecture is deliberately editor-agnostic from day one — a single `sharplsp-lsp` binary on `$PATH` that any LSP-capable editor can launch.
+SharpLsp is not a promise. It is working software. The VS Code extension is the first editor integration, but the architecture is deliberately editor-agnostic from day one — a single `sharplsp` binary on `$PATH` that any LSP-capable editor can launch.
 
 The key architectural insight is that we do not reimplement what the compilers already know. We call them. Roslyn for C#. FSharp.Compiler.Service for F#. Everything semantic — completions, diagnostics, hover, go-to-definition, rename — comes from the actual compilers via a thin IPC bridge. We own the LSP protocol layer, the virtual file system, and the syntax-level features via tree-sitter. The compilers own correctness. This is not a compromise. It is the correct design.
 
@@ -257,7 +257,7 @@ Syntax-only requests — document symbols, folding ranges, selection ranges — 
 | Hybrid | Rust + Sidecar | &lt;100ms | semanticTokens |
 | Cached | Rust (salsa) | &lt;1ms | Repeat requests for unchanged documents |
 
-**All SharpLsp binaries live in one central location on the machine.** `sharplsp-lsp` on `$PATH` is all any editor needs. Editor extensions are thin clients that launch the system binary — they contain zero bundled executables. One install serves VS Code, Neovim, Helix, Zed, and every other LSP-capable editor simultaneously.
+**All SharpLsp binaries live in one central location on the machine.** `sharplsp` on `$PATH` is all any editor needs. Editor extensions are thin clients that launch the system binary — they contain zero bundled executables. One install serves VS Code, Neovim, Helix, Zed, and every other LSP-capable editor simultaneously.
 
 This resolves one of the more absurd aspects of the current ecosystem: every editor extension bundles its own copy of the language server binary. The OmniSharp VS Code extension ships a bundled OmniSharp binary. The Ionide extension ships its own build of the F# language server. These binaries are downloaded per-extension, per-editor, per-machine. They do not share a process. They do not share a cache. A developer using VS Code and Neovim simultaneously against the same solution would theoretically be running two separate instances of OmniSharp — each maintaining its own copy of the Roslyn workspace in memory. SharpLsp runs one process per solution, shared by all editors on the machine.
 

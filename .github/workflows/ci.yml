@@ -171,7 +171,7 @@ jobs:
       shell: bash
       run: |-
         set -euo pipefail
-        for binary in sharplsp-lsp sharplsp-sidecar-csharp sharplsp-sidecar-fsharp forge-lsp forge-sidecar-csharp; do
+        for binary in sharplsp-lsp sharplsp-sidecar-csharp sharplsp-sidecar-fsharp; do
           resolved="$(command -v "$binary" || true)"
           if [ -n "$resolved" ]; then
             rm -f "$resolved"
@@ -179,7 +179,7 @@ jobs:
         done
     - name: Test VS Code extension with coverage
       run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR
-        -u FORGE_LSP_PATH -u FORGE_BINARY_DIR xvfb-run -a make test-vsix
+        xvfb-run -a make test-vsix
     - name: Verify VSIX contains platform binary
       shell: bash
       run: |-

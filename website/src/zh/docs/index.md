@@ -41,7 +41,7 @@ code --install-extension sharplsp.vsix
 
 ### 其他编辑器
 
-从 [GitHub Releases 页面](https://github.com/Nimblesite/SharpLsp/releases) 下载 `sharplsp-lsp` 二进制文件并放入 PATH，然后参阅[编辑器配置](/zh/docs/editors/)指南。
+从 [GitHub Releases 页面](https://github.com/Nimblesite/SharpLsp/releases) 下载 `sharplsp` 二进制文件并放入 PATH，然后参阅[编辑器配置](/zh/docs/editors/)指南。
 
 ## 基本用法
 

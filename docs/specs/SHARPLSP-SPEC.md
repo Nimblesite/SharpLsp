@@ -121,20 +121,20 @@ The project system is the hardest engineering problem in .NET tooling. [MSBuild]
 
 ### 2.6 Binary Layout & Installation
 
-**ALL SharpLsp binaries live in ONE central location on the machine. NEVER inside an editor extension.** Every editor (VS Code, Zed, Neovim, Helix, etc.) finds `sharplsp-lsp` on `$PATH`. Extensions are thin clients that launch the system-installed binaries. **Extensions contain ZERO binaries.**
+**ALL SharpLsp binaries live in ONE central location on the machine. NEVER inside an editor extension.** Every editor (VS Code, Zed, Neovim, Helix, etc.) finds `sharplsp` on `$PATH`. Extensions are thin clients that launch the system-installed binaries. **Extensions contain ZERO binaries.**
 
 **Install locations (PREFIX defaults to `~/.local`):**
 
 | Artifact | Install Path | Purpose |
 |---|---|---|
-| `sharplsp-lsp` | `$(PREFIX)/bin/sharplsp-lsp` | Rust LSP server binary (MUST be on `$PATH`) |
+| `sharplsp` | `$(PREFIX)/bin/sharplsp` | Rust LSP server binary (MUST be on `$PATH`) |
 | C# sidecar | `$(PREFIX)/lib/sharplsp/sidecar-csharp/` | Self-contained single-file executable |
 | F# sidecar | `$(PREFIX)/lib/sharplsp/sidecar-fsharp/` | Self-contained single-file executable |
 
 ```
 ~/.local/
 ├── bin/
-│   └── sharplsp-lsp                          (on $PATH)
+│   └── sharplsp                          (on $PATH)
 └── lib/sharplsp/
     ├── sidecar-csharp/
     │   └── SharpLsp.Sidecar.CSharp          (self-contained executable)
@@ -157,8 +157,8 @@ All three methods install to the SAME locations. One install serves every editor
 All three binaries support `--version` and print their version to stdout:
 
 ```
-$ sharplsp-lsp --version
-sharplsp-lsp 0.1.0
+$ sharplsp --version
+sharplsp 0.1.0
 
 $ SharpLsp.Sidecar.CSharp --version
 sharplsp-sidecar-csharp 0.1.0
@@ -176,20 +176,20 @@ Extensions use this to verify the correct version is installed before starting.
 
 ### 2.7 Editor Extension Binary Strategy
 
-**Extensions contain NO binaries. Extensions are THIN CLIENTS.** They exist solely to integrate with the editor's UI and launch `sharplsp-lsp` from `$PATH`.
+**Extensions contain NO binaries. Extensions are THIN CLIENTS.** They exist solely to integrate with the editor's UI and launch `sharplsp` from `$PATH`.
 
 On activation, every editor extension follows this exact sequence:
 
-1. **Version check:** Run `sharplsp-lsp --version` to check if sharplsp-lsp is installed and what version it is. The output format is `sharplsp-lsp X.Y.Z` — the version is always the second whitespace-delimited token. Extensions parse this deterministically.
+1. **Version check:** Run `sharplsp --version` to check if sharplsp is installed and what version it is. The output format is `sharplsp X.Y.Z` — the version is always the second whitespace-delimited token. Extensions parse this deterministically.
 2. **Version match:** If the installed version matches the extension's expected version, start normally. Done.
-3. **Missing or outdated:** Download the correct platform-specific archive from the GitHub release matching the extension version. Install `sharplsp-lsp` to `$(PREFIX)/bin/` and sidecars to `$(PREFIX)/lib/sharplsp/`. Then start normally.
+3. **Missing or outdated:** Download the correct platform-specific archive from the GitHub release matching the extension version. Install `sharplsp` to `$(PREFIX)/bin/` and sidecars to `$(PREFIX)/lib/sharplsp/`. Then start normally.
 4. **Download fails:** Surface an error to the user with maximum urgency. Do NOT silently degrade. Do NOT fall back to some partial mode. The extension CANNOT function without the binaries. Tell the user exactly what went wrong and how to fix it (manual download link, `make install` instructions, etc.).
 
 **CRITICAL — Failure must NEVER lock up the editor:**
 
 When any step above fails — version mismatch, binary not found, download failed, `--version` returns garbage — the extension MUST:
 
-- Show a clear, user-facing error message explaining what happened and how to fix it (e.g., "SharpLsp: sharplsp-lsp v0.1.0 required but v0.0.9 found. Run `make install` or update the extension.")
+- Show a clear, user-facing error message explaining what happened and how to fix it (e.g., "SharpLsp: sharplsp v0.1.0 required but v0.0.9 found. Run `make install` or update the extension.")
 - Deactivate gracefully — dispose all resources, unregister providers, stop any pending operations
 - NEVER throw an unhandled exception that propagates to the editor host process
 - NEVER block the editor's main thread or event loop waiting for a binary that will never arrive
@@ -201,7 +201,7 @@ This applies to ALL editor extensions: VS Code, Zed, Neovim, Helix, etc. An exte
 
 | Component | Version source | `--version` output format |
 |---|---|---|
-| `sharplsp-lsp` | `Cargo.toml` via `env!("CARGO_PKG_VERSION")` | `sharplsp-lsp X.Y.Z` |
+| `sharplsp` | `Cargo.toml` via `env!("CARGO_PKG_VERSION")` | `sharplsp X.Y.Z` |
 | C# sidecar | `.csproj` AssemblyVersion | `sharplsp-sidecar-csharp X.Y.Z` |
 | F# sidecar | `.fsproj` AssemblyVersion | `sharplsp-sidecar-fsharp X.Y.Z` |
 | VS Code ext | `package.json` version field | N/A (not a CLI) |
@@ -212,13 +212,13 @@ All versions MUST be kept in sync across all components. A release tags all comp
 **Test requirements:**
 
 Every editor extension MUST have e2e tests that prove:
-1. `sharplsp-lsp --version` returns the correct format and version
+1. `sharplsp --version` returns the correct format and version
 2. When the version matches, the extension starts the server successfully
 3. When the version mismatches, the extension shows a user-facing error and does NOT freeze the editor
 4. When the binary is missing, the extension shows a user-facing error and does NOT freeze the editor
 
 The Rust binary MUST have a test that proves:
-1. `--version` prints the correct format: `sharplsp-lsp X.Y.Z` where X.Y.Z matches `Cargo.toml`
+1. `--version` prints the correct format: `sharplsp X.Y.Z` where X.Y.Z matches `Cargo.toml`
 2. The process exits with code 0
 
 This is editor-agnostic by design. One set of binaries serves VS Code, Zed, Neovim, Helix, and any future editor. A user who runs `make install` already has everything every extension needs. An extension that auto-installs binaries provides them for every other extension too.
@@ -366,7 +366,7 @@ These tools are excellent at what they do and there is no reason to duplicate th
 
 > **Full specification:** [DEBUGGING-SPEC.md](./DEBUGGING-SPEC.md)
 >
-> SharpLsp delivers a fully open-source .NET debugging experience via [DAP](https://microsoft.github.io/debug-adapter-protocol/specification). Phase 4 uses [netcoredbg](https://github.com/Samsung/netcoredbg) (MIT) with a `DapRouter` layer in the Rust host for capability augmentation (logpoints, async call stack reconstruction, Hot Reload). Phase 5 replaces netcoredbg with a Forge-native C# Debug Sidecar (Tier 4) built on [ClrDebug](https://github.com/lordmilko/ClrDebug) + ICorDebug, achieving full feature parity with Microsoft's proprietary vsdbg.
+> SharpLsp delivers a fully open-source .NET debugging experience via [DAP](https://microsoft.github.io/debug-adapter-protocol/specification). Phase 4 uses [netcoredbg](https://github.com/Samsung/netcoredbg) (MIT) with a `DapRouter` layer in the Rust host for capability augmentation (logpoints, async call stack reconstruction, Hot Reload). Phase 5 replaces netcoredbg with a SharpLsp-native C# Debug Sidecar (Tier 4) built on [ClrDebug](https://github.com/lordmilko/ClrDebug) + ICorDebug, achieving full feature parity with Microsoft's proprietary vsdbg.
 
 ### 4.9 Test Discovery & Execution
 
@@ -746,7 +746,7 @@ These are features no single incumbent offers today. This is where SharpLsp stop
 
 SharpLsp is distributed via three channels:
 
-- **`sharplsp-lsp`** — Homebrew (macOS/Linux) and Scoop (Windows), from GitHub release assets.
+- **`sharplsp`** — Homebrew (macOS/Linux) and Scoop (Windows), from GitHub release assets.
 - **`SharpLsp.Sidecar.CSharp`** — dotnet global tool on NuGet.org.
 - **`SharpLsp.Sidecar.FSharp`** — dotnet global tool on NuGet.org.
 

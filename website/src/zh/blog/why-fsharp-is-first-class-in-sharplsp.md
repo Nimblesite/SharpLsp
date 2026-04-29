@@ -44,7 +44,7 @@ SharpLsp 使用 Rust 宿主进程处理共享 LSP 行为，并把语义语言工
 - F# 语义请求发送到 [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/) sidecar。
 - 宿主负责路由、取消、工作区通知、sidecar 生命周期和编辑器协议行为。
 
-这样每种语言都能获得它需要的编译器服务，而不会把 SharpLsp 拆成两个互不相关的产品。共享宿主仍然可以强制共同约束：一个安装位置、一个 `sharplsp-lsp` 入口点、一个协议表面，以及一个编辑器集成故事。
+这样每种语言都能获得它需要的编译器服务，而不会把 SharpLsp 拆成两个互不相关的产品。共享宿主仍然可以强制共同约束：一个安装位置、一个 `sharplsp` 入口点、一个协议表面，以及一个编辑器集成故事。
 
 ## 一等公民在实践中意味着什么
 

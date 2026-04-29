@@ -75,7 +75,7 @@ No single open-source, cross-platform, editor-agnostic .NET language server exis
 
 ## What SharpLsp Is Building
 
-SharpLsp is built around one installed `sharplsp-lsp` binary. Editor clients find it on `PATH` and launch it over standard input/output. The same server handles C#, F#, solution discovery, semantic requests, diagnostics, and custom SharpLsp requests.
+SharpLsp is built around one installed `sharplsp` binary. Editor clients find it on `PATH` and launch it over standard input/output. The same server handles C#, F#, solution discovery, semantic requests, diagnostics, and custom SharpLsp requests.
 
 The architecture is deliberately split:
 
@@ -84,7 +84,7 @@ The architecture is deliberately split:
 - The **F# sidecar** hosts [FSharp.Compiler.Service](https://fsharp.github.io/fsharp-compiler-docs/) for semantic F# features.
 - **F# is not a bolt-on.** F# features are built ahead of C# features where we can, and F# is a first-class target from day one.
 
-This is why the VS Code extension can provide a Solution Explorer and profiler view while the same `sharplsp-lsp` can still serve editors that only support standard LSP capabilities.
+This is why the VS Code extension can provide a Solution Explorer and profiler view while the same `sharplsp` can still serve editors that only support standard LSP capabilities.
 
 The alpha is focused on making the VS Code path solid first — that is the right proving ground. The long-term target is one open-source .NET tooling stack, one server, every editor, with a profiler.
 

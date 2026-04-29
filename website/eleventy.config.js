@@ -105,7 +105,7 @@ export default function (eleventyConfig) {
       return content;
     }
     const year = new Date().getFullYear();
-    const original = `&copy; ${year} Forge`;
+    const original = `&copy; ${year} SharpLsp`;
     const replacement = `&copy; ${year} <a href="https://nimblesite.co">NIMBLESITE</a>`;
     return content.replace(original, replacement);
   });

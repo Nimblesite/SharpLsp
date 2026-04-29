@@ -17,12 +17,12 @@ Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 
 ### Rust binary
 
-- [x] `sharplsp-lsp --version` prints `sharplsp-lsp <semver>`
+- [x] `sharplsp --version` prints `sharplsp <semver>`
 - [x] E2E test validates version output format
 
 ### Release workflow (`.github/workflows/release.yml`)
 
-- [x] Job: `build-sharplsp-lsp` — matrix build, single binary archives (no sidecars)
+- [x] Job: `build-sharplsp` — matrix build, single binary archives (no sidecars)
 - [x] Job: `pack-sidecars` — framework-dependent `dotnet pack`, 2 nupkgs
 - [x] Job: `release` — GitHub release, NuGet publish, Homebrew tap, Scoop bucket
 - [ ] Test with a `v*-rc*` tag on a fork
@@ -42,7 +42,7 @@ Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 
 ### Makefile
 
-- [x] Add `install-rust` target (copies sharplsp-lsp to `$PREFIX/bin`)
+- [x] Add `install-rust` target (copies sharplsp to `$PREFIX/bin`)
 - [x] Add `install-sidecars` target (dotnet tool install from local nupkgs)
 - [x] Keep `install-binaries` as alias for both
 - [x] Verify `test-vsix` still works with new install layout — `make test-vsix` stages binaries at `$(PREFIX)` and runs tests with coverage; all passing

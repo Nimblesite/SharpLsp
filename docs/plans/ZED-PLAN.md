@@ -5,7 +5,7 @@
 
 ## Overview
 
-Zed extension for SharpLsp — the open-source .NET LSP. Provides sharplsp-lsp integration for C# and F# development in Zed, plus a solution tree slash command for AI-assisted workflows.
+Zed extension for SharpLsp — the open-source .NET LSP. Provides sharplsp integration for C# and F# development in Zed, plus a solution tree slash command for AI-assisted workflows.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ Zed extension for SharpLsp — the open-source .NET LSP. Provides sharplsp-lsp i
 Zed Editor
   └── SharpLsp Extension (Rust → WASM)
         ├── Language Server Adapter
-        │     └── sharplsp-lsp binary (stdio JSON-RPC)
+        │     └── sharplsp binary (stdio JSON-RPC)
         └── Slash Commands
               └── /sharplsp-tree → .sln/.csproj/.fsproj parsing
 ```
@@ -41,7 +41,7 @@ The extension compiles to `wasm32-wasip1` and runs in Zed's WASM sandbox. It can
 | Select solution dialog | Partial | Slash command takes path argument |
 | Remove NuGet package | Blocked | Requires Zed command/UI API |
 | Remove project reference | Blocked | Requires Zed command/UI API |
-| Document symbols outline | Free | Zed outline panel + sharplsp-lsp documentSymbol |
+| Document symbols outline | Free | Zed outline panel + sharplsp documentSymbol |
 | Semantic tokens | Free | Zed renders LSP semantic tokens natively |
 | Auto-refresh on file change | Free | Zed re-queries LSP on file change |
 
@@ -89,7 +89,7 @@ Requires `rustup target add wasm32-wasip1` for WASM builds.
 
 ## Key Decisions
 
-1. **Standalone workspace** — The Zed extension has its own `[workspace]` in Cargo.toml because it targets wasm32-wasip1, not the native target used by sharplsp-lsp.
+1. **Standalone workspace** — The Zed extension has its own `[workspace]` in Cargo.toml because it targets wasm32-wasip1, not the native target used by sharplsp.
 
 2. **No grammar/highlights** — The extension does not bundle tree-sitter grammars or highlight queries. Users should install the existing C# Zed extension for syntax highlighting. SharpLsp provides the language server, not the grammar.
 
@@ -124,8 +124,8 @@ Requires `rustup target add wasm32-wasip1` for WASM builds.
 
 - [ ] Read `sharplsp.lspPath` from Zed settings for custom binary location
 - [ ] Read `sharplsp.logging.level` from Zed settings for RUST_LOG
-- [ ] Pass extra CLI args to sharplsp-lsp from settings
-- [ ] Send initialization options (solution path) to sharplsp-lsp
+- [ ] Pass extra CLI args to sharplsp from settings
+- [ ] Send initialization options (solution path) to sharplsp
 - [ ] Workspace configuration passthrough from Zed settings
 
 ### Phase 4: Symbol Integration

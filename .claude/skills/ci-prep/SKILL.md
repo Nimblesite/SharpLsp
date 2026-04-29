@@ -43,7 +43,7 @@ Read **every line** of `--log-failed` output. For each failure note the exact fi
 ## Step 2 — Analyze the CI workflow
 
 1. Read `.github/workflows/ci.yml` completely. Parse every job and every step.
-2. Extract the ordered list of commands the CI actually runs. The Forge CI has these jobs:
+2. Extract the ordered list of commands the CI actually runs. The SharpLsp CI has these jobs:
    - **lint**: `make lint-rust`, `make lint-zed`, `dotnet csharpier check sidecars/`, `make lint-dotnet`, sidecar dotnet pack smoke test, `cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'`, `make lint-vsix`
    - **test**: `make test-rust`, `make test-zed`, `make test-dotnet`, `xvfb-run -a make test-vsix`
 3. Note any environment variables, matrix strategies, or conditional steps that affect execution.

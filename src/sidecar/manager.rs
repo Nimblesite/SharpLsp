@@ -387,7 +387,7 @@ fn find_on_path(command: &str) -> Option<std::path::PathBuf> {
 ///   1. VSIX bundle:    `<exe_dir>/<subdir>/<name>[.exe]`
 ///   2. `make install`: `<exe_dir>/../lib/sharplsp/<subdir>/<name>[.exe]`
 ///   3. Dev build:      `<exe_dir>/../<subdir>/<name>[.exe]`
-///      (e.g. `target/sidecar-csharp/` next to `target/release/sharplsp-lsp`,
+///      (e.g. `target/sidecar-csharp/` next to `target/release/sharplsp`,
 ///      where `make build-dotnet` writes the published sidecar output)
 fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf> {
     let current = std::env::current_exe().ok()?;

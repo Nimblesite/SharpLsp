@@ -103,21 +103,13 @@ project.lock.json
 # =============================================================================
 .ionide/
 
-# =============================================================================
-# FORGE-SPECIFIC
-# =============================================================================
-forge.toml
-forge.vsix
-
 # Screenshot test artifacts at root
 /*.png
-forge-zed-extension.tar.gz
 
 editors/rider/.intellijPlatform/
-forge-rider.zip
 
-
-.forge/profiles/
 website/test-results/
 
 test-results/
+
+docs/plans/editors/zed/target/

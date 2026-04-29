@@ -80,7 +80,7 @@ fn error_code_i32(code: lsp_server::ErrorCode) -> i32 {
 fn main() -> ExitCode {
     // Implements [SWR-VERSION-RUST] — Shipwright binary version contract.
     let spec = shipwright::VersionSpec {
-        name: "sharplsp",
+        name: "sharplsp-lsp",
         version: env!("CARGO_PKG_VERSION"),
         kind: shipwright_manifest::ExecutableKind::Lsp,
         language: shipwright_manifest::Language::Rust,

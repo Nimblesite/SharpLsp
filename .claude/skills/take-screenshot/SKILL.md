@@ -7,12 +7,12 @@ disable-model-invocation: true
 
 # Take Editor Screenshot
 
-Captures screenshots of VS Code and/or Zed showing **Forge features** and saves them to `website/src/assets/screenshots/`.
+Captures screenshots of VS Code and/or Zed showing **SharpLsp features** and saves them to `website/src/assets/screenshots/`.
 
 ## CRITICAL: BUILD AND INSTALL BEFORE CAPTURING
 
 **You MUST build and install the latest VSIX before capturing ANY screenshot.**
-The capture script uses `code serve-web` which runs a SEPARATE VS Code instance. If you don't install the latest VSIX, the screenshots will show stale or missing Forge features.
+The capture script uses `code serve-web` which runs a SEPARATE VS Code instance. If you don't install the latest VSIX, the screenshots will show stale or missing SharpLsp features.
 
 ### Step 1: Build the VSIX
 
@@ -26,7 +26,7 @@ make build
 make build-vsix
 ```
 
-This produces `forge.vsix` in the repo root (or `editors/vscode/forge-0.1.0.vsix`).
+This produces `sharplsp.vsix` in the repo root (or `editors/vscode/sharp-lsp-0.1.0.vsix`).
 
 ### Step 2: Install to BOTH desktop and serve-web
 
@@ -36,7 +36,7 @@ code --install-extension <vsix> --force
 code --install-extension <vsix> --force --extensions-dir ~/.vscode-server/extensions
 ```
 
-**If you skip the build, you get stale screenshots that don't show Forge features.**
+**If you skip the build, you get stale screenshots that don't show SharpLsp features.**
 
 ## SAFETY RULES
 
@@ -50,19 +50,19 @@ code --install-extension <vsix> --force --extensions-dir ~/.vscode-server/extens
 
 - `$ARGUMENTS` — the screenshot name (e.g., `completions`, `split-editor`, `code-folding`, `nested-classes`, `homepage`)
 
-## What Are Forge Features?
+## What Are SharpLsp Features?
 
-Screenshots MUST show **Forge-specific functionality**, not generic VS Code features. Forge provides:
+Screenshots MUST show **SharpLsp-specific functionality**, not generic VS Code features. SharpLsp provides:
 
-- **Solution Explorer tree view** — the `forge-explorer` activity bar icon with `forge.solutionExplorer` tree showing .NET solution structure (projects, files, dependencies)
-- **Profiler panel** — `forge.profiler` tree view showing .NET process profiling
+- **Solution Explorer tree view** — the `sharplsp-explorer` activity bar icon with `sharplsp.solutionExplorer` tree showing .NET solution structure (projects, files, dependencies)
+- **Profiler panel** — `sharplsp.profiler` tree view showing .NET process profiling
 - **Code completions** — Roslyn-powered IntelliSense via the C# sidecar
 - **Diagnostics** — error squiggles from Roslyn analysis
 - **Hover info** — type/doc tooltips from Roslyn
 - **Go to Definition** — symbol navigation via Roslyn
-- **Document symbols / code folding / selection ranges** — tree-sitter powered, served by Forge's Rust host
+- **Document symbols / code folding / selection ranges** — tree-sitter powered, served by SharpLsp's Rust host
 
-The Solution Explorer tree is the most visible Forge-specific feature. If it doesn't appear, the extension isn't activated or the VSIX is stale.
+The Solution Explorer tree is the most visible SharpLsp-specific feature. If it doesn't appear, the extension isn't activated or the VSIX is stale.
 
 ## VS Code Screenshots (Playwright)
 
@@ -86,20 +86,20 @@ node screenshots/capture.mjs
 
 ### Tweaking Capture Functions
 
-If a screenshot doesn't show the correct Forge feature:
+If a screenshot doesn't show the correct SharpLsp feature:
 
 1. **Read** `editors/vscode/screenshots/capture.mjs`
 2. Find the capture function (e.g., `captureCompletions`)
 3. **Edit** the function — adjust selectors, timing, interactions
 4. **Re-run**: `node screenshots/capture.mjs <name>`
 5. **Verify** with the Read tool (view the PNG)
-6. **Repeat** until the screenshot shows the actual Forge feature
+6. **Repeat** until the screenshot shows the actual SharpLsp feature
 
 ## Zed Screenshots (screencapture)
 
 Shell script at `.claude/skills/take-screenshot/capture.sh`.
 
-**NOTE**: Zed captures can only show static code views. Forge features (completions, hover, diagnostics) cannot be triggered programmatically in Zed. If the screenshot doesn't show a Forge feature, report to the user.
+**NOTE**: Zed captures can only show static code views. SharpLsp features (completions, hover, diagnostics) cannot be triggered programmatically in Zed. If the screenshot doesn't show a SharpLsp feature, report to the user.
 
 ### Run Zed Capture
 
@@ -151,8 +151,8 @@ Read each criterion word by word. Then look at the image. Then answer honestly: 
 | `hover` | A **floating tooltip/popup box** above or below code showing type signature, documentation, or parameter info. Must be clearly a tooltip, not a notification. | Just code with no popup. A command palette or notification instead of a hover tooltip. |
 | `go-to-definition` | A **peek definition inline overlay** showing source code in a bordered sub-editor, OR evidence of navigation to a different file. | Just code with no overlay or navigation evidence. |
 | `profiler` | The **Profiler tree view** with actual .NET process entries (PIDs, names, memory). Real data, not placeholder text. | "No .NET processes found" or an empty profiler panel. |
-| `homepage` | Code editor with C# syntax highlighting AND "Forge" visible in the status bar. | No Forge branding visible. Error dialogs covering the editor. |
-| `editor-overview` | **Outline panel** with hierarchical symbol nodes (namespaces, classes, methods) populated by Forge. At least 3+ symbol nodes. | Empty outline panel or just "No symbols found". |
+| `homepage` | Code editor with C# syntax highlighting AND "SharpLsp" visible in the status bar. | No SharpLsp branding visible. Error dialogs covering the editor. |
+| `editor-overview` | **Outline panel** with hierarchical symbol nodes (namespaces, classes, methods) populated by SharpLsp. At least 3+ symbol nodes. | Empty outline panel or just "No symbols found". |
 
 ### Step 4: THIRD CHECK — name every element or it's a FAIL
 
@@ -210,7 +210,8 @@ RESULT: FAIL — [what's actually there] vs [what's required]
 
 - **ALWAYS** build the VSIX before capturing (`make build-vsix`)
 - NEVER save a screenshot that shows a 404, blank page, or error dialog
-- NEVER save a screenshot that doesn't show the actual Forge feature with real content
+- NEVER save a screenshot that doesn't show the actual SharpLsp feature with real content
+
 - ALWAYS verify visually by reading the PNG back with the Read tool
 - ALWAYS use dark theme
 - Viewport: 1280x800 (VS Code) or 1280x720 (Zed)

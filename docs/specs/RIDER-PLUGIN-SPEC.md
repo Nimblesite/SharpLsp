@@ -6,7 +6,7 @@ https://plugins.jetbrains.com/docs/intellij/language-server-protocol.html
 
 ## 1. Overview
 
-The SharpLsp Rider plugin wires the `sharplsp-lsp` binary into JetBrains Rider (and
+The SharpLsp Rider plugin wires the `sharplsp` binary into JetBrains Rider (and
 every other non-Community IntelliJ-based IDE that ships LSP support) and adds
 a **SharpLsp Solution Explorer** tool window that renders the full solution tree
 by calling the same custom LSP requests the VS Code extension uses.
@@ -30,10 +30,10 @@ on the `com.intellij.modules.lsp` module and fails to load on Community.
 ## 3. Architecture
 
 ```
-Rider JVM ──lsp4j──> sharplsp-lsp (stdio, MessagePack for IPC to sidecars)
+Rider JVM ──lsp4j──> sharplsp (stdio, MessagePack for IPC to sidecars)
     │
     ├── SharpLspLspServerSupportProvider   (extension point)
-    │     └── SharpLspLspServerDescriptor  (launches sharplsp-lsp, sets env)
+    │     └── SharpLspLspServerDescriptor  (launches sharplsp, sets env)
     │           └── SharpLspLsp4jServer    (custom request interface)
     │
     └── SharpLspSolutionToolWindow         (toolWindow extension point)
@@ -80,10 +80,10 @@ No sidecar, no webview, no MessagePack on the Rider side. The plugin is
   Copied to the repo root as `sharplsp.zip` (alongside `sharplsp.vsix`).
 - **Gradle wrapper:** committed so contributors and CI don't need a system
   Gradle.
-- **Binary resolution:** the plugin does **not** bundle `sharplsp-lsp`. It
+- **Binary resolution:** the plugin does **not** bundle `sharplsp`. It
   resolves the binary identically to the VS Code extension:
   1. `sharplsp.lspPath` setting (per-project, stored in workspace.xml)
-  2. `~/.local/bin/sharplsp-lsp`
+  2. `~/.local/bin/sharplsp`
   3. Anything on `$PATH`
   4. Clear error with install instructions if none found
   This keeps the plugin zip under 200 KB and sidesteps Rider's plugin-size
@@ -102,7 +102,7 @@ One server per Rider project, not per file.
 
 - `isSupportedFile(VirtualFile)` — whitelist of C# / F# extensions.
 - `createCommandLine()` — builds a `GeneralCommandLine` pointing at the
-  resolved `sharplsp-lsp` binary, sets `RUST_LOG=info`, inherits the project's
+  resolved `sharplsp` binary, sets `RUST_LOG=info`, inherits the project's
   `VIRTUAL_FILE_DELIMITER` and working directory.
 - `lsp4jServerClass = SharpLspLsp4jServer::class.java` — this is the hook
   JetBrains documents for custom requests. The returned class extends
@@ -201,7 +201,7 @@ multi-file save burst doesn't thrash.
 ## 7. Error handling
 
 - LSP binary not found → toast notification with a "Configure" button
-  that opens the settings panel. Tool window shows a single "sharplsp-lsp not
+  that opens the settings panel. Tool window shows a single "sharplsp not
   installed" node with install instructions as a tooltip.
 - Server crash → lsp4j automatically restarts it (JetBrains LSP API
   contract). The tool window shows a stale tree with a warning banner
@@ -213,7 +213,7 @@ multi-file save burst doesn't thrash.
 
 Single settings panel at **Settings → Tools → SharpLsp**:
 
-- **Server path** — override for `sharplsp-lsp` binary location (default:
+- **Server path** — override for `sharplsp` binary location (default:
   auto-detect).
 - **Log level** — dropdown (error / warn / info / debug / trace),
   translates to `RUST_LOG`.
@@ -243,7 +243,7 @@ canned JSON responses, and asserts:
   offset.
 - A VFS change to the `.csproj` triggers exactly one subtree reload.
 
-### 9.3 Smoke test against a real sharplsp-lsp
+### 9.3 Smoke test against a real sharplsp
 
 A manual dev-loop test, run from `make test-rider`:
 

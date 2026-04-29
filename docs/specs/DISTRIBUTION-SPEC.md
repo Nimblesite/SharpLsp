@@ -7,7 +7,7 @@ All statements below are normative requirements, not suggestions.
 
 | Component | Channel | Package ID |
 |-----------|---------|------------|
-| `sharplsp-lsp` | Homebrew (macOS/Linux), Scoop (Windows) | `Nimblesite/tap/sharplsp-lsp` / `Nimblesite/sharplsp-lsp` |
+| `sharplsp` | Homebrew (macOS/Linux), Scoop (Windows) | `Nimblesite/tap/sharplsp` / `Nimblesite/sharplsp` |
 | C# sidecar | dotnet global tool on NuGet.org | `SharpLsp.Sidecar.CSharp` |
 | F# sidecar | dotnet global tool on NuGet.org | `SharpLsp.Sidecar.FSharp` |
 
@@ -45,7 +45,7 @@ Any editor extension (VS Code today, Zed/JetBrains/Neovim in the future) MUST:
 
 | Binary | Command | Expected stdout |
 |--------|---------|-----------------|
-| `sharplsp-lsp` | `sharplsp-lsp --version` | `sharplsp-lsp <semver>` |
+| `sharplsp` | `sharplsp --version` | `sharplsp <semver>` |
 | C# sidecar | `sharplsp-sidecar-csharp --version` | `sharplsp-sidecar-csharp <semver>` |
 | F# sidecar | `sharplsp-sidecar-fsharp --version` | `sharplsp-sidecar-fsharp <semver>` |
 
@@ -55,7 +55,7 @@ Before running any install command, check that the required package manager
 is available on PATH. If missing, show a modal with a link to the install
 page and abort. Do not offer to install package managers automatically.
 
-| Platform | sharplsp-lsp PM | Sidecar PM | PM install URL |
+| Platform | sharplsp PM | Sidecar PM | PM install URL |
 |----------|-------------|-----------|----------------|
 | macOS | `brew` | `dotnet` | brew.sh / dotnet.microsoft.com |
 | Linux | `brew` | `dotnet` | brew.sh / dotnet.microsoft.com |
@@ -63,8 +63,8 @@ page and abort. Do not offer to install package managers automatically.
 
 ## 4. Tap/Bucket Repo Layout
 
-- `Nimblesite/homebrew-tap` contains `Formula/sharplsp-lsp.rb`
-- `Nimblesite/scoop-bucket` contains `bucket/sharplsp-lsp.json`
+- `Nimblesite/homebrew-tap` contains `Formula/sharplsp.rb`
+- `Nimblesite/scoop-bucket` contains `bucket/sharplsp.json`
 - Both are auto-updated by the release workflow using `BREW_SCOOP_PAT`
 - Manual edits are forbidden
 
@@ -72,11 +72,11 @@ page and abort. Do not offer to install package managers automatically.
 
 Tag-triggered (`v*`). Three jobs:
 
-1. **`build-sharplsp-lsp`** — matrix: 4 targets (linux-x64, macOS-arm64,
+1. **`build-sharplsp`** — matrix: 4 targets (linux-x64, macOS-arm64,
    macOS-x64, win-x64). Single binary per archive (no sidecars bundled).
 2. **`pack-sidecars`** — single ubuntu job. `dotnet pack` both sidecars
    as framework-dependent tools. Produces 2 nupkgs.
-3. **`release`** — sequential steps: create GitHub release with sharplsp-lsp
+3. **`release`** — sequential steps: create GitHub release with sharplsp
    archives, push nupkgs to NuGet.org, update Homebrew tap, update Scoop
    bucket.
 

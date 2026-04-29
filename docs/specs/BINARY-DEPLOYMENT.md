@@ -3,13 +3,13 @@
 ## Context
 
 SharpLsp currently ships a single tagged GitHub release containing one monolithic
-archive per platform with `bin/sharplsp-lsp` + `sidecar-csharp/` + `sidecar-fsharp/`
+archive per platform with `bin/sharplsp` + `sidecar-csharp/` + `sidecar-fsharp/`
 folders. The VS Code extension downloads that archive and extracts it into
 `~/.local/` (see [install.ts:308-384](editors/vscode/src/install.ts#L308-L384)).
 
 The user wants three distinct distribution channels:
 
-1. **Rust `sharplsp-lsp` binary** — Homebrew (macOS/Linux) and Scoop (Windows),
+1. **Rust `sharplsp` binary** — Homebrew (macOS/Linux) and Scoop (Windows),
    driven by GitHub release assets.
 2. **C# and F# sidecars** — published as global `dotnet tool` packages
    (`dotnet tool install -g SharpLsp.Sidecar.CSharp` / `.FSharp`).
@@ -35,7 +35,7 @@ pattern, plus a NuGet.org push for the two sidecars.
 ```mermaid
 flowchart TD
     Tag["git tag v0.1.1"] --> Release[.github/workflows/release.yml]
-    Release --> BuildRust["build sharplsp-lsp<br/>4 targets"]
+    Release --> BuildRust["build sharplsp<br/>4 targets"]
     Release --> PackCS["pack SharpLsp.Sidecar.CSharp<br/>as dotnet tool .nupkg"]
     Release --> PackFS["pack SharpLsp.Sidecar.FSharp<br/>as dotnet tool .nupkg"]
     BuildRust --> GH[GitHub Release assets]
@@ -43,8 +43,8 @@ flowchart TD
     PackFS --> Nuget
     GH --> Brew[update Nimblesite/homebrew-tap]
     GH --> Scoop[update Nimblesite/scoop-bucket]
-    Brew --> UserBrew["brew install<br/>Nimblesite/tap/sharplsp-lsp"]
-    Scoop --> UserScoop["scoop install<br/>Nimblesite/sharplsp-lsp"]
+    Brew --> UserBrew["brew install<br/>Nimblesite/tap/sharplsp"]
+    Scoop --> UserScoop["scoop install<br/>Nimblesite/sharplsp"]
     Nuget --> UserCS["dotnet tool install -g<br/>SharpLsp.Sidecar.CSharp"]
     Nuget --> UserFS["dotnet tool install -g<br/>SharpLsp.Sidecar.FSharp"]
     UserBrew & UserScoop & UserCS & UserFS --> VSIX[VS Code extension activates]
@@ -55,9 +55,9 @@ flowchart TD
 ```mermaid
 flowchart TD
     Activate[extension activate] --> Expected["read expected version<br/>from package.json"]
-    Expected --> CheckLSP["spawn sharplsp-lsp --version"]
+    Expected --> CheckLSP["spawn sharplsp --version"]
     CheckLSP --> LSPok{stdout == expected?}
-    LSPok -- no --> PromptLSP["modal: install sharplsp-lsp via<br/>brew or scoop?"]
+    LSPok -- no --> PromptLSP["modal: install sharplsp via<br/>brew or scoop?"]
     PromptLSP -- yes --> RunPM1["spawn: brew install ... OR<br/>scoop install ..."]
     PromptLSP -- no --> Abort1[abort activation]
     RunPM1 --> CheckLSP
@@ -73,7 +73,7 @@ flowchart TD
     PromptFS -- yes --> RunPM3["spawn: dotnet tool update -g<br/>SharpLsp.Sidecar.FSharp --version X"]
     PromptFS -- no --> Abort3[abort activation]
     RunPM3 --> CheckFS
-    FSok -- yes --> Launch[launch sharplsp-lsp]
+    FSok -- yes --> Launch[launch sharplsp]
 ```
 
 Rules:
@@ -131,7 +131,7 @@ the fix is to flip `<RollForward>LatestMajor</RollForward>` and ensure
 `<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>` so every
 transitive dep lands next to the tool DLL. Still dotnet tool. No self-contained.
 
-### 2. Rust binary — already has `--version`, confirm via `sharplsp-lsp --version`
+### 2. Rust binary — already has `--version`, confirm via `sharplsp --version`
 
 No changes needed in the Rust source. Already verified at
 [install.ts:74-91](editors/vscode/src/install.ts#L74-L91).
@@ -140,9 +140,9 @@ No changes needed in the Rust source. Already verified at
 
 Replace the current monolithic archive job with:
 
-**Job A: `build-sharplsp-lsp`** (matrix: 4 targets)
+**Job A: `build-sharplsp`** (matrix: 4 targets)
 - Build `cargo build --release --target <target>`
-- Package single binary as `sharplsp-lsp-<tag>-<target>.{tar.gz,zip}` (no
+- Package single binary as `sharplsp-<tag>-<target>.{tar.gz,zip}` (no
   sidecar dirs — just the binary, like dart_mutant)
 - Upload artifact
 
@@ -154,7 +154,7 @@ Replace the current monolithic archive job with:
 - Upload nupkg artifacts
 
 **Job C: `release`** (needs [A, B])
-- `gh release create` with all tar.gz/zip assets (sharplsp-lsp only)
+- `gh release create` with all tar.gz/zip assets (sharplsp only)
 
 **Job D: `publish-nuget`** (needs [B])
 - `dotnet nuget push *.nupkg --api-key ${{ secrets.NUGET_API_KEY }}
@@ -163,16 +163,16 @@ Replace the current monolithic archive job with:
 **Job E: `update-homebrew`** (needs [release])
 - Checkout `Nimblesite/homebrew-tap` with `BREW_SCOOP_PAT`
 - Download macOS arm64 + macOS x64 + linux x64 tar.gz assets, sha256 each
-- Generate `Formula/sharplsp-lsp.rb` with `on_macos {on_arm / on_intel}` and
+- Generate `Formula/sharplsp.rb` with `on_macos {on_arm / on_intel}` and
   `on_linux { on_intel }` blocks, one url+sha256 per block
-- `def install; bin.install "sharplsp-lsp"; end`
-- `test do; assert_match "sharplsp-lsp", shell_output("#{bin}/sharplsp-lsp --version"); end`
+- `def install; bin.install "sharplsp"; end`
+- `test do; assert_match "sharplsp", shell_output("#{bin}/sharplsp --version"); end`
 - Commit and push
 
 **Job F: `update-scoop`** (needs [release])
 - Checkout `Nimblesite/scoop-bucket` with `BREW_SCOOP_PAT`
 - Download win x64 zip, sha256 it
-- Write `bucket/sharplsp-lsp.json` with `architecture."64bit".{url,hash,bin}`,
+- Write `bucket/sharplsp.json` with `architecture."64bit".{url,hash,bin}`,
   `checkver.github`, `autoupdate.architecture."64bit".url` template
 - Commit and push
 
@@ -191,7 +191,7 @@ function getVersion(command: string): string | undefined {
 }
 ```
 
-This is called for all three: `sharplsp-lsp`, `sharplsp-sidecar-csharp`,
+This is called for all three: `sharplsp`, `sharplsp-sidecar-csharp`,
 `sharplsp-sidecar-fsharp`. No file-existence checks, no fallbacks.
 
 **Package-manager-driven install (the only install path):**
@@ -200,10 +200,10 @@ This is called for all three: `sharplsp-lsp`, `sharplsp-sidecar-csharp`,
 // Per-binary install/update command keyed by platform.
 // No HTTPS downloads, no tarball extraction, no ~/.local staging.
 const INSTALL_COMMANDS = {
-    "sharplsp-lsp": {
-        darwin: ["brew", "install", "Nimblesite/tap/sharplsp-lsp"],
-        linux:  ["brew", "install", "Nimblesite/tap/sharplsp-lsp"],
-        win32:  ["scoop", "install", "Nimblesite/sharplsp-lsp"],
+    "sharplsp": {
+        darwin: ["brew", "install", "Nimblesite/tap/sharplsp"],
+        linux:  ["brew", "install", "Nimblesite/tap/sharplsp"],
+        win32:  ["scoop", "install", "Nimblesite/sharplsp"],
     },
     "sharplsp-sidecar-csharp": {
         all: ["dotnet", "tool", "update", "-g", "SharpLsp.Sidecar.CSharp",
@@ -219,8 +219,8 @@ const INSTALL_COMMANDS = {
 - `update` (not `install`) is used so the same command works for both first
   install and version bump. `dotnet tool update -g --version X` installs if
   absent and re-pins if present.
-- For `sharplsp-lsp` on Scoop, version pinning uses `scoop install sharplsp-lsp@X`
-  if the bucket manifest supports it, otherwise `scoop update sharplsp-lsp`.
+- For `sharplsp` on Scoop, version pinning uses `scoop install sharplsp@X`
+  if the bucket manifest supports it, otherwise `scoop update sharplsp`.
 
 **Flow for each binary:**
 
@@ -256,10 +256,10 @@ abort. Do not offer to install package managers automatically.
 
 ### 5. Makefile — simplify `install` target
 
-`Makefile:370-383` — the `install` target currently stages sharplsp-lsp +
+`Makefile:370-383` — the `install` target currently stages sharplsp +
 sidecars into `$PREFIX`. Replace with:
 
-- `install-rust`: just copies `sharplsp-lsp` to `$PREFIX/bin` (for local dev)
+- `install-rust`: just copies `sharplsp` to `$PREFIX/bin` (for local dev)
 - `install-sidecars`: runs `dotnet tool install -g` from locally packed
   nupkgs so contributors can test the tool install flow end-to-end
 - Drop `~/.local/lib/sharplsp/` entirely. Sidecars now live wherever
@@ -273,7 +273,7 @@ distributed. MUST state the following as normative requirements (not
 suggestions):
 
 1. **Three channels, no alternatives.**
-   - `sharplsp-lsp` → Homebrew (macOS/Linux) and Scoop (Windows).
+   - `sharplsp` → Homebrew (macOS/Linux) and Scoop (Windows).
    - `SharpLsp.Sidecar.CSharp` → dotnet global tool on NuGet.org.
    - `SharpLsp.Sidecar.FSharp` → dotnet global tool on NuGet.org.
    - Sidecars are **framework-dependent** dotnet tools. `SelfContained=true`
@@ -299,8 +299,8 @@ suggestions):
      to a degraded mode or older version.
 
 4. **Tap/bucket repo layout.** `Nimblesite/homebrew-tap` contains
-   `Formula/sharplsp-lsp.rb`. `Nimblesite/scoop-bucket` contains
-   `bucket/sharplsp-lsp.json`. Both are auto-updated by the release workflow
+   `Formula/sharplsp.rb`. `Nimblesite/scoop-bucket` contains
+   `bucket/sharplsp.json`. Both are auto-updated by the release workflow
    using `BREW_SCOOP_PAT`. Manual edits are forbidden.
 
 5. **Required secrets on `Nimblesite/SharpLsp`:** `BREW_SCOOP_PAT` (PAT with
@@ -351,11 +351,11 @@ before merging the changes:
    Confirms `PackAsTool` + `SelfContained` + multi-RID strategy actually works.
    **If this fails**, the whole dotnet-tool channel is invalid and we need
    to reconsider (fallback: ship sidecars as GitHub release tarballs beside
-   sharplsp-lsp, verified by path on PATH).
+   sharplsp, verified by path on PATH).
 
 2. **VSIX verification path**
    - Build VSIX locally with version `0.1.1`
-   - Install sidecars at `0.1.0` and `sharplsp-lsp` at `0.1.1`
+   - Install sidecars at `0.1.0` and `sharplsp` at `0.1.1`
    - Activate extension in a fresh VS Code window
    - Expect: activation fails fast with a modal showing the exact
      `dotnet tool update -g SharpLsp.Sidecar.CSharp --version 0.1.1` command
@@ -366,7 +366,7 @@ before merging the changes:
    - Observe: `release` workflow succeeds, GitHub release created,
      `homebrew-tap` and `scoop-bucket` forks receive commits, nupkgs
      appear on nuget.org
-   - On a clean macOS VM: `brew install Nimblesite/tap/sharplsp-lsp` + both
+   - On a clean macOS VM: `brew install Nimblesite/tap/sharplsp` + both
      `dotnet tool install` commands → VS Code extension activates cleanly
    - On a clean Windows VM: same via scoop
 

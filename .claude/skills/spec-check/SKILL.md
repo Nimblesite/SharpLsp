@@ -97,7 +97,7 @@ Search the entire codebase for the spec ID string, **excluding** these directori
 
 Use Grep with the literal spec ID (e.g., `[AUTH-TOKEN-VERIFY]`) to find references in code files.
 
-Code files should contain comments referencing the spec ID. The search must catch **all** comment styles for Forge's languages:
+Code files should contain comments referencing the spec ID. The search must catch **all** comment styles for SharpLsp's languages:
 
 **Rust** (`//`, `///`):
 - `// Implements [SPEC-ID]`

@@ -5,8 +5,8 @@
 #   make PROFILE=debug       build everything (debug)
 #   make ci                  lint → test → build
 #   make install-vsix        clean → build → deploy → install VS Code extension
-#   make install-binaries    build + install sharplsp-lsp + sidecars to PATH
-#   make install-rust        build + install sharplsp-lsp only
+#   make install-binaries    build + install sharplsp + sidecars to PATH
+#   make install-rust        build + install sharplsp only
 #   make install-sidecars    build + install sidecars only
 #   make test                run all tests with coverage
 #   make screenshots         capture all website screenshots from real VS Code
@@ -74,17 +74,17 @@ install-vsix: _kill clean _build-rust _build-dotnet _build-vsix _uninstall-vsix 
 	@echo ""
 	@echo "==> VS Code extension installed."
 
-# ── Public: install sharplsp-lsp + sidecars ──────────────────────
+# ── Public: install sharplsp + sidecars ──────────────────────
 
 install-binaries: _kill _build-rust _build-dotnet _deploy-rust _deploy-sidecars
 	@echo ""
 	@echo "==> All binaries installed:"
-	@echo "    $(BINDIR)/sharplsp-lsp"
+	@echo "    $(BINDIR)/sharplsp"
 	@echo "    sharplsp-sidecar-csharp (dotnet tool)"
 	@echo "    sharplsp-sidecar-fsharp (dotnet tool)"
 
 install-rust: _build-rust _kill _deploy-rust
-	@echo "==> Installed: $(BINDIR)/sharplsp-lsp"
+	@echo "==> Installed: $(BINDIR)/sharplsp"
 
 install-sidecars: _build-dotnet _kill _deploy-sidecars
 	@echo "==> Sidecars installed."
@@ -102,9 +102,9 @@ test: test-rust test-vsix test-dotnet test-website
 test-rust: _build-dotnet _stage-sidecars
 	@echo "==> Pre-building ProfileTarget fixture..."
 	dotnet build tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
-	@echo "==> Running sharplsp-lsp tests with coverage..."
+	@echo "==> Running sharplsp tests with coverage..."
 	cargo llvm-cov nextest --json --output-path target/coverage-rust.json --fail-fast
-	@$(CHECK_COV) sharplsp-lsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
+	@$(CHECK_COV) sharplsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
 
 test-zed:
 	@echo "==> Running Zed tests..."
@@ -203,7 +203,7 @@ fmt-dotnet:
 # ── Build primitives (private) ────────────────────────────────────
 
 _build-rust:
-	@echo "==> Building sharplsp-lsp ($(PROFILE))..."
+	@echo "==> Building sharplsp ($(PROFILE))..."
 	cargo build $(CARGO_FLAG)
 	@test -f $(BINARY) || { echo "ERROR: $(BINARY) not found" >&2; exit 1; }
 
@@ -219,7 +219,7 @@ _build-vsix: _stage-vsix-binary
 	rm -rf $(VSCODE_DIR)/bin
 
 _stage-vsix-binary: _build-rust
-	@echo "==> Staging sharplsp-lsp for VSIX ($(VSIX_PLATFORM))..."
+	@echo "==> Staging sharplsp for VSIX ($(VSIX_PLATFORM))..."
 	rm -rf $(VSCODE_DIR)/bin
 	mkdir -p $(dir $(VSIX_BINARY))
 	cp $(BINARY) $(VSIX_BINARY)
@@ -245,7 +245,7 @@ _build-rider:
 # ── Deploy primitives (private) ───────────────────────────────────
 
 _deploy-rust:
-	@echo "==> Installing sharplsp-lsp to $(BINDIR)/..."
+	@echo "==> Installing sharplsp to $(BINDIR)/..."
 	mkdir -p $(BINDIR)
 	cp $(BINARY) $(BINDIR)/sharplsp
 	chmod +x $(BINDIR)/sharplsp

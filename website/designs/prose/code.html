@@ -3,7 +3,7 @@
 <html class="dark" lang="en"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Scaling the Forge Message Broker to 1M Events per Second - DevTerminal</title>
+<title>Scaling the SharpLsp Message Broker to 1M Events per Second - DevTerminal</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;450;600&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
@@ -137,7 +137,7 @@
 <span class="bg-surface-container-high text-on-surface px-2 py-1 rounded text-label-caps font-label-caps uppercase border border-[#262626]">Systems Engineering</span>
 <span class="text-on-secondary-container text-body-sm font-body-sm">Oct 24, 2024</span>
 </div>
-<h1 class="font-headline-xl text-headline-xl text-on-background mb-6">Scaling the Forge Message Broker to 1M Events per Second</h1>
+<h1 class="font-headline-xl text-headline-xl text-on-background mb-6">Scaling the SharpLsp Message Broker to 1M Events per Second</h1>
 <div class="flex items-center gap-4 border-t border-[#262626] pt-6">
 <img alt="Jane Doe Profile" class="w-12 h-12 rounded-full border-2 border-[#262626] object-cover grayscale opacity-80 hover:grayscale-0 hover:opacity-100 transition-all" data-alt="close-up portrait of a female software engineer in low light cyberpunk environment with green neon reflections" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAD67SpD-iAx0p3uV9exHCxuwOCzRb4-DL71Un7bMvBZAhwFrV5QujQLJAj7RY1FW-p4m-0uhYkk9PSxb7WJUOqXt25VH6AtubFss0CAMR3Yw9k0n876VF5g0PJXLF0V45EbGUjr7sUPnCLpJC73GhMMZLUuD43uYczJM1_e9IZSX-rZb87fMAJ03X3HR6kzzFuBpQ80EW3hRgYm54AILhIIO2T5pWPyjljM0PWc13wW6tYobl3bdo6v_PSS6a2MMwmRwZTRD5uSw"/>
 <div>
@@ -149,7 +149,7 @@
 <!-- Article Body -->
 <article class="prose prose-invert prose-emerald max-w-none">
 <p class="font-body-md text-body-md text-on-surface mb-6 text-lg leading-relaxed">
-                When we initially designed Forge, our internal message broker, the target was modest: handle 50,000 events per second with sub-10ms latency. As our microservices ecosystem exploded, that number quickly became a bottleneck. This post details the architectural shifts and low-level Rust optimizations required to push Forge past the 1,000,000 EPS threshold on commodity hardware.
+                When we initially designed SharpLsp, our internal message broker, the target was modest: handle 50,000 events per second with sub-10ms latency. As our microservices ecosystem exploded, that number quickly became a bottleneck. This post details the architectural shifts and low-level Rust optimizations required to push SharpLsp past the 1,000,000 EPS threshold on commodity hardware.
             </p>
 <h2 class="font-headline-lg text-headline-lg text-on-background mt-12 mb-6 pb-2 border-b border-[#262626]">The Bottleneck: Lock Contention</h2>
 <p class="font-body-md text-body-md text-on-surface mb-6">
@@ -158,7 +158,7 @@
 <!-- Image/Diagram Placeholder -->
 <div class="my-8 rounded border border-[#262626] bg-[#1A1A1A] p-2 overflow-hidden shadow-2xl shadow-black/50">
 <img alt="Architecture Diagram" class="w-full h-auto rounded opacity-80 mix-blend-screen" data-alt="abstract dark technical diagram showing glowing green data flows through network nodes on a dark grey background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-ap6VjPSfkymYONTBORgR7-FYubfHcxGVY5iSBkAQ99o2PmogkQ2_rkuS_pQ7OgoDGPTIB30Bbt3FKiCMeDtrg651pxOm1-Zc1JrQZ939G9Jw__mXYo2cLADu8-DzVP51_FV12tAWWaYQjmyCnD3XGhxx-HY2p8lNn7OCVWAN6tx2L-wa911fh_E6_5tLDie-qWhaMlujautjMm_GJTy03xEW1CYvvVfzukhtwTUPBCzcpj9INJrNdpdBX0EYhPDWbAjPozmtgQ"/>
-<p class="text-center font-body-sm text-body-sm text-on-secondary-container mt-2">Figure 1: Lock contention profiling in Forge v1 vs v2.</p>
+<p class="text-center font-body-sm text-body-sm text-on-secondary-container mt-2">Figure 1: Lock contention profiling in SharpLsp v1 vs v2.</p>
 </div>
 <h2 class="font-headline-lg text-headline-lg text-on-background mt-12 mb-6 pb-2 border-b border-[#262626]">Moving to Lock-Free Data Structures</h2>
 <p class="font-body-md text-body-md text-on-surface mb-6">
@@ -215,7 +215,7 @@
 <div>
 <h4 class="font-body-md text-body-md font-semibold text-on-background mb-1">Architecture Note</h4>
 <p class="font-body-sm text-body-sm text-on-secondary-container">
-                        Integrating io_uring required bypassing standard Tokio primitives. We built a custom reactor tailored specifically for Forge's I/O patterns, sacrificing general-purpose utility for raw speed.
+                        Integrating io_uring required bypassing standard Tokio primitives. We built a custom reactor tailored specifically for SharpLsp's I/O patterns, sacrificing general-purpose utility for raw speed.
                     </p>
 </div>
 </div>
@@ -242,7 +242,7 @@
 <span class="text-label-caps font-label-caps text-on-secondary-container uppercase tracking-widest">Benchmark</span>
 <span class="material-symbols-outlined text-on-secondary-container group-hover:text-primary-container transition-colors" data-icon="arrow_outward">arrow_outward</span>
 </div>
-<h4 class="font-body-md text-body-md font-semibold text-on-background mb-2">Forge vs. Kafka: 2024 Performance Report</h4>
+<h4 class="font-body-md text-body-md font-semibold text-on-background mb-2">SharpLsp vs. Kafka: 2024 Performance Report</h4>
 <p class="font-body-sm text-body-sm text-on-secondary-container line-clamp-2">Head-to-head comparison on commodity hardware focusing on tail latencies.</p>
 </a>
 </div>

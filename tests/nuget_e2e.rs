@@ -1,6 +1,6 @@
 //! End-to-end tests for `sharplsp/nuget/*` LSP custom requests.
 //!
-//! Tests spawn the `sharplsp-lsp` binary and communicate over stdio JSON-RPC,
+//! Tests spawn the `sharplsp` binary and communicate over stdio JSON-RPC,
 //! exactly like a real LSP client.
 
 #![expect(
@@ -48,7 +48,7 @@ struct LspClient {
 
 impl LspClient {
     fn start() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_sharplsp"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_sharplsp-lsp"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

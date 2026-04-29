@@ -35,7 +35,7 @@ plugin targeting Rider 2024.3, a `plugin.xml` that depends on
 **Phase 2 — LSP server integration.** Wire `SharpLspLspServerSupportProvider`
 to the `platform.lsp.serverSupportProvider` extension point; have it start
 a `SharpLspLspServerDescriptor` on any `.cs` / `.csx` / `.fs` / `.fsx` / `.fsi`
-file. The descriptor resolves `sharplsp-lsp` with the same priority list as
+file. The descriptor resolves `sharplsp` with the same priority list as
 the VS Code extension (setting override → `~/.local/bin` → `$PATH`) and
 exposes a custom `SharpLspLsp4jServer` subinterface of `LanguageServer` that
 declares `@JsonRequest("sharplsp/...")` methods for every SharpLsp custom
@@ -113,7 +113,7 @@ only — Community editions are not supported.
 - [ ] `SharpLspLspServerDescriptor` extends `ProjectWideLspServerDescriptor`
       and overrides:
     - [ ] `isSupportedFile(VirtualFile)` — `.cs`, `.csx`, `.fs`, `.fsx`, `.fsi`
-    - [ ] `createCommandLine()` — resolves `sharplsp-lsp` via the same
+    - [ ] `createCommandLine()` — resolves `sharplsp` via the same
           priority list as the VS Code extension
     - [ ] `lsp4jServerClass` — points at `SharpLspLsp4jServer`
 - [ ] `SharpLspLsp4jServer` interface with `@JsonRequest` methods for
@@ -121,7 +121,7 @@ only — Community editions are not supported.
       `sharplsp/loadSolution`
 - [ ] DTO data classes matching the Rust JSON wire format exactly
 - [ ] Smoke test: open a `.cs` file in a dev Rider, verify the LSP status
-      bar shows "sharplsp-lsp running"
+      bar shows "sharplsp running"
 
 ### Phase 3: Solution Explorer tool window
 
