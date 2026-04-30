@@ -9,6 +9,9 @@
   "engines": {
     "vscode": "^1.99.0"
   },
+  "extensionDependencies": [
+    "ms-dotnettools.vscode-dotnet-runtime"
+  ],
   "categories": [
     "Programming Languages"
   ],
@@ -352,6 +355,11 @@
       {
         "command": "sharplsp.restartServer",
         "title": "Restart Language Server",
+        "category": "SharpLsp"
+      },
+      {
+        "command": "sharplsp.retryDotnetAcquisition",
+        "title": "Retry .NET Runtime Acquisition",
         "category": "SharpLsp"
       },
       {

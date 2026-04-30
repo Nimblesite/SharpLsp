@@ -12,18 +12,18 @@ This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vsc
 
 ### VS Code extension wiring
 
-- [ ] Add `"extensionDependencies": ["ms-dotnettools.vscode-dotnet-runtime"]` to [editors/vscode/package.json](../../editors/vscode/package.json) (insert after the `engines` block, around line 11)
-- [ ] Create new file `editors/vscode/src/dotnetRuntime.ts` exporting `acquireDotnet10(log, statusBar): Promise<string>` returning the path to `dotnet` / `dotnet.exe`
-- [ ] In `dotnetRuntime.ts`, first call `dotnet.findPath` with `{ acquireContext: { version: '10.0', mode: 'runtime', requestingExtensionId: 'nimblesite.sharplsp' }, versionSpecRequirement: 'greater_than_or_equal' }` — if it returns a path, skip acquisition
-- [ ] Otherwise call `dotnet.acquire` with `{ version: '10.0', mode: 'runtime', requestingExtensionId: 'nimblesite.sharplsp' }`
-- [ ] Wrap the call in `vscode.window.withProgress({ location: vscode.window.ProgressLocation.Notification, title: 'SharpLsp: Installing .NET 10 runtime', cancellable: false }, ...)` — non-interactive toast spinner
-- [ ] Update `SharpLspStatusBar` to show "Installing .NET 10…" via `statusBar.setState(ServerState.Starting)` plus a custom message during acquisition
-- [ ] Define a typed `DotnetAcquireError` thrown on acquisition failure
-- [ ] In [editors/vscode/src/extension.ts](../../editors/vscode/src/extension.ts), insert `step 10c: acquireDotnet10` between line 133 (`initProjectDepsStore`) and line 135 (`activateDeploymentToolkit`); store `dotnetPath` for downstream use
-- [ ] On `DotnetAcquireError`, render a non-modal error notification with `[Open dot.net]` (uses `vscode.env.openExternal`) and `[Show log]` buttons — both informational, no required action; enter degraded state without throwing
-- [ ] Register a `sharplsp.retryDotnetAcquisition` command for the degraded-state recovery path (re-runs `acquireDotnet10` and resumes activation if it succeeds)
+- [x] Add `"extensionDependencies": ["ms-dotnettools.vscode-dotnet-runtime"]` to [editors/vscode/package.json](../../editors/vscode/package.json) (insert after the `engines` block, around line 11)
+- [x] Create new file `editors/vscode/src/dotnetRuntime.ts` exporting `acquireDotnet10(log, statusBar): Promise<string>` returning the path to `dotnet` / `dotnet.exe`
+- [x] In `dotnetRuntime.ts`, first call `dotnet.findPath` with `{ acquireContext: { version: '10.0', mode: 'runtime', requestingExtensionId: 'nimblesite.sharplsp' }, versionSpecRequirement: 'greater_than_or_equal' }` — if it returns a path, skip acquisition
+- [x] Otherwise call `dotnet.acquire` with `{ version: '10.0', mode: 'runtime', requestingExtensionId: 'nimblesite.sharplsp' }`
+- [x] Wrap the call in `vscode.window.withProgress({ location: vscode.window.ProgressLocation.Notification, title: 'SharpLsp: Installing .NET 10 runtime', cancellable: false }, ...)` — non-interactive toast spinner
+- [x] Update `SharpLspStatusBar` to show "Installing .NET 10…" via `statusBar.setState(ServerState.Starting)` plus a custom message during acquisition
+- [x] Define a typed `DotnetAcquireError` thrown on acquisition failure
+- [x] In [editors/vscode/src/extension.ts](../../editors/vscode/src/extension.ts), insert `step 10c: acquireDotnet10` between line 133 (`initProjectDepsStore`) and line 135 (`activateDeploymentToolkit`); store `dotnetPath` for downstream use
+- [x] On `DotnetAcquireError`, render a non-modal error notification with `[Open dot.net]` (uses `vscode.env.openExternal`) and `[Show log]` buttons — both informational, no required action; enter degraded state without throwing
+- [x] Register a `sharplsp.retryDotnetAcquisition` command for the degraded-state recovery path (re-runs `acquireDotnet10` and resumes activation if it succeeds)
 - [ ] In [editors/vscode/src/client.ts](../../editors/vscode/src/client.ts), extend `sidecarEnv` (lines 78–87) to accept `dotnetPath` and set `DOTNET_ROOT` to its directory on the env passed to the Rust LSP host
-- [ ] Update `client.start(...)` signature in extension.ts to thread `dotnetPath` through
+- [x] Update `client.start(...)` signature in extension.ts to thread `dotnetPath` through
 
 ### Rust host (sidecar spawn)
 

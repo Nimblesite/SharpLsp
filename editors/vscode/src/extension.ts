@@ -5,6 +5,7 @@ import { type LanguageClient } from 'vscode-languageclient/node';
 import { getErrorMessage } from './utils.js';
 import {
   CMD_RESTART_SERVER,
+  CMD_RETRY_DOTNET_ACQUISITION,
   CMD_SHOW_OUTPUT,
   CMD_SHOW_TRACE,
   CMD_SELECT_SOLUTION,
@@ -26,6 +27,11 @@ import {
   VIEW_SOLUTION_EXPLORER,
   VIEW_PROFILER,
 } from './constants.js';
+import {
+  acquireDotnet10,
+  DotnetAcquireError,
+  showAcquireFailureNotification,
+} from './dotnetRuntime.js';
 import * as client from './client.js';
 import * as deps from './dependencies.js';
 import * as log from './log.js';
@@ -132,6 +138,23 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   log.info('step 10b: initProjectDepsStore');
   initProjectDepsStore(context);
 
+  log.info('step 10c: acquireDotnet10');
+  let dotnetPath: string | undefined;
+  try {
+    dotnetPath = await acquireDotnet10(statusBar);
+  } catch (err: unknown) {
+    if (err instanceof DotnetAcquireError) {
+      statusBar.setState(ServerState.Error);
+      void showAcquireFailureNotification(err, CMD_RETRY_DOTNET_ACQUISITION);
+      return {
+        explorerProvider,
+        profilerProvider,
+        getLspClient: () => lspClient,
+      };
+    }
+    throw err;
+  }
+
   log.info('step 11: activateDeploymentToolkit');
   const manifestPath = path.join(context.extensionPath, 'shipwright.json');
   const { activateDeploymentToolkit } = await import('@nimblesite/shipwright-vscode');
@@ -147,7 +170,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   }
   log.info('step 11b: client.start (await)');
   try {
-    lspClient = await client.start(context, statusBar, deploymentPaths(deployResult));
+    lspClient = await client.start(context, statusBar, deploymentPaths(deployResult), dotnetPath);
     log.info('step 11b: client.start returned');
   } catch (err: unknown) {
     const msg = getErrorMessage(err);
@@ -222,6 +245,30 @@ function registerCommands(context: ExtensionContext): void {
         const msg = getErrorMessage(err);
         log.info(`Restart failed: ${msg}`);
         statusBar.setState(ServerState.Error);
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(CMD_RETRY_DOTNET_ACQUISITION, async () => {
+      if (statusBar === undefined) return;
+      log.info('Retrying .NET 10 acquisition…');
+      try {
+        await acquireDotnet10(statusBar);
+      } catch (err: unknown) {
+        if (err instanceof DotnetAcquireError) {
+          await showAcquireFailureNotification(err, CMD_RETRY_DOTNET_ACQUISITION);
+          return;
+        }
+        throw err;
+      }
+      const reload = 'Reload Window';
+      const choice = await window.showInformationMessage(
+        'SharpLsp: .NET 10 runtime acquired. Reload the window to start the language server.',
+        reload,
+      );
+      if (choice === reload) {
+        await commands.executeCommand('workbench.action.reloadWindow');
       }
     }),
   );

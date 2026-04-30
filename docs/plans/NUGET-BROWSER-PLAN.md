@@ -226,7 +226,7 @@ chrome inside the editor area. Both `docs/designs/DESIGN.md` § 0 and
 
 ## Phase 8: Target Selection + Directory.Build.props Support (User-Reported P0)
 
-**User report (verbatim):** "I just tapped install on the nuget package and it did fucking NOTHING!!! For starters, we need a drop down which tells us WHICH project we are working with, OR the build props! … we need an option to install into the build props!!! … It did something after a long delay... it installed the package - but it took TOO long! It should be instant!! … We also need SPINNERS as the nuget browser loads shit in the background."
+**User report (paraphrased):** "I tapped install on the NuGet package and it did nothing visible. We need a drop-down telling us WHICH project we're installing into, or the build props. We need an option to install into the build props. After a long delay it eventually installed the package — but it took too long; it should feel instant. We also need spinners while the NuGet browser loads things in the background."
 
 **Root causes identified:**
 

@@ -13,6 +13,7 @@ export const CONFIG_SERVER_EXTRA_ARGS = 'server.extraArgs';
 export const CONFIG_LOGGING_LEVEL = 'logging.level';
 
 export const CMD_RESTART_SERVER = 'sharplsp.restartServer';
+export const CMD_RETRY_DOTNET_ACQUISITION = 'sharplsp.retryDotnetAcquisition';
 export const CMD_SHOW_OUTPUT = 'sharplsp.showOutput';
 export const CMD_SHOW_TRACE = 'sharplsp.showTraceOutput';
 export const CMD_SELECT_SOLUTION = 'sharplsp.selectSolution';
