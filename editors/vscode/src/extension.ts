@@ -166,7 +166,15 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     }
     statusBar.setState(ServerState.Error);
     const msg = blockingDiagnostics.map((diagnostic) => diagnostic.message).join(' ');
-    throw new Error(msg);
+    void notifyActivationFailure(
+      'SharpLsp could not start: required binaries are missing or version-mismatched.',
+      msg,
+    );
+    return {
+      explorerProvider,
+      profilerProvider,
+      getLspClient: () => lspClient,
+    };
   }
   log.info('step 11b: client.start (await)');
   try {

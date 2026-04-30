@@ -5,7 +5,7 @@ description: "SharpLsp 是一个开源、编辑器无关的 C# 和 F# 语言服�
 lang: zh
 date: 2026-03-20
 author: Christian Findlay
-image: /assets/images/blog/introducing-sharplsp.png
+image: /assets/images/blog/introducing-sharplsp-zh.png
 imageAlt: Rust 宿主引擎连接 C# 和 F# sidecar 模块
 tags:
   - posts

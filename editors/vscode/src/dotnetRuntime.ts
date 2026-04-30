@@ -7,6 +7,20 @@ import { getErrorMessage } from './utils.js';
 const DOTNET_VERSION = '10.0';
 const REQUESTING_EXTENSION_ID = 'nimblesite.sharplsp';
 
+/** Map Node `process.arch` to the .NET Install Tool's architecture identifiers. */
+function dotnetArchitecture(): string {
+  switch (process.arch) {
+    case 'x64':
+      return 'x64';
+    case 'arm64':
+      return 'arm64';
+    case 'ia32':
+      return 'x86';
+    default:
+      return 'x64';
+  }
+}
+
 interface AcquireResult {
   readonly dotnetPath: string;
 }
@@ -54,6 +68,7 @@ export async function acquireDotnet10(statusBar: SharpLspStatusBar): Promise<str
           {
             version: DOTNET_VERSION,
             mode: 'runtime',
+            architecture: dotnetArchitecture(),
             requestingExtensionId: REQUESTING_EXTENSION_ID,
           },
         );
@@ -79,6 +94,7 @@ async function tryFindExistingDotnet(): Promise<string | undefined> {
         acquireContext: {
           version: DOTNET_VERSION,
           mode: 'runtime',
+          architecture: dotnetArchitecture(),
           requestingExtensionId: REQUESTING_EXTENSION_ID,
         },
         versionSpecRequirement: 'greater_than_or_equal',
