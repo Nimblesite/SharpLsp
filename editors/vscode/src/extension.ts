@@ -237,10 +237,7 @@ function degradedApi(): SharpLspExtensionApi {
  * non-modal error notification with [Show Log] and [Restart] convenience
  * buttons, plus full diagnostic detail in the output channel.
  */
-export async function notifyActivationFailure(
-  headline: string,
-  detail: string,
-): Promise<void> {
+export async function notifyActivationFailure(headline: string, detail: string): Promise<void> {
   log.error(`Activation failure: ${headline} — ${detail}`);
   const showLog = 'Show Log';
   const restart = 'Restart Window';

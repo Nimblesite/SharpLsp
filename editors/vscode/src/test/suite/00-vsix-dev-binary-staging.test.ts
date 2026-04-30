@@ -36,4 +36,3 @@ function assertStagedComponent(filePath: string, component: string): void {
     ].join(' '),
   );
 }
-

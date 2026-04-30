@@ -191,4 +191,3 @@ suite('Client Module — Error Path: Missing Binary', () => {
     );
   });
 });
-

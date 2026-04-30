@@ -775,7 +775,7 @@ Install Tool) as an `extensionDependencies` entry, then calls `dotnet.acquire`
 on activation to obtain a per-user .NET 10 runtime. Acquisition shows a
 non-interactive progress notification + status-bar indicator; the user is
 informed but never asked to do anything. See
-[DISTRIBUTION-SPEC.md §2](DISTRIBUTION-SPEC.md#2-runtime-acquisition--net-10-via-net-install-tool).
+[DISTRIBUTION-SPEC.md `[DIST-RUNTIME-ACQUIRE]`](DISTRIBUTION-SPEC.md#dist-runtime-acquire).
 
 See [DISTRIBUTION-SPEC.md](DISTRIBUTION-SPEC.md) for the full distribution
 specification including version invariants, release workflow, and the

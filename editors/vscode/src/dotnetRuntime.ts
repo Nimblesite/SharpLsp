@@ -9,17 +9,11 @@ const DOTNET_VERSION = '10.0';
 const REQUESTING_EXTENSION_ID = 'nimblesite.sharplsp';
 
 /** Map Node `process.arch` to the .NET Install Tool's architecture identifiers. */
-function dotnetArchitecture(): string {
-  switch (process.arch) {
-    case 'x64':
-      return 'x64';
-    case 'arm64':
-      return 'arm64';
-    case 'ia32':
-      return 'x86';
-    default:
-      return 'x64';
-  }
+export function dotnetArchitecture(): string {
+  if (process.arch === 'x64') return 'x64';
+  if (process.arch === 'arm64') return 'arm64';
+  if (process.arch === 'ia32') return 'x86';
+  return 'x64';
 }
 
 interface AcquireResult {
@@ -38,9 +32,7 @@ interface FindPathResult {
  * a `Result<string, string>` where the Ok value is the absolute path to the
  * dotnet executable.
  */
-export async function acquireDotnet10(
-  statusBar: SharpLspStatusBar,
-): Promise<Result<string, string>> {
+export async function acquireDotnet10(statusBar: SharpLspStatusBar): Promise<Result<string>> {
   const existing = await tryFindExistingDotnet();
   if (existing.ok) {
     log.info(`acquired dotnet at ${existing.value} (existing compatible runtime)`);
@@ -60,7 +52,7 @@ export async function acquireDotnet10(
 
 async function callAcquire(
   progress: vscode.Progress<{ message?: string; increment?: number }>,
-): Promise<Result<string, string>> {
+): Promise<Result<string>> {
   progress.report({ message: 'Downloading from Microsoft…' });
   const result = await safeExecuteCommand<AcquireResult | undefined>('dotnet.acquire', {
     version: DOTNET_VERSION,
@@ -81,7 +73,7 @@ async function callAcquire(
   return ok(dotnetPath);
 }
 
-async function tryFindExistingDotnet(): Promise<Result<string, string>> {
+async function tryFindExistingDotnet(): Promise<Result<string>> {
   const result = await safeExecuteCommand<FindPathResult | undefined>('dotnet.findPath', {
     acquireContext: {
       version: DOTNET_VERSION,
@@ -99,10 +91,7 @@ async function tryFindExistingDotnet(): Promise<Result<string, string>> {
   return dotnetPath !== undefined && dotnetPath !== '' ? ok(dotnetPath) : err('not found');
 }
 
-async function safeExecuteCommand<T>(
-  command: string,
-  payload: unknown,
-): Promise<Result<T, string>> {
+async function safeExecuteCommand<T>(command: string, payload: unknown): Promise<Result<T>> {
   try {
     const value = await vscode.commands.executeCommand<T>(command, payload);
     return ok(value);

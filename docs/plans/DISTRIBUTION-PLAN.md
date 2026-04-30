@@ -56,6 +56,41 @@ This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vsc
 - [ ] Repeat all of the above on macOS (darwin-arm64) and Linux (linux-x64)
 - [ ] Confirm Shipwright no longer reports `Deployment toolkit (sharplsp-sidecar-csharp): version check failed... no resolved source`
 
+### Failure UX — silent activation failure must be impossible
+
+Triggered by the v0.1.0 production log captured 2026-04-30: missing bundled binaries caused `activate()` to throw, which VS Code logs to its developer console where users do not see it. Spec section: `[DIST-FAILURE-UX]`.
+
+- [x] Introduce `editors/vscode/src/result.ts` with `Result<T, E>`, `ok()`, `err()` per CLAUDE.md "all fallible functions return Result<T, E>"
+- [x] Rewrite `editors/vscode/src/dotnetRuntime.ts` so `acquireDotnet10` returns `Result<string>` (no throws); `safeExecuteCommand` adapts upstream rejections into `Err`
+- [x] Add the missing `architecture` field to both `dotnet.acquire` and `dotnet.findPath` payloads (per `[DIST-API-PARAMETERS]`); export `dotnetArchitecture()` for tests
+- [x] In `editors/vscode/src/extension.ts`, make `activate()` always resolve — outer catch surfaces a non-modal toast and returns a degraded API
+- [x] Replace the `throw new Error(msg)` on the deployment-toolkit failure path with a non-modal toast + degraded return
+- [x] Replace the deferred `window.showErrorMessage` on the `client.start` failure with `notifyActivationFailure(headline, detail)` (consistent UX)
+- [x] Add `notifyActivationFailure(headline, detail)` exported helper with `[Show Log]` and `[Restart Window]` buttons
+- [x] Add `degradedApi()` helper so every error path returns a usable API surface
+- [x] Convert the retry command to consume `Result` from `acquireDotnet10`
+- [x] Tag every Result-based path with `Implements [DIST-FAILURE-UX]` / `Implements [DIST-API-PARAMETERS]` per CLAUDE.md spec-ID rule
+- [x] Add `editors/vscode/src/test/suite/unit-result.test.ts` — pins the Result type contract
+- [x] Add `editors/vscode/src/test/suite/unit-dotnet-runtime.test.ts` — patches `vscode.commands.executeCommand`, asserts the four required fields are sent, asserts no path throws
+- [x] Add `editors/vscode/src/test/suite/unit-failure-ux.test.ts` — asserts `activate()` resolves (never rejects), the retry command is registered, `extensionDependencies` declares the .NET Install Tool, `notifyActivationFailure` is exported
+
+### Spec hygiene — sweep numbered headings (CLAUDE.md violation)
+
+CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separated, never numbered. `docs/specs/DISTRIBUTION-SPEC.md` has been converted. The remaining 11 specs still use numbered headings and need a careful pass:
+
+- [x] `docs/specs/DISTRIBUTION-SPEC.md` — converted in this rev
+- [ ] `docs/specs/SHARPLSP-SPEC.md` — 44 numbered headings (cross-link to `DIST-RUNTIME-ACQUIRE` already updated)
+- [ ] `docs/specs/BINARY-DEPLOYMENT.md` — 6
+- [ ] `docs/specs/DEBUGGING-SPEC.md` — 51
+- [ ] `docs/specs/DEFINITION-SPEC.md` — 29
+- [ ] `docs/specs/DIAGNOSTICS-SPEC.md` — 34
+- [ ] `docs/specs/HOVER-SPEC.md` — 18
+- [ ] `docs/specs/NUGET-BROWSER-SPEC.md` — 27
+- [ ] `docs/specs/PROFILER-SPEC.md` — 34
+- [ ] `docs/specs/REFERENCES-SPEC.md` — 22
+- [ ] `docs/specs/RIDER-PLUGIN-SPEC.md` — 21
+- [ ] `docs/specs/VSCODE-REACTIVITY-SPEC.md` — 10
+
 ### Release
 
 - [ ] Stamp v0.1.1 and re-release once verification passes on all three platforms
