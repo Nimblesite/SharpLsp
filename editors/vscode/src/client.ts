@@ -17,6 +17,7 @@ import {
 import { EXTENSION_ID, EXTENSION_NAME, SERVER_BINARY, SERVER_BINARY_WIN } from './constants.js';
 import * as config from './config.js';
 import * as log from './log.js';
+import { detectRuntimePlatform } from './platform.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
 
 export interface DeploymentPaths {
@@ -80,10 +81,7 @@ export async function start(
   return client;
 }
 
-function sidecarEnv(
-  deploymentPaths: DeploymentPaths,
-  dotnetPath?: string,
-): Record<string, string> {
+function sidecarEnv(deploymentPaths: DeploymentPaths, dotnetPath?: string): Record<string, string> {
   const env: Record<string, string> = {};
   if (deploymentPaths.csharpSidecarPath !== undefined) {
     env.SHARPLSP_CSHARP_SIDECAR_PATH = deploymentPaths.csharpSidecarPath;
@@ -222,7 +220,6 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
   // Fall back to PATH — the language client resolves the command via the shell.
   return binaryName;
 }
-
 
 /** Expand ${workspaceFolder} in a user-configured path. */
 function expandPath(raw: string): string {

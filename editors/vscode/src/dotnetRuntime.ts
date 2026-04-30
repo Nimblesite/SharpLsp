@@ -16,7 +16,10 @@ interface FindPathResult {
 }
 
 export class DotnetAcquireError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
+  constructor(
+    message: string,
+    public readonly cause?: unknown,
+  ) {
     super(message);
     this.name = 'DotnetAcquireError';
   }
@@ -55,9 +58,7 @@ export async function acquireDotnet10(statusBar: SharpLspStatusBar): Promise<str
           },
         );
         if (result?.dotnetPath === undefined || result.dotnetPath === '') {
-          throw new DotnetAcquireError(
-            'dotnet.acquire returned without a dotnetPath',
-          );
+          throw new DotnetAcquireError('dotnet.acquire returned without a dotnetPath');
         }
         log.info(`acquired dotnet at ${result.dotnetPath}`);
         return result.dotnetPath;

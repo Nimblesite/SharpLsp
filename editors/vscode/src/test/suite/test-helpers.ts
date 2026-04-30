@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
+import { detectRuntimePlatform } from '../../platform.js';
 
 // ── Constants ────────────────────────────────────────────────────
 
@@ -42,16 +43,6 @@ export function findSharpLspBinary(): string | undefined {
   }
 
   return undefined;
-}
-
-function detectRuntimePlatform(): string {
-  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64';
-  if (process.platform === 'darwin') return 'darwin-x64';
-  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64';
-  if (process.platform === 'linux') return 'linux-x64';
-  if (process.platform === 'win32' && process.arch === 'arm64') return 'win32-arm64';
-  if (process.platform === 'win32') return 'win32-x64';
-  return 'linux-x64';
 }
 
 // ── Polling ──────────────────────────────────────────────────────
