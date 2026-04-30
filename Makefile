@@ -88,7 +88,6 @@ CHECK_COV = scripts/check-coverage.sh
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
         _package-vsix \
         _deploy-rust _deploy-sidecars \
-        _install-vsix _uninstall-vsix _install-binaries _install-rust _install-sidecars \
         _kill _clean-rider
 
 # ── Build ─────────────────────────────────────────────────────────
@@ -108,6 +107,12 @@ _build-rust:
 	@test -f $(BINARY) || { echo "ERROR: $(BINARY) not found" >&2; exit 1; }
 
 _build-dotnet:
+	@echo "==> Checking for .NET 10 SDK..."
+	@dotnet --list-sdks 2>/dev/null | grep -q '^10\.' || { \
+		echo "ERROR: .NET 10 SDK is not installed. The sidecars target net10.0 and require the .NET 10 SDK to build." >&2; \
+		echo "       Install it from https://dot.net or via: brew install dotnet-sdk" >&2; \
+		exit 1; \
+	}
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
 	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
 	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
@@ -336,7 +341,7 @@ endif
 package-vsix-linux-x64:   RUST_TARGET ?= x86_64-unknown-linux-gnu
 package-vsix-linux-arm64:  RUST_TARGET ?= aarch64-unknown-linux-gnu
 package-vsix-darwin-arm64: RUST_TARGET ?= aarch64-apple-darwin
-package-vsix-darwin-x64:   RUST_TARGET ?= x86_64-apple-darwin
+# package-vsix-darwin-x64:   RUST_TARGET ?= x86_64-apple-darwin
 package-vsix-win32-x64:    RUST_TARGET ?= x86_64-pc-windows-msvc
 package-vsix-win32-arm64:  RUST_TARGET ?= aarch64-pc-windows-msvc
 
@@ -413,11 +418,6 @@ _deploy-sidecars:
 
 # ── Install (private) ─────────────────────────────────────────────
 
-_install-vsix: _kill clean _build-rust _build-dotnet _build-vsix _uninstall-vsix
-	@echo "==> Installing sharplsp.vsix..."
-	code --install-extension sharplsp.vsix --force
-	@echo "==> VS Code extension installed."
-
 _uninstall-vsix:
 	@echo "==> Uninstalling existing SharpLsp extension..."
 	-code --uninstall-extension sharplsp.sharp-lsp 2>/dev/null || true
@@ -469,3 +469,38 @@ setup:
 	dotnet restore $(SIDECAR_SLN)
 	dotnet tool restore
 	@echo "==> Setup complete. Run 'make ci' to validate."
+
+# ── .NET 10 SDK + Runtime install/uninstall ───────────────────────
+
+DOTNET_INSTALL_SCRIPT = $(HOME)/.dotnet-install/dotnet-install.sh
+
+install-dotnet-10:
+	@echo "==> Installing .NET 10 SDK + runtime via dotnet-install.sh..."
+	@mkdir -p $(HOME)/.dotnet-install
+	@if [ ! -f $(DOTNET_INSTALL_SCRIPT) ]; then \
+		echo "==> Downloading dotnet-install.sh..."; \
+		curl -sSL https://dot.net/v1/dotnet-install.sh -o $(DOTNET_INSTALL_SCRIPT); \
+		chmod +x $(DOTNET_INSTALL_SCRIPT); \
+	else \
+		echo "==> dotnet-install.sh already cached at $(DOTNET_INSTALL_SCRIPT)"; \
+	fi
+	sudo bash $(DOTNET_INSTALL_SCRIPT) --channel 10.0 --install-dir /usr/local/share/dotnet
+	@echo "==> .NET 10 installed:"
+	@dotnet --list-sdks | grep '^10\.' || true
+	@dotnet --list-runtimes | grep '^Microsoft.*10\.' || true
+
+uninstall-dotnet-10:
+	@echo "==> Uninstalling .NET 10 SDK + runtime from /usr/local/share/dotnet..."
+	@for sdk in $$(dotnet --list-sdks 2>/dev/null | awk '/^10\./ {print $$1}'); do \
+		echo "  Removing SDK $$sdk..."; \
+		sudo rm -rf "/usr/local/share/dotnet/sdk/$$sdk"; \
+	done
+	@for rt in $$(dotnet --list-runtimes 2>/dev/null | awk '/10\./ {print $$2}'); do \
+		echo "  Removing runtime $$rt..."; \
+		sudo rm -rf "/usr/local/share/dotnet/shared/Microsoft.NETCore.App/$$rt"; \
+		sudo rm -rf "/usr/local/share/dotnet/shared/Microsoft.AspNetCore.App/$$rt"; \
+		sudo rm -rf "/usr/local/share/dotnet/host/fxr/$$rt"; \
+	done
+	@echo "==> .NET 10 removed. Remaining:"
+	@dotnet --list-sdks || true
+	@dotnet --list-runtimes || true

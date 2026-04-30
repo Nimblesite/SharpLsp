@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as log from './log.js';
@@ -33,12 +34,14 @@ interface FindPathResult {
  * dotnet executable.
  */
 export async function acquireDotnet10(statusBar: SharpLspStatusBar): Promise<Result<string>> {
+  log.info(`checking for existing .NET ${DOTNET_VERSION} runtime (arch=${dotnetArchitecture()})…`);
   const existing = await tryFindExistingDotnet();
   if (existing.ok) {
-    log.info(`acquired dotnet at ${existing.value} (existing compatible runtime)`);
+    log.info(`found existing .NET ${DOTNET_VERSION} runtime at ${existing.value}`);
     return ok(existing.value);
   }
 
+  log.info(`no existing .NET ${DOTNET_VERSION} runtime found — invoking dotnet.acquire via .NET Install Tool…`);
   statusBar.setState(ServerState.Starting);
   return vscode.window.withProgress(
     {
@@ -69,7 +72,7 @@ async function callAcquire(
     log.error('dotnet.acquire returned without a dotnetPath');
     return err('dotnet.acquire returned without a dotnetPath');
   }
-  log.info(`acquired dotnet at ${dotnetPath}`);
+  log.info(`dotnet.acquire succeeded — runtime installed at ${dotnetPath}`);
   return ok(dotnetPath);
 }
 
@@ -88,7 +91,16 @@ async function tryFindExistingDotnet(): Promise<Result<string>> {
     return err(result.error);
   }
   const dotnetPath = result.value?.dotnetPath;
-  return dotnetPath !== undefined && dotnetPath !== '' ? ok(dotnetPath) : err('not found');
+  if (dotnetPath === undefined || dotnetPath === '') {
+    log.info('dotnet.findPath returned no path');
+    return err('not found');
+  }
+  if (!fs.existsSync(dotnetPath)) {
+    log.info(`dotnet.findPath returned stale path (does not exist on disk): ${dotnetPath}`);
+    return err('stale path');
+  }
+  log.info(`dotnet.findPath returned ${dotnetPath}`);
+  return ok(dotnetPath);
 }
 
 async function safeExecuteCommand<T>(command: string, payload: unknown): Promise<Result<T>> {
