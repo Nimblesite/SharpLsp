@@ -2,6 +2,8 @@
 
 The open-source .NET Language Server — C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in.
 
+> 🌐 **Other languages:** [日本語](./README.ja.md) · [简体中文](./README.zh-cn.md)
+
 ## Features
 
 - **Code Completions** — IntelliSense-quality completions powered by Roslyn

@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as log from './log.js';
+import { type Result, err, ok } from './result.js';
 import { ServerState, type SharpLspStatusBar } from './status.js';
 import { getErrorMessage } from './utils.js';
 
@@ -29,28 +30,21 @@ interface FindPathResult {
   readonly dotnetPath?: string;
 }
 
-export class DotnetAcquireError extends Error {
-  constructor(
-    message: string,
-    public readonly cause?: unknown,
-  ) {
-    super(message);
-    this.name = 'DotnetAcquireError';
-  }
-}
-
 /**
  * Acquire a .NET 10 runtime via the ms-dotnettools.vscode-dotnet-runtime extension.
  *
  * Implements [DIST-RUNTIME-ACQUIRE]. Always informs the user via a non-interactive
- * progress notification + status bar; never asks the user to do anything. Throws
- * `DotnetAcquireError` on failure so the caller can render a non-modal fallback.
+ * progress notification + status bar; never asks the user to do anything. Returns
+ * a `Result<string, string>` where the Ok value is the absolute path to the
+ * dotnet executable.
  */
-export async function acquireDotnet10(statusBar: SharpLspStatusBar): Promise<string> {
+export async function acquireDotnet10(
+  statusBar: SharpLspStatusBar,
+): Promise<Result<string, string>> {
   const existing = await tryFindExistingDotnet();
-  if (existing !== undefined) {
-    log.info(`acquired dotnet at ${existing} (existing compatible runtime)`);
-    return existing;
+  if (existing.ok) {
+    log.info(`acquired dotnet at ${existing.value} (existing compatible runtime)`);
+    return ok(existing.value);
   }
 
   statusBar.setState(ServerState.Starting);
@@ -60,52 +54,60 @@ export async function acquireDotnet10(statusBar: SharpLspStatusBar): Promise<str
       title: 'SharpLsp: Installing .NET 10 runtime',
       cancellable: false,
     },
-    async (progress) => {
-      progress.report({ message: 'Downloading from Microsoft…' });
-      try {
-        const result = await vscode.commands.executeCommand<AcquireResult | undefined>(
-          'dotnet.acquire',
-          {
-            version: DOTNET_VERSION,
-            mode: 'runtime',
-            architecture: dotnetArchitecture(),
-            requestingExtensionId: REQUESTING_EXTENSION_ID,
-          },
-        );
-        if (result?.dotnetPath === undefined || result.dotnetPath === '') {
-          throw new DotnetAcquireError('dotnet.acquire returned without a dotnetPath');
-        }
-        log.info(`acquired dotnet at ${result.dotnetPath}`);
-        return result.dotnetPath;
-      } catch (err: unknown) {
-        const msg = getErrorMessage(err);
-        log.error(`dotnet.acquire failed: ${msg}`);
-        throw new DotnetAcquireError(`dotnet.acquire failed: ${msg}`, err);
-      }
-    },
+    async (progress) => callAcquire(progress),
   );
 }
 
-async function tryFindExistingDotnet(): Promise<string | undefined> {
+async function callAcquire(
+  progress: vscode.Progress<{ message?: string; increment?: number }>,
+): Promise<Result<string, string>> {
+  progress.report({ message: 'Downloading from Microsoft…' });
+  const result = await safeExecuteCommand<AcquireResult | undefined>('dotnet.acquire', {
+    version: DOTNET_VERSION,
+    mode: 'runtime',
+    architecture: dotnetArchitecture(),
+    requestingExtensionId: REQUESTING_EXTENSION_ID,
+  });
+  if (!result.ok) {
+    log.error(`dotnet.acquire failed: ${result.error}`);
+    return err(`dotnet.acquire failed: ${result.error}`);
+  }
+  const dotnetPath = result.value?.dotnetPath;
+  if (dotnetPath === undefined || dotnetPath === '') {
+    log.error('dotnet.acquire returned without a dotnetPath');
+    return err('dotnet.acquire returned without a dotnetPath');
+  }
+  log.info(`acquired dotnet at ${dotnetPath}`);
+  return ok(dotnetPath);
+}
+
+async function tryFindExistingDotnet(): Promise<Result<string, string>> {
+  const result = await safeExecuteCommand<FindPathResult | undefined>('dotnet.findPath', {
+    acquireContext: {
+      version: DOTNET_VERSION,
+      mode: 'runtime',
+      architecture: dotnetArchitecture(),
+      requestingExtensionId: REQUESTING_EXTENSION_ID,
+    },
+    versionSpecRequirement: 'greater_than_or_equal',
+  });
+  if (!result.ok) {
+    log.info(`dotnet.findPath unavailable: ${result.error}`);
+    return err(result.error);
+  }
+  const dotnetPath = result.value?.dotnetPath;
+  return dotnetPath !== undefined && dotnetPath !== '' ? ok(dotnetPath) : err('not found');
+}
+
+async function safeExecuteCommand<T>(
+  command: string,
+  payload: unknown,
+): Promise<Result<T, string>> {
   try {
-    const result = await vscode.commands.executeCommand<FindPathResult | undefined>(
-      'dotnet.findPath',
-      {
-        acquireContext: {
-          version: DOTNET_VERSION,
-          mode: 'runtime',
-          architecture: dotnetArchitecture(),
-          requestingExtensionId: REQUESTING_EXTENSION_ID,
-        },
-        versionSpecRequirement: 'greater_than_or_equal',
-      },
-    );
-    return result?.dotnetPath !== undefined && result.dotnetPath !== ''
-      ? result.dotnetPath
-      : undefined;
-  } catch (err: unknown) {
-    log.info(`dotnet.findPath unavailable: ${getErrorMessage(err)}`);
-    return undefined;
+    const value = await vscode.commands.executeCommand<T>(command, payload);
+    return ok(value);
+  } catch (caught: unknown) {
+    return err(getErrorMessage(caught));
   }
 }
 
@@ -116,19 +118,18 @@ export function dotnetRootFromPath(dotnetPath: string): string {
 
 /**
  * Show a non-modal error notification when acquisition fails. Buttons are
- * informational links — `[Open dot.net]` and `[Show log]` — never required
- * actions. Returns the chosen action label, if any.
+ * informational links — `[Open dot.net]`, `[Show Log]`, `[Retry]` — never
+ * required actions.
  */
 export async function showAcquireFailureNotification(
-  err: unknown,
+  message: string,
   retryCommandId: string,
 ): Promise<void> {
-  const msg = getErrorMessage(err);
   const openDotNet = 'Open dot.net';
   const showLog = 'Show Log';
   const retry = 'Retry';
   const choice = await vscode.window.showErrorMessage(
-    `SharpLsp could not install the .NET 10 runtime: ${msg}`,
+    `SharpLsp could not install the .NET 10 runtime: ${message}`,
     openDotNet,
     showLog,
     retry,

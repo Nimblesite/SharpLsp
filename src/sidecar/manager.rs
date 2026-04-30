@@ -487,6 +487,7 @@ fn ipc_path(name: &str, workspace_root: &Path) -> String {
     )
 }
 
+/// Build a platform-appropriate IPC path for a sidecar.
 #[cfg(windows)]
 fn ipc_path(name: &str, workspace_root: &Path) -> String {
     format!(
@@ -505,7 +506,12 @@ async fn connect_transport(path: &str) -> Result<FramedTransport> {
     Ok(FramedTransport::new(stream))
 }
 
+/// Connect to the sidecar IPC endpoint and return a `FramedTransport`.
 #[cfg(windows)]
+#[expect(
+    clippy::unused_async,
+    reason = "API parity with the unix variant which awaits the connect"
+)]
 async fn connect_transport(path: &str) -> Result<FramedTransport> {
     use tokio::net::windows::named_pipe::ClientOptions;
     let pipe = ClientOptions::new()

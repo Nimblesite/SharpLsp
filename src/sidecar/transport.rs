@@ -27,6 +27,7 @@ impl FramedTransport {
         }
     }
 
+    /// Wrap a platform stream into split read/write halves.
     #[cfg(windows)]
     pub fn new(pipe: tokio::net::windows::named_pipe::NamedPipeClient) -> Self {
         let (reader, writer) = tokio::io::split(pipe);
@@ -80,12 +81,17 @@ impl FramedTransport {
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::expect_used,
-    reason = "test code — expect() is the correct failure mode"
+#[cfg_attr(
+    unix,
+    expect(
+        clippy::expect_used,
+        reason = "test code — expect() is the correct failure mode"
+    )
 )]
 mod tests {
+    #[cfg(unix)]
     use super::*;
+    #[cfg(unix)]
     use anyhow::Result;
 
     /// Build a `FramedTransport` pair connected via an in-memory socket pair.

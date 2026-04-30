@@ -27,11 +27,7 @@ import {
   VIEW_SOLUTION_EXPLORER,
   VIEW_PROFILER,
 } from './constants.js';
-import {
-  acquireDotnet10,
-  DotnetAcquireError,
-  showAcquireFailureNotification,
-} from './dotnetRuntime.js';
+import { acquireDotnet10, showAcquireFailureNotification } from './dotnetRuntime.js';
 import * as client from './client.js';
 import * as deps from './dependencies.js';
 import * as log from './log.js';
@@ -74,20 +70,27 @@ interface DeploymentResult {
   readonly diagnostics: readonly DeploymentDiagnostic[];
 }
 
+// Implements [DIST-FAILURE-UX]: activate() MUST always resolve, never reject.
+// Any unhandled error becomes a non-modal error notification + degraded API,
+// not a re-throw. VS Code logs uncaught activation rejections to the developer
+// console where users do not see them — that is the failure mode this prevents.
 export async function activate(context: ExtensionContext): Promise<SharpLspExtensionApi> {
-  // FIRST line: synchronous file log so we always know activate() ran,
-  // even if every subsequent line throws.
   log.info('SharpLsp activating…');
   log.info(`File log: ${log.logFilePath()}`);
   try {
     return await activateInner(context);
   } catch (err: unknown) {
     const msg = getErrorMessage(err);
-    log.error(`activate() threw: ${msg}`);
+    log.error(`activate() caught unhandled error: ${msg}`);
     if (err instanceof Error && err.stack !== undefined) {
       log.error(err.stack);
     }
-    throw err;
+    statusBar?.setState(ServerState.Error);
+    void notifyActivationFailure(
+      'SharpLsp failed to activate. The language server will not start.',
+      msg,
+    );
+    return degradedApi();
   }
 }
 
@@ -139,23 +142,18 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   initProjectDepsStore(context);
 
   log.info('step 10c: acquireDotnet10');
-  let dotnetPath: string | undefined;
-  try {
-    dotnetPath = await acquireDotnet10(statusBar);
-  } catch (err: unknown) {
-    if (err instanceof DotnetAcquireError) {
-      statusBar.setState(ServerState.Error);
-      void showAcquireFailureNotification(err, CMD_RETRY_DOTNET_ACQUISITION);
-      return {
-        explorerProvider,
-        profilerProvider,
-        getLspClient: () => lspClient,
-      };
-    }
-    throw err;
+  // Implements [DIST-FAILURE-UX]: Result-based; never throws.
+  const dotnetResult = await acquireDotnet10(statusBar);
+  if (!dotnetResult.ok) {
+    statusBar.setState(ServerState.Error);
+    void showAcquireFailureNotification(dotnetResult.error, CMD_RETRY_DOTNET_ACQUISITION);
+    return degradedApi();
   }
+  const dotnetPath = dotnetResult.value;
 
   log.info('step 11: activateDeploymentToolkit');
+  // Implements [DIST-FAILURE-UX]: deployment-toolkit failures surface a toast
+  // and return a degraded API instead of throwing out of activate().
   const manifestPath = path.join(context.extensionPath, 'shipwright.json');
   const { activateDeploymentToolkit } = await import('@nimblesite/shipwright-vscode');
   const deployResult = await activateDeploymentToolkit(context, { manifestPath });
@@ -165,18 +163,15 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
       log.error(`Deployment toolkit (${diagnostic.componentId}): ${diagnostic.message}`);
     }
     statusBar.setState(ServerState.Error);
-    const msg = blockingDiagnostics.map((diagnostic) => diagnostic.message).join(' ');
+    const detail = blockingDiagnostics.map((diagnostic) => diagnostic.message).join(' ');
     void notifyActivationFailure(
       'SharpLsp could not start: required binaries are missing or version-mismatched.',
-      msg,
+      detail,
     );
-    return {
-      explorerProvider,
-      profilerProvider,
-      getLspClient: () => lspClient,
-    };
+    return degradedApi();
   }
   log.info('step 11b: client.start (await)');
+  // Implements [DIST-FAILURE-UX]: client.start failures also surface a toast.
   try {
     lspClient = await client.start(context, statusBar, deploymentPaths(deployResult), dotnetPath);
     log.info('step 11b: client.start returned');
@@ -184,12 +179,8 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     const msg = getErrorMessage(err);
     log.error(`Failed to start server: ${msg}`);
     statusBar.setState(ServerState.Error);
-    void window.showErrorMessage(`SharpLsp: Failed to start language server. ${msg}`);
-    return {
-      explorerProvider,
-      profilerProvider,
-      getLspClient: () => lspClient,
-    };
+    void notifyActivationFailure('SharpLsp could not start the language server.', msg);
+    return degradedApi();
   }
 
   log.info('step 12: post-start wiring');
@@ -232,6 +223,37 @@ function resolvedComponentPath(
   return typeof resolvedPath === 'string' && resolvedPath !== '' ? resolvedPath : undefined;
 }
 
+/** Implements [DIST-FAILURE-UX]: empty/inert API returned when activation fails. */
+function degradedApi(): SharpLspExtensionApi {
+  return {
+    explorerProvider: explorerProvider ?? new SolutionExplorerProvider(),
+    profilerProvider: profilerProvider ?? new profiler.ProfilerTreeProvider(),
+    getLspClient: () => lspClient,
+  };
+}
+
+/**
+ * Implements [DIST-FAILURE-UX]: every activation failure MUST display a
+ * non-modal error notification with [Show Log] and [Restart] convenience
+ * buttons, plus full diagnostic detail in the output channel.
+ */
+export async function notifyActivationFailure(
+  headline: string,
+  detail: string,
+): Promise<void> {
+  log.error(`Activation failure: ${headline} — ${detail}`);
+  const showLog = 'Show Log';
+  const restart = 'Restart Window';
+  const choice = await window.showErrorMessage(`${headline} ${detail}`, showLog, restart);
+  if (choice === showLog) {
+    log.output().show();
+    return;
+  }
+  if (choice === restart) {
+    await commands.executeCommand('workbench.action.reloadWindow');
+  }
+}
+
 export async function deactivate(): Promise<void> {
   if (lspClient !== undefined) {
     await lspClient.stop();
@@ -261,14 +283,11 @@ function registerCommands(context: ExtensionContext): void {
     commands.registerCommand(CMD_RETRY_DOTNET_ACQUISITION, async () => {
       if (statusBar === undefined) return;
       log.info('Retrying .NET 10 acquisition…');
-      try {
-        await acquireDotnet10(statusBar);
-      } catch (err: unknown) {
-        if (err instanceof DotnetAcquireError) {
-          await showAcquireFailureNotification(err, CMD_RETRY_DOTNET_ACQUISITION);
-          return;
-        }
-        throw err;
+      // Implements [DIST-FAILURE-UX]: Result-based retry with toast on failure.
+      const retryResult = await acquireDotnet10(statusBar);
+      if (!retryResult.ok) {
+        await showAcquireFailureNotification(retryResult.error, CMD_RETRY_DOTNET_ACQUISITION);
+        return;
       }
       const reload = 'Reload Window';
       const choice = await window.showInformationMessage(

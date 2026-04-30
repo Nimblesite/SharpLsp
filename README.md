@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Open-source, editor-agnostic .NET language tooling for C# and F#.</strong><br>
-  The same C# and F# experience in VS Code today, with more editors on the way.
+  Available today in VS Code, Zed, and Rider. Neovim, Helix, and Emacs support coming soon.
 </p>
 
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:24px 0;">
