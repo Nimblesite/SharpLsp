@@ -7,53 +7,27 @@ eleventyNavigation:
   order: 1
 ---
 
-# Getting Started with SharpLsp
+# SharpLsp 快速入门
 
-SharpLsp 是一款开源、编辑器无关的 .NET 语言服务器，为 VS Code、Neovim、Helix、Emacs、Zed 及任何支持 LSP 的编辑器提供完整的 C# 和 F# 开发体验。安装一次服务器，随处享受完整的 .NET 工具链。
-
-<img src="/assets/screenshots/vscode-getting-started-page.png" alt="" aria-hidden="true" style="position:absolute;width:1px;height:1px;opacity:0;margin:0;border:0;">
-
-<section class="callout">
-  <h2><span class="material-symbols-outlined" aria-hidden="true">fact_check</span>前提条件</h2>
-  <ul class="requirement-list">
-    <li>
-      <span class="material-symbols-outlined" aria-hidden="true">deployed_code</span>
-      <div>
-        <h3>.NET 10.0 SDK</h3>
-        <p>用于项目加载、MSBuild 集成和语义分析。请从 <a href="https://dotnet.microsoft.com/download">microsoft.com/download</a> 下载，并确保 <code>dotnet</code> 在您的 PATH 中。</p>
-      </div>
-    </li>
-  </ul>
-</section>
+SharpLsp 是一个用 Rust 构建的开源 .NET 语言服务器协议（LSP）实现，支持 C# 和 F#。一个服务器，每款编辑器。目标是与 Visual Studio、Rider 和 C# Dev Kit 达到完整的功能对等——零专有依赖，零许可证，零供应商锁定。
 
 ## 安装
 
 ### VS Code
 
-从 VS Code Marketplace 安装 SharpLsp 扩展，或从源码构建：
+从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) 安装 SharpLsp 扩展。
 
-```sh
-make build-vsix
-code --install-extension sharplsp.vsix
-```
+扩展在 VSIX 内附带 `sharplsp` 二进制文件和两个 sidecar。无需 Rust 工具链，无需单独安装二进制。打开 `.sln` 或 `.csproj`，SharpLsp 会自动启动。
 
-扩展会自动管理 SharpLsp LSP 服务器的生命周期，无需额外配置。
+<section class="callout">
+  <h2><span class="material-symbols-outlined" aria-hidden="true">deployed_code</span>前提条件</h2>
+  <ul class="requirement-list">
+    <li><span class="material-symbols-outlined" aria-hidden="true">deployed_code</span><div><h3>.NET 10.0 SDK</h3><p>用于项目解析和 MSBuild 集成。请确保 <code>dotnet</code> 在您的 PATH 中。</p></div></li>
+  </ul>
+</section>
 
-### 其他编辑器
+### Neovim 与 Zed
 
-从 [GitHub Releases 页面](https://github.com/Nimblesite/SharpLsp/releases) 下载 `sharplsp` 二进制文件并放入 PATH，然后参阅[编辑器配置](/zh/docs/editors/)指南。
+Neovim 与 Zed 支持即将推出。
 
-## 基本用法
-
-<div class="usage-grid">
-  <section class="usage-card">
-    <h3><span class="material-symbols-outlined" aria-hidden="true">folder_open</span>打开解决方案</h3>
-    <p>打开包含 <code>.sln</code>、<code>.slnx</code>、<code>.csproj</code> 或 <code>.fsproj</code> 文件的目录，SharpLsp 将自动检测并加载项目。</p>
-  </section>
-  <section class="usage-card">
-    <h3><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>开始开发</h3>
-    <p>代码补全、诊断、跳转到定义、悬停提示、重构、NuGet 管理和性能分析功能立即可用，无需额外配置。</p>
-  </section>
-</div>
-
-<p class="next-link"><a href="/zh/docs/architecture/">Next: Architecture <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>
+<p class="next-link"><a href="/zh/docs/architecture/">下一节：架构 <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>

@@ -27,7 +27,7 @@ Windows 以外での .NET 開発者体験は壊れています。理論的にで
 
 ### Visual Studio：Windows のみ、以上
 
-Visual Studio は Windows 専用です。2023 年 8 月、Microsoft は Visual Studio for Mac の廃止を発表しました。[公式退職投稿](https://devblogs.microsoft.com/visualstudio/visual-studio-for-mac-retirement-announcement/)には、F# が必要な Mac 開発者向けの代替手段として次のような記述がありました。
+Visual Studio は Windows 専用です。2023 年 8 月、Microsoft は Visual Studio for Mac の廃止を発表しました。[公式の廃止発表](https://devblogs.microsoft.com/visualstudio/visual-studio-for-mac-retirement-announcement/)には、F# が必要な Mac 開発者向けの代替手段として次のような記述がありました。
 
 > **「Mac 上の VM で Windows 版 Visual Studio IDE を実行する：このオプションは、Xamarin、F#、iOS のリモート開発体験のようなレガシープロジェクトサポートなど、最も広範な IDE ニーズをカバーします。」**
 
@@ -37,11 +37,7 @@ Visual Studio は Windows 専用です。2023 年 8 月、Microsoft は Visual S
 
 代替として Microsoft が提示したのは [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) でした。しかしコミュニティの評価は厳しいものです。
 
-C# Dev Kit は VS Marketplace で低評価を受けています。最近のレビューが状況を物語っています。
-
-> 「そのままでは動かないし、基本的な調整をしても動かない。特に macOS や Linux では... LSP サーバーへの接続がクラッシュしてエラーを投げる。」 — DKchshv、2026 年 3 月
-
-> 「インストール済みの .NET ランタイムを見つけられない。これは最初にできるべきことではないのか？」 — Emre Gönültaş、2026 年 2 月
+C# Dev Kit は VS Marketplace でユーザー評価が低く、初期セットアップや macOS / Linux での安定性に関する不満がレビューで繰り返し報告されています。
 
 ライセンスの問題もあります。[C# Dev Kit のライセンス](https://marketplace.visualstudio.com/items/ms-dotnettools.csdevkit/license)には厳しいエンタープライズ制限があり、250 名を超えるユーザーまたは年間売上 100 万ドルを超える組織は、有料の Visual Studio サブスクリプションなしに商用アプリケーションを開発するために拡張機能を使用できません。
 
