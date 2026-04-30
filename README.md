@@ -48,7 +48,7 @@ That split keeps the editor protocol fast and portable while letting the .NET co
 
 ### VS Code
 
-Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sharplsp.sharp-lsp). The extension ships with the SharpLsp engine and both sidecars — no Rust toolchain or separate install required.
+Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp). The extension ships with the SharpLsp engine and both sidecars — no Rust toolchain or separate install required.
 
 ### Neovim & Zed
 

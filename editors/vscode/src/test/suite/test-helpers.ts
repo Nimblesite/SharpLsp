@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 
 // ── Constants ────────────────────────────────────────────────────
 
-export const EXTENSION_ID = 'sharplsp.sharp-lsp';
+export const EXTENSION_ID = 'nimblesite.sharplsp';
 export const SERVER_START_TIMEOUT_MS = 30_000;
 export const LSP_RESPONSE_TIMEOUT_MS = 15_000;
 export const POLL_INTERVAL_MS = 100;

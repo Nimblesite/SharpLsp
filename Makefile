@@ -18,6 +18,8 @@
 #   make package-vsix-win32-arm64 VERSION=x.y.z     build + package VSIX for win32-arm64
 #
 #   VERSION is required for all package-vsix-* targets.
+#
+#   make print-publish-commands              download VSIXs from latest release and print vsce publish commands
 
 SHELL       := /bin/bash
 .SHELLFLAGS := -eo pipefail -c
@@ -55,6 +57,7 @@ CHECK_COV = scripts/check-coverage.sh
         package-vsix-linux-x64 package-vsix-linux-arm64 \
         package-vsix-darwin-arm64 package-vsix-darwin-x64 \
         package-vsix-win32-x64 package-vsix-win32-arm64 \
+        print-publish-commands \
         _stamp-version \
         _build-rust _build-dotnet _build-vsix _build-zed _build-rider \
         _stage-vsix-binary _stage-sidecars \
@@ -346,6 +349,25 @@ _package-vsix:
 		-o ../../dist/sharplsp-$(VSIX_PLAT).vsix
 	rm -rf $(VSCODE_DIR)/bin
 	@echo "==> dist/sharplsp-$(VSIX_PLAT).vsix ready."
+
+# ── Marketplace publish helpers ──────────────────────────────────
+# Downloads all VSIX assets from the latest GitHub release and prints the
+# vsce publish command for each one. Does NOT publish anything.
+#
+# Usage:
+#   make print-publish-commands
+
+print-publish-commands:
+	@echo "==> Fetching VSIX assets from latest release..."
+	@mkdir -p dist/publish-latest
+	@gh release download --pattern "*.vsix" --dir dist/publish-latest --clobber
+	@echo ""
+	@echo "==> Run these commands to publish to the VS Code Marketplace:"
+	@echo ""
+	@for vsix in dist/publish-latest/*.vsix; do \
+		echo "npx @vscode/vsce publish --packagePath $$vsix"; \
+	done
+	@echo ""
 
 # ── Deploy (private) ─────────────────────────────────────────────
 

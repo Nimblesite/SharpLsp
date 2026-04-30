@@ -19,7 +19,7 @@ function hasVersionString(value: unknown): value is { version: string } {
 
 /** Expected version — read from the extension's package.json via VS Code API. */
 function expectedVersion(): string {
-  const ext = extensions.getExtension('sharplsp.sharp-lsp');
+  const ext = extensions.getExtension('nimblesite.sharplsp');
   if (ext === undefined) {
     throw new Error('SharpLsp extension not found — cannot determine expected version');
   }

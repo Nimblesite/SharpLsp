@@ -186,6 +186,21 @@
   <script src="/techdoc/js/main.js" type="module"></script>
   <script src="/assets/js/custom.js"></script>
 
+  <!-- Mermaid diagrams -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    mermaid.initialize({ startOnLoad: true, theme: isDark ? 'dark' : 'default' });
+    document.addEventListener('themechange', (e) => {
+      mermaid.initialize({ startOnLoad: false, theme: e.detail === 'dark' ? 'dark' : 'default' });
+      document.querySelectorAll('.mermaid[data-processed]').forEach(el => {
+        el.removeAttribute('data-processed');
+        el.innerHTML = el.getAttribute('data-src') || el.innerHTML;
+      });
+      mermaid.run();
+    });
+  </script>
+
   {% block scripts %}{% endblock %}
 </body>
 </html>

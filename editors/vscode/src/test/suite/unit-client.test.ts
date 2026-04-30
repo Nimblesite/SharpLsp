@@ -102,10 +102,7 @@ suite('Client Module — LSP Client Created by Extension', () => {
   });
 
   test('extension exposes active language client after activation', () => {
-    const extId = EXTENSION_ID as string;
-    const ext = vscode.extensions.getExtension(
-      `sharplsp.${extId === 'sharplsp' ? 'sharp-lsp' : extId}`,
-    );
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(
       ext === undefined || ext.isActive,
       'Extension should be active or not found (dev mode)',

@@ -122,7 +122,7 @@ suite('Install Module — version mismatch handling', () => {
     // We verify this indirectly: if the extension is active, it handled
     // any startup issues gracefully.
     const ext = await import('vscode').then((vscode) =>
-      vscode.extensions.getExtension('sharplsp.sharp-lsp'),
+      vscode.extensions.getExtension('nimblesite.sharplsp'),
     );
     if (ext === undefined) {
       // Extension not found in test environment — skip.

@@ -1,9 +1,9 @@
 {
-  "name": "sharp-lsp",
+  "name": "sharplsp",
   "displayName": "SharpLsp",
   "description": "The open-source .NET Language Server — C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in.",
   "version": "0.3.0",
-  "publisher": "sharplsp",
+  "publisher": "nimblesite",
   "license": "MIT",
   "icon": "icons/sharplsp.png",
   "engines": {
