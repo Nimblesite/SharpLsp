@@ -30,6 +30,7 @@ export async function start(
   context: ExtensionContext,
   statusBar: SharpLspStatusBar,
   deploymentPaths: DeploymentPaths = {},
+  dotnetPath?: string,
 ): Promise<LanguageClient | undefined> {
   const serverPath = deploymentPaths.serverPath ?? resolveServerPath(context);
   if (serverPath === undefined) {
@@ -48,7 +49,11 @@ export async function start(
     args: [...config.serverExtraArgs()],
     transport: TransportKind.stdio,
     options: {
-      env: { ...process.env, RUST_LOG: config.loggingLevel(), ...sidecarEnv(deploymentPaths) },
+      env: {
+        ...process.env,
+        RUST_LOG: config.loggingLevel(),
+        ...sidecarEnv(deploymentPaths, dotnetPath),
+      },
     },
   };
 
@@ -75,13 +80,19 @@ export async function start(
   return client;
 }
 
-function sidecarEnv(deploymentPaths: DeploymentPaths): Record<string, string> {
+function sidecarEnv(
+  deploymentPaths: DeploymentPaths,
+  dotnetPath?: string,
+): Record<string, string> {
   const env: Record<string, string> = {};
   if (deploymentPaths.csharpSidecarPath !== undefined) {
     env.SHARPLSP_CSHARP_SIDECAR_PATH = deploymentPaths.csharpSidecarPath;
   }
   if (deploymentPaths.fsharpSidecarPath !== undefined) {
     env.SHARPLSP_FSHARP_SIDECAR_PATH = deploymentPaths.fsharpSidecarPath;
+  }
+  if (dotnetPath !== undefined && dotnetPath !== '') {
+    env.DOTNET_ROOT = path.dirname(dotnetPath);
   }
   return env;
 }

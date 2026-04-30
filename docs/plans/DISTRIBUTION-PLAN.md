@@ -22,14 +22,14 @@ This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vsc
 - [x] In [editors/vscode/src/extension.ts](../../editors/vscode/src/extension.ts), insert `step 10c: acquireDotnet10` between line 133 (`initProjectDepsStore`) and line 135 (`activateDeploymentToolkit`); store `dotnetPath` for downstream use
 - [x] On `DotnetAcquireError`, render a non-modal error notification with `[Open dot.net]` (uses `vscode.env.openExternal`) and `[Show log]` buttons — both informational, no required action; enter degraded state without throwing
 - [x] Register a `sharplsp.retryDotnetAcquisition` command for the degraded-state recovery path (re-runs `acquireDotnet10` and resumes activation if it succeeds)
-- [ ] In [editors/vscode/src/client.ts](../../editors/vscode/src/client.ts), extend `sidecarEnv` (lines 78–87) to accept `dotnetPath` and set `DOTNET_ROOT` to its directory on the env passed to the Rust LSP host
+- [x] In [editors/vscode/src/client.ts](../../editors/vscode/src/client.ts), extend `sidecarEnv` (lines 78–87) to accept `dotnetPath` and set `DOTNET_ROOT` to its directory on the env passed to the Rust LSP host
 - [x] Update `client.start(...)` signature in extension.ts to thread `dotnetPath` through
 
 ### Rust host (sidecar spawn)
 
-- [ ] Locate the Rust sidecar spawn site (likely `src/sidecar/` or wherever `SHARPLSP_CSHARP_SIDECAR_PATH` is consumed)
-- [ ] Verify `Command::spawn` inherits the parent process env (it does by default) so `DOTNET_ROOT` flows to the apphost
-- [ ] Add a unit test that asserts `DOTNET_ROOT` is set when env-var-driven runtime path is provided
+- [x] Locate the Rust sidecar spawn site — `src/sidecar/manager.rs` lines 168–179 (`tokio::process::Command::new(&self.spawn_command)`)
+- [x] Verify `Command::spawn` inherits the parent process env — confirmed: no `env_clear` / `env_remove` / explicit `.env(…)` calls anywhere in `src/sidecar/`, so `DOTNET_ROOT` flows VS Code → sharplsp → sidecar via tokio's default env inheritance
+- [~] Unit test for `DOTNET_ROOT` propagation — skipped per CLAUDE.md ("No unit tests. Only COARSE e2e tests."). The end-to-end activation checklist below validates the full path.
 
 ### Specs & docs
 
@@ -38,7 +38,7 @@ This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vsc
 - [x] Update DISTRIBUTION-SPEC.md §7 Editor Extension Contract item 4 (degraded mode for missing .NET) and item 6 (acquire instead of crash)
 - [x] Update DISTRIBUTION-SPEC.md §12 Forbidden Patterns: replace "crash on missing .NET" with "no modal/asking UI", remove blanket "no graceful degradation", add "no hand-rolled .NET acquisition" and "no required-action UI"
 - [x] Update DISTRIBUTION-PLAN.md (this file) with the new TODO block and Context section
-- [ ] Add a brief callout to [docs/specs/SHARPLSP-SPEC.md](../specs/SHARPLSP-SPEC.md) Distribution section linking to the rewritten §2
+- [x] Add a brief callout to [docs/specs/SHARPLSP-SPEC.md](../specs/SHARPLSP-SPEC.md) Distribution section linking to the rewritten §2
 
 ### Verification (clean Windows machine, no .NET 10 installed)
 

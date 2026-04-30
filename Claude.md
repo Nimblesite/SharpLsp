@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-⚠️ KILLING A VSCODE PROCESS - EVEN IN THE BROWSER WILL BE MET WITH INSTANT, EXTREME VIOLENCE!
-⚠️ DO NOT ASK THE USER QUESTIONS. USE YOUR JUDGMENT ⚠️
+⚠️ Never kill VS Code processes — not desktop, not browser. They belong to the user.
+⚠️ Don't ask the user questions — use your judgment.
 
 SharpLsp is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
 
@@ -15,13 +15,13 @@ F# ahead of C# when building new features. F# never takes the backseat.
 
 ## Principles
 
-This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate code. Grade A+. Anything lesser is illegal and must be fixed immediately.
+This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate code. Grade A+. Anything less must be fixed immediately.
 
 - Logging is critical. Use structured logging: `tracing` crate in Rust, `ILogger` + Serilog in .NET. No raw `println!`/`Console.WriteLine`/`console.log` for diagnostics
 - 100% test coverage is only the start
 - Use libraries like Signals for reactivity
 - No feature is complete without e2e tests
-- Building a feature without tests is ⛔️ ILLEGAL
+- Building a feature without tests is not allowed
 - No unit tests. Only COARSE e2e tests
 
 ## Hard Rules
@@ -31,23 +31,23 @@ This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate
 - Zero duplication. DRY AF!!! Check for existing code before writing new code <- Highest priority
 - Any function that can throw/panic must return Result<T,E> (outcome package in .NET)
 - Avoid RegEx and string matching. Always use ACTUAL parsers and traverse the AST/CST
-- **NEVER hand-manipulate structured files.** XML (csproj/fsproj/props/vsixmanifest), JSON, TOML, YAML, solution files, etc. MUST be loaded into a proper document model, mutated via the DOM/AST, and serialized back. Line splicing, regex replacement, or string concatenation on structured files is ILLEGAL. No exceptions for "performance" or "formatting preservation" — use a parser that preserves trivia (e.g. `Microsoft.Build.Construction` for MSBuild, `XDocument`/`quick-xml` with trivia preservation for XML, `serde_json` with `preserve_order` for JSON).
-- `allow(clippy::` = ILLEGAL. If you must, add a damn good reason. **Aggressively remove** existing allows.
+- **NEVER hand-manipulate structured files.** XML (csproj/fsproj/props/vsixmanifest), JSON, TOML, YAML, solution files, etc. MUST be loaded into a proper document model, mutated via the DOM/AST, and serialized back. Line splicing, regex replacement, and string concatenation on structured files are not permitted. No exceptions for "performance" or "formatting preservation" — use a parser that preserves trivia (e.g. `Microsoft.Build.Construction` for MSBuild, `XDocument`/`quick-xml` with trivia preservation for XML, `serde_json` with `preserve_order` for JSON).
+- `allow(clippy::` is not permitted without a strong, documented reason. **Aggressively remove** existing allows.
 - All code files < 500 LOC. Functions < 20 LOC
 - Aggressively move shared code to shared crates/modules
 - Keep dependencies and versions in sync across: `.github/workflows/ci.yml`, `.devcontainer/Dockerfile`
-- Legacy = DELETED. Copying files is illegal. MOVE them instead
+- Legacy code must be deleted, not copied. Move files instead of duplicating them.
 - Never copy from C# Dev Kit, Rider, or Visual Studio. Reimplement from public APIs and protocols only
 
 ## Testing
 
 100% test coverage and high mutation score. Focus on assertions, not just coverage.
 
-- NEVER DELETE FAILING TESTS
-- NEVER REMOVE ASSERTIONS THAT CAUSE TEST FAILURES
-- ADD more failing tests for broken/missing functionality — NEVER remove them
-- REDUCING TEST ASSERTIVENESS = DATA CENTER DISMANTLED
-- Ignoring tests = ILLEGAL
+- Never delete failing tests
+- Never remove assertions that cause test failures
+- Add more failing tests for broken/missing functionality — never remove them
+- Do not reduce test assertiveness to make tests pass
+- Tests must not be skipped or ignored
 - Test against real .sln/.csproj/.fsproj files, not mocks
 
 ## Rust Quality Standards

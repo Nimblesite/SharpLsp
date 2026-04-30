@@ -768,6 +768,15 @@ Binary resolution is handled by `@nimblesite/shipwright-vscode`. The bundled
 binary is the default resolution source. The `sharplsp.lspPath` setting
 overrides it for advanced users.
 
+**.NET 10 runtime acquisition.** The C# and F# sidecars are framework-dependent
+.NET 10 assemblies. SharpLsp does NOT bundle a runtime. Instead, the VS Code
+extension declares `ms-dotnettools.vscode-dotnet-runtime` (Microsoft's .NET
+Install Tool) as an `extensionDependencies` entry, then calls `dotnet.acquire`
+on activation to obtain a per-user .NET 10 runtime. Acquisition shows a
+non-interactive progress notification + status-bar indicator; the user is
+informed but never asked to do anything. See
+[DISTRIBUTION-SPEC.md §2](DISTRIBUTION-SPEC.md#2-runtime-acquisition--net-10-via-net-install-tool).
+
 See [DISTRIBUTION-SPEC.md](DISTRIBUTION-SPEC.md) for the full distribution
 specification including version invariants, release workflow, and the
 editor extension contract.
