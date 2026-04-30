@@ -15,13 +15,34 @@ SharpLsp has three executable components. All three are REQUIRED and MUST be bun
 
 All three are verified by Shipwright on every VS Code activation via `activationVerifies` in `shipwright.json`.
 
-## 2. Runtime Prerequisite — .NET 10
+## 2. Runtime Acquisition — .NET 10 via .NET Install Tool
 
-The sidecars are framework-dependent .NET assemblies. They require .NET 10 to be installed on the host machine. This is a hard prerequisite — SharpLsp is a .NET language server, and there is no point running it without the .NET runtime.
+The sidecars are framework-dependent .NET assemblies. They require .NET 10 at run time. SharpLsp acquires this runtime automatically via Microsoft's [`ms-dotnettools.vscode-dotnet-runtime`](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.vscode-dotnet-runtime) extension (the .NET Install Tool) — the same mechanism used by C# Dev Kit, the C# extension, .NET MAUI, Unity, CMake, and Bicep.
 
-**If .NET 10 is not installed, activation MUST crash with a clear error.** There is no fallback, no prompt, no graceful degradation. The error message MUST instruct the user to install .NET 10 from https://dot.net.
+> **Reference — how other extensions do this.** The .NET Install Tool's own README states it "provides a unified way for other extensions like the C# and C# Dev Kit extensions to install local versions of the .NET Runtime." C# Dev Kit ([`ms-dotnettools.csdevkit`](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit)) declares it via `extensionDependencies` in its `package.json` — verified by the C# Dev Kit Marketplace listing showing `.NET Install Tool` as a prominent extension dependency. Authoritative API documentation lives at <https://github.com/dotnet/vscode-dotnet-runtime/blob/main/Documentation/commands.md>. SharpLsp follows this exact pattern — there is no Anthropic / Nimblesite-specific mechanism here, and any future maintainer asking "how do other VS Code extensions install .NET silently?" should land on this section and the linked docs.
 
-Shipwright verifies sidecar startup via `verifyStartup: true`. If `dotnet bin/all/sharplsp-sidecar-csharp.dll --version` fails, it means .NET is missing or broken — activation crashes.
+**Hard rules:**
+
+1. SharpLsp's [editors/vscode/package.json](../../editors/vscode/package.json) MUST declare `"extensionDependencies": ["ms-dotnettools.vscode-dotnet-runtime"]`. VS Code installs declared dependencies silently when SharpLsp is installed — no user prompt.
+2. On every activation SharpLsp MUST call the `dotnet.acquire` command exposed by the .NET Install Tool with:
+   ```ts
+   { version: '10.0', mode: 'runtime', requestingExtensionId: 'nimblesite.sharplsp' }
+   ```
+   The command returns `{ dotnetPath: string }` pointing at a managed `dotnet` executable in per-user `globalStorage`. No admin/UAC/sudo. The runtime auto-updates patches every 24 h.
+3. Before `dotnet.acquire`, SharpLsp MAY call `dotnet.findPath` with `versionSpecRequirement: 'greater_than_or_equal'` to skip acquisition when the user already has a compatible runtime. The path returned by either call is the runtime SharpLsp uses.
+4. SharpLsp MUST set `DOTNET_ROOT` (the directory of `dotnetPath`) on the environment passed to the Rust LSP host so all spawned sidecars find that runtime.
+
+**UX during acquisition — inform, never ask:**
+
+- A non-interactive progress notification MUST appear: `vscode.window.withProgress({ location: vscode.window.ProgressLocation.Notification, title: 'SharpLsp: Installing .NET 10 runtime', cancellable: false }, ...)`.
+- The `SharpLspStatusBar` MUST indicate the acquisition is in flight.
+- Neither shows buttons, modals, or any UI that requires user action. No prompt, no terminal, no UAC.
+
+**Failure path — still no required action:**
+
+If acquisition fails (network, antivirus, etc.) SharpLsp MUST display a non-modal error notification with optional informational links: `[Open dot.net]` (uses `vscode.env.openExternal`) and `[Show log]`. These are convenience links, never required actions. Activation enters a degraded state and registers a `SharpLsp: Retry .NET acquisition` command. Activation MUST NOT crash the extension host or block other extensions.
+
+Shipwright continues to verify sidecar startup via `verifyStartup: true`. With `DOTNET_ROOT` set correctly, the apphost finds the managed runtime and the version probe succeeds.
 
 ## 3. Primary Distribution Model — Self-Contained VSIX
 
@@ -130,11 +151,11 @@ The first whitespace-delimited token MUST exactly match the component `id` in `s
 The VS Code extension uses `@nimblesite/shipwright-vscode` (`activateDeploymentToolkit`) to resolve all three components. The extension MUST:
 
 1. **Never hand-roll binary resolution** — use `activateDeploymentToolkit` exclusively.
-2. **Never download binaries over HTTPS** — all binaries ship in the VSIX.
+2. **Never download binaries over HTTPS** — all binaries ship in the VSIX, except .NET 10 itself which is acquired via the .NET Install Tool extension (see §2).
 3. **Never treat any sidecar as optional** — both sidecars are required, both crash activation if missing.
-4. **Crash activation** if any component returns `status: "error"` — no graceful degradation.
+4. **Crash activation** if any *bundled* component returns `status: "error"` (sidecar binary missing from VSIX, version mismatch, etc.). The .NET 10 runtime is NOT a bundled component; failure to acquire it enters degraded mode per §2.
 5. **Pass the Shipwright-resolved path** to `LanguageClient` — never hardcode a binary path.
-6. **Crash activation with a clear error** if .NET 10 is not detected on the host.
+6. **Acquire .NET 10 at activation start** via `dotnet.acquire` from the .NET Install Tool extension (see §2). Show a non-interactive progress notification + status-bar spinner. Never prompt, never block on user action.
 
 ## 8. Optional PATH Install
 
@@ -199,12 +220,13 @@ Every PR:
 
 ## 12. Forbidden Patterns
 
-- `https.get(...)` or `fetch(...)` for binary downloads
+- `https.get(...)` / `fetch(...)` / `child_process` spawning for downloading any binary, including .NET. The .NET runtime is delegated exclusively to the .NET Install Tool extension (see §2); other binaries ship in the VSIX.
 - `dotnet tool install` / `dotnet tool update` as a distribution mechanism for VSIX users
 - Treating either sidecar as optional — both are required, both crash activation if missing
-- Writing any component binary into `~/.local/`, temp dirs, or paths not managed by Shipwright
+- Writing any component binary into `~/.local/`, temp dirs, or paths not managed by Shipwright or the .NET Install Tool
 - Hand-rolling binary resolution — use `activateDeploymentToolkit` exclusively
+- Hand-rolling .NET runtime acquisition — `dotnet.acquire` from the .NET Install Tool is the only sanctioned mechanism
 - Skipping version verification on activation
 - Shipping a single universal VSIX containing all platform binaries
-- `SelfContained=true` in any sidecar `.csproj`/`.fsproj`
-- Graceful degradation when a required component is missing — crash with a clear error
+- Modal prompts, dialogs, or any UI that *requires* user action during .NET runtime acquisition. The user must be informed (progress notification + status bar) but never asked to do anything.
+- Crashing the extension host when .NET 10 acquisition fails — surface a non-modal error with optional informational links and enter degraded mode (see §2).

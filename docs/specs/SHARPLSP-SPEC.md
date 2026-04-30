@@ -10,7 +10,7 @@ C# + F# | Editor-Agnostic | Rust-Hosted | Open Source
 
 ## 1. Mission Statement
 
-SharpLsp is an open-source, editor-agnostic [Language Server Protocol (LSP)](https://microsoft.github.io/language-server-protocol/) implementation for the .NET ecosystem, written in Rust, targeting feature parity with and superiority over Visual Studio, [JetBrains Rider](https://www.jetbrains.com/rider/), and [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) across both C# and F# as equal first-class citizens.
+SharpLsp is an open-source, editor-agnostic [Language Server Protocol (LSP)](https://microsoft.github.io/language-server-protocol/) implementation for the .NET ecosystem, written in Rust, aiming to match — and ultimately go beyond — what Visual Studio, [JetBrains Rider](https://www.jetbrains.com/rider/), and [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) deliver today, with C# and F# as equal first-class citizens.
 
 SharpLsp exists because .NET developers deserve world-class tooling that is not gated behind proprietary licenses, vendor lock-in, or single-editor coupling. Every .NET developer, in every editor, on every platform, should have access to the best possible development experience.
 
@@ -26,17 +26,17 @@ SharpLsp exists because .NET developers deserve world-class tooling that is not 
 
 - **Correctness over cleverness:** Semantic analysis is delegated to the official compilers via managed sidecar processes. We do not reimplement type checkers.
 
-- **Crush the incumbents:** Not approximate parity. Not a lightweight alternative. Full feature-for-feature superiority. Every refactoring Rider has. Every code fix Visual Studio has. Every diagnostic, every navigation feature.
+- **Match the leaders, then go further:** Not approximate parity. Not a lightweight alternative. Full feature-for-feature coverage of what Visual Studio, Rider, and C# Dev Kit do best — and then more. Every refactoring Rider has. Every code fix Visual Studio has. Every diagnostic, every navigation feature.
 
-### 1.2 Competitive Position
+### 1.2 Where SharpLsp Fits
 
-SharpLsp targets three incumbents simultaneously:
+The .NET tooling landscape today is excellent in places, but no single product covers every developer. SharpLsp is positioned to complement three established tools by closing the gaps each leaves behind:
 
-| Target | Weakness SharpLsp Exploits |
+| Tool | Gap SharpLsp Addresses |
 |---|---|
-| Visual Studio | Windows-only, monolithic, closed-source IDE. Features locked behind full IDE installation. No LSP for external editors. |
-| JetBrains Rider | Proprietary, paid license ($169–$399/yr). Uses custom protocol, not LSP. Dual-process JVM/.NET architecture is resource-heavy. |
-| C# Dev Kit | VS Code-only. Proprietary license for teams >5. No F# support. Custom non-standard LSP extensions cause breakage in other editors. |
+| Visual Studio | Windows-only, closed-source IDE. Most language features are tied to the full IDE install. No LSP surface for external editors. |
+| JetBrains Rider | Excellent product, but proprietary and paid ($169–$399/yr). Uses a custom protocol, not LSP. Dual-process JVM/.NET architecture is resource-heavy. |
+| C# Dev Kit | VS Code-only. Proprietary license for teams >5. No F# support. Custom non-standard LSP extensions don't carry across other editors. |
 
 ## 2. Architecture
 
@@ -513,9 +513,9 @@ F# has unique language features that require dedicated support beyond what the s
 - Performance optimization pass (memory budgets, cache eviction, lazy loading)
 - Custom Rider-class inspections beyond Roslyn's built-in set
 
-### Phase 5: Superiority (Months 21+)
+### Phase 5: Beyond Parity (Months 21+)
 
-**Goal:** Features no existing tool has. This is where SharpLsp stops competing and starts leading.
+**Goal:** Features no existing tool has. This is where SharpLsp moves from matching the field to leading it.
 
 **Stretch deliverables:**
 
@@ -559,9 +559,9 @@ SharpLsp is MIT-licensed. All dependencies are compatible:
 
 ## 9. Complete Feature TODO List
 
-Every feature SharpLsp must implement to achieve its stated mission of crushing Visual Studio, Rider, and C# Dev Kit. Features are grouped by category, prioritized (P0 = launch blocker, P1 = fast follow, P2 = competitive parity, P3 = superiority), and marked with their implementation status.
+Every feature SharpLsp must implement to match — and ultimately go beyond — Visual Studio, Rider, and C# Dev Kit. Features are grouped by category, prioritized (P0 = launch blocker, P1 = fast follow, P2 = competitive parity, P3 = beyond parity), and marked with their implementation status.
 
-**Legend:** VS = Visual Studio, CDK = C# Dev Kit, R = Rider. ✓ = incumbent has this feature.
+**Legend:** VS = Visual Studio, CDK = C# Dev Kit, R = Rider. ✓ = the tool has this feature.
 
 ### 9.1 Code Intelligence
 
@@ -725,9 +725,9 @@ SharpLsp does **not** provide formatting. Use [CSharpier](https://csharpier.com/
 | FSharpLint integration | ✗ | ✗ | ✗ | P1 | 4 |
 | FSharp.Analyzers.SDK support | ✗ | ✗ | ✗ | P1 | 4 |
 
-### 9.10 Features That Will Make SharpLsp SUPERIOR
+### 9.10 Features That Set SharpLsp Apart
 
-These are features no single incumbent offers today. This is where SharpLsp stops playing catch-up and starts setting the standard:
+These are features no single tool offers today. This is where SharpLsp moves beyond parity and aims to set the bar:
 
 | Feature | VS | CDK | R | Priority | Phase |
 |---|---|---|---|---|---|
@@ -752,7 +752,7 @@ These are features no single incumbent offers today. This is where SharpLsp stop
 | Beta | All P0 and P1 features working. Usable as a daily driver for C# and F# development | Month 14 |
 | 1.0 Release | All P0, P1, P2 features. Performance targets met. 5+ editors verified | Month 20 |
 | Community adoption | 1,000+ GitHub stars, 100+ daily active users | Month 24 |
-| Feature superiority | Features no incumbent has (cross-language nav, AI actions, architecture analysis) | Month 24+ |
+| Feature leadership | Features no other tool has (cross-language nav, AI actions, architecture analysis) | Month 24+ |
 
 ## 11. Distribution
 

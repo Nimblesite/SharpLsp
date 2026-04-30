@@ -6,7 +6,7 @@
 SharpLsp is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
 
 **Overall aim #1: FIX THE .NET DEVELOPER EXPERIENCE.**
-Crush Visual Studio, Rider, and C# Dev Kit. Full feature-for-feature superiority. Zero proprietary dependencies. Zero licenses. Zero vendor lock-in.
+Match — and ultimately go beyond — Visual Studio, Rider, and C# Dev Kit. Full feature-for-feature parity, then more. Zero proprietary dependencies. Zero licenses. Zero vendor lock-in.
 
 **Overall aim #2: TREAT F# AS A FIRST CLASS CITIZEN.**
 F# ahead of C# when building new features. F# never takes the backseat.
