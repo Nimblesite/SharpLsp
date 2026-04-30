@@ -28,7 +28,7 @@ This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate
 
 - Do not use Git.
 - All screens MUST BE 100% reactive. If underlying data changes, the screen must be listening and update accordingly
-- Zero duplication. DRY AF!!! Check for existing code before writing new code <- Highest priority
+- Zero duplication. Apply DRY rigorously. Check for existing code before writing new code — highest priority
 - Any function that can throw/panic must return Result<T,E> (outcome package in .NET)
 - Avoid RegEx and string matching. Always use ACTUAL parsers and traverse the AST/CST
 - **NEVER hand-manipulate structured files.** XML (csproj/fsproj/props/vsixmanifest), JSON, TOML, YAML, solution files, etc. MUST be loaded into a proper document model, mutated via the DOM/AST, and serialized back. Line splicing, regex replacement, and string concatenation on structured files are not permitted. No exceptions for "performance" or "formatting preservation" — use a parser that preserves trivia (e.g. `Microsoft.Build.Construction` for MSBuild, `XDocument`/`quick-xml` with trivia preservation for XML, `serde_json` with `preserve_order` for JSON).

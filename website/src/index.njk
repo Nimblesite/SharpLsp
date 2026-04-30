@@ -1,17 +1,27 @@
 ---
 layout: layouts/base.njk
 title: "SharpLsp - Open Source C# and F# Language Server for VS Code, Zed, and More"
+lang: en
 ---
+
+{% set t = i18n[lang or 'en'].home %}
 
 <section class="masthead">
   <div class="platform-lockup" aria-label="Independent tooling for the .NET ecosystem">
     <span class="dotnet-mark" role="img" aria-label=".NET logo">.NET</span>
     <span class="platform-copy">
-      <strong>.NET ecosystem tooling</strong>
-      <small>Independent open source. Not affiliated with Microsoft.</small>
+      <strong>{{ t.ecosystemTooling }}</strong>
+      <small>{{ t.notAffiliated }}</small>
     </span>
   </div>
-  <div class="badge"><span class="status-dot"></span>Open Source · MIT License</div>
+  <div class="badge">
+    <span class="status-dot"></span>
+    {%- if release.available -%}
+      <a href="{{ release.url }}" rel="noopener">{{ release.tag }} {{ t.badgeAvailable }}</a>
+    {%- else -%}
+      {{ t.badgeOpenSource }}
+    {%- endif -%}
+  </div>
   <h1 class="title">One <span>.NET Language Server</span>. Every Editor.</h1>
   <p class="lede">
     SharpLsp is an open-source C# and F# language server built in Rust. Full Roslyn-powered IntelliSense,
