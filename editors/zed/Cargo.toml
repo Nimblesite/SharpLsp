@@ -1,6 +1,6 @@
 [package]
 name = "sharplsp-zed"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 license = "MIT"
 description = "SharpLsp Zed extension — .NET LSP integration for C# and F#"
