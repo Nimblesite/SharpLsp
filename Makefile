@@ -21,7 +21,29 @@
 #
 #   make print-publish-commands              download VSIXs from latest release and print vsce publish commands
 
-SHELL       := /bin/bash
+# ── OS detection ──────────────────────────────────────────────────
+# All recipes assume a POSIX shell. On Windows we use Git Bash (bundled with
+# Git for Windows) — NOT WSL's bash, which lives in System32 and would mangle
+# Windows paths. Install Git for Windows if no bash is found.
+ifeq ($(OS),Windows_NT)
+    DETECTED_OS := windows
+    EXE_EXT     := .exe
+    # Probe well-known Git-for-Windows install locations. DOS 8.3 short names
+    # avoid the space in "Program Files" which GNU Make cannot quote in SHELL.
+    GIT_BASH_CANDIDATES := \
+      C:/PROGRA~1/Git/bin/bash.exe \
+      C:/PROGRA~2/Git/bin/bash.exe \
+      C:/msys64/usr/bin/bash.exe \
+      C:/cygwin64/bin/bash.exe
+    SHELL := $(firstword $(wildcard $(GIT_BASH_CANDIDATES)))
+    ifeq ($(SHELL),)
+      $(error No POSIX bash found. Install Git for Windows from https://git-scm.com/download/win)
+    endif
+else
+    DETECTED_OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+    EXE_EXT     :=
+    SHELL       := /bin/bash
+endif
 .SHELLFLAGS := -eo pipefail -c
 
 PROFILE           ?= release
@@ -36,7 +58,7 @@ SIDECAR_FS  = sidecars/SharpLsp.Sidecar.FSharp
 SIDECAR_SLN = sidecars/SharpLsp.Sidecars.sln
 RIDER_DIR   = editors/rider
 
-BINARY         = target/$(PROFILE)/sharplsp
+BINARY         = target/$(PROFILE)/sharplsp$(EXE_EXT)
 SIDECAR_CS_OUT = target/sidecar-csharp
 SIDECAR_FS_OUT = target/sidecar-fsharp
 ZED_WASM       = $(ZED_DIR)/target/wasm32-wasip1/$(PROFILE)/sharplsp_zed.wasm
@@ -47,7 +69,7 @@ RIDER_ZIP      = sharplsp-rider.zip
 
 # Host platform for local VSIX dev builds
 HOST_PLATFORM = $(shell node -e "process.stdout.write(process.platform + '-' + process.arch)")
-HOST_VSIX_BIN = $(VSCODE_DIR)/bin/$(HOST_PLATFORM)/sharplsp
+HOST_VSIX_BIN = $(VSCODE_DIR)/bin/$(HOST_PLATFORM)/sharplsp$(EXE_EXT)
 
 PREFIX   ?= $(HOME)/.local
 BINDIR    = $(PREFIX)/bin
@@ -118,15 +140,15 @@ _stage-vsix-binary: _build-rust _build-dotnet
 	rm -rf $(VSCODE_DIR)/bin
 	mkdir -p $(dir $(HOST_VSIX_BIN)) $(VSCODE_DIR)/bin/all
 	cp $(BINARY) $(HOST_VSIX_BIN)
-	chmod +x $(HOST_VSIX_BIN)
+	chmod +x $(HOST_VSIX_BIN) 2>/dev/null || true
 	cp -r $(SIDECAR_CS_OUT)/. $(VSCODE_DIR)/bin/all/
 	cp -r $(SIDECAR_FS_OUT)/. $(VSCODE_DIR)/bin/all/
-	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.CSharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp 2>/dev/null || true
-	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.FSharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
-	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
+	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.CSharp$(EXE_EXT) \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) 2>/dev/null || true
+	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.FSharp$(EXE_EXT) \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
+	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
 
 _stage-sidecars:
 	@mkdir -p target/debug/sidecar-csharp target/debug/sidecar-fsharp
@@ -336,12 +358,12 @@ _package-vsix:
 	chmod +x $(VSCODE_DIR)/bin/$(VSIX_PLAT)/sharplsp$(EXE) 2>/dev/null || true
 	cp -r $(SIDECAR_CS_OUT)/. $(VSCODE_DIR)/bin/all/
 	cp -r $(SIDECAR_FS_OUT)/. $(VSCODE_DIR)/bin/all/
-	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.CSharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp 2>/dev/null || true
-	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.FSharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
-	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp \
-		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp 2>/dev/null || true
+	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.CSharp$(EXE_EXT) \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) 2>/dev/null || true
+	@mv $(VSCODE_DIR)/bin/all/SharpLsp.Sidecar.FSharp$(EXE_EXT) \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
+	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) \
+		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p dist
 	cd $(VSCODE_DIR) && npx @vscode/vsce package --no-dependencies \

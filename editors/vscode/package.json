@@ -964,6 +964,8 @@
     "dist/",
     "icons/",
     "language-configuration/",
+    "package.nls.json",
+    "package.nls.*.json",
     "shipwright.json",
     "LICENSE"
   ]
