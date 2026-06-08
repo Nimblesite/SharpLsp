@@ -99,7 +99,7 @@ jobs:
       with:
         dotnet-version: |
           9.0.x
-          10.0.x
+          10.0.203
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
