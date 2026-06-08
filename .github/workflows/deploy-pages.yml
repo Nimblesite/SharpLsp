@@ -1,6 +1,10 @@
 ---
+# agent-pmo:b636503
 name: Deploy Pages
+# workflow_call lets release.yml deploy the site at the release ref via `uses:`
+# (website deploys ONLY on release). workflow_dispatch keeps manual deploys.
 'on':
+  workflow_call:
   workflow_dispatch:
 concurrency:
   group: pages

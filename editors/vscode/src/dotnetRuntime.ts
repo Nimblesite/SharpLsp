@@ -41,7 +41,9 @@ export async function acquireDotnet10(statusBar: SharpLspStatusBar): Promise<Res
     return ok(existing.value);
   }
 
-  log.info(`no existing .NET ${DOTNET_VERSION} runtime found — invoking dotnet.acquire via .NET Install Tool…`);
+  log.info(
+    `no existing .NET ${DOTNET_VERSION} runtime found — invoking dotnet.acquire via .NET Install Tool…`,
+  );
   statusBar.setState(ServerState.Starting);
   return vscode.window.withProgress(
     {

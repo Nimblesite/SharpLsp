@@ -72,6 +72,27 @@ This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate
 - Expressions over statements — `match`, `if let`, iterator chains
 - Pure functions, minimize side effects. Early returns with `?`
 
+## Duplication — Deslop
+
+Code duplication is debt. SharpLsp is Rust + C# + F# — all Deslop-supported. The
+ratcheted duplication ceiling lives in `.deslop.toml` (`[threshold].max_duplication_percent`)
+and is the committed source of truth — **never** a hardcoded number in CI YAML or an
+env var. Ratchet **down only**; raising it requires written PR justification. (See
+[CI-DESLOP].)
+
+Use the Deslop MCP tools to prevent duplication, not just measure it:
+
+- **BEFORE authoring** any function, method, class, helper, fixture, or test setup →
+  call `find-similar`. `signals.fused ≥ 0.85` or an `identical`/`nearly_identical`
+  bucket → **reuse the existing code, do not duplicate**; `0.6 ≤ fused < 0.85` → review
+  the canonical occurrence and bias toward reuse; `fused < 0.6` or empty → proceed.
+- **AFTER changing code** → `rescan`, then `top-offenders` (worst clusters by severity)
+  and `cluster-by-id` (full member list for a cluster you plan to merge). Use
+  `report-for-file` / `report-for-range` for a specific file or selection. Call
+  `schema-doc` once per session to learn the report shape.
+- **NEVER silence findings** by widening the threshold, marking code `hidden`, or
+  splitting it into trivially different shapes.
+
 # Multi-Agent Coordination (too-many-cooks)
 
 All agents MUST use tmc to coordinate. No exceptions.
@@ -176,3 +197,27 @@ See `docs/specs/SHARPLSP-SPEC.md` for the full technical specification.
 
 ### F# Sidecar
 `FSharp.Compiler.Service` 43.9+, `Fantomas.Core`, `FSharpLint.Core`, `MessagePack-CSharp`
+
+## Migration to `lspkit`
+
+The cross-cutting LSP + cross-language sidecar scaffolding in this repo (LSP server, VFS, sidecar transport + lifecycle, diagnostics pipeline, TOML config) is being distilled into the generic `lspkit-*` workspace at `/Users/christianfindlay/Documents/Code/lsp_toolkit`. The .NET-specific semantic engines (Roslyn, FCS) stay here; the protocol shells are what migrate.
+
+**For new LSP infrastructure work:** prefer `lspkit-*` crates over reinventing it here.
+**For changes to existing scaffolding in this repo:** flag in the PR description if the patch duplicates `lspkit` functionality, and reference the upstream crate.
+
+Mapping (current → toolkit crate):
+
+| Current path | Toolkit crate |
+|---|---|
+| `src/main.rs:138–262` `lsp-server`-based entrypoint | `lspkit-server` (hand-rolled JSON-RPC + `Dispatcher` + `Capabilities`) |
+| `src/vfs.rs` `Vfs` document state | `lspkit-vfs::Vfs` + `lspkit-vfs::PositionEncoding` |
+| `src/sidecar/protocol.rs` `Envelope` framing | `lspkit-sidecar::transport` (length-prefixed frames, payload format is consumer's choice) |
+| `src/sidecar/transport.rs` `FramedTransport` | `lspkit-sidecar::transport::{read_frame, write_frame}` |
+| `src/sidecar/manager.rs` `SidecarManager` (spawn / health / restart / correlation) | `lspkit-sidecar::lifecycle::Sidecar` + `lspkit-sidecar::correlator::Correlator` |
+| `src/diagnostics.rs` + `pull_diagnostics.rs` diagnostic publication | `lspkit-server::diagnostics::DiagnosticsBus` |
+| `src/config.rs` `sharplsp.toml` loader | `lspkit-config::load_from_ancestor` |
+| `src/handlers.rs` syntax-only handlers | `lspkit-server::Dispatcher::register` per method name |
+| `src/semantic_tokens.rs` `TokenCache` | (consumer-side cache; not in toolkit) |
+| .NET sidecar projects (`sidecars/SharpLsp.Sidecar.*`) | (engine — stays here. `lspkit-sidecar` is pure transport and does not bundle .NET- or Roslyn-specific code) |
+
+Code in this repo is **not** being removed — it stays canonical until the toolkit matures. This note exists so future agents reuse `lspkit` for new servers and avoid widening this repo's scaffolding.

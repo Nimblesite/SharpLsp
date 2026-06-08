@@ -151,12 +151,12 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   }
   const dotnetPath = dotnetResult.value;
 
-  log.info('step 11: activateDeploymentToolkit');
+  log.info('step 11: activateShipwright');
   // Implements [DIST-FAILURE-UX]: deployment-toolkit failures surface a toast
   // and return a degraded API instead of throwing out of activate().
   const manifestPath = path.join(context.extensionPath, 'shipwright.json');
-  const { activateDeploymentToolkit } = await import('@nimblesite/shipwright-vscode');
-  const deployResult = await activateDeploymentToolkit(context, { manifestPath });
+  const { activateShipwright } = await import('@nimblesite/shipwright-vscode');
+  const deployResult = await activateShipwright(context, { manifestPath });
   const blockingDiagnostics = deployResult.diagnostics.filter((diagnostic) => diagnostic.blocking);
   if (blockingDiagnostics.length > 0) {
     for (const diagnostic of blockingDiagnostics) {

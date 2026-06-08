@@ -13,8 +13,9 @@ ehthumbs.db
 Desktop.ini
 
 # IDE / Editor
-.vscode/
-.idea/
+# NOTE: .vscode/ and .idea/ are intentionally NOT ignored — shared dev tooling
+# (settings, launch configs, title-bar colors, run configs) is committed.
+# [GITIGNORE-RULES]
 *.swp
 *.swo
 *~

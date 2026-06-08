@@ -19,7 +19,7 @@ suite('Bundled binary resolution', () => {
   test('sharplsp resolves from bundled source', async function () {
     this.timeout(15_000);
 
-    const { activateDeploymentToolkit } = await import('@nimblesite/shipwright-vscode');
+    const { activateShipwright } = await import('@nimblesite/shipwright-vscode');
     const platform = detectRuntimePlatform();
     const ext = vscode.extensions.getExtension(extensionId);
     assert.ok(ext !== undefined, `${extensionId} must be loaded in the VS Code test host`);
@@ -32,7 +32,7 @@ suite('Bundled binary resolution', () => {
       assert.strictEqual(process.env[name], undefined, `${name} must be unset in VSIX tests`);
     }
 
-    const result = await activateDeploymentToolkit(ext, {
+    const result = await activateShipwright(ext, {
       env: sanitizedEnv(),
       manifestPath: path.join(ext.extensionPath, 'shipwright.json'),
       pathEntries: sidecarPathEntries(ext.extensionPath),

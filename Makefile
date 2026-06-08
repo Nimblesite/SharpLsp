@@ -180,6 +180,11 @@ _test-rust: _build-dotnet _stage-sidecars
 	@echo "==> Pre-building ProfileTarget fixture..."
 	dotnet build tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
 	@echo "==> Running sharplsp tests with coverage..."
+	# --no-fail-fast is intentional ([TEST-RULES] documented exception): coverage
+	# enforcement requires every test to run so the measured line percentage is
+	# complete; stopping at the first failure would under-report coverage and make
+	# the threshold gate meaningless. A real test failure still fails the build via
+	# nextest's non-zero exit, which then fails `make test`.
 	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
 	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
 		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --no-fail-fast --test-threads $(RUST_TEST_THREADS)
@@ -371,7 +376,11 @@ _package-vsix:
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p dist
+	# vsce/ovsx refuse to PUBLISH with --pre-release unless the VSIX was also
+	# PACKAGED with --pre-release (it sets preRelease=true in the embedded
+	# manifest). A hyphenated SemVer VERSION (e.g. 0.2.0-rc.1) is a prerelease.
 	cd $(VSCODE_DIR) && npx @vscode/vsce package --no-dependencies \
+		$(if $(findstring -,$(VERSION)),--pre-release,) \
 		--target $(VSIX_PLAT) \
 		-o ../../dist/sharplsp-$(VSIX_PLAT).vsix
 	rm -rf $(VSCODE_DIR)/bin
