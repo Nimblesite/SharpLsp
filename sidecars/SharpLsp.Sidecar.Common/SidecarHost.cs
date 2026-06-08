@@ -1,4 +1,3 @@
-using System.Net.Sockets;
 using MessagePack;
 using SharpLsp.Sidecar.Common.Ipc;
 using SharpLsp.Sidecar.Common.Messages;
@@ -14,7 +13,7 @@ public abstract class SidecarHost : IAsyncDisposable
 {
     private readonly MessageRouter _router = new();
     private readonly CancellationTokenSource _shutdownCts = new();
-    private Socket? _listener;
+    private IpcListener? _listener;
     private FramedTransport? _transport;
 
     /// <summary>Initializes the host and registers built-in handlers.</summary>
@@ -71,7 +70,11 @@ public abstract class SidecarHost : IAsyncDisposable
             await _transport.DisposeAsync().ConfigureAwait(false);
         }
 
-        _listener?.Dispose();
+        if (_listener is not null)
+        {
+            await _listener.DisposeAsync().ConfigureAwait(false);
+        }
+
         _shutdownCts.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -81,8 +84,7 @@ public abstract class SidecarHost : IAsyncDisposable
         Console.WriteLine($"READY:{socketPath}");
         await Console.Out.FlushAsync().ConfigureAwait(false);
 
-        var client = await _listener!.AcceptAsync(_shutdownCts.Token).ConfigureAwait(false);
-        var stream = new NetworkStream(client, ownsSocket: true);
+        var stream = await _listener!.AcceptStreamAsync(_shutdownCts.Token).ConfigureAwait(false);
         _transport = new FramedTransport(stream);
 
         await MessageLoopAsync().ConfigureAwait(false);

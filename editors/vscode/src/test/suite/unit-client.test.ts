@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import * as config from '../../config.js';
 import { SERVER_BINARY, SERVER_BINARY_WIN, CONFIG_SECTION } from '../../constants.js';
+import { detectRuntimePlatform } from '../../platform.js';
 import {
   EXTENSION_ID,
   LSP_RESPONSE_TIMEOUT_MS,
@@ -102,10 +103,7 @@ suite('Client Module — LSP Client Created by Extension', () => {
   });
 
   test('extension exposes active language client after activation', () => {
-    const extId = EXTENSION_ID as string;
-    const ext = vscode.extensions.getExtension(
-      `sharplsp.${extId === 'sharplsp' ? 'sharp-lsp' : extId}`,
-    );
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(
       ext === undefined || ext.isActive,
       'Extension should be active or not found (dev mode)',
@@ -193,13 +191,3 @@ suite('Client Module — Error Path: Missing Binary', () => {
     );
   });
 });
-
-function detectRuntimePlatform(): string {
-  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64';
-  if (process.platform === 'darwin') return 'darwin-x64';
-  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64';
-  if (process.platform === 'linux') return 'linux-x64';
-  if (process.platform === 'win32' && process.arch === 'arm64') return 'win32-arm64';
-  if (process.platform === 'win32') return 'win32-x64';
-  return 'linux-x64';
-}

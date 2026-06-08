@@ -44,6 +44,7 @@ fn native_process_list() -> Result<Vec<DotNetProcess>> {
     Ok(parse_ps_output(&stdout))
 }
 
+/// Enumerate all processes using the platform-native tool.
 #[cfg(windows)]
 fn native_process_list() -> Result<Vec<DotNetProcess>> {
     // `wmic process get ProcessId,Name,CommandLine /FORMAT:csv` on Windows.
@@ -66,11 +67,13 @@ fn native_process_list() -> Result<Vec<DotNetProcess>> {
 ///
 /// Header line is skipped (PID is non-numeric). Each subsequent line:
 /// `  1234  comm  /full/path/to/command args`
+#[cfg(not(windows))]
 fn parse_ps_output(output: &str) -> Vec<DotNetProcess> {
     output.lines().filter_map(parse_ps_line).collect()
 }
 
 /// Parse one line of `ps -eo pid,comm,command` output into a [`DotNetProcess`].
+#[cfg(not(windows))]
 fn parse_ps_line(line: &str) -> Option<DotNetProcess> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
@@ -100,6 +103,7 @@ fn parse_ps_line(line: &str) -> Option<DotNetProcess> {
     })
 }
 
+/// Parse `wmic process get … /FORMAT:csv` output into `DotNetProcess` rows.
 #[cfg(windows)]
 fn parse_wmic_output(output: &str) -> Vec<DotNetProcess> {
     // CSV: Node,CommandLine,Name,ProcessId
@@ -124,17 +128,24 @@ fn parse_wmic_output(output: &str) -> Vec<DotNetProcess> {
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::unwrap_used,
-    reason = "test code — panics are the correct failure mode"
+#[cfg_attr(
+    not(windows),
+    expect(
+        clippy::unwrap_used,
+        reason = "test code — panics are the correct failure mode"
+    )
 )]
-#[expect(
-    clippy::indexing_slicing,
-    reason = "test code — panics are the correct failure mode"
+#[cfg_attr(
+    not(windows),
+    expect(
+        clippy::indexing_slicing,
+        reason = "test code — panics are the correct failure mode"
+    )
 )]
 mod tests {
     use super::*;
 
+    #[cfg(not(windows))]
     #[test]
     fn test_parse_ps_output_typical() {
         let output = "\
@@ -150,12 +161,14 @@ mod tests {
         assert_eq!(procs[1].pid, 5678);
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn test_parse_ps_output_empty() {
         let procs = parse_ps_output("");
         assert!(procs.is_empty());
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn test_parse_ps_line_no_command() {
         let proc = parse_ps_line("  999 Worker  ").unwrap();

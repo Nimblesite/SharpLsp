@@ -136,7 +136,7 @@ public static class SolutionFileReader
         return new SolutionProjectEntry(
             DisplayName(project),
             ResolveSolutionPath(solutionPath, relativePath),
-            relativePath,
+            ToPortableRelative(relativePath),
             ProjectType(project),
             project.Id.ToString("D"),
             project.Parent?.Name,
@@ -166,7 +166,7 @@ public static class SolutionFileReader
     {
         return new SolutionItemEntry(
             ResolveSolutionPath(solutionPath, relativePath),
-            relativePath,
+            ToPortableRelative(relativePath),
             folder.Name,
             folder.Path,
             index
@@ -212,5 +212,10 @@ public static class SolutionFileReader
     private static string NormalizeSeparators(string path)
     {
         return path.Replace('\\', Path.DirectorySeparatorChar);
+    }
+
+    private static string ToPortableRelative(string path)
+    {
+        return path.Replace('\\', '/');
     }
 }

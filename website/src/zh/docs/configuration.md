@@ -11,57 +11,67 @@ eleventyNavigation:
 
 ![VS Code 中的 SharpLsp 工作区配置](/assets/screenshots/vscode-configuration-page.png)
 
-SharpLsp 通过放置在工作区根目录（与 `.sln` 或根 `.csproj` 同级）的 `sharplsp.toml` 文件进行配置。所有设置都有合理的默认值 — 该文件是可选的。
+SharpLsp 通过放置在工作区根目录（与 `.sln` 或根 `.csproj` 同级）的 `sharplsp.toml` 文件进行配置。所有设置都有合理的默认值——该文件是可选的。
+
+`sharplsp.toml` 使用 `deny_unknown_fields`：未在下方列出的任何键都会在启动时引发解析错误。
 
 ## sharplsp.toml 参考
 
 ```toml
 # sharplsp.toml — 完整配置参考
+# 所有键均为可选；省略时使用默认值。
 
-# ─── 诊断 ───────────────────────────────────────────────────────────────
-[diagnostics]
-# 运行 Roslyn 分析器（不仅仅是编译器错误）
-analyzers_enabled = true
+# ─── 服务器 ────────────────────────────────────────────────────────────────────
+[server]
+# 日志级别："trace"、"debug"、"info"、"warn"、"error"
+log_level = "info"
 
-# 分析解决方案中的所有文件，而不仅仅是打开的文件
-solution_wide_analysis = true
-
-# 将分析限制在特定项目（glob 模式）
-# 空 = 分析所有项目
-project_filter = []
-
-# 要报告的最低严重性："error"、"warning"、"info"、"hint"
-min_severity = "hint"
-
-# 每个文件的最大诊断数（0 = 无限制）
-max_per_file = 0
-
-# 触发重新分析前的防抖窗口（毫秒）
+# 按键后语义请求的防抖窗口（毫秒）
 debounce_ms = 150
 
-# ─── 代码补全 ───────────────────────────────────────────────────────────────
-[completions]
-# 显示未导入程序集中的类型（自动添加 using/open）
-import_completions = true
+# ─── C# ────────────────────────────────────────────────────────────────────────
+[csharp]
+# 启用 C# sidecar
+enabled = true
 
-# 每次请求的最大结果数
-max_results = 200
+# 要加载的 .sln 文件路径。空字符串 = 自动检测。
+solution_path = ""
 
-# ─── Sidecar ───────────────────────────────────────────────────────────────
-[sidecar]
-# 放弃前的最大重启次数（0 = 无限制）
-max_restarts = 10
+# ─── F# ────────────────────────────────────────────────────────────────────────
+[fsharp]
+# 启用 F# sidecar
+enabled = true
 
-# 重启尝试之间的延迟（毫秒，每次尝试加倍）
-restart_delay_ms = 500
+# ─── 诊断 ───────────────────────────────────────────────────────────────────────
+[diagnostics]
+# 运行 Roslyn 分析器（不仅是编译器错误）
+analyzers_enabled = true
 
-# ─── 日志 ───────────────────────────────────────────────────────────────
-[log]
-# 日志级别："trace"、"debug"、"info"、"warn"、"error"
-level = "info"
+# 分析解决方案中的所有文件，而不仅是已打开的文件
+solution_wide_analysis = true
 
-# 日志文件路径（空 = 仅 stderr）
-file = ""
+# 要包含的项目名模式（空 = 所有项目）
+project_filter = []
+
+# ─── 性能分析器 ────────────────────────────────────────────────────────────────
+[profiler]
+# 最大并发分析会话数
+max_concurrent_sessions = 5
+
+# 默认追踪时长（秒，0 = 无限）
+default_trace_duration = 30
+
+# 默认追踪输出格式（"speedscope"、"chromium"、"nettrace"）
+default_trace_format = "speedscope"
+
+# 默认计数器提供程序
+default_counter_providers = ["System.Runtime"]
+
+# 默认计数器刷新间隔（秒）
+default_counter_interval = 1
+
+# 追踪 / dump 文件的输出目录
+output_directory = ".sharplsp/profiles"
 ```
 
 ## 文件位置
@@ -78,17 +88,9 @@ my-solution/
     └── MyApp.Api.csproj
 ```
 
-## 热重载
-
-大多数设置可通过 `workspace/didChangeConfiguration` 热重载。对 `solution_wide_analysis`、`project_filter`、`min_severity` 和 `analyzers_enabled` 的更改无需重启 SharpLsp 即可生效。
-
-需要重启的设置：
-- `[sidecar]` 设置
-- `[log]` 设置
-
 ## 每个项目的覆盖设置
 
-对于精细控制，C# 格式化支持 `.editorconfig` 规则。Roslyn 将 `.editorconfig` 严重性设置直接映射到分析器严重性：
+Roslyn 将 `.editorconfig` 严重性设置直接映射到分析器严重性：
 
 ```ini
 # .editorconfig
@@ -97,25 +99,13 @@ dotnet_diagnostic.IDE0003.severity = warning   # 删除 'this' 限定符
 dotnet_diagnostic.CA1054.severity = error       # URI 参数不应为字符串
 ```
 
-## 环境变量
+## 禁用某种语言
 
-| 变量 | 描述 |
-|----------|-------------|
-| `SHARPLSP_LOG` | 覆盖日志级别（例如，`SHARPLSP_LOG=debug`）|
-| `SHARPLSP_CONFIG` | 覆盖 `sharplsp.toml` 路径 |
-| `SHARPLSP_DOTNET_ROOT` | 覆盖用于 MSBuild 发现的 .NET SDK 根目录 |
-
-## 禁用功能
-
-在最小模式下运行 SharpLsp（仅语法，无 sidecar）：
+要完全跳过启动某个 sidecar，将其 `enabled` 标志设为 `false`：
 
 ```toml
-[diagnostics]
-analyzers_enabled = false
-solution_wide_analysis = false
-
-[completions]
-import_completions = false
+[fsharp]
+enabled = false
 ```
 
-这将禁用 sidecar 启动和所有语义操作。SharpLsp 仍将以全速提供 tree-sitter 驱动的文档符号、折叠范围和选择范围。
+该语言的请求将被拒绝，且不会派生 sidecar 进程。

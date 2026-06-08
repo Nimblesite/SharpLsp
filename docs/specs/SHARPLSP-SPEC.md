@@ -10,7 +10,7 @@ C# + F# | Editor-Agnostic | Rust-Hosted | Open Source
 
 ## 1. Mission Statement
 
-SharpLsp is an open-source, editor-agnostic [Language Server Protocol (LSP)](https://microsoft.github.io/language-server-protocol/) implementation for the .NET ecosystem, written in Rust, targeting feature parity with and superiority over Visual Studio, [JetBrains Rider](https://www.jetbrains.com/rider/), and [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) across both C# and F# as equal first-class citizens.
+SharpLsp is an open-source, editor-agnostic [Language Server Protocol (LSP)](https://microsoft.github.io/language-server-protocol/) implementation for the .NET ecosystem, written in Rust, aiming to match — and ultimately go beyond — what Visual Studio, [JetBrains Rider](https://www.jetbrains.com/rider/), and [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) deliver today, with C# and F# as equal first-class citizens.
 
 SharpLsp exists because .NET developers deserve world-class tooling that is not gated behind proprietary licenses, vendor lock-in, or single-editor coupling. Every .NET developer, in every editor, on every platform, should have access to the best possible development experience.
 
@@ -26,17 +26,17 @@ SharpLsp exists because .NET developers deserve world-class tooling that is not 
 
 - **Correctness over cleverness:** Semantic analysis is delegated to the official compilers via managed sidecar processes. We do not reimplement type checkers.
 
-- **Crush the incumbents:** Not approximate parity. Not a lightweight alternative. Full feature-for-feature superiority. Every refactoring Rider has. Every code fix Visual Studio has. Every diagnostic, every navigation feature.
+- **Match the leaders, then go further:** Not approximate parity. Not a lightweight alternative. Full feature-for-feature coverage of what Visual Studio, Rider, and C# Dev Kit do best — and then more. Every refactoring Rider has. Every code fix Visual Studio has. Every diagnostic, every navigation feature.
 
-### 1.2 Competitive Position
+### 1.2 Where SharpLsp Fits
 
-SharpLsp targets three incumbents simultaneously:
+The .NET tooling landscape today is excellent in places, but no single product covers every developer. SharpLsp is positioned to complement three established tools by closing the gaps each leaves behind:
 
-| Target | Weakness SharpLsp Exploits |
+| Tool | Gap SharpLsp Addresses |
 |---|---|
-| Visual Studio | Windows-only, monolithic, closed-source IDE. Features locked behind full IDE installation. No LSP for external editors. |
-| JetBrains Rider | Proprietary, paid license ($169–$399/yr). Uses custom protocol, not LSP. Dual-process JVM/.NET architecture is resource-heavy. |
-| C# Dev Kit | VS Code-only. Proprietary license for teams >5. No F# support. Custom non-standard LSP extensions cause breakage in other editors. |
+| Visual Studio | Windows-only, closed-source IDE. Most language features are tied to the full IDE install. No LSP surface for external editors. |
+| JetBrains Rider | Excellent product, but proprietary and paid ($169–$399/yr). Uses a custom protocol, not LSP. Dual-process JVM/.NET architecture is resource-heavy. |
+| C# Dev Kit | VS Code-only. Proprietary license for teams >5. No F# support. Custom non-standard LSP extensions don't carry across other editors. |
 
 ## 2. Architecture
 
@@ -152,12 +152,13 @@ bin/<platform>/sharplsp.exe    (Windows)
 
 **Sidecar install locations:**
 
-Sidecars are framework-dependent dotnet global tools. They are NOT bundled in the VSIX.
+Sidecars are required framework-dependent .NET executables. Every VSIX bundles them
+under `bin/all/`; users do not install sidecars separately.
 
-| Artifact | Install mechanism | Package ID |
+| Artifact | VSIX path | Resolver sources |
 |---|---|---|
-| C# sidecar | `dotnet tool install -g SharpLsp.Sidecar.CSharp` | `SharpLsp.Sidecar.CSharp` on NuGet.org |
-| F# sidecar | `dotnet tool install -g SharpLsp.Sidecar.FSharp` | `SharpLsp.Sidecar.FSharp` on NuGet.org |
+| C# sidecar | `bin/all/sharplsp-sidecar-csharp` | user setting, environment variable, bundled, PATH |
+| F# sidecar | `bin/all/sharplsp-sidecar-fsharp` | user setting, environment variable, bundled, PATH |
 
 **Version checking (`--version` flag):**
 
@@ -176,10 +177,12 @@ sharplsp-sidecar-fsharp 0.1.0
 
 Extensions use this to verify the correct version is active before starting.
 
-**Sidecar resolution by the Rust host (two-step fallback):**
+**Sidecar distribution:**
 
-1. **dotnet global tool:** `sharplsp-sidecar-csharp` resolved from PATH (installed via `dotnet tool install -g`)
-2. **Dev build:** `dotnet run --project sidecars/SharpLsp.Sidecar.CSharp` — requires CWD = repo root
+Both sidecars are required framework-dependent .NET assemblies. Every VSIX bundles
+`sharplsp-sidecar-csharp` and `sharplsp-sidecar-fsharp` under `bin/all/`. They require
+.NET 10 on the host machine. Missing .NET 10, a missing sidecar, or a failed sidecar
+version probe is an activation failure.
 
 ### 2.7 Editor Extension Binary Strategy
 
@@ -190,17 +193,17 @@ Binary resolution is handled exclusively by `@nimblesite/shipwright-vscode` (`ac
 On activation, the VS Code extension follows this sequence:
 
 1. **Shipwright resolves `sharplsp`:** Checks user setting → env vars → bundled binary → PATH → pkgmgr. The bundled binary is the default path — it always exists in a valid VSIX install.
-2. **Shipwright resolves sidecars:** Checks user setting → env vars → PATH (`dotnet tool` install). Sidecar failures degrade gracefully; the LSP server still starts.
-3. **Version verification:** Shipwright probes each resolved binary with `--version` and compares against the manifest's `expectedVersion`. On mismatch, prompts the user with the correct install command.
+2. **Shipwright resolves sidecars:** Checks user setting → env vars → bundled `bin/all/` sidecar → PATH. Bundled sidecars are the default for VSIX installs.
+3. **Version verification:** Shipwright probes each resolved binary with `--version` and compares against the manifest's `expectedVersion`.
 4. **Start LSP client:** Pass the resolved `sharplsp` path to `LanguageClient`. Never hardcode a path.
 
-**CRITICAL — Failure must NEVER lock up the editor:**
+**CRITICAL — Missing required components fail activation:**
 
-When any step above fails — version mismatch, binary not found, download failed, `--version` returns garbage — the extension MUST:
+When any required component step above fails — version mismatch, binary not found, missing
+.NET 10, or `--version` returns garbage — the extension MUST:
 
-- Show a clear, user-facing error message explaining what happened and how to fix it (e.g., "SharpLsp: sharplsp v0.1.0 required but v0.0.9 found. Run `make install` or update the extension.")
-- Deactivate gracefully — dispose all resources, unregister providers, stop any pending operations
-- NEVER throw an unhandled exception that propagates to the editor host process
+- Show a clear, user-facing error message explaining what happened and how to fix it (e.g., "SharpLsp: sharplsp v0.1.0 required but v0.0.9 found.")
+- Crash activation instead of starting without C# or F# support
 - NEVER block the editor's main thread or event loop waiting for a binary that will never arrive
 - NEVER leave the extension in a half-initialized zombie state where it eats CPU or holds locks
 
@@ -510,9 +513,9 @@ F# has unique language features that require dedicated support beyond what the s
 - Performance optimization pass (memory budgets, cache eviction, lazy loading)
 - Custom Rider-class inspections beyond Roslyn's built-in set
 
-### Phase 5: Superiority (Months 21+)
+### Phase 5: Beyond Parity (Months 21+)
 
-**Goal:** Features no existing tool has. This is where SharpLsp stops competing and starts leading.
+**Goal:** Features no existing tool has. This is where SharpLsp moves from matching the field to leading it.
 
 **Stretch deliverables:**
 
@@ -556,9 +559,9 @@ SharpLsp is MIT-licensed. All dependencies are compatible:
 
 ## 9. Complete Feature TODO List
 
-Every feature SharpLsp must implement to achieve its stated mission of crushing Visual Studio, Rider, and C# Dev Kit. Features are grouped by category, prioritized (P0 = launch blocker, P1 = fast follow, P2 = competitive parity, P3 = superiority), and marked with their implementation status.
+Every feature SharpLsp must implement to match — and ultimately go beyond — Visual Studio, Rider, and C# Dev Kit. Features are grouped by category, prioritized (P0 = launch blocker, P1 = fast follow, P2 = competitive parity, P3 = beyond parity), and marked with their implementation status.
 
-**Legend:** VS = Visual Studio, CDK = C# Dev Kit, R = Rider. ✓ = incumbent has this feature.
+**Legend:** VS = Visual Studio, CDK = C# Dev Kit, R = Rider. ✓ = the tool has this feature.
 
 ### 9.1 Code Intelligence
 
@@ -703,7 +706,7 @@ SharpLsp does **not** provide formatting. Use [CSharpier](https://csharpier.com/
 | Add/remove project reference | ✓ | ✓ | ✓ | P2 | 4 |
 | File watching & auto-reload | ✓ | ✓ | ✓ | P0 | 2 |
 | Configuration via sharplsp.toml | ✗ | ✗ | ✗ | P0 | 1 |
-| Global tool installation (dotnet tool) | ✗ | ✗ | ✗ | P0 | 1 |
+| Bundled required sidecars in VSIX | ✓ | ✗ | ✓ | P0 | 1 |
 
 ### 9.9 F#-Specific Features
 
@@ -722,9 +725,9 @@ SharpLsp does **not** provide formatting. Use [CSharpier](https://csharpier.com/
 | FSharpLint integration | ✗ | ✗ | ✗ | P1 | 4 |
 | FSharp.Analyzers.SDK support | ✗ | ✗ | ✗ | P1 | 4 |
 
-### 9.10 Features That Will Make SharpLsp SUPERIOR
+### 9.10 Features That Set SharpLsp Apart
 
-These are features no single incumbent offers today. This is where SharpLsp stops playing catch-up and starts setting the standard:
+These are features no single tool offers today. This is where SharpLsp moves beyond parity and aims to set the bar:
 
 | Feature | VS | CDK | R | Priority | Phase |
 |---|---|---|---|---|---|
@@ -749,19 +752,30 @@ These are features no single incumbent offers today. This is where SharpLsp stop
 | Beta | All P0 and P1 features working. Usable as a daily driver for C# and F# development | Month 14 |
 | 1.0 Release | All P0, P1, P2 features. Performance targets met. 5+ editors verified | Month 20 |
 | Community adoption | 1,000+ GitHub stars, 100+ daily active users | Month 24 |
-| Feature superiority | Features no incumbent has (cross-language nav, AI actions, architecture analysis) | Month 24+ |
+| Feature leadership | Features no other tool has (cross-language nav, AI actions, architecture analysis) | Month 24+ |
 
 ## 11. Distribution
 
-SharpLsp is distributed as per-platform VSIXs with the `sharplsp` binary bundled inside each one. Installing the VS Code extension is all a user needs — zero additional steps for the LSP server.
+SharpLsp is distributed as per-platform VSIXs with the `sharplsp` binary and both
+required sidecars bundled inside each one. Installing the VS Code extension is all
+a user needs.
 
 - **`sharplsp`** — bundled inside each per-platform VSIX (`bin/<platform>/sharplsp[.exe]`). Also available via Homebrew (macOS/Linux) and Scoop (Windows) for users who want it on PATH.
-- **`SharpLsp.Sidecar.CSharp`** — dotnet global tool on NuGet.org (`dotnet tool install -g SharpLsp.Sidecar.CSharp`).
-- **`SharpLsp.Sidecar.FSharp`** — dotnet global tool on NuGet.org (`dotnet tool install -g SharpLsp.Sidecar.FSharp`).
+- **`sharplsp-sidecar-csharp`** — bundled inside every VSIX at `bin/all/sharplsp-sidecar-csharp`.
+- **`sharplsp-sidecar-fsharp`** — bundled inside every VSIX at `bin/all/sharplsp-sidecar-fsharp`.
 
 Binary resolution is handled by `@nimblesite/shipwright-vscode`. The bundled
 binary is the default resolution source. The `sharplsp.lspPath` setting
 overrides it for advanced users.
+
+**.NET 10 runtime acquisition.** The C# and F# sidecars are framework-dependent
+.NET 10 assemblies. SharpLsp does NOT bundle a runtime. Instead, the VS Code
+extension declares `ms-dotnettools.vscode-dotnet-runtime` (Microsoft's .NET
+Install Tool) as an `extensionDependencies` entry, then calls `dotnet.acquire`
+on activation to obtain a per-user .NET 10 runtime. Acquisition shows a
+non-interactive progress notification + status-bar indicator; the user is
+informed but never asked to do anything. See
+[DISTRIBUTION-SPEC.md `[DIST-RUNTIME-ACQUIRE]`](DISTRIBUTION-SPEC.md#dist-runtime-acquire).
 
 See [DISTRIBUTION-SPEC.md](DISTRIBUTION-SPEC.md) for the full distribution
 specification including version invariants, release workflow, and the

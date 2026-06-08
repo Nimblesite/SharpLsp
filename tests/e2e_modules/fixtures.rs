@@ -151,7 +151,13 @@ EndGlobal"#,
 
     let restore = std::process::Command::new("dotnet")
         .args(["restore", "--verbosity", "quiet"])
-        .current_dir(tmp.path())
+        // Restore the project directly, not the cwd: the generated .sln has no
+        // GlobalSection(ProjectConfigurationPlatforms), so `dotnet restore` in
+        // tmp warns "Unable to find a project to restore" and writes NO
+        // obj/project.assets.json. Without the assets file the sidecar's Roslyn
+        // design-time build cannot resolve the project and returns null
+        // definitions on cold CI runners (matches the ChangeTest fixture below).
+        .current_dir(&proj_dir)
         .status()
         .expect("dotnet restore failed to start");
     assert!(restore.success(), "dotnet restore must succeed");
@@ -222,7 +228,13 @@ EndGlobal"#,
 
     let restore = std::process::Command::new("dotnet")
         .args(["restore", "--verbosity", "quiet"])
-        .current_dir(tmp.path())
+        // Restore the project directly, not the cwd: the generated .sln has no
+        // GlobalSection(ProjectConfigurationPlatforms), so `dotnet restore` in
+        // tmp warns "Unable to find a project to restore" and writes NO
+        // obj/project.assets.json. Without the assets file the sidecar's Roslyn
+        // design-time build cannot resolve the project and returns null
+        // definitions on cold CI runners (matches the ChangeTest fixture below).
+        .current_dir(&proj_dir)
         .status()
         .expect("dotnet restore failed");
     assert!(restore.success(), "dotnet restore must succeed");
@@ -306,7 +318,13 @@ EndGlobal"#,
 
     let restore = std::process::Command::new("dotnet")
         .args(["restore", "--verbosity", "quiet"])
-        .current_dir(tmp.path())
+        // Restore the project directly, not the cwd: the generated .sln has no
+        // GlobalSection(ProjectConfigurationPlatforms), so `dotnet restore` in
+        // tmp warns "Unable to find a project to restore" and writes NO
+        // obj/project.assets.json. Without the assets file the sidecar's Roslyn
+        // design-time build cannot resolve the project and returns null
+        // definitions on cold CI runners (matches the ChangeTest fixture below).
+        .current_dir(&proj_dir)
         .status()
         .expect("dotnet restore failed to start");
     assert!(restore.success(), "dotnet restore must succeed");

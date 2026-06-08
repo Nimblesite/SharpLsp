@@ -8,7 +8,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 - **DONE** = SharpLsp has this fully working
 - **PARTIAL** = SharpLsp has some support but incomplete
 - **MISSING** = SharpLsp doesn't have this at all
-- **SUPERIOR** = SharpLsp already exceeds C# Dev Kit here
+- **AHEAD** = SharpLsp already goes past C# Dev Kit here
 
 ---
 
@@ -29,12 +29,12 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Dependencies folder | Yes | Yes | **DONE** |
 | NuGet package display with versions | Yes | Yes | **DONE** |
 | Project reference display | Yes | Yes | **DONE** |
-| Remove NuGet package | No (read-only) | Yes | **SUPERIOR** |
-| Remove project reference | No (read-only) | Yes | **SUPERIOR** |
-| Namespace merging in explorer | No | Yes | **SUPERIOR** |
-| Member-level symbols in explorer | No | Yes | **SUPERIOR** |
-| Sort modes (natural/alpha/accessibility) | No | Yes | **SUPERIOR** |
-| F# project support | No | Yes | **SUPERIOR** |
+| Remove NuGet package | No (read-only) | Yes | **AHEAD** |
+| Remove project reference | No (read-only) | Yes | **AHEAD** |
+| Namespace merging in explorer | No | Yes | **AHEAD** |
+| Member-level symbols in explorer | No | Yes | **AHEAD** |
+| Sort modes (natural/alpha/accessibility) | No | Yes | **AHEAD** |
+| F# project support | No | Yes | **AHEAD** |
 
 ### Code Intelligence
 
@@ -65,8 +65,8 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Peek Definition (inline) | Yes | Yes (editor feature) | **DONE** |
 | Workspace symbol search | Yes | Yes | **DONE** |
 | Breadcrumbs | Yes | No | **MISSING** |
-| Call hierarchy | No | Yes | **SUPERIOR** |
-| Type hierarchy | No | Yes | **SUPERIOR** |
+| Call hierarchy | No | Yes | **AHEAD** |
+| Type hierarchy | No | Yes | **AHEAD** |
 
 ### Code Actions & Refactorings
 
@@ -86,7 +86,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Encapsulate field | Yes | Yes | **DONE** |
 | Use var / explicit type | Yes | Yes | **DONE** |
 | Rename symbol (all code elements) | Yes | No | **MISSING** |
-| Sort members | No | Yes | **SUPERIOR** |
+| Sort members | No | Yes | **AHEAD** |
 | All Roslyn quick fixes | Yes | Yes | **DONE** |
 | All Roslyn refactorings | Yes | Yes | **DONE** |
 
@@ -165,7 +165,7 @@ All NuGet operations route through LSP custom requests (`sharplsp/nuget/*`). The
 | New Project from template | Yes | No | **MISSING** |
 | New File from template (class, interface, etc.) | Yes | No | **MISSING** |
 
-### Features Where SharpLsp is Already Superior
+### Features Where SharpLsp is Already Ahead
 
 | Feature | Notes |
 |---------|-------|
@@ -379,9 +379,9 @@ Features where we go beyond what C# Dev Kit offers.
 
 The biggest remaining gaps are **rename** (P0 parity blocker), **debugging** (P2.1), and **test explorer** (P2.2). P2 remains the next broad feature area, but rename is the critical refactoring gap inside P1.
 
-### What SharpLsp Already Wins On
+### What SharpLsp Already Does Better
 
-Even today, SharpLsp beats C# Dev Kit on:
+Even today, SharpLsp goes beyond C# Dev Kit on:
 1. **F# support** -- Dev Kit has literally zero
 2. **Solution Explorer depth** -- members, namespaces, sort modes
 3. **Profiler** -- full EventPipe/counter/heap integration

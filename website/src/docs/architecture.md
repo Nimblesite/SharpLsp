@@ -12,6 +12,8 @@ eleventyNavigation:
 
 SharpLsp is built on a three-tier architecture that separates concerns between fast syntax operations and rich semantic analysis.
 
+{% include "partials/architecture-diagram.njk" %}
+
 ## Tier 1 — Rust LSP Host
 
 The host process handles:

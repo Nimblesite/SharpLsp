@@ -94,7 +94,8 @@ fn main() -> ExitCode {
             toolchain: None,
         },
     };
-    match shipwright::dispatch(std::env::args(), std::io::stdout(), &spec) {
+    let args: Vec<String> = std::env::args().collect();
+    match shipwright::dispatch(&args, &mut std::io::stdout(), &spec) {
         Ok(true) => return ExitCode::SUCCESS,
         Ok(false) => {}
         Err(e) => {

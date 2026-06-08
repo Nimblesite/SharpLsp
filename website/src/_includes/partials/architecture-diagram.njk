@@ -1,0 +1,45 @@
+<pre class="mermaid">
+graph LR
+    Editor([Editor / IDE])
+
+    subgraph T1[Tier 1 — Rust LSP Host]
+        direction TB
+        LSP[LSP Server\nJSON-RPC over stdio]
+        Router[Request Router]
+        VFS[Virtual File System]
+        TS[tree-sitter\nC# and F# grammars]
+        Salsa[salsa cache]
+        LSP --> Router
+        LSP --> VFS
+        VFS --> TS
+        TS --> Salsa
+    end
+
+    IPC[[IPC\nMessagePack\nnamed pipes / Unix sockets]]
+
+    subgraph T2[Tier 2 — C# Sidecar]
+        direction TB
+        Roslyn[Roslyn\nMSBuildWorkspace]
+        Decompiler[ICSharpCode.Decompiler]
+        CSharpFeatures[completions\ndiagnostics\nrefactoring]
+        Roslyn --> Decompiler
+        Roslyn --> CSharpFeatures
+    end
+
+    subgraph T3[Tier 3 — F# Sidecar]
+        direction TB
+        FCS[FSharpChecker]
+        ProjInfo[Ionide.ProjInfo]
+        Fantomas[Fantomas]
+        FSharpLint[FSharpLint]
+        FCS --> ProjInfo
+        FCS --> Fantomas
+        FCS --> FSharpLint
+    end
+
+    Editor -- LSP 3.17 --> LSP
+    Router -- syntax under 5ms --> Salsa
+    Router -- semantic under 200ms --> IPC
+    IPC <--> Roslyn
+    IPC <--> FCS
+</pre>

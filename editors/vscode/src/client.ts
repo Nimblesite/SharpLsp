@@ -17,14 +17,23 @@ import {
 import { EXTENSION_ID, EXTENSION_NAME, SERVER_BINARY, SERVER_BINARY_WIN } from './constants.js';
 import * as config from './config.js';
 import * as log from './log.js';
+import { detectRuntimePlatform } from './platform.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
+
+export interface DeploymentPaths {
+  readonly serverPath?: string;
+  readonly csharpSidecarPath?: string;
+  readonly fsharpSidecarPath?: string;
+}
 
 /** Create, start, and return a new `LanguageClient`. */
 export async function start(
   context: ExtensionContext,
   statusBar: SharpLspStatusBar,
+  deploymentPaths: DeploymentPaths = {},
+  dotnetPath?: string,
 ): Promise<LanguageClient | undefined> {
-  const serverPath = resolveServerPath(context);
+  const serverPath = deploymentPaths.serverPath ?? resolveServerPath(context);
   if (serverPath === undefined) {
     const msg =
       'SharpLsp binary not found. Install via `cargo install sharplsp` or set `sharplsp.lspPath`.';
@@ -34,19 +43,18 @@ export async function start(
     return undefined;
   }
 
-  const launchPath = prepareLaunchBinary(context, serverPath);
-
   log.info(`Server binary: ${serverPath}`);
-  if (launchPath !== serverPath) {
-    log.info(`Server launch binary: ${launchPath}`);
-  }
 
   const run: Executable = {
-    command: launchPath,
+    command: serverPath,
     args: [...config.serverExtraArgs()],
     transport: TransportKind.stdio,
     options: {
-      env: { ...process.env, RUST_LOG: config.loggingLevel() },
+      env: {
+        ...process.env,
+        RUST_LOG: config.loggingLevel(),
+        ...sidecarEnv(deploymentPaths, dotnetPath),
+      },
     },
   };
 
@@ -71,6 +79,20 @@ export async function start(
   statusBar.setState(ServerState.Starting);
   await client.start();
   return client;
+}
+
+function sidecarEnv(deploymentPaths: DeploymentPaths, dotnetPath?: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (deploymentPaths.csharpSidecarPath !== undefined) {
+    env.SHARPLSP_CSHARP_SIDECAR_PATH = deploymentPaths.csharpSidecarPath;
+  }
+  if (deploymentPaths.fsharpSidecarPath !== undefined) {
+    env.SHARPLSP_FSHARP_SIDECAR_PATH = deploymentPaths.fsharpSidecarPath;
+  }
+  if (dotnetPath !== undefined && dotnetPath !== '') {
+    env.DOTNET_ROOT = path.dirname(dotnetPath);
+  }
+  return env;
 }
 
 /** Wire client state changes to the status bar indicator. */
@@ -197,55 +219,6 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
 
   // Fall back to PATH — the language client resolves the command via the shell.
   return binaryName;
-}
-
-function prepareLaunchBinary(context: ExtensionContext, serverPath: string): string {
-  if (!isBundledServerPath(context, serverPath)) {
-    return serverPath;
-  }
-
-  const platform = detectRuntimePlatform();
-  const cachePath = path.join(
-    context.globalStorageUri.fsPath,
-    'bin',
-    platform,
-    path.basename(serverPath),
-  );
-
-  try {
-    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.copyFileSync(serverPath, cachePath);
-    if (process.platform !== 'win32') {
-      fs.chmodSync(cachePath, 0o755);
-    }
-    return cachePath;
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    log.warn(`Failed to prepare stable launch binary: ${message}`);
-    return serverPath;
-  }
-}
-
-function isBundledServerPath(context: ExtensionContext, serverPath: string): boolean {
-  if (!path.isAbsolute(serverPath)) {
-    return false;
-  }
-
-  const bundledRoot = path.resolve(context.extensionPath, 'bin');
-  const resolvedServerPath = path.resolve(serverPath);
-  return (
-    resolvedServerPath === bundledRoot || resolvedServerPath.startsWith(`${bundledRoot}${path.sep}`)
-  );
-}
-
-function detectRuntimePlatform(): string {
-  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64';
-  if (process.platform === 'darwin') return 'darwin-x64';
-  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64';
-  if (process.platform === 'linux') return 'linux-x64';
-  if (process.platform === 'win32' && process.arch === 'arm64') return 'win32-arm64';
-  if (process.platform === 'win32') return 'win32-x64';
-  return 'linux-x64';
 }
 
 /** Expand ${workspaceFolder} in a user-configured path. */

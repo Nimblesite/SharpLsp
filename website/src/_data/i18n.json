@@ -8,6 +8,12 @@
       "categories": "Categories",
       "empty": "No blog posts yet. Check back soon!"
     },
+    "home": {
+      "badgeAvailable": "Available on GitHub",
+      "badgeOpenSource": "Open Source · MIT License",
+      "ecosystemTooling": ".NET ecosystem tooling",
+      "notAffiliated": "Independent open source. Not affiliated with Microsoft."
+    },
     "nav": {
       "docs": "Docs",
       "blog": "Blog"
@@ -51,6 +57,12 @@
       "categories": "分类",
       "empty": "暂无博客文章，请稍后再来！"
     },
+    "home": {
+      "badgeAvailable": "现已在 GitHub 提供",
+      "badgeOpenSource": "开源 · MIT 许可证",
+      "ecosystemTooling": ".NET 生态工具",
+      "notAffiliated": "独立开源项目。与 Microsoft 无关。"
+    },
     "nav": {
       "docs": "文档",
       "blog": "博客"
@@ -93,6 +105,12 @@
       "tags": "タグ",
       "categories": "カテゴリー",
       "empty": "ブログ記事はまだありません。しばらくしてからご確認ください。"
+    },
+    "home": {
+      "badgeAvailable": "GitHub で公開中",
+      "badgeOpenSource": "オープンソース · MIT ライセンス",
+      "ecosystemTooling": ".NET エコシステムツール",
+      "notAffiliated": "独立したオープンソースです。Microsoft とは無関係です。"
     },
     "nav": {
       "docs": "ドキュメント",

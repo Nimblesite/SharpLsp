@@ -1,14 +1,17 @@
 {
-  "name": "sharp-lsp",
-  "displayName": "SharpLsp",
-  "description": "The open-source .NET Language Server — C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in.",
+  "name": "sharplsp",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
   "version": "0.1.0",
-  "publisher": "sharplsp",
+  "publisher": "nimblesite",
   "license": "MIT",
   "icon": "icons/sharplsp.png",
   "engines": {
     "vscode": "^1.99.0"
   },
+  "extensionDependencies": [
+    "ms-dotnettools.vscode-dotnet-runtime"
+  ],
   "categories": [
     "Programming Languages"
   ],
@@ -68,26 +71,26 @@
       }
     ],
     "configuration": {
-      "title": "SharpLsp",
+      "title": "%configuration.title%",
       "properties": {
         "sharplsp.lspPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `sharplsp` binary. Leave empty to let Shipwright resolve the bundled binary, environment variables, package manager installation, or `$PATH`.",
+          "markdownDescription": "%setting.lspPath%",
           "scope": "machine-overridable",
           "order": 0
         },
         "sharplsp.csharpSidecarPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `sharplsp-sidecar-csharp` binary. Leave empty to let Shipwright resolve the bundled sidecar, environment variable, or `$PATH`.",
+          "markdownDescription": "%setting.csharpSidecarPath%",
           "scope": "machine-overridable",
           "order": 1
         },
         "sharplsp.fsharpSidecarPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `sharplsp-sidecar-fsharp` binary. Leave empty to let Shipwright resolve the bundled sidecar, environment variable, or `$PATH`.",
+          "markdownDescription": "%setting.fsharpSidecarPath%",
           "scope": "machine-overridable",
           "order": 2
         },
@@ -97,7 +100,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Extra arguments passed to the `sharplsp` process.",
+          "markdownDescription": "%setting.server.extraArgs%",
           "scope": "machine-overridable",
           "order": 3
         },
@@ -109,7 +112,7 @@
             "verbose"
           ],
           "default": "off",
-          "description": "Trace LSP communication between VS Code and the SharpLsp server.",
+          "description": "%setting.trace.server%",
           "scope": "window",
           "order": 4
         },
@@ -123,56 +126,56 @@
             "trace"
           ],
           "default": "info",
-          "markdownDescription": "Log level for the SharpLsp server (maps to `RUST_LOG`).",
+          "markdownDescription": "%setting.logging.level%",
           "scope": "window",
           "order": 5
         },
         "sharplsp.debug.netcoredbgPath": {
           "type": "string",
           "default": "",
-          "description": "Path to netcoredbg executable. Leave empty for auto-detection.",
+          "description": "%setting.debug.netcoredbgPath%",
           "scope": "machine",
           "order": 20
         },
         "sharplsp.inlayHints.parameterNames": {
           "type": "boolean",
           "default": true,
-          "description": "Show parameter name hints in method calls.",
+          "description": "%setting.inlayHints.parameterNames%",
           "scope": "resource",
           "order": 5
         },
         "sharplsp.inlayHints.typeInference": {
           "type": "boolean",
           "default": true,
-          "description": "Show type inference hints for var declarations and lambdas.",
+          "description": "%setting.inlayHints.typeInference%",
           "scope": "resource",
           "order": 6
         },
         "sharplsp.inlayHints.pipelineTypes": {
           "type": "boolean",
           "default": true,
-          "description": "Show type hints for F# pipeline operators.",
+          "description": "%setting.inlayHints.pipelineTypes%",
           "scope": "resource",
           "order": 7
         },
         "sharplsp.nuget.includePrerelease": {
           "type": "boolean",
           "default": false,
-          "description": "Include prerelease versions in NuGet package search results.",
+          "description": "%setting.nuget.includePrerelease%",
           "scope": "resource",
           "order": 15
         },
         "sharplsp.hotReload.onSave": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically start hot reload on file save when a dotnet watch session is active.",
+          "description": "%setting.hotReload.onSave%",
           "scope": "resource",
           "order": 16
         },
         "sharplsp.testLens.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Show pass/fail status, Run Test, and Debug Test lenses above test methods.",
+          "description": "%setting.testLens.enabled%",
           "scope": "resource",
           "order": 17
         },
@@ -191,7 +194,7 @@
             "category",
             "alphabetical"
           ],
-          "markdownDescription": "Sort tiebreaker order for **Sort Members**. Members are grouped by the first criterion, then sub-sorted by the second, then the third.",
+          "markdownDescription": "%setting.memberSortOrder.hierarchy%",
           "scope": "resource",
           "order": 10
         },
@@ -208,7 +211,7 @@
             "private protected",
             "private"
           ],
-          "markdownDescription": "Access modifier priority for **Sort Members** (first = highest priority).",
+          "markdownDescription": "%setting.memberSortOrder.accessibilityOrder%",
           "scope": "resource",
           "order": 11
         },
@@ -234,7 +237,7 @@
             "class",
             "record"
           ],
-          "markdownDescription": "Member kind priority for **Sort Members** (first = highest priority).",
+          "markdownDescription": "%setting.memberSortOrder.categoryOrder%",
           "scope": "resource",
           "order": 12
         }
@@ -243,7 +246,7 @@
     "debuggers": [
       {
         "type": "sharplsp-coreclr",
-        "label": "SharpLsp .NET Debugger",
+        "label": "%debugger.label%",
         "languages": [
           "csharp",
           "fsharp"
@@ -256,27 +259,27 @@
             "properties": {
               "program": {
                 "type": "string",
-                "description": "Path to the .NET assembly to debug."
+                "description": "%debugger.launch.program%"
               },
               "args": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 },
-                "description": "Command line arguments.",
+                "description": "%debugger.launch.args%",
                 "default": []
               },
               "cwd": {
                 "type": "string",
-                "description": "Working directory."
+                "description": "%debugger.launch.cwd%"
               },
               "env": {
                 "type": "object",
-                "description": "Environment variables."
+                "description": "%debugger.launch.env%"
               },
               "stopAtEntry": {
                 "type": "boolean",
-                "description": "Break at the entry point.",
+                "description": "%debugger.launch.stopAtEntry%",
                 "default": false
               }
             }
@@ -288,15 +291,15 @@
             "properties": {
               "processId": {
                 "type": "number",
-                "description": "Process ID to attach to."
+                "description": "%debugger.attach.processId%"
               }
             }
           }
         },
         "configurationSnippets": [
           {
-            "label": "SharpLsp: Launch .NET Project",
-            "description": "Launch a .NET project with SharpLsp debugger",
+            "label": "%debugger.snippet.launch.label%",
+            "description": "%debugger.snippet.launch.description%",
             "body": {
               "type": "sharplsp-coreclr",
               "request": "launch",
@@ -307,8 +310,8 @@
             }
           },
           {
-            "label": "SharpLsp: Attach to .NET Process",
-            "description": "Attach to a running .NET process",
+            "label": "%debugger.snippet.attach.label%",
+            "description": "%debugger.snippet.attach.description%",
             "body": {
               "type": "sharplsp-coreclr",
               "request": "attach",
@@ -323,7 +326,7 @@
       "activitybar": [
         {
           "id": "sharplsp-explorer",
-          "title": "SharpLsp",
+          "title": "%viewsContainer.title%",
           "icon": "icons/sharplsp-activity.svg"
         }
       ]
@@ -332,12 +335,12 @@
       "sharplsp-explorer": [
         {
           "id": "sharplsp.solutionExplorer",
-          "name": "Solution Explorer",
+          "name": "%view.solutionExplorer.name%",
           "icon": "icons/sharplsp.svg"
         },
         {
           "id": "sharplsp.profiler",
-          "name": "Profiler",
+          "name": "%view.profiler.name%",
           "icon": "$(pulse)"
         }
       ]
@@ -345,352 +348,357 @@
     "viewsWelcome": [
       {
         "view": "sharplsp.solutionExplorer",
-        "contents": "No .sln or .slnx files found in this workspace."
+        "contents": "%viewWelcome.solutionExplorer.contents%"
       }
     ],
     "commands": [
       {
         "command": "sharplsp.restartServer",
-        "title": "Restart Language Server",
-        "category": "SharpLsp"
+        "title": "%cmd.restartServer%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.retryDotnetAcquisition",
+        "title": "%cmd.retryDotnetAcquisition%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.showOutput",
-        "title": "Show Output Channel",
-        "category": "SharpLsp"
+        "title": "%cmd.showOutput%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.showTraceOutput",
-        "title": "Show Trace Output",
-        "category": "SharpLsp"
+        "title": "%cmd.showTraceOutput%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.selectSolution",
-        "title": "Select Solution",
-        "category": "SharpLsp",
+        "title": "%cmd.selectSolution%",
+        "category": "%category%",
         "icon": "$(folder-opened)"
       },
       {
         "command": "sharplsp.openSolution",
-        "title": "Open Solution",
-        "category": "SharpLsp"
+        "title": "%cmd.openSolution%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.refreshExplorer",
-        "title": "Refresh Explorer",
-        "category": "SharpLsp",
+        "title": "%cmd.refreshExplorer%",
+        "category": "%category%",
         "icon": "$(refresh)"
       },
       {
         "command": "sharplsp.sortNatural",
-        "title": "Sort: Source Order",
-        "category": "SharpLsp",
+        "title": "%cmd.sortNatural%",
+        "category": "%category%",
         "icon": "$(list-ordered)"
       },
       {
         "command": "sharplsp.sortAlphabetical",
-        "title": "Sort: Alphabetical",
-        "category": "SharpLsp",
+        "title": "%cmd.sortAlphabetical%",
+        "category": "%category%",
         "icon": "$(case-sensitive)"
       },
       {
         "command": "sharplsp.sortAccessibility",
-        "title": "Sort: Accessibility",
-        "category": "SharpLsp",
+        "title": "%cmd.sortAccessibility%",
+        "category": "%category%",
         "icon": "$(shield)"
       },
       {
         "command": "sharplsp.removeNuGetPackage",
-        "title": "Remove Package",
-        "category": "SharpLsp",
+        "title": "%cmd.removeNuGetPackage%",
+        "category": "%category%",
         "icon": "$(trash)"
       },
       {
         "command": "sharplsp.removeProjectReference",
-        "title": "Remove Project Reference",
-        "category": "SharpLsp",
+        "title": "%cmd.removeProjectReference%",
+        "category": "%category%",
         "icon": "$(trash)"
       },
       {
         "command": "sharplsp.browseNuGetPackages",
-        "title": "Browse NuGet Packages",
-        "category": "SharpLsp",
+        "title": "%cmd.browseNuGetPackages%",
+        "category": "%category%",
         "icon": "$(package)"
       },
       {
         "command": "sharplsp.sortMembers",
-        "title": "Sort Members",
-        "category": "SharpLsp",
+        "title": "%cmd.sortMembers%",
+        "category": "%category%",
         "icon": "$(list-ordered)"
       },
       {
         "command": "sharplsp.copyQualifiedName",
-        "title": "Copy Qualified Name",
-        "category": "SharpLsp"
+        "title": "%cmd.copyQualifiedName%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.copyName",
-        "title": "Copy Name",
-        "category": "SharpLsp"
+        "title": "%cmd.copyName%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.revealInExplorer",
-        "title": "Reveal in File Explorer",
-        "category": "SharpLsp",
+        "title": "%cmd.revealInExplorer%",
+        "category": "%category%",
         "icon": "$(go-to-file)"
       },
       {
         "command": "sharplsp.profiler.listProcesses",
-        "title": "List .NET Processes",
-        "category": "SharpLsp"
+        "title": "%cmd.profiler.listProcesses%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.profiler.startTrace",
-        "title": "Start Performance Trace",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.startTrace%",
+        "category": "%category%",
         "icon": "$(record)"
       },
       {
         "command": "sharplsp.profiler.stopTrace",
-        "title": "Stop Performance Trace",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.stopTrace%",
+        "category": "%category%",
         "icon": "$(debug-stop)"
       },
       {
         "command": "sharplsp.profiler.startCounters",
-        "title": "Start Counter Monitoring",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.startCounters%",
+        "category": "%category%",
         "icon": "$(pulse)"
       },
       {
         "command": "sharplsp.profiler.stopCounters",
-        "title": "Stop Counter Monitoring",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.stopCounters%",
+        "category": "%category%",
         "icon": "$(debug-stop)"
       },
       {
         "command": "sharplsp.profiler.collectDump",
-        "title": "Collect Memory Dump",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.collectDump%",
+        "category": "%category%",
         "icon": "$(database)"
       },
       {
         "command": "sharplsp.profiler.analyzeHeap",
-        "title": "Analyze Heap Dump",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.analyzeHeap%",
+        "category": "%category%",
         "icon": "$(graph)"
       },
       {
         "command": "sharplsp.profiler.refresh",
-        "title": "Refresh Profiler",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.refresh%",
+        "category": "%category%",
         "icon": "$(refresh)"
       },
       {
         "command": "sharplsp.profiler.diffSnapshots",
-        "title": "Compare Heap Snapshots",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.diffSnapshots%",
+        "category": "%category%",
         "icon": "$(diff)"
       },
       {
         "command": "sharplsp.profiler.detectLeaks",
-        "title": "Detect Memory Leaks",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.detectLeaks%",
+        "category": "%category%",
         "icon": "$(warning)"
       },
       {
         "command": "sharplsp.profiler.showObjectGraph",
-        "title": "Show Object Retention Graph",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.showObjectGraph%",
+        "category": "%category%",
         "icon": "$(type-hierarchy)"
       },
       {
         "command": "sharplsp.profiler.inspectObject",
-        "title": "Inspect Object",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.inspectObject%",
+        "category": "%category%",
         "icon": "$(search)"
       },
       {
         "command": "sharplsp.profiler.openTrace",
-        "title": "Open Trace File…",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.openTrace%",
+        "category": "%category%",
         "icon": "$(folder-opened)"
       },
       {
         "command": "sharplsp.profiler.convertTrace",
-        "title": "Convert .nettrace to SpeedScope",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.convertTrace%",
+        "category": "%category%",
         "icon": "$(file-binary)"
       },
       {
         "command": "sharplsp.profiler.stopSession",
-        "title": "Stop Session",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.stopSession%",
+        "category": "%category%",
         "icon": "$(debug-stop)"
       },
       {
         "command": "sharplsp.profiler.revealOutput",
-        "title": "Reveal Output File in Finder",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.revealOutput%",
+        "category": "%category%",
         "icon": "$(go-to-file)"
       },
       {
         "command": "sharplsp.profiler.copyOutputPath",
-        "title": "Copy Output Path",
-        "category": "SharpLsp"
+        "title": "%cmd.profiler.copyOutputPath%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.profiler.showCountersPanel",
-        "title": "Show Live Counters Panel",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.showCountersPanel%",
+        "category": "%category%",
         "icon": "$(preview)"
       },
       {
         "command": "sharplsp.profiler.traceProcess",
-        "title": "Start Trace on This Process",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.traceProcess%",
+        "category": "%category%",
         "icon": "$(record)"
       },
       {
         "command": "sharplsp.profiler.countersProcess",
-        "title": "Start Counters on This Process",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.countersProcess%",
+        "category": "%category%",
         "icon": "$(pulse)"
       },
       {
         "command": "sharplsp.profiler.dumpProcess",
-        "title": "Collect Memory Dump of This Process",
-        "category": "SharpLsp",
+        "title": "%cmd.profiler.dumpProcess%",
+        "category": "%category%",
         "icon": "$(database)"
       },
       {
         "command": "sharplsp.profiler.copyPid",
-        "title": "Copy PID",
-        "category": "SharpLsp"
+        "title": "%cmd.profiler.copyPid%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.build",
-        "title": "Build",
-        "category": "SharpLsp",
+        "title": "%cmd.build%",
+        "category": "%category%",
         "icon": "$(tools)"
       },
       {
         "command": "sharplsp.rebuild",
-        "title": "Rebuild",
-        "category": "SharpLsp"
+        "title": "%cmd.rebuild%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.clean",
-        "title": "Clean",
-        "category": "SharpLsp"
+        "title": "%cmd.clean%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.nuget.add",
-        "title": "Add NuGet Package",
-        "category": "SharpLsp",
+        "title": "%cmd.nuget.add%",
+        "category": "%category%",
         "icon": "$(package)"
       },
       {
         "command": "sharplsp.nuget.update",
-        "title": "Update NuGet Package",
-        "category": "SharpLsp"
+        "title": "%cmd.nuget.update%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.newProject",
-        "title": "New Project",
-        "category": "SharpLsp",
+        "title": "%cmd.newProject%",
+        "category": "%category%",
         "icon": "$(new-folder)"
       },
       {
         "command": "sharplsp.newFile",
-        "title": "New File (Class/Interface/Enum/Struct/Record)",
-        "category": "SharpLsp",
+        "title": "%cmd.newFile%",
+        "category": "%category%",
         "icon": "$(new-file)"
       },
       {
         "command": "sharplsp.addProjectToSolution",
-        "title": "Add Project to Solution",
-        "category": "SharpLsp"
+        "title": "%cmd.addProjectToSolution%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.nuget.restore",
-        "title": "Restore NuGet Packages",
-        "category": "SharpLsp",
+        "title": "%cmd.nuget.restore%",
+        "category": "%category%",
         "icon": "$(sync)"
       },
       {
         "command": "sharplsp.openProjectFile",
-        "title": "Open Project File",
-        "category": "SharpLsp",
+        "title": "%cmd.openProjectFile%",
+        "category": "%category%",
         "icon": "$(go-to-file)"
       },
       {
         "command": "sharplsp.addProjectReference",
-        "title": "Add Project Reference",
-        "category": "SharpLsp",
+        "title": "%cmd.addProjectReference%",
+        "category": "%category%",
         "icon": "$(add)"
       },
       {
         "command": "sharplsp.nuget.addFromExplorer",
-        "title": "Add NuGet Package",
-        "category": "SharpLsp",
+        "title": "%cmd.nuget.add%",
+        "category": "%category%",
         "icon": "$(package)"
       },
       {
         "command": "sharplsp.fsi.send",
-        "title": "F# Interactive: Send Selection",
-        "category": "SharpLsp",
+        "title": "%cmd.fsi.send%",
+        "category": "%category%",
         "icon": "$(play)"
       },
       {
         "command": "sharplsp.fsi.sendFile",
-        "title": "F# Interactive: Load File",
-        "category": "SharpLsp"
+        "title": "%cmd.fsi.sendFile%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.fsi.start",
-        "title": "F# Interactive: Start New Session",
-        "category": "SharpLsp"
+        "title": "%cmd.fsi.start%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.fsi.generateSignature",
-        "title": "F#: Generate Signature File (.fsi)",
-        "category": "SharpLsp"
+        "title": "%cmd.fsi.generateSignature%",
+        "category": "%category%"
       },
       {
         "command": "sharplsp.hotReload.start",
-        "title": "Start Hot Reload (dotnet watch)",
-        "category": "SharpLsp",
+        "title": "%cmd.hotReload.start%",
+        "category": "%category%",
         "icon": "$(flame)"
       },
       {
         "command": "sharplsp.hotReload.stop",
-        "title": "Stop Hot Reload",
-        "category": "SharpLsp",
+        "title": "%cmd.hotReload.stop%",
+        "category": "%category%",
         "icon": "$(debug-stop)"
       },
       {
         "command": "sharplsp.hotReload.toggle",
-        "title": "Toggle Hot Reload",
-        "category": "SharpLsp",
+        "title": "%cmd.hotReload.toggle%",
+        "category": "%category%",
         "icon": "$(flame)"
       },
       {
         "command": "sharplsp.test.runAtCursor",
-        "title": "Run Test at Cursor",
-        "category": "SharpLsp",
+        "title": "%cmd.test.runAtCursor%",
+        "category": "%category%",
         "icon": "$(play)"
       },
       {
         "command": "sharplsp.test.debugAtCursor",
-        "title": "Debug Test at Cursor",
-        "category": "SharpLsp",
+        "title": "%cmd.test.debugAtCursor%",
+        "category": "%category%",
         "icon": "$(bug)"
       },
       {
         "command": "sharplsp.debugProgram",
-        "title": "Debug Program",
-        "category": "SharpLsp",
+        "title": "%cmd.debugProgram%",
+        "category": "%category%",
         "icon": "$(debug-alt)"
       }
     ],
@@ -929,7 +937,7 @@
     "vscode:prepublish": "node esbuild.mjs --production"
   },
   "dependencies": {
-    "@nimblesite/shipwright-vscode": "^0.1.0",
+    "@nimblesite/shipwright-vscode": "^0.9.0",
     "fast-xml-parser": "^5.6.0",
     "vscode-languageclient": "^9.0.1"
   },
@@ -942,7 +950,7 @@
     "@typescript-eslint/parser": "^8.57.1",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.0",
-    "@vscode/vsce": "^3.0.0",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.21.0",
     "eslint": "^10.0.3",
     "glob": "^11.0.0",
@@ -956,6 +964,8 @@
     "dist/",
     "icons/",
     "language-configuration/",
+    "package.nls.json",
+    "package.nls.*.json",
     "shipwright.json",
     "LICENSE"
   ]

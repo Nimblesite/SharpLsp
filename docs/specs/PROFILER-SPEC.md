@@ -8,7 +8,7 @@ SharpLsp integrates .NET diagnostic tools (`dotnet-trace`, `dotnet-counters`, `d
 
 **Reference:** [dotnet-trace documentation](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-trace)
 
-**Priority:** P2 (Phase 5 — Superiority)
+**Priority:** P2 (Phase 5 — Beyond Parity)
 
 ## 2. Diagnostic Tools
 

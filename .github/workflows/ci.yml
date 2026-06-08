@@ -1,4 +1,4 @@
-# agent-pmo:2efd847
+---
 name: PR
 'on':
   pull_request:
@@ -27,7 +27,7 @@ jobs:
       run: |-
         set -euo pipefail
         tmp="$(mktemp -d)"
-        npm install --prefix "$tmp" @nimblesite/shipwright-validate-manifest@0.1.0
+        npm install --prefix "$tmp" @nimblesite/shipwright-validate-manifest@0.9.0
         "$tmp/node_modules/.bin/shipwright-validate-manifest" \
           --schema .github/shipwright/deployment-toolkit.schema.json \
           shipwright.json editors/vscode/shipwright.json
@@ -43,7 +43,9 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: |
+          9.0.x
+          10.0.203
     - uses: actions/cache@v4
       with:
         path: "~/.nuget/packages"
@@ -93,7 +95,9 @@ jobs:
     - uses: taiki-e/install-action@nextest
     - uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: |
+          9.0.x
+          10.0.203
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
@@ -130,7 +134,9 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: |
+          9.0.x
+          10.0.203
     - name: Test .NET sidecars with coverage
       run: make _test-dotnet
     - name: Verify sidecar version flags
@@ -151,14 +157,20 @@ jobs:
     needs:
     - lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # TIMEOUT EXCEPTION: this job builds the Rust binary + .NET sidecars,
+    # installs .NET 9 + 10, downloads the VS Code test host, then runs the full
+    # ~300-test e2e suite (many tests spin up the Roslyn/FCS sidecars and load
+    # real solutions). 10 minutes is too tight for the end-to-end run.
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
     - uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: |
+          9.0.x
+          10.0.203
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
@@ -177,8 +189,7 @@ jobs:
           fi
         done
     - name: Test VS Code extension with coverage
-      run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR
-        xvfb-run -a make _test-vsix
+      run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR xvfb-run -a make _test-vsix
     - name: Verify VSIX contains platform binary
       shell: bash
       run: |-
@@ -190,50 +201,11 @@ jobs:
       with:
         name: coverage-vsix
         path: coverage-thresholds.json
-  coverage:
-    name: Ratchet Coverage
-    needs:
-    - test-rust
-    - test-dotnet
-    - test-vsix
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        token: "${{ secrets.GITHUB_TOKEN }}"
-    - name: Download all coverage artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: coverage-artifacts
-    - name: Merge ratcheted thresholds
-      run: |
-        BASE="coverage-thresholds.json"
-        for artifact_dir in coverage-artifacts/coverage-*/; do
-          ARTIFACT="${artifact_dir}coverage-thresholds.json"
-          if [ -f "$ARTIFACT" ]; then
-            jq -s '
-              .[0] as $base | .[1] as $new |
-              $base | to_entries | map(
-                if .value | type == "object" then
-                  .key as $k |
-                  .value.line_percent as $bp |
-                  ($new[$k].line_percent // $bp) as $np |
-                  .value.line_percent = (if $np > $bp then $np else $bp end)
-                else .
-                end
-              ) | from_entries
-            ' "$BASE" "$ARTIFACT" > tmp-merged.json
-            mv tmp-merged.json "$BASE"
-          fi
-        done
-    - name: Commit ratcheted thresholds
-      run: |
-        git diff --quiet coverage-thresholds.json && exit 0
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add coverage-thresholds.json
-        git commit -m "ci: ratchet coverage threshold"
-        git push
+  # NOTE: the former `coverage` job that git-committed+pushed ratcheted
+  # thresholds was removed. On a pull_request, actions/checkout is a detached
+  # HEAD, so `git push` failed the moment coverage changed — a latent red build,
+  # and a direct push to a protected branch ([BRANCH-RULES]). Coverage is
+  # already enforced inside `make test` (scripts/check-coverage.sh reads
+  # coverage-thresholds.json and fails below threshold in each test-* job).
+  # Thresholds ratchet via the reviewed PR diff, not a bot commit.
+  # [COVERAGE-THRESHOLDS-JSON]
