@@ -121,8 +121,13 @@ suite('[DIST-API-PARAMETERS] dotnet.acquire payload', () => {
   });
 
   test('skips dotnet.acquire when findPath returns a compatible path', async () => {
+    // acquireDotnet10 validates that findPath's result actually exists on disk
+    // (dotnetRuntime.ts: `fs.existsSync`) so a stale path is never trusted. The
+    // mock must therefore point at a real existing file to represent a
+    // "compatible path"; process.execPath is always present in the test host.
+    const compatiblePath = process.execPath;
     patch = patchExecuteCommand({
-      'dotnet.findPath': { dotnetPath: '/already/installed/dotnet' },
+      'dotnet.findPath': { dotnetPath: compatiblePath },
       'dotnet.acquire': { dotnetPath: '/should/not/be/used' },
     });
     statusBar = makeStatusBar();
@@ -131,7 +136,7 @@ suite('[DIST-API-PARAMETERS] dotnet.acquire payload', () => {
 
     assert.strictEqual(result.ok, true);
     if (result.ok) {
-      assert.strictEqual(result.value, '/already/installed/dotnet');
+      assert.strictEqual(result.value, compatiblePath);
     }
     const acquireCalled = patch.calls.some((c) => c.command === 'dotnet.acquire');
     assert.strictEqual(acquireCalled, false, 'dotnet.acquire must be skipped on findPath hit');

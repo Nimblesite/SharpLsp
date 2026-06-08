@@ -157,7 +157,11 @@ jobs:
     needs:
     - lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # TIMEOUT EXCEPTION: this job builds the Rust binary + .NET sidecars,
+    # installs .NET 9 + 10, downloads the VS Code test host, then runs the full
+    # ~300-test e2e suite (many tests spin up the Roslyn/FCS sidecars and load
+    # real solutions). 10 minutes is too tight for the end-to-end run.
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
