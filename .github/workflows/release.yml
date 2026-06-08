@@ -216,8 +216,16 @@ jobs:
     - release
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Passwordless publish via Microsoft Entra ID OIDC — NO long-lived PAT.
+    # Binding the job to the `release` environment makes the GitHub OIDC subject
+    # deterministic (repo:OWNER/REPO:environment:release), so ONE federated
+    # credential covers every v* tag — Entra rejects tag wildcards in an explicit
+    # federated subject. Secrets (Azure app's client + tenant id, neither
+    # sensitive) live on the `release` environment. [SWR-SEC-TOKEN-PRIVILEGE]
+    environment: release
     permissions:
       contents: read
+      id-token: write
     steps:
     - uses: actions/setup-node@v4
       with:
@@ -227,30 +235,45 @@ jobs:
         path: artifacts
         pattern: vsix-*
         merge-multiple: true
-    # One `vsce publish` per platform-specific VSIX — vsce silently uses only
-    # the first when several are globbed into a single call. A hyphenated tag is
-    # published with --pre-release (the VSIX is packaged with --pre-release in
-    # the Makefile for hyphenated versions). Secret: VSCODE_MARKETPLACE_PAT.
-    - name: Publish each platform VSIX
-      env:
-        VSCE_PAT: "${{ secrets.VSCODE_MARKETPLACE_PAT }}"
+    # Exchange the GitHub Actions OIDC token for an Entra ID session (no client
+    # secret). The publisher identity has no Azure subscription role — its only
+    # authorization is Marketplace publisher membership — hence
+    # allow-no-subscriptions.
+    - uses: azure/login@v2
+      with:
+        client-id: "${{ secrets.AZURE_CLIENT_ID }}"
+        tenant-id: "${{ secrets.AZURE_TENANT_ID }}"
+        allow-no-subscriptions: true
+    # One `vsce publish` per platform-specific VSIX — vsce silently uses only the
+    # first when several are globbed into a single call. We mint an Azure DevOps
+    # / Marketplace-scoped Entra access token from the OIDC session and hand it to
+    # vsce via VSCE_PAT (kept off argv + masked). 499b84ac-... is Azure DevOps'
+    # fixed first-party app id that vsce authenticates against; this explicit
+    # short-lived-token path is the reliable PAT-less recipe and sidesteps the
+    # `--azure-credential` publish bug (microsoft/vscode-vsce#1023). vsce is
+    # version-pinned: a floating `npx @vscode/vsce` would fetch and run the latest
+    # release inside the job that holds the token — a supply-chain risk. A
+    # hyphenated tag is published with --pre-release (the VSIX is packaged with
+    # --pre-release in the Makefile for hyphenated versions).
+    - name: Publish each platform VSIX (Entra OIDC, no PAT)
       shell: bash
       run: |
         set -euo pipefail
-        if [ -z "${VSCE_PAT:-}" ]; then
-          echo "::error::VSCODE_MARKETPLACE_PAT is not set; cannot publish to the Marketplace"
-          exit 1
-        fi
         shopt -s globstar nullglob
         flag=""
         if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
           flag="--pre-release"
           echo "Prerelease tag ${GITHUB_REF_NAME}; publishing with --pre-release"
         fi
+        VSCE_PAT="$(az account get-access-token \
+          --resource 499b84ac-1321-427f-aa17-267ca6975798 \
+          --query accessToken -o tsv)"
+        echo "::add-mask::${VSCE_PAT}"
+        export VSCE_PAT
         published=0
         for vsix in artifacts/**/*.vsix; do
           echo "Publishing ${vsix}"
-          npx --yes @vscode/vsce publish ${flag} --packagePath "${vsix}"
+          npx --yes @vscode/vsce@3.9.2 publish ${flag} --packagePath "${vsix}"
           published=$((published + 1))
         done
         if [ "${published}" -eq 0 ]; then
