@@ -16,7 +16,7 @@ SharpLsp is editor-agnostic at the LSP layer. The VS Code extension is the prima
 
 ## VS Code
 
-Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sharplsp.sharplsp). The extension ships with the `sharplsp` binary and both sidecars bundled inside the VSIX — no Rust toolchain or separate binary install required.
+Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp). The extension ships with the `sharplsp` binary and both sidecars bundled inside the VSIX — no Rust toolchain or separate binary install required.
 
 The extension automatically manages the `sharplsp` server lifecycle and provides the Solution Explorer, profiler, NuGet browser, test lens, and editor status integration. No additional configuration is required.
 

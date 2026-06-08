@@ -3,6 +3,7 @@ module SharpLsp.Sidecar.FSharp.FSharpWorkspace
 
 open System
 open System.IO
+open System.Reflection
 open System.Threading
 open System.Xml.Linq
 open FSharp.Compiler.CodeAnalysis
@@ -97,24 +98,28 @@ let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string 
                 eprintfn $"F# workspace found {fsprojFiles.Length} projects; loading {fsprojPath}"
             let sourceFiles = parseFsprojSourceFiles fsprojPath
             // Build compiler options with framework refs from the runtime dir.
+            // The runtime dir contains both managed and native DLLs (e.g.
+            // clretwrc.dll, coreclr.dll); skip native DLLs since FCS rejects
+            // them with "bad cli header".
             let runtimeDir =
                 Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory()
+            let isManagedAssembly (path: string) =
+                try
+                    AssemblyName.GetAssemblyName(path) |> ignore
+                    true
+                with _ -> false
             let frameworkRefs =
                 Directory.GetFiles(runtimeDir, "*.dll")
+                |> Array.filter isManagedAssembly
                 |> Array.map (fun dll -> $"-r:{dll}")
-            // Also find FSharp.Core from the SDK directory.
-            let sdkFSharpCore =
-                let sdkBase = Path.Combine(Path.GetDirectoryName(runtimeDir) |> string, "..", "..", "sdk")
-                let sdkDir = Path.GetFullPath(sdkBase)
-                if Directory.Exists(sdkDir) then
-                    Directory.GetFiles(sdkDir, "FSharp.Core.dll", SearchOption.AllDirectories)
-                    |> Array.tryHead
-                else
-                    None
+            // FSharp.Core is loaded by the sidecar itself; use that path —
+            // it's guaranteed to exist and be ABI-compatible with FCS.
+            let fsharpCorePath = typeof<unit>.Assembly.Location
             let fsharpCoreRef =
-                match sdkFSharpCore with
-                | Some corePath -> [| $"-r:{corePath}" |]
-                | None -> [||]
+                if String.IsNullOrEmpty(fsharpCorePath) || not (File.Exists fsharpCorePath) then
+                    [||]
+                else
+                    [| $"-r:{fsharpCorePath}" |]
             let otherOptions =
                 [| yield "--noframework"
                    yield "--targetprofile:netcore"
@@ -123,7 +128,7 @@ let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string 
             let options =
                 state.Checker.GetProjectOptionsFromCommandLineArgs(
                     fsprojPath,
-                    [| yield! sourceFiles; yield! otherOptions |])
+                    [| yield! otherOptions; yield! sourceFiles |])
             state.ProjectOptions <- Some options
             state.IsLoaded <- true
             let fileList = String.Join(", ", sourceFiles |> Array.map Path.GetFileName)
@@ -208,7 +213,7 @@ let getHover
                 let source = File.ReadAllText(filePath)
                 let sourceText = SourceText.ofString source
 
-                let! _parseResults, checkAnswer =
+                let! parseResults, checkAnswer =
                     state.Checker.ParseAndCheckFileInProject(
                         filePath,
                         0,
@@ -219,7 +224,11 @@ let getHover
                 | FSharpCheckFileAnswer.Succeeded checkResults ->
                     return extractToolTip checkResults source line character
                 | FSharpCheckFileAnswer.Aborted ->
-                    eprintfn "[F# Hover] Check aborted"
+                    let diags =
+                        parseResults.Diagnostics
+                        |> Array.map (fun d -> $"{d.Severity}: {d.Message}")
+                        |> String.concat "; "
+                    eprintfn $"[F# Hover] Check aborted; parse diagnostics: {diags}"
                     return None
         with ex ->
             eprintfn $"[F# Hover] Exception: {ex.Message}"

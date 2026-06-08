@@ -104,7 +104,7 @@ suite('Diagnostics / Problems Panel', () => {
     );
     // Load fixture solution so Solution Explorer is populated in the screenshot.
     if (process.env['SHARPLSP_SCREENSHOTS']) {
-      const ext2 = vscode.extensions.getExtension('sharplsp.sharp-lsp');
+      const ext2 = vscode.extensions.getExtension('nimblesite.sharplsp');
       const api2 = ext2?.exports as
         | {
             explorerProvider?: {

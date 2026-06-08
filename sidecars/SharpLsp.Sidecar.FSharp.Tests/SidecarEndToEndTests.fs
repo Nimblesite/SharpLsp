@@ -5,7 +5,6 @@ module SharpLsp.Sidecar.FSharp.Tests.SidecarEndToEndTests
 
 open System
 open System.IO
-open System.Net.Sockets
 open System.Threading
 open System.Threading.Tasks
 open Xunit
@@ -121,12 +120,14 @@ type SidecarFixture() =
             for _ in 1..100 do
                 if not ok then
                     do! Task.Delay(50)
-                    try
-                        let s = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified)
-                        do! s.ConnectAsync(UnixDomainSocketEndPoint(sock))
-                        transport <- Some(new FramedTransport(new NetworkStream(s, true)))
+                    let! result = IpcConnection.ConnectAsync(sock)
+                    let stream =
+                        result.Match((fun value -> Some value), (fun _ -> None))
+                    match stream with
+                    | Some value ->
+                        transport <- Some(new FramedTransport(value))
                         ok <- true
-                    with _ -> ()
+                    | None -> ()
             if not ok then failwith "Cannot connect to F# sidecar"
 
             let! resp = this.Send("workspace/open", MessagePackSerializer.Serialize(dir))

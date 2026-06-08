@@ -307,7 +307,7 @@ Without this gate, the editor's first pull happens against a workspace with unre
 
 ## 8. Competitive Analysis
 
-**Legend:** VS = Visual Studio, CDK = C# Dev Kit, R = Rider. ✓ = incumbent has this feature.
+**Legend:** VS = Visual Studio, CDK = C# Dev Kit, R = Rider. ✓ = the tool has this feature.
 
 | Feature | VS | CDK | R | SharpLsp | Priority | Phase |
 |---|---|---|---|---|---|---|

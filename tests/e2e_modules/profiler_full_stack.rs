@@ -117,6 +117,7 @@ pub fn stop_profile_target(target: &mut ProfileTargetProcess) {
     target.stop();
 }
 
+#[cfg(unix)]
 #[test]
 fn test_profile_target_drop_reaps_child_process() {
     let binary = build_profile_target();

@@ -7,6 +7,8 @@ export function run(): Promise<void> {
     ui: 'tdd',
     color: true,
     timeout: parseInt(process.env['MOCHA_TIMEOUT'] ?? '60000', 10),
+    // Opt-in test filter for local debugging; CI leaves it unset (runs all).
+    ...(process.env['MOCHA_GREP'] ? { grep: process.env['MOCHA_GREP'] } : {}),
   });
 
   const testsRoot = path.resolve(__dirname);

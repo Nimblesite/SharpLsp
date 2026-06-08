@@ -54,7 +54,7 @@
         "all"
       ],
       "bundled": {
-        "bundlePath": "bin/all/sharplsp-sidecar-csharp",
+        "bundlePath": "bin/all/sharplsp-sidecar-csharp${exe}",
         "perPlatformArtifact": false
       },
       "sources": [
@@ -80,7 +80,7 @@
         "all"
       ],
       "bundled": {
-        "bundlePath": "bin/all/sharplsp-sidecar-fsharp",
+        "bundlePath": "bin/all/sharplsp-sidecar-fsharp${exe}",
         "perPlatformArtifact": false
       },
       "sources": [

@@ -2,8 +2,9 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { detectRuntimePlatform } from '../../platform.js';
 
-const extensionId = 'sharplsp.sharp-lsp';
+const extensionId = 'nimblesite.sharplsp';
 const lspComponentId = 'sharplsp';
 const envVarsThatBypassBundledResolution = [
   'SHARPLSP_EXECUTABLE_PATH',
@@ -18,7 +19,7 @@ suite('Bundled binary resolution', () => {
   test('sharplsp resolves from bundled source', async function () {
     this.timeout(15_000);
 
-    const { activateDeploymentToolkit } = await import('@nimblesite/shipwright-vscode');
+    const { activateShipwright } = await import('@nimblesite/shipwright-vscode');
     const platform = detectRuntimePlatform();
     const ext = vscode.extensions.getExtension(extensionId);
     assert.ok(ext !== undefined, `${extensionId} must be loaded in the VS Code test host`);
@@ -31,7 +32,7 @@ suite('Bundled binary resolution', () => {
       assert.strictEqual(process.env[name], undefined, `${name} must be unset in VSIX tests`);
     }
 
-    const result = await activateDeploymentToolkit(ext, {
+    const result = await activateShipwright(ext, {
       env: sanitizedEnv(),
       manifestPath: path.join(ext.extensionPath, 'shipwright.json'),
       pathEntries: sidecarPathEntries(ext.extensionPath),
@@ -55,16 +56,6 @@ function sanitizedEnv(): NodeJS.ProcessEnv {
       ([name]) => !envVarsThatBypassBundledResolutionSet.has(name),
     ),
   ) as NodeJS.ProcessEnv;
-}
-
-function detectRuntimePlatform(): string {
-  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64';
-  if (process.platform === 'darwin') return 'darwin-x64';
-  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64';
-  if (process.platform === 'linux') return 'linux-x64';
-  if (process.platform === 'win32' && process.arch === 'arm64') return 'win32-arm64';
-  if (process.platform === 'win32') return 'win32-x64';
-  return 'linux-x64';
 }
 
 function sidecarPathEntries(extensionPath: string): string[] {

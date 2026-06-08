@@ -2,7 +2,7 @@
 
 **Related issue:** [#4 — NuGet XML editing is line-oriented — must use a real XML DOM](https://github.com/Nimblesite/sharplsp/issues/4)
 
-**CLAUDE.md rule:** _"NEVER hand-manipulate structured files. XML/JSON/TOML/YAML/solution files MUST be loaded into a proper document model, mutated via the DOM/AST, and serialized back. Line splicing, regex replacement, or string concatenation on structured files is ILLEGAL."_
+**CLAUDE.md rule:** _"NEVER hand-manipulate structured files. XML/JSON/TOML/YAML/solution files MUST be loaded into a proper document model, mutated via the DOM/AST, and serialized back. Line splicing, regex replacement, and string concatenation on structured files are not permitted."_
 
 ## Goal
 

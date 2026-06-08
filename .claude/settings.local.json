@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh --version)",
+      "Bash(node -e \"const j=require\\('C:/Users/chris/.claude.json'\\); console.log\\(JSON.stringify\\(j.mcpServers,null,2\\)\\)\")",
+      "Bash(dotnet --list-sdks)",
+      "Bash(dotnet --list-runtimes)"
+    ]
+  }
+}

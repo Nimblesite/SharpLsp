@@ -35,12 +35,19 @@ for (const file of ["base.njk", "blog.njk", "docs.njk", "prose.njk", "author.njk
   }
 }
 
-// Patch plugin page templates (tags, categories) with blog-grid style overrides
+// Patch plugin page templates (tags, categories, blog index) with local overrides
 for (const file of ["tags-pages.njk", "categories-pages.njk"]) {
   const local = join(localOverrides, file);
   if (existsSync(local)) {
     writeFileSync(join(pluginPages, "blog", file), readFileSync(local, "utf-8"));
   }
+}
+
+// Patch plugin blog index with local override so the virtual template uses our version
+const localBlogIndex = join(__dirname, "src/blog/index.njk");
+if (existsSync(localBlogIndex)) {
+  writeFileSync(join(pluginPages, "blog/index.njk"), readFileSync(localBlogIndex, "utf-8"));
+  unlinkSync(localBlogIndex);
 }
 
 export default function (eleventyConfig) {

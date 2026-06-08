@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 
-const extensionId = 'sharplsp.sharp-lsp';
+const extensionId = 'nimblesite.sharplsp';
 
 suite('Bundled sidecar resolution', () => {
   test('sidecars are present in bin/all/ inside the extension directory', () => {

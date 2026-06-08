@@ -62,21 +62,6 @@ var json = JsonSerializer.Serialize(obj);
 //         ↑ 补全添加：using System.Text.Json;
 ```
 
-## 配置
-
-```toml
-# sharplsp.toml
-[completions]
-# 显示未引用程序集中的类型（需要 NuGet 还原）
-import_completions = true
-
-# 每次请求返回的最大结果数
-max_results = 200
-
-# 触发补全前的最小字符数
-min_trigger_length = 0
-```
-
 ## LSP 协议
 
 SharpLsp 广播：

@@ -4,8 +4,24 @@ title: "SharpLsp - 每款编辑器的完整 .NET 开发体验"
 lang: zh
 ---
 
+{% set t = i18n[lang or 'en'].home %}
+
 <section class="masthead">
-  <div class="badge"><span class="status-dot"></span>v1.0.4 Now Available</div>
+  <div class="platform-lockup" aria-label=".NET 生态系统的独立工具">
+    <span class="dotnet-mark" role="img" aria-label=".NET 标志">.NET</span>
+    <span class="platform-copy">
+      <strong>{{ t.ecosystemTooling }}</strong>
+      <small>{{ t.notAffiliated }}</small>
+    </span>
+  </div>
+  <div class="badge">
+    <span class="status-dot"></span>
+    {%- if release.available -%}
+      <a href="{{ release.url }}" rel="noopener">{{ release.tag }} {{ t.badgeAvailable }}</a>
+    {%- else -%}
+      {{ t.badgeOpenSource }}
+    {%- endif -%}
+  </div>
   <h1 class="title">每款编辑器的<span>完整 .NET 开发</span>体验</h1>
   <p class="lede">
     一款开源语言服务器，提供完整的 C# 和 F# 智能体验——代码补全、诊断、重构、NuGet 管理、性能分析和调试——支持 VS Code、Neovim、Helix、Emacs、Zed 及所有兼容 LSP 的编辑器。无专有锁定，无需许可证。

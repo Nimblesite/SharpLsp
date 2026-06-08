@@ -14,7 +14,7 @@ SharpLsp is an open-source Language Server Protocol (LSP) implementation for .NE
 
 ### VS Code
 
-Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sharplsp.sharplsp).
+Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp).
 
 The extension ships with the `sharplsp` binary and both sidecars bundled inside the VSIX. No Rust toolchain. No separate binary install. Open a `.sln` or `.csproj` and SharpLsp starts automatically.
 
