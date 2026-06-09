@@ -857,6 +857,21 @@
           "group": "2_build"
         },
         {
+          "command": "sharplsp.build",
+          "when": "view == sharplsp.solutionExplorer && viewItem == solution",
+          "group": "2_build"
+        },
+        {
+          "command": "sharplsp.rebuild",
+          "when": "view == sharplsp.solutionExplorer && viewItem == solution",
+          "group": "2_build"
+        },
+        {
+          "command": "sharplsp.clean",
+          "when": "view == sharplsp.solutionExplorer && viewItem == solution",
+          "group": "2_build"
+        },
+        {
           "command": "sharplsp.addProjectReference",
           "when": "view == sharplsp.solutionExplorer && viewItem == dependencyFolder",
           "group": "1_add"
