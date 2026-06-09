@@ -997,7 +997,7 @@
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.21.0",
     "eslint": "^10.0.3",
-    "glob": "^11.0.0",
+    "glob": "^13.0.6",
     "mocha": "^10.7.0",
     "playwright": "^1.58.2",
     "typescript": "^5.4.0",
