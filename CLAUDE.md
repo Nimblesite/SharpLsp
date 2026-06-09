@@ -1,7 +1,10 @@
 # CLAUDE.md
 
-⚠️ Never kill VS Code processes — not desktop, not browser. They belong to the user.
-⚠️ Don't ask the user questions — use your judgment.
+⚠️ Never kill VS Code processes — not desktop, not browser. They belong to the user. ⚠️ 
+
+⚠️ Don't ask the user questions — use your judgment. ⚠️ 
+
+⚠️ Don't use git. Especially critical: don't stamp yourself as coauthor on commits ⚠️ 
 
 SharpLsp is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
 

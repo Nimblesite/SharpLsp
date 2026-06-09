@@ -37,7 +37,7 @@
   "viewsContainer.title": "SharpLsp",
   "view.solutionExplorer.name": "Solution Explorer",
   "view.profiler.name": "Profiler",
-  "viewWelcome.solutionExplorer.contents": "No .sln or .slnx files found in this workspace.",
+  "viewWelcome.solutionExplorer.contents": "No solution found in this workspace.\n[New Solution](command:sharplsp.newSolution)\n[New Project](command:sharplsp.newProject)\nOr [open an existing solution](command:sharplsp.selectSolution).",
 
   "cmd.restartServer": "Restart Language Server",
   "cmd.retryDotnetAcquisition": "Retry .NET Runtime Acquisition",
@@ -83,6 +83,7 @@
   "cmd.clean": "Clean",
   "cmd.nuget.add": "Add NuGet Package",
   "cmd.nuget.update": "Update NuGet Package",
+  "cmd.newSolution": "New Solution",
   "cmd.newProject": "New Project",
   "cmd.newFile": "New File (Class/Interface/Enum/Struct/Record)",
   "cmd.addProjectToSolution": "Add Project to Solution",

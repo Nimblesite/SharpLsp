@@ -604,6 +604,12 @@
         "category": "%category%"
       },
       {
+        "command": "sharplsp.newSolution",
+        "title": "%cmd.newSolution%",
+        "category": "%category%",
+        "icon": "$(files)"
+      },
+      {
         "command": "sharplsp.newProject",
         "title": "%cmd.newProject%",
         "category": "%category%",
@@ -711,6 +717,16 @@
         }
       ],
       "view/title": [
+        {
+          "command": "sharplsp.newSolution",
+          "when": "view == sharplsp.solutionExplorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sharplsp.newProject",
+          "when": "view == sharplsp.solutionExplorer",
+          "group": "navigation@2"
+        },
         {
           "command": "sharplsp.selectSolution",
           "when": "view == sharplsp.solutionExplorer",
