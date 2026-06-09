@@ -998,7 +998,7 @@
     "esbuild": "^0.21.0",
     "eslint": "^10.0.3",
     "glob": "^11.0.0",
-    "mocha": "^10.7.0",
+    "mocha": "^11.7.6",
     "playwright": "^1.58.2",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.57.1"
