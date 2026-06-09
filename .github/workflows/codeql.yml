@@ -25,6 +25,12 @@ jobs:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # TEMPORARY: code scanning (SARIF upload) requires GitHub Advanced Security
+    # on PRIVATE repositories. SharpLsp is private until the go-public flip, so
+    # the upload fails with "Code Security must be enabled for this repository".
+    # Gate on public visibility so this self-enables the moment the repo is made
+    # public — no follow-up edit needed. [TODO-GO-PUBLIC: confirm green once public]
+    if: github.event.repository.visibility == 'public'
     permissions:
       security-events: write
       actions: read
