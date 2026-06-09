@@ -27,8 +27,8 @@ jobs:
     outputs:
       version: "${{ steps.extract.outputs.version }}"
     steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+    - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
       with:
         node-version: '24'
     - name: Extract version from tag
@@ -82,7 +82,7 @@ jobs:
           rust_target: aarch64-pc-windows-msvc
           can_execute: false
     steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
     # Each build job stamps the version into the runner working tree from the
     # tag — deterministic, no artifact hand-off, nothing committed.
     # [CI-RELEASE] [SWR-VERSION-BUILD-STAMPING]
@@ -96,12 +96,12 @@ jobs:
     - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       with:
         key: "${{ matrix.rust_target }}"
-    - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+    - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
       with:
         dotnet-version: |
           9.0.x
           10.0.203
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+    - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
       with:
         node-version: '20'
         cache: npm
@@ -148,7 +148,7 @@ jobs:
           echo "::error::foreign-platform binary found in dist/sharplsp-${{ matrix.platform }}.vsix"
           exit 1
         fi
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: vsix-${{ matrix.platform }}
         path: dist/*.vsix
@@ -164,7 +164,7 @@ jobs:
     permissions:
       contents: write
     steps:
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         path: artifacts
         pattern: vsix-*
@@ -228,10 +228,10 @@ jobs:
       contents: read
       id-token: write
     steps:
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+    - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
       with:
         node-version: '20'
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         path: artifacts
         pattern: vsix-*
@@ -240,7 +240,7 @@ jobs:
     # secret). The publisher identity has no Azure subscription role — its only
     # authorization is Marketplace publisher membership — hence
     # allow-no-subscriptions.
-    - uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
+    - uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
       with:
         client-id: "${{ secrets.AZURE_CLIENT_ID }}"
         tenant-id: "${{ secrets.AZURE_TENANT_ID }}"
@@ -295,10 +295,10 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+    - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
       with:
         node-version: '20'
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         path: artifacts
         pattern: vsix-*
