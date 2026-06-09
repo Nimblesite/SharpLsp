@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest a capability or improvement for SharpLsp.
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do, and what's missing or painful today?
+      placeholder: There's no way to … which makes … hard.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like SharpLsp to do?
+    validations:
+      required: true
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language relevance
+      description: SharpLsp treats F# and C# as equal first-class citizens — which does this affect?
+      options:
+        - "Both C# and F#"
+        - "C# only"
+        - "F# only"
+        - "Editor/tooling (language-agnostic)"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, or how other tools (Visual Studio, Rider, C# Dev Kit) handle this.
+    validations:
+      required: false

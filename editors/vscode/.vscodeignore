@@ -1,0 +1,14 @@
+# Denylist for `vsce package`. The package.json "files" field is the allowlist;
+# this file guarantees debug/build byproducts never ship in the published VSIX
+# even when they are present in dist/ or bin/ at packaging time.
+
+# Source maps leak minified-source mapping and absolute CI build paths.
+**/*.map
+**/*.js.map
+
+# .NET debug symbols leak absolute build paths and bloat the package.
+**/*.pdb
+
+# .NET publish byproducts that are not needed at runtime.
+**/*.xml.cache
+**/*.deps.json.bak

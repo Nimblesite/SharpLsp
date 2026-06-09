@@ -56,6 +56,11 @@ mutants.out/
 *.key
 !*.pub.key
 
+# Per-developer machine-local agent config (never publish — leaks local paths/usernames)
+.claude/settings.local.json
+**/settings.local.json
+.claude/**/*.local.json
+
 # Temporary
 tmp/
 temp/

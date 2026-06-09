@@ -1,0 +1,71 @@
+# Dependabot keeps the Rust, .NET, npm, and GitHub Actions dependency trees
+# patched. Minor/patch bumps are grouped per-ecosystem to keep PR noise low;
+# major bumps still arrive as individual PRs so they get deliberate review.
+version: 2
+updates:
+  # ── Rust: host crate ────────────────────────────────────────────────
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      rust-host:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ── Rust: Zed extension crate ───────────────────────────────────────
+  - package-ecosystem: cargo
+    directory: "/editors/zed"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      rust-zed:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ── .NET: C#/F# sidecars solution ───────────────────────────────────
+  - package-ecosystem: nuget
+    directory: "/sidecars"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      dotnet-sidecars:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ── npm: VS Code extension ──────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/editors/vscode"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      vscode-extension:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ── npm: website ────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/website"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      website:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ── GitHub Actions: all workflows ───────────────────────────────────
+  # Keeps the SHA-pinned actions current (Dependabot bumps the pin and the
+  # trailing version comment together).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns: ["*"]

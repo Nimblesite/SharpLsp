@@ -1,0 +1,46 @@
+name: CodeQL
+
+# Static analysis for the TypeScript VS Code extension and the GitHub Actions
+# workflows themselves. Both languages analyze without a build step, so this
+# workflow stays fast and reliable. (.NET/Rust semantic engines are covered by
+# their own strict lint/clippy gates in ci.yml.)
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so newly-published CodeQL queries re-scan even without a push.
+    - cron: "27 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+      with:
+        language: ${{ matrix.language }}
+        queries: security-extended
+    - name: Perform CodeQL analysis
+      uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+      with:
+        category: "/language:${{ matrix.language }}"

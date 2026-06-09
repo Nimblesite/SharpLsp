@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Open-source, editor-agnostic .NET language tooling for C# and F#.</strong><br>
-  Available today in VS Code, Zed, and Rider. Neovim, Helix, and Emacs support coming soon.
+  Available today in VS Code. Rider, Zed, Neovim, Helix, and Emacs support is on the way.
 </p>
 
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:24px 0;">
@@ -50,9 +50,9 @@ That split keeps the editor protocol fast and portable while letting the .NET co
 
 Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp). The extension ships with the SharpLsp engine and both sidecars — no Rust toolchain or separate install required.
 
-### Neovim & Zed
+### Other editors
 
-Neovim and Zed support are coming soon.
+Rider, Zed, Neovim, Helix, and Emacs support is coming soon.
 
 ## Documentation
 

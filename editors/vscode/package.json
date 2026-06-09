@@ -42,6 +42,19 @@
     "workspaceContains:**/*.fsproj"
   ],
   "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In an untrusted workspace, SharpLsp ignores workspace-provided settings that select which executable to run (server/sidecar/debug-adapter paths and extra server arguments) and runs only the bundled, vetted binaries. Grant workspace trust to use custom executable paths.",
+      "restrictedConfigurations": [
+        "sharplsp.lspPath",
+        "sharplsp.csharpSidecarPath",
+        "sharplsp.fsharpSidecarPath",
+        "sharplsp.server.extraArgs",
+        "sharplsp.debug.netcoredbgPath"
+      ]
+    }
+  },
   "contributes": {
     "languages": [
       {
