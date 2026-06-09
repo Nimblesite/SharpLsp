@@ -29,7 +29,7 @@
 
     <ItemGroup>
         <!-- Microsoft .NET Analyzers -->
-        <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.201">
+        <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.301">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
         </PackageReference>
