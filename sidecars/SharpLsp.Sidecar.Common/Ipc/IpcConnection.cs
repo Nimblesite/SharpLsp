@@ -92,6 +92,7 @@ public sealed class IpcListener : IAsyncDisposable
         {
             socket.Bind(new UnixDomainSocketEndPoint(effectivePath));
             socket.Listen(1);
+            RestrictSocketToOwner(effectivePath);
             return socket;
         }
         catch
@@ -99,6 +100,23 @@ public sealed class IpcListener : IAsyncDisposable
             socket.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Restrict the just-bound Unix domain socket to owner-only access (0600).
+    /// The socket path is deterministic and lives in a shared temp directory, so
+    /// without this a co-located local user could predict the path and connect
+    /// to the unauthenticated sidecar IPC channel. This is a same-user hardening
+    /// measure, not a cross-trust-boundary fix.
+    /// </summary>
+    private static void RestrictSocketToOwner(string socketPath)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        File.SetUnixFileMode(socketPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 #endif
 }

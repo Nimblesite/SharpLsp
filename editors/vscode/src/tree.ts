@@ -214,6 +214,7 @@ function buildTree(
   node.iconPath = new ThemeIcon('package', new ThemeColor('terminal.ansiGreen'));
   node.sortName = name;
   node.contextValue = 'solution';
+  node.projectFilePath = solutionPath;
   node.children = response.projects.map(buildProjectNode);
   for (const project of node.children) {
     sortProjectChildren(project, order);

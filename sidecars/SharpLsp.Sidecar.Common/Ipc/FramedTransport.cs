@@ -8,6 +8,15 @@ namespace SharpLsp.Sidecar.Common.Ipc;
 /// </summary>
 public sealed class FramedTransport : IAsyncDisposable
 {
+    /// <summary>
+    /// Maximum accepted frame payload size (64 MiB). The host and sidecar are
+    /// same-user processes, so this is a robustness/DoS guard rather than a
+    /// trust boundary: it stops a corrupt or runaway 4-byte length prefix from
+    /// forcing a multi-gigabyte allocation. Mirrors <c>MAX_FRAME_LEN</c> in the
+    /// Rust host transport (src/sidecar/transport.rs).
+    /// </summary>
+    private const uint MaxFrameLength = 64 * 1024 * 1024;
+
     private readonly Stream _stream;
     private readonly byte[] _lengthBuffer = new byte[4];
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -28,6 +37,13 @@ public sealed class FramedTransport : IAsyncDisposable
         }
 
         var length = BinaryPrimitives.ReadUInt32LittleEndian(_lengthBuffer);
+        if (length > MaxFrameLength)
+        {
+            throw new InvalidDataException(
+                $"Frame length {length} exceeds maximum {MaxFrameLength} bytes."
+            );
+        }
+
         if (length is 0)
         {
             return [];
@@ -41,6 +57,14 @@ public sealed class FramedTransport : IAsyncDisposable
     /// <summary>Write one length-prefixed frame.</summary>
     public async Task WriteFrameAsync(byte[] payload, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(payload);
+        if ((uint)payload.Length > MaxFrameLength)
+        {
+            throw new InvalidDataException(
+                $"Outgoing frame length {payload.Length} exceeds maximum {MaxFrameLength} bytes."
+            );
+        }
+
         var lengthPrefix = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(lengthPrefix, (uint)payload.Length);
 

@@ -67,6 +67,12 @@ export const CMD_NUGET_ADD_FROM_EXPLORER = 'sharplsp.nuget.addFromExplorer';
 export const CMD_OPEN_PROJECT_FILE = 'sharplsp.openProjectFile';
 export const CMD_ADD_PROJECT_REFERENCE = 'sharplsp.addProjectReference';
 
+// Scaffolding (dotnet new)
+export const CMD_NEW_SOLUTION = 'sharplsp.newSolution';
+export const CMD_NEW_PROJECT = 'sharplsp.newProject';
+export const CMD_NEW_FILE = 'sharplsp.newFile';
+export const CMD_ADD_PROJECT_TO_SOLUTION = 'sharplsp.addProjectToSolution';
+
 // F# Interactive
 export const CMD_FSI_SEND_SELECTION = 'sharplsp.fsi.sendSelection';
 export const CMD_FSI_SEND_FILE = 'sharplsp.fsi.sendFile';

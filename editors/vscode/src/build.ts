@@ -29,10 +29,7 @@ export class SharpLspBuildTaskProvider implements vscode.TaskProvider {
 }
 
 function createBuildTask(command: string, label: string): vscode.Task {
-  const dotnetCommand = command === 'rebuild' ? 'build' : command;
-  const args = command === 'rebuild' ? ['--no-incremental'] : [];
-
-  const execution = new vscode.ShellExecution('dotnet', [dotnetCommand, ...args]);
+  const execution = new vscode.ShellExecution('dotnet', dotnetArgs(command));
   const task = new vscode.Task(
     { type: SharpLspBuildTaskProvider.Type, command },
     vscode.TaskScope.Workspace,
@@ -85,17 +82,12 @@ function parseBuildDiagnostics(output: string): void {
   }
 }
 
-/** Run dotnet build and capture diagnostics. */
-export async function buildWithDiagnostics(
-  command: string,
-  extraArgs: string[] = [],
-): Promise<void> {
+/** Run dotnet build/clean for an optional target file and capture diagnostics. */
+export async function buildWithDiagnostics(command: string, target?: string): Promise<void> {
   const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (folder === undefined) return;
 
-  const dotnetCommand = command === 'rebuild' ? 'build' : command;
-  const args = [dotnetCommand, ...extraArgs];
-  if (command === 'rebuild') args.push('--no-incremental');
+  const args = dotnetArgs(command, target);
 
   try {
     const output = await new Promise<string>((resolve, reject) => {
@@ -114,6 +106,11 @@ export async function buildWithDiagnostics(
   }
 }
 
+/** A solution/project tree node that can supply an MSBuild target file path. */
+interface BuildTarget {
+  readonly projectFilePath?: string;
+}
+
 /**
  * Register build commands and task provider.
  */
@@ -128,39 +125,61 @@ export function registerBuildCommands(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_BUILD, async () => {
-      info('Running dotnet build');
-      runDotnetCommand('build');
-      await buildWithDiagnostics('build');
+    vscode.commands.registerCommand(CMD_BUILD, async (node?: BuildTarget) => {
+      await runDotnetTask('build', node);
     }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_REBUILD, async () => {
-      info('Running dotnet rebuild');
-      runDotnetCommand('build', ['--no-incremental']);
-      await buildWithDiagnostics('rebuild');
+    vscode.commands.registerCommand(CMD_REBUILD, async (node?: BuildTarget) => {
+      await runDotnetTask('rebuild', node);
     }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_CLEAN, () => {
-      info('Running dotnet clean');
-      runDotnetCommand('clean');
-      diagnosticCollection.clear();
+    vscode.commands.registerCommand(CMD_CLEAN, async (node?: BuildTarget) => {
+      await runDotnetTask('clean', node);
     }),
   );
 }
 
-function runDotnetCommand(command: string, extraArgs: string[] = []): void {
+/** Run build/rebuild/clean for the workspace, or for a right-clicked solution/project node. */
+async function runDotnetTask(command: string, node?: BuildTarget): Promise<void> {
+  const target = targetFromNode(node);
+  const scope = target !== undefined ? ` for ${target}` : '';
+  info(`Running dotnet ${command}${scope}`);
+  runDotnetCommand(command, target);
+  if (command === 'clean') {
+    diagnosticCollection.clear();
+    return;
+  }
+  await buildWithDiagnostics(command, target);
+}
+
+/** Resolve the .sln/.csproj/.fsproj a node represents, if any. */
+function targetFromNode(node?: BuildTarget): string | undefined {
+  const target = node?.projectFilePath;
+  return target !== undefined && target.length > 0 ? target : undefined;
+}
+
+/** Build the dotnet CLI argument list for a command targeting an optional file. */
+function dotnetArgs(command: string, target?: string): string[] {
+  const dotnetCommand = command === 'rebuild' ? 'build' : command;
+  const args = [dotnetCommand];
+  if (target !== undefined) args.push(target);
+  if (command === 'rebuild') args.push('--no-incremental');
+  return args;
+}
+
+function runDotnetCommand(command: string, target?: string): void {
   try {
     const terminal =
       vscode.window.terminals.find((t) => t.name === 'SharpLsp Build') ??
       vscode.window.createTerminal('SharpLsp Build');
     terminal.show(true);
-    terminal.sendText(`dotnet ${command} ${extraArgs.join(' ')}`.trim());
+    const args = dotnetArgs(command, target).map(quoteArg);
+    terminal.sendText(`dotnet ${args.join(' ')}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     void vscode.window.showErrorMessage(`Build failed: ${message}`);
   }
+}
+
+/** Wrap an argument in double quotes when it contains whitespace. */
+function quoteArg(value: string): string {
+  return value.includes(' ') ? `"${value}"` : value;
 }

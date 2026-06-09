@@ -8,6 +8,16 @@ use tracing::trace;
 
 use super::protocol::Envelope;
 
+/// Maximum accepted frame payload size (64 MiB).
+///
+/// The host↔sidecar peers are same-user processes, so this is a
+/// robustness/DoS guard rather than a trust boundary: it stops a corrupt or
+/// runaway 4-byte length prefix (worst case `0xFFFF_FFFF` ≈ 4 GiB) from
+/// triggering a giant `vec![0u8; len]` allocation and an indefinite blocking
+/// read. 64 MiB comfortably exceeds any legitimate LSP payload — even large
+/// semantic-token or workspace-symbol responses are far smaller.
+const MAX_FRAME_LEN: u32 = 64 * 1024 * 1024;
+
 /// Async framed transport over a platform IPC stream.
 pub struct FramedTransport {
     /// Read half of the IPC stream.
@@ -47,6 +57,9 @@ impl FramedTransport {
         }
 
         let len = u32::from_le_bytes(len_buf);
+        if len > MAX_FRAME_LEN {
+            anyhow::bail!("frame length {len} exceeds maximum {MAX_FRAME_LEN} bytes");
+        }
         let mut payload = vec![0u8; usize::try_from(len)?];
         let _ = self
             .reader
@@ -64,6 +77,9 @@ impl FramedTransport {
     pub async fn write_envelope(&mut self, envelope: &Envelope) -> Result<()> {
         let payload = rmp_serde::to_vec_named(envelope).context("serialize envelope")?;
         let len = u32::try_from(payload.len()).context("frame too large")?;
+        if len > MAX_FRAME_LEN {
+            anyhow::bail!("outgoing frame length {len} exceeds maximum {MAX_FRAME_LEN} bytes");
+        }
 
         self.writer
             .write_all(&len.to_le_bytes())
@@ -141,6 +157,31 @@ mod tests {
             .await
             .expect("read_envelope should not error on EOF");
         assert!(result.is_none(), "expected None at EOF, got Some(_)");
+        Ok(())
+    }
+
+    /// A length prefix larger than `MAX_FRAME_LEN` must be rejected before any
+    /// allocation, rather than triggering a multi-gigabyte `vec![0u8; len]`.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn rejects_oversized_frame_length() -> Result<()> {
+        let (mut client, server) =
+            tokio::net::UnixStream::pair().context("create UnixStream pair")?;
+        let mut reader_transport = FramedTransport::new(server);
+
+        // Announce a payload one byte larger than the cap, then send nothing.
+        let oversized = MAX_FRAME_LEN + 1;
+        client
+            .write_all(&oversized.to_le_bytes())
+            .await
+            .expect("write oversized length prefix");
+        client.flush().await.expect("flush length prefix");
+
+        let result = reader_transport.read_envelope().await;
+        assert!(
+            result.is_err(),
+            "an oversized frame length must be rejected, not allocated"
+        );
         Ok(())
     }
 }

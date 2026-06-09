@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a defect in SharpLsp (language server, sidecars, or an editor extension).
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please do **not** report
+        security vulnerabilities here — use private reporting (see SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When I open a workspace with two solutions, hover stops working…
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps. A link to a sample repo or a minimal project is ideal.
+      placeholder: |
+        1. Open '...'
+        2. Trigger '...'
+        3. Observe '...'
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of SharpLsp is affected?
+      options:
+        - "Not sure"
+        - "Rust LSP host"
+        - "C# sidecar (Roslyn)"
+        - "F# sidecar (FCS)"
+        - "VS Code extension"
+        - "Other editor (Zed/Rider/Neovim/…)"
+    validations:
+      required: true
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      description: C#, F#, or both?
+      placeholder: C#
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: SharpLsp version
+      description: Extension version or `sharplsp --version`.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Editor & OS
+      description: Editor + version, operating system, and .NET SDK version.
+      placeholder: VS Code 1.99.0, macOS 15.5 (arm64), .NET 10.0.203
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Output from the SharpLsp output channel (set `sharplsp.logging.level` to `debug`). Redact anything sensitive.
+      render: shell
+    validations:
+      required: false

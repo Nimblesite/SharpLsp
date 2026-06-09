@@ -37,7 +37,7 @@
   "viewsContainer.title": "SharpLsp",
   "view.solutionExplorer.name": "ソリューションエクスプローラー",
   "view.profiler.name": "プロファイラー",
-  "viewWelcome.solutionExplorer.contents": "このワークスペースには .sln または .slnx ファイルが見つかりません。",
+  "viewWelcome.solutionExplorer.contents": "このワークスペースにソリューションが見つかりません。\n[新しいソリューション](command:sharplsp.newSolution)\n[新しいプロジェクト](command:sharplsp.newProject)\nまたは[既存のソリューションを開く](command:sharplsp.selectSolution)。",
 
   "cmd.restartServer": "Language Server を再起動",
   "cmd.retryDotnetAcquisition": ".NET ランタイム取得を再試行",
@@ -83,6 +83,7 @@
   "cmd.clean": "クリーン",
   "cmd.nuget.add": "NuGet パッケージを追加",
   "cmd.nuget.update": "NuGet パッケージを更新",
+  "cmd.newSolution": "新しいソリューション",
   "cmd.newProject": "新しいプロジェクト",
   "cmd.newFile": "新しいファイル（Class / Interface / Enum / Struct / Record）",
   "cmd.addProjectToSolution": "ソリューションにプロジェクトを追加",

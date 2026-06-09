@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: '24'
     - name: Validate shipwright.json
@@ -36,22 +36,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       with:
+        toolchain: stable
         components: clippy, rustfmt
-    - uses: Swatinem/rust-cache@v2
-    - uses: actions/setup-dotnet@v4
+    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+    - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
       with:
         dotnet-version: |
           9.0.x
           10.0.203
-    - uses: actions/cache@v4
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: "~/.nuget/packages"
         key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}"
         restore-keys: "${{ runner.os }}-nuget-"
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: '20'
         cache: npm
@@ -86,19 +87,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       with:
+        toolchain: stable
         components: llvm-tools-preview
-    - uses: Swatinem/rust-cache@v2
-    - uses: taiki-e/install-action@cargo-llvm-cov
-    - uses: taiki-e/install-action@nextest
-    - uses: actions/setup-dotnet@v4
+    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+    - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2
+      with:
+        tool: cargo-llvm-cov
+    - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2
+      with:
+        tool: nextest
+    - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
       with:
         dotnet-version: |
           9.0.x
           10.0.203
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: '20'
     - name: Install .NET diagnostic tools
@@ -118,7 +124,7 @@ jobs:
         ./target/release/sharplsp --version | grep -Fx "sharplsp ${VERSION}"
         ./target/release/sharplsp --version --json | VERSION="${VERSION}" node -e 'const fs=require("node:fs"); const actual=JSON.parse(fs.readFileSync(0,"utf8")); const expected={name:"sharplsp",version:process.env.VERSION,kind:"lsp",language:"rust",product:"sharplsp"}; for (const [key,value] of Object.entries(expected)) { if (actual[key] !== value) throw new Error(`${key}: expected ${value}, got ${actual[key]}`); }'
     - name: Upload coverage
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: coverage-rust
         path: |
@@ -131,8 +137,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
       with:
         dotnet-version: |
           9.0.x
@@ -148,7 +154,7 @@ jobs:
         target/sidecar-csharp/SharpLsp.Sidecar.CSharp --version | grep -Fx "sharplsp-sidecar-csharp ${CS_VERSION}"
         target/sidecar-fsharp/SharpLsp.Sidecar.FSharp --version | grep -Fx "sharplsp-sidecar-fsharp ${FS_VERSION}"
     - name: Upload coverage
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: coverage-dotnet
         path: coverage-thresholds.json
@@ -163,15 +169,17 @@ jobs:
     # real solutions). 10 minutes is too tight for the end-to-end run.
     timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: Swatinem/rust-cache@v2
-    - uses: actions/setup-dotnet@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      with:
+        toolchain: stable
+    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+    - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
       with:
         dotnet-version: |
           9.0.x
           10.0.203
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: '20'
         cache: npm
@@ -197,7 +205,7 @@ jobs:
         platform="$(node -e 'process.stdout.write(`${process.platform}-${process.arch}`)')"
         unzip -l sharplsp.vsix | grep -F "bin/${platform}/sharplsp"
     - name: Upload coverage
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: coverage-vsix
         path: coverage-thresholds.json

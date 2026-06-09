@@ -194,6 +194,21 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     });
   }
 
+  // Implements [DIST-WORKSPACE-TRUST]: when the user grants trust, the
+  // previously-restricted executable-path/extra-args settings become active.
+  // Restart the client so a trusted custom server path/args take effect without
+  // requiring a manual window reload.
+  context.subscriptions.push(
+    workspace.onDidGrantWorkspaceTrust(() => {
+      log.info(
+        'Workspace trust granted — restarting language server to apply trusted configuration.',
+      );
+      void lspClient?.restart().catch((err: unknown) => {
+        log.error(`Restart after trust grant failed: ${getErrorMessage(err)}`);
+      });
+    }),
+  );
+
   log.info('step 13: activate complete');
   return {
     explorerProvider,

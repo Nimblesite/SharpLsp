@@ -10,13 +10,30 @@ function section(): ReturnType<typeof workspace.getConfiguration> {
   return workspace.getConfiguration(CONFIG_SECTION);
 }
 
-/** User-configured path to the sharplsp binary, or empty string. */
+/**
+ * User-configured path to the sharplsp binary, or empty string.
+ *
+ * Implements [DIST-WORKSPACE-TRUST]: this value selects which executable is
+ * spawned as the language server, so an untrusted workspace must never be able
+ * to supply it. `package.json` already lists `sharplsp.lspPath` under
+ * `capabilities.untrustedWorkspaces.restrictedConfigurations`, which makes
+ * VS Code ignore workspace-scoped values until trust is granted; this guard is
+ * defence-in-depth so the dangerous path is never honoured in an untrusted
+ * window even if the declarative restriction is ever lifted.
+ */
 export function serverPath(): string {
+  if (!workspace.isTrusted) return '';
   return section().get<string>(CONFIG_SERVER_PATH) ?? '';
 }
 
-/** Extra CLI arguments to pass to the server process. */
+/**
+ * Extra CLI arguments to pass to the server process.
+ *
+ * Implements [DIST-WORKSPACE-TRUST]: extra args are applied to whatever server
+ * binary runs, so an untrusted workspace must not be able to inject them.
+ */
 export function serverExtraArgs(): readonly string[] {
+  if (!workspace.isTrusted) return [];
   return section().get<string[]>(CONFIG_SERVER_EXTRA_ARGS) ?? [];
 }
 

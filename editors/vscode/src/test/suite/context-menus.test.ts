@@ -31,6 +31,7 @@ interface TreeNode {
   readonly children?: TreeNode[];
   readonly symbolUri?: string;
   readonly sortName?: string;
+  readonly projectFilePath?: string;
 }
 
 interface ExplorerApi {
@@ -153,6 +154,29 @@ suite('Context Menu — Package.json Contributions', () => {
     test(`${cmd} command is registered`, async () => {
       const cmds = await vscode.commands.getCommands(true);
       assert.ok(cmds.includes(cmd), `${cmd} must be a registered VS Code command`);
+    });
+  }
+
+  // ── Build/Rebuild/Clean on the root solution node ─────────────
+
+  const SOLUTION_WHEN = 'view == sharplsp.solutionExplorer && viewItem == solution';
+  const PROJECT_WHEN = 'view == sharplsp.solutionExplorer && viewItem == project';
+
+  for (const cmd of ['sharplsp.build', 'sharplsp.rebuild', 'sharplsp.clean']) {
+    test(`${cmd} has a solution-node menu entry in the 2_build group`, () => {
+      const entry = menuEntries().find((m) => m.command === cmd && m.when === SOLUTION_WHEN);
+      assert.ok(entry, `${cmd} must have a view/item/context entry scoped to the solution node`);
+      assert.strictEqual(
+        entry.group,
+        '2_build',
+        `${cmd} solution entry must be in the '2_build' group, got '${entry.group}'`,
+      );
+    });
+
+    test(`${cmd} still has its project-node menu entry`, () => {
+      const entry = menuEntries().find((m) => m.command === cmd && m.when === PROJECT_WHEN);
+      assert.ok(entry, `${cmd} must keep its project-node menu entry`);
+      assert.strictEqual(entry.group, '2_build', `${cmd} project entry must stay in '2_build'`);
     });
   }
 
@@ -1342,6 +1366,30 @@ suite('Context Menu — Project Node Commands Execute', () => {
       await vscode.commands.executeCommand('sharplsp.clean');
     }, 'sharplsp.clean must not throw');
   });
+
+  test('solution node carries projectFilePath pointing at the .sln', () => {
+    const roots = provider.getChildren();
+    const slnNode = roots?.[0];
+    assert.ok(slnNode, 'Solution node must exist');
+    assert.strictEqual(slnNode.contextValue, 'solution', 'Root node must be the solution');
+    assert.ok(
+      slnNode.projectFilePath?.endsWith('.sln'),
+      `Solution node projectFilePath must point at the .sln, got '${String(slnNode.projectFilePath)}'`,
+    );
+  });
+
+  for (const cmd of ['sharplsp.build', 'sharplsp.rebuild', 'sharplsp.clean']) {
+    test(`${cmd} executes without error on the solution node`, async function () {
+      this.timeout(30_000);
+      const roots = provider.getChildren();
+      const slnNode = roots?.[0];
+      assert.ok(slnNode, 'Solution node must exist');
+      assert.strictEqual(slnNode.contextValue, 'solution', 'Root node must be the solution');
+      await assert.doesNotReject(async () => {
+        await vscode.commands.executeCommand(cmd, slnNode);
+      }, `${cmd} must not throw when invoked on the solution node`);
+    });
+  }
 
   test('sharplsp.openProjectFile handles node without projectFilePath gracefully', async function () {
     this.timeout(5_000);

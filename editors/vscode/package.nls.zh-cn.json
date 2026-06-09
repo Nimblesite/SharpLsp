@@ -37,7 +37,7 @@
   "viewsContainer.title": "SharpLsp",
   "view.solutionExplorer.name": "解决方案资源管理器",
   "view.profiler.name": "性能分析器",
-  "viewWelcome.solutionExplorer.contents": "在此工作区中未找到 .sln 或 .slnx 文件。",
+  "viewWelcome.solutionExplorer.contents": "在此工作区中未找到解决方案。\n[新建解决方案](command:sharplsp.newSolution)\n[新建项目](command:sharplsp.newProject)\n或[打开现有解决方案](command:sharplsp.selectSolution)。",
 
   "cmd.restartServer": "重启 Language Server",
   "cmd.retryDotnetAcquisition": "重试 .NET 运行时获取",
@@ -83,6 +83,7 @@
   "cmd.clean": "清理",
   "cmd.nuget.add": "添加 NuGet 包",
   "cmd.nuget.update": "更新 NuGet 包",
+  "cmd.newSolution": "新建解决方案",
   "cmd.newProject": "新建项目",
   "cmd.newFile": "新建文件（Class/Interface/Enum/Struct/Record）",
   "cmd.addProjectToSolution": "将项目添加到解决方案",
