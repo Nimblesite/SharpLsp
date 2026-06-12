@@ -22,7 +22,7 @@ lsp-server = "0.7"
 lsp-types = "0.97"
 
 # Tree-sitter
-tree-sitter = "0.24"
+tree-sitter = "0.26"
 tree-sitter-c-sharp = "0.23"
 
 # Async runtime
