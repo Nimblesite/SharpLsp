@@ -73,6 +73,10 @@ min_severity = "hint"
 # Maximum diagnostics per file (0 = unlimited). Applied after severity filtering.
 max_per_file = 0
 
+# SharpLsp-owned static analyzers are configured under
+# [diagnostics.static_analyzers]. Monorepo-only analyzers also require
+# [workspace].repository_kind = "monorepo".
+
 # Refresh debounce in milliseconds. Workspace mutations within this window
 # coalesce into one workspace/diagnostic/refresh notification. Default 2000
 # matches Microsoft.CodeAnalysis.LanguageServer.
@@ -100,6 +104,25 @@ When empty (default), every project in the solution is included. Per-document pu
 
 Diagnostics settings are hot-reloadable via `workspace/didChangeConfiguration`. Changing `solution_wide_analysis`, `project_filter`, or `min_severity` bumps `global_state_version` and triggers `workspace/diagnostic/refresh` so the editor re-pulls under the new policy.
 
+### 2.3 [ANALYZERS-MONOREPO-GATE] Static Analyzer Monorepo Gate
+
+SharpLsp-owned static analyzers are specified in
+[DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md).
+Unused-public-code analyzers for C# and F# run only when the workspace is
+explicitly configured as a monorepo:
+
+```toml
+[workspace]
+repository_kind = "monorepo"
+
+[diagnostics.static_analyzers]
+enabled = true
+unused_public_symbols = true
+```
+
+The default `repository_kind` is `"standard"`, which disables unused-public-code
+diagnostics even if ordinary compiler/analyzer diagnostics are enabled.
+
 ## 3. Diagnostic Categories
 
 ### 3.1 Compiler Diagnostics (P0)
@@ -119,8 +142,17 @@ Diagnostics settings are hot-reloadable via `workspace/didChangeConfiguration`. 
 | .editorconfig rules | `.editorconfig` → analyzer severity | Code style enforcement |
 | Third-party NuGet analyzers | NuGet `<Analyzer>` references | StyleCop, SonarAnalyzer, etc. |
 | FSharp.Analyzers.SDK | Plugin-based analyzers | Community F# analyzers |
+| SharpLsp static analyzers | Solution-wide symbol/reference index | Monorepo-only unused public C#/F# code elements |
 
-### 3.3 Live Squiggles (P0)
+### 3.3 [ANALYZERS-UNUSED-PUBLIC] Monorepo-Only Unused Public Code
+
+SharpLsp reports unused public C# and F# symbols only when the workspace is
+configured as a monorepo. The analyzer is solution-wide, uses compiler symbol
+APIs rather than text matching, and reports through `workspace/diagnostic`
+partial results. See
+[DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md).
+
+### 3.4 Live Squiggles (P0)
 
 Live diagnostics flow through the **pull + refresh cycle** described in §1.1:
 
@@ -315,6 +347,7 @@ Without this gate, the editor's first pull happens against a workspace with unre
 | Roslyn analyzer diagnostics | ✓ | ✓ | ✓ | **P0** | P0 | 2 |
 | Solution-wide error analysis (SWEA) | ✓ | ✗ | ✓ | **P0 (default on)** | P0 | 2 |
 | Unused using/open detection | ✓ | ✓ | ✓ | **P0** | P0 | 2 |
+| Monorepo-only unused public code detection | ✗ | ✗ | ✓ | **P0** | P0 | 4 |
 | Nullable reference analysis | ✓ | ✓ | ✓ | **P1** | P1 | 3 |
 | Code style enforcement (.editorconfig) | ✓ | ✓ | ✓ | **P1** | P1 | 3 |
 | Third-party NuGet analyzers | ✓ | ✓ | ✓ | **P1** | P1 | 4 |

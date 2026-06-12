@@ -13,13 +13,15 @@ eleventyNavigation:
 
 SharpLsp 基于三层架构构建，将快速语法操作与丰富语义分析的关注点分离。
 
+{% include "partials/architecture-diagram.njk" %}
+
 ## 第一层 — Rust LSP 宿主
 
 宿主进程负责处理：
 
 - **LSP 协议**：基于 stdio 的 JSON-RPC，目标是符合 LSP 3.17 行为
 - **虚拟文件系统（VFS）**：带变更跟踪的内存文件状态
-- **tree-sitter 解析**：当前优先覆盖 C# 语法路径；F# 支持仍在推进
+- **tree-sitter 解析**：亚毫秒级的增量 C# 解析；F# 语法集成仍在推进，F# 语法功能会路由到 sidecar
 - **salsa 缓存**：增量计算 — 仅重新处理变更的内容
 - **请求路由**：快速语法请求留在 Rust 中，语义请求发送到 sidecar
 

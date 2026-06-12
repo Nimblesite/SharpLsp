@@ -75,6 +75,11 @@ The sidecar's per-document diagnostics path is correct and survives the pivot. T
 - [ ] IDE0005 (unused usings) detection
 - [ ] Map analyzer diagnostic codes to LSP `Diagnostic.code` + `codeDescription` URL
 
+SharpLsp-owned static analyzers are tracked in
+[DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md](DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md).
+The first rules are monorepo-gated, solution-wide unused-public-code analyzers
+for both C# and F#.
+
 ## Phase 5: Pull Diagnostics + Refresh Cycle (P0 — primary path)
 
 This is now the **primary** diagnostic pipeline. Pull is mandatory for editors that advertise `textDocument.diagnostic` client capability; push (Phase 1 wiring) is fallback only. Implements [DIAGNOSTICS-SPEC §1.1](../specs/DIAGNOSTICS-SPEC.md#11-the-pull--refresh-cycle), [§4.2](../specs/DIAGNOSTICS-SPEC.md#42-pull-model-primary-textdocumentdiagnostic-workspacediagnostic), [§4.3](../specs/DIAGNOSTICS-SPEC.md#43-refresh-notifications-workspacediagnosticrefresh).
@@ -249,6 +254,9 @@ The single biggest source of phantom CS0246 is unresolved NuGet `<PackageReferen
 - [ ] **C# sidecar**: Load .editorconfig severity overrides
 - [ ] **C# sidecar**: IDE0005 (unused usings) detection
 - [ ] **C# sidecar**: Map analyzer codes to `codeDescription` URLs
+- [ ] **Static analyzers**: Implement
+  [DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md](DIAGNOSTICS-STATIC-ANALYZERS-PLAN.md)
+  for monorepo-only unused public C#/F# code elements
 
 ### F# sidecar (Phase 3 unchanged)
 - [ ] **F# sidecar**: `FSharpCheckFileResults.Diagnostics` integration

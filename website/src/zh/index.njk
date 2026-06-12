@@ -1,6 +1,6 @@
 ---
 layout: layouts/base.njk
-title: "SharpLsp - 每款编辑器的完整 .NET 开发体验"
+title: "SharpLsp - 面向 VS Code、Zed 等编辑器的开源 C# 与 F# 语言服务器"
 lang: zh
 ---
 
@@ -22,9 +22,10 @@ lang: zh
       {{ t.badgeOpenSource }}
     {%- endif -%}
   </div>
-  <h1 class="title">每款编辑器的<span>完整 .NET 开发</span>体验</h1>
+  <h1 class="title">一个 <span>.NET 语言服务器</span>。每款编辑器都能用。</h1>
   <p class="lede">
-    一款开源语言服务器，提供完整的 C# 和 F# 智能体验——代码补全、诊断、重构、NuGet 管理、性能分析和调试——支持 VS Code、Neovim、Helix、Emacs、Zed 及所有兼容 LSP 的编辑器。无专有锁定，无需许可证。
+    SharpLsp 是用 Rust 构建的开源 C# 与 F# 语言服务器。由 Roslyn 提供完整 IntelliSense、
+    诊断、跳转到定义和重构能力，可用于 VS Code、Zed 或任何兼容 LSP 的编辑器。
   </p>
   <div class="button-row">
     <a class="button button-primary" href="/zh/docs/">快速入门</a>
@@ -37,66 +38,54 @@ lang: zh
 
 <section class="panel">
   <div class="card-grid card-grid-three">
-    <article class="metric-card">
-      <span class="material-symbols-outlined card-icon" aria-hidden="true">bolt</span>
-      <h2>&lt;3s</h2>
-      <p>冷启动时间</p>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">terminal</span>
+      <h2>支持 VS Code 与 Zed</h2>
+      <p>完整 Roslyn 补全、诊断、跳转到定义和内联提示。Neovim、Helix 和 Emacs 支持即将推出。</p>
     </article>
-    <article class="metric-card">
-      <span class="material-symbols-outlined card-icon" aria-hidden="true">speed</span>
-      <h2>&lt;100ms</h2>
-      <p>代码补全 p50</p>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">functions</span>
+      <h2>F# 是一等公民</h2>
+      <p>由 FSharp.Compiler.Service 支撑的 F# 语言服务器。功能深度与 C# 对等，不是事后追加。</p>
     </article>
-    <article class="metric-card">
-      <span class="material-symbols-outlined card-icon" aria-hidden="true">extension_off</span>
-      <h2>0</h2>
-      <p>专有依赖</p>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">lock_open</span>
+      <h2>无需订阅。没有锁定。</h2>
+      <p>MIT 许可。可在 VSCodium、Open VSX 和任何兼容 LSP 的编辑器中使用。无需 Microsoft 账户。</p>
     </article>
   </div>
+</section>
+
+<section class="ecosystem-strip">
+  <p class="ecosystem-label">当前可用</p>
+  <span class="ecosystem-name">VS Code</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name">Zed</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name">Rider</span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Neovim <small>即将推出</small></span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Helix <small>即将推出</small></span>
+  <span class="ecosystem-sep">·</span>
+  <span class="ecosystem-name coming-soon">Emacs <small>即将推出</small></span>
 </section>
 
 {% include "partials/releases-section.njk" %}
 
 <section class="band">
   <div class="copy-block">
-    <h2>任意编辑器，同一工具链</h2>
-    <p>安装一次 SharpLsp，即可在您喜欢的任何编辑器中获得完整的 .NET 开发体验——C# 和 F# 同等支持。无需 Visual Studio，无需 Rider 许可证，无供应商锁定。</p>
+    <h2>C# Dev Kit 的开源替代方案</h2>
+    <p>C# Dev Kit 是闭源的，不能在 VSCodium 或 Open VSX 上使用，并且组织使用需要 Visual Studio Professional 或 Enterprise 订阅。SharpLsp 采用 MIT 许可，适用于每款编辑器，并且永远没有许可证限制。</p>
   </div>
 
-  <div class="window">
-    <div class="window-bar">
-      <div class="window-controls" aria-hidden="true">
-        <span class="window-dot window-dot-red"></span>
-        <span class="window-dot window-dot-yellow"></span>
-        <span class="window-dot window-dot-green"></span>
-      </div>
-      <div class="window-title">Program.cs — SharpLsp</div>
-      <div class="window-tools" aria-hidden="true">
-        <span class="material-symbols-outlined">play_arrow</span>
-        <span class="material-symbols-outlined">bug_report</span>
-      </div>
-    </div>
-    <pre class="code-pane"><code><span class="token-keyword">using</span> System;
-<span class="token-keyword">using</span> System.Diagnostics;
-
-<span class="token-keyword">namespace</span> SharpLsp.Demo
-{
-    <span class="token-keyword">public class</span> Program
-    {
-        <span class="token-keyword">public static void</span> Main()
-        {
-            <span class="token-type">var</span> sw = Stopwatch.StartNew();
-
-            Console.WriteLine(<span class="token-string">"Initializing SharpLsp workspace..."</span>);
-
-            <span class="token-type">var</span> parser = <span class="token-keyword">new</span> FastSyntaxParser();
-            parser.AnalyzeProject();
-
-            sw.Stop();
-            Console.WriteLine(<span class="token-string">$"Ready in {sw.ElapsedMilliseconds}ms"</span>);
-        }
-    }
-}</code></pre>
+  <div class="screenshot-frame">
+    <img
+      src="/assets/screenshots/vscode-hover-page.png"
+      alt="SharpLsp 在 VS Code 中显示悬停文档和解决方案资源管理器"
+      width="720"
+      loading="eager"
+    />
   </div>
 </section>
 
@@ -104,44 +93,51 @@ lang: zh
   <div class="card-grid card-grid-three">
     <article class="feature-card">
       <span class="material-symbols-outlined icon-box" aria-hidden="true">explore</span>
-      <h2>完整语言智能</h2>
-      <p>Roslyn 驱动的 C# 和 FCS 驱动的 F# 代码补全、悬停提示、跳转到定义、查找引用和重命名——与编译器精度一致。</p>
+      <h2>跳转到定义</h2>
+      <p>在整个解决方案中跳转到符号定义，包括反编译的 NuGet 包和 BCL 源代码。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">psychology</span>
+      <h2>补全与悬停文档</h2>
+      <p>Roslyn 驱动的 IntelliSense，完整支持 XML 文档注释、签名帮助和重载解析。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">build</span>
+      <h2>代码操作与重构</h2>
+      <p>重命名符号、提取方法、生成构造函数、批量修复诊断，全都通过标准 LSP 代码操作提供。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">format_paint</span>
+      <h2>格式化</h2>
+      <p>C# 使用 Roslyn 格式化。F# 使用 Fantomas 格式化。遵循 EditorConfig。适用于每款编辑器。</p>
+    </article>
+    <article class="feature-card">
+      <span class="material-symbols-outlined icon-box" aria-hidden="true">error</span>
+      <h2>实时诊断</h2>
+      <p>在输入时显示 Roslyn 编译器错误和警告。无需单独构建步骤即可在线查看错误。</p>
     </article>
     <article class="feature-card">
       <span class="material-symbols-outlined icon-box" aria-hidden="true">view_in_ar</span>
       <h2>NuGet 集成</h2>
-      <p>无需离开编辑器即可浏览、安装和更新 NuGet 包，通过标准 LSP 命令在所有支持的编辑器中可用。</p>
+      <p>无需离开编辑器或运行 CLI 命令，即可搜索、安装和更新 NuGet 包。</p>
     </article>
-    <article class="feature-card">
-      <span class="material-symbols-outlined icon-box" aria-hidden="true">analytics</span>
-      <h2>内置性能分析器</h2>
-      <p>内存分配追踪和 CPU 性能分析直接集成到编辑器工作流中，无需切换到独立工具。</p>
-    </article>
-    <article class="feature-card">
-      <span class="material-symbols-outlined icon-box" aria-hidden="true">code_blocks</span>
-      <h2>F# 一等公民</h2>
-      <p>通过专用的 FSharp.Compiler.Service sidecar 提供完整 F# 支持，不是附加功能，F# 特性有独立的验收标准和测试覆盖。</p>
-    </article>
-    <article class="feature-card">
-      <span class="material-symbols-outlined icon-box" aria-hidden="true">build</span>
-      <h2>重构与代码操作</h2>
-      <p>Roslyn 驱动的代码操作：提取方法、重命名、整理导入、批量修复建议——与闭源替代品同等质量。</p>
-    </article>
-    <article class="feature-card">
-      <span class="material-symbols-outlined icon-box" aria-hidden="true">search</span>
-      <h2>解决方案资源管理器</h2>
-      <p>在编辑器内浏览完整的 .sln 或 .slnx 解决方案树、管理项目并深入查看依赖关系。</p>
-    </article>
+  </div>
+</section>
+
+<section class="band">
+  <div class="copy-block">
+    <h2>离开 Visual Studio。保留你喜欢的编辑器。</h2>
+    <p>Visual Studio 仅限 Windows，并迫使你进入重量级 IDE。SharpLsp 将同样的 Roslyn 语言智能带到 VS Code、Zed 和更多编辑器中，可运行在 Windows、macOS 和 Linux 上。无需 IDE。</p>
   </div>
 </section>
 
 <section class="cta">
   <div class="copy-block">
-    <h2>.NET 开发者应得的工具。</h2>
-    <p>开源，MIT 许可，无专有依赖。加入社区，共同打造真正跨编辑器的 .NET 开发体验。</p>
+    <h2>在你的编辑器中使用 C# 和 F#。不做妥协。</h2>
+    <p>用一个安装命令即可在 VS Code 或 Zed 中设置 SharpLsp。MIT 许可。永远开源。</p>
   </div>
   <div class="button-row">
-    <a class="button button-primary" href="/zh/docs/">快速入门</a>
-    <a class="button button-secondary" href="/zh/docs/editors/">编辑器配置</a>
+    <a class="button button-primary" href="/zh/docs/">安装 SharpLsp</a>
+    <a class="button button-secondary" href="/zh/docs/">阅读文档</a>
   </div>
 </section>

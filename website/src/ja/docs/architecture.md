@@ -13,6 +13,8 @@ eleventyNavigation:
 
 SharpLsp は、軽量な構文処理と豊かなセマンティック解析を分離する 3 層アーキテクチャで構築されています。
 
+{% include "partials/architecture-diagram.njk" %}
+
 ## 第 1 層 — Rust LSP ホスト
 
 ホストプロセスは次を担当します。
