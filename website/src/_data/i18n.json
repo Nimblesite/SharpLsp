@@ -12,7 +12,11 @@
       "badgeAvailable": "Available on GitHub",
       "badgeOpenSource": "Open Source · MIT License",
       "ecosystemTooling": ".NET ecosystem tooling",
-      "notAffiliated": "Independent open source. Not affiliated with Microsoft."
+      "notAffiliated": "Independent open source. Not affiliated with Microsoft.",
+      "releasesTitle": "Latest Releases",
+      "releasesSubtitle": "Generated from the published GitHub Releases for SharpLsp.",
+      "releasesViewAll": "View all GitHub releases",
+      "releasePrerelease": "Prerelease"
     },
     "nav": {
       "docs": "Docs",
@@ -61,7 +65,11 @@
       "badgeAvailable": "现已在 GitHub 提供",
       "badgeOpenSource": "开源 · MIT 许可证",
       "ecosystemTooling": ".NET 生态工具",
-      "notAffiliated": "独立开源项目。与 Microsoft 无关。"
+      "notAffiliated": "独立开源项目。与 Microsoft 无关。",
+      "releasesTitle": "最新版本",
+      "releasesSubtitle": "此列表由 SharpLsp 的 GitHub Releases 自动生成。",
+      "releasesViewAll": "查看所有 GitHub Releases",
+      "releasePrerelease": "预发布"
     },
     "nav": {
       "docs": "文档",
@@ -110,7 +118,11 @@
       "badgeAvailable": "GitHub で公開中",
       "badgeOpenSource": "オープンソース · MIT ライセンス",
       "ecosystemTooling": ".NET エコシステムツール",
-      "notAffiliated": "独立したオープンソースです。Microsoft とは無関係です。"
+      "notAffiliated": "独立したオープンソースです。Microsoft とは無関係です。",
+      "releasesTitle": "最新リリース",
+      "releasesSubtitle": "SharpLsp の GitHub Releases から自動生成されます。",
+      "releasesViewAll": "GitHub Releases をすべて見る",
+      "releasePrerelease": "プレリリース"
     },
     "nav": {
       "docs": "ドキュメント",

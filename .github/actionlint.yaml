@@ -1,0 +1,7 @@
+self-hosted-runner:
+  labels:
+    - Medium
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      - "shellcheck reported issue in this script: SC2016:.+"

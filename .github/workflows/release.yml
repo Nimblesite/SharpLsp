@@ -3,7 +3,7 @@ name: Release
 'on':
   push:
     tags:
-    - v*
+      - v*
 
 # Least-privilege default: every job is read-only unless it explicitly
 # escalates (the GitHub Release job needs contents: write; deploy-pages needs
@@ -22,30 +22,30 @@ jobs:
   # [CI-RELEASE] [SWR-VERSION-BUILD-STAMPING]
   version:
     name: Prepare release version
-    runs-on: ubuntu-latest
+    runs-on: Medium
     timeout-minutes: 10
     outputs:
       version: "${{ steps.extract.outputs.version }}"
     steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-      with:
-        node-version: '24'
-    - name: Extract version from tag
-      id: extract
-      shell: bash
-      run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-    # Reuses the exact validator invocation from ci.yml so CI and release stay
-    # in sync — the manifest is the source of truth for what ships.
-    - name: Validate shipwright manifest
-      shell: bash
-      run: |-
-        set -euo pipefail
-        tmp="$(mktemp -d)"
-        npm install --prefix "$tmp" @nimblesite/shipwright-validate-manifest@0.9.0
-        "$tmp/node_modules/.bin/shipwright-validate-manifest" \
-          --schema .github/shipwright/deployment-toolkit.schema.json \
-          shipwright.json editors/vscode/shipwright.json
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Extract version from tag
+        id: extract
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      # Reuses the exact validator invocation from ci.yml so CI and release stay
+      # in sync — the manifest is the source of truth for what ships.
+      - name: Validate shipwright manifest
+        shell: bash
+        run: |-
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          npm install --prefix "$tmp" @nimblesite/shipwright-validate-manifest@0.9.0
+          "$tmp/node_modules/.bin/shipwright-validate-manifest" \
+            --schema .github/shipwright/deployment-toolkit.schema.json \
+            shipwright.json editors/vscode/shipwright.json
 
   build-vsix:
     name: Build VSIX (${{ matrix.platform }})
@@ -56,154 +56,154 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - platform: linux-x64
-          os: ubuntu-latest
-          rust_target: x86_64-unknown-linux-gnu
-          can_execute: true
-        - platform: linux-arm64
-          os: ubuntu-latest
-          rust_target: aarch64-unknown-linux-gnu
-          can_execute: false
-        - platform: darwin-arm64
-          os: macos-15
-          rust_target: aarch64-apple-darwin
-          can_execute: true
-        # This just spins forever on GitHub's hosted runners
-        # - platform: darwin-x64
-        #   os: macos-13
-        #   rust_target: x86_64-apple-darwin
-        #   can_execute: true
-        - platform: win32-x64
-          os: windows-latest
-          rust_target: x86_64-pc-windows-msvc
-          can_execute: true
-        - platform: win32-arm64
-          os: windows-latest
-          rust_target: aarch64-pc-windows-msvc
-          can_execute: false
+          - platform: linux-x64
+            os: Medium
+            rust_target: x86_64-unknown-linux-gnu
+            can_execute: true
+          - platform: linux-arm64
+            os: Medium
+            rust_target: aarch64-unknown-linux-gnu
+            can_execute: false
+          - platform: darwin-arm64
+            os: macos-15
+            rust_target: aarch64-apple-darwin
+            can_execute: true
+          # This just spins forever on GitHub's hosted runners
+          # - platform: darwin-x64
+          #   os: macos-13
+          #   rust_target: x86_64-apple-darwin
+          #   can_execute: true
+          - platform: win32-x64
+            os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            can_execute: true
+          - platform: win32-arm64
+            os: windows-latest
+            rust_target: aarch64-pc-windows-msvc
+            can_execute: false
     steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-    # Each build job stamps the version into the runner working tree from the
-    # tag — deterministic, no artifact hand-off, nothing committed.
-    # [CI-RELEASE] [SWR-VERSION-BUILD-STAMPING]
-    - name: Stamp release version
-      shell: bash
-      run: make _stamp-version VERSION="${{ needs.version.outputs.version }}"
-    - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      with:
-        toolchain: stable
-        targets: "${{ matrix.rust_target }}"
-    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      with:
-        key: "${{ matrix.rust_target }}"
-    - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
-      with:
-        dotnet-version: |
-          9.0.x
-          10.0.203
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-      with:
-        node-version: '20'
-        cache: npm
-        cache-dependency-path: editors/vscode/package-lock.json
-    - name: Install VS Code extension dependencies
-      run: npm ci --prefix editors/vscode
-    - name: Install Linux ARM64 cross linker
-      if: matrix.rust_target == 'aarch64-unknown-linux-gnu'
-      shell: bash
-      run: |
-        set -euo pipefail
-        sudo apt-get update
-        sudo apt-get install -y gcc-aarch64-linux-gnu
-        {
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc"
-          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc"
-          echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"
-        } >> "$GITHUB_ENV"
-    - name: Set platform variables
-      shell: bash
-      run: |
-        exe=""
-        if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
-        echo "EXE=${exe}" >> "$GITHUB_ENV"
-    - name: Package VSIX
-      shell: bash
-      run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target }} VERSION="${{ needs.version.outputs.version }}"
-    - name: Verify binary version
-      if: "${{ matrix.can_execute }}"
-      shell: bash
-      run: |
-        set -euo pipefail
-        "target/${{ matrix.rust_target }}/release/sharplsp${EXE}" --version | grep -Fx "sharplsp ${{ needs.version.outputs.version }}"
-    - name: Verify VSIX contains all binaries
-      shell: bash
-      run: |
-        set -euo pipefail
-        unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/${{ matrix.platform }}/sharplsp${EXE}"
-        unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/all/sharplsp-sidecar-csharp"
-        unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/all/sharplsp-sidecar-fsharp"
-        # Negative check: no foreign-platform binary dirs leaked into the VSIX.
-        # [SWR-VSIX-VERIFY]
-        if unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -Eo 'bin/[a-z0-9]+-[a-z0-9]+/sharplsp' | grep -v "bin/${{ matrix.platform }}/sharplsp"; then
-          echo "::error::foreign-platform binary found in dist/sharplsp-${{ matrix.platform }}.vsix"
-          exit 1
-        fi
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-      with:
-        name: vsix-${{ matrix.platform }}
-        path: dist/*.vsix
-        if-no-files-found: error
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      # Each build job stamps the version into the runner working tree from the
+      # tag — deterministic, no artifact hand-off, nothing committed.
+      # [CI-RELEASE] [SWR-VERSION-BUILD-STAMPING]
+      - name: Stamp release version
+        shell: bash
+        run: make _stamp-version VERSION="${{ needs.version.outputs.version }}"
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          targets: "${{ matrix.rust_target }}"
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: "${{ matrix.rust_target }}"
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.203
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - name: Install VS Code extension dependencies
+        run: npm ci --prefix editors/vscode
+      - name: Install Linux ARM64 cross linker
+        if: matrix.rust_target == 'aarch64-unknown-linux-gnu'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          {
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc"
+            echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc"
+            echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"
+          } >> "$GITHUB_ENV"
+      - name: Set platform variables
+        shell: bash
+        run: |
+          exe=""
+          if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
+          echo "EXE=${exe}" >> "$GITHUB_ENV"
+      - name: Package VSIX
+        shell: bash
+        run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target
+          }} VERSION="${{ needs.version.outputs.version }}"
+      - name: Verify binary version
+        if: "${{ matrix.can_execute }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          "target/${{ matrix.rust_target }}/release/sharplsp${EXE}" --version | grep -Fx "sharplsp ${{ needs.version.outputs.version }}"
+      - name: Verify VSIX contains all binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/${{ matrix.platform }}/sharplsp${EXE}"
+          unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/all/sharplsp-sidecar-csharp"
+          unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/all/sharplsp-sidecar-fsharp"
+          # Negative check: no foreign-platform binary dirs leaked into the VSIX.
+          # [SWR-VSIX-VERIFY]
+          if unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -Eo 'bin/[a-z0-9]+-[a-z0-9]+/sharplsp' | grep -v "bin/${{ matrix.platform }}/sharplsp"; then
+            echo "::error::foreign-platform binary found in dist/sharplsp-${{ matrix.platform }}.vsix"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vsix-${{ matrix.platform }}
+          path: dist/*.vsix
+          if-no-files-found: error
 
   release:
     name: Create GitHub release
     needs:
-    - version
-    - build-vsix
-    runs-on: ubuntu-latest
+      - version
+      - build-vsix
+    runs-on: Medium
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-      with:
-        path: artifacts
-        pattern: vsix-*
-        merge-multiple: true
-    - name: Generate SHA256SUMS
-      shell: bash
-      run: |
-        set -euo pipefail
-        cd artifacts
-        : > SHA256SUMS
-        for f in *.vsix; do
-          [ -e "$f" ] || continue
-          sha256sum "$f" >> SHA256SUMS
-        done
-        cat SHA256SUMS
-    # Hyphenated SemVer tags (v0.2.0-rc.1, v0.2.0-beta) are marked prerelease so
-    # they never become the "Latest release". [BRANCH] [CI-RELEASE]
-    - name: Create GitHub release
-      env:
-        GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-      shell: bash
-      run: |
-        set -euo pipefail
-        prerelease=""
-        if [[ "${GITHUB_REF_NAME}" == *-* ]]; then prerelease="--prerelease"; fi
-        gh release create "${GITHUB_REF_NAME}" \
-          --repo "${GITHUB_REPOSITORY}" \
-          --title "SharpLsp ${{ needs.version.outputs.version }}" \
-          --generate-notes \
-          ${prerelease} \
-          artifacts/*.vsix \
-          artifacts/SHA256SUMS
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+          pattern: vsix-*
+          merge-multiple: true
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifacts
+          : > SHA256SUMS
+          for f in *.vsix; do
+            [ -e "$f" ] || continue
+            sha256sum "$f" >> SHA256SUMS
+          done
+          cat SHA256SUMS
+      # Hyphenated SemVer tags (v0.2.0-rc.1, v0.2.0-beta) are marked prerelease so
+      # they never become the "Latest release". [BRANCH] [CI-RELEASE]
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          prerelease=""
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then prerelease="--prerelease"; fi
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "SharpLsp ${{ needs.version.outputs.version }}" \
+            --generate-notes \
+            ${prerelease} \
+            artifacts/*.vsix \
+            artifacts/SHA256SUMS
 
-  # Website deploys ONLY on release (never on push to main) so the site never
-  # gets ahead of the released artifact. Stable tags only. [CI-WORKFLOWS]
+  # Website deploys on every v* release tag (never on push to main) so the site
+  # never gets ahead of the released artifact. [CI-WORKFLOWS]
   deploy-pages:
     name: Deploy website to GitHub Pages
     needs: release
-    if: ${{ !contains(github.ref_name, '-') }}
     permissions:
       contents: read
       pages: write
@@ -213,9 +213,9 @@ jobs:
   publish-marketplace:
     name: Publish VSIX to VS Code Marketplace
     needs:
-    - version
-    - release
-    runs-on: ubuntu-latest
+      - version
+      - release
+    runs-on: Medium
     timeout-minutes: 10
     # Passwordless publish via Microsoft Entra ID OIDC — NO long-lived PAT.
     # Binding the job to the `release` environment makes the GitHub OIDC subject
@@ -228,107 +228,107 @@ jobs:
       contents: read
       id-token: write
     steps:
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-      with:
-        node-version: '20'
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-      with:
-        path: artifacts
-        pattern: vsix-*
-        merge-multiple: true
-    # Exchange the GitHub Actions OIDC token for an Entra ID session (no client
-    # secret). The publisher identity has no Azure subscription role — its only
-    # authorization is Marketplace publisher membership — hence
-    # allow-no-subscriptions.
-    - uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
-      with:
-        client-id: "${{ secrets.AZURE_CLIENT_ID }}"
-        tenant-id: "${{ secrets.AZURE_TENANT_ID }}"
-        allow-no-subscriptions: true
-    # One `vsce publish` per platform-specific VSIX — vsce silently uses only the
-    # first when several are globbed into a single call. We mint an Azure DevOps
-    # / Marketplace-scoped Entra access token from the OIDC session and hand it to
-    # vsce via VSCE_PAT (kept off argv + masked). 499b84ac-... is Azure DevOps'
-    # fixed first-party app id that vsce authenticates against; this explicit
-    # short-lived-token path is the reliable PAT-less recipe and sidesteps the
-    # `--azure-credential` publish bug (microsoft/vscode-vsce#1023). vsce is
-    # version-pinned: a floating `npx @vscode/vsce` would fetch and run the latest
-    # release inside the job that holds the token — a supply-chain risk. A
-    # hyphenated tag is published with --pre-release (the VSIX is packaged with
-    # --pre-release in the Makefile for hyphenated versions).
-    - name: Publish each platform VSIX (Entra OIDC, no PAT)
-      shell: bash
-      run: |
-        set -euo pipefail
-        shopt -s globstar nullglob
-        flag=""
-        if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
-          flag="--pre-release"
-          echo "Prerelease tag ${GITHUB_REF_NAME}; publishing with --pre-release"
-        fi
-        VSCE_PAT="$(az account get-access-token \
-          --resource 499b84ac-1321-427f-aa17-267ca6975798 \
-          --query accessToken -o tsv)"
-        echo "::add-mask::${VSCE_PAT}"
-        export VSCE_PAT
-        published=0
-        for vsix in artifacts/**/*.vsix; do
-          echo "Publishing ${vsix}"
-          npx --yes @vscode/vsce@3.9.2 publish ${flag} --packagePath "${vsix}"
-          published=$((published + 1))
-        done
-        if [ "${published}" -eq 0 ]; then
-          echo "::error::no VSIX artifacts found to publish"
-          exit 1
-        fi
-        echo "Published ${published} VSIX(es) to the Marketplace"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+          pattern: vsix-*
+          merge-multiple: true
+      # Exchange the GitHub Actions OIDC token for an Entra ID session (no client
+      # secret). The publisher identity has no Azure subscription role — its only
+      # authorization is Marketplace publisher membership — hence
+      # allow-no-subscriptions.
+      - uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
+        with:
+          client-id: "${{ secrets.AZURE_CLIENT_ID }}"
+          tenant-id: "${{ secrets.AZURE_TENANT_ID }}"
+          allow-no-subscriptions: true
+      # One `vsce publish` per platform-specific VSIX — vsce silently uses only the
+      # first when several are globbed into a single call. We mint an Azure DevOps
+      # / Marketplace-scoped Entra access token from the OIDC session and hand it to
+      # vsce via VSCE_PAT (kept off argv + masked). 499b84ac-... is Azure DevOps'
+      # fixed first-party app id that vsce authenticates against; this explicit
+      # short-lived-token path is the reliable PAT-less recipe and sidesteps the
+      # `--azure-credential` publish bug (microsoft/vscode-vsce#1023). vsce is
+      # version-pinned: a floating `npx @vscode/vsce` would fetch and run the latest
+      # release inside the job that holds the token — a supply-chain risk. A
+      # hyphenated tag is published with --pre-release (the VSIX is packaged with
+      # --pre-release in the Makefile for hyphenated versions).
+      - name: Publish each platform VSIX (Entra OIDC, no PAT)
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          flag=""
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            flag="--pre-release"
+            echo "Prerelease tag ${GITHUB_REF_NAME}; publishing with --pre-release"
+          fi
+          VSCE_PAT="$(az account get-access-token \
+            --resource 499b84ac-1321-427f-aa17-267ca6975798 \
+            --query accessToken -o tsv)"
+          echo "::add-mask::${VSCE_PAT}"
+          export VSCE_PAT
+          published=0
+          for vsix in artifacts/**/*.vsix; do
+            echo "Publishing ${vsix}"
+            npx --yes @vscode/vsce@3.9.2 publish ${flag} --packagePath "${vsix}"
+            published=$((published + 1))
+          done
+          if [ "${published}" -eq 0 ]; then
+            echo "::error::no VSIX artifacts found to publish"
+            exit 1
+          fi
+          echo "Published ${published} VSIX(es) to the Marketplace"
 
   publish-openvsx:
     name: Publish VSIX (Open VSX)
     needs:
-    - version
-    - release
-    runs-on: ubuntu-latest
+      - version
+      - release
+    runs-on: Medium
     timeout-minutes: 10
     # Independent of publish-marketplace: the Open VSX push (Cursor, Windsurf,
     # Antigravity) must not be gated on the MS Marketplace publish, or vice versa.
     permissions:
       contents: read
     steps:
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-      with:
-        node-version: '20'
-    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-      with:
-        path: artifacts
-        pattern: vsix-*
-        merge-multiple: true
-    # ovsx is version-pinned: a floating `npx ovsx` would fetch and run the
-    # latest release at publish time, inside the job that holds the token — a
-    # supply-chain risk. Bump deliberately. Secret: OPEN_VSX_PAT.
-    - name: Publish to Open VSX Registry
-      env:
-        OVSX_PAT: "${{ secrets.OPEN_VSX_PAT }}"
-      shell: bash
-      run: |
-        set -euo pipefail
-        if [ -z "${OVSX_PAT:-}" ]; then
-          echo "::error::OPEN_VSX_PAT is not set; cannot publish to Open VSX"
-          exit 1
-        fi
-        shopt -s globstar nullglob
-        flag=""
-        if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
-          flag="--pre-release"
-        fi
-        published=0
-        for vsix in artifacts/**/*.vsix; do
-          echo "Publishing ${vsix}"
-          npx --yes ovsx@1.0.0 publish ${flag} --packagePath "${vsix}"
-          published=$((published + 1))
-        done
-        if [ "${published}" -eq 0 ]; then
-          echo "::error::no VSIX artifacts found to publish"
-          exit 1
-        fi
-        echo "Published ${published} VSIX(es) to Open VSX"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+          pattern: vsix-*
+          merge-multiple: true
+      # ovsx is version-pinned: a floating `npx ovsx` would fetch and run the
+      # latest release at publish time, inside the job that holds the token — a
+      # supply-chain risk. Bump deliberately. Secret: OPEN_VSX_PAT.
+      - name: Publish to Open VSX Registry
+        env:
+          OVSX_PAT: "${{ secrets.OPEN_VSX_PAT }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "::error::OPEN_VSX_PAT is not set; cannot publish to Open VSX"
+            exit 1
+          fi
+          shopt -s globstar nullglob
+          flag=""
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            flag="--pre-release"
+          fi
+          published=0
+          for vsix in artifacts/**/*.vsix; do
+            echo "Publishing ${vsix}"
+            npx --yes ovsx@1.0.0 publish ${flag} --packagePath "${vsix}"
+            published=$((published + 1))
+          done
+          if [ "${published}" -eq 0 ]; then
+            echo "::error::no VSIX artifacts found to publish"
+            exit 1
+          fi
+          echo "Published ${published} VSIX(es) to Open VSX"

@@ -5,10 +5,8 @@ name: CodeQL
 # workflow stays fast and reliable. (.NET/Rust semantic engines are covered by
 # their own strict lint/clippy gates in ci.yml.)
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
+    branches: [ main ]
   schedule:
     # Weekly, so newly-published CodeQL queries re-scan even without a push.
     - cron: "27 4 * * 1"
@@ -23,7 +21,7 @@ concurrency:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ubuntu-latest
+    runs-on: Medium
     timeout-minutes: 20
     # TEMPORARY: code scanning (SARIF upload) requires GitHub Advanced Security
     # on PRIVATE repositories. SharpLsp is private until the go-public flip, so
@@ -38,15 +36,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [javascript-typescript, actions]
+        language: [ javascript-typescript, actions ]
     steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
-      with:
-        language: ${{ matrix.language }}
-        queries: security-extended
-    - name: Perform CodeQL analysis
-      uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
-      with:
-        category: "/language:${{ matrix.language }}"
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        with:
+          language: ${{ matrix.language }}
+          queries: security-extended
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        with:
+          category: "/language:${{ matrix.language }}"
