@@ -4,7 +4,7 @@ name: CodeQL
 # workflows themselves. Both languages analyze without a build step, so this
 # workflow stays fast and reliable. (.NET/Rust semantic engines are covered by
 # their own strict lint/clippy gates in ci.yml.)
-on:
+on: 
   pull_request:
     branches: [ main ]
   schedule:
