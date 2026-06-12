@@ -1,10 +1,9 @@
 name: CodeQL
 
-# Static analysis for the TypeScript VS Code extension and the GitHub Actions
-# workflows themselves. Both languages analyze without a build step, so this
-# workflow stays fast and reliable. (.NET/Rust semantic engines are covered by
-# their own strict lint/clippy gates in ci.yml.)
-on: 
+# Static analysis for the supported codebase and GitHub Actions workflows.
+# Keep this separate from ci.yml: CodeQL feeds GitHub code scanning alerts and
+# needs security-events: write, while CI owns build/lint/test/coverage.
+on:
   pull_request:
     branches: [ main ]
   schedule:
@@ -27,7 +26,7 @@ jobs:
     # on PRIVATE repositories. SharpLsp is private until the go-public flip, so
     # the upload fails with "Code Security must be enabled for this repository".
     # Gate on public visibility so this self-enables the moment the repo is made
-    # public — no follow-up edit needed. [TODO-GO-PUBLIC: confirm green once public]
+    # public - no follow-up edit needed. [TODO-GO-PUBLIC: confirm green once public]
     if: github.event.repository.visibility == 'public'
     permissions:
       security-events: write
@@ -36,15 +35,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ javascript-typescript, actions ]
+        include:
+          - language: javascript-typescript
+            build-mode: none
+          - language: actions
+            build-mode: none
+          - language: rust
+            build-mode: none
+          - language: csharp
+            build-mode: none
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
-          language: ${{ matrix.language }}
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
           queries: security-extended
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           category: "/language:${{ matrix.language }}"
