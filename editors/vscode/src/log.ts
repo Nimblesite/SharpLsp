@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { window, type LogOutputChannel } from 'vscode';
 import { OUTPUT_CHANNEL_NAME, TRACE_CHANNEL_NAME } from './constants.js';
+import { guardChannel } from './channel-guard.js';
 
 let outputChannel: LogOutputChannel | undefined;
 let traceChannel: LogOutputChannel | undefined;
@@ -29,13 +30,15 @@ function fileLog(level: string, message: string): void {
 
 /** Lazily create and return the main output channel. */
 export function output(): LogOutputChannel {
-  outputChannel ??= window.createOutputChannel(OUTPUT_CHANNEL_NAME, { log: true });
+  // Guarded so a write racing extension-host teardown is a no-op, not an uncaught
+  // throw — vscode-languageclient pipes the server's stderr through this channel.
+  outputChannel ??= guardChannel(window.createOutputChannel(OUTPUT_CHANNEL_NAME, { log: true }));
   return outputChannel;
 }
 
 /** Lazily create and return the LSP trace channel. */
 export function trace(): LogOutputChannel {
-  traceChannel ??= window.createOutputChannel(TRACE_CHANNEL_NAME, { log: true });
+  traceChannel ??= guardChannel(window.createOutputChannel(TRACE_CHANNEL_NAME, { log: true }));
   return traceChannel;
 }
 
