@@ -1,0 +1,46 @@
+---
+layout: layouts/base.njk
+title: "Releases — SharpLsp"
+description: "Every SharpLsp release with full release notes, generated at build time from the GitHub Releases for SharpLsp."
+lang: en
+permalink: /releases/
+---
+
+{% set t = i18n[lang or 'en'].releases %}
+
+<section class="masthead releases-masthead">
+  <div class="copy-block">
+    <h1>{{ t.title }}</h1>
+    <p>{{ t.subtitle }}</p>
+    <p class="release-more">
+      <a href="{{ release.releasesUrl }}" rel="noopener">{{ t.viewAllGitHub }}</a>
+    </p>
+  </div>
+</section>
+
+<section class="panel">
+  {% if release.available and release.items.length %}
+  <div class="release-log">
+    {% for item in release.items %}
+    <article class="release-entry" id="{{ item.tag }}">
+      <div class="release-card-header">
+        <h2><a href="{{ item.url }}" rel="noopener">{{ item.title }}</a></h2>
+        <span class="release-tag">{{ item.tag }}</span>
+      </div>
+      <p class="release-meta">
+        {% if item.publishedDate %}<time datetime="{{ item.publishedAt }}">{{ item.publishedDate }}</time>{% endif %}
+        {% if item.prerelease %}<span class="release-state">{{ t.prerelease }}</span>{% endif %}
+      </p>
+      {% if item.body %}
+      <div class="release-notes">{{ item.body | releaseNotes | safe }}</div>
+      {% else %}
+      <p class="release-notes-empty"><a href="{{ item.url }}" rel="noopener">{{ t.viewOnGitHub }}</a></p>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p>{{ t.empty }} <a href="{{ release.releasesUrl }}" rel="noopener">{{ t.viewAllGitHub }}</a></p>
+  {% endif %}
+</section>
+

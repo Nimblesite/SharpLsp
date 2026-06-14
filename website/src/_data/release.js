@@ -1,5 +1,7 @@
 const REPO = "Nimblesite/SharpLsp";
-const MAX_RELEASES = 4;
+// Full set powers the on-site /releases/ page; the homepage shows `recent` only.
+const MAX_RELEASES = 30;
+const RECENT_COUNT = 4;
 const API_URL = `https://api.github.com/repos/${REPO}/releases?per_page=${MAX_RELEASES}`;
 const RELEASES_URL = `https://github.com/${REPO}/releases`;
 
@@ -14,6 +16,7 @@ function fallback(reason) {
     publishedAt: null,
     publishedDate: null,
     items: [],
+    recent: [],
   };
 }
 
@@ -41,6 +44,10 @@ function mapRelease(data) {
     publishedAt,
     publishedDate: formatDate(publishedAt),
     prerelease: Boolean(data.prerelease),
+    // Raw GitHub release notes (Markdown). Rendered at build time by the
+    // `releaseNotes` filter with raw HTML disabled, so untrusted PR-title
+    // content in generated notes cannot inject markup.
+    body: data.body || "",
   };
 }
 
@@ -84,6 +91,7 @@ export default async function () {
       publishedAt: latest.publishedAt,
       publishedDate: latest.publishedDate,
       items,
+      recent: items.slice(0, RECENT_COUNT),
     };
   } catch (err) {
     return fallback(err.message);

@@ -15,12 +15,21 @@
       "notAffiliated": "Independent open source. Not affiliated with Microsoft.",
       "releasesTitle": "Latest Releases",
       "releasesSubtitle": "Generated from the published GitHub Releases for SharpLsp.",
-      "releasesViewAll": "View all GitHub releases",
+      "releasesViewAll": "View all releases",
       "releasePrerelease": "Prerelease"
+    },
+    "releases": {
+      "title": "Releases",
+      "subtitle": "Every SharpLsp release with full notes — generated at build time from the GitHub Releases for SharpLsp.",
+      "viewAllGitHub": "View all releases on GitHub",
+      "viewOnGitHub": "Read the notes on GitHub",
+      "prerelease": "Prerelease",
+      "empty": "Releases will appear here once the first version ships."
     },
     "nav": {
       "docs": "Docs",
-      "blog": "Blog"
+      "blog": "Blog",
+      "releases": "Releases"
     },
     "docs": {
       "title": "Documentation",
@@ -68,12 +77,21 @@
       "notAffiliated": "独立开源项目。与 Microsoft 无关。",
       "releasesTitle": "最新版本",
       "releasesSubtitle": "此列表由 SharpLsp 的 GitHub Releases 自动生成。",
-      "releasesViewAll": "查看所有 GitHub Releases",
+      "releasesViewAll": "查看所有版本",
       "releasePrerelease": "预发布"
+    },
+    "releases": {
+      "title": "版本发布",
+      "subtitle": "每个 SharpLsp 版本及完整发行说明，在构建时从 SharpLsp 的 GitHub Releases 自动生成。",
+      "viewAllGitHub": "在 GitHub 上查看所有版本",
+      "viewOnGitHub": "在 GitHub 上阅读说明",
+      "prerelease": "预发布",
+      "empty": "首个版本发布后，发行记录将显示在此处。"
     },
     "nav": {
       "docs": "文档",
-      "blog": "博客"
+      "blog": "博客",
+      "releases": "版本"
     },
     "docs": {
       "title": "文档",
@@ -121,12 +139,21 @@
       "notAffiliated": "独立したオープンソースです。Microsoft とは無関係です。",
       "releasesTitle": "最新リリース",
       "releasesSubtitle": "SharpLsp の GitHub Releases から自動生成されます。",
-      "releasesViewAll": "GitHub Releases をすべて見る",
+      "releasesViewAll": "すべてのリリースを見る",
       "releasePrerelease": "プレリリース"
+    },
+    "releases": {
+      "title": "リリース",
+      "subtitle": "すべての SharpLsp リリースと完全なリリースノート。ビルド時に SharpLsp の GitHub Releases から自動生成されます。",
+      "viewAllGitHub": "GitHub ですべてのリリースを見る",
+      "viewOnGitHub": "GitHub でノートを読む",
+      "prerelease": "プレリリース",
+      "empty": "最初のバージョンが公開されると、ここにリリースが表示されます。"
     },
     "nav": {
       "docs": "ドキュメント",
-      "blog": "ブログ"
+      "blog": "ブログ",
+      "releases": "リリース"
     },
     "docs": {
       "title": "ドキュメント",

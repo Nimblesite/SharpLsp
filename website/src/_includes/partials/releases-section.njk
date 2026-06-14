@@ -1,5 +1,5 @@
 {% set homeText = i18n[lang or 'en'].home %}
-{% if release.items and release.items.length %}
+{% if release.recent and release.recent.length %}
 <section class="panel release-panel" aria-labelledby="releases-heading">
   <div class="copy-block">
     <h2 id="releases-heading">{{ homeText.releasesTitle }}</h2>
@@ -7,7 +7,7 @@
   </div>
 
   <div class="release-list">
-    {% for item in release.items %}
+    {% for item in release.recent %}
     <article class="release-card">
       <div class="release-card-header">
         <h3><a href="{{ item.url }}" rel="noopener">{{ item.title }}</a></h3>
@@ -24,7 +24,7 @@
   </div>
 
   <p class="release-more">
-    <a href="{{ release.releasesUrl }}" rel="noopener">{{ homeText.releasesViewAll }}</a>
+    <a href="/releases/">{{ homeText.releasesViewAll }}</a>
   </p>
 </section>
 {% endif %}

@@ -1,5 +1,6 @@
 import { HtmlBasePlugin } from "@11ty/eleventy";
 import techdoc from "eleventy-plugin-techdoc";
+import markdownIt from "markdown-it";
 import { existsSync, lstatSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -75,6 +76,16 @@ export default function (eleventyConfig) {
   });
 
   eleventyConfig.addPlugin(HtmlBasePlugin);
+
+  // Renders GitHub release notes (Markdown) on the /releases/ page. Raw HTML is
+  // disabled so untrusted content carried in auto-generated notes (PR titles,
+  // contributor handles) can never inject markup; linkify turns bare URLs into
+  // links.
+  const releaseNotesMd = markdownIt({ html: false, linkify: true, breaks: false });
+  eleventyConfig.addFilter("releaseNotes", (body) =>
+    body ? releaseNotesMd.render(body) : "",
+  );
+
   eleventyConfig.addPassthroughCopy("src/assets");
   eleventyConfig.addPassthroughCopy("src/favicon.ico");
   eleventyConfig.addPassthroughCopy("src/favicon.svg");

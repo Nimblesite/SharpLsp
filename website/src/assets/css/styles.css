@@ -424,6 +424,30 @@ img { display: block; max-width: 100%; }
 .release-state { display: inline-block; margin-left: 8px; }
 .release-more { margin: 18px 0 0; text-align: center; }
 
+/* ── Releases page (/releases/) ── */
+.releases-masthead { text-align: center; }
+.release-log { display: grid; gap: 28px; }
+.release-entry {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 24px;
+  scroll-margin-top: 90px;
+}
+.release-entry h2 { color: var(--text); font: 600 22px/1.3 var(--font-heading); margin: 0; }
+.release-meta { color: var(--text-muted); font-size: 13px; margin: 6px 0 16px; }
+.release-notes { color: var(--text); font-size: 15px; line-height: 1.65; }
+.release-notes h1,
+.release-notes h2,
+.release-notes h3 { color: var(--text); font-family: var(--font-heading); margin: 20px 0 8px; }
+.release-notes h2 { font-size: 18px; }
+.release-notes h3 { font-size: 16px; }
+.release-notes ul { margin: 8px 0; padding-left: 22px; }
+.release-notes li { margin: 4px 0; }
+.release-notes code { font-family: var(--font-code); font-size: 13px; }
+.release-notes a { word-break: break-word; }
+.release-notes-empty { color: var(--text-muted); font-size: 14px; }
+
 /* ── Screenshots / code window ── */
 .screenshot-frame { border-radius: 8px; box-shadow: 0 24px 54px rgba(0, 0, 0, 0.45); margin: 0 auto; max-width: 720px; overflow: hidden; }
 .screenshot-frame img { display: block; height: auto; width: 100%; }
