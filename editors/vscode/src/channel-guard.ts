@@ -38,16 +38,17 @@ export function guardChannel(channel: LogOutputChannel): LogOutputChannel {
       if (typeof value !== 'function') {
         return value;
       }
-      const bound = (value as (...args: readonly unknown[]) => unknown).bind(target);
-      if (typeof property !== 'string' || !WRITE_METHODS.has(property)) {
-        return bound;
-      }
+      const shouldGuard = typeof property === 'string' && WRITE_METHODS.has(property);
       return (...args: readonly unknown[]): unknown => {
         try {
-          return bound(...args);
-        } catch {
-          // Channel closed during teardown — logging must not crash the host.
-          return undefined;
+          const result: unknown = Reflect.apply(value, target, args);
+          return result;
+        } catch (caught) {
+          if (shouldGuard) {
+            // Channel closed during teardown — logging must not crash the host.
+            return undefined;
+          }
+          throw caught;
         }
       };
     },
