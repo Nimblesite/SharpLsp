@@ -1,3 +1,4 @@
+# agent-pmo:0b21609
 ---
 name: PR
 'on':
@@ -59,6 +60,27 @@ jobs:
           printf '  %s\n' "${files[@]}"
           echo "code_changed=${code_changed}"
           echo "manifest_changed=${manifest_changed}"
+  security:
+    name: Dependency Review
+    runs-on: Medium
+    timeout-minutes: 10
+    needs:
+      - detect-changes
+    # Owns vulnerable *dependencies* (Cargo, npm, NuGet). CodeQL (codeql.yml)
+    # owns vulnerable *code* and `make lint` owns style - no overlap. There is
+    # no native vuln-gate (cargo-deny/osv) in this repo, so dependency-review is
+    # the single dependency scanner. [GITHUB-DEP-REVIEW]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Dependency review
+        # Fails the PR when it introduces a dependency carrying a known
+        # high-or-worse vulnerability advisory.
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   validate-manifest:
     name: Validate Shipwright Manifest
     runs-on: Medium

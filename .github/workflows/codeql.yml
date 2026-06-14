@@ -1,3 +1,4 @@
+# agent-pmo:0b21609
 name: CodeQL
 
 # Static analysis for the supported codebase and GitHub Actions workflows.
@@ -6,6 +7,12 @@ name: CodeQL
 on:
   pull_request:
     branches: [ main ]
+  push:
+    # Run before EVERY release: scan the exact released SHA with the current
+    # query set. The PR scan covers the diff and the weekly scan covers drift;
+    # this covers the released commit itself so a release never ships code that
+    # was last analyzed weeks ago. [GITHUB-CODE-SCANNING]
+    tags: [ "v*" ]
   schedule:
     # Weekly, so newly-published CodeQL queries re-scan even without a push.
     - cron: "27 4 * * 1"
@@ -22,11 +29,12 @@ jobs:
     name: Analyze (${{ matrix.language }})
     runs-on: Medium
     timeout-minutes: 20
-    # TEMPORARY: code scanning (SARIF upload) requires GitHub Advanced Security
-    # on PRIVATE repositories. SharpLsp is private until the go-public flip, so
-    # the upload fails with "Code Security must be enabled for this repository".
-    # Gate on public visibility so this self-enables the moment the repo is made
-    # public - no follow-up edit needed. [TODO-GO-PUBLIC: confirm green once public]
+    # SharpLsp is public, so code scanning (SARIF upload) is free and this job
+    # runs. The public-visibility gate stays as a safety net: if the repo is ever
+    # flipped back to private without GitHub Advanced Security, the SARIF upload
+    # would fail with "Code Security must be enabled for this repository" - the
+    # gate skips the job cleanly instead, and self-re-enables once the repo is
+    # public again. No follow-up edit needed. [GITHUB-CODE-SCANNING]
     if: github.event.repository.visibility == 'public'
     permissions:
       security-events: write
