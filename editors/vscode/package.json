@@ -989,7 +989,7 @@
     "@eslint/js": "^10.0.1",
     "@types/mocha": "^10.0.6",
     "@types/node": "^25.9.2",
-    "@types/vscode": "^1.120.0",
+    "@types/vscode": "^1.99.0",
     "@typescript-eslint/eslint-plugin": "^8.61.0",
     "@typescript-eslint/parser": "^8.61.0",
     "@vscode/test-cli": "^0.0.12",
