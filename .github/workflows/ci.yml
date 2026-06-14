@@ -19,7 +19,7 @@ permissions:
 jobs:
   detect-changes:
     name: Detect Changed Paths
-    runs-on: Medium
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       code_changed: ${{ steps.classify.outputs.code_changed }}
@@ -62,7 +62,7 @@ jobs:
           echo "manifest_changed=${manifest_changed}"
   security:
     name: Dependency Review
-    runs-on: Medium
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     needs:
       - detect-changes
@@ -83,7 +83,7 @@ jobs:
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   validate-manifest:
     name: Validate Shipwright Manifest
-    runs-on: Medium
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -104,8 +104,8 @@ jobs:
     if: ${{ needs.detect-changes.outputs.manifest_changed == 'true' }}
   lint:
     name: Lint
-    runs-on: Medium
-    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -160,8 +160,8 @@ jobs:
     needs:
       - detect-changes
       - lint
-    runs-on: Medium
-    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -212,8 +212,8 @@ jobs:
     needs:
       - detect-changes
       - lint
-    runs-on: Medium
-    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
@@ -242,12 +242,12 @@ jobs:
     needs:
       - detect-changes
       - lint
-    runs-on: Medium
+    runs-on: ubuntu-latest
     # TIMEOUT EXCEPTION: this job builds the Rust binary + .NET sidecars,
     # installs .NET 9 + 10, downloads the VS Code test host, then runs the full
     # ~300-test e2e suite (many tests spin up the Roslyn/FCS sidecars and load
     # real solutions). 10 minutes is too tight for the end-to-end run.
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable

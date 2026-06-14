@@ -27,7 +27,7 @@ concurrency:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: Medium
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     # SharpLsp is public, so code scanning (SARIF upload) is free and this job
     # runs. The public-visibility gate stays as a safety net: if the repo is ever

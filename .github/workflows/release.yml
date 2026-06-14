@@ -1,4 +1,4 @@
-# agent-pmo:b636503
+# agent-pmo:0b21609
 name: Release
 'on':
   push:
@@ -22,7 +22,7 @@ jobs:
   # [CI-RELEASE] [SWR-VERSION-BUILD-STAMPING]
   version:
     name: Prepare release version
-    runs-on: Medium
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       version: "${{ steps.extract.outputs.version }}"
@@ -57,11 +57,11 @@ jobs:
       matrix:
         include:
           - platform: linux-x64
-            os: Medium
+            os: ubuntu-latest
             rust_target: x86_64-unknown-linux-gnu
             can_execute: true
           - platform: linux-arm64
-            os: Medium
+            os: ubuntu-latest
             rust_target: aarch64-unknown-linux-gnu
             can_execute: false
           - platform: darwin-arm64
@@ -160,7 +160,7 @@ jobs:
     needs:
       - version
       - build-vsix
-    runs-on: Medium
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
@@ -215,7 +215,7 @@ jobs:
     needs:
       - version
       - release
-    runs-on: Medium
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     # Passwordless publish via Microsoft Entra ID OIDC — NO long-lived PAT.
     # Binding the job to the `release` environment makes the GitHub OIDC subject
@@ -288,7 +288,7 @@ jobs:
     needs:
       - version
       - release
-    runs-on: Medium
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     # Independent of publish-marketplace: the Open VSX push (Cursor, Windsurf,
     # Antigravity) must not be gated on the MS Marketplace publish, or vice versa.

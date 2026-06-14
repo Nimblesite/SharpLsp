@@ -1,5 +1,5 @@
 ---
-# agent-pmo:b636503
+# agent-pmo:0b21609
 name: Deploy Pages
 # workflow_call lets release.yml deploy the site at the release ref via `uses:`.
 # workflow_dispatch keeps manual deploys available.
@@ -16,7 +16,7 @@ permissions:
 jobs:
   build:
     name: Build
-    runs-on: Medium
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     defaults:
       run:
@@ -42,7 +42,7 @@ jobs:
   deploy:
     name: Deploy
     needs: build
-    runs-on: Medium
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     environment:
       name: github-pages
