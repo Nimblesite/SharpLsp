@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using ICSharpCode.Decompiler;
 using ICSharpCode.Decompiler.CSharp;
 using Microsoft.CodeAnalysis;
+using Serilog;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -26,7 +27,7 @@ internal static class MetadataNavigator
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[MetadataNav] Decompilation failed: {ex.Message}");
+            Log.Debug(ex, "[MetadataNav] Decompilation failed");
             return null;
         }
     }
@@ -124,7 +125,7 @@ internal static class MetadataNavigator
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[MetadataNav] DecompileType failed: {ex.Message}");
+            Log.Debug(ex, "[MetadataNav] DecompileType failed");
             return "";
         }
     }
@@ -139,7 +140,11 @@ internal static class MetadataNavigator
         var typeName = BuildDecompilerTypeName(containingType);
         var fullTypeName = new ICSharpCode.Decompiler.TypeSystem.FullTypeName(typeName);
 
-        Console.Error.WriteLine($"[MetadataNav] Decompiling {fullTypeName} from {assemblyPath}");
+        Log.Debug(
+            "[MetadataNav] Decompiling {TypeName} from {AssemblyPath}",
+            fullTypeName,
+            assemblyPath
+        );
 
         var source = decompiler.DecompileTypeAsString(fullTypeName);
         return WriteToTempFile(containingType, source);
@@ -167,7 +172,7 @@ internal static class MetadataNavigator
         var filePath = Path.Combine(dir, $"{safeName}.cs");
         File.WriteAllText(filePath, source);
 
-        Console.Error.WriteLine($"[MetadataNav] Wrote decompiled source to {filePath}");
+        Log.Debug("[MetadataNav] Wrote decompiled source to {FilePath}", filePath);
 
         return filePath;
     }
@@ -194,7 +199,7 @@ internal static class MetadataNavigator
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[MetadataNav] FindSymbol failed: {ex.Message}");
+            Log.Debug(ex, "[MetadataNav] FindSymbol failed");
             return FallbackLocation(filePath);
         }
     }

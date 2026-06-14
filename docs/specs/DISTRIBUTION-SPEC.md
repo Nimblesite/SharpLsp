@@ -86,6 +86,26 @@ The first v0.1.0 release threw out of `activate()` when bundled binaries were mi
 - `editors/vscode/src/extension.ts` — outer `activate()` catch surfaces the toast; inner `activateInner()` step paths return early with toast + degraded API instead of throwing.
 - `editors/vscode/src/dotnetRuntime.ts` — `acquireDotnet10` returns `Result<string, string>`; the caller pattern-matches.
 
+## [DIST-CLEAN-OUTPUT]
+
+Editors capture the language server's `stderr` into a user-facing Output panel (VS Code: the **SharpLsp** channel). Because the Rust host inherits each sidecar's `stderr`, that single stream carries host logs *and* both sidecars' logs. The panel MUST therefore stay clean, human-readable, and level-appropriate — never a dumping ground for raw, colorized, or per-request diagnostics.
+
+**Hard rules:**
+
+1. **No ANSI escape codes reach the panel.** The captured stream is a pipe, not a TTY, so color/cursor escapes render as garbage. The Rust host gates its `tracing` stderr layer on `std::io::IsTerminal` (`.with_ansi(stderr_is_terminal)`), emitting plain text whenever stderr is not an interactive terminal. The VS Code extension additionally strips ANSI defensively before anything reaches the channel (`createAnsiStrippingChannel`).
+2. **Sidecars MUST NOT write diagnostics to `Console.Error` / `eprintfn`.** Per the project logging rule, sidecar diagnostics use structured logging (Serilog) routed to a per-sidecar rolling file under the system temp directory (`sharplsp-logs/sidecar-<name>.log`) — never the inherited stderr. The only legitimate sidecar `stdout`/`stderr` writes are the `READY:` IPC handshake, the `--version` banner, the CLI usage message, and the single actionable Roslyn-mismatch hint ([DIST-RUNTIME-ACQUIRE] portability, below).
+3. **Per-request chatter goes to the file log, not the panel.** Routine traces (e.g. the router's per-request `[Router] Handling …`) are logged at `Debug` to the rolling file. Genuinely user-facing failures still surface (via the host's `error!` on a failed sidecar request, or a `[Show Log]` action per [DIST-FAILURE-UX]).
+4. **A type-load failure is summarized once.** MSBuild surfaces a `ReflectionTypeLoadException` as a diagnostic carrying dozens of identical "Could not load file or assembly" lines, repeated once per project. Repeated lines MUST be collapsed (`SidecarLog.CollapseRepeatedLines`) and duplicate summaries de-duplicated so the log records one distinct, actionable line — not a flood.
+
+**Reasoning — why this rule exists.**
+The first releases piped the host's colorized `tracing` output and each sidecar's raw `Console.Error` straight into the Output panel. Activation filled it with `\x1b[2m…\x1b[0m` escape garbage, a per-request `[Router] Handling …` line, and ~200 near-identical type-load lines dumped from a single exception — making the panel unreadable and masking the real failure (a Roslyn version mismatch). Captured in issue #78.
+
+**Implementation reference:**
+- `src/main.rs` — `IsTerminal`-gated `.with_ansi(…)` on the stderr `tracing` layer.
+- `editors/vscode/src/output-filter.ts` — `stripAnsi` + `createAnsiStrippingChannel`, wired into the client's `outputChannel` in `editors/vscode/src/client.ts`.
+- `sidecars/SharpLsp.Sidecar.Common/Logging/SidecarLog.cs` — Serilog rolling-file configuration + `CollapseRepeatedLines`; initialized by `SidecarHost`.
+- `sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.cs` — `LogWorkspaceFailure` collapses and de-duplicates MSBuild workspace-load diagnostics.
+
 ## [DIST-VSIX-MODEL]
 
 The VSIX is self-contained. A user who installs the extension gets everything they need with zero additional installation steps beyond the .NET 10 runtime (which is acquired automatically per [DIST-RUNTIME-ACQUIRE]).

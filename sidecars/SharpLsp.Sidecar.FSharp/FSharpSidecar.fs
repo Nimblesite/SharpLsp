@@ -200,7 +200,7 @@ module private Helpers =
             })
 
 type FSharpSidecar() =
-    inherit SidecarHost()
+    inherit SidecarHost("fsharp")
 
     let workspace = FSharpWorkspace.create ()
     let codeFixState = FSharpCodeFixes.createState ()

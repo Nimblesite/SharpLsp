@@ -2,6 +2,8 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 using Outcome;
+using Serilog;
+using SharpLsp.Sidecar.Common.Logging;
 using SharpLsp.Sidecar.CSharp.Hover;
 using AllDiagnosticsResult = Outcome.Result<
     System.Collections.Generic.Dictionary<
@@ -54,6 +56,11 @@ internal sealed partial class WorkspaceManager : IDisposable
     // is a non-atomic read-modify-write. Concurrent didChange and workspace-load
     // mutations would drop edits, leaving Roslyn with stale text.
     private readonly SemaphoreSlim _solutionMutationLock = new(1, 1);
+
+    // Distinct workspace-load failure summaries already logged. MSBuild reports
+    // the same type-load failure once per project, so de-duplicating prevents the
+    // log flood described in issue #78.
+    private readonly HashSet<string> _loggedWorkspaceFailures = new(StringComparer.Ordinal);
 
     public void Dispose()
     {
@@ -250,15 +257,11 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         try
         {
-            await Console
-                .Error.WriteLineAsync($"[Hover] GetHoverAsync: {filePath}:{line}:{character}")
-                .ConfigureAwait(false);
+            Log.Debug("[Hover] request {File}:{Line}:{Character}", filePath, line, character);
             var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
             if (document is null)
             {
-                await Console
-                    .Error.WriteLineAsync($"[Hover] Document not found: {filePath}")
-                    .ConfigureAwait(false);
+                Log.Debug("[Hover] document not found: {File}", filePath);
                 return new HoverQueryResult.Ok<HoverResult?, string>(null);
             }
 
@@ -267,25 +270,20 @@ internal sealed partial class WorkspaceManager : IDisposable
             var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
             if (model is null)
             {
-                await Console
-                    .Error.WriteLineAsync($"[Hover] Semantic model is null: {filePath}")
-                    .ConfigureAwait(false);
+                Log.Debug("[Hover] semantic model is null: {File}", filePath);
                 return new HoverQueryResult.Ok<HoverResult?, string>(null);
             }
 
             var result = CSharpHoverBuilder.Build(model, position, ct);
-            await Console
-                .Error.WriteLineAsync(
-                    $"[Hover] Result: {(result is HoverQueryResult.Ok<HoverResult?, string> { Value: not null } ? "content" : "null")}"
-                )
-                .ConfigureAwait(false);
+            var outcome = result is HoverQueryResult.Ok<HoverResult?, string> { Value: not null }
+                ? "content"
+                : "null";
+            Log.Debug("[Hover] result: {Outcome}", outcome);
             return result;
         }
         catch (Exception ex)
         {
-            await Console
-                .Error.WriteLineAsync($"[Hover] Exception: {ex.Message}")
-                .ConfigureAwait(false);
+            Log.Debug(ex, "[Hover] request failed");
             return HoverQueryResult.Failure(ex.Message);
         }
     }
@@ -537,10 +535,9 @@ internal sealed partial class WorkspaceManager : IDisposable
             ["SkipCompilerExecution"] = "true",
         };
 
+        _loggedWorkspaceFailures.Clear();
         _workspace = MSBuildWorkspace.Create(properties);
-        _ = _workspace.RegisterWorkspaceFailedHandler(args =>
-            Console.Error.WriteLine($"Workspace warning: {args.Diagnostic.Message}")
-        );
+        _ = _workspace.RegisterWorkspaceFailedHandler(LogWorkspaceFailure);
 
         var findResult = SolutionLoader.FindSolutionOrProject(path);
         if (findResult.IsError)
@@ -567,11 +564,28 @@ internal sealed partial class WorkspaceManager : IDisposable
             _ = _solutionMutationLock.Release();
         }
 
-        await Console
-            .Error.WriteLineAsync($"Loaded {_solution.ProjectIds.Count} project(s) from {target}")
-            .ConfigureAwait(false);
+        Log.Information(
+            "Loaded {ProjectCount} project(s) from {Target}",
+            _solution.ProjectIds.Count,
+            target
+        );
 
         return new VoidResult.Ok<Unit, string>(Unit.Value);
+    }
+
+    /// <summary>
+    /// Logs an MSBuildWorkspace load failure to the rolling file at debug level.
+    /// The raw diagnostic can carry dozens of identical type-load lines and is
+    /// reported once per project; we collapse repeats and skip already-seen
+    /// summaries so it no longer floods the editor's Output panel (issue #78).
+    /// </summary>
+    private void LogWorkspaceFailure(WorkspaceDiagnosticEventArgs args)
+    {
+        var summary = SidecarLog.CollapseRepeatedLines(args.Diagnostic.Message);
+        if (_loggedWorkspaceFailures.Add(summary))
+        {
+            Log.Debug("Workspace load diagnostic: {Diagnostic}", summary);
+        }
     }
 
     /// <summary>

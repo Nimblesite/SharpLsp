@@ -6,6 +6,7 @@ using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CodeRefactorings;
 using Microsoft.CodeAnalysis.Text;
+using Serilog;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -128,11 +129,11 @@ internal sealed class CodeActionResolver
                 }
                 catch (Exception ex)
                 {
-                    await Console
-                        .Error.WriteLineAsync(
-                            $"[CodeAction] Fix provider {provider.GetType().Name} failed: {ex.Message}"
-                        )
-                        .ConfigureAwait(false);
+                    Log.Debug(
+                        ex,
+                        "[CodeAction] Fix provider {Provider} failed",
+                        provider.GetType().Name
+                    );
                 }
             }
         }
@@ -160,11 +161,11 @@ internal sealed class CodeActionResolver
             }
             catch (Exception ex)
             {
-                await Console
-                    .Error.WriteLineAsync(
-                        $"[CodeAction] Refactoring provider {provider.GetType().Name} failed: {ex.Message}"
-                    )
-                    .ConfigureAwait(false);
+                Log.Debug(
+                    ex,
+                    "[CodeAction] Refactoring provider {Provider} failed",
+                    provider.GetType().Name
+                );
             }
         }
     }
@@ -327,8 +328,10 @@ internal sealed class CodeActionResolver
             CollectProvidersFromAssembly(assembly, providers);
         }
 
-        Console.Error.WriteLine(
-            $"[CodeAction] Discovered {providers.Count} {typeof(T).Name} providers"
+        Log.Debug(
+            "[CodeAction] Discovered {Count} {ProviderType} providers",
+            providers.Count,
+            typeof(T).Name
         );
         return [.. providers];
     }
@@ -343,9 +346,14 @@ internal sealed class CodeActionResolver
                 TryInstantiateProvider(type, providers);
             }
         }
-        catch (ReflectionTypeLoadException)
+        catch (ReflectionTypeLoadException ex)
         {
-            // Assembly has unresolvable types — skip it.
+            // Assembly has unresolvable types — skip it, noting why (file log only).
+            Log.Debug(
+                ex,
+                "[CodeAction] Skipped assembly {Assembly} (unresolvable types)",
+                assembly.GetName().Name
+            );
         }
     }
 

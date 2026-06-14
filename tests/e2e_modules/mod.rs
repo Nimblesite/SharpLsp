@@ -48,6 +48,7 @@ pub mod full_stack_semantic;
 pub mod hover;
 pub mod inlay_hints_tests;
 pub mod lifecycle;
+pub mod logging;
 pub mod lsp_features;
 pub mod profiler;
 pub mod profiler_edge_cases;
@@ -71,7 +72,7 @@ pub use nav_helpers::*;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -93,6 +94,7 @@ pub struct LspClient {
     pub child: Child,
     pub stdin: Option<ChildStdin>,
     pub reader: BufReader<ChildStdout>,
+    pub stderr: Option<ChildStderr>,
 }
 
 impl LspClient {
@@ -104,6 +106,12 @@ impl LspClient {
     /// Spawn with stderr visible (for full-stack tests that need sidecar logs).
     pub fn start_verbose() -> Self {
         Self::spawn(Stdio::inherit())
+    }
+
+    /// Spawn with stderr captured to a pipe so a test can inspect the host's
+    /// log output (e.g. to assert it contains no ANSI escape codes).
+    pub fn start_capture_stderr() -> Self {
+        Self::spawn(Stdio::piped())
     }
 
     pub fn spawn(stderr: Stdio) -> Self {
@@ -119,12 +127,25 @@ impl LspClient {
             .expect(&failure);
         let stdin = child.stdin.take().expect("no stdin");
         let stdout = child.stdout.take().expect("no stdout");
+        let stderr = child.stderr.take();
         let reader = BufReader::new(stdout);
         Self {
             child,
             stdin: Some(stdin),
             reader,
+            stderr,
         }
+    }
+
+    /// Drain the captured stderr pipe to a string. Only meaningful when the
+    /// client was created via [`LspClient::start_capture_stderr`] and the
+    /// process has exited (call after `wait_with_timeout`).
+    pub fn read_stderr_to_string(&mut self) -> String {
+        let mut buf = String::new();
+        if let Some(mut stderr) = self.stderr.take() {
+            let _ = stderr.read_to_string(&mut buf);
+        }
+        buf
     }
 
     /// Send a JSON-RPC message with proper Content-Length framing.

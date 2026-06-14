@@ -7,6 +7,7 @@ open System.IO
 open System.Xml.Linq
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Text
+open Serilog
 
 /// A detected file ordering issue.
 type FileOrderIssue =
@@ -34,7 +35,7 @@ let getCompileOrder (fsprojPath: string) : string array =
                 Path.GetFullPath(Path.Combine(projDir, string attr.Value))))
         |> Seq.toArray
     with ex ->
-        eprintfn $"[F# FileOrder] Failed to parse .fsproj: {ex.Message}"
+        Log.Debug(ex, "[F# FileOrder] failed to parse .fsproj")
         [||]
 
 /// Build a map of symbol name → defining file path from check results.
@@ -143,7 +144,7 @@ let analyzeFileOrder
                             | _ -> ()
                     return issues |> List.rev
         with ex ->
-            eprintfn $"[F# FileOrder] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# FileOrder] failed")
             return []
     }
 
@@ -185,5 +186,5 @@ let generateReorderEdit
         else
             None
     with ex ->
-        eprintfn $"[F# FileOrder] Reorder edit failed: {ex.Message}"
+        Log.Debug(ex, "[F# FileOrder] reorder edit failed")
         None

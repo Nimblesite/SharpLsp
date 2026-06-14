@@ -3,6 +3,7 @@ module SharpLsp.Sidecar.FSharp.FSharpReferences
 
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
+open Serilog
 
 /// Result type for document highlights: location + read/write kind.
 type HighlightLocation =
@@ -55,7 +56,7 @@ let getReferences
                                 else Some(toDefinitionLocation r))
                         |> Array.toList
         with ex ->
-            eprintfn $"[F# References] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# References] failed")
             return []
     }
 
@@ -93,6 +94,6 @@ let getDocumentHighlights
                                       Kind = kind })
                         |> Array.toList
         with ex ->
-            eprintfn $"[F# DocumentHighlight] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# DocumentHighlight] failed")
             return []
     }

@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.Text;
+using Serilog;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -355,9 +356,7 @@ internal static class DefinitionResolver
         var token = root.FindToken(position);
         if (token.Parent is null)
         {
-            await Console
-                .Error.WriteLineAsync("[Resolve] token.Parent is null")
-                .ConfigureAwait(false);
+            Log.Debug("[Resolve] token.Parent is null");
             return null;
         }
 
@@ -496,32 +495,28 @@ internal static class DefinitionResolver
             return;
         }
 
-        await Console
-            .Error.WriteLineAsync(
-                $"[Override] Looking for overrides of {containingType.Name}.{symbol.Name}"
-            )
-            .ConfigureAwait(false);
+        Log.Debug(
+            "[Override] Looking for overrides of {Type}.{Member}",
+            containingType.Name,
+            symbol.Name
+        );
 
         var derivedTypes = await SymbolFinder
             .FindDerivedClassesAsync(containingType, solution, cancellationToken: ct)
             .ConfigureAwait(false);
 
-        await Console
-            .Error.WriteLineAsync($"[Override] Found {derivedTypes.Count()} derived types")
-            .ConfigureAwait(false);
+        Log.Debug("[Override] Found {Count} derived types", derivedTypes.Count());
 
         foreach (var derived in derivedTypes)
         {
-            await Console
-                .Error.WriteLineAsync($"[Override] Checking {derived.Name}")
-                .ConfigureAwait(false);
+            Log.Debug("[Override] Checking {Type}", derived.Name);
             foreach (var member in derived.GetMembers(symbol.Name))
             {
-                await Console
-                    .Error.WriteLineAsync(
-                        $"[Override] Member {member.Name} override={member.IsOverride}"
-                    )
-                    .ConfigureAwait(false);
+                Log.Debug(
+                    "[Override] Member {Member} override={IsOverride}",
+                    member.Name,
+                    member.IsOverride
+                );
                 if (member.IsOverride)
                 {
                     AddSourceLocation(locations, member);
