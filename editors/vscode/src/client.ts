@@ -110,6 +110,10 @@ function wireStatusBar(
         statusBar.setState(ServerState.Running);
         log.info('Server is running.');
         break;
+      case State.StartFailed:
+        statusBar.setState(ServerState.Error);
+        log.error('Server failed to start.');
+        break;
       case State.Stopped:
         statusBar.setState(ServerState.Stopped);
         log.info('Server stopped.');

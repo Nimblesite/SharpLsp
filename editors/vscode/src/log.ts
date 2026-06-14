@@ -1,11 +1,11 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { window, type OutputChannel } from 'vscode';
+import { window, type LogOutputChannel } from 'vscode';
 import { OUTPUT_CHANNEL_NAME, TRACE_CHANNEL_NAME } from './constants.js';
 
-let outputChannel: OutputChannel | undefined;
-let traceChannel: OutputChannel | undefined;
+let outputChannel: LogOutputChannel | undefined;
+let traceChannel: LogOutputChannel | undefined;
 
 const LOG_FILE = path.join(os.tmpdir(), 'sharplsp-vscode.log');
 let logStream: fs.WriteStream | undefined;
@@ -28,14 +28,14 @@ function fileLog(level: string, message: string): void {
 }
 
 /** Lazily create and return the main output channel. */
-export function output(): OutputChannel {
-  outputChannel ??= window.createOutputChannel(OUTPUT_CHANNEL_NAME);
+export function output(): LogOutputChannel {
+  outputChannel ??= window.createOutputChannel(OUTPUT_CHANNEL_NAME, { log: true });
   return outputChannel;
 }
 
 /** Lazily create and return the LSP trace channel. */
-export function trace(): OutputChannel {
-  traceChannel ??= window.createOutputChannel(TRACE_CHANNEL_NAME);
+export function trace(): LogOutputChannel {
+  traceChannel ??= window.createOutputChannel(TRACE_CHANNEL_NAME, { log: true });
   return traceChannel;
 }
 

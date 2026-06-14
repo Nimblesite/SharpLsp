@@ -51,11 +51,13 @@ suite('Bundled binary resolution', () => {
 });
 
 function sanitizedEnv(): NodeJS.ProcessEnv {
-  return Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([name]) => !envVarsThatBypassBundledResolutionSet.has(name),
-    ),
-  ) as NodeJS.ProcessEnv;
+  const env: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (!envVarsThatBypassBundledResolutionSet.has(name)) {
+      env[name] = value;
+    }
+  }
+  return env;
 }
 
 function sidecarPathEntries(extensionPath: string): string[] {
