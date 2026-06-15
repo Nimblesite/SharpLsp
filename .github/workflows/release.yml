@@ -47,6 +47,22 @@ jobs:
             --schema .github/shipwright/deployment-toolkit.schema.json \
             shipwright.json editors/vscode/shipwright.json
 
+  # CodeQL release gate. Scans the tagged SHA with the current query set and
+  # FAILS on any High/Critical finding. The `release` job `needs:` this, so a
+  # failed scan blocks the GitHub Release and every downstream publish
+  # (marketplace, open-vsx, pages). Runs in PARALLEL with build-vsix — rebuilding
+  # is cheap; shipping an unscanned release is not. Reuses codeql.yml via
+  # workflow_call (DRY — no duplicated matrix). [GITHUB-CODE-SCANNING] [CI-RELEASE]
+  codeql:
+    name: CodeQL release gate
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    uses: ./.github/workflows/codeql.yml
+    with:
+      gate: true
+
   build-vsix:
     name: Build VSIX (${{ matrix.platform }})
     needs: version
@@ -160,6 +176,7 @@ jobs:
     needs:
       - version
       - build-vsix
+      - codeql
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
