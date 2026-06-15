@@ -1,0 +1,17 @@
+# Shared CodeQL configuration for the PR, weekly, and gated release scans
+# (referenced by .github/workflows/codeql.yml). [GITHUB-CODE-SCANNING]
+#
+# Test code is never shipped: the VSIX bundles dist/extension.js (esbuild output
+# of src/, excluding src/test) and the Rust/.NET binaries — never the TypeScript
+# test suite. So test sources must not be able to gate a release. Excluding them
+# from extraction also removes false positives such as
+# js/incomplete-url-substring-sanitization firing on Array.prototype.includes()
+# over NuGet fixture names that happen to resemble hostnames (e.g. "Zlib.Net").
+name: SharpLsp CodeQL config
+
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  - '**/*.test.ts'
+  - editors/vscode/src/test
