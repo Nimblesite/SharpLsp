@@ -117,7 +117,7 @@ register -> broadcast intent -> acquire locks -> update plan -> do work -> relea
 All documentation lives in `docs/`.
 
 - `docs/specs/` — **Specifications**: describe **how functionality works**. Source of truth for feature behavior, protocols, and architecture. Naming: `[COMPONENT]-[FEATURE]-SPEC.md`
-- `docs/plans/` — **Implementation plans**: describe **how we are going to build it**. Each plan includes TODO checklists tracking progress toward the corresponding spec. Naming: `[COMPONENT]-[FEATURE]-PLAN.md`
+- `docs/plans/` — **Implementation plans**: describe **how we are going to build it**. Each plan includes TODO checklists at the bottomm tracking progress toward the corresponding spec. Naming: `[COMPONENT]-[FEATURE]-PLAN.md`
 
 `docs/specs/SHARPLSP-SPEC.md` is the **full technical specification** for the project. Always read the relevant spec before working on a feature, and update the corresponding plan's TODOs as work progresses.
 

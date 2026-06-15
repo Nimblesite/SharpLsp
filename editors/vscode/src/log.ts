@@ -1,11 +1,12 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { window, type OutputChannel } from 'vscode';
+import { window, type LogOutputChannel } from 'vscode';
 import { OUTPUT_CHANNEL_NAME, TRACE_CHANNEL_NAME } from './constants.js';
+import { guardChannel } from './channel-guard.js';
 
-let outputChannel: OutputChannel | undefined;
-let traceChannel: OutputChannel | undefined;
+let outputChannel: LogOutputChannel | undefined;
+let traceChannel: LogOutputChannel | undefined;
 
 const LOG_FILE = path.join(os.tmpdir(), 'sharplsp-vscode.log');
 let logStream: fs.WriteStream | undefined;
@@ -28,14 +29,16 @@ function fileLog(level: string, message: string): void {
 }
 
 /** Lazily create and return the main output channel. */
-export function output(): OutputChannel {
-  outputChannel ??= window.createOutputChannel(OUTPUT_CHANNEL_NAME);
+export function output(): LogOutputChannel {
+  // Guarded so a write racing extension-host teardown is a no-op, not an uncaught
+  // throw — vscode-languageclient pipes the server's stderr through this channel.
+  outputChannel ??= guardChannel(window.createOutputChannel(OUTPUT_CHANNEL_NAME, { log: true }));
   return outputChannel;
 }
 
 /** Lazily create and return the LSP trace channel. */
-export function trace(): OutputChannel {
-  traceChannel ??= window.createOutputChannel(TRACE_CHANNEL_NAME);
+export function trace(): LogOutputChannel {
+  traceChannel ??= guardChannel(window.createOutputChannel(TRACE_CHANNEL_NAME, { log: true }));
   return traceChannel;
 }
 

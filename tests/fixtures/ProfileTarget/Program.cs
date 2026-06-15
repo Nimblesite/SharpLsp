@@ -53,17 +53,28 @@ static void LockContention(CancellationToken ct)
 {
     var queue = new Queue<int>();
     var locker = new object();
+    const int maxQueueDepth = 256;
     var producer = Task.Run(() =>
     {
         var i = 0;
         while (!ct.IsCancellationRequested)
         {
-            lock (locker) { queue.Enqueue(i++); }
+            lock (locker)
+            {
+                if (queue.Count < maxQueueDepth)
+                    queue.Enqueue(i++);
+            }
+            Thread.SpinWait(128);
         }
     }, ct);
 
     while (!ct.IsCancellationRequested)
     {
+        lock (locker)
+        {
+            if (queue.Count > 0)
+                _ = queue.Dequeue();
+        }
         Fibonacci(28);
         Thread.Sleep(5);
     }

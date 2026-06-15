@@ -81,6 +81,132 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
                 var greeting = greeter.Greet("World");
             }
         }
+
+        /// <summary>
+        /// Richly documented service exercising every XML-doc tag.
+        /// </summary>
+        /// <remarks>
+        /// See <see cref="Calculator"/> for arithmetic. Use <c>inline code</c> and
+        /// <paramref name="seed"/> references. <para>A second paragraph.</para>
+        /// <list type="bullet"><item>First item</item><item>Second item</item></list>
+        /// </remarks>
+        /// <typeparam name="TItem">The element type handled by the service.</typeparam>
+        /// <example>
+        /// <code>
+        /// var s = new DocumentedService();
+        /// s.Process(1, new[] { 2 });
+        /// </code>
+        /// </example>
+        public class DocumentedService<TItem>
+        {
+            /// <summary>Processes a seed with extras.</summary>
+            /// <param name="seed">The seed value.</param>
+            /// <param name="extras">Extra items to include.</param>
+            /// <typeparam name="TResult">Result element type.</typeparam>
+            /// <returns>A combined list of results.</returns>
+            /// <exception cref="System.ArgumentNullException">When extras is null.</exception>
+            /// <seealso cref="Calculator.Add"/>
+            public System.Collections.Generic.List<TResult> Process<TResult>(
+                TItem seed,
+                System.Collections.Generic.IEnumerable<TResult> extras
+            )
+            {
+                if (extras is null)
+                {
+                    throw new System.ArgumentNullException(nameof(extras));
+                }
+
+                return System.Linq.Enumerable.ToList(extras);
+            }
+
+            /// <summary>An event raised on completion.</summary>
+            public event System.EventHandler? Completed;
+
+            /// <summary>A public field.</summary>
+            public int FieldCount;
+
+            /// <summary>Raises the completed event.</summary>
+            public void Raise() => Completed?.Invoke(this, System.EventArgs.Empty);
+        }
+
+        /// <summary>Extensions for strings.</summary>
+        public static class StringExtensions
+        {
+            /// <summary>Shout a value.</summary>
+            public static string Shout(this string value) => value.ToUpperInvariant() + "!";
+        }
+
+        /// <summary>A deprecated calculator.</summary>
+        [System.Obsolete("Use Calculator instead.")]
+        public class LegacyCalculator
+        {
+            public int OldAdd(int a, int b) => a + b;
+        }
+
+        public abstract class Shape
+        {
+            public abstract double Area();
+        }
+
+        public class Circle : Shape
+        {
+            public double Radius { get; set; }
+
+            public override double Area() => 3.14 * Radius * Radius;
+        }
+
+        public class Square : Shape
+        {
+            public override double Area() => 1.0;
+        }
+
+        public class Consumer
+        {
+            public void Use()
+            {
+                var service = new DocumentedService<int>();
+                var numbers = new System.Collections.Generic.List<int> { 1, 2, 3 };
+                var doubled = System.Linq.Enumerable.Select(numbers, n => n * 2);
+                var shouted = "hi".Shout();
+                var len = "hello".Length;
+                var legacy = new LegacyCalculator();
+                var old = legacy.OldAdd(4, 5);
+                System.Console.WriteLine(shouted);
+                foreach (var item in numbers)
+                {
+                    System.Console.WriteLine(item);
+                }
+
+                var tuple = (Count: 3, Label: "x");
+                var label = tuple.Label;
+                var unused = 42;
+                Shape shape = new Circle { Radius = 2.0 };
+                var area = shape.Area();
+            }
+        }
+
+        /// <summary>
+        /// Mutates a counter so document-highlight classifies write vs read.
+        /// </summary>
+        /// <param name="start"> a leading-space described parameter </param>
+        /// <returns> the final counter value </returns>
+        /// <example>plain example text without a code block</example>
+        /// <remarks>See <see langword="null"/> and <see cref="Bare"/>.</remarks>
+        public class Mutator
+        {
+            public int Counter;
+
+            public int Tick(int start)
+            {
+                Counter = start;
+                Counter += 1;
+                Counter++;
+                ++Counter;
+                return Counter;
+            }
+        }
+
+        public class Bare { }
         """;
 
     private static readonly Lock MsBuildRegistrationLock = new();
@@ -95,7 +221,76 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
 
     public string TempDir { get; private set; } = string.Empty;
     public string SourceFile => Path.Combine(TempDir, "Program.cs");
+    public string MetaProbeFile => Path.Combine(TempDir, "MetaProbe.cs");
     public static string InitialSource => TestSource;
+
+    // A second compilation unit packed with every token kind, framework-member
+    // reference kind, and symbol shape, so semantic tokens / inlay hints /
+    // metadata-fallback navigation / hover are driven across all their branches
+    // through the real socket. Line/char positions are referenced by
+    // MetaProbeEndToEndTests; APPEND only — do not renumber existing lines.
+    internal const string MetaProbeSource = """
+        using System;
+        using System.Collections.Generic;
+        using System.Text;
+
+        namespace MetaProbe;
+
+        /// <summary>A colour.</summary>
+        public enum Color { Red, Green, Blue }
+
+        public delegate int Transform(int value);
+
+        public struct Point { public int X; public int Y; }
+
+        public readonly record struct Pair(int A, int B);
+
+        public record Money(decimal Amount);
+
+        public interface IShape { double Area(); }
+
+        public static class Extensions
+        {
+            public static int Twice(this int n) => n * 2;
+        }
+
+        public sealed class Probe
+        {
+            public const int Limit = 10;
+            public event Transform? OnChange;
+            public string Name { get; set; } = "";
+
+            public int Compute(int seed)
+            {
+                Console.WriteLine("start");
+                var sb = new StringBuilder();
+                sb.Append("x");
+                var list = new List<int>();
+                list.Add(seed);
+                var verbatim = @"raw\path";
+                var total = list.Count + Limit;
+                var max = int.MaxValue;
+                var color = Color.Red;
+                foreach (var item in list)
+                {
+                    total += item.Twice();
+                }
+                Func<int, int> dbl = x => x * 2;
+                var unused = 42;
+                OnChange?.Invoke(total);
+                return total + max + dbl(seed) + verbatim.Length + (int)color;
+            }
+
+            /// <param name="value">The seed.</param>
+            /// <returns>The doubled value.</returns>
+            /// <remarks>Pass <see langword="true"/> and inline <code>value + 1</code> here.</remarks>
+            /// <example>Call it inline like Doc(2).</example>
+            public int Doc(int value)
+            {
+                return value * 2;
+            }
+        }
+        """;
 
     public async Task<Envelope> SendAsync(string method, byte[] payload)
     {
@@ -121,6 +316,19 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
             new PositionRequest
             {
                 FilePath = SourceFile,
+                Line = line,
+                Character = character,
+            }
+        );
+    }
+
+    /// <summary>Position payload targeting an explicit file in the workspace.</summary>
+    public static byte[] PosFor(string filePath, int line, int character)
+    {
+        return MessagePackSerializer.Serialize(
+            new PositionRequest
+            {
+                FilePath = filePath,
                 Line = line,
                 Character = character,
             }
@@ -212,6 +420,7 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
             """
         );
         File.WriteAllText(Path.Combine(dir, "Program.cs"), TestSource);
+        File.WriteAllText(Path.Combine(dir, "MetaProbe.cs"), MetaProbeSource);
         return dir;
     }
 

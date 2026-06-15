@@ -4,5 +4,6 @@
     "titleBar.activeForeground": "#ffffff",
     "titleBar.inactiveBackground": "#005826",
     "titleBar.inactiveForeground": "#ffffffcc"
-  }
+  },
+  "deslop.topOffenders.splitByLanguage": true
 }

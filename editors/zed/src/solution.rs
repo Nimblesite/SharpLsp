@@ -1,7 +1,7 @@
 //! Parse .sln and .slnx files to extract project entries.
 
 use quick_xml::events::{BytesStart, Event};
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 
 /// A project entry extracted from a solution file.
 #[derive(Debug, Clone)]
@@ -87,7 +87,7 @@ fn attribute_value(
         .flatten()
         .find(|attr| attr.key.as_ref() == name)
         .and_then(|attr| {
-            attr.decode_and_unescape_value(reader.decoder())
+            attr.decoded_and_normalized_value(XmlVersion::Implicit1_0, reader.decoder())
                 .ok()
                 .map(|value| value.into_owned())
         })

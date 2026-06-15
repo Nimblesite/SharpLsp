@@ -1,0 +1,30 @@
+{% set homeText = i18n[lang or 'en'].home %}
+{% if release.recent and release.recent.length %}
+<section class="panel release-panel" aria-labelledby="releases-heading">
+  <div class="copy-block">
+    <h2 id="releases-heading">{{ homeText.releasesTitle }}</h2>
+    <p>{{ homeText.releasesSubtitle }}</p>
+  </div>
+
+  <div class="release-list">
+    {% for item in release.recent %}
+    <article class="release-card">
+      <div class="release-card-header">
+        <h3><a href="{{ item.url }}" rel="noopener">{{ item.title }}</a></h3>
+        <span class="release-tag">{{ item.tag }}</span>
+      </div>
+      {% if item.publishedDate %}
+      <time datetime="{{ item.publishedAt }}">{{ item.publishedDate }}</time>
+      {% endif %}
+      {% if item.prerelease %}
+      <span class="release-state">{{ homeText.releasePrerelease }}</span>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+
+  <p class="release-more">
+    <a href="/releases/">{{ homeText.releasesViewAll }}</a>
+  </p>
+</section>
+{% endif %}

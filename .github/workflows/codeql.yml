@@ -1,14 +1,18 @@
+# agent-pmo:0b21609
 name: CodeQL
 
-# Static analysis for the TypeScript VS Code extension and the GitHub Actions
-# workflows themselves. Both languages analyze without a build step, so this
-# workflow stays fast and reliable. (.NET/Rust semantic engines are covered by
-# their own strict lint/clippy gates in ci.yml.)
+# Static analysis for the supported codebase and GitHub Actions workflows.
+# Keep this separate from ci.yml: CodeQL feeds GitHub code scanning alerts and
+# needs security-events: write, while CI owns build/lint/test/coverage.
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
+    branches: [ main ]
+  push:
+    # Run before EVERY release: scan the exact released SHA with the current
+    # query set. The PR scan covers the diff and the weekly scan covers drift;
+    # this covers the released commit itself so a release never ships code that
+    # was last analyzed weeks ago. [GITHUB-CODE-SCANNING]
+    tags: [ "v*" ]
   schedule:
     # Weekly, so newly-published CodeQL queries re-scan even without a push.
     - cron: "27 4 * * 1"
@@ -25,11 +29,12 @@ jobs:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # TEMPORARY: code scanning (SARIF upload) requires GitHub Advanced Security
-    # on PRIVATE repositories. SharpLsp is private until the go-public flip, so
-    # the upload fails with "Code Security must be enabled for this repository".
-    # Gate on public visibility so this self-enables the moment the repo is made
-    # public — no follow-up edit needed. [TODO-GO-PUBLIC: confirm green once public]
+    # SharpLsp is public, so code scanning (SARIF upload) is free and this job
+    # runs. The public-visibility gate stays as a safety net: if the repo is ever
+    # flipped back to private without GitHub Advanced Security, the SARIF upload
+    # would fail with "Code Security must be enabled for this repository" - the
+    # gate skips the job cleanly instead, and self-re-enables once the repo is
+    # public again. No follow-up edit needed. [GITHUB-CODE-SCANNING]
     if: github.event.repository.visibility == 'public'
     permissions:
       security-events: write
@@ -38,15 +43,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [javascript-typescript, actions]
+        include:
+          - language: javascript-typescript
+            build-mode: none
+          - language: actions
+            build-mode: none
+          - language: rust
+            build-mode: none
+          - language: csharp
+            build-mode: none
     steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
-      with:
-        language: ${{ matrix.language }}
-        queries: security-extended
-    - name: Perform CodeQL analysis
-      uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
-      with:
-        category: "/language:${{ matrix.language }}"
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          category: "/language:${{ matrix.language }}"

@@ -318,6 +318,12 @@ SharpLsp uses the LSP 3.17 **pull-diagnostics + workspace-refresh** model (`text
 
 See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) for the full specification, including the pull + refresh cycle, the NuGet restore gate, project filtering, and the truth guarantees SharpLsp makes (and doesn't make) about diagnostic completeness during workspace load.
 
+SharpLsp also owns custom static analyzers that run through the same workspace
+diagnostics channel. The first rules detect unused public C# and F# code
+elements at solution scope, but only when `sharplsp.toml` explicitly marks the
+workspace as a monorepo. See
+[DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md).
+
 ### 4.4 Code Actions & Refactoring
 
 This is where SharpLsp must match Rider's 2,200+ inspections and 60+ refactorings. Roslyn provides a substantial base of [CodeFixProviders](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.codefixes.codefixprovider) and [CodeRefactoringProviders](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.coderefactorings.coderefactoringprovider) out of the box. SharpLsp will expose all of them and add custom ones.
@@ -407,6 +413,7 @@ These tools are excellent at what they do and there is no reason to duplicate th
 | Multi-TFM selection | Custom: `sharplsp/targetFramework` | Active TFM switching per project | P1 |
 | File watching & reload | `workspace/didChangeWatchedFiles` | [notify](https://crates.io/crates/notify) crate + sidecar reload | P0 |
 | Workspace diagnostics (pull) | `workspace/diagnostic` + `workspace/diagnostic/refresh` | Solution-wide error analysis via LSP 3.17 pull model + 2000ms-debounced refresh; primary diagnostic path (see [DIAGNOSTICS-SPEC §1.1](DIAGNOSTICS-SPEC.md#11-the-pull--refresh-cycle)) | P0 |
+| Monorepo static analyzers | `workspace/diagnostic` partial results | SharpLsp-owned unused-public-code analyzers for C# and F#; gated by `workspace.repository_kind = "monorepo"` | P0 |
 | NuGet restore gate | (internal, before `workspace/open`) | `dotnet restore` if `obj/project.assets.json` is stale; eliminates phantom CS0246 for NuGet types ([DIAGNOSTICS-SPEC §6](DIAGNOSTICS-SPEC.md#6-nuget-restore-gate)) | P0 |
 | Project init complete | Custom: `workspace/projectInitializationComplete` | Notification fired once per workspace open after restore + `MSBuildWorkspace.OpenSolutionAsync`; matches Roslyn LSP contract | P0 |
 | Configuration | `workspace/didChangeConfiguration` | [.editorconfig](https://editorconfig.org/) + sharplsp.toml | P0 |
@@ -508,6 +515,7 @@ F# has unique language features that require dedicated support beyond what the s
 - F#-specific features: signature files, pipeline hints, FSI integration, file ordering
 - Source generator output viewing
 - Third-party analyzer support (NuGet analyzers for C#, [FSharp.Analyzers.SDK](https://github.com/ionide/FSharp.Analyzers.SDK) for F#)
+- Monorepo-only unused public C# and F# code element analyzers
 - Multi-editor verification (Neovim, Helix, Zed, Emacs, Sublime)
 - Hot reload support via [dotnet watch](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-watch)
 - Performance optimization pass (memory budgets, cache eviction, lazy loading)
@@ -607,7 +615,7 @@ Every feature SharpLsp must implement to match — and ultimately go beyond — 
 
 ### 9.3 Diagnostics & Analysis
 
-See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) § Competitive Analysis for the full feature comparison table. Key change from this document: **solution-wide analysis is now P0 (Phase 2), default enabled** — not P1/Phase 4.
+See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) § Competitive Analysis for the full feature comparison table. Key change from this document: **solution-wide analysis is now P0 (Phase 2), default enabled** — not P1/Phase 4. SharpLsp-owned monorepo static analyzers are specified separately in [DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md).
 
 ### 9.4 Code Actions & Refactoring
 

@@ -1,9 +1,10 @@
+# agent-pmo:0b21609
 ---
 name: PR
 'on':
   pull_request:
     branches:
-    - main
+      - main
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
@@ -12,203 +13,284 @@ env:
   RUST_BACKTRACE: 1
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+permissions:
+  contents: read
+  pull-requests: read
 jobs:
+  detect-changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code_changed: ${{ steps.classify.outputs.code_changed }}
+      manifest_changed: ${{ steps.classify.outputs.manifest_changed }}
+    steps:
+      - name: Classify changed files
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |-
+          set -euo pipefail
+          mapfile -t files < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename')
+
+          code_changed=false
+          manifest_changed=false
+          for file in "${files[@]}"; do
+            case "$file" in
+              shipwright.json|editors/vscode/shipwright.json|.github/shipwright/deployment-toolkit.schema.json)
+                manifest_changed=true
+                code_changed=true
+                ;;
+              website/*|docs/*|.github/ISSUE_TEMPLATE/*|*.md)
+                ;;
+              *)
+                code_changed=true
+                ;;
+            esac
+          done
+
+          {
+            echo "code_changed=${code_changed}"
+            echo "manifest_changed=${manifest_changed}"
+          } >> "$GITHUB_OUTPUT"
+
+          printf 'Changed files:\n'
+          printf '  %s\n' "${files[@]}"
+          echo "code_changed=${code_changed}"
+          echo "manifest_changed=${manifest_changed}"
+  security:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - detect-changes
+    # Owns vulnerable *dependencies* (Cargo, npm, NuGet). CodeQL (codeql.yml)
+    # owns vulnerable *code* and `make lint` owns style - no overlap. There is
+    # no native vuln-gate (cargo-deny/osv) in this repo, so dependency-review is
+    # the single dependency scanner. [GITHUB-DEP-REVIEW]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Dependency review
+        # Fails the PR when it introduces a dependency carrying a known
+        # high-or-worse vulnerability advisory.
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   validate-manifest:
     name: Validate Shipwright Manifest
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-      with:
-        node-version: '24'
-    - name: Validate shipwright.json
-      shell: bash
-      run: |-
-        set -euo pipefail
-        tmp="$(mktemp -d)"
-        npm install --prefix "$tmp" @nimblesite/shipwright-validate-manifest@0.9.0
-        "$tmp/node_modules/.bin/shipwright-validate-manifest" \
-          --schema .github/shipwright/deployment-toolkit.schema.json \
-          shipwright.json editors/vscode/shipwright.json
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24'
+      - name: Validate shipwright.json
+        shell: bash
+        run: |-
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          npm install --prefix "$tmp" @nimblesite/shipwright-validate-manifest@0.9.0
+          "$tmp/node_modules/.bin/shipwright-validate-manifest" \
+            --schema .github/shipwright/deployment-toolkit.schema.json \
+            shipwright.json editors/vscode/shipwright.json
+    needs:
+      - detect-changes
+    if: ${{ needs.detect-changes.outputs.manifest_changed == 'true' }}
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-    - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      with:
-        toolchain: stable
-        components: clippy, rustfmt
-    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-    - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
-      with:
-        dotnet-version: |
-          9.0.x
-          10.0.203
-    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-      with:
-        path: "~/.nuget/packages"
-        key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}"
-        restore-keys: "${{ runner.os }}-nuget-"
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-      with:
-        node-version: '20'
-        cache: npm
-        cache-dependency-path: editors/vscode/package-lock.json
-    - name: Install dependencies
-      run: |
-        dotnet tool restore
-        npm ci --prefix editors/vscode
-    - name: Lint (Rust)
-      run: make _lint-rust PROFILE=debug
-    - name: Lint (Zed)
-      run: make _lint-zed
-    - name: Format check (.NET)
-      run: dotnet csharpier check sidecars/
-    - name: Lint (.NET)
-      run: make _lint-dotnet
-    - name: Sidecar pack smoke test
-      run: |
-        dotnet pack sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
-          -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-        dotnet pack sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
-          -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-        ls -la /tmp/nupkg-smoke/*.nupkg
-    - name: Format check (VS Code)
-      run: cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'
-    - name: Lint (VS Code)
-      run: make _lint-vsix
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.203
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: "~/.nuget/packages"
+          key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj',
+            'sidecars/Directory.Build.props') }}"
+          restore-keys: "${{ runner.os }}-nuget-"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - name: Install dependencies
+        run: |
+          dotnet tool restore
+          npm ci --prefix editors/vscode
+      - name: Lint (Rust)
+        run: make _lint-rust PROFILE=debug
+      - name: Lint (Zed)
+        run: make _lint-zed
+      - name: Format check (.NET)
+        run: dotnet csharpier check sidecars/
+      - name: Lint (.NET)
+        run: make _lint-dotnet
+      - name: Sidecar pack smoke test
+        run: |
+          dotnet pack sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
+            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+          dotnet pack sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
+            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+          ls -la /tmp/nupkg-smoke/*.nupkg
+      - name: Format check (VS Code)
+        run: cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'
+      - name: Lint (VS Code)
+        run: make _lint-vsix
+    needs:
+      - detect-changes
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   test-rust:
     name: Test Rust
     needs:
-    - lint
+      - detect-changes
+      - lint
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-    - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      with:
-        toolchain: stable
-        components: llvm-tools-preview
-    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-    - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2
-      with:
-        tool: cargo-llvm-cov
-    - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2
-      with:
-        tool: nextest
-    - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
-      with:
-        dotnet-version: |
-          9.0.x
-          10.0.203
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-      with:
-        node-version: '20'
-    - name: Install .NET diagnostic tools
-      run: |
-        dotnet tool install -g dotnet-trace
-        dotnet tool install -g dotnet-counters
-        dotnet tool install -g dotnet-dump
-    - name: Test Rust with coverage
-      run: make _test-rust
-    - name: Build release binary
-      run: cargo build --release --bin sharplsp
-    - name: Verify sharplsp version contract
-      shell: bash
-      run: |-
-        set -euo pipefail
-        VERSION="$(cargo metadata --no-deps --format-version 1 | node -e 'const fs=require("node:fs"); const meta=JSON.parse(fs.readFileSync(0,"utf8")); const pkg=meta.packages.find((item)=>item.name==="sharplsp"); if(!pkg) throw new Error("sharplsp package missing"); process.stdout.write(pkg.version);')"
-        ./target/release/sharplsp --version | grep -Fx "sharplsp ${VERSION}"
-        ./target/release/sharplsp --version --json | VERSION="${VERSION}" node -e 'const fs=require("node:fs"); const actual=JSON.parse(fs.readFileSync(0,"utf8")); const expected={name:"sharplsp",version:process.env.VERSION,kind:"lsp",language:"rust",product:"sharplsp"}; for (const [key,value] of Object.entries(expected)) { if (actual[key] !== value) throw new Error(`${key}: expected ${value}, got ${actual[key]}`); }'
-    - name: Upload coverage
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-      with:
-        name: coverage-rust
-        path: |
-          target/coverage-rust.json
-          coverage-thresholds.json
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2
+        with:
+          tool: cargo-llvm-cov
+      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2
+        with:
+          tool: nextest
+      - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.203
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20'
+      - name: Install .NET diagnostic tools
+        run: |
+          dotnet tool install -g dotnet-trace
+          dotnet tool install -g dotnet-counters
+          dotnet tool install -g dotnet-dump
+      - name: Test Rust with coverage
+        run: make _test-rust
+      - name: Build release binary
+        run: cargo build --release --bin sharplsp
+      - name: Verify sharplsp version contract
+        shell: bash
+        run: |-
+          set -euo pipefail
+          VERSION="$(cargo metadata --no-deps --format-version 1 | node -e 'const fs=require("node:fs"); const meta=JSON.parse(fs.readFileSync(0,"utf8")); const pkg=meta.packages.find((item)=>item.name==="sharplsp"); if(!pkg) throw new Error("sharplsp package missing"); process.stdout.write(pkg.version);')"
+          ./target/release/sharplsp --version | grep -Fx "sharplsp ${VERSION}"
+          ./target/release/sharplsp --version --json | VERSION="${VERSION}" node -e 'const fs=require("node:fs"); const actual=JSON.parse(fs.readFileSync(0,"utf8")); const expected={name:"sharplsp",version:process.env.VERSION,kind:"lsp",language:"rust",product:"sharplsp"}; for (const [key,value] of Object.entries(expected)) { if (actual[key] !== value) throw new Error(`${key}: expected ${value}, got ${actual[key]}`); }'
+      - name: Upload coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-rust
+          path: |
+            target/coverage-rust.json
+            coverage-thresholds.json
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   test-dotnet:
     name: Test .NET
     needs:
-    - lint
+      - detect-changes
+      - lint
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-    - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
-      with:
-        dotnet-version: |
-          9.0.x
-          10.0.203
-    - name: Test .NET sidecars with coverage
-      run: make _test-dotnet
-    - name: Verify sidecar version flags
-      shell: bash
-      run: |-
-        set -euo pipefail
-        CS_VERSION="$(dotnet msbuild sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj -getProperty:Version -nologo)"
-        FS_VERSION="$(dotnet msbuild sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj -getProperty:Version -nologo)"
-        target/sidecar-csharp/SharpLsp.Sidecar.CSharp --version | grep -Fx "sharplsp-sidecar-csharp ${CS_VERSION}"
-        target/sidecar-fsharp/SharpLsp.Sidecar.FSharp --version | grep -Fx "sharplsp-sidecar-fsharp ${FS_VERSION}"
-    - name: Upload coverage
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-      with:
-        name: coverage-dotnet
-        path: coverage-thresholds.json
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.203
+      - name: Test .NET sidecars with coverage
+        run: make _test-dotnet
+      - name: Verify sidecar version flags
+        shell: bash
+        run: |-
+          set -euo pipefail
+          CS_VERSION="$(dotnet msbuild sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj -getProperty:Version -nologo)"
+          FS_VERSION="$(dotnet msbuild sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj -getProperty:Version -nologo)"
+          target/sidecar-csharp/SharpLsp.Sidecar.CSharp --version | grep -Fx "sharplsp-sidecar-csharp ${CS_VERSION}"
+          target/sidecar-fsharp/SharpLsp.Sidecar.FSharp --version | grep -Fx "sharplsp-sidecar-fsharp ${FS_VERSION}"
+      - name: Upload coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-dotnet
+          path: coverage-thresholds.json
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   test-vsix:
     name: Test VS Code
     needs:
-    - lint
+      - detect-changes
+      - lint
     runs-on: ubuntu-latest
     # TIMEOUT EXCEPTION: this job builds the Rust binary + .NET sidecars,
     # installs .NET 9 + 10, downloads the VS Code test host, then runs the full
     # ~300-test e2e suite (many tests spin up the Roslyn/FCS sidecars and load
     # real solutions). 10 minutes is too tight for the end-to-end run.
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
-    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-    - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      with:
-        toolchain: stable
-    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-    - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
-      with:
-        dotnet-version: |
-          9.0.x
-          10.0.203
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-      with:
-        node-version: '20'
-        cache: npm
-        cache-dependency-path: editors/vscode/package-lock.json
-    - name: Install VS Code extension deps
-      run: npm ci --prefix editors/vscode
-    - name: Remove PATH-installed SharpLsp binaries
-      shell: bash
-      run: |-
-        set -euo pipefail
-        for binary in sharplsp sharplsp-sidecar-csharp sharplsp-sidecar-fsharp; do
-          resolved="$(command -v "$binary" || true)"
-          if [ -n "$resolved" ]; then
-            rm -f "$resolved"
-          fi
-        done
-    - name: Test VS Code extension with coverage
-      run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR xvfb-run -a make _test-vsix
-    - name: Verify VSIX contains platform binary
-      shell: bash
-      run: |-
-        set -euo pipefail
-        platform="$(node -e 'process.stdout.write(`${process.platform}-${process.arch}`)')"
-        unzip -l sharplsp.vsix | grep -F "bin/${platform}/sharplsp"
-    - name: Upload coverage
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-      with:
-        name: coverage-vsix
-        path: coverage-thresholds.json
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.203
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - name: Install VS Code extension deps
+        run: npm ci --prefix editors/vscode
+      - name: Remove PATH-installed SharpLsp binaries
+        shell: bash
+        run: |-
+          set -euo pipefail
+          for binary in sharplsp sharplsp-sidecar-csharp sharplsp-sidecar-fsharp; do
+            resolved="$(command -v "$binary" || true)"
+            if [ -n "$resolved" ]; then
+              rm -f "$resolved"
+            fi
+          done
+      - name: Test VS Code extension with coverage
+        run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR
+          xvfb-run -a make _test-vsix
+      - name: Verify VSIX contains platform binary
+        shell: bash
+        run: |-
+          set -euo pipefail
+          platform="$(node -e 'process.stdout.write(`${process.platform}-${process.arch}`)')"
+          unzip -l sharplsp.vsix | grep -F "bin/${platform}/sharplsp"
+      - name: Upload coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-vsix
+          path: coverage-thresholds.json
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   # NOTE: the former `coverage` job that git-committed+pushed ratcheted
   # thresholds was removed. On a pull_request, actions/checkout is a detached
   # HEAD, so `git push` failed the moment coverage changed — a latent red build,
