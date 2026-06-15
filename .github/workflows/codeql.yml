@@ -68,7 +68,9 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          queries: security-extended
+          # Query suite and test-code exclusions live in the shared config so the
+          # PR, weekly, and gated release scans stay identical. [GITHUB-CODE-SCANNING]
+          config-file: ./.github/codeql/codeql-config.yml
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
