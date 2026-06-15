@@ -65,10 +65,7 @@ public sealed class CommonStackEndToEndTests(CSharpSidecarFixture fixture)
                 + "EndGlobal\n"
         );
 
-        var r = await fixture.SendAsync(
-            "solution/read",
-            MessagePackSerializer.Serialize(slnPath)
-        );
+        var r = await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(slnPath));
         Assert.Null(r.Error);
         var model = MessagePackSerializer.Deserialize<SolutionFileModel>(r.Payload);
         Assert.Equal("sln", model.Format);

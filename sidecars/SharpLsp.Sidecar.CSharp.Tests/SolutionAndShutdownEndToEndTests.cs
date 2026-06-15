@@ -78,10 +78,7 @@ public sealed class SolutionAndShutdownEndToEndTests(CSharpSidecarFixture fixtur
             """
         );
 
-        var r = await fixture.SendAsync(
-            "solution/read",
-            MessagePackSerializer.Serialize(slnxPath)
-        );
+        var r = await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(slnxPath));
 
         Assert.Null(r.Error);
         var model = MessagePackSerializer.Deserialize<SolutionFileModel>(r.Payload);
@@ -109,10 +106,7 @@ public sealed class SolutionAndShutdownEndToEndTests(CSharpSidecarFixture fixtur
             """
         );
 
-        var r = await fixture.SendAsync(
-            "solution/read",
-            MessagePackSerializer.Serialize(slnxPath)
-        );
+        var r = await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(slnxPath));
 
         Assert.Null(r.Error);
         var model = MessagePackSerializer.Deserialize<SolutionFileModel>(r.Payload);
