@@ -7,15 +7,24 @@ name: CodeQL
 on:
   pull_request:
     branches: [ main ]
-  push:
-    # Run before EVERY release: scan the exact released SHA with the current
-    # query set. The PR scan covers the diff and the weekly scan covers drift;
-    # this covers the released commit itself so a release never ships code that
-    # was last analyzed weeks ago. [GITHUB-CODE-SCANNING]
-    tags: [ "v*" ]
   schedule:
     # Weekly, so newly-published CodeQL queries re-scan even without a push.
     - cron: "27 4 * * 1"
+  # release.yml calls this with gate=true to scan the exact released SHA with the
+  # current query set and BLOCK publishing on any High/Critical finding. The PR
+  # scan covers the diff and the weekly scan covers query drift; the gated call
+  # covers the released commit itself, so a release never ships code that was last
+  # analyzed weeks ago — and now actually FAILS the release instead of just
+  # filing alerts after the VSIX already shipped. [GITHUB-CODE-SCANNING]
+  workflow_call:
+    inputs:
+      gate:
+        description: >-
+          When true, fail the job on any High/Critical finding so the calling
+          workflow (release.yml) blocks publishing. PR and weekly runs leave this
+          false and stay advisory (the PR check-failure threshold governs merges).
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -64,3 +73,48 @@ jobs:
         uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           category: "/language:${{ matrix.language }}"
+          # Drop the SARIF on disk so the gate step can read it. `upload` stays on
+          # (default) so alerts still post to code scanning on every run.
+          output: sarif-results
+      # Release gate. `security-severity` is the 0-10 CVSS-style score CodeQL
+      # attaches to each security rule; >= 7.0 == High or Critical. Enforced ONLY
+      # on gated (release) calls — PR/weekly runs skip this and stay advisory.
+      # Caveat: this reads the freshly produced SARIF, which does NOT reflect
+      # alert dismissals — a dismissed false positive re-blocks until the query is
+      # tuned or excluded via a CodeQL config. [GITHUB-CODE-SCANNING]
+      - name: Enforce no high/critical findings (release gate)
+        if: inputs.gate
+        shell: bash
+        env:
+          SARIF_DIR: sarif-results
+          SEVERITY_THRESHOLD: '7.0'
+        run: |-
+          set -euo pipefail
+          shopt -s nullglob
+          offenders=0
+          for sarif in "${SARIF_DIR}"/*.sarif; do
+            # Build a ruleId -> security-severity map (rules live in the driver
+            # AND in query-pack extensions), then keep results at/above threshold.
+            hits="$(jq -r --argjson t "${SEVERITY_THRESHOLD}" '
+              .runs[]
+              | ( [ (.tool.driver.rules // [])[],
+                    (.tool.extensions[]?.rules // [])[] ]
+                  | map({ key: .id,
+                          value: ((.properties["security-severity"] // "0") | tonumber) })
+                  | from_entries
+                ) as $severity
+              | .results[]
+              | select( ($severity[.ruleId] // 0) >= $t )
+              | .ruleId
+            ' "${sarif}" | sort | uniq -c | sort -rn)"
+            if [ -n "${hits}" ]; then
+              echo "::error::High/critical CodeQL findings in ${sarif}:"
+              echo "${hits}"
+              offenders=$((offenders + 1))
+            fi
+          done
+          if [ "${offenders}" -gt 0 ]; then
+            echo "::error::CodeQL gate failed — release blocked. Fix or dismiss-and-exclude the findings, then re-tag."
+            exit 1
+          fi
+          echo "CodeQL gate passed: nothing at or above severity ${SEVERITY_THRESHOLD}."
