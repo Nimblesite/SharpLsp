@@ -11,12 +11,21 @@
 // going away must be a no-op, not a crash.
 import type { LogOutputChannel } from 'vscode';
 
-// The mutating methods of LogOutputChannel. Reads/lifecycle (name, logLevel,
-// show, hide, dispose, onDidChangeLogLevel) are passed through untouched.
+// The best-effort methods of LogOutputChannel: writes (append*/replace/clear and
+// the log-level helpers) AND the visibility toggles (show/hide). All of these
+// route through the extension-host RPC and throw "Channel has been closed" once
+// the underlying channel is torn down — e.g. `sharplsp.showOutput` calls
+// `channel.show()` after a server restart races channel teardown. None of them
+// must ever crash the host, so all are wrapped. Only `dispose` and pure
+// reads/events (name, logLevel, onDidChangeLogLevel) are passed through
+// untouched: disposal must really happen, and reads cannot throw.
 const WRITE_METHODS: ReadonlySet<string> = new Set([
   'append',
   'appendLine',
   'replace',
+  'clear',
+  'show',
+  'hide',
   'trace',
   'debug',
   'info',
