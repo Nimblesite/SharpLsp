@@ -81,9 +81,12 @@ jobs:
       # Release gate. `security-severity` is the 0-10 CVSS-style score CodeQL
       # attaches to each security rule; >= 7.0 == High or Critical. Enforced ONLY
       # on gated (release) calls — PR/weekly runs skip this and stay advisory.
-      # Caveat: this reads the freshly produced SARIF, which does NOT reflect
-      # alert dismissals — a dismissed false positive re-blocks until the query is
-      # tuned or excluded via a CodeQL config. [GITHUB-CODE-SCANNING]
+      # FAILS CLOSED: if no SARIF is produced (path drift, skipped analysis) or it
+      # is malformed, the gate errors rather than passing — a security gate must
+      # never green a release it could not actually evaluate.
+      # Caveat: this reads the freshly produced SARIF, which does NOT reflect alert
+      # dismissals — a dismissed false positive re-blocks until the query is tuned
+      # or excluded via the CodeQL config. [GITHUB-CODE-SCANNING]
       - name: Enforce no high/critical findings (release gate)
         if: inputs.gate
         shell: bash
@@ -93,10 +96,30 @@ jobs:
         run: |-
           set -euo pipefail
           shopt -s nullglob
+          # Fail closed: no SARIF means we cannot prove the code is clean.
+          sarifs=( "${SARIF_DIR}"/*.sarif )
+          if [ "${#sarifs[@]}" -eq 0 ]; then
+            echo "::error::CodeQL gate: no SARIF in ${SARIF_DIR}; cannot verify findings — failing closed."
+            exit 1
+          fi
           offenders=0
-          for sarif in "${SARIF_DIR}"/*.sarif; do
-            # Build a ruleId -> security-severity map (rules live in the driver
-            # AND in query-pack extensions), then keep results at/above threshold.
+          for sarif in "${sarifs[@]}"; do
+            # Malformed SARIF -> fail closed.
+            if ! jq -e '.runs' "${sarif}" >/dev/null 2>&1; then
+              echo "::error::CodeQL gate: ${sarif} is not valid SARIF (no .runs) — failing closed."
+              exit 1
+            fi
+            # Observability: prove real data was parsed. A clean scan logs
+            # results=0 with a non-zero severity_rules count (rules carry the
+            # security-severity that the gate keys on).
+            jq -r --arg f "${sarif##*/}" '
+              ([ (.runs[].tool.driver.rules // [])[],
+                 (.runs[].tool.extensions[]?.rules // [])[] ]) as $rules
+              | "CodeQL gate: \($f): results=\([.runs[].results[]?]|length) severity_rules=\([$rules[]|select(.properties["security-severity"])]|length)"
+            ' "${sarif}"
+            # Map ruleId -> security-severity. CodeQL puts query rules in
+            # tool.extensions[].rules (driver.rules is empty in CodeQL output);
+            # union both defensively, then keep results at/above threshold.
             hits="$(jq -r --argjson t "${SEVERITY_THRESHOLD}" '
               .runs[]
               | ( [ (.tool.driver.rules // [])[],
