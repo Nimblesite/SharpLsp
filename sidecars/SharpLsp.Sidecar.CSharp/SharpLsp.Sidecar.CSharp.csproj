@@ -33,6 +33,12 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.Build.Locator" Version="1.11.2" />
+        <!-- MSBuildLocator loads the real MSBuild assemblies from the .NET SDK at
+             runtime, so the MSBuild-family assemblies pulled in transitively by
+             Microsoft.CodeAnalysis.Workspaces.MSBuild must be compile-time only.
+             Microsoft.Build.Locator 1.11+ enforces this via MSBL001. -->
+        <PackageReference Include="Microsoft.Build.Framework" Version="17.11.48" ExcludeAssets="runtime" PrivateAssets="all" />
+        <PackageReference Include="Microsoft.NET.StringTools" Version="17.11.4" ExcludeAssets="runtime" PrivateAssets="all" />
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="5.3.0" />
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.3.0" />
         <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.3.0" />
