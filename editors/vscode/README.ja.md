@@ -2,7 +2,7 @@
 
 オープンソースの .NET Language Server — あらゆるエディターのための C# / F# インテリジェンス。ライセンス料ゼロ、ベンダーロックインなし。
 
-> 🌐 **他の言語:** [English](./README.md) · [简体中文](./README.zh-cn.md)
+> 🌐 **他の言語:** [English](https://sharplsp.dev/) · [简体中文](https://sharplsp.dev/zh/)
 
 ## 機能
 
