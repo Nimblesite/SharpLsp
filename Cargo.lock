@@ -1139,7 +1139,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "shipwright",
- "shipwright-manifest",
+ "shipwright-manifest 0.10.0",
  "tempfile",
  "tokio",
  "toml",
@@ -1158,7 +1158,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1b66a7e9aa82b0e124a3b5416e62a5c593955a9074778a8745c2717ab569a21"
 dependencies = [
  "serde_json",
- "shipwright-manifest",
+ "shipwright-manifest 0.9.0",
  "thiserror",
 ]
 
@@ -1167,6 +1167,17 @@ name = "shipwright-manifest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c2389d704c2149fdd45f8c8eae968e54d4000b18ee42f606ad9fd144d0911e2"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "shipwright-manifest"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e90748d7c705f11412d8f2f3ee18364eb4d71e51b358c1260ef29a014960245d"
 dependencies = [
  "serde",
  "serde_json",
