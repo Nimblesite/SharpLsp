@@ -7,6 +7,7 @@ open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Syntax
 open FSharp.Compiler.Text
+open Serilog
 
 // ── Formatting via Fantomas (SEQUESTERED) ───────────────────────
 // This code is not wired into the LSP server. SharpLsp does not provide
@@ -33,7 +34,7 @@ let formatDocument (filePath: string) =
                           EndCharacter = lastChar
                           NewText = result |} |]
         with ex ->
-            eprintfn $"[F# Format] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# Format] failed")
             return [||]
     }
 
@@ -58,7 +59,7 @@ let formatRange (filePath: string) (startLine: int) (startChar: int) (endLine: i
                           EndCharacter = if endLine < lines.Length then lines[endLine].Length else 0
                           NewText = result |} |]
         with ex ->
-            eprintfn $"[F# FormatRange] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# FormatRange] failed")
             return [||]
     }
 
@@ -73,7 +74,7 @@ let formatPreview (filePath: string) =
             let formatted = formatResult.Code
             return Some {| Original = source; Formatted = formatted |}
         with ex ->
-            eprintfn $"[F# FormatPreview] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# FormatPreview] failed")
             return None
     }
 
@@ -160,7 +161,7 @@ let getSemanticTokens
                 | FSharpCheckFileAnswer.Aborted ->
                     return [||]
         with ex ->
-            eprintfn $"[F# SemanticTokens] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# SemanticTokens] failed")
             return [||]
     }
 
@@ -188,7 +189,7 @@ let getSemanticTokensRange
                 | FSharpCheckFileAnswer.Aborted ->
                     return [||]
         with ex ->
-            eprintfn $"[F# SemanticTokensRange] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# SemanticTokensRange] failed")
             return [||]
     }
 
@@ -309,6 +310,6 @@ let getInlayHints
                 | FSharpCheckFileAnswer.Aborted ->
                     return []
         with ex ->
-            eprintfn $"[F# InlayHints] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# InlayHints] failed")
             return []
     }

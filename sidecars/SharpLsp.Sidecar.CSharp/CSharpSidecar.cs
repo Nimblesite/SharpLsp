@@ -14,6 +14,7 @@ namespace SharpLsp.Sidecar.CSharp;
 internal sealed partial class CSharpSidecar : SidecarHost
 {
     public CSharpSidecar()
+        : base("csharp")
     {
         Register("workspace/open", HandleWorkspaceOpenAsync);
         Register("workspace/status", HandleWorkspaceStatusAsync);

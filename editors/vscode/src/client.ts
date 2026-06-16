@@ -17,6 +17,7 @@ import {
 import { EXTENSION_ID, EXTENSION_NAME, SERVER_BINARY, SERVER_BINARY_WIN } from './constants.js';
 import * as config from './config.js';
 import * as log from './log.js';
+import { createAnsiStrippingChannel } from './output-filter.js';
 import { detectRuntimePlatform } from './platform.js';
 import { type SharpLspStatusBar, ServerState } from './status.js';
 
@@ -67,7 +68,10 @@ export async function start(
       { scheme: 'untitled', language: 'csharp' },
       { scheme: 'untitled', language: 'fsharp' },
     ],
-    outputChannel: log.output(),
+    // Strip ANSI escape codes from the server's raw stderr before it reaches
+    // the user-facing Output panel (issue #78). The host gates ANSI on whether
+    // stderr is a TTY, but this is defence-in-depth against any leaked codes.
+    outputChannel: createAnsiStrippingChannel(log.output()),
     traceOutputChannel: log.trace(),
     errorHandler: makeErrorHandler(statusBar),
   };

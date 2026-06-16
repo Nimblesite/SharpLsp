@@ -10,6 +10,7 @@ open System.Threading
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Diagnostics
 open FSharp.Compiler.Text
+open Serilog
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -346,7 +347,7 @@ let getCodeActions
                 | FSharpCheckFileAnswer.Aborted ->
                     return []
         with ex ->
-            eprintfn $"[F# CodeFixes] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# CodeFixes] failed")
             return []
     }
 

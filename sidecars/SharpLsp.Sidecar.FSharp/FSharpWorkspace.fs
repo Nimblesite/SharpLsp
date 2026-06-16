@@ -11,6 +11,7 @@ open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Text
 open FSharp.Compiler.Tokenization
+open Serilog
 open SharpLsp.Sidecar.Common.Solutions
 open SharpLsp.Sidecar.FSharp.Hover
 
@@ -95,7 +96,7 @@ let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string 
         try
             let fsprojPath = Array.head fsprojFiles
             if fsprojFiles.Length > 1 then
-                eprintfn $"F# workspace found {fsprojFiles.Length} projects; loading {fsprojPath}"
+                Log.Debug("F# workspace found {Count} projects; loading {Path}", fsprojFiles.Length, fsprojPath)
             let sourceFiles = parseFsprojSourceFiles fsprojPath
             // Build compiler options with framework refs from the runtime dir.
             // The runtime dir contains both managed and native DLLs (e.g.
@@ -132,7 +133,7 @@ let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string 
             state.ProjectOptions <- Some options
             state.IsLoaded <- true
             let fileList = String.Join(", ", sourceFiles |> Array.map Path.GetFileName)
-            eprintfn $"F# workspace loaded from {fsprojPath} with files: [{fileList}]"
+            Log.Debug("F# workspace loaded from {Path} with files: [{Files}]", fsprojPath, fileList)
             Ok()
         with ex ->
             Error ex.Message
@@ -148,16 +149,16 @@ let loadProjectWithCancellation
             let! discovered = discoverFsprojFiles path ct
             match discovered with
             | Error msg ->
-                eprintfn $"{msg}"
+                Log.Debug("F# workspace diagnostic: {Message}", msg)
                 return Error msg
             | Ok fsprojFiles ->
                 match loadFirstProject state fsprojFiles with
                 | Ok () -> return Ok()
                 | Error msg ->
-                    eprintfn $"F# workspace load failed: {msg}"
+                    Log.Debug("F# workspace load failed: {Message}", msg)
                     return Error msg
         with ex ->
-            eprintfn $"F# workspace load failed: {ex.Message}"
+            Log.Debug(ex, "F# workspace load failed")
             return Error ex.Message
     }
 
@@ -228,10 +229,10 @@ let getHover
                         parseResults.Diagnostics
                         |> Array.map (fun d -> $"{d.Severity}: {d.Message}")
                         |> String.concat "; "
-                    eprintfn $"[F# Hover] Check aborted; parse diagnostics: {diags}"
+                    Log.Debug("[F# Hover] check aborted; parse diagnostics: {Diagnostics}", diags)
                     return None
         with ex ->
-            eprintfn $"[F# Hover] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# Hover] failed")
             return None
     }
 
@@ -316,7 +317,7 @@ let getDefinition
             | None ->
                 return None
         with ex ->
-            eprintfn $"[F# Definition] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# Definition] failed")
             return None
     }
 
@@ -397,7 +398,7 @@ let getTypeDefinition
                 return extractTypeDefinition checkResults source line character
             | None -> return None
         with ex ->
-            eprintfn $"[F# TypeDefinition] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# TypeDefinition] failed")
             return None
     }
 
@@ -458,7 +459,7 @@ let getDeclaration
                 return extractDeclaration checkResults source line character
             | None -> return None
         with ex ->
-            eprintfn $"[F# Declaration] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# Declaration] failed")
             return None
     }
 
@@ -496,6 +497,6 @@ let getImplementations
                 return extractImplementations checkResults source line character
             | None -> return []
         with ex ->
-            eprintfn $"[F# Implementation] Exception: {ex.Message}"
+            Log.Debug(ex, "[F# Implementation] failed")
             return []
     }

@@ -1,5 +1,7 @@
 open System
 open System.Reflection
+open Serilog
+open SharpLsp.Sidecar.Common.Logging
 open SharpLsp.Sidecar.FSharp
 
 [<EntryPoint>]
@@ -29,7 +31,7 @@ let main (args: string[]) =
         }
         |> fun t -> t.GetAwaiter().GetResult()
     with ex ->
-        eprintfn $"F# sidecar failed: {ex.Message}"
+        Log.Error(ex, "F# sidecar terminated unexpectedly")
         Environment.Exit(1)
 
     0

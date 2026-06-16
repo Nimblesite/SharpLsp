@@ -1,4 +1,6 @@
 using System.Reflection;
+using Serilog;
+using SharpLsp.Sidecar.Common.Logging;
 using SharpLsp.Sidecar.CSharp;
 
 if (args.Length > 0 && args[0] == "--version")
@@ -8,15 +10,16 @@ if (args.Length > 0 && args[0] == "--version")
     return;
 }
 
+SidecarLog.Initialize("csharp");
+
 try
 {
     MSBuildInstanceSelector.Register(Console.Error);
 }
 catch (Exception ex)
 {
-    await Console
-        .Error.WriteLineAsync($"MSBuild locator failed: {ex.Message}")
-        .ConfigureAwait(false);
+    Log.Fatal(ex, "MSBuild registration failed");
+    SidecarLog.Shutdown();
     Environment.Exit(1);
 }
 
@@ -43,7 +46,8 @@ static async Task RunSidecarAsync(string[] args)
     }
     catch (Exception ex)
     {
-        await Console.Error.WriteLineAsync($"Sidecar failed: {ex.Message}").ConfigureAwait(false);
+        Log.Fatal(ex, "C# sidecar terminated unexpectedly");
+        SidecarLog.Shutdown();
         Environment.Exit(1);
     }
 }

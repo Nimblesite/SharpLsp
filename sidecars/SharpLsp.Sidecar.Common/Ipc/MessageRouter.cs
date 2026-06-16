@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using MessagePack;
+using Serilog;
 using SharpLsp.Sidecar.Common.Messages;
 using ByteResult = Outcome.Result<byte[], string>;
 
@@ -50,9 +51,7 @@ public sealed class MessageRouter
         }
         catch (Exception ex)
         {
-            await Console
-                .Error.WriteLineAsync($"HandleAsync error: {ex.Message}")
-                .ConfigureAwait(false);
+            Log.Error(ex, "Router failed to handle envelope (id={Id})", envelope.Id);
             return envelope.Id is not null
                 ? new Envelope { Id = envelope.Id, Error = ex.Message }
                 : null;
@@ -112,30 +111,32 @@ public sealed class MessageRouter
     {
         if (!_handlers.TryGetValue(request.Method!, out var handler))
         {
-            await Console
-                .Error.WriteLineAsync($"[Router] Unknown method: {request.Method}")
-                .ConfigureAwait(false);
+            Log.Warning("[Router] Unknown method: {Method}", request.Method);
             return new Envelope { Id = request.Id, Error = $"Unknown method: {request.Method}" };
         }
 
         try
         {
-            await Console
-                .Error.WriteLineAsync($"[Router] Handling {request.Method} (id={request.Id})")
-                .ConfigureAwait(false);
+            Log.Debug("[Router] Handling {Method} (id={Id})", request.Method, request.Id);
             var result = await handler(request.Payload, ct).ConfigureAwait(false);
             return result.Match(
                 payload =>
                 {
-                    Console.Error.WriteLine(
-                        $"[Router] {request.Method} (id={request.Id}) => OK ({payload.Length} bytes)"
+                    Log.Debug(
+                        "[Router] {Method} (id={Id}) => OK ({Bytes} bytes)",
+                        request.Method,
+                        request.Id,
+                        payload.Length
                     );
                     return new Envelope { Id = request.Id, Payload = payload };
                 },
                 error =>
                 {
-                    Console.Error.WriteLine(
-                        $"[Router] {request.Method} (id={request.Id}) => Error: {error}"
+                    Log.Debug(
+                        "[Router] {Method} (id={Id}) => Error: {Error}",
+                        request.Method,
+                        request.Id,
+                        error
                     );
                     return new Envelope { Id = request.Id, Error = error };
                 }
@@ -143,11 +144,7 @@ public sealed class MessageRouter
         }
         catch (Exception ex)
         {
-            await Console
-                .Error.WriteLineAsync(
-                    $"[Router] {request.Method} (id={request.Id}) => Exception: {ex.Message}"
-                )
-                .ConfigureAwait(false);
+            Log.Error(ex, "[Router] {Method} (id={Id}) threw", request.Method, request.Id);
             return new Envelope { Id = request.Id, Error = ex.Message };
         }
     }

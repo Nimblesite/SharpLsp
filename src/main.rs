@@ -30,6 +30,7 @@ mod vfs;
 mod workspace_symbols;
 
 use std::collections::HashMap;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -111,12 +112,16 @@ fn main() -> ExitCode {
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
 
+    // Only emit ANSI colors when stderr is an interactive terminal. Editors
+    // (e.g. VS Code) capture stderr into a plain Output panel where escape
+    // codes would render as garbage. See issue #78 / [DIST-CLEAN-OUTPUT].
+    let stderr_is_terminal = std::io::stderr().is_terminal();
     tracing_subscriber::registry()
         .with(env_filter)
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(std::io::stderr)
-                .with_ansi(true),
+                .with_ansi(stderr_is_terminal),
         )
         .with(
             tracing_subscriber::fmt::layer()

@@ -3,6 +3,7 @@ module SharpLsp.Sidecar.FSharp.FSharpLinting
 
 open System.IO
 open FSharpLint.Application
+open Serilog
 
 /// A lint diagnostic matching the sidecar wire format.
 type LintDiagnostic =
@@ -38,10 +39,10 @@ let lintFile (filePath: string) : LintDiagnostic list =
                       Severity = "Warning"
                       Code = w.RuleIdentifier })
             | LintResult.Failure failure ->
-                eprintfn $"[FSharpLint] Failure: {failure.Description}"
+                Log.Debug("[FSharpLint] failure: {Description}", failure.Description)
                 []
     with ex ->
-        eprintfn $"[FSharpLint] Exception: {ex.Message}"
+        Log.Debug(ex, "[FSharpLint] failed")
         []
 
 /// Run FSharpLint on all F# source files in a project directory.
@@ -56,5 +57,5 @@ let lintProject (projectDir: string) : Map<string, LintDiagnostic list> =
         |> Array.filter (fun (_, diags) -> not diags.IsEmpty)
         |> Map.ofArray
     with ex ->
-        eprintfn $"[FSharpLint] Project lint failed: {ex.Message}"
+        Log.Debug(ex, "[FSharpLint] project lint failed")
         Map.empty

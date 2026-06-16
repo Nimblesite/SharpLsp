@@ -1,5 +1,7 @@
 using MessagePack;
+using Serilog;
 using SharpLsp.Sidecar.Common.Ipc;
+using SharpLsp.Sidecar.Common.Logging;
 using SharpLsp.Sidecar.Common.Messages;
 using ByteResult = Outcome.Result<byte[], string>;
 
@@ -16,9 +18,11 @@ public abstract class SidecarHost : IAsyncDisposable
     private IpcListener? _listener;
     private FramedTransport? _transport;
 
-    /// <summary>Initializes the host and registers built-in handlers.</summary>
-    protected SidecarHost()
+    /// <summary>Initializes the host, structured logging, and built-in handlers.</summary>
+    /// <param name="name">Identifies the sidecar (e.g. "csharp") for its log file.</param>
+    protected SidecarHost(string name)
     {
+        SidecarLog.Initialize(name);
         _router.Register("ping", HandlePingAsync);
         _router.Register("shutdown", HandleShutdownAsync);
     }
@@ -40,9 +44,7 @@ public abstract class SidecarHost : IAsyncDisposable
             var listenerResult = IpcConnection.CreateListener(socketPath);
             if (listenerResult.IsError)
             {
-                await Console
-                    .Error.WriteLineAsync($"Listener failed: {!listenerResult}")
-                    .ConfigureAwait(false);
+                Log.Error("Sidecar listener failed: {Error}", !listenerResult);
                 return;
             }
 
@@ -54,9 +56,7 @@ public abstract class SidecarHost : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            await Console
-                .Error.WriteLineAsync($"Sidecar error: {ex.Message}")
-                .ConfigureAwait(false);
+            Log.Error(ex, "Sidecar terminated with an unexpected error");
         }
     }
 
@@ -76,6 +76,7 @@ public abstract class SidecarHost : IAsyncDisposable
         }
 
         _shutdownCts.Dispose();
+        SidecarLog.Shutdown();
         GC.SuppressFinalize(this);
     }
 
@@ -108,9 +109,7 @@ public abstract class SidecarHost : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                await Console
-                    .Error.WriteLineAsync($"Message error: {ex.Message}")
-                    .ConfigureAwait(false);
+                Log.Error(ex, "Sidecar message loop error");
             }
         }
     }
