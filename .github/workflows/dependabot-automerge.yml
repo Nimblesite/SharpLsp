@@ -1,0 +1,42 @@
+name: Dependabot auto-merge
+
+# Auto-merges Dependabot version-bump PRs INTO the `dependabot-upgrades` staging
+# branch so they never pile up for you to handle by hand.
+#
+# Safe to merge unattended here: nothing reaches `main` this way. The full
+# build/test (ci.yml) + CodeQL (codeql.yml) gate the single
+# `dependabot-upgrades -> main` consolidation PR, which is where review and the
+# expensive suite actually run. This job is a ~10-second merge bot, NOT the CI
+# pipeline.
+#
+# Lives at the repo root so it is present on `dependabot-upgrades` (which is cut
+# from main): `pull_request` runs the workflow from the PR merge ref, so the
+# staging branch must carry this file for auto-merge to fire.
+on:
+  pull_request:
+    branches:
+      - dependabot-upgrades
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Auto-merge into dependabot-upgrades
+    if: github.actor == 'dependabot[bot]'
+    # Deliberately the standard runner, NOT vars.UBUNTU_RUNNER: a trivial merge
+    # bot should not consume the larger (paid) runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Squash-merge the bump into the staging branch
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Prefer auto-merge (queues until mergeable); fall back to an immediate
+        # squash merge when the PR is already mergeable (no required checks on
+        # the staging branch, so GitHub may refuse to "enable" auto-merge).
+        run: |
+          gh pr merge --auto --squash --delete-branch "$PR_URL" \
+            || gh pr merge --squash --delete-branch "$PR_URL"

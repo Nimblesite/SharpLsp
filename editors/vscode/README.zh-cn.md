@@ -2,7 +2,7 @@
 
 开源的 .NET Language Server——为每个编辑器提供 C# 和 F# 智能感知。零许可证，零厂商锁定。
 
-> 🌐 **其他语言：** [English](./README.md) · [日本語](./README.ja.md)
+> 🌐 **其他语言：** [English](https://sharplsp.dev/) · [日本語](https://sharplsp.dev/ja/)
 
 ## 功能
 

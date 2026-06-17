@@ -1,68 +1,91 @@
-# Dependabot keeps the Rust, .NET, npm, and GitHub Actions dependency trees
-# patched. Minor/patch bumps are grouped per-ecosystem to keep PR noise low;
-# major bumps still arrive as individual PRs so they get deliberate review.
+# Dependabot configuration.
+#
+# Goal: routine version bumps NEVER bother you and NEVER burn CI on `main`,
+# while genuine security fixes still reach you automatically.
+#
+# How this achieves that:
+#   * VERSION updates -> `target-branch: dependabot-upgrades`. Every routine bump
+#     PR is opened against the long-lived `dependabot-upgrades` staging branch,
+#     not main. ci.yml / codeql.yml only trigger on `pull_request: [main]`
+#     (the filter matches the PR *base*), so these PRs run NO build/test/CodeQL.
+#     They are auto-merged into the staging branch by
+#     .github/workflows/dependabot-automerge.yml. When you want the batch in
+#     main, open ONE `dependabot-upgrades -> main` PR (CI runs once).
+#   * SECURITY updates -> still raised automatically against `main`, untouched by
+#     this file. Per GitHub docs, `target-branch` only redirects *version*
+#     updates; "security updates always use the default branch for the
+#     repository." So a real CVE still opens a PR against main where you see it
+#     and CI runs. This is the "only bother me for genuine security" channel, and
+#     it is controlled by the repo's "Dependabot security updates" setting (ON),
+#     NOT by this file.
+#   * groups with no update-types filter -> each ecosystem collapses ALL bumps
+#     (minor, patch AND major) into ONE grouped PR per run.
+#   * interval: weekly -> one grouped PR per ecosystem each week (not 50).
+#
+# REQUIREMENT: the `dependabot-upgrades` branch must exist (create it from main
+# AFTER this file + the auto-merge workflow are merged to main, so the staging
+# branch contains the auto-merge workflow).
 version: 2
 updates:
   # ── Rust: host crate ────────────────────────────────────────────────
   - package-ecosystem: cargo
     directory: "/"
+    target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
       rust-host:
         patterns: ["*"]
-        update-types: ["minor", "patch"]
 
   # ── Rust: Zed extension crate ───────────────────────────────────────
   - package-ecosystem: cargo
     directory: "/editors/zed"
+    target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
       rust-zed:
         patterns: ["*"]
-        update-types: ["minor", "patch"]
 
   # ── .NET: C#/F# sidecars solution ───────────────────────────────────
   - package-ecosystem: nuget
     directory: "/sidecars"
+    target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
       dotnet-sidecars:
         patterns: ["*"]
-        update-types: ["minor", "patch"]
 
   # ── npm: VS Code extension ──────────────────────────────────────────
   - package-ecosystem: npm
     directory: "/editors/vscode"
+    target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
       vscode-extension:
         patterns: ["*"]
-        update-types: ["minor", "patch"]
 
   # ── npm: website ────────────────────────────────────────────────────
   - package-ecosystem: npm
     directory: "/website"
+    target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
       website:
         patterns: ["*"]
-        update-types: ["minor", "patch"]
 
   # ── GitHub Actions: all workflows ───────────────────────────────────
-  # Keeps the SHA-pinned actions current (Dependabot bumps the pin and the
-  # trailing version comment together).
   - package-ecosystem: github-actions
     directory: "/"
+    target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
     open-pull-requests-limit: 10

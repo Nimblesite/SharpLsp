@@ -19,7 +19,7 @@ permissions:
 jobs:
   detect-changes:
     name: Detect Changed Paths
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     outputs:
       code_changed: ${{ steps.classify.outputs.code_changed }}
@@ -62,7 +62,7 @@ jobs:
           echo "manifest_changed=${manifest_changed}"
   security:
     name: Dependency Review
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     needs:
       - detect-changes
@@ -83,7 +83,7 @@ jobs:
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   validate-manifest:
     name: Validate Shipwright Manifest
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -104,7 +104,7 @@ jobs:
     if: ${{ needs.detect-changes.outputs.manifest_changed == 'true' }}
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -160,7 +160,7 @@ jobs:
     needs:
       - detect-changes
       - lint
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -169,10 +169,10 @@ jobs:
           toolchain: stable
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2
+      - uses: taiki-e/install-action@15449e3094499af05d8d964a1c884208e4b8b595 # v2
         with:
           tool: cargo-llvm-cov
-      - uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2
+      - uses: taiki-e/install-action@15449e3094499af05d8d964a1c884208e4b8b595 # v2
         with:
           tool: nextest
       - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
@@ -212,7 +212,7 @@ jobs:
     needs:
       - detect-changes
       - lint
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -242,7 +242,7 @@ jobs:
     needs:
       - detect-changes
       - lint
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     # TIMEOUT EXCEPTION: this job builds the Rust binary + .NET sidecars,
     # installs .NET 9 + 10, downloads the VS Code test host, then runs the full
     # ~300-test e2e suite (many tests spin up the Roslyn/FCS sidecars and load

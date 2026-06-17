@@ -2,7 +2,7 @@
 
 The open-source .NET Language Server — C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in.
 
-> 🌐 **Other languages:** [日本語](./README.ja.md) · [简体中文](./README.zh-cn.md)
+> 🌐 **Other languages:** [日本語](https://sharplsp.dev/ja/) · [简体中文](https://sharplsp.dev/zh/)
 
 ## Features
 
