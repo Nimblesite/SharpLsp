@@ -630,7 +630,14 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
             Assert.Contains(diags, fun d -> d.Severity = "Error")
         finally
             // Restore the shared fixture workspace for the remaining tests.
-            let! _ = fixture.Send("workspace/open", MessagePackSerializer.Serialize(fixture.Dir))
+            // A `finally` block is not part of the surrounding `task { }`
+            // computation expression, so `let!` is invalid here (FS0750 on the
+            // F# 10.0.3xx compiler). Await the restore synchronously instead.
+            fixture
+                .Send("workspace/open", MessagePackSerializer.Serialize(fixture.Dir))
+                .GetAwaiter()
+                .GetResult()
+            |> ignore
             try Directory.Delete(badDir, true) with _ -> ()
     }
 
