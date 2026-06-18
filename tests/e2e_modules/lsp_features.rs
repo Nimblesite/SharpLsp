@@ -299,6 +299,36 @@ fn test_code_action_capabilities_advertised() {
     client.wait_with_timeout();
 }
 
+// ── COMPLETION ────────────────────────────────────────────────────
+
+// Member-access completion (typing `.`) only auto-fires if the server
+// advertises `.` as a completion trigger character. Without it, editors never
+// send a textDocument/completion request after a dot, so the popup never
+// appears. Regression guard for that bug.
+#[test]
+fn test_completion_capabilities_advertise_dot_trigger_character() {
+    let mut client = LspClient::start();
+    let resp = client.initialize();
+
+    let completion_provider = &resp["result"]["capabilities"]["completionProvider"];
+    assert!(
+        !completion_provider.is_null(),
+        "completionProvider must be advertised, got: {completion_provider}"
+    );
+
+    let triggers = completion_provider["triggerCharacters"]
+        .as_array()
+        .expect("completionProvider.triggerCharacters must be advertised");
+    assert!(
+        triggers.iter().any(|c| c.as_str() == Some(".")),
+        "completionProvider.triggerCharacters must include `.` for member-access \
+         completion, got: {completion_provider}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 #[test]
 fn test_code_action_resolve_without_sidecar_returns_null() {
     let mut client = LspClient::start();

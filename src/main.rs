@@ -279,6 +279,10 @@ fn build_capabilities() -> ServerCapabilities {
         ),
         completion_provider: Some(lsp_types::CompletionOptions {
             resolve_provider: Some(true),
+            // `.` must be advertised so editors auto-send textDocument/completion
+            // on member access (e.g. `this.`). Without it the popup never appears
+            // after a dot. Applies to both C# and F# member access.
+            trigger_characters: Some(vec![".".to_string()]),
             ..lsp_types::CompletionOptions::default()
         }),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
@@ -718,6 +722,7 @@ fn handle_custom_request(
         }
         // Profiler
         "sharplsp/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
+        "sharplsp/profiler/killProcess" => profiler::handlers::handle_kill_process(req),
         "sharplsp/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
         "sharplsp/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req),
         "sharplsp/profiler/convertTrace" => profiler::handlers::handle_convert_trace(req),

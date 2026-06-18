@@ -590,6 +590,12 @@
         "category": "%category%"
       },
       {
+        "command": "sharplsp.profiler.killProcess",
+        "title": "%cmd.profiler.killProcess%",
+        "category": "%category%",
+        "icon": "$(trash)"
+      },
+      {
         "command": "sharplsp.build",
         "title": "%cmd.build%",
         "category": "%category%",
@@ -963,6 +969,16 @@
           "command": "sharplsp.profiler.copyPid",
           "when": "view == sharplsp.profiler && viewItem == profiler-process",
           "group": "9_copy@1"
+        },
+        {
+          "command": "sharplsp.profiler.killProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
+          "group": "inline@2"
+        },
+        {
+          "command": "sharplsp.profiler.killProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
+          "group": "9_destroy@1"
         }
       ]
     }

@@ -18,6 +18,14 @@ pub fn handle_list_processes(req: Request) -> Result<serde_json::Value> {
     Ok(serde_json::to_value(processes)?)
 }
 
+/// Handle `sharplsp/profiler/killProcess`.
+pub fn handle_kill_process(req: Request) -> Result<serde_json::Value> {
+    let params: KillProcessParams = serde_json::from_value(req.params)?;
+    info!("Handling sharplsp/profiler/killProcess pid={}", params.pid);
+    process_list::kill(params.pid)?;
+    Ok(serde_json::json!({ "killed": true, "pid": params.pid }))
+}
+
 /// Handle `sharplsp/profiler/startTrace`.
 pub fn handle_start_trace(req: Request) -> Result<serde_json::Value> {
     info!("Handling sharplsp/profiler/startTrace");
@@ -133,4 +141,11 @@ pub fn handle_get_object_graph(
 struct StopSessionParams {
     /// Identifier of the session to stop.
     session_id: String,
+}
+
+/// Wire type for `sharplsp/profiler/killProcess`.
+#[derive(serde::Deserialize)]
+struct KillProcessParams {
+    /// PID of the .NET process to terminate.
+    pid: u32,
 }

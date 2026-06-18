@@ -25,6 +25,7 @@ import {
   CMD_PROFILER_COUNTERS_PROCESS,
   CMD_PROFILER_DUMP_PROCESS,
   CMD_PROFILER_COPY_PID,
+  CMD_PROFILER_KILL_PROCESS,
 } from './constants.js';
 import { promptAndOpenGraph } from './profiler-graph.js';
 import { promptAndOpenDiff, detectLeaksWorkflow } from './profiler-diff.js';
@@ -35,6 +36,8 @@ interface DotNetProcess {
   readonly pid: number;
   readonly name: string;
   readonly command_line: string;
+  /** Detected .NET runtime version (e.g. `10.0.0`) or TFM; null when unknown. */
+  readonly runtime_version?: string | null;
 }
 
 interface StartTraceResult {
@@ -315,15 +318,19 @@ function buildProcessNode(proc: DotNetProcess): ProfilerTreeItem {
     vscode.TreeItemCollapsibleState.None,
     { pid: proc.pid, processName: proc.name, contextValue: 'profiler-process' },
   );
-  node.description = proc.command_line;
+  const runtimeVersion = proc.runtime_version ?? '';
+  const version = runtimeVersion.length > 0 ? `.NET ${runtimeVersion}` : '.NET (version unknown)';
+  node.description = `${version} · ${proc.command_line}`;
   node.iconPath = new vscode.ThemeIcon('terminal');
   node.tooltip = new vscode.MarkdownString(
     [
       `**${proc.name}** · PID \`${String(proc.pid)}\``,
       '',
+      `Runtime: ${version}`,
+      '',
       `\`${proc.command_line}\``,
       '',
-      'Click to choose an action. Right-click for: trace, counters, dump, copy PID.',
+      'Click to choose an action. Right-click for: trace, counters, dump, copy PID, kill.',
     ].join('\n'),
   );
   node.command = {
@@ -760,6 +767,31 @@ export function registerCommands(
       if (pid === undefined) return;
       await vscode.env.clipboard.writeText(String(pid));
       void vscode.window.showInformationMessage(`Copied PID ${String(pid)} to clipboard`);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD_PROFILER_KILL_PROCESS, async (item?: ProfilerTreeItem) => {
+      const pid = item?.processPid;
+      if (pid === undefined) return;
+      const name = provider.processNameFor(pid) ?? item?.processName;
+      const who = name !== undefined ? `${name} (PID ${String(pid)})` : `PID ${String(pid)}`;
+      // Modal "Are you sure?" — destructive and irreversible.
+      const answer = await vscode.window.showWarningMessage(
+        `Kill .NET process ${who}? This sends SIGTERM and cannot be undone.`,
+        { modal: true },
+        'Kill',
+      );
+      if (answer !== 'Kill') return;
+      const lsp = getClient();
+      if (lsp === undefined) return;
+      try {
+        await lsp.sendRequest('sharplsp/profiler/killProcess', { pid });
+        void vscode.window.showInformationMessage(`Killed ${who}`);
+        await provider.refresh();
+      } catch (err: unknown) {
+        void vscode.window.showErrorMessage(`Kill failed: ${getErrorMessage(err)}`);
+      }
     }),
   );
 
