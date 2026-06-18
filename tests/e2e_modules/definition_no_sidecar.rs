@@ -23,122 +23,68 @@ fn test_definition_on_unopened_document() {
 
 #[test]
 fn test_definition_on_comment_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
     let code = "// This is a comment\nnamespace Test { public class Foo { } }\n";
-    client.open_document(TEST_URI, code);
-
-    let resp = definition(&mut client, TEST_URI, 0, 5);
-    assert_nav_ok(&resp);
-    assert!(
-        resp["result"].is_null(),
-        "definition on comment must be null"
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
+    assert_nav_null_no_sidecar(code, definition, 0, 5, "definition on comment must be null");
 }
 
 // 47. DEFINITION ON STRING LITERAL RETURNS NULL
 
 #[test]
 fn test_definition_on_string_literal_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
     let code = "namespace T\n{\n    public class F\n    {\n        public string X = \"hello\";\n    }\n}\n";
-    client.open_document(TEST_URI, code);
-
-    let resp = definition(&mut client, TEST_URI, 4, 28);
-    assert_nav_ok(&resp);
-    assert!(
-        resp["result"].is_null(),
-        "definition on string must be null"
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
+    assert_nav_null_no_sidecar(code, definition, 4, 28, "definition on string must be null");
 }
 
 // 48. DEFINITION WITHOUT SIDECAR RETURNS NULL
 
 #[test]
 fn test_definition_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = definition(&mut client, TEST_URI, 5, 18);
-    assert_nav_ok(&resp);
-    assert!(
-        resp["result"].is_null(),
-        "definition without sidecar must be null"
+    assert_nav_null_no_sidecar(
+        SIMPLE_CLASS,
+        definition,
+        5,
+        18,
+        "definition without sidecar must be null",
     );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 // 49. TYPE DEFINITION ON COMMENT RETURNS NULL
 
 #[test]
 fn test_type_definition_on_comment_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
     let code = "// comment\nnamespace X { }\n";
-    client.open_document(TEST_URI, code);
-
-    let resp = type_definition(&mut client, TEST_URI, 0, 3);
-    assert_nav_ok(&resp);
-    assert!(
-        resp["result"].is_null(),
-        "typeDefinition on comment must be null"
+    assert_nav_null_no_sidecar(
+        code,
+        type_definition,
+        0,
+        3,
+        "typeDefinition on comment must be null",
     );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 // 50. DECLARATION ON STRING RETURNS NULL
 
 #[test]
 fn test_declaration_on_string_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
     let code = "namespace T { public class F { public string X = \"abc\"; } }\n";
-    client.open_document(TEST_URI, code);
-
-    let resp = declaration(&mut client, TEST_URI, 0, 51);
-    assert_nav_ok(&resp);
-    assert!(
-        resp["result"].is_null(),
-        "declaration on string must be null"
+    assert_nav_null_no_sidecar(
+        code,
+        declaration,
+        0,
+        51,
+        "declaration on string must be null",
     );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 // 51. IMPLEMENTATION WITHOUT SIDECAR RETURNS NULL
 
 #[test]
 fn test_implementation_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    client.open_document(TEST_URI, COMPLEX_CLASS);
-
-    let resp = implementation(&mut client, TEST_URI, 6, 22);
-    assert_nav_ok(&resp);
-    assert!(
-        resp["result"].is_null(),
-        "implementation without sidecar must be null"
+    assert_nav_null_no_sidecar(
+        COMPLEX_CLASS,
+        implementation,
+        6,
+        22,
+        "implementation without sidecar must be null",
     );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }

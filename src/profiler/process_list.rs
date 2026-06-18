@@ -26,7 +26,7 @@ pub struct DotNetProcess {
 
 /// Whether something (a process or its output directory) is .NET, plus the
 /// runtime version when determinable. Memoized per directory in [`list`].
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum DotnetMatch {
     /// Not a .NET process / output directory.
     No,
@@ -187,11 +187,16 @@ fn framework_version(options: &serde_json::Value) -> Option<&str> {
         .and_then(serde_json::Value::as_str)
 }
 
-/// Terminate a process by PID on Unix via `kill -TERM`.
+/// Terminate a process by PID on Unix via `kill -KILL` (SIGKILL).
+///
+/// Forceful — matching the Windows `taskkill /F` semantics — so a rogue or
+/// unresponsive .NET process is guaranteed to die. A "Kill Process" action gated
+/// behind an explicit confirmation must not be silently ignorable, which a
+/// catchable SIGTERM would be (many .NET apps trap only SIGINT/Ctrl-C).
 #[cfg(not(windows))]
 fn native_kill(pid: u32) -> Result<()> {
     let status = std::process::Command::new("kill")
-        .args(["-TERM", &pid.to_string()])
+        .args(["-KILL", &pid.to_string()])
         .status()
         .context("failed to run kill")?;
     if status.success() {
@@ -369,5 +374,67 @@ mod tests {
         // Smoke test: list() must not panic or error on the host machine.
         let result = list();
         assert!(result.is_ok(), "list() failed: {:?}", result.err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_classify_dotnet_muxer_reports_runtime_version() {
+        // `dotnet <App>.dll` is the host muxer; the version is read from the
+        // managed assembly's directory `*.runtimeconfig.json`.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("App.runtimeconfig.json"),
+            r#"{"runtimeOptions":{"tfm":"net10.0","framework":{"name":"Microsoft.NETCore.App","version":"10.0.7"}}}"#,
+        )
+        .unwrap();
+        let command_line = format!(
+            "/usr/share/dotnet/dotnet {}",
+            dir.path().join("App.dll").display()
+        );
+        let mut cache = HashMap::new();
+        assert_eq!(
+            classify(&command_line, "dotnet", &mut cache),
+            DotnetMatch::Yes(Some("10.0.7".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_classify_dotnet_muxer_without_assembly_has_no_version() {
+        // `dotnet run` carries no managed assembly — still .NET, version unknown.
+        let mut cache = HashMap::new();
+        assert_eq!(
+            classify("/usr/share/dotnet/dotnet run", "dotnet", &mut cache),
+            DotnetMatch::Yes(None)
+        );
+    }
+
+    #[test]
+    fn test_first_exe_token_honors_quoted_path() {
+        // A leading double-quoted path (Windows-style) wins over whitespace.
+        assert_eq!(
+            first_exe_token("\"/opt/my dotnet/dotnet\" exec App.dll"),
+            Some("/opt/my dotnet/dotnet")
+        );
+        // An empty quoted token yields nothing.
+        assert_eq!(first_exe_token("\"\""), None);
+    }
+
+    #[test]
+    fn test_framework_version_falls_back_to_frameworks_array() {
+        // ASP.NET-style runtimeconfig uses a `frameworks` array, not a single
+        // `framework`; the first version wins.
+        let options = serde_json::json!({
+            "frameworks": [
+                { "name": "Microsoft.NETCore.App", "version": "10.0.7" },
+                { "name": "Microsoft.AspNetCore.App", "version": "10.0.7" }
+            ]
+        });
+        assert_eq!(framework_version(&options), Some("10.0.7"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_parse_ps_line_skips_blank() {
+        assert!(parse_ps_line("    ").is_none());
     }
 }

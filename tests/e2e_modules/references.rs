@@ -111,21 +111,14 @@ fn test_references_without_sidecar_returns_null() {
 
 #[test]
 fn test_document_highlight_on_comment_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
     let code = "// This is a comment\nnamespace Test { public class Foo { } }\n";
-    client.open_document(TEST_URI, code);
-
-    let resp = document_highlight(&mut client, TEST_URI, 0, 5);
-    assert_nav_ok(&resp);
-    assert!(
-        resp["result"].is_null(),
-        "document highlight on comment must be null"
+    assert_nav_null_no_sidecar(
+        code,
+        document_highlight,
+        0,
+        5,
+        "document highlight on comment must be null",
     );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]

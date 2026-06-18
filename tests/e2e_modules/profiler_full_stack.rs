@@ -96,6 +96,25 @@ impl ProfileTargetProcess {
         self.child.id()
     }
 
+    /// Poll until the child has exited, reaping it, or `timeout` elapses.
+    ///
+    /// Uses the child handle rather than `kill -0`: once an external signal
+    /// (e.g. the LSP's `killProcess`) terminates the child, it lingers as a
+    /// zombie until its parent — this test process — reaps it, and `kill -0`
+    /// reports a zombie as still alive. `try_wait` reaps and reports truthfully.
+    pub fn wait_for_exit(&mut self, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match self.child.try_wait() {
+                Ok(Some(_)) => return true,
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                _ => return false,
+            }
+        }
+    }
+
     /// Kill and reap the target process if it is still running.
     pub fn stop(&mut self) {
         if self.child.try_wait().ok().flatten().is_some() {
@@ -159,6 +178,67 @@ fn process_exists(pid: u32) -> bool {
 #[cfg(unix)]
 fn kill_profile_target_pid(pid: u32) {
     let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+}
+
+/// [PROFILER-PROCESS-LIST] `killProcess` terminates a REAL .NET process. Starts
+/// `ProfileTarget`, confirms it appears in `listProcesses` carrying a runtime
+/// version, then kills it through the LSP and verifies the OS process is gone.
+#[cfg(unix)]
+#[test]
+fn test_profiler_kill_process_terminates_dotnet_target() {
+    let binary = build_profile_target();
+    let mut target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+
+    // The live .NET apphost must appear in the list, carrying a runtime version.
+    let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
+    let processes = resp["result"].as_array().expect("result must be array");
+    let found = processes
+        .iter()
+        .find(|p| p["pid"].as_u64() == Some(u64::from(target_pid)));
+    assert!(
+        found.is_some(),
+        "listProcesses must include target PID {target_pid}, got: {processes:?}"
+    );
+    let found = found.expect("target present");
+    assert!(
+        found["runtime_version"].is_string(),
+        "a killable .NET process must report a runtime version: {found}"
+    );
+
+    // killProcess must terminate it and report success.
+    let resp = client.request(
+        "sharplsp/profiler/killProcess",
+        json!({ "pid": target_pid }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "killProcess must succeed for a live .NET PID: {resp}"
+    );
+    assert_eq!(
+        resp["result"]["killed"],
+        json!(true),
+        "killProcess must report killed=true: {resp}"
+    );
+    assert_eq!(
+        resp["result"]["pid"].as_u64(),
+        Some(u64::from(target_pid)),
+        "killProcess must echo the terminated PID: {resp}"
+    );
+
+    // The target process must actually be gone (reap the handle to confirm,
+    // since the LSP killed it out-of-band as a child of this test process).
+    assert!(
+        target.wait_for_exit(Duration::from_secs(10)),
+        "killProcess must terminate PID {target_pid}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
 }
 
 /// Full lifecycle: listProcesses → find our PID → startTrace → stopTrace → verify .nettrace file.

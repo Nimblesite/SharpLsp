@@ -27,9 +27,10 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
         // `System.Console.WriteLine(...)` at L128 c23 has no in-source
         // location, forcing DefinitionResolver.ResolveMetadataFallbackAsync
         // and MetadataNavigator to decompile Console.
-        var r = await fixture.SendAsync("textDocument/definition", fixture.PosPayload(128, 23));
-        Assert.Null(r.Error);
-        var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
+        var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
+            "textDocument/definition",
+            fixture.PosPayload(128, 23)
+        );
         Assert.NotEmpty(loc.Locations);
         Assert.EndsWith(".cs", loc.Locations[0].FilePath);
         Assert.Contains("decompiled", loc.Locations[0].FilePath);
@@ -41,9 +42,10 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
         // The `var` of `var len = "hello".Length;` (L125 c8) infers `int`
         // (System.Int32), which has no in-source location — type definition
         // falls back to decompiled metadata (ResolveMetadataFallbackSingleAsync).
-        var r = await fixture.SendAsync("textDocument/typeDefinition", fixture.PosPayload(125, 8));
-        Assert.Null(r.Error);
-        var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
+        var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
+            "textDocument/typeDefinition",
+            fixture.PosPayload(125, 8)
+        );
         Assert.NotEmpty(loc.Locations);
         Assert.EndsWith(".cs", loc.Locations[0].FilePath);
     }
@@ -51,21 +53,20 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task PrepareTypeHierarchy_on_abstract_class_returns_item()
     {
-        var r = await fixture.SendAsync(
+        var item = await fixture.SendAndDeserializeAsync<TypeHierarchyItem>(
             "textDocument/prepareTypeHierarchy",
             fixture.PosPayload(100, 22)
         );
-        Assert.Null(r.Error);
-        var item = MessagePackSerializer.Deserialize<TypeHierarchyItem>(r.Payload);
         Assert.Equal("Shape", item.Name);
     }
 
     [Fact]
     public async Task Subtypes_of_abstract_Shape_includes_derived_classes()
     {
-        var r = await fixture.SendAsync("typeHierarchy/subtypes", fixture.PosPayload(100, 22));
-        Assert.Null(r.Error);
-        var items = MessagePackSerializer.Deserialize<TypeHierarchyItem[]>(r.Payload);
+        var items = await fixture.SendAndDeserializeAsync<TypeHierarchyItem[]>(
+            "typeHierarchy/subtypes",
+            fixture.PosPayload(100, 22)
+        );
         Assert.Contains(items, i => i.Name == "Circle");
         Assert.Contains(items, i => i.Name == "Square");
     }
@@ -73,9 +74,10 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Supertypes_of_Circle_includes_Shape()
     {
-        var r = await fixture.SendAsync("typeHierarchy/supertypes", fixture.PosPayload(105, 13));
-        Assert.Null(r.Error);
-        var items = MessagePackSerializer.Deserialize<TypeHierarchyItem[]>(r.Payload);
+        var items = await fixture.SendAndDeserializeAsync<TypeHierarchyItem[]>(
+            "typeHierarchy/supertypes",
+            fixture.PosPayload(105, 13)
+        );
         Assert.Contains(items, i => i.Name == "Shape");
     }
 
@@ -83,9 +85,10 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     public async Task IncomingCalls_on_OldAdd_finds_consumer()
     {
         // OldAdd (declared L97) is called by Consumer.Use at L127.
-        var r = await fixture.SendAsync("callHierarchy/incomingCalls", fixture.PosPayload(97, 15));
-        Assert.Null(r.Error);
-        var calls = MessagePackSerializer.Deserialize<CallHierarchyCallResult[]>(r.Payload);
+        var calls = await fixture.SendAndDeserializeAsync<CallHierarchyCallResult[]>(
+            "callHierarchy/incomingCalls",
+            fixture.PosPayload(97, 15)
+        );
         Assert.NotEmpty(calls);
     }
 
@@ -93,21 +96,20 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     public async Task OutgoingCalls_from_Use_finds_invocations()
     {
         // Consumer.Use (declared L119) invokes Shout, OldAdd, WriteLine, etc.
-        var r = await fixture.SendAsync("callHierarchy/outgoingCalls", fixture.PosPayload(119, 20));
-        Assert.Null(r.Error);
-        var calls = MessagePackSerializer.Deserialize<CallHierarchyCallResult[]>(r.Payload);
+        var calls = await fixture.SendAndDeserializeAsync<CallHierarchyCallResult[]>(
+            "callHierarchy/outgoingCalls",
+            fixture.PosPayload(119, 20)
+        );
         Assert.NotEmpty(calls);
     }
 
     [Fact]
     public async Task PrepareCallHierarchy_on_Use_returns_method_item()
     {
-        var r = await fixture.SendAsync(
+        var item = await fixture.SendAndDeserializeAsync<CallHierarchyItem>(
             "textDocument/prepareCallHierarchy",
             fixture.PosPayload(119, 20)
         );
-        Assert.Null(r.Error);
-        var item = MessagePackSerializer.Deserialize<CallHierarchyItem>(r.Payload);
         Assert.Equal("Use", item.Name);
         Assert.Equal("method", item.Kind);
     }
@@ -125,9 +127,10 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
                 EndLine = 139,
             }
         );
-        var r = await fixture.SendAsync("textDocument/inlayHint", payload);
-        Assert.Null(r.Error);
-        var hints = MessagePackSerializer.Deserialize<InlayHintResult[]>(r.Payload);
+        var hints = await fixture.SendAndDeserializeAsync<InlayHintResult[]>(
+            "textDocument/inlayHint",
+            payload
+        );
         Assert.NotEmpty(hints);
         Assert.Contains(hints, h => h.Kind == 1); // a type hint
     }
@@ -135,12 +138,10 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task SemanticTokensFull_over_rich_source_returns_many_tokens()
     {
-        var r = await fixture.SendAsync(
+        var tokens = await fixture.SendAndDeserializeAsync<SemanticTokensResult>(
             "textDocument/semanticTokens/full",
             fixture.PosPayload(0, 0)
         );
-        Assert.Null(r.Error);
-        var tokens = MessagePackSerializer.Deserialize<SemanticTokensResult>(r.Payload);
         // Each token is 5 ints; the rich source yields well over 50 tokens.
         Assert.Equal(0, tokens.Data.Length % 5);
         Assert.True(tokens.Data.Length > 50);
@@ -159,9 +160,10 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
                 EndCharacter = 0,
             }
         );
-        var r = await fixture.SendAsync("textDocument/semanticTokens/range", payload);
-        Assert.Null(r.Error);
-        var tokens = MessagePackSerializer.Deserialize<SemanticTokensResult>(r.Payload);
+        var tokens = await fixture.SendAndDeserializeAsync<SemanticTokensResult>(
+            "textDocument/semanticTokens/range",
+            payload
+        );
         Assert.NotEmpty(tokens.Data);
     }
 
@@ -170,9 +172,10 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     {
         // IGreeter (L17) is an interface, so CollectLensesAsync adds both a
         // reference lens and an implementation-count lens.
-        var r = await fixture.SendAsync("textDocument/codeLens", fixture.PosPayload(17, 0));
-        Assert.Null(r.Error);
-        var lenses = MessagePackSerializer.Deserialize<CodeLensResult[]>(r.Payload);
+        var lenses = await fixture.SendAndDeserializeAsync<CodeLensResult[]>(
+            "textDocument/codeLens",
+            fixture.PosPayload(17, 0)
+        );
         Assert.NotEmpty(lenses);
         Assert.Contains(lenses, l => l.Title.Contains("implementation"));
     }
@@ -180,9 +183,10 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task CodeLens_on_abstract_class_includes_implementation_count()
     {
-        var r = await fixture.SendAsync("textDocument/codeLens", fixture.PosPayload(100, 0));
-        Assert.Null(r.Error);
-        var lenses = MessagePackSerializer.Deserialize<CodeLensResult[]>(r.Payload);
+        var lenses = await fixture.SendAndDeserializeAsync<CodeLensResult[]>(
+            "textDocument/codeLens",
+            fixture.PosPayload(100, 0)
+        );
         Assert.NotEmpty(lenses);
         Assert.Contains(lenses, l => l.Title.Contains("implementation"));
     }
@@ -192,9 +196,10 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     {
         // Area is abstract on Shape (declared L102 c27) and overridden by
         // Circle and Square — implementation resolves the override locations.
-        var r = await fixture.SendAsync("textDocument/implementation", fixture.PosPayload(102, 27));
-        Assert.Null(r.Error);
-        var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
+        var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
+            "textDocument/implementation",
+            fixture.PosPayload(102, 27)
+        );
         Assert.NotEmpty(loc.Locations);
     }
 
@@ -210,9 +215,10 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
                 IncludeDeclaration = true,
             }
         );
-        var r = await fixture.SendAsync("textDocument/references", payload);
-        Assert.Null(r.Error);
-        var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
+        var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
+            "textDocument/references",
+            payload
+        );
         Assert.True(loc.Locations.Count > 1);
     }
 
@@ -228,24 +234,23 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
                 Character = 12,
             }
         );
-        var r = await fixture.SendAsync("textDocument/documentHighlight", payload);
-        Assert.Null(r.Error);
-        var result = MessagePackSerializer.Deserialize<DocumentHighlightListResult>(r.Payload);
+        var result = await fixture.SendAndDeserializeAsync<DocumentHighlightListResult>(
+            "textDocument/documentHighlight",
+            payload
+        );
         Assert.NotEmpty(result.Highlights);
     }
 
     [Fact]
     public async Task Completion_resolve_returns_additional_edits_shape()
     {
-        var completionResp = await fixture.SendAsync(
+        var items = await fixture.SendAndDeserializeAsync<CompletionItem[]>(
             "textDocument/completion",
             fixture.PosPayload(128, 23)
         );
-        Assert.Null(completionResp.Error);
-        var items = MessagePackSerializer.Deserialize<CompletionItem[]>(completionResp.Payload);
         Assert.NotEmpty(items);
 
-        var resolveResp = await fixture.SendAsync(
+        var resolved = await fixture.SendAndDeserializeAsync<CompletionResolveResult>(
             "completionItem/resolve",
             MessagePackSerializer.Serialize(
                 new CompletionResolveRequest
@@ -254,10 +259,6 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
                     Index = items[0].Index,
                 }
             )
-        );
-        Assert.Null(resolveResp.Error);
-        var resolved = MessagePackSerializer.Deserialize<CompletionResolveResult>(
-            resolveResp.Payload
         );
         Assert.NotNull(resolved.AdditionalEdits);
     }

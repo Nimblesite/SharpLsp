@@ -1,7 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
-using Microsoft.CodeAnalysis.Text;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -18,22 +17,15 @@ internal static class CallHierarchyResolver
         CancellationToken ct
     )
     {
-        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-        var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-        if (model is null)
+        var resolved = await DocumentPosition
+            .ResolveTokenAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        if (resolved is null)
         {
             return null;
         }
 
-        var position = text.Lines.GetPosition(new LinePosition(line, character));
-        var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
-        if (root is null)
-        {
-            return null;
-        }
-
-        var token = root.FindToken(position);
-        var symbol = ResolveSymbol(token, model, ct);
+        var symbol = ResolveSymbol(resolved.Value.Token, resolved.Value.Model, ct);
         return symbol is null ? null : ToCallHierarchyItem(symbol);
     }
 
@@ -142,16 +134,12 @@ internal static class CallHierarchyResolver
         CancellationToken ct
     )
     {
-        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-        var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-        if (model is null)
-        {
-            return null;
-        }
-
-        var position = text.Lines.GetPosition(new LinePosition(line, character));
-        var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
-        return root is null ? null : ResolveSymbol(root.FindToken(position), model, ct);
+        var resolved = await DocumentPosition
+            .ResolveTokenAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        return resolved is null
+            ? null
+            : ResolveSymbol(resolved.Value.Token, resolved.Value.Model, ct);
     }
 
     private static ISymbol? ResolveSymbol(

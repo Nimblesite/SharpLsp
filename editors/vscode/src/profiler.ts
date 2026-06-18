@@ -778,7 +778,7 @@ export function registerCommands(
       const who = name !== undefined ? `${name} (PID ${String(pid)})` : `PID ${String(pid)}`;
       // Modal "Are you sure?" — destructive and irreversible.
       const answer = await vscode.window.showWarningMessage(
-        `Kill .NET process ${who}? This sends SIGTERM and cannot be undone.`,
+        `Kill .NET process ${who}? This forcibly terminates it (SIGKILL / taskkill /F) and cannot be undone.`,
         { modal: true },
         'Kill',
       );

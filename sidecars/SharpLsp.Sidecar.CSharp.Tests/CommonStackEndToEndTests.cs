@@ -33,12 +33,10 @@ public sealed class CommonStackEndToEndTests(CSharpSidecarFixture fixture)
         // <returns>, a <remarks> with <see langword="true"/> (cref-less) and an
         // inline <code> element, and an inline <example>. Rendering it drives the
         // XmlDocRenderer branches a summary-only comment never reaches.
-        var r = await fixture.SendAsync(
+        var hover = await fixture.SendAndDeserializeAsync<HoverResult>(
             "textDocument/hover",
             CSharpSidecarFixture.PosFor(fixture.MetaProbeFile, 55, 15)
         );
-        Assert.Null(r.Error);
-        var hover = MessagePackSerializer.Deserialize<HoverResult>(r.Payload);
         Assert.Contains("doubled", hover.Contents);
     }
 
@@ -65,9 +63,10 @@ public sealed class CommonStackEndToEndTests(CSharpSidecarFixture fixture)
                 + "EndGlobal\n"
         );
 
-        var r = await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(slnPath));
-        Assert.Null(r.Error);
-        var model = MessagePackSerializer.Deserialize<SolutionFileModel>(r.Payload);
+        var model = await fixture.SendAndDeserializeAsync<SolutionFileModel>(
+            "solution/read",
+            MessagePackSerializer.Serialize(slnPath)
+        );
         Assert.Equal("sln", model.Format);
         Assert.Contains(model.Projects, p => p.DisplayName == "TestProject");
         Assert.NotEmpty(model.Folders);

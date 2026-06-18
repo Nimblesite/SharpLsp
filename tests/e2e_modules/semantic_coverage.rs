@@ -152,23 +152,16 @@ fn test_implementation_repeated_returns_same_result() {
 
 #[test]
 fn test_definition_on_identifier_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    let code = "namespace N { class C { void M() { int x = 1; } } }\n";
-    client.open_document(TEST_URI, code);
-
     // Request on "x" — an identifier, not a comment/string, so it goes
     // through the full cached_nav path.
-    let resp = definition(&mut client, TEST_URI, 0, 39);
-    assert_nav_ok(&resp);
-    assert!(
-        resp["result"].is_null(),
-        "definition on local var without sidecar must be null"
+    let code = "namespace N { class C { void M() { int x = 1; } } }\n";
+    assert_nav_null_no_sidecar(
+        code,
+        definition,
+        0,
+        39,
+        "definition on local var without sidecar must be null",
     );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 // 73. DID_CHANGE TRIGGERS NOTIFY_DID_CHANGE PATH
@@ -199,42 +192,28 @@ fn test_did_change_then_definition_exercises_notify_path() {
 
 #[test]
 fn test_type_definition_on_identifier_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
     let code = "namespace N { class C { void M() { int x = 1; } } }\n";
-    client.open_document(TEST_URI, code);
-
-    let resp = type_definition(&mut client, TEST_URI, 0, 39);
-    assert_nav_ok(&resp);
-    assert!(
-        resp["result"].is_null(),
-        "typeDefinition on identifier without sidecar must be null"
+    assert_nav_null_no_sidecar(
+        code,
+        type_definition,
+        0,
+        39,
+        "typeDefinition on identifier without sidecar must be null",
     );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 // 75. DECLARATION ON IDENTIFIER WITHOUT SIDECAR — EXERCISES SINGLE LOCATION NAV
 
 #[test]
 fn test_declaration_on_identifier_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
     let code = "namespace N { class C { void M() { int x = 1; } } }\n";
-    client.open_document(TEST_URI, code);
-
-    let resp = declaration(&mut client, TEST_URI, 0, 39);
-    assert_nav_ok(&resp);
-    assert!(
-        resp["result"].is_null(),
-        "declaration on identifier without sidecar must be null"
+    assert_nav_null_no_sidecar(
+        code,
+        declaration,
+        0,
+        39,
+        "declaration on identifier without sidecar must be null",
     );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 // 76. ALL NAV METHODS ON SAME POSITION WITHOUT SIDECAR

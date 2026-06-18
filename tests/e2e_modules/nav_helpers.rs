@@ -76,6 +76,26 @@ pub fn assert_nav_ok(resp: &Value) {
     );
 }
 
+/// Start a no-sidecar server, open `code` at [`TEST_URI`], run the `nav` request,
+/// and assert the navigation result is JSON `null` — the "no sidecar connected /
+/// no resolvable symbol" outcome shared by the no-sidecar navigation tests.
+pub fn assert_nav_null_no_sidecar(
+    code: &str,
+    nav: impl FnOnce(&mut LspClient, &str, u32, u32) -> Value,
+    line: u32,
+    character: u32,
+    msg: &str,
+) {
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+    client.open_document(TEST_URI, code);
+    let resp = nav(&mut client, TEST_URI, line, character);
+    assert_nav_ok(&resp);
+    assert!(resp["result"].is_null(), "{msg}");
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 /// Assert a Location result has uri and range fields.
 pub fn assert_location_shape(loc: &Value) {
     assert!(loc.get("uri").is_some(), "location must have uri: {loc}");
