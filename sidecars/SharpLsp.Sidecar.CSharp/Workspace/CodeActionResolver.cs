@@ -233,7 +233,7 @@ internal sealed class CodeActionResolver
                 continue;
             }
 
-            var edits = await ComputeTextEditsAsync(oldDoc, newDoc, ct).ConfigureAwait(false);
+            var edits = await DocumentText.ComputeEditsAsync(oldDoc, newDoc, ct).ConfigureAwait(false);
             if (edits.Count > 0 && newDoc.FilePath is not null)
             {
                 result.DocumentChanges.Add(
@@ -277,36 +277,6 @@ internal sealed class CodeActionResolver
                 }
             );
         }
-    }
-
-    private static async Task<List<TextEditResult>> ComputeTextEditsAsync(
-        Document oldDoc,
-        Document newDoc,
-        CancellationToken ct
-    )
-    {
-        var oldText = await oldDoc.GetTextAsync(ct).ConfigureAwait(false);
-        var newText = await newDoc.GetTextAsync(ct).ConfigureAwait(false);
-        var textChanges = newText.GetTextChanges(oldText);
-
-        var edits = new List<TextEditResult>();
-        foreach (var change in textChanges)
-        {
-            var start = oldText.Lines.GetLinePosition(change.Span.Start);
-            var end = oldText.Lines.GetLinePosition(change.Span.End);
-            edits.Add(
-                new TextEditResult
-                {
-                    StartLine = start.Line,
-                    StartCharacter = start.Character,
-                    EndLine = end.Line,
-                    EndCharacter = end.Character,
-                    NewText = change.NewText ?? "",
-                }
-            );
-        }
-
-        return edits;
     }
 
     private static ImmutableArray<CodeFixProvider> LoadFixProviders()

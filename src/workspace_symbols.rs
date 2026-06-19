@@ -559,21 +559,7 @@ fn extract_ws_symbol_name(node: Node<'_>, source: &[u8]) -> Option<String> {
         return name_node.utf8_text(source).ok().map(String::from);
     }
     // field_declaration / event_field_declaration: variable_declaration > variable_declarator
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "variable_declaration" {
-            let mut inner = child.walk();
-            for declarator in child.children(&mut inner) {
-                if declarator.kind() == "variable_declarator" {
-                    return declarator
-                        .child_by_field_name("name")
-                        .and_then(|n| n.utf8_text(source).ok())
-                        .map(String::from);
-                }
-            }
-        }
-    }
-    None
+    crate::sort_members::variable_declarator_name(&node, source)
 }
 
 /// Map a tree-sitter node to a `SymbolNode` if it is a recognized declaration.
@@ -597,7 +583,7 @@ fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<SymbolNode> {
     let name = extract_ws_symbol_name(node, source)?;
 
     let detail = extract_type_detail(node, source);
-    let access = extract_access(node, source);
+    let access = crate::sort_members::extract_access_modifiers(&node, source);
 
     let range = SymbolRange {
         start: SymbolPosition {
@@ -620,26 +606,6 @@ fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<SymbolNode> {
         range,
         children,
     })
-}
-
-/// Extract access modifier (public, private, protected, internal).
-fn extract_access(node: Node<'_>, source: &[u8]) -> Option<String> {
-    let mut cursor = node.walk();
-    let mut parts: Vec<&str> = Vec::new();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "modifier" {
-            if let Ok(text) = child.utf8_text(source) {
-                if matches!(text, "public" | "private" | "protected" | "internal") {
-                    parts.push(text);
-                }
-            }
-        }
-    }
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join(" "))
-    }
 }
 
 /// Extract type info (base class, return type) for display.

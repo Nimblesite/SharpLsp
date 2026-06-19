@@ -34,4 +34,40 @@ internal static class DocumentPosition
         var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
         return root is null ? null : (model, root.FindToken(position));
     }
+
+    /// <summary>
+    /// Projects a <see cref="FileLinePositionSpan"/> into the path plus start/end
+    /// (line, character) coordinates shared by the call-hierarchy, type-hierarchy, and
+    /// definition result shapes. Collapses the identical field-mapping block those
+    /// resolvers each repeated.
+    /// </summary>
+    public static (string Path, int Line, int Character, int EndLine, int EndCharacter) Coordinates(
+        FileLinePositionSpan span
+    )
+    {
+        return (
+            span.Path,
+            span.StartLinePosition.Line,
+            span.StartLinePosition.Character,
+            span.EndLinePosition.Line,
+            span.EndLinePosition.Character
+        );
+    }
+
+    /// <summary>
+    /// Builds a <see cref="LocationResult"/> from a <see cref="FileLinePositionSpan"/>
+    /// using the shared <see cref="Coordinates"/> projection.
+    /// </summary>
+    public static LocationResult ToLocationResult(FileLinePositionSpan span)
+    {
+        var (path, line, character, endLine, endCharacter) = Coordinates(span);
+        return new LocationResult
+        {
+            FilePath = path,
+            Line = line,
+            Character = character,
+            EndLine = endLine,
+            EndCharacter = endCharacter,
+        };
+    }
 }

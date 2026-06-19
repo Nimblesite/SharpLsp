@@ -78,28 +78,16 @@ pub fn handle_full(
     let params: SemanticTokensParams = serde_json::from_value(req.params)?;
     let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
 
-    let request = SidecarFileReq { file_path };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("textDocument/semanticTokens/full", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar semanticTokens/full unavailable: {err:#}");
-                return Ok(serde_json::Value::Null);
-            }
-        };
-
-    let result: SidecarSemanticTokens = rmp_serde::from_slice(&response_bytes)?;
-    debug!(
-        "Got {} semantic token values from sidecar",
-        result.data.len()
-    );
+    let Some(data) = fetch_full_tokens(runtime, sidecar, file_path)? else {
+        return Ok(serde_json::Value::Null);
+    };
+    debug!("Got {} semantic token values from sidecar", data.len());
     let uri_str = params.text_document.uri.as_str();
     let result_id = TOKEN_CACHE
         .lock()
-        .map(|mut cache| cache.store(uri_str, result.data.clone()))
+        .map(|mut cache| cache.store(uri_str, data.clone()))
         .ok();
-    let mut tokens = decode_tokens(&result.data);
+    let mut tokens = decode_tokens(&data);
     tokens.result_id = result_id;
     Ok(serde_json::to_value(SemanticTokensResult::Tokens(tokens))?)
 }
@@ -154,18 +142,9 @@ pub fn handle_delta(
 
     // Fetch fresh tokens from sidecar.
     let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
-    let request = SidecarFileReq { file_path };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("textDocument/semanticTokens/full", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar semanticTokens/full unavailable: {err:#}");
-                return Ok(serde_json::Value::Null);
-            }
-        };
-    let result: SidecarSemanticTokens = rmp_serde::from_slice(&response_bytes)?;
-    let new_data = result.data;
+    let Some(new_data) = fetch_full_tokens(runtime, sidecar, file_path)? else {
+        return Ok(serde_json::Value::Null);
+    };
 
     // Try to compute delta against cached previous result.
     let delta = TOKEN_CACHE.lock().ok().and_then(|cache| {
@@ -193,6 +172,29 @@ pub fn handle_delta(
             SemanticTokensFullDeltaResult::Tokens(tokens),
         )?)
     }
+}
+
+/// Fetch the full flat token array for `file_path` from the sidecar.
+///
+/// Returns `Ok(None)` when the sidecar is unavailable so callers can reply with
+/// `null`, mirroring the LSP "no result" response.
+fn fetch_full_tokens(
+    runtime: &tokio::runtime::Runtime,
+    sidecar: &Arc<SidecarManager>,
+    file_path: String,
+) -> Result<Option<Vec<i32>>> {
+    let request = SidecarFileReq { file_path };
+    let payload = rmp_serde::to_vec(&request)?;
+    let response_bytes =
+        match runtime.block_on(sidecar.request("textDocument/semanticTokens/full", payload)) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                warn!("Sidecar semanticTokens/full unavailable: {err:#}");
+                return Ok(None);
+            }
+        };
+    let result: SidecarSemanticTokens = rmp_serde::from_slice(&response_bytes)?;
+    Ok(Some(result.data))
 }
 
 /// Compute semantic token edits between old and new flat i32 arrays.

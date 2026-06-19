@@ -387,6 +387,32 @@ mod tests {
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "test helper mirrors the eight-field HeapTypeDiff struct one-to-one"
+    )]
+    fn heap_type_diff(
+        type_name: &str,
+        baseline_count: u64,
+        comparison_count: u64,
+        count_delta: i64,
+        baseline_size_bytes: u64,
+        comparison_size_bytes: u64,
+        size_delta_bytes: i64,
+        growth_percent: f64,
+    ) -> HeapTypeDiff {
+        HeapTypeDiff {
+            type_name: type_name.to_string(),
+            baseline_count,
+            comparison_count,
+            count_delta,
+            baseline_size_bytes,
+            comparison_size_bytes,
+            size_delta_bytes,
+            growth_percent,
+        }
+    }
+
     #[test]
     fn test_compute_diffs_growing_type() {
         let baseline = vec![make_type("System.String", 100, 5_000)];
@@ -430,16 +456,16 @@ mod tests {
 
     #[test]
     fn test_classify_high_severity() {
-        let diff = HeapTypeDiff {
-            type_name: "EventHandler".to_string(),
-            baseline_count: 10,
-            comparison_count: 1500,
-            count_delta: 1490,
-            baseline_size_bytes: 480,
-            comparison_size_bytes: 72_000,
-            size_delta_bytes: 71_520,
-            growth_percent: 14_900.0,
-        };
+        let diff = heap_type_diff(
+            "EventHandler",
+            10,
+            1500,
+            1490,
+            480,
+            72_000,
+            71_520,
+            14_900.0,
+        );
 
         let suspect = classify_single(&diff).unwrap();
         assert!(matches!(suspect.severity, LeakSeverity::High));
@@ -448,16 +474,16 @@ mod tests {
 
     #[test]
     fn test_classify_medium_severity() {
-        let diff = HeapTypeDiff {
-            type_name: "MyApp.Worker".to_string(),
-            baseline_count: 100,
-            comparison_count: 200,
-            count_delta: 100,
-            baseline_size_bytes: 100_000,
-            comparison_size_bytes: 250_000,
-            size_delta_bytes: 150_000,
-            growth_percent: 150.0,
-        };
+        let diff = heap_type_diff(
+            "MyApp.Worker",
+            100,
+            200,
+            100,
+            100_000,
+            250_000,
+            150_000,
+            150.0,
+        );
 
         let suspect = classify_single(&diff).unwrap();
         assert!(matches!(suspect.severity, LeakSeverity::Medium));
@@ -465,32 +491,32 @@ mod tests {
 
     #[test]
     fn test_classify_no_suspect_for_shrinking() {
-        let diff = HeapTypeDiff {
-            type_name: "System.String".to_string(),
-            baseline_count: 1000,
-            comparison_count: 800,
-            count_delta: -200,
-            baseline_size_bytes: 50_000,
-            comparison_size_bytes: 40_000,
-            size_delta_bytes: -10_000,
-            growth_percent: -20.0,
-        };
+        let diff = heap_type_diff(
+            "System.String",
+            1000,
+            800,
+            -200,
+            50_000,
+            40_000,
+            -10_000,
+            -20.0,
+        );
 
         assert!(classify_single(&diff).is_none());
     }
 
     #[test]
     fn test_classify_collection_growth() {
-        let diff = HeapTypeDiff {
-            type_name: "System.Collections.Generic.List`1[[System.String]]".to_string(),
-            baseline_count: 50,
-            comparison_count: 80,
-            count_delta: 30,
-            baseline_size_bytes: 20_000,
-            comparison_size_bytes: 40_000,
-            size_delta_bytes: 20_000,
-            growth_percent: 100.0,
-        };
+        let diff = heap_type_diff(
+            "System.Collections.Generic.List`1[[System.String]]",
+            50,
+            80,
+            30,
+            20_000,
+            40_000,
+            20_000,
+            100.0,
+        );
 
         let suspect = classify_single(&diff).unwrap();
         assert!(suspect.reason.contains("growing collection"));
@@ -499,16 +525,16 @@ mod tests {
     #[test]
     fn test_classify_suspects_filters_by_threshold() {
         // Small, non-suspect growth below thresholds.
-        let diff = HeapTypeDiff {
-            type_name: "System.Object".to_string(),
-            baseline_count: 1000,
-            comparison_count: 1010,
-            count_delta: 10,
-            baseline_size_bytes: 100_000,
-            comparison_size_bytes: 101_000,
-            size_delta_bytes: 1_000,
-            growth_percent: 1.0,
-        };
+        let diff = heap_type_diff(
+            "System.Object",
+            1000,
+            1010,
+            10,
+            100_000,
+            101_000,
+            1_000,
+            1.0,
+        );
 
         assert!(classify_single(&diff).is_none());
     }
@@ -578,16 +604,7 @@ mod tests {
 
     #[test]
     fn test_classify_low_severity() {
-        let diff = HeapTypeDiff {
-            type_name: "MyApp.Widget".to_string(),
-            baseline_count: 100,
-            comparison_count: 120,
-            count_delta: 20,
-            baseline_size_bytes: 50_000,
-            comparison_size_bytes: 70_000,
-            size_delta_bytes: 20_000,
-            growth_percent: 40.0,
-        };
+        let diff = heap_type_diff("MyApp.Widget", 100, 120, 20, 50_000, 70_000, 20_000, 40.0);
 
         let suspect = classify_single(&diff).unwrap();
         assert!(matches!(suspect.severity, LeakSeverity::Low));
@@ -596,16 +613,16 @@ mod tests {
     #[test]
     fn test_classify_leak_prone_boost() {
         // Small growth but leak-prone type → Low severity via boost
-        let diff = HeapTypeDiff {
-            type_name: "System.EventHandler`1[[MyArgs]]".to_string(),
-            baseline_count: 10,
-            comparison_count: 15,
-            count_delta: 5,
-            baseline_size_bytes: 100,
-            comparison_size_bytes: 200,
-            size_delta_bytes: 100,
-            growth_percent: 100.0,
-        };
+        let diff = heap_type_diff(
+            "System.EventHandler`1[[MyArgs]]",
+            10,
+            15,
+            5,
+            100,
+            200,
+            100,
+            100.0,
+        );
 
         let suspect = classify_single(&diff).unwrap();
         assert!(matches!(suspect.severity, LeakSeverity::Low));
@@ -614,16 +631,16 @@ mod tests {
 
     #[test]
     fn test_classify_collection_boost() {
-        let diff = HeapTypeDiff {
-            type_name: "System.Collections.Generic.Dictionary`2".to_string(),
-            baseline_count: 10,
-            comparison_count: 15,
-            count_delta: 5,
-            baseline_size_bytes: 100,
-            comparison_size_bytes: 200,
-            size_delta_bytes: 100,
-            growth_percent: 100.0,
-        };
+        let diff = heap_type_diff(
+            "System.Collections.Generic.Dictionary`2",
+            10,
+            15,
+            5,
+            100,
+            200,
+            100,
+            100.0,
+        );
 
         let suspect = classify_single(&diff).unwrap();
         assert!(suspect.reason.contains("growing collection"));
@@ -632,26 +649,17 @@ mod tests {
     #[test]
     fn test_classify_suspects_multiple() {
         let diffs = vec![
-            HeapTypeDiff {
-                type_name: "LeakyType".to_string(),
-                baseline_count: 10,
-                comparison_count: 1500,
-                count_delta: 1490,
-                baseline_size_bytes: 480,
-                comparison_size_bytes: 2_000_000,
-                size_delta_bytes: 1_999_520,
-                growth_percent: 416_566.7,
-            },
-            HeapTypeDiff {
-                type_name: "StableType".to_string(),
-                baseline_count: 100,
-                comparison_count: 100,
-                count_delta: 0,
-                baseline_size_bytes: 5000,
-                comparison_size_bytes: 5000,
-                size_delta_bytes: 0,
-                growth_percent: 0.0,
-            },
+            heap_type_diff(
+                "LeakyType",
+                10,
+                1500,
+                1490,
+                480,
+                2_000_000,
+                1_999_520,
+                416_566.7,
+            ),
+            heap_type_diff("StableType", 100, 100, 0, 5000, 5000, 0, 0.0),
         ];
 
         let suspects = classify_suspects(&diffs);
@@ -680,16 +688,7 @@ mod tests {
 
     #[test]
     fn test_build_reason_size_growth() {
-        let diff = HeapTypeDiff {
-            type_name: "MyType".to_string(),
-            baseline_count: 100,
-            comparison_count: 200,
-            count_delta: 100,
-            baseline_size_bytes: 5000,
-            comparison_size_bytes: 15_000,
-            size_delta_bytes: 10_000,
-            growth_percent: 200.0,
-        };
+        let diff = heap_type_diff("MyType", 100, 200, 100, 5000, 15_000, 10_000, 200.0);
 
         let reason = build_reason(&diff, 100.0, false, false);
         assert!(reason.contains("count grew"));

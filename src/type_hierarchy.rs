@@ -6,12 +6,13 @@ use std::sync::Arc;
 use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
-    Position, Range, SymbolKind, TypeHierarchyItem, TypeHierarchyPrepareParams,
-    TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, Uri,
+    SymbolKind, TypeHierarchyItem, TypeHierarchyPrepareParams, TypeHierarchySubtypesParams,
+    TypeHierarchySupertypesParams,
 };
 use tracing::{debug, warn};
 
 use crate::sidecar::manager::SidecarManager;
+use crate::utils::{hierarchy_item_location, SidecarHierarchyItem};
 
 /// Handle `textDocument/prepareTypeHierarchy`.
 pub fn handle_prepare(
@@ -127,22 +128,15 @@ pub fn handle_subtypes(
 
 /// Convert a sidecar hierarchy item into an LSP `TypeHierarchyItem`.
 fn map_type_hierarchy_item(item: &SidecarHierarchyItem) -> Option<TypeHierarchyItem> {
-    let uri = format!("file://{}", item.file_path);
-    let parsed_uri = uri.parse::<Uri>().ok()?;
+    let (uri, range, selection_range) = hierarchy_item_location(item)?;
     Some(TypeHierarchyItem {
         name: item.name.clone(),
         kind: parse_symbol_kind(&item.kind),
         tags: None,
         detail: None,
-        uri: parsed_uri,
-        range: Range::new(
-            Position::new(item.line, item.character),
-            Position::new(item.end_line, item.end_character),
-        ),
-        selection_range: Range::new(
-            Position::new(item.line, item.character),
-            Position::new(item.line, item.character),
-        ),
+        uri,
+        range,
+        selection_range,
         data: None,
     })
 }
@@ -169,23 +163,4 @@ struct SidecarPositionReq {
     line: u32,
     /// Zero-based character offset within the line.
     character: u32,
-}
-
-/// A hierarchy item returned by the sidecar for type hierarchy requests.
-#[derive(serde::Deserialize)]
-struct SidecarHierarchyItem {
-    /// Display name of the type.
-    name: String,
-    /// Symbol kind string (e.g. "Class", "Interface").
-    kind: String,
-    /// Absolute path to the file containing this type.
-    file_path: String,
-    /// Start line of the type range.
-    line: u32,
-    /// Start character offset within the start line.
-    character: u32,
-    /// End line of the type range.
-    end_line: u32,
-    /// End character offset within the end line.
-    end_character: u32,
 }

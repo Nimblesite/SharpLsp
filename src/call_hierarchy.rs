@@ -8,11 +8,12 @@ use lsp_server::Request;
 use lsp_types::{
     CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams, CallHierarchyItem,
     CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
-    Position, Range, SymbolKind, Uri,
+    Position, Range, SymbolKind,
 };
 use tracing::{debug, warn};
 
 use crate::sidecar::manager::SidecarManager;
+use crate::utils::{hierarchy_item_location, SidecarHierarchyItem};
 
 /// Handle `textDocument/prepareCallHierarchy`.
 pub fn handle_prepare(
@@ -156,22 +157,15 @@ pub fn handle_outgoing(
 
 /// Convert a sidecar hierarchy item into an LSP `CallHierarchyItem`.
 fn map_hierarchy_item(item: &SidecarHierarchyItem) -> Option<CallHierarchyItem> {
-    let uri = format!("file://{}", item.file_path);
-    let parsed_uri = uri.parse::<Uri>().ok()?;
+    let (uri, range, selection_range) = hierarchy_item_location(item)?;
     Some(CallHierarchyItem {
         name: item.name.clone(),
         kind: parse_symbol_kind(&item.kind),
         tags: None,
         detail: None,
-        uri: parsed_uri,
-        range: Range::new(
-            Position::new(item.line, item.character),
-            Position::new(item.end_line, item.end_character),
-        ),
-        selection_range: Range::new(
-            Position::new(item.line, item.character),
-            Position::new(item.line, item.character),
-        ),
+        uri,
+        range,
+        selection_range,
         data: None,
     })
 }
@@ -203,25 +197,6 @@ struct SidecarPositionReq {
     line: u32,
     /// Zero-based character offset within the line.
     character: u32,
-}
-
-/// A hierarchy item returned by the sidecar for call hierarchy requests.
-#[derive(serde::Deserialize)]
-struct SidecarHierarchyItem {
-    /// Display name of the symbol.
-    name: String,
-    /// Symbol kind string (e.g. "Function", "Class").
-    kind: String,
-    /// Absolute path to the file containing this symbol.
-    file_path: String,
-    /// Start line of the symbol range.
-    line: u32,
-    /// Start character offset within the start line.
-    character: u32,
-    /// End line of the symbol range.
-    end_line: u32,
-    /// End character offset within the end line.
-    end_character: u32,
 }
 
 #[cfg(test)]

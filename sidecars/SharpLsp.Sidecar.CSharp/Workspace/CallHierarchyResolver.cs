@@ -183,16 +183,18 @@ internal static class CallHierarchyResolver
             return null;
         }
 
-        var span = loc.GetMappedLineSpan();
+        var (path, line, character, endLine, endCharacter) = DocumentPosition.Coordinates(
+            loc.GetMappedLineSpan()
+        );
         return new CallHierarchyItem
         {
             Name = symbol.Name,
             Kind = MapSymbolKind(symbol),
-            FilePath = span.Path,
-            Line = span.StartLinePosition.Line,
-            Character = span.StartLinePosition.Character,
-            EndLine = span.EndLinePosition.Line,
-            EndCharacter = span.EndLinePosition.Character,
+            FilePath = path,
+            Line = line,
+            Character = character,
+            EndLine = endLine,
+            EndCharacter = endCharacter,
         };
     }
 

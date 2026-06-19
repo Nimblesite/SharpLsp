@@ -266,6 +266,19 @@ internal sealed partial class CSharpSidecar : SidecarHost
             .ConfigureAwait(false);
     }
 
+    private static Task<TResult> InvokePositionRequestAsync<TResult>(
+        byte[] payload,
+        Func<string, int, int, CancellationToken, Task<TResult>> workspaceMethod,
+        CancellationToken ct
+    )
+    {
+        var request = MessagePackSerializer.Deserialize<PositionRequest>(
+            payload,
+            cancellationToken: ct
+        );
+        return workspaceMethod(request.FilePath, request.Line, request.Character, ct);
+    }
+
     private static async Task<ByteResult> HandlePositionRequestAsync<T>(
         byte[] payload,
         Func<string, int, int, CancellationToken, Task<Result<T, string>>> workspaceMethod,
@@ -274,16 +287,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
     {
         try
         {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await workspaceMethod(
-                    request.FilePath,
-                    request.Line,
-                    request.Character,
-                    ct
-                )
+            var result = await InvokePositionRequestAsync(payload, workspaceMethod, ct)
                 .ConfigureAwait(false);
             return SerializeResult(result, ct);
         }
@@ -302,16 +306,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
     {
         try
         {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await workspaceMethod(
-                    request.FilePath,
-                    request.Line,
-                    request.Character,
-                    ct
-                )
+            var result = await InvokePositionRequestAsync(payload, workspaceMethod, ct)
                 .ConfigureAwait(false);
             if (result is not Result<T?, string>.Ok<T?, string> { Value: var value })
             {
@@ -341,16 +336,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
     {
         try
         {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await workspaceMethod(
-                    request.FilePath,
-                    request.Line,
-                    request.Character,
-                    ct
-                )
+            var result = await InvokePositionRequestAsync(payload, workspaceMethod, ct)
                 .ConfigureAwait(false);
             if (
                 result

@@ -330,9 +330,16 @@ pub fn handle_references(
         "textDocument/references:nodecl"
     };
 
-    if let Some(cached) = nav_cache.get(uri.as_str(), version, line, character, cache_method) {
-        debug!("References cache hit");
-        return Ok(cached.clone());
+    if let Some(cached) = cached_nav_hit(
+        nav_cache,
+        uri.as_str(),
+        version,
+        line,
+        character,
+        cache_method,
+        "References",
+    ) {
+        return Ok(cached);
     }
 
     let value = handle_references_nav(req.clone(), runtime, sidecar)?;
@@ -383,9 +390,16 @@ pub fn handle_document_highlight(
     let version = vfs.get_version(uri).unwrap_or(0);
     let method = "textDocument/documentHighlight";
 
-    if let Some(cached) = nav_cache.get(uri.as_str(), version, line, character, method) {
-        debug!("DocumentHighlight cache hit");
-        return Ok(cached.clone());
+    if let Some(cached) = cached_nav_hit(
+        nav_cache,
+        uri.as_str(),
+        version,
+        line,
+        character,
+        method,
+        "DocumentHighlight",
+    ) {
+        return Ok(cached);
     }
 
     let value = dispatch_document_highlight(req, runtime, sidecar)?;
@@ -509,17 +523,18 @@ fn handle_references_nav(
 
 // ── Shared Helpers ────────────────────────────────────────────────
 
-/// Shared handler for multi-location navigation requests
-/// (definition, implementation).
-fn handle_multi_location_nav(
+/// Dispatch a position-based navigation request to the sidecar and return the
+/// raw location-list result. Returns `Ok(None)` — for which the caller should
+/// yield JSON `null` — when no sidecar is connected or the sidecar call fails.
+fn dispatch_position_request(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
     method: &str,
-) -> Result<serde_json::Value> {
+) -> Result<Option<SidecarLocationListResult>> {
     let Some(sidecar) = sidecar else {
         debug!("{method}: no sidecar available");
-        return Ok(serde_json::Value::Null);
+        return Ok(None);
     };
     let params: GotoDefinitionParams = serde_json::from_value(req.params)?;
     let file_path = uri_to_path(&params.text_document_position_params.text_document.uri)?;
@@ -543,11 +558,24 @@ fn handle_multi_location_nav(
         Ok(bytes) => bytes,
         Err(err) => {
             warn!("Sidecar {method} unavailable: {err:#}");
-            return Ok(serde_json::Value::Null);
+            return Ok(None);
         }
     };
 
-    let result: SidecarLocationListResult = rmp_serde::from_slice(&response_bytes)?;
+    Ok(Some(rmp_serde::from_slice(&response_bytes)?))
+}
+
+/// Shared handler for multi-location navigation requests
+/// (definition, implementation).
+fn handle_multi_location_nav(
+    req: Request,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: Option<&Arc<SidecarManager>>,
+    method: &str,
+) -> Result<serde_json::Value> {
+    let Some(result) = dispatch_position_request(req, runtime, sidecar, method)? else {
+        return Ok(serde_json::Value::Null);
+    };
     let locations: Vec<Location> = result
         .locations
         .into_iter()
@@ -597,6 +625,23 @@ fn handle_cached_nav_with_fallback(
     Ok(value)
 }
 
+/// Look up a navigation result in the cache, logging a hit under `label`.
+///
+/// Returns the cloned cached value on hit, or `None` when absent/stale.
+fn cached_nav_hit(
+    nav_cache: &crate::nav_cache::NavCache,
+    uri: &str,
+    version: i32,
+    line: u32,
+    character: u32,
+    method: &str,
+    label: &str,
+) -> Option<serde_json::Value> {
+    let cached = nav_cache.get(uri, version, line, character, method)?;
+    debug!("{label} cache hit");
+    Some(cached.clone())
+}
+
 /// Cached navigation handler — checks cache before dispatching to sidecar.
 ///
 /// `multi` controls whether to use multi-location (definition) or
@@ -616,9 +661,16 @@ fn handle_cached_nav(
     let character = params.text_document_position_params.position.character;
     let version = vfs.get_version(uri).unwrap_or(0);
 
-    if let Some(cached) = nav_cache.get(uri.as_str(), version, line, character, method) {
-        debug!("{method} cache hit");
-        return Ok(cached.clone());
+    if let Some(cached) = cached_nav_hit(
+        nav_cache,
+        uri.as_str(),
+        version,
+        line,
+        character,
+        method,
+        method,
+    ) {
+        return Ok(cached);
     }
 
     let value = if multi {
@@ -646,37 +698,9 @@ fn handle_single_location_nav(
     sidecar: Option<&Arc<SidecarManager>>,
     method: &str,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
-        debug!("{method}: no sidecar available");
+    let Some(result) = dispatch_position_request(req, runtime, sidecar, method)? else {
         return Ok(serde_json::Value::Null);
     };
-    let params: GotoDefinitionParams = serde_json::from_value(req.params)?;
-    let file_path = uri_to_path(&params.text_document_position_params.text_document.uri)?;
-    let line = params.text_document_position_params.position.line;
-    let character = params.text_document_position_params.position.character;
-
-    debug!(
-        file = %file_path,
-        line = line,
-        character = character,
-        "{method} request dispatching to sidecar"
-    );
-
-    let request = SidecarPositionReq {
-        file_path,
-        line,
-        character,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes = match runtime.block_on(sidecar.request(method, payload)) {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            warn!("Sidecar {method} unavailable: {err:#}");
-            return Ok(serde_json::Value::Null);
-        }
-    };
-
-    let result: SidecarLocationListResult = rmp_serde::from_slice(&response_bytes)?;
     let response = result.locations.first().and_then(|loc| {
         let location = sidecar_location_to_lsp(loc)?;
         Some(GotoDefinitionResponse::Scalar(location))
