@@ -359,6 +359,28 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
         Assert.Null(envelope.Error);
     }
 
+    /// <summary>
+    /// Serializes <paramref name="request"/> with MessagePack, sends it, and deserializes
+    /// the response. Overload of <see cref="SendAndDeserializeAsync{T}(string, byte[])"/>
+    /// that collapses the repeated "serialize a request then send" pattern shared across
+    /// the end-to-end tests. <typeparamref name="TRequest"/> precedes
+    /// <typeparamref name="TResult"/> in the type-argument list.
+    /// </summary>
+    public Task<TResult> SendAndDeserializeAsync<TRequest, TResult>(string method, TRequest request)
+    {
+        return SendAndDeserializeAsync<TResult>(method, MessagePackSerializer.Serialize(request));
+    }
+
+    /// <summary>
+    /// Serializes <paramref name="request"/> with MessagePack, sends it, and asserts the
+    /// response carries no error. Overload of
+    /// <see cref="SendAndAssertOkAsync(string, byte[])"/>.
+    /// </summary>
+    public Task SendAndAssertOkAsync<TRequest>(string method, TRequest request)
+    {
+        return SendAndAssertOkAsync(method, MessagePackSerializer.Serialize(request));
+    }
+
     public async Task InitializeAsync()
     {
         TempDir = CreateTestProject();
@@ -622,10 +644,10 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task AllDiagnostics_returns_results()
     {
-        var payload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "workspace/diagnostics/all",
             new SolutionDiagnosticsRequest { ProjectFilter = [] }
         );
-        await fixture.SendAndAssertOkAsync("workspace/diagnostics/all", payload);
     }
 
     [Fact]
@@ -645,20 +667,21 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
         Assert.Null(r.Error);
         Assert.Equal("ok", MessagePackSerializer.Deserialize<string>(r.Payload));
 
-        var resetPayload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "textDocument/didChange",
             new DidChangeRequest
             {
                 FilePath = fixture.SourceFile,
                 NewText = CSharpSidecarFixture.InitialSource,
             }
         );
-        await fixture.SendAndAssertOkAsync("textDocument/didChange", resetPayload);
     }
 
     [Fact]
     public async Task References_finds_usages()
     {
-        var payload = MessagePackSerializer.Serialize(
+        var loc = await fixture.SendAndDeserializeAsync<ReferencesRequest, LocationListResult>(
+            "textDocument/references",
             new ReferencesRequest
             {
                 FilePath = fixture.SourceFile,
@@ -667,17 +690,14 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
                 IncludeDeclaration = true,
             }
         );
-        var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
-            "textDocument/references",
-            payload
-        );
         Assert.NotEmpty(loc.Locations);
     }
 
     [Fact]
     public async Task DocumentHighlight_finds_occurrences()
     {
-        var payload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "textDocument/documentHighlight",
             new PositionRequest
             {
                 FilePath = fixture.SourceFile,
@@ -685,7 +705,6 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
                 Character = 15,
             }
         );
-        await fixture.SendAndAssertOkAsync("textDocument/documentHighlight", payload);
     }
 
     [Fact]

@@ -10,13 +10,7 @@ fn test_inlay_hint_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         SIMPLE_CLASS,
         "textDocument/inlayHint",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 0 },
-                "end": { "line": 20, "character": 0 }
-            }
-        }),
+        range_params(0, 0, 20, 0),
         NoSidecarResult::Null,
         "inlayHint",
     );
@@ -58,13 +52,7 @@ fn test_inlay_hint_zero_width_range_without_sidecar() {
     assert_no_sidecar_request(
         "public class Calc { public int Add(int a, int b) { return a + b; } }",
         "textDocument/inlayHint",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 35 },
-                "end": { "line": 0, "character": 35 }
-            }
-        }),
+        range_params(0, 35, 0, 35),
         NoSidecarResult::Null,
         "inlayHint",
     );
@@ -75,13 +63,7 @@ fn test_inlay_hint_complex_class_without_sidecar() {
     assert_no_sidecar_request(
         COMPLEX_CLASS,
         "textDocument/inlayHint",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 0 },
-                "end": { "line": 40, "character": 0 }
-            }
-        }),
+        range_params(0, 0, 40, 0),
         NoSidecarResult::Null,
         "inlayHint",
     );
@@ -91,16 +73,7 @@ fn test_inlay_hint_complex_class_without_sidecar() {
 fn test_inlay_hint_after_document_change_without_sidecar() {
     let mut client = open_no_sidecar("public class V1 { public int X; }");
 
-    let before = client.request(
-        "textDocument/inlayHint",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 0 },
-                "end": { "line": 1, "character": 0 }
-            }
-        }),
-    );
+    let before = client.request("textDocument/inlayHint", range_params(0, 0, 1, 0));
     assert!(
         before.get("error").is_none(),
         "before change must not error"
@@ -114,16 +87,7 @@ fn test_inlay_hint_after_document_change_without_sidecar() {
         "public class V2 { public int Add(int a, int b) { return a + b; } }",
     );
 
-    let after = client.request(
-        "textDocument/inlayHint",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 0 },
-                "end": { "line": 1, "character": 0 }
-            }
-        }),
-    );
+    let after = client.request("textDocument/inlayHint", range_params(0, 0, 1, 0));
     assert!(after.get("error").is_none(), "after change must not error");
     assert!(
         after["result"].is_null(),
@@ -138,13 +102,7 @@ fn test_inlay_hint_after_document_change_without_sidecar() {
 fn test_inlay_hint_repeated_same_range_without_sidecar() {
     let mut client = open_no_sidecar(SIMPLE_CLASS);
 
-    let params = json!({
-        "textDocument": { "uri": TEST_URI },
-        "range": {
-            "start": { "line": 5, "character": 0 },
-            "end": { "line": 12, "character": 0 }
-        }
-    });
+    let params = range_params(5, 0, 12, 0);
 
     let resp1 = client.request("textDocument/inlayHint", params.clone());
     let resp2 = client.request("textDocument/inlayHint", params);
@@ -180,13 +138,7 @@ fn test_semantic_tokens_range_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         SIMPLE_CLASS,
         "textDocument/semanticTokens/range",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 0 },
-                "end": { "line": 15, "character": 0 }
-            }
-        }),
+        range_params(0, 0, 15, 0),
         NoSidecarResult::Null,
         "semanticTokens/range",
     );
@@ -223,13 +175,7 @@ fn test_semantic_tokens_all_three_methods_without_sidecar() {
 
     let range = client.request(
         "textDocument/semanticTokens/range",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 5, "character": 0 },
-                "end": { "line": 20, "character": 0 }
-            }
-        }),
+        range_params(5, 0, 20, 0),
     );
     assert_eq!(range["jsonrpc"], "2.0");
     assert!(range.get("error").is_none(), "range must not error");

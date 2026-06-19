@@ -33,6 +33,14 @@ public sealed class SolutionLoaderTests : IDisposable
         }
     }
 
+    /// <summary>Resolve the solution/project for <paramref name="searchPath"/> and return
+    /// the success value (or null on error).</summary>
+    private static string? Resolve(string searchPath)
+    {
+        var result = SolutionLoader.FindSolutionOrProject(searchPath);
+        return result.Match(v => v, _ => null);
+    }
+
     [Fact]
     public void Single_sln_in_root_is_found()
     {
@@ -48,8 +56,7 @@ public sealed class SolutionLoaderTests : IDisposable
     {
         var slnPath = Path.Combine(_root, "Exact.sln");
         File.WriteAllText(slnPath, "");
-        var result = SolutionLoader.FindSolutionOrProject(slnPath);
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(slnPath);
         Assert.Equal(slnPath, value);
     }
 
@@ -107,8 +114,7 @@ public sealed class SolutionLoaderTests : IDisposable
         File.WriteAllText(unwanted, "");
 
         // When given the EXPLICIT path, it must return that exact file.
-        var result = SolutionLoader.FindSolutionOrProject(wanted);
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(wanted);
         Assert.Equal(wanted, value);
     }
 
@@ -118,9 +124,7 @@ public sealed class SolutionLoaderTests : IDisposable
         var csproj = Path.Combine(_root, "App.csproj");
         File.WriteAllText(csproj, "");
 
-        var result = SolutionLoader.FindSolutionOrProject(_root);
-
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(_root);
         Assert.Equal(csproj, value);
     }
 
@@ -146,9 +150,7 @@ public sealed class SolutionLoaderTests : IDisposable
         File.WriteAllText(wanted, "");
         File.WriteAllText(other, "");
 
-        var result = SolutionLoader.FindSolutionOrProject(app);
-
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(app);
         Assert.Equal(wanted, value);
     }
 
@@ -161,9 +163,7 @@ public sealed class SolutionLoaderTests : IDisposable
         File.WriteAllText(a, "");
         File.WriteAllText(b, "");
 
-        var result = SolutionLoader.FindSolutionOrProject(_root);
-
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(_root);
         Assert.True(value == a || value == b);
     }
 
@@ -176,9 +176,7 @@ public sealed class SolutionLoaderTests : IDisposable
         var csproj = Path.Combine(sub, "Deep.csproj");
         File.WriteAllText(csproj, "");
 
-        var result = SolutionLoader.FindSolutionOrProject(_root);
-
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(_root);
         Assert.Equal(csproj, value);
     }
 
@@ -190,9 +188,7 @@ public sealed class SolutionLoaderTests : IDisposable
         var sln = Path.Combine(sub, "Nested.sln");
         File.WriteAllText(sln, "");
 
-        var result = SolutionLoader.FindSolutionOrProject(_root);
-
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(_root);
         Assert.Equal(sln, value);
     }
 
@@ -202,9 +198,7 @@ public sealed class SolutionLoaderTests : IDisposable
         var slnx = Path.Combine(_root, "App.slnx");
         File.WriteAllText(slnx, "");
 
-        var result = SolutionLoader.FindSolutionOrProject(_root);
-
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(_root);
         Assert.Equal(slnx, value);
     }
 
@@ -218,9 +212,7 @@ public sealed class SolutionLoaderTests : IDisposable
         var slnx = Path.Combine(sub, "AiCms.slnx");
         File.WriteAllText(slnx, "");
 
-        var result = SolutionLoader.FindSolutionOrProject(_root);
-
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(_root);
         Assert.Equal(slnx, value);
     }
 
@@ -230,9 +222,7 @@ public sealed class SolutionLoaderTests : IDisposable
         var slnx = Path.Combine(_root, "Exact.slnx");
         File.WriteAllText(slnx, "");
 
-        var result = SolutionLoader.FindSolutionOrProject(slnx);
-
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(slnx);
         Assert.Equal(slnx, value);
     }
 
@@ -245,9 +235,7 @@ public sealed class SolutionLoaderTests : IDisposable
         Directory.CreateDirectory(sub);
         File.WriteAllText(Path.Combine(sub, "Other.csproj"), "");
 
-        var result = SolutionLoader.FindSolutionOrProject(_root);
-
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(_root);
         Assert.Equal(slnx, value);
     }
 
@@ -262,9 +250,7 @@ public sealed class SolutionLoaderTests : IDisposable
         File.WriteAllText(wanted, "");
         File.WriteAllText(other, "");
 
-        var result = SolutionLoader.FindSolutionOrProject(app);
-
-        var value = result.Match(v => v, _ => null);
+        var value = Resolve(app);
         Assert.Equal(wanted, value);
     }
 }

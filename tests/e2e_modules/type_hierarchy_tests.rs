@@ -7,10 +7,7 @@ fn test_prepare_type_hierarchy_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         COMPLEX_CLASS,
         "textDocument/prepareTypeHierarchy",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 11, "character": 18 }
-        }),
+        position_params(11, 18),
         NoSidecarResult::Null,
         "prepareTypeHierarchy",
     );
@@ -52,13 +49,7 @@ namespace TypeHierTest
     let mut client = open_no_sidecar(code);
 
     // Prepare on IShape.
-    let prepare = client.request(
-        "textDocument/prepareTypeHierarchy",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 3, "character": 25 }
-        }),
-    );
+    let prepare = client.request("textDocument/prepareTypeHierarchy", position_params(3, 25));
     assert_eq!(prepare["jsonrpc"], "2.0");
     assert!(prepare.get("error").is_none(), "prepare must not error");
     assert!(
@@ -102,20 +93,8 @@ fn test_type_hierarchy_prepare_repeated_same_position() {
     let mut client = open_no_sidecar(COMPLEX_CLASS);
 
     // Prepare on IEntity — call twice, must be stable.
-    let resp1 = client.request(
-        "textDocument/prepareTypeHierarchy",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 7, "character": 22 }
-        }),
-    );
-    let resp2 = client.request(
-        "textDocument/prepareTypeHierarchy",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 7, "character": 22 }
-        }),
-    );
+    let resp1 = client.request("textDocument/prepareTypeHierarchy", position_params(7, 22));
+    let resp2 = client.request("textDocument/prepareTypeHierarchy", position_params(7, 22));
 
     assert_eq!(resp1["jsonrpc"], "2.0");
     assert_eq!(resp2["jsonrpc"], "2.0");

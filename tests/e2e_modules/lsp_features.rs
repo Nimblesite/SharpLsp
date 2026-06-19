@@ -10,10 +10,7 @@ fn test_prepare_call_hierarchy_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         SIMPLE_CLASS,
         "textDocument/prepareCallHierarchy",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 18 }
-        }),
+        position_params(5, 18),
         NoSidecarResult::Null,
         "prepareCallHierarchy",
     );
@@ -53,10 +50,7 @@ fn test_prepare_type_hierarchy_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         SIMPLE_CLASS,
         "textDocument/prepareTypeHierarchy",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 18 }
-        }),
+        position_params(5, 18),
         NoSidecarResult::Null,
         "prepareTypeHierarchy",
     );
@@ -91,14 +85,7 @@ fn test_code_action_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         SIMPLE_CLASS,
         "textDocument/codeAction",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 5, "character": 0 },
-                "end": { "line": 5, "character": 20 }
-            },
-            "context": { "diagnostics": [] }
-        }),
+        code_action_params(5, 0, 5, 20),
         NoSidecarResult::Null,
         "codeAction",
     );
@@ -179,13 +166,7 @@ fn test_inlay_hints_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         SIMPLE_CLASS,
         "textDocument/inlayHint",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 0 },
-                "end": { "line": 20, "character": 0 }
-            }
-        }),
+        range_params(0, 0, 20, 0),
         NoSidecarResult::Null,
         "inlayHint",
     );
@@ -202,16 +183,7 @@ fn test_inlay_hints_on_unopened_document_errors() {
     let _ = client.initialize();
     // Do NOT open the document — server should error.
 
-    let resp = client.request(
-        "textDocument/inlayHint",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 0 },
-                "end": { "line": 10, "character": 0 }
-            }
-        }),
-    );
+    let resp = client.request("textDocument/inlayHint", range_params(0, 0, 10, 0));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(resp.get("id").is_some(), "must have id");

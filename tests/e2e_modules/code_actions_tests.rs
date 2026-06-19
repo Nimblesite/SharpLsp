@@ -10,16 +10,7 @@ fn test_code_action_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         SIMPLE_CLASS,
         "textDocument/codeAction",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 5, "character": 8 },
-                "end": { "line": 5, "character": 16 }
-            },
-            "context": {
-                "diagnostics": []
-            }
-        }),
+        code_action_params(5, 8, 5, 16),
         NoSidecarResult::Null,
         "codeAction",
     );
@@ -88,14 +79,7 @@ fn test_code_action_full_document_range_without_sidecar() {
 fn test_code_action_repeated_same_range_without_sidecar() {
     let mut client = open_no_sidecar(SIMPLE_CLASS);
 
-    let params = json!({
-        "textDocument": { "uri": TEST_URI },
-        "range": {
-            "start": { "line": 7, "character": 12 },
-            "end": { "line": 7, "character": 28 }
-        },
-        "context": { "diagnostics": [] }
-    });
+    let params = code_action_params(7, 12, 7, 28);
 
     let resp1 = client.request("textDocument/codeAction", params.clone());
     let resp2 = client.request("textDocument/codeAction", params);
@@ -120,17 +104,7 @@ fn test_code_action_repeated_same_range_without_sidecar() {
 fn test_code_action_after_document_change_without_sidecar() {
     let mut client = open_no_sidecar("public class V1 { }");
 
-    let before = client.request(
-        "textDocument/codeAction",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 13 },
-                "end": { "line": 0, "character": 15 }
-            },
-            "context": { "diagnostics": [] }
-        }),
-    );
+    let before = client.request("textDocument/codeAction", code_action_params(0, 13, 0, 15));
     assert!(
         before.get("error").is_none(),
         "before change must not error"
@@ -139,17 +113,7 @@ fn test_code_action_after_document_change_without_sidecar() {
     // Change document.
     client.change_document(TEST_URI, 2, "public class V2 { public void Go() {} }");
 
-    let after = client.request(
-        "textDocument/codeAction",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 13 },
-                "end": { "line": 0, "character": 15 }
-            },
-            "context": { "diagnostics": [] }
-        }),
-    );
+    let after = client.request("textDocument/codeAction", code_action_params(0, 13, 0, 15));
     assert!(after.get("error").is_none(), "after change must not error");
 
     client.shutdown_and_exit();
@@ -246,17 +210,7 @@ fn test_code_lens_and_code_action_interleaved_without_sidecar() {
     );
     assert!(lens1.get("error").is_none(), "lens1 must not error");
 
-    let action1 = client.request(
-        "textDocument/codeAction",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 5, "character": 4 },
-                "end": { "line": 5, "character": 14 }
-            },
-            "context": { "diagnostics": [] }
-        }),
-    );
+    let action1 = client.request("textDocument/codeAction", code_action_params(5, 4, 5, 14));
     assert!(action1.get("error").is_none(), "action1 must not error");
 
     let lens2 = client.request(
@@ -265,17 +219,7 @@ fn test_code_lens_and_code_action_interleaved_without_sidecar() {
     );
     assert!(lens2.get("error").is_none(), "lens2 must not error");
 
-    let action2 = client.request(
-        "textDocument/codeAction",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 11, "character": 8 },
-                "end": { "line": 11, "character": 20 }
-            },
-            "context": { "diagnostics": [] }
-        }),
-    );
+    let action2 = client.request("textDocument/codeAction", code_action_params(11, 8, 11, 20));
     assert!(action2.get("error").is_none(), "action2 must not error");
 
     // All must be null or empty (no sidecar).

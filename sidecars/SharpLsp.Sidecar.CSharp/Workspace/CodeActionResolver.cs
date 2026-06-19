@@ -233,7 +233,9 @@ internal sealed class CodeActionResolver
                 continue;
             }
 
-            var edits = await DocumentText.ComputeEditsAsync(oldDoc, newDoc, ct).ConfigureAwait(false);
+            var edits = await DocumentText
+                .ComputeEditsAsync(oldDoc, newDoc, ct)
+                .ConfigureAwait(false);
             if (edits.Count > 0 && newDoc.FilePath is not null)
             {
                 result.DocumentChanges.Add(

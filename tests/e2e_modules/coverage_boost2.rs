@@ -76,13 +76,7 @@ fn test_linked_editing_range_on_cs_file() {
     let code = "public class Widget { public Widget() {} }";
     client.open_document(TEST_URI, code);
 
-    let resp = client.request(
-        "textDocument/linkedEditingRange",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 0, "character": 14 }
-        }),
-    );
+    let resp = client.request("textDocument/linkedEditingRange", position_params(0, 14));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(resp.get("id").is_some(), "must have request id");
@@ -111,13 +105,7 @@ fn test_linked_editing_range_on_class_name_matches_constructor() {
     let code = "public class Button\n{\n    public Button() {}\n}";
     client.open_document(TEST_URI, code);
 
-    let resp = client.request(
-        "textDocument/linkedEditingRange",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 0, "character": 14 }
-        }),
-    );
+    let resp = client.request("textDocument/linkedEditingRange", position_params(0, 14));
 
     assert_eq!(resp["jsonrpc"], "2.0");
     assert!(resp.get("error").is_none(), "must not error");

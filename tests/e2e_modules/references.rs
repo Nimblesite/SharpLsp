@@ -1,61 +1,7 @@
 use super::*;
 
-// ── References & Document Highlight helpers ──────────────────────
-
-/// Helper: send a references request and return the response.
-fn references(
-    client: &mut LspClient,
-    uri: &str,
-    line: u32,
-    character: u32,
-    include_declaration: bool,
-) -> Value {
-    client.request(
-        "textDocument/references",
-        json!({
-            "textDocument": { "uri": uri },
-            "position": { "line": line, "character": character },
-            "context": { "includeDeclaration": include_declaration }
-        }),
-    )
-}
-
-/// Helper: send a document highlight request and return the response.
-fn document_highlight(client: &mut LspClient, uri: &str, line: u32, character: u32) -> Value {
-    client.request(
-        "textDocument/documentHighlight",
-        json!({
-            "textDocument": { "uri": uri },
-            "position": { "line": line, "character": character }
-        }),
-    )
-}
-
-/// Poll references until the sidecar returns a non-null, non-empty result.
-fn poll_references_until_ready(
-    client: &mut LspClient,
-    uri: &str,
-    line: u32,
-    character: u32,
-    timeout: Duration,
-) -> Value {
-    std::thread::sleep(Duration::from_secs(5));
-    let deadline = std::time::Instant::now() + timeout;
-    loop {
-        let resp = references(client, uri, line, character, true);
-        assert_nav_ok(&resp);
-        let result = &resp["result"];
-        if result.is_array() && !result.as_array().unwrap().is_empty() {
-            return resp;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "references did not resolve within {}s — sidecar not ready",
-            timeout.as_secs(),
-        );
-        std::thread::sleep(Duration::from_secs(2));
-    }
-}
+// References, document_highlight, and poll_references_until_ready live in
+// `nav_helpers` and are imported via the glob above.
 
 // ── References & Document Highlight capability tests ─────────────
 

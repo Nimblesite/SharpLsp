@@ -119,17 +119,14 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     {
         // The Consumer.Use body (L119-139) is dense with var locals (type
         // hints), a lambda parameter, and method-call arguments (param hints).
-        var payload = MessagePackSerializer.Serialize(
+        var hints = await fixture.SendAndDeserializeAsync<InlayHintRequest, InlayHintResult[]>(
+            "textDocument/inlayHint",
             new InlayHintRequest
             {
                 FilePath = fixture.SourceFile,
                 StartLine = 119,
                 EndLine = 139,
             }
-        );
-        var hints = await fixture.SendAndDeserializeAsync<InlayHintResult[]>(
-            "textDocument/inlayHint",
-            payload
         );
         Assert.NotEmpty(hints);
         Assert.Contains(hints, h => h.Kind == 1); // a type hint
@@ -150,7 +147,11 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task SemanticTokensRange_over_documented_service_returns_tokens()
     {
-        var payload = MessagePackSerializer.Serialize(
+        var tokens = await fixture.SendAndDeserializeAsync<
+            RangeFormattingRequest,
+            SemanticTokensResult
+        >(
+            "textDocument/semanticTokens/range",
             new RangeFormattingRequest
             {
                 FilePath = fixture.SourceFile,
@@ -159,10 +160,6 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
                 EndLine = 84,
                 EndCharacter = 0,
             }
-        );
-        var tokens = await fixture.SendAndDeserializeAsync<SemanticTokensResult>(
-            "textDocument/semanticTokens/range",
-            payload
         );
         Assert.NotEmpty(tokens.Data);
     }
@@ -206,7 +203,8 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task References_to_Shape_finds_derived_usages()
     {
-        var payload = MessagePackSerializer.Serialize(
+        var loc = await fixture.SendAndDeserializeAsync<ReferencesRequest, LocationListResult>(
+            "textDocument/references",
             new ReferencesRequest
             {
                 FilePath = fixture.SourceFile,
@@ -215,10 +213,6 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
                 IncludeDeclaration = true,
             }
         );
-        var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
-            "textDocument/references",
-            payload
-        );
         Assert.True(loc.Locations.Count > 1);
     }
 
@@ -226,17 +220,17 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     public async Task DocumentHighlight_on_numbers_local_marks_read_and_write()
     {
         // `numbers` is declared and read multiple times in Use().
-        var payload = MessagePackSerializer.Serialize(
+        var result = await fixture.SendAndDeserializeAsync<
+            PositionRequest,
+            DocumentHighlightListResult
+        >(
+            "textDocument/documentHighlight",
             new PositionRequest
             {
                 FilePath = fixture.SourceFile,
                 Line = 122,
                 Character = 12,
             }
-        );
-        var result = await fixture.SendAndDeserializeAsync<DocumentHighlightListResult>(
-            "textDocument/documentHighlight",
-            payload
         );
         Assert.NotEmpty(result.Highlights);
     }

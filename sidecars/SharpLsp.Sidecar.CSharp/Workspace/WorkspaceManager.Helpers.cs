@@ -301,10 +301,9 @@ internal sealed partial class WorkspaceManager
         try
         {
             var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            var value =
-                document is null
-                    ? emptyValue
-                    : await resolve(document).ConfigureAwait(false);
+            var value = document is null
+                ? emptyValue
+                : await resolve(document).ConfigureAwait(false);
             return new Outcome.Result<TValue, string>.Ok<TValue, string>(value);
         }
         catch (Exception ex)

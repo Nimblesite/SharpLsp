@@ -470,13 +470,7 @@ fn test_full_stack_rename_no_sidecar_returns_error_or_null() {
 fn test_full_stack_prepare_rename_no_sidecar_returns_null_or_error() {
     let mut client = open_no_sidecar("namespace T; public class Foo {}");
 
-    let resp = client.request(
-        "textDocument/prepareRename",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 0, "character": 20 }
-        }),
-    );
+    let resp = client.request("textDocument/prepareRename", position_params(0, 20));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
 

@@ -106,6 +106,53 @@ pub fn open_no_sidecar(code: &str) -> LspClient {
     client
 }
 
+/// Build `{ "textDocument": { "uri": TEST_URI }, "position": { line, character } }` —
+/// the request params shared by all position-based LSP methods (definition, hover,
+/// prepareCallHierarchy, prepareTypeHierarchy, …).
+pub fn position_params(line: u32, character: u32) -> Value {
+    json!({
+        "textDocument": { "uri": TEST_URI },
+        "position": { "line": line, "character": character }
+    })
+}
+
+/// Build `{ "textDocument": { "uri": TEST_URI }, "range": { start, end } }` — the request
+/// params shared by range-based LSP methods (inlayHint, rangeFormatting, semanticTokens
+/// range, …). Coordinates are `(start_line, start_character, end_line, end_character)`.
+pub fn range_params(
+    start_line: u32,
+    start_character: u32,
+    end_line: u32,
+    end_character: u32,
+) -> Value {
+    json!({
+        "textDocument": { "uri": TEST_URI },
+        "range": {
+            "start": { "line": start_line, "character": start_character },
+            "end": { "line": end_line, "character": end_character }
+        }
+    })
+}
+
+/// Build `textDocument/codeAction` params: a [`range_params`] range plus an empty
+/// `context.diagnostics`. Coordinates are `(start_line, start_character, end_line,
+/// end_character)`.
+pub fn code_action_params(
+    start_line: u32,
+    start_character: u32,
+    end_line: u32,
+    end_character: u32,
+) -> Value {
+    json!({
+        "textDocument": { "uri": TEST_URI },
+        "range": {
+            "start": { "line": start_line, "character": start_character },
+            "end": { "line": end_line, "character": end_character }
+        },
+        "context": { "diagnostics": [] }
+    })
+}
+
 /// Build the `{ "item": { … } }` params shared by the call- and type-hierarchy
 /// `incomingCalls`/`outgoingCalls`/`supertypes`/`subtypes` requests. `range` and
 /// `selection` are `(start_line, start_character, end_line, end_character)` tuples.
@@ -395,4 +442,44 @@ pub fn default_sort_config() -> Value {
             "operator", "method", "struct", "class", "record"
         ]
     })
+}
+
+/// Run `sharplsp/sortMembers` on `source` over `range`, given as
+/// `(start_line, start_character, end_line, end_character)`, with [`default_sort_config`];
+/// assert the request succeeds and returns non-empty edits; and return the first edit's
+/// `newText` for per-test ordering assertions. Collapses the identical
+/// setup/request/assert harness shared by the sort-members tests.
+pub fn sort_members_new_text(source: &str, range: (u32, u32, u32, u32)) -> String {
+    let (_tmp, _path, uri) = create_sort_members_file(source);
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+
+    let resp = client.request(
+        "sharplsp/sortMembers",
+        json!({
+            "uri": uri,
+            "range": {
+                "start": { "line": range.0, "character": range.1 },
+                "end": { "line": range.2, "character": range.3 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_none(),
+        "sharplsp/sortMembers must not error: {resp}"
+    );
+    let edits = resp["result"]["edits"]
+        .as_array()
+        .expect("sortMembers result must have an edits array");
+    assert!(!edits.is_empty(), "expected sortMembers to produce edits");
+    let new_text = edits[0]["newText"]
+        .as_str()
+        .expect("edit must have newText")
+        .to_string();
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    new_text
 }

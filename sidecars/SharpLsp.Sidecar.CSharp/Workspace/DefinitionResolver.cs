@@ -53,9 +53,7 @@ internal static class DefinitionResolver
     )
     {
         var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
-        return symbol is null
-            ? new LocationListResult()
-            : await map(symbol).ConfigureAwait(false);
+        return symbol is null ? new LocationListResult() : await map(symbol).ConfigureAwait(false);
     }
 
     /// <summary>

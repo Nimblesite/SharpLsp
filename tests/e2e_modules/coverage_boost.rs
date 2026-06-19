@@ -83,10 +83,7 @@ fn test_document_highlight_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         SIMPLE_CLASS,
         "textDocument/documentHighlight",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 18 }
-        }),
+        position_params(5, 18),
         NoSidecarResult::Null,
         "documentHighlight",
     );
@@ -97,10 +94,7 @@ fn test_document_highlight_complex_class_without_sidecar() {
     assert_no_sidecar_request(
         COMPLEX_CLASS,
         "textDocument/documentHighlight",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 13, "character": 23 }
-        }),
+        position_params(13, 23),
         NoSidecarResult::Null,
         "documentHighlight",
     );
@@ -112,20 +106,8 @@ fn test_document_highlight_repeated_caches_result() {
     let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
-    let resp1 = client.request(
-        "textDocument/documentHighlight",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 18 }
-        }),
-    );
-    let resp2 = client.request(
-        "textDocument/documentHighlight",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 18 }
-        }),
-    );
+    let resp1 = client.request("textDocument/documentHighlight", position_params(5, 18));
+    let resp2 = client.request("textDocument/documentHighlight", position_params(5, 18));
 
     assert_eq!(resp1["jsonrpc"], "2.0");
     assert_eq!(resp2["jsonrpc"], "2.0");
@@ -166,13 +148,7 @@ namespace Test
     client.open_document(TEST_URI, code);
 
     // Request completion at "items." — exercises the VFS + LangId path.
-    let resp = client.request(
-        "textDocument/completion",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 10, "character": 18 }
-        }),
-    );
+    let resp = client.request("textDocument/completion", position_params(10, 18));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(resp.get("id").is_some(), "must have request id");

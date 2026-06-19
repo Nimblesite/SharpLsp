@@ -18,13 +18,7 @@ fn test_semantic_tokens_range_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         SIMPLE_CLASS,
         "textDocument/semanticTokens/range",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 0 },
-                "end": { "line": 10, "character": 0 }
-            }
-        }),
+        range_params(0, 0, 10, 0),
         NoSidecarResult::Null,
         "semanticTokens/range",
     );

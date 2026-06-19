@@ -338,10 +338,7 @@ fn test_completion_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         SIMPLE_CLASS,
         "textDocument/completion",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 18 }
-        }),
+        position_params(5, 18),
         NoSidecarResult::Null,
         "completion",
     );
@@ -362,13 +359,7 @@ fn test_completion_and_hover_without_sidecar_both_null() {
     );
 
     // Then completion.
-    let resp = client.request(
-        "textDocument/completion",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 18 }
-        }),
-    );
+    let resp = client.request("textDocument/completion", position_params(5, 18));
     assert_eq!(resp["jsonrpc"], "2.0");
     assert!(resp.get("error").is_none(), "completion must not error");
     assert!(

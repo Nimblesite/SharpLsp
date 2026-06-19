@@ -48,7 +48,11 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task SemanticTokens_range_over_method_body_returns_tokens()
     {
-        var payload = MessagePackSerializer.Serialize(
+        var tokens = await fixture.SendAndDeserializeAsync<
+            RangeFormattingRequest,
+            SemanticTokensResult
+        >(
+            "textDocument/semanticTokens/range",
             new RangeFormattingRequest
             {
                 FilePath = fixture.MetaProbeFile,
@@ -58,10 +62,6 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
                 EndCharacter = 0,
             }
         );
-        var tokens = await fixture.SendAndDeserializeAsync<SemanticTokensResult>(
-            "textDocument/semanticTokens/range",
-            payload
-        );
         Assert.NotEmpty(tokens.Data);
     }
 
@@ -70,17 +70,14 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task InlayHints_over_method_body_return_type_and_parameter_hints()
     {
-        var payload = MessagePackSerializer.Serialize(
+        var hints = await fixture.SendAndDeserializeAsync<InlayHintRequest, InlayHintResult[]>(
+            "textDocument/inlayHint",
             new InlayHintRequest
             {
                 FilePath = fixture.MetaProbeFile,
                 StartLine = 30,
                 EndLine = 49,
             }
-        );
-        var hints = await fixture.SendAndDeserializeAsync<InlayHintResult[]>(
-            "textDocument/inlayHint",
-            payload
         );
         // `var sb = ...`, `var list = ...`, `var total = ...`, lambda params, and
         // call arguments yield a mix of type (1) and parameter (2) hints.
@@ -150,7 +147,8 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     public async Task CodeAction_over_unused_local_offers_and_resolves_fix()
     {
         // `var unused = 42;` at L46 raises CS0219 (assigned but never used).
-        var request = MessagePackSerializer.Serialize(
+        var actions = await fixture.SendAndDeserializeAsync<CodeActionRequest, CodeActionItem[]>(
+            "textDocument/codeAction",
             new CodeActionRequest
             {
                 FilePath = fixture.MetaProbeFile,
@@ -160,19 +158,15 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
                 EndCharacter = 24,
             }
         );
-        var actions = await fixture.SendAndDeserializeAsync<CodeActionItem[]>(
-            "textDocument/codeAction",
-            request
-        );
 
         // If Roslyn surfaces a fix for the span, resolving it must drive
         // CodeActionResolver's edit-collection path without error.
         if (actions.Length > 0)
         {
-            var resolve = MessagePackSerializer.Serialize(
+            await fixture.SendAndAssertOkAsync(
+                "codeAction/resolve",
                 new CodeActionResolveRequest { Id = actions[0].Id }
             );
-            await fixture.SendAndAssertOkAsync("codeAction/resolve", resolve);
         }
     }
 
@@ -183,7 +177,8 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
         // "Move type to <Name>.cs" refactoring on the `Point` struct (L11 c14).
         // Resolving it produces a NEW document, driving CodeActionResolver's
         // added-document collection path (CollectAddedDocumentsAsync).
-        var request = MessagePackSerializer.Serialize(
+        var actions = await fixture.SendAndDeserializeAsync<CodeActionRequest, CodeActionItem[]>(
+            "textDocument/codeAction",
             new CodeActionRequest
             {
                 FilePath = fixture.MetaProbeFile,
@@ -192,10 +187,6 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
                 EndLine = 11,
                 EndCharacter = 19,
             }
-        );
-        var actions = await fixture.SendAndDeserializeAsync<CodeActionItem[]>(
-            "textDocument/codeAction",
-            request
         );
 
         var move = actions.FirstOrDefault(a => a.Title.Contains("Move"));
@@ -228,7 +219,8 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Rename_local_produces_workspace_edit()
     {
-        var payload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "textDocument/rename",
             new RenameRequest
             {
                 FilePath = fixture.MetaProbeFile,
@@ -237,6 +229,5 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
                 NewName = "grandTotal",
             }
         );
-        await fixture.SendAndAssertOkAsync("textDocument/rename", payload);
     }
 }

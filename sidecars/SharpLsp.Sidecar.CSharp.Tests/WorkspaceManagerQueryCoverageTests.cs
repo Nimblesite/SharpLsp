@@ -43,6 +43,13 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
 
     private string SourcePath => _fixture.SourcePath;
 
+    /// <summary>Assert the query succeeded and return its success value.</summary>
+    private static TValue AssertOk<TValue>(Outcome.Result<TValue, string> result)
+    {
+        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
+        return +result;
+    }
+
     // ── Hover ────────────────────────────────────────────────────────
 
     [Fact]
@@ -50,10 +57,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     {
         // Line 12: `    public virtual int Add(int a, int b) => a + b;`
         // `Add` starts at character 23.
-        var result = await Manager.GetHoverAsync(SourcePath, 12, 24);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var hover = +result;
+        var hover = AssertOk(await Manager.GetHoverAsync(SourcePath, 12, 24));
         Assert.NotNull(hover);
         Assert.Contains("Add", hover!.Contents);
     }
@@ -79,10 +83,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     {
         // Line 29 inside Run(): `        var sum = calc.Add(1, 2);`
         // The `.` after `calc` is at char 22; request completion right after it.
-        var result = await Manager.GetCompletionsAsync(SourcePath, 29, 23);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var items = +result;
+        var items = AssertOk(await Manager.GetCompletionsAsync(SourcePath, 29, 23));
         Assert.NotNull(items);
         // Member-access completion on a Calculator instance must surface `Add`.
         Assert.Contains(items, item => item.Label == "Add");
@@ -96,10 +97,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task DefinitionOnCallSiteLocatesMethod()
     {
         // Line 29: `        var sum = calc.Add(1, 2);` → `Add` call at char 23.
-        var result = await Manager.GetDefinitionAsync(SourcePath, 29, 24);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var locations = +result;
+        var locations = AssertOk(await Manager.GetDefinitionAsync(SourcePath, 29, 24));
         Assert.NotEmpty(locations.Locations);
         Assert.All(locations.Locations, loc => Assert.False(string.IsNullOrEmpty(loc.FilePath)));
     }
@@ -108,10 +106,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task TypeDefinitionOnVariableLocatesItsType()
     {
         // Line 28: `        var calc = new Calculator();` → `calc` at char 12.
-        var result = await Manager.GetTypeDefinitionAsync(SourcePath, 28, 13);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var location = +result;
+        var location = AssertOk(await Manager.GetTypeDefinitionAsync(SourcePath, 28, 13));
         // The variable's type (Calculator) may resolve to its source declaration,
         // a decompiled metadata location, or null — exactly as the resolver-level
         // test tolerates. When present the location must reference a real file.
@@ -124,10 +119,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
         // Line 19: `    public override int Add(int a, int b) => base.Add(a, b) + 1;`
         // `Add` (the override) at char 24 → declaration resolves the virtual
         // base member (or the symbol itself).
-        var result = await Manager.GetDeclarationAsync(SourcePath, 19, 25);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var location = +result;
+        var location = AssertOk(await Manager.GetDeclarationAsync(SourcePath, 19, 25));
         // Declaration may be null when there is no distinct base declaration,
         // but when present it must reference a real file.
         if (location is not null)
@@ -143,10 +135,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     {
         // Line 7 inside the interface: `    int Compute(int value);` → `Compute`
         // at char 8. Calculator implements it.
-        var result = await Manager.GetImplementationsAsync(SourcePath, 7, 9);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var locations = +result;
+        var locations = AssertOk(await Manager.GetImplementationsAsync(SourcePath, 7, 9));
         Assert.NotEmpty(locations.Locations);
     }
 
@@ -175,10 +164,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task DocumentHighlightsForLocalVariableFound()
     {
         // Line 29: `        var sum = calc.Add(1, 2);` — `calc` usage at char 18.
-        var result = await Manager.GetDocumentHighlightsAsync(SourcePath, 29, 19);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var highlights = +result;
+        var highlights = AssertOk(await Manager.GetDocumentHighlightsAsync(SourcePath, 29, 19));
         Assert.NotEmpty(highlights.Highlights);
         Assert.All(highlights.Highlights, highlight => Assert.True(highlight.StartLine >= 0));
     }
@@ -189,10 +175,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task CodeActionsForMethodRangeAreReturnedAndResolvable()
     {
         // Range over the override method declaration on line 19.
-        var result = await Manager.GetCodeActionsAsync(SourcePath, 19, 4, 19, 60);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var actions = +result;
+        var actions = AssertOk(await Manager.GetCodeActionsAsync(SourcePath, 19, 4, 19, 60));
 
         // Roslyn offers refactorings/fixes here (e.g. "use expression body",
         // "introduce local"). Each item has a non-empty title.
@@ -200,9 +183,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
 
         if (actions.Count > 0)
         {
-            var resolved = await Manager.ResolveCodeActionAsync(actions[0].Id);
-            Assert.False(resolved.IsError, resolved.Match(_ => "ok", err => err));
-            var edit = +resolved;
+            var edit = AssertOk(await Manager.ResolveCodeActionAsync(actions[0].Id));
             Assert.NotNull(edit);
         }
     }
@@ -222,10 +203,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task PrepareRenameOnMethodReportsRenameableSpan()
     {
         // Line 12: `Add` method declaration at char 23.
-        var result = await Manager.PrepareRenameAsync(SourcePath, 12, 24);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var prepare = +result;
+        var prepare = AssertOk(await Manager.PrepareRenameAsync(SourcePath, 12, 24));
         Assert.True(prepare.CanRename, "method symbol must be renameable");
         Assert.Equal("Add", prepare.Placeholder);
         Assert.Equal(12, prepare.StartLine);
@@ -237,10 +215,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     {
         // Rename the `Add` declaration on line 12; the call on line 29 must
         // also be rewritten.
-        var result = await Manager.RenameAsync(SourcePath, 12, 24, "Renamed");
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var edit = +result;
+        var edit = AssertOk(await Manager.RenameAsync(SourcePath, 12, 24, "Renamed"));
         Assert.NotEmpty(edit.DocumentChanges);
 
         var allEdits = edit.DocumentChanges.SelectMany(change => change.Edits).ToList();
@@ -256,10 +231,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     [Fact]
     public async Task CodeLensesReturnedForLoadedDocument()
     {
-        var result = await Manager.GetCodeLensesAsync(SourcePath);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var lenses = +result;
+        var lenses = AssertOk(await Manager.GetCodeLensesAsync(SourcePath));
         // Reference lenses sit on declarations; titles are non-empty when present.
         Assert.All(lenses, lens => Assert.False(string.IsNullOrEmpty(lens.Title)));
     }
@@ -269,10 +241,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     [Fact]
     public async Task SemanticTokensFullReturnsWellFormedData()
     {
-        var result = await Manager.GetSemanticTokensFullAsync(SourcePath);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var tokens = +result;
+        var tokens = AssertOk(await Manager.GetSemanticTokensFullAsync(SourcePath));
         Assert.NotEmpty(tokens.Data);
         // LSP semantic tokens are encoded as quintuples.
         Assert.Equal(0, tokens.Data.Length % 5);
@@ -284,10 +253,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task InlayHintsForMethodRangeHaveLabels()
     {
         // Cover the Run() body (var declarations + literal args) lines 28-32.
-        var result = await Manager.GetInlayHintsAsync(SourcePath, 0, 40);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var hints = +result;
+        var hints = AssertOk(await Manager.GetInlayHintsAsync(SourcePath, 0, 40));
         // `var` declarations and literal arguments yield type/parameter hints.
         Assert.All(hints, hint => Assert.False(string.IsNullOrEmpty(hint.Label)));
     }
@@ -298,10 +264,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task PrepareCallHierarchyOnMethodReturnsItem()
     {
         // Line 12: `Add` declaration at char 23.
-        var result = await Manager.PrepareCallHierarchyAsync(SourcePath, 12, 24);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var item = +result;
+        var item = AssertOk(await Manager.PrepareCallHierarchyAsync(SourcePath, 12, 24));
         Assert.NotNull(item);
         Assert.Equal("Add", item!.Name);
         Assert.Contains("Source.cs", item.FilePath);
@@ -311,10 +274,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task IncomingCallsToMethodAreNonError()
     {
         // `Add` is called from Run() on line 29.
-        var result = await Manager.GetIncomingCallsAsync(SourcePath, 12, 24);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var calls = +result;
+        var calls = AssertOk(await Manager.GetIncomingCallsAsync(SourcePath, 12, 24));
         Assert.All(calls, call => Assert.False(string.IsNullOrEmpty(call.Name)));
     }
 
@@ -322,10 +282,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task OutgoingCallsFromMethodAreNonError()
     {
         // Run() (declared on line 26) calls Add and Console.WriteLine.
-        var result = await Manager.GetOutgoingCallsAsync(SourcePath, 26, 17);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var calls = +result;
+        var calls = AssertOk(await Manager.GetOutgoingCallsAsync(SourcePath, 26, 17));
         Assert.All(calls, call => Assert.False(string.IsNullOrEmpty(call.Name)));
     }
 
@@ -336,10 +293,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     {
         // Line 17: `public sealed class AdvancedCalculator : Calculator` — the
         // type name starts at char 20.
-        var result = await Manager.PrepareTypeHierarchyAsync(SourcePath, 17, 21);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var item = +result;
+        var item = AssertOk(await Manager.PrepareTypeHierarchyAsync(SourcePath, 17, 21));
         Assert.NotNull(item);
         Assert.Equal("AdvancedCalculator", item!.Name);
     }
@@ -348,10 +302,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task SupertypesOfDerivedClassIncludeBase()
     {
         // Line 17: AdvancedCalculator derives from Calculator.
-        var result = await Manager.GetSupertypesAsync(SourcePath, 17, 21);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var items = +result;
+        var items = AssertOk(await Manager.GetSupertypesAsync(SourcePath, 17, 21));
         // Calculator is a supertype.
         Assert.Contains(items, item => item.Name == "Calculator");
     }
@@ -360,10 +311,7 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     public async Task SubtypesOfBaseClassIncludeDerived()
     {
         // Line 10: `public class Calculator : IComputer` — type name at char 13.
-        var result = await Manager.GetSubtypesAsync(SourcePath, 10, 14);
-
-        Assert.False(result.IsError, result.Match(_ => "ok", err => err));
-        var items = +result;
+        var items = AssertOk(await Manager.GetSubtypesAsync(SourcePath, 10, 14));
         Assert.Contains(items, item => item.Name == "AdvancedCalculator");
     }
 

@@ -142,7 +142,9 @@ internal sealed partial class WorkspaceManager
             new SemanticTokensResult(),
             async document => new SemanticTokensResult
             {
-                Data = await SemanticTokensResolver.GetFullAsync(document, ct).ConfigureAwait(false),
+                Data = await SemanticTokensResolver
+                    .GetFullAsync(document, ct)
+                    .ConfigureAwait(false),
             },
             ct
         );

@@ -10,10 +10,7 @@ fn test_prepare_call_hierarchy_without_sidecar_returns_null() {
     assert_no_sidecar_request(
         SIMPLE_CLASS,
         "textDocument/prepareCallHierarchy",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 18 }
-        }),
+        position_params(5, 18),
         NoSidecarResult::Null,
         "prepareCallHierarchy",
     );
@@ -57,13 +54,7 @@ namespace CallHierarchyTest
     let mut client = open_no_sidecar(code);
 
     // Prepare on the Start method.
-    let prepare = client.request(
-        "textDocument/prepareCallHierarchy",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 21 }
-        }),
-    );
+    let prepare = client.request("textDocument/prepareCallHierarchy", position_params(5, 21));
     assert_eq!(prepare["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(prepare.get("error").is_none(), "prepare must not error");
     assert!(
@@ -104,10 +95,7 @@ fn test_prepare_call_hierarchy_complex_class_without_sidecar() {
     assert_no_sidecar_request(
         COMPLEX_CLASS,
         "textDocument/prepareCallHierarchy",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 16, "character": 15 }
-        }),
+        position_params(16, 15),
         NoSidecarResult::Null,
         "prepareCallHierarchy",
     );
@@ -118,20 +106,8 @@ fn test_call_hierarchy_repeated_prepare_same_position() {
     let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     // Same position twice — both must return null without crashing.
-    let resp1 = client.request(
-        "textDocument/prepareCallHierarchy",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 7, "character": 8 }
-        }),
-    );
-    let resp2 = client.request(
-        "textDocument/prepareCallHierarchy",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 7, "character": 8 }
-        }),
-    );
+    let resp1 = client.request("textDocument/prepareCallHierarchy", position_params(7, 8));
+    let resp2 = client.request("textDocument/prepareCallHierarchy", position_params(7, 8));
 
     assert_eq!(resp1["jsonrpc"], "2.0");
     assert_eq!(resp2["jsonrpc"], "2.0");

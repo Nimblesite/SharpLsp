@@ -19,16 +19,17 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
         var r = await fixture.SendAsync("textDocument/completion", fixture.PosPayload(32, 25));
         var items = MessagePackSerializer.Deserialize<CompletionItem[]>(r.Payload);
         Assert.NotEmpty(items);
-        var resolvePayload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "completionItem/resolve",
             new CompletionResolveRequest { FilePath = fixture.SourceFile, Index = items[0].Index }
         );
-        await fixture.SendAndAssertOkAsync("completionItem/resolve", resolvePayload);
     }
 
     [Fact]
     public async Task CodeAction_returns_actions()
     {
-        var payload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "textDocument/codeAction",
             new CodeActionRequest
             {
                 FilePath = fixture.SourceFile,
@@ -38,7 +39,6 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
                 EndCharacter = 18,
             }
         );
-        await fixture.SendAndAssertOkAsync("textDocument/codeAction", payload);
     }
 
     [Fact]
@@ -66,7 +66,11 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task SemanticTokensRange_returns_token_data()
     {
-        var payload = MessagePackSerializer.Serialize(
+        var tokens = await fixture.SendAndDeserializeAsync<
+            RangeFormattingRequest,
+            SemanticTokensResult
+        >(
+            "textDocument/semanticTokens/range",
             new RangeFormattingRequest
             {
                 FilePath = fixture.SourceFile,
@@ -76,27 +80,20 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
                 EndCharacter = 0,
             }
         );
-        var tokens = await fixture.SendAndDeserializeAsync<SemanticTokensResult>(
-            "textDocument/semanticTokens/range",
-            payload
-        );
         Assert.NotEmpty(tokens.Data);
     }
 
     [Fact]
     public async Task InlayHint_returns_type_and_parameter_hints()
     {
-        var payload = MessagePackSerializer.Serialize(
+        var hints = await fixture.SendAndDeserializeAsync<InlayHintRequest, InlayHintResult[]>(
+            "textDocument/inlayHint",
             new InlayHintRequest
             {
                 FilePath = fixture.SourceFile,
                 StartLine = 0,
                 EndLine = 35,
             }
-        );
-        var hints = await fixture.SendAndDeserializeAsync<InlayHintResult[]>(
-            "textDocument/inlayHint",
-            payload
         );
         Assert.NotEmpty(hints);
         Assert.False(string.IsNullOrEmpty(hints[0].Label));
@@ -173,7 +170,8 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task RangeFormatting_returns_edits()
     {
-        var payload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "textDocument/rangeFormatting",
             new RangeFormattingRequest
             {
                 FilePath = fixture.SourceFile,
@@ -183,13 +181,13 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
                 EndCharacter = 0,
             }
         );
-        await fixture.SendAndAssertOkAsync("textDocument/rangeFormatting", payload);
     }
 
     [Fact]
     public async Task OnTypeFormatting_returns_edits()
     {
-        var payload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "textDocument/onTypeFormatting",
             new OnTypeFormattingRequest
             {
                 FilePath = fixture.SourceFile,
@@ -197,6 +195,5 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
                 Character = 50,
             }
         );
-        await fixture.SendAndAssertOkAsync("textDocument/onTypeFormatting", payload);
     }
 }

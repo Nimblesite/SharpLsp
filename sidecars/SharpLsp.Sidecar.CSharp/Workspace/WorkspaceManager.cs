@@ -717,12 +717,7 @@ internal sealed partial class WorkspaceManager : IDisposable
                 return RenameEditResult.Failure("Document or solution not available");
             }
 
-            var (_, _, symbol) = await FindSymbolAtLineCharacterAsync(
-                    document,
-                    line,
-                    character,
-                    ct
-                )
+            var (_, _, symbol) = await FindSymbolAtLineCharacterAsync(document, line, character, ct)
                 .ConfigureAwait(false);
 
             if (symbol is null)
