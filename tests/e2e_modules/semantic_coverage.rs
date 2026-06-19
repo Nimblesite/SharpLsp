@@ -6,9 +6,7 @@ use super::*;
 
 #[test]
 fn test_definition_cache_returns_same_result() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     // Without sidecar, definition returns null — cache stores null.
     let resp1 = definition(&mut client, TEST_URI, 5, 18);
@@ -51,9 +49,7 @@ fn test_definition_cache_invalidated_on_change() {
 
 #[test]
 fn test_type_definition_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     let resp = type_definition(&mut client, TEST_URI, 5, 18);
     assert_nav_ok(&resp);
@@ -70,9 +66,7 @@ fn test_type_definition_without_sidecar_returns_null() {
 
 #[test]
 fn test_declaration_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     let resp = declaration(&mut client, TEST_URI, 5, 18);
     assert_nav_ok(&resp);
@@ -89,9 +83,7 @@ fn test_declaration_without_sidecar_returns_null() {
 
 #[test]
 fn test_type_definition_cache_returns_same_result() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     let resp1 = type_definition(&mut client, TEST_URI, 5, 18);
     let resp2 = type_definition(&mut client, TEST_URI, 5, 18);
@@ -110,9 +102,7 @@ fn test_type_definition_cache_returns_same_result() {
 
 #[test]
 fn test_declaration_cache_returns_same_result() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     let resp1 = declaration(&mut client, TEST_URI, 5, 18);
     let resp2 = declaration(&mut client, TEST_URI, 5, 18);
@@ -131,9 +121,7 @@ fn test_declaration_cache_returns_same_result() {
 
 #[test]
 fn test_implementation_repeated_returns_same_result() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, COMPLEX_CLASS);
+    let mut client = open_no_sidecar(COMPLEX_CLASS);
 
     let resp1 = implementation(&mut client, TEST_URI, 6, 22);
     let resp2 = implementation(&mut client, TEST_URI, 6, 22);
@@ -286,10 +274,7 @@ fn test_definition_cache_different_positions() {
 
 #[test]
 fn test_hover_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     // Hover on the class name "Program" (line 5, char 18).
     let resp = hover(&mut client, TEST_URI, 5, 18);
@@ -308,10 +293,7 @@ fn test_hover_without_sidecar_returns_null() {
 
 #[test]
 fn test_all_nav_methods_without_sidecar_return_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     // Definition on class name.
     let resp = definition(&mut client, TEST_URI, 5, 18);
@@ -353,43 +335,23 @@ fn test_all_nav_methods_without_sidecar_return_null() {
 
 #[test]
 fn test_completion_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "textDocument/completion",
         json!({
             "textDocument": { "uri": TEST_URI },
             "position": { "line": 5, "character": 18 }
         }),
+        NoSidecarResult::Null,
+        "completion",
     );
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "completion without sidecar must not error: {resp}",
-    );
-    // Without sidecar, result should be null (no completions available).
-    assert!(
-        resp["result"].is_null(),
-        "completion without sidecar must return null, got: {}",
-        resp["result"],
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 // Completion and hover both return null in a single session without sidecar.
 
 #[test]
 fn test_completion_and_hover_without_sidecar_both_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     // Hover first.
     let resp = hover(&mut client, TEST_URI, 5, 18);

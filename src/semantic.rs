@@ -18,6 +18,7 @@ use lsp_types::{
 use tracing::{debug, info, warn};
 
 use crate::sidecar::manager::SidecarManager;
+use crate::utils::{map_text_edits, SidecarTextEdit};
 
 /// Handle `textDocument/completion` via the .NET sidecar + postfix templates.
 pub fn handle_completion(
@@ -123,19 +124,7 @@ pub fn handle_completion_resolve(
 
     let result: SidecarCompletionResolveResult = rmp_serde::from_slice(&response_bytes)?;
     if !result.additional_edits.is_empty() {
-        item.additional_text_edits = Some(
-            result
-                .additional_edits
-                .into_iter()
-                .map(|e| TextEdit {
-                    range: Range::new(
-                        Position::new(e.start_line, e.start_character),
-                        Position::new(e.end_line, e.end_character),
-                    ),
-                    new_text: e.new_text,
-                })
-                .collect(),
-        );
+        item.additional_text_edits = Some(map_text_edits(&result.additional_edits));
     }
 
     Ok(serde_json::to_value(item)?)
@@ -848,21 +837,6 @@ struct SidecarCompletionResolveReq {
 struct SidecarCompletionResolveResult {
     /// Additional edits to apply (e.g. adding `using` directives).
     additional_edits: Vec<SidecarTextEdit>,
-}
-
-/// A text edit returned by the sidecar (flat coordinate representation).
-#[derive(serde::Deserialize)]
-struct SidecarTextEdit {
-    /// Start line of the edit range.
-    start_line: u32,
-    /// Start character of the edit range.
-    start_character: u32,
-    /// End line of the edit range.
-    end_line: u32,
-    /// End character of the edit range.
-    end_character: u32,
-    /// Replacement text.
-    new_text: String,
 }
 
 /// Sidecar hover response with optional range coordinates.

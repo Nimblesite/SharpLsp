@@ -136,6 +136,19 @@ pub fn stop_profile_target(target: &mut ProfileTargetProcess) {
     target.stop();
 }
 
+/// Build and start a `ProfileTarget`, then start an initialized LSP client.
+/// Returns the live target handle, its PID, and the client — the shared setup
+/// repeated by the profiler full-stack and edge-case tests.
+pub fn start_profiler_session() -> (ProfileTargetProcess, u32, LspClient) {
+    let binary = build_profile_target();
+    let target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+    (target, target_pid, client)
+}
+
 #[cfg(unix)]
 #[test]
 fn test_profile_target_drop_reaps_child_process() {
@@ -186,12 +199,7 @@ fn kill_profile_target_pid(pid: u32) {
 #[cfg(unix)]
 #[test]
 fn test_profiler_kill_process_terminates_dotnet_target() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     // The live .NET apphost must appear in the list, carrying a runtime version.
     let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
@@ -244,12 +252,7 @@ fn test_profiler_kill_process_terminates_dotnet_target() {
 /// Full lifecycle: listProcesses → find our PID → startTrace → stopTrace → verify .nettrace file.
 #[test]
 fn test_profiler_happy_path_trace_lifecycle() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     // 1. listProcesses must include our target PID.
     let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
@@ -333,12 +336,7 @@ fn test_profiler_happy_path_trace_lifecycle() {
 /// Happy path: startCounters → let it run → stopCounters → verify clean lifecycle.
 #[test]
 fn test_profiler_happy_path_counter_lifecycle() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     // 1. startCounters on the target.
     let resp = client.request(
@@ -389,12 +387,7 @@ fn test_profiler_happy_path_counter_lifecycle() {
 /// Happy path: collectDump → analyzeHeap → verify real heap stats.
 #[test]
 fn test_profiler_happy_path_dump_and_analyze() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     // 1. collectDump on the target.
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
@@ -498,12 +491,7 @@ fn test_profiler_happy_path_dump_and_analyze() {
 /// Happy path: collectDump → inspectObject on a real heap address.
 #[test]
 fn test_profiler_inspect_object_from_dump() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     // 1. Collect a heap dump.
     let tmp_dir = tempfile::tempdir().expect("create temp dir");

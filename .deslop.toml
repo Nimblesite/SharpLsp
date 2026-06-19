@@ -8,9 +8,10 @@
 # fixtures, and example projects from analysis, so this score tracks duplication
 # in code we actually ship — not the inherently repetitive end-to-end
 # request/response scaffolding. Test-helper duplication is still reduced via
-# shared modules (e.g. `nav_helpers::assert_nav_null_no_sidecar`, the
-# `CSharpSidecarFixture` send/deserialize helpers, `DocumentPosition.ResolveTokenAsync`);
-# that work simply isn't counted against the production gate.
+# shared modules (e.g. `nav_helpers::{assert_no_sidecar_request, open_no_sidecar,
+# hierarchy_item_params}`, the `CSharpSidecarFixture` send/deserialize helpers,
+# `DocumentPosition.ResolveTokenAsync`); that work simply isn't counted against
+# the production gate.
 #
 # RATCHET DOWN ONLY — never raise this without written PR justification.
 max_duplication_percent = 20.0

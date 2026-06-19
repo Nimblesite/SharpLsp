@@ -7,11 +7,8 @@ use super::*;
 
 #[test]
 fn test_inlay_hint_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "textDocument/inlayHint",
         json!({
             "textDocument": { "uri": TEST_URI },
@@ -20,22 +17,9 @@ fn test_inlay_hint_without_sidecar_returns_null() {
                 "end": { "line": 20, "character": 0 }
             }
         }),
+        NoSidecarResult::Null,
+        "inlayHint",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "inlayHint without sidecar must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "inlayHint without sidecar must return null, got: {}",
-        resp["result"]
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
@@ -71,14 +55,8 @@ fn test_inlay_hint_on_unopened_document_returns_error_or_null() {
 
 #[test]
 fn test_inlay_hint_zero_width_range_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    let code = "public class Calc { public int Add(int a, int b) { return a + b; } }";
-    client.open_document(TEST_URI, code);
-
-    // Range with start == end (zero height, zero width).
-    let resp = client.request(
+    assert_no_sidecar_request(
+        "public class Calc { public int Add(int a, int b) { return a + b; } }",
         "textDocument/inlayHint",
         json!({
             "textDocument": { "uri": TEST_URI },
@@ -87,30 +65,15 @@ fn test_inlay_hint_zero_width_range_without_sidecar() {
                 "end": { "line": 0, "character": 35 }
             }
         }),
+        NoSidecarResult::Null,
+        "inlayHint",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "inlayHint with zero-width range must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "inlayHint without sidecar must return null"
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_inlay_hint_complex_class_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, COMPLEX_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        COMPLEX_CLASS,
         "textDocument/inlayHint",
         json!({
             "textDocument": { "uri": TEST_URI },
@@ -119,25 +82,14 @@ fn test_inlay_hint_complex_class_without_sidecar() {
                 "end": { "line": 40, "character": 0 }
             }
         }),
+        NoSidecarResult::Null,
+        "inlayHint",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0");
-    assert!(resp.get("error").is_none(), "must not error: {resp}");
-    assert!(
-        resp["result"].is_null(),
-        "inlayHint without sidecar must return null"
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_inlay_hint_after_document_change_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    client.open_document(TEST_URI, "public class V1 { public int X; }");
+    let mut client = open_no_sidecar("public class V1 { public int X; }");
 
     let before = client.request(
         "textDocument/inlayHint",
@@ -184,9 +136,7 @@ fn test_inlay_hint_after_document_change_without_sidecar() {
 
 #[test]
 fn test_inlay_hint_repeated_same_range_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     let params = json!({
         "textDocument": { "uri": TEST_URI },
@@ -216,38 +166,19 @@ fn test_inlay_hint_repeated_same_range_without_sidecar() {
 
 #[test]
 fn test_semantic_tokens_full_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "textDocument/semanticTokens/full",
         json!({ "textDocument": { "uri": TEST_URI } }),
+        NoSidecarResult::Null,
+        "semanticTokens/full",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "semanticTokens/full without sidecar must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "semanticTokens/full without sidecar must return null, got: {}",
-        resp["result"]
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_semantic_tokens_range_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "textDocument/semanticTokens/range",
         json!({
             "textDocument": { "uri": TEST_URI },
@@ -256,59 +187,28 @@ fn test_semantic_tokens_range_without_sidecar_returns_null() {
                 "end": { "line": 15, "character": 0 }
             }
         }),
+        NoSidecarResult::Null,
+        "semanticTokens/range",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "semanticTokens/range without sidecar must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "semanticTokens/range without sidecar must return null, got: {}",
-        resp["result"]
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_semantic_tokens_full_delta_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "textDocument/semanticTokens/full/delta",
         json!({
             "textDocument": { "uri": TEST_URI },
             "previousResultId": "1"
         }),
+        NoSidecarResult::Null,
+        "semanticTokens/full/delta",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "semanticTokens/full/delta without sidecar must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "semanticTokens/full/delta without sidecar must return null, got: {}",
-        resp["result"]
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_semantic_tokens_all_three_methods_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, COMPLEX_CLASS);
+    let mut client = open_no_sidecar(COMPLEX_CLASS);
 
     let full = client.request(
         "textDocument/semanticTokens/full",
@@ -358,9 +258,7 @@ fn test_semantic_tokens_all_three_methods_without_sidecar() {
 
 #[test]
 fn test_semantic_tokens_full_repeated_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     let resp1 = client.request(
         "textDocument/semanticTokens/full",
@@ -386,10 +284,7 @@ fn test_semantic_tokens_full_repeated_without_sidecar() {
 
 #[test]
 fn test_semantic_tokens_after_document_change_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    client.open_document(TEST_URI, "public class V1 { }");
+    let mut client = open_no_sidecar("public class V1 { }");
 
     let before = client.request(
         "textDocument/semanticTokens/full",

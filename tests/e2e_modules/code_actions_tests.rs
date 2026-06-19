@@ -7,11 +7,8 @@ use super::*;
 
 #[test]
 fn test_code_action_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "textDocument/codeAction",
         json!({
             "textDocument": { "uri": TEST_URI },
@@ -23,65 +20,31 @@ fn test_code_action_without_sidecar_returns_null() {
                 "diagnostics": []
             }
         }),
+        NoSidecarResult::Null,
+        "codeAction",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "codeAction without sidecar must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "codeAction without sidecar must return null, got: {}",
-        resp["result"]
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_code_action_resolve_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "codeAction/resolve",
         json!({
             "title": "Add missing using",
             "kind": "quickfix",
             "data": { "id": 1, "uri": TEST_URI }
         }),
+        NoSidecarResult::Null,
+        "codeAction/resolve",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "codeAction/resolve without sidecar must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "codeAction/resolve without sidecar must return null, got: {}",
-        resp["result"]
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_code_action_zero_width_range_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    let code = "public class Widget { public void Render() { } }";
-    client.open_document(TEST_URI, code);
-
     // Zero-width range (cursor position, no selection).
-    let resp = client.request(
+    assert_no_sidecar_request(
+        "public class Widget { public void Render() { } }",
         "textDocument/codeAction",
         json!({
             "textDocument": { "uri": TEST_URI },
@@ -94,31 +57,16 @@ fn test_code_action_zero_width_range_without_sidecar() {
                 "triggerKind": 1
             }
         }),
+        NoSidecarResult::Null,
+        "codeAction",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "codeAction with zero-width range must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "codeAction without sidecar must return null"
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_code_action_full_document_range_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, COMPLEX_CLASS);
-
     // Range spanning the entire document.
-    let resp = client.request(
+    assert_no_sidecar_request(
+        COMPLEX_CLASS,
         "textDocument/codeAction",
         json!({
             "textDocument": { "uri": TEST_URI },
@@ -131,24 +79,14 @@ fn test_code_action_full_document_range_without_sidecar() {
                 "only": ["quickfix", "refactor"]
             }
         }),
+        NoSidecarResult::Null,
+        "codeAction",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0");
-    assert!(resp.get("error").is_none(), "must not error");
-    assert!(
-        resp["result"].is_null(),
-        "codeAction without sidecar must return null"
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_code_action_repeated_same_range_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     let params = json!({
         "textDocument": { "uri": TEST_URI },
@@ -180,10 +118,7 @@ fn test_code_action_repeated_same_range_without_sidecar() {
 
 #[test]
 fn test_code_action_after_document_change_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    client.open_document(TEST_URI, "public class V1 { }");
+    let mut client = open_no_sidecar("public class V1 { }");
 
     let before = client.request(
         "textDocument/codeAction",
@@ -225,60 +160,29 @@ fn test_code_action_after_document_change_without_sidecar() {
 
 #[test]
 fn test_code_lens_without_sidecar_returns_empty_array() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "textDocument/codeLens",
         json!({ "textDocument": { "uri": TEST_URI } }),
+        NoSidecarResult::NullOrEmptyArray,
+        "codeLens",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "codeLens without sidecar must not error: {resp}"
-    );
-    // Without sidecar the handler returns an empty array.
-    let result = &resp["result"];
-    assert!(
-        result.is_null() || result.as_array().is_some_and(Vec::is_empty),
-        "codeLens without sidecar must return null or empty array, got: {result}"
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_code_lens_on_complex_class_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, COMPLEX_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        COMPLEX_CLASS,
         "textDocument/codeLens",
         json!({ "textDocument": { "uri": TEST_URI } }),
+        NoSidecarResult::NullOrEmptyArray,
+        "codeLens",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0");
-    assert!(resp.get("error").is_none(), "must not error: {resp}");
-    let result = &resp["result"];
-    assert!(
-        result.is_null() || result.as_array().is_some_and(Vec::is_empty),
-        "codeLens without sidecar must return null or empty array"
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_code_lens_repeated_on_same_document_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
+    let mut client = open_no_sidecar(SIMPLE_CLASS);
 
     let resp1 = client.request(
         "textDocument/codeLens",
@@ -304,10 +208,7 @@ fn test_code_lens_repeated_on_same_document_without_sidecar() {
 
 #[test]
 fn test_code_lens_after_document_change_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-
-    client.open_document(TEST_URI, "public class Before { }");
+    let mut client = open_no_sidecar("public class Before { }");
 
     let before = client.request(
         "textDocument/codeLens",
@@ -336,9 +237,7 @@ fn test_code_lens_after_document_change_without_sidecar() {
 
 #[test]
 fn test_code_lens_and_code_action_interleaved_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, COMPLEX_CLASS);
+    let mut client = open_no_sidecar(COMPLEX_CLASS);
 
     // Interleave code lens and code action requests.
     let lens1 = client.request(

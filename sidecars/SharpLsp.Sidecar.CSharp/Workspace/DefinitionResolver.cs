@@ -104,14 +104,14 @@ internal static class DefinitionResolver
         CancellationToken ct
     )
     {
-        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-        if (model is null)
+        var resolved = await ResolveModelAndPositionAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        if (resolved is null)
         {
             return null;
         }
 
-        var position = await ToAbsolutePositionAsync(document, line, character, ct)
-            .ConfigureAwait(false);
+        var (model, position) = resolved.Value;
 
         var typeInfo = model.GetTypeInfo(
             await GetNodeAtPositionAsync(document, position, ct).ConfigureAwait(false),
@@ -362,14 +362,14 @@ internal static class DefinitionResolver
         CancellationToken ct
     )
     {
-        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-        if (model is null)
+        var resolved = await ResolveModelAndPositionAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        if (resolved is null)
         {
             return null;
         }
 
-        var position = await ToAbsolutePositionAsync(document, line, character, ct)
-            .ConfigureAwait(false);
+        var (model, position) = resolved.Value;
 
         var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
         if (root is null)
@@ -420,6 +420,29 @@ internal static class DefinitionResolver
     {
         var text = await document.GetTextAsync(ct).ConfigureAwait(false);
         return text.Lines.GetPosition(new LinePosition(line, character));
+    }
+
+    /// <summary>
+    /// Fetch the semantic model and resolve <paramref name="line"/>/<paramref name="character"/>
+    /// to an absolute position. Returns <see langword="null"/> when the document exposes no
+    /// semantic model. Shared preamble of the symbol- and type-definition resolvers.
+    /// </summary>
+    private static async Task<(SemanticModel Model, int Position)?> ResolveModelAndPositionAsync(
+        Document document,
+        int line,
+        int character,
+        CancellationToken ct
+    )
+    {
+        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
+        if (model is null)
+        {
+            return null;
+        }
+
+        var position = await ToAbsolutePositionAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        return (model, position);
     }
 
     /// <summary>Get the syntax node at an absolute position.</summary>

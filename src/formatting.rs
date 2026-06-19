@@ -6,11 +6,11 @@ use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
     DocumentFormattingParams, DocumentOnTypeFormattingParams, DocumentRangeFormattingParams,
-    Position, Range, TextEdit,
 };
 use tracing::{debug, warn};
 
 use crate::sidecar::manager::SidecarManager;
+use crate::utils::{map_text_edits, SidecarTextEdit};
 
 /// Handle `textDocument/formatting`.
 pub fn handle_formatting(
@@ -37,7 +37,7 @@ pub fn handle_formatting(
 
     let edits: Vec<SidecarTextEdit> = rmp_serde::from_slice(&response_bytes)?;
     debug!("Got {} formatting edits from sidecar", edits.len());
-    Ok(serde_json::to_value(map_edits(&edits))?)
+    Ok(serde_json::to_value(map_text_edits(&edits))?)
 }
 
 /// Handle `textDocument/rangeFormatting`.
@@ -70,7 +70,7 @@ pub fn handle_range_formatting(
         };
 
     let edits: Vec<SidecarTextEdit> = rmp_serde::from_slice(&response_bytes)?;
-    Ok(serde_json::to_value(map_edits(&edits))?)
+    Ok(serde_json::to_value(map_text_edits(&edits))?)
 }
 
 /// Handle `textDocument/onTypeFormatting`.
@@ -101,20 +101,7 @@ pub fn handle_on_type_formatting(
         };
 
     let edits: Vec<SidecarTextEdit> = rmp_serde::from_slice(&response_bytes)?;
-    Ok(serde_json::to_value(map_edits(&edits))?)
-}
-
-fn map_edits(edits: &[SidecarTextEdit]) -> Vec<TextEdit> {
-    edits
-        .iter()
-        .map(|e| TextEdit {
-            range: Range::new(
-                Position::new(e.start_line, e.start_character),
-                Position::new(e.end_line, e.end_character),
-            ),
-            new_text: e.new_text.clone(),
-        })
-        .collect()
+    Ok(serde_json::to_value(map_text_edits(&edits))?)
 }
 
 // ── Wire types ────────────────────────────────────────────────────
@@ -138,13 +125,4 @@ struct SidecarPositionReq {
     file_path: String,
     line: u32,
     character: u32,
-}
-
-#[derive(serde::Deserialize)]
-struct SidecarTextEdit {
-    start_line: u32,
-    start_character: u32,
-    end_line: u32,
-    end_character: u32,
-    new_text: String,
 }

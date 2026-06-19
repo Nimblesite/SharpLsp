@@ -87,12 +87,7 @@ pub fn handle_install(
     // Perform the synchronous XML fast path.
     let response = apply_install(&target, &params.package_id, &params.version)?;
 
-    // Fire background restore if the file was actually modified.
-    if response.success && !response.modified_files.is_empty() {
-        spawn_restore(runtime, sender, &target, response.modified_files.clone());
-    }
-
-    Ok(serde_json::to_value(response)?)
+    finish_with_restore(response, runtime, sender, &target)
 }
 
 /// Handle `sharplsp/nuget/uninstall` — fast-path XML edit + background restore.
@@ -107,8 +102,50 @@ pub fn handle_uninstall(
 
     let response = apply_uninstall(&target, &params.package_id)?;
 
-    if response.success && !response.modified_files.is_empty() {
-        spawn_restore(runtime, sender, &target, response.modified_files.clone());
+    finish_with_restore(response, runtime, sender, &target)
+}
+
+/// Install/uninstall responses that may trigger a background restore.
+trait RestoreOutcome {
+    /// Whether the operation succeeded.
+    fn succeeded(&self) -> bool;
+    /// Paths of files the operation modified.
+    fn modified_files(&self) -> &[String];
+}
+
+impl RestoreOutcome for types::InstallResponse {
+    fn succeeded(&self) -> bool {
+        self.success
+    }
+
+    fn modified_files(&self) -> &[String] {
+        &self.modified_files
+    }
+}
+
+impl RestoreOutcome for types::UninstallResponse {
+    fn succeeded(&self) -> bool {
+        self.success
+    }
+
+    fn modified_files(&self) -> &[String] {
+        &self.modified_files
+    }
+}
+
+/// Fire a background restore when the operation modified files, then serialize the
+/// response. Shared tail of `handle_install` and `handle_uninstall`.
+fn finish_with_restore<R>(
+    response: R,
+    runtime: &tokio::runtime::Runtime,
+    sender: Sender<Message>,
+    target: &types::NuGetTarget,
+) -> Result<serde_json::Value>
+where
+    R: RestoreOutcome + serde::Serialize,
+{
+    if response.succeeded() && !response.modified_files().is_empty() {
+        spawn_restore(runtime, sender, target, response.modified_files().to_vec());
     }
 
     Ok(serde_json::to_value(response)?)
