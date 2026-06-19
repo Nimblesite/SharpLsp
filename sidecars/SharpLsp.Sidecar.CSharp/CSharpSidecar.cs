@@ -111,11 +111,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
             var result = await _workspace
                 .UpdateDocumentTextAsync(request.FilePath, request.NewText, ct)
                 .ConfigureAwait(false);
-            return result.IsError
-                ? ByteResult.Failure(!result ?? "Update failed")
-                : new ByteResult.Ok<byte[], string>(
-                    MessagePackSerializer.Serialize("ok", cancellationToken: ct)
-                );
+            return AckOrFailure(result, "Update failed", ct);
         }
         catch (Exception ex)
         {
@@ -170,10 +166,9 @@ internal sealed partial class CSharpSidecar : SidecarHost
         }
     }
 
-    private async Task<ByteResult> HandleDeclarationAsync(byte[] payload, CancellationToken ct)
+    private Task<ByteResult> HandleDeclarationAsync(byte[] payload, CancellationToken ct)
     {
-        return await HandleSingleLocationRequestAsync(payload, _workspace.GetDeclarationAsync, ct)
-            .ConfigureAwait(false);
+        return HandleSingleLocationRequestAsync(payload, _workspace.GetDeclarationAsync, ct);
     }
 
     private Task<ByteResult> HandleDefinitionAsync(byte[] payload, CancellationToken ct)
@@ -198,10 +193,9 @@ internal sealed partial class CSharpSidecar : SidecarHost
         }
     }
 
-    private async Task<ByteResult> HandleHoverAsync(byte[] payload, CancellationToken ct)
+    private Task<ByteResult> HandleHoverAsync(byte[] payload, CancellationToken ct)
     {
-        return await HandleNullableRequestAsync(payload, _workspace.GetHoverAsync, ct)
-            .ConfigureAwait(false);
+        return HandleNullableRequestAsync(payload, _workspace.GetHoverAsync, ct);
     }
 
     private Task<ByteResult> HandleImplementationAsync(byte[] payload, CancellationToken ct)
@@ -256,14 +250,22 @@ internal sealed partial class CSharpSidecar : SidecarHost
         }
     }
 
-    private async Task<ByteResult> HandleTypeDefinitionAsync(byte[] payload, CancellationToken ct)
+    private Task<ByteResult> HandleTypeDefinitionAsync(byte[] payload, CancellationToken ct)
     {
-        return await HandleSingleLocationRequestAsync(
-                payload,
-                _workspace.GetTypeDefinitionAsync,
-                ct
-            )
-            .ConfigureAwait(false);
+        return HandleSingleLocationRequestAsync(payload, _workspace.GetTypeDefinitionAsync, ct);
+    }
+
+    private static Task<TResult> InvokePositionRequestAsync<TResult>(
+        byte[] payload,
+        Func<string, int, int, CancellationToken, Task<TResult>> workspaceMethod,
+        CancellationToken ct
+    )
+    {
+        var request = MessagePackSerializer.Deserialize<PositionRequest>(
+            payload,
+            cancellationToken: ct
+        );
+        return workspaceMethod(request.FilePath, request.Line, request.Character, ct);
     }
 
     private static async Task<ByteResult> HandlePositionRequestAsync<T>(
@@ -274,16 +276,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
     {
         try
         {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await workspaceMethod(
-                    request.FilePath,
-                    request.Line,
-                    request.Character,
-                    ct
-                )
+            var result = await InvokePositionRequestAsync(payload, workspaceMethod, ct)
                 .ConfigureAwait(false);
             return SerializeResult(result, ct);
         }
@@ -302,16 +295,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
     {
         try
         {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await workspaceMethod(
-                    request.FilePath,
-                    request.Line,
-                    request.Character,
-                    ct
-                )
+            var result = await InvokePositionRequestAsync(payload, workspaceMethod, ct)
                 .ConfigureAwait(false);
             if (result is not Result<T?, string>.Ok<T?, string> { Value: var value })
             {
@@ -341,16 +325,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
     {
         try
         {
-            var request = MessagePackSerializer.Deserialize<PositionRequest>(
-                payload,
-                cancellationToken: ct
-            );
-            var result = await workspaceMethod(
-                    request.FilePath,
-                    request.Line,
-                    request.Character,
-                    ct
-                )
+            var result = await InvokePositionRequestAsync(payload, workspaceMethod, ct)
                 .ConfigureAwait(false);
             if (
                 result
@@ -378,6 +353,24 @@ internal sealed partial class CSharpSidecar : SidecarHost
         }
     }
 
+    /// <summary>
+    /// Serialize an "ok" acknowledgement, or convert an errored <paramref name="result"/> into
+    /// a failure carrying its message (falling back to <paramref name="failureMessage"/>). Shared
+    /// tail of the document-update and workspace-open handlers.
+    /// </summary>
+    private static ByteResult AckOrFailure<T>(
+        Result<T, string> result,
+        string failureMessage,
+        CancellationToken ct
+    )
+    {
+        return result.IsError
+            ? ByteResult.Failure(!result ?? failureMessage)
+            : new ByteResult.Ok<byte[], string>(
+                MessagePackSerializer.Serialize("ok", cancellationToken: ct)
+            );
+    }
+
     private async Task<ByteResult> HandleWorkspaceOpenAsync(byte[] payload, CancellationToken ct)
     {
         try
@@ -386,11 +379,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
 #pragma warning disable CS0618 // OpenAsync is obsolete - placeholder until workspace loading is redesigned
             var openResult = await _workspace.OpenAsync(path, ct).ConfigureAwait(false);
 #pragma warning restore CS0618
-            return openResult.IsError
-                ? ByteResult.Failure(!openResult ?? "Open failed")
-                : new ByteResult.Ok<byte[], string>(
-                    MessagePackSerializer.Serialize("ok", cancellationToken: ct)
-                );
+            return AckOrFailure(openResult, "Open failed", ct);
         }
         catch (Exception ex)
         {

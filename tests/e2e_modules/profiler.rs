@@ -34,6 +34,136 @@ fn test_profiler_list_processes() {
     client.wait_with_timeout();
 }
 
+/// [PROFILER-PROCESS-LIST] `listProcesses` must return ONLY .NET processes,
+/// never native OS daemons. Regression: it returned every row from `ps`/`wmic`
+/// (PID 1 launchd/init, logd, systemstats, … ~972 entries on macOS).
+#[test]
+fn test_profiler_list_processes_filters_to_dotnet_only() {
+    // Known native daemons from the bug report that must never appear.
+    const NATIVE_DAEMONS: &[&str] = &[
+        "launchd",
+        "kernel_task",
+        "logd",
+        "smd",
+        "systemstats",
+        "mds",
+        "systemd",
+    ];
+
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+
+    let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
+
+    let result = &resp["result"];
+    assert!(result.is_array(), "result must be a JSON array: {resp}");
+    if let Some(processes) = result.as_array() {
+        // PID 1 (launchd on macOS, init/systemd on Linux) always exists, is
+        // always returned by an unfiltered `ps -e`, and is NEVER .NET. Its
+        // presence proves the list is unfiltered.
+        let pid1_present = processes.iter().any(|p| p["pid"].as_u64() == Some(1));
+        assert!(
+            !pid1_present,
+            "PID 1 (init/launchd) leaked into the .NET process list — not filtered"
+        );
+
+        // Known native daemons from the bug report must never appear.
+        for proc in processes {
+            let name = proc["name"].as_str().unwrap_or("");
+            assert!(
+                !NATIVE_DAEMONS.contains(&name),
+                "native OS process '{name}' must be filtered out of the .NET list"
+            );
+        }
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// [PROFILER-PROCESS-LIST] `listProcesses` exposes a `runtime_version` on every
+/// row and returns the list sorted by (case-insensitive name, pid).
+#[test]
+fn test_profiler_list_processes_sorted_with_runtime_version() {
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+
+    let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
+
+    let result = &resp["result"];
+    assert!(result.is_array(), "result must be a JSON array: {resp}");
+    if let Some(processes) = result.as_array() {
+        // Every process carries a `runtime_version` field (may be null).
+        for proc in processes {
+            assert!(
+                proc.get("runtime_version").is_some(),
+                "every process must expose a runtime_version field: {proc}"
+            );
+        }
+        // The list is sorted by (lowercased name, pid).
+        let keys: Vec<(String, u64)> = processes
+            .iter()
+            .map(|p| {
+                (
+                    p["name"].as_str().unwrap_or("").to_ascii_lowercase(),
+                    p["pid"].as_u64().unwrap_or(0),
+                )
+            })
+            .collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        assert_eq!(keys, sorted, "process list must be sorted by (name, pid)");
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// [PROFILER-PROCESS-LIST] `killProcess` refuses a non-.NET PID. PID 1
+/// (launchd/init) is never .NET, so the safety guard must reject it WITHOUT
+/// sending any signal — the server must return an error and not crash.
+#[test]
+fn test_profiler_kill_process_refuses_non_dotnet_pid() {
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+
+    let resp = client.request("sharplsp/profiler/killProcess", json!({ "pid": 1 }));
+
+    assert!(
+        resp.get("error").is_some(),
+        "killing PID 1 must be refused, got: {resp}"
+    );
+    let msg = resp["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("not a running .NET process") || msg.contains("refusing"),
+        "error must explain the refusal, got: {msg}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// [PROFILER-PROCESS-LIST] `killProcess` errors on a non-existent PID without
+/// crashing the server.
+#[test]
+fn test_profiler_kill_process_invalid_pid() {
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+
+    let resp = client.request(
+        "sharplsp/profiler/killProcess",
+        json!({ "pid": 999_999_999 }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "killing a non-existent PID must return an error: {resp}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 /// `sharplsp/profiler/startTrace` returns an error for a non-existent PID
 /// (tool not found or attach failure — both acceptable, server must not crash).
 #[test]

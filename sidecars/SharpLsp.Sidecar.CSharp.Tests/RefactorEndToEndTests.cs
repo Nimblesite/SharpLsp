@@ -25,9 +25,10 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     public async Task PrepareRename_on_method_allows_rename()
     {
         // `Add` method at L9 c15.
-        var r = await fixture.SendAsync("textDocument/prepareRename", fixture.PosPayload(9, 15));
-        Assert.Null(r.Error);
-        var result = MessagePackSerializer.Deserialize<PrepareRenameResult>(r.Payload);
+        var result = await fixture.SendAndDeserializeAsync<PrepareRenameResult>(
+            "textDocument/prepareRename",
+            fixture.PosPayload(9, 15)
+        );
         Assert.True(result.CanRename);
         Assert.Equal("Add", result.Placeholder);
         Assert.Equal(9, result.StartLine);
@@ -37,9 +38,10 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     public async Task PrepareRename_on_namespace_disallows_rename()
     {
         // The namespace token cannot be renamed (symbol is INamespaceSymbol).
-        var r = await fixture.SendAsync("textDocument/prepareRename", fixture.PosPayload(0, 12));
-        Assert.Null(r.Error);
-        var result = MessagePackSerializer.Deserialize<PrepareRenameResult>(r.Payload);
+        var result = await fixture.SendAndDeserializeAsync<PrepareRenameResult>(
+            "textDocument/prepareRename",
+            fixture.PosPayload(0, 12)
+        );
         Assert.False(result.CanRename);
     }
 
@@ -47,9 +49,10 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     public async Task PrepareRename_on_field_allows_rename()
     {
         // `FieldCount` field at L80 c15.
-        var r = await fixture.SendAsync("textDocument/prepareRename", fixture.PosPayload(80, 15));
-        Assert.Null(r.Error);
-        var result = MessagePackSerializer.Deserialize<PrepareRenameResult>(r.Payload);
+        var result = await fixture.SendAndDeserializeAsync<PrepareRenameResult>(
+            "textDocument/prepareRename",
+            fixture.PosPayload(80, 15)
+        );
         Assert.True(result.CanRename);
         Assert.Equal("FieldCount", result.Placeholder);
     }
@@ -59,7 +62,8 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     {
         // Rename `Add` (declared L9, called L32) — RenameAsync must surface
         // edits for both sites without touching disk.
-        var payload = MessagePackSerializer.Serialize(
+        var edit = await fixture.SendAndDeserializeAsync<RenameRequest, WorkspaceEditResult>(
+            "textDocument/rename",
             new RenameRequest
             {
                 FilePath = fixture.SourceFile,
@@ -68,9 +72,6 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
                 NewName = "Sum",
             }
         );
-        var r = await fixture.SendAsync("textDocument/rename", payload);
-        Assert.Null(r.Error);
-        var edit = MessagePackSerializer.Deserialize<WorkspaceEditResult>(r.Payload);
         var doc = Assert.Single(edit.DocumentChanges);
         Assert.Equal(fixture.SourceFile, doc.FilePath);
         Assert.NotEmpty(doc.Edits);
@@ -80,7 +81,8 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Rename_field_produces_edits()
     {
-        var payload = MessagePackSerializer.Serialize(
+        var edit = await fixture.SendAndDeserializeAsync<RenameRequest, WorkspaceEditResult>(
+            "textDocument/rename",
             new RenameRequest
             {
                 FilePath = fixture.SourceFile,
@@ -89,9 +91,6 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
                 NewName = "Counter",
             }
         );
-        var r = await fixture.SendAsync("textDocument/rename", payload);
-        Assert.Null(r.Error);
-        var edit = MessagePackSerializer.Deserialize<WorkspaceEditResult>(r.Payload);
         Assert.NotEmpty(edit.DocumentChanges);
     }
 
@@ -99,7 +98,8 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     public async Task Rename_on_string_literal_returns_empty_edit()
     {
         // No symbol at a string literal -> empty workspace edit, not an error.
-        var payload = MessagePackSerializer.Serialize(
+        var edit = await fixture.SendAndDeserializeAsync<RenameRequest, WorkspaceEditResult>(
+            "textDocument/rename",
             new RenameRequest
             {
                 FilePath = fixture.SourceFile,
@@ -108,9 +108,6 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
                 NewName = "Whatever",
             }
         );
-        var r = await fixture.SendAsync("textDocument/rename", payload);
-        Assert.Null(r.Error);
-        var edit = MessagePackSerializer.Deserialize<WorkspaceEditResult>(r.Payload);
         Assert.Empty(edit.DocumentChanges);
     }
 
@@ -127,12 +124,10 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
             EndLine = 136,
             EndCharacter = 18,
         };
-        var listResp = await fixture.SendAsync(
+        var actions = await fixture.SendAndDeserializeAsync<CodeActionItem[]>(
             "textDocument/codeAction",
             MessagePackSerializer.Serialize(request)
         );
-        Assert.Null(listResp.Error);
-        var actions = MessagePackSerializer.Deserialize<CodeActionItem[]>(listResp.Payload);
         Assert.NotEmpty(actions);
 
         var resolved = await ResolveFirstActionWithEditsAsync(actions);
@@ -188,12 +183,10 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
             EndLine = 9,
             EndCharacter = 40,
         };
-        var r = await fixture.SendAsync(
+        var actions = await fixture.SendAndDeserializeAsync<CodeActionItem[]>(
             "textDocument/codeAction",
             MessagePackSerializer.Serialize(request)
         );
-        Assert.Null(r.Error);
-        var actions = MessagePackSerializer.Deserialize<CodeActionItem[]>(r.Payload);
         Assert.NotNull(actions);
     }
 }

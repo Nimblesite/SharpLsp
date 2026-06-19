@@ -202,7 +202,7 @@ fn collect_members(type_node: Node<'_>, source: &[u8]) -> Vec<MemberInfo> {
     for (index, child) in parent.children(&mut cursor).enumerate() {
         if let Some(category) = member_category(&child, source) {
             let name = extract_member_name(&child, source).unwrap_or_default();
-            let access = extract_member_access(&child, source);
+            let access = extract_access_modifiers(&child, source);
 
             // Find leading trivia (comments/attributes) by looking at
             // the gap between previous sibling's end and this node's start.
@@ -277,13 +277,17 @@ fn extract_member_name(node: &Node<'_>, source: &[u8]) -> Option<String> {
     }
     // field_declaration: name is inside variable_declaration > variable_declarator
     if node.kind() == "field_declaration" {
-        return find_field_name(node, source);
+        return variable_declarator_name(node, source);
     }
     None
 }
 
-/// Extract the name from a `field_declaration`'s `variable_declarator`.
-fn find_field_name(node: &Node<'_>, source: &[u8]) -> Option<String> {
+/// Extract the name from a `variable_declaration`'s first `variable_declarator`.
+///
+/// Shared by C# declarations whose name lives in a nested
+/// `variable_declaration > variable_declarator` (e.g. `field_declaration`,
+/// `event_field_declaration`) rather than a direct `name` field.
+pub(crate) fn variable_declarator_name(node: &Node<'_>, source: &[u8]) -> Option<String> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "variable_declaration" {
@@ -302,7 +306,10 @@ fn find_field_name(node: &Node<'_>, source: &[u8]) -> Option<String> {
 }
 
 /// Extract the accessibility modifier(s) from a member declaration node.
-fn extract_member_access(node: &Node<'_>, source: &[u8]) -> Option<String> {
+///
+/// Collects the C# access modifiers (`public`, `private`, `protected`,
+/// `internal`) declared on `node`, in source order, joined by a space.
+pub(crate) fn extract_access_modifiers(node: &Node<'_>, source: &[u8]) -> Option<String> {
     let mut cursor = node.walk();
     let mut parts: Vec<&str> = Vec::new();
     for child in node.children(&mut cursor) {

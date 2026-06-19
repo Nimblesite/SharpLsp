@@ -96,6 +96,25 @@ impl ProfileTargetProcess {
         self.child.id()
     }
 
+    /// Poll until the child has exited, reaping it, or `timeout` elapses.
+    ///
+    /// Uses the child handle rather than `kill -0`: once an external signal
+    /// (e.g. the LSP's `killProcess`) terminates the child, it lingers as a
+    /// zombie until its parent — this test process — reaps it, and `kill -0`
+    /// reports a zombie as still alive. `try_wait` reaps and reports truthfully.
+    pub fn wait_for_exit(&mut self, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match self.child.try_wait() {
+                Ok(Some(_)) => return true,
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                _ => return false,
+            }
+        }
+    }
+
     /// Kill and reap the target process if it is still running.
     pub fn stop(&mut self) {
         if self.child.try_wait().ok().flatten().is_some() {
@@ -115,6 +134,19 @@ impl Drop for ProfileTargetProcess {
 /// Kill and reap the target process.
 pub fn stop_profile_target(target: &mut ProfileTargetProcess) {
     target.stop();
+}
+
+/// Build and start a `ProfileTarget`, then start an initialized LSP client.
+/// Returns the live target handle, its PID, and the client — the shared setup
+/// repeated by the profiler full-stack and edge-case tests.
+pub fn start_profiler_session() -> (ProfileTargetProcess, u32, LspClient) {
+    let binary = build_profile_target();
+    let target = start_profile_target(&binary);
+    let target_pid = target.id();
+
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+    (target, target_pid, client)
 }
 
 #[cfg(unix)]
@@ -161,15 +193,66 @@ fn kill_profile_target_pid(pid: u32) {
     let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
 }
 
+/// [PROFILER-PROCESS-LIST] `killProcess` terminates a REAL .NET process. Starts
+/// `ProfileTarget`, confirms it appears in `listProcesses` carrying a runtime
+/// version, then kills it through the LSP and verifies the OS process is gone.
+#[cfg(unix)]
+#[test]
+fn test_profiler_kill_process_terminates_dotnet_target() {
+    let (mut target, target_pid, mut client) = start_profiler_session();
+
+    // The live .NET apphost must appear in the list, carrying a runtime version.
+    let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
+    let processes = resp["result"].as_array().expect("result must be array");
+    let found = processes
+        .iter()
+        .find(|p| p["pid"].as_u64() == Some(u64::from(target_pid)));
+    assert!(
+        found.is_some(),
+        "listProcesses must include target PID {target_pid}, got: {processes:?}"
+    );
+    let found = found.expect("target present");
+    assert!(
+        found["runtime_version"].is_string(),
+        "a killable .NET process must report a runtime version: {found}"
+    );
+
+    // killProcess must terminate it and report success.
+    let resp = client.request(
+        "sharplsp/profiler/killProcess",
+        json!({ "pid": target_pid }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "killProcess must succeed for a live .NET PID: {resp}"
+    );
+    assert_eq!(
+        resp["result"]["killed"],
+        json!(true),
+        "killProcess must report killed=true: {resp}"
+    );
+    assert_eq!(
+        resp["result"]["pid"].as_u64(),
+        Some(u64::from(target_pid)),
+        "killProcess must echo the terminated PID: {resp}"
+    );
+
+    // The target process must actually be gone (reap the handle to confirm,
+    // since the LSP killed it out-of-band as a child of this test process).
+    assert!(
+        target.wait_for_exit(Duration::from_secs(10)),
+        "killProcess must terminate PID {target_pid}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+    stop_profile_target(&mut target);
+}
+
 /// Full lifecycle: listProcesses → find our PID → startTrace → stopTrace → verify .nettrace file.
 #[test]
 fn test_profiler_happy_path_trace_lifecycle() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     // 1. listProcesses must include our target PID.
     let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
@@ -253,12 +336,7 @@ fn test_profiler_happy_path_trace_lifecycle() {
 /// Happy path: startCounters → let it run → stopCounters → verify clean lifecycle.
 #[test]
 fn test_profiler_happy_path_counter_lifecycle() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     // 1. startCounters on the target.
     let resp = client.request(
@@ -309,12 +387,7 @@ fn test_profiler_happy_path_counter_lifecycle() {
 /// Happy path: collectDump → analyzeHeap → verify real heap stats.
 #[test]
 fn test_profiler_happy_path_dump_and_analyze() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     // 1. collectDump on the target.
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
@@ -418,12 +491,7 @@ fn test_profiler_happy_path_dump_and_analyze() {
 /// Happy path: collectDump → inspectObject on a real heap address.
 #[test]
 fn test_profiler_inspect_object_from_dump() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     // 1. Collect a heap dump.
     let tmp_dir = tempfile::tempdir().expect("create temp dir");

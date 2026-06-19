@@ -78,6 +78,7 @@
   "cmd.profiler.countersProcess": "对此进程开始计数器",
   "cmd.profiler.dumpProcess": "收集此进程的内存转储",
   "cmd.profiler.copyPid": "复制 PID",
+  "cmd.profiler.killProcess": "终止进程",
   "cmd.build": "构建",
   "cmd.rebuild": "重新构建",
   "cmd.clean": "清理",

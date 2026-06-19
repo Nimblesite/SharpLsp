@@ -496,34 +496,26 @@ internal sealed partial class WorkspaceManager : IDisposable
         }
     }
 
-    public async Task<HighlightsResult> GetDocumentHighlightsAsync(
+    public Task<HighlightsResult> GetDocumentHighlightsAsync(
         string filePath,
         int line,
         int character,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null || _solution is null)
+        return RunDocumentQueryAsync(
+            filePath,
+            new DocumentHighlightListResult(),
+            // A non-null document implies _solution was non-null at lookup time:
+            // FindDocumentAsync returns null whenever _solution is null.
+            async document => new DocumentHighlightListResult
             {
-                return new HighlightsResult.Ok<DocumentHighlightListResult, string>(
-                    new DocumentHighlightListResult()
-                );
-            }
-
-            var highlights = await DefinitionResolver
-                .ResolveDocumentHighlightsAsync(document, _solution, line, character, ct)
-                .ConfigureAwait(false);
-            return new HighlightsResult.Ok<DocumentHighlightListResult, string>(
-                new DocumentHighlightListResult { Highlights = highlights }
-            );
-        }
-        catch (Exception ex)
-        {
-            return HighlightsResult.Failure(ex.Message);
-        }
+                Highlights = await DefinitionResolver
+                    .ResolveDocumentHighlightsAsync(document, _solution!, line, character, ct)
+                    .ConfigureAwait(false),
+            },
+            ct
+        );
     }
 
     private async Task<VoidResult> OpenCoreAsync(string path, CancellationToken ct)
@@ -663,12 +655,10 @@ internal sealed partial class WorkspaceManager : IDisposable
                 return PrepareRenameQueryResult.Failure("Document not found");
             }
 
-            var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-            var position = text.Lines[line].Start + character;
-            var symbol = await Microsoft
-                .CodeAnalysis.FindSymbols.SymbolFinder.FindSymbolAtPositionAsync(
+            var (text, position, symbol) = await FindSymbolAtLineCharacterAsync(
                     document,
-                    position,
+                    line,
+                    character,
                     ct
                 )
                 .ConfigureAwait(false);
@@ -727,14 +717,7 @@ internal sealed partial class WorkspaceManager : IDisposable
                 return RenameEditResult.Failure("Document or solution not available");
             }
 
-            var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-            var position = text.Lines[line].Start + character;
-            var symbol = await Microsoft
-                .CodeAnalysis.FindSymbols.SymbolFinder.FindSymbolAtPositionAsync(
-                    document,
-                    position,
-                    ct
-                )
+            var (_, _, symbol) = await FindSymbolAtLineCharacterAsync(document, line, character, ct)
                 .ConfigureAwait(false);
 
             if (symbol is null)
@@ -809,5 +792,30 @@ internal sealed partial class WorkspaceManager : IDisposable
         {
             return RenameEditResult.Failure(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Fetch the document's source text and the symbol at the given
+    /// (<paramref name="line"/>, <paramref name="character"/>) position. Returns the
+    /// text so callers needing it for further work avoid a second fetch. Collapses
+    /// the identical preamble shared by the prepare-rename and rename flows.
+    /// </summary>
+    private static async Task<(
+        SourceText Text,
+        int Position,
+        ISymbol? Symbol
+    )> FindSymbolAtLineCharacterAsync(
+        Document document,
+        int line,
+        int character,
+        CancellationToken ct
+    )
+    {
+        var text = await document.GetTextAsync(ct).ConfigureAwait(false);
+        var position = text.Lines[line].Start + character;
+        var symbol = await Microsoft
+            .CodeAnalysis.FindSymbols.SymbolFinder.FindSymbolAtPositionAsync(document, position, ct)
+            .ConfigureAwait(false);
+        return (text, position, symbol);
     }
 }

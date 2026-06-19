@@ -25,7 +25,7 @@ internal static class FormattingResolver
         var formatted = await Formatter
             .FormatAsync(document, cancellationToken: ct)
             .ConfigureAwait(false);
-        return await ComputeEditsAsync(document, formatted, ct).ConfigureAwait(false);
+        return await DocumentText.ComputeEditsAsync(document, formatted, ct).ConfigureAwait(false);
     }
 
     /// <summary>Format a range within a document.</summary>
@@ -38,15 +38,11 @@ internal static class FormattingResolver
         CancellationToken ct
     )
     {
-        var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-        var start = text.Lines.GetPosition(new LinePosition(startLine, startCharacter));
-        var end = text.Lines.GetPosition(new LinePosition(endLine, endCharacter));
-        var span = TextSpan.FromBounds(start, end);
-
-        var formatted = await Formatter
-            .FormatAsync(document, span, cancellationToken: ct)
+        var (_, span) = await DocumentText
+            .ResolveSpanAsync(document, startLine, startCharacter, endLine, endCharacter, ct)
             .ConfigureAwait(false);
-        return await ComputeEditsAsync(document, formatted, ct).ConfigureAwait(false);
+
+        return await FormatSpanAsync(document, span, ct).ConfigureAwait(false);
     }
 
     /// <summary>Format after typing a trigger character (semicolon, brace, newline).</summary>
@@ -62,41 +58,22 @@ internal static class FormattingResolver
 
         // Format the line containing the trigger character.
         var lineInfo = text.Lines.GetLineFromPosition(position);
-        var span = lineInfo.Span;
-
-        var formatted = await Formatter
-            .FormatAsync(document, span, cancellationToken: ct)
-            .ConfigureAwait(false);
-        return await ComputeEditsAsync(document, formatted, ct).ConfigureAwait(false);
+        return await FormatSpanAsync(document, lineInfo.Span, ct).ConfigureAwait(false);
     }
 
-    private static async Task<List<TextEditResult>> ComputeEditsAsync(
-        Document oldDoc,
-        Document newDoc,
+    /// <summary>
+    /// Format <paramref name="span"/> within <paramref name="document"/> and project the
+    /// result into granular text edits. Shared tail of the range and on-type formatters.
+    /// </summary>
+    private static async Task<List<TextEditResult>> FormatSpanAsync(
+        Document document,
+        TextSpan span,
         CancellationToken ct
     )
     {
-        var oldText = await oldDoc.GetTextAsync(ct).ConfigureAwait(false);
-        var newText = await newDoc.GetTextAsync(ct).ConfigureAwait(false);
-        var changes = newText.GetTextChanges(oldText);
-
-        var edits = new List<TextEditResult>();
-        foreach (var change in changes)
-        {
-            var start = oldText.Lines.GetLinePosition(change.Span.Start);
-            var end = oldText.Lines.GetLinePosition(change.Span.End);
-            edits.Add(
-                new TextEditResult
-                {
-                    StartLine = start.Line,
-                    StartCharacter = start.Character,
-                    EndLine = end.Line,
-                    EndCharacter = end.Character,
-                    NewText = change.NewText ?? "",
-                }
-            );
-        }
-
-        return edits;
+        var formatted = await Formatter
+            .FormatAsync(document, span, cancellationToken: ct)
+            .ConfigureAwait(false);
+        return await DocumentText.ComputeEditsAsync(document, formatted, ct).ConfigureAwait(false);
     }
 }

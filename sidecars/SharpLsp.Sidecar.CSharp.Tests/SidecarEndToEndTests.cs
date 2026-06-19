@@ -335,6 +335,52 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
         );
     }
 
+    /// <summary>
+    /// Sends a request through the sidecar socket, asserts the response carries no
+    /// error, then deserializes its payload into <typeparamref name="T"/>. Collapses
+    /// the pervasive send → assert-no-error → deserialize boilerplate that repeats
+    /// across every E2E suite.
+    /// </summary>
+    public async Task<T> SendAndDeserializeAsync<T>(string method, byte[] payload)
+    {
+        var envelope = await SendAsync(method, payload).ConfigureAwait(false);
+        Assert.Null(envelope.Error);
+        return MessagePackSerializer.Deserialize<T>(envelope.Payload);
+    }
+
+    /// <summary>
+    /// Sends a request through the sidecar socket and asserts the response carries no
+    /// error. For tests that only need to confirm the call succeeded without
+    /// inspecting the payload.
+    /// </summary>
+    public async Task SendAndAssertOkAsync(string method, byte[] payload)
+    {
+        var envelope = await SendAsync(method, payload).ConfigureAwait(false);
+        Assert.Null(envelope.Error);
+    }
+
+    /// <summary>
+    /// Serializes <paramref name="request"/> with MessagePack, sends it, and deserializes
+    /// the response. Overload of <see cref="SendAndDeserializeAsync{T}(string, byte[])"/>
+    /// that collapses the repeated "serialize a request then send" pattern shared across
+    /// the end-to-end tests. <typeparamref name="TRequest"/> precedes
+    /// <typeparamref name="TResult"/> in the type-argument list.
+    /// </summary>
+    public Task<TResult> SendAndDeserializeAsync<TRequest, TResult>(string method, TRequest request)
+    {
+        return SendAndDeserializeAsync<TResult>(method, MessagePackSerializer.Serialize(request));
+    }
+
+    /// <summary>
+    /// Serializes <paramref name="request"/> with MessagePack, sends it, and asserts the
+    /// response carries no error. Overload of
+    /// <see cref="SendAndAssertOkAsync(string, byte[])"/>.
+    /// </summary>
+    public Task SendAndAssertOkAsync<TRequest>(string method, TRequest request)
+    {
+        return SendAndAssertOkAsync(method, MessagePackSerializer.Serialize(request));
+    }
+
     public async Task InitializeAsync()
     {
         TempDir = CreateTestProject();
@@ -469,10 +515,10 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
             """
         );
 
-        var r = await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(slnxPath));
-
-        Assert.Null(r.Error);
-        var model = MessagePackSerializer.Deserialize<SolutionFileModel>(r.Payload);
+        var model = await fixture.SendAndDeserializeAsync<SolutionFileModel>(
+            "solution/read",
+            MessagePackSerializer.Serialize(slnxPath)
+        );
         Assert.Equal("slnx", model.Format);
         var project = Assert.Single(model.Projects);
         Assert.Equal("TestProject", project.DisplayName);
@@ -481,9 +527,10 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Hover_on_documented_method_shows_xml_docs()
     {
-        var r = await fixture.SendAsync("textDocument/hover", fixture.PosPayload(9, 15));
-        Assert.Null(r.Error);
-        var h = MessagePackSerializer.Deserialize<HoverResult>(r.Payload);
+        var h = await fixture.SendAndDeserializeAsync<HoverResult>(
+            "textDocument/hover",
+            fixture.PosPayload(9, 15)
+        );
         Assert.Contains("Add", h.Contents);
         Assert.Contains("Adds two numbers", h.Contents);
         Assert.NotNull(h.StartLine);
@@ -492,27 +539,30 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Hover_on_class_shows_type_info()
     {
-        var r = await fixture.SendAsync("textDocument/hover", fixture.PosPayload(3, 13));
-        Assert.Null(r.Error);
-        var h = MessagePackSerializer.Deserialize<HoverResult>(r.Payload);
+        var h = await fixture.SendAndDeserializeAsync<HoverResult>(
+            "textDocument/hover",
+            fixture.PosPayload(3, 13)
+        );
         Assert.Contains("Calculator", h.Contents);
     }
 
     [Fact]
     public async Task Hover_on_var_resolves_type()
     {
-        var r = await fixture.SendAsync("textDocument/hover", fixture.PosPayload(31, 8));
-        Assert.Null(r.Error);
-        var h = MessagePackSerializer.Deserialize<HoverResult>(r.Payload);
+        var h = await fixture.SendAndDeserializeAsync<HoverResult>(
+            "textDocument/hover",
+            fixture.PosPayload(31, 8)
+        );
         Assert.Contains("Calculator", h.Contents);
     }
 
     [Fact]
     public async Task Hover_on_property_shows_info()
     {
-        var r = await fixture.SendAsync("textDocument/hover", fixture.PosPayload(11, 18));
-        Assert.Null(r.Error);
-        var h = MessagePackSerializer.Deserialize<HoverResult>(r.Payload);
+        var h = await fixture.SendAndDeserializeAsync<HoverResult>(
+            "textDocument/hover",
+            fixture.PosPayload(11, 18)
+        );
         Assert.Contains("Name", h.Contents);
     }
 
@@ -520,16 +570,16 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     public async Task Hover_on_empty_line_returns_result()
     {
         // Even empty lines may resolve to enclosing namespace/type
-        var r = await fixture.SendAsync("textDocument/hover", fixture.PosPayload(1, 0));
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("textDocument/hover", fixture.PosPayload(1, 0));
     }
 
     [Fact]
     public async Task Definition_of_method_call_resolves()
     {
-        var r = await fixture.SendAsync("textDocument/definition", fixture.PosPayload(32, 25));
-        Assert.Null(r.Error);
-        var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
+        var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
+            "textDocument/definition",
+            fixture.PosPayload(32, 25)
+        );
         Assert.NotEmpty(loc.Locations);
         Assert.Equal(9, loc.Locations[0].Line);
     }
@@ -538,16 +588,16 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     public async Task Definition_on_empty_line_returns_result()
     {
         // Empty lines may still resolve to enclosing constructs
-        var r = await fixture.SendAsync("textDocument/definition", fixture.PosPayload(1, 0));
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("textDocument/definition", fixture.PosPayload(1, 0));
     }
 
     [Fact]
     public async Task TypeDefinition_of_variable_resolves_to_type()
     {
-        var r = await fixture.SendAsync("textDocument/typeDefinition", fixture.PosPayload(31, 8));
-        Assert.Null(r.Error);
-        var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
+        var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
+            "textDocument/typeDefinition",
+            fixture.PosPayload(31, 8)
+        );
         Assert.NotEmpty(loc.Locations);
         Assert.Equal(3, loc.Locations[0].Line);
     }
@@ -555,9 +605,10 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Declaration_of_interface_impl_finds_interface()
     {
-        var r = await fixture.SendAsync("textDocument/declaration", fixture.PosPayload(24, 18));
-        Assert.Null(r.Error);
-        var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
+        var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
+            "textDocument/declaration",
+            fixture.PosPayload(24, 18)
+        );
         Assert.NotEmpty(loc.Locations);
         Assert.Equal(19, loc.Locations.First().Line);
     }
@@ -565,18 +616,20 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Implementation_of_interface_method_finds_impl()
     {
-        var r = await fixture.SendAsync("textDocument/implementation", fixture.PosPayload(19, 11));
-        Assert.Null(r.Error);
-        var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
+        var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
+            "textDocument/implementation",
+            fixture.PosPayload(19, 11)
+        );
         Assert.NotEmpty(loc.Locations);
     }
 
     [Fact]
     public async Task Completion_at_position_returns_items()
     {
-        var r = await fixture.SendAsync("textDocument/completion", fixture.PosPayload(32, 25));
-        Assert.Null(r.Error);
-        var items = MessagePackSerializer.Deserialize<CompletionItem[]>(r.Payload);
+        var items = await fixture.SendAndDeserializeAsync<CompletionItem[]>(
+            "textDocument/completion",
+            fixture.PosPayload(32, 25)
+        );
         Assert.NotNull(items);
         Assert.NotEmpty(items);
     }
@@ -585,18 +638,16 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     public async Task Diagnostics_returns_results()
     {
         var payload = MessagePackSerializer.Serialize(fixture.SourceFile);
-        var r = await fixture.SendAsync("workspace/diagnostics", payload);
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("workspace/diagnostics", payload);
     }
 
     [Fact]
     public async Task AllDiagnostics_returns_results()
     {
-        var payload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "workspace/diagnostics/all",
             new SolutionDiagnosticsRequest { ProjectFilter = [] }
         );
-        var r = await fixture.SendAsync("workspace/diagnostics/all", payload);
-        Assert.Null(r.Error);
     }
 
     [Fact]
@@ -616,21 +667,21 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
         Assert.Null(r.Error);
         Assert.Equal("ok", MessagePackSerializer.Deserialize<string>(r.Payload));
 
-        var resetPayload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "textDocument/didChange",
             new DidChangeRequest
             {
                 FilePath = fixture.SourceFile,
                 NewText = CSharpSidecarFixture.InitialSource,
             }
         );
-        var reset = await fixture.SendAsync("textDocument/didChange", resetPayload);
-        Assert.Null(reset.Error);
     }
 
     [Fact]
     public async Task References_finds_usages()
     {
-        var payload = MessagePackSerializer.Serialize(
+        var loc = await fixture.SendAndDeserializeAsync<ReferencesRequest, LocationListResult>(
+            "textDocument/references",
             new ReferencesRequest
             {
                 FilePath = fixture.SourceFile,
@@ -639,16 +690,14 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
                 IncludeDeclaration = true,
             }
         );
-        var r = await fixture.SendAsync("textDocument/references", payload);
-        Assert.Null(r.Error);
-        var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
         Assert.NotEmpty(loc.Locations);
     }
 
     [Fact]
     public async Task DocumentHighlight_finds_occurrences()
     {
-        var payload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "textDocument/documentHighlight",
             new PositionRequest
             {
                 FilePath = fixture.SourceFile,
@@ -656,8 +705,6 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
                 Character = 15,
             }
         );
-        var r = await fixture.SendAsync("textDocument/documentHighlight", payload);
-        Assert.Null(r.Error);
     }
 
     [Fact]

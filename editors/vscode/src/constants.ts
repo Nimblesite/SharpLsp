@@ -53,6 +53,7 @@ export const CMD_PROFILER_TRACE_PROCESS = 'sharplsp.profiler.traceProcess';
 export const CMD_PROFILER_COUNTERS_PROCESS = 'sharplsp.profiler.countersProcess';
 export const CMD_PROFILER_DUMP_PROCESS = 'sharplsp.profiler.dumpProcess';
 export const CMD_PROFILER_COPY_PID = 'sharplsp.profiler.copyPid';
+export const CMD_PROFILER_KILL_PROCESS = 'sharplsp.profiler.killProcess';
 
 // Build commands
 export const CMD_BUILD = 'sharplsp.build';

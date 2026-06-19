@@ -78,6 +78,7 @@
   "cmd.profiler.countersProcess": "このプロセスのカウンターを開始",
   "cmd.profiler.dumpProcess": "このプロセスのメモリダンプを取得",
   "cmd.profiler.copyPid": "PID をコピー",
+  "cmd.profiler.killProcess": "プロセスを強制終了",
   "cmd.build": "ビルド",
   "cmd.rebuild": "リビルド",
   "cmd.clean": "クリーン",

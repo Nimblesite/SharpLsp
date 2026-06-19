@@ -33,9 +33,10 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task SemanticTokens_full_over_token_rich_source_returns_tokens()
     {
-        var r = await fixture.SendAsync("textDocument/semanticTokens/full", Pos(0, 0));
-        Assert.Null(r.Error);
-        var tokens = MessagePackSerializer.Deserialize<SemanticTokensResult>(r.Payload);
+        var tokens = await fixture.SendAndDeserializeAsync<SemanticTokensResult>(
+            "textDocument/semanticTokens/full",
+            Pos(0, 0)
+        );
         // The source contains namespaces, enums/members, structs, records,
         // interfaces, delegates, classes, properties, events, fields, methods,
         // extension methods, parameters, locals, strings, numbers and operators —
@@ -47,7 +48,11 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task SemanticTokens_range_over_method_body_returns_tokens()
     {
-        var payload = MessagePackSerializer.Serialize(
+        var tokens = await fixture.SendAndDeserializeAsync<
+            RangeFormattingRequest,
+            SemanticTokensResult
+        >(
+            "textDocument/semanticTokens/range",
             new RangeFormattingRequest
             {
                 FilePath = fixture.MetaProbeFile,
@@ -57,9 +62,6 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
                 EndCharacter = 0,
             }
         );
-        var r = await fixture.SendAsync("textDocument/semanticTokens/range", payload);
-        Assert.Null(r.Error);
-        var tokens = MessagePackSerializer.Deserialize<SemanticTokensResult>(r.Payload);
         Assert.NotEmpty(tokens.Data);
     }
 
@@ -68,7 +70,8 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task InlayHints_over_method_body_return_type_and_parameter_hints()
     {
-        var payload = MessagePackSerializer.Serialize(
+        var hints = await fixture.SendAndDeserializeAsync<InlayHintRequest, InlayHintResult[]>(
+            "textDocument/inlayHint",
             new InlayHintRequest
             {
                 FilePath = fixture.MetaProbeFile,
@@ -76,9 +79,6 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
                 EndLine = 49,
             }
         );
-        var r = await fixture.SendAsync("textDocument/inlayHint", payload);
-        Assert.Null(r.Error);
-        var hints = MessagePackSerializer.Deserialize<InlayHintResult[]>(r.Payload);
         // `var sb = ...`, `var list = ...`, `var total = ...`, lambda params, and
         // call arguments yield a mix of type (1) and parameter (2) hints.
         Assert.NotEmpty(hints);
@@ -97,9 +97,10 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     [InlineData(32, 8)] // Console            → named type
     public async Task Definition_on_framework_member_falls_back_to_metadata(int line, int character)
     {
-        var r = await fixture.SendAsync("textDocument/definition", Pos(line, character));
-        Assert.Null(r.Error);
-        var loc = MessagePackSerializer.Deserialize<LocationListResult>(r.Payload);
+        var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
+            "textDocument/definition",
+            Pos(line, character)
+        );
         // A framework symbol has no in-source location, so DefinitionResolver
         // routes through MetadataNavigator, which decompiles the containing type
         // to a temp ".cs" file. Either a decompiled location is produced or the
@@ -114,8 +115,7 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     public async Task TypeDefinition_on_framework_typed_local_decompiles_metadata()
     {
         // `var max = int.MaxValue;` — the local's type is System.Int32.
-        var r = await fixture.SendAsync("textDocument/typeDefinition", Pos(39, 12));
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("textDocument/typeDefinition", Pos(39, 12));
     }
 
     // ── Hover across symbol kinds ─────────────────────────────────
@@ -131,16 +131,14 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     [InlineData(30, 27)] // seed    → parameter
     public async Task Hover_on_symbol_returns_without_error(int line, int character)
     {
-        var r = await fixture.SendAsync("textDocument/hover", Pos(line, character));
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("textDocument/hover", Pos(line, character));
     }
 
     [Fact]
     public async Task Hover_on_extension_method_call_renders_signature()
     {
         // `item.Twice()` at L43 — an extension method invocation.
-        var r = await fixture.SendAsync("textDocument/hover", Pos(43, 26));
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("textDocument/hover", Pos(43, 26));
     }
 
     // ── Code actions: quick-fix over a real diagnostic ───────────
@@ -149,7 +147,8 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     public async Task CodeAction_over_unused_local_offers_and_resolves_fix()
     {
         // `var unused = 42;` at L46 raises CS0219 (assigned but never used).
-        var request = MessagePackSerializer.Serialize(
+        var actions = await fixture.SendAndDeserializeAsync<CodeActionRequest, CodeActionItem[]>(
+            "textDocument/codeAction",
             new CodeActionRequest
             {
                 FilePath = fixture.MetaProbeFile,
@@ -159,19 +158,15 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
                 EndCharacter = 24,
             }
         );
-        var r = await fixture.SendAsync("textDocument/codeAction", request);
-        Assert.Null(r.Error);
-        var actions = MessagePackSerializer.Deserialize<CodeActionItem[]>(r.Payload);
 
         // If Roslyn surfaces a fix for the span, resolving it must drive
         // CodeActionResolver's edit-collection path without error.
         if (actions.Length > 0)
         {
-            var resolve = MessagePackSerializer.Serialize(
+            await fixture.SendAndAssertOkAsync(
+                "codeAction/resolve",
                 new CodeActionResolveRequest { Id = actions[0].Id }
             );
-            var resolved = await fixture.SendAsync("codeAction/resolve", resolve);
-            Assert.Null(resolved.Error);
         }
     }
 
@@ -182,7 +177,8 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
         // "Move type to <Name>.cs" refactoring on the `Point` struct (L11 c14).
         // Resolving it produces a NEW document, driving CodeActionResolver's
         // added-document collection path (CollectAddedDocumentsAsync).
-        var request = MessagePackSerializer.Serialize(
+        var actions = await fixture.SendAndDeserializeAsync<CodeActionRequest, CodeActionItem[]>(
+            "textDocument/codeAction",
             new CodeActionRequest
             {
                 FilePath = fixture.MetaProbeFile,
@@ -192,19 +188,14 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
                 EndCharacter = 19,
             }
         );
-        var r = await fixture.SendAsync("textDocument/codeAction", request);
-        Assert.Null(r.Error);
-        var actions = MessagePackSerializer.Deserialize<CodeActionItem[]>(r.Payload);
 
         var move = actions.FirstOrDefault(a => a.Title.Contains("Move"));
         if (move is not null)
         {
-            var resolved = await fixture.SendAsync(
+            var edit = await fixture.SendAndDeserializeAsync<WorkspaceEditResult>(
                 "codeAction/resolve",
                 MessagePackSerializer.Serialize(new CodeActionResolveRequest { Id = move.Id })
             );
-            Assert.Null(resolved.Error);
-            var edit = MessagePackSerializer.Deserialize<WorkspaceEditResult>(resolved.Payload);
             Assert.NotEmpty(edit.DocumentChanges);
         }
     }
@@ -214,15 +205,13 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task PrepareCallHierarchy_on_method_returns_item()
     {
-        var r = await fixture.SendAsync("textDocument/prepareCallHierarchy", Pos(30, 15));
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("textDocument/prepareCallHierarchy", Pos(30, 15));
     }
 
     [Fact]
     public async Task PrepareTypeHierarchy_on_interface_returns_item()
     {
-        var r = await fixture.SendAsync("textDocument/prepareTypeHierarchy", Pos(17, 17));
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("textDocument/prepareTypeHierarchy", Pos(17, 17));
     }
 
     // ── Rename a local through the real socket ───────────────────
@@ -230,7 +219,8 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Rename_local_produces_workspace_edit()
     {
-        var payload = MessagePackSerializer.Serialize(
+        await fixture.SendAndAssertOkAsync(
+            "textDocument/rename",
             new RenameRequest
             {
                 FilePath = fixture.MetaProbeFile,
@@ -239,7 +229,5 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
                 NewName = "grandTotal",
             }
         );
-        var r = await fixture.SendAsync("textDocument/rename", payload);
-        Assert.Null(r.Error);
     }
 }

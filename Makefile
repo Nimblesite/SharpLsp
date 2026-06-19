@@ -64,7 +64,6 @@ SIDECAR_FS_OUT = target/sidecar-fsharp
 ZED_WASM       = $(ZED_DIR)/target/wasm32-wasip1/$(PROFILE)/sharplsp_zed.wasm
 ZED_PKG_DIR    = target/zed-extension
 ZED_PKG_TAR    = sharplsp-zed-extension.tar.gz
-RIDER_ZIP_SRC  = $(RIDER_DIR)/build/distributions/sharplsp-rider-$(if $(VERSION),$(VERSION),0.0.0).zip
 RIDER_ZIP      = sharplsp-rider.zip
 
 # Host platform for local VSIX dev builds
@@ -137,8 +136,9 @@ _build-rider:
 	@command -v java >/dev/null 2>&1 || { echo "==> Skipping Rider plugin (no java on PATH)"; exit 0; }
 	@echo "==> Building Rider plugin..."
 	cd $(RIDER_DIR) && ./gradlew buildPlugin --no-daemon
-	@test -f $(RIDER_ZIP_SRC) || { echo "ERROR: $(RIDER_ZIP_SRC) not found" >&2; exit 1; }
-	cp $(RIDER_ZIP_SRC) $(RIDER_ZIP)
+	@zip=$$(ls $(RIDER_DIR)/build/distributions/sharplsp-rider-*.zip 2>/dev/null | head -n1); \
+		test -n "$$zip" || { echo "ERROR: no Rider plugin zip in $(RIDER_DIR)/build/distributions/" >&2; exit 1; }; \
+		cp "$$zip" $(RIDER_ZIP)
 
 _stage-vsix-binary: _build-rust _build-dotnet
 	@echo "==> Staging required VSIX binaries ($(HOST_PLATFORM))..."

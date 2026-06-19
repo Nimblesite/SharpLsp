@@ -449,9 +449,7 @@ fn test_full_stack_rename_renames_symbol_across_usages() {
 #[test]
 fn test_full_stack_rename_no_sidecar_returns_error_or_null() {
     // Without a sidecar, rename must not crash the server.
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, "namespace T; public class Foo {}");
+    let mut client = open_no_sidecar("namespace T; public class Foo {}");
 
     let resp = client.request(
         "textDocument/rename",
@@ -470,17 +468,9 @@ fn test_full_stack_rename_no_sidecar_returns_error_or_null() {
 
 #[test]
 fn test_full_stack_prepare_rename_no_sidecar_returns_null_or_error() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, "namespace T; public class Foo {}");
+    let mut client = open_no_sidecar("namespace T; public class Foo {}");
 
-    let resp = client.request(
-        "textDocument/prepareRename",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 0, "character": 20 }
-        }),
-    );
+    let resp = client.request("textDocument/prepareRename", position_params(0, 20));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
 

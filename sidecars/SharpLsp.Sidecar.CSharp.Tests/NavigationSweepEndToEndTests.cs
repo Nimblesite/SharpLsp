@@ -59,16 +59,14 @@ public sealed class NavigationSweepEndToEndTests(CSharpSidecarFixture fixture)
     [MemberData(nameof(Symbols))]
     public async Task Hover_across_symbol_kinds_returns_without_error(int line, int character)
     {
-        var r = await fixture.SendAsync("textDocument/hover", Pos(line, character));
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("textDocument/hover", Pos(line, character));
     }
 
     [Theory]
     [MemberData(nameof(Symbols))]
     public async Task Definition_across_symbol_kinds_returns_without_error(int line, int character)
     {
-        var r = await fixture.SendAsync("textDocument/definition", Pos(line, character));
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("textDocument/definition", Pos(line, character));
     }
 
     [Theory]
@@ -78,8 +76,7 @@ public sealed class NavigationSweepEndToEndTests(CSharpSidecarFixture fixture)
         int character
     )
     {
-        var r = await fixture.SendAsync("textDocument/documentHighlight", Pos(line, character));
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("textDocument/documentHighlight", Pos(line, character));
     }
 
     [Theory]
@@ -98,7 +95,6 @@ public sealed class NavigationSweepEndToEndTests(CSharpSidecarFixture fixture)
                 IncludeDeclaration = true,
             }
         );
-        var r = await fixture.SendAsync("textDocument/references", payload);
-        Assert.Null(r.Error);
+        await fixture.SendAndAssertOkAsync("textDocument/references", payload);
     }
 }

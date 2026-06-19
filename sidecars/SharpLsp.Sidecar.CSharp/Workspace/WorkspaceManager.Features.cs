@@ -132,36 +132,26 @@ internal sealed partial class WorkspaceManager
     }
 
     /// <summary>Get semantic tokens for a full document.</summary>
-    public async Task<SemanticTokensResultType> GetSemanticTokensFullAsync(
+    public Task<SemanticTokensResultType> GetSemanticTokensFullAsync(
         string filePath,
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
+        return RunDocumentQueryAsync(
+            filePath,
+            new SemanticTokensResult(),
+            async document => new SemanticTokensResult
             {
-                return new SemanticTokensResultType.Ok<SemanticTokensResult, string>(
-                    new SemanticTokensResult()
-                );
-            }
-
-            var data = await SemanticTokensResolver
-                .GetFullAsync(document, ct)
-                .ConfigureAwait(false);
-            return new SemanticTokensResultType.Ok<SemanticTokensResult, string>(
-                new SemanticTokensResult { Data = data }
-            );
-        }
-        catch (Exception ex)
-        {
-            return SemanticTokensResultType.Failure(ex.Message);
-        }
+                Data = await SemanticTokensResolver
+                    .GetFullAsync(document, ct)
+                    .ConfigureAwait(false),
+            },
+            ct
+        );
     }
 
     /// <summary>Get semantic tokens for a range.</summary>
-    public async Task<SemanticTokensResultType> GetSemanticTokensRangeAsync(
+    public Task<SemanticTokensResultType> GetSemanticTokensRangeAsync(
         string filePath,
         int startLine,
         int startCharacter,
@@ -170,27 +160,17 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
+        return RunDocumentQueryAsync(
+            filePath,
+            new SemanticTokensResult(),
+            async document => new SemanticTokensResult
             {
-                return new SemanticTokensResultType.Ok<SemanticTokensResult, string>(
-                    new SemanticTokensResult()
-                );
-            }
-
-            var data = await SemanticTokensResolver
-                .GetRangeAsync(document, startLine, startCharacter, endLine, endCharacter, ct)
-                .ConfigureAwait(false);
-            return new SemanticTokensResultType.Ok<SemanticTokensResult, string>(
-                new SemanticTokensResult { Data = data }
-            );
-        }
-        catch (Exception ex)
-        {
-            return SemanticTokensResultType.Failure(ex.Message);
-        }
+                Data = await SemanticTokensResolver
+                    .GetRangeAsync(document, startLine, startCharacter, endLine, endCharacter, ct)
+                    .ConfigureAwait(false),
+            },
+            ct
+        );
     }
 
     /// <summary>Get inlay hints for a range.</summary>

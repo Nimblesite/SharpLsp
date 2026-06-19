@@ -9,12 +9,8 @@ use super::*;
 
 #[test]
 fn test_completion_resolve_without_sidecar_returns_item_unchanged() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    // completionItem/resolve without sidecar returns the item unchanged.
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "completionItem/resolve",
         json!({
             "label": "Console",
@@ -24,23 +20,9 @@ fn test_completion_resolve_without_sidecar_returns_item_unchanged() {
                 "index": 0
             }
         }),
+        NoSidecarResult::Null,
+        "completionItem/resolve",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "completionItem/resolve without sidecar must not error: {resp}"
-    );
-    // Without sidecar the handler returns null.
-    assert!(
-        resp["result"].is_null(),
-        "completionItem/resolve without sidecar must return null, got: {}",
-        resp["result"]
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
@@ -98,58 +80,24 @@ fn test_completion_resolve_with_no_data_field_returns_item() {
 
 #[test]
 fn test_document_highlight_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "textDocument/documentHighlight",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 18 }
-        }),
+        position_params(5, 18),
+        NoSidecarResult::Null,
+        "documentHighlight",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "documentHighlight without sidecar must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "documentHighlight without sidecar must return null, got: {}",
-        resp["result"]
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_document_highlight_complex_class_without_sidecar() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, COMPLEX_CLASS);
-
-    // Highlight on field "Name".
-    let resp = client.request(
+    assert_no_sidecar_request(
+        COMPLEX_CLASS,
         "textDocument/documentHighlight",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 13, "character": 23 }
-        }),
+        position_params(13, 23),
+        NoSidecarResult::Null,
+        "documentHighlight",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0");
-    assert!(resp.get("error").is_none(), "must not error");
-    assert!(
-        resp["result"].is_null(),
-        "documentHighlight without sidecar must return null"
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
@@ -158,20 +106,8 @@ fn test_document_highlight_repeated_caches_result() {
     let _ = client.initialize();
     client.open_document(TEST_URI, SIMPLE_CLASS);
 
-    let resp1 = client.request(
-        "textDocument/documentHighlight",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 18 }
-        }),
-    );
-    let resp2 = client.request(
-        "textDocument/documentHighlight",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 5, "character": 18 }
-        }),
-    );
+    let resp1 = client.request("textDocument/documentHighlight", position_params(5, 18));
+    let resp2 = client.request("textDocument/documentHighlight", position_params(5, 18));
 
     assert_eq!(resp1["jsonrpc"], "2.0");
     assert_eq!(resp2["jsonrpc"], "2.0");
@@ -212,13 +148,7 @@ namespace Test
     client.open_document(TEST_URI, code);
 
     // Request completion at "items." — exercises the VFS + LangId path.
-    let resp = client.request(
-        "textDocument/completion",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 10, "character": 18 }
-        }),
-    );
+    let resp = client.request("textDocument/completion", position_params(10, 18));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(resp.get("id").is_some(), "must have request id");

@@ -63,13 +63,7 @@ fn test_full_stack_completion_no_sidecar_returns_postfix_or_null() {
     let code = "namespace T; public class X { void M() { var x = 42; x. } }";
     client.open_document(TEST_URI, code);
 
-    let resp = client.request(
-        "textDocument/completion",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "position": { "line": 0, "character": 56 }
-        }),
-    );
+    let resp = client.request("textDocument/completion", position_params(0, 56));
 
     assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(

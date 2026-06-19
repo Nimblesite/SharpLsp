@@ -279,6 +279,10 @@ fn build_capabilities() -> ServerCapabilities {
         ),
         completion_provider: Some(lsp_types::CompletionOptions {
             resolve_provider: Some(true),
+            // `.` must be advertised so editors auto-send textDocument/completion
+            // on member access (e.g. `this.`). Without it the popup never appears
+            // after a dot. Applies to both C# and F# member access.
+            trigger_characters: Some(vec![".".to_string()]),
             ..lsp_types::CompletionOptions::default()
         }),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
@@ -718,6 +722,7 @@ fn handle_custom_request(
         }
         // Profiler
         "sharplsp/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
+        "sharplsp/profiler/killProcess" => profiler::handlers::handle_kill_process(req),
         "sharplsp/profiler/startTrace" => profiler::handlers::handle_start_trace(req),
         "sharplsp/profiler/stopTrace" => profiler::handlers::handle_stop_trace(req),
         "sharplsp/profiler/convertTrace" => profiler::handlers::handle_convert_trace(req),
@@ -785,18 +790,16 @@ fn pick_sidecar_with_fallback<'a>(
 /// Checks `params.textDocument.uri` first, then falls back to `params.data.uri`
 /// for code action resolve requests where the URI is embedded in the data field.
 fn extract_document_uri(req: &Request) -> Option<Uri> {
-    req.params
-        .get("textDocument")
-        .and_then(|td| td.get("uri"))
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<Uri>().ok())
-        .or_else(|| {
-            req.params
-                .get("data")
-                .and_then(|d| d.get("uri"))
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<Uri>().ok())
-        })
+    nested_uri(&req.params, "textDocument").or_else(|| nested_uri(&req.params, "data"))
+}
+
+/// Parse `params.<outer>.uri` into a [`Uri`], if present and valid.
+fn nested_uri(params: &serde_json::Value, outer: &str) -> Option<Uri> {
+    params
+        .get(outer)
+        .and_then(|value| value.get("uri"))
+        .and_then(|value| value.as_str())
+        .and_then(|raw| raw.parse::<Uri>().ok())
 }
 
 // ── Solution Loading ─────────────────────────────────────────────

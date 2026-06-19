@@ -1,4 +1,4 @@
-use super::profiler_full_stack::{build_profile_target, start_profile_target, stop_profile_target};
+use super::profiler_full_stack::{start_profiler_session, stop_profile_target};
 use super::*;
 
 // ── Profiler Edge Case Tests ─────────────────────────────────────
@@ -6,12 +6,7 @@ use super::*;
 /// Edge case: double-stop the same trace session must error on second stop.
 #[test]
 fn test_profiler_edge_double_stop_trace() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
     let trace_path = tmp_dir
@@ -63,12 +58,7 @@ fn test_profiler_edge_double_stop_trace() {
 /// Edge case: start trace, then kill the target process, then stop — must not hang.
 #[test]
 fn test_profiler_edge_trace_target_dies() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
     let trace_path = tmp_dir
@@ -188,12 +178,7 @@ fn test_profiler_edge_start_trace_rejects_non_dotnet_pid() {
 /// Edge case: `listProcesses` finds `ProfileTarget` by name in the process list.
 #[test]
 fn test_profiler_edge_process_list_finds_target_by_name() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     let resp = client.request("sharplsp/profiler/listProcesses", json!({}));
     let processes = resp["result"].as_array().expect("result must be array");
@@ -223,12 +208,7 @@ fn test_profiler_edge_process_list_finds_target_by_name() {
 /// Edge case: max concurrent sessions enforcement.
 #[test]
 fn test_profiler_edge_max_concurrent_sessions() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
     let mut session_ids = Vec::new();
@@ -291,12 +271,7 @@ fn test_profiler_edge_max_concurrent_sessions() {
 /// Edge case: analyzeHeap with type filter returns only matching types.
 #[test]
 fn test_profiler_edge_analyze_heap_type_filter() {
-    let binary = build_profile_target();
-    let mut target = start_profile_target(&binary);
-    let target_pid = target.id();
-
-    let mut client = LspClient::start();
-    let _ = client.initialize();
+    let (mut target, target_pid, mut client) = start_profiler_session();
 
     // Collect a dump first.
     let tmp_dir = tempfile::tempdir().expect("create temp dir");

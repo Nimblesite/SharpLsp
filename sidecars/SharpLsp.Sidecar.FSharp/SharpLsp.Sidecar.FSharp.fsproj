@@ -25,7 +25,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SharpLsp.Sidecar.Common\SharpLsp.Sidecar.Common.csproj" SetTargetFramework="TargetFramework=net10.0" />
+    <ProjectReference Include="..\SharpLsp.Sidecar.Common\SharpLsp.Sidecar.Common.csproj" />
   </ItemGroup>
 
   <ItemGroup>

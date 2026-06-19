@@ -48,10 +48,10 @@ public sealed class SolutionAndShutdownEndToEndTests(CSharpSidecarFixture fixtur
             """
         );
 
-        var r = await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(slnPath));
-
-        Assert.Null(r.Error);
-        var model = MessagePackSerializer.Deserialize<SolutionFileModel>(r.Payload);
+        var model = await fixture.SendAndDeserializeAsync<SolutionFileModel>(
+            "solution/read",
+            MessagePackSerializer.Serialize(slnPath)
+        );
         Assert.Equal("sln", model.Format);
         var project = Assert.Single(model.Projects);
         Assert.Equal("App", project.DisplayName);
@@ -78,10 +78,10 @@ public sealed class SolutionAndShutdownEndToEndTests(CSharpSidecarFixture fixtur
             """
         );
 
-        var r = await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(slnxPath));
-
-        Assert.Null(r.Error);
-        var model = MessagePackSerializer.Deserialize<SolutionFileModel>(r.Payload);
+        var model = await fixture.SendAndDeserializeAsync<SolutionFileModel>(
+            "solution/read",
+            MessagePackSerializer.Serialize(slnxPath)
+        );
         Assert.Equal(2, model.Folders.Count);
         var child = model.Folders.Single(folder => folder.Path == "/src/tests/");
         Assert.Equal("/src/", child.ParentPath);
@@ -106,10 +106,10 @@ public sealed class SolutionAndShutdownEndToEndTests(CSharpSidecarFixture fixtur
             """
         );
 
-        var r = await fixture.SendAsync("solution/read", MessagePackSerializer.Serialize(slnxPath));
-
-        Assert.Null(r.Error);
-        var model = MessagePackSerializer.Deserialize<SolutionFileModel>(r.Payload);
+        var model = await fixture.SendAndDeserializeAsync<SolutionFileModel>(
+            "solution/read",
+            MessagePackSerializer.Serialize(slnxPath)
+        );
         Assert.Single(model.Projects);
         var item = Assert.Single(model.Files);
         Assert.Equal("README.md", item.RelativePath);

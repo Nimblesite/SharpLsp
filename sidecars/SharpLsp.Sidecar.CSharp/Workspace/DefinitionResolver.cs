@@ -21,16 +21,39 @@ internal static class DefinitionResolver
         CancellationToken ct
     )
     {
-        var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
-        if (symbol is null)
-        {
-            return new LocationListResult();
-        }
+        return await ResolveSymbolLocationsAsync(
+                document,
+                line,
+                character,
+                async symbol =>
+                {
+                    var sourceLocations = ToAllSourceLocations(symbol);
+                    return sourceLocations.Locations.Count > 0
+                        ? sourceLocations
+                        : await ResolveMetadataFallbackAsync(document, symbol, ct)
+                            .ConfigureAwait(false);
+                },
+                ct
+            )
+            .ConfigureAwait(false);
+    }
 
-        var sourceLocations = ToAllSourceLocations(symbol);
-        return sourceLocations.Locations.Count > 0
-            ? sourceLocations
-            : await ResolveMetadataFallbackAsync(document, symbol, ct).ConfigureAwait(false);
+    /// <summary>
+    /// Resolve the symbol at a position, returning an empty
+    /// <see cref="LocationListResult"/> when none is found, otherwise mapping it
+    /// via <paramref name="map"/>. Collapses the identical resolve-or-empty guard
+    /// shared by the definition, implementation, and reference resolvers.
+    /// </summary>
+    private static async Task<LocationListResult> ResolveSymbolLocationsAsync(
+        Document document,
+        int line,
+        int character,
+        Func<ISymbol, Task<LocationListResult>> map,
+        CancellationToken ct
+    )
+    {
+        var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
+        return symbol is null ? new LocationListResult() : await map(symbol).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -79,14 +102,14 @@ internal static class DefinitionResolver
         CancellationToken ct
     )
     {
-        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-        if (model is null)
+        var resolved = await ResolveModelAndPositionAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        if (resolved is null)
         {
             return null;
         }
 
-        var position = await ToAbsolutePositionAsync(document, line, character, ct)
-            .ConfigureAwait(false);
+        var (model, position) = resolved.Value;
 
         var typeInfo = model.GetTypeInfo(
             await GetNodeAtPositionAsync(document, position, ct).ConfigureAwait(false),
@@ -131,44 +154,48 @@ internal static class DefinitionResolver
         CancellationToken ct
     )
     {
-        var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
-        if (symbol is null)
-        {
-            return new LocationListResult();
-        }
+        return await ResolveSymbolLocationsAsync(
+                document,
+                line,
+                character,
+                async symbol =>
+                {
+                    var locations = new List<LocationResult>();
 
-        var locations = new List<LocationResult>();
+                    // FindImplementationsAsync handles interfaces and abstract members.
+                    var implementations = await SymbolFinder
+                        .FindImplementationsAsync(symbol, solution, cancellationToken: ct)
+                        .ConfigureAwait(false);
+                    foreach (var impl in implementations)
+                    {
+                        AddSourceLocation(locations, impl);
+                    }
 
-        // FindImplementationsAsync handles interfaces and abstract members.
-        var implementations = await SymbolFinder
-            .FindImplementationsAsync(symbol, solution, cancellationToken: ct)
+                    // For virtual/abstract methods/properties, find overrides via
+                    // derived classes (FindOverridesAsync is unreliable with
+                    // MSBuildWorkspace).
+                    if (
+                        symbol is IMethodSymbol or IPropertySymbol
+                        && (symbol.IsVirtual || symbol.IsAbstract || symbol.IsOverride)
+                    )
+                    {
+                        await FindOverridesViaDerivedTypesAsync(symbol, solution, locations, ct)
+                            .ConfigureAwait(false);
+                    }
+
+                    // If no implementations found, include the symbol's own location.
+                    // Matches VS/Rider: "Go to Implementation" on a concrete type navigates
+                    // to itself when nothing derives from or implements it.
+                    if (locations.Count == 0)
+                    {
+                        AddSourceLocation(locations, symbol);
+                    }
+
+                    return new LocationListResult { Locations = locations };
+                },
+                ct
+            )
             .ConfigureAwait(false);
-        foreach (var impl in implementations)
-        {
-            AddSourceLocation(locations, impl);
-        }
-
-        // For virtual/abstract methods/properties, find overrides via
-        // derived classes (FindOverridesAsync is unreliable with
-        // MSBuildWorkspace).
-        if (
-            symbol is IMethodSymbol or IPropertySymbol
-            && (symbol.IsVirtual || symbol.IsAbstract || symbol.IsOverride)
-        )
-        {
-            await FindOverridesViaDerivedTypesAsync(symbol, solution, locations, ct)
-                .ConfigureAwait(false);
-        }
-
-        // If no implementations found, include the symbol's own location.
-        // Matches VS/Rider: "Go to Implementation" on a concrete type navigates
-        // to itself when nothing derives from or implements it.
-        if (locations.Count == 0)
-        {
-            AddSourceLocation(locations, symbol);
-        }
-
-        return new LocationListResult { Locations = locations };
     }
 
     /// <summary>Find all references to the symbol at a position across the solution.</summary>
@@ -181,44 +208,39 @@ internal static class DefinitionResolver
         CancellationToken ct
     )
     {
-        var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
-        if (symbol is null)
-        {
-            return new LocationListResult();
-        }
-
-        var locations = new List<LocationResult>();
-        var referencedSymbols = await SymbolFinder
-            .FindReferencesAsync(symbol, solution, cancellationToken: ct)
-            .ConfigureAwait(false);
-
-        foreach (var refSymbol in referencedSymbols)
-        {
-            if (includeDeclaration)
-            {
-                AddSourceLocation(locations, refSymbol.Definition);
-            }
-
-            foreach (var refLoc in refSymbol.Locations)
-            {
-                var span = refLoc.Location.GetMappedLineSpan();
-                if (span.IsValid && refLoc.Location.IsInSource)
+        return await ResolveSymbolLocationsAsync(
+                document,
+                line,
+                character,
+                async symbol =>
                 {
-                    locations.Add(
-                        new LocationResult
-                        {
-                            FilePath = span.Path,
-                            Line = span.StartLinePosition.Line,
-                            Character = span.StartLinePosition.Character,
-                            EndLine = span.EndLinePosition.Line,
-                            EndCharacter = span.EndLinePosition.Character,
-                        }
-                    );
-                }
-            }
-        }
+                    var locations = new List<LocationResult>();
+                    var referencedSymbols = await SymbolFinder
+                        .FindReferencesAsync(symbol, solution, cancellationToken: ct)
+                        .ConfigureAwait(false);
 
-        return new LocationListResult { Locations = locations };
+                    foreach (var refSymbol in referencedSymbols)
+                    {
+                        if (includeDeclaration)
+                        {
+                            AddSourceLocation(locations, refSymbol.Definition);
+                        }
+
+                        foreach (var refLoc in refSymbol.Locations)
+                        {
+                            var span = refLoc.Location.GetMappedLineSpan();
+                            if (span.IsValid && refLoc.Location.IsInSource)
+                            {
+                                locations.Add(DocumentPosition.ToLocationResult(span));
+                            }
+                        }
+                    }
+
+                    return new LocationListResult { Locations = locations };
+                },
+                ct
+            )
+            .ConfigureAwait(false);
     }
 
     /// <summary>Find document highlights for the symbol at a position (current doc only).</summary>
@@ -338,14 +360,14 @@ internal static class DefinitionResolver
         CancellationToken ct
     )
     {
-        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-        if (model is null)
+        var resolved = await ResolveModelAndPositionAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        if (resolved is null)
         {
             return null;
         }
 
-        var position = await ToAbsolutePositionAsync(document, line, character, ct)
-            .ConfigureAwait(false);
+        var (model, position) = resolved.Value;
 
         var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
         if (root is null)
@@ -396,6 +418,29 @@ internal static class DefinitionResolver
     {
         var text = await document.GetTextAsync(ct).ConfigureAwait(false);
         return text.Lines.GetPosition(new LinePosition(line, character));
+    }
+
+    /// <summary>
+    /// Fetch the semantic model and resolve <paramref name="line"/>/<paramref name="character"/>
+    /// to an absolute position. Returns <see langword="null"/> when the document exposes no
+    /// semantic model. Shared preamble of the symbol- and type-definition resolvers.
+    /// </summary>
+    private static async Task<(SemanticModel Model, int Position)?> ResolveModelAndPositionAsync(
+        Document document,
+        int line,
+        int character,
+        CancellationToken ct
+    )
+    {
+        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
+        if (model is null)
+        {
+            return null;
+        }
+
+        var position = await ToAbsolutePositionAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        return (model, position);
     }
 
     /// <summary>Get the syntax node at an absolute position.</summary>
@@ -547,17 +592,7 @@ internal static class DefinitionResolver
         var locations = new List<LocationResult>();
         foreach (var location in symbol.Locations.Where(l => l.IsInSource))
         {
-            var span = location.GetMappedLineSpan();
-            locations.Add(
-                new LocationResult
-                {
-                    FilePath = span.Path,
-                    Line = span.StartLinePosition.Line,
-                    Character = span.StartLinePosition.Character,
-                    EndLine = span.EndLinePosition.Line,
-                    EndCharacter = span.EndLinePosition.Character,
-                }
-            );
+            locations.Add(DocumentPosition.ToLocationResult(location.GetMappedLineSpan()));
         }
 
         return new LocationListResult { Locations = locations };
@@ -571,19 +606,8 @@ internal static class DefinitionResolver
     private static LocationResult? ToFirstSourceLocation(ISymbol symbol)
     {
         var location = symbol.Locations.FirstOrDefault(l => l.IsInSource);
-        if (location is null)
-        {
-            return null;
-        }
-
-        var span = location.GetMappedLineSpan();
-        return new LocationResult
-        {
-            FilePath = span.Path,
-            Line = span.StartLinePosition.Line,
-            Character = span.StartLinePosition.Character,
-            EndLine = span.EndLinePosition.Line,
-            EndCharacter = span.EndLinePosition.Character,
-        };
+        return location is null
+            ? null
+            : DocumentPosition.ToLocationResult(location.GetMappedLineSpan());
     }
 }

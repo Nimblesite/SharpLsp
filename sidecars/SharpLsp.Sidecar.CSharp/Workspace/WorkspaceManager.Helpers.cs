@@ -150,18 +150,7 @@ internal sealed partial class WorkspaceManager
                 continue;
             }
 
-            var startPos = text.Lines.GetLinePosition(textChange.Span.Start);
-            var endPos = text.Lines.GetLinePosition(textChange.Span.End);
-            result.AdditionalEdits.Add(
-                new TextEditResult
-                {
-                    StartLine = startPos.Line,
-                    StartCharacter = startPos.Character,
-                    EndLine = endPos.Line,
-                    EndCharacter = endPos.Character,
-                    NewText = textChange.NewText ?? "",
-                }
-            );
+            result.AdditionalEdits.Add(DocumentText.ToTextEdit(text, textChange));
         }
 
         return result;
@@ -293,5 +282,33 @@ internal sealed partial class WorkspaceManager
                 normalizedPath,
                 StringComparison.OrdinalIgnoreCase
             );
+    }
+
+    /// <summary>
+    /// Shared skeleton for document-scoped semantic queries: look up the document,
+    /// return <paramref name="emptyValue"/> when it is missing, otherwise run
+    /// <paramref name="resolve"/> and wrap its payload in a success result. Any
+    /// exception is mapped to a failure carrying its message.
+    /// </summary>
+    private async Task<Outcome.Result<TValue, string>> RunDocumentQueryAsync<TValue>(
+        string filePath,
+        TValue emptyValue,
+        Func<Document, Task<TValue>> resolve,
+        CancellationToken ct
+    )
+        where TValue : notnull
+    {
+        try
+        {
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
+            var value = document is null
+                ? emptyValue
+                : await resolve(document).ConfigureAwait(false);
+            return new Outcome.Result<TValue, string>.Ok<TValue, string>(value);
+        }
+        catch (Exception ex)
+        {
+            return Outcome.Result<TValue, string>.Failure(ex.Message);
+        }
     }
 }

@@ -561,11 +561,18 @@ mod tests {
         assert!(!out.contains("Newtonsoft.Json\" Version="));
     }
 
-    #[test]
-    fn add_package_writes_new_package_to_file() {
+    /// Writes `SIMPLE_CSPROJ` into a fresh temp dir, returning the `TempDir`
+    /// (kept alive by the caller) and the path to the written `.csproj` file.
+    fn write_simple_csproj() -> (tempfile::TempDir, std::path::PathBuf) {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("Project.csproj");
         std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+        (tmp, path)
+    }
+
+    #[test]
+    fn add_package_writes_new_package_to_file() {
+        let (_tmp, path) = write_simple_csproj();
 
         let result = add_package(&path, "Serilog", "3.1.0", PackageElement::Reference).unwrap();
         assert!(result.modified);
@@ -576,9 +583,7 @@ mod tests {
 
     #[test]
     fn add_package_no_change_when_already_present() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("Project.csproj");
-        std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+        let (_tmp, path) = write_simple_csproj();
 
         let result = add_package(
             &path,
@@ -593,9 +598,7 @@ mod tests {
 
     #[test]
     fn remove_package_from_file_modifies_content() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("Project.csproj");
-        std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+        let (_tmp, path) = write_simple_csproj();
 
         let result = remove_package(&path, "Newtonsoft.Json", PackageElement::Reference).unwrap();
         assert!(result.modified);
@@ -606,9 +609,7 @@ mod tests {
 
     #[test]
     fn remove_package_no_change_when_not_present() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("Project.csproj");
-        std::fs::write(&path, SIMPLE_CSPROJ).unwrap();
+        let (_tmp, path) = write_simple_csproj();
 
         let result = remove_package(&path, "NonExistent", PackageElement::Reference).unwrap();
         assert!(!result.modified);

@@ -77,12 +77,19 @@ suite('Profiler', () => {
     'sharplsp.profiler.detectLeaks',
     'sharplsp.profiler.showObjectGraph',
     'sharplsp.profiler.inspectObject',
+    'sharplsp.profiler.killProcess',
   ]) {
     test(`${cmd} command is registered`, async () => {
       const allCommands = await vscode.commands.getCommands(true);
       assert.ok(allCommands.includes(cmd), `${cmd} should be registered`);
     });
   }
+
+  // Invoking killProcess with no selected tree item must return before any
+  // confirmation dialog (which would hang the test runner) and not throw.
+  test('killProcess with no selection is a safe no-op', async () => {
+    await vscode.commands.executeCommand('sharplsp.profiler.killProcess');
+  });
 
   // ── Package Contributions ────────────────────────────────────
 

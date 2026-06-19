@@ -8,12 +8,12 @@ use std::sync::Arc;
 use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
-    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, Position, Range, TextEdit,
-    Uri, WorkspaceEdit,
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, TextEdit, Uri, WorkspaceEdit,
 };
 use tracing::{debug, warn};
 
 use crate::sidecar::manager::SidecarManager;
+use crate::utils::{map_text_edit, SidecarTextEdit};
 
 /// Handle `textDocument/codeAction` — returns available code fixes and refactorings.
 pub fn handle_code_action(
@@ -135,17 +135,6 @@ fn map_workspace_edit(edit: &SidecarWorkspaceEdit) -> WorkspaceEdit {
     }
 }
 
-/// Convert a sidecar text edit into an LSP `TextEdit`.
-fn map_text_edit(edit: &SidecarTextEdit) -> TextEdit {
-    TextEdit {
-        range: Range::new(
-            Position::new(edit.start_line, edit.start_character),
-            Position::new(edit.end_line, edit.end_character),
-        ),
-        new_text: edit.new_text.clone(),
-    }
-}
-
 // ── Sidecar wire types (MessagePack) ──────────────────────────────
 
 /// Request sent to the sidecar for code actions at a given range.
@@ -181,21 +170,6 @@ struct SidecarCodeActionItem {
 struct SidecarCodeActionResolveReq {
     /// Identifier of the code action to resolve.
     id: i32,
-}
-
-/// A single text edit returned by the sidecar.
-#[derive(serde::Deserialize)]
-struct SidecarTextEdit {
-    /// Start line of the range to replace.
-    start_line: u32,
-    /// Start character offset within the start line.
-    start_character: u32,
-    /// End line of the range to replace.
-    end_line: u32,
-    /// End character offset within the end line.
-    end_character: u32,
-    /// Replacement text to insert at the range.
-    new_text: String,
 }
 
 /// Edits for a single document returned by the sidecar.
@@ -248,21 +222,6 @@ mod tests {
     fn map_action_kind_unknown_falls_back_to_quickfix() {
         assert_eq!(map_action_kind(""), CodeActionKind::QUICKFIX);
         assert_eq!(map_action_kind("anything-else"), CodeActionKind::QUICKFIX);
-    }
-
-    #[test]
-    fn map_text_edit_translates_range_and_text() {
-        let edit = SidecarTextEdit {
-            start_line: 1,
-            start_character: 2,
-            end_line: 3,
-            end_character: 4,
-            new_text: "x".to_string(),
-        };
-        let mapped = map_text_edit(&edit);
-        assert_eq!(mapped.range.start, Position::new(1, 2));
-        assert_eq!(mapped.range.end, Position::new(3, 4));
-        assert_eq!(mapped.new_text, "x");
     }
 
     #[test]

@@ -78,6 +78,7 @@
   "cmd.profiler.countersProcess": "Start Counters on This Process",
   "cmd.profiler.dumpProcess": "Collect Memory Dump of This Process",
   "cmd.profiler.copyPid": "Copy PID",
+  "cmd.profiler.killProcess": "Kill Process",
   "cmd.build": "Build",
   "cmd.rebuild": "Rebuild",
   "cmd.clean": "Clean",

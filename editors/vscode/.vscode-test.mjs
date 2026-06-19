@@ -1,11 +1,17 @@
 import { defineConfig } from '@vscode/test-cli';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const configDir = fileURLToPath(new URL('.', import.meta.url));
+// Default the test host's --user-data-dir to a SHORT path under the OS temp
+// dir, not the repo-relative `.vscode-test/`. VS Code's main IPC handle is a
+// Unix domain socket (`<user-data-dir>/<v>-main.sock`); on macOS/Linux the
+// `sun_path` limit is ~104 chars, so a deep checkout path (e.g.
+// `~/Documents/Code/SharpLsp/editors/vscode/.vscode-test/...`) overflows it and
+// the host dies at startup with `listen EINVAL` before any test runs. The OS
+// temp dir keeps the socket path well under the limit (and Windows uses named
+// pipes, so it's unaffected either way). Overridable via the env var.
 const testUserDataDir =
-  process.env.VSCODE_TEST_USER_DATA_DIR ??
-  path.join(configDir, '.vscode-test', `user-data-${process.pid}`);
+  process.env.VSCODE_TEST_USER_DATA_DIR ?? path.join(os.tmpdir(), 'slsp-vsx', `u${process.pid}`);
 
 export default defineConfig({
   tests: [

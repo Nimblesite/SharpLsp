@@ -4,92 +4,38 @@ use super::*;
 
 #[test]
 fn test_semantic_tokens_full_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "textDocument/semanticTokens/full",
         json!({ "textDocument": { "uri": TEST_URI } }),
+        NoSidecarResult::Null,
+        "semanticTokens/full",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have id");
-    assert!(
-        resp.get("error").is_none(),
-        "semanticTokens/full without sidecar must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "semanticTokens/full without sidecar must return null, got: {}",
-        resp["result"]
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_semantic_tokens_range_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "textDocument/semanticTokens/range",
-        json!({
-            "textDocument": { "uri": TEST_URI },
-            "range": {
-                "start": { "line": 0, "character": 0 },
-                "end": { "line": 10, "character": 0 }
-            }
-        }),
+        range_params(0, 0, 10, 0),
+        NoSidecarResult::Null,
+        "semanticTokens/range",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have id");
-    assert!(
-        resp.get("error").is_none(),
-        "semanticTokens/range without sidecar must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "semanticTokens/range without sidecar must return null, got: {}",
-        resp["result"]
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]
 fn test_semantic_tokens_delta_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
-    let _ = client.initialize();
-    client.open_document(TEST_URI, SIMPLE_CLASS);
-
-    let resp = client.request(
+    assert_no_sidecar_request(
+        SIMPLE_CLASS,
         "textDocument/semanticTokens/full/delta",
         json!({
             "textDocument": { "uri": TEST_URI },
             "previousResultId": "1"
         }),
+        NoSidecarResult::Null,
+        "semanticTokens/delta",
     );
-
-    assert_eq!(resp["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "must have id");
-    assert!(
-        resp.get("error").is_none(),
-        "semanticTokens/delta without sidecar must not error: {resp}"
-    );
-    assert!(
-        resp["result"].is_null(),
-        "semanticTokens/delta without sidecar must return null, got: {}",
-        resp["result"]
-    );
-
-    client.shutdown_and_exit();
-    client.wait_with_timeout();
 }
 
 #[test]

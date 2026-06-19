@@ -1,6 +1,5 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.FindSymbols;
-using Microsoft.CodeAnalysis.Text;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -113,22 +112,12 @@ internal static class TypeHierarchyResolver
         CancellationToken ct
     )
     {
-        var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-        var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-        if (model is null)
-        {
-            return null;
-        }
-
-        var position = text.Lines.GetPosition(new LinePosition(line, character));
-        var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
-        if (root is null)
-        {
-            return null;
-        }
-
-        var token = root.FindToken(position);
-        return ResolveNamedType(token, model, ct);
+        var resolved = await DocumentPosition
+            .ResolveTokenAsync(document, line, character, ct)
+            .ConfigureAwait(false);
+        return resolved is null
+            ? null
+            : ResolveNamedType(resolved.Value.Token, resolved.Value.Model, ct);
     }
 
     private static INamedTypeSymbol? ResolveNamedType(
@@ -170,16 +159,18 @@ internal static class TypeHierarchyResolver
             return null;
         }
 
-        var span = loc.GetMappedLineSpan();
+        var (path, line, character, endLine, endCharacter) = DocumentPosition.Coordinates(
+            loc.GetMappedLineSpan()
+        );
         return new TypeHierarchyItem
         {
             Name = symbol.Name,
             Kind = MapKind(symbol),
-            FilePath = span.Path,
-            Line = span.StartLinePosition.Line,
-            Character = span.StartLinePosition.Character,
-            EndLine = span.EndLinePosition.Line,
-            EndCharacter = span.EndLinePosition.Character,
+            FilePath = path,
+            Line = line,
+            Character = character,
+            EndLine = endLine,
+            EndCharacter = endCharacter,
         };
     }
 

@@ -79,10 +79,9 @@ internal static class SemanticTokensResolver
         CancellationToken ct
     )
     {
-        var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-        var start = text.Lines.GetPosition(new LinePosition(startLine, startCharacter));
-        var end = text.Lines.GetPosition(new LinePosition(endLine, endCharacter));
-        var span = TextSpan.FromBounds(start, end);
+        var (text, span) = await DocumentText
+            .ResolveSpanAsync(document, startLine, startCharacter, endLine, endCharacter, ct)
+            .ConfigureAwait(false);
 
         var spans = await Classifier
             .GetClassifiedSpansAsync(document, span, ct)

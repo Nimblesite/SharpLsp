@@ -2,78 +2,7 @@ use super::*;
 
 // ── Workspace Symbols Tests ──────────────────────────────────────
 
-/// Create a temp .sln + .csproj + .cs workspace for workspaceSymbols tests.
-fn create_workspace_symbols_fixture() -> (tempfile::TempDir, String) {
-    let tmp = tempfile::tempdir().unwrap();
-    let proj_dir = tmp.path().join("MyLib");
-    std::fs::create_dir_all(&proj_dir).unwrap();
-
-    std::fs::write(
-        proj_dir.join("MyLib.csproj"),
-        r#"<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-  </PropertyGroup>
-</Project>"#,
-    )
-    .unwrap();
-
-    std::fs::write(
-        proj_dir.join("Models.cs"),
-        r#"namespace MyLib.Models;
-
-public class Customer
-{
-    public string Name { get; set; } = "";
-    public int Age { get; set; }
-
-    public void Greet() { }
-    private int _id;
-}
-
-public interface IRepository
-{
-    void Save();
-}
-
-public enum Status
-{
-    Active,
-    Inactive
-}
-
-public struct Point
-{
-    public int X;
-    public int Y;
-}
-
-public record Address(string Street, string City);
-
-public delegate void Handler(string msg);
-"#,
-    )
-    .unwrap();
-
-    std::fs::write(
-        tmp.path().join("Test.sln"),
-        r#"Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyLib", "MyLib/MyLib.csproj", "{00000000-0000-0000-0000-000000000001}"
-EndProject
-Global
-EndGlobal"#,
-    )
-    .unwrap();
-
-    let sln_path = tmp
-        .path()
-        .canonicalize()
-        .unwrap()
-        .join("Test.sln")
-        .to_string_lossy()
-        .to_string();
-    (tmp, sln_path)
-}
+// create_workspace_symbols_fixture lives in `fixtures` (re-exported via super::*).
 
 /// Create a temp .slnx + .csproj + .cs workspace for workspaceSymbols tests.
 fn create_workspace_symbols_slnx_fixture() -> (tempfile::TempDir, String) {

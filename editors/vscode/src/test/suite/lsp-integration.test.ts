@@ -519,6 +519,39 @@ suite('LSP Integration — Real Semantic LSP', () => {
     assert.strictEqual(items.get('_count')?.kind, vscode.CompletionItemKind.Field);
   });
 
+  test('auto-triggers member completion when `.` is typed', async function () {
+    this.timeout(90_000);
+    const { uri } = await openWorkspaceFixture(fixtureDir, 'CompletionShot.cs');
+    await waitForDocumentSymbols(uri);
+
+    // Passing a trigger character makes VS Code route the request ONLY to
+    // providers registered for that character. This stays empty unless the
+    // server advertises `.` in completionProvider.triggerCharacters — i.e. it
+    // reproduces "press dot, get nothing" end-to-end through the language client.
+    const completions = await pollUntilResult(
+      async () => {
+        const result = await vscode.commands.executeCommand<vscode.CompletionList>(
+          'vscode.executeCompletionItemProvider',
+          uri,
+          new vscode.Position(11, 24),
+          '.',
+        );
+        return result ?? new vscode.CompletionList();
+      },
+      (list) => list.items.some((item) => item.label.toString() === 'Add'),
+      90_000,
+      2_000,
+    );
+
+    const labels = new Set(completions.items.map((item) => item.label.toString()));
+    assert.ok(labels.has('Add'), 'Typing `.` must auto-trigger member completion including Add');
+    assert.ok(labels.has('Name'), 'Typing `.` must auto-trigger member completion including Name');
+    assert.ok(
+      labels.has('_count'),
+      'Typing `.` must auto-trigger member completion including _count',
+    );
+  });
+
   test('resolves definition and references for a method call site', async function () {
     this.timeout(90_000);
     const { uri } = await openWorkspaceFixture(fixtureDir, 'CompletionShot.cs');
