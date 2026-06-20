@@ -141,7 +141,12 @@ export async function removeNuGetPackage(
 ): Promise<string | undefined> {
   try {
     log.info(`Removing NuGet package ${packageName} from ${projectPath}`);
-    await execFileAsync('dotnet', ['remove', projectPath, 'package', packageName]);
+    // Use `dotnet package remove <name> --project <path>` (the .NET 10 verb-noun
+    // form). The legacy `dotnet remove <path> package <name>` silently ignores the
+    // positional project and resolves against the *current working directory*
+    // instead — which, for the extension host, is the workspace root, not the
+    // project's folder — so every removal failed with "Could not find any project".
+    await execFileAsync('dotnet', ['package', 'remove', packageName, '--project', projectPath]);
     return undefined;
   } catch (err: unknown) {
     const msg = getErrorMessage(err);

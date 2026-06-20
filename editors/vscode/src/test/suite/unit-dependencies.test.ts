@@ -2,7 +2,11 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { parseProjectXml, parseProjectDependencies } from '../../dependencies.js';
+import {
+  parseProjectXml,
+  parseProjectDependencies,
+  removeNuGetPackage,
+} from '../../dependencies.js';
 
 const SINGLE_PACKAGE_XML = `
 <Project Sdk="Microsoft.NET.Sdk">
@@ -186,5 +190,41 @@ suite('Dependencies Module — parseProjectDependencies()', () => {
     const result = parseProjectDependencies(filePath);
     assert.strictEqual(result.nugetPackages.length, 0);
     assert.strictEqual(result.projectReferences.length, 0);
+  });
+});
+
+// Coarse e2e over the real `dotnet` CLI: the removal path behind
+// "Remove Unused Packages" must actually delete the <PackageReference> from a
+// project that lives OUTSIDE the current working directory — exactly how the
+// extension host invokes it (cwd = workspace root, project in a subfolder).
+suite('Dependencies Module — removeNuGetPackage() (real dotnet)', () => {
+  let tmpDir: string;
+
+  setup(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-remove-pkg-'));
+  });
+
+  teardown(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('removes a PackageReference from a project outside the cwd', async function () {
+    this.timeout(60_000);
+    const projectPath = path.join(tmpDir, 'RemoveMe.csproj');
+    fs.writeFileSync(projectPath, SINGLE_PACKAGE_XML, 'utf-8');
+    assert.ok(
+      fs.readFileSync(projectPath, 'utf8').includes('Newtonsoft.Json'),
+      'precondition: the package is present before removal',
+    );
+
+    // The function shells out to `dotnet`; it must resolve the project from the
+    // absolute path we hand it, NOT from process.cwd() (which is not tmpDir).
+    const error = await removeNuGetPackage(projectPath, 'Newtonsoft.Json');
+
+    assert.strictEqual(error, undefined, `removal must succeed, got error: ${error ?? ''}`);
+    assert.ok(
+      !fs.readFileSync(projectPath, 'utf8').includes('Newtonsoft.Json'),
+      'the <PackageReference> must be gone from the project file after removal',
+    );
   });
 });
