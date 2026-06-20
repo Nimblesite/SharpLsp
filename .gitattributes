@@ -1,0 +1,40 @@
+# Line-ending policy.
+#
+# Every text file is stored as LF in the repository AND checked out as LF on
+# every platform. This is required because `.editorconfig` sets
+# `end_of_line = lf` and the .NET build enforces it via the Roslyn IDE0055
+# analyzer (`-warnaserror`). Without this, Windows CI runners (whose Git has
+# `core.autocrlf=true` by default) check out source as CRLF, and the Windows
+# `Build VSIX` jobs fail with `IDE0055: Fix formatting` even though the files
+# are clean LF in the repo. `eol=lf` here overrides `core.autocrlf`.
+* text=auto eol=lf
+
+# Windows batch scripts must stay CRLF to run correctly (e.g. Gradle wrapper).
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets — never normalize or diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.7z binary
+*.wasm binary
+*.dll binary
+*.exe binary
+*.so binary
+*.dylib binary
+*.nupkg binary
+*.vsix binary
+*.snk binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
