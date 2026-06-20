@@ -1196,3 +1196,422 @@ fn nuget_install_missing_params_returns_error() {
 
     client.shutdown_and_exit();
 }
+
+// ── sharplsp/nuget/consolidate ─────────────────────────────────────
+// Implements [PKG-CONSOLIDATE-REQUEST]. The pure consolidation logic is unit
+// tested in `src/nuget/consolidate.rs`; these drive the LSP request end to end
+// through the spawned server, asserting the wire contract and on-disk effects.
+
+/// A `.csproj` referencing two shared packages plus one unique to it.
+fn shared_csproj(unique_id: &str, nj_version: &str, serilog_version: &str) -> String {
+    format!(
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="{nj_version}" />
+    <PackageReference Include="Serilog" Version="{serilog_version}" />
+    <PackageReference Include="{unique_id}" Version="1.0.0" />
+  </ItemGroup>
+</Project>
+"#
+    )
+}
+
+/// Two-project solution where `Newtonsoft.Json` + `Serilog` are shared (at
+/// differing versions) and each project also has a unique reference. Returns
+/// `(TempDir, sln path, Core.csproj path, Api.csproj path)`.
+fn make_shared_package_solution() -> (TempDir, String, std::path::PathBuf, std::path::PathBuf) {
+    let td = TempDir::new().unwrap();
+    let root = td.path().to_path_buf();
+    write_file(&root, "App.sln", "Microsoft Visual Studio Solution File\n");
+    write_file(
+        &root,
+        "src/Core/Core.csproj",
+        &shared_csproj("OnlyCore", "13.0.3", "3.1.0"),
+    );
+    write_file(
+        &root,
+        "src/Api/Api.csproj",
+        &shared_csproj("OnlyApi", "13.0.4", "3.0.1"),
+    );
+    let sln = root.join("App.sln").to_string_lossy().into_owned();
+    let core = root.join("src/Core/Core.csproj");
+    let api = root.join("src/Api/Api.csproj");
+    (td, sln, core, api)
+}
+
+/// Locate a moved package by id within a consolidate result's `moved` array.
+/// The callers always assert the package is present first.
+fn moved_pkg<'a>(result: &'a Value, id: &str) -> &'a Value {
+    result["moved"]
+        .as_array()
+        .expect("moved array")
+        .iter()
+        .find(|m| m["id"].as_str() == Some(id))
+        .expect("moved package present")
+}
+
+#[test]
+fn nuget_consolidate_dry_run_previews_shared_without_touching_files() {
+    let (workspace, sln, core, api) = make_shared_package_solution();
+    let core_before = std::fs::read_to_string(&core).unwrap();
+    let api_before = std::fs::read_to_string(&api).unwrap();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "sharplsp/nuget/consolidate",
+        json!({ "solutionPath": sln, "dryRun": true }),
+    );
+
+    assert!(
+        resp.get("error").is_none(),
+        "dry-run consolidate should succeed: {resp}"
+    );
+    let result = &resp["result"];
+
+    // Exactly the two shared packages, alpha-ordered (BTreeMap key order).
+    let moved = result["moved"].as_array().expect("moved array");
+    assert_eq!(
+        moved.len(),
+        2,
+        "two packages are shared across both projects"
+    );
+    assert_eq!(
+        moved[0]["id"].as_str(),
+        Some("Newtonsoft.Json"),
+        "moved list is alphabetised"
+    );
+    assert_eq!(moved[1]["id"].as_str(), Some("Serilog"));
+
+    // Highest version across projects wins.
+    assert_eq!(
+        moved_pkg(result, "Newtonsoft.Json")["version"].as_str(),
+        Some("13.0.4"),
+        "highest Newtonsoft version reported"
+    );
+    assert_eq!(
+        moved_pkg(result, "Serilog")["version"].as_str(),
+        Some("3.1.0"),
+        "highest Serilog version reported"
+    );
+
+    // Each shared package lists both declaring projects.
+    let nj_from = moved_pkg(result, "Newtonsoft.Json")["fromProjects"]
+        .as_array()
+        .expect("fromProjects array");
+    assert_eq!(nj_from.len(), 2, "Newtonsoft declared in both projects");
+    let names: Vec<&str> = nj_from.iter().filter_map(|v| v.as_str()).collect();
+    assert!(names.contains(&"Core.csproj"), "names: {names:?}");
+    assert!(names.contains(&"Api.csproj"), "names: {names:?}");
+
+    // Dry run is non-destructive: no props file, no modified files, no writes.
+    assert!(
+        result.get("propsFile").is_none() || result["propsFile"].is_null(),
+        "dry run reports no props file: {result}"
+    );
+    assert!(
+        result["modifiedFiles"]
+            .as_array()
+            .expect("modifiedFiles array")
+            .is_empty(),
+        "dry run modifies nothing"
+    );
+    assert!(
+        result["message"].as_str().unwrap().contains("shared"),
+        "message describes the shared packages: {result}"
+    );
+    assert!(
+        !workspace.path().join("Directory.Build.props").exists(),
+        "dry run must not create Directory.Build.props"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&core).unwrap(),
+        core_before,
+        "dry run leaves Core.csproj byte-for-byte unchanged"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&api).unwrap(),
+        api_before,
+        "dry run leaves Api.csproj byte-for-byte unchanged"
+    );
+
+    client.shutdown_and_exit();
+}
+
+#[test]
+fn nuget_consolidate_apply_hoists_shared_into_build_props() {
+    let (workspace, sln, core, api) = make_shared_package_solution();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "sharplsp/nuget/consolidate",
+        json!({ "solutionPath": sln, "dryRun": false }),
+    );
+
+    assert!(
+        resp.get("error").is_none(),
+        "apply consolidate should succeed: {resp}"
+    );
+    let result = &resp["result"];
+
+    // Both shared packages were moved.
+    assert_eq!(
+        result["moved"].as_array().expect("moved array").len(),
+        2,
+        "both shared packages moved"
+    );
+
+    // A Directory.Build.props at the solution root was written and reported.
+    let props_file = result["propsFile"]
+        .as_str()
+        .expect("propsFile set on apply");
+    assert!(
+        props_file.ends_with("Directory.Build.props"),
+        "propsFile points at the build props: {props_file}"
+    );
+    let props_path = workspace.path().join("Directory.Build.props");
+    assert!(props_path.exists(), "Directory.Build.props created on disk");
+
+    // modifiedFiles covers the props file + both projects.
+    let modified: Vec<String> = result["modifiedFiles"]
+        .as_array()
+        .expect("modifiedFiles array")
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_owned))
+        .collect();
+    assert!(
+        modified
+            .iter()
+            .any(|f| f.ends_with("Directory.Build.props")),
+        "props file reported modified: {modified:?}"
+    );
+    assert!(
+        modified.iter().any(|f| f.ends_with("Core.csproj")),
+        "Core.csproj reported modified: {modified:?}"
+    );
+    assert!(
+        modified.iter().any(|f| f.ends_with("Api.csproj")),
+        "Api.csproj reported modified: {modified:?}"
+    );
+
+    // The props file now declares both shared packages at their highest version.
+    let props_text = std::fs::read_to_string(&props_path).unwrap();
+    assert!(
+        props_text.contains("Include=\"Newtonsoft.Json\" Version=\"13.0.4\""),
+        "props declares Newtonsoft 13.0.4: {props_text}"
+    );
+    assert!(
+        props_text.contains("Include=\"Serilog\" Version=\"3.1.0\""),
+        "props declares Serilog 3.1.0: {props_text}"
+    );
+
+    // Shared refs are stripped from each project; the unique refs remain.
+    let core_text = std::fs::read_to_string(&core).unwrap();
+    let api_text = std::fs::read_to_string(&api).unwrap();
+    assert!(
+        !core_text.contains("Newtonsoft.Json") && !core_text.contains("Serilog"),
+        "shared refs removed from Core.csproj: {core_text}"
+    );
+    assert!(
+        !api_text.contains("Newtonsoft.Json") && !api_text.contains("Serilog"),
+        "shared refs removed from Api.csproj: {api_text}"
+    );
+    assert!(
+        core_text.contains("OnlyCore"),
+        "Core's unique package is preserved: {core_text}"
+    );
+    assert!(
+        api_text.contains("OnlyApi"),
+        "Api's unique package is preserved: {api_text}"
+    );
+    assert!(
+        result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Newtonsoft.Json"),
+        "summary names the moved packages: {result}"
+    );
+
+    client.shutdown_and_exit();
+}
+
+#[test]
+fn nuget_consolidate_no_shared_packages_moves_nothing() {
+    let td = TempDir::new().unwrap();
+    let root = td.path();
+    write_file(root, "App.sln", "Microsoft Visual Studio Solution File\n");
+    write_file(
+        root,
+        "src/A/A.csproj",
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="OnlyA" Version="1.0.0" />
+  </ItemGroup>
+</Project>
+"#,
+    );
+    write_file(
+        root,
+        "src/B/B.csproj",
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="OnlyB" Version="2.0.0" />
+  </ItemGroup>
+</Project>
+"#,
+    );
+    let sln = root.join("App.sln").to_string_lossy().into_owned();
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "sharplsp/nuget/consolidate",
+        json!({ "solutionPath": sln, "dryRun": false }),
+    );
+
+    assert!(
+        resp.get("error").is_none(),
+        "consolidate with no shared packages should still succeed: {resp}"
+    );
+    let result = &resp["result"];
+    assert!(
+        result["moved"].as_array().expect("moved array").is_empty(),
+        "nothing is shared, so nothing moves: {result}"
+    );
+    assert!(
+        result["modifiedFiles"]
+            .as_array()
+            .expect("modifiedFiles array")
+            .is_empty(),
+        "no files modified when nothing is shared"
+    );
+    assert!(
+        result.get("propsFile").is_none() || result["propsFile"].is_null(),
+        "no props file when nothing is shared"
+    );
+    assert!(
+        !root.join("Directory.Build.props").exists(),
+        "Directory.Build.props must not be created when nothing is shared"
+    );
+
+    client.shutdown_and_exit();
+}
+
+#[test]
+fn nuget_consolidate_dry_run_defaults_off_when_param_omitted() {
+    // `dryRun` is `#[serde(default)]`; omitting it must default to false (apply).
+    let (workspace, sln, _core, _api) = make_shared_package_solution();
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("sharplsp/nuget/consolidate", json!({ "solutionPath": sln }));
+
+    assert!(
+        resp.get("error").is_none(),
+        "consolidate without dryRun should default to apply: {resp}"
+    );
+    assert!(
+        workspace.path().join("Directory.Build.props").exists(),
+        "omitted dryRun defaults to false → files are written"
+    );
+
+    client.shutdown_and_exit();
+}
+
+#[test]
+fn nuget_consolidate_missing_solution_param_returns_error() {
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request("sharplsp/nuget/consolidate", json!({ "dryRun": true }));
+
+    assert!(
+        resp.get("error").is_some(),
+        "missing solutionPath should return an error: {resp}"
+    );
+
+    client.shutdown_and_exit();
+}
+
+// ── sharplsp/nuget/unused (error/routing paths) ────────────────────
+// Implements [PKG-UNUSED-REQUEST]. The success path (a real Roslyn compilation
+// with a flagged package) is a full-stack test in `e2e_modules`; these cover
+// the host-side request handling, project-file reading, and language routing.
+
+#[test]
+fn nuget_unused_unloaded_csproj_returns_error() {
+    // A real, readable project that no solution has loaded into a sidecar:
+    // read_direct_refs succeeds, the sidecar query fails → an LSP error.
+    let td = TempDir::new().unwrap();
+    let root = td.path();
+    write_file(root, "App.csproj", BARE_CSPROJ);
+    let csproj = root.join("App.csproj");
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "sharplsp/nuget/unused",
+        json!({ "projectPath": csproj.to_str().unwrap() }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "unused on an unloaded project must return an error: {resp}"
+    );
+
+    client.shutdown_and_exit();
+}
+
+#[test]
+fn nuget_unused_fsproj_routes_to_fsharp_sidecar() {
+    // A `.fsproj` path must route through the F# sidecar branch of
+    // pick_package_sidecar. With nothing loaded it still resolves to an error.
+    let td = TempDir::new().unwrap();
+    let root = td.path();
+    write_file(root, "Lib.fsproj", BARE_FSPROJ);
+    let fsproj = root.join("Lib.fsproj");
+
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "sharplsp/nuget/unused",
+        json!({ "projectPath": fsproj.to_str().unwrap() }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "unused on an unloaded fsproj must return an error: {resp}"
+    );
+
+    client.shutdown_and_exit();
+}
+
+#[test]
+fn nuget_unused_missing_project_file_returns_error() {
+    // read_direct_refs cannot open the file → the handler surfaces an error.
+    let mut client = LspClient::start();
+    client.initialize();
+
+    let resp = client.request(
+        "sharplsp/nuget/unused",
+        json!({ "projectPath": "/nonexistent/Ghost.csproj" }),
+    );
+
+    assert!(
+        resp.get("error").is_some(),
+        "unused on a missing project file must return an error: {resp}"
+    );
+
+    client.shutdown_and_exit();
+}

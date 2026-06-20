@@ -50,6 +50,7 @@ pub mod inlay_hints_tests;
 pub mod lifecycle;
 pub mod logging;
 pub mod lsp_features;
+pub mod nuget_unused_full_stack;
 pub mod profiler;
 pub mod profiler_edge_cases;
 pub mod profiler_full_stack;

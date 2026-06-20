@@ -1460,39 +1460,93 @@ suite('Context Menu — Project Node Commands Execute', () => {
 suite('Package Maintenance — collectProjectPaths', () => {
   type NodeArg = Parameters<typeof collectProjectPaths>[0];
 
-  function projectNodeArg(filePath: string): unknown {
-    return { contextValue: 'project', projectFilePath: filePath, children: [] };
+  function mkNode(
+    contextValue: string,
+    projectFilePath: string | undefined,
+    children: unknown[] = [],
+  ): unknown {
+    return { contextValue, projectFilePath, children };
+  }
+  function projectNode(filePath: string): unknown {
+    return mkNode('project', filePath);
   }
 
-  test('project node yields its own project path', () => {
-    const node = projectNodeArg('/repo/A/A.csproj') as NodeArg;
-    assert.deepEqual(collectProjectPaths(node), ['/repo/A/A.csproj']);
+  test('project node yields exactly its own project path', () => {
+    const result = collectProjectPaths(projectNode('/repo/A/A.csproj') as NodeArg);
+    assert.ok(Array.isArray(result), 'returns an array');
+    assert.strictEqual(result.length, 1, 'exactly one path');
+    assert.strictEqual(result[0], '/repo/A/A.csproj', 'the path is the project file');
+    assert.deepEqual(result, ['/repo/A/A.csproj']);
   });
 
-  test('solution node yields every descendant project path', () => {
-    const solution = {
-      contextValue: 'solution',
-      projectFilePath: '/repo/App.sln',
-      children: [projectNodeArg('/repo/A/A.csproj'), projectNodeArg('/repo/B/B.fsproj')],
-    } as unknown as NodeArg;
-    assert.deepEqual(collectProjectPaths(solution), ['/repo/A/A.csproj', '/repo/B/B.fsproj']);
+  test('solution node yields every descendant project path in order', () => {
+    const solution = mkNode('solution', '/repo/App.sln', [
+      projectNode('/repo/A/A.csproj'),
+      projectNode('/repo/B/B.fsproj'),
+    ]) as NodeArg;
+    const result = collectProjectPaths(solution);
+    assert.strictEqual(result.length, 2, 'both projects collected');
+    assert.deepEqual(result, ['/repo/A/A.csproj', '/repo/B/B.fsproj'], 'order preserved');
+    assert.ok(result.includes('/repo/A/A.csproj'), 'includes the .csproj');
+    assert.ok(result.includes('/repo/B/B.fsproj'), 'includes the .fsproj');
+    assert.ok(!result.includes('/repo/App.sln'), 'the .sln itself is not a project path');
   });
 
-  test('duplicate project paths are de-duplicated', () => {
-    const solution = {
-      contextValue: 'solution',
-      projectFilePath: '/repo/App.sln',
-      children: [projectNodeArg('/repo/A/A.csproj'), projectNodeArg('/repo/A/A.csproj')],
-    } as unknown as NodeArg;
-    assert.deepEqual(collectProjectPaths(solution), ['/repo/A/A.csproj']);
+  test('collects project nodes nested under dependency folders', () => {
+    const solution = mkNode('solution', '/repo/App.sln', [
+      mkNode('project', '/repo/A/A.csproj', [
+        mkNode('dependencyFolder', undefined, [mkNode('nugetPackage', undefined)]),
+        mkNode('symbol.class', undefined),
+      ]),
+      mkNode('dependencyFolder', undefined, [mkNode('project', '/repo/B/B.csproj')]),
+    ]) as NodeArg;
+    const result = collectProjectPaths(solution);
+    assert.strictEqual(result.length, 2, 'both projects found despite nesting');
+    assert.ok(result.includes('/repo/A/A.csproj'), 'top-level project found');
+    assert.ok(result.includes('/repo/B/B.csproj'), 'nested project found');
   });
 
-  test('undefined node yields no paths', () => {
-    assert.deepEqual(collectProjectPaths(undefined), []);
+  test('ignores project nodes without a projectFilePath', () => {
+    const solution = mkNode('solution', '/repo/App.sln', [
+      projectNode('/repo/A/A.csproj'),
+      mkNode('project', undefined),
+    ]) as NodeArg;
+    const result = collectProjectPaths(solution);
+    assert.strictEqual(result.length, 1, 'the path-less project is skipped');
+    assert.deepEqual(result, ['/repo/A/A.csproj']);
+    assert.ok(!result.includes(undefined as unknown as string), 'no undefined entries');
+  });
+
+  test('de-duplicates repeated project paths', () => {
+    const solution = mkNode('solution', '/repo/App.sln', [
+      projectNode('/repo/A/A.csproj'),
+      projectNode('/repo/A/A.csproj'),
+      projectNode('/repo/B/B.csproj'),
+    ]) as NodeArg;
+    const result = collectProjectPaths(solution);
+    assert.strictEqual(result.length, 2, 'duplicate A collapsed to one');
+    assert.deepEqual(result, ['/repo/A/A.csproj', '/repo/B/B.csproj']);
+  });
+
+  test('non-project node with no project descendants yields nothing', () => {
+    const symbol = mkNode('symbol.class', undefined, [
+      mkNode('symbol.method', undefined),
+    ]) as NodeArg;
+    const result = collectProjectPaths(symbol);
+    assert.ok(Array.isArray(result), 'still returns an array');
+    assert.strictEqual(result.length, 0, 'no projects collected');
+    assert.deepEqual(result, []);
+  });
+
+  test('undefined node yields an empty array', () => {
+    const result = collectProjectPaths(undefined);
+    assert.ok(Array.isArray(result), 'returns an array even for undefined');
+    assert.strictEqual(result.length, 0);
+    assert.deepEqual(result, []);
   });
 });
 
-// ── Suite 10: Package Maintenance — Consolidate (LSP e2e) ─────────
+// ── Shared package-maintenance LSP e2e helpers ───────────────────
 
 interface ConsolidateResp {
   readonly moved: { id: string; version: string; fromProjects: string[] }[];
@@ -1501,19 +1555,81 @@ interface ConsolidateResp {
   readonly message: string;
 }
 
+interface UnusedResp {
+  readonly projectPath: string;
+  readonly unused: { id: string; version: string }[];
+}
+
 interface SharpLspApiForPkgTests {
   readonly getLspClient: () => LanguageClient | undefined;
 }
 
-/** Minimal .csproj text with a single PackageReference. */
-function csprojWith(id: string, version: string): string {
-  return `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="${id}" Version="${version}" />
-  </ItemGroup>
-</Project>`;
+/** Resolve a running LSP client from the extension exports. */
+function getPkgLspClient(): LanguageClient {
+  const ext = vscode.extensions.getExtension(EXTENSION_ID);
+  assert.ok(ext, 'Extension must be found');
+  const api = ext.exports as SharpLspApiForPkgTests | undefined;
+  assert.ok(api?.getLspClient, 'Extension must export getLspClient');
+  const client = api.getLspClient();
+  assert.ok(client, 'LSP client must be running');
+  return client;
 }
+
+/** Absolute path to the TestFixtures project loaded in the sidecar workspace. */
+function fixtureProjectPath(): string {
+  return path.resolve(__dirname, '../../../test-fixtures/workspace/TestFixtures.csproj');
+}
+
+/** A `[id, version]` package reference pair. */
+type Ref = readonly string[];
+
+interface ProjectSpec {
+  readonly name: string;
+  readonly refs: readonly Ref[];
+  readonly ext?: string;
+}
+
+/** Write a project file with the given PackageReferences. */
+function writeProject(dir: string, name: string, refs: readonly Ref[], ext = 'csproj'): string {
+  const projDir = path.join(dir, name);
+  fs.mkdirSync(projDir, { recursive: true });
+  const items = refs
+    .map((ref) => `    <PackageReference Include="${ref[0]}" Version="${ref[1]}" />`)
+    .join('\n');
+  const file = path.join(projDir, `${name}.${ext}`);
+  fs.writeFileSync(
+    file,
+    `<Project Sdk="Microsoft.NET.Sdk">\n` +
+      `  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n` +
+      `  <ItemGroup>\n${items}\n  </ItemGroup>\n</Project>\n`,
+  );
+  return file;
+}
+
+/** Create an isolated solution directory containing the given projects. */
+function makeSolution(
+  tmpDir: string,
+  name: string,
+  projects: readonly ProjectSpec[],
+): { sln: string; dir: string; projects: string[] } {
+  const dir = path.join(tmpDir, name);
+  fs.mkdirSync(dir, { recursive: true });
+  const created = projects.map((p) => writeProject(dir, p.name, p.refs, p.ext ?? 'csproj'));
+  const sln = path.join(dir, `${name}.sln`);
+  fs.writeFileSync(sln, 'Microsoft Visual Studio Solution File, Format Version 12.00\n');
+  return { sln, dir, projects: created };
+}
+
+/** Send a consolidate request (scan or apply) over the LSP. */
+async function consolidate(
+  lsp: LanguageClient,
+  solutionPath: string,
+  dryRun: boolean,
+): Promise<ConsolidateResp> {
+  return lsp.sendRequest<ConsolidateResp>('sharplsp/nuget/consolidate', { solutionPath, dryRun });
+}
+
+// ── Suite 10: Package Maintenance — Consolidate (LSP e2e) ─────────
 
 suite('Package Maintenance — Consolidate (LSP e2e)', () => {
   let tmpDir: string;
@@ -1528,117 +1644,326 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
     teardownLspTestSuite(tmpDir);
   });
 
-  function getClient(): LanguageClient {
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext, 'Extension must be found');
-    const api = ext.exports as SharpLspApiForPkgTests | undefined;
-    assert.ok(api?.getLspClient, 'Extension must export getLspClient');
-    const client = api.getLspClient();
-    assert.ok(client, 'LSP client must be running');
-    return client;
-  }
-
-  /** Create an isolated solution dir with two projects sharing Serilog. */
-  function makeSharedSolution(name: string, aVersion: string, bVersion: string): string {
-    const dir = path.join(tmpDir, name);
-    fs.mkdirSync(path.join(dir, 'A'), { recursive: true });
-    fs.mkdirSync(path.join(dir, 'B'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'A', 'A.csproj'), csprojWith('Serilog', aVersion));
-    fs.writeFileSync(path.join(dir, 'B', 'B.csproj'), csprojWith('Serilog', bVersion));
-    const sln = path.join(dir, `${name}.sln`);
-    fs.writeFileSync(sln, 'Microsoft Visual Studio Solution File, Format Version 12.00\n');
-    return sln;
-  }
-
-  test('dry-run reports the shared package and touches no files', async function () {
+  test('dry-run reports the shared package with full detail and touches no files', async function () {
     this.timeout(20_000);
-    const lsp = getClient();
-    const sln = makeSharedSolution('DryRun', '3.1.0', '3.0.0');
+    const lsp = getPkgLspClient();
+    const { sln, dir } = makeSolution(tmpDir, 'DryDetail', [
+      { name: 'A', refs: [['Serilog', '3.1.0']] },
+      { name: 'B', refs: [['Serilog', '3.0.0']] },
+    ]);
 
-    const resp = await lsp.sendRequest<ConsolidateResp>('sharplsp/nuget/consolidate', {
-      solutionPath: sln,
-      dryRun: true,
-    });
+    const resp = await consolidate(lsp, sln, true);
 
-    const serilog = resp.moved.find((m) => m.id === 'Serilog');
-    assert.ok(serilog, `dry-run must report Serilog as shared; got ${JSON.stringify(resp.moved)}`);
-    assert.strictEqual(serilog.version, '3.1.0', 'highest version is chosen');
-    assert.strictEqual(serilog.fromProjects.length, 2, 'shared across 2 projects');
-    assert.deepEqual(resp.modifiedFiles, [], 'dry-run must not modify files');
+    assert.ok(resp, 'response must be defined');
+    assert.ok(Array.isArray(resp.moved), 'moved is an array');
+    assert.strictEqual(resp.moved.length, 1, 'exactly one shared package');
+    const serilog = resp.moved[0];
+    assert.ok(serilog, 'the moved entry exists');
+    assert.strictEqual(serilog.id, 'Serilog', 'the shared package id');
+    assert.strictEqual(serilog.version, '3.1.0', 'highest version (3.1.0 > 3.0.0) is chosen');
+    assert.ok(Array.isArray(serilog.fromProjects), 'fromProjects is an array');
+    assert.strictEqual(serilog.fromProjects.length, 2, 'shared across two projects');
+    assert.ok(serilog.fromProjects.includes('A.csproj'), 'names project A');
+    assert.ok(serilog.fromProjects.includes('B.csproj'), 'names project B');
+    assert.deepEqual(resp.modifiedFiles, [], 'dry-run modifies nothing');
+    assert.strictEqual(resp.propsFile, undefined, 'dry-run reports no props file');
+    assert.strictEqual(typeof resp.message, 'string', 'message is a string');
+    assert.ok(resp.message.length > 0, 'message is non-empty');
+    assert.ok(!fs.existsSync(path.join(dir, 'Directory.Build.props')), 'no props file created');
     assert.ok(
-      !fs.existsSync(path.join(tmpDir, 'DryRun', 'Directory.Build.props')),
-      'dry-run must not create Directory.Build.props',
+      fs.readFileSync(path.join(dir, 'A', 'A.csproj'), 'utf8').includes('Serilog'),
+      'project A left untouched',
+    );
+    assert.ok(
+      fs.readFileSync(path.join(dir, 'B', 'B.csproj'), 'utf8').includes('3.0.0'),
+      'project B version left untouched',
     );
   });
 
-  test('apply hoists shared package into Directory.Build.props and strips projects', async function () {
+  test('dry-run ignores packages referenced by only one project', async function () {
     this.timeout(20_000);
-    const lsp = getClient();
-    const sln = makeSharedSolution('Apply', '3.1.0', '3.1.0');
-    const dir = path.dirname(sln);
+    const lsp = getPkgLspClient();
+    const { sln } = makeSolution(tmpDir, 'MixedShare', [
+      {
+        name: 'A',
+        refs: [
+          ['Serilog', '3.1.0'],
+          ['OnlyA', '1.0.0'],
+        ],
+      },
+      {
+        name: 'B',
+        refs: [
+          ['Serilog', '3.1.0'],
+          ['OnlyB', '2.0.0'],
+        ],
+      },
+    ]);
 
-    const resp = await lsp.sendRequest<ConsolidateResp>('sharplsp/nuget/consolidate', {
-      solutionPath: sln,
-      dryRun: false,
-    });
+    const resp = await consolidate(lsp, sln, true);
+    const ids = resp.moved.map((m) => m.id);
+    assert.strictEqual(resp.moved.length, 1, 'only the shared package is reported');
+    assert.deepEqual(ids, ['Serilog'], 'exactly Serilog');
+    assert.ok(!ids.includes('OnlyA'), 'single-project OnlyA is not reported');
+    assert.ok(!ids.includes('OnlyB'), 'single-project OnlyB is not reported');
+    const serilog = resp.moved.find((m) => m.id === 'Serilog');
+    assert.ok(serilog, 'Serilog entry present');
+    assert.strictEqual(serilog.fromProjects.length, 2, 'shared across both');
+  });
 
+  test('dry-run selects the highest version across three projects', async function () {
+    this.timeout(20_000);
+    const lsp = getPkgLspClient();
+    const { sln } = makeSolution(tmpDir, 'ThreeWay', [
+      { name: 'A', refs: [['Newtonsoft.Json', '12.0.1']] },
+      { name: 'B', refs: [['Newtonsoft.Json', '13.0.3']] },
+      { name: 'C', refs: [['Newtonsoft.Json', '13.0.1']] },
+    ]);
+
+    const resp = await consolidate(lsp, sln, true);
+    assert.strictEqual(resp.moved.length, 1, 'one shared package');
+    const pkg = resp.moved[0];
+    assert.ok(pkg, 'moved entry present');
+    assert.strictEqual(pkg.id, 'Newtonsoft.Json');
+    assert.strictEqual(pkg.version, '13.0.3', 'highest of 12.0.1 / 13.0.3 / 13.0.1');
+    assert.strictEqual(pkg.fromProjects.length, 3, 'shared across all three projects');
+  });
+
+  test('dry-run enumerates F# (.fsproj) projects too', async function () {
+    this.timeout(20_000);
+    const lsp = getPkgLspClient();
+    const { sln } = makeSolution(tmpDir, 'FSharpShare', [
+      { name: 'A', refs: [['FSharp.Data', '6.3.0']], ext: 'fsproj' },
+      { name: 'B', refs: [['FSharp.Data', '6.3.0']], ext: 'fsproj' },
+    ]);
+
+    const resp = await consolidate(lsp, sln, true);
+    assert.strictEqual(resp.moved.length, 1, 'F# projects are scanned');
+    const pkg = resp.moved[0];
+    assert.ok(pkg, 'moved entry present');
+    assert.strictEqual(pkg.id, 'FSharp.Data');
+    assert.strictEqual(pkg.fromProjects.length, 2);
+    assert.ok(pkg.fromProjects.includes('A.fsproj'), 'names A.fsproj');
+    assert.ok(pkg.fromProjects.includes('B.fsproj'), 'names B.fsproj');
+  });
+
+  test('apply hoists shared package into Directory.Build.props and strips projects', async function () {
+    this.timeout(30_000);
+    const lsp = getPkgLspClient();
+    const { sln, dir } = makeSolution(tmpDir, 'Apply', [
+      { name: 'A', refs: [['Serilog', '3.1.0']] },
+      { name: 'B', refs: [['Serilog', '3.1.0']] },
+    ]);
+
+    const resp = await consolidate(lsp, sln, false);
+
+    assert.strictEqual(resp.moved.length, 1, 'one package moved');
     assert.ok(
       resp.moved.some((m) => m.id === 'Serilog'),
-      'apply must report Serilog moved',
+      'Serilog reported as moved',
     );
     const propsPath = path.join(dir, 'Directory.Build.props');
-    assert.ok(fs.existsSync(propsPath), 'Directory.Build.props must be created');
+    assert.ok(resp.propsFile, 'propsFile is reported');
+    assert.ok(
+      resp.propsFile.endsWith('Directory.Build.props'),
+      'propsFile points at the props file',
+    );
+    assert.ok(fs.existsSync(propsPath), 'Directory.Build.props was created');
     const props = fs.readFileSync(propsPath, 'utf8');
-    assert.ok(props.includes('Serilog'), 'props must declare Serilog');
-    // Projects no longer carry the reference.
+    assert.ok(props.includes('<PackageReference'), 'props declares a PackageReference');
+    assert.ok(props.includes('Serilog'), 'props declares Serilog');
+    assert.ok(props.includes('Version="3.1.0"'), 'props carries the resolved version');
+    assert.ok(resp.modifiedFiles.length >= 3, 'props + two projects were modified');
+    assert.ok(
+      resp.modifiedFiles.some((f) => f.endsWith('Directory.Build.props')),
+      'props in modifiedFiles',
+    );
+    assert.ok(
+      resp.modifiedFiles.some((f) => f.endsWith('A.csproj')),
+      'A.csproj in modifiedFiles',
+    );
+    assert.ok(
+      resp.modifiedFiles.some((f) => f.endsWith('B.csproj')),
+      'B.csproj in modifiedFiles',
+    );
     const aText = fs.readFileSync(path.join(dir, 'A', 'A.csproj'), 'utf8');
     const bText = fs.readFileSync(path.join(dir, 'B', 'B.csproj'), 'utf8');
-    assert.ok(!aText.includes('Serilog'), 'A.csproj must no longer reference Serilog');
-    assert.ok(!bText.includes('Serilog'), 'B.csproj must no longer reference Serilog');
+    assert.ok(!aText.includes('Serilog'), 'A no longer references Serilog');
+    assert.ok(!bText.includes('Serilog'), 'B no longer references Serilog');
+    assert.ok(aText.includes('<Project'), 'A is still a valid project');
+    assert.ok(aText.includes('TargetFramework'), 'A keeps its other content');
+    assert.ok(resp.message.includes('Serilog'), 'message names the moved package');
+  });
+
+  test('apply preserves existing Directory.Build.props content', async function () {
+    this.timeout(30_000);
+    const lsp = getPkgLspClient();
+    const { sln, dir } = makeSolution(tmpDir, 'PreserveProps', [
+      { name: 'A', refs: [['Serilog', '3.1.0']] },
+      { name: 'B', refs: [['Serilog', '3.1.0']] },
+    ]);
+    const propsPath = path.join(dir, 'Directory.Build.props');
+    fs.writeFileSync(propsPath, '<Project>\n  <!-- sentinel comment -->\n</Project>\n');
+
+    const resp = await consolidate(lsp, sln, false);
+    assert.strictEqual(resp.moved.length, 1, 'one package moved');
+    const props = fs.readFileSync(propsPath, 'utf8');
+    assert.ok(props.includes('<!-- sentinel comment -->'), 'existing comment preserved');
+    assert.ok(props.includes('Serilog'), 'Serilog added to the existing props');
+    assert.ok(props.includes('Version="3.1.0"'), 'version preserved in props');
+  });
+
+  test('apply is idempotent — a second scan finds nothing shared', async function () {
+    this.timeout(30_000);
+    const lsp = getPkgLspClient();
+    const { sln } = makeSolution(tmpDir, 'Idempotent', [
+      { name: 'A', refs: [['Serilog', '3.1.0']] },
+      { name: 'B', refs: [['Serilog', '3.1.0']] },
+    ]);
+
+    const applied = await consolidate(lsp, sln, false);
+    assert.strictEqual(applied.moved.length, 1, 'first apply moves Serilog');
+    assert.ok(applied.modifiedFiles.length >= 3, 'first apply modified files');
+
+    const rescan = await consolidate(lsp, sln, true);
+    assert.deepEqual(rescan.moved, [], 'nothing shared remains after the move');
+    assert.strictEqual(rescan.modifiedFiles.length, 0, 'rescan modifies nothing');
+    assert.strictEqual(rescan.propsFile, undefined, 'rescan reports no further props work');
   });
 
   test('reports nothing when no package is shared', async function () {
     this.timeout(20_000);
-    const lsp = getClient();
-    const dir = path.join(tmpDir, 'NoShare');
-    fs.mkdirSync(path.join(dir, 'A'), { recursive: true });
-    fs.mkdirSync(path.join(dir, 'B'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'A', 'A.csproj'), csprojWith('OnlyA', '1.0.0'));
-    fs.writeFileSync(path.join(dir, 'B', 'B.csproj'), csprojWith('OnlyB', '1.0.0'));
-    const sln = path.join(dir, 'NoShare.sln');
-    fs.writeFileSync(sln, 'Microsoft Visual Studio Solution File\n');
+    const lsp = getPkgLspClient();
+    const { sln, dir } = makeSolution(tmpDir, 'NoShare', [
+      { name: 'A', refs: [['OnlyA', '1.0.0']] },
+      { name: 'B', refs: [['OnlyB', '1.0.0']] },
+    ]);
 
-    const resp = await lsp.sendRequest<ConsolidateResp>('sharplsp/nuget/consolidate', {
-      solutionPath: sln,
-      dryRun: true,
-    });
-    assert.deepEqual(resp.moved, [], 'no packages should be reported as shared');
+    const resp = await consolidate(lsp, sln, true);
+    assert.deepEqual(resp.moved, [], 'nothing shared is reported');
+    assert.strictEqual(resp.moved.length, 0);
+    assert.strictEqual(resp.propsFile, undefined, 'no props file');
+    assert.deepEqual(resp.modifiedFiles, [], 'no files modified');
+    assert.strictEqual(typeof resp.message, 'string', 'message is a string');
+    assert.ok(!fs.existsSync(path.join(dir, 'Directory.Build.props')), 'no props created');
+  });
+
+  test('a single-project solution shares nothing', async function () {
+    this.timeout(20_000);
+    const lsp = getPkgLspClient();
+    const { sln } = makeSolution(tmpDir, 'Single', [{ name: 'A', refs: [['Serilog', '3.1.0']] }]);
+    const resp = await consolidate(lsp, sln, true);
+    assert.deepEqual(resp.moved, [], 'one project cannot share with itself');
+    assert.strictEqual(resp.moved.length, 0);
+    assert.deepEqual(resp.modifiedFiles, []);
   });
 });
 
-// ── Suite 11: Package Maintenance — Command Execution ─────────────
+// ── Suite 11: Package Maintenance — Unused (LSP e2e) ──────────────
 
-suite('Package Maintenance — Command Execution', () => {
-  test('removeUnusedPackages handles a node without projectFilePath gracefully', async function () {
-    this.timeout(5_000);
-    const mockNode = { projectFilePath: undefined, contextValue: 'project', children: [] };
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.removeUnusedPackages', mockNode);
-    }, 'removeUnusedPackages must not throw for a node without a project path');
+suite('Package Maintenance — Unused (LSP e2e)', () => {
+  let tmpDir: string;
+
+  suiteSetup(async function () {
+    this.timeout(60_000);
+    const result = await setupLspTestSuite('pkg-unused-');
+    tmpDir = result.tmpDir;
   });
 
-  test('consolidatePackages handles a node without projectFilePath gracefully', async function () {
-    this.timeout(5_000);
-    const mockNode = { projectFilePath: undefined, contextValue: 'solution', children: [] };
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.consolidatePackages', mockNode);
-    }, 'consolidatePackages must not throw for a node without a solution path');
+  suiteTeardown(() => {
+    teardownLspTestSuite(tmpDir);
   });
 
-  test('removeUnusedPackages handles an undefined node gracefully', async function () {
-    this.timeout(5_000);
+  test('unused request resolves against the loaded fixture project via Roslyn', async function () {
+    this.timeout(40_000);
+    const lsp = getPkgLspClient();
+    const projectPath = fixtureProjectPath();
+
+    // Poll until the Roslyn workspace is warm enough to answer (request rejects
+    // while the project isn't yet in the sidecar's loaded solution).
+    const resp = await pollUntilResult<UnusedResp | undefined>(
+      async () => {
+        try {
+          return await lsp.sendRequest<UnusedResp>('sharplsp/nuget/unused', { projectPath });
+        } catch {
+          return undefined;
+        }
+      },
+      (r) => r !== undefined,
+      30_000,
+      1_000,
+    );
+
+    assert.ok(resp, 'unused must resolve — the Roslyn GetUsedAssemblyReferences pipeline ran');
+    assert.strictEqual(resp.projectPath, projectPath, 'projectPath is echoed back exactly');
+    assert.ok(Array.isArray(resp.unused), 'unused is an array');
+    // TestFixtures declares no <PackageReference Include=...> → nothing to flag.
+    assert.strictEqual(
+      resp.unused.length,
+      0,
+      'a project with no direct refs has no unused packages',
+    );
+    for (const pkg of resp.unused) {
+      assert.strictEqual(typeof pkg.id, 'string', 'each unused id is a string');
+      assert.ok(pkg.id.length > 0, 'each unused id is non-empty');
+      assert.strictEqual(typeof pkg.version, 'string', 'each unused version is a string');
+      assert.ok(!pkg.id.includes('/'), 'id is a package id, not a path');
+      assert.ok(!pkg.id.endsWith('.dll'), 'id is a package id, not an assembly file');
+    }
+  });
+
+  test('unused request rejects for a project file that cannot be read', async function () {
+    this.timeout(15_000);
+    const lsp = getPkgLspClient();
+    const bogus = path.join(tmpDir, 'Nope', 'Nope.csproj');
+    await assert.rejects(async () => {
+      await lsp.sendRequest<UnusedResp>('sharplsp/nuget/unused', { projectPath: bogus });
+    }, 'unused must reject when the project file does not exist');
+  });
+
+  test('removeUnusedPackages command runs end-to-end through the real LSP', async function () {
+    this.timeout(40_000);
+    const lsp = getPkgLspClient();
+    const projectPath = fixtureProjectPath();
+    const projectNode = { contextValue: 'project', projectFilePath: projectPath, children: [] };
+
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.removeUnusedPackages', undefined);
-    }, 'removeUnusedPackages must not throw for an undefined node');
+      await vscode.commands.executeCommand('sharplsp.removeUnusedPackages', projectNode);
+    }, 'the command must complete against the real LSP');
+
+    // The detection truth the command relied on, asserted directly over the LSP.
+    const resp = await lsp.sendRequest<UnusedResp>('sharplsp/nuget/unused', { projectPath });
+    assert.strictEqual(resp.projectPath, projectPath, 'projectPath echoed');
+    assert.ok(Array.isArray(resp.unused), 'unused is an array');
+    assert.strictEqual(resp.unused.length, 0, 'fixture project has nothing to remove');
+  });
+
+  test('consolidatePackages command runs end-to-end through the real LSP', async function () {
+    this.timeout(30_000);
+    const lsp = getPkgLspClient();
+    // No shared packages → the command takes the non-modal "nothing to do" path,
+    // exercising the real LSP scan without a confirmation dialog.
+    const { sln, dir } = makeSolution(tmpDir, 'CmdConsolidate', [
+      { name: 'A', refs: [['OnlyA', '1.0.0']] },
+      { name: 'B', refs: [['OnlyB', '2.0.0']] },
+    ]);
+    const solutionNode = { contextValue: 'solution', projectFilePath: sln, children: [] };
+
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('sharplsp.consolidatePackages', solutionNode);
+    }, 'the command must complete against the real LSP');
+
+    // The scan truth the command relied on, asserted directly over the LSP.
+    const preview = await consolidate(lsp, sln, true);
+    assert.ok(Array.isArray(preview.moved), 'moved is an array');
+    assert.deepEqual(preview.moved, [], 'nothing shared detected over the LSP');
+    assert.ok(
+      !fs.existsSync(path.join(dir, 'Directory.Build.props')),
+      'command must not create a props file when nothing is shared',
+    );
+    assert.ok(
+      fs.readFileSync(path.join(dir, 'A', 'A.csproj'), 'utf8').includes('OnlyA'),
+      'project A is untouched',
+    );
   });
 });

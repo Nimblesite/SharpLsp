@@ -169,6 +169,85 @@ EndGlobal"#,
     (tmp, root_uri, file_uri, cs_source.to_string())
 }
 
+/// Create a workspace whose single project references `Newtonsoft.Json` but
+/// never uses it — so a real Roslyn `GetUsedAssemblyReferences` pass flags the
+/// package as unused. Returns `(TempDir, root_uri, sln_path, csproj_path,
+/// file_uri, source)`. Used by the `sharplsp/nuget/unused` full-stack test.
+pub fn create_unused_packages_workspace(
+) -> (tempfile::TempDir, String, String, String, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("UnusedPkg");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("UnusedPkg.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    // Source uses only the framework — Newtonsoft.Json is referenced but never
+    // touched, which is exactly what makes it "unused".
+    let cs_source = r#"namespace UnusedPkg;
+
+public class Greeter
+{
+    public string Greet(string name) => $"Hello, {name}!";
+
+    public int Count { get; set; }
+}"#;
+    std::fs::write(proj_dir.join("Program.cs"), cs_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("UnusedPkg.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnusedPkg", "UnusedPkg/UnusedPkg.csproj", "{00000000-0000-0000-0000-000000000003}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        // Restore the project directly so obj/project.assets.json is written and
+        // the Newtonsoft.Json compile assembly resolves for the design-time build.
+        .current_dir(&proj_dir)
+        .status()
+        .expect("dotnet restore failed to start");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let real_proj = real_root.join("UnusedPkg");
+    let root_uri = format!("file://{}", real_root.display());
+    let sln_path = real_root
+        .join("UnusedPkg.sln")
+        .to_string_lossy()
+        .into_owned();
+    let csproj_path = real_proj
+        .join("UnusedPkg.csproj")
+        .to_string_lossy()
+        .into_owned();
+    let file_uri = format!("file://{}", real_proj.join("Program.cs").display());
+    (
+        tmp,
+        root_uri,
+        sln_path,
+        csproj_path,
+        file_uri,
+        cs_source.to_string(),
+    )
+}
+
 /// Create an F# test workspace with .fsproj and .fs files.
 pub fn create_fsharp_test_workspace() -> (tempfile::TempDir, String, String, String) {
     let tmp = tempfile::tempdir().unwrap();
