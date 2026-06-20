@@ -12,6 +12,8 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { type LanguageClient } from 'vscode-languageclient/node';
+import { collectProjectPaths } from '../../package-maintenance.js';
 import {
   EXTENSION_ID,
   closeAllEditors,
@@ -150,6 +152,8 @@ suite('Context Menu — Package.json Contributions', () => {
     'sharplsp.nuget.addFromExplorer',
     'sharplsp.removeNuGetPackage',
     'sharplsp.removeProjectReference',
+    'sharplsp.removeUnusedPackages',
+    'sharplsp.consolidatePackages',
   ]) {
     test(`${cmd} command is registered`, async () => {
       const cmds = await vscode.commands.getCommands(true);
@@ -179,6 +183,29 @@ suite('Context Menu — Package.json Contributions', () => {
       assert.strictEqual(entry.group, '2_build', `${cmd} project entry must stay in '2_build'`);
     });
   }
+
+  // ── Package maintenance (unused / consolidate) ────────────────
+
+  test('removeUnusedPackages has project + solution menu entries in 5_dependencies', () => {
+    const entries = menuEntries().filter((m) => m.command === 'sharplsp.removeUnusedPackages');
+    const project = entries.find((m) => m.when === PROJECT_WHEN);
+    const solution = entries.find((m) => m.when === SOLUTION_WHEN);
+    assert.ok(project, 'removeUnusedPackages must have a project-node entry');
+    assert.ok(solution, 'removeUnusedPackages must have a solution-node entry');
+    assert.strictEqual(project.group, '5_dependencies');
+    assert.strictEqual(solution.group, '5_dependencies');
+  });
+
+  test('consolidatePackages has a solution-only menu entry in 5_dependencies', () => {
+    const entries = menuEntries().filter((m) => m.command === 'sharplsp.consolidatePackages');
+    const solution = entries.find((m) => m.when === SOLUTION_WHEN);
+    assert.ok(solution, 'consolidatePackages must have a solution-node entry');
+    assert.strictEqual(solution.group, '5_dependencies');
+    assert.ok(
+      !entries.some((m) => m.when === PROJECT_WHEN),
+      'consolidatePackages must NOT appear on project nodes (it is solution-wide)',
+    );
+  });
 
   // ── sortMembers when clause ───────────────────────────────────
 
@@ -1425,5 +1452,193 @@ suite('Context Menu — Project Node Commands Execute', () => {
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.nuget.addFromExplorer', mockNode);
     }, 'nuget.addFromExplorer must handle missing projectFilePath without throwing');
+  });
+});
+
+// ── Suite 9: Package Maintenance — collectProjectPaths ────────────
+
+suite('Package Maintenance — collectProjectPaths', () => {
+  type NodeArg = Parameters<typeof collectProjectPaths>[0];
+
+  function projectNodeArg(filePath: string): unknown {
+    return { contextValue: 'project', projectFilePath: filePath, children: [] };
+  }
+
+  test('project node yields its own project path', () => {
+    const node = projectNodeArg('/repo/A/A.csproj') as NodeArg;
+    assert.deepEqual(collectProjectPaths(node), ['/repo/A/A.csproj']);
+  });
+
+  test('solution node yields every descendant project path', () => {
+    const solution = {
+      contextValue: 'solution',
+      projectFilePath: '/repo/App.sln',
+      children: [projectNodeArg('/repo/A/A.csproj'), projectNodeArg('/repo/B/B.fsproj')],
+    } as unknown as NodeArg;
+    assert.deepEqual(collectProjectPaths(solution), ['/repo/A/A.csproj', '/repo/B/B.fsproj']);
+  });
+
+  test('duplicate project paths are de-duplicated', () => {
+    const solution = {
+      contextValue: 'solution',
+      projectFilePath: '/repo/App.sln',
+      children: [projectNodeArg('/repo/A/A.csproj'), projectNodeArg('/repo/A/A.csproj')],
+    } as unknown as NodeArg;
+    assert.deepEqual(collectProjectPaths(solution), ['/repo/A/A.csproj']);
+  });
+
+  test('undefined node yields no paths', () => {
+    assert.deepEqual(collectProjectPaths(undefined), []);
+  });
+});
+
+// ── Suite 10: Package Maintenance — Consolidate (LSP e2e) ─────────
+
+interface ConsolidateResp {
+  readonly moved: { id: string; version: string; fromProjects: string[] }[];
+  readonly propsFile?: string;
+  readonly modifiedFiles: string[];
+  readonly message: string;
+}
+
+interface SharpLspApiForPkgTests {
+  readonly getLspClient: () => LanguageClient | undefined;
+}
+
+/** Minimal .csproj text with a single PackageReference. */
+function csprojWith(id: string, version: string): string {
+  return `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="${id}" Version="${version}" />
+  </ItemGroup>
+</Project>`;
+}
+
+suite('Package Maintenance — Consolidate (LSP e2e)', () => {
+  let tmpDir: string;
+
+  suiteSetup(async function () {
+    this.timeout(60_000);
+    const result = await setupLspTestSuite('pkg-consol-');
+    tmpDir = result.tmpDir;
+  });
+
+  suiteTeardown(() => {
+    teardownLspTestSuite(tmpDir);
+  });
+
+  function getClient(): LanguageClient {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, 'Extension must be found');
+    const api = ext.exports as SharpLspApiForPkgTests | undefined;
+    assert.ok(api?.getLspClient, 'Extension must export getLspClient');
+    const client = api.getLspClient();
+    assert.ok(client, 'LSP client must be running');
+    return client;
+  }
+
+  /** Create an isolated solution dir with two projects sharing Serilog. */
+  function makeSharedSolution(name: string, aVersion: string, bVersion: string): string {
+    const dir = path.join(tmpDir, name);
+    fs.mkdirSync(path.join(dir, 'A'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'B'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'A', 'A.csproj'), csprojWith('Serilog', aVersion));
+    fs.writeFileSync(path.join(dir, 'B', 'B.csproj'), csprojWith('Serilog', bVersion));
+    const sln = path.join(dir, `${name}.sln`);
+    fs.writeFileSync(sln, 'Microsoft Visual Studio Solution File, Format Version 12.00\n');
+    return sln;
+  }
+
+  test('dry-run reports the shared package and touches no files', async function () {
+    this.timeout(20_000);
+    const lsp = getClient();
+    const sln = makeSharedSolution('DryRun', '3.1.0', '3.0.0');
+
+    const resp = await lsp.sendRequest<ConsolidateResp>('sharplsp/nuget/consolidate', {
+      solutionPath: sln,
+      dryRun: true,
+    });
+
+    const serilog = resp.moved.find((m) => m.id === 'Serilog');
+    assert.ok(serilog, `dry-run must report Serilog as shared; got ${JSON.stringify(resp.moved)}`);
+    assert.strictEqual(serilog.version, '3.1.0', 'highest version is chosen');
+    assert.strictEqual(serilog.fromProjects.length, 2, 'shared across 2 projects');
+    assert.deepEqual(resp.modifiedFiles, [], 'dry-run must not modify files');
+    assert.ok(
+      !fs.existsSync(path.join(tmpDir, 'DryRun', 'Directory.Build.props')),
+      'dry-run must not create Directory.Build.props',
+    );
+  });
+
+  test('apply hoists shared package into Directory.Build.props and strips projects', async function () {
+    this.timeout(20_000);
+    const lsp = getClient();
+    const sln = makeSharedSolution('Apply', '3.1.0', '3.1.0');
+    const dir = path.dirname(sln);
+
+    const resp = await lsp.sendRequest<ConsolidateResp>('sharplsp/nuget/consolidate', {
+      solutionPath: sln,
+      dryRun: false,
+    });
+
+    assert.ok(
+      resp.moved.some((m) => m.id === 'Serilog'),
+      'apply must report Serilog moved',
+    );
+    const propsPath = path.join(dir, 'Directory.Build.props');
+    assert.ok(fs.existsSync(propsPath), 'Directory.Build.props must be created');
+    const props = fs.readFileSync(propsPath, 'utf8');
+    assert.ok(props.includes('Serilog'), 'props must declare Serilog');
+    // Projects no longer carry the reference.
+    const aText = fs.readFileSync(path.join(dir, 'A', 'A.csproj'), 'utf8');
+    const bText = fs.readFileSync(path.join(dir, 'B', 'B.csproj'), 'utf8');
+    assert.ok(!aText.includes('Serilog'), 'A.csproj must no longer reference Serilog');
+    assert.ok(!bText.includes('Serilog'), 'B.csproj must no longer reference Serilog');
+  });
+
+  test('reports nothing when no package is shared', async function () {
+    this.timeout(20_000);
+    const lsp = getClient();
+    const dir = path.join(tmpDir, 'NoShare');
+    fs.mkdirSync(path.join(dir, 'A'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'B'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'A', 'A.csproj'), csprojWith('OnlyA', '1.0.0'));
+    fs.writeFileSync(path.join(dir, 'B', 'B.csproj'), csprojWith('OnlyB', '1.0.0'));
+    const sln = path.join(dir, 'NoShare.sln');
+    fs.writeFileSync(sln, 'Microsoft Visual Studio Solution File\n');
+
+    const resp = await lsp.sendRequest<ConsolidateResp>('sharplsp/nuget/consolidate', {
+      solutionPath: sln,
+      dryRun: true,
+    });
+    assert.deepEqual(resp.moved, [], 'no packages should be reported as shared');
+  });
+});
+
+// ── Suite 11: Package Maintenance — Command Execution ─────────────
+
+suite('Package Maintenance — Command Execution', () => {
+  test('removeUnusedPackages handles a node without projectFilePath gracefully', async function () {
+    this.timeout(5_000);
+    const mockNode = { projectFilePath: undefined, contextValue: 'project', children: [] };
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('sharplsp.removeUnusedPackages', mockNode);
+    }, 'removeUnusedPackages must not throw for a node without a project path');
+  });
+
+  test('consolidatePackages handles a node without projectFilePath gracefully', async function () {
+    this.timeout(5_000);
+    const mockNode = { projectFilePath: undefined, contextValue: 'solution', children: [] };
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('sharplsp.consolidatePackages', mockNode);
+    }, 'consolidatePackages must not throw for a node without a solution path');
+  });
+
+  test('removeUnusedPackages handles an undefined node gracefully', async function () {
+    this.timeout(5_000);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('sharplsp.removeUnusedPackages', undefined);
+    }, 'removeUnusedPackages must not throw for an undefined node');
   });
 });

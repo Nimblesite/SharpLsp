@@ -24,6 +24,8 @@ export const CMD_SORT_ACCESSIBILITY = 'sharplsp.sortAccessibility';
 
 export const CMD_REMOVE_NUGET_PACKAGE = 'sharplsp.removeNuGetPackage';
 export const CMD_REMOVE_PROJECT_REFERENCE = 'sharplsp.removeProjectReference';
+export const CMD_REMOVE_UNUSED_PACKAGES = 'sharplsp.removeUnusedPackages';
+export const CMD_CONSOLIDATE_PACKAGES = 'sharplsp.consolidatePackages';
 export const CMD_SORT_MEMBERS = 'sharplsp.sortMembers';
 export const CMD_COPY_QUALIFIED_NAME = 'sharplsp.copyQualifiedName';
 export const CMD_COPY_NAME = 'sharplsp.copyName';

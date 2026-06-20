@@ -150,6 +150,15 @@ type FormattingPreviewResult =
 type SemanticTokensResult =
     { [<Key(0)>] Data: int array }
 
+// Implements [PKG-UNUSED-DETECT-FS] — wire-compatible with the C# sidecar's
+// ReferenceUsageResult (positional MessagePack keys).
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type ReferenceUsageResult =
+    { [<Key(0)>] UsedPaths: string array
+      [<Key(1)>] AllPaths: string array
+      [<Key(2)>] PackagesRoot: string }
+
 module private Helpers =
     /// Convert a FSharpWorkspace.DefinitionLocation to a LocationResult.
     let toLocationResult (loc: FSharpWorkspace.DefinitionLocation) : LocationResult =
@@ -259,6 +268,21 @@ type FSharpSidecar() =
                         // Return MessagePack nil (0xC0) for no hover result.
                         let bytes = [| 0xC0uy |]
                         return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Unused-package detection [PKG-UNUSED-DETECT-FS].
+        base.Register("project/unusedPackages", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let projectPath = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
+                    let! usage = FSharpPackages.getReferenceUsage workspace projectPath
+                    let result =
+                        { UsedPaths = usage.Used
+                          AllPaths = usage.All
+                          PackagesRoot = usage.Root }
+                    return Helpers.serializeOk result ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)
             }))

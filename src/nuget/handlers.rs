@@ -6,9 +6,13 @@ use anyhow::{Context, Result};
 use crossbeam_channel::Sender;
 use lsp_server::{Message, Notification, Request};
 use std::path::Path;
+use std::sync::Arc;
+use tokio::runtime::Runtime;
 use tracing::{error, info};
 
-use super::{cli, search, targets, types, xml_edit};
+use crate::sidecar::manager::SidecarManager;
+
+use super::{cli, consolidate, parse, search, targets, types, unused, xml_edit};
 
 /// Handle `sharplsp/nuget/targets` — enumerate projects and props files.
 pub fn handle_targets(req: Request) -> Result<serde_json::Value> {
@@ -105,6 +109,81 @@ pub fn handle_uninstall(
     finish_with_restore(response, runtime, sender, &target)
 }
 
+/// Handle `sharplsp/nuget/unused` — detect unused direct package references.
+///
+/// Implements [PKG-UNUSED-REQUEST]: the language-appropriate sidecar computes
+/// reference usage; the path → package mapping and intersection with the
+/// project's *direct* references happen here.
+pub fn handle_unused(
+    req: Request,
+    runtime: &Runtime,
+    csharp: Option<&Arc<SidecarManager>>,
+    fsharp: Option<&Arc<SidecarManager>>,
+) -> Result<serde_json::Value> {
+    info!("Handling sharplsp/nuget/unused");
+    let params: types::UnusedParams = serde_json::from_value(req.params)?;
+    let direct = read_direct_refs(&params.project_path)?;
+    let usage = query_reference_usage(&params.project_path, runtime, csharp, fsharp)?;
+    let response = types::UnusedResponse {
+        unused: unused::compute_unused(&usage, &direct),
+        project_path: params.project_path,
+    };
+    Ok(serde_json::to_value(response)?)
+}
+
+/// Read the direct `PackageReference` items declared in a project file.
+fn read_direct_refs(project_path: &str) -> Result<Vec<parse::PackageItem>> {
+    let text =
+        std::fs::read_to_string(project_path).with_context(|| format!("read {project_path}"))?;
+    Ok(parse::read_package_items(&text, "PackageReference"))
+}
+
+/// Query the language-appropriate sidecar for a project's reference usage.
+fn query_reference_usage(
+    project_path: &str,
+    runtime: &Runtime,
+    csharp: Option<&Arc<SidecarManager>>,
+    fsharp: Option<&Arc<SidecarManager>>,
+) -> Result<unused::ReferenceUsage> {
+    let sidecar =
+        pick_package_sidecar(project_path, csharp, fsharp).context("no sidecar for project")?;
+    let payload = rmp_serde::to_vec(project_path)?;
+    let bytes = runtime.block_on(sidecar.request("project/unusedPackages", payload))?;
+    Ok(rmp_serde::from_slice(&bytes)?)
+}
+
+/// Pick the sidecar that owns a project's language (`.fsproj` → F#, else C#).
+fn pick_package_sidecar<'a>(
+    project_path: &str,
+    csharp: Option<&'a Arc<SidecarManager>>,
+    fsharp: Option<&'a Arc<SidecarManager>>,
+) -> Option<&'a Arc<SidecarManager>> {
+    if project_path.to_lowercase().ends_with(".fsproj") {
+        fsharp
+    } else {
+        csharp
+    }
+}
+
+/// Handle `sharplsp/nuget/consolidate` — hoist shared packages to props.
+///
+/// Implements [PKG-CONSOLIDATE-REQUEST]: pure Tier-1 work plus a single
+/// background restore for the files it touched.
+pub fn handle_consolidate(
+    req: Request,
+    runtime: &Runtime,
+    sender: Sender<Message>,
+) -> Result<serde_json::Value> {
+    info!("Handling sharplsp/nuget/consolidate");
+    let params: types::ConsolidateParams = serde_json::from_value(req.params)?;
+    let response = consolidate::consolidate(&params.solution_path, params.dry_run)?;
+    if !params.dry_run && !response.modified_files.is_empty() {
+        let target = types::NuGetTarget::from_project_path(&params.solution_path);
+        spawn_restore(runtime, sender, &target, response.modified_files.clone());
+    }
+    Ok(serde_json::to_value(response)?)
+}
+
 /// Install/uninstall responses that may trigger a background restore.
 trait RestoreOutcome {
     /// Whether the operation succeeded.
@@ -185,32 +264,19 @@ async fn list_installed_for_target(
 /// Read `<PackageReference>` / `<PackageVersion>` entries from a props file.
 fn list_props_packages(path: &str) -> Result<Vec<types::InstalledPackageInfo>> {
     let text = std::fs::read_to_string(path).with_context(|| format!("read {path}"))?;
-    let mut packages = Vec::new();
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        if !(trimmed.starts_with("<PackageReference") || trimmed.starts_with("<PackageVersion")) {
-            continue;
-        }
-        let Some(id) = extract_attr(line, "Include") else {
-            continue;
-        };
-        let version = extract_attr(line, "Version").unwrap_or_default();
-        packages.push(types::InstalledPackageInfo {
-            id,
-            requested_version: version.clone(),
-            resolved_version: version,
-        });
-    }
-    Ok(packages)
-}
-
-/// Extract the value of an XML attribute (e.g. `Include="..."`) from a line.
-fn extract_attr(line: &str, attr: &str) -> Option<String> {
-    let needle = format!("{attr}=\"");
-    let start = line.find(&needle)? + needle.len();
-    let rest = line.get(start..)?;
-    let end = rest.find('"')?;
-    Some(rest.get(..end)?.to_string())
+    let items = parse::read_package_items(&text, "PackageReference")
+        .into_iter()
+        .chain(parse::read_package_items(&text, "PackageVersion"));
+    Ok(items
+        .map(|item| {
+            let version = item.version.unwrap_or_default();
+            types::InstalledPackageInfo {
+                id: item.id,
+                requested_version: version.clone(),
+                resolved_version: version,
+            }
+        })
+        .collect())
 }
 
 /// Apply install via XML fast path.
@@ -237,7 +303,7 @@ fn apply_install(
         modified.push(target.path.clone());
     }
     if matches!(element, xml_edit::PackageElement::ReferenceNoVersion) {
-        if let Some(props_path) = find_packages_props(path) {
+        if let Some(props_path) = targets::find_packages_props(path) {
             let props_outcome = xml_edit::add_package(
                 &props_path,
                 package_id,
@@ -293,25 +359,10 @@ fn pick_install_element(target: &types::NuGetTarget) -> xml_edit::PackageElement
         xml_edit::PackageElement::Version
     } else if matches!(target.kind, types::TargetKind::BuildProps) {
         xml_edit::PackageElement::Reference
-    } else if find_packages_props(Path::new(&target.path)).is_some() {
+    } else if targets::find_packages_props(Path::new(&target.path)).is_some() {
         xml_edit::PackageElement::ReferenceNoVersion
     } else {
         xml_edit::PackageElement::Reference
-    }
-}
-
-/// Walk up from a csproj looking for a sibling / ancestor
-/// `Directory.Packages.props`. Returns the first one found.
-fn find_packages_props(start: &Path) -> Option<std::path::PathBuf> {
-    let mut dir = start.parent()?.to_path_buf();
-    loop {
-        let candidate = dir.join("Directory.Packages.props");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-        if !dir.pop() {
-            return None;
-        }
     }
 }
 

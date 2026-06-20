@@ -191,6 +191,24 @@ fn build_props_target(root: &Path, path: &Path, file_name: &str) -> NuGetTarget 
     }
 }
 
+/// Walk up from a project/file path looking for a sibling or ancestor
+/// `Directory.Packages.props`. Returns the first one found.
+///
+/// Single source of truth for CPM props-file discovery, shared by the install,
+/// consolidation, and unused-package flows.
+pub fn find_packages_props(start: &Path) -> Option<PathBuf> {
+    let mut dir = start.parent()?.to_path_buf();
+    loop {
+        let candidate = dir.join("Directory.Packages.props");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
 /// Parse a `Directory.Packages.props` file for the CPM switch.
 ///
 /// Text search is sufficient — the element is a single bool and any reasonable

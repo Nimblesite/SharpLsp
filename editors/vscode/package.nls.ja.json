@@ -51,6 +51,8 @@
   "cmd.sortAccessibility": "並べ替え: アクセシビリティ順",
   "cmd.removeNuGetPackage": "パッケージを削除",
   "cmd.removeProjectReference": "プロジェクト参照を削除",
+  "cmd.removeUnusedPackages": "未使用のパッケージを削除",
+  "cmd.consolidatePackages": "パッケージを Directory.Build.props に統合",
   "cmd.browseNuGetPackages": "NuGet パッケージを参照",
   "cmd.sortMembers": "メンバーを並べ替え",
   "cmd.copyQualifiedName": "完全修飾名をコピー",

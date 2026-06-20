@@ -38,7 +38,7 @@ let create () : FSharpWorkspaceState =
       IsLoaded = false }
 
 /// Parse an .fsproj file to extract Compile Include entries.
-let private parseFsprojSourceFiles (fsprojPath: string) : string array =
+let internal parseFsprojSourceFiles (fsprojPath: string) : string array =
     let doc = XDocument.Load(fsprojPath)
     let projDir = Path.GetDirectoryName(fsprojPath) |> string
     doc.Descendants(XName.Get("Compile"))
@@ -89,6 +89,35 @@ let private discoverFsprojFiles (path: string) (ct: CancellationToken) =
             return Error $"Path does not exist: {path}"
     }
 
+/// Build the shared compiler options for a netcore F# check: `--noframework`,
+/// the managed framework reference assemblies from the runtime dir, and
+/// FSharp.Core. Reused by both project loading and unused-package analysis.
+let internal frameworkReferenceArgs () : string array =
+    // The runtime dir contains both managed and native DLLs (e.g. clretwrc.dll,
+    // coreclr.dll); skip native DLLs since FCS rejects them with "bad cli header".
+    let runtimeDir = Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory()
+    let isManagedAssembly (path: string) =
+        try
+            AssemblyName.GetAssemblyName(path) |> ignore
+            true
+        with _ -> false
+    let frameworkRefs =
+        Directory.GetFiles(runtimeDir, "*.dll")
+        |> Array.filter isManagedAssembly
+        |> Array.map (fun dll -> $"-r:{dll}")
+    // FSharp.Core is loaded by the sidecar itself; use that path — it's
+    // guaranteed to exist and be ABI-compatible with FCS.
+    let fsharpCorePath = typeof<unit>.Assembly.Location
+    let fsharpCoreRef =
+        if String.IsNullOrEmpty(fsharpCorePath) || not (File.Exists fsharpCorePath) then
+            [||]
+        else
+            [| $"-r:{fsharpCorePath}" |]
+    [| yield "--noframework"
+       yield "--targetprofile:netcore"
+       yield! frameworkRefs
+       yield! fsharpCoreRef |]
+
 let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string array) =
     if fsprojFiles.Length = 0 then
         Error "No .fsproj found"
@@ -98,34 +127,7 @@ let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string 
             if fsprojFiles.Length > 1 then
                 Log.Debug("F# workspace found {Count} projects; loading {Path}", fsprojFiles.Length, fsprojPath)
             let sourceFiles = parseFsprojSourceFiles fsprojPath
-            // Build compiler options with framework refs from the runtime dir.
-            // The runtime dir contains both managed and native DLLs (e.g.
-            // clretwrc.dll, coreclr.dll); skip native DLLs since FCS rejects
-            // them with "bad cli header".
-            let runtimeDir =
-                Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory()
-            let isManagedAssembly (path: string) =
-                try
-                    AssemblyName.GetAssemblyName(path) |> ignore
-                    true
-                with _ -> false
-            let frameworkRefs =
-                Directory.GetFiles(runtimeDir, "*.dll")
-                |> Array.filter isManagedAssembly
-                |> Array.map (fun dll -> $"-r:{dll}")
-            // FSharp.Core is loaded by the sidecar itself; use that path —
-            // it's guaranteed to exist and be ABI-compatible with FCS.
-            let fsharpCorePath = typeof<unit>.Assembly.Location
-            let fsharpCoreRef =
-                if String.IsNullOrEmpty(fsharpCorePath) || not (File.Exists fsharpCorePath) then
-                    [||]
-                else
-                    [| $"-r:{fsharpCorePath}" |]
-            let otherOptions =
-                [| yield "--noframework"
-                   yield "--targetprofile:netcore"
-                   yield! frameworkRefs
-                   yield! fsharpCoreRef |]
+            let otherOptions = frameworkReferenceArgs ()
             let options =
                 state.Checker.GetProjectOptionsFromCommandLineArgs(
                     fsprojPath,

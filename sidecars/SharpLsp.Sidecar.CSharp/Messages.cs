@@ -474,3 +474,23 @@ internal sealed class PrepareRenameResult
     [Key(5)]
     public string Placeholder { get; set; } = "";
 }
+
+// ── Unused Package Detection ──────────────────────────────────────
+
+// Implements [PKG-UNUSED-DETECT-CS]: assembly-level reference usage for a
+// project, consumed by the Rust host's [PKG-UNUSED-MAP] package mapping.
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class ReferenceUsageResult
+{
+    /// <summary>Absolute paths of assemblies actually used by the compilation.</summary>
+    [Key(0)]
+    public string[] UsedPaths { get; set; } = [];
+
+    /// <summary>Absolute paths of every assembly referenced by the compilation.</summary>
+    [Key(1)]
+    public string[] AllPaths { get; set; } = [];
+
+    /// <summary>NuGet global packages folder used to map assemblies to packages.</summary>
+    [Key(2)]
+    public string PackagesRoot { get; set; } = "";
+}

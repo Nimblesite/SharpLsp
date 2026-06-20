@@ -48,6 +48,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("textDocument/inlayHint", HandleInlayHintAsync);
         Register("textDocument/prepareRename", HandlePrepareRenameAsync);
         Register("textDocument/rename", HandleRenameAsync);
+        Register("project/unusedPackages", HandleUnusedPackagesAsync);
     }
 
     private readonly WorkspaceManager _workspace = new();
@@ -185,6 +186,26 @@ internal sealed partial class CSharpSidecar : SidecarHost
                 cancellationToken: ct
             );
             var result = await _workspace.GetDiagnosticsAsync(filePath, ct).ConfigureAwait(false);
+            return SerializeResult(result, ct);
+        }
+        catch (Exception ex)
+        {
+            return ByteResult.Failure(ex.Message);
+        }
+    }
+
+    // Implements [PKG-UNUSED-DETECT-CS]
+    private async Task<ByteResult> HandleUnusedPackagesAsync(byte[] payload, CancellationToken ct)
+    {
+        try
+        {
+            var projectPath = MessagePackSerializer.Deserialize<string>(
+                payload,
+                cancellationToken: ct
+            );
+            var result = await _workspace
+                .GetReferenceUsageAsync(projectPath, ct)
+                .ConfigureAwait(false);
             return SerializeResult(result, ct);
         }
         catch (Exception ex)
