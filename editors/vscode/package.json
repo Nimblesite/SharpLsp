@@ -433,6 +433,18 @@
         "icon": "$(trash)"
       },
       {
+        "command": "sharplsp.removeUnusedPackages",
+        "title": "%cmd.removeUnusedPackages%",
+        "category": "%category%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "sharplsp.consolidatePackages",
+        "title": "%cmd.consolidatePackages%",
+        "category": "%category%",
+        "icon": "$(combine)"
+      },
+      {
         "command": "sharplsp.browseNuGetPackages",
         "title": "%cmd.browseNuGetPackages%",
         "category": "%category%",
@@ -858,6 +870,21 @@
         {
           "command": "sharplsp.browseNuGetPackages",
           "when": "view == sharplsp.solutionExplorer && viewItem == project",
+          "group": "5_dependencies"
+        },
+        {
+          "command": "sharplsp.removeUnusedPackages",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
+          "group": "5_dependencies"
+        },
+        {
+          "command": "sharplsp.removeUnusedPackages",
+          "when": "view == sharplsp.solutionExplorer && viewItem == solution",
+          "group": "5_dependencies"
+        },
+        {
+          "command": "sharplsp.consolidatePackages",
+          "when": "view == sharplsp.solutionExplorer && viewItem == solution",
           "group": "5_dependencies"
         },
         {

@@ -15,6 +15,8 @@ import {
   CMD_SORT_ACCESSIBILITY,
   CMD_REMOVE_NUGET_PACKAGE,
   CMD_REMOVE_PROJECT_REFERENCE,
+  CMD_REMOVE_UNUSED_PACKAGES,
+  CMD_CONSOLIDATE_PACKAGES,
   CMD_BROWSE_NUGET_PACKAGES,
   CMD_SORT_MEMBERS,
   CMD_COPY_QUALIFIED_NAME,
@@ -36,6 +38,7 @@ import * as solution from './solution.js';
 import { SharpLspStatusBar, ServerState } from './status.js';
 import { type ExplorerNode, SolutionExplorerProvider, buildQualifiedName } from './tree.js';
 import { NuGetBrowserPanel } from './nuget-browser.js';
+import * as pkgMaint from './package-maintenance.js';
 import { registerBuildCommands } from './build.js';
 import { registerNuGetCommands, addNuGetPackageToProject } from './nuget.js';
 import { registerScaffoldingCommands } from './scaffolding.js';
@@ -369,7 +372,18 @@ function registerDependencyCommands(context: ExtensionContext): void {
     commands.registerCommand(CMD_BROWSE_NUGET_PACKAGES, (node: ExplorerNode | undefined) => {
       browseNuGetPackages(node, context);
     }),
+    commands.registerCommand(CMD_REMOVE_UNUSED_PACKAGES, async (node: ExplorerNode | undefined) => {
+      await pkgMaint.removeUnusedPackages(node, lspClient, refreshExplorer);
+    }),
+    commands.registerCommand(CMD_CONSOLIDATE_PACKAGES, async (node: ExplorerNode | undefined) => {
+      await pkgMaint.consolidatePackages(node, lspClient, refreshExplorer);
+    }),
   );
+}
+
+/** Refresh the Solution Explorer tree, tolerating an unset provider. */
+async function refreshExplorer(): Promise<void> {
+  await (explorerProvider?.refresh() ?? Promise.resolve());
 }
 
 function browseNuGetPackages(node: ExplorerNode | undefined, context: ExtensionContext): void {

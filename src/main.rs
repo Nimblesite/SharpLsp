@@ -720,6 +720,12 @@ fn handle_custom_request(
         "sharplsp/nuget/uninstall" => {
             nuget::handlers::handle_uninstall(req, runtime, connection.sender.clone())
         }
+        "sharplsp/nuget/unused" => {
+            nuget::handlers::handle_unused(req, runtime, csharp_sidecar, fsharp_sidecar)
+        }
+        "sharplsp/nuget/consolidate" => {
+            nuget::handlers::handle_consolidate(req, runtime, connection.sender.clone())
+        }
         // Profiler
         "sharplsp/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
         "sharplsp/profiler/killProcess" => profiler::handlers::handle_kill_process(req),

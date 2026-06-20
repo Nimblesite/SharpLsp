@@ -51,6 +51,8 @@
   "cmd.sortAccessibility": "Sort: Accessibility",
   "cmd.removeNuGetPackage": "Remove Package",
   "cmd.removeProjectReference": "Remove Project Reference",
+  "cmd.removeUnusedPackages": "Remove Unused Packages",
+  "cmd.consolidatePackages": "Consolidate Packages to Directory.Build.props",
   "cmd.browseNuGetPackages": "Browse NuGet Packages",
   "cmd.sortMembers": "Sort Members",
   "cmd.copyQualifiedName": "Copy Qualified Name",

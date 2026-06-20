@@ -51,6 +51,8 @@
   "cmd.sortAccessibility": "排序：可访问性",
   "cmd.removeNuGetPackage": "移除包",
   "cmd.removeProjectReference": "移除项目引用",
+  "cmd.removeUnusedPackages": "移除未使用的包",
+  "cmd.consolidatePackages": "将共享包合并到 Directory.Build.props",
   "cmd.browseNuGetPackages": "浏览 NuGet 包",
   "cmd.sortMembers": "排序成员",
   "cmd.copyQualifiedName": "复制限定名称",

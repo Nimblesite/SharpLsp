@@ -5,8 +5,11 @@
 
 pub mod cache;
 pub mod cli;
+pub mod consolidate;
 pub mod handlers;
+pub mod parse;
 pub mod search;
 pub mod targets;
 pub mod types;
+pub mod unused;
 pub mod xml_edit;

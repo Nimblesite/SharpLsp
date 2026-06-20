@@ -285,6 +285,78 @@ pub struct UninstallResponse {
     pub modified_files: Vec<String>,
 }
 
+// ── sharplsp/nuget/unused ──────────────────────────────────────────
+// Implements [PKG-UNUSED-REQUEST]
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Parameters for the `sharplsp/nuget/unused` request.
+pub struct UnusedParams {
+    /// Absolute path to the `.csproj` / `.fsproj` to analyse.
+    pub project_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+/// A direct `PackageReference` proven unused by the compilation.
+pub struct UnusedPackage {
+    /// Package identifier.
+    pub id: String,
+    /// Version as declared in the project file (empty for CPM references).
+    pub version: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Response for the `sharplsp/nuget/unused` request.
+pub struct UnusedResponse {
+    /// Project that was analysed.
+    pub project_path: String,
+    /// Direct package references with no used compile assembly.
+    pub unused: Vec<UnusedPackage>,
+}
+
+// ── sharplsp/nuget/consolidate ─────────────────────────────────────
+// Implements [PKG-CONSOLIDATE-REQUEST]
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Parameters for the `sharplsp/nuget/consolidate` request.
+pub struct ConsolidateParams {
+    /// Absolute path to the solution (`.sln`/`.slnx`) being consolidated.
+    pub solution_path: String,
+    /// When true, report what would move without modifying any files.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// A package hoisted from per-project references into `Directory.Build.props`.
+pub struct MovedPackage {
+    /// Package identifier.
+    pub id: String,
+    /// Version written into `Directory.Build.props` (empty for CPM).
+    pub version: String,
+    /// Display names of the projects the reference was removed from.
+    pub from_projects: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Response for the `sharplsp/nuget/consolidate` request.
+pub struct ConsolidateResponse {
+    /// Packages moved into `Directory.Build.props`.
+    pub moved: Vec<MovedPackage>,
+    /// Absolute path to the `Directory.Build.props` that was written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub props_file: Option<String>,
+    /// All files modified by the operation (props + projects).
+    pub modified_files: Vec<String>,
+    /// Human-readable summary of what moved.
+    pub message: String,
+}
+
 // ── sharplsp/nuget/restoreProgress (server → client notification) ──
 
 /// Parameters for the `sharplsp/nuget/restoreProgress` notification.
