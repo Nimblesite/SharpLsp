@@ -82,7 +82,10 @@ suite('FSI Module — extractSignature() declarations passed through', () => {
   });
 
   test('type declaration is preserved verbatim including indentation', () => {
-    assert.strictEqual(fsi.extractSignature('  type Point = { X: int }'), '  type Point = { X: int }\n');
+    assert.strictEqual(
+      fsi.extractSignature('  type Point = { X: int }'),
+      '  type Point = { X: int }\n',
+    );
   });
 
   test('existing val line is passed through unchanged', () => {
@@ -239,10 +242,7 @@ suite('FSI Module — isFSharpSourceDocument()', () => {
   });
 
   test('a Windows-style .fs path is recognized', () => {
-    assert.strictEqual(
-      fsi.isFSharpSourceDocument(fakeDoc({ fsPath: 'C:\\src\\Lib.fs' })),
-      true,
-    );
+    assert.strictEqual(fsi.isFSharpSourceDocument(fakeDoc({ fsPath: 'C:\\src\\Lib.fs' })), true);
   });
 
   test('a .fsx script file is NOT an F# source document', () => {

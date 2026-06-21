@@ -350,9 +350,7 @@ suite('Build Module — parseBuildDiagnostics()', () => {
   test('diagnostics across different files land on their respective URIs', () => {
     const fileA = fixturePath('A.cs');
     const fileB = fixturePath('B.cs');
-    parseBuildDiagnostics(
-      `${fileA}(5,5): error CS1001: in A\n${fileB}(6,6): warning CS1002: in B`,
-    );
+    parseBuildDiagnostics(`${fileA}(5,5): error CS1001: in A\n${fileB}(6,6): warning CS1002: in B`);
     const aDiags = vscode.languages.getDiagnostics(vscode.Uri.file(fileA));
     const bDiags = vscode.languages.getDiagnostics(vscode.Uri.file(fileB));
     assert.strictEqual(aDiags.length, 1);

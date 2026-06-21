@@ -95,10 +95,7 @@ suite('F# LSP — Go to Definition', () => {
     );
 
     // Greeter constructor (used in Usage.fs) → type declaration in Library.fs
-    const greeterDef = await pollDefinition(
-      usage.uri,
-      positionOf(usage.doc, 'Greeter("Hello")'),
-    );
+    const greeterDef = await pollDefinition(usage.uri, positionOf(usage.doc, 'Greeter("Hello")'));
     assert.ok(
       greeterDef.some((loc) => loc.uri.fsPath.endsWith('Library.fs')),
       'Greeter definition must resolve into Library.fs',
@@ -170,11 +167,7 @@ suite('F# LSP — Find References & Document Highlights', () => {
     this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
     const library = await openFSharpFixture('Library.fs');
     // area: declared in Library, used in `List.map area`.
-    const areaRefs = await pollReferences(
-      library.uri,
-      positionOf(library.doc, 'let area', 4),
-      2,
-    );
+    const areaRefs = await pollReferences(library.uri, positionOf(library.doc, 'let area', 4), 2);
     assert.ok(areaRefs.length >= 2, `area must have ≥2 references, got ${areaRefs.length}`);
     assert.ok(
       areaRefs.some((loc) => loc.uri.fsPath.endsWith('Library.fs')),

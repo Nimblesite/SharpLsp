@@ -119,10 +119,9 @@ let analyzeFileOrder
                     let mutable issues = []
                     for filePath in files do
                         let! errors = collectUndefinedErrors state.Checker options filePath
-                        let currentIdx =
-                            match fileIndex.TryGetValue(filePath) with
-                            | true, idx -> idx
-                            | false, _ -> -1
+                        // filePath comes straight from `files`, and fileIndex is
+                        // built from exactly that array, so the key is always present.
+                        let currentIdx = fileIndex[filePath]
                         for (line, char, msg) in errors do
                             // Extract symbol name from error message.
                             let symbolName =
@@ -131,11 +130,11 @@ let analyzeFileOrder
                                 |> Option.defaultValue ""
                             match definitions.TryGetValue(symbolName) with
                             | true, defFile when defFile <> filePath ->
-                                let defIdx =
-                                    match fileIndex.TryGetValue(defFile) with
-                                    | true, idx -> idx
-                                    | false, _ -> -1
-                                if defIdx > currentIdx && currentIdx >= 0 then
+                                // defFile is a value from `definitions`, which only
+                                // ever stores paths drawn from `files`, so it is
+                                // always a key of fileIndex.
+                                let defIdx = fileIndex[defFile]
+                                if defIdx > currentIdx then
                                     let issue =
                                         { FilePath = filePath
                                           Line = line

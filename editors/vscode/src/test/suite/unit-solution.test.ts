@@ -94,15 +94,15 @@ suite('solution.ts — toSolutionSelections (pure)', () => {
   test('handles dotted file names (multiple dots before the extension)', () => {
     const [sel] = toSolutionSelections(['/x/My.Company.Product.sln']);
     assert.ok(sel);
-    assert.strictEqual(sel.name, 'My.Company.Product.sln', 'only trailing path segment is the name');
+    assert.strictEqual(
+      sel.name,
+      'My.Company.Product.sln',
+      'only trailing path segment is the name',
+    );
   });
 
   test('sorts multiple selections alphabetically by name', () => {
-    const result = toSolutionSelections([
-      '/x/Zebra.sln',
-      '/x/Alpha.sln',
-      '/x/Mango.sln',
-    ]);
+    const result = toSolutionSelections(['/x/Zebra.sln', '/x/Alpha.sln', '/x/Mango.sln']);
     assert.strictEqual(result.length, 3, 'all three preserved');
     assert.deepStrictEqual(
       result.map((s) => s.name),
@@ -121,11 +121,7 @@ suite('solution.ts — toSolutionSelections (pure)', () => {
 
   test('ties on name fall back to sorting by path', () => {
     // Two files with the identical basename but different directories.
-    const result = toSolutionSelections([
-      '/zzz/Same.sln',
-      '/aaa/Same.sln',
-      '/mmm/Same.sln',
-    ]);
+    const result = toSolutionSelections(['/zzz/Same.sln', '/aaa/Same.sln', '/mmm/Same.sln']);
     assert.strictEqual(result.length, 3);
     assert.deepStrictEqual(
       result.map((s) => s.name),
@@ -201,11 +197,7 @@ suite('solution.ts — findSolutions (workspace-backed)', () => {
     for (const sel of result) {
       assert.strictEqual(typeof sel.path, 'string', 'path is a string');
       assert.strictEqual(typeof sel.name, 'string', 'name is a string');
-      assert.strictEqual(
-        sel.name,
-        path.basename(sel.path),
-        'name is exactly the basename of path',
-      );
+      assert.strictEqual(sel.name, path.basename(sel.path), 'name is exactly the basename of path');
     }
   });
 

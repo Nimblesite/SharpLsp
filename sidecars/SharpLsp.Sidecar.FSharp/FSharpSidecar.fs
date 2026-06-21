@@ -276,18 +276,6 @@ type FSharpSidecar() =
                                       Severity = severity
                                       Code = $"FS{d.ErrorNumber:D4}" })
                         | FSharp.Compiler.CodeAnalysis.FSharpCheckFileAnswer.Aborted -> ()
-                    // FSharpLint diagnostics.
-                    let lintDiags = FSharpLinting.lintFile filePath
-                    for ld in lintDiags do
-                        results.Add(
-                            { FilePath = ld.FilePath
-                              StartLine = ld.StartLine
-                              StartCharacter = ld.StartCharacter
-                              EndLine = ld.EndLine
-                              EndCharacter = ld.EndCharacter
-                              Message = ld.Message
-                              Severity = ld.Severity
-                              Code = ld.Code })
                     return Helpers.serializeOk (results.ToArray()) ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)

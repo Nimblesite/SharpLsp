@@ -502,11 +502,7 @@ suite('Testing Module — findCoberturaFile()', () => {
   test('the path it finds is consumable by parseCoberturaXml end-to-end', () => {
     const guidDir = path.join(tmpDir, 'run-1');
     fs.mkdirSync(guidDir);
-    fs.writeFileSync(
-      path.join(guidDir, 'coverage.cobertura.xml'),
-      COBERTURA_SINGLE_FILE,
-      'utf-8',
-    );
+    fs.writeFileSync(path.join(guidDir, 'coverage.cobertura.xml'), COBERTURA_SINGLE_FILE, 'utf-8');
     const found = findCoberturaFile(tmpDir);
     assert.ok(found !== undefined);
     const coverages = parseCoberturaXml(found);

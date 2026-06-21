@@ -20,8 +20,6 @@
     <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>
     <EnableNETAnalyzers>false</EnableNETAnalyzers>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
-    <!-- Suppress vulnerability warnings from transitive FSharpLint.Core deps (Microsoft.Build) -->
-    <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,10 +30,7 @@
     <PackageReference Include="FSharp.Core" Version="10.1.204" />
     <PackageReference Include="FSharp.Compiler.Service" Version="43.12.204" />
     <PackageReference Include="Fantomas.Core" Version="7.0.5" />
-    <PackageReference Include="FSharpLint.Core" Version="0.27.0" />
     <PackageReference Include="MessagePack" Version="3.1.7" />
-    <!-- Override transitive 9.0.0 from FSharpLint.Core/Microsoft.Build chain (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, fixed in 9.0.15). -->
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.9" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,7 +40,6 @@
     <Compile Include="FSharpReferences.fs" />
     <Compile Include="FSharpFeatures.fs" />
     <Compile Include="FSharpFileOrder.fs" />
-    <Compile Include="FSharpLinting.fs" />
     <Compile Include="FSharpCodeActions.fs" />
     <Compile Include="FSharpCodeFixes.fs" />
     <Compile Include="FSharpCompletion.fs" />

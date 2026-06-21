@@ -22,7 +22,10 @@ suite('test-lens — extractCSharpMethodName()', () => {
   });
 
   test('generic return type does not confuse the capture', () => {
-    assert.strictEqual(extractCSharpMethodName('public async Task<int> FetchAsync()'), 'FetchAsync');
+    assert.strictEqual(
+      extractCSharpMethodName('public async Task<int> FetchAsync()'),
+      'FetchAsync',
+    );
   });
 
   test('generic method type-parameter list is consumed before the (', () => {
@@ -134,7 +137,10 @@ suite('test-lens — extractCSharpMethodName()', () => {
   });
 
   test('parameters present vs absent do not change the captured name', () => {
-    assert.strictEqual(extractCSharpMethodName('public void WithArgs(int a, string b)'), 'WithArgs');
+    assert.strictEqual(
+      extractCSharpMethodName('public void WithArgs(int a, string b)'),
+      'WithArgs',
+    );
     assert.strictEqual(extractCSharpMethodName('public void NoArgs()'), 'NoArgs');
   });
 

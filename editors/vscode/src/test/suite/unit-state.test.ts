@@ -430,9 +430,7 @@ suite('state — refresh() error path', () => {
   teardown(resetSignals);
 
   test('a thrown Error becomes an error state carrying its message', async () => {
-    client.value = fakeClient(State.Running, () =>
-      Promise.reject(new Error('roslyn exploded')),
-    );
+    client.value = fakeClient(State.Running, () => Promise.reject(new Error('roslyn exploded')));
     solutionPath.value = SOLUTION;
 
     await refresh();

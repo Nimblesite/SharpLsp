@@ -17,14 +17,7 @@ import {
 suite('Scaffolding Pure — newSolutionArgs()', () => {
   test('builds the canonical dotnet new sln argument vector', () => {
     const args = newSolutionArgs('MySolution', '/work/dir');
-    assert.deepStrictEqual(args, [
-      'new',
-      'sln',
-      '--name',
-      'MySolution',
-      '--output',
-      '/work/dir',
-    ]);
+    assert.deepStrictEqual(args, ['new', 'sln', '--name', 'MySolution', '--output', '/work/dir']);
   });
 
   test('argument vector always has exactly six elements', () => {

@@ -259,8 +259,8 @@ let private getFixesForDiagnostic
     | 25 -> tryFixIncompleteMatch state filePath source diag
     | 26 -> tryFixRedundantCase state filePath source diag
     | 39 -> tryFixUndefinedName state filePath source diag
-    | 40 -> tryFixTypeMismatch state filePath source diag
-    | 1104 -> tryFixUnusedValue state filePath source diag
+    // FS0001 is the type-mismatch diagnostic ("expected type X but has type Y").
+    | 1 -> tryFixTypeMismatch state filePath source diag
     | 1182 -> tryFixUnusedValue state filePath source diag
     | _ -> []
 

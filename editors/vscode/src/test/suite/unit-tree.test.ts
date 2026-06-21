@@ -344,7 +344,9 @@ suite('SolutionExplorerProvider — loaded solution tree', () => {
 
   test('a top-level class symbol wires icon, range, command and uri', () => {
     const root = loadInto(provider, '/s/Sol.sln', [
-      project('P', '/s/P.csproj', [symbol({ name: 'Calculator', kind: 'Class', range: range(7, 4) })]),
+      project('P', '/s/P.csproj', [
+        symbol({ name: 'Calculator', kind: 'Class', range: range(7, 4) }),
+      ]),
     ]);
     const projectNode = root.children[0];
     assert.ok(projectNode !== undefined);
@@ -369,9 +371,7 @@ suite('SolutionExplorerProvider — loaded solution tree', () => {
 
   test('symbol with detail renders "name : detail" label', () => {
     const root = loadInto(provider, '/d/Sol.sln', [
-      project('P', '/d/P.csproj', [
-        symbol({ name: 'Count', kind: 'Property', detail: 'int' }),
-      ]),
+      project('P', '/d/P.csproj', [symbol({ name: 'Count', kind: 'Property', detail: 'int' })]),
     ]);
     const sym = root.children[0]?.children.find((c) => nt(c) === 'symbol');
     assert.ok(sym !== undefined);

@@ -202,10 +202,7 @@ suite('Debug Module — readLaunchProfiles()', () => {
     // The presence of a project file adds a duplicate candidate path; the
     // result must still be the parsed profiles, not affected by the dedup path.
     fs.writeFileSync(path.join(tmpDir, 'App.csproj'), '<Project />', 'utf-8');
-    writeLaunchSettings(
-      tmpDir,
-      JSON.stringify({ profiles: { Web: { commandName: 'Project' } } }),
-    );
+    writeLaunchSettings(tmpDir, JSON.stringify({ profiles: { Web: { commandName: 'Project' } } }));
     const profiles = readLaunchProfiles(tmpDir);
     assert.deepStrictEqual(Object.keys(profiles), ['Web']);
     assert.strictEqual(profiles.Web?.commandName, 'Project');
@@ -250,10 +247,7 @@ suite('Debug Module — getNetcoredbgCandidates()', () => {
   test('every candidate ends with the platform-correct executable name', () => {
     const exe = process.platform === 'win32' ? 'netcoredbg.exe' : 'netcoredbg';
     for (const candidate of getNetcoredbgCandidates()) {
-      assert.ok(
-        candidate.endsWith(exe),
-        `expected ${candidate} to end with ${exe}`,
-      );
+      assert.ok(candidate.endsWith(exe), `expected ${candidate} to end with ${exe}`);
     }
   });
 
@@ -333,10 +327,7 @@ suite('Debug Module — projectEntryFromFile()', () => {
   test('strips the .fsproj extension to derive the dll name', () => {
     const projFile = path.join(tmpDir, 'FSharpLib.fsproj');
     const entry = projectEntryFromFile(projFile);
-    assert.strictEqual(
-      entry.dll,
-      path.join(tmpDir, 'bin', 'Debug', 'net10.0', 'FSharpLib.dll'),
-    );
+    assert.strictEqual(entry.dll, path.join(tmpDir, 'bin', 'Debug', 'net10.0', 'FSharpLib.dll'));
   });
 
   test('derives the dll name from the basename only, not the directory', () => {
@@ -345,10 +336,7 @@ suite('Debug Module — projectEntryFromFile()', () => {
     const projFile = path.join(nested, 'Service.Api.csproj');
     const entry = projectEntryFromFile(projFile);
     // Multi-dot name: extname is '.csproj', so only that is stripped.
-    assert.strictEqual(
-      entry.dll,
-      path.join(nested, 'bin', 'Debug', 'net10.0', 'Service.Api.dll'),
-    );
+    assert.strictEqual(entry.dll, path.join(nested, 'bin', 'Debug', 'net10.0', 'Service.Api.dll'));
     assert.strictEqual(entry.cwd, nested);
   });
 });
@@ -369,20 +357,14 @@ suite('Debug Module — findProjectFile()', () => {
     const entry = findProjectFile(tmpDir, tmpDir);
     assert.ok(entry !== undefined);
     assert.strictEqual(entry.cwd, tmpDir);
-    assert.strictEqual(
-      entry.dll,
-      path.join(tmpDir, 'bin', 'Debug', 'net10.0', 'Direct.dll'),
-    );
+    assert.strictEqual(entry.dll, path.join(tmpDir, 'bin', 'Debug', 'net10.0', 'Direct.dll'));
   });
 
   test('finds a .fsproj directly in the start directory', () => {
     fs.writeFileSync(path.join(tmpDir, 'Lib.fsproj'), '<Project />', 'utf-8');
     const entry = findProjectFile(tmpDir, tmpDir);
     assert.ok(entry !== undefined);
-    assert.strictEqual(
-      entry.dll,
-      path.join(tmpDir, 'bin', 'Debug', 'net10.0', 'Lib.dll'),
-    );
+    assert.strictEqual(entry.dll, path.join(tmpDir, 'bin', 'Debug', 'net10.0', 'Lib.dll'));
   });
 
   test('returns undefined when start equals stop and no project exists', () => {
@@ -396,10 +378,7 @@ suite('Debug Module — findProjectFile()', () => {
     const entry = findProjectFile(child, tmpDir);
     assert.ok(entry !== undefined);
     assert.strictEqual(entry.cwd, tmpDir);
-    assert.strictEqual(
-      entry.dll,
-      path.join(tmpDir, 'bin', 'Debug', 'net10.0', 'Root.dll'),
-    );
+    assert.strictEqual(entry.dll, path.join(tmpDir, 'bin', 'Debug', 'net10.0', 'Root.dll'));
   });
 
   test('returns the nearest project when both child and ancestor have one', () => {
@@ -410,10 +389,7 @@ suite('Debug Module — findProjectFile()', () => {
     const entry = findProjectFile(child, tmpDir);
     assert.ok(entry !== undefined);
     assert.strictEqual(entry.cwd, child);
-    assert.strictEqual(
-      entry.dll,
-      path.join(child, 'bin', 'Debug', 'net10.0', 'Inner.dll'),
-    );
+    assert.strictEqual(entry.dll, path.join(child, 'bin', 'Debug', 'net10.0', 'Inner.dll'));
   });
 
   test('stops at stopPath and returns undefined without scanning above it', () => {
@@ -454,10 +430,7 @@ suite('Debug Module — findEntryProject()', () => {
     const entry = findEntryProject(tmpDir);
     assert.ok(entry !== undefined);
     assert.strictEqual(entry.cwd, tmpDir);
-    assert.strictEqual(
-      entry.dll,
-      path.join(tmpDir, 'bin', 'Debug', 'net10.0', 'Entry.dll'),
-    );
+    assert.strictEqual(entry.dll, path.join(tmpDir, 'bin', 'Debug', 'net10.0', 'Entry.dll'));
   });
 
   test('returns undefined for a root path with no project (search does not walk up)', () => {
@@ -485,7 +458,9 @@ suite('Debug Module — applyLaunchProfile()', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function makeConfig(overrides: Partial<vscode.DebugConfiguration> = {}): vscode.DebugConfiguration {
+  function makeConfig(
+    overrides: Partial<vscode.DebugConfiguration> = {},
+  ): vscode.DebugConfiguration {
     return {
       type: 'sharplsp-coreclr',
       name: 'Launch',
@@ -635,7 +610,11 @@ suite('Debug Module — applyLaunchProfile()', () => {
       JSON.stringify({
         profiles: {
           IIS: { commandName: 'IISExpress', environmentVariables: { WHICH: 'iis' } },
-          Web: { commandName: 'Project', environmentVariables: { WHICH: 'web' }, commandLineArgs: 'a b c' },
+          Web: {
+            commandName: 'Project',
+            environmentVariables: { WHICH: 'web' },
+            commandLineArgs: 'a b c',
+          },
         },
       }),
     );

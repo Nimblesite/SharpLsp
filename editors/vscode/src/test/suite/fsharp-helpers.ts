@@ -111,11 +111,9 @@ export async function pollDefinition(
 ): Promise<vscode.Location[]> {
   return pollUntilResult(
     async () => {
-      const result = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
-        'vscode.executeDefinitionProvider',
-        uri,
-        position,
-      );
+      const result = await vscode.commands.executeCommand<
+        (vscode.Location | vscode.LocationLink)[]
+      >('vscode.executeDefinitionProvider', uri, position);
       return (result ?? []).map(normalizeLocation);
     },
     (locations) => locations.length > 0,

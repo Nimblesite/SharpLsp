@@ -269,10 +269,7 @@ suite('ObjectGraphPanel — truncation warning branch', () => {
 
     const html = await renderViaPanel(resolvingClient(graph), 'd', 'r');
 
-    assert.ok(
-      !html.includes('WARNING'),
-      'non-truncated graphs must not include any WARNING text',
-    );
+    assert.ok(!html.includes('WARNING'), 'non-truncated graphs must not include any WARNING text');
     assert.ok(!html.includes('graph truncated'));
   });
 });
@@ -325,11 +322,7 @@ suite('ObjectGraphPanel — no HTML escaping (documents real behavior)', () => {
 
   test('root address is echoed verbatim into the body', async () => {
     const graph = makeGraph({ stats: makeStats({}) });
-    const html = await renderViaPanel(
-      resolvingClient(graph),
-      '/tmp/d.dmp',
-      '0xCAFEBABE<script>',
-    );
+    const html = await renderViaPanel(resolvingClient(graph), '/tmp/d.dmp', '0xCAFEBABE<script>');
     assert.ok(html.includes('Root: 0xCAFEBABE<script>'), 'root echoed raw');
     assert.ok(!html.includes('&lt;script&gt;'), 'root not escaped (documents behavior)');
   });
@@ -439,7 +432,10 @@ suite('ObjectGraphPanel — error path', () => {
     );
 
     assert.ok(html.startsWith('<!DOCTYPE html>'), 'error page is a full document');
-    assert.ok(html.includes('Error: sidecar exploded'), 'error message surfaced via getErrorMessage');
+    assert.ok(
+      html.includes('Error: sidecar exploded'),
+      'error message surfaced via getErrorMessage',
+    );
     assert.ok(!html.includes('<pre>'), 'error page does not use the summary <pre> layout');
     assert.ok(!html.includes('Nodes:'), 'error page does not render a stats line');
   });
@@ -475,7 +471,12 @@ suite('ObjectGraphPanel — webview construction', () => {
     };
 
     try {
-      await ObjectGraphPanel.open('/tmp/d.dmp', '00007ffTITLE', fakeContext(), resolvingClient(makeGraph({})));
+      await ObjectGraphPanel.open(
+        '/tmp/d.dmp',
+        '00007ffTITLE',
+        fakeContext(),
+        resolvingClient(makeGraph({})),
+      );
       assert.ok(
         titles.some((t) => t.includes('Object Graph: 00007ffTITLE')),
         'panel title must embed the root address',

@@ -54,7 +54,9 @@ suite('NuGet Module — isNuGetSearchResult()', () => {
   });
 
   test('a value whose narrowed type is usable after the guard', () => {
-    const value: unknown = { data: [{ id: 'X', version: '1.0.0', description: '', totalDownloads: 0 }] };
+    const value: unknown = {
+      data: [{ id: 'X', version: '1.0.0', description: '', totalDownloads: 0 }],
+    };
     if (isNuGetSearchResult(value)) {
       // Inside the guard, TS narrows `value.data` to NuGetPackage[].
       assert.strictEqual(value.data.length, 1);

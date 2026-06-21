@@ -173,10 +173,7 @@ suite('HotReload Module — isRelevantLanguage() edge / malformed input', () => 
   test('returns false for nullish values coerced through the string parameter', () => {
     // The function does strict === against string literals; non-string inputs
     // can never equal them, so the result is always false.
-    assert.strictEqual(
-      hotReload.isRelevantLanguage(undefined as unknown as string),
-      false,
-    );
+    assert.strictEqual(hotReload.isRelevantLanguage(undefined as unknown as string), false);
     assert.strictEqual(hotReload.isRelevantLanguage(null as unknown as string), false);
     assert.strictEqual(hotReload.isRelevantLanguage(0 as unknown as string), false);
     assert.strictEqual(hotReload.isRelevantLanguage(false as unknown as string), false);

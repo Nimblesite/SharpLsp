@@ -113,11 +113,7 @@ suite('package-maintenance — collectProjectPaths()', () => {
       ]);
       const result = collectProjectPaths(sln);
       assert.strictEqual(result.length, 3);
-      assert.deepStrictEqual(result, [
-        '/repo/A/A.csproj',
-        '/repo/B/B.csproj',
-        '/repo/C/C.fsproj',
-      ]);
+      assert.deepStrictEqual(result, ['/repo/A/A.csproj', '/repo/B/B.csproj', '/repo/C/C.fsproj']);
       assert.ok(!result.includes('/repo/My.sln'), 'the .sln path must NOT be collected');
     });
 
@@ -183,10 +179,7 @@ suite('package-maintenance — collectProjectPaths()', () => {
         node({ contextValue: 'projectReference', projectFilePath: '/repo/ignore-3' }),
       ]);
       const result = collectProjectPaths(sln);
-      assert.deepStrictEqual(result, [
-        '/repo/Keep/Keep.csproj',
-        '/repo/AlsoKeep/AlsoKeep.fsproj',
-      ]);
+      assert.deepStrictEqual(result, ['/repo/Keep/Keep.csproj', '/repo/AlsoKeep/AlsoKeep.fsproj']);
       assert.ok(!result.includes('/repo/ignore-1'));
       assert.ok(!result.includes('/repo/ignore-2'));
       assert.ok(!result.includes('/repo/ignore-3'));
@@ -223,10 +216,7 @@ suite('package-maintenance — collectProjectPaths()', () => {
         }),
       ]);
       const result = collectProjectPaths(outer);
-      assert.deepStrictEqual(result, [
-        '/repo/Outer/Outer.csproj',
-        '/repo/Inner/Inner.csproj',
-      ]);
+      assert.deepStrictEqual(result, ['/repo/Outer/Outer.csproj', '/repo/Inner/Inner.csproj']);
     });
 
     test('a wide-and-deep tree collects every project exactly once in order', () => {
@@ -239,10 +229,7 @@ suite('package-maintenance — collectProjectPaths()', () => {
         ]),
         node({
           contextValue: 'folder',
-          children: [
-            projectNode('/repo/P2/P2.csproj'),
-            projectNode('/repo/P3/P3.fsproj'),
-          ],
+          children: [projectNode('/repo/P2/P2.csproj'), projectNode('/repo/P3/P3.fsproj')],
         }),
       ]);
       const result = collectProjectPaths(sln);
@@ -274,25 +261,16 @@ suite('package-maintenance — collectProjectPaths()', () => {
         projectNode('/repo/B/B.csproj'),
         node({
           contextValue: 'folder',
-          children: [
-            projectNode('/repo/A/A.csproj'),
-            projectNode('/repo/C/C.csproj'),
-          ],
+          children: [projectNode('/repo/A/A.csproj'), projectNode('/repo/C/C.csproj')],
         }),
       ]);
       const result = collectProjectPaths(sln);
-      assert.deepStrictEqual(result, [
-        '/repo/A/A.csproj',
-        '/repo/B/B.csproj',
-        '/repo/C/C.csproj',
-      ]);
+      assert.deepStrictEqual(result, ['/repo/A/A.csproj', '/repo/B/B.csproj', '/repo/C/C.csproj']);
       assert.strictEqual(result.length, 3);
     });
 
     test('a self-project that also duplicates a child is collected once', () => {
-      const outer = projectNode('/repo/Shared.csproj', [
-        projectNode('/repo/Shared.csproj'),
-      ]);
+      const outer = projectNode('/repo/Shared.csproj', [projectNode('/repo/Shared.csproj')]);
       const result = collectProjectPaths(outer);
       assert.deepStrictEqual(result, ['/repo/Shared.csproj']);
       assert.strictEqual(result.length, 1);
@@ -301,7 +279,7 @@ suite('package-maintenance — collectProjectPaths()', () => {
 
   // ── Edge-case path strings ──────────────────────────────────────
   suite('edge-case path strings', () => {
-    test("an empty-string projectFilePath IS collected (it is !== undefined)", () => {
+    test('an empty-string projectFilePath IS collected (it is !== undefined)', () => {
       // '' is a defined string, so the guard `projectFilePath !== undefined` passes.
       const result = collectProjectPaths(node({ contextValue: 'project', projectFilePath: '' }));
       assert.deepStrictEqual(result, ['']);
@@ -352,7 +330,11 @@ suite('package-maintenance — collectProjectPaths()', () => {
       assert.notStrictEqual(first, second, 'each call returns a new array instance');
       assert.deepStrictEqual(first, second);
       first.push('/mutated');
-      assert.deepStrictEqual(second, ['/repo/A/A.csproj'], 'mutating one must not affect the other');
+      assert.deepStrictEqual(
+        second,
+        ['/repo/A/A.csproj'],
+        'mutating one must not affect the other',
+      );
     });
 
     test('every element is a string', () => {

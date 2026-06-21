@@ -175,7 +175,14 @@ let private existingFieldNames (fields: SynExprRecordField list) : Set<string> =
 
 /// Generate a default value for a given F# type.
 let private defaultValue (ty: FSharpType) : string =
-    let name = ty.Format(FSharpDisplayContext.Empty)
+    // Use the SHORT type name: FSharpDisplayContext.Empty fully-qualifies every
+    // name (e.g. "Microsoft.FSharp.Core.int"), which would never match the bare
+    // literals below. The type definition's DisplayName gives "int"/"bool"/
+    // "option"/"list"/"array" directly, and short names are correct for stub text
+    // inserted where the type is already in scope.
+    let name =
+        if ty.HasTypeDefinition then ty.TypeDefinition.DisplayName
+        else ty.Format(FSharpDisplayContext.Empty)
     match name with
     | "string" -> "\"\""
     | "int" | "int32" | "int64" | "float" | "double" | "decimal" -> "0"

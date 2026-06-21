@@ -562,9 +562,6 @@ suite('profiler-diff buildDiffHtml diff rows', () => {
       leak_suspects: [makeSuspect()],
       diffs: [makeDiff()],
     });
-    assert.strictEqual(
-      buildDiffHtml(result, '/b', '/c'),
-      buildDiffHtml(result, '/b', '/c'),
-    );
+    assert.strictEqual(buildDiffHtml(result, '/b', '/c'), buildDiffHtml(result, '/b', '/c'));
   });
 });

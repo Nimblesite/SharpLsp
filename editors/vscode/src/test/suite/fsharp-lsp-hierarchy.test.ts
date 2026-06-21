@@ -57,9 +57,6 @@ suite('F# LSP — Call Hierarchy', () => {
       'vscode.provideIncomingCalls',
       items[0],
     );
-    assert.ok(
-      (incoming ?? []).length >= 1,
-      'double must have ≥1 incoming call (from quadruple)',
-    );
+    assert.ok((incoming ?? []).length >= 1, 'double must have ≥1 incoming call (from quadruple)');
   });
 });

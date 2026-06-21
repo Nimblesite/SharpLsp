@@ -214,7 +214,10 @@ suite('Profiler — escapeHtml()', () => {
   });
 
   test('all four escaped entities together, in source order', () => {
-    assert.strictEqual(escapeHtml('<a href="x">&</a>'), '&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;');
+    assert.strictEqual(
+      escapeHtml('<a href="x">&</a>'),
+      '&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;',
+    );
   });
 
   test('ampersand is escaped first so existing entities double-escape', () => {
@@ -272,7 +275,9 @@ suite('Profiler — buildCounterHtml()', () => {
   });
 
   test('a single counter renders one data row with all four cells', () => {
-    const html = buildCounterHtml([counter({ provider: 'P', display_name: 'D', value: 7, unit: 'x' })]);
+    const html = buildCounterHtml([
+      counter({ provider: 'P', display_name: 'D', value: 7, unit: 'x' }),
+    ]);
     assert.ok(html.includes('<td class="provider">P</td>'));
     assert.ok(html.includes('<td class="name">D</td>'));
     assert.ok(html.includes('<td class="value">7</td>'));
@@ -286,7 +291,9 @@ suite('Profiler — buildCounterHtml()', () => {
   });
 
   test('non-blank display_name is preferred over the raw name', () => {
-    const html = buildCounterHtml([counter({ name: 'gc-heap-size', display_name: 'GC Heap Size' })]);
+    const html = buildCounterHtml([
+      counter({ name: 'gc-heap-size', display_name: 'GC Heap Size' }),
+    ]);
     assert.ok(html.includes('<td class="name">GC Heap Size</td>'));
     assert.ok(!html.includes('>gc-heap-size<'));
   });
@@ -385,7 +392,10 @@ suite('Profiler — buildSessionNode()', () => {
   });
 
   test('contextValue is profiler-session-<lowercased kind>', () => {
-    assert.strictEqual(buildSessionNode(session({ kind: 'Trace' })).contextValue, 'profiler-session-trace');
+    assert.strictEqual(
+      buildSessionNode(session({ kind: 'Trace' })).contextValue,
+      'profiler-session-trace',
+    );
     assert.strictEqual(
       buildSessionNode(session({ kind: 'Counters' })).contextValue,
       'profiler-session-counters',
@@ -415,8 +425,8 @@ suite('Profiler — buildSessionNode()', () => {
   test('Trace session description reads "recording · <n>s"', () => {
     const node = buildSessionNode(session({ kind: 'Trace', startedAt: Date.now() }));
     assert.ok(typeof node.description === 'string');
-    assert.ok((node.description).startsWith('recording · '));
-    assert.ok((node.description).endsWith('s'));
+    assert.ok(node.description.startsWith('recording · '));
+    assert.ok(node.description.endsWith('s'));
   });
 
   test('Counters session description is exactly "streaming"', () => {
@@ -428,14 +438,14 @@ suite('Profiler — buildSessionNode()', () => {
     const node = buildSessionNode(session({ kind: 'Trace' }));
     const icon = node.iconPath as vscode.ThemeIcon;
     assert.strictEqual(icon.id, 'record');
-    assert.strictEqual((icon.color!).id, 'charts.red');
+    assert.strictEqual(icon.color!.id, 'charts.red');
   });
 
   test('Counters session uses the "pulse" theme icon coloured charts.red', () => {
     const node = buildSessionNode(session({ kind: 'Counters' }));
     const icon = node.iconPath as vscode.ThemeIcon;
     assert.strictEqual(icon.id, 'pulse');
-    assert.strictEqual((icon.color!).id, 'charts.red');
+    assert.strictEqual(icon.color!.id, 'charts.red');
   });
 
   test('tooltip is a MarkdownString listing process, PID and session id', () => {
@@ -465,7 +475,8 @@ suite('Profiler — buildSessionNode()', () => {
 
   test('Trace tooltip prompts stop & open; Counters tooltip prompts show panel', () => {
     const trace = buildSessionNode(session({ kind: 'Trace' })).tooltip as vscode.MarkdownString;
-    const counters = buildSessionNode(session({ kind: 'Counters' })).tooltip as vscode.MarkdownString;
+    const counters = buildSessionNode(session({ kind: 'Counters' }))
+      .tooltip as vscode.MarkdownString;
     assert.ok(trace.value.includes('Click to **stop & open** the trace.'));
     assert.ok(counters.value.includes('Click to **show the live counters panel**.'));
   });
