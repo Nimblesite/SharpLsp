@@ -28,7 +28,8 @@ export class SharpLspBuildTaskProvider implements vscode.TaskProvider {
   }
 }
 
-function createBuildTask(command: string, label: string): vscode.Task {
+/** Build a VS Code shell task that runs `dotnet <command>` with the msCompile matcher. */
+export function createBuildTask(command: string, label: string): vscode.Task {
   const execution = new vscode.ShellExecution('dotnet', dotnetArgs(command));
   const task = new vscode.Task(
     { type: SharpLspBuildTaskProvider.Type, command },
@@ -45,7 +46,7 @@ function createBuildTask(command: string, label: string): vscode.Task {
 /**
  * Parse MSBuild diagnostic output and push to VS Code diagnostics.
  */
-function parseBuildDiagnostics(output: string): void {
+export function parseBuildDiagnostics(output: string): void {
   diagnosticCollection.clear();
   const diagnosticMap = new Map<string, vscode.Diagnostic[]>();
 
@@ -151,13 +152,13 @@ async function runDotnetTask(command: string, node?: BuildTarget): Promise<void>
 }
 
 /** Resolve the .sln/.csproj/.fsproj a node represents, if any. */
-function targetFromNode(node?: BuildTarget): string | undefined {
+export function targetFromNode(node?: BuildTarget): string | undefined {
   const target = node?.projectFilePath;
   return target !== undefined && target.length > 0 ? target : undefined;
 }
 
 /** Build the dotnet CLI argument list for a command targeting an optional file. */
-function dotnetArgs(command: string, target?: string): string[] {
+export function dotnetArgs(command: string, target?: string): string[] {
   const dotnetCommand = command === 'rebuild' ? 'build' : command;
   const args = [dotnetCommand];
   if (target !== undefined) args.push(target);
@@ -180,6 +181,6 @@ function runDotnetCommand(command: string, target?: string): void {
 }
 
 /** Wrap an argument in double quotes when it contains whitespace. */
-function quoteArg(value: string): string {
+export function quoteArg(value: string): string {
   return value.includes(' ') ? `"${value}"` : value;
 }

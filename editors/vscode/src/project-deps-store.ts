@@ -287,6 +287,10 @@ function remove(filePath: string): void {
 export function resetForTests(): void {
   watcher?.dispose();
   watcher = undefined;
+  // Reset the captured ExtensionContext too: a leaked storeContext makes
+  // pre-init ensureTracked() attach a watcher to a stale context and pollute
+  // projectWatchers, which breaks "start fresh" isolation across suites.
+  storeContext = undefined;
   if (mtimeGuard !== undefined) clearInterval(mtimeGuard);
   mtimeGuard = undefined;
   for (const disposable of projectWatchers.values()) disposable.dispose();

@@ -107,7 +107,7 @@ function handleDocumentSave(doc: vscode.TextDocument): void {
 }
 
 /** Check if the language is C# or F#. */
-function isRelevantLanguage(languageId: string): boolean {
+export function isRelevantLanguage(languageId: string): boolean {
   return languageId === 'csharp' || languageId === 'fsharp';
 }
 

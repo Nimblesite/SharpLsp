@@ -204,7 +204,7 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
 }
 
 /** Extract a C# method name from a line containing a method signature. */
-function extractCSharpMethodName(line: string): string | undefined {
+export function extractCSharpMethodName(line: string): string | undefined {
   const trimmed = line.trim();
   if (
     trimmed.startsWith('[') ||
@@ -257,7 +257,7 @@ const CS_KEYWORDS = new Set([
 ]);
 
 /** Extract an F# function name from a `let` or `member` binding. */
-function extractFSharpFunctionName(line: string): string | undefined {
+export function extractFSharpFunctionName(line: string): string | undefined {
   const trimmed = line.trim();
   const letMatch = /^let\s+(\w+)/.exec(trimmed);
   if (letMatch?.[1] !== undefined) {
@@ -271,7 +271,7 @@ function extractFSharpFunctionName(line: string): string | undefined {
 }
 
 /** Format a duration in ms for display. */
-function formatDuration(duration: number | undefined): string {
+export function formatDuration(duration: number | undefined): string {
   if (duration === undefined) {
     return '';
   }

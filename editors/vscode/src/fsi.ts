@@ -5,7 +5,8 @@ import { info } from './log';
 
 let fsiTerminal: vscode.Terminal | undefined;
 
-function isFSharpSourceDocument(
+/** True when the document is an F# source (.fs) file. */
+export function isFSharpSourceDocument(
   document: vscode.TextDocument | undefined,
 ): document is vscode.TextDocument {
   return document?.uri.fsPath.endsWith('.fs') === true;
@@ -57,7 +58,7 @@ async function generateSignatureFile(): Promise<void> {
 }
 
 /** Extract a basic signature from F# source code. */
-function extractSignature(source: string): string {
+export function extractSignature(source: string): string {
   const lines = source.split('\n');
   const sigLines: string[] = [];
 
