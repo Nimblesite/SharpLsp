@@ -27,13 +27,16 @@ type FormatEditWire =
       [<Key("EndCharacter")>] EndCharacter: int
       [<Key("NewText")>] NewText: string }
 
+// Inlay hints are now serialized as a POSITIONAL MessagePack record (keyed
+// 0..3) so the Rust host's `SidecarInlayHint` ([line, character, label, kind])
+// can deserialize them. Mirror that layout here.
 [<MessagePackObject>]
 [<NoComparison; NoEquality>]
 type InlayHintWire =
-    { [<Key("Line")>] Line: int
-      [<Key("Character")>] Character: int
-      [<Key("Label")>] Label: string
-      [<Key("Kind")>] Kind: int }
+    { [<Key(0)>] Line: int
+      [<Key(1)>] Character: int
+      [<Key(2)>] Label: string
+      [<Key(3)>] Kind: int }
 
 [<MessagePackObject>]
 [<NoComparison; NoEquality>]
@@ -86,10 +89,40 @@ type SimpleGreeter() =
 let useGreeter () =
     let greeter = SimpleGreeter() :> IGreeter
     greeter.Greet "World"
+
+// Appended AFTER all hard-coded e2e positions (≤ line 28) so it never shifts
+// them. Enriches symbol kinds (DU, struct) and adds a pipeline, exercising the
+// completion glyph arms, pipeline inlay hints, and type-hierarchy paths.
+type Color =
+    | Red
+    | Green of int
+
+[<Struct>]
+type Point = { Px: int; Py: int }
+
+let pipedSum = [ 1; 2; 3 ] |> List.sum
+
+let colors = [ Red; Green 5 ]
+
+/// A real CLR enum (drives the Enum symbol-kind / glyph arm).
+type Direction =
+    | North = 0
+    | South = 1
+
+/// A class with a constructor and a property (drives the Constructor / Property
+/// symbol-kind + glyph arms).
+type Counter(start: int) =
+    let mutable count = start
+    member _.Value = count
+    member _.Bump() = count <- count + 1
+
+let counter = Counter(0)
+let heading = Direction.North
 """
 
 /// Create a temp directory with a real .fsproj and F# source file.
-let private createTestProject () =
+/// Public so the extra-coverage suite can build a real loaded workspace from it.
+let createTestProject () =
     let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-e2e-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
     File.WriteAllText(
@@ -101,13 +134,35 @@ let private createTestProject () =
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Library.fs" />
+    <Compile Include="Consumer.fs" />
+    <Compile Include="Extra.fs" />
   </ItemGroup>
 </Project>""")
     File.WriteAllText(Path.Combine(dir, "Library.fs"), testSource)
+    // A third file kept self-contained (no references to Library symbols, so it
+    // never changes cross-file reference/rename counts). It carries:
+    //   * an FS0020 (implicitly-ignored result) at line 4 → drives the
+    //     code-action + code-action/resolve success path; and
+    //   * an FSharpLint hint (`not (a = b)` → prefer `<>`) at line 7 → drives the
+    //     lint branch of workspace/diagnostics.
+    File.WriteAllText(
+        Path.Combine(dir, "Extra.fs"),
+        "module TestProject.Extra\n\n"
+        + "let private compute () = 1 + 1\n\n"
+        + "let ignoredResult () =\n"
+        + "    compute ()\n"
+        + "    ()\n\n"
+        + "let lintHint x = not (x = 1)\n")
+    // A second source file that references Library.add, so references/rename can
+    // be exercised across file boundaries (proving they are project-wide).
+    File.WriteAllText(
+        Path.Combine(dir, "Consumer.fs"),
+        "module TestProject.Consumer\n\nopen TestProject.Library\n\nlet consumeAdd () = add 100 200\n")
     dir
 
 /// Deserialize a MessagePack byte[] payload to the target type.
-let private deserialize<'T> (payload: byte array) : 'T =
+/// Public so the extra-coverage suite ([FSharpExtraCoverageTests]) can reuse it.
+let deserialize<'T> (payload: byte array) : 'T =
     let buf : ReadOnlyMemory<byte> = ReadOnlyMemory<byte>(payload)
     MessagePackSerializer.Deserialize<'T>(buf, MessagePackSerializerOptions.Standard)
 
@@ -124,7 +179,8 @@ let private sendRequest (transport: FramedTransport) id meth payload : Task<Enve
     }
 
 /// Build a serialized PositionRequest payload.
-let private posPayload file line char =
+/// Public so the extra-coverage suite ([FSharpExtraCoverageTests]) can reuse it.
+let posPayload file line char =
     MessagePackSerializer.Serialize(
         { PositionRequest.FilePath = file; Line = line; Character = char })
 
@@ -143,6 +199,7 @@ type SidecarFixture() =
 
     member _.Dir = dir
     member _.Src = Path.Combine(dir, "Library.fs")
+    member _.Consumer = Path.Combine(dir, "Consumer.fs")
     member _.NextId() = Interlocked.Increment(&nextId)
 
     member this.Send(meth, payload) =
@@ -672,6 +729,194 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         let! r = fixture.Send("solution/read", payload)
         // The reader reports an error which the handler surfaces on the envelope.
         Assert.NotNull(r.Error)
+    }
+
+    // ── Completion [FS-COMPLETION] ──────────────────────────────
+
+    [<Fact>]
+    member _.``completion after dot lists the member``() = task {
+        // `greeter.Greet "World"` at line 28; completion just after the dot must
+        // surface the IGreeter member `Greet`.
+        let! r = fixture.Send("textDocument/completion", posPayload fixture.Src 28 12)
+        Assert.Null(r.Error)
+        let items = deserialize<CompletionItemResult array>(r.Payload)
+        Assert.NotEmpty(items)
+        Assert.Contains(items, fun i -> i.Label = "Greet")
+    }
+
+    [<Fact>]
+    member _.``completion items carry a kind and index``() = task {
+        let! r = fixture.Send("textDocument/completion", posPayload fixture.Src 28 12)
+        Assert.Null(r.Error)
+        let items = deserialize<CompletionItemResult array>(r.Payload)
+        Assert.NotEmpty(items)
+        for i in items do
+            Assert.False(String.IsNullOrEmpty(i.Kind))
+            Assert.True(i.Index >= 0)
+    }
+
+    [<Fact>]
+    member _.``completion resolve returns empty additional edits``() = task {
+        let payload =
+            MessagePackSerializer.Serialize(
+                { PositionRequest.FilePath = fixture.Src; Line = 0; Character = 0 })
+        let! r = fixture.Send("completionItem/resolve", payload)
+        Assert.Null(r.Error)
+        let result = deserialize<CompletionResolveResultWire>(r.Payload)
+        Assert.Empty(result.AdditionalEdits)
+    }
+
+    // ── References are project-wide [FS-REFS-PROJECT] ───────────
+
+    [<Fact>]
+    member _.``references span multiple files``() = task {
+        // `add` is defined in Library.fs and used in both Library.fs and
+        // Consumer.fs, so project-wide references must include both files.
+        let payload =
+            MessagePackSerializer.Serialize(
+                { ReferencesRequest.FilePath = fixture.Src
+                  Line = 6; Character = 4
+                  IncludeDeclaration = true })
+        let! r = fixture.Send("textDocument/references", payload)
+        Assert.Null(r.Error)
+        let loc = deserialize<LocationListResult>(r.Payload)
+        Assert.Contains(loc.Locations, fun l -> l.FilePath.EndsWith("Consumer.fs"))
+        Assert.Contains(loc.Locations, fun l -> l.FilePath.EndsWith("Library.fs"))
+    }
+
+    // ── Rename [FS-RENAME-PREPARE] / [FS-RENAME-APPLY] ──────────
+
+    [<Fact>]
+    member _.``prepare rename allows a project symbol``() = task {
+        let! r = fixture.Send("textDocument/prepareRename", posPayload fixture.Src 6 4)
+        Assert.Null(r.Error)
+        let result = deserialize<PrepareRenameResultWire>(r.Payload)
+        Assert.True(result.CanRename)
+        Assert.Equal("add", result.Placeholder)
+    }
+
+    [<Fact>]
+    member _.``rename rewrites every occurrence across files``() = task {
+        let payload =
+            MessagePackSerializer.Serialize(
+                { RenameRequest.FilePath = fixture.Src
+                  Line = 6; Character = 4
+                  NewName = "sum" })
+        let! r = fixture.Send("textDocument/rename", payload)
+        Assert.Null(r.Error)
+        let edit = deserialize<WorkspaceEditResult>(r.Payload)
+        Assert.NotEmpty(edit.DocumentChanges)
+        // The definition (Library.fs) and the cross-file use (Consumer.fs) both edit.
+        Assert.Contains(edit.DocumentChanges, fun d -> d.FilePath.EndsWith("Consumer.fs"))
+        Assert.Contains(edit.DocumentChanges, fun d -> d.FilePath.EndsWith("Library.fs"))
+        let allEdits = edit.DocumentChanges |> Array.collect (fun d -> d.Edits)
+        Assert.NotEmpty(allEdits)
+        for e in allEdits do
+            Assert.Equal("sum", e.NewText)
+    }
+
+    // ── Code Lens [FS-CODELENS] ─────────────────────────────────
+
+    [<Fact>]
+    member _.``code lens reports reference counts``() = task {
+        let payload = MessagePackSerializer.Serialize({ FileRequest.FilePath = fixture.Src })
+        let! r = fixture.Send("textDocument/codeLens", payload)
+        Assert.Null(r.Error)
+        let lenses = deserialize<CodeLensItemResult array>(r.Payload)
+        Assert.NotEmpty(lenses)
+        // Every lens title is an "N reference(s)" string and `add` (line 6) has one.
+        for l in lenses do
+            Assert.Contains("reference", l.Title)
+        Assert.Contains(lenses, fun l -> l.Line = 6)
+    }
+
+    // ── Document Symbols [FS-DOCSYMBOL] ─────────────────────────
+
+    [<Fact>]
+    member _.``document symbols list types and nested members``() = task {
+        let payload = MessagePackSerializer.Serialize({ FileRequest.FilePath = fixture.Src })
+        let! r = fixture.Send("textDocument/documentSymbol", payload)
+        Assert.Null(r.Error)
+        let symbols = deserialize<DocumentSymbolResult array>(r.Payload)
+        Assert.NotEmpty(symbols)
+        // `Counter` (line 22+) is a class with `Value`/`Bump` members; its presence
+        // with nested children proves the recursive wire mapping ran.
+        Assert.Contains(symbols, fun s -> s.Name = "Counter")
+        Assert.Contains(symbols, fun s -> s.Children.Length > 0)
+    }
+
+    // ── Signature Help [FS-SIGHELP] ─────────────────────────────
+
+    [<Fact>]
+    member _.``signature help surfaces a constructor overload``() = task {
+        // `let counter = Counter(0)` — caret just inside the constructor parens.
+        let lines = File.ReadAllText(fixture.Src).Replace("\r\n", "\n").Split('\n')
+        let lineIdx = lines |> Array.findIndex (fun l -> l.Contains "Counter(0)")
+        let col = lines[lineIdx].IndexOf("Counter(") + "Counter(".Length
+        let! r = fixture.Send("textDocument/signatureHelp", posPayload fixture.Src lineIdx col)
+        Assert.Null(r.Error)
+        Assert.NotEqual<byte>([| 0xC0uy |], r.Payload)
+        let help = deserialize<SignatureHelpResult>(r.Payload)
+        Assert.NotEmpty(help.Signatures)
+    }
+
+    // ── Call Hierarchy [FS-CALLHIER-*] ──────────────────────────
+
+    [<Fact>]
+    member _.``prepare call hierarchy returns the function``() = task {
+        let! r = fixture.Send("textDocument/prepareCallHierarchy", posPayload fixture.Src 6 4)
+        Assert.Null(r.Error)
+        Assert.NotEqual<byte>([| 0xC0uy |], r.Payload)
+        let item = deserialize<HierarchyItemResult>(r.Payload)
+        Assert.Equal("add", item.Name)
+    }
+
+    [<Fact>]
+    member _.``incoming calls find the caller``() = task {
+        // `add` is called from the `result` binding (Library) and `consumeAdd`
+        // (Consumer); both enclosing declarations are incoming callers.
+        let! r = fixture.Send("callHierarchy/incomingCalls", posPayload fixture.Src 6 4)
+        Assert.Null(r.Error)
+        let items = deserialize<HierarchyItemResult array>(r.Payload)
+        Assert.NotEmpty(items)
+        Assert.Contains(items, fun i -> i.Name = "consumeAdd")
+    }
+
+    [<Fact>]
+    member _.``outgoing calls find the callee``() = task {
+        // `useGreeter` (line 26) calls `Greet`.
+        let! r = fixture.Send("callHierarchy/outgoingCalls", posPayload fixture.Src 26 4)
+        Assert.Null(r.Error)
+        let items = deserialize<HierarchyItemResult array>(r.Payload)
+        Assert.NotEmpty(items)
+        Assert.Contains(items, fun i -> i.Name = "Greet")
+    }
+
+    // ── Type Hierarchy [FS-TYPEHIER-*] ──────────────────────────
+
+    [<Fact>]
+    member _.``prepare type hierarchy returns the type``() = task {
+        let! r = fixture.Send("textDocument/prepareTypeHierarchy", posPayload fixture.Src 22 5)
+        Assert.Null(r.Error)
+        Assert.NotEqual<byte>([| 0xC0uy |], r.Payload)
+        let item = deserialize<HierarchyItemResult>(r.Payload)
+        Assert.Equal("SimpleGreeter", item.Name)
+    }
+
+    [<Fact>]
+    member _.``supertypes include the implemented interface``() = task {
+        let! r = fixture.Send("typeHierarchy/supertypes", posPayload fixture.Src 22 5)
+        Assert.Null(r.Error)
+        let items = deserialize<HierarchyItemResult array>(r.Payload)
+        Assert.Contains(items, fun i -> i.Name = "IGreeter")
+    }
+
+    [<Fact>]
+    member _.``subtypes include the implementing type``() = task {
+        let! r = fixture.Send("typeHierarchy/subtypes", posPayload fixture.Src 19 5)
+        Assert.Null(r.Error)
+        let items = deserialize<HierarchyItemResult array>(r.Payload)
+        Assert.Contains(items, fun i -> i.Name = "SimpleGreeter")
     }
 
 // ── Workspace-level tests (real FCS, no IPC) ────────────────────

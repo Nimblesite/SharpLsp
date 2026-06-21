@@ -1,5 +1,5 @@
 /// Coarse-grained tests that exercise FSharpCodeFixes, FSharpCodeActions,
-/// FSharpFileOrder, FSharpLinting, and FSharpWorkspace with real .fsproj
+/// FSharpFileOrder and FSharpWorkspace with real .fsproj
 /// fixtures and live FSharp.Compiler.Service results.
 module SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 
@@ -526,46 +526,6 @@ let ``tryGenerateRecordStubs handles various field types for defaults`` () = tas
     finally
         cleanup dir
 }
-
-// ── FSharpLinting tests ──────────────────────────────────────────
-
-[<Fact>]
-let ``lintFile returns empty list for non-existent path`` () =
-    let diags = FSharpLinting.lintFile "/does/not/exist.fs"
-    Assert.Empty(diags)
-
-[<Fact>]
-let ``lintFile runs on a real F# file without throwing`` () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-lint-{Guid.NewGuid():N}")
-    Directory.CreateDirectory(dir) |> ignore
-    let file = Path.Combine(dir, "Test.fs")
-    File.WriteAllText(file, "module Test\nlet x = 1\n")
-    try
-        let diags = FSharpLinting.lintFile file
-        // Structure assertion — not about counts.
-        for d in diags do
-            Assert.Equal(file, d.FilePath)
-            Assert.NotNull(d.Message)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``lintProject returns a map for a real directory`` () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-lint-proj-{Guid.NewGuid():N}")
-    Directory.CreateDirectory(dir) |> ignore
-    File.WriteAllText(Path.Combine(dir, "A.fs"), "module A\nlet a = 1\n")
-    File.WriteAllText(Path.Combine(dir, "B.fs"), "module B\nlet b = 2\n")
-    try
-        let results = FSharpLinting.lintProject dir
-        Assert.NotNull(results :> obj)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``lintProject handles non-existent directory`` () =
-    let results =
-        FSharpLinting.lintProject "/definitely/does/not/exist/anywhere"
-    Assert.True(results.IsEmpty)
 
 // ── FSharpWorkspace edge-case tests ──────────────────────────────
 
@@ -1556,7 +1516,7 @@ let ``FIX tryGenerateRecordStubs returns None when record is complete`` () = tas
 
 // ----- FEAT -----
 // ══ FEAT: appended coverage for FSharpFeatures / FSharpFileOrder /
-//    FSharpReferences / FSharpHoverBuilder / FSharpLinting ══════════
+//    FSharpReferences / FSharpHoverBuilder ══════════════════════════
 
 // ── FEAT FSharpFeatures: semantic tokens ─────────────────────────
 
@@ -2004,69 +1964,6 @@ let ``FEAT hover renders xml doc summary for documented value`` () = task {
         cleanup dir
 }
 
-// ── FEAT FSharpLinting: rule hits ────────────────────────────────
-
-[<Fact>]
-let ``FEAT lintFile returns well-formed diagnostics`` () =
-    // Exercises FSharpLinting.lintFile. Which rules fire is FSharpLint
-    // config/version dependent across environments, so we don't require a
-    // specific rule — the contract is that lintFile runs and every diagnostic
-    // it returns is well-formed.
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-lint-feat-{Guid.NewGuid():N}")
-    Directory.CreateDirectory(dir) |> ignore
-    let file = Path.Combine(dir, "Naming.fs")
-    File.WriteAllText(file, "module Naming\ntype badName = { Field: int }\n")
-    try
-        let diags = FSharpLinting.lintFile file
-        Assert.NotNull(diags :> obj)
-        // Every diagnostic carries the file, a non-empty message, severity,
-        // and a rule code.
-        for d in diags do
-            Assert.Equal(file, d.FilePath)
-            Assert.False(System.String.IsNullOrEmpty(d.Message))
-            Assert.Equal("Warning", d.Severity)
-            Assert.False(System.String.IsNullOrEmpty(d.Code))
-            Assert.True(d.StartLine >= 0)
-            Assert.True(d.EndCharacter >= d.StartCharacter || d.EndLine > d.StartLine)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``FEAT lintProject returns a well-formed diagnostics map`` () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-lint-proj-feat-{Guid.NewGuid():N}")
-    Directory.CreateDirectory(dir) |> ignore
-    // One clean file, one with a naming-rule violation.
-    File.WriteAllText(Path.Combine(dir, "Clean.fs"), "module Clean\nlet x = 1\n")
-    File.WriteAllText(Path.Combine(dir, "Dirty.fs"), "module Dirty\ntype lowerType = int\n")
-    try
-        let results = FSharpLinting.lintProject dir
-        // Rule activation is environment dependent; exercise lintProject and
-        // validate the shape of whatever it returns.
-        Assert.NotNull(results :> obj)
-        // Files with no diagnostics are filtered out of the map.
-        for KeyValue(path, diags) in results do
-            Assert.NotEmpty(diags)
-            Assert.True(File.Exists(path))
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``FEAT lintProject ignores obj and bin directories`` () =
-    let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-lint-skip-{Guid.NewGuid():N}")
-    Directory.CreateDirectory(dir) |> ignore
-    Directory.CreateDirectory(Path.Combine(dir, "obj")) |> ignore
-    // A lint-triggering file under obj/ must be skipped by the filter.
-    File.WriteAllText(Path.Combine(dir, "obj", "Generated.fs"), "module Gen\ntype badType = int\n")
-    File.WriteAllText(Path.Combine(dir, "Ok.fs"), "module Ok\nlet y = 2\n")
-    try
-        let results = FSharpLinting.lintProject dir
-        Assert.NotNull(results :> obj)
-        // No key should reference the obj directory.
-        for KeyValue(path, _) in results do
-            Assert.DoesNotContain("obj", path)
-    finally
-        cleanup dir
-
 // ── FEAT FSharpHoverBuilder: renderToolTip direct branch coverage ──
 
 [<Fact>]
@@ -2411,6 +2308,329 @@ let ``WS2 getImplementations on an interface override returns its location`` () 
         for loc in impls do
             Assert.EndsWith("M.fs", loc.FilePath)
             Assert.True(loc.Line >= 0)
+    finally
+        cleanup dir
+}
+
+// ════════════════════════════════════════════════════════════════
+// Branch coverage: code actions / code fixes via the public entry,
+// workspace load-failure paths, file-order edges, and feature
+// extractors — all against real, minted projects.
+// ════════════════════════════════════════════════════════════════
+
+/// Collect every NewText emitted by a resolved workspace edit.
+let private editTexts (edit: FSharpCodeFixes.WorkspaceEdit) =
+    edit.DocumentChanges
+    |> List.collect (fun dc -> dc.Edits)
+    |> List.map (fun e -> e.NewText)
+    |> String.concat "\n"
+
+[<Fact>]
+let ``record stub action fills missing fields with typed defaults`` () = task {
+    // An incomplete record literal → tryGenerateRecordStubs offers the missing
+    // fields, exercising defaultValue's string/int/bool/list arms.
+    let! (state, dir, _, paths) =
+        loadWorkspace
+            [ "M.fs",
+              "module M\n"
+              + "type Rec = { S: string; I: int; B: bool; L: int list }\n"
+              + "let r : Rec = { S = \"x\" }\n" ]
+    try
+        let cf = FSharpCodeFixes.createState ()
+        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 2 14 2 25
+        let stub =
+            actions
+            |> Seq.tryFind (fun a -> a.Title.Contains("field") || a.Title.Contains("record"))
+        Assert.True(stub.IsSome, "an incomplete record must offer a field-stub action")
+        let edit = FSharpCodeFixes.resolveCodeAction cf stub.Value.Id
+        Assert.True(edit.IsSome)
+        let text = editTexts edit.Value
+        // defaultValue: int→0, bool→false, list→[], string→"".
+        Assert.Contains("I = 0", text)
+        Assert.Contains("B = false", text)
+        Assert.Contains("L = []", text)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``record stub resolver skips a value-use before the record field`` () = task {
+    // A copy-and-update record places the value-use `basePerson` in tryPick
+    // order BEFORE the field label → resolveRecordType's `| _ -> None` arm.
+    let! (state, dir, _, paths) =
+        loadWorkspace
+            [ "M.fs",
+              "module M\n"
+              + "type Person = { Name: string; Age: int }\n"
+              + "let basePerson = { Name = \"a\"; Age = 1 }\n"
+              + "let p = { basePerson with Name = \"b\" }\n" ]
+    try
+        let cf = FSharpCodeFixes.createState ()
+        // Must not throw; the copy-update record is complete so no stub is forced,
+        // but resolveRecordType still iterates the value-use first.
+        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 3 8 3 38
+        Assert.NotNull(actions :> obj)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``union stub generation returns nothing for an enum match`` () = task {
+    // An enum (not a DU) match: resolveMatchType resolves the clause symbol to an
+    // FSharpField, not an FSharpUnionCase → tryGenerateUnionStubs `| _ -> None`.
+    let! (state, dir, _, paths) =
+        loadWorkspace
+            [ "M.fs",
+              "module M\n"
+              + "type Color = Red = 0 | Green = 1 | Blue = 2\n"
+              + "let f (c: Color) =\n"
+              + "    match c with\n"
+              + "    | Color.Red -> 1\n" ]
+    try
+        let cf = FSharpCodeFixes.createState ()
+        // Position over the `match c with` line; no union-stub action results.
+        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 3 4 4 15
+        Assert.DoesNotContain(actions, fun (a: FSharpCodeFixes.CodeActionItem) -> a.Title.Contains("union case"))
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``code fix offers a conversion for a numeric type mismatch`` () = task {
+    // FS0001 (type mismatch) routes through getFixesForDiagnostic `| 1 ->`
+    // tryFixTypeMismatch, which builds an int/float conversion action.
+    let! (state, dir, _, paths) =
+        loadWorkspace
+            [ "M.fs",
+              "module M\n"
+              + "let g (x: int) = x + 1\n"
+              + "let n : float = 5.0\n"
+              + "let y = g n\n" ]
+    try
+        let cf = FSharpCodeFixes.createState ()
+        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 3 0 3 12
+        Assert.NotNull(actions :> obj)
+        // Whatever actions exist must resolve cleanly.
+        for a in actions do
+            Assert.True((FSharpCodeFixes.resolveCodeAction cf a.Id).IsSome)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``code fix prefixes an unused value with underscore`` () = task {
+    // FS1182 (unused value) is off by default; enable it via --warnon:1182 on the
+    // live project options, then the unused-value fix (FS1182 dispatch arm) fires.
+    let! (state, dir, _, paths) =
+        loadWorkspace
+            [ "M.fs",
+              "module M\n"
+              + "let f () =\n"
+              + "    let unusedVar = 42\n"
+              + "    ()\n" ]
+    try
+        let opts = state.ProjectOptions.Value
+        state.ProjectOptions <-
+            Some { opts with OtherOptions = Array.append opts.OtherOptions [| "--warnon:1182" |] }
+        let cf = FSharpCodeFixes.createState ()
+        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 2 0 2 24
+        let prefix = actions |> Seq.tryFind (fun a -> a.Title.Contains("_"))
+        Assert.True(prefix.IsSome, "unused value must offer an underscore-prefix fix")
+        let edit = FSharpCodeFixes.resolveCodeAction cf prefix.Value.Id
+        Assert.True(edit.IsSome)
+        Assert.Contains("_unusedVar", editTexts edit.Value)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``code fix ignores a diagnostic with no registered handler`` () = task {
+    // FS0049 (uppercase identifier as a pattern) has no fix handler →
+    // getFixesForDiagnostic `| _ -> []`. getCodeActions must not throw.
+    let! (state, dir, _, paths) =
+        loadWorkspace
+            [ "M.fs", "module M\nlet f x = match x with | Y -> 1 | _ -> 2\n" ]
+    try
+        let cf = FSharpCodeFixes.createState ()
+        let! actions = FSharpCodeFixes.getCodeActions cf state paths[0] 1 0 1 40
+        Assert.NotNull(actions :> obj)
+    finally
+        cleanup dir
+}
+
+// ── Workspace load-failure + discovery branches ──────────────────
+
+[<Fact>]
+let ``loadProject reports an error for a malformed fsproj`` () = task {
+    let dir = Path.Combine(Path.GetTempPath(), $"slsp-badproj-{Guid.NewGuid():N}")
+    Directory.CreateDirectory(dir) |> ignore
+    File.WriteAllText(Path.Combine(dir, "Bad.fsproj"), "this is not xml <<<")
+    try
+        let ws = FSharpWorkspace.create ()
+        let! result = FSharpWorkspace.loadProject ws dir
+        Assert.True(match result with | Error _ -> true | Ok _ -> false)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``loadProject reports an error for a corrupt slnx`` () = task {
+    let dir = Path.Combine(Path.GetTempPath(), $"slsp-badslnx-{Guid.NewGuid():N}")
+    Directory.CreateDirectory(dir) |> ignore
+    let slnx = Path.Combine(dir, "Bad.slnx")
+    File.WriteAllText(slnx, "<Solution><<<not xml")
+    try
+        let ws = FSharpWorkspace.create ()
+        let! result = FSharpWorkspace.loadProject ws slnx
+        Assert.True(match result with | Error _ -> true | Ok _ -> false)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``loadProject discovers and loads the first of several projects`` () = task {
+    let dir = Path.Combine(Path.GetTempPath(), $"slsp-multi-{Guid.NewGuid():N}")
+    Directory.CreateDirectory(Path.Combine(dir, "ProjA")) |> ignore
+    Directory.CreateDirectory(Path.Combine(dir, "ProjB")) |> ignore
+    let proj name =
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
+        + "<TargetFramework>net10.0</TargetFramework>"
+        + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>"
+        + $"</PropertyGroup><ItemGroup><Compile Include=\"{name}.fs\" /></ItemGroup></Project>"
+    File.WriteAllText(Path.Combine(dir, "ProjA", "ProjA.fsproj"), proj "A")
+    File.WriteAllText(Path.Combine(dir, "ProjA", "A.fs"), "module A\nlet a = 1\n")
+    File.WriteAllText(Path.Combine(dir, "ProjB", "ProjB.fsproj"), proj "B")
+    File.WriteAllText(Path.Combine(dir, "ProjB", "B.fs"), "module B\nlet b = 2\n")
+    try
+        let ws = FSharpWorkspace.create ()
+        let! result = FSharpWorkspace.loadProject ws dir
+        Assert.True(match result with | Ok _ -> true | Error _ -> false)
+        Assert.True(ws.IsLoaded)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``loadProject accepts a direct fsproj path and ignores attribute-less Compile`` () = task {
+    let dir = Path.Combine(Path.GetTempPath(), $"slsp-direct-{Guid.NewGuid():N}")
+    Directory.CreateDirectory(dir) |> ignore
+    let fsproj = Path.Combine(dir, "Direct.fsproj")
+    // The first <Compile> has no Include attribute → parseFsprojSourceFiles None arm.
+    File.WriteAllText(
+        fsproj,
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
+        + "<TargetFramework>net10.0</TargetFramework>"
+        + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>"
+        + "</PropertyGroup><ItemGroup><Compile /><Compile Include=\"A.fs\" /></ItemGroup></Project>")
+    File.WriteAllText(Path.Combine(dir, "A.fs"), "module A\nlet a = 1\n")
+    try
+        let ws = FSharpWorkspace.create ()
+        // Pass the .fsproj path directly (isFsprojPath true → Ok [| fullPath |]).
+        let! result = FSharpWorkspace.loadProject ws fsproj
+        Assert.True(match result with | Ok _ -> true | Error _ -> false)
+        Assert.True(ws.IsLoaded)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``loadProjectWithCancellation reports an error for an invalid path`` () = task {
+    let ws = FSharpWorkspace.create ()
+    // An embedded NUL makes Path.GetFullPath throw before any guarded branch.
+    let! result =
+        FSharpWorkspace.loadProjectWithCancellation ws "bad path" System.Threading.CancellationToken.None
+    Assert.True(match result with | Error _ -> true | Ok _ -> false)
+}
+
+// ── File-order edges ─────────────────────────────────────────────
+
+[<Fact>]
+let ``analyzeFileOrder skips a compile entry whose file is absent`` () = task {
+    let dir = Path.Combine(Path.GetTempPath(), $"slsp-ghost-{Guid.NewGuid():N}")
+    Directory.CreateDirectory(dir) |> ignore
+    let fsproj = Path.Combine(dir, "Order.fsproj")
+    File.WriteAllText(
+        fsproj,
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
+        + "<TargetFramework>net10.0</TargetFramework>"
+        + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>"
+        + "</PropertyGroup><ItemGroup><Compile Include=\"A.fs\" /><Compile Include=\"Ghost.fs\" /></ItemGroup></Project>")
+    File.WriteAllText(Path.Combine(dir, "A.fs"), "module A\nlet x = 1\n")
+    // Ghost.fs is intentionally NOT created → collectUndefinedErrors returns [].
+    try
+        let ws = FSharpWorkspace.create ()
+        let! _ = FSharpWorkspace.loadProject ws dir
+        let! issues = FSharpFileOrder.analyzeFileOrder ws fsproj
+        Assert.NotNull(issues :> obj)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``analyzeFileOrder swallows a missing-options inconsistency`` () = task {
+    // IsLoaded forced true but ProjectOptions left None → the loop dereferences
+    // ProjectOptions.Value and throws → the analyzer's catch returns [].
+    let (dir, fsproj, _) =
+        makeProject
+            [ "A.fs", "module A\nlet x = 1\n"
+              "B.fs", "module B\nlet y = 2\n" ]
+    try
+        let ws = FSharpWorkspace.create ()
+        ws.IsLoaded <- true
+        let! issues = FSharpFileOrder.analyzeFileOrder ws fsproj
+        Assert.Empty(issues)
+    finally
+        cleanup dir
+}
+
+// ── Feature extractors: generic params, active patterns, no-op format ──
+
+[<Fact>]
+let ``semantic tokens classify a generic parameter`` () = task {
+    let! (state, dir, _, paths) =
+        loadWorkspace
+            [ "M.fs",
+              "module M\n"
+              + "let identity<'T> (x: 'T) : 'T = x\n"
+              + "type Container<'A> = { Value: 'A }\n"
+              + "let c = identity 5\n" ]
+    try
+        let! tokens = FSharpFeatures.getSemanticTokens state paths[0]
+        Assert.NotEmpty(tokens)
+        // Token-type index is every 5th value starting at offset 3; 6 = generic param.
+        let types = [ for i in 3 .. 5 .. tokens.Length - 1 -> tokens[i] ]
+        Assert.Contains(6, types)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``semantic tokens tolerate active-pattern symbol kinds`` () = task {
+    let! (state, dir, _, paths) =
+        loadWorkspace
+            [ "M.fs",
+              "module M\n"
+              + "let (|Even|Odd|) n = if n % 2 = 0 then Even else Odd\n"
+              + "let describe n = match n with | Even -> \"e\" | Odd -> \"o\"\n" ]
+    try
+        // Active-pattern-case uses drive mapFcsSymbolKind's `_ -> -1` arm; the
+        // function still returns a well-formed token array.
+        let! tokens = FSharpFeatures.getSemanticTokens state paths[0]
+        Assert.NotNull(tokens :> obj)
+    finally
+        cleanup dir
+}
+
+[<Fact>]
+let ``formatRange returns no edits when the range is already formatted`` () = task {
+    let dir = Path.Combine(Path.GetTempPath(), $"slsp-fmt-{Guid.NewGuid():N}")
+    Directory.CreateDirectory(dir) |> ignore
+    let file = Path.Combine(dir, "Clean.fs")
+    File.WriteAllText(file, "module M\n\nlet x = 1\n")
+    try
+        // The single already-formatted line round-trips unchanged → [||].
+        let! edits = FSharpFeatures.formatRange file 2 3 3 0
+        Assert.Empty(edits)
     finally
         cleanup dir
 }

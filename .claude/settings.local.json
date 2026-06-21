@@ -6,5 +6,6 @@
       "Bash(dotnet --list-sdks)",
       "Bash(dotnet --list-runtimes)"
     ]
-  }
+  },
+  "autoMemoryEnabled": false
 }

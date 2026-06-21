@@ -240,8 +240,9 @@ let getHover
 
 // ── Definition ───────────────────────────────────────────────────
 
-/// Parse and check a file, returning check results if successful.
-let internal checkFile
+/// Parse and check a file, returning parse results, check results, and source.
+/// The canonical per-file analysis entry point; `checkFile` is the parse-less view.
+let internal checkFileWithParse
     (state: FSharpWorkspaceState)
     (filePath: string)
     =
@@ -252,7 +253,7 @@ let internal checkFile
             let source = File.ReadAllText(filePath)
             let sourceText = SourceText.ofString source
 
-            let! _parseResults, checkAnswer =
+            let! parseResults, checkAnswer =
                 state.Checker.ParseAndCheckFileInProject(
                     filePath,
                     0,
@@ -261,72 +262,58 @@ let internal checkFile
 
             match checkAnswer with
             | FSharpCheckFileAnswer.Succeeded checkResults ->
-                return Some(checkResults, source)
+                return Some(parseResults, checkResults, source)
             | FSharpCheckFileAnswer.Aborted ->
                 return None
     }
 
-/// Extract declaration location from FCS check results.
-let private extractDefinition
-    (checkResults: FSharpCheckFileResults)
-    (source: string)
-    (line: int)
-    (character: int)
-    : DefinitionLocation option =
-    let lines = source.Split('\n')
-    if line >= lines.Length then
-        None
-    else
-        let lineText = lines[line]
-        let fcsLine = line + 1
-
-        let island =
-            QuickParse.GetCompleteIdentifierIsland true lineText character
-
-        match island with
-        | None -> None
-        | Some(name, _, _) ->
-            let names = [ name ]
-            let declResult =
-                checkResults.GetDeclarationLocation(
-                    fcsLine, character, lineText, names)
-
-            match declResult with
-            | FindDeclResult.DeclFound declRange ->
-                Some
-                    { FilePath = declRange.FileName
-                      Line = declRange.StartLine - 1
-                      Character = declRange.StartColumn
-                      EndLine = declRange.EndLine - 1
-                      EndCharacter = declRange.EndColumn }
-            | FindDeclResult.DeclNotFound _
-            | FindDeclResult.ExternalDecl _ ->
-                None
-
-/// Get definition location at a position in an F# file.
-let getDefinition
+/// Parse and check a file, returning check results + source if successful.
+let internal checkFile
     (state: FSharpWorkspaceState)
     (filePath: string)
-    (line: int)
-    (character: int)
     =
     task {
-        try
-            let! result = checkFile state filePath
-            match result with
-            | Some(checkResults, source) ->
-                return extractDefinition checkResults source line character
-            | None ->
-                return None
-        with ex ->
-            Log.Debug(ex, "[F# Definition] failed")
-            return None
+        let! result = checkFileWithParse state filePath
+        return result |> Option.map (fun (_parse, check, source) -> (check, source))
     }
+
+/// Check the whole loaded project (used for project-wide symbol queries:
+/// references, rename, code lens, call hierarchy). FCS caches results keyed by
+/// the project options, so repeat calls are cheap.
+let internal checkProject (state: FSharpWorkspaceState) =
+    task {
+        if not state.IsLoaded then
+            return None
+        else
+            let! results = state.Checker.ParseAndCheckProject(state.ProjectOptions.Value)
+            return Some results
+    }
+
+/// Whether a symbol is declared inside the loaded project's own source files
+/// (renameable), as opposed to the BCL / FSharp.Core / a NuGet dependency.
+let internal isSymbolInProject
+    (state: FSharpWorkspaceState)
+    (symbol: FSharpSymbol)
+    : bool =
+    match symbol.DeclarationLocation, state.ProjectOptions with
+    | Some range, Some options when range.FileName <> "" ->
+        let normalize (path: string) =
+            try Path.GetFullPath(path) with _ -> path
+        let target = normalize range.FileName
+        let inSourceFiles = options.SourceFiles |> Array.exists (fun file -> normalize file = target)
+        // Fall back to an on-disk F# source check: BCL / FSharp.Core / NuGet
+        // symbols have no source declaration, so this stays false for them.
+        let isSourceOnDisk =
+            (target.EndsWith(".fs", StringComparison.OrdinalIgnoreCase)
+             || target.EndsWith(".fsi", StringComparison.OrdinalIgnoreCase))
+            && File.Exists(target)
+        inSourceFiles || isSourceOnDisk
+    | _ -> false
 
 // ── Shared helpers ──────────────────────────────────────────────
 
 /// Convert an FCS Range to a DefinitionLocation (1-based → 0-based).
-let private rangeToLocation (r: FSharp.Compiler.Text.Range) =
+let rangeToLocation (r: FSharp.Compiler.Text.Range) =
     if r.FileName = "" then None
     else
         Some
@@ -360,6 +347,57 @@ let internal getSymbolUse
 let private getTypeEntity (ty: FSharpType) =
     if ty.HasTypeDefinition then Some ty.TypeDefinition
     else None
+
+/// Extract the declaration location for the symbol at a position.
+/// Prefers the resolved FSharpSymbol's declaration location — robust for
+/// qualified names (Module.member), record fields, DU cases, and cross-file
+/// symbols — and falls back to FCS GetDeclarationLocation (which can follow
+/// into signature files) using the identifier island's end column.
+let private extractDefinition
+    (checkResults: FSharpCheckFileResults)
+    (source: string)
+    (line: int)
+    (character: int)
+    : DefinitionLocation option =
+    let fromSymbol =
+        getSymbolUse checkResults source line character
+        |> Option.bind (fun su -> su.Symbol.DeclarationLocation)
+        |> Option.bind rangeToLocation
+    match fromSymbol with
+    | Some _ -> fromSymbol
+    | None ->
+        let lines = source.Split('\n')
+        if line >= lines.Length then
+            None
+        else
+            let lineText = lines[line]
+            match QuickParse.GetCompleteIdentifierIsland true lineText character with
+            | None -> None
+            | Some(name, endCol, _) ->
+                match checkResults.GetDeclarationLocation(line + 1, endCol, lineText, [ name ]) with
+                | FindDeclResult.DeclFound declRange -> rangeToLocation declRange
+                | FindDeclResult.DeclNotFound _
+                | FindDeclResult.ExternalDecl _ -> None
+
+/// Get definition location at a position in an F# file.
+let getDefinition
+    (state: FSharpWorkspaceState)
+    (filePath: string)
+    (line: int)
+    (character: int)
+    =
+    task {
+        try
+            let! result = checkFile state filePath
+            match result with
+            | Some(checkResults, source) ->
+                return extractDefinition checkResults source line character
+            | None ->
+                return None
+        with ex ->
+            Log.Debug(ex, "[F# Definition] failed")
+            return None
+    }
 
 // ── Type Definition ─────────────────────────────────────────────
 
