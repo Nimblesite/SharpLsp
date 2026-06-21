@@ -23,6 +23,31 @@ let private canRename (state: FSharpWorkspace.FSharpWorkspaceState) (symbol: FSh
     | :? FSharpEntity as ent when ent.IsNamespace -> false
     | _ -> FSharpWorkspace.isSymbolInProject state symbol
 
+/// Pure prepare-rename computation over an already-checked file. Kept separate
+/// from the `task` so the async wrapper has a single bind + single return — the
+/// shape FCS can compile to a static state machine (avoids FS3511).
+let private computePrepare
+    (state: FSharpWorkspace.FSharpWorkspaceState)
+    (checkResults: FSharpCheckFileResults)
+    (source: string)
+    (line: int)
+    (character: int)
+    : PrepareRename option =
+    match FSharpWorkspace.getSymbolUse checkResults source line character with
+    | Some su when canRename state su.Symbol ->
+        let lines = source.Split('\n')
+        let lineText = lines[line]
+        match QuickParse.GetCompleteIdentifierIsland true lineText character with
+        | Some(name, endCol, _) ->
+            Some
+                { StartLine = line
+                  StartCharacter = max 0 (endCol - name.Length)
+                  EndLine = line
+                  EndCharacter = endCol
+                  Placeholder = su.Symbol.DisplayName }
+        | None -> None
+    | _ -> None
+
 /// Check whether the symbol at a position can be renamed, returning its token range.
 let prepareRename
     (state: FSharpWorkspace.FSharpWorkspaceState)
@@ -33,25 +58,10 @@ let prepareRename
     task {
         try
             let! fileCheck = FSharpWorkspace.checkFile state filePath
-            match fileCheck with
-            | None -> return None
-            | Some(checkResults, source) ->
-                match FSharpWorkspace.getSymbolUse checkResults source line character with
-                | Some su when not (canRename state su.Symbol) -> return None
-                | Some su ->
-                    let lines = source.Split('\n')
-                    let lineText = lines[line]
-                    match QuickParse.GetCompleteIdentifierIsland true lineText character with
-                    | Some(name, endCol, _) ->
-                        return
-                            Some
-                                { StartLine = line
-                                  StartCharacter = max 0 (endCol - name.Length)
-                                  EndLine = line
-                                  EndCharacter = endCol
-                                  Placeholder = su.Symbol.DisplayName }
-                    | None -> return None
-                | None -> return None
+            return
+                fileCheck
+                |> Option.bind (fun (checkResults, source) ->
+                    computePrepare state checkResults source line character)
         with ex ->
             Log.Debug(ex, "[F# PrepareRename] failed")
             return None
