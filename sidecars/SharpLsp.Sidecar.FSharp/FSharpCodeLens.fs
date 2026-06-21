@@ -2,6 +2,7 @@
 /// [FS-CODELENS] — a "N references" lens above every top-level definition.
 module SharpLsp.Sidecar.FSharp.FSharpCodeLens
 
+open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open Serilog
 

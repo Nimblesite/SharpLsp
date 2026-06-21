@@ -52,6 +52,7 @@
     <Compile Include="FSharpRename.fs" />
     <Compile Include="FSharpCodeLens.fs" />
     <Compile Include="FSharpHierarchy.fs" />
+    <Compile Include="FSharpWire.fs" />
     <Compile Include="FSharpSidecar.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

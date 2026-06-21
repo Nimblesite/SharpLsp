@@ -188,7 +188,7 @@ suite('F# LSP — Find References & Document Highlights', () => {
     // double: declared once, called twice inside quadruple.
     const doubleRefs = await pollReferences(
       usage.uri,
-      positionOf(usage.doc, 'let double (value'),
+      positionOf(usage.doc, 'let double (value', 'let '.length),
       3,
     );
     assert.ok(

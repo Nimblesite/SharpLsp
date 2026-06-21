@@ -7,6 +7,7 @@ open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Syntax
 open FSharp.Compiler.Text
+open MessagePack
 open Serilog
 
 // ── Formatting via Fantomas (SEQUESTERED) ───────────────────────
@@ -195,12 +196,24 @@ let getSemanticTokensRange
 
 // ── Inlay Hints ──────────────────────────────────────────────────
 
+/// Wire-compatible inlay hint, positionally matched to the Rust host's
+/// `SidecarInlayHint` ([line, character, label, kind]). This MUST be a keyed
+/// MessagePack record — F# anonymous records (`{| ... |}`) serialize with
+/// alphabetically-sorted, named fields, which the host cannot deserialize
+/// (it fails with `missing field \`line\``), so inlay hints silently vanished.
+[<MessagePackObject>]
+type InlayHintItem =
+    { [<Key(0)>] Line: int
+      [<Key(1)>] Character: int
+      [<Key(2)>] Label: string
+      [<Key(3)>] Kind: int }
+
 /// Extract type hints for let bindings (Kind = 1 = Type).
 let private extractTypeHints
     (checkResults: FSharpCheckFileResults)
     (startLine: int)
     (endLine: int)
-    : {| Line: int; Character: int; Label: string; Kind: int |} list =
+    : InlayHintItem list =
     try
         let uses = checkResults.GetAllUsesOfAllSymbolsInFile() |> Seq.toArray
         [ for su in uses do
@@ -213,10 +226,10 @@ let private extractTypeHints
                     let typeName = mfv.FullType.Format(FSharpDisplayContext.Empty)
                     let endCol = r.EndColumn
                     yield
-                        {| Line = line
-                           Character = endCol
-                           Label = $": {typeName}"
-                           Kind = 1 |}
+                        { Line = line
+                          Character = endCol
+                          Label = $": {typeName}"
+                          Kind = 1 }
                 | _ -> () ]
     with _ ->
         []
@@ -227,7 +240,7 @@ let private extractParameterHints
     (parseResults: FSharpParseFileResults)
     (startLine: int)
     (endLine: int)
-    : {| Line: int; Character: int; Label: string; Kind: int |} list =
+    : InlayHintItem list =
     try
         let uses = checkResults.GetAllUsesOfAllSymbolsInFile() |> Seq.toArray
         [ for su in uses do
@@ -243,10 +256,10 @@ let private extractParameterHints
                             match param.DisplayName with
                             | name when name <> "" ->
                                 yield
-                                    {| Line = line
-                                       Character = r.StartColumn
-                                       Label = $"{name}:"
-                                       Kind = 2 |}
+                                    { Line = line
+                                      Character = r.StartColumn
+                                      Label = $"{name}:"
+                                      Kind = 2 }
                             | _ -> ()
                 | _ -> () ]
     with _ ->
@@ -258,7 +271,7 @@ let private extractPipelineHints
     (source: string)
     (startLine: int)
     (endLine: int)
-    : {| Line: int; Character: int; Label: string; Kind: int |} list =
+    : InlayHintItem list =
     try
         let lines = source.Split('\n')
         [ for lineIdx in startLine .. (min endLine (lines.Length - 1)) do
@@ -275,10 +288,10 @@ let private extractPipelineHints
                         let typeName = items[0].MainDescription |> Array.map (fun t -> t.Text) |> String.concat ""
                         if typeName <> "" then
                             yield
-                                {| Line = lineIdx
-                                   Character = pipeIdx
-                                   Label = $": {typeName}"
-                                   Kind = 1 |}
+                                { Line = lineIdx
+                                  Character = pipeIdx
+                                  Label = $": {typeName}"
+                                  Kind = 1 }
                     | _ -> ()
                 | _ -> () ]
     with _ ->

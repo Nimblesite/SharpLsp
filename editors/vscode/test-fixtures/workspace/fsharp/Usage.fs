@@ -30,3 +30,9 @@ module Usage =
 
     /// Two call sites of `double` for reference counting.
     let quadruple (value: int) : int = double (double value)
+
+    // Unannotated bindings — inlay hints must surface the inferred types here
+    // (`: int`, `: string`, `: float`). Keep these without type annotations.
+    let answer = double 21
+    let label = "fsharp"
+    let ratio = 3.14 * 2.0

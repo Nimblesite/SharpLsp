@@ -73,7 +73,14 @@ export function nthPositionOf(
 }
 
 /** Long timeout for the first semantic call while the F# sidecar cracks the project. */
-export const FSHARP_COLD_TIMEOUT_MS = 120_000;
+export const FSHARP_COLD_TIMEOUT_MS = 75_000;
+
+/**
+ * Short timeout for features that respond (or fail) immediately and need no
+ * project crack: tree-sitter syntax features (Rust host, <5ms) and capabilities
+ * not advertised at all. Keeps the suite fast when these are still unimplemented.
+ */
+export const FSHARP_SYNTAX_TIMEOUT_MS = 15_000;
 
 /** Poll a hover provider at a position until it returns content. */
 export async function pollHover(

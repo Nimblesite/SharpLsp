@@ -2,6 +2,8 @@
 /// Implements [FS-RENAME-PREPARE] / [FS-RENAME-APPLY].
 module SharpLsp.Sidecar.FSharp.FSharpRename
 
+open FSharp.Compiler.CodeAnalysis
+open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Tokenization
 open Serilog

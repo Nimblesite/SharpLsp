@@ -5,6 +5,7 @@
 module SharpLsp.Sidecar.FSharp.FSharpHierarchy
 
 open System.Collections.Generic
+open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Syntax
 open FSharp.Compiler.Text
@@ -84,8 +85,10 @@ let private enclosingBinding (parseTree: ParsedInput) (pos: pos) : (Ident * rang
                 match defaultTraverse binding with
                 | Some inner -> Some inner
                 | None ->
-                    let (SynBinding(headPat = pat; range = range)) = binding
-                    patIdent pat |> Option.map (fun ident -> (ident, range)) }
+                    // RangeOfBindingWithRhs spans the whole binding incl. its body;
+                    // the bare `range` field covers only the head (before `=`).
+                    let (SynBinding(headPat = pat)) = binding
+                    patIdent pat |> Option.map (fun ident -> (ident, binding.RangeOfBindingWithRhs)) }
 
     SyntaxTraversal.Traverse(pos, parseTree, visitor)
 
@@ -127,14 +130,15 @@ let private callerItem (state: FSharpWorkspace.FSharpWorkspaceState) (su: FSharp
             | None -> return None
             | Some(ident, _range) ->
                 let lines = source.Split('\n')
-                let nameLine = ident.idRange.StartLine - 1
+                let idRange = ident.idRange
+                let nameLine = idRange.StartLine - 1
                 if nameLine < 0 || nameLine >= lines.Length then
                     return None
                 else
                     let lineText = lines[nameLine]
                     let resolved =
                         checkResults.GetSymbolUseAtLocation(
-                            ident.idRange.StartLine, ident.idRange.EndColumn, lineText, [ ident.idText ])
+                            idRange.StartLine, idRange.EndColumn, lineText, [ ident.idText ])
                     match resolved with
                     | Some caller -> return itemOfSymbol caller.Symbol
                     | None -> return None

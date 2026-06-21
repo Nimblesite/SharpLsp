@@ -2,6 +2,7 @@
 /// References are project-wide ([FS-REFS-PROJECT]); highlights stay file-local.
 module SharpLsp.Sidecar.FSharp.FSharpReferences
 
+open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open Serilog
 

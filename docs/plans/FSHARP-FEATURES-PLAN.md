@@ -108,21 +108,38 @@ scanning project entities for any whose base type or interfaces include the targ
 - [ ] File ordering awareness + reorder suggestions (F# compilation order matters)
 - [ ] Type provider navigation support
 - [ ] Convert pipe to/from nested function calls (refactoring)
+- [ ] Multi-project F# workspace state (multiple `FSharpProjectOptions`). Unblocks
+      mixed C#/F# `.slnx` full-stack coverage (migrated from the completed-and-removed
+      SLNX-SUPPORT plan, whose only remaining item was gated on this).
 
 ## TODO — parity pass
 
-- [ ] [FS-COMPLETION] `textDocument/completion` via `GetDeclarationListInfo`
-- [ ] [FS-COMPLETION-RESOLVE] `completionItem/resolve` (wire-empty edits + ns hint)
-- [ ] [FS-REFS-PROJECT] project-wide `textDocument/references`
-- [ ] [FS-RENAME-PREPARE] `textDocument/prepareRename`
-- [ ] [FS-RENAME-APPLY] `textDocument/rename` (project-wide edits)
-- [ ] [FS-CODELENS] `textDocument/codeLens` reference counts
-- [ ] [FS-CALLHIER-PREPARE] `textDocument/prepareCallHierarchy`
-- [ ] [FS-CALLHIER-INCOMING] `callHierarchy/incomingCalls`
-- [ ] [FS-CALLHIER-OUTGOING] `callHierarchy/outgoingCalls`
-- [ ] [FS-TYPEHIER-PREPARE] `textDocument/prepareTypeHierarchy`
-- [ ] [FS-TYPEHIER-SUPER] `typeHierarchy/supertypes`
-- [ ] [FS-TYPEHIER-SUB] `typeHierarchy/subtypes`
-- [ ] e2e tests for every method above (real `.fsproj`, IPC round-trip)
-</content>
-</invoke>
+All parity methods are registered in the F# sidecar
+([FSharpSidecar.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpSidecar.fs)) and
+backed by dedicated modules ([FSharpCompletion.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpCompletion.fs),
+[FSharpRename.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpRename.fs),
+[FSharpCodeLens.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeLens.fs),
+[FSharpHierarchy.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpHierarchy.fs),
+[FSharpReferences.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpReferences.fs)),
+with the MessagePack wire contract in
+[FSharpWire.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpWire.fs).
+E2E coverage lives in the F# sidecar IPC round-trip suite
+([SidecarEndToEndTests.fs](../../sidecars/SharpLsp.Sidecar.FSharp.Tests/SidecarEndToEndTests.fs)),
+which loads a real two-file `.fsproj` over a Unix socket and asserts each method's
+MessagePack response (completion, resolve, project-wide references, prepare/apply
+rename, code lens, and call/type hierarchy).
+
+- [x] [FS-COMPLETION] `textDocument/completion` via `GetDeclarationListInfo`
+- [x] [FS-COMPLETION-RESOLVE] `completionItem/resolve` (wire-empty edits + ns hint)
+- [x] [FS-REFS-PROJECT] project-wide `textDocument/references`
+- [x] [FS-RENAME-PREPARE] `textDocument/prepareRename`
+- [x] [FS-RENAME-APPLY] `textDocument/rename` (project-wide edits)
+- [x] [FS-CODELENS] `textDocument/codeLens` reference counts
+- [x] [FS-CALLHIER-PREPARE] `textDocument/prepareCallHierarchy`
+- [x] [FS-CALLHIER-INCOMING] `callHierarchy/incomingCalls`
+- [x] [FS-CALLHIER-OUTGOING] `callHierarchy/outgoingCalls`
+- [x] [FS-TYPEHIER-PREPARE] `textDocument/prepareTypeHierarchy`
+- [x] [FS-TYPEHIER-SUPER] `typeHierarchy/supertypes`
+- [x] [FS-TYPEHIER-SUB] `typeHierarchy/subtypes`
+- [x] e2e tests for every method above (real `.fsproj`, IPC round-trip)
+
