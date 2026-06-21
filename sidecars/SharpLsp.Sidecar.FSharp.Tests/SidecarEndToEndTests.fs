@@ -27,13 +27,16 @@ type FormatEditWire =
       [<Key("EndCharacter")>] EndCharacter: int
       [<Key("NewText")>] NewText: string }
 
+// Inlay hints are now serialized as a POSITIONAL MessagePack record (keyed
+// 0..3) so the Rust host's `SidecarInlayHint` ([line, character, label, kind])
+// can deserialize them. Mirror that layout here.
 [<MessagePackObject>]
 [<NoComparison; NoEquality>]
 type InlayHintWire =
-    { [<Key("Line")>] Line: int
-      [<Key("Character")>] Character: int
-      [<Key("Label")>] Label: string
-      [<Key("Kind")>] Kind: int }
+    { [<Key(0)>] Line: int
+      [<Key(1)>] Character: int
+      [<Key(2)>] Label: string
+      [<Key(3)>] Kind: int }
 
 [<MessagePackObject>]
 [<NoComparison; NoEquality>]
@@ -86,10 +89,40 @@ type SimpleGreeter() =
 let useGreeter () =
     let greeter = SimpleGreeter() :> IGreeter
     greeter.Greet "World"
+
+// Appended AFTER all hard-coded e2e positions (≤ line 28) so it never shifts
+// them. Enriches symbol kinds (DU, struct) and adds a pipeline, exercising the
+// completion glyph arms, pipeline inlay hints, and type-hierarchy paths.
+type Color =
+    | Red
+    | Green of int
+
+[<Struct>]
+type Point = { Px: int; Py: int }
+
+let pipedSum = [ 1; 2; 3 ] |> List.sum
+
+let colors = [ Red; Green 5 ]
+
+/// A real CLR enum (drives the Enum symbol-kind / glyph arm).
+type Direction =
+    | North = 0
+    | South = 1
+
+/// A class with a constructor and a property (drives the Constructor / Property
+/// symbol-kind + glyph arms).
+type Counter(start: int) =
+    let mutable count = start
+    member _.Value = count
+    member _.Bump() = count <- count + 1
+
+let counter = Counter(0)
+let heading = Direction.North
 """
 
 /// Create a temp directory with a real .fsproj and F# source file.
-let private createTestProject () =
+/// Public so the extra-coverage suite can build a real loaded workspace from it.
+let createTestProject () =
     let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-e2e-{Guid.NewGuid():N}")
     Directory.CreateDirectory(dir) |> ignore
     File.WriteAllText(
@@ -102,9 +135,24 @@ let private createTestProject () =
   <ItemGroup>
     <Compile Include="Library.fs" />
     <Compile Include="Consumer.fs" />
+    <Compile Include="Extra.fs" />
   </ItemGroup>
 </Project>""")
     File.WriteAllText(Path.Combine(dir, "Library.fs"), testSource)
+    // A third file kept self-contained (no references to Library symbols, so it
+    // never changes cross-file reference/rename counts). It carries:
+    //   * an FS0020 (implicitly-ignored result) at line 4 → drives the
+    //     code-action + code-action/resolve success path; and
+    //   * an FSharpLint hint (`not (a = b)` → prefer `<>`) at line 7 → drives the
+    //     lint branch of workspace/diagnostics.
+    File.WriteAllText(
+        Path.Combine(dir, "Extra.fs"),
+        "module TestProject.Extra\n\n"
+        + "let private compute () = 1 + 1\n\n"
+        + "let ignoredResult () =\n"
+        + "    compute ()\n"
+        + "    ()\n\n"
+        + "let lintHint x = not (x = 1)\n")
     // A second source file that references Library.add, so references/rename can
     // be exercised across file boundaries (proving they are project-wide).
     File.WriteAllText(
@@ -113,7 +161,8 @@ let private createTestProject () =
     dir
 
 /// Deserialize a MessagePack byte[] payload to the target type.
-let private deserialize<'T> (payload: byte array) : 'T =
+/// Public so the extra-coverage suite ([FSharpExtraCoverageTests]) can reuse it.
+let deserialize<'T> (payload: byte array) : 'T =
     let buf : ReadOnlyMemory<byte> = ReadOnlyMemory<byte>(payload)
     MessagePackSerializer.Deserialize<'T>(buf, MessagePackSerializerOptions.Standard)
 
@@ -130,7 +179,8 @@ let private sendRequest (transport: FramedTransport) id meth payload : Task<Enve
     }
 
 /// Build a serialized PositionRequest payload.
-let private posPayload file line char =
+/// Public so the extra-coverage suite ([FSharpExtraCoverageTests]) can reuse it.
+let posPayload file line char =
     MessagePackSerializer.Serialize(
         { PositionRequest.FilePath = file; Line = line; Character = char })
 

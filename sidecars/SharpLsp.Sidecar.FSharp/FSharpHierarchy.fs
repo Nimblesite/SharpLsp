@@ -117,31 +117,39 @@ let prepareCall (state: FSharpWorkspace.FSharpWorkspaceState) filePath line char
             return None
     }
 
+/// Pure resolution of the enclosing-declaration caller from a checked file.
+/// Extracted so `callerItem`'s `task` is a single bind + single return (FS3511).
+let private resolveCaller
+    (checkData: (FSharpParseFileResults * FSharpCheckFileResults * string) option)
+    (su: FSharpSymbolUse)
+    : HierItem option =
+    match checkData with
+    | None -> None
+    | Some(parseResults, checkResults, source) ->
+        let r = su.Range
+        let pos = Position.mkPos r.StartLine r.StartColumn
+        match enclosingBinding parseResults.ParseTree pos with
+        | None -> None
+        | Some(ident, _range) ->
+            let lines = source.Split('\n')
+            let idRange = ident.idRange
+            let nameLine = idRange.StartLine - 1
+            if nameLine < 0 || nameLine >= lines.Length then
+                None
+            else
+                let lineText = lines[nameLine]
+                checkResults.GetSymbolUseAtLocation(
+                    idRange.StartLine, idRange.EndColumn, lineText, [ ident.idText ])
+                |> Option.bind (fun caller -> itemOfSymbol caller.Symbol)
+
 /// Resolve the caller (enclosing declaration) of a single call-site use.
 let private callerItem (state: FSharpWorkspace.FSharpWorkspaceState) (su: FSharpSymbolUse) =
     task {
+        // Bind the range struct to a local before reading FileName to avoid the
+        // FS0052 defensive-copy warning on the by-value struct property.
         let r = su.Range
         let! checkData = FSharpWorkspace.checkFileWithParse state r.FileName
-        match checkData with
-        | None -> return None
-        | Some(parseResults, checkResults, source) ->
-            let pos = Position.mkPos r.StartLine r.StartColumn
-            match enclosingBinding parseResults.ParseTree pos with
-            | None -> return None
-            | Some(ident, _range) ->
-                let lines = source.Split('\n')
-                let idRange = ident.idRange
-                let nameLine = idRange.StartLine - 1
-                if nameLine < 0 || nameLine >= lines.Length then
-                    return None
-                else
-                    let lineText = lines[nameLine]
-                    let resolved =
-                        checkResults.GetSymbolUseAtLocation(
-                            idRange.StartLine, idRange.EndColumn, lineText, [ ident.idText ])
-                    match resolved with
-                    | Some caller -> return itemOfSymbol caller.Symbol
-                    | None -> return None
+        return resolveCaller checkData su
     }
 
 /// Get incoming calls: project-wide call sites of the symbol, mapped to the
@@ -164,35 +172,44 @@ let incomingCalls (state: FSharpWorkspace.FSharpWorkspaceState) filePath line ch
             return []
     }
 
+/// Pure computation of outgoing calls from a checked file. Extracted so
+/// `outgoingCalls`'s `task` is a single bind + single return (FS3511).
+let private computeOutgoing
+    (checkData: (FSharpParseFileResults * FSharpCheckFileResults * string) option)
+    (line: int)
+    (character: int)
+    : HierItem list =
+    match checkData with
+    | None -> []
+    | Some(parseResults, checkResults, source) ->
+        match FSharpWorkspace.getSymbolUse checkResults source line character with
+        | None -> []
+        | Some su ->
+            match su.Symbol.DeclarationLocation with
+            | None -> []
+            | Some declRange ->
+                let pos = Position.mkPos declRange.StartLine declRange.StartColumn
+                match enclosingBinding parseResults.ParseTree pos with
+                | None -> []
+                | Some(_ident, bindingRange) ->
+                    let results = List<HierItem>()
+                    let seen = HashSet<string>()
+                    for u in checkResults.GetAllUsesOfAllSymbolsInFile() do
+                        if not u.IsFromDefinition
+                           && Range.rangeContainsRange bindingRange u.Range
+                           && isCallable u.Symbol then
+                            match itemOfSymbol u.Symbol with
+                            | Some item when seen.Add(itemKey item) -> results.Add(item)
+                            | _ -> ()
+                    List.ofSeq results
+
 /// Get outgoing calls: function/member applications inside the symbol's own
 /// binding body.
 let outgoingCalls (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
     task {
         try
             let! checkData = FSharpWorkspace.checkFileWithParse state filePath
-            match checkData with
-            | None -> return []
-            | Some(parseResults, checkResults, source) ->
-                match FSharpWorkspace.getSymbolUse checkResults source line character with
-                | None -> return []
-                | Some su ->
-                    match su.Symbol.DeclarationLocation with
-                    | None -> return []
-                    | Some declRange ->
-                        let pos = Position.mkPos declRange.StartLine declRange.StartColumn
-                        match enclosingBinding parseResults.ParseTree pos with
-                        | None -> return []
-                        | Some(_ident, bindingRange) ->
-                            let results = List<HierItem>()
-                            let seen = HashSet<string>()
-                            for u in checkResults.GetAllUsesOfAllSymbolsInFile() do
-                                if not u.IsFromDefinition
-                                   && Range.rangeContainsRange bindingRange u.Range
-                                   && isCallable u.Symbol then
-                                    match itemOfSymbol u.Symbol with
-                                    | Some item when seen.Add(itemKey item) -> results.Add(item)
-                                    | _ -> ()
-                            return List.ofSeq results
+            return computeOutgoing checkData line character
         with ex ->
             Log.Debug(ex, "[F# OutgoingCalls] failed")
             return []

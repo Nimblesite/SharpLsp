@@ -368,7 +368,8 @@ async function pickSolutionFile(): Promise<string | undefined> {
   return picked?.path;
 }
 
-function generateFileContent(type: string, name: string): string {
+/** Generate the source body for a new file of the given snippet type. Pure. */
+export function generateFileContent(type: string, name: string): string {
   switch (type) {
     case 'interface':
       return `namespace MyNamespace;\n\npublic interface ${name}\n{\n}\n`;

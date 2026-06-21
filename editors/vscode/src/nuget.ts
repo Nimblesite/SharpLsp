@@ -12,7 +12,8 @@ interface NuGetSearchResult {
   data: NuGetPackage[];
 }
 
-function isNuGetSearchResult(value: unknown): value is NuGetSearchResult {
+/** Type guard for the NuGet search API response: an object with an array `data` field. */
+export function isNuGetSearchResult(value: unknown): value is NuGetSearchResult {
   return (
     value !== null && typeof value === 'object' && 'data' in value && Array.isArray(value.data)
   );
@@ -151,7 +152,8 @@ export async function addNuGetPackageToProject(projectPath: string): Promise<voi
   }
 }
 
-function includePrerelease(): boolean {
+/** Whether prerelease packages should be included in NuGet searches (config-driven, defaults false). */
+export function includePrerelease(): boolean {
   return (
     vscode.workspace.getConfiguration('sharplsp').get<boolean>('nuget.includePrerelease') ?? false
   );

@@ -15,6 +15,7 @@
     <Compile Include="FSharpCoverageTests.fs" />
     <Compile Include="FSharpPackagesTests.fs" />
     <Compile Include="SidecarEndToEndTests.fs" />
+    <Compile Include="FSharpExtraCoverageTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

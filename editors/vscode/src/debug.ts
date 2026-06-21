@@ -121,7 +121,8 @@ export class SharpLspDebugAdapterFactory implements vscode.DebugAdapterDescripto
   }
 }
 
-function applyLaunchProfile(rootPath: string, config: vscode.DebugConfiguration): void {
+/** Apply the first `Project` profile from launchSettings.json onto a debug config. */
+export function applyLaunchProfile(rootPath: string, config: vscode.DebugConfiguration): void {
   const profiles = readLaunchProfiles(rootPath);
   const entries = Object.entries(profiles);
   if (entries.length === 0) return;
@@ -143,7 +144,8 @@ function applyLaunchProfile(rootPath: string, config: vscode.DebugConfiguration)
   }
 }
 
-function readLaunchProfiles(rootPath: string): Record<string, LaunchProfile> {
+/** Read and parse launchSettings.json profiles under `rootPath/Properties`. */
+export function readLaunchProfiles(rootPath: string): Record<string, LaunchProfile> {
   const candidates = [path.join(rootPath, 'Properties', 'launchSettings.json')];
 
   // Also check subdirectories for the first .csproj project.
@@ -171,7 +173,8 @@ function readLaunchProfiles(rootPath: string): Record<string, LaunchProfile> {
   return {};
 }
 
-function isLaunchSettings(value: unknown): value is LaunchSettings {
+/** Type guard for a parsed launchSettings.json document. */
+export function isLaunchSettings(value: unknown): value is LaunchSettings {
   return typeof value === 'object' && value !== null && 'profiles' in value;
 }
 
@@ -196,7 +199,8 @@ function findNetcoredbg(): string | undefined {
   return 'netcoredbg';
 }
 
-function getNetcoredbgCandidates(): string[] {
+/** Platform-aware list of common netcoredbg installation paths. */
+export function getNetcoredbgCandidates(): string[] {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
   const isWin = process.platform === 'win32';
   const exe = isWin ? 'netcoredbg.exe' : 'netcoredbg';
@@ -215,12 +219,13 @@ interface ProjectEntry {
   cwd: string;
 }
 
-function findEntryProject(rootPath: string): ProjectEntry | undefined {
+/** Find the nearest project entry by searching `rootPath` only. */
+export function findEntryProject(rootPath: string): ProjectEntry | undefined {
   return findProjectFile(rootPath, rootPath);
 }
 
 /** Walk up from `startPath` to `stopPath` looking for the nearest .csproj/.fsproj. */
-function findProjectFile(startPath: string, stopPath: string): ProjectEntry | undefined {
+export function findProjectFile(startPath: string, stopPath: string): ProjectEntry | undefined {
   let current: string | undefined = startPath;
   while (current !== undefined) {
     try {
@@ -239,7 +244,8 @@ function findProjectFile(startPath: string, stopPath: string): ProjectEntry | un
   return undefined;
 }
 
-function projectEntryFromFile(projFile: string): ProjectEntry {
+/** Build a project entry (dll path + cwd) from a project file path. */
+export function projectEntryFromFile(projFile: string): ProjectEntry {
   const dir = path.dirname(projFile);
   const name = path.basename(projFile, path.extname(projFile));
   // Prefer net10.0, fall back to net9.0, then net8.0.

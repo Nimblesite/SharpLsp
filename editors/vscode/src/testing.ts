@@ -319,15 +319,18 @@ interface TestResult {
   message?: string | undefined;
 }
 
-function isTestName(line: string): boolean {
+/** True when a line looks like a fully qualified test name (word chars/dots, contains a dot). */
+export function isTestName(line: string): boolean {
   return /^[\w.]+$/.test(line) && line.includes('.');
 }
 
-function isExpectoTest(name: string): boolean {
+/** True when a test name matches Expecto naming conventions. */
+export function isExpectoTest(name: string): boolean {
   return name.includes('Expecto') || name.includes('testCase') || name.includes('testList');
 }
 
-function isFsCheckTest(name: string): boolean {
+/** True when a test name matches FsCheck property-test conventions. */
+export function isFsCheckTest(name: string): boolean {
   return name.includes('FsCheck') || name.includes('Property');
 }
 
@@ -343,7 +346,8 @@ async function runProcess(command: string, args: string[], cwd: string): Promise
   });
 }
 
-function buildFilterArgs(tests: vscode.TestItem[]): string[] {
+/** Build `dotnet test --filter` args from selected test items (empty when none). */
+export function buildFilterArgs(tests: vscode.TestItem[]): string[] {
   if (tests.length === 0) return [];
   const names = tests.map((t) => `FullyQualifiedName=${t.id}`);
   return ['--filter', names.join('|')];
@@ -378,7 +382,8 @@ const coberturaParser = new XMLParser({
   isArray: (tagName) => tagName === 'package' || tagName === 'class' || tagName === 'line',
 });
 
-function findCoberturaFile(resultsDir: string): string | undefined {
+/** Find a `coverage.cobertura.xml` one directory below `resultsDir`, or undefined. */
+export function findCoberturaFile(resultsDir: string): string | undefined {
   if (!fs.existsSync(resultsDir)) return undefined;
   const entries = fs.readdirSync(resultsDir);
   for (const entry of entries) {
@@ -389,7 +394,8 @@ function findCoberturaFile(resultsDir: string): string | undefined {
   return undefined;
 }
 
-function parseCoberturaXml(filePath: string): vscode.FileCoverage[] {
+/** Parse a cobertura XML report into VS Code FileCoverage entries. */
+export function parseCoberturaXml(filePath: string): vscode.FileCoverage[] {
   const xml = fs.readFileSync(filePath, 'utf-8');
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- fast-xml-parser returns untyped output; CoberturaReport mirrors the known schema
   const doc: CoberturaReport = coberturaParser.parse(xml);
