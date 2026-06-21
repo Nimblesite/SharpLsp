@@ -39,6 +39,8 @@ that feature — that is the parity gap.
 | `textDocument/documentHighlight` | nav | ✅ | ✅ | — |
 | `textDocument/codeAction` + resolve | [code_actions.rs](../../src/code_actions.rs) | ✅ | ✅ | — |
 | `textDocument/semanticTokens/{full,range}` | [semantic_tokens.rs](../../src/semantic_tokens.rs) | ✅ | ✅ | — |
+| `textDocument/documentSymbol` | [document_symbols.rs:20](../../src/document_symbols.rs#L20) | ✅ tree-sitter (host) | ✅ **FCS nav items (this plan)** | [FS-DOCSYMBOL] |
+| `textDocument/signatureHelp` | [signature_help.rs:21](../../src/signature_help.rs#L21) | — | ✅ **FCS GetMethods (this plan)** | [FS-SIGHELP] |
 | `textDocument/inlayHint` | [inlay_hints.rs](../../src/inlay_hints.rs) | ✅ | ✅ | — |
 | `workspace/diagnostics` (pull) | [pull_diagnostics.rs](../../src/pull_diagnostics.rs) | ✅ | ✅ | — |
 | `project/unusedPackages` | [nuget](../../src/nuget) | ✅ | ✅ | — |
@@ -141,5 +143,13 @@ rename, code lens, and call/type hierarchy).
 - [x] [FS-TYPEHIER-PREPARE] `textDocument/prepareTypeHierarchy`
 - [x] [FS-TYPEHIER-SUPER] `typeHierarchy/supertypes`
 - [x] [FS-TYPEHIER-SUB] `typeHierarchy/subtypes`
+- [x] [FS-DOCSYMBOL] `textDocument/documentSymbol` via FCS `GetNavigationItems` (parse-only; host routes `.fs` to the sidecar, `.cs` stays tree-sitter)
+- [x] [FS-SIGHELP] `textDocument/signatureHelp` via FCS `GetMethods` (capability advertised; overloads surfaced)
 - [x] e2e tests for every method above (real `.fsproj`, IPC round-trip)
+
+> **Routing note:** `callHierarchy/incomingCalls`/`outgoingCalls` and
+> `typeHierarchy/super`/`subtypes` carry the document URI inside `params.item`,
+> not `params.textDocument`. `extract_document_uri`
+> ([main.rs](../../src/main.rs)) now also reads `params.item.uri` so these
+> follow-up requests route to the **F#** sidecar instead of defaulting to C#.
 

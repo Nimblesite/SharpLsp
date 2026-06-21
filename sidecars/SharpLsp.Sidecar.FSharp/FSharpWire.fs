@@ -199,6 +199,38 @@ type HierarchyItemResult =
       [<Key(5)>] EndLine: int
       [<Key(6)>] EndCharacter: int }
 
+// ── Document Symbol Types (nested; wire-compatible with the Rust host) ──
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type DocumentSymbolResult =
+    { [<Key(0)>] Name: string
+      [<Key(1)>] Kind: string
+      [<Key(2)>] StartLine: int
+      [<Key(3)>] StartCharacter: int
+      [<Key(4)>] EndLine: int
+      [<Key(5)>] EndCharacter: int
+      [<Key(6)>] SelectionStartLine: int
+      [<Key(7)>] SelectionStartCharacter: int
+      [<Key(8)>] SelectionEndLine: int
+      [<Key(9)>] SelectionEndCharacter: int
+      [<Key(10)>] Children: DocumentSymbolResult array }
+
+// ── Signature Help Types (wire-compatible with the Rust host) ───
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type SignatureInfoResult =
+    { [<Key(0)>] Label: string
+      [<Key(1)>] Parameters: string array }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type SignatureHelpResult =
+    { [<Key(0)>] Signatures: SignatureInfoResult array
+      [<Key(1)>] ActiveSignature: int
+      [<Key(2)>] ActiveParameter: int }
+
 // ── Rename Types (wire-compatible with the Rust host) ───────────
 
 [<MessagePackObject(AllowPrivate = true)>]
@@ -281,6 +313,31 @@ module internal Helpers =
           Character = item.Character
           EndLine = item.EndLine
           EndCharacter = item.EndCharacter }
+
+    /// Map a document-symbol domain item (and its children) to its wire shape.
+    let rec toDocumentSymbol (item: FSharpSymbols.SymbolItem) : DocumentSymbolResult =
+        { Name = item.Name
+          Kind = item.Kind
+          StartLine = item.StartLine
+          StartCharacter = item.StartCharacter
+          EndLine = item.EndLine
+          EndCharacter = item.EndCharacter
+          SelectionStartLine = item.SelStartLine
+          SelectionStartCharacter = item.SelStartCharacter
+          SelectionEndLine = item.SelEndLine
+          SelectionEndCharacter = item.SelEndCharacter
+          Children = item.Children |> List.map toDocumentSymbol |> Array.ofList }
+
+    /// Map a signature-help domain result to its wire shape.
+    let toSignatureHelp (help: FSharpSignature.SignatureHelp) : SignatureHelpResult =
+        { Signatures =
+            help.Signatures
+            |> List.map (fun s ->
+                { Label = s.Label
+                  Parameters = s.Parameters |> Array.ofList })
+            |> Array.ofList
+          ActiveSignature = help.ActiveSignature
+          ActiveParameter = help.ActiveParameter }
 
     /// Map a completion domain entry to its wire shape (None detail → nil).
     let toCompletionItem (entry: FSharpCompletion.CompletionEntry) : CompletionItemResult =

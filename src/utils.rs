@@ -42,6 +42,28 @@ pub fn hierarchy_item_location(item: &SidecarHierarchyItem) -> Option<(Uri, Rang
     Some((parsed_uri, range, selection_range))
 }
 
+/// Request identifying a position in a file, sent to a sidecar. Serialized as a
+/// positional `MessagePack` array `(file_path, line, character)` matching the
+/// sidecars' `PositionRequest` Key layout.
+#[derive(serde::Serialize)]
+pub struct SidecarPositionReq {
+    /// Absolute path to the source file.
+    pub file_path: String,
+    /// Zero-based line number.
+    pub line: u32,
+    /// Zero-based character offset within the line.
+    pub character: u32,
+}
+
+/// Request identifying a whole file, sent to a sidecar. Serialized as a
+/// positional `MessagePack` array `(file_path)` matching the sidecars'
+/// `FileRequest` Key layout.
+#[derive(serde::Serialize)]
+pub struct SidecarFileReq {
+    /// Absolute path to the source file.
+    pub file_path: String,
+}
+
 /// A text edit returned by the sidecar in flat-coordinate form. Shared by the
 /// formatting, code-action, and completion-resolve flows, which deserialize it
 /// and map it into an LSP [`TextEdit`].

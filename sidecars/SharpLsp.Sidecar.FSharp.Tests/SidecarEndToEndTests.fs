@@ -830,6 +830,36 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Contains(lenses, fun l -> l.Line = 6)
     }
 
+    // ── Document Symbols [FS-DOCSYMBOL] ─────────────────────────
+
+    [<Fact>]
+    member _.``document symbols list types and nested members``() = task {
+        let payload = MessagePackSerializer.Serialize({ FileRequest.FilePath = fixture.Src })
+        let! r = fixture.Send("textDocument/documentSymbol", payload)
+        Assert.Null(r.Error)
+        let symbols = deserialize<DocumentSymbolResult array>(r.Payload)
+        Assert.NotEmpty(symbols)
+        // `Counter` (line 22+) is a class with `Value`/`Bump` members; its presence
+        // with nested children proves the recursive wire mapping ran.
+        Assert.Contains(symbols, fun s -> s.Name = "Counter")
+        Assert.Contains(symbols, fun s -> s.Children.Length > 0)
+    }
+
+    // ── Signature Help [FS-SIGHELP] ─────────────────────────────
+
+    [<Fact>]
+    member _.``signature help surfaces a constructor overload``() = task {
+        // `let counter = Counter(0)` — caret just inside the constructor parens.
+        let lines = File.ReadAllText(fixture.Src).Replace("\r\n", "\n").Split('\n')
+        let lineIdx = lines |> Array.findIndex (fun l -> l.Contains "Counter(0)")
+        let col = lines[lineIdx].IndexOf("Counter(") + "Counter(".Length
+        let! r = fixture.Send("textDocument/signatureHelp", posPayload fixture.Src lineIdx col)
+        Assert.Null(r.Error)
+        Assert.NotEqual<byte>([| 0xC0uy |], r.Payload)
+        let help = deserialize<SignatureHelpResult>(r.Payload)
+        Assert.NotEmpty(help.Signatures)
+    }
+
     // ── Call Hierarchy [FS-CALLHIER-*] ──────────────────────────
 
     [<Fact>]

@@ -334,6 +334,33 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
+        // Document symbols [FS-DOCSYMBOL]
+        base.Register("textDocument/documentSymbol", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<FileRequest>(payload, cancellationToken = ct)
+                    let! symbols = FSharpSymbols.documentSymbols workspace request.FilePath
+                    let results = symbols |> List.map Helpers.toDocumentSymbol |> Array.ofList
+                    return Helpers.serializeOk results ct
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Signature help [FS-SIGHELP]
+        base.Register("textDocument/signatureHelp", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
+                    let! help =
+                        FSharpSignature.signatureHelp
+                            workspace request.FilePath request.Line request.Character
+                    match help with
+                    | Some h -> return Helpers.serializeOk (Helpers.toSignatureHelp h) ct
+                    | None -> return Helpers.nilResult ()
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
         // Prepare rename [FS-RENAME-PREPARE]
         base.Register("textDocument/prepareRename", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {

@@ -7,6 +7,7 @@ mod code_actions;
 mod code_lens;
 mod config;
 mod diagnostics;
+mod document_symbols;
 // Formatting module is sequestered — not wired into the LSP server.
 // Use CSharpier (C#) / Fantomas via Ionide (F#). See docs/formatting/README.md.
 #[cfg(feature = "formatting")]
@@ -21,6 +22,7 @@ mod pull_diagnostics;
 mod semantic;
 mod semantic_tokens;
 mod sidecar;
+mod signature_help;
 mod sort_members;
 mod syntax;
 mod tree_sitter_parse;
@@ -50,8 +52,9 @@ use lsp_types::{
         GotoTypeDefinition, HoverRequest, InlayHintRequest, LinkedEditingRange,
         PrepareRenameRequest, References, Rename, Request as _, ResolveCompletionItem,
         SelectionRangeRequest, SemanticTokensFullDeltaRequest, SemanticTokensFullRequest,
-        SemanticTokensRangeRequest, Shutdown, TypeHierarchyPrepare, TypeHierarchySubtypes,
-        TypeHierarchySupertypes, WorkspaceDiagnosticRequest, WorkspaceSymbolRequest,
+        SemanticTokensRangeRequest, Shutdown, SignatureHelpRequest, TypeHierarchyPrepare,
+        TypeHierarchySubtypes, TypeHierarchySupertypes, WorkspaceDiagnosticRequest,
+        WorkspaceSymbolRequest,
     },
     FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams, OneOf,
     SelectionRangeProviderCapability, ServerCapabilities, TextDocumentSyncCapability,
@@ -329,6 +332,11 @@ fn build_capabilities() -> ServerCapabilities {
             ),
         ),
         inlay_hint_provider: Some(OneOf::Left(true)),
+        signature_help_provider: Some(lsp_types::SignatureHelpOptions {
+            trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
+            retrigger_characters: Some(vec![",".to_string()]),
+            work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
+        }),
         workspace_symbol_provider: Some(OneOf::Left(true)),
         call_hierarchy_provider: Some(lsp_types::CallHierarchyServerCapability::Simple(true)),
         code_lens_provider: Some(lsp_types::CodeLensOptions {
@@ -493,9 +501,15 @@ fn handle_request(
     let method = req.method.clone();
 
     let result = match req.method.as_str() {
-        // Syntax-only (tree-sitter, Rust)
+        // Syntax-only (tree-sitter, Rust) for C#; F# has no host grammar, so its
+        // symbols come from the sidecar's FCS navigation items. [FS-DOCSYMBOL]
         DocumentSymbolRequest::METHOD => {
-            handlers::handle_document_symbols(req, vfs, parsers, trees)
+            if is_fsharp_request(&req) {
+                let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+                document_symbols::handle_fsharp(req, runtime, sidecar)
+            } else {
+                handlers::handle_document_symbols(req, vfs, parsers, trees)
+            }
         }
         FoldingRangeRequest::METHOD => handlers::handle_folding_ranges(req, vfs, parsers, trees),
         SelectionRangeRequest::METHOD => {
@@ -555,6 +569,11 @@ fn handle_request(
         InlayHintRequest::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             inlay_hints::handle_inlay_hint(req, runtime, sidecar, vfs)
+        }
+        // Signature help [FS-SIGHELP]
+        SignatureHelpRequest::METHOD => {
+            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
+            signature_help::handle(req, runtime, sidecar)
         }
         // Code lens
         CodeLensRequest::METHOD => {
@@ -793,10 +812,20 @@ fn pick_sidecar_with_fallback<'a>(
 
 /// Extract the document URI from a request's params (best-effort).
 ///
-/// Checks `params.textDocument.uri` first, then falls back to `params.data.uri`
-/// for code action resolve requests where the URI is embedded in the data field.
+/// Checks `params.textDocument.uri` first, then `params.item.uri` (call- and
+/// type-hierarchy incoming/outgoing/super/subtype requests carry the URI inside
+/// the hierarchy item, not a `textDocument`), then falls back to
+/// `params.data.uri` for code-action-resolve requests. Without the `item`
+/// fallback, F# hierarchy follow-up requests misroute to the C# sidecar.
 fn extract_document_uri(req: &Request) -> Option<Uri> {
-    nested_uri(&req.params, "textDocument").or_else(|| nested_uri(&req.params, "data"))
+    nested_uri(&req.params, "textDocument")
+        .or_else(|| nested_uri(&req.params, "item"))
+        .or_else(|| nested_uri(&req.params, "data"))
+}
+
+/// Whether a request targets an F# document (by file extension).
+fn is_fsharp_request(req: &Request) -> bool {
+    extract_document_uri(req).and_then(|uri| LangId::from_uri(&uri)) == Some(LangId::FSharp)
 }
 
 /// Parse `params.<outer>.uri` into a [`Uri`], if present and valid.

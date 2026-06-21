@@ -13,7 +13,7 @@ use lsp_types::{
 use tracing::{debug, warn};
 
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{hierarchy_item_location, SidecarHierarchyItem};
+use crate::utils::{hierarchy_item_location, SidecarHierarchyItem, SidecarPositionReq};
 
 /// Handle `textDocument/prepareCallHierarchy`.
 pub fn handle_prepare(
@@ -184,19 +184,6 @@ fn parse_symbol_kind(kind: &str) -> SymbolKind {
         "Module" | "Namespace" => SymbolKind::MODULE,
         _ => SymbolKind::METHOD,
     }
-}
-
-// ── Wire types ────────────────────────────────────────────────────
-
-/// Request sent to the sidecar identifying a position in a file.
-#[derive(serde::Serialize)]
-struct SidecarPositionReq {
-    /// Absolute path to the source file.
-    file_path: String,
-    /// Zero-based line number.
-    line: u32,
-    /// Zero-based character offset within the line.
-    character: u32,
 }
 
 #[cfg(test)]
