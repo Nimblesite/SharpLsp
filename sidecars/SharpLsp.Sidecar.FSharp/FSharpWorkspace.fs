@@ -240,8 +240,9 @@ let getHover
 
 // ── Definition ───────────────────────────────────────────────────
 
-/// Parse and check a file, returning check results if successful.
-let internal checkFile
+/// Parse and check a file, returning parse results, check results, and source.
+/// The canonical per-file analysis entry point; `checkFile` is the parse-less view.
+let internal checkFileWithParse
     (state: FSharpWorkspaceState)
     (filePath: string)
     =
@@ -252,7 +253,7 @@ let internal checkFile
             let source = File.ReadAllText(filePath)
             let sourceText = SourceText.ofString source
 
-            let! _parseResults, checkAnswer =
+            let! parseResults, checkAnswer =
                 state.Checker.ParseAndCheckFileInProject(
                     filePath,
                     0,
@@ -261,10 +262,46 @@ let internal checkFile
 
             match checkAnswer with
             | FSharpCheckFileAnswer.Succeeded checkResults ->
-                return Some(checkResults, source)
+                return Some(parseResults, checkResults, source)
             | FSharpCheckFileAnswer.Aborted ->
                 return None
     }
+
+/// Parse and check a file, returning check results + source if successful.
+let internal checkFile
+    (state: FSharpWorkspaceState)
+    (filePath: string)
+    =
+    task {
+        let! result = checkFileWithParse state filePath
+        return result |> Option.map (fun (_parse, check, source) -> (check, source))
+    }
+
+/// Check the whole loaded project (used for project-wide symbol queries:
+/// references, rename, code lens, call hierarchy). FCS caches results keyed by
+/// the project options, so repeat calls are cheap.
+let internal checkProject (state: FSharpWorkspaceState) =
+    task {
+        if not state.IsLoaded then
+            return None
+        else
+            let! results = state.Checker.ParseAndCheckProject(state.ProjectOptions.Value)
+            return Some results
+    }
+
+/// Whether a symbol is declared inside the loaded project's own source files
+/// (renameable), as opposed to the BCL / FSharp.Core / a NuGet dependency.
+let internal isSymbolInProject
+    (state: FSharpWorkspaceState)
+    (symbol: FSharpSymbol)
+    : bool =
+    match symbol.DeclarationLocation, state.ProjectOptions with
+    | Some range, Some options when range.FileName <> "" ->
+        let normalize (path: string) =
+            try Path.GetFullPath(path) with _ -> path
+        let target = normalize range.FileName
+        options.SourceFiles |> Array.exists (fun file -> normalize file = target)
+    | _ -> false
 
 /// Extract declaration location from FCS check results.
 let private extractDefinition
@@ -326,7 +363,7 @@ let getDefinition
 // ── Shared helpers ──────────────────────────────────────────────
 
 /// Convert an FCS Range to a DefinitionLocation (1-based → 0-based).
-let private rangeToLocation (r: FSharp.Compiler.Text.Range) =
+let rangeToLocation (r: FSharp.Compiler.Text.Range) =
     if r.FileName = "" then None
     else
         Some

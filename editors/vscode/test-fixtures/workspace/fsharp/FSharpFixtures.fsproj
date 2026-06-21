@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    F# semantic-feature test fixtures for the VS Code extension e2e suite.
+
+    This project is intentionally framework-only (no external NuGet references):
+    the F# sidecar loads it via FSharpChecker.GetProjectOptionsFromCommandLineArgs
+    using framework reference assemblies from the runtime directory, so it never
+    runs `dotnet restore`. Keep it that way — adding PackageReferences here would
+    break sidecar project cracking until Ionide.ProjInfo lands.
+
+    File order matters in F#: Domain (types) → Library (logic) → Usage
+    (cross-file references) → DiagnosticsTarget (overwritten on disk by the
+    diagnostics tests). Do NOT reorder.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <!-- These fixtures are minimal F# snippets for integration tests, not
+         production code. Neutralise the strict analyzer/doc settings inherited
+         from the repo-root Directory.Build.props so a stray `dotnet build`
+         never fails on them. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <WarningsAsErrors />
+    <NoWarn>$(NoWarn);FS0025</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Remove="Microsoft.CodeAnalysis.NetAnalyzers" />
+    <PackageReference Remove="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Remove="Microsoft.CodeAnalysis.Analyzers" />
+    <PackageReference Remove="Microsoft.CodeAnalysis.BannedApiAnalyzers" />
+    <PackageReference Remove="Outcome" />
+    <PackageReference Remove="Exhaustion" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Domain.fs" />
+    <Compile Include="Library.fs" />
+    <Compile Include="Usage.fs" />
+    <Compile Include="DiagnosticsTarget.fs" />
+  </ItemGroup>
+
+</Project>

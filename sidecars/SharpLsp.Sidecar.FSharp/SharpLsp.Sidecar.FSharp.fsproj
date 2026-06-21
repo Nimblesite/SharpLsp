@@ -48,6 +48,10 @@
     <Compile Include="FSharpLinting.fs" />
     <Compile Include="FSharpCodeActions.fs" />
     <Compile Include="FSharpCodeFixes.fs" />
+    <Compile Include="FSharpCompletion.fs" />
+    <Compile Include="FSharpRename.fs" />
+    <Compile Include="FSharpCodeLens.fs" />
+    <Compile Include="FSharpHierarchy.fs" />
     <Compile Include="FSharpSidecar.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
