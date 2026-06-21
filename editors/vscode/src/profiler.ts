@@ -32,7 +32,7 @@ import { promptAndOpenDiff, detectLeaksWorkflow } from './profiler-diff.js';
 
 // ── LSP Types ─────────────────────────────────────────────────────
 
-interface DotNetProcess {
+export interface DotNetProcess {
   readonly pid: number;
   readonly name: string;
   readonly command_line: string;
@@ -72,7 +72,7 @@ interface HeapStats {
   readonly types: HeapTypeInfo[];
 }
 
-interface CounterValue {
+export interface CounterValue {
   readonly provider: string;
   readonly name: string;
   readonly display_name: string;
@@ -87,7 +87,7 @@ interface CounterUpdateParams {
 
 // ── Tree View ─────────────────────────────────────────────────────
 
-interface SessionInfo {
+export interface SessionInfo {
   readonly id: string;
   /** 'Trace' or 'Counters'. */
   readonly kind: string;
@@ -261,7 +261,7 @@ export class ProfilerTreeProvider implements vscode.TreeDataProvider<ProfilerTre
 }
 
 /** Build a tree node for an active profiling session. */
-function buildSessionNode(session: SessionInfo): ProfilerTreeItem {
+export function buildSessionNode(session: SessionInfo): ProfilerTreeItem {
   const kindLower = session.kind.toLowerCase();
   const contextValue = `profiler-session-${kindLower}`;
   const options: { sessionId: string; contextValue: string; outputPath?: string } = {
@@ -311,7 +311,7 @@ function buildSessionNode(session: SessionInfo): ProfilerTreeItem {
 }
 
 /** Build a tree node for a discovered .NET process. */
-function buildProcessNode(proc: DotNetProcess): ProfilerTreeItem {
+export function buildProcessNode(proc: DotNetProcess): ProfilerTreeItem {
   const node = new ProfilerTreeItem(
     `${proc.name} (PID ${String(proc.pid)})`,
     'process',
@@ -416,7 +416,7 @@ class CounterWebviewPanel {
 }
 
 /** Build the HTML content for the counter webview. */
-function buildCounterHtml(counters: CounterValue[]): string {
+export function buildCounterHtml(counters: CounterValue[]): string {
   const rows = counters
     .sort((a, b) => `${a.provider}/${a.name}`.localeCompare(`${b.provider}/${b.name}`))
     .map((c) => {
@@ -473,7 +473,7 @@ function buildCounterHtml(counters: CounterValue[]): string {
 </html>`;
 }
 
-function formatCounterValue(value: number, unit: string): string {
+export function formatCounterValue(value: number, unit: string): string {
   const u = unit.toLowerCase();
   if (u === 'bytes' || u.includes('byte')) {
     return formatBytes(value);
@@ -482,7 +482,7 @@ function formatCounterValue(value: number, unit: string): string {
   return value.toFixed(2);
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -1128,7 +1128,7 @@ async function showHeapStats(stats: HeapStats): Promise<void> {
   await vscode.window.showTextDocument(doc, { preview: true });
 }
 
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${String(bytes)} B`;
   const kb = bytes / 1024;
   if (kb < 1024) return `${kb.toFixed(1)} KB`;
@@ -1136,7 +1136,7 @@ function formatBytes(bytes: number): string {
   return `${mb.toFixed(1)} MB`;
 }
 
-function formatDuration(ms: number): string {
+export function formatDuration(ms: number): string {
   if (ms < 1000) return `${String(ms)}ms`;
   const seconds = ms / 1000;
   if (seconds < 60) return `${seconds.toFixed(1)}s`;
