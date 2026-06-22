@@ -135,6 +135,14 @@ type DiagnosticResult =
       [<Key(6)>] Severity: string
       [<Key(7)>] Code: string }
 
+/// `analyzers/configure` request: analyzer flags the host reads from
+/// `sharplsp.toml` `[analyzers]` and pushes to the sidecar after `workspace/open`.
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type AnalyzerConfigRequest =
+    { [<Key(0)>] DeadCode: bool
+      [<Key(1)>] Monorepo: bool }
+
 // ── Formatting Preview Types ────────────────────────────────────
 
 [<MessagePackObject(AllowPrivate = true)>]

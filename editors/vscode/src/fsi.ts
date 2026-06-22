@@ -2,6 +2,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { info } from './log';
+import * as config from './config.js';
+import * as state from './state.js';
+
+const FSI_TERMINAL_NAME = 'F# Interactive';
 
 let fsiTerminal: vscode.Terminal | undefined;
 
@@ -10,6 +14,54 @@ export function isFSharpSourceDocument(
   document: vscode.TextDocument | undefined,
 ): document is vscode.TextDocument {
   return document?.uri.fsPath.endsWith('.fs') === true;
+}
+
+/** VS Code terminal options for launching an F# Interactive session. */
+export interface FsiTerminalOptions {
+  readonly name: string;
+  readonly shellPath: string;
+  readonly shellArgs: readonly string[];
+}
+
+/**
+ * Build the terminal options for an F# Interactive session.
+ *
+ * When the .NET 10 SDK was acquired off-`$PATH` — e.g. via the .NET Install
+ * Tool on a machine that previously had only the .NET 9 SDK (see
+ * [DIST-RUNTIME-ACQUIRE]) — the bare `dotnet` command is not resolvable, so
+ * FSI must launch through the resolved SDK executable. `dotnetExecutable` is
+ * that absolute path; pass `undefined`/empty to fall back to `dotnet` on
+ * `$PATH`. `extraArgs` follow the `fsi` verb (Ionide's `fsiExtraParameters`).
+ */
+export function fsiTerminalOptions(
+  dotnetExecutable: string | undefined,
+  extraArgs: readonly string[],
+): FsiTerminalOptions {
+  const shellPath =
+    dotnetExecutable !== undefined && dotnetExecutable !== '' ? dotnetExecutable : 'dotnet';
+  return {
+    name: FSI_TERMINAL_NAME,
+    shellPath,
+    shellArgs: ['fsi', ...extraArgs],
+  };
+}
+
+/** Create a fresh FSI terminal using the acquired SDK + configured args. */
+function createFsiTerminal(): vscode.Terminal {
+  const options = fsiTerminalOptions(state.dotnetPath.value, config.fsiExtraArgs());
+  return vscode.window.createTerminal({
+    name: options.name,
+    shellPath: options.shellPath,
+    shellArgs: [...options.shellArgs],
+  });
+}
+
+/** Return the live FSI terminal, creating one if none is running. */
+function ensureFsiTerminal(): vscode.Terminal {
+  if (fsiTerminal === undefined || fsiTerminal.exitStatus !== undefined) {
+    fsiTerminal = createFsiTerminal();
+  }
+  return fsiTerminal;
 }
 
 /** Start F# Interactive and optionally send selected text. */
@@ -25,16 +77,9 @@ function sendToFsi(): void {
     ? editor.document.lineAt(selection.active.line).text
     : editor.document.getText(selection);
 
-  if (fsiTerminal === undefined || fsiTerminal.exitStatus !== undefined) {
-    fsiTerminal = vscode.window.createTerminal({
-      name: 'F# Interactive',
-      shellPath: 'dotnet',
-      shellArgs: ['fsi'],
-    });
-  }
-
-  fsiTerminal.show(true);
-  fsiTerminal.sendText(text + ';;');
+  const terminal = ensureFsiTerminal();
+  terminal.show(true);
+  terminal.sendText(text + ';;');
   info(`Sent to FSI: ${text.substring(0, 50)}...`);
 }
 
@@ -92,16 +137,9 @@ function sendFileToFsi(): void {
     return;
   }
 
-  if (fsiTerminal === undefined || fsiTerminal.exitStatus !== undefined) {
-    fsiTerminal = vscode.window.createTerminal({
-      name: 'F# Interactive',
-      shellPath: 'dotnet',
-      shellArgs: ['fsi'],
-    });
-  }
-
-  fsiTerminal.show(true);
-  fsiTerminal.sendText(`#load @"${editor.document.uri.fsPath}";;`);
+  const terminal = ensureFsiTerminal();
+  terminal.show(true);
+  terminal.sendText(`#load @"${editor.document.uri.fsPath}";;`);
   info(`Loaded ${editor.document.fileName} in FSI`);
 }
 
@@ -111,11 +149,7 @@ function startFsi(): void {
     fsiTerminal.dispose();
     fsiTerminal = undefined;
   }
-  fsiTerminal = vscode.window.createTerminal({
-    name: 'F# Interactive',
-    shellPath: 'dotnet',
-    shellArgs: ['fsi'],
-  });
+  fsiTerminal = createFsiTerminal();
   fsiTerminal.show();
   info('Started fresh FSI session');
 }

@@ -86,13 +86,13 @@ mod tests {
 
     #[test]
     fn get_returns_none_for_a_missing_key() {
-        let cache: TtlCache<i32> = TtlCache::new(Duration::from_secs(60));
+        let cache: TtlCache<i32> = TtlCache::new(Duration::from_mins(1));
         assert_eq!(cache.get("absent"), None);
     }
 
     #[test]
     fn get_returns_a_fresh_value() {
-        let cache = TtlCache::new(Duration::from_secs(60));
+        let cache = TtlCache::new(Duration::from_mins(1));
         cache.insert("k".to_string(), 7);
         assert_eq!(cache.get("k"), Some(7));
     }

@@ -221,6 +221,7 @@ public sealed class EdgeCaseEndToEndTests(CSharpSidecarFixture fixture)
     [InlineData("textDocument/prepareRename")]
     [InlineData("textDocument/rename")]
     [InlineData("project/unusedPackages")]
+    [InlineData("analyzers/configure")]
     public async Task Handler_with_malformed_payload_returns_error_and_survives(string method)
     {
         var response = await fixture.SendAsync(method, [0xC1]);

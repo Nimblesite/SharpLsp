@@ -11,6 +11,7 @@
   "setting.server.extraArgs": "Extra arguments passed to the `sharplsp` process.",
   "setting.trace.server": "Trace LSP communication between VS Code and the SharpLsp server.",
   "setting.logging.level": "Log level for the SharpLsp server (maps to `RUST_LOG`).",
+  "setting.fsi.extraArgs": "Extra arguments passed to `dotnet fsi` when starting F# Interactive (e.g. `--define:DEBUG`, `--use:setup.fsx`). Honoured only in trusted workspaces.",
   "setting.debug.netcoredbgPath": "Path to netcoredbg executable. Leave empty for auto-detection.",
   "setting.inlayHints.parameterNames": "Show parameter name hints in method calls.",
   "setting.inlayHints.typeInference": "Show type inference hints for var declarations and lambdas.",

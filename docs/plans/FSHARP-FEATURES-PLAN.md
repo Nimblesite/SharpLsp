@@ -103,6 +103,35 @@ scanning project entities for any whose base type or interfaces include the targ
 - **Cross-language hierarchies** — F#↔C# call/type hierarchy edges require a unified
   symbol index; both sidecars stay single-language for now.
 
+## Analyzers & diagnostics — FSAC parity + beyond
+
+Implemented in [FSharpAnalyzers.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpAnalyzers.fs),
+merged into the `workspace/diagnostics` handler
+([FSharpSidecar.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpSidecar.fs)), configured
+by the host via `analyzers/configure`. Full design in
+[DIAGNOSTICS-STATIC-ANALYZERS-SPEC](../specs/DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md).
+
+| Analyzer | Code | FSAC has it? | SharpLsp |
+|---|---|---|---|
+| Unused `open` detection | `SLSPF0102` | ✅ | ✅ |
+| Simplify name / redundant qualifier | `SLSPF0103` | ✅ | ✅ |
+| Unused symbol detection | `SLSPF0101` | ✅ (file-local) | ✅ **project-wide** |
+| **Monorepo dead-code = error** | `SLSPF0101` | ❌ | ✅ **(beyond FSAC)** [ANALYZERS-DEADCODE-SEVERITY] |
+
+The monorepo dead-code gate ([ANALYZERS-MONOREPO-GATE], [ANALYZERS-CONFIG-IMPL]) is
+the headline differentiator: when `[analyzers] monorepo = true`, an unreferenced
+public symbol is a hard **error** (the repo is the whole world), which no FSAC/Ionide
+rule offers. Private/internal dead code is reported even outside monorepo mode.
+
+- [x] [FS-ANALYZER-DEADCODE] monorepo dead-code (`GetAllUsesOfAllSymbols`, config-gated severity)
+- [x] [FS-ANALYZER-UNUSEDOPEN] unused `open` detection (FCS `UnusedOpens`)
+- [x] [FS-ANALYZER-SIMPLIFYNAME] simplify-name (FCS `SimplifyNames`)
+- [x] e2e + unit coverage (dead-code fixture, unused-open fixture, pure-helper unit tests)
+- [x] C# parity: Roslyn `SymbolFinder` monorepo dead-code (`SLSPC0101`) + `analyzers/configure`
+      ([DeadCodeAnalyzer.cs](../../sidecars/SharpLsp.Sidecar.CSharp/Workspace/DeadCodeAnalyzer.cs),
+      5 e2e tests; same `[analyzers]` config flows to both sidecars from the host)
+- [ ] code fixes: remove-unused-open, simplify-name rewrite, safe-delete dead symbol
+
 ## Pre-existing backlog (unchanged)
 
 - [ ] Ionide.ProjInfo integration for project cracking (currently manual `.fsproj`

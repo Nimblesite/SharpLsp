@@ -49,6 +49,25 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("textDocument/prepareRename", HandlePrepareRenameAsync);
         Register("textDocument/rename", HandleRenameAsync);
         Register("project/unusedPackages", HandleUnusedPackagesAsync);
+        Register("analyzers/configure", HandleConfigureAnalyzersAsync);
+    }
+
+    private Task<ByteResult> HandleConfigureAnalyzersAsync(byte[] payload, CancellationToken ct)
+    {
+        try
+        {
+            var request = MessagePackSerializer.Deserialize<AnalyzerConfigRequest>(
+                payload,
+                cancellationToken: ct
+            );
+            _workspace.ConfigureAnalyzers(request.DeadCode, request.Monorepo);
+            var bytes = MessagePackSerializer.Serialize("ok", cancellationToken: ct);
+            return Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(bytes));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(ByteResult.Failure(ex.Message));
+        }
     }
 
     private readonly WorkspaceManager _workspace = new();

@@ -51,6 +51,7 @@
         "sharplsp.csharpSidecarPath",
         "sharplsp.fsharpSidecarPath",
         "sharplsp.server.extraArgs",
+        "sharplsp.fsi.extraArgs",
         "sharplsp.debug.netcoredbgPath"
       ]
     }
@@ -142,6 +143,16 @@
           "markdownDescription": "%setting.logging.level%",
           "scope": "window",
           "order": 5
+        },
+        "sharplsp.fsi.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "%setting.fsi.extraArgs%",
+          "scope": "machine-overridable",
+          "order": 18
         },
         "sharplsp.debug.netcoredbgPath": {
           "type": "string",

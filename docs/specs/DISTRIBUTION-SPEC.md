@@ -22,26 +22,27 @@ All three are verified by Shipwright on every VS Code activation via `activation
 
 ## [DIST-RUNTIME-ACQUIRE]
 
-The sidecars are framework-dependent .NET assemblies. They require .NET 10 at run time. SharpLsp acquires this runtime automatically via Microsoft's [`ms-dotnettools.vscode-dotnet-runtime`](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.vscode-dotnet-runtime) extension (the .NET Install Tool) — the same mechanism used by C# Dev Kit, the C# extension, .NET MAUI, Unity, CMake, and Bicep.
+The sidecars are framework-dependent .NET assemblies that target `net10.0`. They require a .NET 10 **SDK** — not merely a runtime — because the C# sidecar runs an in-process MSBuild design-time build and locates MSBuild via `MSBuildLocator.QueryVisualStudioInstances()` (see `sidecars/SharpLsp.Sidecar.CSharp/MSBuildInstanceSelector.cs`), which **only enumerates installed SDKs**. A machine with a runtime alone — or with only an older SDK such as the .NET 9 SDK — has no MSBuild whose Roslyn matches the bundled `Microsoft.CodeAnalysis`, so every project load fails (`FUSION_E_REF_DEF_MISMATCH`) or MSBuild cannot be located at all. SharpLsp therefore acquires the **SDK** automatically via Microsoft's [`ms-dotnettools.vscode-dotnet-runtime`](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.vscode-dotnet-runtime) extension (the .NET Install Tool) — the same mechanism used by C# Dev Kit, the C# extension, .NET MAUI, Unity, CMake, and Bicep.
 
-> **Reference — how other extensions do this.** The .NET Install Tool's own README states it "provides a unified way for other extensions like the C# and C# Dev Kit extensions to install local versions of the .NET Runtime." C# Dev Kit ([`ms-dotnettools.csdevkit`](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit)) declares it via `extensionDependencies` in its `package.json` — verified by the C# Dev Kit Marketplace listing showing `.NET Install Tool` as a prominent extension dependency. Authoritative API documentation lives at <https://github.com/dotnet/vscode-dotnet-runtime/blob/main/Documentation/commands.md>. SharpLsp follows this exact pattern — there is no Anthropic / Nimblesite-specific mechanism here, and any future maintainer asking "how do other VS Code extensions install .NET silently?" should land on this section and the linked docs.
+> **Reference — how other extensions do this.** The .NET Install Tool exposes `dotnet.acquire` (local *runtime*), `dotnet.acquireGlobalSDK` (system-wide *SDK*), and `dotnet.findPath` (discover an existing install). C# Dev Kit ([`ms-dotnettools.csdevkit`](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit)) declares the tool via `extensionDependencies` in its `package.json`. Authoritative API documentation lives at <https://github.com/dotnet/vscode-dotnet-runtime/blob/main/Documentation/commands.md>. SharpLsp follows this exact pattern — there is no Anthropic / Nimblesite-specific mechanism here, and any future maintainer asking "how do other VS Code extensions install .NET silently?" should land on this section and the linked docs.
 
 **Hard rules:**
 
 1. SharpLsp's [editors/vscode/package.json](../../editors/vscode/package.json) MUST declare `"extensionDependencies": ["ms-dotnettools.vscode-dotnet-runtime"]`. VS Code installs declared dependencies silently when SharpLsp is installed — no user prompt.
-2. On every activation SharpLsp MUST call the `dotnet.acquire` command exposed by the .NET Install Tool with the parameter shape mandated in [DIST-API-PARAMETERS]. The command returns `{ dotnetPath: string }` pointing at a managed `dotnet` executable in per-user `globalStorage`. No admin/UAC/sudo. The runtime auto-updates patches every 24 h.
-3. Before `dotnet.acquire`, SharpLsp MAY call `dotnet.findPath` with `versionSpecRequirement: 'greater_than_or_equal'` to skip acquisition when the user already has a compatible runtime. The path returned by either call is the runtime SharpLsp uses.
-4. SharpLsp MUST set `DOTNET_ROOT` (the directory of `dotnetPath`) on the environment passed to the Rust LSP host so all spawned sidecars find that runtime.
+2. SharpLsp MUST explicitly activate the .NET Install Tool extension (`vscode.extensions.getExtension(...).activate()`) before invoking its commands. `extensionDependencies` activates it first, but the explicit await turns a missing/disabled dependency into a clear `[DIST-FAILURE-UX]` message instead of an opaque "command `dotnet.findPath` not found".
+3. On every activation SharpLsp MUST call the `dotnet.acquireGlobalSDK` command exposed by the .NET Install Tool with the parameter shape mandated in [DIST-API-PARAMETERS]. The command returns `{ dotnetPath: string }` pointing at the `dotnet` executable of a system-wide SDK install. A global SDK install runs the platform installer and **may prompt for elevation** — that UI belongs to the .NET Install Tool, and is the unavoidable cost of providing MSBuild; SharpLsp never shows the elevation prompt itself.
+4. Before `dotnet.acquireGlobalSDK`, SharpLsp MUST call `dotnet.findPath` with `mode: 'sdk'` and `versionSpecRequirement: 'greater_than_or_equal'` to skip acquisition when the user already has a compatible SDK (>= 10.0). The path returned by either call is the SDK SharpLsp uses.
+5. SharpLsp MUST set `DOTNET_ROOT` (the directory of `dotnetPath`) on the environment passed to the Rust LSP host so all spawned sidecars run on that SDK's runtime and so `MSBuildLocator` finds that SDK's MSBuild.
 
-**UX during acquisition — inform, never ask:**
+**UX during acquisition — inform, never ask (SharpLsp's own UI):**
 
-- A non-interactive progress notification MUST appear: `vscode.window.withProgress({ location: vscode.window.ProgressLocation.Notification, title: 'SharpLsp: Installing .NET 10 runtime', cancellable: false }, ...)`.
+- A non-interactive progress notification MUST appear: `vscode.window.withProgress({ location: vscode.window.ProgressLocation.Notification, title: 'SharpLsp: Installing .NET 10 SDK', cancellable: false }, ...)`.
 - The `SharpLspStatusBar` MUST indicate the acquisition is in flight.
-- Neither shows buttons, modals, or any UI that requires user action. No prompt, no terminal, no UAC.
+- SharpLsp's own UI shows no buttons or modals requiring action. (The OS elevation prompt raised by a global SDK installer is the .NET Install Tool's UI, not SharpLsp's.)
 
-**Failure path:** Surface per [DIST-FAILURE-UX]. Activation enters a degraded state and registers a `SharpLsp: Retry .NET acquisition` command. Activation MUST NOT crash the extension host or block other extensions.
+**Failure path:** Surface per [DIST-FAILURE-UX]. The notification MUST name the .NET 10 **SDK** in plain language. Activation enters a degraded state and registers a `SharpLsp: Retry .NET acquisition` command. Activation MUST NOT crash the extension host or block other extensions.
 
-Shipwright continues to verify sidecar startup via `verifyStartup: true`. With `DOTNET_ROOT` set correctly, the apphost finds the managed runtime and the version probe succeeds.
+Shipwright continues to verify sidecar startup via `verifyStartup: true`. With `DOTNET_ROOT` pointed at the SDK, the apphost finds the runtime, MSBuild loads, and the version probe succeeds.
 
 ## [DIST-API-PARAMETERS]
 
@@ -50,11 +51,14 @@ Every call SharpLsp makes to the .NET Install Tool MUST include all four require
 ```ts
 {
   version: '10.0',                     // major.minor only — the docs require this exact format
-  mode: 'runtime',                     // 'runtime' | 'sdk' | 'aspnetcore'
+  mode: 'sdk',                         // 'runtime' | 'sdk' | 'aspnetcore' — SharpLsp needs 'sdk' for MSBuild
   architecture: dotnetArchitecture(),  // 'x64' | 'arm64' | 'x86' — derived from process.arch
   requestingExtensionId: 'nimblesite.sharplsp',
+  installType: 'global',               // required by dotnet.acquireGlobalSDK; omit for dotnet.findPath
 }
 ```
+
+`dotnet.findPath` takes the same four required fields nested under `acquireContext` (no `installType`), plus `versionSpecRequirement: 'greater_than_or_equal'`. `dotnet.acquireGlobalSDK` takes them flat, plus `installType: 'global'`.
 
 `architecture` is derived from Node's `process.arch` and mapped as: `x64` → `x64`, `arm64` → `arm64`, `ia32` → `x86`, default → `x64`. This mapping lives in `editors/vscode/src/dotnetRuntime.ts`.
 
@@ -84,7 +88,7 @@ The first v0.1.0 release threw out of `activate()` when bundled binaries were mi
 **Implementation reference:**
 - `editors/vscode/src/result.ts` — `Result<T, E>`, `ok`, `err`.
 - `editors/vscode/src/extension.ts` — outer `activate()` catch surfaces the toast; inner `activateInner()` step paths return early with toast + degraded API instead of throwing.
-- `editors/vscode/src/dotnetRuntime.ts` — `acquireDotnet10` returns `Result<string, string>`; the caller pattern-matches.
+- `editors/vscode/src/dotnetRuntime.ts` — `acquireDotnet10Sdk` returns `Result<string, string>`; the caller pattern-matches.
 
 ## [DIST-CLEAN-OUTPUT]
 
@@ -108,7 +112,7 @@ The first releases piped the host's colorized `tracing` output and each sidecar'
 
 ## [DIST-VSIX-MODEL]
 
-The VSIX is self-contained. A user who installs the extension gets everything they need with zero additional installation steps beyond the .NET 10 runtime (which is acquired automatically per [DIST-RUNTIME-ACQUIRE]).
+The VSIX is self-contained. A user who installs the extension gets everything they need with zero additional installation steps beyond the .NET 10 SDK (which is acquired automatically per [DIST-RUNTIME-ACQUIRE]).
 
 - `sharplsp` — native Rust binary, pre-built per platform, bundled at `bin/<platform>/`
 - `sharplsp-sidecar-csharp` — framework-dependent .NET assembly, bundled at `bin/all/`
@@ -221,9 +225,9 @@ The VS Code extension uses `@nimblesite/shipwright-vscode` (`activateDeploymentT
 1. **Never hand-roll binary resolution** — use `activateDeploymentToolkit` exclusively.
 2. **Never download binaries over HTTPS** — all binaries ship in the VSIX, except .NET 10 itself which is acquired via the .NET Install Tool extension (see [DIST-RUNTIME-ACQUIRE]).
 3. **Never treat any sidecar as optional** — both sidecars are required, both crash activation if missing.
-4. **Surface every failure per [DIST-FAILURE-UX]** if any component returns `status: "error"`. The .NET 10 runtime is NOT a bundled component; failure to acquire it enters degraded mode per [DIST-RUNTIME-ACQUIRE].
+4. **Surface every failure per [DIST-FAILURE-UX]** if any component returns `status: "error"`. The .NET 10 SDK is NOT a bundled component; failure to acquire it enters degraded mode per [DIST-RUNTIME-ACQUIRE].
 5. **Pass the Shipwright-resolved path** to `LanguageClient` — never hardcode a binary path.
-6. **Acquire .NET 10 at activation start** via `dotnet.acquire` from the .NET Install Tool extension (see [DIST-RUNTIME-ACQUIRE]). Show a non-interactive progress notification + status-bar spinner. Never prompt, never block on user action.
+6. **Acquire the .NET 10 SDK at activation start** via `dotnet.acquireGlobalSDK` from the .NET Install Tool extension (see [DIST-RUNTIME-ACQUIRE]). Show a non-interactive progress notification + status-bar spinner. SharpLsp's own UI never prompts or blocks on user action.
 7. **Use `Result<T, E>` everywhere** per [DIST-FAILURE-UX]. No `throw` inside extension code; no unhandled rejections out of `activate()`.
 
 ## [DIST-PATH-INSTALL]

@@ -131,7 +131,26 @@ internal sealed partial class WorkspaceManager : IDisposable
         }
     }
 
-    /// <summary>Get compiler diagnostics for a file.</summary>
+    private bool _deadCodeEnabled;
+    private bool _monorepo;
+
+    /// <summary>
+    /// Configure the static analyzers from the host's <c>analyzers/configure</c>
+    /// push ([ANALYZERS-CONFIG-IMPL]). Flags persist across workspace re-opens.
+    /// Defaults are off so direct test construction never gets dead-code diagnostics
+    /// unless explicitly enabled; the host always configures in production.
+    /// </summary>
+    public void ConfigureAnalyzers(bool deadCode, bool monorepo)
+    {
+        _deadCodeEnabled = deadCode;
+        _monorepo = monorepo;
+    }
+
+    /// <summary>
+    /// Get diagnostics for a file: FCS-style compiler diagnostics plus, when the
+    /// dead-code analyzer is enabled, project-wide unused-symbol diagnostics
+    /// (`SLSPC0101`, [ANALYZERS-UNUSED-PUBLIC]).
+    /// </summary>
     public async Task<DiagnosticsResult> GetDiagnosticsAsync(
         string filePath,
         CancellationToken ct = default
@@ -146,11 +165,21 @@ internal sealed partial class WorkspaceManager : IDisposable
             }
 
             var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
-            return model is null
-                ? new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([])
-                : new DiagnosticsResult.Ok<List<DiagnosticResult>, string>(
-                    MapDiagnostics(filePath, model, ct)
-                );
+            if (model is null)
+            {
+                return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([]);
+            }
+
+            var diagnostics = MapDiagnostics(filePath, model, ct);
+            if (_deadCodeEnabled && _solution is not null)
+            {
+                var dead = await DeadCodeAnalyzer
+                    .AnalyzeAsync(document, _solution, _monorepo, ct)
+                    .ConfigureAwait(false);
+                diagnostics.AddRange(dead);
+            }
+
+            return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>(diagnostics);
         }
         catch (Exception ex)
         {

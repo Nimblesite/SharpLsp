@@ -813,8 +813,12 @@ mod tests {
         }
     }
 
-    fn folder(name: &str, path: &str, parent_path: Option<&str>, parent_name: Option<&str>)
-        -> SolutionFolderEntry {
+    fn folder(
+        name: &str,
+        path: &str,
+        parent_path: Option<&str>,
+        parent_name: Option<&str>,
+    ) -> SolutionFolderEntry {
         SolutionFolderEntry {
             name: name.to_string(),
             path: path.to_string(),
@@ -857,7 +861,10 @@ mod tests {
     fn parent_folder_name_resolves_via_folder_path() {
         let folders = vec![folder("src", "/src/", None, None)];
         let entry = project("App", "/App.csproj", "", None, Some("/src/"), 0);
-        assert_eq!(parent_folder_name(&entry, &folders), Some("src".to_string()));
+        assert_eq!(
+            parent_folder_name(&entry, &folders),
+            Some("src".to_string())
+        );
     }
 
     #[test]
@@ -902,9 +909,37 @@ mod tests {
 
     #[test]
     fn is_dotnet_project_detects_by_path_and_by_type_marker() {
-        assert!(is_dotnet_project(&project("A", "/A.csproj", "", None, None, 0)));
-        assert!(is_dotnet_project(&project("B", "/B.fsproj", "", None, None, 0)));
-        assert!(is_dotnet_project(&project("C", "/C.unknown", ".csproj", None, None, 0)));
-        assert!(!is_dotnet_project(&project("D", "/D.vcxproj", "native", None, None, 0)));
+        assert!(is_dotnet_project(&project(
+            "A",
+            "/A.csproj",
+            "",
+            None,
+            None,
+            0
+        )));
+        assert!(is_dotnet_project(&project(
+            "B",
+            "/B.fsproj",
+            "",
+            None,
+            None,
+            0
+        )));
+        assert!(is_dotnet_project(&project(
+            "C",
+            "/C.unknown",
+            ".csproj",
+            None,
+            None,
+            0
+        )));
+        assert!(!is_dotnet_project(&project(
+            "D",
+            "/D.vcxproj",
+            "native",
+            None,
+            None,
+            0
+        )));
     }
 }

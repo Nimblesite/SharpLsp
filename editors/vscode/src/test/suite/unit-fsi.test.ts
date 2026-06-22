@@ -236,6 +236,56 @@ function fakeDoc(options: FakeDocOptions): vscode.TextDocument {
   } as unknown as vscode.TextDocument;
 }
 
+suite('FSI Module — fsiTerminalOptions()', () => {
+  test('falls back to bare "dotnet" on PATH when no SDK path is known', () => {
+    const opts = fsi.fsiTerminalOptions(undefined, []);
+    assert.strictEqual(opts.shellPath, 'dotnet');
+  });
+
+  test('an empty SDK path also falls back to bare "dotnet"', () => {
+    const opts = fsi.fsiTerminalOptions('', []);
+    assert.strictEqual(opts.shellPath, 'dotnet');
+  });
+
+  test('uses the resolved SDK dotnet executable when provided (off-PATH install)', () => {
+    // The exact case after an off-PATH SDK install via the .NET Install Tool.
+    const opts = fsi.fsiTerminalOptions('/usr/share/dotnet/dotnet', []);
+    assert.strictEqual(opts.shellPath, '/usr/share/dotnet/dotnet');
+  });
+
+  test('a Windows SDK path is used verbatim as the shell path', () => {
+    const opts = fsi.fsiTerminalOptions('C:\\Program Files\\dotnet\\dotnet.exe', []);
+    assert.strictEqual(opts.shellPath, 'C:\\Program Files\\dotnet\\dotnet.exe');
+  });
+
+  test('shellArgs always starts with the "fsi" verb', () => {
+    const opts = fsi.fsiTerminalOptions(undefined, []);
+    assert.deepStrictEqual([...opts.shellArgs], ['fsi']);
+  });
+
+  test('extra args follow the "fsi" verb in order', () => {
+    const opts = fsi.fsiTerminalOptions('/x/dotnet', ['--define:DEBUG', '--use:setup.fsx']);
+    assert.deepStrictEqual([...opts.shellArgs], ['fsi', '--define:DEBUG', '--use:setup.fsx']);
+  });
+
+  test('the terminal name is always "F# Interactive"', () => {
+    assert.strictEqual(fsi.fsiTerminalOptions('/x/dotnet', ['--a']).name, 'F# Interactive');
+  });
+
+  test("does not mutate the caller's extraArgs array", () => {
+    const extra = ['--define:DEBUG'];
+    const opts = fsi.fsiTerminalOptions(undefined, extra);
+    assert.strictEqual(extra.length, 1, 'input array must not be mutated');
+    assert.notStrictEqual(opts.shellArgs, extra, 'returns a fresh args array');
+  });
+
+  test('the SDK path is used together with extra args (combined case)', () => {
+    const opts = fsi.fsiTerminalOptions('/usr/share/dotnet/dotnet', ['--readline-']);
+    assert.strictEqual(opts.shellPath, '/usr/share/dotnet/dotnet');
+    assert.deepStrictEqual([...opts.shellArgs], ['fsi', '--readline-']);
+  });
+});
+
 suite('FSI Module — isFSharpSourceDocument()', () => {
   test('a .fs file is recognized as an F# source document', () => {
     assert.strictEqual(fsi.isFSharpSourceDocument(fakeDoc({ fsPath: '/tmp/Program.fs' })), true);

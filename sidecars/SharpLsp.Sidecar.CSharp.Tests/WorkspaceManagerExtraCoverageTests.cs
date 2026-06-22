@@ -395,9 +395,7 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
 
         // `Resource : IDisposable` — IDisposable is metadata-only (no source
         // location), so it is dropped; the call still succeeds with no error.
-        var items = await Unwrapped(
-            manager.GetSupertypesAsync(_sourcePath, line, character)
-        );
+        var items = await Unwrapped(manager.GetSupertypesAsync(_sourcePath, line, character));
 
         Assert.DoesNotContain(items, i => i.Name == "IDisposable");
     }
@@ -489,7 +487,9 @@ public sealed class WorkspaceManagerExtraCoverageTests : IDisposable
             Unwrap(await manager.GetDefinitionAsync(_sourcePath, line, character)).Locations
         );
         Assert.Empty(
-            Unwrap(await manager.GetDocumentHighlightsAsync(_sourcePath, line, character)).Highlights
+            Unwrap(
+                await manager.GetDocumentHighlightsAsync(_sourcePath, line, character)
+            ).Highlights
         );
         Assert.Empty(await Unwrapped(manager.GetIncomingCallsAsync(_sourcePath, line, character)));
         Assert.Empty(await Unwrapped(manager.GetOutgoingCallsAsync(_sourcePath, line, character)));

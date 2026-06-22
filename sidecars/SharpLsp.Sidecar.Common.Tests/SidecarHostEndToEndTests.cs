@@ -30,10 +30,7 @@ public sealed class SidecarHostEndToEndTests
                     Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(payload))
             );
             Register("boom", (_, _) => Task.FromResult(ByteResult.Failure("handler said no")));
-            Register(
-                "throw",
-                (_, _) => throw new InvalidOperationException("handler exploded")
-            );
+            Register("throw", (_, _) => throw new InvalidOperationException("handler exploded"));
         }
     }
 
@@ -66,13 +63,11 @@ public sealed class SidecarHostEndToEndTests
                 Assert.Equal("handler said no", boom.Error);
 
                 // Unknown method is rejected by the router.
-                var unknown = await RoundTripAsync(client, Request(4, "nope"))
-                    .ConfigureAwait(true);
+                var unknown = await RoundTripAsync(client, Request(4, "nope")).ConfigureAwait(true);
                 Assert.Contains("Unknown method", unknown.Error!, StringComparison.Ordinal);
 
                 // A throwing handler is caught and surfaced as an error.
-                var thrown = await RoundTripAsync(client, Request(5, "throw"))
-                    .ConfigureAwait(true);
+                var thrown = await RoundTripAsync(client, Request(5, "throw")).ConfigureAwait(true);
                 Assert.Contains("handler exploded", thrown.Error!, StringComparison.Ordinal);
 
                 // A response-shaped envelope (id, no method) is treated as a response:
@@ -156,9 +151,7 @@ public sealed class SidecarHostEndToEndTests
 
     private static async Task<Envelope> RoundTripAsync(FramedTransport client, Envelope request)
     {
-        await client
-            .WriteFrameAsync(MessagePackSerializer.Serialize(request))
-            .ConfigureAwait(true);
+        await client.WriteFrameAsync(MessagePackSerializer.Serialize(request)).ConfigureAwait(true);
         var responseBytes = await client.ReadFrameAsync().ConfigureAwait(true);
         Assert.NotNull(responseBytes);
         return MessagePackSerializer.Deserialize<Envelope>(responseBytes);

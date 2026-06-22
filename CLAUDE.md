@@ -4,7 +4,9 @@
 
 ⚠️ Don't ask the user questions — use your judgment. ⚠️ 
 
-⚠️ Don't use git. Especially critical: don't stamp yourself as coauthor on commits ⚠️ 
+⚠️ Don't use git. Especially critical: don't stamp yourself as coauthor on commits ⚠️
+
+> "Git" here means **version-control operations**: commits, branches, merges, rebases, tags, pushes — and never stamping yourself as coauthor. It does **NOT** mean GitHub. **GitHub issues are allowed and encouraged** — use the `gh` CLI to file, comment on, and manage issues for bugs and tracking. GitHub ≠ Git.
 
 SharpLsp is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
 

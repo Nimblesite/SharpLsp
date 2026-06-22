@@ -369,7 +369,7 @@ mod tests {
         assert_eq!(edit.delete_count, 0, "appending deletes nothing");
         let inserted = edit.data.as_ref().unwrap();
         assert_eq!(inserted.len(), 1, "exactly one new token is inserted");
-        assert_eq!(inserted[0].length, 4);
+        assert_eq!(inserted.first().unwrap().length, 4);
     }
 
     #[test]
@@ -382,7 +382,10 @@ mod tests {
         let edit = edits.first().unwrap();
         assert_eq!(edit.start, 0);
         assert_eq!(edit.delete_count, 5, "the whole token is deleted");
-        assert!(edit.data.is_none(), "a pure deletion carries no insert data");
+        assert!(
+            edit.data.is_none(),
+            "a pure deletion carries no insert data"
+        );
     }
 
     #[test]

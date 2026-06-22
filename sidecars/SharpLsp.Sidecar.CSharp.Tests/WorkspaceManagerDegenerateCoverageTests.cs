@@ -163,7 +163,10 @@ public sealed class WorkspaceManagerDegenerateCoverageTests : IDisposable
         // Both edits arrive before load: one targets a real document (replayed),
         // the other a path no document matches (dropped during replay).
         await manager
-            .UpdateDocumentTextAsync(_sourcePath, "namespace D;\npublic class C { public int N; }\n")
+            .UpdateDocumentTextAsync(
+                _sourcePath,
+                "namespace D;\npublic class C { public int N; }\n"
+            )
             .ConfigureAwait(true);
         await manager
             .UpdateDocumentTextAsync(Path.Combine(_root, "ghost.cs"), "namespace D; class Ghost {}")

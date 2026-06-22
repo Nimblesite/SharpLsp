@@ -115,6 +115,19 @@ public class MSBuildInstanceSelectorTests
     }
 
     [Fact]
+    public void BuildNoSdkHint_is_actionable_and_names_the_sdk_and_install_tool()
+    {
+        var hint = MSBuildInstanceSelector.BuildNoSdkHint();
+
+        Assert.Contains("ERROR", hint, StringComparison.Ordinal);
+        Assert.Contains(".NET 10", hint, StringComparison.Ordinal);
+        Assert.Contains("SDK", hint, StringComparison.Ordinal);
+        // Names the automatic remedy (VS Code) and the manual one (download link).
+        Assert.Contains(".NET Install Tool", hint, StringComparison.Ordinal);
+        Assert.Contains("dotnet.microsoft.com", hint, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WarnNoMatch_reports_the_bundled_roslyn_and_installed_sdks()
     {
         using var writer = new StringWriter();
