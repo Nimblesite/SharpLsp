@@ -185,6 +185,21 @@ internal sealed class DiagnosticResult
     public string Code { get; set; } = "";
 }
 
+/// <summary>
+/// <c>analyzers/configure</c> request: the analyzer flags the host reads from
+/// <c>sharplsp.toml</c> <c>[analyzers]</c> and pushes after <c>workspace/open</c>.
+/// Mirrors the F# sidecar's <c>AnalyzerConfigRequest</c> wire layout.
+/// </summary>
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class AnalyzerConfigRequest
+{
+    [Key(0)]
+    public bool DeadCode { get; init; }
+
+    [Key(1)]
+    public bool Monorepo { get; init; }
+}
+
 // ── Code Action Types ────────────────────────────────────────────
 
 [MessagePackObject(AllowPrivate = true)]

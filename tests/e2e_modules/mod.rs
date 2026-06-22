@@ -33,6 +33,7 @@ pub mod call_hierarchy_tests;
 pub mod code_actions_tests;
 pub mod coverage_boost;
 pub mod coverage_boost2;
+pub mod coverage_boost3;
 pub mod definition;
 pub mod definition_full_stack;
 pub mod definition_no_sidecar;

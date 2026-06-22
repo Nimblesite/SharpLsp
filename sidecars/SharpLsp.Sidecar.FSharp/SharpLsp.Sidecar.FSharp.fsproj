@@ -49,6 +49,7 @@
     <Compile Include="FSharpSymbols.fs" />
     <Compile Include="FSharpSignature.fs" />
     <Compile Include="FSharpWire.fs" />
+    <Compile Include="FSharpAnalyzers.fs" />
     <Compile Include="FSharpSidecar.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

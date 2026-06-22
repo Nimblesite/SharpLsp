@@ -56,6 +56,30 @@ Changing the monorepo gate or static analyzer settings via
 `workspace/didChangeConfiguration` bumps `global_state_version` and triggers
 `workspace/diagnostic/refresh`.
 
+### [ANALYZERS-CONFIG-IMPL] Implemented Configuration (F#)
+
+The F# sidecar gate is live. The Rust host reads an `[analyzers]` table from
+`sharplsp.toml` and pushes the flags to each sidecar via the `analyzers/configure`
+request immediately after `workspace/open` (see
+[config.rs](../../src/config.rs) `AnalyzersConfig` and
+[main.rs](../../src/main.rs) `configure_analyzers`):
+
+```toml
+[analyzers]
+# Whether the dead-code analyzer runs at all (default true).
+dead_code = true
+# Whether the workspace is the entire world. true => unused PUBLIC symbols are
+# dead-code ERRORS; false => only private/internal dead code is reported, as a
+# warning (default false).
+monorepo = false
+```
+
+`analyzers/configure` carries a positional MessagePack payload
+(`AnalyzerConfigRequest`: `[Key(0)] DeadCode`, `[Key(1)] Monorepo`). A sidecar
+keeps the flags as mutable state across re-opens. This `[analyzers]` table is the
+shipping schema; the richer `[workspace] repository_kind` / `[diagnostics.static_analyzers]`
+form above is the forward-compatible target the loader will also accept.
+
 ## [ANALYZERS-SOLUTION-SCOPE] Solution-Wide Scope
 
 Static analyzer diagnostics are IDE-level workspace diagnostics. They are
@@ -165,6 +189,34 @@ Message format:
 ```text
 Public {kind} '{symbol}' has no references in the configured monorepo.
 ```
+
+### [ANALYZERS-DEADCODE-SEVERITY] Severity (implemented, F#)
+
+By project decision the F# dead-code analyzer (`SLSPF0101`) escalates severity in
+monorepo mode — an unreferenced symbol in a declared monorepo is a hard error, not
+a hint, because nothing outside the repo can be the missing consumer:
+
+| Mode | Private/internal dead code | Public dead code |
+|---|---|---|
+| `monorepo = false` | **Warning** | not reported (assumed external API) |
+| `monorepo = true`  | **Error**   | **Error** |
+
+Reporting private/internal dead code (regardless of monorepo mode) extends beyond
+[ANALYZERS-UNUSED-PUBLIC]: a private/internal symbol can never be reached from
+outside its assembly, so its deadness is sound without the monorepo gate.
+
+### [ANALYZERS-FSAC-PARITY] File-Local Analyzers (F#, FSAC parity)
+
+The F# sidecar also runs two always-on file-local analyzers via FCS
+`EditorServices`, surfaced as `Hint` diagnostics so editors grey the range and can
+offer the matching code fix (parity with FsAutoComplete / Ionide):
+
+| Code | Source rule | Message |
+|---|---|---|
+| `SLSPF0102` | `UnusedOpens.getUnusedOpens` | `Unused 'open' statement; safe to remove.` |
+| `SLSPF0103` | `SimplifyNames.getSimplifiableNames` | `Redundant qualifier; '{name}' is sufficient here.` |
+
+These are independent of the monorepo gate and the `dead_code` flag.
 
 Diagnostics include a stable symbol identity in `Diagnostic.data` so future code
 actions can offer safe-delete, visibility reduction, or suppression insertion.

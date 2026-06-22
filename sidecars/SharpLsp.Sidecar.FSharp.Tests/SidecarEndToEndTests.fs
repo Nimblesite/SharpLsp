@@ -136,6 +136,8 @@ let createTestProject () =
     <Compile Include="Library.fs" />
     <Compile Include="Consumer.fs" />
     <Compile Include="Extra.fs" />
+    <Compile Include="Dead.fs" />
+    <Compile Include="Hints.fs" />
   </ItemGroup>
 </Project>""")
     File.WriteAllText(Path.Combine(dir, "Library.fs"), testSource)
@@ -158,6 +160,27 @@ let createTestProject () =
     File.WriteAllText(
         Path.Combine(dir, "Consumer.fs"),
         "module TestProject.Consumer\n\nopen TestProject.Library\n\nlet consumeAdd () = add 100 200\n")
+    // A self-contained file with deliberate dead code, driving the dead-code
+    // analyzer ([FS-ANALYZER-DEADCODE]). It references no Library symbols, so it
+    // never perturbs cross-file reference/rename counts:
+    //   * sharedConst  — private, referenced by every fn below → ALIVE
+    //   * deadPrivateFn — private, never used → Warning (always), Error (monorepo)
+    //   * deadPublicFn  — public,  never used → skipped (default), Error (monorepo)
+    //   * liveOne       — public,  used by liveResult → ALIVE
+    //   * liveResult    — public,  never used → skipped (default), Error (monorepo)
+    File.WriteAllText(
+        Path.Combine(dir, "Dead.fs"),
+        "module TestProject.Dead\n\n"
+        + "let private sharedConst = 7\n\n"
+        + "let private deadPrivateFn () = sharedConst + 1\n\n"
+        + "let deadPublicFn () = sharedConst + 2\n\n"
+        + "let liveOne () = sharedConst + 3\n\n"
+        + "let liveResult = liveOne ()\n")
+    // Drives the FSAC-parity file-local analyzers: an unused 'open' that nothing
+    // references → [FS-ANALYZER-UNUSEDOPEN].
+    File.WriteAllText(
+        Path.Combine(dir, "Hints.fs"),
+        "module TestProject.Hints\n\nopen System.Text\n\nlet hintValue = 1\n")
     dir
 
 /// Deserialize a MessagePack byte[] payload to the target type.
@@ -184,6 +207,16 @@ let posPayload file line char =
     MessagePackSerializer.Serialize(
         { PositionRequest.FilePath = file; Line = line; Character = char })
 
+/// Serialize an `analyzers/configure` request payload.
+let analyzerConfigPayload deadCode monorepo =
+    MessagePackSerializer.Serialize(
+        { AnalyzerConfigRequest.DeadCode = deadCode; Monorepo = monorepo })
+
+/// Dead-code diagnostics whose message names `symbol`.
+let deadCodeFor (symbol: string) (diags: DiagnosticResult array) =
+    diags
+    |> Array.filter (fun d -> d.Code = "SLSPF0101" && d.Message.Contains(symbol))
+
 /// Shared fixture: starts FSharpSidecar over IPC, loads a real workspace.
 type SidecarFixture() =
     let dir = createTestProject ()
@@ -200,6 +233,8 @@ type SidecarFixture() =
     member _.Dir = dir
     member _.Src = Path.Combine(dir, "Library.fs")
     member _.Consumer = Path.Combine(dir, "Consumer.fs")
+    member _.Dead = Path.Combine(dir, "Dead.fs")
+    member _.Hints = Path.Combine(dir, "Hints.fs")
     member _.NextId() = Interlocked.Increment(&nextId)
 
     member this.Send(meth, payload) =
@@ -447,6 +482,103 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         // Should return an array (possibly empty).
         let items = deserialize<CodeActionItemResult array>(r.Payload)
         Assert.NotNull(items)
+    }
+
+    // ── Analyzers: monorepo dead-code [FS-ANALYZER-DEADCODE] ─────
+
+    [<Fact>]
+    member _.``analyzers configure acknowledges the flags``() = task {
+        let! r = fixture.Send("analyzers/configure", analyzerConfigPayload true false)
+        Assert.Null(r.Error)
+        Assert.Equal("ok", deserialize<string>(r.Payload))
+    }
+
+    [<Fact>]
+    member _.``dead-code warns on unused private and ignores public off-monorepo``() = task {
+        // Off-monorepo: public symbols are assumed external API and not flagged;
+        // private dead code is still surfaced as a warning.
+        let! cfg = fixture.Send("analyzers/configure", analyzerConfigPayload true false)
+        Assert.Null(cfg.Error)
+        let! r = fixture.Send("workspace/diagnostics", MessagePackSerializer.Serialize(fixture.Dead))
+        Assert.Null(r.Error)
+        let diags = deserialize<DiagnosticResult array>(r.Payload)
+
+        let priv = deadCodeFor "deadPrivateFn" diags
+        Assert.Equal(1, priv.Length)
+        Assert.Equal("Warning", priv[0].Severity)
+        Assert.Equal("SLSPF0101", priv[0].Code)
+        Assert.Contains("never used", priv[0].Message)
+        Assert.Contains("in the project", priv[0].Message)
+        // The dead diagnostic points at the private binding's own declaration line.
+        Assert.True(priv[0].StartLine >= 0)
+        Assert.Contains("Dead.fs", priv[0].FilePath)
+
+        // Public deadness is suppressed without monorepo opt-in.
+        Assert.Empty(deadCodeFor "deadPublicFn" diags)
+        Assert.Empty(deadCodeFor "liveResult" diags)
+        // Live symbols are never flagged.
+        Assert.Empty(deadCodeFor "liveOne" diags)
+        Assert.Empty(deadCodeFor "sharedConst" diags)
+    }
+
+    [<Fact>]
+    member _.``monorepo mode reports unused public symbols as errors``() = task {
+        let! cfg = fixture.Send("analyzers/configure", analyzerConfigPayload true true)
+        Assert.Null(cfg.Error)
+        let! r = fixture.Send("workspace/diagnostics", MessagePackSerializer.Serialize(fixture.Dead))
+        Assert.Null(r.Error)
+        let diags = deserialize<DiagnosticResult array>(r.Payload)
+
+        // Unused public symbol is genuinely dead when the monorepo is the world.
+        let pub = deadCodeFor "deadPublicFn" diags
+        Assert.Equal(1, pub.Length)
+        Assert.Equal("Error", pub[0].Severity)
+        Assert.Contains("public", pub[0].Message)
+        Assert.Contains("monorepo", pub[0].Message)
+
+        // Private deadness escalates to an error in monorepo mode.
+        let priv = deadCodeFor "deadPrivateFn" diags
+        Assert.Equal(1, priv.Length)
+        Assert.Equal("Error", priv[0].Severity)
+
+        // The orphaned public binding is dead as well.
+        Assert.NotEmpty(deadCodeFor "liveResult" diags)
+        // But referenced symbols are still never flagged.
+        Assert.Empty(deadCodeFor "liveOne" diags)
+        Assert.Empty(deadCodeFor "sharedConst" diags)
+        // Restore default config so sibling diagnostics tests are unaffected.
+        let! _ = fixture.Send("analyzers/configure", analyzerConfigPayload true false)
+        ()
+    }
+
+    [<Fact>]
+    member _.``disabling the analyzer suppresses every dead-code diagnostic``() = task {
+        // dead_code = false must win even with monorepo = true.
+        let! cfg = fixture.Send("analyzers/configure", analyzerConfigPayload false true)
+        Assert.Null(cfg.Error)
+        let! r = fixture.Send("workspace/diagnostics", MessagePackSerializer.Serialize(fixture.Dead))
+        Assert.Null(r.Error)
+        let diags = deserialize<DiagnosticResult array>(r.Payload)
+        Assert.Empty(diags |> Array.filter (fun d -> d.Code = "SLSPF0101"))
+        // Restore default config so sibling diagnostics tests are unaffected.
+        let! _ = fixture.Send("analyzers/configure", analyzerConfigPayload true false)
+        ()
+    }
+
+    [<Fact>]
+    member _.``unused open analyzer flags a redundant open as a hint``() = task {
+        // File-local analyzers are always on, independent of the dead-code gate.
+        let! r = fixture.Send("workspace/diagnostics", MessagePackSerializer.Serialize(fixture.Hints))
+        Assert.Null(r.Error)
+        let diags = deserialize<DiagnosticResult array>(r.Payload)
+        let opens = diags |> Array.filter (fun d -> d.Code = "SLSPF0102")
+        Assert.NotEmpty(opens)
+        let o = opens[0]
+        Assert.Equal("Hint", o.Severity)
+        Assert.Contains("open", o.Message)
+        Assert.Contains("Hints.fs", o.FilePath)
+        Assert.True(o.StartLine >= 0)
+        Assert.True(o.EndCharacter >= o.StartCharacter)
     }
 
     [<Fact>]

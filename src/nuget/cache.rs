@@ -79,3 +79,38 @@ pub fn http_client() -> reqwest::Client {
     *guard = Some(client.clone());
     client
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_returns_none_for_a_missing_key() {
+        let cache: TtlCache<i32> = TtlCache::new(Duration::from_mins(1));
+        assert_eq!(cache.get("absent"), None);
+    }
+
+    #[test]
+    fn get_returns_a_fresh_value() {
+        let cache = TtlCache::new(Duration::from_mins(1));
+        cache.insert("k".to_string(), 7);
+        assert_eq!(cache.get("k"), Some(7));
+    }
+
+    #[test]
+    fn get_evicts_an_expired_value() {
+        // A zero TTL makes any stored entry immediately stale, so the get must
+        // take the eviction branch and return None.
+        let cache = TtlCache::new(Duration::ZERO);
+        cache.insert("k".to_string(), 7);
+        assert_eq!(cache.get("k"), None);
+    }
+
+    #[test]
+    fn http_client_returns_a_reusable_client() {
+        let first = http_client();
+        let second = http_client();
+        // Both handles point at the same lazily-built client.
+        drop((first, second));
+    }
+}

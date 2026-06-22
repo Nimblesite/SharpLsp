@@ -6,6 +6,12 @@
         <PackageId>SharpLsp.Sidecar.Common</PackageId>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
+        <!-- [BUILD-DEPSFILE-LOCK] (GitHub #111): this is a referenced-only library;
+             its deps.json is never read at runtime (the executable sidecars + test
+             project emit their own). Suppressing it removes the unused, lock-prone
+             artifact whose GenerateDepsFile write intermittently failed with MSB4018
+             ("deps.json ... being used by another process"). -->
+        <GenerateDependencyFile>false</GenerateDependencyFile>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <WarningLevel>9999</WarningLevel>
         <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>

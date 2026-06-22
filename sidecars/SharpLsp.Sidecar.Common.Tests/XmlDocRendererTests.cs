@@ -118,4 +118,54 @@ public sealed class XmlDocRendererTests
         var result = XmlDocRenderer.Render(xml);
         Assert.Contains("`x`", result, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Render_inline_c_element_produces_inline_code()
+    {
+        const string xml = "<doc><summary>Call <c>Dispose</c> when done.</summary></doc>";
+        var result = XmlDocRenderer.Render(xml);
+        Assert.Contains("`Dispose`", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Render_inline_code_element_produces_code_block()
+    {
+        const string xml = "<doc><summary>Like <code>var x = 1;</code></summary></doc>";
+        var result = XmlDocRenderer.Render(xml);
+        Assert.Contains("```csharp", result, StringComparison.Ordinal);
+        Assert.Contains("var x = 1;", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Render_para_element_breaks_paragraphs()
+    {
+        const string xml = "<doc><summary>First.<para/>Second.</summary></doc>";
+        var result = XmlDocRenderer.Render(xml);
+        Assert.Contains("First.", result, StringComparison.Ordinal);
+        Assert.Contains("Second.", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Render_unknown_inline_element_falls_back_to_its_text()
+    {
+        const string xml = "<doc><summary>Hello <bogus>world</bogus>.</summary></doc>";
+        var result = XmlDocRenderer.Render(xml);
+        Assert.Contains("world", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Render_see_without_cref_renders_placeholder()
+    {
+        const string xml = "<doc><summary>See <see/> for details.</summary></doc>";
+        var result = XmlDocRenderer.Render(xml);
+        Assert.Contains("`?`", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Render_example_without_code_renders_inline_text()
+    {
+        const string xml = "<doc><example>Just prose, no code.</example></doc>";
+        var result = XmlDocRenderer.Render(xml);
+        Assert.Contains("Just prose, no code.", result, StringComparison.Ordinal);
+    }
 }

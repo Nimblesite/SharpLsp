@@ -21,6 +21,8 @@ pub struct SharpLspConfig {
     pub fsharp: FSharpConfig,
     /// Diagnostics settings.
     pub diagnostics: DiagnosticsConfig,
+    /// Static analyzer settings (dead-code, monorepo gating).
+    pub analyzers: AnalyzersConfig,
     /// Profiler settings.
     pub profiler: ProfilerConfig,
 }
@@ -95,6 +97,29 @@ impl Default for DiagnosticsConfig {
             analyzers_enabled: true,
             solution_wide_analysis: true,
             project_filter: Vec::new(),
+        }
+    }
+}
+
+/// Static-analyzer configuration. Drives the novel monorepo dead-code analyzer
+/// implemented in both the F# (FCS) and C# (Roslyn) sidecars.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AnalyzersConfig {
+    /// Whether the dead-code analyzer runs at all.
+    pub dead_code: bool,
+    /// When `true`, the workspace is the entire world: a public symbol with no
+    /// uses anywhere is genuinely dead and is reported as an **error**. When
+    /// `false`, public symbols are assumed to be an external API and only
+    /// private/internal dead code is reported (as a warning).
+    pub monorepo: bool,
+}
+
+impl Default for AnalyzersConfig {
+    fn default() -> Self {
+        Self {
+            dead_code: true,
+            monorepo: false,
         }
     }
 }
@@ -181,6 +206,8 @@ mod tests {
         assert!(config.diagnostics.analyzers_enabled);
         assert!(config.diagnostics.solution_wide_analysis);
         assert!(config.diagnostics.project_filter.is_empty());
+        assert!(config.analyzers.dead_code);
+        assert!(!config.analyzers.monorepo);
         assert_eq!(config.profiler.max_concurrent_sessions, 5);
         assert_eq!(config.profiler.default_trace_duration, 30);
         assert_eq!(config.profiler.output_directory, ".sharplsp/profiles");
@@ -225,6 +252,47 @@ project_filter = ["MyApp.Core", "MyApp.Api"]
         let toml_str = r"
 [server]
 nonexistent_field = true
+";
+        let result: std::result::Result<SharpLspConfig, _> = toml::from_str(toml_str);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_analyzers_section() {
+        let toml_str = r"
+[analyzers]
+dead_code = true
+monorepo = true
+";
+        let config: SharpLspConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.analyzers.dead_code);
+        assert!(config.analyzers.monorepo);
+    }
+
+    #[test]
+    fn test_analyzers_partial_override_keeps_defaults() {
+        // Only `monorepo` set: `dead_code` must fall back to its default of true.
+        let toml_str = r"
+[analyzers]
+monorepo = true
+";
+        let config: SharpLspConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.analyzers.dead_code);
+        assert!(config.analyzers.monorepo);
+    }
+
+    #[test]
+    fn test_analyzers_defaults_when_section_absent() {
+        let config: SharpLspConfig = toml::from_str("").unwrap();
+        assert!(config.analyzers.dead_code);
+        assert!(!config.analyzers.monorepo);
+    }
+
+    #[test]
+    fn test_analyzers_unknown_field_rejected() {
+        let toml_str = r"
+[analyzers]
+bogus = true
 ";
         let result: std::result::Result<SharpLspConfig, _> = toml::from_str(toml_str);
         assert!(result.is_err());

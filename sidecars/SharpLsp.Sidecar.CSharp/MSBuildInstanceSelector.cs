@@ -46,6 +46,17 @@ internal static class MSBuildInstanceSelector
 
         var bundled = ReadBundledRoslynVersion();
         var instances = MSBuildLocator.QueryVisualStudioInstances().ToList();
+
+        if (instances.Count == 0)
+        {
+            // Runtime-only machine: the apphost ran us, but no SDK means no
+            // MSBuild. RegisterDefaults() will throw; emit an actionable hint
+            // first so the failure names the real cause and remedy.
+            diagnostics.WriteLine(BuildNoSdkHint());
+            _ = MSBuildLocator.RegisterDefaults();
+            return;
+        }
+
         var match = bundled is null ? null : SelectMatching(ToCandidates(instances), bundled);
 
         if (match is { } chosen)
@@ -56,6 +67,19 @@ internal static class MSBuildInstanceSelector
 
         WarnNoMatch(diagnostics, bundled, instances);
         _ = MSBuildLocator.RegisterDefaults();
+    }
+
+    /// <summary>
+    /// Actionable single-line hint emitted when no .NET SDK is installed at all.
+    /// SharpLsp needs the .NET 10 SDK (not just the runtime) because project
+    /// analysis runs an in-process MSBuild. See [DIST-RUNTIME-ACQUIRE].
+    /// </summary>
+    internal static string BuildNoSdkHint()
+    {
+        return "[sharplsp] ERROR: no .NET SDK found on this machine. SharpLsp requires the .NET 10 "
+            + "SDK (not just the runtime) because project analysis runs MSBuild. In VS Code the SDK "
+            + "is installed automatically via the .NET Install Tool; otherwise install it from "
+            + "https://dotnet.microsoft.com/download/dotnet/10.0.";
     }
 
     /// <summary>The newest candidate whose Roslyn equals <paramref name="bundledRoslyn"/>.</summary>

@@ -224,6 +224,7 @@ fn run_server() -> Result<()> {
         csharp_sidecar.as_ref(),
         workspace_root.as_ref(),
         Some((&sharplsp_config.diagnostics, &connection)),
+        sharplsp_config.analyzers.clone(),
         &runtime,
         Arc::clone(&vfs),
     );
@@ -231,6 +232,7 @@ fn run_server() -> Result<()> {
         fsharp_sidecar.as_ref(),
         workspace_root.as_ref(),
         None,
+        sharplsp_config.analyzers.clone(),
         &runtime,
         Arc::clone(&vfs),
     );
@@ -361,11 +363,43 @@ async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
     Ok(())
 }
 
+/// Push analyzer flags from `[analyzers]` in `sharplsp.toml` to a sidecar via
+/// `analyzers/configure`. Sidecars that do not register the method ignore it; any
+/// failure is logged and never aborts startup. The flags drive the monorepo
+/// dead-code analyzer ([FS-ANALYZER-DEADCODE]) in both the F# and C# sidecars.
+async fn configure_analyzers(sidecar: &SidecarManager, analyzers: &config::AnalyzersConfig) {
+    #[derive(serde::Serialize)]
+    struct ConfigureRequest {
+        dead_code: bool,
+        monorepo: bool,
+    }
+    let req = ConfigureRequest {
+        dead_code: analyzers.dead_code,
+        monorepo: analyzers.monorepo,
+    };
+    match rmp_serde::to_vec(&req) {
+        Ok(payload) => match sidecar.request("analyzers/configure", payload).await {
+            Ok(_) => info!(
+                "Analyzers configured for {} sidecar (dead_code={}, monorepo={})",
+                sidecar.name(),
+                analyzers.dead_code,
+                analyzers.monorepo
+            ),
+            Err(err) => warn!(
+                "analyzers/configure failed for {} sidecar: {err:#}",
+                sidecar.name()
+            ),
+        },
+        Err(err) => warn!("serialize analyzers/configure failed: {err:#}"),
+    }
+}
+
 /// Start a sidecar: open workspace, optionally trigger solution diagnostics, begin health monitoring.
 fn start_sidecar(
     sidecar: Option<&Arc<SidecarManager>>,
     workspace_root: Option<&PathBuf>,
     diagnostics_cfg: Option<(&config::DiagnosticsConfig, &Connection)>,
+    analyzers: config::AnalyzersConfig,
     runtime: &tokio::runtime::Runtime,
     vfs: Arc<Vfs>,
 ) {
@@ -381,6 +415,7 @@ fn start_sidecar(
                 error!("Failed to open workspace in sidecar: {err:#}");
                 return;
             }
+            configure_analyzers(&sc, &analyzers).await;
             if let Some((sender, project_filter)) = diag {
                 info!("Starting solution-wide diagnostics scan");
                 diagnostics::request_solution_in_background(

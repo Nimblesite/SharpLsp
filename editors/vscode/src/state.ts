@@ -79,6 +79,14 @@ export const client = new Signal<LanguageClient | undefined>(undefined);
 /** Path to the currently loaded solution file. */
 export const solutionPath = new Signal<string | undefined>(undefined);
 
+/**
+ * Absolute path to the `dotnet` executable of the acquired/located .NET 10 SDK
+ * (see [DIST-RUNTIME-ACQUIRE]). Set after activation resolves the SDK; consumed
+ * by features that spawn `dotnet` (e.g. F# Interactive) so they work even when
+ * `dotnet` is not on `$PATH` — the exact case after an off-PATH SDK install.
+ */
+export const dotnetPath = new Signal<string | undefined>(undefined);
+
 /** Current sort order for the solution explorer tree. */
 export const sortOrder = new Signal<SortOrder>(SortOrder.Alphabetical);
 

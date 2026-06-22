@@ -1,5 +1,8 @@
 using Microsoft.Build.Locator;
 
+#pragma warning disable RS1035 // Path.GetTempPath banned for analyzers — we're tests
+#pragma warning disable IDE0058 // Expression value is never used
+
 namespace SharpLsp.Sidecar.CSharp.Tests;
 
 // Implements the regression guard for the Roslyn ref/def mismatch
@@ -66,6 +69,29 @@ public class MSBuildInstanceSelectorTests
     }
 
     [Fact]
+    public void ReadRoslynVersion_returns_null_for_a_non_assembly_file()
+    {
+        // A Microsoft.CodeAnalysis.dll that exists but is not a valid PE image makes
+        // AssemblyName.GetAssemblyName throw BadImageFormatException, which the reader
+        // must swallow and report as an unknown version.
+        var root = Path.Combine(Path.GetTempPath(), $"slsp-msb-{Guid.NewGuid():N}");
+        var bincore = Path.Combine(root, "Roslyn", "bincore");
+        Directory.CreateDirectory(bincore);
+        File.WriteAllText(
+            Path.Combine(bincore, "Microsoft.CodeAnalysis.dll"),
+            "this is not a portable executable"
+        );
+        try
+        {
+            Assert.Null(MSBuildInstanceSelector.ReadRoslynVersion(root));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void ToCandidates_pairs_each_installed_sdk_with_its_roslyn_version()
     {
         var candidates = MSBuildInstanceSelector.ToCandidates(
@@ -86,6 +112,19 @@ public class MSBuildInstanceSelectorTests
         MSBuildInstanceSelector.Register(TextWriter.Null);
 
         Assert.True(MSBuildLocator.IsRegistered);
+    }
+
+    [Fact]
+    public void BuildNoSdkHint_is_actionable_and_names_the_sdk_and_install_tool()
+    {
+        var hint = MSBuildInstanceSelector.BuildNoSdkHint();
+
+        Assert.Contains("ERROR", hint, StringComparison.Ordinal);
+        Assert.Contains(".NET 10", hint, StringComparison.Ordinal);
+        Assert.Contains("SDK", hint, StringComparison.Ordinal);
+        // Names the automatic remedy (VS Code) and the manual one (download link).
+        Assert.Contains(".NET Install Tool", hint, StringComparison.Ordinal);
+        Assert.Contains("dotnet.microsoft.com", hint, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -126,5 +126,8 @@ sharplsp-zed-extension.tar.gz
 
 
 .deslop-cache/
+# Deslop report artifacts (generated locally by `deslop`, never committed).
+deslop-report.*
+deslop-*.log
 .ghissues/
 .vscode/code-navigator/

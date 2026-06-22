@@ -318,6 +318,22 @@ mod tests {
     }
 
     #[test]
+    fn extracts_indexer_expression() {
+        // A trailing `]` increments the bracket-depth tracker during the reverse
+        // scan, so the whole indexer expression is captured as the receiver.
+        let (start, expr, trigger) = extract_postfix_context("arr[0].if", 9).unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(expr, "arr[0]");
+        assert_eq!(trigger, "if");
+    }
+
+    #[test]
+    fn returns_none_when_expression_before_dot_is_empty() {
+        // A leading dot has no receiver expression, so there is nothing to expand.
+        assert!(extract_postfix_context(".if", 3).is_none());
+    }
+
+    #[test]
     fn generates_csharp_if_postfix() {
         let items = get_postfix_completions("foo.if", 0, 6, LangId::CSharp);
         assert_eq!(items.len(), 1);

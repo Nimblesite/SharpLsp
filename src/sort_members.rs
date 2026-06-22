@@ -619,4 +619,94 @@ mod tests {
         // priority functions instead (above). The category mapping is
         // verified in E2E tests.
     }
+
+    #[test]
+    fn handle_reorders_out_of_order_members_into_edits() {
+        // A class (no modifier, so the declaration starts at column 0) whose
+        // members are deliberately out of accessibility/category order. Sorting
+        // drives collect_members, member_category, access/variable name
+        // extraction, sort_member_infos, build_edits and byte_to_position.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Sample.cs");
+        let source = "class Sample\n\
+{\n\
+    private int _field;\n\
+    public void Beta() { }\n\
+    public int Alpha { get; set; }\n\
+    public Sample() { }\n\
+    private const int Max = 10;\n\
+}\n";
+        std::fs::write(&file, source).unwrap();
+
+        let params = SortMembersParams {
+            uri: format!("file://{}", file.to_string_lossy()),
+            range: SortRange {
+                start: SortPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: SortPosition {
+                    line: 7,
+                    character: 1,
+                },
+            },
+            sort_config: SortConfig {
+                hierarchy: vec![
+                    "accessibility".to_string(),
+                    "category".to_string(),
+                    "alphabetical".to_string(),
+                ],
+                accessibility_order: vec![
+                    "public".to_string(),
+                    "protected".to_string(),
+                    "internal".to_string(),
+                    "private".to_string(),
+                ],
+                category_order: vec![
+                    "const".to_string(),
+                    "field".to_string(),
+                    "constructor".to_string(),
+                    "property".to_string(),
+                    "method".to_string(),
+                ],
+            },
+        };
+
+        let response = handle(&params, &TsParsers::new()).unwrap();
+
+        assert!(
+            !response.edits.is_empty(),
+            "out-of-order members must produce reordering edits"
+        );
+    }
+
+    #[test]
+    fn handle_on_single_member_type_makes_no_edits() {
+        // Fewer than two members: nothing to reorder.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("One.cs");
+        std::fs::write(&file, "class One\n{\n    public int X;\n}\n").unwrap();
+
+        let params = SortMembersParams {
+            uri: format!("file://{}", file.to_string_lossy()),
+            range: SortRange {
+                start: SortPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: SortPosition {
+                    line: 3,
+                    character: 1,
+                },
+            },
+            sort_config: SortConfig {
+                hierarchy: vec!["accessibility".to_string()],
+                accessibility_order: vec!["public".to_string()],
+                category_order: vec!["field".to_string()],
+            },
+        };
+
+        let response = handle(&params, &TsParsers::new()).unwrap();
+        assert!(response.edits.is_empty());
+    }
 }

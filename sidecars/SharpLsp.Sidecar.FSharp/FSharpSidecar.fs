@@ -14,8 +14,17 @@ type FSharpSidecar() =
 
     let workspace = FSharpWorkspace.create ()
     let codeFixState = FSharpCodeFixes.createState ()
+    let mutable analyzerConfig = FSharpAnalyzers.AnalyzerConfig.Default
 
     do
+        // Analyzer configuration push from the host ([analyzers] in sharplsp.toml).
+        base.Register("analyzers/configure", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            try
+                let req = MessagePackSerializer.Deserialize<AnalyzerConfigRequest>(payload, cancellationToken = ct)
+                analyzerConfig <- FSharpAnalyzers.AnalyzerConfig.Create(req.DeadCode, req.Monorepo)
+                Task.FromResult<ByteResult>(Helpers.serializeOk "ok" ct)
+            with ex ->
+                Task.FromResult<ByteResult>(ByteResult.Failure(ex.Message))))
         base.Register("workspace/open", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -275,7 +284,21 @@ type FSharpSidecar() =
                                       Message = d.Message
                                       Severity = severity
                                       Code = $"FS{d.ErrorNumber:D4}" })
+                            // [FS-ANALYZER-UNUSEDOPEN]/[FS-ANALYZER-SIMPLIFYNAME]
+                            // FSAC-parity file-local analyzers (always-on hints).
+                            let! fileDiags = FSharpAnalyzers.fileAnalyzerDiagnostics check source
+                            fileDiags |> List.iter results.Add
                         | FSharp.Compiler.CodeAnalysis.FSharpCheckFileAnswer.Aborted -> ()
+                    // [FS-ANALYZER-DEADCODE] Merge project-wide dead-code diagnostics
+                    // for this file (monorepo mode promotes public deadness to errors).
+                    if workspace.IsLoaded && analyzerConfig.DeadCodeEnabled then
+                        let! proj = FSharpWorkspace.checkProject workspace
+                        match proj with
+                        | Some projResults ->
+                            let allUses = projResults.GetAllUsesOfAllSymbols()
+                            FSharpAnalyzers.deadCodeDiagnosticsForFile analyzerConfig allUses filePath
+                            |> List.iter results.Add
+                        | None -> ()
                     return Helpers.serializeOk (results.ToArray()) ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)

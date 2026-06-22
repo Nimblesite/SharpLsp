@@ -1,5 +1,7 @@
 using SharpLsp.Sidecar.Common.Ipc;
 
+#pragma warning disable RS1035 // Path.GetTempPath banned for analyzers — tests own temp fixtures
+
 namespace SharpLsp.Sidecar.Common.Tests;
 
 public sealed class IpcConnectionTests
@@ -107,6 +109,63 @@ public sealed class IpcConnectionTests
         {
             DeleteSocketFileIfPresent(socketPath);
         }
+    }
+
+#if !WINDOWS
+    [Fact]
+    public async Task CreateListener_replaces_a_stale_socket_file()
+    {
+        // A leftover file at the socket path (e.g. from a crashed prior run) must
+        // be deleted before binding, otherwise bind fails with "address in use".
+        var socketPath = IpcConnection.GenerateSocketPath($"stale-{Guid.NewGuid():N}");
+        await File.WriteAllTextAsync(socketPath, "stale").ConfigureAwait(true);
+        try
+        {
+            var listener = Assert
+                .IsType<Outcome.Result<IpcListener, string>.Ok<IpcListener, string>>(
+                    IpcConnection.CreateListener(socketPath)
+                )
+                .Value;
+            await listener.DisposeAsync().ConfigureAwait(true);
+        }
+        finally
+        {
+            DeleteSocketFileIfPresent(socketPath);
+        }
+    }
+
+    [Fact]
+    public async Task CreateListener_relocates_an_overlong_socket_path()
+    {
+        // Unix domain sockets cap paths at 108 chars; an overlong path must be
+        // transparently relocated to a hashed temp path so binding still succeeds.
+        var overlong = Path.Combine(Path.GetTempPath(), new string('a', 120) + ".sock");
+        Assert.True(overlong.Length > 107);
+
+        var listener = Assert
+            .IsType<Outcome.Result<IpcListener, string>.Ok<IpcListener, string>>(
+                IpcConnection.CreateListener(overlong)
+            )
+            .Value;
+        await listener.DisposeAsync().ConfigureAwait(true);
+    }
+#endif
+
+    [Fact]
+    public void CreateListener_unbindable_path_returns_failure()
+    {
+        // A socket path whose parent directory does not exist cannot bind; the
+        // listener factory surfaces the bind error as a structured failure.
+        var badPath = Path.Combine(
+            Path.GetTempPath(),
+            $"sharplsp-missing-{Guid.NewGuid():N}",
+            "x.sock"
+        );
+        var result = IpcConnection.CreateListener(badPath);
+        Assert.True(
+            result is Outcome.Result<IpcListener, string>.Error<IpcListener, string>,
+            "CreateListener must fail when the socket path cannot be bound"
+        );
     }
 
     [Fact]

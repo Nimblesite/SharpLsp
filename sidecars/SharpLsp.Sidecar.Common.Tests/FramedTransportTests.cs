@@ -63,4 +63,43 @@ public sealed class FramedTransportTests
         Assert.NotNull(read);
         Assert.Equal(body, read);
     }
+
+    [Fact]
+    public async Task ReadFrameAsync_returns_null_at_end_of_stream()
+    {
+        // An empty stream yields no length prefix, signalling a closed peer.
+        var transport = new FramedTransport(new MemoryStream());
+        await using var transportLease = transport.ConfigureAwait(true);
+
+        Assert.Null(await transport.ReadFrameAsync().ConfigureAwait(true));
+    }
+
+    [Fact]
+    public async Task ReadFrameAsync_returns_empty_for_a_zero_length_frame()
+    {
+        // A valid length prefix of zero is a legitimate empty payload, not EOF.
+        var prefix = new byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(prefix, 0);
+        var transport = new FramedTransport(new MemoryStream(prefix));
+        await using var transportLease = transport.ConfigureAwait(true);
+
+        var read = await transport.ReadFrameAsync().ConfigureAwait(true);
+
+        Assert.NotNull(read);
+        Assert.Empty(read!);
+    }
+
+    [Fact]
+    public async Task ReadFrameAsync_returns_null_when_payload_is_truncated()
+    {
+        // The prefix promises four bytes but only one follows; the truncated
+        // payload read hits end-of-stream and the frame is abandoned.
+        var truncated = new byte[5];
+        BinaryPrimitives.WriteUInt32LittleEndian(truncated, 4);
+        truncated[4] = 0x42;
+        var transport = new FramedTransport(new MemoryStream(truncated));
+        await using var transportLease = transport.ConfigureAwait(true);
+
+        Assert.Null(await transport.ReadFrameAsync().ConfigureAwait(true));
+    }
 }

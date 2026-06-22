@@ -11,6 +11,7 @@ export const CONFIG_SECTION = 'sharplsp';
 export const CONFIG_SERVER_PATH = 'lspPath';
 export const CONFIG_SERVER_EXTRA_ARGS = 'server.extraArgs';
 export const CONFIG_LOGGING_LEVEL = 'logging.level';
+export const CONFIG_FSI_EXTRA_ARGS = 'fsi.extraArgs';
 
 export const CMD_RESTART_SERVER = 'sharplsp.restartServer';
 export const CMD_RETRY_DOTNET_ACQUISITION = 'sharplsp.retryDotnetAcquisition';

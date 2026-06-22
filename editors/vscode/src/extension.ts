@@ -29,8 +29,9 @@ import {
   VIEW_SOLUTION_EXPLORER,
   VIEW_PROFILER,
 } from './constants.js';
-import { acquireDotnet10, showAcquireFailureNotification } from './dotnetRuntime.js';
+import { acquireDotnet10Sdk, showAcquireFailureNotification } from './dotnetRuntime.js';
 import * as client from './client.js';
+import * as sharedState from './state.js';
 import * as deps from './dependencies.js';
 import * as log from './log.js';
 import * as profiler from './profiler.js';
@@ -144,15 +145,19 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   log.info('step 10b: initProjectDepsStore');
   initProjectDepsStore(context);
 
-  log.info('step 10c: acquireDotnet10');
+  log.info('step 10c: acquireDotnet10Sdk');
   // Implements [DIST-FAILURE-UX]: Result-based; never throws.
-  const dotnetResult = await acquireDotnet10(statusBar);
+  const dotnetResult = await acquireDotnet10Sdk(statusBar);
   if (!dotnetResult.ok) {
     statusBar.setState(ServerState.Error);
     void showAcquireFailureNotification(dotnetResult.error, CMD_RETRY_DOTNET_ACQUISITION);
     return degradedApi();
   }
   const dotnetPath = dotnetResult.value;
+  // Publish the resolved SDK path so dotnet-spawning features (e.g. F#
+  // Interactive) use it even when `dotnet` is not on $PATH. See
+  // [DIST-RUNTIME-ACQUIRE].
+  sharedState.dotnetPath.value = dotnetPath;
 
   log.info('step 11: activateShipwright');
   // Implements [DIST-FAILURE-UX]: deployment-toolkit failures surface a toast
@@ -297,16 +302,17 @@ function registerCommands(context: ExtensionContext): void {
   context.subscriptions.push(
     commands.registerCommand(CMD_RETRY_DOTNET_ACQUISITION, async () => {
       if (statusBar === undefined) return;
-      log.info('Retrying .NET 10 acquisition…');
+      log.info('Retrying .NET 10 SDK acquisition…');
       // Implements [DIST-FAILURE-UX]: Result-based retry with toast on failure.
-      const retryResult = await acquireDotnet10(statusBar);
+      const retryResult = await acquireDotnet10Sdk(statusBar);
       if (!retryResult.ok) {
         await showAcquireFailureNotification(retryResult.error, CMD_RETRY_DOTNET_ACQUISITION);
         return;
       }
+      sharedState.dotnetPath.value = retryResult.value;
       const reload = 'Reload Window';
       const choice = await window.showInformationMessage(
-        'SharpLsp: .NET 10 runtime acquired. Reload the window to start the language server.',
+        'SharpLsp: .NET 10 SDK acquired. Reload the window to start the language server.',
         reload,
       );
       if (choice === reload) {

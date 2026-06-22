@@ -4,6 +4,7 @@ import {
   CONFIG_SERVER_PATH,
   CONFIG_SERVER_EXTRA_ARGS,
   CONFIG_LOGGING_LEVEL,
+  CONFIG_FSI_EXTRA_ARGS,
 } from './constants.js';
 
 function section(): ReturnType<typeof workspace.getConfiguration> {
@@ -40,6 +41,19 @@ export function serverExtraArgs(): readonly string[] {
 /** Logging level forwarded to the server as `RUST_LOG`. */
 export function loggingLevel(): string {
   return section().get<string>(CONFIG_LOGGING_LEVEL) ?? 'info';
+}
+
+/**
+ * Extra arguments passed to `dotnet fsi` when starting F# Interactive.
+ *
+ * Implements [DIST-WORKSPACE-TRUST]: these are CLI arguments applied to a
+ * spawned process, so — like `serverExtraArgs` — an untrusted workspace must
+ * not be able to inject them. `package.json` lists this key under
+ * `restrictedConfigurations`; this guard is defence-in-depth.
+ */
+export function fsiExtraArgs(): readonly string[] {
+  if (!workspace.isTrusted) return [];
+  return section().get<string[]>(CONFIG_FSI_EXTRA_ARGS) ?? [];
 }
 
 /** Whether to show parameter name inlay hints. */
