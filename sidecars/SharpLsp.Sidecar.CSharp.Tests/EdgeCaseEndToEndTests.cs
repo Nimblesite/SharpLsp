@@ -179,4 +179,67 @@ public sealed class EdgeCaseEndToEndTests(CSharpSidecarFixture fixture)
         // throws inside the handler, which must catch and reply, not crash.
         await AssertHandledGracefully(method, fixture.PosPayload(100_000, 0));
     }
+
+    // ── Malformed payloads exercise every handler's deserialize fault path ──
+
+    /// <summary>
+    /// 0xC1 is the MessagePack "never used" byte: deserializing any request DTO
+    /// from it fails, driving the <c>catch (Exception)</c> fault branch of each
+    /// handler. The sidecar must reply with a descriptive error (never a crash),
+    /// and a follow-up ping confirms the process stayed alive.
+    /// </summary>
+    [Theory]
+    [InlineData("workspace/open")]
+    [InlineData("workspace/diagnostics")]
+    [InlineData("workspace/diagnostics/all")]
+    [InlineData("solution/read")]
+    [InlineData("textDocument/didChange")]
+    [InlineData("textDocument/completion")]
+    [InlineData("completionItem/resolve")]
+    [InlineData("textDocument/hover")]
+    [InlineData("textDocument/definition")]
+    [InlineData("textDocument/typeDefinition")]
+    [InlineData("textDocument/declaration")]
+    [InlineData("textDocument/implementation")]
+    [InlineData("textDocument/references")]
+    [InlineData("textDocument/documentHighlight")]
+    [InlineData("textDocument/codeAction")]
+    [InlineData("codeAction/resolve")]
+    [InlineData("textDocument/codeLens")]
+    [InlineData("textDocument/prepareCallHierarchy")]
+    [InlineData("callHierarchy/incomingCalls")]
+    [InlineData("callHierarchy/outgoingCalls")]
+    [InlineData("textDocument/prepareTypeHierarchy")]
+    [InlineData("typeHierarchy/supertypes")]
+    [InlineData("typeHierarchy/subtypes")]
+    [InlineData("textDocument/formatting")]
+    [InlineData("textDocument/rangeFormatting")]
+    [InlineData("textDocument/onTypeFormatting")]
+    [InlineData("textDocument/semanticTokens/full")]
+    [InlineData("textDocument/semanticTokens/range")]
+    [InlineData("textDocument/inlayHint")]
+    [InlineData("textDocument/prepareRename")]
+    [InlineData("textDocument/rename")]
+    [InlineData("project/unusedPackages")]
+    public async Task Handler_with_malformed_payload_returns_error_and_survives(string method)
+    {
+        var response = await fixture.SendAsync(method, [0xC1]);
+        Assert.NotNull(response.Error);
+
+        var ping = await fixture.SendAsync("ping", []);
+        Assert.Null(ping.Error);
+        Assert.Equal("pong", MessagePackSerializer.Deserialize<string>(ping.Payload));
+    }
+
+    [Fact]
+    public async Task UnusedPackages_for_real_project_returns_usage()
+    {
+        // The loaded project's .csproj path drives the unused-packages handler
+        // body end to end (a project with no PackageReferences yields empty usage).
+        var csproj = Path.Combine(fixture.TempDir, "TestProject.csproj");
+        await AssertHandledGracefully(
+            "project/unusedPackages",
+            MessagePackSerializer.Serialize(csproj)
+        );
+    }
 }

@@ -341,3 +341,57 @@ struct SidecarSemanticTokens {
     /// Flat i32 array: groups of 5 (deltaLine, deltaStart, length, tokenType, modifiers).
     data: Vec<i32>,
 }
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code — panics are the correct failure mode"
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compute_delta_of_identical_arrays_is_empty() {
+        let tokens = [0, 0, 1, 0, 0, 1, 0, 2, 0, 0];
+        assert!(compute_delta(&tokens, &tokens).is_empty());
+    }
+
+    #[test]
+    fn compute_delta_for_an_appended_token_inserts_without_deleting() {
+        let old = [0, 0, 1, 0, 0];
+        // The appended token shares no suffix with `old`, so the whole token is
+        // a clean insertion at the end.
+        let new = [0, 0, 1, 0, 0, 2, 3, 4, 5, 6];
+
+        let edits = compute_delta(&old, &new);
+
+        let edit = edits.first().unwrap();
+        assert_eq!(edit.delete_count, 0, "appending deletes nothing");
+        let inserted = edit.data.as_ref().unwrap();
+        assert_eq!(inserted.len(), 1, "exactly one new token is inserted");
+        assert_eq!(inserted[0].length, 4);
+    }
+
+    #[test]
+    fn compute_delta_for_a_removed_token_deletes_without_inserting() {
+        let old = [0, 0, 1, 0, 0];
+        let new: [i32; 0] = [];
+
+        let edits = compute_delta(&old, &new);
+
+        let edit = edits.first().unwrap();
+        assert_eq!(edit.start, 0);
+        assert_eq!(edit.delete_count, 5, "the whole token is deleted");
+        assert!(edit.data.is_none(), "a pure deletion carries no insert data");
+    }
+
+    #[test]
+    fn compute_delta_when_change_is_absorbed_by_prefix_and_suffix_is_empty() {
+        // The new array merely duplicates the old: the matching prefix and suffix
+        // overlap so there is no net change to emit.
+        let old = [1, 2, 3, 4, 5];
+        let new = [1, 2, 3, 4, 5, 1, 2, 3, 4, 5];
+
+        assert!(compute_delta(&old, &new).is_empty());
+    }
+}

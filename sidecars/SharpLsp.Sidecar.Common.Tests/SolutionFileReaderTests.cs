@@ -169,6 +169,69 @@ public sealed class SolutionFileReaderTests : IDisposable
         );
     }
 
+    [Fact]
+    public async Task Read_nonexistent_file_returns_error()
+    {
+        var missing = Path.Combine(_root, "does-not-exist.sln");
+
+        var result = await SolutionFileReader.ReadAsync(missing);
+
+        Assert.True(result.IsError);
+        Assert.Contains(
+            "does not exist",
+            result.Match(_ => string.Empty, err => err),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task Read_unsupported_extension_returns_error()
+    {
+        var textPath = Path.Combine(_root, "notes.txt");
+        await File.WriteAllTextAsync(textPath, "not a solution");
+
+        var result = await SolutionFileReader.ReadAsync(textPath);
+
+        Assert.True(result.IsError);
+        Assert.Contains(
+            "Unsupported solution file extension",
+            result.Match(_ => string.Empty, err => err),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task Read_blank_path_returns_error()
+    {
+        var result = await SolutionFileReader.ReadAsync("   ");
+
+        Assert.True(result.IsError);
+        Assert.Contains(
+            "Failed to read solution",
+            result.Match(_ => string.Empty, err => err),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task Read_slnx_with_absolute_project_path_resolves_to_full_path()
+    {
+        WriteProject("src/App/App.csproj");
+        var absoluteProject = Path.Combine(_root, "src", "App", "App.csproj");
+        var slnxPath = WriteSlnx(
+            $"""
+            <Solution>
+              <Project Path="{absoluteProject.Replace('\\', '/')}" />
+            </Solution>
+            """
+        );
+
+        var model = AssertOk(await SolutionFileReader.ReadAsync(slnxPath));
+
+        var project = Assert.Single(model.Projects);
+        Assert.Equal(Path.GetFullPath(absoluteProject), project.Path);
+    }
+
     private string WriteSlnx(string content)
     {
         var path = Path.Combine(_root, "App.slnx");

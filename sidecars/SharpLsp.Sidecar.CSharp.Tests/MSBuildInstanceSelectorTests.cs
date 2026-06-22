@@ -1,5 +1,8 @@
 using Microsoft.Build.Locator;
 
+#pragma warning disable RS1035 // Path.GetTempPath banned for analyzers — we're tests
+#pragma warning disable IDE0058 // Expression value is never used
+
 namespace SharpLsp.Sidecar.CSharp.Tests;
 
 // Implements the regression guard for the Roslyn ref/def mismatch
@@ -63,6 +66,29 @@ public class MSBuildInstanceSelectorTests
     {
         // A directory that does not contain Roslyn/bincore/Microsoft.CodeAnalysis.dll.
         Assert.Null(MSBuildInstanceSelector.ReadRoslynVersion("/no/such/sdk/root"));
+    }
+
+    [Fact]
+    public void ReadRoslynVersion_returns_null_for_a_non_assembly_file()
+    {
+        // A Microsoft.CodeAnalysis.dll that exists but is not a valid PE image makes
+        // AssemblyName.GetAssemblyName throw BadImageFormatException, which the reader
+        // must swallow and report as an unknown version.
+        var root = Path.Combine(Path.GetTempPath(), $"slsp-msb-{Guid.NewGuid():N}");
+        var bincore = Path.Combine(root, "Roslyn", "bincore");
+        Directory.CreateDirectory(bincore);
+        File.WriteAllText(
+            Path.Combine(bincore, "Microsoft.CodeAnalysis.dll"),
+            "this is not a portable executable"
+        );
+        try
+        {
+            Assert.Null(MSBuildInstanceSelector.ReadRoslynVersion(root));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
     }
 
     [Fact]

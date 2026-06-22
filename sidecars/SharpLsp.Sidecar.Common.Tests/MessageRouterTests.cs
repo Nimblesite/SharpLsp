@@ -100,6 +100,63 @@ public sealed class MessageRouterTests
         );
     }
 
+    /// <summary>A stream that fails every write, used to drive transport errors.</summary>
+    private sealed class WriteFailingStream : Stream
+    {
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => 0;
+        public override long Position
+        {
+            get => 0;
+            set { }
+        }
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            throw new IOException("write failed");
+        }
+
+        public override void Flush() { }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return 0;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            return 0;
+        }
+
+        public override void SetLength(long value) { }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new IOException("write failed");
+        }
+    }
+
+    [Fact]
+    public async Task SendRequestAsync_returns_failure_when_the_transport_write_throws()
+    {
+        var router = new MessageRouter();
+        var transport = new FramedTransport(new WriteFailingStream());
+        await using (transport.ConfigureAwait(false))
+        {
+            var result = await router
+                .SendRequestAsync(transport, "echo", [1, 2, 3])
+                .ConfigureAwait(true);
+
+            var error = Assert.IsType<ByteResult.Error<byte[], string>>(result);
+            Assert.Contains("write failed", error.Value, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public async Task SendRequestAsync_correlates_a_response_to_its_pending_request()
     {

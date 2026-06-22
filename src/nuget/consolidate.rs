@@ -297,8 +297,9 @@ mod tests {
         assert_eq!(cmp_versions("13.0.3", "13.0.4"), Ordering::Less);
         assert_eq!(cmp_versions("3.1.0", "3.1.0"), Ordering::Equal);
         assert_eq!(cmp_versions("2.0.0", "1.9.9"), Ordering::Greater);
-        // Release outranks an equal-core prerelease.
+        // Release outranks an equal-core prerelease (both orderings).
         assert_eq!(cmp_versions("1.0.0", "1.0.0-beta"), Ordering::Greater);
+        assert_eq!(cmp_versions("1.0.0-beta", "1.0.0"), Ordering::Less);
         assert_eq!(cmp_versions("1.0.0-alpha", "1.0.0-beta"), Ordering::Less);
     }
 
