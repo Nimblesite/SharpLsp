@@ -6,7 +6,7 @@
 
 ## Overview
 
-The Solution Explorer is a VS Code tree view that displays the full code hierarchy of a .NET solution: solutions, projects, namespaces, types, and members. It accepts legacy `.sln` and XML `.slnx` solution files. It is powered by a custom LSP request (`sharplsp/workspaceSymbols`) backed by the sidecar `solution/read` model and tree-sitter parsing in the Rust host.
+The Solution Explorer is a VS Code tree view that displays the full code hierarchy of a .NET solution: solutions, projects, namespaces, types, and members. It accepts legacy `.sln` and XML `.slnx` solution files. It is powered by a custom LSP request (`sharplsp/workspaceSymbols`) backed by the sidecar `solution/read` model, tree-sitter parsing in the Rust host for C#, and the FCS sidecar's `documentSymbol` for F# ([SE-FSHARP-SYMBOLS]).
 
 See [LSP-ARCHITECTURE-SPEC.md](specs/LSP-ARCHITECTURE-SPEC.md) for shared LSP architecture.
 
@@ -19,9 +19,22 @@ VS Code Tree View
               └── Rust Host
                     ├── solution/read sidecar request
                     │     └── .sln/.slnx → projects, folders, solution items
-                    └── tree-sitter parsing
-                          └── .csproj/.fsproj → .cs/.fs files
+                    ├── tree-sitter parsing (C#)
+                    │     └── .csproj → .cs files
+                    └── FCS sidecar documentSymbol (F#)
+                          └── .fsproj → .fs files
 ```
+
+### Language-Specific Symbol Extraction [SE-FSHARP-SYMBOLS]
+
+Per-file symbols are sourced by language, never by a single parser:
+
+| Language | Source | Rationale |
+|----------|--------|-----------|
+| C# (`.cs`) | tree-sitter parsing in the Rust host | A C# grammar is integrated in the host. |
+| F# (`.fs`) | FCS sidecar `textDocument/documentSymbol` ([FS-DOCSYMBOL]) | The host has **no** F# tree-sitter grammar, so a tree-sitter-only path silently drops every `.fs` file (issue #119). F# is a first-class language — its files and symbols MUST appear under an `.fsproj` exactly as `.cs` files appear under a `.csproj`. |
+
+The F# path reuses the **same** sidecar `documentSymbol` request that powers the editor outline, mapping the nested FCS symbols (module, namespace, type, DU case, member) into the shared `FileSymbol`/`SymbolNode` tree model using each symbol's full range. The F# sidecar must be threaded into `workspace_symbols::handle`; when it is unavailable the project's `.fs` files contribute no symbols rather than failing the whole request.
 
 ### Request: `sharplsp/workspaceSymbols`
 
@@ -488,6 +501,32 @@ To support scoped context menus, symbol nodes set `contextValue` based on their 
 ## Navigation
 
 Clicking a symbol node opens the file and navigates to the symbol's declaration position.
+
+## Active Editor Synchronization `[SE-ACTIVE-EDITOR-SYNC]`
+
+The Solution Explorer MUST stay synchronized with the active text editor. When a
+C# or F# document becomes active — opened, focused, or navigated to (Go to
+Definition, Quick Open, tab switch) — the tree MUST reveal that document's node:
+expand its ancestors, scroll it into view, and **select (highlight)** it. Example:
+focusing `FSharpRename.fs` in the editor expands the tree to it and highlights it.
+Switching the active editor re-syncs the selection to the new document. This
+mirrors VS Code's built-in File Explorer `explorer.autoReveal` behaviour.
+
+This is the inverse of [Reveal in File Explorer](#reveal-in-file-explorer)
+(tree → editor); here the direction is **editor → tree**.
+
+### Requirements
+
+| # | Requirement |
+|---|-------------|
+| 1 | A reference to the `TreeView` returned by `createTreeView` MUST be retained so `TreeView.reveal()` can be called. |
+| 2 | `SolutionExplorerProvider` MUST implement `getParent()` (VS Code requires it for `reveal()`). |
+| 3 | A `window.onDidChangeActiveTextEditor` listener MUST locate the node whose file URI (`symbolUri`) matches the active document and call `treeView.reveal(node, { select: true, focus: false, expand: true })`. |
+| 4 | Sync MUST re-run after the tree is (re)populated (`onDidChangeTreeData`) so a newly loaded tree still reveals the current editor — per [VSCODE-REACTIVITY-SPEC](VSCODE-REACTIVITY-SPEC.md). |
+| 5 | A setting (mirroring `explorer.autoReveal`, default **on**) MUST gate the behaviour so users can disable it. |
+| 6 | Revealing MUST NOT steal editor focus (`focus: false`) and MUST be a no-op when the active document has no corresponding node (e.g. files outside the loaded solution). |
+
+Tracked in [issue #118](https://github.com/Nimblesite/SharpLsp/issues/118).
 
 ## Key Files
 

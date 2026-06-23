@@ -19,6 +19,7 @@
   "setting.nuget.includePrerelease": "Include prerelease versions in NuGet package search results.",
   "setting.hotReload.onSave": "Automatically start hot reload on file save when a dotnet watch session is active.",
   "setting.testLens.enabled": "Show pass/fail status, Run Test, and Debug Test lenses above test methods.",
+  "setting.solutionExplorer.autoReveal": "Reveal and select the active editor's file in the SharpLsp Solution Explorer, mirroring `explorer.autoReveal`.",
   "setting.memberSortOrder.hierarchy": "Sort tiebreaker order for **Sort Members**. Members are grouped by the first criterion, then sub-sorted by the second, then the third.",
   "setting.memberSortOrder.accessibilityOrder": "Access modifier priority for **Sort Members** (first = highest priority).",
   "setting.memberSortOrder.categoryOrder": "Member kind priority for **Sort Members** (first = highest priority).",

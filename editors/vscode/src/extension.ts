@@ -98,6 +98,47 @@ export async function activate(context: ExtensionContext): Promise<SharpLspExten
   }
 }
 
+/**
+ * Keep the Solution Explorer in sync with the active editor: reveal and select
+ * the tree node for the focused file, re-syncing whenever the tree repopulates
+ * or the view becomes visible. Mirrors VS Code's `explorer.autoReveal`; gated by
+ * the `sharplsp.solutionExplorer.autoReveal` setting (default on).
+ * [SE-ACTIVE-EDITOR-SYNC]
+ */
+function wireActiveEditorReveal(
+  context: ExtensionContext,
+  treeView: vscode.TreeView<ExplorerNode>,
+  provider: SolutionExplorerProvider,
+): void {
+  const reveal = (editor: vscode.TextEditor | undefined): void => {
+    if (editor === undefined || !treeView.visible) return;
+    const enabled = workspace
+      .getConfiguration('sharplsp')
+      .get<boolean>('solutionExplorer.autoReveal', true);
+    if (!enabled) return;
+    const node = provider.findNodeForUri(editor.document.uri.toString());
+    if (node === undefined) return;
+    void treeView
+      .reveal(node, { select: true, focus: false, expand: true })
+      .then(undefined, (err: unknown) => {
+        log.traceInfo(`Solution Explorer reveal failed: ${getErrorMessage(err)}`);
+      });
+  };
+
+  context.subscriptions.push(
+    window.onDidChangeActiveTextEditor(reveal),
+    // Re-sync after the tree (re)populates so the selection follows the editor.
+    provider.onDidChangeTreeData(() => {
+      reveal(window.activeTextEditor);
+    }),
+    // Sync the moment the view is revealed (it may have been hidden on open).
+    treeView.onDidChangeVisibility((event) => {
+      if (event.visible) reveal(window.activeTextEditor);
+    }),
+  );
+  reveal(window.activeTextEditor);
+}
+
 async function activateInner(context: ExtensionContext): Promise<SharpLspExtensionApi> {
   log.info('step 1: SharpLspStatusBar');
   statusBar = new SharpLspStatusBar();
@@ -106,12 +147,12 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   log.info('step 2: SolutionExplorerProvider');
   explorerProvider = new SolutionExplorerProvider();
   log.info('step 3: createTreeView SOLUTION_EXPLORER');
-  context.subscriptions.push(
-    window.createTreeView(VIEW_SOLUTION_EXPLORER, {
-      treeDataProvider: explorerProvider,
-      showCollapseAll: true,
-    }),
-  );
+  const solutionTreeView = window.createTreeView<ExplorerNode>(VIEW_SOLUTION_EXPLORER, {
+    treeDataProvider: explorerProvider,
+    showCollapseAll: true,
+  });
+  context.subscriptions.push(solutionTreeView);
+  wireActiveEditorReveal(context, solutionTreeView, explorerProvider);
 
   log.info('step 4: ProfilerTreeProvider');
   profilerProvider = new profiler.ProfilerTreeProvider();

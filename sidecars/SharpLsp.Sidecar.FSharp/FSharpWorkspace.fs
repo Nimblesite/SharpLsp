@@ -140,6 +140,25 @@ let internal frameworkReferenceArgs () : string array =
        yield! frameworkRefs
        yield! fsharpCoreRef |]
 
+/// Build the persistent FCS project options for an .fsproj: framework reference
+/// assemblies + the project's restored NuGet package references ([FSharpAssets])
+/// + the project's compile sources. Including the package references is what
+/// keeps a building project free of false unresolved-`open` / unknown-type
+/// diagnostics — without them FCS cannot resolve any external reference and
+/// flags every `open`/type as an error even though the project compiles (#120).
+/// Shared with the unused-package analysis so the compiler sees one reference
+/// set across diagnostics, hover, and usage.
+let internal buildProjectOptions (state: FSharpWorkspaceState) (fsprojPath: string) : FSharpProjectOptions =
+    let sourceFiles = parseFsprojSourceFiles fsprojPath
+
+    let packageRefs =
+        FSharpAssets.parseAssets fsprojPath
+        |> Option.map (snd >> FSharpAssets.packageReferenceArgs)
+        |> Option.defaultValue [||]
+
+    let otherOptions = Array.append (frameworkReferenceArgs ()) packageRefs
+    state.Checker.GetProjectOptionsFromCommandLineArgs(fsprojPath, Array.append otherOptions sourceFiles)
+
 let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string array) =
     if fsprojFiles.Length = 0 then
         Error "No .fsproj found"
@@ -148,15 +167,10 @@ let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string 
             let fsprojPath = Array.head fsprojFiles
             if fsprojFiles.Length > 1 then
                 Log.Debug("F# workspace found {Count} projects; loading {Path}", fsprojFiles.Length, fsprojPath)
-            let sourceFiles = parseFsprojSourceFiles fsprojPath
-            let otherOptions = frameworkReferenceArgs ()
-            let options =
-                state.Checker.GetProjectOptionsFromCommandLineArgs(
-                    fsprojPath,
-                    [| yield! otherOptions; yield! sourceFiles |])
+            let options = buildProjectOptions state fsprojPath
             state.ProjectOptions <- Some options
             state.IsLoaded <- true
-            let fileList = String.Join(", ", sourceFiles |> Array.map Path.GetFileName)
+            let fileList = String.Join(", ", options.SourceFiles |> Array.map Path.GetFileName)
             Log.Debug("F# workspace loaded from {Path} with files: [{Files}]", fsprojPath, fileList)
             Ok()
         with ex ->
