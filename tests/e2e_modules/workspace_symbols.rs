@@ -221,6 +221,104 @@ fn test_workspace_symbols_access_modifiers() {
     client.wait_with_timeout();
 }
 
+// F# is a first-class language: an `.fsproj` in the Solution Explorer must show
+// its `.fs` source files and their symbols exactly the way a `.csproj` shows its
+// `.cs` files — not just the Dependencies node. The host has no F# tree-sitter
+// grammar, so F# file symbols must come from the FCS sidecar's documentSymbol,
+// not the (bailing) tree-sitter path that silently drops every `.fs` file.
+// Regression guard for issue #119 (F# files & symbols missing from the tree).
+#[test]
+fn test_workspace_symbols_includes_fsharp_files_and_symbols() {
+    // Collect symbol names recursively (declared first so it precedes statements).
+    fn collect_names(symbols: &[Value], out: &mut Vec<String>) {
+        for symbol in symbols {
+            if let Some(name) = symbol["name"].as_str() {
+                out.push(name.to_string());
+            }
+            if let Some(children) = symbol["children"].as_array() {
+                collect_names(children, out);
+            }
+        }
+    }
+
+    require_dotnet();
+
+    let (tmp, _root_uri, _file_uri, _source) = create_fsharp_test_workspace();
+    let sln_path = tmp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("TestFSharp.sln")
+        .to_string_lossy()
+        .to_string();
+
+    let mut client = LspClient::start_verbose();
+    initialize_workspace_symbols_client(&mut client, &tmp);
+
+    // Poll until the F# project reports its file symbols — the FCS sidecar must
+    // finish its background project load first. Before the fix this never
+    // happens: F# files are dropped because the host parses them with
+    // tree-sitter, which has no F# grammar, so the project's `symbols` stays
+    // empty forever and the loop times out.
+    let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let mut last = json!(null);
+    let file_symbols = loop {
+        let resp = client.request("sharplsp/workspaceSymbols", json!({ "solution": sln_path }));
+        assert!(resp.get("error").is_none(), "must not error: {resp}");
+        last = resp.clone();
+
+        let symbols = resp["result"]["projects"]
+            .as_array()
+            .and_then(|projects| projects.iter().find(|p| p["name"] == "TestFSharp"))
+            .and_then(|proj| proj["symbols"].as_array().cloned());
+
+        if let Some(symbols) = symbols {
+            if !symbols.is_empty() {
+                break symbols;
+            }
+        }
+
+        assert!(
+            std::time::Instant::now() < deadline,
+            "F# project 'TestFSharp' must expose its `.fs` files and symbols in the \
+             Solution Explorer like C# projects do, but `symbols` stayed empty — F# \
+             files are dropped by the tree-sitter-only extraction (#119). Last: {last}"
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    };
+
+    // The `.fs` source file must be present under the project node.
+    let library = file_symbols.iter().find(|f| {
+        f["file"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("Library.fs"))
+    });
+    assert!(
+        library.is_some(),
+        "F# project must include Library.fs: {file_symbols:?}"
+    );
+    let library = library.unwrap();
+
+    // …and that file must carry its module + members, recursively.
+    let mut names = Vec::new();
+    collect_names(
+        library["symbols"]
+            .as_array()
+            .expect("Library.fs must carry a symbols array"),
+        &mut names,
+    );
+
+    for expected in ["Calculator", "add", "Shape", "area"] {
+        assert!(
+            names.iter().any(|name| name == expected),
+            "F# Library.fs must expose `{expected}` in the tree like C# symbols, got: {names:?}"
+        );
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 #[test]
 fn test_workspace_symbols_nonexistent_solution() {
     let tmp = tempfile::tempdir().unwrap();

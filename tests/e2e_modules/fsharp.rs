@@ -322,6 +322,66 @@ fn test_full_stack_fsharp_hover_reflects_live_edit() {
     client.wait_with_timeout();
 }
 
+// ── F# Diagnostics (Full-Stack) ─────────────────────────────────
+// A file that compiles cleanly must not be flooded with false errors. The F#
+// sidecar's persistent project options must resolve the project's restored
+// NuGet package references; otherwise every external `open`/type is reported as
+// an unresolved-reference error even though `dotnet build` succeeds. Regression
+// guard for issue #120 (F# false errors everywhere despite compiling cleanly).
+#[test]
+fn test_full_stack_fsharp_nuget_reference_resolves_no_false_errors() {
+    require_dotnet();
+
+    let (_tmp, root_uri, file_uri, source) = create_fsharp_nuget_workspace();
+    let mut client = LspClient::start_verbose();
+    let _ = client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Block until the FCS background project load completes. Hover on the local
+    // `Serializer` module (line 5, char 7) resolves from in-source symbols and is
+    // unaffected by a missing external reference, so it is a clean readiness
+    // signal even while the (bug) reference set is incomplete.
+    let ready = poll_hover_until_ready(&mut client, &file_uri, 5, 7, Duration::from_secs(90));
+    assert!(
+        !ready.is_null(),
+        "F# sidecar must load the project before diagnostics can be trusted"
+    );
+
+    // Pull diagnostics synchronously — deterministic, no publish race.
+    let resp = client.request(
+        "textDocument/diagnostic",
+        json!({ "textDocument": { "uri": file_uri } }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "pull diagnostics must not return an error: {resp}"
+    );
+    assert!(
+        resp["result"]["items"].is_array(),
+        "diagnostic report must carry an items array: {resp}"
+    );
+    let items = resp["result"]["items"].as_array().unwrap();
+
+    // The file `open`s the restored Newtonsoft.Json package and calls
+    // `JsonConvert` — both resolve once the sidecar feeds FCS the project's
+    // package references. Any Error-severity diagnostic here is a false positive
+    // from an incomplete reference set (#120).
+    let errors: Vec<&Value> = items
+        .iter()
+        .filter(|d| d["severity"].as_u64() == Some(1))
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "F# file that opens a restored NuGet package must compile clean — the F# \
+         sidecar's project options are missing the resolved package references, so \
+         `open Newtonsoft.Json` / `JsonConvert` are falsely flagged (#120). \
+         Errors: {errors:?}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 // ── F# Navigation (Full-Stack) ──────────────────────────────────
 // Exercises the host→F# sidecar routing for go-to-definition, type-definition,
 // project-wide references, and document highlights. FSAC parity: these are the

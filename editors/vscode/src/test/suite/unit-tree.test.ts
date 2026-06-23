@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { MarkdownString, ThemeColor, ThemeIcon, TreeItemCollapsibleState } from 'vscode';
+import { MarkdownString, ThemeColor, ThemeIcon, TreeItemCollapsibleState, Uri } from 'vscode';
 import { ExplorerNode, SolutionExplorerProvider, buildQualifiedName } from '../../tree.js';
 import { buildNonSymbolTooltip, SYMBOL_CONTEXT_VALUES } from '../../tree-tooltip.js';
 import * as state from '../../state.js';
@@ -889,6 +889,87 @@ suite('SolutionExplorerProvider — solution picker', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────
+// SolutionExplorerProvider — active editor reveal (issue #118)
+// ─────────────────────────────────────────────────────────────────
+
+suite('SolutionExplorerProvider — active editor reveal', () => {
+  let provider: SolutionExplorerProvider;
+
+  setup(() => {
+    resetTreeState();
+    provider = new SolutionExplorerProvider();
+  });
+
+  teardown(() => {
+    resetTreeState();
+  });
+
+  test('findNodeForUri resolves a tree node living in the given file', () => {
+    loadInto(provider, '/ar/Sol.sln', [
+      project('P', '/ar/P.csproj', [symbol({ name: 'Service', kind: 'Class' })]),
+    ]);
+    // project() places symbols in `${projectPath}.cs`.
+    const fileUri = Uri.file('/ar/P.csproj.cs').toString();
+
+    const node = provider.findNodeForUri(fileUri);
+    assert.ok(node !== undefined, 'must find a node whose file is the active editor');
+    assert.strictEqual(node.symbolUri, fileUri, 'resolved node must belong to the file');
+    assert.strictEqual(node.label, 'Service');
+  });
+
+  test('findNodeForUri returns undefined for a file with no symbols in the tree', () => {
+    loadInto(provider, '/ar0/Sol.sln', [
+      project('P', '/ar0/P.csproj', [symbol({ name: 'Only', kind: 'Class' })]),
+    ]);
+    const node = provider.findNodeForUri(Uri.file('/ar0/Unrelated.cs').toString());
+    assert.strictEqual(node, undefined, 'no node matches an unrelated file uri');
+  });
+
+  test('getParent yields a complete chain from a file node up to the solution root', () => {
+    const root = loadInto(provider, '/ar2/Sol.sln', [
+      project('P', '/ar2/P.csproj', [
+        symbol({
+          name: 'Ns',
+          kind: 'Namespace',
+          children: [symbol({ name: 'Widget', kind: 'Class' })],
+        }),
+      ]),
+    ]);
+    const fileUri = Uri.file('/ar2/P.csproj.cs').toString();
+    const node = provider.findNodeForUri(fileUri);
+    assert.ok(node !== undefined, 'symbol node must resolve');
+
+    // TreeView.reveal walks getParent() to the root; every ancestor must be
+    // returned or the reveal silently no-ops (the #118 symptom).
+    const chain: ExplorerNode[] = [];
+    let current: ExplorerNode | undefined = node;
+    while (current !== undefined) {
+      chain.push(current);
+      current = provider.getParent(current) as ExplorerNode | undefined;
+      assert.ok(chain.length < 50, 'parent chain must terminate (no cycle)');
+    }
+
+    const top = chain[chain.length - 1];
+    assert.ok(top !== undefined);
+    assert.strictEqual(nt(top), 'solution', 'chain must terminate at the solution root');
+    assert.strictEqual(top, root, 'chain must reach the exact solution root instance');
+    assert.ok(
+      chain.some((n) => nt(n) === 'project'),
+      'chain must pass through the project node so reveal expands it',
+    );
+    assert.ok(
+      chain.some((n) => nt(n) === 'namespace'),
+      'chain must pass through the namespace node',
+    );
+  });
+
+  test('getParent returns undefined for a solution root (top of the tree)', () => {
+    const root = loadInto(provider, '/ar3/Sol.sln', [project('P', '/ar3/P.csproj', [])]);
+    assert.strictEqual(provider.getParent(root), undefined, 'the root has no parent');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
 // buildQualifiedName
 // ─────────────────────────────────────────────────────────────────
 
@@ -913,7 +994,7 @@ suite('tree — buildQualifiedName', () => {
     assert.strictEqual(buildQualifiedName(sym), 'Solo');
   });
 
-  test('a namespace node qualifies to its own name (project parent is not wired)', () => {
+  test('a namespace node qualifies to its own name (project ancestor is skipped)', () => {
     const root = loadInto(provider, '/q2/Sol.sln', [
       project('P', '/q2/P.csproj', [
         symbol({
@@ -971,8 +1052,9 @@ suite('tree — buildQualifiedName', () => {
   });
 
   test('walking upward skips non-symbol/non-namespace ancestors', () => {
-    // A symbol directly under the project: its parent chain is undefined, so the
-    // solution and project ancestors never contribute to the qualified name.
+    // A symbol directly under the project: buildQualifiedName walks the parent
+    // chain but contributes only Namespace/Symbol ancestors, so the wired
+    // project and solution ancestors never leak into the qualified name.
     const root = loadInto(provider, '/q5/Sol.sln', [
       project('MyProj', '/q5/P.csproj', [symbol({ name: 'Direct', kind: 'Class' })]),
     ]);

@@ -166,6 +166,24 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
     return element.children;
   }
 
+  /**
+   * Parent of a node, required by VS Code for `TreeView.reveal`. The whole
+   * chain from any revealable node up to a solution root must resolve, or the
+   * active-editor sync silently no-ops (issue #118).
+   */
+  public getParent(element: ExplorerNode): ProviderResult<ExplorerNode> {
+    return element.parent;
+  }
+
+  /**
+   * First tree node belonging to `uri` (a `file://` document URI), in document
+   * order. Used to reveal/select the active editor's file in the tree. Returns
+   * `undefined` when the file contributes no symbols. [SE-ACTIVE-EDITOR-SYNC]
+   */
+  public findNodeForUri(uri: string): ExplorerNode | undefined {
+    return findFirstNodeForUri(this.roots, uri);
+  }
+
   /** Resolve tooltip via LSP hover for symbols, instant for non-symbols. */
   public async resolveTreeItem(
     item: TreeItem,
@@ -202,6 +220,19 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
   }
 }
 
+/** Depth-first search for the first node whose `symbolUri` matches `uri`. */
+function findFirstNodeForUri(
+  nodes: readonly ExplorerNode[],
+  uri: string,
+): ExplorerNode | undefined {
+  for (const node of nodes) {
+    if (node.symbolUri === uri) return node;
+    const found = findFirstNodeForUri(node.children, uri);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 // ── Tree construction ────────────────────────────────────────────
 
 function buildTree(
@@ -217,6 +248,9 @@ function buildTree(
   node.projectFilePath = solutionPath;
   node.children = response.projects.map(buildProjectNode);
   for (const project of node.children) {
+    // Wire the project → solution link so TreeView.reveal can walk a complete
+    // parent chain from any file node up to the root (issue #118).
+    project.parent = node;
     sortProjectChildren(project, order);
   }
   return [node];
@@ -233,6 +267,11 @@ function buildProjectNode(project: ProjectNode): ExplorerNode {
   const depFolder = buildDependencyFolder(project.path);
   const symbols = groupByNamespace(project.symbols);
   node.children = depFolder !== undefined ? [depFolder, ...symbols] : symbols;
+  // Wire each direct child (namespace nodes, top-level symbols, Dependencies)
+  // back to the project so the reveal parent chain is unbroken (issue #118).
+  for (const child of node.children) {
+    child.parent = node;
+  }
   return node;
 }
 

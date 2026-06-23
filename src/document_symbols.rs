@@ -32,24 +32,39 @@ pub fn handle_fsharp(
     let params: DocumentSymbolParams = serde_json::from_value(req.params)?;
     let file_path = crate::semantic::uri_to_path(&params.text_document.uri)?;
 
-    let request = SidecarFileReq { file_path };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("textDocument/documentSymbol", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar documentSymbol unavailable: {err:#}");
-                return Ok(serde_json::to_value(DocumentSymbolResponse::Nested(
-                    vec![],
-                ))?);
-            }
-        };
-
-    let items: Vec<SidecarDocumentSymbol> = rmp_serde::from_slice(&response_bytes)?;
+    // A sidecar/parse failure yields an empty outline rather than a hard error —
+    // a transient outline gap is preferable to a failed request. [FS-DOCSYMBOL]
+    let items = match fetch_fsharp_document_symbols(runtime, sidecar, file_path) {
+        Ok(items) => items,
+        Err(err) => {
+            warn!("Sidecar documentSymbol unavailable: {err:#}");
+            return Ok(serde_json::to_value(DocumentSymbolResponse::Nested(
+                vec![],
+            ))?);
+        }
+    };
     let symbols: Vec<DocumentSymbol> = items.iter().map(map_symbol).collect();
     Ok(serde_json::to_value(DocumentSymbolResponse::Nested(
         symbols,
     ))?)
+}
+
+/// Fetch the FCS document-symbol tree for an F# file from the sidecar.
+///
+/// Shared by the `textDocument/documentSymbol` outline and the Solution
+/// Explorer's `sharplsp/workspaceSymbols` tree, so F# files contribute the same
+/// FCS-sourced symbols in both — the host has no F# tree-sitter grammar.
+/// [FS-DOCSYMBOL]
+pub(crate) fn fetch_fsharp_document_symbols(
+    runtime: &tokio::runtime::Runtime,
+    sidecar: &Arc<SidecarManager>,
+    file_path: String,
+) -> Result<Vec<SidecarDocumentSymbol>> {
+    let request = SidecarFileReq { file_path };
+    let payload = rmp_serde::to_vec(&request)?;
+    let response_bytes =
+        runtime.block_on(sidecar.request("textDocument/documentSymbol", payload))?;
+    Ok(rmp_serde::from_slice(&response_bytes)?)
 }
 
 /// Convert a sidecar document symbol (and its children) into an LSP one.
@@ -100,30 +115,32 @@ fn parse_document_symbol_kind(kind: &str) -> SymbolKind {
 
 /// A nested document symbol returned by the sidecar. Deserialized from a
 /// positional `MessagePack` array matching the sidecar's `DocumentSymbolResult`.
+/// `pub(crate)` so the Solution Explorer (`workspace_symbols`) can map the same
+/// FCS symbols into its tree model. [FS-DOCSYMBOL]
 #[derive(serde::Deserialize)]
-struct SidecarDocumentSymbol {
+pub(crate) struct SidecarDocumentSymbol {
     /// Display name of the symbol.
-    name: String,
+    pub(crate) name: String,
     /// Symbol kind string (e.g. "Module", "Class", "Function").
-    kind: String,
+    pub(crate) kind: String,
     /// Start line of the full symbol range.
-    start_line: u32,
+    pub(crate) start_line: u32,
     /// Start character of the full symbol range.
-    start_character: u32,
+    pub(crate) start_character: u32,
     /// End line of the full symbol range.
-    end_line: u32,
+    pub(crate) end_line: u32,
     /// End character of the full symbol range.
-    end_character: u32,
+    pub(crate) end_character: u32,
     /// Start line of the selection (identifier) range.
-    selection_start_line: u32,
+    pub(crate) selection_start_line: u32,
     /// Start character of the selection (identifier) range.
-    selection_start_character: u32,
+    pub(crate) selection_start_character: u32,
     /// End line of the selection (identifier) range.
-    selection_end_line: u32,
+    pub(crate) selection_end_line: u32,
     /// End character of the selection (identifier) range.
-    selection_end_character: u32,
+    pub(crate) selection_end_character: u32,
     /// Nested child symbols (members of a module, type, etc.).
-    children: Vec<SidecarDocumentSymbol>,
+    pub(crate) children: Vec<SidecarDocumentSymbol>,
 }
 
 #[cfg(test)]

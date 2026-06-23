@@ -203,6 +203,13 @@
           "scope": "resource",
           "order": 17
         },
+        "sharplsp.solutionExplorer.autoReveal": {
+          "type": "boolean",
+          "default": true,
+          "description": "%setting.solutionExplorer.autoReveal%",
+          "scope": "resource",
+          "order": 18
+        },
         "sharplsp.memberSortOrder.hierarchy": {
           "type": "array",
           "items": {

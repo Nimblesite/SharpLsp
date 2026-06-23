@@ -325,6 +325,78 @@ EndGlobal"#,
     (tmp, root_uri, file_uri, fs_source.to_string())
 }
 
+/// Create an F# workspace whose source `open`s a restored external package
+/// (`Newtonsoft.Json`). Used to prove the F# sidecar resolves package references
+/// in its persistent project options — a file that compiles must not report
+/// unresolved-namespace/type errors. Regression fixture for issue #120.
+pub fn create_fsharp_nuget_workspace() -> (tempfile::TempDir, String, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proj_dir = tmp.path().join("TestFSharpNuget");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("TestFSharpNuget.fsproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Serializer.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    // `open Newtonsoft.Json` + `JsonConvert` exercise the external package
+    // reference. With the package resolved this compiles cleanly; with it
+    // missing FCS reports FS0039 (namespace not defined) — the #120 symptom.
+    let fs_source = r"namespace TestFSharpNuget
+
+open Newtonsoft.Json
+
+/// Serializes values to JSON via the Newtonsoft.Json package.
+module Serializer =
+
+    /// A simple record round-tripped through JSON.
+    type Payload = { Name: string; Value: int }
+
+    /// Serialize a payload to a JSON string.
+    let toJson (payload: Payload) : string =
+        JsonConvert.SerializeObject(payload)
+";
+    std::fs::write(proj_dir.join("Serializer.fs"), fs_source).unwrap();
+
+    std::fs::write(
+        tmp.path().join("TestFSharpNuget.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "TestFSharpNuget", "TestFSharpNuget/TestFSharpNuget.fsproj", "{00000000-0000-0000-0000-000000000003}"
+EndProject
+Global
+EndGlobal"#,
+    )
+    .unwrap();
+
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        // Restore the project directly: the generated .sln has no
+        // ProjectConfigurationPlatforms, so restoring the cwd writes no
+        // obj/project.assets.json and the sidecar cannot resolve references.
+        .current_dir(&proj_dir)
+        .status()
+        .expect("dotnet restore failed");
+    assert!(restore.success(), "dotnet restore must succeed");
+
+    let real_root = std::fs::canonicalize(tmp.path()).unwrap();
+    let real_proj = real_root.join("TestFSharpNuget");
+    let root_uri = format!("file://{}", real_root.display());
+    let file_uri = format!("file://{}", real_proj.join("Serializer.fs").display());
+    (tmp, root_uri, file_uri, fs_source.to_string())
+}
+
 /// Create a .NET workspace with interfaces, implementations, overrides,
 /// and method calls — everything needed to test definition navigation.
 pub fn create_definition_workspace() -> (tempfile::TempDir, String, String, String) {

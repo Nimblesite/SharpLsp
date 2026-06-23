@@ -183,6 +183,7 @@ pub fn handle(
     vfs: &Vfs,
     runtime: &tokio::runtime::Runtime,
     solution_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<WorkspaceSymbolsResponse> {
     let sln_data = read_solution(params, runtime, solution_sidecar)?;
 
@@ -199,7 +200,7 @@ pub fn handle(
         .projects
         .iter()
         .filter_map(|proj| {
-            let mut node = build_project_node(proj, parsers, vfs).ok()?;
+            let mut node = build_project_node(proj, parsers, vfs, runtime, fsharp_sidecar).ok()?;
             node.parent_folder.clone_from(&proj.parent_folder);
             Some(node)
         })
@@ -399,10 +400,17 @@ struct ProjectInfo {
 }
 
 /// Build a `ProjectNode` by finding and parsing all source files.
+///
+/// `.cs` files are parsed syntactically with tree-sitter; `.fs` files have no
+/// host grammar, so their symbols are sourced from the FCS sidecar's
+/// documentSymbol — the same path the editor outline uses — so F# projects show
+/// their files and symbols exactly like C# projects (#119). [FS-DOCSYMBOL]
 fn build_project_node(
     project: &ProjectInfo,
     parsers: &TsParsers,
     vfs: &Vfs,
+    runtime: &tokio::runtime::Runtime,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<ProjectNode> {
     let proj_dir = Path::new(&project.path)
         .parent()
@@ -412,7 +420,7 @@ fn build_project_node(
 
     let symbols: Vec<FileSymbol> = source_files
         .iter()
-        .filter_map(|file| parse_file_symbols(file, parsers, vfs).ok())
+        .filter_map(|file| file_symbols(file, parsers, vfs, runtime, fsharp_sidecar).ok())
         .filter(|fs| !fs.symbols.is_empty())
         .collect();
 
@@ -422,6 +430,62 @@ fn build_project_node(
         symbols,
         parent_folder: project.parent_folder.clone(),
     })
+}
+
+/// Extract a file's symbols, dispatching by language: tree-sitter for C#, the
+/// FCS sidecar for F#.
+fn file_symbols(
+    file_path: &str,
+    parsers: &TsParsers,
+    vfs: &Vfs,
+    runtime: &tokio::runtime::Runtime,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<FileSymbol> {
+    match LangId::from_path(Path::new(file_path)) {
+        Some(LangId::FSharp) => parse_fsharp_file_symbols(file_path, runtime, fsharp_sidecar),
+        _ => parse_file_symbols(file_path, parsers, vfs),
+    }
+}
+
+/// Extract an F# file's symbols via the FCS sidecar's documentSymbol, mapping
+/// the result into the Solution Explorer's symbol model. [FS-DOCSYMBOL]
+fn parse_fsharp_file_symbols(
+    file_path: &str,
+    runtime: &tokio::runtime::Runtime,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+) -> Result<FileSymbol> {
+    let sidecar = fsharp_sidecar.context("F# sidecar unavailable for F# symbol extraction")?;
+    let items = crate::document_symbols::fetch_fsharp_document_symbols(
+        runtime,
+        sidecar,
+        file_path.to_string(),
+    )?;
+    Ok(FileSymbol {
+        file: file_path.to_string(),
+        symbols: items.iter().map(map_sidecar_symbol).collect(),
+    })
+}
+
+/// Map a sidecar document symbol (and its children) into a `SymbolNode`. Uses
+/// the full symbol range to match the C# tree-sitter path's `node_to_symbol`.
+fn map_sidecar_symbol(item: &crate::document_symbols::SidecarDocumentSymbol) -> SymbolNode {
+    SymbolNode {
+        name: item.name.clone(),
+        kind: item.kind.clone(),
+        detail: None,
+        access: None,
+        range: SymbolRange {
+            start: SymbolPosition {
+                line: item.start_line,
+                character: item.start_character,
+            },
+            end: SymbolPosition {
+                line: item.end_line,
+                character: item.end_character,
+            },
+        },
+        children: item.children.iter().map(map_sidecar_symbol).collect(),
+    }
 }
 
 /// Recursively find `.cs` and `.fs` files under a directory.

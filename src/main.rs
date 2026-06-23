@@ -761,6 +761,7 @@ fn handle_custom_request(
             vfs,
             runtime,
             csharp_sidecar.or(fsharp_sidecar),
+            fsharp_sidecar,
         ),
         "sharplsp/sortMembers" => handle_sort_members(req, parsers),
         // NuGet package management
@@ -950,9 +951,17 @@ fn handle_workspace_symbols(
     vfs: &Vfs,
     runtime: &tokio::runtime::Runtime,
     solution_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     let params: workspace_symbols::WorkspaceSymbolsParams = serde_json::from_value(req.params)?;
-    let response = workspace_symbols::handle(&params, parsers, vfs, runtime, solution_sidecar)?;
+    let response = workspace_symbols::handle(
+        &params,
+        parsers,
+        vfs,
+        runtime,
+        solution_sidecar,
+        fsharp_sidecar,
+    )?;
     Ok(serde_json::to_value(response)?)
 }
 
