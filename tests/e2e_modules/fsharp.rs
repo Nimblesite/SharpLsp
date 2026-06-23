@@ -275,6 +275,53 @@ fn test_full_stack_fsharp_hover_xml_docs() {
     client.wait_with_timeout();
 }
 
+// 43b. F# HOVER REFLECTS LIVE EDITS (didChange overlay, not stale disk)
+//
+// Regression for "F# hover is broken after typing": the F# sidecar was cut out
+// of document sync. `notify_did_change` was hardcoded to the C# sidecar and the
+// F# sidecar registered no `textDocument/didChange`, so `getHover` always read
+// the file from DISK. As soon as the editor buffer diverged from disk, F# hover
+// resolved the editor's line/char against stale on-disk text and returned the
+// wrong symbol (or null). C# already honored the in-memory buffer; this restores
+// F# to parity. [FS-DIDCHANGE-OVERLAY]
+#[test]
+fn test_full_stack_fsharp_hover_reflects_live_edit() {
+    let (_tmp, file_uri, mut client) = ready_fsharp_client();
+
+    // Replace the whole buffer (full-sync didChange) with a document whose only
+    // binding, `subtractEdited`, exists ONLY in the editor — never on disk.
+    let edited = "namespace TestFSharp\n\
+        \n\
+        /// Edited-only module that lives solely in the editor buffer.\n\
+        module Edited =\n    \
+        /// Subtracts two integers; present only after a didChange, never on disk.\n    \
+        let subtractEdited (a: int) (b: int) : int = a - b\n";
+    client.change_document(&file_uri, 2, edited);
+
+    // `subtractEdited` is on line 5 (0-based), column 12 sits inside the
+    // identifier. Poll so FCS can re-check the overlay; today this never yields
+    // the edited symbol because the sidecar re-reads the on-disk file.
+    let needle = "subtractEdited";
+    let deadline = std::time::Instant::now() + Duration::from_mins(1);
+    loop {
+        let h = hover(&mut client, &file_uri, 5, 12);
+        assert_hover_ok(&h);
+        let md = h["result"]["contents"]["value"].as_str().unwrap_or("");
+        if md.contains(needle) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "F# hover must reflect the in-memory edit (`{needle}`), not the stale \
+             on-disk file — the F# sidecar must honor didChange overlays. Last hover: {h}"
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 // ── F# Navigation (Full-Stack) ──────────────────────────────────
 // Exercises the host→F# sidecar routing for go-to-definition, type-definition,
 // project-wide references, and document highlights. FSAC parity: these are the

@@ -2,6 +2,7 @@
 module SharpLsp.Sidecar.FSharp.FSharpWorkspace
 
 open System
+open System.Collections.Concurrent
 open System.IO
 open System.Reflection
 open System.Threading
@@ -28,14 +29,35 @@ type DefinitionLocation =
 type FSharpWorkspaceState =
     { Checker: FSharpChecker
       mutable ProjectOptions: FSharpProjectOptions option
-      mutable IsLoaded: bool }
+      mutable IsLoaded: bool
+      /// In-memory document buffers keyed by absolute file path, kept current by
+      /// LSP `textDocument/didChange`. Per-file analyses read from here so hover,
+      /// completion, etc. reflect unsaved edits instead of stale on-disk text.
+      /// [FS-DIDCHANGE-OVERLAY]
+      Overlays: ConcurrentDictionary<string, string> }
 
 /// Create a new workspace with an FSharpChecker.
 let create () : FSharpWorkspaceState =
     let checker = FSharpChecker.Create(keepAssemblyContents = true)
     { Checker = checker
       ProjectOptions = None
-      IsLoaded = false }
+      IsLoaded = false
+      Overlays = ConcurrentDictionary<string, string>() }
+
+/// Record the editor's in-memory buffer for a file (LSP didChange/didOpen).
+/// Per-file FCS analyses then resolve positions against the live buffer rather
+/// than the on-disk file, restoring parity with the C# sidecar. The Rust host
+/// sends the same absolute path it sends on position requests, so the keys
+/// align. [FS-DIDCHANGE-OVERLAY]
+let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
+    state.Overlays[filePath] <- newText
+
+/// Read a file's current source: the in-memory overlay when the editor has an
+/// open buffer for it, otherwise the on-disk contents. [FS-DIDCHANGE-OVERLAY]
+let internal readSource (state: FSharpWorkspaceState) (filePath: string) : string =
+    match state.Overlays.TryGetValue filePath with
+    | true, text -> text
+    | _ -> File.ReadAllText filePath
 
 /// Parse an .fsproj file to extract Compile Include entries.
 let internal parseFsprojSourceFiles (fsprojPath: string) : string array =
@@ -213,7 +235,7 @@ let getHover
             if not state.IsLoaded then
                 return None
             else
-                let source = File.ReadAllText(filePath)
+                let source = readSource state filePath
                 let sourceText = SourceText.ofString source
 
                 let! parseResults, checkAnswer =
@@ -250,7 +272,7 @@ let internal checkFileWithParse
         if not state.IsLoaded then
             return None
         else
-            let source = File.ReadAllText(filePath)
+            let source = readSource state filePath
             let sourceText = SourceText.ofString source
 
             let! parseResults, checkAnswer =

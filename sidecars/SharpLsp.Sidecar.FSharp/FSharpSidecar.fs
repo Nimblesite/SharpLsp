@@ -82,6 +82,19 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
+        // Records the editor's in-memory buffer so per-file analyses (hover,
+        // completion, …) reflect unsaved edits instead of stale on-disk text.
+        // Mirrors the C# sidecar's didChange overlay. [FS-DIDCHANGE-OVERLAY]
+        base.Register("textDocument/didChange", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<DidChangeRequest>(payload, cancellationToken = ct)
+                    FSharpWorkspace.applyDidChange workspace request.FilePath request.NewText
+                    return Helpers.serializeOk "ok" ct
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
         // Unused-package detection [PKG-UNUSED-DETECT-FS].
         base.Register("project/unusedPackages", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
