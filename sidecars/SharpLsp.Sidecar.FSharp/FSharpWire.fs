@@ -16,6 +16,15 @@ type PositionRequest =
       [<Key(1)>] Line: int
       [<Key(2)>] Character: int }
 
+/// `textDocument/didChange` payload: the full replacement text of a document.
+/// Layout mirrors the Rust host's `SidecarDidChangeReq` and the C# sidecar's
+/// `DidChangeRequest`. [FS-DIDCHANGE-OVERLAY]
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type DidChangeRequest =
+    { [<Key(0)>] FilePath: string
+      [<Key(1)>] NewText: string }
+
 [<MessagePackObject(AllowPrivate = true)>]
 [<NoComparison; NoEquality>]
 type HoverResult =

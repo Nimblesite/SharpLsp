@@ -819,8 +819,17 @@ fn pick_sidecar<'a>(
     csharp: Option<&'a Arc<SidecarManager>>,
     fsharp: Option<&'a Arc<SidecarManager>>,
 ) -> Option<&'a Arc<SidecarManager>> {
-    let uri = extract_document_uri(req);
-    match uri.and_then(|u| LangId::from_uri(&u)) {
+    extract_document_uri(req).map_or(csharp, |uri| sidecar_for_uri(&uri, csharp, fsharp))
+}
+
+/// Select the sidecar that owns a document, by file language. F# documents go to
+/// the F# sidecar; everything else (including unknown extensions) to C#.
+fn sidecar_for_uri<'a>(
+    uri: &Uri,
+    csharp: Option<&'a Arc<SidecarManager>>,
+    fsharp: Option<&'a Arc<SidecarManager>>,
+) -> Option<&'a Arc<SidecarManager>> {
+    match LangId::from_uri(uri) {
         Some(LangId::FSharp) => fsharp,
         _ => csharp,
     }
@@ -1107,11 +1116,13 @@ fn handle_notification(
                 info!("Opened: {}", doc.uri.as_str());
                 vfs.open(doc.uri.clone(), doc.version, doc.text.clone());
                 reparse(parsers, trees, &doc.uri, &doc.text);
-                // Sync text to sidecar so Roslyn sees the current source.
-                // Without this, the sidecar's _solution retains stale text
-                // from the initial workspace load or a previous didChange.
+                // Sync text to the document's own sidecar so the semantic engine
+                // (Roslyn / FCS) sees the current buffer. Routing by language is
+                // essential: without it F# edits never reach the F# sidecar, which
+                // then resolves hover/completion against stale on-disk text.
                 if let Ok(file_path) = semantic::uri_to_path(&doc.uri) {
-                    semantic::notify_did_change(&file_path, &doc.text, runtime, csharp_sidecar);
+                    let sidecar = sidecar_for_uri(&doc.uri, csharp_sidecar, fsharp_sidecar);
+                    semantic::notify_did_change(&file_path, &doc.text, runtime, sidecar);
                 }
                 trigger_diagnostics(
                     &doc.uri,
@@ -1137,14 +1148,11 @@ fn handle_notification(
                     vfs.change(uri, params.text_document.version, change.text.clone());
                     reparse(parsers, trees, uri, &change.text);
                     nav_cache.invalidate(uri);
-                    // Notify the sidecar so Roslyn sees the new source text.
+                    // Notify the document's own sidecar so the semantic engine
+                    // sees the new source text (F# → F# sidecar, C# → C#).
                     if let Ok(file_path) = semantic::uri_to_path(uri) {
-                        semantic::notify_did_change(
-                            &file_path,
-                            &change.text,
-                            runtime,
-                            csharp_sidecar,
-                        );
+                        let sidecar = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar);
+                        semantic::notify_did_change(&file_path, &change.text, runtime, sidecar);
                     }
                     trigger_diagnostics(uri, runtime, csharp_sidecar, fsharp_sidecar, connection);
                 }
@@ -1193,11 +1201,7 @@ fn trigger_diagnostics(
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     connection: &Connection,
 ) {
-    let sidecar = match crate::tree_sitter_parse::LangId::from_uri(uri) {
-        Some(crate::tree_sitter_parse::LangId::FSharp) => fsharp_sidecar,
-        _ => csharp_sidecar,
-    };
-    let Some(sidecar) = sidecar else {
+    let Some(sidecar) = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar) else {
         return;
     };
     let Ok(file_path) = semantic::uri_to_path(uri) else {

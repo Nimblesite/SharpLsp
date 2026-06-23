@@ -38,6 +38,7 @@ type SidecarErrorBranchTests(fixture: SidecarFixture) =
     [<InlineData("workspace/open")>]
     [<InlineData("solution/read")>]
     [<InlineData("textDocument/hover")>]
+    [<InlineData("textDocument/didChange")>]
     [<InlineData("project/unusedPackages")>]
     [<InlineData("textDocument/definition")>]
     [<InlineData("textDocument/typeDefinition")>]
@@ -325,6 +326,39 @@ let ``inlay hints surface on the loaded file`` () =
         let ws, src = loaded.Value
         let! hints = FSharpFeatures.getInlayHints ws src 0 100
         Assert.NotEmpty(hints)
+    }
+
+/// Hover resolves against the in-memory `didChange` overlay rather than the
+/// on-disk file: an unsaved binding that exists ONLY in the editor buffer must
+/// be hoverable. Regression for "F# hover is broken after typing". Uses an
+/// isolated workspace so the overlay never leaks into the shared `loaded`.
+/// [FS-DIDCHANGE-OVERLAY]
+[<Fact>]
+let ``getHover reads the didChange overlay instead of on-disk source`` () =
+    task {
+        let dir = createTestProject ()
+        try
+            let ws = FSharpWorkspace.create ()
+            let! _ = FSharpWorkspace.loadProject ws dir
+            let src = Path.Combine(dir, "Library.fs")
+            // Edited buffer: append a binding present only in memory, never on disk.
+            let edited =
+                File.ReadAllText(src)
+                + "\n/// Present only in the editor buffer, never on disk.\n"
+                + "let overlayOnlyBinding (a: int) (b: int) : int = a - b\n"
+            FSharpWorkspace.applyDidChange ws src edited
+
+            let lines = edited.Replace("\r\n", "\n").Split('\n')
+            let lineIdx =
+                lines |> Array.findIndex (fun l -> l.Contains "let overlayOnlyBinding")
+            let col = lines[lineIdx].IndexOf("overlayOnlyBinding") + 2
+
+            let! h = FSharpWorkspace.getHover ws src lineIdx col
+            Assert.True(h.IsSome, "hover must resolve the overlay-only binding")
+            let markdown, _, _, _, _ = h.Value
+            Assert.Contains("overlayOnlyBinding", markdown)
+        finally
+            try Directory.Delete(dir, true) with _ -> ()
     }
 
 // ── Program entry point: --version path ──────────────────────────

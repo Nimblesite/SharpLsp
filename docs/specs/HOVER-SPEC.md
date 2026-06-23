@@ -143,6 +143,19 @@ F# hover follows the same Markdown structure as C#:
 | Discriminated union cases | Show case fields with types |
 | Record fields | Show field type and containing record |
 
+### 5.4 Live-Buffer Resolution `[FS-DIDCHANGE-OVERLAY]`
+
+Hover MUST resolve against the editor's **in-memory buffer**, not the on-disk
+file. The Rust host forwards `textDocument/didOpen`/`didChange` to the document's
+own sidecar (F# → F# sidecar, C# → C# sidecar); routing by language is mandatory,
+since a misrouted edit leaves the owning sidecar resolving positions against stale
+text. The F# sidecar keeps an in-memory overlay keyed by absolute file path and
+every per-file analysis (hover, completion, signature help, …) reads source via
+that overlay, falling back to disk only when no open buffer exists. This restores
+F# to parity with C#, whose Roslyn workspace is already updated in place on
+`didChange`. Without this, F# hover misaligns the moment the buffer diverges from
+disk (i.e. as soon as the user types) and returns the wrong symbol or `null`.
+
 ## 6. Caching Strategy
 
 Hover results are cached via the [salsa](https://salsa-rs.github.io/salsa/) incremental computation database in the Rust host.
