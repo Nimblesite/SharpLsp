@@ -40,6 +40,7 @@ that feature — that is the parity gap.
 | `textDocument/codeAction` + resolve | [code_actions.rs](../../src/code_actions.rs) | ✅ | ✅ | — |
 | `textDocument/semanticTokens/{full,range}` | [semantic_tokens.rs](../../src/semantic_tokens.rs) | ✅ | ✅ | — |
 | `textDocument/documentSymbol` | [document_symbols.rs:20](../../src/document_symbols.rs#L20) | ✅ tree-sitter (host) | ✅ **FCS nav items (this plan)** | [FS-DOCSYMBOL] |
+| `workspace/symbol` | [main.rs](../../src/main.rs) `handle_standard_workspace_symbol` | ✅ tree-sitter (host) | ✅ **FCS document symbols** | [FS-WORKSPACE-SYMBOL] |
 | `textDocument/signatureHelp` | [signature_help.rs:21](../../src/signature_help.rs#L21) | — | ✅ **FCS GetMethods (this plan)** | [FS-SIGHELP] |
 | `textDocument/inlayHint` | [inlay_hints.rs](../../src/inlay_hints.rs) | ✅ | ✅ | — |
 | `workspace/diagnostics` (pull) | [pull_diagnostics.rs](../../src/pull_diagnostics.rs) | ✅ | ✅ | — |
@@ -130,7 +131,11 @@ rule offers. Private/internal dead code is reported even outside monorepo mode.
 - [x] C# parity: Roslyn `SymbolFinder` monorepo dead-code (`SLSPC0101`) + `analyzers/configure`
       ([DeadCodeAnalyzer.cs](../../sidecars/SharpLsp.Sidecar.CSharp/Workspace/DeadCodeAnalyzer.cs),
       5 e2e tests; same `[analyzers]` config flows to both sidecars from the host)
-- [ ] code fixes: remove-unused-open, simplify-name rewrite, safe-delete dead symbol
+- [x] code fixes: remove-unused-open (`[FS-CODEFIX-UNUSEDOPEN]`) + simplify-name (`[FS-CODEFIX-SIMPLIFYNAME]`)
+      — `removeUnusedOpenActions`/`simplifyNameActions` in
+      [FSharpCodeFixes.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeFixes.fs), backed by the
+      shared [FSharpLocalAnalysis.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpLocalAnalysis.fs)
+- [ ] code fixes: safe-delete dead symbol
 
 ## Pre-existing backlog (unchanged)
 

@@ -304,6 +304,76 @@ let private collectTypeInformedActions
     | None -> ()
     actions |> List.rev
 
+// ── Analyzer-driven fixes (FSAC parity) ──────────────────────────
+
+/// [FS-CODEFIX-UNUSEDOPEN] "Remove unused open" for each unused `open` range that
+/// overlaps the requested range. Deletes the whole `open` line (start of its first
+/// line through the start of the line after its last), mirroring FSAC's behaviour.
+let private removeUnusedOpenActions
+    (state: CodeFixState)
+    (filePath: string)
+    (unusedOpens: range list)
+    (startLine: int)
+    (endLine: int)
+    : CodeActionItem list =
+    unusedOpens
+    |> List.filter (fun r -> overlapsRange (r.StartLine - 1) (r.EndLine - 1) startLine endLine)
+    |> List.map (fun r ->
+        let edit =
+            singleFileEdit
+                filePath
+                [ { StartLine = r.StartLine - 1
+                    StartCharacter = 0
+                    EndLine = r.EndLine
+                    EndCharacter = 0
+                    NewText = "" } ]
+
+        cacheAction state "Remove unused open" "quickfix" false edit)
+
+/// [FS-CODEFIX-SIMPLIFYNAME] "Simplify name" for each redundant qualifier that
+/// overlaps the requested range. FCS reports `Range` as the unnecessary qualifier
+/// prefix (including its trailing dot), so simplification deletes that span,
+/// e.g. `System.DateTime.MinValue` → `DateTime.MinValue` when `System` is open.
+let private simplifyNameActions
+    (state: CodeFixState)
+    (filePath: string)
+    (names: (range * string) list)
+    (startLine: int)
+    (endLine: int)
+    : CodeActionItem list =
+    names
+    |> List.filter (fun (r, _) -> overlapsRange (r.StartLine - 1) (r.EndLine - 1) startLine endLine)
+    |> List.map (fun (r, _relativeName) ->
+        let edit =
+            singleFileEdit
+                filePath
+                [ { StartLine = r.StartLine - 1
+                    StartCharacter = r.StartColumn
+                    EndLine = r.EndLine - 1
+                    EndCharacter = r.EndColumn
+                    NewText = "" } ]
+
+        cacheAction state "Simplify name" "quickfix" false edit)
+
+/// Collect analyzer-driven fixes (unused-open removal, name simplification) from
+/// the shared [FSharpLocalAnalysis] findings, so the always-on diagnostic hints
+/// and these fixes are always computed from the same FCS results.
+let private collectAnalyzerActions
+    (state: CodeFixState)
+    (filePath: string)
+    (checkResults: FSharpCheckFileResults)
+    (source: string)
+    (startLine: int)
+    (endLine: int)
+    : Async<CodeActionItem list> =
+    async {
+        let! findings = FSharpLocalAnalysis.getFileAnalyzerFindings checkResults source
+
+        return
+            removeUnusedOpenActions state filePath findings.UnusedOpens startLine endLine
+            @ simplifyNameActions state filePath findings.SimplifiableNames startLine endLine
+    }
+
 /// Get all code actions for a file range.
 let getCodeActions
     (state: CodeFixState)
@@ -343,7 +413,20 @@ let getCodeActions
                             state filePath source
                             checkResults parseResults
                             startLine startCharacter
-                    return diagActions @ typeActions
+                    // Phase 3: Analyzer-driven fixes (remove unused open, simplify name).
+                    let! analyzerActions =
+                        collectAnalyzerActions
+                            state filePath checkResults source startLine endLine
+                    // Phase 4: Interface implementation stub [FS-CODEFIX-INTERFACESTUB].
+                    let! interfaceStub =
+                        FSharpCodeActions.tryGenerateInterfaceStub
+                            checkResults parseResults source
+                            filePath startLine startCharacter
+                    let interfaceActions =
+                        match interfaceStub with
+                        | Some action -> [ wrapGeneratedAction state action ]
+                        | None -> []
+                    return diagActions @ typeActions @ analyzerActions @ interfaceActions
                 | FSharpCheckFileAnswer.Aborted ->
                     return []
         with ex ->

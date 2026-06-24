@@ -4,6 +4,7 @@
 module SharpLsp.Sidecar.FSharp.FSharpCodeActions
 
 open FSharp.Compiler.CodeAnalysis
+open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Syntax
 open FSharp.Compiler.Text
@@ -253,3 +254,95 @@ let tryGenerateRecordStubs
                                 EndCharacter = max 0 insertCol
                                 NewText = $"; {stubText}" } ] }
     with _ -> None
+
+// ── Interface implementation stub generation ────────────────────
+// [FS-CODEFIX-INTERFACESTUB] Completes the stub-generation trio (union / record /
+// interface) using FCS `InterfaceStubGenerator` — FSAC parity. Given the cursor on
+// an `interface IFoo with` declaration, generate stubs for the not-yet-implemented
+// members (`member _.X ... = failwith "..."`).
+
+/// Resolve the interface entity for an `interface … with` block: the first symbol
+/// use inside the declaration range whose symbol is an interface entity.
+let private resolveInterfaceEntity
+    (checkResults: FSharpCheckFileResults)
+    (interfaceRange: Range)
+    : FSharpSymbolUse option =
+    checkResults.GetAllUsesOfAllSymbolsInFile()
+    |> Seq.tryPick (fun su ->
+        match su.Symbol with
+        | :? FSharpEntity as ent when
+            InterfaceStubGenerator.IsInterface ent
+            && Range.rangeContainsRange interfaceRange su.Range -> Some su
+        | _ -> None)
+
+/// Generate stub implementations for the unimplemented members of an interface.
+let tryGenerateInterfaceStub
+    (checkResults: FSharpCheckFileResults)
+    (parseResults: FSharpParseFileResults)
+    (source: string)
+    (filePath: string)
+    (line: int)
+    (col: int)
+    : Async<GeneratedAction option> =
+    async {
+        try
+            let pos = Position.mkPos (line + 1) col
+
+            match InterfaceStubGenerator.TryFindInterfaceDeclaration pos parseResults.ParseTree with
+            | None -> return None
+            | Some interfaceData ->
+                // Bind the struct range to a local so property access doesn't trip FS0052.
+                let interfaceRange = interfaceData.Range
+
+                match resolveInterfaceEntity checkResults interfaceRange with
+                | None -> return None
+                | Some symbolUse ->
+                    let entity = symbolUse.Symbol :?> FSharpEntity
+
+                    if InterfaceStubGenerator.HasNoInterfaceMember entity then
+                        return None
+                    else
+                        let getLine = FSharpLocalAnalysis.lineGetter source
+
+                        let getMemberByLocation (name: string, range: Range) =
+                            checkResults.GetSymbolUseAtLocation(
+                                range.EndLine, range.EndColumn, getLine range.EndLine, [ name ])
+
+                        let displayContext = symbolUse.DisplayContext
+
+                        let! implemented =
+                            InterfaceStubGenerator.GetImplementedMemberSignatures
+                                getMemberByLocation displayContext interfaceData
+
+                        let stubIndent = interfaceRange.StartColumn + 4
+
+                        let stub =
+                            InterfaceStubGenerator.FormatInterface
+                                stubIndent 4 [||] "_"
+                                "failwith \"Not implemented yet\""
+                                displayContext implemented entity false
+
+                        if System.String.IsNullOrWhiteSpace stub then
+                            return None
+                        else
+                            let insertLine = interfaceRange.EndLine - 1
+                            let insertCol = interfaceRange.EndColumn
+                            // Prefix `with` only when the declaration lacks it.
+                            let declText = getLine interfaceRange.EndLine
+                            let prefix = if declText.Contains(" with") then "\n" else " with\n"
+
+                            return
+                                Some
+                                    { Title = "Implement interface"
+                                      Kind = "quickfix"
+                                      IsPreferred = true
+                                      Edits =
+                                        [ { FilePath = filePath
+                                            StartLine = insertLine
+                                            StartCharacter = insertCol
+                                            EndLine = insertLine
+                                            EndCharacter = insertCol
+                                            NewText = prefix + stub } ] }
+        with _ ->
+            return None
+    }

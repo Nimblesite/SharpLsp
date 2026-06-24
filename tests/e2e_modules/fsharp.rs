@@ -582,6 +582,91 @@ fn test_full_stack_fsharp_language_surface() {
     client.wait_with_timeout();
 }
 
+// ── F# Workspace Symbol (Full-Stack) ────────────────────────────
+// The editor's "Go to Symbol in Workspace" (Ctrl-T) must reach F# symbols. The
+// host has no F# tree-sitter grammar, so the standard `workspace/symbol` handler
+// routes F# files to the FCS sidecar's document symbols. [FS-WORKSPACE-SYMBOL]
+
+#[test]
+fn test_full_stack_fsharp_workspace_symbol() {
+    let (_tmp, file_uri, mut client) = ready_fsharp_client();
+
+    // Exact query: the `Calculator` module must surface, located in the F# file.
+    let calc = client.request("workspace/symbol", json!({ "query": "Calculator" }));
+    assert_rpc_ok(&calc, "workspace/symbol(Calculator)");
+    let calc_arr = calc["result"]
+        .as_array()
+        .expect("workspace/symbol must return an array");
+    assert!(
+        calc_arr.iter().any(|s| s["name"] == "Calculator"),
+        "workspace/symbol must find the Calculator module: {calc}"
+    );
+    let calc_sym = calc_arr
+        .iter()
+        .find(|s| s["name"] == "Calculator")
+        .expect("Calculator symbol present");
+    // SymbolKind::Module == 2; the location must point back at Library.fs.
+    assert_eq!(calc_sym["kind"], 2, "Calculator must be a Module");
+    assert_eq!(
+        calc_sym["location"]["uri"],
+        json!(file_uri),
+        "the F# symbol must locate in the opened document"
+    );
+
+    // The `Shape` discriminated union surfaces as an Enum-kind symbol
+    // (FCS maps DU glyphs to Enum; SymbolKind::Enum == 10).
+    let shape = client.request("workspace/symbol", json!({ "query": "Shape" }));
+    let shape_arr = shape["result"].as_array().expect("array");
+    assert!(
+        shape_arr.iter().any(|s| s["name"] == "Shape"),
+        "workspace/symbol must find the Shape type: {shape}"
+    );
+    let shape_sym = shape_arr
+        .iter()
+        .find(|s| s["name"] == "Shape")
+        .expect("Shape symbol present");
+    assert_eq!(
+        shape_sym["kind"], 10,
+        "Shape (a DU) must be an Enum-kind symbol"
+    );
+
+    // Fuzzy subsequence match: `calc` matches `Calculator`.
+    let fuzzy = client.request("workspace/symbol", json!({ "query": "calc" }));
+    assert!(
+        fuzzy["result"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .any(|s| s["name"] == "Calculator"),
+        "fuzzy query `calc` must match the Calculator module: {fuzzy}"
+    );
+
+    // The empty query enumerates every F# symbol (module + members) in the file.
+    let all = client.request("workspace/symbol", json!({ "query": "" }));
+    let all_arr = all["result"].as_array().expect("array");
+    assert!(
+        all_arr.len() >= 4,
+        "empty query must enumerate the F# symbols (got {}): {all}",
+        all_arr.len()
+    );
+    assert!(
+        all_arr
+            .iter()
+            .all(|s| s["location"]["uri"] == json!(file_uri)),
+        "every F# workspace symbol must locate in the opened document"
+    );
+
+    // A nonsense query matches nothing.
+    let none = client.request("workspace/symbol", json!({ "query": "zzqqxx" }));
+    assert!(
+        none["result"].as_array().expect("array").is_empty(),
+        "a non-matching query must return no F# symbols: {none}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 // ── F# Hierarchies (Full-Stack) ─────────────────────────────────
 // Call hierarchy and type hierarchy — features FSAC does NOT provide; SharpLsp
 // implements them via FCS AST traversal. Exercises prepare + a follow-up edge.

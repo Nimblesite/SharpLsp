@@ -67,6 +67,22 @@ pub(crate) fn fetch_fsharp_document_symbols(
     Ok(rmp_serde::from_slice(&response_bytes)?)
 }
 
+/// The full source range of a sidecar symbol.
+fn full_range(item: &SidecarDocumentSymbol) -> Range {
+    Range::new(
+        lsp_types::Position::new(item.start_line, item.start_character),
+        lsp_types::Position::new(item.end_line, item.end_character),
+    )
+}
+
+/// The selection (identifier) range of a sidecar symbol.
+fn selection_range(item: &SidecarDocumentSymbol) -> Range {
+    Range::new(
+        lsp_types::Position::new(item.selection_start_line, item.selection_start_character),
+        lsp_types::Position::new(item.selection_end_line, item.selection_end_character),
+    )
+}
+
 /// Convert a sidecar document symbol (and its children) into an LSP one.
 fn map_symbol(item: &SidecarDocumentSymbol) -> DocumentSymbol {
     #[expect(
@@ -79,15 +95,57 @@ fn map_symbol(item: &SidecarDocumentSymbol) -> DocumentSymbol {
         kind: parse_document_symbol_kind(&item.kind),
         tags: None,
         deprecated: None,
-        range: Range::new(
-            lsp_types::Position::new(item.start_line, item.start_character),
-            lsp_types::Position::new(item.end_line, item.end_character),
-        ),
-        selection_range: Range::new(
-            lsp_types::Position::new(item.selection_start_line, item.selection_start_character),
-            lsp_types::Position::new(item.selection_end_line, item.selection_end_character),
-        ),
+        range: full_range(item),
+        selection_range: selection_range(item),
         children: Some(item.children.iter().map(map_symbol).collect()),
+    }
+}
+
+/// Flatten the F# document-symbol tree for one file into LSP workspace
+/// [`SymbolInformation`]s (one entry per symbol, nested members included) so the
+/// editor's `workspace/symbol` (Go to Symbol in Workspace / Ctrl-T) search reaches
+/// F# symbols. The host has no F# tree-sitter grammar, so — like the outline and
+/// the Solution Explorer — these come from the FCS sidecar. Unfiltered; the caller
+/// applies the query match. [FS-WORKSPACE-SYMBOL]
+pub(crate) fn fsharp_workspace_symbols(
+    runtime: &tokio::runtime::Runtime,
+    sidecar: &Arc<SidecarManager>,
+    uri: &lsp_types::Uri,
+    file_path: String,
+) -> Result<Vec<lsp_types::SymbolInformation>> {
+    let items = fetch_fsharp_document_symbols(runtime, sidecar, file_path)?;
+    let mut out = Vec::new();
+    for item in &items {
+        flatten_workspace_symbol(uri, item, None, &mut out);
+    }
+    Ok(out)
+}
+
+/// Recursively flatten a symbol and its children into `SymbolInformation`s,
+/// threading each symbol's name down as its children's `container_name`.
+fn flatten_workspace_symbol(
+    uri: &lsp_types::Uri,
+    item: &SidecarDocumentSymbol,
+    container: Option<&str>,
+    out: &mut Vec<lsp_types::SymbolInformation>,
+) {
+    #[expect(
+        deprecated,
+        reason = "SymbolInformation is the LSP 3.17 workspace/symbol response type"
+    )]
+    out.push(lsp_types::SymbolInformation {
+        name: item.name.clone(),
+        kind: parse_document_symbol_kind(&item.kind),
+        tags: None,
+        deprecated: None,
+        location: lsp_types::Location {
+            uri: uri.clone(),
+            range: full_range(item),
+        },
+        container_name: container.map(str::to_string),
+    });
+    for child in &item.children {
+        flatten_workspace_symbol(uri, child, Some(&item.name), out);
     }
 }
 
@@ -146,6 +204,7 @@ pub(crate) struct SidecarDocumentSymbol {
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
+    clippy::indexing_slicing,
     reason = "test code — panics are the correct failure mode"
 )]
 mod tests {
@@ -204,6 +263,35 @@ mod tests {
         let first = children.first().unwrap();
         assert_eq!(first.name, "area");
         assert_eq!(first.kind, SymbolKind::FUNCTION);
+    }
+
+    #[test]
+    fn flatten_workspace_symbol_flattens_tree_with_containers() {
+        // Geometry (Module) → { area (Function), Greeter (Class) → Greet (Method) }
+        let mut module = leaf("Geometry", "Module");
+        let mut greeter = leaf("Greeter", "Class");
+        // The F# sidecar maps member glyphs to "Function" (see FSharpSymbols.fs).
+        greeter.children = vec![leaf("Greet", "Function")];
+        module.children = vec![leaf("area", "Function"), greeter];
+
+        let uri: lsp_types::Uri = "file:///tmp/Library.fs".parse().unwrap();
+        let mut out = Vec::new();
+        flatten_workspace_symbol(&uri, &module, None, &mut out);
+
+        // Four symbols: the module plus its two members plus the nested method.
+        assert_eq!(out.len(), 4);
+        let names: Vec<&str> = out.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["Geometry", "area", "Greeter", "Greet"]);
+
+        // Top-level module has no container; members are contained by their parent.
+        assert_eq!(out[0].container_name, None);
+        assert_eq!(out[1].container_name.as_deref(), Some("Geometry"));
+        assert_eq!(out[2].container_name.as_deref(), Some("Geometry"));
+        assert_eq!(out[3].container_name.as_deref(), Some("Greeter"));
+        assert_eq!(out[0].kind, SymbolKind::MODULE);
+        assert_eq!(out[3].kind, SymbolKind::FUNCTION);
+        // Every symbol points back at the requested document.
+        assert!(out.iter().all(|s| s.location.uri == uri));
     }
 
     #[test]

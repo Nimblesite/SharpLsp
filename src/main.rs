@@ -666,7 +666,9 @@ fn handle_request(
         }
         WorkspaceDiagnosticRequest::METHOD => pull_diagnostics::handle_workspace_diagnostic(req),
         // Standard workspace/symbol
-        WorkspaceSymbolRequest::METHOD => handle_standard_workspace_symbol(req, parsers, vfs),
+        WorkspaceSymbolRequest::METHOD => {
+            handle_standard_workspace_symbol(req, parsers, vfs, runtime, fsharp_sidecar)
+        }
         // Solution loading
         "sharplsp/loadSolution" => handle_load_solution(
             req,
@@ -965,30 +967,64 @@ fn handle_workspace_symbols(
     Ok(serde_json::to_value(response)?)
 }
 
-/// Standard `workspace/symbol` handler using tree-sitter to find symbols matching a query.
+/// Standard `workspace/symbol` handler. C#/syntax files are matched by tree-sitter
+/// over the VFS; F# files are matched via the FCS sidecar's document symbols, since
+/// the host has no F# tree-sitter grammar. [FS-WORKSPACE-SYMBOL]
 fn handle_standard_workspace_symbol(
     req: Request,
     parsers: &TsParsers,
     vfs: &Vfs,
+    runtime: &tokio::runtime::Runtime,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     let params: lsp_types::WorkspaceSymbolParams = serde_json::from_value(req.params)?;
     let query = params.query.to_lowercase();
 
-    // Reuse the existing workspace symbols infrastructure.
     // Get all files from the VFS and search for matching symbols.
     let mut symbols = Vec::new();
     for entry in vfs.iter() {
         let uri = entry.key().clone();
-        let content = entry.value().content.clone();
         let Some(lang) = LangId::from_uri(&uri) else {
             continue;
         };
+        if matches!(lang, LangId::FSharp) {
+            collect_fsharp_ws_symbols(&uri, runtime, fsharp_sidecar, &query, &mut symbols);
+            continue;
+        }
+        let content = entry.value().content.clone();
         if let Ok(tree) = parsers.parse(lang, &content, None) {
             collect_matching_symbols(&uri, &tree, &content, &query, &mut symbols);
         }
     }
 
     Ok(serde_json::to_value(symbols)?)
+}
+
+/// Append the FCS-sourced workspace symbols matching `query` for one open F#
+/// document. No sidecar / unresolvable path / sidecar error → contributes
+/// nothing, never fails the whole search. [FS-WORKSPACE-SYMBOL]
+fn collect_fsharp_ws_symbols(
+    uri: &Uri,
+    runtime: &tokio::runtime::Runtime,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+    query: &str,
+    symbols: &mut Vec<lsp_types::SymbolInformation>,
+) {
+    let Some(sidecar) = fsharp_sidecar else {
+        return;
+    };
+    let Ok(file_path) = crate::semantic::uri_to_path(uri) else {
+        return;
+    };
+    let Ok(found) = document_symbols::fsharp_workspace_symbols(runtime, sidecar, uri, file_path)
+    else {
+        return;
+    };
+    for sym in found {
+        if query.is_empty() || fuzzy_match_subsequence(&sym.name.to_lowercase(), query) {
+            symbols.push(sym);
+        }
+    }
 }
 
 /// Collect symbols from a tree that match the query string.

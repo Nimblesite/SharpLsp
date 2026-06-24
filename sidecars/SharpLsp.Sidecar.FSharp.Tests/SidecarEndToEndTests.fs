@@ -138,6 +138,8 @@ let createTestProject () =
     <Compile Include="Extra.fs" />
     <Compile Include="Dead.fs" />
     <Compile Include="Hints.fs" />
+    <Compile Include="Simplify.fs" />
+    <Compile Include="Interface.fs" />
   </ItemGroup>
 </Project>""")
     File.WriteAllText(Path.Combine(dir, "Library.fs"), testSource)
@@ -181,6 +183,27 @@ let createTestProject () =
     File.WriteAllText(
         Path.Combine(dir, "Hints.fs"),
         "module TestProject.Hints\n\nopen System.Text\n\nlet hintValue = 1\n")
+    // Drives the analyzer-backed code fixes ([FS-CODEFIX-SIMPLIFYNAME]): `open
+    // System` is genuinely used (DateTime unqualified on line 4), so it is NOT a
+    // remove-unused-open candidate, while `System.DateTime` on line 6 carries a
+    // redundant qualifier → "Simplify name" to `DateTime`.
+    File.WriteAllText(
+        Path.Combine(dir, "Simplify.fs"),
+        "module TestProject.Simplify\n\n"
+        + "open System\n\n"
+        + "let nowKind () : DateTime = DateTime.Now\n\n"
+        + "let redundant = System.DateTime.MinValue\n")
+    // Drives the interface-implementation stub code action
+    // ([FS-CODEFIX-INTERFACESTUB]): `Square` declares `interface IShape` but
+    // implements none of its members → "Implement interface" generates them.
+    File.WriteAllText(
+        Path.Combine(dir, "Interface.fs"),
+        "module TestProject.Interface\n\n"
+        + "type IShape =\n"
+        + "    abstract member Area: unit -> float\n"
+        + "    abstract member Name: string\n\n"
+        + "type Square() =\n"
+        + "    interface IShape\n")
     dir
 
 /// Deserialize a MessagePack byte[] payload to the target type.
@@ -235,6 +258,8 @@ type SidecarFixture() =
     member _.Consumer = Path.Combine(dir, "Consumer.fs")
     member _.Dead = Path.Combine(dir, "Dead.fs")
     member _.Hints = Path.Combine(dir, "Hints.fs")
+    member _.Simplify = Path.Combine(dir, "Simplify.fs")
+    member _.Interface = Path.Combine(dir, "Interface.fs")
     member _.NextId() = Interlocked.Increment(&nextId)
 
     member this.Send(meth, payload) =
@@ -589,6 +614,109 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Null(r.Error)
         let edit = deserialize<WorkspaceEditResult>(r.Payload)
         Assert.Empty(edit.DocumentChanges)
+    }
+
+    // ── Analyzer-driven code fixes (FSAC parity) ────────────────
+
+    [<Fact>]
+    member _.``code action offers remove-unused-open and deletes the open line``() = task {
+        // Hints.fs line 2 (0-based) is `open System.Text`, which nothing uses.
+        let payload =
+            MessagePackSerializer.Serialize(
+                { CodeActionRequest.FilePath = fixture.Hints
+                  StartLine = 2; StartCharacter = 0
+                  EndLine = 2; EndCharacter = 16 })
+        let! r = fixture.Send("textDocument/codeAction", payload)
+        Assert.Null(r.Error)
+        let actions = deserialize<CodeActionItemResult array>(r.Payload)
+        let remove = actions |> Array.filter (fun a -> a.Title = "Remove unused open")
+        Assert.NotEmpty(remove)
+        Assert.Equal("quickfix", remove[0].Kind)
+
+        // Resolving the action deletes the whole `open` line: (2,0) → (3,0) = "".
+        let resolvePayload =
+            MessagePackSerializer.Serialize({ CodeActionResolveRequest.Id = remove[0].Id })
+        let! rr = fixture.Send("codeAction/resolve", resolvePayload)
+        Assert.Null(rr.Error)
+        let edit = deserialize<WorkspaceEditResult>(rr.Payload)
+        Assert.Equal(1, edit.DocumentChanges.Length)
+        let dc = edit.DocumentChanges[0]
+        Assert.Contains("Hints.fs", dc.FilePath)
+        Assert.Equal(1, dc.Edits.Length)
+        let e = dc.Edits[0]
+        Assert.Equal(2, e.StartLine)
+        Assert.Equal(0, e.StartCharacter)
+        Assert.Equal(3, e.EndLine)
+        Assert.Equal(0, e.EndCharacter)
+        Assert.Equal("", e.NewText)
+    }
+
+    [<Fact>]
+    member _.``code action offers simplify-name on a redundant qualifier``() = task {
+        // Simplify.fs line 6 (0-based): `let redundant = System.DateTime.MinValue`
+        // — `System.` is redundant because `open System` is in scope.
+        let payload =
+            MessagePackSerializer.Serialize(
+                { CodeActionRequest.FilePath = fixture.Simplify
+                  StartLine = 6; StartCharacter = 0
+                  EndLine = 6; EndCharacter = 40 })
+        let! r = fixture.Send("textDocument/codeAction", payload)
+        Assert.Null(r.Error)
+        let actions = deserialize<CodeActionItemResult array>(r.Payload)
+        let simplify = actions |> Array.filter (fun a -> a.Title = "Simplify name")
+        Assert.NotEmpty(simplify)
+        Assert.Equal("quickfix", simplify[0].Kind)
+
+        // Resolving deletes the redundant `System.` qualifier prefix.
+        let resolvePayload =
+            MessagePackSerializer.Serialize({ CodeActionResolveRequest.Id = simplify[0].Id })
+        let! rr = fixture.Send("codeAction/resolve", resolvePayload)
+        Assert.Null(rr.Error)
+        let edit = deserialize<WorkspaceEditResult>(rr.Payload)
+        Assert.Equal(1, edit.DocumentChanges.Length)
+        let dc = edit.DocumentChanges[0]
+        Assert.Contains("Simplify.fs", dc.FilePath)
+        Assert.Equal(1, dc.Edits.Length)
+        let e = dc.Edits[0]
+        Assert.Equal(6, e.StartLine)
+        Assert.Equal(6, e.EndLine)
+        // Applying the edit to the source line yields the simplified form.
+        let original = "let redundant = System.DateTime.MinValue"
+        let applied =
+            original.Substring(0, e.StartCharacter) + e.NewText + original.Substring(e.EndCharacter)
+        Assert.Equal("let redundant = DateTime.MinValue", applied)
+    }
+
+    [<Fact>]
+    member _.``code action offers implement-interface stub for an unimplemented interface``() = task {
+        // Interface.fs line 7 (0-based) is `    interface IShape` with no members;
+        // `Square` implements none of IShape's members.
+        let payload =
+            MessagePackSerializer.Serialize(
+                { CodeActionRequest.FilePath = fixture.Interface
+                  StartLine = 7; StartCharacter = 14
+                  EndLine = 7; EndCharacter = 20 })
+        let! r = fixture.Send("textDocument/codeAction", payload)
+        Assert.Null(r.Error)
+        let actions = deserialize<CodeActionItemResult array>(r.Payload)
+        let impl = actions |> Array.filter (fun a -> a.Title = "Implement interface")
+        Assert.NotEmpty(impl)
+        Assert.Equal("quickfix", impl[0].Kind)
+
+        // Resolving generates stubs for both unimplemented members (Area, Name).
+        let resolvePayload =
+            MessagePackSerializer.Serialize({ CodeActionResolveRequest.Id = impl[0].Id })
+        let! rr = fixture.Send("codeAction/resolve", resolvePayload)
+        Assert.Null(rr.Error)
+        let edit = deserialize<WorkspaceEditResult>(rr.Payload)
+        Assert.Equal(1, edit.DocumentChanges.Length)
+        let dc = edit.DocumentChanges[0]
+        Assert.Contains("Interface.fs", dc.FilePath)
+        Assert.Equal(1, dc.Edits.Length)
+        let e = dc.Edits[0]
+        Assert.Contains("member", e.NewText)
+        Assert.Contains("Area", e.NewText)
+        Assert.Contains("Name", e.NewText)
     }
 
     // ── Diagnostics ─────────────────────────────────────────────
