@@ -10,8 +10,9 @@
     break sidecar project cracking until Ionide.ProjInfo lands.
 
     File order matters in F#: Domain (types) → Library (logic) → Usage
-    (cross-file references) → DiagnosticsTarget (overwritten on disk by the
-    diagnostics tests). Do NOT reorder.
+    (cross-file references) → CodeFixes (unused open + redundant qualifier, for
+    the analyzer-backed code-fix tests) → DiagnosticsTarget (overwritten on disk
+    by the diagnostics tests). Do NOT reorder.
   -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -41,6 +42,8 @@
     <Compile Include="Domain.fs" />
     <Compile Include="Library.fs" />
     <Compile Include="Usage.fs" />
+    <Compile Include="CodeFixes.fs" />
+    <Compile Include="Implement.fs" />
     <Compile Include="DiagnosticsTarget.fs" />
   </ItemGroup>
 

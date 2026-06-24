@@ -41,6 +41,7 @@
     <Compile Include="FSharpReferences.fs" />
     <Compile Include="FSharpFeatures.fs" />
     <Compile Include="FSharpFileOrder.fs" />
+    <Compile Include="FSharpLocalAnalysis.fs" />
     <Compile Include="FSharpCodeActions.fs" />
     <Compile Include="FSharpCodeFixes.fs" />
     <Compile Include="FSharpCompletion.fs" />

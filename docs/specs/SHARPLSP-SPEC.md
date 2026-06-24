@@ -304,7 +304,7 @@ This section specifies every feature SharpLsp will implement, mapped to the LSP 
 | Go to implementation | See [DEFINITION-SPEC.md](DEFINITION-SPEC.md) | | | P0 |
 | Find all references | `textDocument/references` | [SymbolFinder.FindReferencesAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.findusages.symbolfinder.findreferencesasync) | GetUsesOfSymbolInFile/Project() | P0 |
 | Document highlights | `textDocument/documentHighlight` | SymbolFinder (scoped to doc) | GetUsesOfSymbolInFile() | P0 |
-| Workspace symbol search | `workspace/symbol` | SymbolFinder (project-wide) | GetAllUsesOfAllSymbols() | P0 |
+| Workspace symbol search | `workspace/symbol` | tree-sitter over open docs (host) | FCS document symbols via sidecar — `[FS-WORKSPACE-SYMBOL]` (host has no F# tree-sitter grammar) | P0 |
 | Document symbols | `textDocument/documentSymbol` | tree-sitter structural extraction | tree-sitter structural extraction | P0 |
 | Call hierarchy | `textDocument/prepareCallHierarchy` | SymbolFinder.FindCallersAsync() | Custom call graph analysis | P1 |
 | Type hierarchy | `textDocument/prepareTypeHierarchy` | FindDerivedClasses + base types | Type hierarchy via FCS symbols | P1 |

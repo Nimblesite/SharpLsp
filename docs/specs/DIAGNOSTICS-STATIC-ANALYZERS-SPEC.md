@@ -221,6 +221,41 @@ These are independent of the monorepo gate and the `dead_code` flag.
 Diagnostics include a stable symbol identity in `Diagnostic.data` so future code
 actions can offer safe-delete, visibility reduction, or suppression insertion.
 
+The raw FCS findings (`open` ranges and `(range, relativeName)` simplifications)
+are computed once in [FSharpLocalAnalysis.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpLocalAnalysis.fs)
+(`getFileAnalyzerFindings`) and shared by both the hint producer above and the
+code fixes below, so the greyed range and the offered fix can never disagree.
+
+#### [FS-CODEFIX-UNUSEDOPEN] "Remove unused open" code fix
+
+The `textDocument/codeAction` handler turns each `SLSPF0102` finding overlapping
+the request range into a `Remove unused open` quick fix
+([FSharpCodeFixes.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeFixes.fs)
+`removeUnusedOpenActions`). Resolving it deletes the whole `open` line — from the
+start of its first line through the start of the line after its last — matching
+FsAutoComplete. E2E: the F# sidecar IPC suite (`code action offers
+remove-unused-open …`) and the VSIX suite (`F# LSP — Code Fixes`).
+
+#### [FS-CODEFIX-SIMPLIFYNAME] "Simplify name" code fix
+
+Each `SLSPF0103` finding overlapping the request range becomes a `Simplify name`
+quick fix (`simplifyNameActions`). FCS reports the simplifiable `Range` as the
+**redundant qualifier prefix including its trailing dot**, so the fix deletes that
+span (e.g. `System.DateTime.MinValue` → `DateTime.MinValue` when `System` is open).
+E2E: the IPC suite (`code action offers simplify-name …`) and the VSIX suite.
+
+#### [FS-CODEFIX-INTERFACESTUB] "Implement interface" code fix
+
+A type-informed (not analyzer-driven) code action that completes the F# stub trio —
+union cases, record fields, **interface members**. When the cursor is on an
+`interface IFoo …` declaration with unimplemented members, FCS
+`InterfaceStubGenerator` (`TryFindInterfaceDeclaration` → `GetImplementedMemberSignatures`
+→ `FormatInterface`) generates `member _.X … = failwith "…"` stubs for the missing
+members ([FSharpCodeActions.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeActions.fs)
+`tryGenerateInterfaceStub`, wired into `getCodeActions` Phase 4). E2E: the IPC suite
+(`code action offers implement-interface stub …`) and the VSIX suite
+(`F# LSP — Implement Interface`).
+
 ## [ANALYZERS-PERFORMANCE] Performance And Caching
 
 Static analyzers are lower priority than compiler diagnostics. A

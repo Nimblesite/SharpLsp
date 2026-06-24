@@ -17,7 +17,6 @@
 module SharpLsp.Sidecar.FSharp.FSharpAnalyzers
 
 open FSharp.Compiler.CodeAnalysis
-open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Text
 
@@ -152,14 +151,10 @@ let deadCodeDiagnosticsForFile
 
 // ── File-local FCS analyzers (FSAC parity) ──────────────────────────
 
-/// A 1-based line accessor over file source (FCS line numbers are 1-based).
+/// A 1-based line accessor over file source. Re-exported from
+/// [FSharpLocalAnalysis] so the implementation stays single-sourced.
 let lineGetter (source: string) : int -> string =
-    let lines = source.Replace("\r\n", "\n").Split('\n')
-    fun lineNumber ->
-        if lineNumber >= 1 && lineNumber <= lines.Length then
-            lines.[lineNumber - 1]
-        else
-            ""
+    FSharpLocalAnalysis.lineGetter source
 
 /// [FS-ANALYZER-UNUSEDOPEN] Unused `open` declarations, surfaced as hints so the
 /// editor can grey them out and offer removal (FSAC's "remove unused open").
@@ -178,17 +173,16 @@ let simplifyNameDiagnostics (items: (range * string) list) : DiagnosticResult li
 
 /// Run the file-local FCS analyzers (unused opens, simplifiable names) and return
 /// their diagnostics. These are always-on hints, independent of the dead-code gate.
+/// The raw findings come from the shared [FSharpLocalAnalysis], so the always-on
+/// hints and the "Remove unused open"/"Simplify name" code fixes never diverge.
 let fileAnalyzerDiagnostics
     (check: FSharpCheckFileResults)
     (source: string)
     : Async<DiagnosticResult list> =
     async {
-        let getLine = lineGetter source
-        let! unusedOpens = UnusedOpens.getUnusedOpens(check, getLine)
-        let! simplifiable = SimplifyNames.getSimplifiableNames(check, getLine)
-        let simplifyItems =
-            simplifiable
-            |> Seq.map (fun s -> (s.Range, s.RelativeName))
-            |> List.ofSeq
-        return unusedOpenDiagnostics unusedOpens @ simplifyNameDiagnostics simplifyItems
+        let! findings = FSharpLocalAnalysis.getFileAnalyzerFindings check source
+
+        return
+            unusedOpenDiagnostics findings.UnusedOpens
+            @ simplifyNameDiagnostics findings.SimplifiableNames
     }

@@ -145,7 +145,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 ### NuGet Package Management
 
-See [NUGET-BROWSER-SPEC.md](../specs/NUGET-BROWSER-SPEC.md) and [NUGET-BROWSER-PLAN.md](NUGET-BROWSER-PLAN.md) for full details.
+See [NUGET-BROWSER-SPEC.md](../specs/NUGET-BROWSER-SPEC.md) for full details. (The build/implementation plan shipped and was removed; remaining items tracked in [#123](https://github.com/Nimblesite/SharpLsp/issues/123).)
 
 All NuGet operations route through LSP custom requests (`sharplsp/nuget/*`). The extension is a thin UI shell only.
 
@@ -273,7 +273,7 @@ Features users expect within the first day of use.
   - [ ] Auto-build on test discovery refresh
   - [ ] Build task provider for tasks.json integration
 
-- [x] **P2.4: NuGet Package Management** — see [NUGET-BROWSER-PLAN.md](NUGET-BROWSER-PLAN.md) (core complete)
+- [x] **P2.4: NuGet Package Management** — see [NUGET-BROWSER-SPEC.md](../specs/NUGET-BROWSER-SPEC.md) (core complete; remaining items in [#123](https://github.com/Nimblesite/SharpLsp/issues/123))
   - [x] Implement `sharplsp/nuget/search` LSP handler (Rust host)
   - [x] Implement `sharplsp/nuget/versions` LSP handler (Rust host)
   - [x] Implement `sharplsp/nuget/installed` LSP handler (Rust host)
