@@ -6,7 +6,16 @@ import {
   parseProjectXml,
   parseProjectDependencies,
   removeNuGetPackage,
+  addProjectReference,
+  removeProjectReference,
 } from '../../dependencies.js';
+
+const MINIMAL_CSPROJ = `<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>
+`;
 
 const SINGLE_PACKAGE_XML = `
 <Project Sdk="Microsoft.NET.Sdk">
@@ -227,4 +236,100 @@ suite('Dependencies Module — removeNuGetPackage() (real dotnet)', () => {
       'the <PackageReference> must be gone from the project file after removal',
     );
   });
+
+  test('returns an error message (never throws) when the project does not exist', async function () {
+    this.timeout(60_000);
+    // The dotnet CLI exits non-zero for a missing project. execFileAsync rejects,
+    // the catch maps it to a string, and the function resolves with that message
+    // instead of throwing — exercising the failure branch.
+    const missing = path.join(tmpDir, 'DoesNotExist.csproj');
+    assert.ok(!fs.existsSync(missing), 'precondition: the project is absent');
+
+    const error = await removeNuGetPackage(missing, 'Whatever.Package');
+
+    assert.ok(typeof error === 'string', 'a failed removal must resolve to an error string');
+    assert.ok((error ?? '').length > 0, 'the error message must be non-empty');
+  });
 });
+
+// Coarse e2e over the real `dotnet` CLI for the project-reference verbs the
+// Solution Explorer context menu wires up. `dotnet add/remove reference` only
+// edits the project XML (no build, no network) so these stay fast and offline.
+suite(
+  'Dependencies Module — addProjectReference() / removeProjectReference() (real dotnet)',
+  () => {
+    let tmpDir: string;
+
+    setup(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-proj-ref-'));
+    });
+
+    teardown(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    test('addProjectReference writes a <ProjectReference> and returns undefined on success', async function () {
+      this.timeout(60_000);
+      const projectPath = path.join(tmpDir, 'App.csproj');
+      const referencePath = path.join(tmpDir, 'Lib.csproj');
+      fs.writeFileSync(projectPath, MINIMAL_CSPROJ, 'utf-8');
+      fs.writeFileSync(referencePath, MINIMAL_CSPROJ, 'utf-8');
+
+      const error = await addProjectReference(projectPath, referencePath);
+
+      assert.strictEqual(error, undefined, `add must succeed, got error: ${error ?? ''}`);
+      assert.ok(
+        fs.readFileSync(projectPath, 'utf8').includes('Lib.csproj'),
+        'the <ProjectReference> must be present in the project after a successful add',
+      );
+    });
+
+    test('removeProjectReference deletes the <ProjectReference> and returns undefined on success', async function () {
+      this.timeout(60_000);
+      const projectPath = path.join(tmpDir, 'App.csproj');
+      const referencePath = path.join(tmpDir, 'Lib.csproj');
+      fs.writeFileSync(projectPath, MINIMAL_CSPROJ, 'utf-8');
+      fs.writeFileSync(referencePath, MINIMAL_CSPROJ, 'utf-8');
+
+      const addError = await addProjectReference(projectPath, referencePath);
+      assert.strictEqual(addError, undefined, 'precondition: the reference was added');
+      assert.ok(fs.readFileSync(projectPath, 'utf8').includes('Lib.csproj'));
+
+      const removeError = await removeProjectReference(projectPath, referencePath);
+
+      assert.strictEqual(
+        removeError,
+        undefined,
+        `remove must succeed, got error: ${removeError ?? ''}`,
+      );
+      assert.ok(
+        !fs.readFileSync(projectPath, 'utf8').includes('Lib.csproj'),
+        'the <ProjectReference> must be gone after a successful remove',
+      );
+    });
+
+    test('addProjectReference resolves to an error string (never throws) for a missing project', async function () {
+      this.timeout(60_000);
+      const missing = path.join(tmpDir, 'Nope.csproj');
+      const referencePath = path.join(tmpDir, 'Lib.csproj');
+      fs.writeFileSync(referencePath, MINIMAL_CSPROJ, 'utf-8');
+
+      const error = await addProjectReference(missing, referencePath);
+
+      assert.ok(typeof error === 'string', 'a failed add must resolve to an error string');
+      assert.ok((error ?? '').length > 0, 'the error message must be non-empty');
+    });
+
+    test('removeProjectReference resolves to an error string (never throws) for a missing project', async function () {
+      this.timeout(60_000);
+      const missing = path.join(tmpDir, 'Nope.csproj');
+      const referencePath = path.join(tmpDir, 'Lib.csproj');
+      fs.writeFileSync(referencePath, MINIMAL_CSPROJ, 'utf-8');
+
+      const error = await removeProjectReference(missing, referencePath);
+
+      assert.ok(typeof error === 'string', 'a failed remove must resolve to an error string');
+      assert.ok((error ?? '').length > 0, 'the error message must be non-empty');
+    });
+  },
+);

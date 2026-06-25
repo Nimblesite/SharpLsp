@@ -12,6 +12,9 @@ import {
   newProjectArgs,
   findProjectFile,
   generateFileContent,
+  createSolution,
+  createProject,
+  addProjectToSolutionFile,
 } from '../../scaffolding.js';
 
 suite('Scaffolding Pure — newSolutionArgs()', () => {
@@ -472,5 +475,176 @@ suite('Scaffolding Pure — generateFileContent()', () => {
     // namespace token + class name both "MyNamespace" → two occurrences total.
     const occurrences = content.split('MyNamespace').length - 1;
     assert.strictEqual(occurrences, 2);
+  });
+});
+
+// ── Real .NET CLI — exercise the process-spawning seam (runDotnet) ──
+// These drive `createSolution` / `createProject` / `addProjectToSolutionFile`
+// against a throwaway temp dir. Every `dotnet new`/`dotnet sln` here runs in
+// well under a second locally, so we keep a generous timeout (template restore
+// on a cold machine) without ever starting a long-running build. The reject
+// branch of the internal `runDotnet` helper is covered by feeding the CLI
+// inputs it must refuse (bad template, bogus project path, illegal name).
+
+suite('Scaffolding Process — createSolution()', () => {
+  let work: string;
+
+  setup(() => {
+    work = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-create-sln-'));
+  });
+
+  teardown(() => {
+    fs.rmSync(work, { recursive: true, force: true });
+  });
+
+  test('returns the absolute path of the solution file the SDK produced', async function () {
+    this.timeout(180_000); // first invocation may restore templates.
+    const slnPath = await createSolution(work, 'Acme');
+    assert.ok(path.isAbsolute(slnPath), 'returned path must be absolute');
+    assert.ok(fs.existsSync(slnPath), 'returned solution file must exist on disk');
+    assert.strictEqual(path.dirname(slnPath), work, 'solution must live in the requested folder');
+  });
+
+  test('the produced file is named after the solution with a .sln or .slnx extension', async function () {
+    this.timeout(180_000);
+    const slnPath = await createSolution(work, 'Contoso');
+    const base = path.basename(slnPath);
+    // The SDK chooses the format: .NET 9+ → modern .slnx, older → classic .sln.
+    assert.match(base, /^Contoso\.slnx?$/, `unexpected solution file name: ${base}`);
+  });
+
+  test('detects whichever extension the SDK emitted (slnx preferred, sln fallback)', async function () {
+    this.timeout(180_000);
+    const slnPath = await createSolution(work, 'FmtProbe');
+    const ext = path.extname(slnPath);
+    assert.ok(ext === '.slnx' || ext === '.sln', `extension must be .slnx or .sln, got ${ext}`);
+    // Whichever one was returned must be the one that actually exists.
+    assert.ok(fs.existsSync(slnPath));
+  });
+
+  test('a dotted solution name round-trips into the file name', async function () {
+    this.timeout(180_000);
+    const slnPath = await createSolution(work, 'Acme.Platform');
+    assert.match(path.basename(slnPath), /^Acme\.Platform\.slnx?$/);
+  });
+
+  test('rejects (propagates the CLI error) when dotnet cannot create the solution', async () => {
+    // Pointing at a path that does not exist makes `dotnet new` fail, which
+    // drives the reject branch of the internal runDotnet helper.
+    const missing = path.join(work, 'no', 'such', 'nested', 'dir');
+    await assert.rejects(
+      () => createSolution(missing, 'Nope'),
+      (err: unknown) => err instanceof Error && err.message.length > 0,
+      'createSolution must reject with a non-empty Error when the CLI fails',
+    );
+  });
+});
+
+suite('Scaffolding Process — createProject()', () => {
+  let work: string;
+
+  setup(() => {
+    work = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-create-proj-'));
+  });
+
+  teardown(() => {
+    fs.rmSync(work, { recursive: true, force: true });
+  });
+
+  test('creates a C# console project and returns its directory (no --language)', async function () {
+    this.timeout(180_000);
+    const projDir = await createProject(work, 'Api', 'console');
+    assert.strictEqual(projDir, path.join(work, 'Api'), 'returns folder/name as the project dir');
+    assert.ok(fs.existsSync(projDir), 'project directory must exist');
+    const proj = findProjectFile(projDir, 'Api');
+    assert.ok(proj?.endsWith('Api.csproj'), 'a C# project file must be emitted');
+  });
+
+  test('creates an F# class library when a language is supplied (--language branch)', async function () {
+    this.timeout(180_000);
+    const projDir = await createProject(work, 'Core', 'classlib', 'F#');
+    assert.strictEqual(projDir, path.join(work, 'Core'));
+    const proj = findProjectFile(projDir, 'Core');
+    assert.ok(proj?.endsWith('Core.fsproj'), 'an F# project file must be emitted');
+    assert.ok(!fs.existsSync(path.join(projDir, 'Core.csproj')), 'no C# project should appear');
+  });
+
+  test('returns the project directory even before locating the project file', async function () {
+    this.timeout(180_000);
+    const projDir = await createProject(work, 'Worker', 'classlib');
+    // The contract is "returns the absolute project directory" = folder/name.
+    assert.ok(path.isAbsolute(projDir));
+    assert.strictEqual(path.basename(projDir), 'Worker');
+  });
+
+  test('rejects (propagates the CLI error) for an unknown template', async () => {
+    await assert.rejects(
+      () => createProject(work, 'X', 'this-template-does-not-exist'),
+      (err: unknown) => err instanceof Error && err.message.length > 0,
+      'createProject must reject with a non-empty Error for a bad template',
+    );
+  });
+});
+
+suite('Scaffolding Process — addProjectToSolutionFile()', () => {
+  let work: string;
+
+  setup(() => {
+    work = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-add-proj-'));
+  });
+
+  teardown(() => {
+    fs.rmSync(work, { recursive: true, force: true });
+  });
+
+  test('wires a freshly created project into the solution file', async function () {
+    this.timeout(180_000);
+    const slnPath = await createSolution(work, 'Suite');
+    const projDir = await createProject(work, 'Lib', 'classlib');
+    const projFile = findProjectFile(projDir, 'Lib');
+    assert.ok(projFile, 'project file must be locatable before adding it');
+
+    await addProjectToSolutionFile(slnPath, projFile);
+
+    const slnText = fs.readFileSync(slnPath, 'utf-8');
+    assert.ok(slnText.includes('Lib.csproj'), 'solution must now reference the added project');
+  });
+
+  test('adds both a C# and an F# project into the same solution', async function () {
+    this.timeout(180_000);
+    const slnPath = await createSolution(work, 'Mixed');
+    const csDir = await createProject(work, 'CsApp', 'classlib');
+    const fsDir = await createProject(work, 'FsApp', 'classlib', 'F#');
+    const csProj = findProjectFile(csDir, 'CsApp');
+    const fsProj = findProjectFile(fsDir, 'FsApp');
+    assert.ok(csProj && fsProj, 'both project files must be located');
+
+    await addProjectToSolutionFile(slnPath, csProj);
+    await addProjectToSolutionFile(slnPath, fsProj);
+
+    const slnText = fs.readFileSync(slnPath, 'utf-8');
+    assert.ok(slnText.includes('CsApp.csproj'), 'solution must reference the C# project');
+    assert.ok(slnText.includes('FsApp.fsproj'), 'solution must reference the F# project');
+  });
+
+  test('rejects (propagates the CLI error) when the project path does not exist', async function () {
+    this.timeout(180_000);
+    const slnPath = await createSolution(work, 'Bad');
+    const bogusProject = path.join(work, 'ghost', 'Ghost.csproj');
+    await assert.rejects(
+      () => addProjectToSolutionFile(slnPath, bogusProject),
+      (err: unknown) => err instanceof Error && err.message.length > 0,
+      'adding a non-existent project must reject with a non-empty Error',
+    );
+  });
+
+  test('rejects when the solution file itself is missing', async () => {
+    const missingSln = path.join(work, 'Absent.slnx');
+    const bogusProject = path.join(work, 'Ghost.csproj');
+    await assert.rejects(
+      () => addProjectToSolutionFile(missingSln, bogusProject),
+      (err: unknown) => err instanceof Error,
+      'a missing solution must surface a CLI error rather than resolve',
+    );
   });
 });

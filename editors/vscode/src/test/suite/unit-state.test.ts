@@ -550,6 +550,92 @@ suite('state — refresh() retry behavior', () => {
   });
 });
 
+// ── refresh() — LSP-not-running branch + retries exhausted ──────
+// state.ts:146-151 (tryFetch's `lsp.state !== State.Running` guard returns
+// false without calling sendRequest) and state.ts:140-142 (fetchWithRetry
+// runs the full attempt budget then sets the 'All retries exhausted' error).
+// A non-running client trips this on every attempt: 1 initial + MAX_RETRIES(3)
+// attempts, with 3 inter-attempt delays of RETRY_DELAY_MS(2000ms) ≈ 6s.
+
+suite('state — refresh() not-running / retries exhausted', () => {
+  setup(resetSignals);
+  teardown(resetSignals);
+
+  test('a Starting (not Running) client never sends a request and exhausts retries', async function () {
+    this.timeout(20_000);
+    let calls = 0;
+    client.value = fakeClient(State.Starting, () => {
+      calls += 1;
+      return Promise.resolve(response([]));
+    });
+    solutionPath.value = SOLUTION;
+
+    await refresh();
+
+    assert.strictEqual(calls, 0, 'sendRequest is never invoked while the client is not Running');
+    const current = symbolsState.value;
+    assert.strictEqual(current.kind, 'error', 'exhausting retries yields an error state');
+    if (current.kind === 'error') {
+      assert.strictEqual(current.message, 'All retries exhausted', 'exact exhaustion message');
+    }
+  });
+
+  test('a Stopped client also exhausts retries into the exhaustion error', async function () {
+    this.timeout(20_000);
+    client.value = fakeClient(State.Stopped, () => Promise.resolve(response([])));
+    solutionPath.value = SOLUTION;
+
+    await refresh();
+
+    const current = symbolsState.value;
+    assert.strictEqual(current.kind, 'error');
+    if (current.kind === 'error') {
+      assert.strictEqual(current.message, 'All retries exhausted');
+    }
+  });
+
+  test('subscribers observe the final transition into the exhaustion error', async function () {
+    this.timeout(20_000);
+    const transitions: SymbolsState['kind'][] = [];
+    const unsub = symbolsState.subscribe((s) => transitions.push(s.kind));
+    client.value = fakeClient(State.Starting, () => Promise.resolve(response([])));
+    solutionPath.value = SOLUTION;
+    try {
+      await refresh();
+    } finally {
+      unsub();
+    }
+    assert.ok(transitions.includes('error'), 'an error transition is emitted');
+    assert.strictEqual(symbolsState.value.kind, 'error', 'final state is error');
+  });
+
+  test('a client that becomes Running on a later attempt eventually loads', async function () {
+    this.timeout(20_000);
+    const resp = response([project('LateStart', [symbol('Ready', 'class')])]);
+    let attempt = 0;
+    // The `state` getter flips to Running on the 2nd read so the first attempt
+    // takes the not-running branch (146-151) and the retry succeeds.
+    const flipping = {
+      get state(): State {
+        attempt += 1;
+        return attempt >= 2 ? State.Running : State.Starting;
+      },
+      sendRequest: () => Promise.resolve(resp),
+    } as unknown as LanguageClient;
+    client.value = flipping;
+    solutionPath.value = SOLUTION;
+
+    await refresh();
+
+    const current = symbolsState.value;
+    assert.strictEqual(current.kind, 'loaded', 'a later Running state recovers into loaded');
+    if (current.kind === 'loaded') {
+      assert.strictEqual(current.response, resp);
+      assert.strictEqual(current.response.projects[0]?.name, 'LateStart');
+    }
+  });
+});
+
 // ── loadSolution() ──────────────────────────────────────────────
 
 suite('state — loadSolution()', () => {

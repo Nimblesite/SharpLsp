@@ -1035,7 +1035,7 @@
     "lint": "eslint src/ && tsc --noEmit",
     "lint:eslint": "eslint src/",
     "compile-tests": "tsc -p ./",
-    "pretest": "npm run compile-tests",
+    "pretest": "npm run compile-tests && npm run build",
     "test": "vscode-test --coverage",
     "test:run": "node out/test/runTest.js",
     "package": "vsce package --no-dependencies",

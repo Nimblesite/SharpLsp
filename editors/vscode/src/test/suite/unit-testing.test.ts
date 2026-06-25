@@ -88,6 +88,19 @@ suite('Testing Module — isTestName()', () => {
     assert.strictEqual(isTestName('Тест.Метод'), false);
     assert.strictEqual(isTestName('测试.方法'), false);
   });
+
+  test('realistic xUnit/NUnit/MSTest fully qualified names ARE test names', () => {
+    assert.strictEqual(isTestName('MyApp.Tests.CalculatorTests.Add_TwoNumbers_ReturnsSum'), true);
+    assert.strictEqual(isTestName('Acme.Core.UnitTests.OrderServiceTests.Cancels'), true);
+    assert.strictEqual(isTestName('Lib.Tests.MathFixture.SqrtOfNegativeThrows'), true);
+  });
+
+  test('the header banner and "The following..." prose lines are NOT test names', () => {
+    assert.strictEqual(isTestName('The following Tests are available:'), false);
+    assert.strictEqual(isTestName('Determining projects to restore...'), false);
+    assert.strictEqual(isTestName('Build succeeded.'), false);
+    assert.strictEqual(isTestName('Passed!  - Failed: 0, Passed: 3'), false);
+  });
 });
 
 suite('Testing Module — isExpectoTest()', () => {
@@ -509,5 +522,22 @@ suite('Testing Module — findCoberturaFile()', () => {
     assert.strictEqual(coverages.length, 1);
     assert.strictEqual(coverages[0]?.statementCoverage.total, 3);
     assert.strictEqual(coverages[0]?.statementCoverage.covered, 2);
+  });
+});
+
+suite('Testing Module — addTestItem tagging via discovered F# names', () => {
+  // discoverTestsInFolder is private and dotnet-driven; instead we assert the
+  // tagging predicates the controller uses to flag F# frameworks, mirroring
+  // the exact logic in addTestItem (isExpectoTest || isFsCheckTest).
+  test('Expecto and FsCheck names are flagged as F#, others are not', () => {
+    const isFsharp = (name: string): boolean => isExpectoTest(name) || isFsCheckTest(name);
+    assert.strictEqual(isFsharp('MyLib.Tests.testCase'), true);
+    assert.strictEqual(isFsharp('MyLib.Tests.testList'), true);
+    assert.strictEqual(isFsharp('MyLib.Expecto.Foo'), true);
+    assert.strictEqual(isFsharp('MyLib.FsCheck.Prop'), true);
+    assert.strictEqual(isFsharp('MyLib.Property.Roundtrip'), true);
+    assert.strictEqual(isFsharp('MyApp.Tests.Calculator.Adds'), false);
+    assert.strictEqual(isFsharp('xUnit.FactTest'), false);
+    assert.strictEqual(isFsharp('NUnit.TestFixture.Method'), false);
   });
 });

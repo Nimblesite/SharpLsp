@@ -19,6 +19,7 @@ import {
   dotnetArchitecture,
   dotnetRootFromPath,
   showAcquireFailureNotification,
+  INSTALL_TOOL_EXTENSION_ID,
 } from '../../dotnetRuntime.js';
 import { type Result } from '../../result.js';
 import { SharpLspStatusBar } from '../../status.js';
@@ -342,5 +343,301 @@ suite('[DIST-FAILURE-UX] showAcquireFailureNotification names the SDK in plain l
     assert.ok(captured, 'an error notification must be shown');
     assert.match(captured ?? '', /\.NET 10 SDK/, 'message must name the .NET 10 SDK');
     assert.match(captured ?? '', /network down/, 'message must include the underlying cause');
+  });
+});
+
+// ── dotnetArchitecture() process.arch fallback branches ──────────────
+
+interface ArchOverride {
+  restore(): void;
+}
+
+/**
+ * Temporarily override `process.arch` so the rarely-hit mapping branches
+ * (`ia32` → x86, and the unknown-arch default → x64) execute regardless of the
+ * host CPU. The descriptor is restored verbatim in `restore()`.
+ */
+function overrideArch(arch: string): ArchOverride {
+  const original = Object.getOwnPropertyDescriptor(process, 'arch');
+  Object.defineProperty(process, 'arch', {
+    value: arch,
+    configurable: true,
+    writable: false,
+    enumerable: true,
+  });
+  return {
+    restore() {
+      if (original !== undefined) {
+        Object.defineProperty(process, 'arch', original);
+      }
+    },
+  };
+}
+
+suite('dotnetArchitecture() — process.arch mapping branches', () => {
+  let override: ArchOverride | undefined;
+
+  teardown(() => {
+    override?.restore();
+    override = undefined;
+  });
+
+  test('maps ia32 to the .NET "x86" identifier', () => {
+    override = overrideArch('ia32');
+    assert.strictEqual(dotnetArchitecture(), 'x86');
+  });
+
+  test('maps x64 to "x64"', () => {
+    override = overrideArch('x64');
+    assert.strictEqual(dotnetArchitecture(), 'x64');
+  });
+
+  test('maps arm64 to "arm64"', () => {
+    override = overrideArch('arm64');
+    assert.strictEqual(dotnetArchitecture(), 'arm64');
+  });
+
+  test('defaults an unknown arch (e.g. mips) to "x64"', () => {
+    override = overrideArch('mips');
+    assert.strictEqual(dotnetArchitecture(), 'x64', 'unrecognised arch must fall back to x64');
+  });
+});
+
+// ── ensureInstallToolActivated() branches via vscode.extensions.getExtension ──
+
+interface MinimalExtension {
+  isActive: boolean;
+  activate(): Promise<unknown>;
+}
+
+interface ExtensionsPatch {
+  restore(): void;
+}
+
+/**
+ * Stub `vscode.extensions.getExtension` so `acquireDotnet10Sdk` sees a
+ * controlled install-tool extension: `undefined` (not installed), an already
+ * inactive one whose `activate()` resolves, or one whose `activate()` rejects.
+ * Only the install-tool id is intercepted; everything else is delegated.
+ */
+function patchGetExtension(result: MinimalExtension | undefined | 'real'): ExtensionsPatch {
+  const target = vscode.extensions as {
+    getExtension: typeof vscode.extensions.getExtension;
+  };
+  const original = target.getExtension.bind(vscode.extensions);
+  const stub = ((extensionId: string) => {
+    if (extensionId === INSTALL_TOOL_EXTENSION_ID && result !== 'real') {
+      return result as unknown as ReturnType<typeof vscode.extensions.getExtension>;
+    }
+    return original(extensionId);
+  }) as unknown as typeof vscode.extensions.getExtension;
+  target.getExtension = stub;
+  return {
+    restore() {
+      target.getExtension = original;
+    },
+  };
+}
+
+suite('[DIST-RUNTIME-ACQUIRE] ensureInstallToolActivated() failure + activation branches', () => {
+  let patch: PatchHandle | undefined;
+  let extPatch: ExtensionsPatch | undefined;
+  let statusBar: SharpLspStatusBar | undefined;
+
+  teardown(() => {
+    patch?.restore();
+    patch = undefined;
+    extPatch?.restore();
+    extPatch = undefined;
+    statusBar?.dispose();
+    statusBar = undefined;
+  });
+
+  test('returns Err naming the install tool when the extension is not installed', async () => {
+    extPatch = patchGetExtension(undefined);
+    statusBar = makeStatusBar();
+
+    const result = await acquireDotnet10Sdk(statusBar);
+
+    assert.strictEqual(result.ok, false, 'a missing install tool must short-circuit to Err');
+    if (!result.ok) {
+      assert.match(result.error, /not installed/i, 'error must explain the tool is missing');
+      assert.ok(
+        result.error.includes(INSTALL_TOOL_EXTENSION_ID),
+        'error must name the install-tool extension id',
+      );
+    }
+  });
+
+  test('does not invoke any dotnet.* command when the install tool is absent', async () => {
+    extPatch = patchGetExtension(undefined);
+    patch = patchExecuteCommand({
+      'dotnet.findPath': { dotnetPath: '/should/not/be/used' },
+      'dotnet.acquireGlobalSDK': { dotnetPath: '/should/not/be/used' },
+    });
+    statusBar = makeStatusBar();
+
+    const result = await acquireDotnet10Sdk(statusBar);
+
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(
+      patch.calls.length,
+      0,
+      'no acquisition/find command may run before the install tool is confirmed present',
+    );
+  });
+
+  test('activates an inactive install tool, then proceeds to findPath', async () => {
+    let activated = false;
+    extPatch = patchGetExtension({
+      isActive: false,
+      activate: () => {
+        activated = true;
+        return Promise.resolve(undefined);
+      },
+    });
+    patch = patchExecuteCommand({
+      'dotnet.findPath': { dotnetPath: process.execPath },
+    });
+    statusBar = makeStatusBar();
+
+    const result = await acquireDotnet10Sdk(statusBar);
+
+    assert.ok(activated, 'an inactive install tool must be activated before any command runs');
+    assert.strictEqual(result.ok, true, 'after activation the existing SDK lookup must succeed');
+    if (result.ok) assert.strictEqual(result.value, process.execPath);
+    assert.ok(
+      patch.calls.some((c) => c.command === 'dotnet.findPath'),
+      'findPath must run once the tool is active',
+    );
+  });
+
+  test('returns Err (never throws) when the install tool fails to activate', async () => {
+    extPatch = patchGetExtension({
+      isActive: false,
+      activate: () => Promise.reject(new Error('activation kaboom')),
+    });
+    patch = patchExecuteCommand({
+      'dotnet.findPath': { dotnetPath: process.execPath },
+    });
+    statusBar = makeStatusBar();
+
+    const result = await acquireDotnet10Sdk(statusBar);
+
+    assert.strictEqual(result.ok, false, 'a failed activation must surface as Err');
+    if (!result.ok) {
+      assert.match(result.error, /failed to activate/i);
+      assert.match(result.error, /activation kaboom/, 'error must include the underlying cause');
+    }
+    assert.strictEqual(patch.calls.length, 0, 'no dotnet.* command may run if activation failed');
+  });
+});
+
+// ── showAcquireFailureNotification() button branches ─────────────────
+
+interface NotificationSeams {
+  restore(): void;
+}
+
+suite('[DIST-FAILURE-UX] showAcquireFailureNotification() handles each button choice', () => {
+  let originalShowError: typeof vscode.window.showErrorMessage;
+  let originalOpenExternal: typeof vscode.env.openExternal;
+  let originalExecuteCommand: typeof vscode.commands.executeCommand;
+  let openedUri: vscode.Uri | undefined;
+  let executedCommand: string | undefined;
+
+  /** Replace `showErrorMessage` so it returns the caller-chosen button label. */
+  function patchSeams(choice: string | undefined): NotificationSeams {
+    openedUri = undefined;
+    executedCommand = undefined;
+
+    const win = vscode.window as { showErrorMessage: typeof vscode.window.showErrorMessage };
+    const errStub = (() =>
+      Promise.resolve(choice)) as unknown as typeof vscode.window.showErrorMessage;
+    win.showErrorMessage = errStub;
+
+    const env = vscode.env as { openExternal: typeof vscode.env.openExternal };
+    const openStub = ((uri: vscode.Uri) => {
+      openedUri = uri;
+      return Promise.resolve(true);
+    }) as unknown as typeof vscode.env.openExternal;
+    env.openExternal = openStub;
+
+    const cmds = vscode.commands as { executeCommand: typeof vscode.commands.executeCommand };
+    const cmdStub = ((command: string) => {
+      executedCommand = command;
+      return Promise.resolve(undefined);
+    }) as unknown as typeof vscode.commands.executeCommand;
+    cmds.executeCommand = cmdStub;
+
+    return {
+      restore() {
+        win.showErrorMessage = originalShowError;
+        env.openExternal = originalOpenExternal;
+        cmds.executeCommand = originalExecuteCommand;
+      },
+    };
+  }
+
+  let seams: NotificationSeams | undefined;
+
+  setup(() => {
+    originalShowError = vscode.window.showErrorMessage.bind(vscode.window);
+    originalOpenExternal = vscode.env.openExternal.bind(vscode.env);
+    originalExecuteCommand = vscode.commands.executeCommand.bind(vscode.commands);
+  });
+
+  teardown(() => {
+    seams?.restore();
+    seams = undefined;
+  });
+
+  test('"Open dot.net" opens the .NET 10 download page and runs no command', async () => {
+    seams = patchSeams('Open dot.net');
+
+    await showAcquireFailureNotification('boom', 'sharplsp.retryDotnetAcquisition');
+
+    assert.ok(openedUri !== undefined, 'choosing "Open dot.net" must open an external URL');
+    assert.match(
+      openedUri?.toString() ?? '',
+      /dotnet\.microsoft\.com\/download\/dotnet\/10\.0/,
+      'must navigate to the .NET 10 download page',
+    );
+    assert.strictEqual(
+      executedCommand,
+      undefined,
+      'opening the page must not run the retry command',
+    );
+  });
+
+  test('"Show Log" reveals the output channel and runs no command', async () => {
+    seams = patchSeams('Show Log');
+
+    await showAcquireFailureNotification('boom', 'sharplsp.retryDotnetAcquisition');
+
+    assert.strictEqual(openedUri, undefined, '"Show Log" must not open an external URL');
+    assert.strictEqual(executedCommand, undefined, '"Show Log" must not run the retry command');
+  });
+
+  test('"Retry" invokes the supplied retry command id', async () => {
+    seams = patchSeams('Retry');
+
+    await showAcquireFailureNotification('boom', 'sharplsp.retryDotnetAcquisition');
+
+    assert.strictEqual(
+      executedCommand,
+      'sharplsp.retryDotnetAcquisition',
+      '"Retry" must execute exactly the retry command id passed in',
+    );
+    assert.strictEqual(openedUri, undefined, '"Retry" must not open an external URL');
+  });
+
+  test('dismissing the toast (no choice) performs no side effects', async () => {
+    seams = patchSeams(undefined);
+
+    await showAcquireFailureNotification('boom', 'sharplsp.retryDotnetAcquisition');
+
+    assert.strictEqual(openedUri, undefined, 'a dismissed toast must not open a URL');
+    assert.strictEqual(executedCommand, undefined, 'a dismissed toast must not run a command');
   });
 });

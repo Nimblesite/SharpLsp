@@ -350,3 +350,166 @@ suite('FSI Module — isFSharpSourceDocument()', () => {
     assert.strictEqual(typeof falsy, 'boolean');
   });
 });
+
+suite('FSI Module — fsiTerminalOptions() extra args & cwd/env independence', () => {
+  test('the returned name, shellPath and shellArgs together form the full launch spec', () => {
+    const opts = fsi.fsiTerminalOptions('/opt/dotnet/dotnet', ['--define:RELEASE']);
+    assert.deepStrictEqual(
+      { name: opts.name, shellPath: opts.shellPath, shellArgs: [...opts.shellArgs] },
+      {
+        name: 'F# Interactive',
+        shellPath: '/opt/dotnet/dotnet',
+        shellArgs: ['fsi', '--define:RELEASE'],
+      },
+    );
+  });
+
+  test('many extra args are appended after "fsi" in their original order', () => {
+    const extra = ['--use:bootstrap.fsx', '--define:DEBUG', '--optimize+', '--nologo'];
+    const opts = fsi.fsiTerminalOptions(undefined, extra);
+    assert.deepStrictEqual([...opts.shellArgs], ['fsi', ...extra]);
+    assert.strictEqual(opts.shellArgs[0], 'fsi');
+    assert.strictEqual(opts.shellArgs[opts.shellArgs.length - 1], '--nologo');
+  });
+
+  test('a dotnet executable path that itself contains spaces is preserved verbatim', () => {
+    const opts = fsi.fsiTerminalOptions('/Program Files/dotnet/dotnet', []);
+    assert.strictEqual(opts.shellPath, '/Program Files/dotnet/dotnet');
+  });
+
+  test('whitespace-only dotnet path is treated as present (not the empty-string fallback)', () => {
+    // The source falls back only on undefined or exactly '' — a single space is truthy.
+    const opts = fsi.fsiTerminalOptions(' ', []);
+    assert.strictEqual(opts.shellPath, ' ');
+  });
+
+  test('shellArgs is a distinct array from the result of any other call (no shared state)', () => {
+    const a = fsi.fsiTerminalOptions(undefined, ['--x']);
+    const b = fsi.fsiTerminalOptions(undefined, ['--y']);
+    assert.notStrictEqual(a.shellArgs, b.shellArgs);
+    assert.deepStrictEqual([...a.shellArgs], ['fsi', '--x']);
+    assert.deepStrictEqual([...b.shellArgs], ['fsi', '--y']);
+  });
+
+  test('a single extra arg is positioned immediately after the fsi verb', () => {
+    const opts = fsi.fsiTerminalOptions('dotnet', ['--readline-']);
+    assert.strictEqual(opts.shellArgs.length, 2);
+    assert.strictEqual(opts.shellArgs[1], '--readline-');
+  });
+});
+
+suite('FSI Module — extractSignature() function-style let bindings', () => {
+  test('a multi-parameter let function captures only the function name', () => {
+    assert.strictEqual(fsi.extractSignature('let f a b = a + b'), "val f : 'a\n");
+  });
+
+  test('a curried let with type annotations still yields one val line', () => {
+    assert.strictEqual(
+      fsi.extractSignature('let combine (a: int) (b: int) : int = a + b'),
+      "val combine : 'a\n",
+    );
+  });
+
+  test('an inline-record-returning let still produces a generic val', () => {
+    assert.strictEqual(
+      fsi.extractSignature('let makePoint x y = { X = x; Y = y }'),
+      "val makePoint : 'a\n",
+    );
+  });
+
+  test('a let binding inside a type body (member-like indentation) yields an indented val', () => {
+    assert.strictEqual(fsi.extractSignature('        let inner z = z'), "        val inner : 'a\n");
+  });
+});
+
+suite('FSI Module — extractSignature() type and member declarations', () => {
+  test('a discriminated-union type header passes through verbatim', () => {
+    assert.strictEqual(
+      fsi.extractSignature('type Color = Red | Green | Blue'),
+      'type Color = Red | Green | Blue\n',
+    );
+  });
+
+  test('a record type with an opening brace passes through verbatim', () => {
+    assert.strictEqual(
+      fsi.extractSignature('type Vec = { X: float; Y: float }'),
+      'type Vec = { X: float; Y: float }\n',
+    );
+  });
+
+  test('a bare type header ending in = passes through verbatim', () => {
+    assert.strictEqual(fsi.extractSignature('type Tree ='), 'type Tree =\n');
+  });
+
+  test('a member with parameters passes through verbatim including indentation', () => {
+    assert.strictEqual(
+      fsi.extractSignature('    member this.Scale (k: float) = k'),
+      '    member this.Scale (k: float) = k\n',
+    );
+  });
+
+  test('a full type declaration block keeps headers, members and union cases', () => {
+    const source = [
+      'type Shape =',
+      '  | Circle of float',
+      '  member this.Area = 3.14',
+      'let private impl x = x',
+    ].join('\n');
+    // 'type Shape =' kept; '| Circle of float' dropped (no keyword);
+    // 'member this.Area...' kept; 'let private impl...' dropped.
+    assert.strictEqual(fsi.extractSignature(source), 'type Shape =\n  member this.Area = 3.14\n');
+  });
+});
+
+suite('FSI Module — extractSignature() let-private prefix boundary', () => {
+  test('"let private" is a prefix match, so "let privateData" is also dropped', () => {
+    // trimmed.startsWith('let private') is true for "let privateData = 1" even
+    // though privateData is a public-looking binding — the guard is prefix-only.
+    assert.strictEqual(fsi.extractSignature('let privateData = 1'), '\n');
+  });
+
+  test('indented "let private" with extra spaces before the name is dropped', () => {
+    assert.strictEqual(fsi.extractSignature('      let private   hidden = 2'), '\n');
+  });
+
+  test('"let publicish" (not the private prefix) becomes a val', () => {
+    assert.strictEqual(fsi.extractSignature('let publicish = 3'), "val publicish : 'a\n");
+  });
+
+  test('a block mixing private-prefixed and normal lets keeps only the normal ones', () => {
+    const source = [
+      'let alpha = 1',
+      'let private beta = 2',
+      'let privateGamma = 3',
+      'let delta = 4',
+    ].join('\n');
+    // alpha -> val; private beta dropped; privateGamma dropped (prefix); delta -> val.
+    assert.strictEqual(fsi.extractSignature(source), "val alpha : 'a\nval delta : 'a\n");
+  });
+
+  test('"val"-prefixed and "member"-prefixed lines coexist with let conversions', () => {
+    const source = ['val existing : int', 'let computed = 0', 'member this.M () = ()'].join('\n');
+    assert.strictEqual(
+      fsi.extractSignature(source),
+      "val existing : int\nval computed : 'a\nmember this.M () = ()\n",
+    );
+  });
+});
+
+suite('FSI Module — fsiTerminalOptions() exhaustive field assertions', () => {
+  test('the no-SDK, no-extra-args case yields the complete default launch spec', () => {
+    const opts = fsi.fsiTerminalOptions(undefined, []);
+    assert.deepStrictEqual(
+      { name: opts.name, shellPath: opts.shellPath, shellArgs: [...opts.shellArgs] },
+      { name: 'F# Interactive', shellPath: 'dotnet', shellArgs: ['fsi'] },
+    );
+  });
+
+  test('the empty-string SDK path with extra args still falls back to bare dotnet', () => {
+    const opts = fsi.fsiTerminalOptions('', ['--nologo']);
+    assert.deepStrictEqual(
+      { name: opts.name, shellPath: opts.shellPath, shellArgs: [...opts.shellArgs] },
+      { name: 'F# Interactive', shellPath: 'dotnet', shellArgs: ['fsi', '--nologo'] },
+    );
+  });
+});

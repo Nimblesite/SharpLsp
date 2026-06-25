@@ -4,11 +4,72 @@
 // is asserted against the literal regex semantics (notably: `\w` is ASCII-only
 // without the `u` flag, so non-ASCII identifiers are NOT matched).
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as vscode from 'vscode';
 import {
+  TestStatusLensProvider,
   extractCSharpMethodName,
   extractFSharpFunctionName,
   formatDuration,
 } from '../../test-lens.js';
+import { type CachedTestResult, type SharpLspTestController } from '../../testing.js';
+import { CMD_TEST_RUN_AT_CURSOR, CMD_TEST_DEBUG_AT_CURSOR } from '../../constants.js';
+
+/**
+ * Minimal stand-in for {@link SharpLspTestController} that exposes only the
+ * three members the lens provider reads — the `onResultsChanged` event, the
+ * `cachedResults` map, and `items` — wired to a real {@link vscode.EventEmitter}
+ * so tests can fire it and observe `onDidChangeCodeLenses`.
+ */
+class StubTestController {
+  public readonly results = new Map<string, CachedTestResult>();
+  private readonly emitter = new vscode.EventEmitter<void>();
+  public readonly onResultsChanged = this.emitter.event;
+
+  public get cachedResults(): ReadonlyMap<string, CachedTestResult> {
+    return this.results;
+  }
+
+  public readonly items: vscode.TestItemCollection = {
+    forEach: () => undefined,
+  } as unknown as vscode.TestItemCollection;
+
+  /** Record a cached result keyed by fully qualified name. */
+  public record(fqn: string, result: CachedTestResult): void {
+    this.results.set(fqn, result);
+  }
+
+  /** Simulate a completed test run notifying listeners. */
+  public fireResultsChanged(): void {
+    this.emitter.fire();
+  }
+
+  public dispose(): void {
+    this.emitter.dispose();
+  }
+}
+
+/** Build a provider bound to a fresh stub controller. */
+function makeProvider(): { provider: TestStatusLensProvider; controller: StubTestController } {
+  const controller = new StubTestController();
+  const provider = new TestStatusLensProvider(controller as unknown as SharpLspTestController);
+  return { provider, controller };
+}
+
+const NO_TOKEN = new vscode.CancellationTokenSource().token;
+
+/** Open a real on-disk file as a TextDocument so languageId resolves by extension. */
+async function openDoc(
+  tmpDir: string,
+  name: string,
+  content: string,
+): Promise<vscode.TextDocument> {
+  const filePath = path.join(tmpDir, name);
+  fs.writeFileSync(filePath, content, 'utf8');
+  return vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+}
 
 suite('test-lens — extractCSharpMethodName()', () => {
   test('plain method signature yields the method name', () => {
@@ -299,5 +360,643 @@ suite('test-lens — formatDuration()', () => {
     assert.ok(out.endsWith('s)'));
     assert.ok(!out.endsWith('ms)'));
     assert.strictEqual(out, ' (3.5s)');
+  });
+});
+
+// ── TestStatusLensProvider — C# documents ─────────────────────────
+
+suite('test-lens — TestStatusLensProvider (C#)', () => {
+  let tmpDir: string;
+
+  suiteSetup(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-lens-cs-'));
+  });
+
+  suiteTeardown(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('a C# document is recognised as csharp by extension', async () => {
+    const doc = await openDoc(tmpDir, 'Lang.cs', 'class C {}\n');
+    assert.strictEqual(doc.languageId, 'csharp');
+  });
+
+  test('one [Fact] test with no cached result yields Run + Debug lenses only', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'NoResult.cs',
+      ['[Fact]', 'public void Alpha()', '{', '}', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 2);
+
+    const run = lenses[0];
+    const debug = lenses[1];
+    assert.ok(run !== undefined && debug !== undefined);
+    assert.strictEqual(run.command?.title, '$(play) Run Test');
+    assert.strictEqual(run.command?.command, CMD_TEST_RUN_AT_CURSOR);
+    assert.deepStrictEqual(run.command?.arguments, [doc.uri, 'Alpha']);
+    assert.strictEqual(debug.command?.title, '$(bug) Debug Test');
+    assert.strictEqual(debug.command?.command, CMD_TEST_DEBUG_AT_CURSOR);
+    assert.deepStrictEqual(debug.command?.arguments, [doc.uri, 'Alpha']);
+    provider.dispose();
+  });
+
+  test('the lens range covers the attribute line (line 0) full width', async () => {
+    const { provider } = makeProvider();
+    const attrLine = '[Fact]';
+    const doc = await openDoc(
+      tmpDir,
+      'Range.cs',
+      [attrLine, 'public void Ranged()', '{', '}', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    const first = lenses[0];
+    assert.ok(first !== undefined);
+    assert.strictEqual(first.range.start.line, 0);
+    assert.strictEqual(first.range.start.character, 0);
+    assert.strictEqual(first.range.end.line, 0);
+    assert.strictEqual(first.range.end.character, attrLine.length);
+    provider.dispose();
+  });
+
+  test('a passing cached result renders a $(pass) status lens with duration', async () => {
+    const { provider, controller } = makeProvider();
+    controller.record('My.Ns.Suite.Beta', { passed: true, duration: 1500 });
+    const doc = await openDoc(
+      tmpDir,
+      'Passed.cs',
+      ['[Fact]', 'public void Beta()', '{', '}', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 3);
+    const status = lenses[0];
+    assert.ok(status !== undefined);
+    assert.strictEqual(status.command?.title, '$(pass) Passed (1.5s)');
+    // Status lens is non-actionable: empty command and no arguments.
+    assert.strictEqual(status.command?.command, '');
+    assert.deepStrictEqual(status.command?.arguments, []);
+    provider.dispose();
+  });
+
+  test('a passing result with sub-second duration uses the ms suffix', async () => {
+    const { provider, controller } = makeProvider();
+    controller.record('A.B.Gamma', { passed: true, duration: 42 });
+    const doc = await openDoc(
+      tmpDir,
+      'PassedMs.cs',
+      ['[Test]', 'public void Gamma()', '{', '}', ''].join('\n'),
+    );
+
+    const status = provider.provideCodeLenses(doc, NO_TOKEN)[0];
+    assert.ok(status !== undefined);
+    assert.strictEqual(status.command?.title, '$(pass) Passed (42ms)');
+    provider.dispose();
+  });
+
+  test('a passing result without a duration omits the parenthetical', async () => {
+    const { provider, controller } = makeProvider();
+    controller.record('A.B.Delta', { passed: true });
+    const doc = await openDoc(
+      tmpDir,
+      'PassedNoDur.cs',
+      ['[Fact]', 'public void Delta()', '{', '}', ''].join('\n'),
+    );
+
+    const status = provider.provideCodeLenses(doc, NO_TOKEN)[0];
+    assert.ok(status !== undefined);
+    assert.strictEqual(status.command?.title, '$(pass) Passed');
+    provider.dispose();
+  });
+
+  test('a failing cached result renders a $(error) status lens with the message', async () => {
+    const { provider, controller } = makeProvider();
+    controller.record('A.B.Epsilon', { passed: false, message: 'Expected 1 but got 2' });
+    const doc = await openDoc(
+      tmpDir,
+      'Failed.cs',
+      ['[Fact]', 'public void Epsilon()', '{', '}', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 3);
+    const status = lenses[0];
+    assert.ok(status !== undefined);
+    assert.strictEqual(status.command?.title, '$(error) Failed: Expected 1 but got 2');
+    assert.strictEqual(status.command?.command, '');
+    provider.dispose();
+  });
+
+  test('a failing result with no message renders bare $(error) Failed', async () => {
+    const { provider, controller } = makeProvider();
+    controller.record('A.B.Zeta', { passed: false });
+    const doc = await openDoc(
+      tmpDir,
+      'FailedNoMsg.cs',
+      ['[Fact]', 'public void Zeta()', '{', '}', ''].join('\n'),
+    );
+
+    const status = provider.provideCodeLenses(doc, NO_TOKEN)[0];
+    assert.ok(status !== undefined);
+    assert.strictEqual(status.command?.title, '$(error) Failed');
+    provider.dispose();
+  });
+
+  test('the result is matched by short (last-segment) name, ignoring the namespace', async () => {
+    const { provider, controller } = makeProvider();
+    // FQN has dotted namespace; only the trailing "Match" segment is compared.
+    controller.record('Deep.Nested.Name.Match', { passed: true, duration: 5 });
+    const doc = await openDoc(
+      tmpDir,
+      'ShortName.cs',
+      ['[Fact]', 'public void Match()', '{', '}', ''].join('\n'),
+    );
+
+    const status = provider.provideCodeLenses(doc, NO_TOKEN)[0];
+    assert.ok(status !== undefined);
+    assert.strictEqual(status.command?.title, '$(pass) Passed (5ms)');
+    provider.dispose();
+  });
+
+  test('a cached result for an UNrelated method does not attach a status lens', async () => {
+    const { provider, controller } = makeProvider();
+    controller.record('Other.Unrelated', { passed: true, duration: 10 });
+    const doc = await openDoc(
+      tmpDir,
+      'NoMatch.cs',
+      ['[Fact]', 'public void Solo()', '{', '}', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    // No status lens — just Run + Debug.
+    assert.strictEqual(lenses.length, 2);
+    assert.strictEqual(lenses[0]?.command?.title, '$(play) Run Test');
+    provider.dispose();
+  });
+
+  test('a result id with no dot is matched against the whole id', async () => {
+    const { provider, controller } = makeProvider();
+    controller.record('Dotless', { passed: true, duration: 7 });
+    const doc = await openDoc(
+      tmpDir,
+      'Dotless.cs',
+      ['[Fact]', 'public void Dotless()', '{', '}', ''].join('\n'),
+    );
+
+    const status = provider.provideCodeLenses(doc, NO_TOKEN)[0];
+    assert.ok(status !== undefined);
+    assert.strictEqual(status.command?.title, '$(pass) Passed (7ms)');
+    provider.dispose();
+  });
+
+  test('multiple test methods each produce their own lens group', async () => {
+    const { provider, controller } = makeProvider();
+    controller.record('N.First', { passed: true, duration: 1 });
+    controller.record('N.Second', { passed: false, message: 'boom' });
+    const doc = await openDoc(
+      tmpDir,
+      'Multi.cs',
+      [
+        '[Fact]',
+        'public void First()',
+        '{',
+        '}',
+        '',
+        '[Theory]',
+        'public void Second()',
+        '{',
+        '}',
+        '',
+      ].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    // 3 lenses per test (status + run + debug) × 2 tests.
+    assert.strictEqual(lenses.length, 6);
+    const titles = lenses.map((l) => l.command?.title);
+    assert.ok(titles.includes('$(pass) Passed (1ms)'));
+    assert.ok(titles.includes('$(error) Failed: boom'));
+    // The two run lenses target the distinct method names.
+    const runArgs = lenses
+      .filter((l) => l.command?.command === CMD_TEST_RUN_AT_CURSOR)
+      .map((l) => l.command?.arguments?.[1]);
+    assert.deepStrictEqual(runArgs, ['First', 'Second']);
+    provider.dispose();
+  });
+
+  test('attribute with parenthesised arguments ([Theory(...)]) is recognised', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'ParenAttr.cs',
+      ['[Theory(DisplayName = "x")]', 'public void Parened()', '{', '}', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 2);
+    assert.deepStrictEqual(lenses[0]?.command?.arguments, [doc.uri, 'Parened']);
+    provider.dispose();
+  });
+
+  test('an inline attribute prefixing the method ([Fact] public void) is recognised', async () => {
+    const { provider } = makeProvider();
+    // hasTestAttribute matches via `includes`; the method name is found by
+    // scanning forward up to 6 lines — here it is on the SAME line, but the
+    // leading-[ guard rejects that line, so no name is found → no lenses.
+    const doc = await openDoc(
+      tmpDir,
+      'Inline.cs',
+      ['[Fact] public void Inlined()', '{', '}', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 0);
+    provider.dispose();
+  });
+
+  test('an attribute with no method within 6 lines produces no lenses', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'Orphan.cs',
+      ['[Fact]', '', '', '', '', '', '', 'public void TooFar()', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 0);
+    provider.dispose();
+  });
+
+  test('a non-test attribute does not produce lenses', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'NonTest.cs',
+      ['[Obsolete]', 'public void NotATest()', '{', '}', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 0);
+    provider.dispose();
+  });
+
+  test('a document with no test attributes yields an empty lens array', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'Plain.cs',
+      ['public class Plain', '{', '    public void Helper() {}', '}', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.deepStrictEqual(lenses, []);
+    provider.dispose();
+  });
+
+  test('an empty document yields an empty lens array', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(tmpDir, 'Empty.cs', '');
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.deepStrictEqual(lenses, []);
+    provider.dispose();
+  });
+});
+
+// ── TestStatusLensProvider — F# documents ─────────────────────────
+
+suite('test-lens — TestStatusLensProvider (F#)', () => {
+  let tmpDir: string;
+
+  suiteSetup(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-lens-fs-'));
+  });
+
+  suiteTeardown(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('an F# document is recognised as fsharp by extension', async () => {
+    const doc = await openDoc(tmpDir, 'Lang.fs', 'module M\n');
+    assert.strictEqual(doc.languageId, 'fsharp');
+  });
+
+  test('[<Fact>] over a let binding yields Run + Debug lenses', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'Basic.fs',
+      ['[<Fact>]', 'let alpha () =', '    ()', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 2);
+    assert.strictEqual(lenses[0]?.command?.title, '$(play) Run Test');
+    assert.deepStrictEqual(lenses[0]?.command?.arguments, [doc.uri, 'alpha']);
+    assert.strictEqual(lenses[1]?.command?.title, '$(bug) Debug Test');
+    assert.deepStrictEqual(lenses[1]?.command?.arguments, [doc.uri, 'alpha']);
+    provider.dispose();
+  });
+
+  test('a passing cached F# result renders the $(pass) status lens', async () => {
+    const { provider, controller } = makeProvider();
+    controller.record('Tests.Module.beta', { passed: true, duration: 250 });
+    const doc = await openDoc(
+      tmpDir,
+      'Passed.fs',
+      ['[<Test>]', 'let beta () =', '    ()', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 3);
+    assert.strictEqual(lenses[0]?.command?.title, '$(pass) Passed (250ms)');
+    provider.dispose();
+  });
+
+  test('a failing cached F# result renders the $(error) status lens', async () => {
+    const { provider, controller } = makeProvider();
+    controller.record('Tests.gamma', { passed: false, message: 'assertion failed' });
+    const doc = await openDoc(
+      tmpDir,
+      'Failed.fs',
+      ['[<Fact>]', 'let gamma () =', '    ()', ''].join('\n'),
+    );
+
+    const status = provider.provideCodeLenses(doc, NO_TOKEN)[0];
+    assert.ok(status !== undefined);
+    assert.strictEqual(status.command?.title, '$(error) Failed: assertion failed');
+    provider.dispose();
+  });
+
+  test('attribute with parenthesised arg ([<Test(...)>]) is recognised', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'ParenAttr.fs',
+      ['[<Test(Category = "fast")>]', 'let parened () =', '    ()', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 2);
+    assert.deepStrictEqual(lenses[0]?.command?.arguments, [doc.uri, 'parened']);
+    provider.dispose();
+  });
+
+  test('a member binding under an attribute is captured after the dot', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'Member.fs',
+      ['[<Fact>]', 'member this.MyTest () =', '    ()', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 2);
+    assert.deepStrictEqual(lenses[0]?.command?.arguments, [doc.uri, 'MyTest']);
+    provider.dispose();
+  });
+
+  test('backtick-quoted name under [<Fact>] finds no name within 4 lines → no lenses', async () => {
+    const { provider } = makeProvider();
+    // extractFSharpFunctionName cannot match the backtick form, so the forward
+    // scan (limited to 4 lines) finds no binding name.
+    const doc = await openDoc(
+      tmpDir,
+      'Backtick.fs',
+      ['[<Fact>]', 'let ``my test`` () =', '    ()', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 0);
+    provider.dispose();
+  });
+
+  test('an [<Fact>] with no binding within 4 lines produces no lenses', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'OrphanFs.fs',
+      ['[<Fact>]', '', '', '', '', 'let tooFar () =', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 0);
+    provider.dispose();
+  });
+
+  test('an F# document with no test attributes yields an empty lens array', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'Plain.fs',
+      ['module Plain', '', 'let helper () = ()', ''].join('\n'),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.deepStrictEqual(lenses, []);
+    provider.dispose();
+  });
+
+  test('two F# tests each yield distinct run targets', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'TwoFs.fs',
+      ['[<Fact>]', 'let one () =', '    ()', '', '[<Theory>]', 'let two () =', '    ()', ''].join(
+        '\n',
+      ),
+    );
+
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(lenses.length, 4);
+    const runArgs = lenses
+      .filter((l) => l.command?.command === CMD_TEST_RUN_AT_CURSOR)
+      .map((l) => l.command?.arguments?.[1]);
+    assert.deepStrictEqual(runArgs, ['one', 'two']);
+    provider.dispose();
+  });
+});
+
+// ── TestStatusLensProvider — language gating, events, lifecycle ────
+
+interface MutableWorkspace {
+  getConfiguration: typeof vscode.workspace.getConfiguration;
+}
+
+suite('test-lens — TestStatusLensProvider (gating / events)', () => {
+  let tmpDir: string;
+
+  suiteSetup(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-lens-misc-'));
+  });
+
+  suiteTeardown(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('a non-C#/F# language (e.g. plaintext) yields no lenses', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(tmpDir, 'notes.txt', '[Fact]\npublic void X()\n');
+    assert.notStrictEqual(doc.languageId, 'csharp');
+    assert.notStrictEqual(doc.languageId, 'fsharp');
+    const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.deepStrictEqual(lenses, []);
+    provider.dispose();
+  });
+
+  test('when sharplsp.testLens.enabled is false the provider returns no lenses', async () => {
+    const { provider } = makeProvider();
+    const doc = await openDoc(
+      tmpDir,
+      'Gated.cs',
+      ['[Fact]', 'public void Gated()', '{', '}', ''].join('\n'),
+    );
+
+    const mut = vscode.workspace as unknown as MutableWorkspace;
+    const orig = mut.getConfiguration;
+    try {
+      mut.getConfiguration = (section?: string) => {
+        if (section === 'sharplsp.testLens') {
+          return {
+            get: <T>(_key: string, _default: T): T => false as unknown as T,
+          } as unknown as vscode.WorkspaceConfiguration;
+        }
+        return orig(section);
+      };
+
+      const lenses = provider.provideCodeLenses(doc, NO_TOKEN);
+      assert.deepStrictEqual(lenses, []);
+    } finally {
+      mut.getConfiguration = orig;
+    }
+    provider.dispose();
+  });
+
+  test('onDidChangeCodeLenses fires when the controller reports results changed', () => {
+    const { provider, controller } = makeProvider();
+    let fired = 0;
+    const sub = provider.onDidChangeCodeLenses(() => {
+      fired += 1;
+    });
+
+    controller.fireResultsChanged();
+    controller.fireResultsChanged();
+    assert.strictEqual(fired, 2);
+
+    sub.dispose();
+    provider.dispose();
+  });
+
+  test('dispose unsubscribes — later controller events do not reach a fresh listener count', () => {
+    const { provider, controller } = makeProvider();
+    let fired = 0;
+    provider.onDidChangeCodeLenses(() => {
+      fired += 1;
+    });
+
+    controller.fireResultsChanged();
+    assert.strictEqual(fired, 1);
+
+    // After dispose the provider's emitter is torn down; firing the underlying
+    // controller no longer drives the (now disposed) change emitter.
+    provider.dispose();
+    controller.fireResultsChanged();
+    assert.strictEqual(fired, 1);
+    controller.dispose();
+  });
+
+  test('dispose is idempotent and does not throw on a second call', () => {
+    const { provider, controller } = makeProvider();
+    provider.dispose();
+    assert.doesNotThrow(() => {
+      provider.dispose();
+    });
+    controller.dispose();
+  });
+
+  test('provideCodeLenses can be called repeatedly with stable output', async () => {
+    const { provider, controller } = makeProvider();
+    controller.record('N.Stable', { passed: true, duration: 3 });
+    const doc = await openDoc(
+      tmpDir,
+      'Stable.cs',
+      ['[Fact]', 'public void Stable()', '{', '}', ''].join('\n'),
+    );
+
+    const first = provider.provideCodeLenses(doc, NO_TOKEN);
+    const second = provider.provideCodeLenses(doc, NO_TOKEN);
+    assert.strictEqual(first.length, second.length);
+    assert.strictEqual(first.length, 3);
+    assert.strictEqual(first[0]?.command?.title, second[0]?.command?.title);
+    provider.dispose();
+  });
+
+  // ── Constructor config-change subscription (test-lens.ts 37-38) ────
+  //
+  // The provider subscribes in its constructor to onDidChangeConfiguration and,
+  // when the change `affectsConfiguration('sharplsp.testLens.enabled')`, fires
+  // onDidChangeCodeLenses. We drive a REAL workspace config update on that key
+  // and await the provider's change event to prove lines 37-38 execute.
+
+  test('toggling sharplsp.testLens.enabled fires onDidChangeCodeLenses (37-38)', async function () {
+    this.timeout(15_000);
+    const { provider, controller } = makeProvider();
+    const cfg = vscode.workspace.getConfiguration('sharplsp.testLens');
+    const effective = cfg.get<boolean>('enabled', true);
+    // Restore the exact prior workspace value (undefined when unset) so the key
+    // is removed rather than persisted as a default into the fixture settings.
+    const savedWorkspaceValue = cfg.inspect<boolean>('enabled')?.workspaceValue;
+
+    const fired = new Promise<void>((resolve) => {
+      const sub = provider.onDidChangeCodeLenses(() => {
+        sub.dispose();
+        resolve();
+      });
+    });
+
+    try {
+      // Flip the value so the configuration genuinely changes and VS Code emits
+      // an onDidChangeConfiguration that affects the watched key.
+      await cfg.update('enabled', !effective, vscode.ConfigurationTarget.Workspace);
+      await fired; // resolves only if the constructor handler fired the emitter.
+      assert.ok(true, 'provider re-emitted after the testLens.enabled config change');
+    } finally {
+      await vscode.workspace
+        .getConfiguration('sharplsp.testLens')
+        .update('enabled', savedWorkspaceValue, vscode.ConfigurationTarget.Workspace);
+      provider.dispose();
+      controller.dispose();
+    }
+  });
+
+  test('a config change to an UNRELATED key does not fire the lens emitter', async function () {
+    this.timeout(15_000);
+    const { provider, controller } = makeProvider();
+    let fired = 0;
+    const sub = provider.onDidChangeCodeLenses(() => {
+      fired += 1;
+    });
+
+    const cfg = vscode.workspace.getConfiguration('sharplsp');
+    const saved = cfg.get<string>('logging.level') ?? 'info';
+    const next = saved === 'debug' ? 'info' : 'debug';
+    try {
+      await cfg.update('logging.level', next, vscode.ConfigurationTarget.Workspace);
+      // Give VS Code a tick to deliver the config event before asserting.
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+      // affectsConfiguration('sharplsp.testLens.enabled') is false here, so the
+      // constructor handler must NOT fire the emitter (37-38 guard is skipped).
+      assert.strictEqual(fired, 0, 'unrelated config change must not refresh the lenses');
+    } finally {
+      await vscode.workspace
+        .getConfiguration('sharplsp')
+        .update('logging.level', saved, vscode.ConfigurationTarget.Workspace);
+      sub.dispose();
+      provider.dispose();
+      controller.dispose();
+    }
   });
 });

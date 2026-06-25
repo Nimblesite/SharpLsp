@@ -1,6 +1,14 @@
 import * as assert from 'node:assert/strict';
 import * as hotReload from '../../hot-reload.js';
 
+interface HotReloadGlobal {
+  __sharplspHotReloadRunning: boolean | undefined;
+}
+
+function reloadGlobal(): HotReloadGlobal {
+  return globalThis;
+}
+
 suite('HotReload Module — exports', () => {
   test('registerHotReloadCommands is exported as a function', () => {
     assert.strictEqual(typeof hotReload.registerHotReloadCommands, 'function');
@@ -184,5 +192,58 @@ suite('HotReload Module — isRelevantLanguage() edge / malformed input', () => 
     assert.strictEqual(hotReload.isRelevantLanguage('csharp'), true);
     assert.strictEqual(hotReload.isRelevantLanguage('python'), false);
     assert.strictEqual(hotReload.isRelevantLanguage('python'), false);
+  });
+});
+
+suite('HotReload Module — isHotReloadRunning() reads global session state', () => {
+  let saved: boolean | undefined;
+
+  setup(() => {
+    saved = reloadGlobal().__sharplspHotReloadRunning;
+  });
+
+  teardown(() => {
+    // Always restore so we never leak a "running" state into other suites.
+    reloadGlobal().__sharplspHotReloadRunning = saved;
+  });
+
+  test('reflects an explicit true in the backing global flag', () => {
+    reloadGlobal().__sharplspHotReloadRunning = true;
+    assert.strictEqual(hotReload.isHotReloadRunning(), true);
+  });
+
+  test('reflects an explicit false in the backing global flag', () => {
+    reloadGlobal().__sharplspHotReloadRunning = false;
+    assert.strictEqual(hotReload.isHotReloadRunning(), false);
+  });
+
+  test('falls back to false via the nullish-coalescing branch when undefined', () => {
+    reloadGlobal().__sharplspHotReloadRunning = undefined;
+    assert.strictEqual(hotReload.isHotReloadRunning(), false);
+  });
+
+  test('tracks the flag as it toggles true -> false -> true within one test', () => {
+    reloadGlobal().__sharplspHotReloadRunning = true;
+    assert.strictEqual(hotReload.isHotReloadRunning(), true);
+    reloadGlobal().__sharplspHotReloadRunning = false;
+    assert.strictEqual(hotReload.isHotReloadRunning(), false);
+    reloadGlobal().__sharplspHotReloadRunning = true;
+    assert.strictEqual(hotReload.isHotReloadRunning(), true);
+  });
+
+  test('always returns a primitive boolean regardless of the stored value', () => {
+    reloadGlobal().__sharplspHotReloadRunning = true;
+    assert.strictEqual(typeof hotReload.isHotReloadRunning(), 'boolean');
+    reloadGlobal().__sharplspHotReloadRunning = undefined;
+    assert.strictEqual(typeof hotReload.isHotReloadRunning(), 'boolean');
+  });
+
+  test('does not mutate the global flag when merely reading it', () => {
+    reloadGlobal().__sharplspHotReloadRunning = false;
+    hotReload.isHotReloadRunning();
+    assert.strictEqual(reloadGlobal().__sharplspHotReloadRunning, false);
+    reloadGlobal().__sharplspHotReloadRunning = true;
+    hotReload.isHotReloadRunning();
+    assert.strictEqual(reloadGlobal().__sharplspHotReloadRunning, true);
   });
 });

@@ -4,6 +4,7 @@
 // only the exported pure functions are exercised directly.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
+import { type LanguageClient } from 'vscode-languageclient/node';
 import {
   formatBytes,
   formatDuration,
@@ -13,6 +14,8 @@ import {
   buildSessionNode,
   buildProcessNode,
   ProfilerTreeItem,
+  ProfilerTreeProvider,
+  ProfilerStatusBar,
   type CounterValue,
   type SessionInfo,
   type DotNetProcess,
@@ -502,6 +505,55 @@ suite('Profiler — buildSessionNode()', () => {
   });
 });
 
+// ── buildSessionNode() — remaining outputPath / processName branches ──
+
+suite('Profiler — buildSessionNode() edge branches', () => {
+  test('empty-string outputPath is !== undefined so it IS propagated and listed in the tooltip', () => {
+    const node = buildSessionNode(session({ outputPath: '' }));
+    assert.strictEqual(node.outputPath, '');
+    const tooltip = node.tooltip as vscode.MarkdownString;
+    // The builder's `outputPath !== undefined` check is true for '' → an Output line renders.
+    assert.ok(tooltip.value.includes('- Output: ``'));
+  });
+
+  test('empty-string processName omits both the label name and the tooltip Process line', () => {
+    const node = buildSessionNode(session({ kind: 'Trace', processName: '', pid: 3 }));
+    assert.strictEqual(node.label, 'Trace: PID 3');
+    const tooltip = node.tooltip as vscode.MarkdownString;
+    assert.ok(!tooltip.value.includes('- Process:'));
+    assert.ok(tooltip.value.includes('- PID: `3`'));
+  });
+
+  test('mixed-case kind lowercases only the contextValue, preserving the label casing', () => {
+    const node = buildSessionNode(session({ kind: 'TRACE', processName: 'App', pid: 1 }));
+    assert.strictEqual(node.contextValue, 'profiler-session-trace');
+    assert.strictEqual(node.label, 'TRACE: App (PID 1)');
+    // A non-'Trace' kind string takes the Counters branch for description/icon/command.
+    assert.strictEqual(node.description, 'streaming');
+    assert.strictEqual((node.iconPath as vscode.ThemeIcon).id, 'pulse');
+    assert.strictEqual(node.command?.title, 'Show Counters');
+  });
+
+  test('a non-Trace, non-Counters kind falls through to the Counters-style branches', () => {
+    const node = buildSessionNode(session({ kind: 'GcDump', processName: undefined, pid: 8 }));
+    assert.strictEqual(node.contextValue, 'profiler-session-gcdump');
+    assert.strictEqual(node.label, 'GcDump: PID 8');
+    assert.strictEqual(node.description, 'streaming');
+    assert.strictEqual((node.iconPath as vscode.ThemeIcon).id, 'pulse');
+    const tooltip = node.tooltip as vscode.MarkdownString;
+    assert.ok(tooltip.value.includes('**GcDump session**'));
+    assert.ok(tooltip.value.includes('Click to **show the live counters panel**.'));
+  });
+
+  test('session node always reports nodeKind "session" and None collapsibility regardless of kind', () => {
+    for (const kind of ['Trace', 'Counters', 'Other']) {
+      const node = buildSessionNode(session({ kind }));
+      assert.strictEqual(node.nodeKind, 'session');
+      assert.strictEqual(node.collapsibleState, vscode.TreeItemCollapsibleState.None);
+    }
+  });
+});
+
 // ── buildProcessNode ──────────────────────────────────────────────
 
 function proc(overrides: Partial<DotNetProcess>): DotNetProcess {
@@ -598,6 +650,119 @@ suite('Profiler — buildProcessNode()', () => {
   });
 });
 
+// ── buildProcessNode() — exhaustive branch coverage ───────────────
+//
+// These drive the runtime_version nullish-coalescing (present / null /
+// undefined / empty) AND the tooltip + description string assembly across
+// special-char names and empty / very-long command lines, asserting every
+// field of the produced ProfilerTreeItem.
+
+suite('Profiler — buildProcessNode() runtime_version branches', () => {
+  test('absent runtime_version field (undefined) renders ".NET (version unknown)"', () => {
+    // Build a process with NO runtime_version key at all — distinct from null.
+    const bare: DotNetProcess = {
+      pid: 808,
+      name: 'NoRuntime',
+      command_line: 'noruntime.dll',
+    };
+    assert.strictEqual(bare.runtime_version, undefined);
+    const node = buildProcessNode(bare);
+    assert.strictEqual(node.description, '.NET (version unknown) · noruntime.dll');
+    const tooltip = node.tooltip as vscode.MarkdownString;
+    assert.ok(tooltip.value.includes('Runtime: .NET (version unknown)'));
+    assert.ok(tooltip.value.includes('**NoRuntime** · PID `808`'));
+    assert.ok(tooltip.value.includes('`noruntime.dll`'));
+  });
+
+  test('present non-empty runtime_version takes the ".NET <v>" branch in description AND tooltip', () => {
+    const node = buildProcessNode(
+      proc({ runtime_version: '8.0.11', command_line: 'svc.dll', name: 'Svc', pid: 11 }),
+    );
+    assert.strictEqual(node.description, '.NET 8.0.11 · svc.dll');
+    const tooltip = node.tooltip as vscode.MarkdownString;
+    assert.ok(tooltip.value.includes('Runtime: .NET 8.0.11'));
+    assert.ok(tooltip.value.includes('**Svc** · PID `11`'));
+  });
+
+  test('null and absent (undefined) runtime_version produce identical descriptions', () => {
+    const nullNode = buildProcessNode(proc({ runtime_version: null, command_line: 'x.dll' }));
+    // An ABSENT runtime_version key flows through the same `?? ''` nullish branch.
+    const absentNode = buildProcessNode({ pid: 1, name: 'dotnet', command_line: 'x.dll' });
+    assert.strictEqual(nullNode.description, absentNode.description);
+    assert.strictEqual(absentNode.description, '.NET (version unknown) · x.dll');
+  });
+
+  test('empty-string runtime_version is treated as unknown in tooltip too', () => {
+    const node = buildProcessNode(proc({ runtime_version: '', command_line: 'empty.dll' }));
+    const tooltip = node.tooltip as vscode.MarkdownString;
+    assert.ok(tooltip.value.includes('Runtime: .NET (version unknown)'));
+    assert.ok(!tooltip.value.includes('Runtime: .NET  '));
+  });
+});
+
+suite('Profiler — buildProcessNode() name / command-line assembly', () => {
+  test('special-character process name is preserved verbatim in label, tooltip and command', () => {
+    const node = buildProcessNode(
+      proc({ name: 'My.App<Worker> & "Co"', pid: 42, command_line: 'm.dll' }),
+    );
+    assert.strictEqual(node.label, 'My.App<Worker> & "Co" (PID 42)');
+    assert.strictEqual(node.processName, 'My.App<Worker> & "Co"');
+    const tooltip = node.tooltip as vscode.MarkdownString;
+    // The tooltip is a MarkdownString; the builder does NOT HTML-escape names.
+    assert.ok(tooltip.value.includes('**My.App<Worker> & "Co"** · PID `42`'));
+    assert.ok(node.command !== undefined);
+    assert.deepStrictEqual(node.command.arguments, [node]);
+  });
+
+  test('empty command_line still produces a well-formed description and tooltip', () => {
+    const node = buildProcessNode(proc({ command_line: '', runtime_version: '10.0.0' }));
+    assert.strictEqual(node.description, '.NET 10.0.0 · ');
+    const tooltip = node.tooltip as vscode.MarkdownString;
+    // Empty command line renders as an empty backtick span on its own line.
+    assert.ok(tooltip.value.includes('``'));
+    assert.ok(tooltip.value.includes('Runtime: .NET 10.0.0'));
+  });
+
+  test('a very long command_line is carried through unchanged into description and tooltip', () => {
+    const longCmd = `dotnet ${'--flag '.repeat(60)}App.dll`.trim();
+    const node = buildProcessNode(proc({ command_line: longCmd, runtime_version: '10.0.0' }));
+    assert.strictEqual(node.description, `.NET 10.0.0 · ${longCmd}`);
+    const tooltip = node.tooltip as vscode.MarkdownString;
+    assert.ok(tooltip.value.includes(`\`${longCmd}\``));
+  });
+
+  test('label embeds the numeric PID via String()', () => {
+    assert.strictEqual(buildProcessNode(proc({ pid: 0 })).label, 'dotnet (PID 0)');
+    assert.strictEqual(
+      buildProcessNode(proc({ pid: 2147483647 })).label,
+      'dotnet (PID 2147483647)',
+    );
+  });
+
+  test('tooltip always closes with the right-click action hint and a click-to-act line', () => {
+    const node = buildProcessNode(proc({}));
+    const tooltip = node.tooltip as vscode.MarkdownString;
+    assert.ok(tooltip instanceof vscode.MarkdownString);
+    assert.ok(
+      tooltip.value.includes(
+        'Click to choose an action. Right-click for: trace, counters, dump, copy PID, kill.',
+      ),
+    );
+  });
+
+  test('every produced process node is a None-collapsible terminal-icon leaf with the trace command', () => {
+    const node = buildProcessNode(proc({ name: 'Leaf', pid: 5, runtime_version: null }));
+    assert.strictEqual(node.collapsibleState, vscode.TreeItemCollapsibleState.None);
+    assert.strictEqual(node.contextValue, 'profiler-process');
+    assert.strictEqual((node.iconPath as vscode.ThemeIcon).id, 'terminal');
+    assert.strictEqual((node.iconPath as vscode.ThemeIcon).color, undefined);
+    assert.strictEqual(node.command?.command, 'sharplsp.profiler.traceProcess');
+    assert.strictEqual(node.command?.title, 'Start Trace');
+    assert.strictEqual(node.sessionId, undefined);
+    assert.strictEqual(node.outputPath, undefined);
+  });
+});
+
 // ── ProfilerTreeItem constructor ──────────────────────────────────
 
 suite('Profiler — ProfilerTreeItem constructor', () => {
@@ -635,5 +800,480 @@ suite('Profiler — ProfilerTreeItem constructor', () => {
     });
     assert.strictEqual(item.contextValue, undefined);
     assert.strictEqual(item.processPid, 1);
+  });
+});
+
+// ── ProfilerTreeProvider ──────────────────────────────────────────
+//
+// The provider is a TreeDataProvider whose `getChildren()`/`getTreeItem()` and
+// session/process mutators are all directly callable. `refresh()` talks to a
+// LanguageClient via `sendRequest('sharplsp/profiler/listProcesses')`; we drive
+// it with stub clients that resolve/reject so no LSP server is needed.
+
+/** A LanguageClient stub whose sendRequest resolves with the given process list. */
+function processListClient(processes: DotNetProcess[]): LanguageClient {
+  return {
+    sendRequest: async (_method: string, _payload: unknown): Promise<unknown> => processes,
+  } as unknown as LanguageClient;
+}
+
+/** A LanguageClient stub whose sendRequest rejects with the given error. */
+function failingListClient(error: unknown): LanguageClient {
+  return {
+    sendRequest: async (_method: string, _payload: unknown): Promise<unknown> => {
+      throw error;
+    },
+  } as unknown as LanguageClient;
+}
+
+const PROC_A: DotNetProcess = {
+  pid: 100,
+  name: 'AppA',
+  command_line: 'dotnet AppA.dll',
+  runtime_version: '10.0.0',
+};
+const PROC_B: DotNetProcess = {
+  pid: 200,
+  name: 'AppB',
+  command_line: 'dotnet AppB.dll',
+  runtime_version: null,
+};
+
+suite('Profiler — ProfilerTreeProvider getChildren() / getTreeItem()', () => {
+  test('fresh provider with no sessions and no processes shows the empty node', () => {
+    const provider = new ProfilerTreeProvider();
+    const nodes = provider.getChildren();
+    assert.strictEqual(nodes.length, 1);
+    const empty = nodes[0]!;
+    assert.strictEqual(empty.label, 'No .NET processes found');
+    assert.strictEqual(empty.nodeKind, 'header');
+    assert.strictEqual(empty.description, 'Click the refresh icon to scan again');
+    const icon = empty.iconPath as vscode.ThemeIcon;
+    assert.strictEqual(icon.id, 'info');
+    assert.strictEqual(empty.collapsibleState, vscode.TreeItemCollapsibleState.None);
+  });
+
+  test('getChildren(element) always returns no children (flat tree)', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('s1', 'Trace', 1);
+    const root = provider.getChildren();
+    assert.ok(root.length > 0);
+    // Passing any node back in yields an empty array — every node is a leaf.
+    for (const node of root) {
+      assert.deepStrictEqual(provider.getChildren(node), []);
+    }
+  });
+
+  test('getTreeItem returns the element it is handed unchanged', () => {
+    const provider = new ProfilerTreeProvider();
+    const item = new ProfilerTreeItem('X', 'header', vscode.TreeItemCollapsibleState.None);
+    assert.strictEqual(provider.getTreeItem(item), item);
+  });
+
+  test('a single session yields a header plus one session node, no process header', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('sess-1', 'Trace', 4242, '/tmp/t.nettrace', 'MyApp');
+    const nodes = provider.getChildren();
+    assert.strictEqual(nodes.length, 2);
+
+    const header = nodes[0]!;
+    assert.strictEqual(header.label, 'Active Sessions (1)');
+    assert.strictEqual(header.nodeKind, 'header');
+    assert.strictEqual(header.contextValue, 'profiler-header-sessions');
+    assert.strictEqual((header.iconPath as vscode.ThemeIcon).id, 'pulse');
+    assert.strictEqual(header.collapsibleState, vscode.TreeItemCollapsibleState.None);
+
+    const session = nodes[1]!;
+    assert.strictEqual(session.nodeKind, 'session');
+    assert.strictEqual(session.label, 'Trace: MyApp (PID 4242)');
+    assert.strictEqual(session.sessionId, 'sess-1');
+    assert.strictEqual(session.outputPath, '/tmp/t.nettrace');
+    assert.strictEqual(session.contextValue, 'profiler-session-trace');
+
+    // No process header should appear.
+    assert.ok(!nodes.some((n) => n.contextValue === 'profiler-header-processes'));
+  });
+
+  test('session header pluralizes the count as sessions are added', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('a', 'Trace', 1);
+    provider.addSession('b', 'Counters', 2);
+    provider.addSession('c', 'Trace', 3);
+    const header = provider.getChildren()[0]!;
+    assert.strictEqual(header.label, 'Active Sessions (3)');
+    assert.strictEqual(provider.sessionCount, 3);
+  });
+
+  test('sessions appear in insertion order beneath the header', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('first', 'Trace', 1, undefined, 'First');
+    provider.addSession('second', 'Counters', 2, undefined, 'Second');
+    const nodes = provider.getChildren();
+    // [header, first, second]
+    assert.strictEqual(nodes[1]!.sessionId, 'first');
+    assert.strictEqual(nodes[2]!.sessionId, 'second');
+    assert.strictEqual(nodes[1]!.label, 'Trace: First (PID 1)');
+    assert.strictEqual(nodes[2]!.label, 'Counters: Second (PID 2)');
+  });
+
+  test('Trace and Counters sessions get distinct context values and icons', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('t', 'Trace', 1);
+    provider.addSession('c', 'Counters', 2);
+    const nodes = provider.getChildren();
+    const trace = nodes.find((n) => n.sessionId === 't')!;
+    const counters = nodes.find((n) => n.sessionId === 'c')!;
+    assert.strictEqual(trace.contextValue, 'profiler-session-trace');
+    assert.strictEqual(counters.contextValue, 'profiler-session-counters');
+    assert.strictEqual((trace.iconPath as vscode.ThemeIcon).id, 'record');
+    assert.strictEqual((counters.iconPath as vscode.ThemeIcon).id, 'pulse');
+    assert.ok(
+      typeof trace.description === 'string' && trace.description.startsWith('recording · '),
+    );
+    assert.strictEqual(counters.description, 'streaming');
+  });
+
+  test('after refresh() with processes, a process header plus process nodes appear', async () => {
+    const provider = new ProfilerTreeProvider();
+    provider.setClient(processListClient([PROC_A, PROC_B]));
+    await provider.refresh();
+    const nodes = provider.getChildren();
+    // [process header, procA, procB]
+    assert.strictEqual(nodes.length, 3);
+
+    const header = nodes[0]!;
+    assert.strictEqual(header.label, '.NET Processes (2)');
+    assert.strictEqual(header.contextValue, 'profiler-header-processes');
+    assert.strictEqual((header.iconPath as vscode.ThemeIcon).id, 'server-process');
+
+    const procA = nodes[1]!;
+    assert.strictEqual(procA.nodeKind, 'process');
+    assert.strictEqual(procA.label, 'AppA (PID 100)');
+    assert.strictEqual(procA.processPid, 100);
+    assert.strictEqual(procA.processName, 'AppA');
+    assert.strictEqual(procA.contextValue, 'profiler-process');
+    assert.strictEqual(procA.description, '.NET 10.0.0 · dotnet AppA.dll');
+
+    const procB = nodes[2]!;
+    assert.strictEqual(procB.label, 'AppB (PID 200)');
+    assert.strictEqual(procB.description, '.NET (version unknown) · dotnet AppB.dll');
+  });
+
+  test('with both sessions and processes, both headers and all nodes render in order', async () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('sess', 'Trace', 1, undefined, 'Sess');
+    provider.setClient(processListClient([PROC_A]));
+    await provider.refresh();
+    const nodes = provider.getChildren();
+    // [sessions header, session, processes header, process]
+    assert.strictEqual(nodes.length, 4);
+    assert.strictEqual(nodes[0]!.contextValue, 'profiler-header-sessions');
+    assert.strictEqual(nodes[1]!.nodeKind, 'session');
+    assert.strictEqual(nodes[2]!.contextValue, 'profiler-header-processes');
+    assert.strictEqual(nodes[3]!.nodeKind, 'process');
+    // The empty placeholder must NOT appear when real nodes exist.
+    assert.ok(!nodes.some((n) => n.label === 'No .NET processes found'));
+  });
+});
+
+suite('Profiler — ProfilerTreeProvider session mutation', () => {
+  test('addSession then findSession returns the stored SessionInfo', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('id-1', 'Trace', 55, '/out.nettrace', 'Web');
+    const found = provider.findSession('id-1');
+    assert.ok(found !== undefined);
+    assert.strictEqual(found.id, 'id-1');
+    assert.strictEqual(found.kind, 'Trace');
+    assert.strictEqual(found.pid, 55);
+    assert.strictEqual(found.outputPath, '/out.nettrace');
+    assert.strictEqual(found.processName, 'Web');
+    assert.ok(typeof found.startedAt === 'number');
+  });
+
+  test('addSession with omitted outputPath and processName stores undefined for both', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('id-2', 'Counters', 77);
+    const found = provider.findSession('id-2')!;
+    assert.strictEqual(found.outputPath, undefined);
+    assert.strictEqual(found.processName, undefined);
+  });
+
+  test('findSession returns undefined for an unknown id', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('present', 'Trace', 1);
+    assert.strictEqual(provider.findSession('absent'), undefined);
+  });
+
+  test('removeSession drops the matching session and decrements the count', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('keep', 'Trace', 1);
+    provider.addSession('drop', 'Counters', 2);
+    assert.strictEqual(provider.sessionCount, 2);
+    provider.removeSession('drop');
+    assert.strictEqual(provider.sessionCount, 1);
+    assert.strictEqual(provider.findSession('drop'), undefined);
+    assert.ok(provider.findSession('keep') !== undefined);
+  });
+
+  test('removeSession with an unknown id is a no-op', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('only', 'Trace', 1);
+    provider.removeSession('nope');
+    assert.strictEqual(provider.sessionCount, 1);
+    assert.ok(provider.findSession('only') !== undefined);
+  });
+
+  test('sessionCount starts at zero and tracks adds/removes', () => {
+    const provider = new ProfilerTreeProvider();
+    assert.strictEqual(provider.sessionCount, 0);
+    provider.addSession('a', 'Trace', 1);
+    provider.addSession('b', 'Trace', 2);
+    assert.strictEqual(provider.sessionCount, 2);
+    provider.removeSession('a');
+    provider.removeSession('b');
+    assert.strictEqual(provider.sessionCount, 0);
+  });
+
+  test('getActiveSessions filters by kind', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('t1', 'Trace', 1);
+    provider.addSession('t2', 'Trace', 2);
+    provider.addSession('c1', 'Counters', 3);
+    const traces = provider.getActiveSessions('Trace');
+    const counters = provider.getActiveSessions('Counters');
+    assert.strictEqual(traces.length, 2);
+    assert.deepStrictEqual(
+      traces.map((s) => s.id),
+      ['t1', 't2'],
+    );
+    assert.strictEqual(counters.length, 1);
+    assert.strictEqual(counters[0]!.id, 'c1');
+    assert.deepStrictEqual(provider.getActiveSessions('Unknown'), []);
+  });
+});
+
+suite('Profiler — ProfilerTreeProvider refresh() and process cache', () => {
+  test('refresh() without a client is a no-op (no processes, no throw)', async () => {
+    const provider = new ProfilerTreeProvider();
+    await provider.refresh();
+    const nodes = provider.getChildren();
+    assert.strictEqual(nodes.length, 1);
+    assert.strictEqual(nodes[0]!.label, 'No .NET processes found');
+  });
+
+  test('refresh() populates processNameFor() from the listed processes', async () => {
+    const provider = new ProfilerTreeProvider();
+    provider.setClient(processListClient([PROC_A, PROC_B]));
+    await provider.refresh();
+    assert.strictEqual(provider.processNameFor(100), 'AppA');
+    assert.strictEqual(provider.processNameFor(200), 'AppB');
+    assert.strictEqual(provider.processNameFor(999), undefined);
+  });
+
+  test('processNameFor() is undefined before any refresh', () => {
+    const provider = new ProfilerTreeProvider();
+    assert.strictEqual(provider.processNameFor(100), undefined);
+  });
+
+  test('refresh() failure clears the cached processes and does not throw', async () => {
+    const provider = new ProfilerTreeProvider();
+    provider.setClient(processListClient([PROC_A]));
+    await provider.refresh();
+    assert.strictEqual(provider.processNameFor(100), 'AppA');
+
+    // Now swap in a failing client; refresh should swallow the error and reset.
+    provider.setClient(failingListClient(new Error('listProcesses boom')));
+    await provider.refresh();
+    assert.strictEqual(provider.processNameFor(100), undefined);
+    const nodes = provider.getChildren();
+    assert.strictEqual(nodes.length, 1);
+    assert.strictEqual(nodes[0]!.label, 'No .NET processes found');
+  });
+
+  test('refresh() failure with a non-Error rejection still clears processes', async () => {
+    const provider = new ProfilerTreeProvider();
+    provider.setClient(processListClient([PROC_A, PROC_B]));
+    await provider.refresh();
+    assert.strictEqual(provider.processNameFor(200), 'AppB');
+
+    provider.setClient(failingListClient('string failure'));
+    await provider.refresh();
+    assert.strictEqual(provider.processNameFor(200), undefined);
+  });
+
+  test('refresh() replaces a previously empty process list', async () => {
+    const provider = new ProfilerTreeProvider();
+    provider.setClient(processListClient([]));
+    await provider.refresh();
+    assert.strictEqual(provider.getChildren()[0]!.label, 'No .NET processes found');
+
+    provider.setClient(processListClient([PROC_A]));
+    await provider.refresh();
+    const nodes = provider.getChildren();
+    assert.strictEqual(nodes[0]!.label, '.NET Processes (1)');
+  });
+});
+
+suite('Profiler — ProfilerTreeProvider onDidChangeTreeData', () => {
+  test('addSession fires the change event with undefined (root refresh)', () => {
+    const provider = new ProfilerTreeProvider();
+    let fired = 0;
+    let lastArg: ProfilerTreeItem | undefined = new ProfilerTreeItem(
+      'x',
+      'header',
+      vscode.TreeItemCollapsibleState.None,
+    );
+    const sub = provider.onDidChangeTreeData((arg) => {
+      fired += 1;
+      lastArg = arg;
+    });
+    provider.addSession('s', 'Trace', 1);
+    sub.dispose();
+    assert.strictEqual(fired, 1);
+    assert.strictEqual(lastArg, undefined);
+  });
+
+  test('removeSession fires the change event', () => {
+    const provider = new ProfilerTreeProvider();
+    provider.addSession('s', 'Trace', 1);
+    let fired = 0;
+    const sub = provider.onDidChangeTreeData(() => {
+      fired += 1;
+    });
+    provider.removeSession('s');
+    sub.dispose();
+    assert.strictEqual(fired, 1);
+  });
+
+  test('refresh() fires the change event once it completes', async () => {
+    const provider = new ProfilerTreeProvider();
+    provider.setClient(processListClient([PROC_A]));
+    let fired = 0;
+    const sub = provider.onDidChangeTreeData(() => {
+      fired += 1;
+    });
+    await provider.refresh();
+    sub.dispose();
+    assert.strictEqual(fired, 1);
+  });
+
+  test('a no-client refresh() does not fire the change event', async () => {
+    const provider = new ProfilerTreeProvider();
+    let fired = 0;
+    const sub = provider.onDidChangeTreeData(() => {
+      fired += 1;
+    });
+    await provider.refresh();
+    sub.dispose();
+    assert.strictEqual(fired, 0);
+  });
+});
+
+// ── ProfilerStatusBar ─────────────────────────────────────────────
+//
+// The status bar wraps a real vscode StatusBarItem (the test host supports
+// createStatusBarItem). We only need a context with a `subscriptions` array.
+
+function statusBarContext(): vscode.ExtensionContext {
+  return {
+    subscriptions: [] as vscode.Disposable[],
+  } as unknown as vscode.ExtensionContext;
+}
+
+suite('Profiler — ProfilerStatusBar', () => {
+  test('construction registers the item as a context subscription', () => {
+    const ctx = statusBarContext();
+    const bar = new ProfilerStatusBar(ctx);
+    assert.ok(bar instanceof ProfilerStatusBar);
+    // The constructor pushes its StatusBarItem onto subscriptions.
+    assert.strictEqual(ctx.subscriptions.length, 1);
+    assert.ok(typeof ctx.subscriptions[0]!.dispose === 'function');
+    ctx.subscriptions[0]!.dispose();
+  });
+
+  test('update(0) hides the item without throwing', () => {
+    const ctx = statusBarContext();
+    const bar = new ProfilerStatusBar(ctx);
+    assert.doesNotThrow(() => {
+      bar.update(0);
+    });
+    ctx.subscriptions[0]!.dispose();
+  });
+
+  test('update(n>0) shows a session count without throwing', () => {
+    const ctx = statusBarContext();
+    const bar = new ProfilerStatusBar(ctx);
+    assert.doesNotThrow(() => {
+      bar.update(1);
+      bar.update(5);
+    });
+    ctx.subscriptions[0]!.dispose();
+  });
+
+  test('toggling between visible and hidden states is safe', () => {
+    const ctx = statusBarContext();
+    const bar = new ProfilerStatusBar(ctx);
+    assert.doesNotThrow(() => {
+      bar.update(3);
+      bar.update(0);
+      bar.update(7);
+      bar.update(0);
+    });
+    ctx.subscriptions[0]!.dispose();
+  });
+
+  test('the registered subscription is the underlying StatusBarItem (text/show/hide visible)', () => {
+    const ctx = statusBarContext();
+    const bar = new ProfilerStatusBar(ctx);
+    const item = ctx.subscriptions[0] as unknown as vscode.StatusBarItem;
+    // The constructor wires command + tooltip onto the same item it subscribes.
+    assert.strictEqual(item.command, 'sharplsp.profiler.listProcesses');
+    assert.strictEqual(item.tooltip, 'Active profiling sessions — click to list processes');
+    // update(n>0) takes the `text + show()` branch.
+    bar.update(2);
+    assert.strictEqual(item.text, '$(pulse) 2 profiling');
+    bar.update(1);
+    assert.strictEqual(item.text, '$(pulse) 1 profiling');
+    bar.update(137);
+    assert.strictEqual(item.text, '$(pulse) 137 profiling');
+    // update(0) takes the `hide()` branch and leaves the previous text untouched.
+    bar.update(0);
+    assert.strictEqual(item.text, '$(pulse) 137 profiling');
+    item.dispose();
+  });
+
+  test('construction starts in the hidden (count 0) branch via the constructor update(0)', () => {
+    const ctx = statusBarContext();
+    const bar = new ProfilerStatusBar(ctx);
+    const item = ctx.subscriptions[0] as unknown as vscode.StatusBarItem;
+    // Constructor calls update(0): the text-setting branch never ran, so text is the default ''.
+    assert.strictEqual(item.text, '');
+    // First positive update flips into the visible branch.
+    bar.update(1);
+    assert.strictEqual(item.text, '$(pulse) 1 profiling');
+    item.dispose();
+  });
+});
+
+// ── formatCounterValue() — remaining numeric branches ─────────────
+
+suite('Profiler — formatCounterValue() extra numeric branches', () => {
+  test('large integer non-byte values keep locale grouping (no byte tier)', () => {
+    assert.strictEqual(
+      formatCounterValue(1_000_000_000, 'requests'),
+      (1_000_000_000).toLocaleString(),
+    );
+  });
+
+  test('a unit whose substring "byte" appears mid-word still routes to formatBytes', () => {
+    assert.strictEqual(formatCounterValue(1024 * 1024, 'total-bytes-allocated'), '1.0 MB');
+  });
+
+  test('NaN is not an integer so it takes the toFixed(2) branch', () => {
+    assert.strictEqual(formatCounterValue(Number.NaN, 'ratio'), 'NaN');
+  });
+
+  test('whole-number float (e.g. 5.0) is an integer and uses locale grouping', () => {
+    assert.strictEqual(formatCounterValue(5.0, 'count'), (5).toLocaleString());
   });
 });

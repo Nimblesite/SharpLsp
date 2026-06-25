@@ -2,7 +2,17 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { MarkdownString, ThemeColor, ThemeIcon, TreeItemCollapsibleState, Uri } from 'vscode';
+import {
+  CancellationTokenSource,
+  commands,
+  Hover,
+  MarkdownString,
+  ThemeColor,
+  ThemeIcon,
+  TreeItem,
+  TreeItemCollapsibleState,
+  Uri,
+} from 'vscode';
 import { ExplorerNode, SolutionExplorerProvider, buildQualifiedName } from '../../tree.js';
 import { buildNonSymbolTooltip, SYMBOL_CONTEXT_VALUES } from '../../tree-tooltip.js';
 import * as state from '../../state.js';
@@ -1064,5 +1074,287 @@ suite('tree — buildQualifiedName', () => {
     assert.strictEqual(qualified, 'Direct');
     assert.ok(!qualified.includes('MyProj'), 'project name must not leak into qualified name');
     assert.ok(!qualified.includes('Sol'), 'solution name must not leak into qualified name');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// SolutionExplorerProvider — sort context & cycling
+// ─────────────────────────────────────────────────────────────────
+
+interface MutableCommands {
+  executeCommand: typeof commands.executeCommand;
+}
+
+suite('SolutionExplorerProvider — initSortContext & cycleSortOrder', () => {
+  const mutCommands = commands as unknown as MutableCommands;
+  let provider: SolutionExplorerProvider;
+  let origExecuteCommand: typeof mutCommands.executeCommand;
+
+  setup(() => {
+    resetTreeState();
+    origExecuteCommand = mutCommands.executeCommand;
+    provider = new SolutionExplorerProvider();
+  });
+
+  teardown(() => {
+    // ALWAYS restore the patched seam so other suites see the real command bus.
+    mutCommands.executeCommand = origExecuteCommand;
+    resetTreeState();
+  });
+
+  test('initSortContext pushes the current sort order into the setContext key', async () => {
+    state.sortOrder.value = SortOrder.Natural;
+    const calls: { command: string; key: unknown; value: unknown }[] = [];
+    mutCommands.executeCommand = (async (command: string, key: unknown, value: unknown) => {
+      calls.push({ command, key, value });
+      return undefined;
+    }) as unknown as typeof mutCommands.executeCommand;
+
+    provider.initSortContext();
+
+    // The very first call seeds the context key with the present order.
+    assert.ok(calls.length >= 1, 'initSortContext must invoke setContext at least once');
+    const first = calls[0];
+    assert.ok(first !== undefined);
+    assert.strictEqual(first.command, 'setContext');
+    assert.strictEqual(first.key, 'sharplsp.sortOrder');
+    assert.strictEqual(first.value, SortOrder.Natural);
+  });
+
+  test('initSortContext subscription re-pushes the key on every sort-order change', () => {
+    const seen: unknown[] = [];
+    mutCommands.executeCommand = (async (command: string, key: unknown, value: unknown) => {
+      if (command === 'setContext' && key === 'sharplsp.sortOrder') {
+        seen.push(value);
+      }
+      return undefined;
+    }) as unknown as typeof mutCommands.executeCommand;
+
+    provider.initSortContext();
+    // Each subsequent value change fires the subscribe() callback (line 124).
+    state.sortOrder.value = SortOrder.Alphabetical;
+    state.sortOrder.value = SortOrder.Accessibility;
+    state.sortOrder.value = SortOrder.Natural;
+
+    // Seed + three explicit changes -> at least the three latest values appear in order.
+    assert.ok(
+      seen.includes(SortOrder.Alphabetical),
+      'change to alphabetical must re-push the context key',
+    );
+    assert.ok(
+      seen.includes(SortOrder.Accessibility),
+      'change to accessibility must re-push the context key',
+    );
+    const last = seen[seen.length - 1];
+    assert.strictEqual(last, SortOrder.Natural, 'the final pushed value matches the final order');
+  });
+
+  test('cycleSortOrder advances natural -> alphabetical via the shared state action', () => {
+    state.sortOrder.value = SortOrder.Natural;
+    provider.cycleSortOrder();
+    assert.strictEqual(state.sortOrder.value, SortOrder.Alphabetical);
+  });
+
+  test('cycleSortOrder advances alphabetical -> accessibility', () => {
+    state.sortOrder.value = SortOrder.Alphabetical;
+    provider.cycleSortOrder();
+    assert.strictEqual(state.sortOrder.value, SortOrder.Accessibility);
+  });
+
+  test('cycleSortOrder wraps accessibility -> natural', () => {
+    state.sortOrder.value = SortOrder.Accessibility;
+    provider.cycleSortOrder();
+    assert.strictEqual(state.sortOrder.value, SortOrder.Natural);
+  });
+
+  test('three successive cycles return to the starting order (full ring)', () => {
+    state.sortOrder.value = SortOrder.Natural;
+    provider.cycleSortOrder();
+    provider.cycleSortOrder();
+    provider.cycleSortOrder();
+    assert.strictEqual(state.sortOrder.value, SortOrder.Natural, 'the cycle is a 3-element ring');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// SolutionExplorerProvider — resolveTreeItem (LSP hover tooltips)
+// ─────────────────────────────────────────────────────────────────
+
+suite('SolutionExplorerProvider — resolveTreeItem', () => {
+  const mutCommands = commands as unknown as MutableCommands;
+  let provider: SolutionExplorerProvider;
+  let origExecuteCommand: typeof mutCommands.executeCommand;
+  let tokenSource: CancellationTokenSource;
+
+  setup(() => {
+    resetTreeState();
+    origExecuteCommand = mutCommands.executeCommand;
+    tokenSource = new CancellationTokenSource();
+    provider = new SolutionExplorerProvider();
+  });
+
+  teardown(() => {
+    mutCommands.executeCommand = origExecuteCommand;
+    tokenSource.dispose();
+    resetTreeState();
+  });
+
+  /** Stub the hover command to return the given hovers (or throw if `thrown`). */
+  function stubHover(result: Hover[] | undefined, thrown?: Error): void {
+    mutCommands.executeCommand = (async (command: string) => {
+      if (command === 'vscode.executeHoverProvider') {
+        if (thrown !== undefined) throw thrown;
+        return result;
+      }
+      return origExecuteCommand(command);
+    }) as unknown as typeof mutCommands.executeCommand;
+  }
+
+  /** Resolve the first symbol node loaded for a project under `dir`. */
+  function symbolNodeIn(dir: string): ExplorerNode {
+    const root = loadInto(provider, `${dir}/Sol.sln`, [
+      project('P', `${dir}/P.csproj`, [symbol({ name: 'Service', kind: 'Class' })]),
+    ]);
+    const projectNode = root.children[0];
+    assert.ok(projectNode !== undefined);
+    const symbolNode = projectNode.children.find((c) => nt(c) === 'symbol');
+    assert.ok(symbolNode !== undefined, 'a symbol node must be present');
+    return symbolNode;
+  }
+
+  test('a symbol hover with a plain-string content becomes the markdown tooltip', async () => {
+    const node = symbolNodeIn('/rt1');
+    // A string content exercises the `typeof content === 'string'` push branch.
+    stubHover([new Hover('class Service { }')]);
+    const item = new TreeItem('Service');
+
+    const resolved = await provider.resolveTreeItem(item, node, tokenSource.token);
+
+    assert.strictEqual(resolved, item, 'resolveTreeItem mutates and returns the same item');
+    assert.ok(resolved.tooltip instanceof MarkdownString, 'tooltip must be the merged markdown');
+    assert.ok(
+      resolved.tooltip.value.includes('class Service { }'),
+      'the plain-string hover content must appear in the tooltip',
+    );
+  });
+
+  test('a MarkdownString hover content is merged into the tooltip', async () => {
+    const node = symbolNodeIn('/rt2');
+    stubHover([new Hover(new MarkdownString('**Service** : class'))]);
+    const item = new TreeItem('Service');
+
+    const resolved = await provider.resolveTreeItem(item, node, tokenSource.token);
+
+    assert.ok(resolved.tooltip instanceof MarkdownString);
+    assert.ok(resolved.tooltip.value.includes('**Service** : class'));
+  });
+
+  test('multiple hovers (string + markdown) are joined with a horizontal rule', async () => {
+    const node = symbolNodeIn('/rt3');
+    stubHover([new Hover('first part'), new Hover(new MarkdownString('second part'))]);
+    const item = new TreeItem('Service');
+
+    const resolved = await provider.resolveTreeItem(item, node, tokenSource.token);
+
+    const value = (resolved.tooltip as MarkdownString).value;
+    assert.ok(value.includes('first part'));
+    assert.ok(value.includes('second part'));
+    assert.ok(value.includes('---'), 'the two hover blocks are separated by a divider');
+  });
+
+  test('an empty hover list falls back to the non-symbol tooltip (undefined for a class)', async () => {
+    const node = symbolNodeIn('/rt4');
+    stubHover([]);
+    const item = new TreeItem('Service');
+
+    const resolved = await provider.resolveTreeItem(item, node, tokenSource.token);
+
+    // hovers.length === 0 -> resolveSymbolTooltip undefined -> non-symbol fallback,
+    // which is undefined for a class node.
+    assert.strictEqual(resolved.tooltip, undefined, 'no hover and no non-symbol tooltip');
+  });
+
+  test('a thrown hover provider is swallowed and yields the fallback tooltip', async () => {
+    const node = symbolNodeIn('/rt5');
+    // Forces the catch block (lines 470-472): log + return undefined.
+    stubHover(undefined, new Error('hover provider exploded'));
+    const item = new TreeItem('Service');
+
+    const resolved = await provider.resolveTreeItem(item, node, tokenSource.token);
+
+    assert.strictEqual(resolved.tooltip, undefined, 'a hover failure must not crash the tree');
+  });
+
+  test('a namespace node without a symbol uri short-circuits before any hover call', async () => {
+    let hoverInvoked = false;
+    mutCommands.executeCommand = (async (command: string) => {
+      if (command === 'vscode.executeHoverProvider') hoverInvoked = true;
+      return [];
+    }) as unknown as typeof mutCommands.executeCommand;
+
+    const root = loadInto(provider, '/rt6/Sol.sln', [
+      project('P', '/rt6/P.csproj', [
+        symbol({
+          name: 'My.Ns',
+          kind: 'Namespace',
+          children: [symbol({ name: 'Widget', kind: 'Class' })],
+        }),
+      ]),
+    ]);
+    const projectNode = root.children[0];
+    assert.ok(projectNode !== undefined);
+    const ns = projectNode.children.find((c) => nt(c) === 'namespace');
+    assert.ok(ns !== undefined, 'namespace node must exist');
+    // createNamespaceNodes never sets symbolUri/symbolPosition, so the
+    // `symbolUri === undefined || symbolPosition === undefined` guard returns
+    // undefined (lines 459-460) without touching the hover provider.
+    assert.strictEqual(ns.symbolUri, undefined, 'namespace nodes carry no symbol uri');
+
+    const item = new TreeItem('My.Ns');
+    const resolved = await provider.resolveTreeItem(item, ns, tokenSource.token);
+
+    assert.strictEqual(hoverInvoked, false, 'no hover request for a uri-less symbol node');
+    assert.strictEqual(resolved.tooltip, undefined, 'namespace falls back to undefined tooltip');
+  });
+
+  test('a non-symbol node (nuget package) bypasses hover and uses its rich tooltip', async () => {
+    let hoverInvoked = false;
+    mutCommands.executeCommand = (async (command: string) => {
+      if (command === 'vscode.executeHoverProvider') hoverInvoked = true;
+      return [];
+    }) as unknown as typeof mutCommands.executeCommand;
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tree-resolve-nuget-'));
+    try {
+      const projPath = path.join(tmpDir, 'App.csproj');
+      fs.writeFileSync(
+        projPath,
+        `<Project Sdk="Microsoft.NET.Sdk"><ItemGroup>` +
+          `<PackageReference Include="Serilog" Version="3.1.1" />` +
+          `</ItemGroup></Project>`,
+        'utf-8',
+      );
+      const root = loadInto(provider, path.join(tmpDir, 'App.sln'), [
+        project('App', projPath, [symbol({ name: 'C', kind: 'Class' })]),
+      ]);
+      const projectNode = root.children[0];
+      assert.ok(projectNode !== undefined);
+      const depFolder = projectNode.children.find((c) => nt(c) === 'dependencyFolder');
+      assert.ok(depFolder !== undefined);
+      const packagesFolder = depFolder.children.find((c) => c.label === 'Packages');
+      assert.ok(packagesFolder !== undefined);
+      const pkg = packagesFolder.children[0];
+      assert.ok(pkg !== undefined);
+
+      const item = new TreeItem('Serilog');
+      const resolved = await provider.resolveTreeItem(item, pkg, tokenSource.token);
+
+      assert.strictEqual(hoverInvoked, false, 'nuget nodes are not symbols — no hover call');
+      assert.ok(resolved.tooltip instanceof MarkdownString, 'nuget node gets a rich tooltip');
+      assert.ok(resolved.tooltip.value.includes('Serilog'));
+      assert.ok(resolved.tooltip.value.includes('3.1.1'));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

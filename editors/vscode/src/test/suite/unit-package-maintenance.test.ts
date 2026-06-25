@@ -3,9 +3,18 @@
 // async dotnet/quick-pick driven commands are out of scope for pure-logic tests;
 // only the node → project-path collector is directly callable without an LSP host.
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as vscode from 'vscode';
 import { TreeItemCollapsibleState } from 'vscode';
+import { type LanguageClient } from 'vscode-languageclient/node';
 import { ExplorerNode } from '../../tree.js';
-import { collectProjectPaths } from '../../package-maintenance.js';
+import {
+  collectProjectPaths,
+  consolidatePackages,
+  removeUnusedPackages,
+} from '../../package-maintenance.js';
 
 // ── Fixture builders ──────────────────────────────────────────────
 //
@@ -346,5 +355,482 @@ suite('package-maintenance — collectProjectPaths()', () => {
         assert.strictEqual(typeof entry, 'string');
       }
     });
+  });
+});
+
+// ── Async command harness ─────────────────────────────────────────
+//
+// `removeUnusedPackages` and `consolidatePackages` drive `vscode.window.*`
+// dialogs and an injected `LanguageClient.sendRequest` seam. We monkeypatch
+// every window method they touch (saving + restoring around each test) and
+// feed a fake LanguageClient, so the full detect → confirm → apply flow runs
+// with NO LSP host and NO real dialogs. The apply branch of removal is driven
+// through the cancel/empty/error paths so no real `dotnet` is spawned.
+
+/** A captured `showXxxMessage` invocation: the message plus modal-ness. */
+interface MsgCall {
+  readonly message: string;
+  readonly modal: boolean;
+}
+
+/** A stub dialog: receives the message + options/items, resolves to a choice. */
+type StubDialog = (message: string, ...rest: unknown[]) => Promise<string | undefined>;
+
+/** Mutable view of the `vscode.window` methods these commands invoke. */
+interface MutableWindow {
+  showWarningMessage: StubDialog;
+  showInformationMessage: StubDialog;
+  showErrorMessage: StubDialog;
+}
+
+/** Records of everything the SUT showed during a single test. */
+interface WindowSpy {
+  readonly warnings: MsgCall[];
+  readonly infos: MsgCall[];
+  readonly errors: MsgCall[];
+}
+
+const mutableWindow = vscode.window as unknown as MutableWindow;
+
+interface SavedWindow {
+  readonly showWarningMessage: StubDialog;
+  readonly showInformationMessage: StubDialog;
+  readonly showErrorMessage: StubDialog;
+}
+
+/** Snapshot the real window methods so teardown can restore them. */
+function saveWindow(): SavedWindow {
+  return {
+    showWarningMessage: mutableWindow.showWarningMessage,
+    showInformationMessage: mutableWindow.showInformationMessage,
+    showErrorMessage: mutableWindow.showErrorMessage,
+  };
+}
+
+/** Restore the real window methods captured by {@link saveWindow}. */
+function restoreWindow(saved: SavedWindow): void {
+  mutableWindow.showWarningMessage = saved.showWarningMessage;
+  mutableWindow.showInformationMessage = saved.showInformationMessage;
+  mutableWindow.showErrorMessage = saved.showErrorMessage;
+}
+
+/** Was this `showXxxMessage(message, options?, ...items)` call modal? */
+function isModalCall(args: unknown[]): boolean {
+  const options = args[1];
+  return (
+    typeof options === 'object' &&
+    options !== null &&
+    (options as { modal?: boolean }).modal === true
+  );
+}
+
+/**
+ * Install spies on every window dialog. `warningAnswer` is what a modal
+ * warning resolves to (drives the confirm/cancel branches).
+ */
+function installWindowSpy(warningAnswer: string | undefined): WindowSpy {
+  const spy: WindowSpy = { warnings: [], infos: [], errors: [] };
+  mutableWindow.showWarningMessage = (message: string, ...rest: unknown[]) => {
+    spy.warnings.push({ message, modal: isModalCall([message, ...rest]) });
+    return Promise.resolve(warningAnswer);
+  };
+  mutableWindow.showInformationMessage = (message: string, ...rest: unknown[]) => {
+    spy.infos.push({ message, modal: isModalCall([message, ...rest]) });
+    return Promise.resolve(undefined);
+  };
+  mutableWindow.showErrorMessage = (message: string, ...rest: unknown[]) => {
+    spy.errors.push({ message, modal: isModalCall([message, ...rest]) });
+    return Promise.resolve(undefined);
+  };
+  return spy;
+}
+
+/** A LanguageClient stub whose sendRequest returns `responses[method]`. */
+function lspReturning(responses: Record<string, unknown>): LanguageClient {
+  return {
+    sendRequest: (method: string): Promise<unknown> => Promise.resolve(responses[method]),
+  } as unknown as LanguageClient;
+}
+
+/** A LanguageClient stub whose sendRequest always rejects. */
+function lspRejecting(error: unknown): LanguageClient {
+  return {
+    sendRequest: (): Promise<unknown> =>
+      Promise.reject(error instanceof Error ? error : new Error(String(error))),
+  } as unknown as LanguageClient;
+}
+
+/** A LanguageClient stub recording every (method, payload) it receives. */
+function lspRecording(
+  log: { method: string; payload: unknown }[],
+  responses: Record<string, unknown>,
+): LanguageClient {
+  return {
+    sendRequest: (method: string, payload: unknown): Promise<unknown> => {
+      log.push({ method, payload });
+      return Promise.resolve(responses[method]);
+    },
+  } as unknown as LanguageClient;
+}
+
+/** A refresh callback that counts invocations. */
+function countingRefresh(): { fn: () => Promise<void>; count: () => number } {
+  let calls = 0;
+  return {
+    fn: () => {
+      calls++;
+      return Promise.resolve();
+    },
+    count: () => calls,
+  };
+}
+
+// ── removeUnusedPackages() [PKG-UNUSED-UI] ─────────────────────────
+
+suite('package-maintenance — removeUnusedPackages()', () => {
+  let saved: SavedWindow;
+  setup(() => {
+    saved = saveWindow();
+  });
+  teardown(() => {
+    restoreWindow(saved);
+  });
+
+  test('with no LSP client: warns and never refreshes', async () => {
+    const spy = installWindowSpy(undefined);
+    const refresh = countingRefresh();
+    await removeUnusedPackages(projectNode('/repo/A/A.csproj'), undefined, refresh.fn);
+
+    assert.strictEqual(spy.warnings.length, 1, 'exactly one warning shown');
+    assert.strictEqual(spy.warnings[0]?.message, 'SharpLsp server not available.');
+    assert.strictEqual(spy.infos.length, 0);
+    assert.strictEqual(spy.errors.length, 0);
+    assert.strictEqual(refresh.count(), 0, 'no refresh without a client');
+  });
+
+  test('with no project under the node: warns "No project selected."', async () => {
+    const spy = installWindowSpy(undefined);
+    const refresh = countingRefresh();
+    // A symbol node carries no project path -> collectProjectPaths is empty.
+    await removeUnusedPackages(node({ contextValue: 'symbol' }), lspReturning({}), refresh.fn);
+
+    assert.strictEqual(spy.warnings.length, 1);
+    assert.strictEqual(spy.warnings[0]?.message, 'No project selected.');
+    assert.strictEqual(refresh.count(), 0);
+  });
+
+  test('undefined node also warns "No project selected."', async () => {
+    const spy = installWindowSpy(undefined);
+    const refresh = countingRefresh();
+    await removeUnusedPackages(undefined, lspReturning({}), refresh.fn);
+
+    assert.strictEqual(spy.warnings.length, 1);
+    assert.strictEqual(spy.warnings[0]?.message, 'No project selected.');
+  });
+
+  test('no unused packages found: shows info and does not refresh', async () => {
+    const spy = installWindowSpy(undefined);
+    const refresh = countingRefresh();
+    const lsp = lspReturning({
+      'sharplsp/nuget/unused': { projectPath: '/repo/A/A.csproj', unused: [] },
+    });
+    await removeUnusedPackages(projectNode('/repo/A/A.csproj'), lsp, refresh.fn);
+
+    assert.strictEqual(spy.warnings.length, 0, 'no confirmation when nothing to remove');
+    assert.strictEqual(spy.infos.length, 1);
+    assert.strictEqual(spy.infos[0]?.message, 'No unused packages found.');
+    assert.strictEqual(refresh.count(), 0);
+  });
+
+  test('a request that throws is swallowed -> treated as no findings', async () => {
+    const spy = installWindowSpy(undefined);
+    const refresh = countingRefresh();
+    await removeUnusedPackages(
+      projectNode('/repo/A/A.csproj'),
+      lspRejecting(new Error('boom')),
+      refresh.fn,
+    );
+
+    // detectUnused catches the error and returns undefined -> total === 0.
+    assert.strictEqual(spy.infos.length, 1);
+    assert.strictEqual(spy.infos[0]?.message, 'No unused packages found.');
+    assert.strictEqual(spy.errors.length, 0, 'errors are logged, not surfaced as dialogs');
+    assert.strictEqual(refresh.count(), 0);
+  });
+
+  test('findings present but user cancels the modal: nothing removed, no refresh', async () => {
+    const spy = installWindowSpy(undefined); // modal returns undefined => cancel
+    const refresh = countingRefresh();
+    const lsp = lspReturning({
+      'sharplsp/nuget/unused': {
+        projectPath: '/repo/A/A.csproj',
+        unused: [
+          { id: 'Newtonsoft.Json', version: '13.0.0' },
+          { id: 'Serilog', version: '3.1.0' },
+        ],
+      },
+    });
+    await removeUnusedPackages(projectNode('/repo/A/A.csproj'), lsp, refresh.fn);
+
+    assert.strictEqual(spy.warnings.length, 1, 'the confirmation modal is shown');
+    const confirm = spy.warnings[0];
+    assert.ok(confirm);
+    assert.strictEqual(confirm.modal, true, 'confirmation is modal');
+    assert.ok(confirm.message.startsWith('Remove 2 unused package(s)?'), confirm.message);
+    assert.ok(confirm.message.includes('A.csproj:'), 'lists the project basename');
+    assert.ok(confirm.message.includes('Newtonsoft.Json'), 'lists each package id');
+    assert.ok(confirm.message.includes('Serilog'));
+    assert.strictEqual(spy.infos.length, 0, 'no success info on cancel');
+    assert.strictEqual(spy.errors.length, 0);
+    assert.strictEqual(refresh.count(), 0, 'cancel must not refresh');
+  });
+
+  test('aggregates findings across multiple projects in the summary', async () => {
+    const spy = installWindowSpy(undefined);
+    const refresh = countingRefresh();
+    const log: { method: string; payload: unknown }[] = [];
+    // A solution over two projects; both report a single unused package.
+    const sln = solutionNode('/repo/My.sln', [
+      projectNode('/repo/A/A.csproj'),
+      projectNode('/repo/B/B.fsproj'),
+    ]);
+    const lsp = lspRecording(log, {
+      'sharplsp/nuget/unused': { unused: [{ id: 'Moq', version: '4.20.0' }] },
+    });
+    await removeUnusedPackages(sln, lsp, refresh.fn);
+
+    // One request per project path.
+    assert.strictEqual(log.length, 2, 'one nuget/unused request per project');
+    assert.deepStrictEqual(
+      log.map((entry) => entry.method),
+      ['sharplsp/nuget/unused', 'sharplsp/nuget/unused'],
+    );
+    assert.deepStrictEqual(log[0]?.payload, { projectPath: '/repo/A/A.csproj' });
+    assert.deepStrictEqual(log[1]?.payload, { projectPath: '/repo/B/B.fsproj' });
+
+    const confirm = spy.warnings[0];
+    assert.ok(confirm);
+    assert.ok(confirm.message.startsWith('Remove 2 unused package(s)?'), confirm.message);
+    assert.ok(confirm.message.includes('A.csproj: Moq'));
+    assert.ok(confirm.message.includes('B.fsproj: Moq'));
+  });
+
+  test('apply path against a temp project removes/attempts and refreshes once', async function () {
+    this.timeout(30_000);
+    const spy = installWindowSpy('Remove'); // confirm the modal
+    const refresh = countingRefresh();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkg-rm-'));
+    try {
+      const projDir = path.join(dir, 'App');
+      fs.mkdirSync(projDir, { recursive: true });
+      const projectPath = path.join(projDir, 'App.csproj');
+      fs.writeFileSync(
+        projectPath,
+        '<Project Sdk="Microsoft.NET.Sdk">\n' +
+          '  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n' +
+          '  <ItemGroup><PackageReference Include="Ghost.Package" Version="1.0.0" /></ItemGroup>\n' +
+          '</Project>\n',
+      );
+      const lsp = lspReturning({
+        'sharplsp/nuget/unused': {
+          projectPath,
+          unused: [{ id: 'Ghost.Package', version: '1.0.0' }],
+        },
+      });
+
+      await removeUnusedPackages(projectNode(projectPath), lsp, refresh.fn);
+
+      // Regardless of whether the real `dotnet package remove` succeeds or
+      // fails in this environment, the SUT must: show the modal, refresh
+      // exactly once, and surface exactly one terminal info OR error message.
+      assert.strictEqual(spy.warnings.length, 1, 'the confirmation modal is shown');
+      assert.strictEqual(spy.warnings[0]?.modal, true);
+      assert.strictEqual(refresh.count(), 1, 'apply path always refreshes once');
+      const terminal = spy.infos.length + spy.errors.length;
+      assert.strictEqual(terminal, 1, 'exactly one terminal message after apply');
+      if (spy.errors.length === 1) {
+        assert.ok(spy.errors[0]?.message.includes('Ghost.Package'), spy.errors[0]?.message);
+      } else {
+        assert.ok(
+          spy.infos[0]?.message.startsWith('Removed 1 unused package(s).'),
+          spy.infos[0]?.message,
+        );
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ── consolidatePackages() [PKG-CONSOLIDATE-UI] ─────────────────────
+
+suite('package-maintenance — consolidatePackages()', () => {
+  let saved: SavedWindow;
+  setup(() => {
+    saved = saveWindow();
+  });
+  teardown(() => {
+    restoreWindow(saved);
+  });
+
+  test('with no LSP client: warns and never refreshes', async () => {
+    const spy = installWindowSpy(undefined);
+    const refresh = countingRefresh();
+    await consolidatePackages(solutionNode('/repo/My.sln', []), undefined, refresh.fn);
+
+    assert.strictEqual(spy.warnings.length, 1);
+    assert.strictEqual(spy.warnings[0]?.message, 'SharpLsp server not available.');
+    assert.strictEqual(refresh.count(), 0);
+  });
+
+  test('node without a projectFilePath: warns "No solution selected."', async () => {
+    const spy = installWindowSpy(undefined);
+    const refresh = countingRefresh();
+    // A folder node has no projectFilePath.
+    await consolidatePackages(node({ contextValue: 'folder' }), lspReturning({}), refresh.fn);
+
+    assert.strictEqual(spy.warnings.length, 1);
+    assert.strictEqual(spy.warnings[0]?.message, 'No solution selected.');
+    assert.strictEqual(refresh.count(), 0);
+  });
+
+  test('undefined node: warns "No solution selected."', async () => {
+    const spy = installWindowSpy(undefined);
+    const refresh = countingRefresh();
+    await consolidatePackages(undefined, lspReturning({}), refresh.fn);
+
+    assert.strictEqual(spy.warnings.length, 1);
+    assert.strictEqual(spy.warnings[0]?.message, 'No solution selected.');
+  });
+
+  test('dry-run preview rejects: error surfaced, no refresh', async () => {
+    const spy = installWindowSpy(undefined);
+    const refresh = countingRefresh();
+    await consolidatePackages(
+      solutionNode('/repo/My.sln', []),
+      lspRejecting(new Error('scan failed')),
+      refresh.fn,
+    );
+
+    // requestConsolidate catches and shows an error, then returns undefined.
+    assert.strictEqual(spy.errors.length, 1);
+    assert.ok(spy.errors[0]?.message.includes('Consolidate failed:'), spy.errors[0]?.message);
+    assert.ok(spy.errors[0]?.message.includes('scan failed'));
+    assert.strictEqual(spy.infos.length, 0);
+    assert.strictEqual(refresh.count(), 0);
+  });
+
+  test('preview with no moves: shows the server message and stops', async () => {
+    const spy = installWindowSpy(undefined);
+    const refresh = countingRefresh();
+    const lsp = lspReturning({
+      'sharplsp/nuget/consolidate': {
+        moved: [],
+        modifiedFiles: [],
+        message: 'No shared packages to consolidate.',
+      },
+    });
+    await consolidatePackages(solutionNode('/repo/My.sln', []), lsp, refresh.fn);
+
+    assert.strictEqual(spy.infos.length, 1);
+    assert.strictEqual(spy.infos[0]?.message, 'No shared packages to consolidate.');
+    assert.strictEqual(spy.warnings.length, 0, 'no confirmation when nothing to move');
+    assert.strictEqual(refresh.count(), 0);
+  });
+
+  test('preview with moves but user cancels the modal: no apply, no refresh', async () => {
+    const spy = installWindowSpy(undefined); // modal returns undefined => cancel
+    const refresh = countingRefresh();
+    const log: { method: string; payload: unknown }[] = [];
+    const lsp = lspRecording(log, {
+      'sharplsp/nuget/consolidate': {
+        moved: [
+          {
+            id: 'Serilog',
+            version: '3.1.0',
+            fromProjects: ['/repo/A/A.csproj', '/repo/B/B.csproj'],
+          },
+          { id: 'Moq', version: '', fromProjects: ['/repo/A/A.csproj'] },
+        ],
+        modifiedFiles: [],
+        message: 'apply message (unused on cancel)',
+      },
+    });
+    await consolidatePackages(solutionNode('/repo/My.sln', []), lsp, refresh.fn);
+
+    // Only the dry-run scan should have run (apply is gated behind confirm).
+    assert.strictEqual(log.length, 1, 'only the dry-run scan request fires on cancel');
+    assert.strictEqual(log[0]?.method, 'sharplsp/nuget/consolidate');
+    assert.deepStrictEqual(log[0]?.payload, { solutionPath: '/repo/My.sln', dryRun: true });
+
+    const confirm = spy.warnings[0];
+    assert.ok(confirm);
+    assert.strictEqual(confirm.modal, true);
+    assert.ok(
+      confirm.message.startsWith('Move 2 shared package(s) into Directory.Build.props?'),
+      confirm.message,
+    );
+    // Versioned and version-less entries render distinctly.
+    assert.ok(confirm.message.includes('Serilog 3.1.0 (2 projects)'), confirm.message);
+    assert.ok(confirm.message.includes('Moq (1 projects)'), confirm.message);
+    assert.strictEqual(spy.infos.length, 0, 'no success info on cancel');
+    assert.strictEqual(refresh.count(), 0);
+  });
+
+  test('confirm path runs apply, refreshes once, shows the apply message', async () => {
+    const spy = installWindowSpy('Move'); // confirm the modal
+    const refresh = countingRefresh();
+    const log: { method: string; payload: unknown }[] = [];
+    // Both dry-run and apply share this fixture; dryRun toggles in the payload.
+    const lsp = lspRecording(log, {
+      'sharplsp/nuget/consolidate': {
+        moved: [{ id: 'Serilog', version: '3.1.0', fromProjects: ['/repo/A/A.csproj'] }],
+        propsFile: '/repo/Directory.Build.props',
+        modifiedFiles: ['/repo/Directory.Build.props', '/repo/A/A.csproj'],
+        message: 'Moved 1 package into Directory.Build.props.',
+      },
+    });
+    await consolidatePackages(solutionNode('/repo/My.sln', []), lsp, refresh.fn);
+
+    // Two requests: dry-run scan then the real apply.
+    assert.strictEqual(log.length, 2, 'scan then apply');
+    assert.deepStrictEqual(log[0]?.payload, { solutionPath: '/repo/My.sln', dryRun: true });
+    assert.deepStrictEqual(log[1]?.payload, { solutionPath: '/repo/My.sln', dryRun: false });
+
+    assert.strictEqual(spy.warnings.length, 1, 'one confirmation modal');
+    assert.strictEqual(refresh.count(), 1, 'apply refreshes exactly once');
+    assert.strictEqual(spy.infos.length, 1);
+    assert.strictEqual(spy.infos[0]?.message, 'Moved 1 package into Directory.Build.props.');
+  });
+
+  test('apply request rejects: error surfaced, no refresh, no success info', async () => {
+    const spy = installWindowSpy('Move'); // confirm the modal
+    const refresh = countingRefresh();
+    let call = 0;
+    // First call (dry-run) resolves with moves; second call (apply) rejects.
+    const lsp = {
+      sendRequest: (_method: string, payload: unknown): Promise<unknown> => {
+        call++;
+        const dryRun = (payload as { dryRun: boolean }).dryRun;
+        if (dryRun) {
+          return Promise.resolve({
+            moved: [{ id: 'Serilog', version: '3.1.0', fromProjects: ['/repo/A/A.csproj'] }],
+            modifiedFiles: [],
+            message: 'scan',
+          });
+        }
+        return Promise.reject(new Error('apply failed'));
+      },
+    } as unknown as LanguageClient;
+
+    await consolidatePackages(solutionNode('/repo/My.sln', []), lsp, refresh.fn);
+
+    assert.strictEqual(call, 2, 'both scan and apply were attempted');
+    assert.strictEqual(spy.warnings.length, 1, 'the confirmation modal was shown');
+    assert.strictEqual(spy.errors.length, 1, 'the apply failure is surfaced');
+    assert.ok(spy.errors[0]?.message.includes('Consolidate failed:'), spy.errors[0]?.message);
+    assert.ok(spy.errors[0]?.message.includes('apply failed'));
+    assert.strictEqual(spy.infos.length, 0, 'no success info after a failed apply');
+    assert.strictEqual(refresh.count(), 0, 'failed apply must not refresh');
   });
 });

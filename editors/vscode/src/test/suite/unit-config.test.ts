@@ -104,3 +104,152 @@ suite('Config Module — Direct Function Tests', () => {
     assert.strictEqual(a, b, 'Same call should return same result');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The remaining getters (config.ts:54-82): fsiExtraArgs, the three inlayHints
+// flags, nugetIncludePrerelease, and hotReloadOnSave. Each is tested for both
+// its default (unset) and its configured value; every update is restored in the
+// finally block so unrelated suites see pristine config.
+// ─────────────────────────────────────────────────────────────────────────────
+suite('Config Module — feature getters (config.ts:54-82)', () => {
+  const ws = (): ReturnType<typeof vscode.workspace.getConfiguration> =>
+    vscode.workspace.getConfiguration(CONFIG_SECTION);
+
+  /**
+   * Update a setting, run a body, then restore EXACTLY the prior workspace state.
+   * Restoring `cfg.get(key)` would write the default value back and leave the key
+   * persisted in the fixture's `.vscode/settings.json`; restoring the original
+   * `inspect().workspaceValue` (undefined when the key was never workspace-set)
+   * removes the key instead, keeping the committed fixture pristine.
+   */
+  async function withSetting(key: string, value: unknown, body: () => void): Promise<void> {
+    const cfg = ws();
+    const originalWorkspaceValue = cfg.inspect(key)?.workspaceValue;
+    try {
+      await cfg.update(key, value, vscode.ConfigurationTarget.Workspace);
+      body();
+    } finally {
+      await cfg.update(key, originalWorkspaceValue, vscode.ConfigurationTarget.Workspace);
+    }
+  }
+
+  // ── fsiExtraArgs() ───────────────────────────────────────────
+  test('fsiExtraArgs() defaults to an empty array when unset', () => {
+    const result = config.fsiExtraArgs();
+    assert.ok(Array.isArray(result), 'must return an array');
+    assert.strictEqual(result.length, 0, 'default is an empty array');
+  });
+
+  test('fsiExtraArgs() returns the configured arguments when set', async () => {
+    await withSetting('fsi.extraArgs', ['--use:init.fsx', '--nologo'], () => {
+      const result = config.fsiExtraArgs();
+      assert.deepStrictEqual([...result], ['--use:init.fsx', '--nologo']);
+    });
+  });
+
+  test('fsiExtraArgs() is consistent across repeated calls', () => {
+    assert.deepStrictEqual([...config.fsiExtraArgs()], [...config.fsiExtraArgs()]);
+  });
+
+  // ── inlayHintsParameterNames() ───────────────────────────────
+  test('inlayHintsParameterNames() defaults to true', () => {
+    assert.strictEqual(
+      config.inlayHintsParameterNames(),
+      true,
+      'parameter-name hints on by default',
+    );
+  });
+
+  test('inlayHintsParameterNames() reflects a configured false', async () => {
+    await withSetting('inlayHints.parameterNames', false, () => {
+      assert.strictEqual(config.inlayHintsParameterNames(), false);
+    });
+  });
+
+  test('inlayHintsParameterNames() reflects a configured true', async () => {
+    await withSetting('inlayHints.parameterNames', true, () => {
+      assert.strictEqual(config.inlayHintsParameterNames(), true);
+    });
+  });
+
+  // ── inlayHintsTypeInference() ────────────────────────────────
+  test('inlayHintsTypeInference() defaults to true', () => {
+    assert.strictEqual(
+      config.inlayHintsTypeInference(),
+      true,
+      'type-inference hints on by default',
+    );
+  });
+
+  test('inlayHintsTypeInference() reflects a configured false', async () => {
+    await withSetting('inlayHints.typeInference', false, () => {
+      assert.strictEqual(config.inlayHintsTypeInference(), false);
+    });
+  });
+
+  test('inlayHintsTypeInference() reflects a configured true', async () => {
+    await withSetting('inlayHints.typeInference', true, () => {
+      assert.strictEqual(config.inlayHintsTypeInference(), true);
+    });
+  });
+
+  // ── inlayHintsPipelineTypes() ────────────────────────────────
+  test('inlayHintsPipelineTypes() defaults to true', () => {
+    assert.strictEqual(config.inlayHintsPipelineTypes(), true, 'pipeline-type hints on by default');
+  });
+
+  test('inlayHintsPipelineTypes() reflects a configured false', async () => {
+    await withSetting('inlayHints.pipelineTypes', false, () => {
+      assert.strictEqual(config.inlayHintsPipelineTypes(), false);
+    });
+  });
+
+  test('inlayHintsPipelineTypes() reflects a configured true', async () => {
+    await withSetting('inlayHints.pipelineTypes', true, () => {
+      assert.strictEqual(config.inlayHintsPipelineTypes(), true);
+    });
+  });
+
+  // ── nugetIncludePrerelease() ─────────────────────────────────
+  test('nugetIncludePrerelease() defaults to false', () => {
+    assert.strictEqual(config.nugetIncludePrerelease(), false, 'prerelease excluded by default');
+  });
+
+  test('nugetIncludePrerelease() reflects a configured true', async () => {
+    await withSetting('nuget.includePrerelease', true, () => {
+      assert.strictEqual(config.nugetIncludePrerelease(), true);
+    });
+  });
+
+  test('nugetIncludePrerelease() reflects a configured false', async () => {
+    await withSetting('nuget.includePrerelease', false, () => {
+      assert.strictEqual(config.nugetIncludePrerelease(), false);
+    });
+  });
+
+  // ── hotReloadOnSave() ────────────────────────────────────────
+  test('hotReloadOnSave() defaults to false', () => {
+    assert.strictEqual(config.hotReloadOnSave(), false, 'hot reload on save off by default');
+  });
+
+  test('hotReloadOnSave() reflects a configured true', async () => {
+    await withSetting('hotReload.onSave', true, () => {
+      assert.strictEqual(config.hotReloadOnSave(), true);
+    });
+  });
+
+  test('hotReloadOnSave() reflects a configured false', async () => {
+    await withSetting('hotReload.onSave', false, () => {
+      assert.strictEqual(config.hotReloadOnSave(), false);
+    });
+  });
+
+  // ── all boolean getters return real booleans ─────────────────
+  test('every boolean getter returns a boolean primitive', () => {
+    assert.strictEqual(typeof config.inlayHintsParameterNames(), 'boolean');
+    assert.strictEqual(typeof config.inlayHintsTypeInference(), 'boolean');
+    assert.strictEqual(typeof config.inlayHintsPipelineTypes(), 'boolean');
+    assert.strictEqual(typeof config.nugetIncludePrerelease(), 'boolean');
+    assert.strictEqual(typeof config.hotReloadOnSave(), 'boolean');
+  });
+});

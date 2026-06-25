@@ -450,3 +450,163 @@ suite('solution.ts — selectSolution (integration over live workspace)', () => 
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// selectSolution — deterministic branches (solution.ts:18-21 no-solutions,
+// 24-29 single-solution auto-select). We stub `workspace.findFiles` so
+// `findSolutions` returns a controlled URI set regardless of the live workspace,
+// and record `showInformationMessage` to assert the "no solutions" toast.
+// ─────────────────────────────────────────────────────────────────────────────
+type FindFiles = typeof vscode.workspace.findFiles;
+
+interface MutableWorkspaceFind {
+  findFiles: FindFiles;
+}
+
+suite('solution.ts — selectSolution (findFiles stubbed, deterministic branches)', () => {
+  const mutableFind = vscode.workspace as unknown as MutableWorkspaceFind;
+  let originalFindFiles: FindFiles;
+  let originalShowInfo: ShowInformationMessage;
+  let originalShowQuickPick: ShowQuickPick;
+  let infoMessages: string[];
+  let quickPickCalls: number;
+
+  setup(() => {
+    originalFindFiles = mutableFind.findFiles;
+    originalShowInfo = mutableWindow.showInformationMessage;
+    originalShowQuickPick = mutableWindow.showQuickPick;
+    infoMessages = [];
+    quickPickCalls = 0;
+    mutableWindow.showInformationMessage = async (message: string): Promise<undefined> => {
+      infoMessages.push(message);
+      return undefined;
+    };
+    mutableWindow.showQuickPick = (async (
+      items: readonly QuickPickItemWithSolution[],
+    ): Promise<QuickPickItemWithSolution | undefined> => {
+      quickPickCalls += 1;
+      return items[0];
+    }) as unknown as ShowQuickPick;
+  });
+
+  teardown(() => {
+    mutableFind.findFiles = originalFindFiles;
+    mutableWindow.showInformationMessage = originalShowInfo;
+    mutableWindow.showQuickPick = originalShowQuickPick;
+  });
+
+  /** Install a findFiles stub returning the given absolute paths as file URIs. */
+  function stubFindFiles(paths: readonly string[]): void {
+    mutableFind.findFiles = async (): Promise<vscode.Uri[]> => paths.map((p) => vscode.Uri.file(p));
+  }
+
+  test('no solutions → shows the "no .sln" info toast and returns undefined (lines 18-21)', async () => {
+    stubFindFiles([]);
+    const result = await selectSolution();
+    assert.strictEqual(result, undefined, 'no solutions yields undefined');
+    assert.strictEqual(quickPickCalls, 0, 'no prompt is shown when there are zero solutions');
+    assert.deepStrictEqual(
+      infoMessages,
+      ['SharpLsp: No .sln or .slnx files found in this workspace.'],
+      'exactly the no-solution toast is shown',
+    );
+  });
+
+  test('exactly one solution auto-selects without prompting (lines 24-29)', async () => {
+    stubFindFiles(['/ws/Single.sln']);
+    const result = await selectSolution();
+    assert.ok(result, 'a solution is returned');
+    assert.strictEqual(result.path, '/ws/Single.sln', 'the lone solution is auto-selected');
+    assert.strictEqual(result.name, 'Single.sln', 'name is the basename');
+    assert.strictEqual(quickPickCalls, 0, 'a single solution never prompts the user');
+    assert.deepStrictEqual(infoMessages, [], 'no info toast for the happy single-solution path');
+  });
+
+  test('one .slnx solution is auto-selected with its extension intact', async () => {
+    stubFindFiles(['/ws/Modern.slnx']);
+    const result = await selectSolution();
+    assert.ok(result);
+    assert.strictEqual(result.name, 'Modern.slnx');
+    assert.strictEqual(quickPickCalls, 0);
+  });
+
+  test('multiple solutions prompt exactly once and return the picked one', async () => {
+    stubFindFiles(['/ws/Beta.sln', '/ws/Alpha.sln']);
+    const result = await selectSolution();
+    assert.strictEqual(quickPickCalls, 1, 'multiple solutions trigger one prompt');
+    assert.ok(result);
+    // The stub picks items[0]; findSolutions sorts by name, so Alpha.sln is first.
+    assert.strictEqual(result.name, 'Alpha.sln', 'sorted order places Alpha first');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// findSolutions — no-workspace-folders guard (solution.ts:62-63) and the
+// 5s cancellation timer firing (solution.ts:69) when findFiles never resolves.
+// ─────────────────────────────────────────────────────────────────────────────
+suite('solution.ts — findSolutions (folder guard + cancellation timer)', () => {
+  const mutableFind = vscode.workspace as unknown as MutableWorkspaceFind;
+  let originalFindFiles: FindFiles;
+  let originalFoldersDescriptor: PropertyDescriptor | undefined;
+
+  setup(() => {
+    originalFindFiles = mutableFind.findFiles;
+    originalFoldersDescriptor = Object.getOwnPropertyDescriptor(
+      vscode.workspace,
+      'workspaceFolders',
+    );
+  });
+
+  teardown(() => {
+    mutableFind.findFiles = originalFindFiles;
+    if (originalFoldersDescriptor !== undefined) {
+      Object.defineProperty(vscode.workspace, 'workspaceFolders', originalFoldersDescriptor);
+    }
+  });
+
+  test('returns [] when workspaceFolders is undefined (lines 62-63)', async () => {
+    Object.defineProperty(vscode.workspace, 'workspaceFolders', {
+      configurable: true,
+      get: () => undefined,
+    });
+    const result = await findSolutions();
+    assert.deepStrictEqual(result, [], 'no folders → empty discovery, findFiles never called');
+  });
+
+  test('returns [] when workspaceFolders is an empty array (lines 62-63)', async () => {
+    Object.defineProperty(vscode.workspace, 'workspaceFolders', {
+      configurable: true,
+      get: () => [] as vscode.WorkspaceFolder[],
+    });
+    const result = await findSolutions();
+    assert.deepStrictEqual(result, [], 'zero folders → empty discovery');
+  });
+
+  test('the cancellation timer cancels the token when findFiles stalls (line 69)', async function () {
+    this.timeout(15_000);
+    // Force a folder so we reach the findFiles call.
+    Object.defineProperty(vscode.workspace, 'workspaceFolders', {
+      configurable: true,
+      get: () => [{ uri: vscode.Uri.file('/ws'), name: 'ws', index: 0 }],
+    });
+    let observedCancelled = false;
+    // A findFiles that resolves only once its CancellationToken fires — proving
+    // the 5s timer ran `cts.cancel()`. Resolves to [] so discovery returns [].
+    mutableFind.findFiles = ((
+      _pattern: unknown,
+      _exclude: unknown,
+      _max: unknown,
+      token: vscode.CancellationToken,
+    ): Promise<vscode.Uri[]> =>
+      new Promise<vscode.Uri[]>((resolve) => {
+        token.onCancellationRequested(() => {
+          observedCancelled = true;
+          resolve([]);
+        });
+      })) as unknown as FindFiles;
+
+    const result = await findSolutions();
+    assert.ok(observedCancelled, 'the 5s timer fired cts.cancel(), cancelling the token');
+    assert.deepStrictEqual(result, [], 'a cancelled search yields no solutions');
+  });
+});

@@ -15,7 +15,7 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
-import { ObjectGraphPanel } from '../../profiler-graph.js';
+import { ObjectGraphPanel, promptAndOpenGraph } from '../../profiler-graph.js';
 
 // ── Test data shapes (mirror the private interfaces in profiler-graph.ts) ──
 
@@ -526,5 +526,171 @@ suite('ObjectGraphPanel — webview construction', () => {
   test('module exports the ObjectGraphPanel class', () => {
     assert.strictEqual(typeof ObjectGraphPanel, 'function', 'ObjectGraphPanel must be a class');
     assert.strictEqual(typeof ObjectGraphPanel.open, 'function', 'static open() must exist');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════
+// promptAndOpenGraph (lines 110-131): drives showOpenDialog + showInputBox
+// and only reaches ObjectGraphPanel.open when BOTH succeed. We monkeypatch
+// the vscode.window seams (always restored in teardown) and spy on
+// createWebviewPanel to confirm whether a panel was opened.
+// ════════════════════════════════════════════════════════════════════
+
+interface MutableWindow {
+  showOpenDialog: typeof vscode.window.showOpenDialog;
+  showInputBox: typeof vscode.window.showInputBox;
+  createWebviewPanel: typeof vscode.window.createWebviewPanel;
+}
+
+suite('promptAndOpenGraph — dialog/input gating', () => {
+  const mut = vscode.window as unknown as MutableWindow;
+  let origOpen: typeof mut.showOpenDialog;
+  let origInput: typeof mut.showInputBox;
+  let origCreate: typeof mut.createWebviewPanel;
+  let created: vscode.WebviewPanel[];
+  let openCalls: number;
+  let inputCalls: number;
+
+  setup(() => {
+    origOpen = mut.showOpenDialog;
+    origInput = mut.showInputBox;
+    origCreate = mut.createWebviewPanel;
+    created = [];
+    openCalls = 0;
+    inputCalls = 0;
+    (vscode.window as any).createWebviewPanel = (...args: any[]): vscode.WebviewPanel => {
+      const panel = (origCreate as any).apply(vscode.window, args) as vscode.WebviewPanel;
+      created.push(panel);
+      return panel;
+    };
+  });
+
+  teardown(() => {
+    mut.showOpenDialog = origOpen;
+    mut.showInputBox = origInput;
+    (vscode.window as any).createWebviewPanel = origCreate;
+    for (const panel of created) {
+      try {
+        panel.dispose();
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  /** Stub showOpenDialog to return the given selection (or undefined = cancel). */
+  function stubOpenDialog(result: vscode.Uri[] | undefined): void {
+    mut.showOpenDialog = (async (_opts: vscode.OpenDialogOptions) => {
+      openCalls++;
+      return result;
+    }) as unknown as typeof mut.showOpenDialog;
+  }
+
+  /** Stub showInputBox to return the given value (or undefined = cancel). */
+  function stubInputBox(value: string | undefined): void {
+    mut.showInputBox = async (opts?: vscode.InputBoxOptions) => {
+      inputCalls++;
+      // Exercise the validateInput callback the source supplies so its branch
+      // is covered: empty → error message, non-empty → undefined (valid).
+      if (opts?.validateInput) {
+        assert.strictEqual(opts.validateInput('   '), 'Address is required');
+        assert.strictEqual(opts.validateInput('00007ff8'), undefined);
+      }
+      return value;
+    };
+  }
+
+  test('cancelling the open dialog returns early — no input box, no panel', async () => {
+    stubOpenDialog(undefined);
+    let inputInvoked = false;
+    mut.showInputBox = async () => {
+      inputInvoked = true;
+      return undefined;
+    };
+
+    await promptAndOpenGraph(fakeContext(), resolvingClient(makeGraph({})));
+
+    assert.strictEqual(openCalls, 1, 'open dialog was shown once');
+    assert.strictEqual(inputInvoked, false, 'input box must not be shown after cancel');
+    assert.strictEqual(created.length, 0, 'no webview panel created on cancel');
+  });
+
+  test('empty open-dialog selection (no files picked) returns early', async () => {
+    // showOpenDialog can resolve to an empty array; dumpFiles?.[0] is undefined.
+    stubOpenDialog([]);
+    let inputInvoked = false;
+    mut.showInputBox = async () => {
+      inputInvoked = true;
+      return 'addr';
+    };
+
+    await promptAndOpenGraph(fakeContext(), resolvingClient(makeGraph({})));
+
+    assert.strictEqual(openCalls, 1, 'open dialog shown');
+    assert.strictEqual(inputInvoked, false, 'no input box for empty selection');
+    assert.strictEqual(created.length, 0, 'no panel created');
+  });
+
+  test('cancelling the address input returns early — no panel', async () => {
+    stubOpenDialog([vscode.Uri.file('/tmp/dump.dmp')]);
+    stubInputBox(undefined);
+
+    await promptAndOpenGraph(fakeContext(), resolvingClient(makeGraph({})));
+
+    assert.strictEqual(openCalls, 1, 'open dialog shown');
+    assert.strictEqual(inputCalls, 1, 'input box shown after a file was picked');
+    assert.strictEqual(created.length, 0, 'cancelled input must not open a panel');
+  });
+
+  test('happy path: picked file + address opens the graph panel with trimmed address', async () => {
+    stubOpenDialog([vscode.Uri.file('/tmp/heap.dmp')]);
+    // Leading/trailing whitespace must be trimmed before being passed on.
+    stubInputBox('  00007ff8CAFE  ');
+
+    const graph = makeGraph({
+      nodes: [makeNode({ display_name: 'root', type_name: 'My.Type', depth: 0 })],
+      stats: makeStats({ total_nodes_traversed: 1 }),
+    });
+
+    await promptAndOpenGraph(fakeContext(), resolvingClient(graph));
+
+    assert.strictEqual(openCalls, 1, 'open dialog shown');
+    assert.strictEqual(inputCalls, 1, 'input box shown');
+    assert.strictEqual(created.length, 1, 'exactly one panel opened on the happy path');
+    const html = created[0]!.webview.html;
+    // The address is trimmed before reaching ObjectGraphPanel.open / render.
+    assert.ok(html.includes('Root: 00007ff8CAFE'), 'trimmed address echoed into the graph');
+    assert.ok(!html.includes('  00007ff8CAFE'), 'untrimmed address must not leak through');
+    assert.ok(html.includes('root (My.Type) depth=0'), 'graph rendered from the resolved result');
+  });
+
+  test('happy path surfaces sendRequest errors through the panel', async () => {
+    stubOpenDialog([vscode.Uri.file('/tmp/heap.dmp')]);
+    stubInputBox('addr');
+
+    await promptAndOpenGraph(fakeContext(), rejectingClient(new Error('graph boom')));
+
+    assert.strictEqual(created.length, 1, 'panel still opens then shows the error');
+    const html = created[0]!.webview.html;
+    assert.ok(html.includes('Error: graph boom'), 'error message rendered into the panel');
+  });
+
+  test('panel title embeds the trimmed root address', async () => {
+    stubOpenDialog([vscode.Uri.file('/tmp/heap.dmp')]);
+    stubInputBox('  TITLEADDR  ');
+    const titles: string[] = [];
+    (vscode.window as any).createWebviewPanel = (...args: any[]): vscode.WebviewPanel => {
+      titles.push(String(args[1]));
+      const panel = (origCreate as any).apply(vscode.window, args) as vscode.WebviewPanel;
+      created.push(panel);
+      return panel;
+    };
+
+    await promptAndOpenGraph(fakeContext(), resolvingClient(makeGraph({})));
+
+    assert.ok(
+      titles.some((t) => t.includes('Object Graph: TITLEADDR')),
+      'panel title carries the trimmed address',
+    );
   });
 });
