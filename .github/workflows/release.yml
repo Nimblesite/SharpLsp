@@ -289,16 +289,30 @@ jobs:
           echo "::add-mask::${VSCE_PAT}"
           export VSCE_PAT
           published=0
+          skipped=0
           for vsix in artifacts/**/*.vsix; do
             echo "Publishing ${vsix}"
-            npx --yes @vscode/vsce@3.9.2 publish ${flag} --packagePath "${vsix}"
-            published=$((published + 1))
+            # Idempotent: a transient gallery timeout can leave some platforms
+            # already published. Treat "already exists" as success so a re-run
+            # completes the remaining platforms instead of dying on the first one.
+            if out="$(npx --yes @vscode/vsce@3.9.2 publish ${flag} --packagePath "${vsix}" 2>&1)"; then
+              printf '%s\n' "${out}"
+              published=$((published + 1))
+            elif printf '%s' "${out}" | grep -qi 'already exists'; then
+              printf '%s\n' "${out}"
+              echo "Skipping ${vsix}: this version+platform is already published."
+              skipped=$((skipped + 1))
+            else
+              printf '%s\n' "${out}" >&2
+              echo "::error::vsce publish failed for ${vsix}"
+              exit 1
+            fi
           done
-          if [ "${published}" -eq 0 ]; then
+          if [ "$((published + skipped))" -eq 0 ]; then
             echo "::error::no VSIX artifacts found to publish"
             exit 1
           fi
-          echo "Published ${published} VSIX(es) to the Marketplace"
+          echo "Marketplace: published ${published}, skipped ${skipped} already-present of $((published + skipped)) VSIX(es)"
 
   publish-openvsx:
     name: Publish VSIX (Open VSX)
@@ -339,13 +353,26 @@ jobs:
             flag="--pre-release"
           fi
           published=0
+          skipped=0
           for vsix in artifacts/**/*.vsix; do
             echo "Publishing ${vsix}"
-            npx --yes ovsx@1.0.0 publish ${flag} --packagePath "${vsix}"
-            published=$((published + 1))
+            # Idempotent re-runs: tolerate an already-published platform version
+            # so a partial publish can be completed by re-running the job.
+            if out="$(npx --yes ovsx@1.0.0 publish ${flag} --packagePath "${vsix}" 2>&1)"; then
+              printf '%s\n' "${out}"
+              published=$((published + 1))
+            elif printf '%s' "${out}" | grep -qiE 'already exists|already published'; then
+              printf '%s\n' "${out}"
+              echo "Skipping ${vsix}: this version+platform is already published."
+              skipped=$((skipped + 1))
+            else
+              printf '%s\n' "${out}" >&2
+              echo "::error::ovsx publish failed for ${vsix}"
+              exit 1
+            fi
           done
-          if [ "${published}" -eq 0 ]; then
+          if [ "$((published + skipped))" -eq 0 ]; then
             echo "::error::no VSIX artifacts found to publish"
             exit 1
           fi
-          echo "Published ${published} VSIX(es) to Open VSX"
+          echo "Open VSX: published ${published}, skipped ${skipped} already-present of $((published + skipped)) VSIX(es)"
