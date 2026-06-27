@@ -86,6 +86,24 @@ export async function waitForDocumentSymbols(
   );
 }
 
+/**
+ * Flatten a hierarchical DocumentSymbol tree into a flat list of names,
+ * recursing through children. `executeDocumentSymbolProvider` returns NESTED
+ * symbols (e.g. a class under its namespace), so name lookups must walk the
+ * whole tree, not just the top level.
+ */
+export function flattenSymbolNames(symbols: vscode.DocumentSymbol[]): string[] {
+  const names: string[] = [];
+  const walk = (list: vscode.DocumentSymbol[]): void => {
+    for (const symbol of list) {
+      names.push(symbol.name);
+      walk(symbol.children);
+    }
+  };
+  walk(symbols);
+  return names;
+}
+
 /** Wait for folding ranges to be returned by the LSP server. */
 export async function waitForFoldingRanges(
   uri: vscode.Uri,

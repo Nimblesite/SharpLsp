@@ -566,18 +566,18 @@ suite('State E2E — reactive sort signals drive tree order', () => {
   // attached, so symbolsState settles to 'empty' after a load/refresh — that IS
   // the documented contract for a client-less refresh (state.ts:120-127).
   test('clear() and loadSolution() drive solutionPath and symbolsState signals', async () => {
+    // Normalize shared state to undefined BEFORE subscribing so the histories
+    // capture exactly the two transitions this test drives: load (undefined ->
+    // fixture) then clear (fixture -> undefined). clear() on an already-undefined
+    // solutionPath is a correct no-op under the signal's Object.is change-detection
+    // (signals.ts) and emits nothing — so we must drive a real change to observe
+    // the contract. This also makes the test independent of suite execution order.
+    state.clear();
     const pathHistory: (string | undefined)[] = [];
     const stateHistory: string[] = [];
     const disposePath = state.solutionPath.subscribe((value) => pathHistory.push(value));
     const disposeState = state.symbolsState.subscribe((value) => stateHistory.push(value.kind));
     try {
-      state.clear();
-      // clear() sets solutionPath → undefined and symbolsState → empty.
-      assert.strictEqual(state.solutionPath.value, undefined, 'clear() unsets solutionPath');
-      assert.strictEqual(state.symbolsState.value.kind, 'empty', 'clear() empties symbolsState');
-      assert.ok(pathHistory.includes(undefined), 'clear() drove solutionPath to undefined');
-      assert.ok(stateHistory.includes('empty'), 'clear() drove symbolsState to empty');
-
       await state.loadSolution(FIXTURE_SLN);
       assert.strictEqual(
         state.solutionPath.value,
@@ -594,6 +594,13 @@ suite('State E2E — reactive sort signals drive tree order', () => {
         'empty',
         'a client-less loadSolution refresh settles symbolsState to empty',
       );
+
+      state.clear();
+      // clear() drives solutionPath -> undefined and symbolsState -> empty.
+      assert.strictEqual(state.solutionPath.value, undefined, 'clear() unsets solutionPath');
+      assert.strictEqual(state.symbolsState.value.kind, 'empty', 'clear() empties symbolsState');
+      assert.ok(pathHistory.includes(undefined), 'clear() drove solutionPath to undefined');
+      assert.ok(stateHistory.includes('empty'), 'clear() drove symbolsState to empty');
     } finally {
       disposePath();
       disposeState();

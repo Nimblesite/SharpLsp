@@ -643,7 +643,10 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
         // with a speedscope URL carrying the local profile path.
         await vscode.commands.executeCommand('sharplsp.profiler.openTrace');
         assert.strictEqual(captured.length, 1, 'openExternal reached once for a speedscope file');
-        const url = captured[0]?.toString() ?? '';
+        // Uri.toString() percent-encodes the fragment (localProfilePath= -> %3D),
+        // so inspect with skipEncoding to assert the raw query the source builds
+        // (profiler.ts: https://www.speedscope.app/#localProfilePath=<encoded path>).
+        const url = captured[0]?.toString(true) ?? '';
         assert.ok(url.includes('speedscope.app'), 'speedscope viewer URL is opened externally');
         assert.ok(url.includes('localProfilePath='), 'URL carries the local profile path');
       } else {

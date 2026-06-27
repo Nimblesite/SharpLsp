@@ -7,6 +7,7 @@ import {
   EXTENSION_ID,
   closeAllEditors,
   findSharpLspBinary,
+  flattenSymbolNames,
   openCSharpFile,
   setupLspTestSuite,
   teardownLspTestSuite,
@@ -111,7 +112,9 @@ suite('Lifecycle E2E', () => {
     // later suites inherit a WORKING server (never left mid-restart).
     const after = await waitForDocumentSymbols(reopened, 90_000);
     assert.ok(after.length > 0, 'Server must serve symbols again after restart');
-    const names = after.map((symbol) => symbol.name);
+    // DocumentSymbols are hierarchical — `Restartable` is nested under namespace
+    // `L`, so flatten the tree before the name lookup (executeDocumentSymbolProvider).
+    const names = flattenSymbolNames(after);
     assert.ok(names.includes('Restartable'), 'Restarted server resolves the class');
   });
 
