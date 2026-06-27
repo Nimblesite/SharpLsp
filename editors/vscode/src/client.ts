@@ -13,6 +13,7 @@ import {
   type ServerOptions,
   TransportKind,
   State,
+  RevealOutputChannelOn,
 } from 'vscode-languageclient/node';
 import { EXTENSION_ID, EXTENSION_NAME, SERVER_BINARY, SERVER_BINARY_WIN } from './constants.js';
 import * as config from './config.js';
@@ -68,6 +69,13 @@ export async function start(
       { scheme: 'untitled', language: 'csharp' },
       { scheme: 'untitled', language: 'fsharp' },
     ],
+    // Never auto-reveal / steal focus to the Output panel when the server logs an
+    // error. vscode-languageclient defaults this to RevealOutputChannelOn.Error,
+    // which yanks the user's focus on every server-side diagnostic — intrusive UX,
+    // and in the e2e suite it stole window.activeTextEditor mid-test (folding /
+    // scaffolding / copy-name focus-race flakiness). Users open logs explicitly
+    // via the Show Output / Show Trace commands.
+    revealOutputChannelOn: RevealOutputChannelOn.Never,
     // Strip ANSI escape codes from the server's raw stderr before it reaches
     // the user-facing Output panel (issue #78). The host gates ANSI on whether
     // stderr is a TTY, but this is defence-in-depth against any leaked codes.

@@ -233,9 +233,15 @@ export async function replaceDocumentContent(
   return vscode.workspace.applyEdit(edit);
 }
 
-/** Close all open editors. */
+/** Close all open editors and dismiss the bottom panel. */
 export async function closeAllEditors(): Promise<void> {
   await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  // Also dismiss the bottom panel. An Output/Trace channel left shown by a prior
+  // test (e.g. showTraceOutput / "Show Log" routing) otherwise stays the active
+  // item and pollutes window.activeTextEditor and editor.foldAll in the NEXT
+  // test — the root cause of the cross-test focus-race flakiness. closePanel is a
+  // no-op when nothing is open, so this is always safe.
+  await vscode.commands.executeCommand('workbench.action.closePanel');
 }
 
 // ── Suite Setup / Teardown ───────────────────────────────────────

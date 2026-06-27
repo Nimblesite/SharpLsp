@@ -116,7 +116,11 @@ suite('Scaffolding E2E (drive real commands)', () => {
     teardownLspTestSuite(tmpDir);
   });
 
-  setup(() => {
+  setup(async () => {
+    // Start from a clean UI: close editors and dismiss any Output/Trace panel a
+    // prior suite left focused, so window.activeTextEditor reflects the file each
+    // newFile test opens (prevents the cross-test focus-race flakiness).
+    await closeAllEditors();
     stubs = installUiStubs();
     created = [];
   });
