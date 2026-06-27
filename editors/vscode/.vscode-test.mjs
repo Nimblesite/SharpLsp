@@ -34,7 +34,24 @@ export default defineConfig({
     },
   ],
   coverage: {
-    exclude: ['**/dist/**', '**/node_modules/**', '**/.vscode-test/**'],
+    // NOTE: `dist/**` is deliberately NOT excluded. The extension runs from the
+    // bundled `dist/extension.js` (package.json `main`), so the activation path
+    // and every command callback exercised by the end-to-end interaction suites
+    // execute there — not in the `out/` modules the unit tests import. The dev
+    // bundle ships a source map (esbuild `sourcemap: !production`) that remaps
+    // that execution back onto `src/*.ts`, so including it credits the real e2e
+    // coverage that would otherwise be invisible. Bundled node_modules sources
+    // are still dropped by the `node_modules` glob below.
+    // `dist/**` is intentionally NOT excluded. The extension runs from the
+    // bundled `dist/extension.js` (package.json `main`), so the activation path
+    // and every command callback exercised by the end-to-end interaction suites
+    // run there — not in the `out/` modules the unit tests import. The dev bundle
+    // ships a source map (esbuild `sourcemap: !production`) AND externalizes
+    // dependencies (`packages: 'external'` for non-production), so the only
+    // sources it remaps onto are first-party `src/*.ts`. Including it credits the
+    // real e2e coverage that is otherwise invisible. Dependencies are required at
+    // runtime as separate files and dropped by the `node_modules` glob.
+    exclude: ['**/node_modules/**', '**/.vscode-test/**'],
     reporter: ['text-summary', 'html', 'json-summary'],
   },
 });

@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { closeAllEditors, pollUntilResult } from './test-helpers';
+import { closeAllEditors, flattenSymbolNames, pollUntilResult } from './test-helpers';
 import { FSHARP_SYNTAX_TIMEOUT_MS, openFSharpFixture } from './fsharp-helpers';
 
 /**
@@ -116,19 +116,3 @@ suite('F# LSP — Selection Ranges', () => {
     assert.ok(depth >= 2, `selection range chain must expand outward (depth ${depth})`);
   });
 });
-
-// ── Local helpers ─────────────────────────────────────────────────
-
-function flattenSymbolNames(symbols: vscode.DocumentSymbol[]): string[] {
-  const names: string[] = [];
-  const walk = (list: vscode.DocumentSymbol[]): void => {
-    for (const sym of list) {
-      names.push(sym.name);
-      if (sym.children.length > 0) {
-        walk(sym.children);
-      }
-    }
-  };
-  walk(symbols);
-  return names;
-}
