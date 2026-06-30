@@ -10,10 +10,11 @@ use lsp_types::{
     CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
     Position, Range, SymbolKind,
 };
-use tracing::{debug, warn};
-
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{hierarchy_item_location, SidecarHierarchyItem, SidecarPositionReq};
+use crate::utils::{
+    fetch_hierarchy_items, fetch_hierarchy_prepare_item, hierarchy_item_location,
+    SidecarHierarchyItem,
+};
 
 /// Handle `textDocument/prepareCallHierarchy`.
 pub fn handle_prepare(
@@ -29,23 +30,14 @@ pub fn handle_prepare(
         crate::semantic::uri_to_path(&params.text_document_position_params.text_document.uri)?;
     let pos = &params.text_document_position_params.position;
 
-    let request = SidecarPositionReq {
+    let item = fetch_hierarchy_prepare_item(
+        runtime,
+        sidecar,
+        "textDocument/prepareCallHierarchy",
         file_path,
-        line: pos.line,
-        character: pos.character,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("textDocument/prepareCallHierarchy", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar prepareCallHierarchy unavailable: {err:#}");
-                return Ok(serde_json::Value::Null);
-            }
-        };
-
-    let item: Option<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
-    debug!("Got call hierarchy item from sidecar: {}", item.is_some());
+        pos.line,
+        pos.character,
+    )?;
 
     let result: Vec<CallHierarchyItem> = item
         .as_ref()
@@ -68,25 +60,14 @@ pub fn handle_incoming(
     let item = &params.item;
     let file_path = crate::semantic::uri_to_path(&item.uri)?;
 
-    let request = SidecarPositionReq {
+    let items = fetch_hierarchy_items(
+        runtime,
+        sidecar,
+        "callHierarchy/incomingCalls",
         file_path,
-        line: item.selection_range.start.line,
-        character: item.selection_range.start.character,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("callHierarchy/incomingCalls", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar incomingCalls unavailable: {err:#}");
-                return Ok(serde_json::to_value(
-                    Vec::<CallHierarchyIncomingCall>::new(),
-                )?);
-            }
-        };
-
-    let items: Vec<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
-    debug!("Got {} incoming calls from sidecar", items.len());
+        item.selection_range.start.line,
+        item.selection_range.start.character,
+    )?;
 
     let result: Vec<CallHierarchyIncomingCall> = items
         .iter()
@@ -117,25 +98,14 @@ pub fn handle_outgoing(
     let item = &params.item;
     let file_path = crate::semantic::uri_to_path(&item.uri)?;
 
-    let request = SidecarPositionReq {
+    let items = fetch_hierarchy_items(
+        runtime,
+        sidecar,
+        "callHierarchy/outgoingCalls",
         file_path,
-        line: item.selection_range.start.line,
-        character: item.selection_range.start.character,
-    };
-    let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        match runtime.block_on(sidecar.request("callHierarchy/outgoingCalls", payload)) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                warn!("Sidecar outgoingCalls unavailable: {err:#}");
-                return Ok(serde_json::to_value(
-                    Vec::<CallHierarchyOutgoingCall>::new(),
-                )?);
-            }
-        };
-
-    let items: Vec<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
-    debug!("Got {} outgoing calls from sidecar", items.len());
+        item.selection_range.start.line,
+        item.selection_range.start.character,
+    )?;
 
     let result: Vec<CallHierarchyOutgoingCall> = items
         .iter()

@@ -18,7 +18,7 @@ use lsp_types::{
 use tracing::{debug, info, warn};
 
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{map_text_edits, SidecarTextEdit};
+use crate::utils::{map_text_edits, SidecarPositionReq, SidecarTextEdit};
 
 /// Handle `textDocument/completion` via the .NET sidecar + postfix templates.
 pub fn handle_completion(
@@ -797,16 +797,7 @@ pub(crate) struct SidecarDidChangeReq {
     pub(crate) new_text: String,
 }
 
-/// Sidecar request for a position-based query (hover, definition, etc.).
-#[derive(serde::Serialize)]
-struct SidecarPositionReq {
-    /// Absolute filesystem path of the document.
-    file_path: String,
-    /// Zero-based line number.
-    line: u32,
-    /// Zero-based character offset.
-    character: u32,
-}
+
 
 /// A single completion item returned by the sidecar.
 #[derive(serde::Deserialize)]

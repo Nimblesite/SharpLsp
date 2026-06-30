@@ -1,7 +1,12 @@
 //! Shared utility functions used across multiple modules.
 
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
 use lsp_types::{Position, Range, TextEdit, Uri};
+use tracing::{debug, warn};
+
+use crate::sidecar::manager::SidecarManager;
 
 /// A hierarchy item returned by the sidecar for call- and type-hierarchy
 /// requests. Shared by `call_hierarchy` and `type_hierarchy`, which map it
@@ -102,6 +107,64 @@ pub fn uri_to_path(uri: &str) -> Result<String> {
     uri.strip_prefix("file://")
         .map(String::from)
         .context("expected file:// URI")
+}
+
+/// Fetch a single hierarchy item (prepare) from the sidecar.
+///
+/// Returns `None` when the sidecar is unavailable or returns null.
+pub fn fetch_hierarchy_prepare_item(
+    runtime: &tokio::runtime::Runtime,
+    sidecar: &Arc<SidecarManager>,
+    method: &str,
+    file_path: String,
+    line: u32,
+    character: u32,
+) -> Result<Option<SidecarHierarchyItem>> {
+    let request = SidecarPositionReq {
+        file_path,
+        line,
+        character,
+    };
+    let payload = rmp_serde::to_vec(&request)?;
+    let response_bytes = match runtime.block_on(sidecar.request(method, payload)) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!("Sidecar {method} unavailable: {err:#}");
+            return Ok(None);
+        }
+    };
+    let item: Option<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
+    debug!("Got hierarchy item from sidecar: {}", item.is_some());
+    Ok(item)
+}
+
+/// Fetch multiple hierarchy items from the sidecar.
+///
+/// Returns an empty vec when the sidecar is unavailable.
+pub fn fetch_hierarchy_items(
+    runtime: &tokio::runtime::Runtime,
+    sidecar: &Arc<SidecarManager>,
+    method: &str,
+    file_path: String,
+    line: u32,
+    character: u32,
+) -> Result<Vec<SidecarHierarchyItem>> {
+    let request = SidecarPositionReq {
+        file_path,
+        line,
+        character,
+    };
+    let payload = rmp_serde::to_vec(&request)?;
+    let response_bytes = match runtime.block_on(sidecar.request(method, payload)) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!("Sidecar {method} unavailable: {err:#}");
+            return Ok(Vec::new());
+        }
+    };
+    let items: Vec<SidecarHierarchyItem> = rmp_serde::from_slice(&response_bytes)?;
+    debug!("Got {} hierarchy items from sidecar", items.len());
+    Ok(items)
 }
 
 /// Safely convert `usize` to `u32`, clamping to `u32::MAX` on overflow.
