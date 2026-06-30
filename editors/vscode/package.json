@@ -983,25 +983,25 @@
   "dependencies": {
     "@nimblesite/shipwright-vscode": "^0.10.0",
     "fast-xml-parser": "^5.9.3",
-    "vscode-languageclient": "^10.0.0"
+    "vscode-languageclient": "^10.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/mocha": "^10.0.6",
-    "@types/node": "^26.0.0",
+    "@types/node": "^26.0.1",
     "@types/vscode": "^1.125.0",
-    "@typescript-eslint/eslint-plugin": "^8.62.0",
-    "@typescript-eslint/parser": "^8.62.0",
+    "@typescript-eslint/eslint-plugin": "^8.62.1",
+    "@typescript-eslint/parser": "^8.62.1",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.0.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.0",
-    "eslint": "^10.4.1",
+    "eslint": "^10.6.0",
     "glob": "^13.0.6",
     "mocha": "^11.7.6",
-    "playwright": "^1.61.0",
+    "playwright": "^1.61.1",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.0"
+    "typescript-eslint": "^8.62.1"
   },
   "files": [
     "bin/",
