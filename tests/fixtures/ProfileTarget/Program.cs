@@ -8,6 +8,12 @@ using System.Text.Json;
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
+// Self-terminate when orphaned: if the parent (the test host) dies abnormally —
+// e.g. nextest SIGKILLs a timed-out test — Rust-side `Drop` cleanup never runs
+// and this CPU-bound process would leak as a runaway (issue #3). Watch the parent
+// PID and cancel once we are reparented. POSIX-only; `getppid` exists on macOS/Linux.
+StartParentDeathWatchdog(cts);
+
 Console.WriteLine("READY");
 await Console.Out.FlushAsync().ConfigureAwait(false);
 
@@ -22,6 +28,44 @@ var tasks = new[]
 
 try { await Task.WhenAll(tasks).ConfigureAwait(false); }
 catch (OperationCanceledException) { }
+
+// Cancel `cts` as soon as this process is reparented away from its original
+// parent (getppid changes), which happens the instant the parent dies — so an
+// orphaned target shuts down its workers and exits instead of running forever.
+//
+// Runs on a dedicated background thread, NOT the thread pool: the worker loops
+// below are tight CPU-bound spins that saturate the pool, which would starve an
+// async `Task.Delay` watchdog and stop it ever re-checking. A real thread is
+// time-sliced in by the OS regardless.
+static void StartParentDeathWatchdog(CancellationTokenSource cts)
+{
+    if (OperatingSystem.IsWindows())
+        return;
+
+    var initialParentPid = NativeMethods.getppid();
+    var watchdog = new Thread(() =>
+    {
+        while (!cts.IsCancellationRequested)
+        {
+            var currentParentPid = NativeMethods.getppid();
+            // ppid == 1 means we were reparented to init/launchd, i.e. orphaned;
+            // a *changed* ppid additionally covers a Linux child-subreaper. The
+            // `== 1` check also wins the race where the parent dies during our own
+            // startup, before `initialParentPid` could be captured.
+            if (currentParentPid == 1 || currentParentPid != initialParentPid)
+            {
+                cts.Cancel();
+                return;
+            }
+            Thread.Sleep(250);
+        }
+    })
+    {
+        IsBackground = true,
+        Name = "parent-death-watchdog",
+    };
+    watchdog.Start();
+}
 
 // Slow path: allocates a new string payload and deserializes to a Dictionary every iteration.
 static void SlowJsonParsing(CancellationToken ct)
@@ -139,4 +183,19 @@ static string BuildLargeJsonPayload(int entries)
     }
     sb.Append('}');
     return sb.ToString();
+}
+
+// POSIX `getppid(2)` — available on macOS and Linux. Returns the current parent
+// process id; a change signals the original parent has died and we were reparented.
+internal static class NativeMethods
+{
+    // `DefaultDllImportSearchPaths` satisfies CA5392 (a Windows DLL-planting rule);
+    // it is inert for this system libc call on the Unix platforms where the
+    // watchdog actually runs (the caller no-ops on Windows). SYSLIB1054's suggested
+    // LibraryImport form is declined in this fixture — it requires AllowUnsafeBlocks
+    // (SYSLIB1062), not worth enabling for one getppid (suppressed in the csproj).
+    [System.Runtime.InteropServices.DllImport("libc")]
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(
+        System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    internal static extern int getppid();
 }

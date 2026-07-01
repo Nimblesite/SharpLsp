@@ -1,4 +1,6 @@
-use super::profiler_full_stack::{start_profiler_session, stop_profile_target};
+use super::profiler_full_stack::{
+    build_profile_target, start_profiler_session, stop_profile_target,
+};
 use super::*;
 
 // ── Profiler Edge Case Tests ─────────────────────────────────────
@@ -173,6 +175,85 @@ fn test_profiler_edge_start_trace_rejects_non_dotnet_pid() {
     client.wait_with_timeout();
     let _ = non_dotnet.kill();
     let _ = non_dotnet.wait();
+}
+
+/// Return true if `pid` is still a live process. Uses `kill -0`, matching the
+/// harness convention (no libc/nix dependency); a reaped/dead PID reports ESRCH
+/// and yields `false`.
+fn pid_alive(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+/// Repro for #3: a `ProfileTarget` spawned by a test process must NOT survive as
+/// an orphan when that test process dies abnormally (nextest SIGKILLs a timed-out
+/// test), where Rust `Drop` cleanup never runs. The fixture must self-terminate
+/// once it is reparented away from its original parent.
+#[test]
+fn test_profiler_edge_profile_target_dies_when_parent_killed() {
+    let binary = build_profile_target();
+
+    // Intermediary that stands in for the test process nextest SIGKILLs on
+    // timeout: it launches ProfileTarget as a background child, prints the child
+    // PID, and blocks on `wait` so it stays the child's parent until we kill it.
+    let mut parent = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "{} >/dev/null 2>&1 & echo $!; wait",
+            binary.display()
+        ))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed to spawn intermediary parent");
+
+    // Read the ProfileTarget PID the intermediary printed.
+    let mut reader = BufReader::new(parent.stdout.take().expect("intermediary stdout"));
+    let mut pid_line = String::new();
+    let read = reader.read_line(&mut pid_line).expect("read child pid");
+    assert!(read > 0, "intermediary must print the ProfileTarget pid");
+    let child_pid: u32 = pid_line.trim().parse().expect("parse ProfileTarget pid");
+
+    // Confirm ProfileTarget is really running before we sever its parent.
+    let start = Instant::now();
+    while !pid_alive(child_pid) && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        pid_alive(child_pid),
+        "ProfileTarget (PID {child_pid}) should be running before its parent is killed"
+    );
+
+    // Simulate the abnormal death of the test process: SIGKILL the intermediary
+    // WITHOUT touching ProfileTarget. Drop-based cleanup cannot run on this path.
+    let _ = parent.kill();
+    let _ = parent.wait();
+
+    // The orphaned ProfileTarget must self-terminate within a few seconds.
+    let mut survived = true;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        if !pid_alive(child_pid) {
+            survived = false;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    // Always reap the orphan so a RED run (bug present) never leaks it itself.
+    let _ = Command::new("kill")
+        .args(["-9", &child_pid.to_string()])
+        .stderr(Stdio::null())
+        .status();
+
+    assert!(
+        !survived,
+        "orphaned ProfileTarget (PID {child_pid}) survived its parent's death — it \
+         must self-terminate when reparented (issue #3)"
+    );
 }
 
 /// Edge case: `listProcesses` finds `ProfileTarget` by name in the process list.
