@@ -12,7 +12,7 @@ use tracing::{error, info};
 
 use crate::sidecar::manager::SidecarManager;
 
-use super::{cli, consolidate, parse, search, targets, types, unused, xml_edit};
+use super::{cli, consolidate, edit, parse, search, targets, types, unused};
 
 /// Handle `sharplsp/nuget/targets` — enumerate projects and props files.
 pub fn handle_targets(req: Request) -> Result<serde_json::Value> {
@@ -78,35 +78,67 @@ pub fn handle_installed(
     Ok(serde_json::to_value(response)?)
 }
 
-/// Handle `sharplsp/nuget/install` — fast-path XML edit + background restore.
+/// Handle `sharplsp/nuget/install` — MSBuild-DOM edit (C# sidecar) + background
+/// restore. [NUGET-XML-DOM]
 pub fn handle_install(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
+    csharp: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     info!("Handling sharplsp/nuget/install");
     let params: types::InstallParams = serde_json::from_value(req.params)?;
     let target = resolve_target(params.target, params.project_path.clone())?;
 
-    // Perform the synchronous XML fast path.
-    let response = apply_install(&target, &params.package_id, &params.version)?;
+    let Some(sidecar) = csharp else {
+        return no_editor_response(types::InstallResponse {
+            success: false,
+            message: EDITOR_UNAVAILABLE.to_string(),
+            modified_files: Vec::new(),
+        });
+    };
+    let response = apply_install(
+        sidecar,
+        runtime,
+        &target,
+        &params.package_id,
+        &params.version,
+    )?;
 
     finish_with_restore(response, runtime, sender, &target)
 }
 
-/// Handle `sharplsp/nuget/uninstall` — fast-path XML edit + background restore.
+/// Handle `sharplsp/nuget/uninstall` — MSBuild-DOM edit (C# sidecar) + background
+/// restore. [NUGET-XML-DOM]
 pub fn handle_uninstall(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
+    csharp: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     info!("Handling sharplsp/nuget/uninstall");
     let params: types::UninstallParams = serde_json::from_value(req.params)?;
     let target = resolve_target(params.target, params.project_path.clone())?;
 
-    let response = apply_uninstall(&target, &params.package_id)?;
+    let Some(sidecar) = csharp else {
+        return no_editor_response(types::UninstallResponse {
+            success: false,
+            message: EDITOR_UNAVAILABLE.to_string(),
+            modified_files: Vec::new(),
+        });
+    };
+    let response = apply_uninstall(sidecar, runtime, &target, &params.package_id)?;
 
     finish_with_restore(response, runtime, sender, &target)
+}
+
+/// Message returned when no C# sidecar is available to perform an `MSBuild` edit.
+const EDITOR_UNAVAILABLE: &str =
+    "C# sidecar is not available to edit project files (open a workspace first)";
+
+/// Serialize a pre-built failure response for the no-editor case.
+fn no_editor_response<R: serde::Serialize>(response: R) -> Result<serde_json::Value> {
+    Ok(serde_json::to_value(response)?)
 }
 
 /// Handle `sharplsp/nuget/unused` — detect unused direct package references.
@@ -173,10 +205,12 @@ pub fn handle_consolidate(
     req: Request,
     runtime: &Runtime,
     sender: Sender<Message>,
+    csharp: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     info!("Handling sharplsp/nuget/consolidate");
     let params: types::ConsolidateParams = serde_json::from_value(req.params)?;
-    let response = consolidate::consolidate(&params.solution_path, params.dry_run)?;
+    let response =
+        consolidate::consolidate(&params.solution_path, params.dry_run, csharp, runtime)?;
     if !params.dry_run && !response.modified_files.is_empty() {
         let target = types::NuGetTarget::from_project_path(&params.solution_path);
         spawn_restore(runtime, sender, &target, response.modified_files.clone());
@@ -279,8 +313,10 @@ fn list_props_packages(path: &str) -> Result<Vec<types::InstalledPackageInfo>> {
         .collect())
 }
 
-/// Apply install via XML fast path.
+/// Apply install by delegating the XML mutation to the C# sidecar.
 fn apply_install(
+    sidecar: &Arc<SidecarManager>,
+    runtime: &Runtime,
     target: &types::NuGetTarget,
     package_id: &str,
     version: &str,
@@ -295,23 +331,26 @@ fn apply_install(
     }
 
     let element = pick_install_element(target);
-    let outcome = xml_edit::add_package(path, package_id, version, element)?;
+    let outcome = edit::add_package(sidecar, runtime, &target.path, package_id, version, element)?;
 
     // For CPM projects, also update Directory.Packages.props.
     let mut modified: Vec<String> = Vec::new();
     if outcome.modified {
         modified.push(target.path.clone());
     }
-    if matches!(element, xml_edit::PackageElement::ReferenceNoVersion) {
+    if matches!(element, edit::PackageElement::ReferenceNoVersion) {
         if let Some(props_path) = targets::find_packages_props(path) {
-            let props_outcome = xml_edit::add_package(
-                &props_path,
+            let props_str = props_path.to_string_lossy().to_string();
+            let props_outcome = edit::add_package(
+                sidecar,
+                runtime,
+                &props_str,
                 package_id,
                 version,
-                xml_edit::PackageElement::Version,
+                edit::PackageElement::Version,
             )?;
             if props_outcome.modified {
-                modified.push(props_path.to_string_lossy().to_string());
+                modified.push(props_str);
             }
         }
     }
@@ -323,8 +362,10 @@ fn apply_install(
     })
 }
 
-/// Apply uninstall via XML fast path.
+/// Apply uninstall by delegating the XML mutation to the C# sidecar.
 fn apply_uninstall(
+    sidecar: &Arc<SidecarManager>,
+    runtime: &Runtime,
     target: &types::NuGetTarget,
     package_id: &str,
 ) -> Result<types::UninstallResponse> {
@@ -338,7 +379,7 @@ fn apply_uninstall(
     }
 
     let element = pick_install_element(target);
-    let outcome = xml_edit::remove_package(path, package_id, element)?;
+    let outcome = edit::remove_package(sidecar, runtime, &target.path, package_id, element)?;
 
     let mut modified: Vec<String> = Vec::new();
     if outcome.modified {
@@ -353,16 +394,16 @@ fn apply_uninstall(
 }
 
 /// Decide which element flavour to write for the given target.
-fn pick_install_element(target: &types::NuGetTarget) -> xml_edit::PackageElement {
+fn pick_install_element(target: &types::NuGetTarget) -> edit::PackageElement {
     let lower = target.path.to_lowercase();
     if lower.ends_with("directory.packages.props") {
-        xml_edit::PackageElement::Version
+        edit::PackageElement::Version
     } else if matches!(target.kind, types::TargetKind::BuildProps) {
-        xml_edit::PackageElement::Reference
+        edit::PackageElement::Reference
     } else if targets::find_packages_props(Path::new(&target.path)).is_some() {
-        xml_edit::PackageElement::ReferenceNoVersion
+        edit::PackageElement::ReferenceNoVersion
     } else {
-        xml_edit::PackageElement::Reference
+        edit::PackageElement::Reference
     }
 }
 

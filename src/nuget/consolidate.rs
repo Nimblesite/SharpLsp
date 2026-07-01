@@ -1,19 +1,24 @@
 //! [PKG-CONSOLIDATE] Hoist `NuGet` packages shared by ≥2 projects into a
 //! solution-root `Directory.Build.props`.
 //!
-//! Pure Tier-1 logic: enumerate projects (reuse [`super::targets`]), read their
-//! `PackageReference` items (reuse [`super::parse`]), and move shared ones via
-//! the trivia-preserving [`super::xml_edit`]. No sidecar, no second XML editor.
+//! Enumerate projects (reuse [`super::targets`]), read their `PackageReference`
+//! items (reuse [`super::parse`]), and move shared ones through the C# sidecar's
+//! `MSBuild` document model (reuse [`super::edit`]). One editor for every project
+//! file, shared with install/uninstall ([NUGET-XML-DOM]).
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use tokio::runtime::Runtime;
 use tracing::info;
 
+use crate::sidecar::manager::SidecarManager;
+
+use super::edit::{self, PackageElement};
 use super::types::{ConsolidateResponse, MovedPackage};
-use super::xml_edit::{self, PackageElement};
 use super::{parse, targets};
 
 /// Body written when the solution has no `Directory.Build.props` yet.
@@ -34,7 +39,12 @@ struct SharedPackage {
 ///
 /// When `dry_run` is set the shared packages are reported without touching any
 /// files, so the UI can confirm the (destructive) move before it happens.
-pub fn consolidate(solution_path: &str, dry_run: bool) -> Result<ConsolidateResponse> {
+pub fn consolidate(
+    solution_path: &str,
+    dry_run: bool,
+    sidecar: Option<&Arc<SidecarManager>>,
+    runtime: &Runtime,
+) -> Result<ConsolidateResponse> {
     let solution_dir = Path::new(solution_path)
         .parent()
         .map(Path::to_path_buf)
@@ -52,7 +62,12 @@ pub fn consolidate(solution_path: &str, dry_run: bool) -> Result<ConsolidateResp
         return Ok(describe(scan.cpm_enabled, &shared));
     }
 
-    apply(&solution_dir, scan.cpm_enabled, &shared)
+    let Some(sidecar) = sidecar else {
+        return Ok(empty_response(
+            "C# sidecar is not available to consolidate (open a workspace first).",
+        ));
+    };
+    apply(&solution_dir, scan.cpm_enabled, &shared, sidecar, runtime)
 }
 
 /// Build a no-write preview response describing what `apply` would move.
@@ -126,8 +141,11 @@ fn apply(
     solution_dir: &Path,
     cpm_enabled: bool,
     shared: &[SharedPackage],
+    sidecar: &Arc<SidecarManager>,
+    runtime: &Runtime,
 ) -> Result<ConsolidateResponse> {
     let props_path = ensure_props(solution_dir)?;
+    let props_str = props_path.to_string_lossy().to_string();
     let element = if cpm_enabled {
         PackageElement::ReferenceNoVersion
     } else {
@@ -135,12 +153,13 @@ fn apply(
     };
 
     let mut moved = Vec::new();
-    let mut modified = vec![props_path.to_string_lossy().to_string()];
+    let mut modified = vec![props_str.clone()];
 
     for pkg in shared {
         let version = pkg.version.clone().unwrap_or_default();
-        let _ = xml_edit::add_package(&props_path, &pkg.id, &version, element)?;
-        let from_projects = strip_from_projects(&pkg.projects, &pkg.id, &mut modified)?;
+        let _ = edit::add_package(sidecar, runtime, &props_str, &pkg.id, &version, element)?;
+        let from_projects =
+            strip_from_projects(&pkg.projects, &pkg.id, &mut modified, sidecar, runtime)?;
         moved.push(MovedPackage {
             id: pkg.id.clone(),
             version: if cpm_enabled { String::new() } else { version },
@@ -166,12 +185,21 @@ fn strip_from_projects(
     projects: &[PathBuf],
     package_id: &str,
     modified: &mut Vec<String>,
+    sidecar: &Arc<SidecarManager>,
+    runtime: &Runtime,
 ) -> Result<Vec<String>> {
     let mut names = Vec::new();
     for project in projects {
-        let outcome = xml_edit::remove_package(project, package_id, PackageElement::Reference)?;
+        let project_str = project.to_string_lossy().to_string();
+        let outcome = edit::remove_package(
+            sidecar,
+            runtime,
+            &project_str,
+            package_id,
+            PackageElement::Reference,
+        )?;
         if outcome.modified {
-            modified.push(project.to_string_lossy().to_string());
+            modified.push(project_str);
         }
         names.push(file_label(project));
     }
@@ -328,27 +356,10 @@ mod tests {
         assert_eq!(shared[0].projects.len(), 2);
     }
 
-    #[test]
-    fn consolidate_hoists_shared_and_strips_projects() {
-        let td = TempDir::new().unwrap();
-        let root = td.path();
-        let sln = write_solution(root);
-        let a = write_project(root, "A/A", &[("Serilog", "3.1.0")]);
-        let b = write_project(root, "B/B", &[("Serilog", "3.0.0")]);
-
-        let resp = consolidate(&sln, false).unwrap();
-        assert_eq!(resp.moved.len(), 1);
-        assert_eq!(resp.moved[0].id, "Serilog");
-        assert_eq!(resp.moved[0].version, "3.1.0");
-
-        // Directory.Build.props now declares Serilog once.
-        let props = std::fs::read_to_string(root.join("Directory.Build.props")).unwrap();
-        assert!(props.contains("Include=\"Serilog\" Version=\"3.1.0\""));
-
-        // Projects no longer reference Serilog.
-        assert!(!std::fs::read_to_string(&a).unwrap().contains("Serilog"));
-        assert!(!std::fs::read_to_string(&b).unwrap().contains("Serilog"));
-    }
+    // The actual file-mutating paths (hoist / strip / preserve-existing) go
+    // through the C# sidecar's MSBuild document model, so they are covered
+    // full-stack in `tests/nuget_e2e.rs` (`nuget_consolidate_*`) rather than as
+    // in-process unit tests. The cases below need no editor.
 
     #[test]
     fn consolidate_reports_nothing_when_no_shared_packages() {
@@ -358,7 +369,8 @@ mod tests {
         let _a = write_project(root, "A/A", &[("OnlyA", "1.0.0")]);
         let _b = write_project(root, "B/B", &[("OnlyB", "1.0.0")]);
 
-        let resp = consolidate(&sln, false).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let resp = consolidate(&sln, false, None, &runtime).unwrap();
         assert!(resp.moved.is_empty());
         assert!(resp.props_file.is_none());
         // No props file should have been created.
@@ -373,7 +385,8 @@ mod tests {
         let a = write_project(root, "A/A", &[("Serilog", "3.1.0")]);
         let b = write_project(root, "B/B", &[("Serilog", "3.1.0")]);
 
-        let resp = consolidate(&sln, true).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let resp = consolidate(&sln, true, None, &runtime).unwrap();
         assert_eq!(
             resp.moved.len(),
             1,
@@ -386,25 +399,5 @@ mod tests {
         assert!(!root.join("Directory.Build.props").exists());
         assert!(std::fs::read_to_string(&a).unwrap().contains("Serilog"));
         assert!(std::fs::read_to_string(&b).unwrap().contains("Serilog"));
-    }
-
-    #[test]
-    fn consolidate_preserves_existing_props_content() {
-        let td = TempDir::new().unwrap();
-        let root = td.path();
-        let sln = write_solution(root);
-        std::fs::write(
-            root.join("Directory.Build.props"),
-            "<Project>\n  <!-- keep me -->\n</Project>\n",
-        )
-        .unwrap();
-        let _a = write_project(root, "A/A", &[("Serilog", "3.1.0")]);
-        let _b = write_project(root, "B/B", &[("Serilog", "3.1.0")]);
-
-        let resp = consolidate(&sln, false).unwrap();
-        assert_eq!(resp.moved.len(), 1);
-        let props = std::fs::read_to_string(root.join("Directory.Build.props")).unwrap();
-        assert!(props.contains("<!-- keep me -->"), "comment preserved");
-        assert!(props.contains("Serilog"));
     }
 }

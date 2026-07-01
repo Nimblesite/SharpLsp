@@ -4,6 +4,18 @@
 
 **CLAUDE.md rule:** _"NEVER hand-manipulate structured files. XML/JSON/TOML/YAML/solution files MUST be loaded into a proper document model, mutated via the DOM/AST, and serialized back. Line splicing, regex replacement, and string concatenation on structured files are not permitted."_
 
+## Status
+
+**✅ Done (issue #4 — NuGet package editing).** The line-oriented `src/nuget/xml_edit.rs` is deleted. `PackageReference` / `PackageVersion` add / update / remove now go through the C# sidecar's `Microsoft.Build.Construction.ProjectRootElement` (`preserveFormatting: true`), covering install, uninstall, and consolidate for `.csproj` / `.fsproj` / `.props`. Verified full-stack in `tests/nuget_e2e.rs` (multi-line children, wrapped attributes, conditional `ItemGroup`, comments, CPM `Directory.Packages.props`, multi-ItemGroup).
+
+Deviations from the original design below (all functionally equivalent):
+- Editor lives in `sidecars/SharpLsp.Sidecar.CSharp/PackageEditor.cs` (+ handler in `CSharpSidecar.Packages.cs`), not `Workspace/ProjectEditor.cs`.
+- IPC types live in the C# sidecar `Messages.cs`; the Rust wrapper is `src/nuget/edit.rs` (not `src/sidecar/project_editor.rs`).
+- `updatePackageVersion` is folded into `addPackage` (upsert), so there are two methods: `project/addPackage`, `project/removePackage`.
+- `.fsproj` edits route to the **C# sidecar** rather than a mirrored F# handler: `MSBuildLocator` (MSBL001) forbids a shared `Microsoft.Build` reference in the F#/Common projects, and `ProjectRootElement` is language-agnostic (the issue itself notes "it's not F#-specific").
+
+**⏳ Not yet done (separate violations, out of scope for #4):** `addCompileItem` / `reorderCompileItems`, `scaffolding.ts` (V2), `FSharpFileOrder.fs` (V3), and the Phase 5 CI grep-guard.
+
 ## Goal
 
 Eliminate every code path that writes to a structured file (`.csproj`, `.fsproj`, `.props`, `.targets`, `.sln`, `.vsixmanifest`, `package.json`, `launch.json`, `tasks.json`, `settings.json`, etc.) by doing anything other than:
@@ -95,34 +107,34 @@ project.Save(path);                                   // trivia-preserving write
 
 ## Phases
 
-### Phase 1 — Introduce the sidecar API (no caller switches yet)
+### Phase 1 — Introduce the sidecar API (package editing) ✅
 
-- [ ] Add `SharpLsp.Sidecar.Common` IPC message types: `AddPackageRequest`, `RemovePackageRequest`, `UpdatePackageVersionRequest`, `AddCompileItemRequest`, `ReorderCompileItemsRequest`, and a unified `ProjectEditResult { modified: bool, message: string }`.
-- [ ] Implement handlers in `sidecars/SharpLsp.Sidecar.CSharp/Workspace/ProjectEditor.cs` using `ProjectRootElement`:
-  - [ ] `AddPackage` — find/create `<ItemGroup>`, add `<PackageReference Include="X" Version="Y" />`; handle CPM (`Directory.Packages.props`) variant that adds `<PackageVersion>`.
-  - [ ] `RemovePackage` — find matching `<PackageReference>`/`<PackageVersion>` element and call `.Parent.RemoveChild(el)` (removes the whole subtree, fixing issue #4).
-  - [ ] `UpdatePackageVersion` — set `.SetAttributeValue("Version", newVersion)`.
-  - [ ] `AddCompileItem` — detect SDK-style + default `Compile` globs; no-op if already globbed; else add `<Compile Include="..." />`.
-- [ ] Register IPC methods in `sidecars/SharpLsp.Sidecar.CSharp/Program.cs` router.
-- [ ] Mirror the handlers in `sidecars/SharpLsp.Sidecar.FSharp` so `.fsproj` edits go to the F# sidecar (which still uses `Microsoft.Build.Construction` — it's language-agnostic).
-- [ ] Add `ReorderCompileItems` handler: list `<Compile>` children of their parent `<ItemGroup>`, reorder using `.InsertBeforeChild`/`.InsertAfterChild`.
-- [ ] Unit tests for each handler covering the exact scenarios the line-based code broke on:
-  - [ ] `<PackageReference>` with `<PrivateAssets>`/`<IncludeAssets>` children (issue #4)
-  - [ ] Conditional `<ItemGroup Condition="'$(Target)' == 'net10.0'">`
-  - [ ] CPM with `Directory.Packages.props` — add/remove writes `<PackageVersion>` in props and `<PackageReference>` with no `Version=` in csproj
-  - [ ] Multi-ItemGroup files (pick the one that already has PackageReferences)
-  - [ ] Comments preserved between elements
-  - [ ] CRLF files preserved as CRLF after save
+- [x] Add IPC message types (`PackageEditRequest`, `PackageEditResult { Modified, Message }`) in the C# sidecar `Messages.cs`. (Kept in the C# sidecar rather than Common — see Status deviations.)
+- [x] Implement handlers in `sidecars/SharpLsp.Sidecar.CSharp/PackageEditor.cs` using `ProjectRootElement`:
+  - [x] `Add` — find/create `<ItemGroup>`, add `<PackageReference Include="X" Version="Y" />`; CPM variant adds `<PackageVersion>` / a versionless `<PackageReference>`; upsert updates an existing `Version`.
+  - [x] `Remove` — find the matching `<PackageReference>`/`<PackageVersion>` and `.Parent.RemoveChild(el)` (removes the whole subtree, fixing issue #4).
+  - [x] `UpdatePackageVersion` — folded into `Add` (upsert path sets `metadata.Value`).
+  - [ ] `AddCompileItem` — _not done (separate violation V2)._
+- [x] Register `project/addPackage` / `project/removePackage` in the `CSharpSidecar` router.
+- [x] `.fsproj` edits route to the C# sidecar (language-agnostic `ProjectRootElement`) — see Status for the MSBL001 rationale.
+- [ ] `ReorderCompileItems` handler — _not done (separate violation V3)._
+- [x] Tests for the scenarios the line-based code broke on (full-stack in `tests/nuget_e2e.rs`, per CLAUDE.md's coarse-e2e preference):
+  - [x] `<PackageReference>` with `<PrivateAssets>`/`<IncludeAssets>` children (issue #4)
+  - [x] Conditional `<ItemGroup Condition="'$(Target)' == 'net10.0'">`
+  - [x] CPM with `Directory.Packages.props` — writes `<PackageVersion>` in props and a versionless `<PackageReference>` in csproj
+  - [x] Multi-ItemGroup files (pick the one that already has PackageReferences)
+  - [x] Comments preserved between elements
+  - [x] Wrapped-attribute `<PackageReference>` (attributes across lines) removed cleanly
 
-### Phase 2 — Route Rust host through the sidecar, delete `xml_edit.rs`
+### Phase 2 — Route Rust host through the sidecar, delete `xml_edit.rs` ✅
 
-- [ ] Add `src/sidecar/project_editor.rs` — thin wrappers that serialize/send each request.
-- [ ] Rewrite `src/nuget/handlers.rs::handle_install`, `handle_remove`, and the CPM props-file case to call the sidecar instead of `xml_edit::*`.
-- [ ] Delete `src/nuget/xml_edit.rs`.
-- [ ] Delete the `xml_edit` module export from `src/nuget/mod.rs`.
-- [ ] Update `src/nuget/cli.rs` header comment that still references `xml_edit`.
-- [ ] `tests/nuget_e2e.rs` — keep every existing scenario green, plus add the multi-line-child scenario from issue #4.
-- [ ] Remove the now-dead `xml_edit` clippy suppressions or tests.
+- [x] Add the Rust wrapper (`src/nuget/edit.rs`) — thin wrappers that serialize/send each request.
+- [x] Rewrite `src/nuget/handlers.rs::handle_install`, `handle_uninstall`, the CPM props-file case, **and** `consolidate.rs` to call the sidecar instead of `xml_edit::*`.
+- [x] Delete `src/nuget/xml_edit.rs`.
+- [x] Delete the `xml_edit` module export from `src/nuget/mod.rs`.
+- [x] Update `src/nuget/cli.rs` (and `parse.rs`) header comments that referenced `xml_edit`.
+- [x] `tests/nuget_e2e.rs` — every existing scenario green (now full-stack via the sidecar), plus new multi-line-child, wrapped-attribute, conditional-`ItemGroup`, and comment scenarios from issue #4.
+- [x] Remove the now-dead `xml_edit` tests (coverage moved to `nuget_e2e.rs`) and the `quick-xml` dependency.
 
 ### Phase 3 — Switch scaffolding.ts to the sidecar
 
