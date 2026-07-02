@@ -39,10 +39,10 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 |---|---|---|---|
 | Completion + resolve | `textDocument/completion`, `completionItem/resolve` | ✅ / 🟡 | `[FS-COMPLETION]`; auto-`open` insertion on resolve still stubbed `[FS-COMPLETION-RESOLVE]` |
 | Go to definition | `textDocument/definition` | ✅ | e2e: `test_full_stack_fsharp_navigation` |
-| Type definition | `textDocument/typeDefinition` | 🟡 | returns null in cases — **gap [#112]** |
+| Type definition | `textDocument/typeDefinition` | ✅ | resolves to the type decl; `test_full_stack_fsharp_navigation` (was gap [#112] — invalid-fixture artifact) |
 | Implementation | `textDocument/implementation` | ✅ | |
 | Declaration | `textDocument/declaration` | ⭐✅ | not in FSAC's list |
-| Find references | `textDocument/references` | 🟡 | `[FS-REFS-PROJECT]` project-wide, but use-site completeness on types — **gap [#112]** |
+| Find references | `textDocument/references` | ✅ | `[FS-REFS-PROJECT]` project-wide incl. type use-sites; `test_full_stack_fsharp_references_type_use_sites` (was gap [#112] — invalid-fixture artifact) |
 | Hover | `textDocument/hover` | ✅ | XML-doc rendering; e2e covered |
 | Signature help | `textDocument/signatureHelp` | ✅ | `[FS-SIGHELP]` |
 | Document symbols | `textDocument/documentSymbol` | ✅ | `[FS-DOCSYMBOL]` (parse-only) |
@@ -99,7 +99,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 
 Each item is sized to one focused change with e2e + sidecar tests.
 
-1. **references/typeDefinition completeness** — `[#112]` (F# sidecar lane). _Re-verified still open 2026-06-22: refs on the `Shape` type returns only the declaration. Rename (which shares `getProjectUsages`) works, so the gap is specific to type/entity use-site collection in references._
+1. ~~**references/typeDefinition completeness**~~ — ✅ **done** `[#112]`. Root cause was the shared e2e fixture, not the sidecar: `Library.fs` placed `let area` / `let sumOfSquares` directly in a `namespace` (illegal F#, FS0201), so those bindings never type-checked and FCS recorded no `Shape` use-sites inside them — refs/typeDefinition on the `Shape` type saw only the declaration. Making the fixture a valid top-level `module` restored full parity. e2e: `test_full_stack_fsharp_references_type_use_sites` + tightened `test_full_stack_fsharp_navigation`.
 2. ~~**workspace/symbol** for F#~~ — ✅ **done** `[FS-WORKSPACE-SYMBOL]`: F# files route to the
    FCS sidecar's document symbols inside the standard `workspace/symbol` handler
    ([main.rs](../../src/main.rs) `collect_fsharp_ws_symbols`,
@@ -134,7 +134,7 @@ real `sharplsp` host + F# sidecar against `create_fsharp_test_workspace`.
 | Feature | E2E test | Status |
 |---|---|---|
 | Hover (fn/type/module, DU, pipeline, XML docs) | `test_full_stack_fsharp_hover_*` | ✅ |
-| Definition / typeDefinition / references / highlight | `test_full_stack_fsharp_navigation` | ✅ (typeDef/refs gaps → #112) |
+| Definition / typeDefinition / references / highlight | `test_full_stack_fsharp_navigation`, `test_full_stack_fsharp_references_type_use_sites` | ✅ (#112 closed) |
 | documentSymbol / completion / signatureHelp / codeLens / inlayHint / semanticTokens | `test_full_stack_fsharp_language_surface` | ✅ |
 | Call hierarchy + type hierarchy | `test_full_stack_fsharp_hierarchies` | ✅ |
 | Rename (prepare + project-wide apply) | `test_full_stack_fsharp_rename` | ✅ |

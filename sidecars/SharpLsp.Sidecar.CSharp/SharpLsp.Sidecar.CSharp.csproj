@@ -43,9 +43,19 @@
             ExcludeAssets="runtime"
             PrivateAssets="all"
         />
+        <!-- Compile-time only: ProjectRootElement / ProjectCollection for the
+             MSBuild-DOM package editor (GitHub #4). The real assembly is loaded
+             from the SDK at runtime by MSBuildLocator, so runtime is excluded
+             (MSBL001), exactly like Microsoft.Build.Framework above. -->
+        <PackageReference
+            Include="Microsoft.Build"
+            Version="17.11.48"
+            ExcludeAssets="runtime"
+            PrivateAssets="all"
+        />
         <PackageReference
             Include="Microsoft.NET.StringTools"
-            Version="17.11.4"
+            Version="17.11.48"
             ExcludeAssets="runtime"
             PrivateAssets="all"
         />

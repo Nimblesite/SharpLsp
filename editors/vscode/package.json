@@ -1034,12 +1034,13 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ && tsc --noEmit",
     "lint:eslint": "eslint src/",
-    "compile-tests": "tsc -p ./",
+    "compile-tests": "npm run clean && tsc -p ./",
     "pretest": "npm run compile-tests && npm run build",
     "test": "vscode-test --coverage",
     "test:run": "node out/test/runTest.js",
     "package": "vsce package --no-dependencies",
-    "vscode:prepublish": "node esbuild.mjs --production"
+    "vscode:prepublish": "node esbuild.mjs --production",
+    "clean": "node clean-out.mjs"
   },
   "dependencies": {
     "@nimblesite/shipwright-vscode": "^0.10.0",
