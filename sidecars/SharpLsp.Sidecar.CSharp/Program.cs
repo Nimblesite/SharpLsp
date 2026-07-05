@@ -18,9 +18,11 @@ try
 }
 catch (Exception ex)
 {
-    Log.Fatal(ex, "MSBuild registration failed");
-    SidecarLog.Shutdown();
-    Environment.Exit(1);
+    // MSBuild registration must never take the sidecar down. Without it, Roslyn
+    // features degrade per-request, but the process must still reach READY so it
+    // can serve MSBuild-free requests (e.g. solution/read for the Solution
+    // Explorer) instead of crash-looping. [DIST-SDK-DISCOVERY]
+    Log.Error(ex, "MSBuild registration failed; continuing without Roslyn analysis");
 }
 
 await RunSidecarAsync(args).ConfigureAwait(false);
