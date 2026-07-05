@@ -2,9 +2,9 @@
 //!
 //! - `dotnet list <project> package --format json`
 //!
-//! Install / uninstall bypass the `dotnet` CLI entirely — we edit XML
-//! directly via `nuget::xml_edit` and fire restore in the background for
-//! instant-feedback UX.
+//! Install / uninstall bypass the `dotnet` CLI entirely — we edit XML through
+//! the C# sidecar's `MSBuild` document model (`nuget::edit`) and fire restore in
+//! the background for instant-feedback UX.
 
 use anyhow::{Context, Result};
 use tracing::info;

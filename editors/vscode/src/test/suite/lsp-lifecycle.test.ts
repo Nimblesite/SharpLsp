@@ -1,8 +1,10 @@
 import * as assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
 import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  findSharpLspBinary,
   openCSharpFile,
   setupLspTestSuite,
   teardownLspTestSuite,
@@ -155,6 +157,54 @@ suite('LSP Lifecycle', () => {
     assert.ok(symbols.length > 0, 'Server should still respond after rapid open/close');
   });
 
+  // ── Unexpected Server Death → Auto-Restart (issue #8) ────────
+  //
+  // GitHub #8: the language server was killed out from under the client
+  // (transient extension-host restart, or `make install-rust` replacing the
+  // binary on disk mid-session). VS Code's DEFAULT error handler reported the
+  // close as "SIGKILL" and popped a modal instead of silently recovering,
+  // leaving the extension disconnected. The fix (client.ts `makeErrorHandler`)
+  // returns `CloseAction.Restart` with `handled: true` for up to 5 unexpected
+  // closes. This test SIGKILLs the real server process and asserts the client
+  // recovers on its own — WITHOUT any `restartServer` command.
+  test('unexpected SIGKILL of the server auto-recovers without manual restart', async function () {
+    if (process.platform === 'win32') {
+      // Relies on POSIX `ps`; the e2e host runs on macOS/Linux.
+      this.skip();
+    }
+    this.timeout(90_000);
+
+    // Resolve the exact staged server binary the extension launched. Matching
+    // this precise path (not a bare `sharplsp` basename) guarantees we only ever
+    // kill the test host's own server — never a `sharplsp` a developer happens
+    // to be running elsewhere on the machine.
+    const serverBinary = findSharpLspBinary();
+    assert.ok(serverBinary, 'Test host must resolve a staged sharplsp binary');
+
+    // Confirm the server is up and serving before we kill it.
+    const { uri } = await openCSharpFile(
+      tmpDir,
+      'sigkill-recovery.cs',
+      'class BeforeKill { void M() { } }',
+    );
+    await waitForDocumentSymbols(uri);
+
+    // Kill every running server process launched from that exact binary (NOT the
+    // sidecars, which run as `sharplsp-sidecar-*` / `dotnet`). This reproduces
+    // the exact #8 scenario: the server dies out from under the client.
+    const killed = killLspServerProcesses(serverBinary);
+    assert.ok(killed > 0, 'Expected at least one running sharplsp server process to kill');
+
+    // Do NOT invoke sharplsp.restartServer — recovery must come purely from the
+    // client's error handler. Poll generously: kill → connection close → the
+    // handler's CloseAction.Restart → respawn → re-sync the open document.
+    const symbols = await waitForDocumentSymbols(uri, 60_000);
+    assert.ok(
+      symbols.length > 0,
+      'Client must auto-restart the server and serve symbols again after an unexpected SIGKILL',
+    );
+  });
+
   // ── Double Restart ─────────────────────────────────────────
 
   test('restarting twice in succession does not crash', async function () {
@@ -266,6 +316,35 @@ suite('LSP Lifecycle', () => {
 });
 
 // ── Helpers ──────────────────────────────────────────────────────
+
+/**
+ * SIGKILL every running language-server process launched from `binaryPath` and
+ * return how many were killed. Matches the exact executable path so it targets
+ * the test host's own server only — the sidecars run as `sharplsp-sidecar-csharp`
+ * / `-fsharp` or `dotnet` (distinct executables) and are left alone, as is any
+ * `sharplsp` a developer is running from a different location. POSIX-only (`ps`).
+ */
+function killLspServerProcesses(binaryPath: string): number {
+  const listing = execSync('ps -ax -o pid=,command=', { encoding: 'utf8' });
+  let killed = 0;
+  for (const line of listing.split('\n')) {
+    const trimmed = line.trim();
+    const firstSpace = trimmed.indexOf(' ');
+    if (firstSpace < 0) continue;
+    const pid = Number.parseInt(trimmed.slice(0, firstSpace), 10);
+    const command = trimmed.slice(firstSpace + 1);
+    const executable = command.split(' ')[0] ?? '';
+    if (!Number.isNaN(pid) && executable === binaryPath) {
+      try {
+        process.kill(pid, 'SIGKILL');
+        killed += 1;
+      } catch {
+        // Process already exited between listing and kill — fine.
+      }
+    }
+  }
+  return killed;
+}
 
 function flattenNames(symbols: vscode.DocumentSymbol[]): string[] {
   const names: string[] = [];

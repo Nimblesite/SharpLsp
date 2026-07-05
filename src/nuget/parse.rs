@@ -1,9 +1,9 @@
 //! Shared, read-only parsing of `MSBuild` package items.
 //!
-//! Mutation of project/props files always goes through [`super::xml_edit`]
-//! (trivia-preserving). This module only *reads* ids/versions, mirroring the
-//! line-oriented approach the rest of the `nuget` module already uses — it is
-//! the single source of truth for "what `PackageReference` / `PackageVersion`
+//! Mutation of project/props files always goes through [`super::edit`] (the C#
+//! sidecar's `MSBuild` document model). This module only *reads* ids/versions —
+//! it is the single source of truth for "what `PackageReference` /
+//! `PackageVersion`
 //! entries does this file declare?", reused by the installed-listing,
 //! consolidation, and unused-package flows.
 

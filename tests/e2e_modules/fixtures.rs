@@ -268,7 +268,12 @@ pub fn create_fsharp_test_workspace() -> (tempfile::TempDir, String, String, Str
     )
     .unwrap();
 
-    let fs_source = r"namespace TestFSharp
+    // Top-level `module` (not `namespace`): F# forbids values directly in a
+    // namespace (FS0201), so `let area` / `let sumOfSquares` below must live in a
+    // module for the file to type-check. Without a clean compile FCS records no
+    // symbol uses inside those bindings, so `references`/`typeDefinition` on
+    // `Shape` see only its declaration — the root cause of GitHub #112.
+    let fs_source = r"module TestFSharp
 
 /// A simple calculator module.
 module Calculator =

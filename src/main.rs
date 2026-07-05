@@ -772,17 +772,23 @@ fn handle_custom_request(
         "sharplsp/nuget/versions" => nuget::handlers::handle_versions(req, runtime),
         "sharplsp/nuget/installed" => nuget::handlers::handle_installed(req, runtime),
         "sharplsp/nuget/install" => {
-            nuget::handlers::handle_install(req, runtime, connection.sender.clone())
+            nuget::handlers::handle_install(req, runtime, connection.sender.clone(), csharp_sidecar)
         }
-        "sharplsp/nuget/uninstall" => {
-            nuget::handlers::handle_uninstall(req, runtime, connection.sender.clone())
-        }
+        "sharplsp/nuget/uninstall" => nuget::handlers::handle_uninstall(
+            req,
+            runtime,
+            connection.sender.clone(),
+            csharp_sidecar,
+        ),
         "sharplsp/nuget/unused" => {
             nuget::handlers::handle_unused(req, runtime, csharp_sidecar, fsharp_sidecar)
         }
-        "sharplsp/nuget/consolidate" => {
-            nuget::handlers::handle_consolidate(req, runtime, connection.sender.clone())
-        }
+        "sharplsp/nuget/consolidate" => nuget::handlers::handle_consolidate(
+            req,
+            runtime,
+            connection.sender.clone(),
+            csharp_sidecar,
+        ),
         // Profiler
         "sharplsp/profiler/listProcesses" => profiler::handlers::handle_list_processes(req),
         "sharplsp/profiler/killProcess" => profiler::handlers::handle_kill_process(req),

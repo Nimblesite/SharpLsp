@@ -509,3 +509,39 @@ internal sealed class ReferenceUsageResult
     [Key(2)]
     public string PackagesRoot { get; set; } = "";
 }
+
+// ── Package Reference Editing (GitHub #4, [NUGET-XML-DOM]) ─────────
+
+// Add/remove a package entry in an MSBuild project file via the real MSBuild
+// document model (ProjectRootElement) instead of line-oriented text splicing.
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class PackageEditRequest
+{
+    /// <summary>Absolute path to the .csproj / .fsproj / .props file to edit.</summary>
+    [Key(0)]
+    public string FilePath { get; set; } = "";
+
+    /// <summary>The package id (the item's <c>Include</c>).</summary>
+    [Key(1)]
+    public string PackageId { get; set; } = "";
+
+    /// <summary>Version to write (ignored for removal / <c>referenceNoVersion</c>).</summary>
+    [Key(2)]
+    public string Version { get; set; } = "";
+
+    /// <summary><c>reference</c> | <c>referenceNoVersion</c> | <c>version</c>.</summary>
+    [Key(3)]
+    public string ElementKind { get; set; } = "";
+}
+
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class PackageEditResult
+{
+    /// <summary>Whether the file was actually changed on disk.</summary>
+    [Key(0)]
+    public bool Modified { get; set; }
+
+    /// <summary>Human-readable description of what happened.</summary>
+    [Key(1)]
+    public string Message { get; set; } = "";
+}

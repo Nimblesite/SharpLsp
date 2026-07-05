@@ -128,6 +128,22 @@ impl LspClient {
         resp
     }
 
+    /// Initialize with a workspace root so the C# sidecar (which owns `MSBuild`
+    /// package editing, [NUGET-XML-DOM]) is created. Required by install /
+    /// uninstall / consolidate, which delegate the XML mutation to the sidecar.
+    fn initialize_with_root(&mut self, dir: &Path) -> Value {
+        let resp = self.request(
+            "initialize",
+            json!({
+                "processId": null,
+                "capabilities": {},
+                "rootUri": format!("file://{}", dir.display()),
+            }),
+        );
+        self.notify("initialized", json!({}));
+        resp
+    }
+
     fn shutdown_and_exit(&mut self) {
         let resp = self.request("shutdown", json!(null));
         assert!(resp.get("error").is_none(), "shutdown failed: {resp}");
@@ -164,6 +180,20 @@ fn isolated_nuget_project() -> (TempDir, String) {
     std::fs::copy(&src, &dst).expect("copy fixture csproj into tempdir");
     let dst_str = dst.to_string_lossy().into_owned();
     (tmp, dst_str)
+}
+
+/// Whether a usable `dotnet` CLI is on PATH. Install / uninstall / consolidate
+/// now edit through the C# sidecar (`MSBuild` document model), which needs the
+/// .NET SDK; when it is absent those tests no-op instead of failing spuriously.
+fn require_dotnet() -> bool {
+    let ok = std::process::Command::new("dotnet")
+        .arg("--version")
+        .output()
+        .is_ok_and(|out| out.status.success());
+    if !ok {
+        eprintln!("skipping: dotnet CLI not available for sidecar-backed package edit");
+    }
+    ok
 }
 
 // ── sharplsp/nuget/search ──────────────────────────────────────────
@@ -353,12 +383,15 @@ fn nuget_installed_returns_packages_for_test_project() {
 
 #[test]
 fn nuget_install_and_uninstall_package() {
-    let mut client = LspClient::start();
-    client.initialize();
-
+    if !require_dotnet() {
+        return;
+    }
     // Use an isolated copy of the fixture so this mutating test does not
     // race against parallel read-only tests touching the shared csproj.
-    let (_tmp, project) = isolated_nuget_project();
+    let (tmp, project) = isolated_nuget_project();
+
+    let mut client = LspClient::start();
+    client.initialize_with_root(tmp.path());
 
     // Install a small package that isn't already in the fixture.
     let install_resp = client.request(
@@ -438,6 +471,9 @@ fn nuget_install_and_uninstall_package() {
 
 #[test]
 fn nuget_uninstall_removes_multiline_package_reference_children() {
+    if !require_dotnet() {
+        return;
+    }
     let workspace = TempDir::new().unwrap();
     let props = workspace.path().join("Directory.Build.props");
     std::fs::write(
@@ -456,7 +492,7 @@ fn nuget_uninstall_removes_multiline_package_reference_children() {
     .unwrap();
 
     let mut client = LspClient::start();
-    client.initialize();
+    client.initialize_with_root(workspace.path());
 
     let resp = client.request(
         "sharplsp/nuget/uninstall",
@@ -501,6 +537,186 @@ fn nuget_uninstall_removes_multiline_package_reference_children() {
     assert!(
         !text_after.contains("</PackageReference>"),
         "removed package closing element should be gone: {text_after}"
+    );
+
+    client.shutdown_and_exit();
+}
+
+// GitHub #4: the line-oriented XML editor cannot handle a `<PackageReference>`
+// whose attributes wrap across lines (valid MSBuild). Removing it must delete
+// only that element — but line-splicing sees an opening line with no `/>` and no
+// `</PackageReference>` on later lines, so it deletes everything to EOF (the
+// sibling package, the closing `</ItemGroup>`, and `</Project>`), producing
+// invalid XML. A real XML parser removes exactly the one element.
+#[test]
+fn nuget_uninstall_wrapped_attribute_reference_does_not_corrupt_file() {
+    if !require_dotnet() {
+        return;
+    }
+    let workspace = TempDir::new().unwrap();
+    let props = workspace.path().join("Directory.Build.props");
+    std::fs::write(
+        &props,
+        "<Project>\n  <ItemGroup>\n    <PackageReference Include=\"Outcome\" Version=\"1.0.0\" />\n    <PackageReference Include=\"Exhaustion\"\n                      Version=\"1.0.0\"\n                      PrivateAssets=\"all\" />\n    <PackageReference Include=\"Keeper\" Version=\"2.0.0\" />\n  </ItemGroup>\n</Project>\n",
+    )
+    .unwrap();
+
+    let mut client = LspClient::start();
+    client.initialize_with_root(workspace.path());
+
+    let resp = client.request(
+        "sharplsp/nuget/uninstall",
+        json!({
+            "target": {
+                "id": props.to_str().unwrap(),
+                "kind": "buildProps",
+                "displayName": "Directory.Build.props",
+                "path": props.to_str().unwrap(),
+            },
+            "packageId": "Exhaustion",
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_none(),
+        "uninstall should succeed: {resp}"
+    );
+
+    let text_after = std::fs::read_to_string(&props).unwrap();
+
+    // The removed package (and only it) must be gone.
+    assert!(
+        !text_after.contains("Exhaustion"),
+        "removed package must be gone: {text_after}"
+    );
+    assert!(
+        !text_after.contains("PrivateAssets"),
+        "removed package's wrapped attribute line must be gone: {text_after}"
+    );
+
+    // Everything else must survive — this is what line-splicing destroys.
+    assert!(
+        text_after.contains("Include=\"Outcome\" Version=\"1.0.0\""),
+        "preceding sibling `Outcome` must remain: {text_after}"
+    );
+    assert!(
+        text_after.contains("Include=\"Keeper\" Version=\"2.0.0\""),
+        "following sibling `Keeper` must NOT be deleted: {text_after}"
+    );
+    assert!(
+        text_after.contains("</ItemGroup>"),
+        "the `</ItemGroup>` close tag must survive: {text_after}"
+    );
+    assert!(
+        text_after.contains("</Project>"),
+        "the `</Project>` close tag must survive — the file must stay valid XML: {text_after}"
+    );
+
+    client.shutdown_and_exit();
+}
+
+// GitHub #4: removing a package from a *conditional* `<ItemGroup Condition=...>`
+// must remove only that entry and leave the condition, siblings, and structure
+// intact.
+#[test]
+fn nuget_uninstall_from_conditional_item_group_preserves_condition() {
+    if !require_dotnet() {
+        return;
+    }
+    let workspace = TempDir::new().unwrap();
+    let props = workspace.path().join("Directory.Build.props");
+    std::fs::write(
+        &props,
+        "<Project>\n  <ItemGroup Condition=\"'$(TargetFramework)' == 'net9.0'\">\n    <PackageReference Include=\"Keep\" Version=\"1.0.0\" />\n    <PackageReference Include=\"Drop\" Version=\"2.0.0\" />\n  </ItemGroup>\n</Project>\n",
+    )
+    .unwrap();
+
+    let mut client = LspClient::start();
+    client.initialize_with_root(workspace.path());
+    let resp = client.request(
+        "sharplsp/nuget/uninstall",
+        json!({
+            "target": {
+                "id": props.to_str().unwrap(),
+                "kind": "buildProps",
+                "displayName": "Directory.Build.props",
+                "path": props.to_str().unwrap(),
+            },
+            "packageId": "Drop",
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "uninstall should succeed: {resp}"
+    );
+
+    let text_after = std::fs::read_to_string(&props).unwrap();
+    assert!(
+        !text_after.contains("Drop"),
+        "removed package gone: {text_after}"
+    );
+    assert!(
+        text_after.contains("Include=\"Keep\" Version=\"1.0.0\""),
+        "sibling in the conditional group must remain: {text_after}"
+    );
+    assert!(
+        text_after.contains("Condition=\"'$(TargetFramework)' == 'net9.0'\""),
+        "the ItemGroup condition must be preserved verbatim: {text_after}"
+    );
+    assert!(
+        text_after.contains("</Project>"),
+        "file must stay valid XML: {text_after}"
+    );
+
+    client.shutdown_and_exit();
+}
+
+// GitHub #4: comments inside an `<ItemGroup>` must survive a package removal —
+// line-splicing that removed "the element's line" could clip an adjacent comment.
+#[test]
+fn nuget_uninstall_preserves_comments_in_item_group() {
+    if !require_dotnet() {
+        return;
+    }
+    let workspace = TempDir::new().unwrap();
+    let props = workspace.path().join("Directory.Build.props");
+    std::fs::write(
+        &props,
+        "<Project>\n  <ItemGroup>\n    <!-- logging stack -->\n    <PackageReference Include=\"Serilog\" Version=\"3.0.0\" />\n    <PackageReference Include=\"Drop\" Version=\"2.0.0\" />\n  </ItemGroup>\n</Project>\n",
+    )
+    .unwrap();
+
+    let mut client = LspClient::start();
+    client.initialize_with_root(workspace.path());
+    let resp = client.request(
+        "sharplsp/nuget/uninstall",
+        json!({
+            "target": {
+                "id": props.to_str().unwrap(),
+                "kind": "buildProps",
+                "displayName": "Directory.Build.props",
+                "path": props.to_str().unwrap(),
+            },
+            "packageId": "Drop",
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "uninstall should succeed: {resp}"
+    );
+
+    let text_after = std::fs::read_to_string(&props).unwrap();
+    assert!(
+        !text_after.contains("Drop"),
+        "removed package gone: {text_after}"
+    );
+    assert!(
+        text_after.contains("<!-- logging stack -->"),
+        "the comment inside the ItemGroup must be preserved: {text_after}"
+    );
+    assert!(
+        text_after.contains("Include=\"Serilog\" Version=\"3.0.0\""),
+        "the commented sibling must remain: {text_after}"
     );
 
     client.shutdown_and_exit();
@@ -817,11 +1033,14 @@ fn nuget_installed_on_build_props_target_scrapes_xml() {
 
 #[test]
 fn nuget_install_cpm_writes_project_and_props() {
+    if !require_dotnet() {
+        return;
+    }
     let workspace = make_cpm_workspace();
     let csproj = workspace.path().join("src/App/App.csproj");
     let props = workspace.path().join("Directory.Packages.props");
     let mut client = LspClient::start();
-    client.initialize();
+    client.initialize_with_root(workspace.path());
 
     // Install via a full `target` object (kind=project). Because a
     // Directory.Packages.props exists upwards, the handler should:
@@ -903,10 +1122,13 @@ fn nuget_install_cpm_writes_project_and_props() {
 
 #[test]
 fn nuget_install_on_build_props_target_edits_props_file() {
+    if !require_dotnet() {
+        return;
+    }
     let workspace = make_cpm_workspace();
     let build_props = workspace.path().join("Directory.Build.props");
     let mut client = LspClient::start();
-    client.initialize();
+    client.initialize_with_root(workspace.path());
 
     // Install directly into a Directory.Build.props (kind=buildProps).
     let resp = client.request(
@@ -1004,13 +1226,16 @@ fn nuget_install_non_cpm_inserts_version_into_versionless_reference() {
     // Workspace WITHOUT Directory.Packages.props — exercises the
     // `Reference` element path where an existing `<PackageReference
     // Include="X"/>` must have a Version attribute inserted.
+    if !require_dotnet() {
+        return;
+    }
     let td = TempDir::new().unwrap();
     let root = td.path();
     write_file(root, "App.csproj", BARE_CSPROJ);
     let csproj = root.join("App.csproj");
 
     let mut client = LspClient::start();
-    client.initialize();
+    client.initialize_with_root(root);
 
     // Newtonsoft.Json already in BARE_CSPROJ without a Version — install
     // should replace the element by inserting the Version attribute.
@@ -1044,8 +1269,11 @@ fn nuget_install_non_cpm_inserts_version_into_versionless_reference() {
 
 #[test]
 fn nuget_install_cpm_strips_version_from_existing_reference() {
-    // Start with a versioned reference then install via the CPM path —
-    // exercises `strip_version_attr` in xml_edit.
+    // Start with a versioned reference then install via the CPM path — the
+    // existing reference must lose its Version (it moves to the props file).
+    if !require_dotnet() {
+        return;
+    }
     let td = TempDir::new().unwrap();
     let root = td.path();
     write_file(
@@ -1065,7 +1293,7 @@ fn nuget_install_cpm_strips_version_from_existing_reference() {
     let csproj = root.join("App.csproj");
 
     let mut client = LspClient::start();
-    client.initialize();
+    client.initialize_with_root(root);
 
     let resp = client.request(
         "sharplsp/nuget/install",
@@ -1096,7 +1324,10 @@ fn nuget_install_cpm_strips_version_from_existing_reference() {
 
 #[test]
 fn nuget_install_creates_item_group_when_none_exists() {
-    // csproj with no <ItemGroup> at all — exercises `create_item_group_with`.
+    // csproj with no <ItemGroup> at all — the editor must create one.
+    if !require_dotnet() {
+        return;
+    }
     let td = TempDir::new().unwrap();
     let root = td.path();
     write_file(
@@ -1112,7 +1343,7 @@ fn nuget_install_creates_item_group_when_none_exists() {
     let csproj = root.join("Empty.csproj");
 
     let mut client = LspClient::start();
-    client.initialize();
+    client.initialize_with_root(root);
 
     let resp = client.request(
         "sharplsp/nuget/install",
@@ -1344,10 +1575,13 @@ fn nuget_consolidate_dry_run_previews_shared_without_touching_files() {
 
 #[test]
 fn nuget_consolidate_apply_hoists_shared_into_build_props() {
+    if !require_dotnet() {
+        return;
+    }
     let (workspace, sln, core, api) = make_shared_package_solution();
 
     let mut client = LspClient::start();
-    client.initialize();
+    client.initialize_with_root(workspace.path());
 
     let resp = client.request(
         "sharplsp/nuget/consolidate",
@@ -1509,9 +1743,12 @@ fn nuget_consolidate_no_shared_packages_moves_nothing() {
 #[test]
 fn nuget_consolidate_dry_run_defaults_off_when_param_omitted() {
     // `dryRun` is `#[serde(default)]`; omitting it must default to false (apply).
+    if !require_dotnet() {
+        return;
+    }
     let (workspace, sln, _core, _api) = make_shared_package_solution();
     let mut client = LspClient::start();
-    client.initialize();
+    client.initialize_with_root(workspace.path());
 
     let resp = client.request("sharplsp/nuget/consolidate", json!({ "solutionPath": sln }));
 

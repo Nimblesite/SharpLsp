@@ -411,28 +411,28 @@ fn test_full_stack_fsharp_navigation() {
         "definition must point into Library.fs: {loc}"
     );
 
-    // typeDefinition: the `shape` value has type `Shape` → `type Shape =`.
-    // KNOWN GAP (GitHub #112): the F# sidecar currently returns null here, so we
-    // assert the request is well-formed and only check the target line when a
-    // result is present. Tightening this to require a non-null result is owned by
-    // the F# sidecar lane.
+    // typeDefinition: the `shape` value has type `Shape` → `type Shape =`
+    // (line 11). Fixed with GitHub #112: the fixture is now a valid top-level
+    // `module` (was an invalid `namespace` with values), so `area` type-checks and
+    // FCS resolves `shape`'s type to the `Shape` entity.
     let (sv_line, sv_char) = fs_pos::SHAPE_VALUE;
     let type_def = type_definition(&mut client, &file_uri, sv_line, sv_char);
     assert_nav_ok(&type_def);
-    if !type_def["result"].is_null() {
-        let tloc = first_location(&type_def["result"]);
-        assert_location_line(
-            &tloc,
-            u64::from(decl_line),
-            "typeDefinition of `shape` must resolve to `type Shape =`",
-        );
-    }
+    assert!(
+        !type_def["result"].is_null(),
+        "typeDefinition of `shape` must resolve to `type Shape =`, got null (#112)"
+    );
+    let tloc = first_location(&type_def["result"]);
+    assert_location_line(
+        &tloc,
+        u64::from(decl_line),
+        "typeDefinition of `shape` must resolve to `type Shape =`",
+    );
 
-    // references: the request resolves to well-formed, in-project locations for
-    // `Shape`. KNOWN GAP (GitHub #112): use-site completeness — the `: Shape`
-    // annotation in `area` is currently NOT returned (only the declaration). That
-    // stronger assertion is tracked on #112 and owned by the F# sidecar lane; here
-    // we lock in the behaviour that works so this stays a green regression test.
+    // references: well-formed, in-project locations for `Shape`. Use-site
+    // completeness (the `: Shape` annotation in `area`) is asserted in the
+    // dedicated `test_full_stack_fsharp_references_type_use_sites` (#112); here we
+    // keep the shape/location invariants for the whole navigation surface.
     let refs = poll_references_until_ready(
         &mut client,
         &file_uri,
@@ -464,6 +464,56 @@ fn test_full_stack_fsharp_navigation() {
     assert!(
         hl["result"].is_array(),
         "documentHighlight must return an array: {hl}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// ── F# References Use-Site Completeness (Full-Stack) ────────────
+// Regression for GitHub #112: `textDocument/references` on a TYPE must return
+// every use-site (FSAC/Ionide parity), not just the declaration. `references`
+// on the `Shape` type (declared `type Shape =` on line 11) must include the
+// `: Shape` annotation use in `area` (line 16). Before the fix the F# sidecar
+// returned only the declaration (1 location) for entity/type symbols even though
+// rename — which shares `getProjectUsages` — returned every use for values.
+#[test]
+fn test_full_stack_fsharp_references_type_use_sites() {
+    let (_tmp, file_uri, mut client) = ready_fsharp_client();
+
+    let refs = poll_references_until_ready(
+        &mut client,
+        &file_uri,
+        fs_pos::SHAPE_TYPE.0,
+        fs_pos::SHAPE_TYPE.1,
+        Duration::from_mins(1),
+    );
+    let ref_arr = refs["result"].as_array().unwrap();
+
+    // Every returned location must be well-formed and land in Library.fs.
+    for loc in ref_arr {
+        assert_location_shape(loc);
+        assert!(
+            loc["uri"].as_str().unwrap().ends_with("Library.fs"),
+            "every `Shape` reference must point into Library.fs: {loc}"
+        );
+    }
+
+    // FSAC parity: at least the declaration (line 11) + the `: Shape` annotation
+    // use in `area` (line 16) must be present.
+    assert!(
+        ref_arr.len() >= 2,
+        "references on `Shape` must include the `: Shape` annotation use in \
+         `area` (FSAC parity), got {}: {refs}",
+        ref_arr.len()
+    );
+    let (annotation_line, _) = fs_pos::SHAPE_ANNOTATION_USE;
+    assert!(
+        ref_arr.iter().any(|loc| {
+            loc["range"]["start"]["line"].as_u64() == Some(u64::from(annotation_line))
+        }),
+        "references on `Shape` must include the `: Shape` annotation on line {annotation_line} \
+         (the use-site in `area`), got: {refs}"
     );
 
     client.shutdown_and_exit();
@@ -815,14 +865,9 @@ fn test_full_stack_fsharp_rename() {
 }
 
 // NOTE: F# references use-site completeness on a TYPE (the `: Shape` annotation
-// in `area`) is a confirmed-open FSAC-parity gap — re-verified via e2e on
-// 2026-06-22: references on `Shape` still returns only the declaration. Tracked
-// in GitHub #112 (F# sidecar lane owns the fix). The drop-in assertion that
-// flips green when fixed:
-//
-//     assert!(ref_arr.len() >= 2, "references on `Shape` must include the
-//             `: Shape` annotation use in `area` (FSAC parity)");
-//
-// It is intentionally NOT a live test here so the shared suite stays green for
-// the concurrent agents; `test_full_stack_fsharp_navigation` guards the working
-// subset and #112 is the forcing function.
+// in `area`) is covered live by `test_full_stack_fsharp_references_type_use_sites`
+// and resolved with GitHub #112. Root cause was the shared fixture: `area` /
+// `sumOfSquares` were `let` bindings placed directly in a `namespace` (illegal F#,
+// FS0201), so they never type-checked and FCS recorded no `Shape` use-sites inside
+// them. Making the fixture a valid top-level `module` restores full FSAC parity for
+// references and typeDefinition.
