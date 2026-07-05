@@ -113,12 +113,12 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: |
             9.0.x
             10.0.300
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: "~/.nuget/packages"
           key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj',
@@ -149,7 +149,11 @@ jobs:
             -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
           ls -la /tmp/nupkg-smoke/*.nupkg
       - name: Format check (VS Code)
-        run: cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'
+        # Pinned to an exact version: `npx prettier@3` floats to the latest 3.x,
+        # so a new patch release can reformat previously-clean files and fail
+        # this gate non-deterministically (local prettier drifts from CI's).
+        # Bump this deliberately, in lockstep with a repo-wide `--write`.
+        run: cd editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
       - name: Lint (VS Code)
         run: make _lint-vsix
     needs:
@@ -175,7 +179,7 @@ jobs:
       - uses: taiki-e/install-action@9e1e5806d4a4822de933115878265be9aaa786d9 # v2
         with:
           tool: nextest
-      - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: |
             9.0.x
@@ -254,7 +258,7 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: |
             9.0.x

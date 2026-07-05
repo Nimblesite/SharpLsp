@@ -10,14 +10,15 @@
 #   make clean                        remove build artifacts
 #   make setup                        install toolchain dependencies
 #   make screenshots                  capture website screenshots from real VS Code
-#   make package-vsix-linux-x64 VERSION=x.y.z       build + package VSIX for linux-x64
-#   make package-vsix-linux-arm64 VERSION=x.y.z     build + package VSIX for linux-arm64
-#   make package-vsix-darwin-arm64 VERSION=x.y.z    build + package VSIX for darwin-arm64
-#   make package-vsix-darwin-x64 VERSION=x.y.z      build + package VSIX for darwin-x64
-#   make package-vsix-win32-x64 VERSION=x.y.z       build + package VSIX for win32-x64
-#   make package-vsix-win32-arm64 VERSION=x.y.z     build + package VSIX for win32-arm64
+#   make package-vsix-linux-x64 [VERSION=x.y.z]     build + package VSIX for linux-x64
+#   make package-vsix-linux-arm64 [VERSION=x.y.z]   build + package VSIX for linux-arm64
+#   make package-vsix-darwin-arm64 [VERSION=x.y.z]  build + package VSIX for darwin-arm64
+#   make package-vsix-darwin-x64 [VERSION=x.y.z]    build + package VSIX for darwin-x64
+#   make package-vsix-win32-x64 [VERSION=x.y.z]     build + package VSIX for win32-x64
+#   make package-vsix-win32-arm64 [VERSION=x.y.z]   build + package VSIX for win32-arm64
 #
-#   VERSION is required for all package-vsix-* targets.
+#   VERSION is optional for all package-vsix-* targets; it defaults to the
+#   0.0.0 placeholder when omitted.
 #
 #   make print-publish-commands              download VSIXs from latest release and print vsce publish commands
 
@@ -289,13 +290,11 @@ screenshots: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
 	exit $$STATUS
 
 # ── Version stamping ─────────────────────────────────────────────
-# Rewrites the version field in all manifest files before any build.
-# VERSION is required — fails immediately if not set.
+# Rewrites the version field in all manifest files before a package build.
+# Invoked only by the package-vsix-* targets, which supply VERSION (defaulting
+# to the 0.0.0 placeholder when the caller omits it — see PACKAGE_VSIX_TARGETS).
 
 _stamp-version:
-ifndef VERSION
-	$(error VERSION is required — e.g. make package-vsix-darwin-arm64 VERSION=0.3.0)
-endif
 	@echo "==> Stamping version $(VERSION) into all manifests..."
 	sed -i.bak 's/^version = "[^"]*"/version = "$(VERSION)"/' Cargo.toml
 	sed -i.bak 's/^version = "[^"]*"/version = "$(VERSION)"/' $(ZED_DIR)/Cargo.toml
@@ -337,10 +336,12 @@ endif
 # a platform-specific VSIX into dist/.
 #
 # Usage:
+#   make package-vsix-darwin-arm64                  (VERSION defaults to 0.0.0)
 #   make package-vsix-darwin-arm64 VERSION=0.3.0
 #   make package-vsix-darwin-arm64 RUST_TARGET=aarch64-apple-darwin VERSION=0.3.0
 #
-# VERSION is required and is stamped into all manifests before building.
+# VERSION is optional (defaults to the 0.0.0 placeholder) and is stamped into
+# all manifests before building.
 # RUST_TARGET defaults to the canonical triple for each platform.
 
 package-vsix-linux-x64:   RUST_TARGET ?= x86_64-unknown-linux-gnu
@@ -350,9 +351,22 @@ package-vsix-darwin-arm64: RUST_TARGET ?= aarch64-apple-darwin
 package-vsix-win32-x64:    RUST_TARGET ?= x86_64-pc-windows-msvc
 package-vsix-win32-arm64:  RUST_TARGET ?= aarch64-pc-windows-msvc
 
-package-vsix-linux-x64 package-vsix-linux-arm64 \
-package-vsix-darwin-arm64 package-vsix-darwin-x64 \
-package-vsix-win32-x64 package-vsix-win32-arm64: _stamp-version
+PACKAGE_VSIX_TARGETS = \
+	package-vsix-linux-x64 package-vsix-linux-arm64 \
+	package-vsix-darwin-arm64 package-vsix-darwin-x64 \
+	package-vsix-win32-x64 package-vsix-win32-arm64
+
+# VERSION is optional and scoped to packaging ONLY. As a target-specific
+# variable it also reaches the _stamp-version prerequisite and the recursive
+# _build-dotnet / _package-vsix sub-makes, so the whole package build shares one
+# version. When the caller omits it, the 0.0.0 placeholder is stamped (valid
+# SemVer, no '-', so it never trips the --pre-release path). It is deliberately
+# NOT a global default: standalone build/test invocations leave VERSION empty so
+# each project keeps its committed baseline version and the sidecar `--version`
+# contract (test-dotnet) holds. A release passes VERSION=x.y.z, overriding this.
+$(PACKAGE_VSIX_TARGETS): VERSION ?= 0.0.0
+
+$(PACKAGE_VSIX_TARGETS): _stamp-version
 	$(eval VSIX_PLAT := $(subst package-vsix-,,$@))
 	$(eval EXE       := $(if $(filter win32-%,$(VSIX_PLAT)),.exe,))
 	@echo "==> Building sharplsp for $(RUST_TARGET)..."
