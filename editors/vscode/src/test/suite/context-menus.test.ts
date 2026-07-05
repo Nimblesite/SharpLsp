@@ -981,7 +981,8 @@ suite('Context Menu — Reveal in File Explorer', () => {
 
   test('class node has symbolUri pointing to the source file', () => {
     const node = findByLabel(provider.getChildren(), 'RevealClass') as
-      (TreeNode & { symbolUri?: string }) | undefined;
+      | (TreeNode & { symbolUri?: string })
+      | undefined;
     assert.ok(node, 'RevealClass node must be in the tree');
     assert.ok(
       node.symbolUri !== undefined,

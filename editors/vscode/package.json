@@ -2,7 +2,7 @@
   "name": "sharplsp",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "publisher": "nimblesite",
   "license": "MIT",
   "icon": "icons/sharplsp.png",
