@@ -10,14 +10,15 @@
 #   make clean                        remove build artifacts
 #   make setup                        install toolchain dependencies
 #   make screenshots                  capture website screenshots from real VS Code
-#   make package-vsix-linux-x64 VERSION=x.y.z       build + package VSIX for linux-x64
-#   make package-vsix-linux-arm64 VERSION=x.y.z     build + package VSIX for linux-arm64
-#   make package-vsix-darwin-arm64 VERSION=x.y.z    build + package VSIX for darwin-arm64
-#   make package-vsix-darwin-x64 VERSION=x.y.z      build + package VSIX for darwin-x64
-#   make package-vsix-win32-x64 VERSION=x.y.z       build + package VSIX for win32-x64
-#   make package-vsix-win32-arm64 VERSION=x.y.z     build + package VSIX for win32-arm64
+#   make package-vsix-linux-x64 [VERSION=x.y.z]     build + package VSIX for linux-x64
+#   make package-vsix-linux-arm64 [VERSION=x.y.z]   build + package VSIX for linux-arm64
+#   make package-vsix-darwin-arm64 [VERSION=x.y.z]  build + package VSIX for darwin-arm64
+#   make package-vsix-darwin-x64 [VERSION=x.y.z]    build + package VSIX for darwin-x64
+#   make package-vsix-win32-x64 [VERSION=x.y.z]     build + package VSIX for win32-x64
+#   make package-vsix-win32-arm64 [VERSION=x.y.z]   build + package VSIX for win32-arm64
 #
-#   VERSION is required for all package-vsix-* targets.
+#   VERSION is optional for all package-vsix-* targets; it defaults to the
+#   0.0.0 placeholder when omitted.
 #
 #   make print-publish-commands              download VSIXs from latest release and print vsce publish commands
 
@@ -50,6 +51,13 @@ PROFILE           ?= release
 CARGO_FLAG         = $(if $(filter release,$(PROFILE)),--release,)
 DOTNET_CFG         = $(if $(filter release,$(PROFILE)),Release,Debug)
 RUST_TEST_THREADS ?= 1
+
+# VERSION is stamped into every manifest before a package build. It is optional:
+# when unset it falls back to a 0.0.0 placeholder so local and CI dry-run
+# packaging can produce a VSIX without a release number. Release builds override
+# it explicitly (e.g. VERSION=0.3.0). 0.0.0 is valid SemVer and carries no '-',
+# so it never trips the --pre-release path in _package-vsix.
+VERSION           ?= 0.0.0
 
 VSCODE_DIR  = editors/vscode
 ZED_DIR     = editors/zed
@@ -290,12 +298,9 @@ screenshots: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
 
 # ── Version stamping ─────────────────────────────────────────────
 # Rewrites the version field in all manifest files before any build.
-# VERSION is required — fails immediately if not set.
+# VERSION is optional — defaults to the 0.0.0 placeholder (see top of file).
 
 _stamp-version:
-ifndef VERSION
-	$(error VERSION is required — e.g. make package-vsix-darwin-arm64 VERSION=0.3.0)
-endif
 	@echo "==> Stamping version $(VERSION) into all manifests..."
 	sed -i.bak 's/^version = "[^"]*"/version = "$(VERSION)"/' Cargo.toml
 	sed -i.bak 's/^version = "[^"]*"/version = "$(VERSION)"/' $(ZED_DIR)/Cargo.toml
@@ -337,10 +342,12 @@ endif
 # a platform-specific VSIX into dist/.
 #
 # Usage:
+#   make package-vsix-darwin-arm64                  (VERSION defaults to 0.0.0)
 #   make package-vsix-darwin-arm64 VERSION=0.3.0
 #   make package-vsix-darwin-arm64 RUST_TARGET=aarch64-apple-darwin VERSION=0.3.0
 #
-# VERSION is required and is stamped into all manifests before building.
+# VERSION is optional (defaults to the 0.0.0 placeholder) and is stamped into
+# all manifests before building.
 # RUST_TARGET defaults to the canonical triple for each platform.
 
 package-vsix-linux-x64:   RUST_TARGET ?= x86_64-unknown-linux-gnu
