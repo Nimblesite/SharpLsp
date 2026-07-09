@@ -17,5 +17,9 @@
   },
   "devDependencies": {
     "luxon": "^3.7.2"
+  },
+  "overrides": {
+    "js-yaml@^3.0.0": "3.15.0",
+    "js-yaml@^4.0.0": "4.2.0"
   }
 }

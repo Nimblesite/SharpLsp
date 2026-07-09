@@ -92,3 +92,9 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+    # dtolnay/rust-toolchain publishes no semver releases (only rolling
+    # stable/nightly/per-version branches), so Dependabot's pinned-ref
+    # resolver throws and fails the ENTIRE github-actions group update
+    # (run 28865233155). Bump this action's SHA manually instead.
+    ignore:
+      - dependency-name: "dtolnay/rust-toolchain"
