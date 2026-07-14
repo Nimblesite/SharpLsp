@@ -18,7 +18,7 @@ shipwright = "0.10"
 shipwright-manifest = "0.10"
 
 # LSP
-lsp-server = "0.8"
+lsp-server = "0.9"
 lsp-types = "0.97"
 
 # Tree-sitter
