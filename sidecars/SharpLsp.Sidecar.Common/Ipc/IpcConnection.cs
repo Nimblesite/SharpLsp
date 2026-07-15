@@ -17,22 +17,37 @@ public sealed class IpcListener : IAsyncDisposable
     private readonly NamedPipeServerStream? _pipe;
     private readonly Socket? _socket;
 
-    private IpcListener(NamedPipeServerStream pipe)
+    private IpcListener(NamedPipeServerStream pipe, string boundEndpoint)
     {
         _pipe = pipe;
+        BoundEndpoint = boundEndpoint;
     }
 
-    private IpcListener(Socket socket)
+    private IpcListener(Socket socket, string boundEndpoint)
     {
         _socket = socket;
+        BoundEndpoint = boundEndpoint;
     }
+
+    /// <summary>
+    /// The endpoint the listener actually bound. For an overlong Unix path this
+    /// differs from the requested endpoint because it is relocated to a hashed
+    /// temp path; READY MUST advertise this value, since the Rust host connects
+    /// to the echoed path verbatim with no shortening counterpart (GitHub #154,
+    /// [DIST-CI-WIN-TRANSPORT]).
+    /// </summary>
+    public string BoundEndpoint { get; }
 
     /// <summary>Create a listener for the endpoint's transport.</summary>
     public static IpcListener Create(string endpoint)
     {
-        return IpcConnection.IsPipeEndpoint(endpoint)
-            ? new IpcListener(CreateNamedPipe(endpoint))
-            : new IpcListener(CreateUnixSocket(endpoint));
+        if (IpcConnection.IsPipeEndpoint(endpoint))
+        {
+            return new IpcListener(CreateNamedPipe(endpoint), endpoint);
+        }
+
+        var boundPath = IpcConnection.ShortenIfNeeded(endpoint);
+        return new IpcListener(CreateUnixSocket(boundPath), boundPath);
     }
 
     /// <summary>Accept one sidecar IPC connection as a stream.</summary>
@@ -79,9 +94,8 @@ public sealed class IpcListener : IAsyncDisposable
         "CA2000:Dispose objects before losing scope",
         Justification = "Socket ownership transfers to IpcListener"
     )]
-    private static Socket CreateUnixSocket(string endpoint)
+    private static Socket CreateUnixSocket(string effectivePath)
     {
-        var effectivePath = IpcConnection.ShortenIfNeeded(endpoint);
         if (File.Exists(effectivePath))
         {
             File.Delete(effectivePath);
@@ -155,7 +169,11 @@ public static class IpcConnection
         }
         catch (Exception ex)
         {
-            return ListenerResult.Failure(ex.Message);
+            // Preserve the exception type, not just its message: the type (e.g.
+            // SocketException vs UnauthorizedAccessException) is what tells a
+            // pipe-name squat apart from an ACL denial when diagnosing a
+            // pre-READY exit. Implements [DIST-FAILURE-UX] (GitHub #150).
+            return ListenerResult.Failure($"{ex.GetType().Name}: {ex.Message}");
         }
     }
 

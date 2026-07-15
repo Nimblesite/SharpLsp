@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<?xml version="1.0" encoding="utf-8"?><Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -25,7 +25,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="FSharp.Core" Version="10.1.301" />
+    <PackageReference Include="FSharp.Core" Version="10.1.204" />
     <PackageReference Include="MessagePack" Version="3.1.8" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.0" />
     <PackageReference Include="xunit" Version="2.9.3" />

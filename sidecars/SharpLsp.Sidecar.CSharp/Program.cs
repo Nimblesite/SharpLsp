@@ -41,9 +41,18 @@ static async Task RunSidecarAsync(string[] args)
     {
         var socketPath = args[0];
         var sidecar = new CSharpSidecar();
+        bool startupFailed;
         await using (sidecar.ConfigureAwait(false))
         {
             await sidecar.RunAsync(socketPath).ConfigureAwait(false);
+            startupFailed = sidecar.StartupFailed;
+        }
+
+        if (startupFailed)
+        {
+            // The listener never bound; exit non-zero so the failure is not an
+            // opaque clean exit before READY. [DIST-FAILURE-UX] (GitHub #150)
+            Environment.Exit(1);
         }
     }
     catch (Exception ex)

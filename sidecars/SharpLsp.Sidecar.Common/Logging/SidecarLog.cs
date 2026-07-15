@@ -21,6 +21,15 @@ public static class SidecarLog
     private static int _initialized;
 
     /// <summary>
+    /// Directory holding the rolling per-sidecar log files. Surfaced so a fatal
+    /// startup failure can point the operator (and the Rust host's inherited
+    /// stderr) at the logs instead of failing opaquely. Implements
+    /// [DIST-FAILURE-UX] (GitHub #150).
+    /// </summary>
+    public static string LogDirectory { get; } =
+        Path.Combine(Path.GetTempPath(), "sharplsp-logs");
+
+    /// <summary>
     /// Configures the global <see cref="Log.Logger" /> exactly once. Subsequent
     /// calls are no-ops, so it is safe to call from both process startup and the
     /// host constructor.
@@ -33,13 +42,12 @@ public static class SidecarLog
             return;
         }
 
-        var logDirectory = Path.Combine(Path.GetTempPath(), "sharplsp-logs");
-        _ = Directory.CreateDirectory(logDirectory);
+        _ = Directory.CreateDirectory(LogDirectory);
 
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.File(
-                Path.Combine(logDirectory, $"sidecar-{name}.log"),
+                Path.Combine(LogDirectory, $"sidecar-{name}.log"),
                 rollingInterval: RollingInterval.Day,
                 shared: true,
                 outputTemplate: OutputTemplate,

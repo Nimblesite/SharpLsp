@@ -112,11 +112,13 @@ public sealed class SidecarDependencyTests
         return XDocument
             .Load(projectPath)
             .Descendants("PackageReference")
-            .Select(reference => (
-                Package: reference.Attribute("Include")?.Value,
-                Version: reference.Attribute("Version")?.Value
-                    ?? reference.Element("Version")?.Value
-            ))
+            .Select(reference =>
+                (
+                    Package: reference.Attribute("Include")?.Value,
+                    Version: reference.Attribute("Version")?.Value
+                        ?? reference.Element("Version")?.Value
+                )
+            )
             .Where(pin => pin.Package is not null && pin.Version is not null)
             .ToDictionary(
                 pin => pin.Package!,
