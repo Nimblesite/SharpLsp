@@ -91,6 +91,35 @@ public sealed class SidecarHostEndToEndTests
     }
 
     [Fact]
+    public async Task Host_serves_ping_over_a_pipe_endpoint()
+    {
+        // GitHub #110 / [DIST-CI-WIN-TRANSPORT]: transport selection is a
+        // runtime decision, so the full host lifecycle — listen, READY, accept,
+        // serve — must work over a named-pipe endpoint on every platform. This
+        // also drives the named-pipe client arm of IpcConnection.ConnectAsync.
+        var endpoint = $@"\\.\pipe\sharplsp-t-{Guid.NewGuid().ToString("N")[..8]}";
+        var host = new TestHost();
+        await using (host.ConfigureAwait(false))
+        {
+            var runTask = host.RunAsync(endpoint);
+
+            var stream = await ConnectWithRetryAsync(endpoint).ConfigureAwait(true);
+            var client = new FramedTransport(stream);
+            await using (client.ConfigureAwait(false))
+            {
+                var pong = await RoundTripAsync(client, Request(1, "ping")).ConfigureAwait(true);
+                Assert.Null(pong.Error);
+                Assert.Equal("pong", MessagePackSerializer.Deserialize<string>(pong.Payload));
+
+                await client
+                    .WriteFrameAsync(MessagePackSerializer.Serialize(Request(2, "shutdown")))
+                    .ConfigureAwait(true);
+                await runTask.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task Host_loop_ends_when_client_disconnects()
     {
         // A client that closes its connection without sending shutdown drives the

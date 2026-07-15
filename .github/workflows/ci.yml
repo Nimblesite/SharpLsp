@@ -241,6 +241,27 @@ jobs:
           name: coverage-dotnet
           path: coverage-thresholds.json
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+  test-dotnet-windows:
+    name: Test .NET Transport (Windows)
+    needs:
+      - detect-changes
+      - lint
+    # Implements [DIST-CI-WIN-TRANSPORT]: the named-pipe arm of the sidecar IPC
+    # transport only executes on Windows. An ubuntu-only matrix never runs it,
+    # which is how GitHub #110 (sidecars exit before READY on Windows) shipped.
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.300
+      - name: Test sidecar IPC transport on Windows
+        run: dotnet test
+          sidecars/SharpLsp.Sidecar.Common.Tests/SharpLsp.Sidecar.Common.Tests.csproj
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   test-vsix:
     name: Test VS Code
     needs:
