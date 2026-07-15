@@ -1,8 +1,9 @@
-// TEMPORARY Windows named-pipe diagnostic (GitHub #110 follow-up). Isolates the
-// real-NPFS hang the transport tests hit by exercising every server/client
-// PipeOptions.CurrentUserOnly combination in-process, each stage watchdog-bounded
-// and flushed, so the CI log shows exactly which config + stage deadlocks.
-// Removed once the root cause is fixed.
+// TEMPORARY Windows named-pipe diagnostic (GitHub #110 follow-up). The transport
+// tests deadlocked at the first pipe WRITE on real NPFS: a pipe created with the
+// default 0-byte buffers blocks WriteFile until a read is posted. This probe
+// confirms that giving the pipe an explicit buffer removes the deadlock, by
+// contrasting a 0-buffer server (expected HANG at write) with a buffered one
+// (expected OK). Per-stage watchdogs + flushed output. Removed once fixed.
 #:property RunAnalyzers=false
 #:property EnableNETAnalyzers=false
 #:property EnforceExtendedAnalyzerRules=false
@@ -41,18 +42,17 @@ static async Task<bool> Stage(string name, Func<Task> body)
     }
 }
 
-static async Task RunConfig(bool serverCuo, bool clientCuo, int index)
+static async Task RunConfig(int bufferSize, int index)
 {
     var name = $"probe-{index}-{Guid.NewGuid().ToString("N")[..6]}";
-    Line($"CONFIG server.CurrentUserOnly={serverCuo} client.CurrentUserOnly={clientCuo} name={name}");
+    Line($"CONFIG bufferSize={bufferSize} name={name}");
 
-    var serverOptions = PipeOptions.Asynchronous | (serverCuo ? PipeOptions.CurrentUserOnly : PipeOptions.None);
-    var clientOptions = PipeOptions.Asynchronous | (clientCuo ? PipeOptions.CurrentUserOnly : PipeOptions.None);
-
-    var server = new NamedPipeServerStream(
-        name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, serverOptions);
+    var options = PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly;
+    var server = bufferSize == 0
+        ? new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, options)
+        : new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, options, bufferSize, bufferSize);
     await using var _s = server.ConfigureAwait(false);
-    var client = new NamedPipeClientStream(".", name, PipeDirection.InOut, clientOptions);
+    var client = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
     await using var _c = client.ConfigureAwait(false);
 
     Task? acceptTask = null;
@@ -70,8 +70,6 @@ static async Task RunConfig(bool serverCuo, bool clientCuo, int index)
 }
 
 Line($"OSVersion: {Environment.OSVersion}");
-await RunConfig(serverCuo: true, clientCuo: false, index: 1).ConfigureAwait(false);
-await RunConfig(serverCuo: true, clientCuo: true, index: 2).ConfigureAwait(false);
-await RunConfig(serverCuo: false, clientCuo: false, index: 3).ConfigureAwait(false);
-await RunConfig(serverCuo: false, clientCuo: true, index: 4).ConfigureAwait(false);
+await RunConfig(bufferSize: 0, index: 1).ConfigureAwait(false);       // control: expected HANG at write
+await RunConfig(bufferSize: 64 * 1024, index: 2).ConfigureAwait(false); // fix: expected CONFIG OK
 Line("PROBE COMPLETE");

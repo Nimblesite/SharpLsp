@@ -75,6 +75,15 @@ public sealed class IpcListener : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
+    // A Windows named pipe created with the default 0-byte buffers blocks every
+    // write until the peer posts a read (WriteFile waits for a reader), which
+    // deadlocks the request/response handshake before the first read is pending.
+    // Unix domain sockets buffer by default, so this only bites on Windows.
+    // 64 KiB matches a typical pipe buffer and keeps normal frames non-blocking;
+    // larger frames still stream correctly against the always-pending reader in
+    // the message loop. (GitHub #110 — surfaced by the Windows transport CI.)
+    private const int PipeBufferSize = 64 * 1024;
+
     private static NamedPipeServerStream CreateNamedPipe(string endpoint)
     {
         // CurrentUserOnly mirrors RestrictSocketToOwner's 0600 hardening: the
@@ -85,7 +94,9 @@ public sealed class IpcListener : IAsyncDisposable
             PipeDirection.InOut,
             maxNumberOfServerInstances: 1,
             PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
+            PipeBufferSize,
+            PipeBufferSize
         );
     }
 
