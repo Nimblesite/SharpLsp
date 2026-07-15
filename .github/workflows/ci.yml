@@ -260,8 +260,6 @@ jobs:
             10.0.300
       - name: Restore full solution (caches FCS nuspec for dependency-consistency tests)
         run: dotnet restore sidecars/SharpLsp.Sidecars.sln
-      - name: Windows named-pipe diagnostic probe (temporary)
-        run: dotnet run .github/diagnostics/pipe-probe.cs
       - name: Test sidecar IPC transport on Windows
         run: dotnet test
           sidecars/SharpLsp.Sidecar.Common.Tests/SharpLsp.Sidecar.Common.Tests.csproj
