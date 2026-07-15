@@ -1,9 +1,9 @@
 //! Sidecar lifecycle manager — spawn, health monitoring, crash recovery.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use tokio::io::AsyncBufReadExt;
@@ -42,6 +42,11 @@ pub struct SidecarManager {
     next_id: AtomicU32,
     /// Current backoff duration for crash recovery.
     backoff: Mutex<Duration>,
+    /// Earliest instant a respawn may be attempted after a spawn-time failure.
+    /// Spawn failures (e.g. a sidecar that exits before READY) must engage the
+    /// same throttle as crashes so a persistent failure cannot trigger an
+    /// unthrottled respawn storm — one doomed process per LSP request. (#152)
+    spawn_retry_after: Mutex<Option<Instant>>,
 }
 
 impl SidecarManager {
@@ -61,6 +66,7 @@ impl SidecarManager {
             transport: Mutex::new(None),
             next_id: AtomicU32::new(1),
             backoff: Mutex::new(INITIAL_BACKOFF),
+            spawn_retry_after: Mutex::new(None),
         }
     }
 
@@ -105,11 +111,51 @@ impl SidecarManager {
             return Ok(());
         }
 
-        let (child, transport) = self.spawn_process().await?;
-        *self.child.lock().await = Some(child);
-        *transport_guard = Some(transport);
-        info!(sidecar = %self.name, "Sidecar connected");
+        self.enforce_spawn_backoff().await?;
+
+        match self.spawn_process().await {
+            Ok((child, transport)) => {
+                *self.child.lock().await = Some(child);
+                *transport_guard = Some(transport);
+                *self.backoff.lock().await = INITIAL_BACKOFF;
+                *self.spawn_retry_after.lock().await = None;
+                info!(sidecar = %self.name, "Sidecar connected");
+                Ok(())
+            }
+            Err(err) => {
+                self.record_spawn_failure().await;
+                Err(err)
+            }
+        }
+    }
+
+    /// Refuse a respawn while a prior spawn failure's backoff window is open.
+    /// Without this, `request` would relaunch a doomed sidecar with zero delay
+    /// on every semantic LSP request (#152).
+    async fn enforce_spawn_backoff(&self) -> Result<()> {
+        if let Some(until) = *self.spawn_retry_after.lock().await {
+            let now = Instant::now();
+            if now < until {
+                let remaining = (until - now).as_millis();
+                bail!("sidecar spawn in backoff; {remaining}ms until retry");
+            }
+        }
         Ok(())
+    }
+
+    /// Record a spawn-time failure: grow the shared backoff (as crashes do) and
+    /// arm the retry gate so the next respawn waits out the delay (#152).
+    async fn record_spawn_failure(&self) {
+        let mut backoff = self.backoff.lock().await;
+        let delay = *backoff;
+        *backoff = (*backoff * 2).min(MAX_BACKOFF);
+        drop(backoff);
+        *self.spawn_retry_after.lock().await = Some(Instant::now() + delay);
+        warn!(
+            sidecar = %self.name,
+            delay_ms = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX),
+            "Sidecar spawn failed; backing off before respawn"
+        );
     }
 
     /// Send a request to the sidecar and wait for the response.
@@ -195,7 +241,19 @@ impl SidecarManager {
                 line.clear();
                 let bytes = reader.read_line(&mut line).await.context("read stdout")?;
                 if bytes == 0 {
-                    bail!("sidecar exited before READY");
+                    // #150: a bare "exited before READY" is undiagnosable (it is
+                    // exactly what made #110 take multiple log uploads). Reap the
+                    // child for its exit status and point at the sidecar log dir,
+                    // whose FATAL line the host inherits via the child's stderr.
+                    let status = match child.wait().await {
+                        Ok(status) => status.to_string(),
+                        Err(err) => format!("unknown exit status: {err}"),
+                    };
+                    let log_dir = std::env::temp_dir().join("sharplsp-logs");
+                    bail!(
+                        "sidecar exited before READY ({status}); sidecar logs: {}",
+                        log_dir.display()
+                    );
                 }
                 if let Some(path) = line.trim().strip_prefix("READY:") {
                     info!(
@@ -476,14 +534,38 @@ fn installed_sidecar_exe(subdir: &str, name: &str) -> Option<std::path::PathBuf>
     }
 }
 
+/// Monotonic counter making each sidecar endpoint unique within this process.
+static IPC_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// A short endpoint token that is unique per spawn.
+///
+/// #151: deriving the endpoint from the workspace root alone makes two hosts on
+/// the same folder (e.g. two editor windows) compute an identical endpoint — on
+/// Windows the second sidecar finds the single-instance pipe name taken and dies
+/// before READY; on Unix it deletes and steals the live socket. Folding the
+/// process id and a monotonic counter into the hash keeps the token short
+/// (constant length, so it never trips the Unix socket-path limit) while making
+/// it unique across hosts (pid) and within a host (counter). It is computed once
+/// per manager and reused across restarts, so a restart keeps its own endpoint.
+fn unique_endpoint_token(workspace_root: &Path) -> String {
+    let sequence = IPC_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let key = format!(
+        "{}|{}|{}",
+        workspace_root.to_string_lossy(),
+        std::process::id(),
+        sequence
+    );
+    format!("{:x}", fxhash(key.as_bytes()))
+}
+
 /// Build a platform-appropriate IPC path for a sidecar.
 #[cfg(unix)]
 fn ipc_path(name: &str, workspace_root: &Path) -> String {
     format!(
-        "{}/{}-{:x}.sock",
+        "{}/{}-{}.sock",
         std::env::temp_dir().display(),
         name,
-        fxhash(workspace_root.to_string_lossy().as_bytes())
+        unique_endpoint_token(workspace_root)
     )
 }
 
@@ -491,9 +573,9 @@ fn ipc_path(name: &str, workspace_root: &Path) -> String {
 #[cfg(windows)]
 fn ipc_path(name: &str, workspace_root: &Path) -> String {
     format!(
-        r"\\.\pipe\{}-{:x}",
+        r"\\.\pipe\{}-{}",
         name,
-        fxhash(workspace_root.to_string_lossy().as_bytes())
+        unique_endpoint_token(workspace_root)
     )
 }
 
@@ -782,5 +864,60 @@ mod tests {
             "sidecar_launch must use SHARPLSP_CSHARP_SIDECAR_PATH when set"
         );
         assert_eq!(args, vec!["/tmp/sharplsp-test-env.sock"]);
+    }
+
+    /// GitHub #151: two hosts (e.g. two editor windows) on the same workspace
+    /// must not compute the same IPC endpoint — on Windows the second sidecar
+    /// finds the single-instance pipe name taken and dies before READY; on
+    /// Unix it silently deletes and steals the live socket.
+    #[test]
+    fn same_workspace_managers_get_distinct_ipc_endpoints() {
+        let first = SidecarManager::csharp(&PathBuf::from("/workspace"));
+        let second = SidecarManager::csharp(&PathBuf::from("/workspace"));
+        assert_ne!(
+            first.socket_path, second.socket_path,
+            "managers for the same workspace must get unique IPC endpoints (GitHub #151)"
+        );
+    }
+
+    /// GitHub #152: a spawn-time failure must engage the same backoff that
+    /// crash recovery uses — otherwise every semantic LSP request launches a
+    /// fresh doomed process with zero delay.
+    #[tokio::test]
+    async fn spawn_failure_suppresses_immediate_respawn_with_backoff() {
+        let missing = format!("sharplsp-missing-cmd-{}", std::process::id());
+        let manager = SidecarManager::new("test", &missing, vec![], "/tmp/sharplsp-backoff.sock");
+
+        let first = manager.ensure_running().await.unwrap_err();
+        assert!(
+            !format!("{first:#}").contains("backoff"),
+            "first attempt must surface the real spawn failure, got: {first:#}"
+        );
+
+        let second = manager.ensure_running().await.unwrap_err();
+        assert!(
+            format!("{second:#}").contains("backoff"),
+            "an immediate respawn after a spawn failure must be suppressed \
+             by backoff (GitHub #152), got: {second:#}"
+        );
+    }
+
+    /// GitHub #150: when the sidecar dies before READY, the error must carry
+    /// the child's exit status and point at the sidecar log directory instead
+    /// of the bare "exited before READY" that made #110 undiagnosable.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pre_ready_exit_reports_exit_status_and_log_hint() {
+        let manager = SidecarManager::new("test", "false", vec![], "/tmp/sharplsp-eof.sock");
+        let err = manager.ensure_running().await.unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("exit status"),
+            "error must report the child's exit status (GitHub #150), got: {message}"
+        );
+        assert!(
+            message.contains("sharplsp-logs"),
+            "error must point at the sidecar log directory (GitHub #150), got: {message}"
+        );
     }
 }

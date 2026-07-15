@@ -27,14 +27,17 @@ let internal run (args: string[]) : int =
         try
             let socketPath = args[0]
             let sidecar = new FSharpSidecar()
+            // A listener that never bound maps to a non-zero exit so the failure
+            // is visible to the host, not an opaque clean exit before READY.
+            // [DIST-FAILURE-UX] (GitHub #150)
             task {
                 try
                     do! sidecar.RunAsync(socketPath)
+                    return (if sidecar.StartupFailed then 1 else 0)
                 finally
                     (sidecar :> IAsyncDisposable).DisposeAsync().AsTask().Wait()
             }
             |> fun t -> t.GetAwaiter().GetResult()
-            0
         with ex ->
             Log.Error(ex, "F# sidecar terminated unexpectedly")
             1

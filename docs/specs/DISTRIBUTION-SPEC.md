@@ -291,6 +291,10 @@ Stable toolchain. Cross-compilation targets must be added via `dtolnay/rust-tool
 
 Both the Rust host and the .NET sidecar MUST use the same transport on each platform. Win32 builds failing to compile due to `UnixStream` is a hard blocker.
 
+The .NET sidecars are platform-neutral assemblies shipped identically in every VSIX ([DIST-VSIX-LAYOUT]), so **their transport selection MUST be a runtime decision keyed on the endpoint shape**: an endpoint starting with `\\.\pipe\` selects a named pipe server/client; anything else selects a Unix domain socket. Compile-time gating (`#if WINDOWS`) is forbidden in sidecar transport code — the symbol is never defined for the platform-neutral `net10.0` build, which silently compiles the Unix branch into the Windows VSIX and makes the sidecars exit before READY (GitHub #110).
+
+Both listener flavors MUST restrict the endpoint to the current user: `0600` on the Unix domain socket, `PipeOptions.CurrentUserOnly` on the named pipe server. The endpoint names are deterministic, so an unrestricted endpoint is claimable/connectable by any co-located local user. CI MUST run the sidecar transport tests on a Windows runner — an ubuntu-only matrix never executes the named-pipe arm, which is how GitHub #110 shipped.
+
 ## [DIST-SECRETS]
 
 The VS Code Marketplace publishes **passwordless via Microsoft Entra ID OIDC** (workload identity federation) — there is **no** long-lived Marketplace PAT. The `release.yml` `publish-marketplace` job runs in the `release` GitHub Environment so its OIDC subject is the deterministic `repo:Nimblesite/SharpLsp:environment:release`, which one Entra federated credential trusts. Open VSX has **no** OIDC/trusted-publishing path (verified 2026), so it still requires a long-lived access token.

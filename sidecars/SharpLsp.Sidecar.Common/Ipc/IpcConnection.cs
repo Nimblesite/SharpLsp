@@ -1,87 +1,112 @@
+using System.IO.Pipes;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using ListenerResult = Outcome.Result<SharpLsp.Sidecar.Common.Ipc.IpcListener, string>;
 using StreamResult = Outcome.Result<System.IO.Stream, string>;
-#if WINDOWS
-using System.IO.Pipes;
-#else
-using System.Net.Sockets;
-#endif
 
 namespace SharpLsp.Sidecar.Common.Ipc;
 
 /// <summary>Platform listener for sidecar IPC.</summary>
 public sealed class IpcListener : IAsyncDisposable
 {
-#if WINDOWS
-    private readonly NamedPipeServerStream _pipe;
+    // Exactly one transport is set, chosen at runtime from the endpoint shape.
+    // The sidecars ship as a single platform-neutral assembly in every VSIX
+    // ([DIST-VSIX-LAYOUT]), so the transport can never be a compile-time
+    // decision. Implements [DIST-CI-WIN-TRANSPORT] (GitHub #110).
+    private readonly NamedPipeServerStream? _pipe;
+    private readonly Socket? _socket;
 
-    private IpcListener(NamedPipeServerStream pipe)
+    private IpcListener(NamedPipeServerStream pipe, string boundEndpoint)
     {
         _pipe = pipe;
+        BoundEndpoint = boundEndpoint;
     }
-#else
-    private readonly Socket _socket;
 
-    private IpcListener(Socket socket)
+    private IpcListener(Socket socket, string boundEndpoint)
     {
         _socket = socket;
+        BoundEndpoint = boundEndpoint;
     }
-#endif
 
-    /// <summary>Create a listener for the platform endpoint.</summary>
+    /// <summary>
+    /// The endpoint the listener actually bound. For an overlong Unix path this
+    /// differs from the requested endpoint because it is relocated to a hashed
+    /// temp path; READY MUST advertise this value, since the Rust host connects
+    /// to the echoed path verbatim with no shortening counterpart (GitHub #154,
+    /// [DIST-CI-WIN-TRANSPORT]).
+    /// </summary>
+    public string BoundEndpoint { get; }
+
+    /// <summary>Create a listener for the endpoint's transport.</summary>
     public static IpcListener Create(string endpoint)
     {
-#if WINDOWS
-        return new IpcListener(CreateNamedPipe(endpoint));
-#else
-        return new IpcListener(CreateUnixSocket(endpoint));
-#endif
+        if (IpcConnection.IsPipeEndpoint(endpoint))
+        {
+            return new IpcListener(CreateNamedPipe(endpoint), endpoint);
+        }
+
+        var boundPath = IpcConnection.ShortenIfNeeded(endpoint);
+        return new IpcListener(CreateUnixSocket(boundPath), boundPath);
     }
 
     /// <summary>Accept one sidecar IPC connection as a stream.</summary>
     public async Task<Stream> AcceptStreamAsync(CancellationToken ct = default)
     {
-#if WINDOWS
-        await _pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
-        return _pipe;
-#else
-        var client = await _socket.AcceptAsync(ct).ConfigureAwait(false);
+        if (_pipe is not null)
+        {
+            await _pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
+            return _pipe;
+        }
+
+        var client = await _socket!.AcceptAsync(ct).ConfigureAwait(false);
         return new NetworkStream(client, ownsSocket: true);
-#endif
     }
 
     /// <summary>Dispose the underlying listener.</summary>
     public ValueTask DisposeAsync()
     {
-#if WINDOWS
-        return _pipe.DisposeAsync();
-#else
-        _socket.Dispose();
+        if (_pipe is not null)
+        {
+            return _pipe.DisposeAsync();
+        }
+
+        _socket!.Dispose();
         return ValueTask.CompletedTask;
-#endif
     }
 
-#if WINDOWS
+    // A Windows named pipe created with the default 0-byte buffers blocks every
+    // write until the peer posts a read (WriteFile waits for a reader), which
+    // deadlocks the request/response handshake before the first read is pending.
+    // Unix domain sockets buffer by default, so this only bites on Windows.
+    // 64 KiB matches a typical pipe buffer and keeps normal frames non-blocking;
+    // larger frames still stream correctly against the always-pending reader in
+    // the message loop. (GitHub #110 — surfaced by the Windows transport CI.)
+    private const int PipeBufferSize = 64 * 1024;
+
     private static NamedPipeServerStream CreateNamedPipe(string endpoint)
     {
+        // CurrentUserOnly mirrors RestrictSocketToOwner's 0600 hardening: the
+        // pipe name is deterministic, so without it any local user could take
+        // or connect to the single instance ahead of the host.
         return new NamedPipeServerStream(
             IpcConnection.PipeName(endpoint),
             PipeDirection.InOut,
             maxNumberOfServerInstances: 1,
             PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
+            PipeBufferSize,
+            PipeBufferSize
         );
     }
-#else
+
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",
         Justification = "Socket ownership transfers to IpcListener"
     )]
-    private static Socket CreateUnixSocket(string endpoint)
+    private static Socket CreateUnixSocket(string effectivePath)
     {
-        var effectivePath = IpcConnection.ShortenIfNeeded(endpoint);
         if (File.Exists(effectivePath))
         {
             File.Delete(effectivePath);
@@ -118,7 +143,6 @@ public sealed class IpcListener : IAsyncDisposable
 
         File.SetUnixFileMode(socketPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
-#endif
 }
 
 /// <summary>
@@ -126,19 +150,20 @@ public sealed class IpcListener : IAsyncDisposable
 /// </summary>
 public static class IpcConnection
 {
+    private const string PipePrefix = @"\\.\pipe\";
+
     /// <summary>
     /// Generate a deterministic socket path from a workspace root.
-    /// Format: /tmp/sharplsp-{hash8}.sock (stays under 108-char Unix limit).
+    /// Format: /tmp/sharplsp-{hash8}.sock (stays under 108-char Unix limit),
+    /// or \\.\pipe\sharplsp-{hash8} on Windows.
     /// </summary>
     public static string GenerateSocketPath(string workspaceRoot)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(workspaceRoot));
         var hex = Convert.ToHexString(hash).AsSpan(0, 8);
-#if WINDOWS
-        return $@"\\.\pipe\sharplsp-{hex}";
-#else
-        return Path.Combine(Path.GetTempPath(), $"sharplsp-{hex}.sock");
-#endif
+        return OperatingSystem.IsWindows()
+            ? $@"{PipePrefix}sharplsp-{hex}"
+            : Path.Combine(Path.GetTempPath(), $"sharplsp-{hex}.sock");
     }
 
     /// <summary>Start listening on the platform IPC endpoint.</summary>
@@ -155,7 +180,11 @@ public static class IpcConnection
         }
         catch (Exception ex)
         {
-            return ListenerResult.Failure(ex.Message);
+            // Preserve the exception type, not just its message: the type (e.g.
+            // SocketException vs UnauthorizedAccessException) is what tells a
+            // pipe-name squat apart from an ACL denial when diagnosing a
+            // pre-READY exit. Implements [DIST-FAILURE-UX] (GitHub #150).
+            return ListenerResult.Failure($"{ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -182,23 +211,48 @@ public static class IpcConnection
         }
     }
 
+    private static async Task<Stream> ConnectCoreAsync(string socketPath, CancellationToken ct)
+    {
+        return IsPipeEndpoint(socketPath)
+            ? await ConnectNamedPipeAsync(socketPath, ct).ConfigureAwait(false)
+            : await ConnectUnixSocketAsync(socketPath, ct).ConfigureAwait(false);
+    }
+
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",
         Justification = "Stream ownership transfers to caller via Result"
     )]
-    private static async Task<Stream> ConnectCoreAsync(string socketPath, CancellationToken ct)
+    private static async Task<Stream> ConnectNamedPipeAsync(string socketPath, CancellationToken ct)
     {
-#if WINDOWS
         var pipe = new NamedPipeClientStream(
             ".",
-            IpcConnection.PipeName(socketPath),
+            PipeName(socketPath),
             PipeDirection.InOut,
             PipeOptions.Asynchronous
         );
-        await pipe.ConnectAsync(ct).ConfigureAwait(false);
-        return pipe;
-#else
+        try
+        {
+            await pipe.ConnectAsync(ct).ConfigureAwait(false);
+            return pipe;
+        }
+        catch
+        {
+            await pipe.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Stream ownership transfers to caller via Result"
+    )]
+    private static async Task<Stream> ConnectUnixSocketAsync(
+        string socketPath,
+        CancellationToken ct
+    )
+    {
         var effectivePath = ShortenIfNeeded(socketPath);
         var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         try
@@ -213,7 +267,6 @@ public static class IpcConnection
             socket.Dispose();
             throw;
         }
-#endif
     }
 
     /// <summary>
@@ -233,11 +286,16 @@ public static class IpcConnection
         return Path.Combine(Path.GetTempPath(), $"sharplsp-{hex}.sock");
     }
 
+    /// <summary>True when the endpoint addresses the Windows named-pipe namespace.</summary>
+    internal static bool IsPipeEndpoint(string endpoint)
+    {
+        return endpoint.StartsWith(PipePrefix, StringComparison.Ordinal);
+    }
+
     internal static string PipeName(string endpoint)
     {
-        const string prefix = @"\\.\pipe\";
-        return endpoint.StartsWith(prefix, StringComparison.Ordinal)
-            ? endpoint[prefix.Length..]
+        return IsPipeEndpoint(endpoint)
+            ? endpoint[PipePrefix.Length..]
             : throw new ArgumentException("Windows IPC endpoint must be a named pipe path");
     }
 }

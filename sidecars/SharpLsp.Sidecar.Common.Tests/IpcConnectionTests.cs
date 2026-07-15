@@ -1,3 +1,4 @@
+using System.IO.Pipes;
 using SharpLsp.Sidecar.Common.Ipc;
 
 #pragma warning disable RS1035 // Path.GetTempPath banned for analyzers — tests own temp fixtures
@@ -38,25 +39,34 @@ public sealed class IpcConnectionTests
         Assert.Contains("sharplsp-", path, StringComparison.Ordinal);
     }
 
-#if !WINDOWS
     [Fact]
     public void GenerateSocketPath_ends_with_sock()
     {
+        if (OperatingSystem.IsWindows())
+        {
+            return; // Windows endpoints are named pipes, not socket files.
+        }
+
         var path = IpcConnection.GenerateSocketPath("/workspace");
         Assert.EndsWith(".sock", path, StringComparison.Ordinal);
     }
-#endif
 
     [Fact]
     public void GenerateSocketPath_uses_platform_endpoint_shape()
     {
+        // The endpoint shape is a RUNTIME decision — the sidecars ship as one
+        // platform-neutral assembly ([DIST-VSIX-LAYOUT]), so compile-time
+        // platform symbols are never defined. [DIST-CI-WIN-TRANSPORT]
         var path = IpcConnection.GenerateSocketPath("/workspace");
-#if WINDOWS
-        Assert.StartsWith(@"\\.\pipe\sharplsp-", path, StringComparison.Ordinal);
-        Assert.DoesNotContain(".sock", path, StringComparison.Ordinal);
-#else
-        Assert.EndsWith(".sock", path, StringComparison.Ordinal);
-#endif
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.StartsWith(@"\\.\pipe\sharplsp-", path, StringComparison.Ordinal);
+            Assert.DoesNotContain(".sock", path, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.EndsWith(".sock", path, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -111,10 +121,14 @@ public sealed class IpcConnectionTests
         }
     }
 
-#if !WINDOWS
     [Fact]
     public async Task CreateListener_replaces_a_stale_socket_file()
     {
+        if (OperatingSystem.IsWindows())
+        {
+            return; // Stale socket files are a Unix-domain-socket concern.
+        }
+
         // A leftover file at the socket path (e.g. from a crashed prior run) must
         // be deleted before binding, otherwise bind fails with "address in use".
         var socketPath = IpcConnection.GenerateSocketPath($"stale-{Guid.NewGuid():N}");
@@ -137,6 +151,11 @@ public sealed class IpcConnectionTests
     [Fact]
     public async Task CreateListener_relocates_an_overlong_socket_path()
     {
+        if (OperatingSystem.IsWindows())
+        {
+            return; // Path-length relocation is a Unix-domain-socket concern.
+        }
+
         // Unix domain sockets cap paths at 108 chars; an overlong path must be
         // transparently relocated to a hashed temp path so binding still succeeds.
         var overlong = Path.Combine(Path.GetTempPath(), new string('a', 120) + ".sock");
@@ -149,7 +168,53 @@ public sealed class IpcConnectionTests
             .Value;
         await listener.DisposeAsync().ConfigureAwait(true);
     }
-#endif
+
+    [Fact]
+    public async Task Pipe_endpoint_creates_a_real_named_pipe_server()
+    {
+        // GitHub #110 / [DIST-CI-WIN-TRANSPORT]: the host and sidecar must use
+        // the same transport on each platform. The sidecars ship as ONE AnyCPU
+        // assembly for every platform ([DIST-VSIX-LAYOUT]), so transport
+        // selection cannot be a compile-time decision — a \\.\pipe\ endpoint
+        // must produce a genuine named pipe server that a named pipe client
+        // (the Rust host on Windows) can reach. Binding it as a Unix domain
+        // socket instead makes the sidecar exit before READY on Windows.
+        var pipeName = $"sharplsp-t-{Guid.NewGuid().ToString("N")[..8]}";
+        var endpoint = $@"\\.\pipe\{pipeName}";
+        try
+        {
+            var listener = Assert
+                .IsType<Outcome.Result<IpcListener, string>.Ok<IpcListener, string>>(
+                    IpcConnection.CreateListener(endpoint)
+                )
+                .Value;
+            await using var listenerLease = listener.ConfigureAwait(true);
+
+            var acceptTask = listener.AcceptStreamAsync();
+            var client = new NamedPipeClientStream(
+                ".",
+                pipeName,
+                PipeDirection.InOut,
+                PipeOptions.Asynchronous
+            );
+            await using var clientLease = client.ConfigureAwait(true);
+            using var connectTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await client.ConnectAsync(connectTimeout.Token).ConfigureAwait(true);
+
+            var server = await acceptTask.ConfigureAwait(true);
+            await using var serverLease = server.ConfigureAwait(true);
+
+            await client.WriteAsync("ping"u8.ToArray()).ConfigureAwait(true);
+            var buffer = new byte[4];
+            var read = await server.ReadAsync(buffer).ConfigureAwait(true);
+            Assert.Equal(4, read);
+            Assert.Equal("ping"u8.ToArray(), buffer);
+        }
+        finally
+        {
+            DeleteSocketFileIfPresent(endpoint);
+        }
+    }
 
     [Fact]
     public void CreateListener_unbindable_path_returns_failure()
@@ -172,7 +237,11 @@ public sealed class IpcConnectionTests
     public async Task ConnectAsync_no_listener_returns_failure()
     {
         var socketPath = IpcConnection.GenerateSocketPath($"noexist-{Guid.NewGuid():N}");
-        var result = await IpcConnection.ConnectAsync(socketPath).ConfigureAwait(true);
+        // Bounded: a named pipe client would otherwise poll forever on Windows.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var result = await IpcConnection
+            .ConnectAsync(socketPath, timeout.Token)
+            .ConfigureAwait(true);
         Assert.True(
             result is Outcome.Result<Stream, string>.Error<Stream, string>,
             "ConnectAsync must fail when no listener exists"
