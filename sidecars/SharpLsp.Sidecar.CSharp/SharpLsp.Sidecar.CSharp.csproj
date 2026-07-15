@@ -1,4 +1,5 @@
-﻿<?xml version="1.0" encoding="utf-8"?><Project Sdk="Microsoft.NET.Sdk">
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <OutputType>Exe</OutputType>
         <TargetFramework>net10.0</TargetFramework>
@@ -37,13 +38,28 @@
              runtime, so the MSBuild-family assemblies pulled in transitively by
              Microsoft.CodeAnalysis.Workspaces.MSBuild must be compile-time only.
              Microsoft.Build.Locator 1.11+ enforces this via MSBL001. -->
-        <PackageReference Include="Microsoft.Build.Framework" Version="17.11.48" ExcludeAssets="runtime" PrivateAssets="all" />
+        <PackageReference
+            Include="Microsoft.Build.Framework"
+            Version="17.11.48"
+            ExcludeAssets="runtime"
+            PrivateAssets="all"
+        />
         <!-- Compile-time only: ProjectRootElement / ProjectCollection for the
              MSBuild-DOM package editor (GitHub #4). The real assembly is loaded
              from the SDK at runtime by MSBuildLocator, so runtime is excluded
              (MSBL001), exactly like Microsoft.Build.Framework above. -->
-        <PackageReference Include="Microsoft.Build" Version="17.11.48" ExcludeAssets="runtime" PrivateAssets="all" />
-        <PackageReference Include="Microsoft.NET.StringTools" Version="17.11.48" ExcludeAssets="runtime" PrivateAssets="all" />
+        <PackageReference
+            Include="Microsoft.Build"
+            Version="17.11.48"
+            ExcludeAssets="runtime"
+            PrivateAssets="all"
+        />
+        <PackageReference
+            Include="Microsoft.NET.StringTools"
+            Version="17.11.48"
+            ExcludeAssets="runtime"
+            PrivateAssets="all"
+        />
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="5.6.0" />
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.6.0" />
         <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.6.0" />

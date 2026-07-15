@@ -1,4 +1,5 @@
-﻿<?xml version="1.0" encoding="utf-8"?><Project Sdk="Microsoft.NET.Sdk">
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
@@ -19,8 +20,18 @@
              Microsoft.CodeAnalysis.Workspaces.MSBuild reference. MSBuildLocator supplies
              these assemblies from the SDK at runtime, so keep them compile-time only to
              satisfy Microsoft.Build.Locator's MSBL001 check. -->
-        <PackageReference Include="Microsoft.Build.Framework" Version="18.7.1" ExcludeAssets="runtime" PrivateAssets="all" />
-        <PackageReference Include="Microsoft.NET.StringTools" Version="18.7.1" ExcludeAssets="runtime" PrivateAssets="all" />
+        <PackageReference
+            Include="Microsoft.Build.Framework"
+            Version="18.7.1"
+            ExcludeAssets="runtime"
+            PrivateAssets="all"
+        />
+        <PackageReference
+            Include="Microsoft.NET.StringTools"
+            Version="18.7.1"
+            ExcludeAssets="runtime"
+            PrivateAssets="all"
+        />
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
         <PackageReference Include="xunit" Version="2.9.3" />
         <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
