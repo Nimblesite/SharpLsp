@@ -18,9 +18,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="MessagePack" Version="3.1.7" />
+        <PackageReference Include="MessagePack" Version="3.1.8" />
         <PackageReference Include="Microsoft.VisualStudio.SolutionPersistence" Version="1.0.52" />
-        <PackageReference Include="Serilog" Version="4.3.1" />
+        <PackageReference Include="Serilog" Version="4.4.0" />
         <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     </ItemGroup>
 </Project>
