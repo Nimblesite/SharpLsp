@@ -783,4 +783,59 @@ mod tests {
         );
         assert_eq!(args, vec!["/tmp/sharplsp-test-env.sock"]);
     }
+
+    /// GitHub #151: two hosts (e.g. two editor windows) on the same workspace
+    /// must not compute the same IPC endpoint — on Windows the second sidecar
+    /// finds the single-instance pipe name taken and dies before READY; on
+    /// Unix it silently deletes and steals the live socket.
+    #[test]
+    fn same_workspace_managers_get_distinct_ipc_endpoints() {
+        let first = SidecarManager::csharp(&PathBuf::from("/workspace"));
+        let second = SidecarManager::csharp(&PathBuf::from("/workspace"));
+        assert_ne!(
+            first.socket_path, second.socket_path,
+            "managers for the same workspace must get unique IPC endpoints (GitHub #151)"
+        );
+    }
+
+    /// GitHub #152: a spawn-time failure must engage the same backoff that
+    /// crash recovery uses — otherwise every semantic LSP request launches a
+    /// fresh doomed process with zero delay.
+    #[tokio::test]
+    async fn spawn_failure_suppresses_immediate_respawn_with_backoff() {
+        let missing = format!("sharplsp-missing-cmd-{}", std::process::id());
+        let manager = SidecarManager::new("test", &missing, vec![], "/tmp/sharplsp-backoff.sock");
+
+        let first = manager.ensure_running().await.unwrap_err();
+        assert!(
+            !format!("{first:#}").contains("backoff"),
+            "first attempt must surface the real spawn failure, got: {first:#}"
+        );
+
+        let second = manager.ensure_running().await.unwrap_err();
+        assert!(
+            format!("{second:#}").contains("backoff"),
+            "an immediate respawn after a spawn failure must be suppressed \
+             by backoff (GitHub #152), got: {second:#}"
+        );
+    }
+
+    /// GitHub #150: when the sidecar dies before READY, the error must carry
+    /// the child's exit status and point at the sidecar log directory instead
+    /// of the bare "exited before READY" that made #110 undiagnosable.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pre_ready_exit_reports_exit_status_and_log_hint() {
+        let manager = SidecarManager::new("test", "false", vec![], "/tmp/sharplsp-eof.sock");
+        let err = manager.ensure_running().await.unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("exit status"),
+            "error must report the child's exit status (GitHub #150), got: {message}"
+        );
+        assert!(
+            message.contains("sharplsp-logs"),
+            "error must point at the sidecar log directory (GitHub #150), got: {message}"
+        );
+    }
 }
