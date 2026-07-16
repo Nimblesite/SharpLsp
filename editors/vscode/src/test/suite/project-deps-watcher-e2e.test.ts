@@ -52,7 +52,11 @@ suite('Project-deps node watcher survives project dir deletion', () => {
     fs.writeFileSync(projectPath, CSPROJ);
 
     const parsed = ensureTracked(projectPath);
-    assert.strictEqual(parsed.nugetPackages.length, 1, 'tracked project parses its PackageReference');
+    assert.strictEqual(
+      parsed.nugetPackages.length,
+      1,
+      'tracked project parses its PackageReference',
+    );
     assert.ok(projectDependencies.value.has(projectPath), 'project is tracked after ensureTracked');
 
     // Delete the tree out from under the node fs.watch. On Windows this fires
