@@ -1130,6 +1130,7 @@ dependencies = [
  "dashmap",
  "lsp-server",
  "lsp-types",
+ "percent-encoding",
  "reqwest",
  "rmp-serde",
  "serde",

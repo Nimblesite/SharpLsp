@@ -700,8 +700,7 @@ fn handle_single_location_nav(
 
 /// Convert a sidecar `LocationResult` to an LSP `Location`.
 fn sidecar_location_to_lsp(loc: &SidecarLocationResult) -> Option<Location> {
-    let path = format!("file://{}", loc.file_path);
-    let uri: Uri = path.parse().ok()?;
+    let uri: Uri = crate::utils::path_to_lsp_uri(&loc.file_path).ok()?;
     Some(Location {
         uri,
         range: Range::new(
@@ -987,7 +986,7 @@ pub fn handle_rename(
         .document_changes
         .into_iter()
         .filter_map(|doc_edit| {
-            let uri = path_to_uri(&doc_edit.file_path).ok()?;
+            let uri = crate::utils::path_to_lsp_uri(&doc_edit.file_path).ok()?;
             let edits: Vec<OneOf<TextEdit, lsp_types::AnnotatedTextEdit>> = doc_edit
                 .edits
                 .into_iter()
@@ -1026,16 +1025,6 @@ pub fn handle_rename(
         ..WorkspaceEdit::default()
     };
     Ok(serde_json::to_value(workspace_edit)?)
-}
-
-/// Convert a filesystem path to a `file://` URI.
-fn path_to_uri(path: &str) -> Result<Uri> {
-    let uri_str = if path.starts_with('/') {
-        format!("file://{path}")
-    } else {
-        format!("file:///{path}")
-    };
-    uri_str.parse::<Uri>().map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 /// Sidecar request to rename a symbol.

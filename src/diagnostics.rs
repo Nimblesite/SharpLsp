@@ -108,7 +108,7 @@ pub fn request_solution_in_background(
                     }
                 }
                 for (file_path, diagnostics) in file_diagnostics {
-                    let uri = match path_to_uri(&file_path) {
+                    let uri = match crate::utils::path_to_lsp_uri(&file_path) {
                         Ok(uri) => uri,
                         Err(err) => {
                             warn!("Skip diagnostics for {file_path}: {err:#}");
@@ -166,11 +166,12 @@ async fn verify_error_files(
         // Skip the disk-resync step for documents the editor has open. The
         // VFS holds the live, possibly-unsaved text — overwriting the sidecar
         // with on-disk bytes would silently destroy the editor's edits and
-        // leave Roslyn analyzing yesterday's source.
-        let in_vfs = path_to_uri(file_path)
-            .ok()
-            .and_then(|uri| vfs.get_content(&uri))
-            .is_some();
+        // leave Roslyn analyzing yesterday's source. Matching must be by
+        // native path, not a rebuilt URI: editors percent-encode URIs (VS Code
+        // sends `file:///c%3A/…` on Windows), so a rebuilt canonical URI never
+        // string-matches the stored key and the guard silently fails open.
+        // [GitHub #110]
+        let in_vfs = vfs.get_content_for_path(file_path).is_some();
 
         if !in_vfs {
             // Re-read from disk so the sidecar gets fresh text.
@@ -190,7 +191,7 @@ async fn verify_error_files(
 
         match fetch(sidecar, file_path, source_tag).await {
             Ok(diagnostics) => {
-                let uri = match path_to_uri(file_path) {
+                let uri = match crate::utils::path_to_lsp_uri(file_path) {
                     Ok(uri) => uri,
                     Err(err) => {
                         warn!("Skip verification for {file_path}: {err:#}");
@@ -294,12 +295,6 @@ async fn fetch_all(
         })
         .collect();
     Ok(mapped)
-}
-
-/// Convert a filesystem path to a `file://` URI.
-fn path_to_uri(path: &str) -> Result<Uri> {
-    let uri_string = format!("file://{path}");
-    uri_string.parse().context("parse file URI")
 }
 
 /// Send `textDocument/publishDiagnostics` notification to the editor.
@@ -407,8 +402,9 @@ mod tests {
 
     #[test]
     fn path_to_uri_valid_path() {
-        let uri = path_to_uri("/home/user/project/Program.cs").unwrap();
-        assert_eq!(uri.as_str(), "file:///home/user/project/Program.cs");
+        use crate::utils::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
+        let uri = crate::utils::path_to_lsp_uri(NATIVE_FILE).unwrap();
+        assert_eq!(uri.as_str(), NATIVE_FILE_URI);
     }
 
     #[test]

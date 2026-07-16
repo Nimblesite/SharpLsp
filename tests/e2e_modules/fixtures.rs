@@ -27,6 +27,27 @@ pub fn path_to_file_uri(path: &Path) -> String {
     }
 }
 
+/// Build the URI for `path` exactly as VS Code sends it over LSP.
+///
+/// VS Code percent-encodes document URIs (space → `%20`) and, on Windows,
+/// sends the drive letter lowercase and percent-encoded — `file:///c%3A/dir/f.cs`,
+/// not the canonical `file:///C:/dir/f.cs` an RFC 8089 builder produces. The
+/// host must recognize open documents no matter which encoding the editor
+/// picked, so VFS-sensitive tests feed didOpen through this form. [GitHub #110]
+pub fn path_to_vscode_uri(path: &Path) -> String {
+    let canonical = url::Url::from_file_path(path)
+        .expect("fixture paths are absolute")
+        .to_string();
+    let rest = &canonical["file:///".len()..];
+    match (rest.as_bytes().first(), rest.as_bytes().get(1)) {
+        (Some(&drive), Some(&b':')) if drive.is_ascii_alphabetic() => {
+            let lowered = char::from(drive.to_ascii_lowercase());
+            format!("file:///{lowered}%3A{}", &rest[2..])
+        }
+        _ => canonical,
+    }
+}
+
 pub const SIMPLE_CLASS: &str = r#"
 using System;
 

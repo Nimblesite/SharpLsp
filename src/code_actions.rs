@@ -123,8 +123,7 @@ fn map_action_kind(kind: &str) -> CodeActionKind {
 fn map_workspace_edit(edit: &SidecarWorkspaceEdit) -> WorkspaceEdit {
     let mut changes = std::collections::HashMap::new();
     for doc_edit in &edit.document_changes {
-        let path = format!("file://{}", doc_edit.file_path);
-        if let Ok(uri) = path.parse::<Uri>() {
+        if let Ok(uri) = crate::utils::path_to_lsp_uri(&doc_edit.file_path) {
             let edits: Vec<TextEdit> = doc_edit.edits.iter().map(map_text_edit).collect();
             let _ = changes.insert(uri, edits);
         }
@@ -248,9 +247,10 @@ mod tests {
         reason = "Uri is the key type mandated by lsp-types WorkspaceEdit"
     )]
     fn map_workspace_edit_groups_edits_by_uri() {
+        use crate::utils::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
         let edit = SidecarWorkspaceEdit {
             document_changes: vec![SidecarDocumentEdit {
-                file_path: "/tmp/Foo.cs".to_string(),
+                file_path: NATIVE_FILE.to_string(),
                 edits: vec![
                     SidecarTextEdit {
                         start_line: 0,
@@ -273,7 +273,7 @@ mod tests {
         let changes = workspace_edit.changes.unwrap();
         assert_eq!(changes.len(), 1);
         let (uri, edits) = changes.iter().next().unwrap();
-        assert_eq!(uri.as_str(), "file:///tmp/Foo.cs");
+        assert_eq!(uri.as_str(), NATIVE_FILE_URI);
         assert_eq!(edits.len(), 2);
         assert_eq!(edits[0].new_text, "a");
         assert_eq!(edits[1].new_text, "b");

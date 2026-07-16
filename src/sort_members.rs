@@ -650,7 +650,7 @@ mod tests {
         std::fs::write(&file, source).unwrap();
 
         let params = SortMembersParams {
-            uri: format!("file://{}", file.to_string_lossy()),
+            uri: crate::utils::path_to_uri(&file.to_string_lossy()).unwrap(),
             range: SortRange {
                 start: SortPosition {
                     line: 0,
@@ -699,7 +699,7 @@ mod tests {
         std::fs::write(&file, "class One\n{\n    public int X;\n}\n").unwrap();
 
         let params = SortMembersParams {
-            uri: format!("file://{}", file.to_string_lossy()),
+            uri: crate::utils::path_to_uri(&file.to_string_lossy()).unwrap(),
             range: SortRange {
                 start: SortPosition {
                     line: 0,

@@ -228,11 +228,12 @@ mod tests {
 
     #[test]
     fn map_hierarchy_item_translates_fields() {
-        let sidecar = item("Foo", "Class", "/tmp/Foo.cs");
+        use crate::utils::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
+        let sidecar = item("Foo", "Class", NATIVE_FILE);
         let mapped = map_hierarchy_item(&sidecar).unwrap();
         assert_eq!(mapped.name, "Foo");
         assert_eq!(mapped.kind, SymbolKind::CLASS);
-        assert_eq!(mapped.uri.as_str(), "file:///tmp/Foo.cs");
+        assert_eq!(mapped.uri.as_str(), NATIVE_FILE_URI);
         assert_eq!(mapped.range.start, Position::new(10, 4));
         assert_eq!(mapped.range.end, Position::new(10, 14));
         assert_eq!(mapped.selection_range.start, Position::new(10, 4));
