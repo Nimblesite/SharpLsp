@@ -273,7 +273,11 @@ type FSharpSidecar() =
         base.Register("workspace/diagnostics", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
-                    let filePath = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
+                    let requestPath = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
+                    // Resolve onto the project's spelling of the file — FCS
+                    // filename comparisons are case-sensitive while hosts vary
+                    // the casing. [FS-REFS-PROJECT]
+                    let filePath = FSharpWorkspace.projectFilePath workspace requestPath
                     let mutable results = ResizeArray<DiagnosticResult>()
                     // FCS compiler diagnostics, computed from the live buffer
                     // (didChange overlay), never stale disk text.

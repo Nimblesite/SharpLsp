@@ -83,6 +83,37 @@ let ``loadProject carries every compile item into the FCS source file set`` () =
         cleanup dir
 }
 
+/// VS Code lowercases the drive letter while the project loader records the
+/// filesystem spelling, and FCS filename comparisons are case-sensitive: a
+/// file checked under a request spelling that differs from
+/// `ProjectOptions.SourceFiles` yields symbols whose declaration ranges never
+/// match any project-wide use, so references/rename silently return nothing.
+/// Windows-only: case-sensitive filesystems have no alternate spellings.
+/// [FS-REFS-PROJECT]
+[<Fact>]
+let ``project usages resolve through a request path with different drive casing`` () = task {
+    if OperatingSystem.IsWindows() then
+        let! (state, dir, _fsproj, paths) =
+            loadWorkspace
+                [ "Defs.fs", "module Defs\nlet helper (x: int) = x + 1\n"
+                  "Uses.fs", "module Uses\nlet result = Defs.helper 5\n" ]
+        try
+            let defsPath: string = paths[0]
+            let flipped =
+                let head = defsPath[0]
+                let toggled =
+                    if Char.IsUpper head then Char.ToLowerInvariant head
+                    else Char.ToUpperInvariant head
+                string toggled + defsPath[1..]
+            Assert.NotEqual<string>(defsPath, flipped)
+            let! uses = FSharpReferences.getProjectUsages state flipped 1 5
+            Assert.True(
+                uses.Length >= 2,
+                $"references through the flipped-casing path must span both files, got {uses.Length}")
+        finally
+            cleanup dir
+}
+
 // ── FSharpFileOrder tests ────────────────────────────────────────
 
 [<Fact>]

@@ -75,6 +75,22 @@ let internal readSource (state: FSharpWorkspaceState) (filePath: string) : strin
     | true, text -> text
     | _ -> File.ReadAllText filePath
 
+/// Resolve a request path onto the project's own spelling of the same file.
+/// Hosts vary the spelling (VS Code lowercases the drive letter) and FCS
+/// filename comparisons are case-sensitive: checking a file under a spelling
+/// that differs from `ProjectOptions.SourceFiles` yields symbols whose
+/// declaration ranges never match any project-wide use, so references,
+/// rename, and code lens silently return nothing while single-file analyses
+/// keep working. [FS-REFS-PROJECT] [GitHub #110]
+let internal projectFilePath (state: FSharpWorkspaceState) (filePath: string) : string =
+    let normalized = NativePaths.NormalizeFullPath filePath
+    match state.ProjectOptions with
+    | Some options ->
+        options.SourceFiles
+        |> Array.tryFind (fun sourceFile -> NativePaths.AreEqual(sourceFile, normalized))
+        |> Option.defaultValue normalized
+    | None -> normalized
+
 /// Parse an .fsproj file to extract Compile Include entries.
 let internal parseFsprojSourceFiles (fsprojPath: string) : string array =
     let doc = XDocument.Load(fsprojPath)
@@ -274,6 +290,7 @@ let getHover
             if not state.IsLoaded then
                 return None
             else
+                let filePath = projectFilePath state filePath
                 let source = readSource state filePath
                 let sourceText = SourceText.ofString source
 
@@ -311,6 +328,7 @@ let internal checkFileWithParse
         if not state.IsLoaded then
             return None
         else
+            let filePath = projectFilePath state filePath
             let source = readSource state filePath
             let sourceText = SourceText.ofString source
 
