@@ -1,11 +1,11 @@
 //! List running processes using native OS APIs.
 //!
-//! Uses platform-native process enumeration (`ps` on Unix, PowerShell CIM on
-//! Windows) rather than `dotnet-trace ps` to avoid the ~350ms .NET runtime
-//! startup overhead.
+//! Uses platform-native process enumeration (`ps` on Unix, the in-process
+//! native process table via `sysinfo` on Windows) rather than `dotnet-trace
+//! ps` to avoid the ~350ms .NET runtime startup overhead.
 
 #[cfg(windows)]
-mod windows_cim;
+mod windows_native;
 
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
@@ -240,25 +240,20 @@ fn native_process_list() -> Result<Vec<DotNetProcess>> {
     Ok(parse_ps_output(&stdout))
 }
 
-/// Enumerate all processes using the platform-native tool.
+/// Enumerate all processes using the native process table.
 ///
-/// Uses PowerShell CIM — WMIC is deprecated, a Feature-on-Demand, and absent
-/// by default on Windows 11 24H2+ / Server 2025. Any enumeration failure
-/// (spawn error, non-zero exit, unparseable JSON) degrades to an empty list
-/// with a warning rather than an error, so `listProcesses` reports "nothing
-/// found" instead of hard-failing — and [`kill`]'s .NET-only guard fails
-/// closed (refuses every PID) instead of erroring.
+/// In-process (`sysinfo`) — WMIC is deprecated and absent by default on
+/// Windows 11 24H2+ / Server 2025, and spawning PowerShell `Get-CimInstance`
+/// instead costs ~1s per call, blowing the <500ms `listProcesses` budget.
+/// Enumeration cannot fail: inaccessible processes are omitted or carry an
+/// empty command line, so [`kill`]'s .NET-only guard fails closed for them.
 #[cfg(windows)]
 #[expect(
     clippy::unnecessary_wraps,
-    reason = "signature parity with the fallible Unix implementation; the \
-              documented contract degrades enumeration failure to an empty list"
+    reason = "signature parity with the fallible Unix implementation"
 )]
 fn native_process_list() -> Result<Vec<DotNetProcess>> {
-    Ok(windows_cim::process_list().unwrap_or_else(|err| {
-        tracing::warn!("Windows process enumeration failed: {err:#} — returning empty list");
-        Vec::new()
-    }))
+    Ok(windows_native::process_list())
 }
 
 /// Parse `ps -eo pid,comm,command` output.
