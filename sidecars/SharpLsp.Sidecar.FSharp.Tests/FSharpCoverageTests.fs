@@ -583,7 +583,7 @@ let ``formatDocument returns empty for already-formatted file`` () = task {
     // Write something simple that might already match Fantomas output.
     File.WriteAllText(file, "module Fmt\n\nlet x = 1\n")
     try
-        let! edits = FSharpFeatures.formatDocument file
+        let! edits = FSharpFeatures.formatDocument (FSharpWorkspace.create ()) file
         Assert.NotNull(edits :> obj)
     finally
         cleanup dir
@@ -591,19 +591,19 @@ let ``formatDocument returns empty for already-formatted file`` () = task {
 
 [<Fact>]
 let ``formatDocument handles non-existent file gracefully`` () = task {
-    let! edits = FSharpFeatures.formatDocument "/nope/does/not/exist.fs"
+    let! edits = FSharpFeatures.formatDocument (FSharpWorkspace.create ()) "/nope/does/not/exist.fs"
     Assert.Empty(edits)
 }
 
 [<Fact>]
 let ``formatRange handles non-existent file gracefully`` () = task {
-    let! edits = FSharpFeatures.formatRange "/nope.fs" 0 0 1 0
+    let! edits = FSharpFeatures.formatRange (FSharpWorkspace.create ()) "/nope.fs" 0 0 1 0
     Assert.Empty(edits)
 }
 
 [<Fact>]
 let ``formatPreview returns None for non-existent file`` () = task {
-    let! preview = FSharpFeatures.formatPreview "/nope.fs"
+    let! preview = FSharpFeatures.formatPreview (FSharpWorkspace.create ()) "/nope.fs"
     Assert.True(preview.IsNone)
 }
 
@@ -1617,7 +1617,7 @@ let ``FEAT formatDocument rewrites a poorly-formatted file`` () = task {
     let file = Path.Combine(dir, "Bad.fs")
     File.WriteAllText(file, "module    Bad\nlet    x=1\nlet   y    =     2\n")
     try
-        let! edits = FSharpFeatures.formatDocument file
+        let! edits = FSharpFeatures.formatDocument (FSharpWorkspace.create ()) file
         Assert.NotNull(edits :> obj)
         Assert.Single(edits) |> ignore
         let edit = edits[0]
@@ -1637,7 +1637,7 @@ let ``FEAT formatRange reformats a single binding region`` () = task {
     let file = Path.Combine(dir, "Range.fs")
     File.WriteAllText(file, "module Range\nlet   z    =    7\nlet w = 8\n")
     try
-        let! edits = FSharpFeatures.formatRange file 1 0 1 16
+        let! edits = FSharpFeatures.formatRange (FSharpWorkspace.create ()) file 1 0 1 16
         Assert.NotNull(edits :> obj)
         // The poorly spaced line on row 1 is reformatted.
         for e in edits do
@@ -1655,7 +1655,7 @@ let ``FEAT formatPreview returns original and formatted text`` () = task {
     let original = "module Prev\nlet    q=9\n"
     File.WriteAllText(file, original)
     try
-        let! preview = FSharpFeatures.formatPreview file
+        let! preview = FSharpFeatures.formatPreview (FSharpWorkspace.create ()) file
         Assert.True(preview.IsSome)
         let p = preview.Value
         Assert.Equal(original, p.Original)
@@ -2195,7 +2195,7 @@ let ``FEAT2 formatRange returns empty for an already-formatted line`` () = task 
     let file = Path.Combine(dir, "Clean.fs")
     File.WriteAllText(file, "module Clean\n\nlet x = 1\n")
     try
-        let! edits = FSharpFeatures.formatRange file 2 0 2 9
+        let! edits = FSharpFeatures.formatRange (FSharpWorkspace.create ()) file 2 0 2 9
         Assert.NotNull(edits :> obj)
     finally
         cleanup dir
@@ -2210,7 +2210,7 @@ let ``FEAT2 formatDocument returns empty when content is already canonical`` () 
     let file = Path.Combine(dir, "Canon.fs")
     File.WriteAllText(file, "module Canon\n\nlet value = 1\n")
     try
-        let! edits = FSharpFeatures.formatDocument file
+        let! edits = FSharpFeatures.formatDocument (FSharpWorkspace.create ()) file
         // Either no edit (already canonical) or a single normalising edit.
         Assert.NotNull(edits :> obj)
     finally
@@ -2629,7 +2629,7 @@ let ``formatRange returns no edits when the range is already formatted`` () = ta
     File.WriteAllText(file, "module M\n\nlet x = 1\n")
     try
         // The single already-formatted line round-trips unchanged → [||].
-        let! edits = FSharpFeatures.formatRange file 2 3 3 0
+        let! edits = FSharpFeatures.formatRange (FSharpWorkspace.create ()) file 2 3 3 0
         Assert.Empty(edits)
     finally
         cleanup dir

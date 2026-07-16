@@ -47,6 +47,20 @@ impl FramedTransport {
         }
     }
 
+    /// Wrap an arbitrary in-memory stream — test harnesses simulate a
+    /// sidecar with `tokio::io::duplex` instead of a real process.
+    #[cfg(test)]
+    pub fn from_stream<S>(stream: S) -> Self
+    where
+        S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    {
+        let (reader, writer) = tokio::io::split(stream);
+        Self {
+            reader: Box::new(reader),
+            writer: Box::new(writer),
+        }
+    }
+
     /// Read one framed envelope. Returns `None` at EOF.
     pub async fn read_envelope(&mut self) -> Result<Option<Envelope>> {
         let mut len_buf = [0u8; 4];

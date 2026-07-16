@@ -24,6 +24,12 @@ const PING_INTERVAL: Duration = Duration::from_secs(5);
 const PING_TIMEOUT: Duration = Duration::from_secs(2);
 /// How long to wait for the sidecar READY signal.
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
+/// Response budget for ordinary sidecar requests. Anything slower is wedged,
+/// not busy — see [SIDECAR-REQUEST-TIMEOUT].
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+/// Response budget for `workspace/open`, which legitimately runs a full
+/// MSBuild design-time build (minutes on a cold NuGet cache).
+const WORKSPACE_OPEN_TIMEOUT: Duration = Duration::from_secs(600);
 /// Manages a single sidecar process (C# or F#).
 pub struct SidecarManager {
     /// Display name for logging.
@@ -159,7 +165,24 @@ impl SidecarManager {
     }
 
     /// Send a request to the sidecar and wait for the response.
+    ///
+    /// Bounded by a per-method budget: without one, a wedged sidecar handler
+    /// blocks the LSP main loop forever — the health monitor deliberately
+    /// skips pinging while a request holds the transport, so recovery would
+    /// never fire. Implements [SIDECAR-REQUEST-TIMEOUT].
     pub async fn request(&self, method: &str, payload: Vec<u8>) -> Result<Vec<u8>> {
+        self.request_with_budget(method, payload, request_budget(method))
+            .await
+    }
+
+    /// [`SidecarManager::request`] with an explicit response budget — health
+    /// pings use a much shorter one than semantic requests.
+    async fn request_with_budget(
+        &self,
+        method: &str,
+        payload: Vec<u8>,
+        budget: Duration,
+    ) -> Result<Vec<u8>> {
         self.ensure_running().await?;
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -169,12 +192,19 @@ impl SidecarManager {
         let mut transport_guard = self.transport.lock().await;
         let transport = transport_guard.as_mut().context("sidecar not connected")?;
 
-        transport.write_envelope(&envelope).await?;
-
-        let response = transport
-            .read_envelope()
-            .await?
-            .context("sidecar closed connection")?;
+        let exchange = async {
+            transport.write_envelope(&envelope).await?;
+            transport
+                .read_envelope()
+                .await?
+                .context("sidecar closed connection")
+        };
+        let Ok(exchange_result) = tokio::time::timeout(budget, exchange).await else {
+            return self
+                .fail_timed_out_request(&mut transport_guard, method, id, budget)
+                .await;
+        };
+        let response = exchange_result?;
 
         if let Some(err) = response.error {
             error!(sidecar = %self.name, method = %method, id = id, "Sidecar error: {err}");
@@ -195,6 +225,35 @@ impl SidecarManager {
         Ok(response.payload)
     }
 
+    /// Tear down the connection after a request timeout. The late response
+    /// would otherwise be handed to the next caller and desync the framed
+    /// protocol, so the transport is dropped and the process killed — the
+    /// next request respawns a clean sidecar. [SIDECAR-REQUEST-TIMEOUT]
+    async fn fail_timed_out_request(
+        &self,
+        transport: &mut Option<FramedTransport>,
+        method: &str,
+        id: u32,
+        budget: Duration,
+    ) -> Result<Vec<u8>> {
+        *transport = None;
+        if let Some(mut child) = self.child.lock().await.take() {
+            let _ = child.kill().await;
+        }
+        error!(
+            sidecar = %self.name,
+            method = %method,
+            id = id,
+            timeout_secs = budget.as_secs(),
+            "Sidecar request timed out; dropping connection for respawn"
+        );
+        bail!(
+            "{} sidecar request {method} timed out after {}s",
+            self.name,
+            budget.as_secs()
+        )
+    }
+
     /// Spawn the sidecar process and connect via Unix socket.
     /// Returns the child process and transport for the caller to store.
     async fn spawn_process(&self) -> Result<(Child, FramedTransport)> {
@@ -211,18 +270,19 @@ impl SidecarManager {
             socket = %self.socket_path,
             "Spawning sidecar process"
         );
-        let mut child = Command::new(&self.spawn_command)
+        let mut command = Command::new(&self.spawn_command);
+        let _ = command
             .args(&self.spawn_args)
             .kill_on_drop(true)
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::inherit())
-            .spawn()
-            .with_context(|| {
-                format!(
-                    "failed to spawn {} sidecar: command={:?} args={:?}",
-                    self.name, self.spawn_command, self.spawn_args
-                )
-            })?;
+            .stderr(std::process::Stdio::inherit());
+        crate::utils::hide_console_window_tokio(&mut command);
+        let mut child = command.spawn().with_context(|| {
+            format!(
+                "failed to spawn {} sidecar: command={:?} args={:?}",
+                self.name, self.spawn_command, self.spawn_args
+            )
+        })?;
 
         let socket_path = self.wait_for_ready(&mut child).await?;
 
@@ -272,19 +332,21 @@ impl SidecarManager {
     }
 
     /// Send a ping and verify the response.
+    ///
+    /// Routed through [`SidecarManager::request_with_budget`] so a timed-out
+    /// ping poisons the transport instead of abandoning a pending response
+    /// mid-stream — an outer timeout that merely drops the read future leaves
+    /// a stale frame for the next caller. [SIDECAR-REQUEST-TIMEOUT]
     pub async fn health_check(&self) -> Result<()> {
         let ping_payload = rmp_serde::to_vec("ping")?;
-        let result = tokio::time::timeout(PING_TIMEOUT, self.request("ping", ping_payload)).await;
-
-        match result {
-            Ok(Ok(_)) => Ok(()),
-            Ok(Err(err)) => {
+        match self
+            .request_with_budget("ping", ping_payload, PING_TIMEOUT)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(err) => {
                 warn!(sidecar = %self.name, "Health check failed: {err:#}");
                 Err(err)
-            }
-            Err(_) => {
-                warn!(sidecar = %self.name, "Health check timed out");
-                bail!("health check timed out")
             }
         }
     }
@@ -342,6 +404,17 @@ impl SidecarManager {
         if let Some(mut child) = self.child.lock().await.take() {
             let _ = child.kill().await;
         }
+    }
+}
+
+/// Response budget for a sidecar method. `workspace/open` legitimately runs a
+/// full MSBuild design-time build; anything else past two minutes is wedged.
+/// [SIDECAR-REQUEST-TIMEOUT]
+fn request_budget(method: &str) -> Duration {
+    if method == "workspace/open" {
+        WORKSPACE_OPEN_TIMEOUT
+    } else {
+        REQUEST_TIMEOUT
     }
 }
 
@@ -864,6 +937,30 @@ mod tests {
             "sidecar_launch must use SHARPLSP_CSHARP_SIDECAR_PATH when set"
         );
         assert_eq!(args, vec!["/tmp/sharplsp-test-env.sock"]);
+    }
+
+    /// A wedged sidecar (accepts the request, never answers) must fail the
+    /// request within its budget and poison the transport so the next request
+    /// respawns a clean process — not hang the LSP main loop forever.
+    /// Implements [SIDECAR-REQUEST-TIMEOUT].
+    #[tokio::test]
+    async fn request_times_out_and_poisons_the_transport() {
+        let manager = SidecarManager::new("test", "unused-command", vec![], "unused-endpoint");
+        // In-memory pipe standing in for a sidecar that never responds. Keep
+        // the far end alive — dropping it would EOF the stream and take the
+        // "closed connection" path instead of the timeout path.
+        let (host_side, _wedged_sidecar_side) = tokio::io::duplex(1024);
+        *manager.transport.lock().await = Some(FramedTransport::from_stream(host_side));
+
+        let result = manager
+            .request_with_budget("ping", Vec::new(), Duration::from_millis(100))
+            .await;
+
+        assert!(result.is_err(), "wedged sidecar must not hang the request");
+        assert!(
+            manager.transport.lock().await.is_none(),
+            "timed-out transport must be dropped so the next request respawns"
+        );
     }
 
     /// GitHub #151: two hosts (e.g. two editor windows) on the same workspace

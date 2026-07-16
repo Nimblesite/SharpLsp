@@ -62,6 +62,17 @@ pub fn start(
 ) -> Result<StartCountersResult> {
     let tool = tool_discovery::require_counters()?;
 
+    // Same pre-spawn guard as trace::start: `dotnet-counters monitor` hangs
+    // on Windows instead of failing fast when the target is not a .NET
+    // process, leaking the child and a zombie session. [GitHub #110]
+    if super::diagnostics_port::has_endpoint(params.pid) == Some(false) {
+        anyhow::bail!(
+            "failed to attach dotnet-counters to PID {}: target is not a .NET process \
+             (no .NET diagnostics endpoint)",
+            params.pid
+        );
+    }
+
     let providers_arg = params.providers.join(",");
 
     info!(

@@ -519,30 +519,18 @@ fn collect_source_files(dir: &Path, files: &mut Vec<String>) {
     }
 }
 
-/// Check whether the path has a `.cs` or `.fs` extension.
+/// Check whether the path has a `.cs` or `.fs` extension, in any casing —
+/// Windows filesystems are case-insensitive, so `Program.CS` is a C# file.
 fn is_source_file(path: &Path) -> bool {
-    matches!(path.extension().and_then(|e| e.to_str()), Some("cs" | "fs"))
-}
-
-/// Read file content from VFS if the document is open, otherwise from disk.
-fn vfs_or_disk(file_path: &str, vfs: &Vfs) -> Result<String> {
-    // Try the canonical path first (resolves symlinks), then the original —
-    // editors may use the symlinked form (e.g. /tmp on macOS → /private/tmp).
-    let open_content = std::fs::canonicalize(file_path)
-        .ok()
-        .and_then(|canonical| vfs.get_content_for_path(&canonical.to_string_lossy()))
-        .or_else(|| vfs.get_content_for_path(file_path));
-    if let Some(content) = open_content {
-        return Ok(content);
-    }
-    tracing::trace!("VFS miss for {file_path}, reading from disk");
-    std::fs::read_to_string(file_path).with_context(|| format!("read {file_path}"))
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("cs") || ext.eq_ignore_ascii_case("fs"))
 }
 
 /// Parse a single source file and extract symbols.
 /// Prefers VFS content (unsaved buffer) over disk for open documents.
 fn parse_file_symbols(file_path: &str, parsers: &TsParsers, vfs: &Vfs) -> Result<FileSymbol> {
-    let source = vfs_or_disk(file_path, vfs)?;
+    let source = vfs.read_live_or_disk(file_path)?;
 
     let path = Path::new(file_path);
     let lang = LangId::from_path(path).context("unsupported file type")?;
@@ -710,6 +698,15 @@ mod tests {
     }
 
     // ── is_source_file ──
+
+    /// Windows filesystems are case-insensitive — `Program.CS` is the same
+    /// file as `Program.cs` and must not vanish from workspace symbols.
+    #[test]
+    fn is_source_file_matches_extensions_case_insensitively() {
+        assert!(is_source_file(Path::new("A.CS")));
+        assert!(is_source_file(Path::new("B.Fs")));
+        assert!(!is_source_file(Path::new("C.txt")));
+    }
 
     #[test]
     fn is_source_file_cs() {

@@ -4,7 +4,6 @@
 /// Implements [FS-DOCSYMBOL].
 module SharpLsp.Sidecar.FSharp.FSharpSymbols
 
-open System.IO
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Text
@@ -93,11 +92,13 @@ let private parsingOptions (state: FSharpWorkspace.FSharpWorkspaceState) (filePa
     | Some opts -> fst (state.Checker.GetParsingOptionsFromProjectOptions(opts))
     | None -> { FSharpParsingOptions.Default with SourceFiles = [| filePath |] }
 
-/// Document symbols for an F# file (parse-only, project-independent).
+/// Document symbols for an F# file (parse-only, project-independent). Reads
+/// the live buffer through the overlay so the outline tracks unsaved edits.
+/// [FS-DIDCHANGE-OVERLAY]
 let documentSymbols (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: string) =
     task {
         try
-            let source = File.ReadAllText(filePath)
+            let source = FSharpWorkspace.readSource state filePath
             let sourceText = SourceText.ofString source
             let options = parsingOptions state filePath
             let! parseResults = state.Checker.ParseFile(filePath, sourceText, options)

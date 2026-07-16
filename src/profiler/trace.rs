@@ -6,8 +6,16 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use super::child_process;
+use super::diagnostics_port;
 use super::session::{self, SessionKind};
 use super::tool_discovery;
+
+/// How long `stop` waits for `dotnet-trace collect` to exit gracefully before
+/// hard-killing it. Bounded so `stopTrace` can never hang the LSP request
+/// loop — and kept comfortably below the 10s no-hang budget the profiler
+/// edge-case e2e tests assert.
+const GRACEFUL_STOP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
 
 /// Parameters for starting a trace session.
 #[derive(Debug, Deserialize)]
@@ -51,6 +59,19 @@ pub struct StopTraceResult {
 pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
     let tool = tool_discovery::require_trace()?;
 
+    // Reject non-.NET targets before spawning anything: `dotnet-trace collect`
+    // fails fast on Unix but hangs forever on Windows, which would leak the
+    // collector child AND register a zombie session. The endpoint check is
+    // deterministic; when it cannot be evaluated (None) we fail open and rely
+    // on `early_attach_failure` below. [GitHub #110]
+    if diagnostics_port::has_endpoint(params.pid) == Some(false) {
+        anyhow::bail!(
+            "failed to attach dotnet-trace to PID {}: target is not a .NET process \
+             (no .NET diagnostics endpoint)",
+            params.pid
+        );
+    }
+
     let output_path = params.output_path.unwrap_or_else(|| {
         let dir = output_dir();
         format!("{}/trace-{}.nettrace", dir, params.pid)
@@ -78,8 +99,11 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
         let _ = cmd.args(["--duration", &format!("00:00:{:02}", params.duration)]);
     }
 
+    // stdin MUST be piped: writing Enter to it is dotnet-trace's documented
+    // graceful-stop trigger, and the only stop channel that finalizes the
+    // trace on Windows (see `stop`).
     let _ = cmd
-        .stdin(std::process::Stdio::null())
+        .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
@@ -93,6 +117,10 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
     if let Some(err) = early_attach_failure(&mut child) {
         anyhow::bail!("failed to attach dotnet-trace to PID {}: {err}", params.pid);
     }
+
+    // Attach succeeded — hand stdout/stderr to background drain threads so a
+    // long-running collection can never stall once the OS pipe buffer fills.
+    child_process::drain_output(&mut child);
 
     let session_id = session::store().create(
         SessionKind::Trace,
@@ -165,24 +193,13 @@ pub fn stop(session_id: &str) -> Result<StopTraceResult> {
         .get(session_id)
         .map_or_else(std::time::Instant::now, |s| s.started_at);
 
-    // Send SIGINT on Unix, SIGKILL on Windows.
-    // dotnet-trace handles SIGINT gracefully, flushing the trace file.
-    #[cfg(unix)]
-    {
-        let pid = child.id();
-        if let Ok(pid_i32) = i32::try_from(pid) {
-            let _ = std::process::Command::new("kill")
-                .args(["-INT", &pid_i32.to_string()])
-                .status();
-        }
-    }
+    // Ask dotnet-trace to stop gracefully — Enter on stdin (its documented
+    // stop trigger on every platform; SIGINT additionally on Unix) — and wait
+    // for it to flush the rundown and exit. Hard-killing is a last resort:
+    // on Windows `Child::kill()` is `TerminateProcess`, which truncates the
+    // .nettrace mid-write and corrupts it. [GitHub #110]
+    child_process::stop_gracefully(&mut child, GRACEFUL_STOP_TIMEOUT);
 
-    #[cfg(not(unix))]
-    {
-        let _ = child.kill();
-    }
-
-    let _ = child.wait();
     let duration_ms = started_at.elapsed().as_millis();
 
     // Get output path from session.

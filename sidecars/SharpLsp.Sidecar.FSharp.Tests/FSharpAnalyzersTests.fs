@@ -41,9 +41,15 @@ let ``samePath falls back to ordinal compare on invalid paths`` () =
 
 [<Fact>]
 let ``buildDiagnostic maps a 1-based range to 0-based positions`` () =
-    let r = Range.mkRange "/tmp/X.fs" (Position.mkPos 5 2) (Position.mkPos 5 9)
+    // FCS's mkRange normalizes file names to native full paths (on Windows,
+    // `/tmp/X.fs` becomes `C:\tmp\X.fs`), so anchor the fixture to a path
+    // that is already in native full form on every platform.
+    let path =
+        System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "X.fs"))
+
+    let r = Range.mkRange path (Position.mkPos 5 2) (Position.mkPos 5 9)
     let d = FSharpAnalyzers.buildDiagnostic "SLSPF0101" "Warning" "msg" r
-    Assert.Equal("/tmp/X.fs", d.FilePath)
+    Assert.Equal(path, d.FilePath)
     Assert.Equal(4, d.StartLine)
     Assert.Equal(2, d.StartCharacter)
     Assert.Equal(4, d.EndLine)

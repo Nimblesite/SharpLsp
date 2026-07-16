@@ -17,6 +17,7 @@ use lsp_types::{
 };
 use tracing::{debug, info, warn};
 
+use crate::nav_cache::is_empty_nav_result;
 use crate::sidecar::manager::SidecarManager;
 use crate::utils::{map_text_edits, SidecarTextEdit};
 
@@ -573,11 +574,6 @@ fn handle_multi_location_nav(
 
     let response = (!locations.is_empty()).then(|| GotoDefinitionResponse::Array(locations));
     Ok(serde_json::to_value(response)?)
-}
-
-/// Check if a navigation result is empty (null or empty array).
-fn is_empty_nav_result(value: &serde_json::Value) -> bool {
-    value.is_null() || value.as_array().is_some_and(Vec::is_empty)
 }
 
 /// Cached navigation with cross-language fallback.

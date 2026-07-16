@@ -10,8 +10,9 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
 // Self-terminate when orphaned: if the parent (the test host) dies abnormally —
 // e.g. nextest SIGKILLs a timed-out test — Rust-side `Drop` cleanup never runs
-// and this CPU-bound process would leak as a runaway (issue #3). Watch the parent
-// PID and cancel once we are reparented. POSIX-only; `getppid` exists on macOS/Linux.
+// and this CPU-bound process would leak as a runaway (issue #3). POSIX: watch
+// the parent PID and cancel once we are reparented. Windows: wait on a handle
+// to the original parent process (no reparenting exists there).
 StartParentDeathWatchdog(cts);
 
 Console.WriteLine("READY");
@@ -40,7 +41,10 @@ catch (OperationCanceledException) { }
 static void StartParentDeathWatchdog(CancellationTokenSource cts)
 {
     if (OperatingSystem.IsWindows())
+    {
+        StartWindowsParentDeathWatchdog(cts);
         return;
+    }
 
     var initialParentPid = NativeMethods.getppid();
     var watchdog = new Thread(() =>
@@ -65,6 +69,124 @@ static void StartParentDeathWatchdog(CancellationTokenSource cts)
         Name = "parent-death-watchdog",
     };
     watchdog.Start();
+}
+
+// Windows counterpart of the watchdog: there is no reparenting on Windows —
+// the recorded parent PID just goes stale when the parent dies — so instead we
+// open a handle to the original parent at startup (a live handle is immune to
+// PID reuse) and block a dedicated thread on its exit. Same real-thread
+// rationale as the POSIX path: the CPU-bound workers saturate the thread pool.
+static void StartWindowsParentDeathWatchdog(CancellationTokenSource cts)
+{
+    // The direct parent may be an MSYS exec-stub (`sh` spawning a native
+    // binary keeps a wrapper alive exactly as long as we live — it waits on
+    // us), so watching it alone can never fire. Watch a few LIVE ancestors
+    // (parent, grandparent, ...) instead and self-terminate when ANY of them
+    // exits: whichever layer the harness kills, we notice. Handles are opened
+    // immediately at startup, so the waits are immune to PID reuse.
+    var ancestors = LiveAncestors(maxDepth: 3);
+    WatchdogLog(
+        $"watching ancestors: {string.Join(", ", ancestors.Select(a => $"{a.Id} ({SafeName(a)})"))}"
+    );
+    foreach (var ancestor in ancestors)
+    {
+        var watched = ancestor;
+        var watchdog = new Thread(() =>
+        {
+            try
+            {
+                watched.WaitForExit();
+                WatchdogLog($"ancestor {watched.Id} exited -> cancel");
+            }
+            catch (SystemException ex)
+            {
+                // Wait failure means we can no longer observe the ancestor;
+                // treat it as death so we never linger as an unwatched orphan.
+                WatchdogLog($"wait on ancestor {watched.Id} failed ({ex.GetType().Name}) -> cancel");
+            }
+
+            cts.Cancel();
+        })
+        {
+            IsBackground = true,
+            Name = $"parent-death-watchdog-{watched.Id}",
+        };
+        watchdog.Start();
+    }
+}
+
+// Walk the creator chain upward, collecting ancestors that are still alive.
+// Stops at the first dead/unqueryable link (the chain is unknowable past it)
+// or at a system PID. An empty result means "run unguarded" — dying
+// spuriously would be worse than the (test-only) risk of leaking.
+static List<System.Diagnostics.Process> LiveAncestors(int maxDepth)
+{
+    var result = new List<System.Diagnostics.Process>();
+    var pid = NativeMethods.GetParentPid(System.Diagnostics.Process.GetCurrentProcess().Handle);
+    for (var depth = 0; depth < maxDepth && pid > 4; depth++)
+    {
+        System.Diagnostics.Process ancestor;
+        try
+        {
+            ancestor = System.Diagnostics.Process.GetProcessById(pid);
+        }
+        catch (ArgumentException)
+        {
+            break; // Dead: cannot query its creator, chain ends here.
+        }
+
+        result.Add(ancestor);
+        try
+        {
+            pid = NativeMethods.GetParentPid(ancestor.Handle);
+            WatchdogLog($"ancestor {ancestor.Id} -> creator {pid}");
+        }
+        catch (SystemException ex)
+        {
+            // Covers InvalidOperationException too: the ancestor exited
+            // between GetProcessById and Handle — the chain ends here.
+            WatchdogLog($"creator query on {ancestor.Id} failed ({ex.GetType().Name})");
+            break;
+        }
+    }
+
+    return result;
+}
+
+// Opt-in watchdog diagnostics: set PROFILE_TARGET_WATCHDOG_LOG to a file path
+// to record the watchdog's decisions. Off by default; the fixture's stdio is
+// redirected to /dev/null by several harnesses, so a file is the only channel
+// that can explain an unexpected early exit.
+static void WatchdogLog(string message)
+{
+    var path = Environment.GetEnvironmentVariable("PROFILE_TARGET_WATCHDOG_LOG");
+    if (string.IsNullOrEmpty(path))
+        return;
+    try
+    {
+        File.AppendAllText(
+            path,
+            System.FormattableString.Invariant(
+                $"{DateTime.UtcNow:O} [pid {Environment.ProcessId}] {message}{Environment.NewLine}"
+            )
+        );
+    }
+    catch (IOException)
+    {
+        // Diagnostics must never take the fixture down.
+    }
+}
+
+static string SafeName(System.Diagnostics.Process process)
+{
+    try
+    {
+        return process.ProcessName;
+    }
+    catch (InvalidOperationException)
+    {
+        return "<exited>";
+    }
 }
 
 // Slow path: allocates a new string payload and deserializes to a Dictionary every iteration.
@@ -198,4 +320,43 @@ internal static class NativeMethods
     [System.Runtime.InteropServices.DefaultDllImportSearchPaths(
         System.Runtime.InteropServices.DllImportSearchPath.System32)]
     internal static extern int getppid();
+
+    // Windows has no getppid(2); the parent PID lives in
+    // PROCESS_BASIC_INFORMATION.InheritedFromUniqueProcessId, reachable only
+    // via NtQueryInformationProcess (info class 0 = ProcessBasicInformation).
+    [System.Runtime.InteropServices.StructLayout(
+        System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct ProcessBasicInformation
+    {
+        public IntPtr ExitStatus;
+        public IntPtr PebBaseAddress;
+        public IntPtr AffinityMask;
+        public IntPtr BasePriority;
+        public IntPtr UniqueProcessId;
+        public IntPtr InheritedFromUniqueProcessId;
+    }
+
+    [System.Runtime.InteropServices.DllImport("ntdll.dll")]
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(
+        System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    private static extern int NtQueryInformationProcess(
+        IntPtr processHandle,
+        int processInformationClass,
+        ref ProcessBasicInformation processInformation,
+        int processInformationLength,
+        out int returnLength);
+
+    /// <summary>Creator (parent) PID of the process behind <paramref name="processHandle"/>
+    /// on Windows, or -1 when it cannot be determined.</summary>
+    internal static int GetParentPid(IntPtr processHandle)
+    {
+        var info = default(ProcessBasicInformation);
+        var status = NtQueryInformationProcess(
+            processHandle,
+            0,
+            ref info,
+            System.Runtime.InteropServices.Marshal.SizeOf<ProcessBasicInformation>(),
+            out _);
+        return status == 0 ? unchecked((int)info.InheritedFromUniqueProcessId.ToInt64()) : -1;
+    }
 }

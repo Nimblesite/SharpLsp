@@ -84,7 +84,7 @@ impl NavCache {
         method: &str,
         value: serde_json::Value,
     ) {
-        if value.is_null() {
+        if is_empty_nav_result(&value) {
             return;
         }
         let key = (
@@ -105,11 +105,41 @@ impl NavCache {
     }
 }
 
+/// Check if a navigation result is empty (null or empty array). Empty results
+/// mean "the sidecar had nothing yet", never "definitively no results" — both
+/// the cache and the cross-language fallback treat them as retryable.
+pub fn is_empty_nav_result(value: &serde_json::Value) -> bool {
+    value.is_null() || value.as_array().is_some_and(Vec::is_empty)
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
     use super::NavCache;
+
+    #[test]
+    fn insert_skips_empty_array_results() {
+        // An empty location list means the sidecar may still be loading the
+        // workspace; caching it would pin "no results" until the next edit
+        // bumps the document version. [GitHub #110]
+        let mut cache = NavCache::new();
+        cache.insert(
+            "file:///test.cs",
+            1,
+            2,
+            3,
+            "textDocument/references",
+            json!([]),
+        );
+
+        assert!(
+            cache
+                .get("file:///test.cs", 1, 2, 3, "textDocument/references")
+                .is_none(),
+            "empty arrays must not be cached"
+        );
+    }
 
     #[test]
     fn get_returns_none_for_stale_document_version() {

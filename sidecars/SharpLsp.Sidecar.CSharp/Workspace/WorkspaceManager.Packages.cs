@@ -28,7 +28,7 @@ internal sealed partial class WorkspaceManager
                 return ReferenceUsageQueryResult.Failure("No solution loaded");
             }
 
-            var project = FindProjectByPath(projectPath);
+            var project = SolutionPaths.FindProject(_solution, projectPath);
             if (project is null)
             {
                 return ReferenceUsageQueryResult.Failure($"Project not loaded: {projectPath}");
@@ -53,15 +53,6 @@ internal sealed partial class WorkspaceManager
         {
             return ReferenceUsageQueryResult.Failure(ex.Message);
         }
-    }
-
-    /// <summary>Find a loaded project by its file path.</summary>
-    private Project? FindProjectByPath(string projectPath)
-    {
-        var normalized = Path.GetFullPath(projectPath);
-        return _solution!.Projects.FirstOrDefault(project =>
-            IsPathMatch(project.FilePath, normalized)
-        );
     }
 
     /// <summary>Absolute file paths of on-disk (PE) metadata references.</summary>

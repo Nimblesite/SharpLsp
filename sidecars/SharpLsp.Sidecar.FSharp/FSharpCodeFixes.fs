@@ -4,7 +4,6 @@ module SharpLsp.Sidecar.FSharp.FSharpCodeFixes
 
 open System
 open System.Collections.Concurrent
-open System.IO
 open System.Text.RegularExpressions
 open System.Threading
 open FSharp.Compiler.CodeAnalysis
@@ -386,49 +385,43 @@ let getCodeActions
     =
     task {
         try
-            if not workspace.IsLoaded then
-                return []
-            else
-                let source = File.ReadAllText(filePath)
-                let sourceText = SourceText.ofString source
-                let! parseResults, checkAnswer =
-                    workspace.Checker.ParseAndCheckFileInProject(
-                        filePath, 0, sourceText, workspace.ProjectOptions.Value)
-                match checkAnswer with
-                | FSharpCheckFileAnswer.Succeeded checkResults ->
-                    // Phase 1: Diagnostic-based fixes.
-                    let diagnostics = checkResults.Diagnostics
-                    let diagActions =
-                        diagnostics
-                        |> Array.filter (fun d ->
-                            let r = d.Range
-                            let diagStart = r.StartLine - 1
-                            let diagEnd = r.EndLine - 1
-                            overlapsRange diagStart diagEnd startLine endLine)
-                        |> Array.toList
-                        |> List.collect (getFixesForDiagnostic state filePath source)
-                    // Phase 2: Type-informed actions (union/record stubs).
-                    let typeActions =
-                        collectTypeInformedActions
-                            state filePath source
-                            checkResults parseResults
-                            startLine startCharacter
-                    // Phase 3: Analyzer-driven fixes (remove unused open, simplify name).
-                    let! analyzerActions =
-                        collectAnalyzerActions
-                            state filePath checkResults source startLine endLine
-                    // Phase 4: Interface implementation stub [FS-CODEFIX-INTERFACESTUB].
-                    let! interfaceStub =
-                        FSharpCodeActions.tryGenerateInterfaceStub
-                            checkResults parseResults source
-                            filePath startLine startCharacter
-                    let interfaceActions =
-                        match interfaceStub with
-                        | Some action -> [ wrapGeneratedAction state action ]
-                        | None -> []
-                    return diagActions @ typeActions @ analyzerActions @ interfaceActions
-                | FSharpCheckFileAnswer.Aborted ->
-                    return []
+            // Overlay-aware check: fixes are computed from the live buffer,
+            // never stale disk text. [FS-DIDCHANGE-OVERLAY]
+            let! checkedFile = FSharpWorkspace.checkFileWithParse workspace filePath
+            match checkedFile with
+            | None -> return []
+            | Some(parseResults, checkResults, source) ->
+                // Phase 1: Diagnostic-based fixes.
+                let diagnostics = checkResults.Diagnostics
+                let diagActions =
+                    diagnostics
+                    |> Array.filter (fun d ->
+                        let r = d.Range
+                        let diagStart = r.StartLine - 1
+                        let diagEnd = r.EndLine - 1
+                        overlapsRange diagStart diagEnd startLine endLine)
+                    |> Array.toList
+                    |> List.collect (getFixesForDiagnostic state filePath source)
+                // Phase 2: Type-informed actions (union/record stubs).
+                let typeActions =
+                    collectTypeInformedActions
+                        state filePath source
+                        checkResults parseResults
+                        startLine startCharacter
+                // Phase 3: Analyzer-driven fixes (remove unused open, simplify name).
+                let! analyzerActions =
+                    collectAnalyzerActions
+                        state filePath checkResults source startLine endLine
+                // Phase 4: Interface implementation stub [FS-CODEFIX-INTERFACESTUB].
+                let! interfaceStub =
+                    FSharpCodeActions.tryGenerateInterfaceStub
+                        checkResults parseResults source
+                        filePath startLine startCharacter
+                let interfaceActions =
+                    match interfaceStub with
+                    | Some action -> [ wrapGeneratedAction state action ]
+                    | None -> []
+                return diagActions @ typeActions @ analyzerActions @ interfaceActions
         with ex ->
             Log.Debug(ex, "[F# CodeFixes] failed")
             return []

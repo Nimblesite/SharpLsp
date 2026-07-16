@@ -2,25 +2,37 @@
 module SharpLsp.Sidecar.FSharp.FSharpFeatures
 
 open System
-open System.IO
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
-open FSharp.Compiler.Syntax
-open FSharp.Compiler.Text
 open MessagePack
 open Serilog
 
-// ── Formatting via Fantomas (SEQUESTERED) ───────────────────────
-// This code is not wired into the LSP server. SharpLsp does not provide
-// formatting — use Fantomas via the Ionide extension for F#.
-// See docs/formatting/README.md for details.
+// ── Formatting via Fantomas ─────────────────────────────────────
+// Wired into the sidecar: FSharpSidecar registers textDocument/formatting,
+// textDocument/rangeFormatting, and textDocument/formattingPreview against
+// these functions. Sources are read through the workspace overlay so edits
+// are computed from the live buffer, never stale disk text.
+// [FS-DIDCHANGE-OVERLAY]
+
+/// Fantomas defaults to the environment's newline (CRLF on Windows), but a
+/// formatter must preserve the document's own line endings — an LF file must
+/// never be rewritten to CRLF just because the host OS is Windows.
+let private formatConfigFor (source: string) : Fantomas.Core.FormatConfig =
+    { Fantomas.Core.FormatConfig.Default with
+        EndOfLine =
+            if source.Contains("\r\n") then
+                Fantomas.Core.EndOfLineStyle.CRLF
+            else
+                Fantomas.Core.EndOfLineStyle.LF }
 
 /// Format an entire F# file using Fantomas.
-let formatDocument (filePath: string) =
+let formatDocument (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: string) =
     task {
         try
-            let source = File.ReadAllText(filePath)
-            let! formatResult = Fantomas.Core.CodeFormatter.FormatDocumentAsync(false, source)
+            let source = FSharpWorkspace.readSource state filePath
+
+            let! formatResult =
+                Fantomas.Core.CodeFormatter.FormatDocumentAsync(false, source, formatConfigFor source)
             let result = formatResult.Code
             if result = source then
                 return [||]
@@ -40,15 +52,24 @@ let formatDocument (filePath: string) =
     }
 
 /// Format a range of an F# file using Fantomas.
-let formatRange (filePath: string) (startLine: int) (startChar: int) (endLine: int) (endChar: int) =
+let formatRange
+    (state: FSharpWorkspace.FSharpWorkspaceState)
+    (filePath: string)
+    (startLine: int)
+    (startChar: int)
+    (endLine: int)
+    (endChar: int)
+    =
     task {
         try
-            let source = File.ReadAllText(filePath)
+            let source = FSharpWorkspace.readSource state filePath
             let lines = source.Split('\n')
             // Extract the range and format just that portion.
             let rangeLines = lines[startLine..endLine]
             let rangeText = String.Join("\n", rangeLines)
-            let! formatResult = Fantomas.Core.CodeFormatter.FormatDocumentAsync(false, rangeText)
+
+            let! formatResult =
+                Fantomas.Core.CodeFormatter.FormatDocumentAsync(false, rangeText, formatConfigFor rangeText)
             let result = formatResult.Code
             if result = rangeText then
                 return [||]
@@ -64,14 +85,17 @@ let formatRange (filePath: string) (startLine: int) (startChar: int) (endLine: i
             return [||]
     }
 
-// ── Formatting Preview (Fantomas) (SEQUESTERED) ────────────────
+// ── Formatting Preview (Fantomas) ───────────────────────────────
 
 /// Preview Fantomas formatting: returns original and formatted text for diff view.
-let formatPreview (filePath: string) =
+let formatPreview (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: string) =
     task {
         try
-            let source = File.ReadAllText(filePath)
-            let! formatResult = Fantomas.Core.CodeFormatter.FormatDocumentAsync(false, source)
+            let source = FSharpWorkspace.readSource state filePath
+
+            let! formatResult =
+                Fantomas.Core.CodeFormatter.FormatDocumentAsync(false, source, formatConfigFor source)
+
             let formatted = formatResult.Code
             return Some {| Original = source; Formatted = formatted |}
         with ex ->
@@ -140,32 +164,25 @@ let private extractSemanticTokens
 
     data.ToArray()
 
-/// Compute semantic tokens for an F# file using FCS.
+/// Compute semantic tokens for an F# file using FCS. The overlay-aware
+/// `checkFile` supplies the live buffer text. [FS-DIDCHANGE-OVERLAY]
 let getSemanticTokens
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (filePath: string)
     =
     task {
         try
-            if not state.IsLoaded then
-                return [||]
-            else
-                let source = File.ReadAllText(filePath)
-                let sourceText = SourceText.ofString source
-                let! _parseResults, checkAnswer =
-                    state.Checker.ParseAndCheckFileInProject(
-                        filePath, 0, sourceText, state.ProjectOptions.Value)
-                match checkAnswer with
-                | FSharpCheckFileAnswer.Succeeded checkResults ->
-                    return extractSemanticTokens checkResults source None
-                | FSharpCheckFileAnswer.Aborted ->
-                    return [||]
+            let! result = FSharpWorkspace.checkFile state filePath
+            match result with
+            | Some(checkResults, source) ->
+                return extractSemanticTokens checkResults source None
+            | None -> return [||]
         with ex ->
             Log.Debug(ex, "[F# SemanticTokens] failed")
             return [||]
     }
 
-/// Compute semantic tokens for a range of an F# file.
+/// Compute semantic tokens for a range of an F# file. [FS-DIDCHANGE-OVERLAY]
 let getSemanticTokensRange
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (filePath: string)
@@ -174,20 +191,12 @@ let getSemanticTokensRange
     =
     task {
         try
-            if not state.IsLoaded then
-                return [||]
-            else
-                let source = File.ReadAllText(filePath)
-                let sourceText = SourceText.ofString source
-                let! _parseResults, checkAnswer =
-                    state.Checker.ParseAndCheckFileInProject(
-                        filePath, 0, sourceText, state.ProjectOptions.Value)
-                match checkAnswer with
-                | FSharpCheckFileAnswer.Succeeded checkResults ->
-                    let filter = fun line -> line >= startLine && line <= endLine
-                    return extractSemanticTokens checkResults source (Some filter)
-                | FSharpCheckFileAnswer.Aborted ->
-                    return [||]
+            let! result = FSharpWorkspace.checkFile state filePath
+            match result with
+            | Some(checkResults, source) ->
+                let filter = fun line -> line >= startLine && line <= endLine
+                return extractSemanticTokens checkResults source (Some filter)
+            | None -> return [||]
         with ex ->
             Log.Debug(ex, "[F# SemanticTokensRange] failed")
             return [||]
@@ -290,7 +299,8 @@ let private extractPipelineHints
                 | _ -> ()
             | _ -> () ]
 
-/// Get inlay hints for an F# file.
+/// Get inlay hints for an F# file. The overlay-aware `checkFileWithParse`
+/// supplies the live buffer text. [FS-DIDCHANGE-OVERLAY]
 let getInlayHints
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (filePath: string)
@@ -299,22 +309,14 @@ let getInlayHints
     =
     task {
         try
-            if not state.IsLoaded then
-                return []
-            else
-                let source = File.ReadAllText(filePath)
-                let sourceText = SourceText.ofString source
-                let! parseResults, checkAnswer =
-                    state.Checker.ParseAndCheckFileInProject(
-                        filePath, 0, sourceText, state.ProjectOptions.Value)
-                match checkAnswer with
-                | FSharpCheckFileAnswer.Succeeded checkResults ->
-                    let typeHints = extractTypeHints checkResults startLine endLine
-                    let paramHints = extractParameterHints checkResults parseResults startLine endLine
-                    let pipeHints = extractPipelineHints checkResults source startLine endLine
-                    return typeHints @ paramHints @ pipeHints
-                | FSharpCheckFileAnswer.Aborted ->
-                    return []
+            let! result = FSharpWorkspace.checkFileWithParse state filePath
+            match result with
+            | Some(parseResults, checkResults, source) ->
+                let typeHints = extractTypeHints checkResults startLine endLine
+                let paramHints = extractParameterHints checkResults parseResults startLine endLine
+                let pipeHints = extractPipelineHints checkResults source startLine endLine
+                return typeHints @ paramHints @ pipeHints
+            | None -> return []
         with ex ->
             Log.Debug(ex, "[F# InlayHints] failed")
             return []

@@ -38,7 +38,7 @@ internal static class CallHierarchyResolver
         CancellationToken ct
     )
     {
-        var document = FindDocument(solution, filePath);
+        var document = SolutionPaths.FindDocument(solution, filePath);
         if (document is null)
         {
             return [];
@@ -242,29 +242,5 @@ internal static class CallHierarchyResolver
             or SymbolKind.Discard => "function",
             _ => "function",
         };
-    }
-
-    private static Document? FindDocument(Solution solution, string filePath)
-    {
-        var normalized = Path.GetFullPath(filePath);
-        foreach (var project in solution.Projects)
-        {
-            foreach (var doc in project.Documents)
-            {
-                if (
-                    doc.FilePath is not null
-                    && string.Equals(
-                        Path.GetFullPath(doc.FilePath),
-                        normalized,
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                )
-                {
-                    return doc;
-                }
-            }
-        }
-
-        return null;
     }
 }

@@ -16,10 +16,17 @@ pub enum LangId {
 }
 
 impl LangId {
-    /// Detect language from a file URI string.
+    /// Detect language from a file URI.
+    ///
+    /// Decodes the URI through the sanctioned converter first — sniffing the
+    /// raw URI string breaks on query suffixes and percent-encoding, silently
+    /// routing a document to the wrong sidecar. Falls back to the raw string
+    /// for non-`file://` schemes (e.g. `untitled:`) so extension sniffing
+    /// still works there. [GitHub #110]
     pub fn from_uri(uri: &Uri) -> Option<Self> {
-        let s = uri.as_str();
-        Self::from_path(Path::new(s))
+        let raw = uri.as_str();
+        let path = crate::utils::uri_to_path(raw).unwrap_or_else(|_| raw.to_string());
+        Self::from_path(Path::new(&path))
     }
 
     /// Detect language from a file path.
@@ -62,5 +69,25 @@ impl TsParsers {
         parser
             .parse(source, old_tree)
             .context("tree-sitter parse returned None")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Language routing must sniff the extension from the decoded URI path,
+    /// not the raw URI string — a query suffix or exotic encoding must not
+    /// silently misroute a document to the wrong sidecar. [GitHub #110]
+    #[test]
+    fn from_uri_decodes_the_uri_before_sniffing_the_extension() {
+        let fs_with_query: Uri = "file:///c:/dir/Library.fs?v=2".parse().expect("valid uri");
+        assert_eq!(LangId::from_uri(&fs_with_query), Some(LangId::FSharp));
+
+        let encoded_cs: Uri = "file:///c%3A/dir/Program.cs".parse().expect("valid uri");
+        assert_eq!(LangId::from_uri(&encoded_cs), Some(LangId::CSharp));
+
+        let unknown: Uri = "file:///c:/dir/readme.txt".parse().expect("valid uri");
+        assert_eq!(LangId::from_uri(&unknown), None);
     }
 }

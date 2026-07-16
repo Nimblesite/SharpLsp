@@ -142,33 +142,8 @@ fn ready_fsharp_client() -> (tempfile::TempDir, String, LspClient) {
     (tmp, file_uri, client)
 }
 
-/// Send `method` with position params built from the real `file_uri`.
-fn position_request(client: &mut LspClient, method: &str, uri: &str, pos: (u32, u32)) -> Value {
-    client.request(
-        method,
-        json!({
-            "textDocument": { "uri": uri },
-            "position": { "line": pos.0, "character": pos.1 }
-        }),
-    )
-}
-
-/// Send a `{ textDocument: { uri } }`-only request (documentSymbol, codeLens, …).
-fn document_request(client: &mut LspClient, method: &str, uri: &str) -> Value {
-    client.request(method, json!({ "textDocument": { "uri": uri } }))
-}
-
-/// Assert a response is well-formed JSON-RPC 2.0 with an id and no error.
-fn assert_rpc_ok(resp: &Value, label: &str) {
-    assert_eq!(resp["jsonrpc"], "2.0", "{label}: must be JSON-RPC 2.0");
-    assert!(resp.get("id").is_some(), "{label}: must have request id");
-    assert!(
-        resp.get("error").is_none(),
-        "{label}: must not return an error: {resp}"
-    );
-}
-
 // ── F# Hover Tests (Full-Stack) ─────────────────────────────────
+// (position_request / document_request / assert_rpc_ok live in nav_helpers.)
 
 // 40. F# HOVER ON FUNCTION/TYPE/MODULE
 

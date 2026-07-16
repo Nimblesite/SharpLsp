@@ -13,6 +13,7 @@ open FSharp.Compiler.Symbols
 open FSharp.Compiler.Text
 open FSharp.Compiler.Tokenization
 open Serilog
+open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Solutions
 open SharpLsp.Sidecar.FSharp.Hover
 
@@ -36,26 +37,41 @@ type FSharpWorkspaceState =
       /// [FS-DIDCHANGE-OVERLAY]
       Overlays: ConcurrentDictionary<string, string> }
 
+/// Overlay keys compare case-insensitively on Windows, where hosts vary the
+/// path's spelling (VS Code lowercases the drive letter while FCS and MSBuild
+/// report it uppercase); elsewhere Ordinal respects case-sensitive
+/// filesystems. [FS-DIDCHANGE-OVERLAY]
+let private overlayComparer: StringComparer =
+    if OperatingSystem.IsWindows() then StringComparer.OrdinalIgnoreCase
+    else StringComparer.Ordinal
+
+/// Canonical overlay key via the shared `NativePaths` normalization: collapses
+/// separator, relative-segment, and Windows extended-length (`\\?\`) spellings
+/// so the didChange writer and every reader agree on one identity per file.
+/// [FS-DIDCHANGE-OVERLAY]
+let private overlayKey (filePath: string) : string =
+    NativePaths.NormalizeFullPath filePath
+
 /// Create a new workspace with an FSharpChecker.
 let create () : FSharpWorkspaceState =
     let checker = FSharpChecker.Create(keepAssemblyContents = true)
     { Checker = checker
       ProjectOptions = None
       IsLoaded = false
-      Overlays = ConcurrentDictionary<string, string>() }
+      Overlays = ConcurrentDictionary<string, string>(overlayComparer) }
 
 /// Record the editor's in-memory buffer for a file (LSP didChange/didOpen).
 /// Per-file FCS analyses then resolve positions against the live buffer rather
-/// than the on-disk file, restoring parity with the C# sidecar. The Rust host
-/// sends the same absolute path it sends on position requests, so the keys
-/// align. [FS-DIDCHANGE-OVERLAY]
+/// than the on-disk file, restoring parity with the C# sidecar. Keys are
+/// canonicalized, so any spelling of the path the host sends on later requests
+/// finds the buffer. [FS-DIDCHANGE-OVERLAY]
 let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
-    state.Overlays[filePath] <- newText
+    state.Overlays[overlayKey filePath] <- newText
 
 /// Read a file's current source: the in-memory overlay when the editor has an
 /// open buffer for it, otherwise the on-disk contents. [FS-DIDCHANGE-OVERLAY]
 let internal readSource (state: FSharpWorkspaceState) (filePath: string) : string =
-    match state.Overlays.TryGetValue filePath with
+    match state.Overlays.TryGetValue(overlayKey filePath) with
     | true, text -> text
     | _ -> File.ReadAllText filePath
 
@@ -333,10 +349,12 @@ let internal isSymbolInProject
     : bool =
     match symbol.DeclarationLocation, state.ProjectOptions with
     | Some range, Some options when range.FileName <> "" ->
-        let normalize (path: string) =
-            try Path.GetFullPath(path) with _ -> path
-        let target = normalize range.FileName
-        let inSourceFiles = options.SourceFiles |> Array.exists (fun file -> normalize file = target)
+        // Path identity via the shared helper: tolerant of casing and Windows
+        // extended-length (`\\?\`) spellings. [GitHub #110]
+        let target = NativePaths.NormalizeFullPath range.FileName
+        let inSourceFiles =
+            options.SourceFiles
+            |> Array.exists (fun file -> NativePaths.AreEqual(file, target))
         // Fall back to an on-disk F# source check: BCL / FSharp.Core / NuGet
         // symbols have no source declaration, so this stays false for them.
         let isSourceOnDisk =

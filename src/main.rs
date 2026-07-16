@@ -763,7 +763,7 @@ fn handle_custom_request(
             csharp_sidecar.or(fsharp_sidecar),
             fsharp_sidecar,
         ),
-        "sharplsp/sortMembers" => handle_sort_members(req, parsers),
+        "sharplsp/sortMembers" => handle_sort_members(req, parsers, vfs),
         // NuGet package management
         "sharplsp/nuget/targets" => nuget::handlers::handle_targets(req),
         "sharplsp/nuget/search" => nuget::handlers::handle_search(req, runtime),
@@ -1131,9 +1131,9 @@ fn fuzzy_match_subsequence(name: &str, query: &str) -> bool {
 }
 
 /// Handle the custom `sharplsp/sortMembers` request.
-fn handle_sort_members(req: Request, parsers: &TsParsers) -> Result<serde_json::Value> {
+fn handle_sort_members(req: Request, parsers: &TsParsers, vfs: &Vfs) -> Result<serde_json::Value> {
     let params: sort_members::SortMembersParams = serde_json::from_value(req.params)?;
-    let response = sort_members::handle(&params, parsers)?;
+    let response = sort_members::handle(&params, parsers, vfs)?;
     Ok(serde_json::to_value(response)?)
 }
 

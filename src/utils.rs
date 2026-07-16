@@ -107,15 +107,35 @@ pub fn map_text_edits(edits: &[SidecarTextEdit]) -> Vec<TextEdit> {
 /// semantic feature returns nothing on Windows even once the sidecar transport is
 /// up. Implements the correct conversion for [GitHub #110].
 pub fn uri_to_path(uri: &str) -> Result<String> {
-    let parsed = Url::parse(uri).with_context(|| format!("parse file URI: {uri}"))?;
+    let mut parsed = Url::parse(uri).with_context(|| format!("parse file URI: {uri}"))?;
     if parsed.scheme() != "file" {
         anyhow::bail!("expected a file:// URI, got scheme {:?}", parsed.scheme());
     }
+    normalize_bare_drive_root(&mut parsed);
     match parsed.to_file_path() {
         Ok(path) => path.into_os_string().into_string().map_err(|lossy| {
             anyhow::anyhow!("file path is not valid UTF-8: {}", lossy.to_string_lossy())
         }),
         Err(()) => decoded_posix_path(&parsed),
+    }
+}
+
+/// Repair a drive-root URI that omits the trailing slash (`file:///c:` or
+/// `file:///c%3A`), a form some clients build by string concatenation. Without
+/// the slash the url crate's `to_file_path` trips a debug assertion (aborting
+/// the request thread in dev builds) and yields a drive-RELATIVE path (`c:`)
+/// in release — whose meaning depends on the process's per-drive current
+/// directory. Appending the root slash maps it to the drive root. [GitHub #110]
+fn normalize_bare_drive_root(parsed: &mut Url) {
+    let path = parsed.path();
+    let is_bare_drive = match path.as_bytes() {
+        [b'/', drive, b':'] => drive.is_ascii_alphabetic(),
+        [b'/', drive, b'%', b'3', b'a' | b'A'] => drive.is_ascii_alphabetic(),
+        _ => false,
+    };
+    if is_bare_drive {
+        let rooted = format!("{path}/");
+        parsed.set_path(&rooted);
     }
 }
 
@@ -154,6 +174,24 @@ pub fn path_to_lsp_uri(path: &str) -> Result<Uri> {
     path_to_uri(path)?
         .parse()
         .map_err(|err| anyhow::anyhow!("parse file URI for {path}: {err}"))
+}
+
+/// Windows `CREATE_NO_WINDOW` process-creation flag. Without it, every child
+/// process (sidecars, dotnet invocations, profiler tools) flashes a console
+/// window when the host itself runs without one (i.e. launched by an editor).
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Suppress the child's console window on Windows. No-op elsewhere.
+pub fn hide_console_window_tokio(command: &mut tokio::process::Command) {
+    #[cfg(windows)]
+    {
+        let _ = command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
 }
 
 /// Safely convert `usize` to `u32`, clamping to `u32::MAX` on overflow.
@@ -307,6 +345,19 @@ mod tests {
         };
         let uri = path_to_uri(native).unwrap();
         assert_eq!(uri_to_path(&uri).unwrap(), native);
+    }
+
+    /// Some clients build workspace-folder URIs by concatenation and omit the
+    /// root slash (`file:///c:` instead of `file:///c:/`). The url crate
+    /// panics on these under debug assertions and yields a drive-RELATIVE
+    /// path (`c:`) in release — both catastrophic for a client-controlled
+    /// input. [GitHub #110]
+    #[cfg(windows)]
+    #[test]
+    fn uri_to_path_maps_bare_drive_root_uris_to_the_drive_root() {
+        assert_eq!(uri_to_path("file:///c:").unwrap(), r"c:\");
+        assert_eq!(uri_to_path("file:///c%3A").unwrap(), r"c:\");
+        assert_eq!(uri_to_path("file:///C%3a").unwrap(), r"C:\");
     }
 
     #[test]

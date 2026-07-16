@@ -8,23 +8,16 @@ pub const TEST_URI: &str = "file:///test/Program.cs";
 
 /// Build a valid RFC 8089 `file://` URI from a filesystem path, cross-platform.
 ///
-/// A bare `file://` + `display()` is wrong on Windows: `display()` yields
-/// backslashes over a bare drive (`C:\dir`), and `canonicalize` prepends a `\\?\`
-/// verbatim prefix, producing `file://\\?\C:\dir` — a URI the host (correctly)
-/// rejects, so no full-stack test could ever run on Windows. This strips the
-/// verbatim prefix, uses forward slashes, and adds the authority-empty triple
-/// slash so the URI parses back to the right native path on every OS. [GitHub #110]
+/// Hand-rolled `file://` + `display()` concatenation is wrong on Windows:
+/// backslashes, `\\?\` verbatim prefixes from `canonicalize`, and unencoded
+/// spaces or non-ASCII (e.g. a `C:\Users\John Doe\...` temp dir) all produce
+/// URIs the host (correctly) rejects, so no full-stack test could run on such
+/// machines. `Url::from_file_path` handles verbatim disk/UNC prefixes and
+/// percent-encodes every segment. [GitHub #110]
 pub fn path_to_file_uri(path: &Path) -> String {
-    let text = path.display().to_string();
-    if cfg!(windows) {
-        let normalized = text
-            .strip_prefix(r"\\?\")
-            .unwrap_or(&text)
-            .replace('\\', "/");
-        format!("file:///{normalized}")
-    } else {
-        format!("file://{text}")
-    }
+    url::Url::from_file_path(path)
+        .expect("fixture paths are absolute")
+        .to_string()
 }
 
 /// Build the URI for `path` exactly as VS Code sends it over LSP.
@@ -35,9 +28,7 @@ pub fn path_to_file_uri(path: &Path) -> String {
 /// host must recognize open documents no matter which encoding the editor
 /// picked, so VFS-sensitive tests feed didOpen through this form. [GitHub #110]
 pub fn path_to_vscode_uri(path: &Path) -> String {
-    let canonical = url::Url::from_file_path(path)
-        .expect("fixture paths are absolute")
-        .to_string();
+    let canonical = path_to_file_uri(path);
     let rest = &canonical["file:///".len()..];
     match (rest.as_bytes().first(), rest.as_bytes().get(1)) {
         (Some(&drive), Some(&b':')) if drive.is_ascii_alphabetic() => {
@@ -116,6 +107,23 @@ pub const EMPTY_FILE: &str = "";
 
 // ── Workspace creation helpers ────────────────────────────────────
 
+/// Run `dotnet restore` against a specific project directory.
+///
+/// Restore the project directly, not the workspace root: the generated .sln
+/// files have no GlobalSection(ProjectConfigurationPlatforms), so `dotnet
+/// restore` at the root warns "Unable to find a project to restore" and writes
+/// NO obj/project.assets.json. Without the assets file the sidecar's
+/// design-time build cannot resolve the project and returns null results on
+/// cold CI runners.
+pub fn restore_project(proj_dir: &Path) {
+    let restore = std::process::Command::new("dotnet")
+        .args(["restore", "--verbosity", "quiet"])
+        .current_dir(proj_dir)
+        .status()
+        .expect("dotnet restore failed to start");
+    assert!(restore.success(), "dotnet restore must succeed");
+}
+
 /// Create a minimal .NET project workspace in a temp directory.
 pub fn create_test_workspace() -> (tempfile::TempDir, String, String, String) {
     let tmp = tempfile::tempdir().unwrap();
@@ -193,18 +201,7 @@ EndGlobal"#,
     )
     .unwrap();
 
-    let restore = std::process::Command::new("dotnet")
-        .args(["restore", "--verbosity", "quiet"])
-        // Restore the project directly, not the cwd: the generated .sln has no
-        // GlobalSection(ProjectConfigurationPlatforms), so `dotnet restore` in
-        // tmp warns "Unable to find a project to restore" and writes NO
-        // obj/project.assets.json. Without the assets file the sidecar's Roslyn
-        // design-time build cannot resolve the project and returns null
-        // definitions on cold CI runners (matches the ChangeTest fixture below).
-        .current_dir(&proj_dir)
-        .status()
-        .expect("dotnet restore failed to start");
-    assert!(restore.success(), "dotnet restore must succeed");
+    restore_project(&proj_dir);
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let real_proj = real_root.join("TestHover");
@@ -261,14 +258,7 @@ EndGlobal"#,
     )
     .unwrap();
 
-    let restore = std::process::Command::new("dotnet")
-        .args(["restore", "--verbosity", "quiet"])
-        // Restore the project directly so obj/project.assets.json is written and
-        // the Newtonsoft.Json compile assembly resolves for the design-time build.
-        .current_dir(&proj_dir)
-        .status()
-        .expect("dotnet restore failed to start");
-    assert!(restore.success(), "dotnet restore must succeed");
+    restore_project(&proj_dir);
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let real_proj = real_root.join("UnusedPkg");
@@ -354,18 +344,7 @@ EndGlobal"#,
     )
     .unwrap();
 
-    let restore = std::process::Command::new("dotnet")
-        .args(["restore", "--verbosity", "quiet"])
-        // Restore the project directly, not the cwd: the generated .sln has no
-        // GlobalSection(ProjectConfigurationPlatforms), so `dotnet restore` in
-        // tmp warns "Unable to find a project to restore" and writes NO
-        // obj/project.assets.json. Without the assets file the sidecar's Roslyn
-        // design-time build cannot resolve the project and returns null
-        // definitions on cold CI runners (matches the ChangeTest fixture below).
-        .current_dir(&proj_dir)
-        .status()
-        .expect("dotnet restore failed");
-    assert!(restore.success(), "dotnet restore must succeed");
+    restore_project(&proj_dir);
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let real_proj = real_root.join("TestFSharp");
@@ -429,15 +408,7 @@ EndGlobal"#,
     )
     .unwrap();
 
-    let restore = std::process::Command::new("dotnet")
-        .args(["restore", "--verbosity", "quiet"])
-        // Restore the project directly: the generated .sln has no
-        // ProjectConfigurationPlatforms, so restoring the cwd writes no
-        // obj/project.assets.json and the sidecar cannot resolve references.
-        .current_dir(&proj_dir)
-        .status()
-        .expect("dotnet restore failed");
-    assert!(restore.success(), "dotnet restore must succeed");
+    restore_project(&proj_dir);
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let real_proj = real_root.join("TestFSharpNuget");
@@ -516,18 +487,7 @@ EndGlobal"#,
     )
     .unwrap();
 
-    let restore = std::process::Command::new("dotnet")
-        .args(["restore", "--verbosity", "quiet"])
-        // Restore the project directly, not the cwd: the generated .sln has no
-        // GlobalSection(ProjectConfigurationPlatforms), so `dotnet restore` in
-        // tmp warns "Unable to find a project to restore" and writes NO
-        // obj/project.assets.json. Without the assets file the sidecar's Roslyn
-        // design-time build cannot resolve the project and returns null
-        // definitions on cold CI runners (matches the ChangeTest fixture below).
-        .current_dir(&proj_dir)
-        .status()
-        .expect("dotnet restore failed to start");
-    assert!(restore.success(), "dotnet restore must succeed");
+    restore_project(&proj_dir);
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let real_proj = real_root.join("TestDefinition");
@@ -651,12 +611,7 @@ EndGlobal"#,
     )
     .unwrap();
 
-    let restore = std::process::Command::new("dotnet")
-        .args(["restore", "--verbosity", "quiet"])
-        .current_dir(&proj_dir)
-        .status()
-        .expect("dotnet restore failed");
-    assert!(restore.success(), "dotnet restore must succeed");
+    restore_project(&proj_dir);
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let root_uri = path_to_file_uri(&real_root);
@@ -692,12 +647,7 @@ public class Calculator
 }"#;
     std::fs::write(proj_dir.join("Calculator.cs"), cs_source).unwrap();
 
-    let restore = std::process::Command::new("dotnet")
-        .args(["restore", "--verbosity", "quiet"])
-        .current_dir(proj_dir)
-        .status()
-        .expect("dotnet restore failed to start");
-    assert!(restore.success(), "dotnet restore must succeed");
+    restore_project(proj_dir);
 
     let real_root = std::fs::canonicalize(proj_dir).unwrap();
     let root_uri = path_to_file_uri(&real_root);

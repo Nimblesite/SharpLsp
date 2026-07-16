@@ -29,6 +29,10 @@ type FSharpSidecar() =
             task {
                 try
                     let path = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
+                    // Extended-length (`\\?\`) spellings from canonicalizing
+                    // callers break MSBuild-style project resolution —
+                    // normalize at the boundary. [GitHub #110]
+                    let path = SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath path
                     let! result = FSharpWorkspace.loadProjectWithCancellation workspace path ct
                     match result with
                     | Ok () ->
@@ -160,7 +164,7 @@ type FSharpSidecar() =
             task {
                 try
                     let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! edits = FSharpFeatures.formatDocument request.FilePath
+                    let! edits = FSharpFeatures.formatDocument workspace request.FilePath
                     let bytes = MessagePackSerializer.Serialize(edits, cancellationToken = ct)
                     return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
                 with ex ->
@@ -172,7 +176,7 @@ type FSharpSidecar() =
             task {
                 try
                     let request = MessagePackSerializer.Deserialize<RangeRequest>(payload, cancellationToken = ct)
-                    let! edits = FSharpFeatures.formatRange request.FilePath request.StartLine request.StartCharacter request.EndLine request.EndCharacter
+                    let! edits = FSharpFeatures.formatRange workspace request.FilePath request.StartLine request.StartCharacter request.EndLine request.EndCharacter
                     let bytes = MessagePackSerializer.Serialize(edits, cancellationToken = ct)
                     return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
                 with ex ->
@@ -271,9 +275,11 @@ type FSharpSidecar() =
                 try
                     let filePath = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
                     let mutable results = ResizeArray<DiagnosticResult>()
-                    // FCS compiler diagnostics.
+                    // FCS compiler diagnostics, computed from the live buffer
+                    // (didChange overlay), never stale disk text.
+                    // [FS-DIDCHANGE-OVERLAY]
                     if workspace.IsLoaded then
-                        let source = System.IO.File.ReadAllText(filePath)
+                        let source = FSharpWorkspace.readSource workspace filePath
                         let sourceText = FSharp.Compiler.Text.SourceText.ofString source
                         let! _parse, checkAnswer =
                             workspace.Checker.ParseAndCheckFileInProject(
@@ -322,7 +328,7 @@ type FSharpSidecar() =
             task {
                 try
                     let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! preview = FSharpFeatures.formatPreview request.FilePath
+                    let! preview = FSharpFeatures.formatPreview workspace request.FilePath
                     match preview with
                     | Some result ->
                         return Helpers.serializeOk { Original = result.Original; Formatted = result.Formatted } ct

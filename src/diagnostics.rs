@@ -170,8 +170,9 @@ async fn verify_error_files(
         // native path, not a rebuilt URI: editors percent-encode URIs (VS Code
         // sends `file:///c%3A/…` on Windows), so a rebuilt canonical URI never
         // string-matches the stored key and the guard silently fails open.
-        // [GitHub #110]
-        let in_vfs = vfs.get_content_for_path(file_path).is_some();
+        // The canonical retry also unifies 8.3 short names and mapped drives
+        // with the editor's long-form spelling. [GitHub #110]
+        let in_vfs = vfs.get_content_for_path_canonical(file_path).is_some();
 
         if !in_vfs {
             // Re-read from disk so the sidecar gets fresh text.

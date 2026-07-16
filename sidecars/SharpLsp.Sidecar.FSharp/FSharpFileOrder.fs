@@ -39,8 +39,10 @@ let getCompileOrder (fsprojPath: string) : string array =
         [||]
 
 /// Build a map of symbol name → defining file path from check results.
+/// Sources come through the overlay so unsaved edits participate in the
+/// ordering analysis. [FS-DIDCHANGE-OVERLAY]
 let private collectDefinitions
-    (checker: FSharpChecker)
+    (state: FSharpWorkspace.FSharpWorkspaceState)
     (options: FSharpProjectOptions)
     (files: string array)
     =
@@ -49,10 +51,10 @@ let private collectDefinitions
         for filePath in files do
             try
                 if File.Exists(filePath) then
-                    let source = File.ReadAllText(filePath)
+                    let source = FSharpWorkspace.readSource state filePath
                     let sourceText = SourceText.ofString source
                     let! _parse, checkAnswer =
-                        checker.ParseAndCheckFileInProject(filePath, 0, sourceText, options)
+                        state.Checker.ParseAndCheckFileInProject(filePath, 0, sourceText, options)
                     match checkAnswer with
                     | FSharpCheckFileAnswer.Succeeded check ->
                         for su in check.GetAllUsesOfAllSymbolsInFile() do
@@ -64,8 +66,9 @@ let private collectDefinitions
     }
 
 /// Collect undefined symbol errors from FCS check results for a file.
+/// Overlay-aware: checks the live buffer text. [FS-DIDCHANGE-OVERLAY]
 let private collectUndefinedErrors
-    (checker: FSharpChecker)
+    (state: FSharpWorkspace.FSharpWorkspaceState)
     (options: FSharpProjectOptions)
     (filePath: string)
     =
@@ -74,10 +77,10 @@ let private collectUndefinedErrors
             if not (File.Exists(filePath)) then
                 return []
             else
-                let source = File.ReadAllText(filePath)
+                let source = FSharpWorkspace.readSource state filePath
                 let sourceText = SourceText.ofString source
                 let! _parseResults, checkAnswer =
-                    checker.ParseAndCheckFileInProject(filePath, 0, sourceText, options)
+                    state.Checker.ParseAndCheckFileInProject(filePath, 0, sourceText, options)
                 match checkAnswer with
                 | FSharpCheckFileAnswer.Succeeded check ->
                     // FS0039 (value/constructor not defined) and FS0001 are
@@ -111,14 +114,14 @@ let analyzeFileOrder
                 if files.Length < 2 then return []
                 else
                     let options = state.ProjectOptions.Value
-                    let! definitions = collectDefinitions state.Checker options files
+                    let! definitions = collectDefinitions state options files
                     let fileIndex =
                         files
                         |> Array.mapi (fun i f -> f, i)
                         |> dict
                     let mutable issues = []
                     for filePath in files do
-                        let! errors = collectUndefinedErrors state.Checker options filePath
+                        let! errors = collectUndefinedErrors state options filePath
                         // filePath comes straight from `files`, and fileIndex is
                         // built from exactly that array, so the key is always present.
                         let currentIdx = fileIndex[filePath]

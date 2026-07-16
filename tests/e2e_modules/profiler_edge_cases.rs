@@ -180,12 +180,25 @@ fn test_profiler_edge_start_trace_rejects_non_dotnet_pid() {
 /// Return true if `pid` is still a live process. Uses `kill -0`, matching the
 /// harness convention (no libc/nix dependency); a reaped/dead PID reports ESRCH
 /// and yields `false`.
+#[cfg(unix)]
 fn pid_alive(pid: u32) -> bool {
     Command::new("kill")
         .args(["-0", &pid.to_string()])
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
+}
+
+/// Windows variant: MSYS `kill -0` only sees processes in the MSYS pid table,
+/// and the orphan fixture is spawned by a native intermediary — ask Windows
+/// itself. [GitHub #110]
+#[cfg(windows)]
+fn pid_alive(pid: u32) -> bool {
+    Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+        .stderr(Stdio::null())
+        .output()
+        .is_ok_and(|out| String::from_utf8_lossy(&out.stdout).contains(&format!("\"{pid}\"")))
 }
 
 /// Repro for #3: a `ProfileTarget` spawned by a test process must NOT survive as
@@ -199,11 +212,31 @@ fn test_profiler_edge_profile_target_dies_when_parent_killed() {
     // Intermediary that stands in for the test process nextest SIGKILLs on
     // timeout: it launches ProfileTarget as a background child, prints the child
     // PID, and blocks on `wait` so it stays the child's parent until we kill it.
+    #[cfg(unix)]
     let mut parent = Command::new("sh")
         .arg("-c")
         .arg(format!(
             "{} >/dev/null 2>&1 & echo $!; wait",
             binary.display()
+        ))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed to spawn intermediary parent");
+    // Windows: MSYS `sh` interposes a transient fork-helper between itself and
+    // a native child; the helper dies immediately, leaving the child with a
+    // dead creator and no observable link to the intermediary — no orphan
+    // detection can ever fire through that severed chain. A PowerShell
+    // intermediary parents the child directly, so the simulation is faithful
+    // to how the test process itself spawns ProfileTarget. [GitHub #110]
+    #[cfg(windows)]
+    let mut parent = Command::new("powershell")
+        .args(["-NoProfile", "-Command"])
+        .arg(format!(
+            "$child = Start-Process -FilePath '{}' -PassThru -WindowStyle Hidden; \
+             Write-Output $child.Id; \
+             Wait-Process -Id $child.Id",
+            binary.with_extension("exe").display()
         ))
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -244,9 +277,16 @@ fn test_profiler_edge_profile_target_dies_when_parent_killed() {
     }
 
     // Always reap the orphan so a RED run (bug present) never leaks it itself.
+    #[cfg(unix)]
     let _ = Command::new("kill")
         .args(["-9", &child_pid.to_string()])
         .stderr(Stdio::null())
+        .status();
+    #[cfg(windows)]
+    let _ = Command::new("taskkill")
+        .args(["/PID", &child_pid.to_string(), "/F"])
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
         .status();
 
     assert!(

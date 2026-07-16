@@ -26,7 +26,9 @@
 
 // ── Infrastructure sub-modules ────────────────────────────────────
 pub mod fixtures;
+pub mod fixtures_medium;
 pub mod nav_helpers;
+pub mod session_helpers;
 
 // ── Test sub-modules ──────────────────────────────────────────────
 pub mod call_hierarchy_tests;
@@ -65,12 +67,16 @@ pub mod sort_members_extra;
 pub mod standalone_csproj;
 pub mod symbols;
 pub mod type_hierarchy_tests;
+pub mod user_session_csharp;
+pub mod user_session_fsharp;
 pub mod version;
 pub mod workspace_symbols;
 
 // ── Re-exports so `use super::*;` in test modules gets everything ─
 pub use fixtures::*;
+pub use fixtures_medium::*;
 pub use nav_helpers::*;
+pub use session_helpers::*;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};

@@ -102,6 +102,7 @@ Key optimization: on every keystroke, tree-sitter re-parses in <1ms and provides
 
 - **Startup:** Sidecars are spawned lazily on first request for their language. Published as self-contained single-file executables (AOT is incompatible with Roslyn, FSharp.Compiler.Service, and other reflection-heavy dependencies).
 - **Health monitoring:** Periodic heartbeat pings (every 5s). If a sidecar fails to respond within 2s, it is marked unhealthy.
+- **Request timeouts** `[SIDECAR-REQUEST-TIMEOUT]`: Every host→sidecar request carries a response budget — 600s for `workspace/open` (a full MSBuild design-time build on a cold NuGet cache is legitimately slow), 120s for everything else. A request that exceeds its budget is failed to the client, the IPC connection is dropped, and the sidecar process is killed: the late response would otherwise be handed to the next caller and desync the framed protocol, and the health monitor deliberately skips pinging while a request is in flight, so a wedged handler would never be detected. The next request respawns a clean sidecar via the normal crash-recovery path.
 - **Crash recovery:** On sidecar death, cache last-known-good results for graceful degradation. Restart with exponential backoff (1s, 2s, 4s, max 30s). Notify editor via LSP `window/showMessage`.
 - **Isolation:** C# and F# sidecars are independent processes. A Roslyn OOM does not affect FCS, and vice versa.
 - **Shutdown:** On LSP `shutdown` notification, send cancellation to sidecars, wait up to 5s for graceful exit, then SIGKILL.

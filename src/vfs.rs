@@ -70,6 +70,32 @@ impl Vfs {
         })
     }
 
+    /// Like [`Vfs::get_content_for_path`], but retries with the canonicalized
+    /// path when the direct comparison misses. Canonicalization unifies path
+    /// spellings the string comparison cannot: symlinks (`/tmp` → `/private/tmp`
+    /// on macOS), Windows 8.3 short names (`RUNNER~1` vs `runneradmin`), `..`
+    /// components, and mapped drives. [GitHub #110]
+    pub fn get_content_for_path_canonical(&self, path: &str) -> Option<String> {
+        self.get_content_for_path(path).or_else(|| {
+            let canonical = std::fs::canonicalize(path).ok()?;
+            self.get_content_for_path(&canonical.to_string_lossy())
+        })
+    }
+
+    /// Read the live buffer for `file_path` when the editor has the document
+    /// open (trying canonical path spellings too), else the on-disk text.
+    /// Every feature that consumes file content by native path must prefer
+    /// the buffer — sorting or analyzing yesterday's save corrupts the
+    /// user's unsaved edits. [GitHub #110]
+    pub fn read_live_or_disk(&self, file_path: &str) -> anyhow::Result<String> {
+        use anyhow::Context;
+        if let Some(content) = self.get_content_for_path_canonical(file_path) {
+            return Ok(content);
+        }
+        tracing::trace!("VFS miss for {file_path}, reading from disk");
+        std::fs::read_to_string(file_path).with_context(|| format!("read {file_path}"))
+    }
+
     /// Get the current version of a document.
     pub fn get_version(&self, uri: &Uri) -> Option<i32> {
         self.documents.get(uri).map(|d| d.version)
@@ -88,13 +114,73 @@ impl Vfs {
 fn native_paths_equal(left: &str, right: &str) -> bool {
     let (left, right) = (strip_verbatim(left), strip_verbatim(right));
     if cfg!(windows) {
-        left.eq_ignore_ascii_case(right)
+        left.eq_ignore_ascii_case(&right)
     } else {
         left == right
     }
 }
 
-/// Strip the `\\?\` verbatim prefix `std::fs::canonicalize` adds on Windows.
-fn strip_verbatim(path: &str) -> &str {
-    path.strip_prefix(r"\\?\").unwrap_or(path)
+/// Strip the Windows verbatim prefix `std::fs::canonicalize` adds:
+/// `\\?\C:\...` becomes `C:\...` and `\\?\UNC\server\share\...` becomes
+/// `\\server\share\...`. A bare `\\?\` strip would leave the UNC form as
+/// `UNC\server\share\...`, which can never equal the plain spelling — so
+/// every network-share document would miss the VFS. [GitHub #110]
+fn strip_verbatim(path: &str) -> std::borrow::Cow<'_, str> {
+    if let Some(unc_rest) = path.strip_prefix(r"\\?\UNC\") {
+        return std::borrow::Cow::Owned(format!(r"\\{unc_rest}"));
+    }
+    std::borrow::Cow::Borrowed(path.strip_prefix(r"\\?\").unwrap_or(path))
+}
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code — panics are the correct failure mode"
+    )]
+
+    use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn native_paths_equal_strips_verbatim_disk_and_unc_prefixes() {
+        // `std::fs::canonicalize` returns `\\?\C:\...` for local paths and
+        // `\\?\UNC\server\share\...` for network paths; both must compare
+        // equal to their plain spellings. [GitHub #110]
+        assert!(native_paths_equal(r"\\?\C:\dir\F.cs", r"c:\dir\f.cs"));
+        assert!(
+            native_paths_equal(r"\\?\UNC\server\share\F.cs", r"\\server\share\f.cs"),
+            "verbatim UNC must equal its plain UNC spelling"
+        );
+        assert!(!native_paths_equal(
+            r"\\?\UNC\server\share\F.cs",
+            r"\\other\share\F.cs"
+        ));
+    }
+
+    #[test]
+    fn get_content_for_path_canonical_resolves_indirect_spellings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("sub");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("Program.cs");
+        std::fs::write(&file, "class OnDisk {}").unwrap();
+        let canonical = std::fs::canonicalize(&file).unwrap();
+
+        let vfs = Vfs::new();
+        let uri: Uri = url::Url::from_file_path(&canonical)
+            .unwrap()
+            .to_string()
+            .parse()
+            .unwrap();
+        vfs.open(uri, 1, "buffer text".to_string());
+
+        let indirect = dir.join("..").join("sub").join("Program.cs");
+        let found = vfs.get_content_for_path_canonical(&indirect.to_string_lossy());
+        assert_eq!(
+            found.as_deref(),
+            Some("buffer text"),
+            "an indirect path spelling must still find the open buffer"
+        );
+    }
 }

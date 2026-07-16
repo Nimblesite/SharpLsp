@@ -93,10 +93,17 @@ pub struct EditPosition {
 }
 
 /// Handle the `sharplsp/sortMembers` request.
-pub fn handle(params: &SortMembersParams, parsers: &TsParsers) -> Result<SortMembersResponse> {
+///
+/// Reads the live buffer for open documents — sorting the on-disk text while
+/// the user has unsaved edits would splice members at stale offsets and
+/// corrupt the file. [GitHub #110]
+pub fn handle(
+    params: &SortMembersParams,
+    parsers: &TsParsers,
+    vfs: &crate::vfs::Vfs,
+) -> Result<SortMembersResponse> {
     let file_path = uri_to_path(&params.uri)?;
-    let source =
-        std::fs::read_to_string(&file_path).with_context(|| format!("read {file_path}"))?;
+    let source = vfs.read_live_or_disk(&file_path)?;
 
     let path = Path::new(&file_path);
     let lang = LangId::from_path(path).context("unsupported file type")?;
@@ -683,7 +690,7 @@ mod tests {
             },
         };
 
-        let response = handle(&params, &TsParsers::new()).unwrap();
+        let response = handle(&params, &TsParsers::new(), &crate::vfs::Vfs::new()).unwrap();
 
         assert!(
             !response.edits.is_empty(),
@@ -717,7 +724,7 @@ mod tests {
             },
         };
 
-        let response = handle(&params, &TsParsers::new()).unwrap();
+        let response = handle(&params, &TsParsers::new(), &crate::vfs::Vfs::new()).unwrap();
         assert!(response.edits.is_empty());
     }
 }
