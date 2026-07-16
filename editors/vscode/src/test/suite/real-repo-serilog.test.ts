@@ -52,7 +52,11 @@ suite('Real repo stress — serilog (C#)', () => {
     await loadSolutionInServer(path.join(repoDir, SERILOG.sln));
     const { doc, uri } = await openRepoFile(repoDir, LOG_CS);
     await waitForDocumentSymbols(uri, 120_000);
-    await waitForSemanticReady(uri, positionOf(doc, 'public static ILogger Logger', 'Logger'), 600_000);
+    await waitForSemanticReady(
+      uri,
+      positionOf(doc, 'public static ILogger Logger', 'Logger'),
+      600_000,
+    );
   });
 
   suiteTeardown(async function () {
@@ -145,7 +149,10 @@ suite('Real repo stress — serilog (C#)', () => {
       120_000,
       2_000,
     );
-    assert.ok(references.length >= 3, `ILogger must be widely referenced, got ${references.length.toString()}`);
+    assert.ok(
+      references.length >= 3,
+      `ILogger must be widely referenced, got ${references.length.toString()}`,
+    );
     const files = new Set(references.map((ref) => ref.uri.fsPath));
     assert.ok(files.size >= 2, 'references must span multiple files');
   });
@@ -260,13 +267,25 @@ suite('Real repo stress — serilog (C#)', () => {
 
     for (let round = 0; round < 10; round += 1) {
       const [symbols, hover, folding] = await Promise.all([
-        vscode.commands.executeCommand<vscode.DocumentSymbol[]>('vscode.executeDocumentSymbolProvider', uri),
+        vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+          'vscode.executeDocumentSymbolProvider',
+          uri,
+        ),
         vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider', uri, hoverAt),
-        vscode.commands.executeCommand<vscode.FoldingRange[]>('vscode.executeFoldingRangeProvider', uri),
+        vscode.commands.executeCommand<vscode.FoldingRange[]>(
+          'vscode.executeFoldingRangeProvider',
+          uri,
+        ),
       ]);
-      assert.ok((symbols ?? []).length > 0, `round ${round.toString()}: symbols must keep answering`);
+      assert.ok(
+        (symbols ?? []).length > 0,
+        `round ${round.toString()}: symbols must keep answering`,
+      );
       assert.ok((hover ?? []).length > 0, `round ${round.toString()}: hover must keep answering`);
-      assert.ok((folding ?? []).length > 0, `round ${round.toString()}: folding must keep answering`);
+      assert.ok(
+        (folding ?? []).length > 0,
+        `round ${round.toString()}: folding must keep answering`,
+      );
     }
 
     const fleet = sampleServerProcesses();
@@ -278,7 +297,10 @@ suite('Real repo stress — serilog (C#)', () => {
   });
 });
 
-function findSymbol(symbols: vscode.DocumentSymbol[], name: string): vscode.DocumentSymbol | undefined {
+function findSymbol(
+  symbols: vscode.DocumentSymbol[],
+  name: string,
+): vscode.DocumentSymbol | undefined {
   for (const symbol of symbols) {
     if (symbol.name === name) return symbol;
     const nested = findSymbol(symbol.children, name);
@@ -286,4 +308,3 @@ function findSymbol(symbols: vscode.DocumentSymbol[], name: string): vscode.Docu
   }
   return undefined;
 }
-

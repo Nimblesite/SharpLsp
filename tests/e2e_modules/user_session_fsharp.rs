@@ -26,7 +26,7 @@ fn test_full_stack_fsharp_user_session_medium_codebase() {
         &domain_uri,
         line,
         character,
-        Duration::from_secs(120),
+        Duration::from_mins(2),
     );
     let charge_md = charge_hover["contents"]["value"].as_str().unwrap();
     assert!(
@@ -79,8 +79,16 @@ fn test_full_stack_fsharp_user_session_medium_codebase() {
     );
 
     // ── References: charge is used from the sibling file ──
-    let refs = references(&mut client, &domain_uri, line, character, true);
-    assert_nav_ok(&refs);
+    // Project-wide references need FCS's whole-project check; the first
+    // responses are legitimately empty while it warms, so poll like every
+    // other references test ([FS-REFS-PROJECT]).
+    let refs = poll_references_until_ready(
+        &mut client,
+        &domain_uri,
+        line,
+        character,
+        Duration::from_mins(2),
+    );
     let ref_locs = location_entries(&refs["result"]);
     assert!(
         ref_locs.len() >= 2,
@@ -133,16 +141,32 @@ fn test_full_stack_fsharp_user_session_medium_codebase() {
     let labels: Vec<&str> = items.iter().filter_map(|i| i["label"].as_str()).collect();
     for field in ["Sku", "Price"] {
         assert!(
-            labels.iter().any(|l| *l == field),
+            labels.contains(&field),
             "completion after `product.` must offer the record field `{field}`: {labels:?}"
         );
     }
     client.change_document(&calculations_uri, 3, CALCULATIONS_FS);
 
-    // ── Live edit: inject a type error, pull diagnostics, then fix it ──
+    // ── Signature help contract at the settle call site ([FS-SIGHELP]) ──
+    let sig = position_request(
+        &mut client,
+        "textDocument/signatureHelp",
+        &calculations_uri,
+        fs_med_pos::CHARGE_USAGE,
+    );
+    assert_rpc_ok(&sig, "signatureHelp(charge)");
     assert!(
-        pull_error_diagnostics(&mut client, &domain_uri, "diagnostics(clean baseline)").is_empty(),
-        "Domain.fs must start with no error diagnostics"
+        sig["result"].is_null() || sig["result"]["signatures"].is_array(),
+        "signatureHelp must return null or a SignatureHelp with signatures[]: {sig}"
+    );
+
+    // ── Live edit: inject a type error, pull diagnostics, then fix it ──
+    let _ = poll_error_diagnostics_until(
+        &mut client,
+        &domain_uri,
+        "diagnostics(clean baseline)",
+        Duration::from_mins(1),
+        <[Value]>::is_empty,
     );
     let broken_source = replace_line(
         DOMAIN_FS,
@@ -150,19 +174,26 @@ fn test_full_stack_fsharp_user_session_medium_codebase() {
         "    | Cash -> \"oops\"",
     );
     client.change_document(&domain_uri, 2, &broken_source);
-    let errors = pull_error_diagnostics(&mut client, &domain_uri, "diagnostics(type error)");
-    assert!(
+    let decimal_error_on_arm = |errors: &[Value]| {
         errors.iter().any(|d| {
-            d["range"]["start"]["line"].as_u64() == Some(fs_med_pos::CASH_ARM_LINE as u64)
+            d["range"]["start"]["line"].as_u64() == u64::try_from(fs_med_pos::CASH_ARM_LINE).ok()
                 && d["message"].as_str().is_some_and(|m| m.contains("decimal"))
-        }),
-        "returning a string from a decimal match arm must raise a type error on line {}: {errors:?}",
-        fs_med_pos::CASH_ARM_LINE
+        })
+    };
+    let _ = poll_error_diagnostics_until(
+        &mut client,
+        &domain_uri,
+        "diagnostics(type error on the Cash arm)",
+        Duration::from_mins(1),
+        decimal_error_on_arm,
     );
     client.change_document(&domain_uri, 3, DOMAIN_FS);
-    assert!(
-        pull_error_diagnostics(&mut client, &domain_uri, "diagnostics(fixed)").is_empty(),
-        "reverting the match arm must clear all error diagnostics"
+    let _ = poll_error_diagnostics_until(
+        &mut client,
+        &domain_uri,
+        "diagnostics(clean after revert)",
+        Duration::from_mins(1),
+        <[Value]>::is_empty,
     );
 
     // ── Rename charge → chargePayment across both files ──
@@ -173,9 +204,14 @@ fn test_full_stack_fsharp_user_session_medium_codebase() {
         fs_med_pos::CHARGE_FN,
     );
     assert_rpc_ok(&prepare, "prepareRename(charge)");
+    assert!(
+        !prepare["result"].is_null(),
+        "prepareRename must allow renaming charge: {prepare}"
+    );
     assert_eq!(
-        prepare["result"]["placeholder"], "charge",
-        "prepareRename must offer the current name as placeholder: {prepare}"
+        prepare_rename_start_line(&prepare["result"]),
+        Some(fs_med_pos::CHARGE_DECL_LINE),
+        "prepareRename range must span the charge binding: {prepare}"
     );
     let rename = rename_request(&mut client, &domain_uri, line, character, "chargePayment");
     assert_rpc_ok(&rename, "rename(charge -> chargePayment)");
@@ -197,18 +233,31 @@ fn test_full_stack_fsharp_user_session_medium_codebase() {
     for uri in &changed_files {
         assert_wellformed_file_uri(uri, "rename edit target");
     }
-    let all_edits: Vec<&Value> = doc_changes
-        .iter()
-        .flat_map(|dc| dc["edits"].as_array().unwrap().iter())
-        .collect();
+    // Apply the edits and assert the text the user ends up with — valid for
+    // both granular and whole-document edit shapes (GitHub #161).
+    let domain_edits = edits_for(doc_changes, "Domain.fs");
     assert!(
-        all_edits.len() >= 2,
-        "charge has a declaration and one usage — rename edits: {}",
-        all_edits.len()
+        !domain_edits.is_empty(),
+        "rename must carry edits for Domain.fs: {doc_changes:?}"
+    );
+    let renamed_domain = apply_text_edits(DOMAIN_FS, &domain_edits);
+    assert!(
+        renamed_domain.contains("let chargePayment (price: decimal)"),
+        "rename must rewrite the let binding: {renamed_domain}"
     );
     assert!(
-        all_edits.iter().all(|e| e["newText"] == "chargePayment"),
-        "every rename edit must insert the new name: {doc_changes:?}"
+        !renamed_domain.contains("let charge (price"),
+        "the old binding name must be gone: {renamed_domain}"
+    );
+    let calc_edits = edits_for(doc_changes, "Calculations.fs");
+    assert!(
+        !calc_edits.is_empty(),
+        "rename must carry edits for Calculations.fs: {doc_changes:?}"
+    );
+    let renamed_calc = apply_text_edits(CALCULATIONS_FS, &calc_edits);
+    assert!(
+        renamed_calc.contains("chargePayment remaining payment"),
+        "rename must rewrite the cross-file usage in settle: {renamed_calc}"
     );
 
     client.shutdown_and_exit();

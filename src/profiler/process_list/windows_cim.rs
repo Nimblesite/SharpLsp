@@ -53,7 +53,9 @@ impl From<CimProcess> for DotNetProcess {
 
 /// Enumerate all Windows processes via `Get-CimInstance Win32_Process`.
 pub(super) fn process_list() -> Result<Vec<DotNetProcess>> {
-    let output = std::process::Command::new("powershell")
+    let mut cmd = std::process::Command::new("powershell");
+    crate::utils::hide_console_window(&mut cmd);
+    let output = cmd
         .args(["-NoProfile", "-NonInteractive", "-Command", CIM_QUERY])
         .output()
         .context("failed to run powershell Get-CimInstance")?;

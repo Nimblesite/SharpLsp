@@ -173,7 +173,16 @@ let internal buildProjectOptions (state: FSharpWorkspaceState) (fsprojPath: stri
         |> Option.defaultValue [||]
 
     let otherOptions = Array.append (frameworkReferenceArgs ()) packageRefs
-    state.Checker.GetProjectOptionsFromCommandLineArgs(fsprojPath, Array.append otherOptions sourceFiles)
+    // GetProjectOptionsFromCommandLineArgs deliberately returns SourceFiles =
+    // [||] (sources stay buried in OtherOptions), but project-wide analyses —
+    // ParseAndCheckProject for references/rename/code lens, and the
+    // isSymbolInProject rename gate — read options.SourceFiles. Leaving it
+    // empty makes every cross-file query silently return nothing, so populate
+    // it explicitly from the parsed compile items. [FS-REFS-PROJECT]
+    let options =
+        state.Checker.GetProjectOptionsFromCommandLineArgs(
+            fsprojPath, Array.append otherOptions sourceFiles)
+    { options with SourceFiles = sourceFiles }
 
 let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string array) =
     if fsprojFiles.Length = 0 then

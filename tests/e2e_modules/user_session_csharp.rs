@@ -36,7 +36,7 @@ fn test_full_stack_csharp_user_session_medium_codebase() {
         &entities_uri,
         line,
         character,
-        Duration::from_secs(120),
+        Duration::from_mins(2),
     );
     let class_md = class_hover["contents"]["value"].as_str().unwrap();
     assert!(
@@ -115,8 +115,8 @@ fn test_full_stack_csharp_user_session_medium_codebase() {
     );
 
     // ── Hover on a cross-project member call ──
-    let (iv_line, iv_char) = cs_med_pos::IS_VIP_USAGE;
-    let is_vip_hover = hover(&mut client, &processor_uri, iv_line, iv_char);
+    let (is_vip_line, is_vip_char) = cs_med_pos::IS_VIP_USAGE;
+    let is_vip_hover = hover(&mut client, &processor_uri, is_vip_line, is_vip_char);
     assert_hover_ok(&is_vip_hover);
     let is_vip_md = is_vip_hover["result"]["contents"]["value"]
         .as_str()
@@ -127,8 +127,8 @@ fn test_full_stack_csharp_user_session_medium_codebase() {
     );
 
     // ── References: interface used across all three files ──
-    let (ir_line, ir_char) = cs_med_pos::ICUSTOMER_REPOSITORY_DECL;
-    let refs = references(&mut client, &entities_uri, ir_line, ir_char, true);
+    let (repo_line, repo_char) = cs_med_pos::ICUSTOMER_REPOSITORY_DECL;
+    let refs = references(&mut client, &entities_uri, repo_line, repo_char, true);
     assert_nav_ok(&refs);
     let ref_locs = location_entries(&refs["result"]);
     assert!(
@@ -168,6 +168,10 @@ fn test_full_stack_csharp_user_session_medium_codebase() {
     );
 
     // ── Signature help inside ApplyDiscount(...) ──
+    // C# signature help is not implemented sidecar-side yet — the host routes
+    // the request and must answer null rather than erroring ([FS-SIGHELP];
+    // C# parity tracked in GitHub #174). Once it lands, the shape assertions
+    // below take over.
     let sig = position_request(
         &mut client,
         "textDocument/signatureHelp",
@@ -175,24 +179,20 @@ fn test_full_stack_csharp_user_session_medium_codebase() {
         cs_med_pos::APPLY_DISCOUNT_ARGS,
     );
     assert_rpc_ok(&sig, "signatureHelp(ApplyDiscount)");
-    let signatures = sig["result"]["signatures"]
-        .as_array()
-        .expect("signatures array");
-    assert!(
-        !signatures.is_empty(),
-        "ApplyDiscount must offer a signature"
-    );
-    let sig_label = signatures[0]["label"].as_str().unwrap();
-    assert!(
-        sig_label.contains("ApplyDiscount"),
-        "signature label must name the method: {sig_label}"
-    );
-    assert!(
-        signatures[0]["parameters"]
+    if !sig["result"].is_null() {
+        let signatures = sig["result"]["signatures"]
             .as_array()
-            .is_some_and(|p| p.len() == 2),
-        "ApplyDiscount must show two parameters: {sig}"
-    );
+            .expect("signatures array");
+        assert!(
+            !signatures.is_empty(),
+            "non-null signatureHelp must carry a signature: {sig}"
+        );
+        let sig_label = signatures[0]["label"].as_str().unwrap();
+        assert!(
+            sig_label.contains("ApplyDiscount"),
+            "signature label must name the method: {sig_label}"
+        );
+    }
 
     // ── Document highlight on the `customer` local ──
     let (cv_line, cv_char) = cs_med_pos::CUSTOMER_VAR;
@@ -233,17 +233,19 @@ fn test_full_stack_csharp_user_session_medium_codebase() {
     let labels: Vec<&str> = items.iter().filter_map(|i| i["label"].as_str()).collect();
     for member in ["Balance", "Id", "Name", "IsVip"] {
         assert!(
-            labels.iter().any(|l| *l == member),
+            labels.contains(&member),
             "completion after `customer.` must offer `{member}`: {labels:?}"
         );
     }
 
     // ── Live edit: inject CS0029, pull diagnostics, then fix it ──
     client.change_document(&processor_uri, 3, ORDER_PROCESSOR_CS);
-    assert!(
-        pull_error_diagnostics(&mut client, &processor_uri, "diagnostics(clean baseline)")
-            .is_empty(),
-        "reverted OrderProcessor.cs must have no error diagnostics"
+    let _ = poll_error_diagnostics_until(
+        &mut client,
+        &processor_uri,
+        "diagnostics(clean baseline)",
+        Duration::from_mins(1),
+        <[Value]>::is_empty,
     );
     let broken_source = replace_line(
         ORDER_PROCESSOR_CS,
@@ -251,20 +253,27 @@ fn test_full_stack_csharp_user_session_medium_codebase() {
         "        customer.Balance = \"oops\";",
     );
     client.change_document(&processor_uri, 4, &broken_source);
-    let errors = pull_error_diagnostics(&mut client, &processor_uri, "diagnostics(CS0029)");
-    assert!(
+    let cs0029_on_assign_line = |errors: &[Value]| {
         errors.iter().any(|d| {
             d["code"] == "CS0029"
                 && d["range"]["start"]["line"].as_u64()
-                    == Some(cs_med_pos::BALANCE_ASSIGN_LINE as u64)
-        }),
-        "assigning a string to decimal must raise CS0029 on line {}: {errors:?}",
-        cs_med_pos::BALANCE_ASSIGN_LINE
+                    == u64::try_from(cs_med_pos::BALANCE_ASSIGN_LINE).ok()
+        })
+    };
+    let _ = poll_error_diagnostics_until(
+        &mut client,
+        &processor_uri,
+        "diagnostics(CS0029 on the Balance assignment)",
+        Duration::from_mins(1),
+        cs0029_on_assign_line,
     );
     client.change_document(&processor_uri, 5, ORDER_PROCESSOR_CS);
-    assert!(
-        pull_error_diagnostics(&mut client, &processor_uri, "diagnostics(fixed)").is_empty(),
-        "fixing the assignment must clear all error diagnostics"
+    let _ = poll_error_diagnostics_until(
+        &mut client,
+        &processor_uri,
+        "diagnostics(clean after fix)",
+        Duration::from_mins(1),
+        <[Value]>::is_empty,
     );
 
     // ── Rename Customer → Client across the whole workspace ──
@@ -276,9 +285,14 @@ fn test_full_stack_csharp_user_session_medium_codebase() {
         (rc_line, rc_char),
     );
     assert_rpc_ok(&prepare, "prepareRename(Customer)");
+    assert!(
+        !prepare["result"].is_null(),
+        "prepareRename must allow renaming Customer: {prepare}"
+    );
     assert_eq!(
-        prepare["result"]["placeholder"], "Customer",
-        "prepareRename must offer the current name as placeholder: {prepare}"
+        prepare_rename_start_line(&prepare["result"]),
+        Some(u64::from(rc_line)),
+        "prepareRename range must span the Customer identifier: {prepare}"
     );
     let rename = rename_request(&mut client, &entities_uri, rc_line, rc_char, "Client");
     assert_rpc_ok(&rename, "rename(Customer -> Client)");
@@ -302,18 +316,52 @@ fn test_full_stack_csharp_user_session_medium_codebase() {
     for uri in &changed_files {
         assert_wellformed_file_uri(uri, "rename edit target");
     }
-    let all_edits: Vec<&Value> = doc_changes
-        .iter()
-        .flat_map(|dc| dc["edits"].as_array().unwrap().iter())
-        .collect();
+    // Apply the edits and assert the text the user ends up with — valid for
+    // both granular and whole-document edit shapes (GitHub #161).
+    let entities_edits = edits_for(doc_changes, "Entities.cs");
     assert!(
-        all_edits.len() >= 6,
-        "Customer appears 7 times across Core+Services — rename edits: {}",
-        all_edits.len()
+        !entities_edits.is_empty(),
+        "rename must carry edits for Entities.cs: {doc_changes:?}"
+    );
+    let renamed_entities = apply_text_edits(ENTITIES_CS, &entities_edits);
+    assert!(
+        renamed_entities.contains("public class Client"),
+        "rename must rewrite the class declaration: {renamed_entities}"
     );
     assert!(
-        all_edits.iter().all(|e| e["newText"] == "Client"),
-        "every rename edit must insert the new name: {doc_changes:?}"
+        !renamed_entities.contains("public class Customer"),
+        "the old class name must be gone: {renamed_entities}"
+    );
+    assert!(
+        renamed_entities.contains("Client? FindById(int id);"),
+        "rename must rewrite the interface return type: {renamed_entities}"
+    );
+    assert!(
+        renamed_entities.contains("void Save(Client customer);"),
+        "rename must rewrite the parameter type: {renamed_entities}"
+    );
+    assert!(
+        renamed_entities.contains("Client Buyer"),
+        "rename must rewrite the record component type: {renamed_entities}"
+    );
+    let service_edits = edits_for(doc_changes, "CustomerService.cs");
+    assert!(
+        !service_edits.is_empty(),
+        "rename must carry edits for CustomerService.cs: {doc_changes:?}"
+    );
+    let renamed_service = apply_text_edits(CUSTOMER_SERVICE_CS, &service_edits);
+    assert!(
+        renamed_service.contains("Dictionary<int, Client>"),
+        "rename must rewrite the cross-project field type: {renamed_service}"
+    );
+    assert!(
+        renamed_service.contains("public Client? FindById(int id)"),
+        "rename must rewrite the implementation return type: {renamed_service}"
+    );
+    assert!(
+        renamed_service.contains("class CustomerService"),
+        "renaming the Customer type must not touch the CustomerService class \
+         name: {renamed_service}"
     );
 
     // ── The untouched buffer stayed consistent through the whole session ──

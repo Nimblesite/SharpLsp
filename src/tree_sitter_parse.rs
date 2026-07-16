@@ -74,6 +74,10 @@ impl TsParsers {
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::expect_used,
+        reason = "test code — panics are the correct failure mode"
+    )]
     use super::*;
 
     /// Language routing must sniff the extension from the decoded URI path,

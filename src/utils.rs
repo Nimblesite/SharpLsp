@@ -129,8 +129,7 @@ pub fn uri_to_path(uri: &str) -> Result<String> {
 fn normalize_bare_drive_root(parsed: &mut Url) {
     let path = parsed.path();
     let is_bare_drive = match path.as_bytes() {
-        [b'/', drive, b':'] => drive.is_ascii_alphabetic(),
-        [b'/', drive, b'%', b'3', b'a' | b'A'] => drive.is_ascii_alphabetic(),
+        [b'/', drive, b':'] | [b'/', drive, b'%', b'3', b'a' | b'A'] => drive.is_ascii_alphabetic(),
         _ => false,
     };
     if is_bare_drive {
@@ -181,6 +180,19 @@ pub fn path_to_lsp_uri(path: &str) -> Result<Uri> {
 /// window when the host itself runs without one (i.e. launched by an editor).
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Suppress the child's console window on Windows. No-op elsewhere.
+pub fn hide_console_window(command: &mut std::process::Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
+}
 
 /// Suppress the child's console window on Windows. No-op elsewhere.
 pub fn hide_console_window_tokio(command: &mut tokio::process::Command) {

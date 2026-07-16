@@ -82,7 +82,9 @@ pub fn start(
         "Starting dotnet-counters monitor"
     );
 
-    let child = Command::new(tool)
+    let mut cmd = Command::new(tool);
+    crate::utils::hide_console_window(&mut cmd);
+    let child = cmd
         .args(["monitor", "-p"])
         .arg(params.pid.to_string())
         .args(["--counters", &providers_arg])

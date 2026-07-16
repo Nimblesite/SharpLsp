@@ -63,11 +63,11 @@ export function ensureRepoReady(spec: RealRepoSpec): string {
   const repoDir = path.join(root, spec.name);
   if (!fs.existsSync(path.join(repoDir, spec.sln))) {
     fs.rmSync(repoDir, { recursive: true, force: true });
-    execFileSync(
-      'git',
-      ['clone', '--depth', '1', '--branch', spec.tag, spec.url, spec.name],
-      { cwd: root, stdio: 'pipe', timeout: 600_000 },
-    );
+    execFileSync('git', ['clone', '--depth', '1', '--branch', spec.tag, spec.url, spec.name], {
+      cwd: root,
+      stdio: 'pipe',
+      timeout: 600_000,
+    });
   }
   const globalJson = path.join(repoDir, 'global.json');
   if (fs.existsSync(globalJson)) fs.rmSync(globalJson);
@@ -95,8 +95,7 @@ export async function loadSolutionInServer(solutionPath: string): Promise<void> 
   assert.ok(ext, 'extension must be loaded');
   const api = (await ext.activate()) as {
     getLspClient: () =>
-      | { sendRequest: (method: string, params: unknown) => Promise<unknown> }
-      | undefined;
+      { sendRequest: (method: string, params: unknown) => Promise<unknown> } | undefined;
   };
   const client = api.getLspClient();
   assert.ok(client, 'LSP client must be running');
@@ -108,7 +107,15 @@ export async function loadSolutionInServer(solutionPath: string): Promise<void> 
 
 /** The default e2e fixture solution — restored after each real-repo suite. */
 export function fixtureSolutionPath(): string {
-  return path.resolve(__dirname, '..', '..', '..', 'test-fixtures', 'workspace', 'TestFixtures.sln');
+  return path.resolve(
+    __dirname,
+    '..',
+    '..',
+    '..',
+    'test-fixtures',
+    'workspace',
+    'TestFixtures.sln',
+  );
 }
 
 /**
@@ -144,7 +151,11 @@ export async function openRepoFile(
  * `focus` (a substring of the snippet; defaults to its start).
  * Fails the test if either is absent — anchors must exist at the pinned tag.
  */
-export function positionOf(doc: vscode.TextDocument, snippet: string, focus?: string): vscode.Position {
+export function positionOf(
+  doc: vscode.TextDocument,
+  snippet: string,
+  focus?: string,
+): vscode.Position {
   const text = doc.getText();
   const snippetIndex = text.indexOf(snippet);
   assert.ok(snippetIndex >= 0, `anchor snippet not found in ${doc.fileName}: ${snippet}`);
@@ -154,7 +165,11 @@ export function positionOf(doc: vscode.TextDocument, snippet: string, focus?: st
 }
 
 /** Assert a range is internally sane and inside the document. */
-export function assertSaneRange(doc: vscode.TextDocument, range: vscode.Range, label: string): void {
+export function assertSaneRange(
+  doc: vscode.TextDocument,
+  range: vscode.Range,
+  label: string,
+): void {
   assert.ok(range.start.isBeforeOrEqual(range.end), `${label}: start must not follow end`);
   assert.ok(range.end.line < doc.lineCount, `${label}: range must stay inside the document`);
 }
@@ -196,10 +211,14 @@ function sampleWindows(): ProcessSample[] {
   const script =
     "Get-CimInstance Win32_Process -Filter \"Name LIKE 'sharplsp%' OR Name='dotnet.exe'\" | " +
     'Select-Object ProcessId,Name,CommandLine,WorkingSetSize,UserModeTime,KernelModeTime | ConvertTo-Json -Compress';
-  const raw = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
-    encoding: 'utf8',
-    timeout: 30_000,
-  }).trim();
+  const raw = execFileSync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', script],
+    {
+      encoding: 'utf8',
+      timeout: 30_000,
+    },
+  ).trim();
   if (raw.length === 0) return [];
   const parsed = JSON.parse(raw) as Win32ProcessRow | Win32ProcessRow[];
   const rows = Array.isArray(parsed) ? parsed : [parsed];
@@ -285,7 +304,9 @@ export function firstError(diagnostics: vscode.Diagnostic[], label: string): vsc
  */
 export async function waitForErrorsCleared(uri: vscode.Uri, timeoutMs: number): Promise<void> {
   const currentErrors = (): vscode.Diagnostic[] =>
-    vscode.languages.getDiagnostics(uri).filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
+    vscode.languages
+      .getDiagnostics(uri)
+      .filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
   const deadline = Date.now() + timeoutMs;
   while (currentErrors().length > 0 && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -305,7 +326,8 @@ const MAX_SIDECARS_PER_LANGUAGE = 2; // >2 of one language = the orphaned-proces
 export function assertServerResourceBounds(samples: ProcessSample[]): void {
   assert.ok(samples.length >= 1, 'at least one SharpLsp server process must be running');
   for (const proc of samples) {
-    const isHost = proc.name.toLowerCase().startsWith('sharplsp') && !proc.commandLine.includes('sidecar');
+    const isHost =
+      proc.name.toLowerCase().startsWith('sharplsp') && !proc.commandLine.includes('sidecar');
     const cap = isHost ? HOST_RSS_MAX_BYTES : SIDECAR_RSS_MAX_BYTES;
     const mib = Math.round(proc.rssBytes / 1024 ** 2);
     assert.ok(

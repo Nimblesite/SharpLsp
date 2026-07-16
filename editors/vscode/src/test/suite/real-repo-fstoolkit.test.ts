@@ -138,7 +138,10 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
       180_000,
       2_000,
     );
-    assert.ok(references.length >= 2, `Result.map must be referenced widely, got ${references.length.toString()}`);
+    assert.ok(
+      references.length >= 2,
+      `Result.map must be referenced widely, got ${references.length.toString()}`,
+    );
     const files = new Set(references.map((ref) => ref.uri.fsPath.replace(/\\/g, '/')));
     assert.ok(files.size >= 2, 'references must span multiple F# files');
   });
@@ -254,13 +257,28 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
 
     for (let round = 0; round < 10; round += 1) {
       const [symbols, hover, folding] = await Promise.all([
-        vscode.commands.executeCommand<vscode.DocumentSymbol[]>('vscode.executeDocumentSymbolProvider', uri),
+        vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+          'vscode.executeDocumentSymbolProvider',
+          uri,
+        ),
         vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider', uri, hoverAt),
-        vscode.commands.executeCommand<vscode.FoldingRange[]>('vscode.executeFoldingRangeProvider', uri),
+        vscode.commands.executeCommand<vscode.FoldingRange[]>(
+          'vscode.executeFoldingRangeProvider',
+          uri,
+        ),
       ]);
-      assert.ok((symbols ?? []).length > 0, `round ${round.toString()}: F# symbols must keep answering`);
-      assert.ok((hover ?? []).length > 0, `round ${round.toString()}: F# hover must keep answering`);
-      assert.ok((folding ?? []).length > 0, `round ${round.toString()}: F# folding must keep answering`);
+      assert.ok(
+        (symbols ?? []).length > 0,
+        `round ${round.toString()}: F# symbols must keep answering`,
+      );
+      assert.ok(
+        (hover ?? []).length > 0,
+        `round ${round.toString()}: F# hover must keep answering`,
+      );
+      assert.ok(
+        (folding ?? []).length > 0,
+        `round ${round.toString()}: F# folding must keep answering`,
+      );
     }
 
     assertServerResourceBounds(sampleServerProcesses());

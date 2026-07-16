@@ -16,6 +16,10 @@
     reason = "test code — JSON indexing panics are acceptable test failures"
 )]
 #![expect(
+    clippy::panic,
+    reason = "test code — panics are the correct failure mode"
+)]
+#![expect(
     clippy::needless_pass_by_value,
     reason = "test helper ergonomics — Value args are consumed"
 )]

@@ -119,3 +119,91 @@ pub fn pull_error_diagnostics(client: &mut LspClient, uri: &str, label: &str) ->
         .clone();
     items.into_iter().filter(|d| d["severity"] == 1).collect()
 }
+
+/// Poll pull-diagnostics until the Error-severity set satisfies `accept`,
+/// panicking on timeout. Sidecar analysis lags edits, so post-edit state
+/// (injected error, clean revert) is asserted on the settled result, never a
+/// single racy probe.
+pub fn poll_error_diagnostics_until(
+    client: &mut LspClient,
+    uri: &str,
+    label: &str,
+    timeout: Duration,
+    accept: impl Fn(&[Value]) -> bool,
+) -> Vec<Value> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let errors = pull_error_diagnostics(client, uri, label);
+        if accept(&errors) {
+            return errors;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{label}: diagnostics never settled within {}s; last: {errors:?}",
+            timeout.as_secs()
+        );
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+/// The start line of a `prepareRename` result, tolerating both response
+/// shapes the LSP allows: a bare `Range` and `{ range, placeholder }`.
+pub fn prepare_rename_start_line(result: &Value) -> Option<u64> {
+    result["start"]["line"]
+        .as_u64()
+        .or_else(|| result["range"]["start"]["line"].as_u64())
+}
+
+/// All edits in `documentChanges` targeting the file whose URI ends with
+/// `suffix`.
+pub fn edits_for(doc_changes: &[Value], suffix: &str) -> Vec<Value> {
+    doc_changes
+        .iter()
+        .filter(|change| {
+            change["textDocument"]["uri"]
+                .as_str()
+                .is_some_and(|uri| uri.ends_with(suffix))
+        })
+        .flat_map(|change| {
+            change["edits"]
+                .as_array()
+                .expect("documentChange must carry edits")
+                .clone()
+        })
+        .collect()
+}
+
+/// Apply LSP `TextEdit`s to `source` and return the edited text — the exact
+/// operation an editor performs on a rename `WorkspaceEdit`. Asserting on the
+/// applied result validates what the user ends up with, independent of
+/// whether the server sent granular or whole-document edits (GitHub #161).
+/// Positions are treated as char offsets (the session fixtures are ASCII,
+/// where UTF-16 code units and chars coincide).
+pub fn apply_text_edits(source: &str, edits: &[Value]) -> String {
+    let mut sorted: Vec<&Value> = edits.iter().collect();
+    sorted.sort_by_key(|edit| {
+        (
+            edit["range"]["start"]["line"].as_u64().expect("start line"),
+            edit["range"]["start"]["character"]
+                .as_u64()
+                .expect("start character"),
+        )
+    });
+    let mut text = source.to_string();
+    for edit in sorted.iter().rev() {
+        let start = text_offset(&text, &edit["range"]["start"]);
+        let end = text_offset(&text, &edit["range"]["end"]);
+        let new_text = edit["newText"].as_str().expect("edit newText");
+        text.replace_range(start..end, new_text);
+    }
+    text
+}
+
+/// Byte offset of an LSP `{ line, character }` position within `text`.
+fn text_offset(text: &str, pos: &Value) -> usize {
+    let line = usize::try_from(pos["line"].as_u64().expect("position line")).expect("line fits");
+    let character = usize::try_from(pos["character"].as_u64().expect("position character"))
+        .expect("character fits");
+    let line_start: usize = text.split_inclusive('\n').take(line).map(str::len).sum();
+    line_start + character
+}

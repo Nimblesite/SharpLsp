@@ -56,6 +56,33 @@ let private loadWorkspace (files: (string * string) list) =
             return failwith $"Failed to load workspace: {msg}"
     }
 
+// ── Workspace project options ([FS-REFS-PROJECT]) ───────────────
+
+/// References and rename are project-wide: FCS can only search files present
+/// in `ProjectOptions.SourceFiles`. A loaded multi-file project MUST surface
+/// every compile item there — when the source set arrives empty, cross-file
+/// references silently return nothing while hover/definition still work
+/// (GitHub #110 follow-up: F# references empty on multi-file projects).
+[<Fact>]
+let ``loadProject carries every compile item into the FCS source file set`` () = task {
+    let! (state, dir, _fsproj, paths) =
+        loadWorkspace
+            [ "Defs.fs", "module Defs\nlet helper (x: int) = x + 1\n"
+              "Uses.fs", "module Uses\nlet result = Defs.helper 5\n" ]
+    try
+        let sourceFileNames =
+            state.ProjectOptions.Value.SourceFiles
+            |> Array.map (fun (path: string) -> Path.GetFileName path |> string)
+        Assert.Equal<string array>([| "Defs.fs"; "Uses.fs" |], sourceFileNames)
+        // And the project-wide usage search must find the cross-file use.
+        let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5
+        Assert.True(
+            uses.Length >= 2,
+            $"references on `helper` must span both files (decl + use), got {uses.Length}")
+    finally
+        cleanup dir
+}
+
 // ── FSharpFileOrder tests ────────────────────────────────────────
 
 [<Fact>]

@@ -89,6 +89,7 @@ pub fn start(params: StartTraceParams) -> Result<StartTraceResult> {
     );
 
     let mut cmd = std::process::Command::new(tool);
+    crate::utils::hide_console_window(&mut cmd);
     let _ = cmd
         .args(["collect", "-p"])
         .arg(params.pid.to_string())
@@ -297,7 +298,9 @@ fn convert_trace_with_format(nettrace_path: &str, format: &str) -> Result<()> {
 
     info!(path = %nettrace_path, format = %format, "Converting trace");
 
-    let output = std::process::Command::new(tool)
+    let mut cmd = std::process::Command::new(tool);
+    crate::utils::hide_console_window(&mut cmd);
+    let output = cmd
         .args(["convert", nettrace_path, "--format", format])
         .output()
         .context("failed to run dotnet-trace convert")?;

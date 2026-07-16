@@ -213,7 +213,9 @@ fn native_kill(pid: u32) -> Result<()> {
 /// Terminate a process tree by PID on Windows via `taskkill /T /F`.
 #[cfg(windows)]
 fn native_kill(pid: u32) -> Result<()> {
-    let status = std::process::Command::new("taskkill")
+    let mut cmd = std::process::Command::new("taskkill");
+    crate::utils::hide_console_window(&mut cmd);
+    let status = cmd
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .status()
         .context("failed to run taskkill")?;

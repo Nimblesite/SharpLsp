@@ -126,7 +126,10 @@ suite('Real repo stress — FluentValidation (C#)', () => {
     );
     const definition = firstLocation(definitions, 'IValidator definition');
     const defPath = definition.uri.fsPath.replace(/\\/g, '/');
-    assert.ok(defPath.endsWith(IVALIDATOR_CS), `definition must land in IValidator.cs, got ${defPath}`);
+    assert.ok(
+      defPath.endsWith(IVALIDATOR_CS),
+      `definition must land in IValidator.cs, got ${defPath}`,
+    );
     const defDoc = await vscode.workspace.openTextDocument(definition.uri);
     assert.ok(
       defDoc.getText(definition.range).includes('IValidator'),
@@ -144,7 +147,10 @@ suite('Real repo stress — FluentValidation (C#)', () => {
       120_000,
       2_000,
     );
-    assert.ok(references.length >= 2, `RuleFor must have call sites, got ${references.length.toString()}`);
+    assert.ok(
+      references.length >= 2,
+      `RuleFor must have call sites, got ${references.length.toString()}`,
+    );
     for (const ref of references.slice(0, 5)) {
       const refDoc = await vscode.workspace.openTextDocument(ref.uri);
       assertSaneRange(refDoc, ref.range, `reference in ${ref.uri.fsPath}`);
@@ -212,7 +218,10 @@ suite('Real repo stress — FluentValidation (C#)', () => {
     this.timeout(180_000);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
     const folding = await waitForFoldingRanges(uri, 60_000);
-    assert.ok(folding.length >= 10, `AbstractValidator.cs must fold richly, got ${folding.length.toString()}`);
+    assert.ok(
+      folding.length >= 10,
+      `AbstractValidator.cs must fold richly, got ${folding.length.toString()}`,
+    );
 
     const selections = await waitForSelectionRanges(
       uri,
@@ -254,17 +263,33 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   test('stress: rapid-fire mixed requests stay within memory/CPU bounds', async function () {
     this.timeout(300_000);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
-    const hoverAt = positionOf(doc, 'public IRuleBuilderInitial<T, TProperty> RuleFor<TProperty>', 'RuleFor');
+    const hoverAt = positionOf(
+      doc,
+      'public IRuleBuilderInitial<T, TProperty> RuleFor<TProperty>',
+      'RuleFor',
+    );
 
     for (let round = 0; round < 10; round += 1) {
       const [symbols, hover, folding] = await Promise.all([
-        vscode.commands.executeCommand<vscode.DocumentSymbol[]>('vscode.executeDocumentSymbolProvider', uri),
+        vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+          'vscode.executeDocumentSymbolProvider',
+          uri,
+        ),
         vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider', uri, hoverAt),
-        vscode.commands.executeCommand<vscode.FoldingRange[]>('vscode.executeFoldingRangeProvider', uri),
+        vscode.commands.executeCommand<vscode.FoldingRange[]>(
+          'vscode.executeFoldingRangeProvider',
+          uri,
+        ),
       ]);
-      assert.ok((symbols ?? []).length > 0, `round ${round.toString()}: symbols must keep answering`);
+      assert.ok(
+        (symbols ?? []).length > 0,
+        `round ${round.toString()}: symbols must keep answering`,
+      );
       assert.ok((hover ?? []).length > 0, `round ${round.toString()}: hover must keep answering`);
-      assert.ok((folding ?? []).length > 0, `round ${round.toString()}: folding must keep answering`);
+      assert.ok(
+        (folding ?? []).length > 0,
+        `round ${round.toString()}: folding must keep answering`,
+      );
     }
 
     assertServerResourceBounds(sampleServerProcesses());

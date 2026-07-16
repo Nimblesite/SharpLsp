@@ -26,10 +26,10 @@ const PING_TIMEOUT: Duration = Duration::from_secs(2);
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
 /// Response budget for ordinary sidecar requests. Anything slower is wedged,
 /// not busy — see [SIDECAR-REQUEST-TIMEOUT].
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+const REQUEST_TIMEOUT: Duration = Duration::from_mins(2);
 /// Response budget for `workspace/open`, which legitimately runs a full
-/// MSBuild design-time build (minutes on a cold NuGet cache).
-const WORKSPACE_OPEN_TIMEOUT: Duration = Duration::from_secs(600);
+/// `MSBuild` design-time build (minutes on a cold `NuGet` cache).
+const WORKSPACE_OPEN_TIMEOUT: Duration = Duration::from_mins(10);
 /// Manages a single sidecar process (C# or F#).
 pub struct SidecarManager {
     /// Display name for logging.
@@ -408,7 +408,7 @@ impl SidecarManager {
 }
 
 /// Response budget for a sidecar method. `workspace/open` legitimately runs a
-/// full MSBuild design-time build; anything else past two minutes is wedged.
+/// full `MSBuild` design-time build; anything else past two minutes is wedged.
 /// [SIDECAR-REQUEST-TIMEOUT]
 fn request_budget(method: &str) -> Duration {
     if method == "workspace/open" {

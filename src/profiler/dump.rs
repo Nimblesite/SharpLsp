@@ -56,7 +56,9 @@ pub async fn collect(
     let token = format!("dump-{}", params.pid);
     send_progress_begin(&sender, &token, "Collecting memory dump…");
 
-    let output = tokio::process::Command::new(tool)
+    let mut cmd = tokio::process::Command::new(tool);
+    crate::utils::hide_console_window_tokio(&mut cmd);
+    let output = cmd
         .args(["collect", "-p"])
         .arg(params.pid.to_string())
         .args(["--type", &params.dump_type])
