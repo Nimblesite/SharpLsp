@@ -50,6 +50,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 
 # Utilities
 dashmap = "6"
+# RFC 8089 file:// URI ↔ path conversion (Windows drive letters, percent-decoding)
+url = "2"
 
 [dev-dependencies]
 tempfile = "3"

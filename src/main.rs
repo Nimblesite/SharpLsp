@@ -156,25 +156,23 @@ fn run_server() -> Result<()> {
     let init_params: InitializeParams =
         serde_json::from_value(init_params).context("deserialize InitializeParams")?;
 
+    // Convert the workspace URI through the same RFC 8089 parser as every other
+    // file path so Windows drive letters and percent-encoding resolve correctly;
+    // a naive scheme trim yields `/C:/…`, a root the sidecar cannot load (#110).
     let workspace_root = init_params
         .workspace_folders
         .as_ref()
         .and_then(|folders| folders.first())
-        .and_then(|folder| {
-            folder
-                .uri
-                .as_str()
-                .strip_prefix("file://")
-                .map(PathBuf::from)
-        })
+        .and_then(|folder| semantic::uri_to_path(&folder.uri).ok())
         .or_else(|| {
             #[expect(
                 deprecated,
                 reason = "root_uri is the LSP 3.16 fallback when workspace_folders is absent"
             )]
             let root = init_params.root_uri.as_ref();
-            root.and_then(|uri| uri.as_str().strip_prefix("file://").map(PathBuf::from))
-        });
+            root.and_then(|uri| semantic::uri_to_path(uri).ok())
+        })
+        .map(PathBuf::from);
 
     let sharplsp_config = if let Some(ref root) = workspace_root {
         config::load_config(root)?

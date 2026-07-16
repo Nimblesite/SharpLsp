@@ -1145,6 +1145,7 @@ dependencies = [
  "tracing-subscriber",
  "tree-sitter",
  "tree-sitter-c-sharp",
+ "url",
  "wait-timeout",
 ]
 

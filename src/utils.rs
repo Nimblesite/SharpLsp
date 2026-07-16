@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use lsp_types::{Position, Range, TextEdit, Uri};
+use url::Url;
 
 /// A hierarchy item returned by the sidecar for call- and type-hierarchy
 /// requests. Shared by `call_hierarchy` and `type_hierarchy`, which map it
@@ -97,11 +98,28 @@ pub fn map_text_edits(edits: &[SidecarTextEdit]) -> Vec<TextEdit> {
     edits.iter().map(map_text_edit).collect()
 }
 
-/// Convert a `file://` URI string to a filesystem path string.
+/// Convert a `file://` URI string to a native filesystem path string.
+///
+/// Parses the URI (RFC 8089) rather than trimming the scheme, so Windows drive
+/// letters and percent-encoding are handled correctly: `file:///C:/dir/f.cs` and
+/// VS Code's percent-encoded `file:///c%3A/dir/f.cs` both become `C:\dir\f.cs`,
+/// not `/C:/dir/f.cs`. A naive `strip_prefix("file://")` leaves the leading slash
+/// and the raw `%3A`, producing a path Roslyn/FCS cannot resolve — so every
+/// semantic feature returns nothing on Windows even once the sidecar transport is
+/// up. Implements the correct conversion for [GitHub #110].
 pub fn uri_to_path(uri: &str) -> Result<String> {
-    uri.strip_prefix("file://")
-        .map(String::from)
-        .context("expected file:// URI")
+    let parsed = Url::parse(uri).with_context(|| format!("parse file URI: {uri}"))?;
+    if parsed.scheme() != "file" {
+        anyhow::bail!("expected a file:// URI, got scheme {:?}", parsed.scheme());
+    }
+    parsed
+        .to_file_path()
+        .map_err(|()| anyhow::anyhow!("file URI is not a valid filesystem path: {uri}"))?
+        .into_os_string()
+        .into_string()
+        .map_err(|lossy| {
+            anyhow::anyhow!("file path is not valid UTF-8: {}", lossy.to_string_lossy())
+        })
 }
 
 /// Safely convert `usize` to `u32`, clamping to `u32::MAX` on overflow.
@@ -110,8 +128,63 @@ pub fn usize_to_u32(value: usize) -> u32 {
 }
 
 #[cfg(test)]
+#[cfg_attr(
+    windows,
+    expect(
+        clippy::unwrap_used,
+        reason = "test code — panics are the correct failure mode"
+    )
+)]
+#[cfg_attr(
+    unix,
+    expect(
+        clippy::unwrap_used,
+        reason = "test code — panics are the correct failure mode"
+    )
+)]
 mod tests {
     use super::*;
+
+    /// GitHub #110: a real VS Code file URI on Windows carries a drive letter and
+    /// often percent-encodes the drive colon (`%3A`) and spaces (`%20`). It must
+    /// convert to the native path the sidecar can actually open. A naive
+    /// `strip_prefix("file://")` leaves a leading slash and the raw `%3A`,
+    /// yielding `/e%3A/Pavo/Systems/Terrain.fs` — a path Roslyn/FCS cannot
+    /// resolve, so every semantic feature returns nothing on Windows even once
+    /// the sidecar transport is up ("no symbol support beyond colorization").
+    #[cfg(windows)]
+    #[test]
+    fn uri_to_path_yields_native_windows_paths() {
+        assert_eq!(
+            uri_to_path("file:///C:/Users/test/Program.cs").unwrap(),
+            r"C:\Users\test\Program.cs"
+        );
+        // Exact path from the #110 report, as VS Code percent-encodes it.
+        assert_eq!(
+            uri_to_path("file:///e%3A/Pavo/Systems/Terrain.fs").unwrap(),
+            r"e:\Pavo\Systems\Terrain.fs"
+        );
+        // Percent-encoded spaces must decode to real spaces.
+        assert_eq!(
+            uri_to_path("file:///C:/My%20Code/App.fs").unwrap(),
+            r"C:\My Code\App.fs"
+        );
+    }
+
+    /// On Unix the same conversion keeps absolute POSIX paths intact and decodes
+    /// percent-encoding.
+    #[cfg(unix)]
+    #[test]
+    fn uri_to_path_yields_native_unix_paths() {
+        assert_eq!(
+            uri_to_path("file:///home/user/proj/Program.cs").unwrap(),
+            "/home/user/proj/Program.cs"
+        );
+        assert_eq!(
+            uri_to_path("file:///home/user/My%20Proj/App.fs").unwrap(),
+            "/home/user/My Proj/App.fs"
+        );
+    }
 
     #[test]
     fn map_text_edit_translates_range_and_text() {
