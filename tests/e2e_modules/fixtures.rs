@@ -1,8 +1,31 @@
 //! Shared test fixtures: constants, C# source snippets, and workspace creation helpers.
 
+use std::path::Path;
+
 // ── Shared test fixtures ──────────────────────────────────────────
 
 pub const TEST_URI: &str = "file:///test/Program.cs";
+
+/// Build a valid RFC 8089 `file://` URI from a filesystem path, cross-platform.
+///
+/// A bare `file://` + `display()` is wrong on Windows: `display()` yields
+/// backslashes over a bare drive (`C:\dir`), and `canonicalize` prepends a `\\?\`
+/// verbatim prefix, producing `file://\\?\C:\dir` — a URI the host (correctly)
+/// rejects, so no full-stack test could ever run on Windows. This strips the
+/// verbatim prefix, uses forward slashes, and adds the authority-empty triple
+/// slash so the URI parses back to the right native path on every OS. [GitHub #110]
+pub fn path_to_file_uri(path: &Path) -> String {
+    let text = path.display().to_string();
+    if cfg!(windows) {
+        let normalized = text
+            .strip_prefix(r"\\?\")
+            .unwrap_or(&text)
+            .replace('\\', "/");
+        format!("file:///{normalized}")
+    } else {
+        format!("file://{text}")
+    }
+}
 
 pub const SIMPLE_CLASS: &str = r#"
 using System;
@@ -164,8 +187,8 @@ EndGlobal"#,
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let real_proj = real_root.join("TestHover");
-    let root_uri = format!("file://{}", real_root.display());
-    let file_uri = format!("file://{}", real_proj.join("Program.cs").display());
+    let root_uri = path_to_file_uri(&real_root);
+    let file_uri = path_to_file_uri(&real_proj.join("Program.cs"));
     (tmp, root_uri, file_uri, cs_source.to_string())
 }
 
@@ -228,7 +251,7 @@ EndGlobal"#,
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let real_proj = real_root.join("UnusedPkg");
-    let root_uri = format!("file://{}", real_root.display());
+    let root_uri = path_to_file_uri(&real_root);
     let sln_path = real_root
         .join("UnusedPkg.sln")
         .to_string_lossy()
@@ -237,7 +260,7 @@ EndGlobal"#,
         .join("UnusedPkg.csproj")
         .to_string_lossy()
         .into_owned();
-    let file_uri = format!("file://{}", real_proj.join("Program.cs").display());
+    let file_uri = path_to_file_uri(&real_proj.join("Program.cs"));
     (
         tmp,
         root_uri,
@@ -325,8 +348,8 @@ EndGlobal"#,
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let real_proj = real_root.join("TestFSharp");
-    let root_uri = format!("file://{}", real_root.display());
-    let file_uri = format!("file://{}", real_proj.join("Library.fs").display());
+    let root_uri = path_to_file_uri(&real_root);
+    let file_uri = path_to_file_uri(&real_proj.join("Library.fs"));
     (tmp, root_uri, file_uri, fs_source.to_string())
 }
 
@@ -397,8 +420,8 @@ EndGlobal"#,
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let real_proj = real_root.join("TestFSharpNuget");
-    let root_uri = format!("file://{}", real_root.display());
-    let file_uri = format!("file://{}", real_proj.join("Serializer.fs").display());
+    let root_uri = path_to_file_uri(&real_root);
+    let file_uri = path_to_file_uri(&real_proj.join("Serializer.fs"));
     (tmp, root_uri, file_uri, fs_source.to_string())
 }
 
@@ -487,8 +510,8 @@ EndGlobal"#,
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
     let real_proj = real_root.join("TestDefinition");
-    let root_uri = format!("file://{}", real_root.display());
-    let file_uri = format!("file://{}", real_proj.join("Program.cs").display());
+    let root_uri = path_to_file_uri(&real_root);
+    let file_uri = path_to_file_uri(&real_proj.join("Program.cs"));
     (tmp, root_uri, file_uri, cs_source.to_string())
 }
 
@@ -615,9 +638,9 @@ EndGlobal"#,
     assert!(restore.success(), "dotnet restore must succeed");
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
-    let root_uri = format!("file://{}", real_root.display());
+    let root_uri = path_to_file_uri(&real_root);
     let file_path = real_root.join("ChangeTest").join("Widget.cs");
-    let file_uri = format!("file://{}", file_path.display());
+    let file_uri = path_to_file_uri(&file_path);
     (tmp, root_uri, file_path, file_uri, clean_source)
 }
 
@@ -656,7 +679,7 @@ public class Calculator
     assert!(restore.success(), "dotnet restore must succeed");
 
     let real_root = std::fs::canonicalize(proj_dir).unwrap();
-    let root_uri = format!("file://{}", real_root.display());
-    let file_uri = format!("file://{}", real_root.join("Calculator.cs").display());
+    let root_uri = path_to_file_uri(&real_root);
+    let file_uri = path_to_file_uri(&real_root.join("Calculator.cs"));
     (tmp, root_uri, file_uri, cs_source.to_string())
 }

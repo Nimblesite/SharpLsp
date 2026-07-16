@@ -49,7 +49,7 @@ fn create_workspace_symbols_slnx_fixture() -> (tempfile::TempDir, String) {
 /// Initialize LSP with a workspace root so sidecar-backed solution parsing is available.
 fn initialize_workspace_symbols_client(client: &mut LspClient, tmp: &tempfile::TempDir) {
     let root = tmp.path().canonicalize().unwrap();
-    let root_uri = format!("file://{}", root.display());
+    let root_uri = path_to_file_uri(&root);
     let _ = client.initialize_with_root(json!(root_uri));
 }
 

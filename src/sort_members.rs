@@ -603,9 +603,20 @@ mod tests {
     }
 
     #[test]
-    fn uri_to_path_strips_prefix() {
-        let path = uri_to_path("file:///home/user/test.cs").unwrap();
-        assert_eq!(path, "/home/user/test.cs");
+    fn uri_to_path_converts_to_native_path() {
+        // `uri_to_path` yields a NATIVE path per platform: a driveless POSIX URI
+        // is a valid path only on Unix, while Windows requires a drive letter
+        // (GitHub #110 — `file:///C:/…` must not become `/C:/…`).
+        #[cfg(unix)]
+        {
+            let path = uri_to_path("file:///home/user/test.cs").unwrap();
+            assert_eq!(path, "/home/user/test.cs");
+        }
+        #[cfg(windows)]
+        {
+            let path = uri_to_path("file:///C:/Users/test.cs").unwrap();
+            assert_eq!(path, r"C:\Users\test.cs");
+        }
     }
 
     #[test]

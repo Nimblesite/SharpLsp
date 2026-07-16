@@ -143,6 +143,16 @@ function watchTrackedProjectWithNode(projectPath: string): vscode.Disposable | u
     const nodeWatcher = fs.watch(projectPath, { persistent: false }, () => {
       handleTrackedFileEvent(projectPath);
     });
+    // FSWatcher emits async 'error' events (e.g. EPERM on Windows when the
+    // watched file's directory tree is deleted). Without a listener Node
+    // re-raises them as uncaught exceptions and crashes the extension host
+    // (VSCODE-REACTIVITY-SPEC §4). Close the watcher and treat it like a
+    // delete: re-evaluate the file and untrack it when gone.
+    nodeWatcher.on('error', (err: Error) => {
+      log.traceInfo(`project-deps-store: node watcher error for ${projectPath}: ${err.message}`);
+      nodeWatcher.close();
+      handleTrackedFileEvent(projectPath);
+    });
     return new vscode.Disposable(() => {
       nodeWatcher.close();
     });

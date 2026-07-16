@@ -1,1 +1,8 @@
-../../../docs/designs/logo/vsix-activity-bar.svg
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <path
+    fill="currentColor"
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+    d="M12 0.5L23.5 12L12 23.5L0.5 12L12 0.5ZM11.75 3.75H18.25L13.75 11.25H19.5L8.25 21L11.75 14.25H5.5L11.75 3.75Z"
+  />
+</svg>

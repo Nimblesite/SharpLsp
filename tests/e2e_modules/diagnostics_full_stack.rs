@@ -55,9 +55,9 @@ EndGlobal"#,
     assert!(restore.success(), "dotnet restore must succeed");
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
-    let root_uri = format!("file://{}", real_root.display());
+    let root_uri = path_to_file_uri(&real_root);
     let bad_path = real_root.join("ErrTest").join("Bad.cs");
-    let bad_uri = format!("file://{}", bad_path.display());
+    let bad_uri = path_to_file_uri(&bad_path);
 
     let mut client = LspClient::start_verbose();
     let _ = client.initialize_with_root(json!(root_uri));
@@ -164,9 +164,9 @@ EndGlobal"#,
     assert!(restore.success(), "dotnet restore must succeed");
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
-    let root_uri = format!("file://{}", real_root.display());
+    let root_uri = path_to_file_uri(&real_root);
     let file_path = real_root.join("CleanTest").join("AllGood.cs");
-    let file_uri = format!("file://{}", file_path.display());
+    let file_uri = path_to_file_uri(&file_path);
 
     let mut client = LspClient::start_verbose();
     let _ = client.initialize_with_root(json!(root_uri));
@@ -264,9 +264,9 @@ EndGlobal"#,
     assert!(restore.success(), "dotnet restore must succeed");
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
-    let root_uri = format!("file://{}", real_root.display());
+    let root_uri = path_to_file_uri(&real_root);
     let file_path = real_root.join("VerifyTest").join("Item.cs");
-    let item_uri = format!("file://{}", file_path.display());
+    let item_uri = path_to_file_uri(&file_path);
 
     // ── Initialize ──────────────────────────────────────────────
     let mut client = LspClient::start_verbose();
@@ -625,9 +625,9 @@ EndGlobal"#,
     assert!(restore.success(), "dotnet restore must succeed");
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
-    let root_uri = format!("file://{}", real_root.display());
+    let root_uri = path_to_file_uri(&real_root);
     let stale_path = real_root.join("StaleTest").join("Stale.cs");
-    let _stale_uri = format!("file://{}", stale_path.display());
+    let _stale_uri = path_to_file_uri(&stale_path);
 
     // ── Initialize — sidecar loads the broken compilation ───────
     let mut client = LspClient::start_verbose();
@@ -907,9 +907,9 @@ EndGlobal
     );
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
-    let root_uri = format!("file://{}", real_root.display());
+    let root_uri = path_to_file_uri(&real_root);
     let consumer_path = real_root.join("Combined").join("Combined.cs");
-    let consumer_uri = format!("file://{}", consumer_path.display());
+    let consumer_uri = path_to_file_uri(&consumer_path);
 
     // ── Initialize ──────────────────────────────────────────────
     let mut client = LspClient::start_verbose();
@@ -1060,9 +1060,9 @@ EndGlobal"#,
     assert!(restore.success(), "dotnet restore must succeed");
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
-    let root_uri = format!("file://{}", real_root.display());
+    let root_uri = path_to_file_uri(&real_root);
     let file_path = real_root.join("SyntaxErr").join("Oops.cs");
-    let file_uri = format!("file://{}", file_path.display());
+    let file_uri = path_to_file_uri(&file_path);
 
     let mut client = LspClient::start_verbose();
     let _ = client.initialize_with_root(json!(root_uri));

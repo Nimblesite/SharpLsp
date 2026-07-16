@@ -343,9 +343,9 @@ EndGlobal"#,
     assert!(restore.success(), "dotnet restore must succeed");
 
     let real_root = std::fs::canonicalize(tmp.path()).unwrap();
-    let root_uri = format!("file://{}", real_root.display());
+    let root_uri = path_to_file_uri(&real_root);
     let broken_path = real_root.join("DiagTest").join("Broken.cs");
-    let broken_uri = format!("file://{}", broken_path.display());
+    let broken_uri = path_to_file_uri(&broken_path);
 
     let mut client = LspClient::start_verbose();
     let _ = client.initialize_with_root(json!(root_uri));

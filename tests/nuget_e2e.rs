@@ -34,6 +34,22 @@ use tempfile::TempDir;
 
 // ── Test Harness ──────────────────────────────────────────────────
 
+/// Build a valid RFC 8089 `file://` URI cross-platform. On Windows a bare
+/// `file://` + `display()` yields `file://\\?\C:\dir` (backslashes, verbatim
+/// prefix), which the host rejects; this normalizes to `file:///C:/dir`. [#110]
+fn path_to_file_uri(path: &Path) -> String {
+    let text = path.display().to_string();
+    if cfg!(windows) {
+        let normalized = text
+            .strip_prefix(r"\\?\")
+            .unwrap_or(&text)
+            .replace('\\', "/");
+        format!("file:///{normalized}")
+    } else {
+        format!("file://{text}")
+    }
+}
+
 static REQUEST_ID: AtomicI32 = AtomicI32::new(1000);
 
 fn next_id() -> i32 {
@@ -137,7 +153,7 @@ impl LspClient {
             json!({
                 "processId": null,
                 "capabilities": {},
-                "rootUri": format!("file://{}", dir.display()),
+                "rootUri": path_to_file_uri(dir),
             }),
         );
         self.notify("initialized", json!({}));
