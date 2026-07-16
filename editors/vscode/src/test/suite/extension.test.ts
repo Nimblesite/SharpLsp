@@ -317,6 +317,29 @@ suite('Extension Activation & Configuration', () => {
     assert.match(ext.packageJSON.version, /^\d+\.\d+\.\d+/);
   });
 
+  // Implements [DIST-RUNTIME-ACQUIRE]. The test host installs the .NET Install
+  // Tool unconditionally (.vscode-test.mjs `installExtensions`), so without
+  // this guard the suite stays green even if the `extensionDependencies`
+  // declaration is deleted from package.json — silently breaking automatic
+  // SDK acquisition for real installs (the v0.1.0 failure mode).
+  test('package.json declares the .NET Install Tool as an extensionDependency', () => {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext);
+    const deps: string[] = ext.packageJSON.extensionDependencies ?? [];
+    assert.ok(
+      deps.includes('ms-dotnettools.vscode-dotnet-runtime'),
+      'extensionDependencies must include ms-dotnettools.vscode-dotnet-runtime per [DIST-RUNTIME-ACQUIRE]',
+    );
+  });
+
+  test('the .NET Install Tool extension resolves in the extension host', () => {
+    const installTool = vscode.extensions.getExtension('ms-dotnettools.vscode-dotnet-runtime');
+    assert.ok(
+      installTool,
+      'ms-dotnettools.vscode-dotnet-runtime must be present in the host (installed via extensionDependencies)',
+    );
+  });
+
   test('extension contributes all expected commands', () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext);

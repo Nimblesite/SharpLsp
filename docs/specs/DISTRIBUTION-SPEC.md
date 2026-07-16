@@ -164,6 +164,17 @@ bin/
 
 The sidecar binaries are identical across all platform VSIXs — they are managed assemblies and require no platform-specific build.
 
+## [DIST-VSIX-ASSET-INTEGRITY]
+
+The extension's icon assets (`editors/vscode/icons/`) are tracked as symlinks into `docs/designs/logo/` — a single source of truth for brand assets. On checkouts where Git cannot create symlinks (`core.symlinks=false`, the default on most Windows machines), Git materializes each symlink as a small text file containing the target path. `vsce` packages whatever is on disk, so such a checkout silently produces a VSIX whose Marketplace and activity-bar icons are broken text stubs, and the extension-development host renders broken icons.
+
+1. Every image asset referenced by the extension manifest MUST be packaged as real image content. A VSIX containing symlink text stubs is broken.
+2. `scripts/resolve-symlink-stubs.mjs` rewrites stub files in place with their target's content. It MUST leave real OS symlinks untouched (macOS/Linux, and Windows checkouts with `core.symlinks=true`), making it a cross-platform no-op wherever symlinks work. It only rewrites plain files whose entire content is a relative POSIX path resolving to an existing file.
+3. The resolver MUST run automatically before packaging (`vscode:prepublish`) and before the e2e suite (`pretest`), so both the packaged VSIX and the extension-development host load real images. The e2e suite asserts the invariant (`bundled-binary.test.ts`).
+4. Resolved stubs modify the working tree and MUST NOT be committed — Git would record the binary content as the symlink's target text, corrupting the symlink for every other platform. Restore with `git restore editors/vscode/icons`.
+
+CI and releases are unaffected: GitHub's hosted runners (including `windows-latest`) check out with working symlinks, and published VSIXs contain real icons (verified against the `v0.13.0` `win32-x64` asset).
+
 ## [DIST-RESOLUTION]
 
 Resolution is driven by the `sources` array per component in `shipwright.json`. The `activateDeploymentToolkit` call verifies all three on activation. Failure to resolve any required component triggers [DIST-FAILURE-UX] (degraded mode + toast), not a host-crashing throw.
