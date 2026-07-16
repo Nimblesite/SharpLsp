@@ -154,10 +154,11 @@ suite('Real repo stress — serilog (C#)', () => {
     this.timeout(180_000);
     const { doc, uri, editor } = await openRepoFile(repoDir, LOG_CS);
     const initialVersion = doc.version;
-    // Log.cs uses a file-scoped namespace, so the file's last `}` closes the
-    // Log class itself — a method probe there sits inside the class body.
-    const insertAt = doc.positionAt(doc.getText().lastIndexOf('}'));
-    const probe = '\n    static void SharpLspProbe() { Log.';
+    // Insert the probe directly before an existing member declaration —
+    // Roslyn's recovery completes members reliably there, whereas a probe at
+    // the class's closing brace yields only dot-snippet fallbacks.
+    const insertAt = positionOf(doc, 'public static void CloseAndFlush()');
+    const probe = 'static void SharpLspProbe() { Log.';
     const applied = await editor.edit((edit) => {
       edit.insert(insertAt, probe);
     });

@@ -237,16 +237,18 @@ suite('Real repo stress — FluentValidation (C#)', () => {
     assert.ok(renameEdit, 'rename must produce a WorkspaceEdit');
     assert.ok(renameEdit.size >= 1, 'rename plan must touch at least one file');
     const textEdits = renameEdit.entries().flatMap(([, edits]) => edits);
-    // RuleFor's body uses `expression` twice (ThrowIfNull + PropertyRule.Create),
-    // so declaration + uses is at least 3 edits.
-    assert.ok(
-      textEdits.length >= 2,
-      `parameter rename must rewrite declaration and uses — got ${textEdits.length.toString()} edit(s): ` +
-        textEdits.map((edit) => `${edit.range.start.line.toString()}:${edit.range.start.character.toString()}`).join(', '),
+    assert.ok(textEdits.length >= 1, 'rename must contain text edits');
+    // Granularity-agnostic: the sidecar may answer with granular edits or one
+    // whole-document replacement. Either way the payload must rewrite the
+    // declaration AND both body uses (ThrowIfNull + PropertyRule.Create) = 3+.
+    const renamedCount = textEdits.reduce(
+      (sum, edit) => sum + (edit.newText.match(/sharpLspRenamed/g) ?? []).length,
+      0,
     );
-    for (const edit of textEdits) {
-      assert.strictEqual(edit.newText, 'sharpLspRenamed', 'every edit must apply the new name');
-    }
+    assert.ok(
+      renamedCount >= 3,
+      `rename payload must rewrite declaration and both uses — new name appears ${renamedCount.toString()}x`,
+    );
   });
 
   test('stress: rapid-fire mixed requests stay within memory/CPU bounds', async function () {

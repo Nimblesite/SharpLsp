@@ -178,6 +178,10 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
     assert.ok(!doc.getText().includes('__sharpLspProbe'), 'undo must restore the pristine file');
   });
 
+  // KNOWN FAILING — tracks #160: F# pull diagnostics serve stale (phantom)
+  // errors after a revert; FCS check results are not version-gated, so the
+  // slower error-text check completes after the reverted-text check and its
+  // stale result keeps being served. Kept failing per testing policy.
   test('diagnostics round-trip: an F# type error surfaces and clears', async function () {
     this.timeout(420_000);
     const { doc, uri, editor } = await openRepoFile(repoDir, RESULT_FS);
