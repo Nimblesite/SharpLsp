@@ -73,7 +73,12 @@ let private packageAssemblies
 
         compile.EnumerateObject()
         |> Seq.choose (fun file ->
-            if file.Name = "_._" then
+            // Real restores emit placeholders PATH-QUALIFIED (e.g.
+            // `lib/netstandard1.0/_._`), and the file physically exists in the
+            // package — so match on the filename component, not the whole key.
+            // Handing `_._` to FCS as `-r:` poisons every checked file with
+            // FS0229/FS3160 startup errors that no edit clears. [GitHub #160]
+            if Path.GetFileName(file.Name) = "_._" then
                 None
             else
                 let abs = Path.Combine(root, toLocal libPath, toLocal file.Name)

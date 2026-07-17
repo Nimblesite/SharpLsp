@@ -298,6 +298,26 @@ export function firstError(diagnostics: vscode.Diagnostic[], label: string): vsc
 }
 
 /**
+ * Wait until a document carries at least one Error diagnostic and return it.
+ * Real-world files legitimately carry standing warnings/hints (unused opens,
+ * lint), so waiting for *any* diagnostic returns long before the semantic
+ * check of an injected error completes — the wait must be severity-aware.
+ */
+export async function waitForError(uri: vscode.Uri, timeoutMs: number): Promise<vscode.Diagnostic> {
+  const currentError = (): vscode.Diagnostic | undefined =>
+    vscode.languages
+      .getDiagnostics(uri)
+      .find((d) => d.severity === vscode.DiagnosticSeverity.Error);
+  const deadline = Date.now() + timeoutMs;
+  while (currentError() === undefined && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  const error = currentError();
+  assert.ok(error, 'an Error diagnostic must surface for the broken buffer');
+  return error;
+}
+
+/**
  * Wait until a document carries zero Error diagnostics, then assert it.
  * Real-world files may legitimately keep warnings/hints — asserting on a
  * fully empty diagnostics list would flake; errors are the contract.

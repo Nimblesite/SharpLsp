@@ -280,38 +280,35 @@ type FSharpSidecar() =
                     let filePath = FSharpWorkspace.projectFilePath workspace requestPath
                     let mutable results = ResizeArray<DiagnosticResult>()
                     // FCS compiler diagnostics, computed from the live buffer
-                    // (didChange overlay), never stale disk text.
-                    // [FS-DIDCHANGE-OVERLAY]
-                    if workspace.IsLoaded then
-                        let source = FSharpWorkspace.readSource workspace filePath
-                        let sourceText = FSharp.Compiler.Text.SourceText.ofString source
-                        let! _parse, checkAnswer =
-                            workspace.Checker.ParseAndCheckFileInProject(
-                                filePath, 0, sourceText, workspace.ProjectOptions.Value)
-                        match checkAnswer with
-                        | FSharp.Compiler.CodeAnalysis.FSharpCheckFileAnswer.Succeeded check ->
-                            for d in check.Diagnostics do
-                                let severity =
-                                    match d.Severity with
-                                    | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Error -> "Error"
-                                    | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Warning -> "Warning"
-                                    | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Info -> "Info"
-                                    | _ -> "Hint"
-                                let r = d.Range
-                                results.Add(
-                                    { FilePath = filePath
-                                      StartLine = r.StartLine - 1
-                                      StartCharacter = r.StartColumn
-                                      EndLine = r.EndLine - 1
-                                      EndCharacter = r.EndColumn
-                                      Message = d.Message
-                                      Severity = severity
-                                      Code = $"FS{d.ErrorNumber:D4}" })
-                            // [FS-ANALYZER-UNUSEDOPEN]/[FS-ANALYZER-SIMPLIFYNAME]
-                            // FSAC-parity file-local analyzers (always-on hints).
-                            let! fileDiags = FSharpAnalyzers.fileAnalyzerDiagnostics check source
-                            fileDiags |> List.iter results.Add
-                        | FSharp.Compiler.CodeAnalysis.FSharpCheckFileAnswer.Aborted -> ()
+                    // (didChange overlay), never stale disk text — and gated
+                    // by the overlay-stability re-check so a result computed
+                    // from superseded text is never served as current.
+                    // [FS-DIDCHANGE-OVERLAY] [FS-CHECK-VERSION-GATE]
+                    let! checkedFile = FSharpWorkspace.checkFile workspace filePath
+                    match checkedFile with
+                    | Some(check, source) ->
+                        for d in check.Diagnostics do
+                            let severity =
+                                match d.Severity with
+                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Error -> "Error"
+                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Warning -> "Warning"
+                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Info -> "Info"
+                                | _ -> "Hint"
+                            let r = d.Range
+                            results.Add(
+                                { FilePath = filePath
+                                  StartLine = r.StartLine - 1
+                                  StartCharacter = r.StartColumn
+                                  EndLine = r.EndLine - 1
+                                  EndCharacter = r.EndColumn
+                                  Message = d.Message
+                                  Severity = severity
+                                  Code = $"FS{d.ErrorNumber:D4}" })
+                        // [FS-ANALYZER-UNUSEDOPEN]/[FS-ANALYZER-SIMPLIFYNAME]
+                        // FSAC-parity file-local analyzers (always-on hints).
+                        let! fileDiags = FSharpAnalyzers.fileAnalyzerDiagnostics check source
+                        fileDiags |> List.iter results.Add
+                    | None -> ()
                     // [FS-ANALYZER-DEADCODE] Merge project-wide dead-code diagnostics
                     // for this file (monorepo mode promotes public deadness to errors).
                     if workspace.IsLoaded && analyzerConfig.DeadCodeEnabled then

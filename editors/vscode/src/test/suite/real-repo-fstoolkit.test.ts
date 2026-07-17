@@ -15,7 +15,6 @@ import {
   assertServerResourceBounds,
   ensureRepoReady,
   completionLabel,
-  firstError,
   firstLocation,
   fixtureSolutionPath,
   loadSolutionInServer,
@@ -23,6 +22,7 @@ import {
   positionOf,
   sampleServerProcesses,
   selectionDepth,
+  waitForError,
   waitForErrorsCleared,
   waitForSemanticReady,
 } from './real-repo-helpers';
@@ -30,7 +30,6 @@ import {
   closeAllEditors,
   flattenSymbolNames,
   pollUntilResult,
-  waitForDiagnostics,
   waitForDocumentSymbols,
   waitForFoldingRanges,
   waitForHoverResult,
@@ -182,12 +181,14 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   });
 
   // Tracks #160: an F# error must clear after the edit is reverted. Root
-  // cause (verified): not FCS — the sidecar is strictly sequential and its
-  // check cache is content-hash-keyed — but the Rust host's push pipeline,
-  // which dropped the publish when the post-revert fetch failed, stranding
-  // the stale error in the editor's push collection forever. Fixed by
-  // [DIAG-PUSH-GATE]: per-URI push generations + retry until the newest
-  // generation publishes or is superseded.
+  // cause (probe-verified against this very repo): NuGet `_._` placeholder
+  // files — path-qualified in project.assets.json (`lib/netstandard1.0/_._`,
+  // netstandard.library) — were handed to FCS as `-r:` references, attaching
+  // standing FS0229/FS3160 Errors to every checked file; no edit could ever
+  // clear them. Fixed in FSharpAssets ([PKG-ASSETS-FS]) by filtering the
+  // filename component. The investigation also hardened the push pipeline
+  // ([DIAG-PUSH-GATE]) and the sidecar's stale-check gating
+  // ([FS-CHECK-VERSION-GATE]).
   test('diagnostics round-trip: an F# type error surfaces and clears', async function () {
     this.timeout(420_000);
     const { doc, uri, editor } = await openRepoFile(repoDir, RESULT_FS);
@@ -199,8 +200,10 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
     assert.ok(applied, 'error-inducing edit must apply');
 
     try {
-      const diagnostics = await waitForDiagnostics(uri, 180_000);
-      const error = firstError(diagnostics, 'bad F# binding');
+      // Severity-aware wait: real-world files carry standing hints (unused
+      // opens, lint), so waiting for *any* diagnostic returns before the
+      // semantic check of the injected error completes.
+      const error = await waitForError(uri, 180_000);
       assert.ok(error.message.length > 0, 'diagnostic must carry a message');
       assertSaneRange(doc, error.range, 'F# error diagnostic');
     } finally {

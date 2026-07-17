@@ -120,11 +120,13 @@ let ``getReferenceUsage is fail-safe for a non-existent project`` () =
     }
 
 // ── Assets parser: defensive branches via crafted project.assets.json ──
-// These structural shapes (packageFolders as an array, targets as a number,
-// `_._` placeholders, a package with no `compile`, a library missing from the
-// libraries map) cannot be produced by a real `dotnet restore`, so a real,
-// minimal .fsproj is paired with a hand-authored assets file in the exact
-// NuGet on-disk format that the real parser consumes.
+// Most of these structural shapes (packageFolders as an array, targets as a
+// number, a package with no `compile`, a library missing from the libraries
+// map) cannot be produced by a real `dotnet restore`, so a real, minimal
+// .fsproj is paired with a hand-authored assets file in the exact NuGet
+// on-disk format that the real parser consumes. Note `_._` placeholders ARE
+// produced by real restores — path-qualified, e.g. `lib/netstandard1.0/_._`
+// (netstandard.library in FsToolkit.ErrorHandling's assets, GitHub #160).
 
 let private withCraftedAssets (assetsJson: string) =
     let dir = Path.Combine(Path.GetTempPath(), $"sharplsp-assets-{Guid.NewGuid():N}")
@@ -173,6 +175,52 @@ let ``getReferenceUsage handles array packageFolders and empty-assembly packages
         finally
             cleanup dir
     }
+
+/// [GitHub #160] Real restores emit `_._` placeholders **path-qualified**
+/// (e.g. `lib/netstandard1.0/_._` from netstandard.library 2.0.3, present in
+/// FsToolkit.ErrorHandling's assets), and the placeholder file physically
+/// exists inside the package folder. A filename-only equality filter plus the
+/// `File.Exists` gate lets it through as `-r:…\_._`, and FCS then attaches
+/// FS0229/FS3160 startup errors to EVERY checked file — standing "phantom"
+/// errors that no edit can ever clear.
+[<Fact>]
+let ``path-qualified placeholder compile entries are never handed to FCS as references`` () =
+    // A real packages root holding both a physical `_._` placeholder and a
+    // physical real assembly, exactly as `dotnet restore` lays them out.
+    let root = Path.Combine(Path.GetTempPath(), $"sharplsp-pkgs-{Guid.NewGuid():N}")
+    let placeholderDir = Path.Combine(root, "netstandard.library", "2.0.3", "lib", "netstandard1.0")
+    let realDir = Path.Combine(root, "real.package", "1.0.0", "lib", "net10.0")
+    Directory.CreateDirectory(placeholderDir) |> ignore
+    Directory.CreateDirectory(realDir) |> ignore
+    File.WriteAllText(Path.Combine(placeholderDir, "_._"), "")
+    File.WriteAllText(Path.Combine(realDir, "Real.dll"), "not really a dll")
+    let jsonRoot = root.Replace('\\', '/')
+    let assets =
+        $$"""{ "packageFolders": { "{{jsonRoot}}": {} },
+               "libraries": {
+                   "netstandard.library/2.0.3": { "path": "netstandard.library/2.0.3" },
+                   "real.package/1.0.0": { "path": "real.package/1.0.0" } },
+               "targets": { "net10.0": {
+                   "netstandard.library/2.0.3": { "compile": { "lib/netstandard1.0/_._": {} } },
+                   "real.package/1.0.0": { "compile": { "lib/net10.0/Real.dll": {} } } } } }"""
+    let dir, fsproj = withCraftedAssets assets
+    try
+        match FSharpAssets.parseAssets fsproj with
+        | None -> Assert.Fail("crafted assets must parse")
+        | Some(_, assemblies) ->
+            let args = FSharpAssets.packageReferenceArgs assemblies
+            // The real assembly must survive (guards against over-filtering)…
+            Assert.Contains(args, fun (arg: string) -> arg.EndsWith("Real.dll"))
+            // …but the placeholder must never reach FCS: it is not an assembly,
+            // and referencing it poisons every file's diagnostics (#160).
+            let placeholders = args |> Array.filter (fun arg -> arg.Contains "_._")
+            Assert.True(
+                Array.isEmpty placeholders,
+                "placeholder `_._` entries must be filtered; got: "
+                + String.Join("; ", placeholders))
+    finally
+        cleanup dir
+        try Directory.Delete(root, true) with _ -> ()
 
 [<Fact>]
 let ``getReferenceUsage falls back to the package key when libraries lack a path`` () =

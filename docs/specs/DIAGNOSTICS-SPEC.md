@@ -55,8 +55,9 @@ version-gates every push:
    bounded budget that outlasts a sidecar kill + respawn) until it publishes
    or a newer generation supersedes it. Dropping it would strand the previous
    publication — possibly an error set for text that no longer exists — on
-   screen forever (GitHub #160: an F# type error kept being displayed
-   indefinitely after the edit that introduced it was reverted).
+   screen forever. (Hardening found while investigating GitHub #160; that
+   issue's actual root cause was `_._` placeholder references poisoning FCS —
+   see [PKG-ASSETS-FS](PACKAGE-MAINTENANCE-SPEC.md).)
 4. Generations are never reused: reusing a counter after `didClose` would let
    an ancient in-flight fetch match a fresh generation and publish stale
    results.

@@ -7,6 +7,8 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpOverlayTests
 
 open System
 open System.IO
+open System.Threading
+open System.Threading.Tasks
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Diagnostics
 open Xunit
@@ -124,11 +126,12 @@ let private errorMessages (result: (FSharpCheckFileResults * string) option) =
         |> Array.map (fun d -> d.Message)
     | None -> [| "check aborted or workspace not loaded" |]
 
-/// [FS-CHECK-VERSION-GATE] [GitHub #160] Edit/revert cycles through the real
-/// checker: a check result computed from an older overlay must never be served
-/// for newer text — the broken buffer must always error, the reverted buffer
-/// must always be clean, across repeated alternations of the same two texts
-/// (the exact shape FCS caching confuses when `fileVersion` is constant).
+/// [FS-CHECK-VERSION-GATE] [GitHub #160] Sequential edit/revert cycles through
+/// the real checker: the broken buffer must always error, the reverted buffer
+/// must always be clean, across repeated alternations of the same two texts.
+/// Regression guard for FCS's content-keyed check cache under alternating
+/// sources (sequential calls cannot repro the #160 phantom — the in-flight
+/// interleave test below is the gate's failing-first coverage).
 [<Fact>]
 let ``edit and revert cycles always check the newest overlay text`` () =
     task {
@@ -152,6 +155,43 @@ let ``edit and revert cycles always check the newest overlay text`` () =
                     Array.isEmpty staleErrors,
                     $"cycle {cycle}: the reverted overlay must check clean; got: "
                     + String.Join("; ", staleErrors))
+        finally
+            try Directory.Delete(dir, true) with _ -> ()
+    }
+
+/// [FS-CHECK-VERSION-GATE] [GitHub #160] The operative stale-text safeguard:
+/// a didChange landing while a check is in flight must be honoured before the
+/// result is served. FCS checks are CPU-bound, so the whole check runs on the
+/// calling thread — the revert must come from ANOTHER thread, and the broken
+/// text is padded with thousands of bindings so its check takes seconds and
+/// the 300ms revert deterministically lands mid-check. Pre-gate code serves
+/// the broken-text errors for a buffer that is already pristine — the
+/// phantom shape of #160. (Verified failing on pre-gate code.)
+[<Fact>]
+let ``a didChange landing while a check is in flight is honoured before the result is served`` () =
+    task {
+        let! ws, dir, src = freshWorkspace ()
+        try
+            let pristine = File.ReadAllText(src)
+            // Bulk padding keeps the broken check busy for seconds even on a
+            // warm checker, so the timed revert below is safely mid-check.
+            let padding =
+                Seq.init 2000 (fun i -> $"let __sharpLspPad{i} (x: int) = x + {i}")
+                |> String.concat "\n"
+            let broken = $"{pristine}\n{padding}\nlet __sharpLspBad: int = \"not an int\"\n"
+            FSharpWorkspace.applyDidChange ws src broken
+            // Supersede the checked text from another thread, mid-check.
+            let revert =
+                Task.Run(fun () ->
+                    Thread.Sleep 300
+                    FSharpWorkspace.applyDidChange ws src pristine)
+            let! result = FSharpWorkspace.checkFile ws src
+            do! revert
+            let staleErrors = errorMessages result
+            Assert.True(
+                Array.isEmpty staleErrors,
+                "a result computed from superseded text must not be served; got: "
+                + String.Join("; ", staleErrors))
         finally
             try Directory.Delete(dir, true) with _ -> ()
     }

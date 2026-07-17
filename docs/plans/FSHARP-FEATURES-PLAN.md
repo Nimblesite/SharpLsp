@@ -179,7 +179,7 @@ rename, code lens, and call/type hierarchy).
 - [x] [FS-TYPEHIER-SUB] `typeHierarchy/subtypes`
 - [x] [FS-DOCSYMBOL] `textDocument/documentSymbol` via FCS `GetNavigationItems` (parse-only; host routes `.fs` to the sidecar, `.cs` stays tree-sitter)
 - [x] [FS-SIGHELP] `textDocument/signatureHelp` via FCS `GetMethods` (capability advertised; overloads surfaced)
-- [x] [FS-CHECK-VERSION-GATE] version-gated FCS checks: monotonic per-file `fileVersion` bumped on didChange + overlay-stability retry; all per-file analyses funnel through `checkFileWithParse`/`parseAndCheckOnce` (GitHub #160, sidecar-side complement of `[DIAG-PUSH-GATE]`)
+- [x] [FS-CHECK-VERSION-GATE] current-text-safe FCS checks: overlay-stability retry (the operative safeguard) + truthful monotonic `fileVersion` metadata; all per-file analyses funnel through `checkFileWithParse`/`parseAndCheckOnce` (GitHub #160, sidecar-side complement of `[DIAG-PUSH-GATE]`)
 - [x] e2e tests for every method above (real `.fsproj`, IPC round-trip)
 
 > **Routing note:** `callHierarchy/incomingCalls`/`outgoingCalls` and

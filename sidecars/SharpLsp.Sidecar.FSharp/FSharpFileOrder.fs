@@ -6,7 +6,6 @@ module SharpLsp.Sidecar.FSharp.FSharpFileOrder
 open System.IO
 open System.Xml.Linq
 open FSharp.Compiler.CodeAnalysis
-open FSharp.Compiler.Text
 open Serilog
 
 /// A detected file ordering issue.
@@ -51,10 +50,10 @@ let private collectDefinitions
         for filePath in files do
             try
                 if File.Exists(filePath) then
-                    let source = FSharpWorkspace.readSource state filePath
-                    let sourceText = SourceText.ofString source
-                    let! _parse, checkAnswer =
-                        state.Checker.ParseAndCheckFileInProject(filePath, 0, sourceText, options)
+                    // Canonical overlay- and version-aware check funnel.
+                    // [FS-CHECK-VERSION-GATE]
+                    let! _parse, checkAnswer, _source, _stable =
+                        FSharpWorkspace.parseAndCheckOnce state filePath options
                     match checkAnswer with
                     | FSharpCheckFileAnswer.Succeeded check ->
                         for su in check.GetAllUsesOfAllSymbolsInFile() do
@@ -77,10 +76,10 @@ let private collectUndefinedErrors
             if not (File.Exists(filePath)) then
                 return []
             else
-                let source = FSharpWorkspace.readSource state filePath
-                let sourceText = SourceText.ofString source
-                let! _parseResults, checkAnswer =
-                    state.Checker.ParseAndCheckFileInProject(filePath, 0, sourceText, options)
+                // Canonical overlay- and version-aware check funnel.
+                // [FS-CHECK-VERSION-GATE]
+                let! _parseResults, checkAnswer, _source, _stable =
+                    FSharpWorkspace.parseAndCheckOnce state filePath options
                 match checkAnswer with
                 | FSharpCheckFileAnswer.Succeeded check ->
                     // FS0039 (value/constructor not defined) and FS0001 are

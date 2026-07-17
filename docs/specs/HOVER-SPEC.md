@@ -162,20 +162,27 @@ Every per-file FCS analysis (hover, completion, diagnostics, signature help,
 inlay hints, code fixes, file ordering) MUST funnel through one canonical
 check that is **current-text safe** (GitHub #160):
 
-1. The overlay keeps a **monotonic per-file version**, bumped on every
-   `didChange`. The version is bumped *after* the overlay text write, so any
-   reader that observes the new version also observes at least that text.
-2. Each `FSharpChecker.ParseAndCheckFileInProject` call passes that version as
-   `fileVersion` — never a constant — so FCS cache entries for different
-   buffer states are never conflated.
-3. After a check completes, the overlay is re-read: if the text changed while
-   FCS was checking, the result describes **superseded text** and MUST NOT be
-   served as current — the check retries against the newest text (bounded).
+1. **Stability gate (the operative safeguard)**: after a check completes, the
+   overlay is re-read. If the text changed while FCS was checking, the result
+   describes **superseded text** and MUST NOT be served as current — the
+   check retries against the newest text (bounded).
+2. The overlay keeps a **monotonic per-file version**, bumped on every
+   `didChange` (bumped *after* the overlay text write, so a reader that
+   observes the new version also observes at least that text). It is passed
+   as `fileVersion` to `FSharpChecker.ParseAndCheckFileInProject` — never a
+   constant. NOTE: in FCS 43.x's background compiler `fileVersion` is stored
+   metadata (surfaced by `TryGetRecentCheckResultsForFile`), not a cache key —
+   the check cache is keyed by source-content hash. Passing the truthful
+   version keeps that metadata honest and future-proofs a
+   TransparentCompiler switch; it is NOT what prevents stale results. Do not
+   remove the stability gate on the grounds that the version "covers it".
 
 This is the sidecar-side complement of the Rust host's push gate
 `[DIAG-PUSH-GATE]` (DIAGNOSTICS-SPEC §1.3): the host guarantees stale results
-are never *published*; this gate guarantees the sidecar never *produces* a
-result attributed to newer text than it was computed from.
+are never *published* (and was the actual #160 root cause — a dropped failed
+fetch stranding the last-published error); this gate guarantees the sidecar
+never *produces* a result attributed to newer text than it was computed from,
+which matters once requests are dispatched concurrently.
 
 ## 6. Caching Strategy
 
