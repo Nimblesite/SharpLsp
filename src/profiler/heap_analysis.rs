@@ -133,8 +133,14 @@ async fn parse_dumpheap_stat_with_retry(tool: &Path, dump_path: &str) -> Result<
 }
 
 /// Collect raw `dumpheap -stat` output from `dotnet-dump analyze`.
+///
+/// `-ignoreGCState` is required because a dump captured while the target's GC is
+/// mid-collection leaves the heap marked un-walkable; SOS then aborts with "The
+/// GC heap is not in a valid state for traversal" and returns no rows (and, since
+/// the dump is immutable, retrying is futile). The flag forces traversal and is a
+/// no-op on a cleanly-captured heap, so it is always safe to pass.
 async fn collect_dumpheap_stat(tool: &Path, dump_path: &str) -> Result<String> {
-    let output = dump_cmd::run(tool, dump_path, "dumpheap -stat")
+    let output = dump_cmd::run(tool, dump_path, "dumpheap -stat -ignoreGCState")
         .await
         .context("failed to run dotnet-dump analyze")?;
     if !output.status.success() {
