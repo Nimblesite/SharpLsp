@@ -341,11 +341,15 @@ impl LspClient {
     pub fn wait_with_timeout(&mut self) {
         // Close stdin so the server's IO reader thread gets EOF and can finish.
         let _ = self.stdin.take();
+        // Graceful shutdown tears down the Roslyn/MSBuild sidecar, whose exit can
+        // take several seconds on a loaded CI runner. The budget only needs to be
+        // generous enough to distinguish a slow-but-clean exit from a genuine hang,
+        // so keep it large; a real deadlock still trips it.
         let result = self
             .child
-            .wait_timeout(Duration::from_secs(5))
+            .wait_timeout(Duration::from_secs(30))
             .expect("wait failed");
-        assert!(result.is_some(), "server did not exit within 5 seconds");
+        assert!(result.is_some(), "server did not exit within 30 seconds");
     }
 }
 
