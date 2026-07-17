@@ -119,7 +119,8 @@ suite('Debug E2E — exported helpers inside real flows', () => {
     const config: vscode.DebugConfiguration = { type: '', name: '', request: '' };
     const provider = new SharpLspLaunchProvider();
     const resolved = provider.resolveDebugConfiguration(undefined, config) as
-      vscode.DebugConfiguration | undefined;
+      | vscode.DebugConfiguration
+      | undefined;
     assert.ok(resolved !== undefined);
     assert.strictEqual(resolved.type, 'sharplsp-coreclr');
   });

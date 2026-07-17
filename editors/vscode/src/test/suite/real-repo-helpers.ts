@@ -95,7 +95,8 @@ export async function loadSolutionInServer(solutionPath: string): Promise<void> 
   assert.ok(ext, 'extension must be loaded');
   const api = (await ext.activate()) as {
     getLspClient: () =>
-      { sendRequest: (method: string, params: unknown) => Promise<unknown> } | undefined;
+      | { sendRequest: (method: string, params: unknown) => Promise<unknown> }
+      | undefined;
   };
   const client = api.getLspClient();
   assert.ok(client, 'LSP client must be running');

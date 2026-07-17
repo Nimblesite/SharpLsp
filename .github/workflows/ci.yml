@@ -318,6 +318,62 @@ jobs:
           name: coverage-vsix
           path: coverage-thresholds.json
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+  test-vsix-windows:
+    name: Test VS Code (Windows smoke)
+    needs:
+      - detect-changes
+      - lint
+    # Implements [DIST-CI-WIN-VSIX]: a SUBSET of the VS Code e2e suite — the
+    # headline user interactions (C# + F# completion, hover, go-to-definition,
+    # find-references, diagnostics) — driven through the REAL LSP (sharplsp host
+    # + Roslyn/FCS sidecars) inside the actual VS Code extension host on Windows.
+    # The full `test-vsix` job is Ubuntu-only, so nothing else proves the bundled
+    # binary + sidecars start and answer LSP requests over win32 named-pipe IPC
+    # end-to-end. Same rationale as test-dotnet-windows ([DIST-CI-WIN-TRANSPORT]),
+    # one level up: the transport job checks the pipes; this checks the whole
+    # editor experience on top of them. Deliberately a smoke subset (no coverage)
+    # so it stays fast — Linux `test-vsix` owns the full suite + coverage gate.
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: win32-vsix
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.300
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - name: Install VS Code extension deps
+        run: npm ci --prefix editors/vscode
+      - name: Remove PATH-installed SharpLsp binaries
+        # Force the test host onto the freshly-staged bundled binaries, never a
+        # dev copy that leaked onto the runner PATH. Mirrors the Ubuntu job.
+        shell: bash
+        run: |-
+          set -euo pipefail
+          for binary in sharplsp sharplsp-sidecar-csharp sharplsp-sidecar-fsharp; do
+            resolved="$(command -v "$binary" || true)"
+            if [ -n "$resolved" ]; then
+              rm -f "$resolved"
+            fi
+          done
+      - name: Test VS Code extension (Windows smoke subset, real LSP)
+        # No xvfb: the GitHub Windows runner has an interactive desktop session,
+        # so the VS Code test host launches directly. `make` + Git-Bash on the
+        # Windows runner is the same path the release workflow already uses.
+        shell: bash
+        run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR make _test-vsix-smoke
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   # NOTE: the former `coverage` job that git-committed+pushed ratcheted
   # thresholds was removed. On a pull_request, actions/checkout is a detached
   # HEAD, so `git push` failed the moment coverage changed — a latent red build,

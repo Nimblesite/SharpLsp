@@ -170,7 +170,9 @@ export class SharpLspTestController {
       return;
     }
     this.controller.items.replace(items);
-    info(`Test discovery: ${String(items.length)} test(s) from ${String(targets.length)} target(s)`);
+    info(
+      `Test discovery: ${String(items.length)} test(s) from ${String(targets.length)} target(s)`,
+    );
   }
 
   /** List one target, swallowing failures into an empty result. */

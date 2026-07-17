@@ -83,7 +83,7 @@ CHECK_COV = scripts/check-coverage.sh
         _stamp-version \
         _build-rust _build-dotnet _build-vsix _build-zed _build-rider \
         _stage-vsix-binary _stage-sidecars \
-        test-rust _test-rust _test-vsix _test-dotnet _test-website \
+        test-rust _test-rust _test-vsix _test-vsix-smoke _test-dotnet _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
         _package-vsix \
@@ -207,6 +207,39 @@ _test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
 	rm -rf "$(abspath $(VSCODE_DIR))/bin"; \
 	exit $$status
 	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
+
+# ── VSIX smoke subset (Windows CI) ────────────────────────────────
+# Runs a curated SUBSET of the VS Code end-to-end suite that drives the REAL
+# LSP (sharplsp host + Roslyn/FCS sidecars) through the actual VS Code
+# extension host: the headline user interactions — C# and F# completion, hover,
+# go-to-definition, find-references, and diagnostics. This is the Windows smoke
+# gate ([DIST-CI-WIN-VSIX]): it proves the bundled binary + sidecars start and
+# answer LSP requests over win32 named-pipe IPC end-to-end, which the Linux-only
+# _test-vsix job can never exercise (mirrors the rationale for
+# test-dotnet-windows / [DIST-CI-WIN-TRANSPORT]).
+#
+# Deliberately runs WITHOUT --coverage and skips the coverage gate: a subset
+# can't meet the line threshold, so the Linux _test-vsix job owns coverage. The
+# MOCHA_GREP regex is applied by the inner mocha in out/test/suite/index.js. The
+# `#` in `F#` is escaped for Make; `.` matches the em dash in the suite titles.
+VSIX_SMOKE_GREP ?= Real Semantic LSP|Visible Completions|Hover / Quick Info|Diagnostics / Problems Panel|F\# LSP . Hover|F\# LSP . Go to Definition|F\# LSP . Completion|F\# LSP . Diagnostics
+
+_test-vsix-smoke: _stage-vsix-binary
+	@echo "==> Running VS Code extension SMOKE subset (real LSP, C# + F#, no coverage)..."
+	cd $(VSCODE_DIR) && \
+		npm run pretest && \
+		env -u SHARPLSP_EXECUTABLE_PATH \
+			-u SHARPLSP_LSP_PATH \
+				-u SHARPLSP_BINARY_DIR \
+				-u SHARPLSP_CSHARP_SIDECAR_PATH \
+				-u SHARPLSP_FSHARP_SIDECAR_PATH \
+				-u FORGE_LSP_PATH \
+				-u FORGE_BINARY_DIR \
+				MOCHA_GREP="$(VSIX_SMOKE_GREP)" \
+				npx vscode-test; \
+	status=$$?; \
+	rm -rf "$(abspath $(VSCODE_DIR))/bin"; \
+	exit $$status
 
 _test-dotnet: _build-dotnet
 	@echo "==> Running .NET sidecar tests..."

@@ -117,7 +117,13 @@ function dotnet(args: string[], cwd: string): Promise<string> {
 }
 
 /** Write a fixture project (project file + single source file) to disk. */
-function writeProject(dir: string, projName: string, projXml: string, srcName: string, src: string): void {
+function writeProject(
+  dir: string,
+  projName: string,
+  projXml: string,
+  srcName: string,
+  src: string,
+): void {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, projName), projXml, 'utf8');
   fs.writeFileSync(path.join(dir, srcName), src, 'utf8');

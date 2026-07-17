@@ -98,6 +98,8 @@ function fileCoverageForClass(cls: CoberturaClass): vscode.FileCoverage | undefi
 const coverageDetails = new Map<string, vscode.StatementCoverage[]>();
 
 /** Per-file statement coverage detail for VS Code's loadDetailedCoverage callback. */
-export function loadDetailedCoverage(fileCoverage: vscode.FileCoverage): vscode.FileCoverageDetail[] {
+export function loadDetailedCoverage(
+  fileCoverage: vscode.FileCoverage,
+): vscode.FileCoverageDetail[] {
   return coverageDetails.get(fileCoverage.uri.toString()) ?? [];
 }

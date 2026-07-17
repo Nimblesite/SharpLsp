@@ -1,7 +1,8 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as vscode from 'vscode';
-import { detectRuntimePlatform } from '../../platform.js';
+import { detectRuntimePlatform, exeName } from '../../platform.js';
 
 // ── Constants ────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ export function findSharpLspBinary(): string | undefined {
     return envPath;
   }
 
-  const binaryName = process.platform === 'win32' ? 'sharplsp.exe' : 'sharplsp';
+  const binaryName = exeName('sharplsp');
   const platform = detectRuntimePlatform();
 
   // __dirname at runtime: editors/vscode/out/test/suite/
@@ -256,8 +257,14 @@ export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
   tmpDir: string;
   sharplspBinary: string | undefined;
 }> {
+  // `os.tmpdir()` — NOT a hardcoded `/tmp` — is the fallback so the LSP e2e
+  // suites run on Windows too (the win32 smoke subset in CI, [DIST-CI-WIN-VSIX]):
+  // Windows has no `/tmp`, and `mkdtempSync('/tmp/...')` there resolves to
+  // `<drive>:\tmp` and fails with ENOENT. `os.tmpdir()` honours TEMP/TMP on
+  // Windows and TMPDIR on POSIX. The explicit TMPDIR override is kept for the
+  // Linux CI job.
   const tmpDir = fs.mkdtempSync(
-    path.join(process.env['TMPDIR'] ?? '/tmp', `sharplsp-test-${tmpDirPrefix}`),
+    path.join(process.env['TMPDIR'] ?? os.tmpdir(), `sharplsp-test-${tmpDirPrefix}`),
   );
 
   const sharplspBinary = findSharpLspBinary();
