@@ -15,11 +15,10 @@ use super::types::{DotNetListOutput, InstalledPackageInfo};
 pub async fn list_installed(project_path: &str) -> Result<Vec<InstalledPackageInfo>> {
     info!("nuget/installed: dotnet list {project_path} package --format json");
 
-    let output = tokio::process::Command::new("dotnet")
-        .args(["list", project_path, "package", "--format", "json"])
-        .output()
-        .await
-        .context("spawn dotnet list")?;
+    let mut command = tokio::process::Command::new("dotnet");
+    let _ = command.args(["list", project_path, "package", "--format", "json"]);
+    crate::utils::hide_console_window_tokio(&mut command);
+    let output = command.output().await.context("spawn dotnet list")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

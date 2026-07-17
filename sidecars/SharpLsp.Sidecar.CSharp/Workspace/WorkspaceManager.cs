@@ -83,7 +83,13 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         try
         {
-            return await OpenCoreAsync(path, ct).ConfigureAwait(false);
+            // Extended-length (`\\?\`) spellings — produced by callers that
+            // canonicalize, e.g. Rust's std::fs::canonicalize — break
+            // MSBuild's solution loading and relative-path resolution.
+            // Normalize at the boundary so every downstream consumer sees the
+            // normal form. [GitHub #110]
+            var normalized = SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath(path);
+            return await OpenCoreAsync(normalized, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -622,29 +628,13 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         foreach (var (filePath, newText) in _pendingTextEdits)
         {
-            var normalizedPath = Path.GetFullPath(filePath);
-            var documentId = FindDocumentIdByPath(normalizedPath);
+            var documentId = SolutionPaths.FindDocument(_solution, filePath)?.Id;
             if (documentId is not null)
             {
                 _solution = _solution.WithDocumentText(documentId, SourceText.From(newText));
             }
         }
         _pendingTextEdits.Clear();
-    }
-
-    private DocumentId? FindDocumentIdByPath(string normalizedPath)
-    {
-        foreach (var project in _solution!.Projects)
-        {
-            foreach (var document in project.Documents)
-            {
-                if (IsPathMatch(document.FilePath, normalizedPath))
-                {
-                    return document.Id;
-                }
-            }
-        }
-        return null;
     }
 
     private async Task<Solution> LoadSolutionOrProjectAsync(string target, CancellationToken ct)

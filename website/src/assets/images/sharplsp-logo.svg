@@ -1,1 +1,5 @@
-../../../../docs/designs/logo/logo.svg
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
+  <rect width="128" height="128" rx="16" fill="#00E676"/>
+  <path d="M64 20L106 64L64 108L22 64L64 20Z" fill="#003918"/>
+  <path d="M63 34H86L70 61H90L51 98L63 72H43L63 34Z" fill="#00E676"/>
+</svg>

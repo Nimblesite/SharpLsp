@@ -17,9 +17,22 @@ pub fn build_profile_target() -> std::path::PathBuf {
         .get_or_init(|| {
             let project_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("tests/fixtures/ProfileTarget");
-            let binary = project_dir.join("bin/Release/net10.0/ProfileTarget");
+            // Forward-slash spelling: every Windows API accepts it, and the
+            // orphan-reparenting test interpolates this path unquoted into an
+            // `sh -c` command line, where backslashes are escape characters
+            // that silently corrupt the path (the fixture then never spawns).
+            // [GitHub #110]
+            let binary = std::path::PathBuf::from(
+                project_dir
+                    .join("bin/Release/net10.0/ProfileTarget")
+                    .to_string_lossy()
+                    .replace('\\', "/"),
+            );
 
-            if binary.exists() {
+            // On Windows the on-disk file carries an `.exe` suffix the
+            // spawn-time lookup adds automatically — check both spellings so
+            // a warm tree skips the rebuild.
+            if binary.exists() || binary.with_extension("exe").exists() {
                 return binary;
             }
 

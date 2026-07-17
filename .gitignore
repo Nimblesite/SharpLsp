@@ -131,3 +131,6 @@ deslop-report.*
 deslop-*.log
 .ghissues/
 .vscode/code-navigator/
+# Real-world repos cloned by the e2e stress suites (editors/vscode real-repo tests).
+# Never committed - fetched on demand at pinned tags.
+/real-world-fixtures/

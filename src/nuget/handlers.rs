@@ -442,11 +442,10 @@ fn spawn_restore(
             return;
         };
 
-        let output = tokio::process::Command::new("dotnet")
-            .arg("restore")
-            .current_dir(&dir)
-            .output()
-            .await;
+        let mut command = tokio::process::Command::new("dotnet");
+        let _ = command.arg("restore").current_dir(&dir);
+        crate::utils::hide_console_window_tokio(&mut command);
+        let output = command.output().await;
 
         match output {
             Ok(o) if o.status.success() => {

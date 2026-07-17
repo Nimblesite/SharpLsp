@@ -156,6 +156,29 @@ F# to parity with C#, whose Roslyn workspace is already updated in place on
 `didChange`. Without this, F# hover misaligns the moment the buffer diverges from
 disk (i.e. as soon as the user types) and returns the wrong symbol or `null`.
 
+### 5.5 Canonical Check Funnel `[FS-DIDCHANGE-OVERLAY]`
+
+Every per-file FCS analysis (hover, completion, diagnostics, signature help,
+inlay hints, code fixes, file ordering) funnels through **one** canonical
+check — `parseAndCheckOnce` (the raw parse+check) and its `checkFileWithParse`
+/ `checkFile` views — rather than each call site invoking
+`FSharpChecker.ParseAndCheckFileInProject` itself. This keeps overlay-aware
+source resolution and `FSharpCheckFileAnswer` handling in exactly one place
+(DRY) and guarantees every feature type-checks the **live didChange buffer**,
+so a reverted or freshly edited file is always analysed as its newest text
+instead of stale on-disk content — the property that lets a reverted buffer
+clear its phantom errors on the next pull (GitHub #160).
+
+The sidecar processes IPC messages strictly sequentially — `SidecarHost`
+awaits each handler to completion before reading the next frame — so a
+`didChange` never lands while a check is in flight; the source a check reads is
+always the newest committed buffer. (Should dispatch ever become concurrent, a
+mid-check stability re-read would be needed here; it is deliberately omitted
+today because that path is unreachable and cannot be exercised by a
+deterministic test.) This is the sidecar-side complement of the Rust host's
+push gate `[DIAG-PUSH-GATE]` (DIAGNOSTICS-SPEC §1.3), which guarantees stale
+results are never *published*.
+
 ## 6. Caching Strategy
 
 Hover results are cached via the [salsa](https://salsa-rs.github.io/salsa/) incremental computation database in the Rust host.

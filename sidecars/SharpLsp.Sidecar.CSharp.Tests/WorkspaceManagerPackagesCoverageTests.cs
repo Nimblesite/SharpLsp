@@ -55,6 +55,53 @@ public sealed class WorkspaceManagerPackagesCoverageTests
     }
 
     [Fact]
+    public async Task GetReferenceUsageResolvesVerbatimExtendedPath()
+    {
+        // Windows callers that canonicalize (e.g. Rust std::fs::canonicalize in
+        // the host) send \\?\-prefixed extended-length paths. Path.GetFullPath
+        // preserves that prefix, so a naive comparison never matches MSBuild's
+        // normal-form Project.FilePath — the lookup must treat both spellings
+        // as the same file. Non-Windows has no alternate spelling, so the
+        // canonical path keeps the branch covered there. [GitHub #110]
+        var verbatim = OperatingSystem.IsWindows()
+            ? @"\\?\" + Path.GetFullPath(_fixture.CsprojPath)
+            : _fixture.CsprojPath;
+        var result = await _fixture.Manager.GetReferenceUsageAsync(verbatim);
+        Assert.False(
+            result.IsError,
+            "extended-length path spelling must resolve the loaded project: "
+                + result.Match(_ => "ok", err => err)
+        );
+    }
+
+    [Fact]
+    public async Task OpenWithVerbatimPathLoadsProject()
+    {
+        // The Rust host canonicalizes solution paths before `workspace/open`;
+        // on Windows that yields \\?\-prefixed spellings MSBuild cannot load
+        // from directly — OpenAsync must normalize at the boundary. Off
+        // Windows no alternate spelling exists, so the canonical path keeps
+        // the same pipeline covered. [GitHub #110]
+        var openPath = OperatingSystem.IsWindows()
+            ? @"\\?\" + Path.GetFullPath(_fixture.CsprojPath)
+            : _fixture.CsprojPath;
+        using var manager = new WorkspaceManager();
+#pragma warning disable CS0618 // Obsolete OpenAsync placeholder
+        var open = await manager.OpenAsync(openPath);
+#pragma warning restore CS0618
+        Assert.True(
+            open.Match(_ => true, _ => false),
+            "verbatim workspace open must succeed: " + open.Match(_ => "ok", err => err)
+        );
+        var usage = await manager.GetReferenceUsageAsync(_fixture.CsprojPath);
+        Assert.False(
+            usage.IsError,
+            "project loaded via verbatim path must be queryable: "
+                + usage.Match(_ => "ok", err => err)
+        );
+    }
+
+    [Fact]
     public async Task GetReferenceUsageOnUnloadedProjectReturnsError()
     {
         // A real-looking path that no loaded project matches → "Project not loaded".

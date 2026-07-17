@@ -16,6 +16,10 @@
     reason = "test code — JSON indexing panics are acceptable test failures"
 )]
 #![expect(
+    clippy::panic,
+    reason = "test code — panics are the correct failure mode"
+)]
+#![expect(
     clippy::needless_pass_by_value,
     reason = "test helper ergonomics — Value args are consumed"
 )]
@@ -26,7 +30,9 @@
 
 // ── Infrastructure sub-modules ────────────────────────────────────
 pub mod fixtures;
+pub mod fixtures_medium;
 pub mod nav_helpers;
+pub mod session_helpers;
 
 // ── Test sub-modules ──────────────────────────────────────────────
 pub mod call_hierarchy_tests;
@@ -53,6 +59,7 @@ pub mod logging;
 pub mod lsp_features;
 pub mod nuget_unused_full_stack;
 pub mod profiler;
+pub mod profiler_dump_analysis_full_stack;
 pub mod profiler_edge_cases;
 pub mod profiler_full_stack;
 pub mod pull_diagnostics;
@@ -65,12 +72,16 @@ pub mod sort_members_extra;
 pub mod standalone_csproj;
 pub mod symbols;
 pub mod type_hierarchy_tests;
+pub mod user_session_csharp;
+pub mod user_session_fsharp;
 pub mod version;
 pub mod workspace_symbols;
 
 // ── Re-exports so `use super::*;` in test modules gets everything ─
 pub use fixtures::*;
+pub use fixtures_medium::*;
 pub use nav_helpers::*;
+pub use session_helpers::*;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -330,11 +341,15 @@ impl LspClient {
     pub fn wait_with_timeout(&mut self) {
         // Close stdin so the server's IO reader thread gets EOF and can finish.
         let _ = self.stdin.take();
+        // Graceful shutdown tears down the Roslyn/MSBuild sidecar, whose exit can
+        // take several seconds on a loaded CI runner. The budget only needs to be
+        // generous enough to distinguish a slow-but-clean exit from a genuine hang,
+        // so keep it large; a real deadlock still trips it.
         let result = self
             .child
-            .wait_timeout(Duration::from_secs(5))
+            .wait_timeout(Duration::from_secs(30))
             .expect("wait failed");
-        assert!(result.is_some(), "server did not exit within 5 seconds");
+        assert!(result.is_some(), "server did not exit within 30 seconds");
     }
 }
 

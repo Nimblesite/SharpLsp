@@ -248,9 +248,12 @@ _lint-vsix:
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
 
+# Dash-form MSBuild switches only: Git Bash (MSYS) mangles slash-form switches
+# like `/p:...` on Windows (strips the `/`, MSBuild then reads it as a project
+# path and fails with MSB1008). Dash-form behaves identically on all platforms.
 _lint-dotnet:
 	dotnet build $(SIDECAR_SLN) --configuration $(DOTNET_CFG) -warnaserror \
-		/p:UseSharedCompilation=false /nodeReuse:false -maxcpucount:1
+		-p:UseSharedCompilation=false -nodeReuse:false -maxcpucount:1
 
 # ── Format ───────────────────────────────────────────────────────
 

@@ -161,3 +161,52 @@ fn test_sort_members_enum_sorts_members() {
         "expected alphabetical enum members",
     );
 }
+
+// 59. SORT MEMBERS: UNSAVED BUFFER WINS OVER DISK
+
+#[test]
+fn test_sort_members_uses_unsaved_buffer_over_disk() {
+    // Disk: already sorted, so a disk-based sort would produce zero edits.
+    let disk_source = "namespace Test\n{\n    public class Stale\n    {\n        public int Aaa;\n        public int Bbb;\n    }\n}\n";
+    let (_tmp, path, _uri) = create_sort_members_file(disk_source);
+    // Buffer: unsorted members with different names, opened VS Code-style
+    // (percent-encoded URI) and never saved. Sorting must target what the
+    // user sees, not yesterday's save. [GitHub #110]
+    let buffer_source = "namespace Test\n{\n    public class Live\n    {\n        public void Zebra() { }\n        public void Alpha() { }\n    }\n}\n";
+    let vscode_uri = path_to_vscode_uri(std::path::Path::new(&path));
+
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+    client.open_document(&vscode_uri, buffer_source);
+
+    let resp = client.request(
+        "sharplsp/sortMembers",
+        json!({
+            "uri": vscode_uri,
+            "range": {
+                "start": { "line": 2, "character": 4 },
+                "end": { "line": 6, "character": 5 }
+            },
+            "sortConfig": default_sort_config()
+        }),
+    );
+
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+    let edits = resp["result"]["edits"].as_array().unwrap();
+    assert!(
+        !edits.is_empty(),
+        "sortMembers must sort the unsaved buffer, not the already-sorted disk text"
+    );
+    let new_text = edits[0]["newText"].as_str().unwrap();
+    assert!(
+        new_text.contains("Alpha") && new_text.contains("Zebra"),
+        "edits must be computed from the live buffer: {new_text}"
+    );
+    assert!(
+        !new_text.contains("Aaa"),
+        "edits must not leak stale disk members: {new_text}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}

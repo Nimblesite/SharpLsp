@@ -5,9 +5,11 @@
 //! incrementally — one `publishDiagnostics` notification per file.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
+use dashmap::DashMap;
 use lsp_server::{Message, Notification};
 use lsp_types::{
     Diagnostic, DiagnosticSeverity, NumberOrString, Position, PublishDiagnosticsParams, Range, Uri,
@@ -16,6 +18,22 @@ use tracing::{info, warn};
 
 use crate::sidecar::manager::SidecarManager;
 use crate::vfs::Vfs;
+
+/// Delay between retries of a failed push fetch. [DIAG-PUSH-GATE]
+const PUSH_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+/// Retry budget for one push generation. Generous enough to ride out a
+/// sidecar kill + respawn (backoff caps at 30s); a superseding edit ends the
+/// loop early. [DIAG-PUSH-GATE]
+const MAX_PUSH_ATTEMPTS: u32 = 120;
+
+/// Latest push generation per document URI. Implements [DIAG-PUSH-GATE]
+/// (GitHub #160): a completed fetch older than the newest known text must not
+/// publish, and the newest generation must retry on failure until published
+/// or superseded. Entries are monotonic and never removed — reusing a counter
+/// after didClose would let an ancient in-flight fetch match a fresh
+/// generation and publish stale results.
+static PUSH_GENERATIONS: LazyLock<DashMap<String, u64>> = LazyLock::new(DashMap::new);
 
 /// Wire type matching C# `DiagnosticResult` `[Key(N)]` ordering.
 ///
@@ -59,18 +77,80 @@ pub fn request_in_background(
     file_path: String,
 ) {
     let source_tag = source_tag_for_uri(&uri);
+    let generation = next_generation(&uri);
     let _handle = runtime.spawn(async move {
-        match fetch(&sidecar, &file_path, &source_tag).await {
+        fetch_and_publish_gated(&sidecar, &sender, &uri, &file_path, &source_tag, generation).await;
+    });
+}
+
+/// Register a new push generation for `uri`, superseding in-flight fetches.
+/// [DIAG-PUSH-GATE]
+fn next_generation(uri: &Uri) -> u64 {
+    let mut entry = PUSH_GENERATIONS.entry(uri.to_string()).or_insert(0);
+    *entry += 1;
+    *entry
+}
+
+/// Whether `generation` is still the newest push generation for `uri`.
+fn is_current(uri: &Uri, generation: u64) -> bool {
+    PUSH_GENERATIONS
+        .get(uri.as_str())
+        .is_some_and(|current| *current == generation)
+}
+
+/// Publish only when `generation` is still the newest for the document. The
+/// map entry guard is held across the (non-blocking) send so publications for
+/// one document cannot interleave out of generation order. [DIAG-PUSH-GATE]
+fn publish_if_current(
+    sender: &crossbeam_channel::Sender<Message>,
+    uri: &Uri,
+    generation: u64,
+    diagnostics: Vec<Diagnostic>,
+) -> Result<bool> {
+    let Some(current) = PUSH_GENERATIONS.get(uri.as_str()) else {
+        return Ok(false);
+    };
+    if *current != generation {
+        return Ok(false);
+    }
+    publish(sender, uri.clone(), diagnostics)?;
+    Ok(true)
+}
+
+/// Fetch diagnostics and publish them under the generation gate, retrying
+/// while this generation is still the newest text. Dropping a failed fetch
+/// for the *last* edit would leave the previous publication — possibly an
+/// error set for text that no longer exists — on screen forever; that is the
+/// phantom-diagnostics bug of GitHub #160. [DIAG-PUSH-GATE]
+async fn fetch_and_publish_gated(
+    sidecar: &SidecarManager,
+    sender: &crossbeam_channel::Sender<Message>,
+    uri: &Uri,
+    file_path: &str,
+    source_tag: &str,
+    generation: u64,
+) {
+    for attempt in 1..=MAX_PUSH_ATTEMPTS {
+        if !is_current(uri, generation) {
+            return;
+        }
+        match fetch(sidecar, file_path, source_tag).await {
             Ok(diagnostics) => {
-                if let Err(err) = publish(&sender, uri, diagnostics) {
+                if let Err(err) = publish_if_current(sender, uri, generation, diagnostics) {
                     warn!("Failed to publish diagnostics: {err:#}");
                 }
+                return;
             }
             Err(err) => {
-                warn!("Sidecar diagnostics unavailable: {err:#}");
+                warn!("Sidecar diagnostics unavailable (attempt {attempt}): {err:#}");
             }
         }
-    });
+        tokio::time::sleep(PUSH_RETRY_DELAY).await;
+    }
+    warn!(
+        uri = %uri.as_str(),
+        "Diagnostics push gave up after {MAX_PUSH_ATTEMPTS} attempts; last published state may be stale"
+    );
 }
 
 /// Determine the diagnostic source tag based on the document language.
@@ -108,7 +188,7 @@ pub fn request_solution_in_background(
                     }
                 }
                 for (file_path, diagnostics) in file_diagnostics {
-                    let uri = match path_to_uri(&file_path) {
+                    let uri = match crate::utils::path_to_lsp_uri(&file_path) {
                         Ok(uri) => uri,
                         Err(err) => {
                             warn!("Skip diagnostics for {file_path}: {err:#}");
@@ -166,11 +246,13 @@ async fn verify_error_files(
         // Skip the disk-resync step for documents the editor has open. The
         // VFS holds the live, possibly-unsaved text — overwriting the sidecar
         // with on-disk bytes would silently destroy the editor's edits and
-        // leave Roslyn analyzing yesterday's source.
-        let in_vfs = path_to_uri(file_path)
-            .ok()
-            .and_then(|uri| vfs.get_content(&uri))
-            .is_some();
+        // leave Roslyn analyzing yesterday's source. Matching must be by
+        // native path, not a rebuilt URI: editors percent-encode URIs (VS Code
+        // sends `file:///c%3A/…` on Windows), so a rebuilt canonical URI never
+        // string-matches the stored key and the guard silently fails open.
+        // The canonical retry also unifies 8.3 short names and mapped drives
+        // with the editor's long-form spelling. [GitHub #110]
+        let in_vfs = vfs.get_content_for_path_canonical(file_path).is_some();
 
         if !in_vfs {
             // Re-read from disk so the sidecar gets fresh text.
@@ -190,7 +272,7 @@ async fn verify_error_files(
 
         match fetch(sidecar, file_path, source_tag).await {
             Ok(diagnostics) => {
-                let uri = match path_to_uri(file_path) {
+                let uri = match crate::utils::path_to_lsp_uri(file_path) {
                     Ok(uri) => uri,
                     Err(err) => {
                         warn!("Skip verification for {file_path}: {err:#}");
@@ -234,8 +316,11 @@ async fn sync_text_to_sidecar(
     Ok(())
 }
 
-/// Clear diagnostics for a closed document.
+/// Clear diagnostics for a closed document. Bumps the push generation so any
+/// in-flight fetch for the just-closed text cannot republish afterwards.
+/// [DIAG-PUSH-GATE]
 pub fn clear(sender: &crossbeam_channel::Sender<Message>, uri: Uri) -> Result<()> {
+    let _superseding = next_generation(&uri);
     publish(sender, uri, vec![])
 }
 
@@ -294,12 +379,6 @@ async fn fetch_all(
         })
         .collect();
     Ok(mapped)
-}
-
-/// Convert a filesystem path to a `file://` URI.
-fn path_to_uri(path: &str) -> Result<Uri> {
-    let uri_string = format!("file://{path}");
-    uri_string.parse().context("parse file URI")
 }
 
 /// Send `textDocument/publishDiagnostics` notification to the editor.
@@ -407,8 +486,9 @@ mod tests {
 
     #[test]
     fn path_to_uri_valid_path() {
-        let uri = path_to_uri("/home/user/project/Program.cs").unwrap();
-        assert_eq!(uri.as_str(), "file:///home/user/project/Program.cs");
+        use crate::utils::test_paths::{NATIVE_FILE, NATIVE_FILE_URI};
+        let uri = crate::utils::path_to_lsp_uri(NATIVE_FILE).unwrap();
+        assert_eq!(uri.as_str(), NATIVE_FILE_URI);
     }
 
     #[test]
@@ -433,6 +513,139 @@ mod tests {
                 assert!(params.version.is_none());
             }
             _ => panic!("expected Notification, got {msg:?}"),
+        }
+    }
+
+    /// [GitHub #160] Phantom-diagnostics repro at the push-pipeline level.
+    ///
+    /// Timeline mirroring the `FsToolkit` e2e: an edit introduces a type error
+    /// (fetch #1 → Error diagnostic published), the user reverts the edit, and
+    /// the revert-triggered fetch #2 FAILS transiently (timeout / respawn /
+    /// transport hiccup). The revert is the last edit, so nothing else will
+    /// ever re-trigger a push — the pipeline itself must converge: a failed
+    /// fetch for the newest text must be retried until the latest generation
+    /// is published, never dropped. Dropping it strands the stale Error in the
+    /// editor's push collection forever, exactly the "error never clears"
+    /// symptom of #160.
+    #[test]
+    fn failed_fetch_after_revert_must_not_strand_stale_published_diagnostics() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (host_side, sidecar_side) = tokio::io::duplex(64 * 1024);
+        let manager = runtime.block_on(async {
+            Arc::new(
+                crate::sidecar::manager::SidecarManager::connected_to_stream_for_tests(host_side)
+                    .await,
+            )
+        });
+
+        // Scripted sidecar: #1 → error diagnostic (broken text), #2 → transient
+        // failure (the post-revert fetch), #3.. → clean (the reverted text).
+        let error_payload = rmp_serde::to_vec(&vec![(
+            "X.fs".to_string(),
+            0u32,
+            0u32,
+            0u32,
+            5u32,
+            "type mismatch".to_string(),
+            "Error".to_string(),
+            "FS0001".to_string(),
+        )])
+        .unwrap();
+        let clean_payload = rmp_serde::to_vec::<Vec<i32>>(&vec![]).unwrap();
+        let _sidecar_task = runtime.spawn(fake_scripted_sidecar(
+            sidecar_side,
+            error_payload,
+            clean_payload,
+        ));
+
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        let uri: Uri = "file:///x.fs".parse().unwrap();
+
+        // Edit 1: broken text — the error surfaces (repro precondition).
+        request_in_background(
+            &runtime,
+            Arc::clone(&manager),
+            sender.clone(),
+            uri.clone(),
+            "X.fs".to_string(),
+        );
+        let first = recv_publication(&receiver, std::time::Duration::from_secs(10));
+        assert_eq!(
+            first.diagnostics.len(),
+            1,
+            "the broken text must publish its error"
+        );
+
+        // Edit 2: the revert — this fetch fails transiently. The pipeline must
+        // keep retrying for the newest text and publish the clean result.
+        request_in_background(&runtime, manager, sender, uri, "X.fs".to_string());
+        let converged = recv_publication(&receiver, std::time::Duration::from_secs(10));
+        assert!(
+            converged.diagnostics.is_empty(),
+            "after the revert the pipeline must converge to a clean publication \
+             even when a fetch fails transiently — stale errors published for \
+             older text must never remain the final state (GitHub #160); got: {:?}",
+            converged
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// Scripted in-memory sidecar: response #1 carries `error_payload`,
+    /// response #2 is a transient envelope error, responses #3+ carry
+    /// `clean_payload`.
+    async fn fake_scripted_sidecar(
+        stream: tokio::io::DuplexStream,
+        error_payload: Vec<u8>,
+        clean_payload: Vec<u8>,
+    ) {
+        let mut transport = crate::sidecar::transport::FramedTransport::from_stream(stream);
+        let mut request_count = 0u32;
+        while let Ok(Some(request)) = transport.read_envelope().await {
+            request_count += 1;
+            let response = match request_count {
+                1 => crate::sidecar::protocol::Envelope {
+                    id: request.id,
+                    method: None,
+                    payload: error_payload.clone(),
+                    error: None,
+                },
+                2 => crate::sidecar::protocol::Envelope {
+                    id: request.id,
+                    method: None,
+                    payload: Vec::new(),
+                    error: Some("transient transport failure".to_string()),
+                },
+                _ => crate::sidecar::protocol::Envelope {
+                    id: request.id,
+                    method: None,
+                    payload: clean_payload.clone(),
+                    error: None,
+                },
+            };
+            if transport.write_envelope(&response).await.is_err() {
+                break;
+            }
+        }
+    }
+
+    /// Receive the next `publishDiagnostics` notification within `timeout`.
+    fn recv_publication(
+        receiver: &crossbeam_channel::Receiver<Message>,
+        timeout: std::time::Duration,
+    ) -> PublishDiagnosticsParams {
+        match receiver.recv_timeout(timeout) {
+            Ok(Message::Notification(n)) => {
+                assert_eq!(n.method, "textDocument/publishDiagnostics");
+                serde_json::from_value(n.params).unwrap()
+            }
+            Ok(other) => panic!("expected publishDiagnostics notification, got {other:?}"),
+            Err(err) => panic!(
+                "no publishDiagnostics arrived within {timeout:?} ({err}) — the pipeline \
+                 dropped the publication and stale diagnostics remain (GitHub #160)"
+            ),
         }
     }
 

@@ -12,7 +12,9 @@ pub async fn run(
     dump_path: &str,
     command: &str,
 ) -> Result<std::process::Output> {
-    let mut child = tokio::process::Command::new(tool)
+    let mut cmd = tokio::process::Command::new(tool);
+    crate::utils::hide_console_window_tokio(&mut cmd);
+    let mut child = cmd
         .args(["analyze", dump_path])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

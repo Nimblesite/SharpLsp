@@ -29,6 +29,10 @@ type FSharpSidecar() =
             task {
                 try
                     let path = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
+                    // Extended-length (`\\?\`) spellings from canonicalizing
+                    // callers break MSBuild-style project resolution —
+                    // normalize at the boundary. [GitHub #110]
+                    let path = SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath path
                     let! result = FSharpWorkspace.loadProjectWithCancellation workspace path ct
                     match result with
                     | Ok () ->
@@ -160,7 +164,7 @@ type FSharpSidecar() =
             task {
                 try
                     let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! edits = FSharpFeatures.formatDocument request.FilePath
+                    let! edits = FSharpFeatures.formatDocument workspace request.FilePath
                     let bytes = MessagePackSerializer.Serialize(edits, cancellationToken = ct)
                     return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
                 with ex ->
@@ -172,7 +176,7 @@ type FSharpSidecar() =
             task {
                 try
                     let request = MessagePackSerializer.Deserialize<RangeRequest>(payload, cancellationToken = ct)
-                    let! edits = FSharpFeatures.formatRange request.FilePath request.StartLine request.StartCharacter request.EndLine request.EndCharacter
+                    let! edits = FSharpFeatures.formatRange workspace request.FilePath request.StartLine request.StartCharacter request.EndLine request.EndCharacter
                     let bytes = MessagePackSerializer.Serialize(edits, cancellationToken = ct)
                     return Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
                 with ex ->
@@ -269,39 +273,40 @@ type FSharpSidecar() =
         base.Register("workspace/diagnostics", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
-                    let filePath = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
+                    let requestPath = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
+                    // Resolve onto the project's spelling of the file — FCS
+                    // filename comparisons are case-sensitive while hosts vary
+                    // the casing. [FS-REFS-PROJECT]
+                    let filePath = FSharpWorkspace.projectFilePath workspace requestPath
                     let mutable results = ResizeArray<DiagnosticResult>()
-                    // FCS compiler diagnostics.
-                    if workspace.IsLoaded then
-                        let source = System.IO.File.ReadAllText(filePath)
-                        let sourceText = FSharp.Compiler.Text.SourceText.ofString source
-                        let! _parse, checkAnswer =
-                            workspace.Checker.ParseAndCheckFileInProject(
-                                filePath, 0, sourceText, workspace.ProjectOptions.Value)
-                        match checkAnswer with
-                        | FSharp.Compiler.CodeAnalysis.FSharpCheckFileAnswer.Succeeded check ->
-                            for d in check.Diagnostics do
-                                let severity =
-                                    match d.Severity with
-                                    | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Error -> "Error"
-                                    | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Warning -> "Warning"
-                                    | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Info -> "Info"
-                                    | _ -> "Hint"
-                                let r = d.Range
-                                results.Add(
-                                    { FilePath = filePath
-                                      StartLine = r.StartLine - 1
-                                      StartCharacter = r.StartColumn
-                                      EndLine = r.EndLine - 1
-                                      EndCharacter = r.EndColumn
-                                      Message = d.Message
-                                      Severity = severity
-                                      Code = $"FS{d.ErrorNumber:D4}" })
-                            // [FS-ANALYZER-UNUSEDOPEN]/[FS-ANALYZER-SIMPLIFYNAME]
-                            // FSAC-parity file-local analyzers (always-on hints).
-                            let! fileDiags = FSharpAnalyzers.fileAnalyzerDiagnostics check source
-                            fileDiags |> List.iter results.Add
-                        | FSharp.Compiler.CodeAnalysis.FSharpCheckFileAnswer.Aborted -> ()
+                    // FCS compiler diagnostics, computed from the live buffer
+                    // (didChange overlay), never stale disk text — so a reverted
+                    // buffer clears its errors on the next pull. [FS-DIDCHANGE-OVERLAY]
+                    let! checkedFile = FSharpWorkspace.checkFile workspace filePath
+                    match checkedFile with
+                    | Some(check, source) ->
+                        for d in check.Diagnostics do
+                            let severity =
+                                match d.Severity with
+                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Error -> "Error"
+                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Warning -> "Warning"
+                                | FSharp.Compiler.Diagnostics.FSharpDiagnosticSeverity.Info -> "Info"
+                                | _ -> "Hint"
+                            let r = d.Range
+                            results.Add(
+                                { FilePath = filePath
+                                  StartLine = r.StartLine - 1
+                                  StartCharacter = r.StartColumn
+                                  EndLine = r.EndLine - 1
+                                  EndCharacter = r.EndColumn
+                                  Message = d.Message
+                                  Severity = severity
+                                  Code = $"FS{d.ErrorNumber:D4}" })
+                        // [FS-ANALYZER-UNUSEDOPEN]/[FS-ANALYZER-SIMPLIFYNAME]
+                        // FSAC-parity file-local analyzers (always-on hints).
+                        let! fileDiags = FSharpAnalyzers.fileAnalyzerDiagnostics check source
+                        fileDiags |> List.iter results.Add
+                    | None -> ()
                     // [FS-ANALYZER-DEADCODE] Merge project-wide dead-code diagnostics
                     // for this file (monorepo mode promotes public deadness to errors).
                     if workspace.IsLoaded && analyzerConfig.DeadCodeEnabled then
@@ -322,7 +327,7 @@ type FSharpSidecar() =
             task {
                 try
                     let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! preview = FSharpFeatures.formatPreview request.FilePath
+                    let! preview = FSharpFeatures.formatPreview workspace request.FilePath
                     match preview with
                     | Some result ->
                         return Helpers.serializeOk { Original = result.Original; Formatted = result.Formatted } ct

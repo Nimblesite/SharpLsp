@@ -8,6 +8,7 @@ using ByteResult = Outcome.Result<byte[], string>;
 
 namespace SharpLsp.Sidecar.Common.Tests;
 
+[Collection("SerilogGlobalLogger")]
 public sealed class MessageRouterTests
 {
     /// <summary>Captures rendered log messages emitted while it is the active sink.</summary>

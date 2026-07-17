@@ -82,7 +82,9 @@ fn find_tool(name: &str) -> Option<PathBuf> {
 /// Check if the tool is directly available on PATH via `which`/`where`.
 fn find_on_path(name: &str) -> Option<PathBuf> {
     let cmd = if cfg!(windows) { "where" } else { "which" };
-    let output = std::process::Command::new(cmd).arg(name).output().ok()?;
+    let mut lookup = std::process::Command::new(cmd);
+    crate::utils::hide_console_window(&mut lookup);
+    let output = lookup.arg(name).output().ok()?;
 
     if !output.status.success() {
         return None;

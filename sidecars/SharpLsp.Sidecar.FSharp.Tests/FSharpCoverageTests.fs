@@ -56,6 +56,64 @@ let private loadWorkspace (files: (string * string) list) =
             return failwith $"Failed to load workspace: {msg}"
     }
 
+// ── Workspace project options ([FS-REFS-PROJECT]) ───────────────
+
+/// References and rename are project-wide: FCS can only search files present
+/// in `ProjectOptions.SourceFiles`. A loaded multi-file project MUST surface
+/// every compile item there — when the source set arrives empty, cross-file
+/// references silently return nothing while hover/definition still work
+/// (GitHub #110 follow-up: F# references empty on multi-file projects).
+[<Fact>]
+let ``loadProject carries every compile item into the FCS source file set`` () = task {
+    let! (state, dir, _fsproj, paths) =
+        loadWorkspace
+            [ "Defs.fs", "module Defs\nlet helper (x: int) = x + 1\n"
+              "Uses.fs", "module Uses\nlet result = Defs.helper 5\n" ]
+    try
+        let sourceFileNames =
+            state.ProjectOptions.Value.SourceFiles
+            |> Array.map (fun (path: string) -> Path.GetFileName path |> string)
+        Assert.Equal<string array>([| "Defs.fs"; "Uses.fs" |], sourceFileNames)
+        // And the project-wide usage search must find the cross-file use.
+        let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5
+        Assert.True(
+            uses.Length >= 2,
+            $"references on `helper` must span both files (decl + use), got {uses.Length}")
+    finally
+        cleanup dir
+}
+
+/// VS Code lowercases the drive letter while the project loader records the
+/// filesystem spelling, and FCS filename comparisons are case-sensitive: a
+/// file checked under a request spelling that differs from
+/// `ProjectOptions.SourceFiles` yields symbols whose declaration ranges never
+/// match any project-wide use, so references/rename silently return nothing.
+/// Windows-only: case-sensitive filesystems have no alternate spellings.
+/// [FS-REFS-PROJECT]
+[<Fact>]
+let ``project usages resolve through a request path with different drive casing`` () = task {
+    if OperatingSystem.IsWindows() then
+        let! (state, dir, _fsproj, paths) =
+            loadWorkspace
+                [ "Defs.fs", "module Defs\nlet helper (x: int) = x + 1\n"
+                  "Uses.fs", "module Uses\nlet result = Defs.helper 5\n" ]
+        try
+            let defsPath: string = paths[0]
+            let flipped =
+                let head = defsPath[0]
+                let toggled =
+                    if Char.IsUpper head then Char.ToLowerInvariant head
+                    else Char.ToUpperInvariant head
+                string toggled + defsPath[1..]
+            Assert.NotEqual<string>(defsPath, flipped)
+            let! uses = FSharpReferences.getProjectUsages state flipped 1 5
+            Assert.True(
+                uses.Length >= 2,
+                $"references through the flipped-casing path must span both files, got {uses.Length}")
+        finally
+            cleanup dir
+}
+
 // ── FSharpFileOrder tests ────────────────────────────────────────
 
 [<Fact>]
@@ -583,7 +641,7 @@ let ``formatDocument returns empty for already-formatted file`` () = task {
     // Write something simple that might already match Fantomas output.
     File.WriteAllText(file, "module Fmt\n\nlet x = 1\n")
     try
-        let! edits = FSharpFeatures.formatDocument file
+        let! edits = FSharpFeatures.formatDocument (FSharpWorkspace.create ()) file
         Assert.NotNull(edits :> obj)
     finally
         cleanup dir
@@ -591,19 +649,19 @@ let ``formatDocument returns empty for already-formatted file`` () = task {
 
 [<Fact>]
 let ``formatDocument handles non-existent file gracefully`` () = task {
-    let! edits = FSharpFeatures.formatDocument "/nope/does/not/exist.fs"
+    let! edits = FSharpFeatures.formatDocument (FSharpWorkspace.create ()) "/nope/does/not/exist.fs"
     Assert.Empty(edits)
 }
 
 [<Fact>]
 let ``formatRange handles non-existent file gracefully`` () = task {
-    let! edits = FSharpFeatures.formatRange "/nope.fs" 0 0 1 0
+    let! edits = FSharpFeatures.formatRange (FSharpWorkspace.create ()) "/nope.fs" 0 0 1 0
     Assert.Empty(edits)
 }
 
 [<Fact>]
 let ``formatPreview returns None for non-existent file`` () = task {
-    let! preview = FSharpFeatures.formatPreview "/nope.fs"
+    let! preview = FSharpFeatures.formatPreview (FSharpWorkspace.create ()) "/nope.fs"
     Assert.True(preview.IsNone)
 }
 
@@ -1617,7 +1675,7 @@ let ``FEAT formatDocument rewrites a poorly-formatted file`` () = task {
     let file = Path.Combine(dir, "Bad.fs")
     File.WriteAllText(file, "module    Bad\nlet    x=1\nlet   y    =     2\n")
     try
-        let! edits = FSharpFeatures.formatDocument file
+        let! edits = FSharpFeatures.formatDocument (FSharpWorkspace.create ()) file
         Assert.NotNull(edits :> obj)
         Assert.Single(edits) |> ignore
         let edit = edits[0]
@@ -1637,7 +1695,7 @@ let ``FEAT formatRange reformats a single binding region`` () = task {
     let file = Path.Combine(dir, "Range.fs")
     File.WriteAllText(file, "module Range\nlet   z    =    7\nlet w = 8\n")
     try
-        let! edits = FSharpFeatures.formatRange file 1 0 1 16
+        let! edits = FSharpFeatures.formatRange (FSharpWorkspace.create ()) file 1 0 1 16
         Assert.NotNull(edits :> obj)
         // The poorly spaced line on row 1 is reformatted.
         for e in edits do
@@ -1655,7 +1713,7 @@ let ``FEAT formatPreview returns original and formatted text`` () = task {
     let original = "module Prev\nlet    q=9\n"
     File.WriteAllText(file, original)
     try
-        let! preview = FSharpFeatures.formatPreview file
+        let! preview = FSharpFeatures.formatPreview (FSharpWorkspace.create ()) file
         Assert.True(preview.IsSome)
         let p = preview.Value
         Assert.Equal(original, p.Original)
@@ -2195,7 +2253,7 @@ let ``FEAT2 formatRange returns empty for an already-formatted line`` () = task 
     let file = Path.Combine(dir, "Clean.fs")
     File.WriteAllText(file, "module Clean\n\nlet x = 1\n")
     try
-        let! edits = FSharpFeatures.formatRange file 2 0 2 9
+        let! edits = FSharpFeatures.formatRange (FSharpWorkspace.create ()) file 2 0 2 9
         Assert.NotNull(edits :> obj)
     finally
         cleanup dir
@@ -2210,7 +2268,7 @@ let ``FEAT2 formatDocument returns empty when content is already canonical`` () 
     let file = Path.Combine(dir, "Canon.fs")
     File.WriteAllText(file, "module Canon\n\nlet value = 1\n")
     try
-        let! edits = FSharpFeatures.formatDocument file
+        let! edits = FSharpFeatures.formatDocument (FSharpWorkspace.create ()) file
         // Either no edit (already canonical) or a single normalising edit.
         Assert.NotNull(edits :> obj)
     finally
@@ -2629,7 +2687,7 @@ let ``formatRange returns no edits when the range is already formatted`` () = ta
     File.WriteAllText(file, "module M\n\nlet x = 1\n")
     try
         // The single already-formatted line round-trips unchanged → [||].
-        let! edits = FSharpFeatures.formatRange file 2 3 3 0
+        let! edits = FSharpFeatures.formatRange (FSharpWorkspace.create ()) file 2 3 3 0
         Assert.Empty(edits)
     finally
         cleanup dir

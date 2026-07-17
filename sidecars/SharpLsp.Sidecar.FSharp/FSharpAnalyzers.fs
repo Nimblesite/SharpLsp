@@ -127,16 +127,11 @@ let deadCodeDiagnostics
         |> Array.toList
         |> List.distinctBy (fun d -> (d.FilePath, d.StartLine, d.StartCharacter))
 
-/// Compare two paths for identity, tolerant of casing and relative segments.
+/// Compare two paths for identity, tolerant of casing, relative segments and
+/// Windows extended-length (`\\?\`) prefixes. Delegates to the shared sidecar
+/// helper so C# and F# agree on path identity. [GitHub #110]
 let samePath (a: string) (b: string) =
-    try
-        System.String.Equals(
-            System.IO.Path.GetFullPath a,
-            System.IO.Path.GetFullPath b,
-            System.StringComparison.OrdinalIgnoreCase
-        )
-    with _ ->
-        System.String.Equals(a, b, System.StringComparison.OrdinalIgnoreCase)
+    SharpLsp.Sidecar.Common.NativePaths.AreEqual(a, b)
 
 /// Dead-code diagnostics scoped to a single file. The analysis itself is
 /// project-wide, but `workspace/diagnostics` is pulled per file, so only the

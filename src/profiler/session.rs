@@ -232,18 +232,15 @@ fn generate_session_id() -> String {
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     reason = "test code — panics are the correct failure mode"
 )]
 mod tests {
     use super::*;
-    use std::process::Command;
+    use crate::profiler::test_support::{spawn_long_lived, spawn_quick_success};
 
     /// Spawn a trivial child process for testing.
     fn dummy_child() -> Child {
-        Command::new("true")
-            .spawn()
-            .expect("failed to spawn `true`")
+        spawn_quick_success()
     }
 
     #[test]
@@ -376,10 +373,7 @@ mod tests {
     fn shutdown_kills_children_and_clears() {
         let store = SessionStore::new();
         // Spawn a longer-lived process so we can verify kill.
-        let child = Command::new("sleep")
-            .arg("60")
-            .spawn()
-            .expect("failed to spawn `sleep`");
+        let child = spawn_long_lived();
         let pid = child.id();
 
         let id = store

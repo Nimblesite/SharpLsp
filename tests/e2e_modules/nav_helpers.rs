@@ -424,7 +424,7 @@ pub fn create_sort_members_file(content: &str) -> (tempfile::TempDir, String, St
     let real_path = std::fs::canonicalize(tmp.path()).unwrap();
     let file_path = real_path.join("SortTest.cs");
     std::fs::write(&file_path, content).unwrap();
-    let file_uri = format!("file://{}", file_path.display());
+    let file_uri = path_to_file_uri(&file_path);
     (tmp, file_path.to_string_lossy().to_string(), file_uri)
 }
 

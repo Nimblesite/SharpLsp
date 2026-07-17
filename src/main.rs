@@ -156,25 +156,23 @@ fn run_server() -> Result<()> {
     let init_params: InitializeParams =
         serde_json::from_value(init_params).context("deserialize InitializeParams")?;
 
+    // Convert the workspace URI through the same RFC 8089 parser as every other
+    // file path so Windows drive letters and percent-encoding resolve correctly;
+    // a naive scheme trim yields `/C:/…`, a root the sidecar cannot load (#110).
     let workspace_root = init_params
         .workspace_folders
         .as_ref()
         .and_then(|folders| folders.first())
-        .and_then(|folder| {
-            folder
-                .uri
-                .as_str()
-                .strip_prefix("file://")
-                .map(PathBuf::from)
-        })
+        .and_then(|folder| semantic::uri_to_path(&folder.uri).ok())
         .or_else(|| {
             #[expect(
                 deprecated,
                 reason = "root_uri is the LSP 3.16 fallback when workspace_folders is absent"
             )]
             let root = init_params.root_uri.as_ref();
-            root.and_then(|uri| uri.as_str().strip_prefix("file://").map(PathBuf::from))
-        });
+            root.and_then(|uri| semantic::uri_to_path(uri).ok())
+        })
+        .map(PathBuf::from);
 
     let sharplsp_config = if let Some(ref root) = workspace_root {
         config::load_config(root)?
@@ -765,7 +763,7 @@ fn handle_custom_request(
             csharp_sidecar.or(fsharp_sidecar),
             fsharp_sidecar,
         ),
-        "sharplsp/sortMembers" => handle_sort_members(req, parsers),
+        "sharplsp/sortMembers" => handle_sort_members(req, parsers, vfs),
         // NuGet package management
         "sharplsp/nuget/targets" => nuget::handlers::handle_targets(req),
         "sharplsp/nuget/search" => nuget::handlers::handle_search(req, runtime),
@@ -1133,9 +1131,9 @@ fn fuzzy_match_subsequence(name: &str, query: &str) -> bool {
 }
 
 /// Handle the custom `sharplsp/sortMembers` request.
-fn handle_sort_members(req: Request, parsers: &TsParsers) -> Result<serde_json::Value> {
+fn handle_sort_members(req: Request, parsers: &TsParsers, vfs: &Vfs) -> Result<serde_json::Value> {
     let params: sort_members::SortMembersParams = serde_json::from_value(req.params)?;
-    let response = sort_members::handle(&params, parsers)?;
+    let response = sort_members::handle(&params, parsers, vfs)?;
     Ok(serde_json::to_value(response)?)
 }
 

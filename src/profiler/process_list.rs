@@ -1,7 +1,11 @@
 //! List running processes using native OS APIs.
 //!
-//! Uses platform-native process enumeration (`ps` on Unix, `wmic` on Windows)
-//! rather than `dotnet-trace ps` to avoid the ~350ms .NET runtime startup overhead.
+//! Uses platform-native process enumeration (`ps` on Unix, the in-process
+//! native process table via `sysinfo` on Windows) rather than `dotnet-trace
+//! ps` to avoid the ~350ms .NET runtime startup overhead.
+
+#[cfg(windows)]
+mod windows_native;
 
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
@@ -209,7 +213,9 @@ fn native_kill(pid: u32) -> Result<()> {
 /// Terminate a process tree by PID on Windows via `taskkill /T /F`.
 #[cfg(windows)]
 fn native_kill(pid: u32) -> Result<()> {
-    let status = std::process::Command::new("taskkill")
+    let mut cmd = std::process::Command::new("taskkill");
+    crate::utils::hide_console_window(&mut cmd);
+    let status = cmd
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .status()
         .context("failed to run taskkill")?;
@@ -234,23 +240,20 @@ fn native_process_list() -> Result<Vec<DotNetProcess>> {
     Ok(parse_ps_output(&stdout))
 }
 
-/// Enumerate all processes using the platform-native tool.
+/// Enumerate all processes using the native process table.
+///
+/// In-process (`sysinfo`) — WMIC is deprecated and absent by default on
+/// Windows 11 24H2+ / Server 2025, and spawning PowerShell `Get-CimInstance`
+/// instead costs ~1s per call, blowing the <500ms `listProcesses` budget.
+/// Enumeration cannot fail: inaccessible processes are omitted or carry an
+/// empty command line, so [`kill`]'s .NET-only guard fails closed for them.
 #[cfg(windows)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "signature parity with the fallible Unix implementation"
+)]
 fn native_process_list() -> Result<Vec<DotNetProcess>> {
-    // `wmic process get ProcessId,Name,CommandLine /FORMAT:csv` on Windows.
-    // Falls back to an empty list on error rather than crashing.
-    let output = std::process::Command::new("wmic")
-        .args([
-            "process",
-            "get",
-            "ProcessId,Name,CommandLine",
-            "/FORMAT:csv",
-        ])
-        .output()
-        .context("failed to run wmic")?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(parse_wmic_output(&stdout))
+    Ok(windows_native::process_list())
 }
 
 /// Parse `ps -eo pid,comm,command` output.
@@ -292,31 +295,6 @@ fn parse_ps_line(line: &str) -> Option<DotNetProcess> {
         command_line,
         runtime_version: None,
     })
-}
-
-/// Parse `wmic process get … /FORMAT:csv` output into `DotNetProcess` rows.
-#[cfg(windows)]
-fn parse_wmic_output(output: &str) -> Vec<DotNetProcess> {
-    // CSV: Node,CommandLine,Name,ProcessId
-    output
-        .lines()
-        .skip(1) // header
-        .filter_map(|line| {
-            let cols: Vec<&str> = line.splitn(4, ',').collect();
-            let command_line = cols.get(1).unwrap_or(&"").trim().to_string();
-            let name = cols.get(2).unwrap_or(&"").trim().to_string();
-            let pid: u32 = cols.get(3)?.trim().parse().ok()?;
-            if name.is_empty() {
-                return None;
-            }
-            Some(DotNetProcess {
-                pid,
-                name,
-                command_line,
-                runtime_version: None,
-            })
-        })
-        .collect()
 }
 
 #[cfg(test)]

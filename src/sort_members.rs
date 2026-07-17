@@ -93,10 +93,17 @@ pub struct EditPosition {
 }
 
 /// Handle the `sharplsp/sortMembers` request.
-pub fn handle(params: &SortMembersParams, parsers: &TsParsers) -> Result<SortMembersResponse> {
+///
+/// Reads the live buffer for open documents — sorting the on-disk text while
+/// the user has unsaved edits would splice members at stale offsets and
+/// corrupt the file. [GitHub #110]
+pub fn handle(
+    params: &SortMembersParams,
+    parsers: &TsParsers,
+    vfs: &crate::vfs::Vfs,
+) -> Result<SortMembersResponse> {
     let file_path = uri_to_path(&params.uri)?;
-    let source =
-        std::fs::read_to_string(&file_path).with_context(|| format!("read {file_path}"))?;
+    let source = vfs.read_live_or_disk(&file_path)?;
 
     let path = Path::new(&file_path);
     let lang = LangId::from_path(path).context("unsupported file type")?;
@@ -603,9 +610,20 @@ mod tests {
     }
 
     #[test]
-    fn uri_to_path_strips_prefix() {
-        let path = uri_to_path("file:///home/user/test.cs").unwrap();
-        assert_eq!(path, "/home/user/test.cs");
+    fn uri_to_path_converts_to_native_path() {
+        // `uri_to_path` yields a NATIVE path per platform: a driveless POSIX URI
+        // is a valid path only on Unix, while Windows requires a drive letter
+        // (GitHub #110 — `file:///C:/…` must not become `/C:/…`).
+        #[cfg(unix)]
+        {
+            let path = uri_to_path("file:///home/user/test.cs").unwrap();
+            assert_eq!(path, "/home/user/test.cs");
+        }
+        #[cfg(windows)]
+        {
+            let path = uri_to_path("file:///C:/Users/test.cs").unwrap();
+            assert_eq!(path, r"C:\Users\test.cs");
+        }
     }
 
     #[test]
@@ -639,7 +657,7 @@ mod tests {
         std::fs::write(&file, source).unwrap();
 
         let params = SortMembersParams {
-            uri: format!("file://{}", file.to_string_lossy()),
+            uri: crate::utils::path_to_uri(&file.to_string_lossy()).unwrap(),
             range: SortRange {
                 start: SortPosition {
                     line: 0,
@@ -672,7 +690,7 @@ mod tests {
             },
         };
 
-        let response = handle(&params, &TsParsers::new()).unwrap();
+        let response = handle(&params, &TsParsers::new(), &crate::vfs::Vfs::new()).unwrap();
 
         assert!(
             !response.edits.is_empty(),
@@ -688,7 +706,7 @@ mod tests {
         std::fs::write(&file, "class One\n{\n    public int X;\n}\n").unwrap();
 
         let params = SortMembersParams {
-            uri: format!("file://{}", file.to_string_lossy()),
+            uri: crate::utils::path_to_uri(&file.to_string_lossy()).unwrap(),
             range: SortRange {
                 start: SortPosition {
                     line: 0,
@@ -706,7 +724,7 @@ mod tests {
             },
         };
 
-        let response = handle(&params, &TsParsers::new()).unwrap();
+        let response = handle(&params, &TsParsers::new(), &crate::vfs::Vfs::new()).unwrap();
         assert!(response.edits.is_empty());
     }
 }

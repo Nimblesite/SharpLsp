@@ -70,9 +70,16 @@ Triggered by the v0.1.0 production log captured 2026-04-30: missing bundled bina
 - [x] Add `degradedApi()` helper so every error path returns a usable API surface
 - [x] Convert the retry command to consume `Result` from `acquireDotnet10`
 - [x] Tag every Result-based path with `Implements [DIST-FAILURE-UX]` / `Implements [DIST-API-PARAMETERS]` per CLAUDE.md spec-ID rule
-- [x] Add `editors/vscode/src/test/suite/unit-result.test.ts` — pins the Result type contract
-- [x] Add `editors/vscode/src/test/suite/unit-dotnet-runtime.test.ts` — patches `vscode.commands.executeCommand`, asserts the four required fields are sent, asserts no path throws
-- [x] Add `editors/vscode/src/test/suite/unit-failure-ux.test.ts` — asserts `activate()` resolves (never rejects), the retry command is registered, `extensionDependencies` declares the .NET Install Tool, `notifyActivationFailure` is exported
+- [x] Add `editors/vscode/src/test/suite/unit-result.test.ts` — pins the Result type contract *(deleted in the #125 e2e conversion; coverage lives in the e2e suites)*
+- [x] Add `editors/vscode/src/test/suite/unit-dotnet-runtime.test.ts` — patches `vscode.commands.executeCommand`, asserts the four required fields are sent, asserts no path throws *(deleted in the #125 e2e conversion; `lifecycle-e2e.test.ts` covers the acquisition flow end-to-end)*
+- [x] Add `editors/vscode/src/test/suite/unit-failure-ux.test.ts` — asserts `activate()` resolves (never rejects), the retry command is registered, `extensionDependencies` declares the .NET Install Tool, `notifyActivationFailure` is exported *(deleted in the #125 e2e conversion; most coverage moved to `lifecycle-e2e.test.ts`/`extension.test.ts` — the `extensionDependencies` guards were dropped and restored below)*
+
+### Salvaged from the `fixrelease` branch (2026-07-16 audit)
+
+A full audit of the retired `fixrelease` branch (39 commits, 90 files) found everything absorbed by main except two items, restored here:
+
+- [x] Restore the `[DIST-RUNTIME-ACQUIRE]` manifest guards dropped by the #125 e2e conversion — `extension.test.ts` now asserts `extensionDependencies` declares the .NET Install Tool and that it resolves in the test host (the test host installs it unconditionally via `.vscode-test.mjs`, so nothing else fails when the declaration is removed)
+- [x] Salvage `scripts/resolve-symlink-stubs.mjs` (from the branch's auto-stash) — resolves Git text-symlink stubs for the icon assets on `core.symlinks=false` checkouts; wired into `pretest`/`vscode:prepublish` per [DIST-VSIX-ASSET-INTEGRITY], invariant asserted e2e in `bundled-binary.test.ts`
 
 ### Spec hygiene — sweep numbered headings (CLAUDE.md violation)
 

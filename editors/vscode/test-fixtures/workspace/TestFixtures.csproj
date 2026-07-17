@@ -24,6 +24,6 @@
         <PackageReference Remove="Exhaustion" />
     </ItemGroup>
     <ItemGroup>
-      <PackageReference Include="Serilog" Version="4.3.1" />
+      <PackageReference Include="Serilog" Version="4.4.0" />
     </ItemGroup>
 </Project>

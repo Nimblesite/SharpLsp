@@ -18,6 +18,7 @@
     <Compile Include="FSharpExtraCoverageTests.fs" />
     <Compile Include="FSharpSymbolsTests.fs" />
     <Compile Include="FSharpAnalyzersTests.fs" />
+    <Compile Include="FSharpOverlayTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

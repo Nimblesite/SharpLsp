@@ -13,6 +13,7 @@ open FSharp.Compiler.Symbols
 open FSharp.Compiler.Text
 open FSharp.Compiler.Tokenization
 open Serilog
+open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Solutions
 open SharpLsp.Sidecar.FSharp.Hover
 
@@ -36,28 +37,123 @@ type FSharpWorkspaceState =
       /// [FS-DIDCHANGE-OVERLAY]
       Overlays: ConcurrentDictionary<string, string> }
 
+/// Overlay keys compare case-insensitively on Windows, where hosts vary the
+/// path's spelling (VS Code lowercases the drive letter while FCS and MSBuild
+/// report it uppercase); elsewhere Ordinal respects case-sensitive
+/// filesystems. [FS-DIDCHANGE-OVERLAY]
+let private overlayComparer: StringComparer =
+    if OperatingSystem.IsWindows() then StringComparer.OrdinalIgnoreCase
+    else StringComparer.Ordinal
+
+/// Canonical overlay key via the shared `NativePaths` normalization: collapses
+/// separator, relative-segment, and Windows extended-length (`\\?\`) spellings
+/// so the didChange writer and every reader agree on one identity per file.
+/// [FS-DIDCHANGE-OVERLAY]
+let private overlayKey (filePath: string) : string =
+    NativePaths.NormalizeFullPath filePath
+
 /// Create a new workspace with an FSharpChecker.
 let create () : FSharpWorkspaceState =
     let checker = FSharpChecker.Create(keepAssemblyContents = true)
     { Checker = checker
       ProjectOptions = None
       IsLoaded = false
-      Overlays = ConcurrentDictionary<string, string>() }
+      Overlays = ConcurrentDictionary<string, string>(overlayComparer) }
 
 /// Record the editor's in-memory buffer for a file (LSP didChange/didOpen).
 /// Per-file FCS analyses then resolve positions against the live buffer rather
-/// than the on-disk file, restoring parity with the C# sidecar. The Rust host
-/// sends the same absolute path it sends on position requests, so the keys
-/// align. [FS-DIDCHANGE-OVERLAY]
+/// than the on-disk file, restoring parity with the C# sidecar. Keys are
+/// canonicalized, so any spelling of the path the host sends on later requests
+/// finds the buffer. [FS-DIDCHANGE-OVERLAY]
 let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
-    state.Overlays[filePath] <- newText
+    state.Overlays[overlayKey filePath] <- newText
 
 /// Read a file's current source: the in-memory overlay when the editor has an
 /// open buffer for it, otherwise the on-disk contents. [FS-DIDCHANGE-OVERLAY]
 let internal readSource (state: FSharpWorkspaceState) (filePath: string) : string =
-    match state.Overlays.TryGetValue filePath with
+    match state.Overlays.TryGetValue(overlayKey filePath) with
     | true, text -> text
     | _ -> File.ReadAllText filePath
+
+/// Resolve a request path onto the project's own spelling of the same file.
+/// Hosts vary the spelling (VS Code lowercases the drive letter) and FCS
+/// filename comparisons are case-sensitive: checking a file under a spelling
+/// that differs from `ProjectOptions.SourceFiles` yields symbols whose
+/// declaration ranges never match any project-wide use, so references,
+/// rename, and code lens silently return nothing while single-file analyses
+/// keep working. [FS-REFS-PROJECT] [GitHub #110]
+let internal projectFilePath (state: FSharpWorkspaceState) (filePath: string) : string =
+    let normalized = NativePaths.NormalizeFullPath filePath
+    match state.ProjectOptions with
+    | Some options ->
+        options.SourceFiles
+        |> Array.tryFind (fun sourceFile -> NativePaths.AreEqual(sourceFile, normalized))
+        |> Option.defaultValue normalized
+    | None -> normalized
+
+/// One FCS parse+check pass against explicit `options` — the single raw call
+/// every per-file analysis funnels through, so overlay-aware source resolution
+/// (the check reads the live didChange buffer, not stale on-disk text) and the
+/// `ParseAndCheckFileInProject` invocation live in exactly one place instead of
+/// being copy-pasted across hover, completion, diagnostics, and file-order
+/// analysis. [FS-DIDCHANGE-OVERLAY]
+let internal parseAndCheckOnce
+    (state: FSharpWorkspaceState)
+    (filePath: string)
+    (options: FSharpProjectOptions)
+    =
+    task {
+        let source = readSource state filePath
+
+        let! parseResults, checkAnswer =
+            state.Checker.ParseAndCheckFileInProject(
+                filePath, 0, SourceText.ofString source, options)
+
+        return parseResults, checkAnswer, source
+    }
+
+/// Interpret an FCS answer, logging parse diagnostics on `Aborted` so every
+/// consumer keeps the diagnostic trail the old inline call sites had.
+let private interpretAnswer
+    (parseResults: FSharpParseFileResults)
+    (checkAnswer: FSharpCheckFileAnswer)
+    (source: string)
+    =
+    match checkAnswer with
+    | FSharpCheckFileAnswer.Succeeded checkResults -> Some(parseResults, checkResults, source)
+    | FSharpCheckFileAnswer.Aborted ->
+        let diags =
+            parseResults.Diagnostics
+            |> Array.map (fun d -> $"{d.Severity}: {d.Message}")
+            |> String.concat "; "
+
+        Log.Debug("[F# Check] aborted; parse diagnostics: {Diagnostics}", diags)
+        None
+
+/// Parse and check a file, returning parse results, check results, and the
+/// source that was checked. The canonical per-file analysis entry point;
+/// `checkFile` is the parse-less view. The check reads the live didChange
+/// overlay, so a reverted or freshly edited buffer is always type-checked as
+/// its newest text. [FS-DIDCHANGE-OVERLAY]
+let internal checkFileWithParse (state: FSharpWorkspaceState) (filePath: string) =
+    task {
+        if not state.IsLoaded then
+            return None
+        else
+            let filePath = projectFilePath state filePath
+
+            let! parseResults, checkAnswer, source =
+                parseAndCheckOnce state filePath state.ProjectOptions.Value
+
+            return interpretAnswer parseResults checkAnswer source
+    }
+
+/// Parse and check a file, returning check results + source if successful.
+let internal checkFile (state: FSharpWorkspaceState) (filePath: string) =
+    task {
+        let! result = checkFileWithParse state filePath
+        return result |> Option.map (fun (_parse, check, source) -> (check, source))
+    }
 
 /// Parse an .fsproj file to extract Compile Include entries.
 let internal parseFsprojSourceFiles (fsprojPath: string) : string array =
@@ -157,7 +253,16 @@ let internal buildProjectOptions (state: FSharpWorkspaceState) (fsprojPath: stri
         |> Option.defaultValue [||]
 
     let otherOptions = Array.append (frameworkReferenceArgs ()) packageRefs
-    state.Checker.GetProjectOptionsFromCommandLineArgs(fsprojPath, Array.append otherOptions sourceFiles)
+    // GetProjectOptionsFromCommandLineArgs deliberately returns SourceFiles =
+    // [||] (sources stay buried in OtherOptions), but project-wide analyses —
+    // ParseAndCheckProject for references/rename/code lens, and the
+    // isSymbolInProject rename gate — read options.SourceFiles. Leaving it
+    // empty makes every cross-file query silently return nothing, so populate
+    // it explicitly from the parsed compile items. [FS-REFS-PROJECT]
+    let options =
+        state.Checker.GetProjectOptionsFromCommandLineArgs(
+            fsprojPath, Array.append otherOptions sourceFiles)
+    { options with SourceFiles = sourceFiles }
 
 let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string array) =
     if fsprojFiles.Length = 0 then
@@ -246,72 +351,19 @@ let getHover
     =
     task {
         try
-            if not state.IsLoaded then
-                return None
-            else
-                let source = readSource state filePath
-                let sourceText = SourceText.ofString source
+            // Funnel through the canonical overlay-aware check. [FS-DIDCHANGE-OVERLAY]
+            let! checkData = checkFileWithParse state filePath
 
-                let! parseResults, checkAnswer =
-                    state.Checker.ParseAndCheckFileInProject(
-                        filePath,
-                        0,
-                        sourceText,
-                        state.ProjectOptions.Value)
-
-                match checkAnswer with
-                | FSharpCheckFileAnswer.Succeeded checkResults ->
-                    return extractToolTip checkResults source line character
-                | FSharpCheckFileAnswer.Aborted ->
-                    let diags =
-                        parseResults.Diagnostics
-                        |> Array.map (fun d -> $"{d.Severity}: {d.Message}")
-                        |> String.concat "; "
-                    Log.Debug("[F# Hover] check aborted; parse diagnostics: {Diagnostics}", diags)
-                    return None
+            return
+                checkData
+                |> Option.bind (fun (_parse, checkResults, source) ->
+                    extractToolTip checkResults source line character)
         with ex ->
             Log.Debug(ex, "[F# Hover] failed")
             return None
     }
 
 // ── Definition ───────────────────────────────────────────────────
-
-/// Parse and check a file, returning parse results, check results, and source.
-/// The canonical per-file analysis entry point; `checkFile` is the parse-less view.
-let internal checkFileWithParse
-    (state: FSharpWorkspaceState)
-    (filePath: string)
-    =
-    task {
-        if not state.IsLoaded then
-            return None
-        else
-            let source = readSource state filePath
-            let sourceText = SourceText.ofString source
-
-            let! parseResults, checkAnswer =
-                state.Checker.ParseAndCheckFileInProject(
-                    filePath,
-                    0,
-                    sourceText,
-                    state.ProjectOptions.Value)
-
-            match checkAnswer with
-            | FSharpCheckFileAnswer.Succeeded checkResults ->
-                return Some(parseResults, checkResults, source)
-            | FSharpCheckFileAnswer.Aborted ->
-                return None
-    }
-
-/// Parse and check a file, returning check results + source if successful.
-let internal checkFile
-    (state: FSharpWorkspaceState)
-    (filePath: string)
-    =
-    task {
-        let! result = checkFileWithParse state filePath
-        return result |> Option.map (fun (_parse, check, source) -> (check, source))
-    }
 
 /// Check the whole loaded project (used for project-wide symbol queries:
 /// references, rename, code lens, call hierarchy). FCS caches results keyed by
@@ -333,10 +385,12 @@ let internal isSymbolInProject
     : bool =
     match symbol.DeclarationLocation, state.ProjectOptions with
     | Some range, Some options when range.FileName <> "" ->
-        let normalize (path: string) =
-            try Path.GetFullPath(path) with _ -> path
-        let target = normalize range.FileName
-        let inSourceFiles = options.SourceFiles |> Array.exists (fun file -> normalize file = target)
+        // Path identity via the shared helper: tolerant of casing and Windows
+        // extended-length (`\\?\`) spellings. [GitHub #110]
+        let target = NativePaths.NormalizeFullPath range.FileName
+        let inSourceFiles =
+            options.SourceFiles
+            |> Array.exists (fun file -> NativePaths.AreEqual(file, target))
         // Fall back to an on-disk F# source check: BCL / FSharp.Core / NuGet
         // symbols have no source declaration, so this stays false for them.
         let isSourceOnDisk =

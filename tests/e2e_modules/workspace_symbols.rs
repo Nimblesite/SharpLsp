@@ -49,8 +49,20 @@ fn create_workspace_symbols_slnx_fixture() -> (tempfile::TempDir, String) {
 /// Initialize LSP with a workspace root so sidecar-backed solution parsing is available.
 fn initialize_workspace_symbols_client(client: &mut LspClient, tmp: &tempfile::TempDir) {
     let root = tmp.path().canonicalize().unwrap();
-    let root_uri = format!("file://{}", root.display());
+    let root_uri = path_to_file_uri(&root);
     let _ = client.initialize_with_root(json!(root_uri));
+}
+
+/// Collect symbol names recursively (declarations precede their children).
+fn collect_names(symbols: &[Value], out: &mut Vec<String>) {
+    for symbol in symbols {
+        if let Some(name) = symbol["name"].as_str() {
+            out.push(name.to_string());
+        }
+        if let Some(children) = symbol["children"].as_array() {
+            collect_names(children, out);
+        }
+    }
 }
 
 #[test]
@@ -229,18 +241,6 @@ fn test_workspace_symbols_access_modifiers() {
 // Regression guard for issue #119 (F# files & symbols missing from the tree).
 #[test]
 fn test_workspace_symbols_includes_fsharp_files_and_symbols() {
-    // Collect symbol names recursively (declared first so it precedes statements).
-    fn collect_names(symbols: &[Value], out: &mut Vec<String>) {
-        for symbol in symbols {
-            if let Some(name) = symbol["name"].as_str() {
-                out.push(name.to_string());
-            }
-            if let Some(children) = symbol["children"].as_array() {
-                collect_names(children, out);
-            }
-        }
-    }
-
     require_dotnet();
 
     let (tmp, _root_uri, _file_uri, _source) = create_fsharp_test_workspace();
@@ -524,6 +524,99 @@ EndGlobal"#,
             proj["name"]
         );
     }
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+// The workspace-symbols scan must reflect an open document's unsaved buffer no
+// matter how the editor encoded its URI. VS Code percent-encodes (space →
+// `%20`; on Windows the drive arrives as `c%3A`), while the scanner walks
+// native paths from the solution — rebuilding a `file://` URI from the path
+// and string-matching it against VFS keys misses the open document (the
+// rebuilt URI does not even parse when the path contains a space or Windows
+// backslashes), so the tree silently shows stale on-disk symbols. Regression
+// guard for the Windows arm of GitHub #110.
+#[test]
+fn test_workspace_symbols_prefer_unsaved_buffer_for_encoded_uris() {
+    let tmp = tempfile::tempdir().unwrap();
+    // A space in the directory forces percent-encoding on every platform.
+    let proj_dir = tmp.path().join("My Lib");
+    std::fs::create_dir_all(&proj_dir).unwrap();
+
+    std::fs::write(
+        proj_dir.join("MyLib.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        proj_dir.join("Models.cs"),
+        "namespace MyLib;\n\npublic class DiskOnlyModel\n{\n}\n",
+    )
+    .unwrap();
+
+    std::fs::write(
+        tmp.path().join("Test.sln"),
+        r#"Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyLib", "My Lib/MyLib.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+"#,
+    )
+    .unwrap();
+
+    let mut client = LspClient::start();
+    initialize_workspace_symbols_client(&mut client, &tmp);
+
+    // Open the file the way VS Code does — percent-encoded URI — with edited,
+    // not-yet-saved content that differs from the bytes on disk.
+    let real_file = std::fs::canonicalize(proj_dir.join("Models.cs")).unwrap();
+    client.notify(
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": path_to_vscode_uri(&real_file),
+                "languageId": "csharp",
+                "version": 1,
+                "text": "namespace MyLib;\n\npublic class BufferOnlyModel\n{\n}\n",
+            }
+        }),
+    );
+
+    let sln_path = tmp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("Test.sln")
+        .to_string_lossy()
+        .to_string();
+    let resp = client.request("sharplsp/workspaceSymbols", json!({ "solution": sln_path }));
+    assert!(resp.get("error").is_none(), "must not error: {resp}");
+
+    let file_symbols = resp["result"]["projects"][0]["symbols"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let mut names = Vec::new();
+    for file_symbol in &file_symbols {
+        if let Some(symbols) = file_symbol["symbols"].as_array() {
+            collect_names(symbols, &mut names);
+        }
+    }
+
+    assert!(
+        names.iter().any(|name| name == "BufferOnlyModel"),
+        "workspace symbols must reflect the open buffer's unsaved content \
+         even when the editor percent-encodes the document URI, got: {names:?}"
+    );
+    assert!(
+        !names.iter().any(|name| name == "DiskOnlyModel"),
+        "stale on-disk symbols must not appear for an open document, got: {names:?}"
+    );
 
     client.shutdown_and_exit();
     client.wait_with_timeout();

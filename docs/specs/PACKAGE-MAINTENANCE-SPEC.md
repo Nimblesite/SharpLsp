@@ -40,6 +40,28 @@ with `keepAssemblyContents = true`, and walks the typed assembly contents to
 collect the set of assemblies whose entities are actually referenced. The
 used/unused classification and package mapping are identical to the C# path.
 
+### [PKG-ASSETS-FS] Restored-package reference resolution
+
+`FSharpAssets` is the single source of truth for turning `obj/project.assets.json`
+into FCS `-r:` reference arguments, shared by the persistent workspace options
+and the unused-package analysis so the compiler sees one reference set across
+diagnostics, hover, and usage.
+
+Rules:
+
+- **Fail-safe**: a missing or malformed assets file yields no references (the
+  caller falls back to framework-only options) rather than an error.
+- **Existence-gated**: compile paths that do not exist on disk are dropped —
+  a missing-assembly reference would itself surface as a false diagnostic.
+- **Placeholders are never references**: NuGet emits `_._` placeholder files
+  ("no assemblies for this TFM") **path-qualified** in the compile section
+  (e.g. `lib/netstandard1.0/_._` from `netstandard.library`), and the
+  placeholder physically exists inside the package folder. The filter must
+  match the *filename component*, not the whole compile key — handing `_._`
+  to FCS as a reference attaches FS0229/FS3160 startup errors to **every**
+  checked file: standing phantom errors no edit can clear (GitHub #160,
+  observed against FsToolkit.ErrorHandling).
+
 ### [PKG-UNUSED-MAP] Assembly → package mapping
 
 NuGet restores package assemblies under the global packages folder as

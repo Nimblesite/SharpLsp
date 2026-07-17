@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Completion;
 using Microsoft.CodeAnalysis.Text;
+using SharpLsp.Sidecar.Common;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -224,10 +225,8 @@ internal sealed partial class WorkspaceManager
 
         try
         {
-            var normalizedPath = Path.GetFullPath(filePath);
-            return FindRegularDocumentByPath(normalizedPath)
-                ?? await FindSourceGeneratedDocumentByPathAsync(normalizedPath, ct)
-                    .ConfigureAwait(false);
+            return SolutionPaths.FindDocument(_solution, filePath)
+                ?? await FindSourceGeneratedDocumentByPathAsync(filePath, ct).ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -235,24 +234,8 @@ internal sealed partial class WorkspaceManager
         }
     }
 
-    private Document? FindRegularDocumentByPath(string normalizedPath)
-    {
-        foreach (var project in _solution!.Projects)
-        {
-            foreach (var document in project.Documents)
-            {
-                if (IsPathMatch(document.FilePath, normalizedPath))
-                {
-                    return document;
-                }
-            }
-        }
-
-        return null;
-    }
-
     private async Task<Document?> FindSourceGeneratedDocumentByPathAsync(
-        string normalizedPath,
+        string filePath,
         CancellationToken ct
     )
     {
@@ -264,7 +247,7 @@ internal sealed partial class WorkspaceManager
 
             foreach (var document in generatedDocs)
             {
-                if (IsPathMatch(document.FilePath, normalizedPath))
+                if (NativePaths.AreEqual(document.FilePath, filePath))
                 {
                     return document;
                 }
@@ -272,16 +255,6 @@ internal sealed partial class WorkspaceManager
         }
 
         return null;
-    }
-
-    private static bool IsPathMatch(string? documentPath, string normalizedPath)
-    {
-        return documentPath is not null
-            && string.Equals(
-                Path.GetFullPath(documentPath),
-                normalizedPath,
-                StringComparison.OrdinalIgnoreCase
-            );
     }
 
     /// <summary>
