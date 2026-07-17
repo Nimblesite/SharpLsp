@@ -50,9 +50,8 @@ let private collectDefinitions
         for filePath in files do
             try
                 if File.Exists(filePath) then
-                    // Canonical overlay- and version-aware check funnel.
-                    // [FS-CHECK-VERSION-GATE]
-                    let! _parse, checkAnswer, _source, _stable =
+                    // Canonical overlay-aware check funnel. [FS-DIDCHANGE-OVERLAY]
+                    let! _parse, checkAnswer, _source =
                         FSharpWorkspace.parseAndCheckOnce state filePath options
                     match checkAnswer with
                     | FSharpCheckFileAnswer.Succeeded check ->
@@ -76,9 +75,8 @@ let private collectUndefinedErrors
             if not (File.Exists(filePath)) then
                 return []
             else
-                // Canonical overlay- and version-aware check funnel.
-                // [FS-CHECK-VERSION-GATE]
-                let! _parseResults, checkAnswer, _source, _stable =
+                // Canonical overlay-aware check funnel. [FS-DIDCHANGE-OVERLAY]
+                let! _parseResults, checkAnswer, _source =
                     FSharpWorkspace.parseAndCheckOnce state filePath options
                 match checkAnswer with
                 | FSharpCheckFileAnswer.Succeeded check ->

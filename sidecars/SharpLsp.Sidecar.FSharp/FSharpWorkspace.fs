@@ -35,16 +35,7 @@ type FSharpWorkspaceState =
       /// LSP `textDocument/didChange`. Per-file analyses read from here so hover,
       /// completion, etc. reflect unsaved edits instead of stale on-disk text.
       /// [FS-DIDCHANGE-OVERLAY]
-      Overlays: ConcurrentDictionary<string, string>
-      /// Monotonic per-file document version, bumped on every didChange and
-      /// passed to FCS as `fileVersion`. NOTE: in FCS 43.x's background
-      /// compiler this is stored metadata (surfaced by
-      /// `TryGetRecentCheckResultsForFile`), NOT a cache key — the operative
-      /// stale-text safeguard is the overlay-stability retry in
-      /// `checkFileWithParse`. Passing the truthful version keeps the
-      /// metadata honest and future-proofs a TransparentCompiler switch.
-      /// [FS-CHECK-VERSION-GATE] [GitHub #160]
-      Versions: ConcurrentDictionary<string, int> }
+      Overlays: ConcurrentDictionary<string, string> }
 
 /// Overlay keys compare case-insensitively on Windows, where hosts vary the
 /// path's spelling (VS Code lowercases the drive letter while FCS and MSBuild
@@ -67,8 +58,7 @@ let create () : FSharpWorkspaceState =
     { Checker = checker
       ProjectOptions = None
       IsLoaded = false
-      Overlays = ConcurrentDictionary<string, string>(overlayComparer)
-      Versions = ConcurrentDictionary<string, int>(overlayComparer) }
+      Overlays = ConcurrentDictionary<string, string>(overlayComparer) }
 
 /// Record the editor's in-memory buffer for a file (LSP didChange/didOpen).
 /// Per-file FCS analyses then resolve positions against the live buffer rather
@@ -76,13 +66,7 @@ let create () : FSharpWorkspaceState =
 /// canonicalized, so any spelling of the path the host sends on later requests
 /// finds the buffer. [FS-DIDCHANGE-OVERLAY]
 let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
-    let key = overlayKey filePath
-    state.Overlays[key] <- newText
-    // Bump AFTER the overlay write: a reader that sees the new version is
-    // then guaranteed to also see (at least) this text. The bump feeds the
-    // `fileVersion` metadata; staleness itself is caught by the text re-read
-    // in `checkFileWithParse`. [FS-CHECK-VERSION-GATE] [GitHub #160]
-    state.Versions.AddOrUpdate(key, 1, (fun _ version -> version + 1)) |> ignore
+    state.Overlays[overlayKey filePath] <- newText
 
 /// Read a file's current source: the in-memory overlay when the editor has an
 /// open buffer for it, otherwise the on-disk contents. [FS-DIDCHANGE-OVERLAY]
@@ -107,36 +91,25 @@ let internal projectFilePath (state: FSharpWorkspaceState) (filePath: string) : 
         |> Option.defaultValue normalized
     | None -> normalized
 
-/// Current monotonic version of a file's overlay (0 when never edited).
-/// [FS-CHECK-VERSION-GATE]
-let private currentVersion (state: FSharpWorkspaceState) (filePath: string) : int =
-    match state.Versions.TryGetValue(overlayKey filePath) with
-    | true, version -> version
-    | _ -> 0
-
-/// One FCS parse+check pass against explicit `options` — the raw call every
-/// per-file analysis funnels through: overlay-aware source, truthful
-/// `fileVersion` metadata, and a post-check stability flag that is false when
-/// the overlay changed while FCS was checking. The stability flag is the
-/// operative stale-text safeguard (the result then describes superseded text
-/// and must not be served as current); the version is bookkeeping only —
-/// FCS's background compiler keys its check cache by source-content hash.
-/// [FS-CHECK-VERSION-GATE] [GitHub #160]
+/// One FCS parse+check pass against explicit `options` — the single raw call
+/// every per-file analysis funnels through, so overlay-aware source resolution
+/// (the check reads the live didChange buffer, not stale on-disk text) and the
+/// `ParseAndCheckFileInProject` invocation live in exactly one place instead of
+/// being copy-pasted across hover, completion, diagnostics, and file-order
+/// analysis. [FS-DIDCHANGE-OVERLAY]
 let internal parseAndCheckOnce
     (state: FSharpWorkspaceState)
     (filePath: string)
     (options: FSharpProjectOptions)
     =
     task {
-        let version = currentVersion state filePath
         let source = readSource state filePath
 
         let! parseResults, checkAnswer =
             state.Checker.ParseAndCheckFileInProject(
-                filePath, version, SourceText.ofString source, options)
+                filePath, 0, SourceText.ofString source, options)
 
-        let stable = readSource state filePath = source
-        return parseResults, checkAnswer, source, stable
+        return parseResults, checkAnswer, source
     }
 
 /// Interpret an FCS answer, logging parse diagnostics on `Aborted` so every
@@ -159,31 +132,20 @@ let private interpretAnswer
 
 /// Parse and check a file, returning parse results, check results, and the
 /// source that was checked. The canonical per-file analysis entry point;
-/// `checkFile` is the parse-less view. Bounded retry when the overlay text
-/// changes mid-check: a result computed from older text is never returned
-/// for newer text. [FS-CHECK-VERSION-GATE] [GitHub #160]
+/// `checkFile` is the parse-less view. The check reads the live didChange
+/// overlay, so a reverted or freshly edited buffer is always type-checked as
+/// its newest text. [FS-DIDCHANGE-OVERLAY]
 let internal checkFileWithParse (state: FSharpWorkspaceState) (filePath: string) =
     task {
         if not state.IsLoaded then
             return None
         else
             let filePath = projectFilePath state filePath
-            let mutable answer = None
-            let mutable settled = false
-            let mutable attempts = 0
 
-            while not settled do
-                attempts <- attempts + 1
+            let! parseResults, checkAnswer, source =
+                parseAndCheckOnce state filePath state.ProjectOptions.Value
 
-                let! parseResults, checkAnswer, source, stable =
-                    parseAndCheckOnce state filePath state.ProjectOptions.Value
-
-                settled <- stable || attempts >= 3
-
-                if settled then
-                    answer <- interpretAnswer parseResults checkAnswer source
-
-            return answer
+            return interpretAnswer parseResults checkAnswer source
     }
 
 /// Parse and check a file, returning check results + source if successful.
@@ -389,8 +351,7 @@ let getHover
     =
     task {
         try
-            // Funnel through the canonical overlay- and version-gated check.
-            // [FS-CHECK-VERSION-GATE]
+            // Funnel through the canonical overlay-aware check. [FS-DIDCHANGE-OVERLAY]
             let! checkData = checkFileWithParse state filePath
 
             return

@@ -280,10 +280,8 @@ type FSharpSidecar() =
                     let filePath = FSharpWorkspace.projectFilePath workspace requestPath
                     let mutable results = ResizeArray<DiagnosticResult>()
                     // FCS compiler diagnostics, computed from the live buffer
-                    // (didChange overlay), never stale disk text — and gated
-                    // by the overlay-stability re-check so a result computed
-                    // from superseded text is never served as current.
-                    // [FS-DIDCHANGE-OVERLAY] [FS-CHECK-VERSION-GATE]
+                    // (didChange overlay), never stale disk text — so a reverted
+                    // buffer clears its errors on the next pull. [FS-DIDCHANGE-OVERLAY]
                     let! checkedFile = FSharpWorkspace.checkFile workspace filePath
                     match checkedFile with
                     | Some(check, source) ->

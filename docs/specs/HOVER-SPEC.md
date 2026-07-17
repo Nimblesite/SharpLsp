@@ -156,33 +156,28 @@ F# to parity with C#, whose Roslyn workspace is already updated in place on
 `didChange`. Without this, F# hover misaligns the moment the buffer diverges from
 disk (i.e. as soon as the user types) and returns the wrong symbol or `null`.
 
-### 5.5 Version-Gated Checking `[FS-CHECK-VERSION-GATE]`
+### 5.5 Canonical Check Funnel `[FS-DIDCHANGE-OVERLAY]`
 
 Every per-file FCS analysis (hover, completion, diagnostics, signature help,
-inlay hints, code fixes, file ordering) MUST funnel through one canonical
-check that is **current-text safe** (GitHub #160):
+inlay hints, code fixes, file ordering) funnels through **one** canonical
+check — `parseAndCheckOnce` (the raw parse+check) and its `checkFileWithParse`
+/ `checkFile` views — rather than each call site invoking
+`FSharpChecker.ParseAndCheckFileInProject` itself. This keeps overlay-aware
+source resolution and `FSharpCheckFileAnswer` handling in exactly one place
+(DRY) and guarantees every feature type-checks the **live didChange buffer**,
+so a reverted or freshly edited file is always analysed as its newest text
+instead of stale on-disk content — the property that lets a reverted buffer
+clear its phantom errors on the next pull (GitHub #160).
 
-1. **Stability gate (the operative safeguard)**: after a check completes, the
-   overlay is re-read. If the text changed while FCS was checking, the result
-   describes **superseded text** and MUST NOT be served as current — the
-   check retries against the newest text (bounded).
-2. The overlay keeps a **monotonic per-file version**, bumped on every
-   `didChange` (bumped *after* the overlay text write, so a reader that
-   observes the new version also observes at least that text). It is passed
-   as `fileVersion` to `FSharpChecker.ParseAndCheckFileInProject` — never a
-   constant. NOTE: in FCS 43.x's background compiler `fileVersion` is stored
-   metadata (surfaced by `TryGetRecentCheckResultsForFile`), not a cache key —
-   the check cache is keyed by source-content hash. Passing the truthful
-   version keeps that metadata honest and future-proofs a
-   TransparentCompiler switch; it is NOT what prevents stale results. Do not
-   remove the stability gate on the grounds that the version "covers it".
-
-This is the sidecar-side complement of the Rust host's push gate
-`[DIAG-PUSH-GATE]` (DIAGNOSTICS-SPEC §1.3): the host guarantees stale results
-are never *published* (and was the actual #160 root cause — a dropped failed
-fetch stranding the last-published error); this gate guarantees the sidecar
-never *produces* a result attributed to newer text than it was computed from,
-which matters once requests are dispatched concurrently.
+The sidecar processes IPC messages strictly sequentially — `SidecarHost`
+awaits each handler to completion before reading the next frame — so a
+`didChange` never lands while a check is in flight; the source a check reads is
+always the newest committed buffer. (Should dispatch ever become concurrent, a
+mid-check stability re-read would be needed here; it is deliberately omitted
+today because that path is unreachable and cannot be exercised by a
+deterministic test.) This is the sidecar-side complement of the Rust host's
+push gate `[DIAG-PUSH-GATE]` (DIAGNOSTICS-SPEC §1.3), which guarantees stale
+results are never *published*.
 
 ## 6. Caching Strategy
 

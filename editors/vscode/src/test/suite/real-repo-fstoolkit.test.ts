@@ -187,8 +187,8 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   // standing FS0229/FS3160 Errors to every checked file; no edit could ever
   // clear them. Fixed in FSharpAssets ([PKG-ASSETS-FS]) by filtering the
   // filename component. The investigation also hardened the push pipeline
-  // ([DIAG-PUSH-GATE]) and the sidecar's stale-check gating
-  // ([FS-CHECK-VERSION-GATE]).
+  // ([DIAG-PUSH-GATE]) and funneled every F# per-file analysis through one
+  // canonical overlay-aware check ([FS-DIDCHANGE-OVERLAY]).
   test('diagnostics round-trip: an F# type error surfaces and clears', async function () {
     this.timeout(420_000);
     const { doc, uri, editor } = await openRepoFile(repoDir, RESULT_FS);
