@@ -18,7 +18,12 @@ namespace SharpLsp.Sidecar.Common.Tests;
 /// shutdown. This single flow covers the host accept/dispatch loop together with
 /// the <see cref="IpcConnection" /> listener, <see cref="FramedTransport" />
 /// framing, <c>MessageRouter</c> dispatch, and <c>SidecarLog</c> init/shutdown.
+///
+/// Shares the <c>SerilogGlobalLogger</c> collection because
+/// <c>SidecarLog.Initialize</c>/<c>Shutdown</c> swap the process-global
+/// <c>Log.Logger</c>; see <see cref="SerilogGlobalLoggerDefinition" />.
 /// </summary>
+[Collection("SerilogGlobalLogger")]
 public sealed class SidecarHostEndToEndTests
 {
     private sealed class TestHost : SidecarHost
