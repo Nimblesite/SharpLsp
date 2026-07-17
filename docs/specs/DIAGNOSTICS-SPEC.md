@@ -39,7 +39,33 @@ Earlier versions of this spec described a one-shot solution-wide scan on workspa
 
 The pull model removes the failure mode entirely: there is no moment at which SharpLsp proactively claims a file has errors. The editor asks; SharpLsp answers with whatever Roslyn currently knows. When Roslyn learns more, the `global_state_version` bumps and the editor re-asks.
 
-### 1.3 Analysis Scope
+### 1.3 [DIAG-PUSH-GATE] Push Convergence Guarantee
+
+Editors without pull support still receive `textDocument/publishDiagnostics`
+pushes triggered by `didOpen`/`didChange`. Because a push asserts state until
+the *next* push replaces it, the push pipeline must never let a result for
+older text stand as the final published state. The Rust host therefore
+version-gates every push:
+
+1. Each `didOpen`/`didChange`/`didClose` for a document registers a new,
+   monotonically increasing **push generation** for that URI.
+2. A completed sidecar fetch publishes **only if its generation is still the
+   newest** — a slower fetch for older text is dropped, never published.
+3. A **failed** fetch for the newest generation is **retried** (1s interval,
+   bounded budget that outlasts a sidecar kill + respawn) until it publishes
+   or a newer generation supersedes it. Dropping it would strand the previous
+   publication — possibly an error set for text that no longer exists — on
+   screen forever (GitHub #160: an F# type error kept being displayed
+   indefinitely after the edit that introduced it was reverted).
+4. Generations are never reused: reusing a counter after `didClose` would let
+   an ancient in-flight fetch match a fresh generation and publish stale
+   results.
+
+The guarantee: **the last publication for a document always reflects its
+newest known text** — phantom diagnostics cannot outlive the edit that
+resolved them.
+
+### 1.4 Analysis Scope
 
 | Mode | Scope | Default | Use Case |
 |------|-------|---------|----------|

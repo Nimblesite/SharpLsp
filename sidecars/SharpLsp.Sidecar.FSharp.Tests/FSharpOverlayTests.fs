@@ -7,6 +7,8 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpOverlayTests
 
 open System
 open System.IO
+open FSharp.Compiler.CodeAnalysis
+open FSharp.Compiler.Diagnostics
 open Xunit
 open MessagePack
 open SharpLsp.Sidecar.FSharp
@@ -110,6 +112,50 @@ let ``overlay stored under a denormalized path spelling is read via the canonica
             try Directory.Delete(dir, true) with _ -> ()
     }
 
+// ── [GitHub #160]: checks must track the newest overlay text ─────
+
+/// FCS error messages in a `checkFile` result; an unusable result (workspace
+/// not loaded / check aborted) surfaces as a pseudo-error so asserts fail loud.
+let private errorMessages (result: (FSharpCheckFileResults * string) option) =
+    match result with
+    | Some(check, _) ->
+        check.Diagnostics
+        |> Array.filter (fun d -> d.Severity = FSharpDiagnosticSeverity.Error)
+        |> Array.map (fun d -> d.Message)
+    | None -> [| "check aborted or workspace not loaded" |]
+
+/// [FS-CHECK-VERSION-GATE] [GitHub #160] Edit/revert cycles through the real
+/// checker: a check result computed from an older overlay must never be served
+/// for newer text — the broken buffer must always error, the reverted buffer
+/// must always be clean, across repeated alternations of the same two texts
+/// (the exact shape FCS caching confuses when `fileVersion` is constant).
+[<Fact>]
+let ``edit and revert cycles always check the newest overlay text`` () =
+    task {
+        let! ws, dir, src = freshWorkspace ()
+        try
+            let pristine = File.ReadAllText(src)
+            let broken = pristine + "\nlet __sharpLspBad: int = \"not an int\"\n"
+            for cycle in 1 .. 3 do
+                FSharpWorkspace.applyDidChange ws src broken
+                let! brokenCheck = FSharpWorkspace.checkFile ws src
+                Assert.True(
+                    brokenCheck.IsSome,
+                    $"cycle {cycle}: check of the broken overlay must complete")
+                Assert.False(
+                    Array.isEmpty (errorMessages brokenCheck),
+                    $"cycle {cycle}: the broken overlay must produce a type error")
+                FSharpWorkspace.applyDidChange ws src pristine
+                let! cleanCheck = FSharpWorkspace.checkFile ws src
+                let staleErrors = errorMessages cleanCheck
+                Assert.True(
+                    Array.isEmpty staleErrors,
+                    $"cycle {cycle}: the reverted overlay must check clean; got: "
+                    + String.Join("; ", staleErrors))
+        finally
+            try Directory.Delete(dir, true) with _ -> ()
+    }
+
 // ── Bug A over real IPC: diagnostics + formatting handlers ───────
 
 type SidecarOverlayTests(fixture: SidecarFixture) =
@@ -144,6 +190,51 @@ type SidecarOverlayTests(fixture: SidecarFixture) =
                     + String.Join("; ", errors |> Array.map (fun d -> d.Message)))
             finally
                 File.WriteAllText(fixture.Consumer, fixedText)
+        }
+
+    /// [GitHub #160] Phantom-diagnostics repro: inject a type error via
+    /// didChange (buffer-only, never saved to disk), confirm the error is
+    /// reported, then revert the buffer to pristine text via didChange. The
+    /// next pulled diagnostics MUST be clean — a check result computed from
+    /// older text must never be served for newer text.
+    [<Fact>]
+    member _.``diagnostics clear after an error edit is reverted``() =
+        task {
+            let pristine = File.ReadAllText(fixture.Src)
+            let broken = pristine + "\nlet __sharpLspBad: int = \"not an int\"\n"
+            let sendDidChange text =
+                fixture.Send(
+                    "textDocument/didChange",
+                    MessagePackSerializer.Serialize(
+                        { DidChangeRequest.FilePath = fixture.Src; NewText = text }))
+            let pullDiagnostics () =
+                task {
+                    let! r =
+                        fixture.Send(
+                            "workspace/diagnostics", MessagePackSerializer.Serialize(fixture.Src))
+                    Assert.Null(r.Error)
+                    return deserialize<DiagnosticResult array>(r.Payload)
+                }
+
+            // 1. Break the buffer — the error must surface (repro precondition).
+            let! dcBroken = sendDidChange broken
+            Assert.Null(dcBroken.Error)
+            let! brokenDiags = pullDiagnostics ()
+            Assert.Contains(brokenDiags, fun d -> d.Severity = "Error")
+
+            // 2. Deterministic revert, exactly like the e2e: buffer back to pristine.
+            let! dcReverted = sendDidChange pristine
+            Assert.Null(dcReverted.Error)
+
+            // 3. Every subsequent pull must be clean; a single stale answer is
+            //    the #160 phantom.
+            for attempt in 1 .. 3 do
+                let! diags = pullDiagnostics ()
+                let errors = diags |> Array.filter (fun d -> d.Severity = "Error")
+                Assert.True(
+                    Array.isEmpty errors,
+                    $"pull #{attempt} after revert must be clean; got: "
+                    + String.Join("; ", errors |> Array.map (fun d -> $"{d.Code} {d.Message}")))
         }
 
     /// Formatting must derive its whole-file replacement from the live buffer:

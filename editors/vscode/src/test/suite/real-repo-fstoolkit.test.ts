@@ -181,10 +181,13 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
     assert.ok(!doc.getText().includes('__sharpLspProbe'), 'undo must restore the pristine file');
   });
 
-  // KNOWN FAILING — tracks #160: F# pull diagnostics serve stale (phantom)
-  // errors after a revert; FCS check results are not version-gated, so the
-  // slower error-text check completes after the reverted-text check and its
-  // stale result keeps being served. Kept failing per testing policy.
+  // Tracks #160: an F# error must clear after the edit is reverted. Root
+  // cause (verified): not FCS — the sidecar is strictly sequential and its
+  // check cache is content-hash-keyed — but the Rust host's push pipeline,
+  // which dropped the publish when the post-revert fetch failed, stranding
+  // the stale error in the editor's push collection forever. Fixed by
+  // [DIAG-PUSH-GATE]: per-URI push generations + retry until the newest
+  // generation publishes or is superseded.
   test('diagnostics round-trip: an F# type error surfaces and clears', async function () {
     this.timeout(420_000);
     const { doc, uri, editor } = await openRepoFile(repoDir, RESULT_FS);

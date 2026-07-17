@@ -156,6 +156,27 @@ F# to parity with C#, whose Roslyn workspace is already updated in place on
 `didChange`. Without this, F# hover misaligns the moment the buffer diverges from
 disk (i.e. as soon as the user types) and returns the wrong symbol or `null`.
 
+### 5.5 Version-Gated Checking `[FS-CHECK-VERSION-GATE]`
+
+Every per-file FCS analysis (hover, completion, diagnostics, signature help,
+inlay hints, code fixes, file ordering) MUST funnel through one canonical
+check that is **current-text safe** (GitHub #160):
+
+1. The overlay keeps a **monotonic per-file version**, bumped on every
+   `didChange`. The version is bumped *after* the overlay text write, so any
+   reader that observes the new version also observes at least that text.
+2. Each `FSharpChecker.ParseAndCheckFileInProject` call passes that version as
+   `fileVersion` — never a constant — so FCS cache entries for different
+   buffer states are never conflated.
+3. After a check completes, the overlay is re-read: if the text changed while
+   FCS was checking, the result describes **superseded text** and MUST NOT be
+   served as current — the check retries against the newest text (bounded).
+
+This is the sidecar-side complement of the Rust host's push gate
+`[DIAG-PUSH-GATE]` (DIAGNOSTICS-SPEC §1.3): the host guarantees stale results
+are never *published*; this gate guarantees the sidecar never *produces* a
+result attributed to newer text than it was computed from.
+
 ## 6. Caching Strategy
 
 Hover results are cached via the [salsa](https://salsa-rs.github.io/salsa/) incremental computation database in the Rust host.

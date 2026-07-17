@@ -5,7 +5,10 @@
       "Bash(node -e \"const j=require\\('C:/Users/chris/.claude.json'\\); console.log\\(JSON.stringify\\(j.mcpServers,null,2\\)\\)\")",
       "Bash(dotnet --list-sdks)",
       "Bash(dotnet --list-runtimes)",
-      "Bash(MOCHA_GREP='survives project dir deletion' npm test)"
+      "Bash(MOCHA_GREP='survives project dir deletion' npm test)",
+      "Read(//c/Users/chris/**)",
+      "Bash(grep -rl \"too-many-cooks\" ~/.claude/ ~/.claude.json ~/AppData/Roaming/Claude/ 2>/dev/null | head -5)",
+      "Read(//c/Users/chris/.claude/**)"
     ]
   },
   "autoMemoryEnabled": false

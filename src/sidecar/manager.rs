@@ -407,6 +407,18 @@ impl SidecarManager {
     }
 }
 
+#[cfg(test)]
+impl SidecarManager {
+    /// Test-only: a manager pre-wired to an in-memory stream, so pipeline
+    /// tests (e.g. the diagnostics push pipeline) can script sidecar
+    /// responses without spawning a real process.
+    pub(crate) async fn connected_to_stream_for_tests(stream: tokio::io::DuplexStream) -> Self {
+        let manager = Self::new("test", "unused-command", vec![], "unused-endpoint");
+        *manager.transport.lock().await = Some(FramedTransport::from_stream(stream));
+        manager
+    }
+}
+
 /// Response budget for a sidecar method. `workspace/open` legitimately runs a
 /// full `MSBuild` design-time build; anything else past two minutes is wedged.
 /// [SIDECAR-REQUEST-TIMEOUT]
