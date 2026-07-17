@@ -131,8 +131,8 @@ public class Program
     create_and_build_solution(
         root,
         &[
-            "SharedFSharp\\SharedFSharp.fsproj",
-            "CSharpConsumer\\CSharpConsumer.csproj",
+            "SharedFSharp/SharedFSharp.fsproj",
+            "CSharpConsumer/CSharpConsumer.csproj",
         ],
     );
 
@@ -221,8 +221,8 @@ let message = greeter.Greet(localName)
     create_and_build_solution(
         root,
         &[
-            "SharedCSharp\\SharedCSharp.csproj",
-            "FSharpConsumer\\FSharpConsumer.fsproj",
+            "SharedCSharp/SharedCSharp.csproj",
+            "FSharpConsumer/FSharpConsumer.fsproj",
         ],
     );
 
