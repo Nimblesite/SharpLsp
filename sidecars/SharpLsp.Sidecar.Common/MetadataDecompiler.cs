@@ -20,7 +20,9 @@ public sealed record DecompiledPosition(int Line, int Character);
 public static class MetadataDecompiler
 {
     /// <summary>Cache key: <c>assemblyPath|typeFullName</c> -> temp file path.</summary>
-    private static readonly ConcurrentDictionary<string, string> Cache = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, string> Cache = new(
+        StringComparer.Ordinal
+    );
 
     /// <summary>
     /// Decompile <paramref name="typeFullName"/> from <paramref name="assemblyPath"/>
@@ -41,7 +43,11 @@ public static class MetadataDecompiler
         return string.IsNullOrEmpty(filePath) ? null : filePath;
     }
 
-    private static string DecompileCore(string assemblyPath, string typeFullName, string displayName)
+    private static string DecompileCore(
+        string assemblyPath,
+        string typeFullName,
+        string displayName
+    )
     {
         try
         {
@@ -104,7 +110,11 @@ public static class MetadataDecompiler
         }
     }
 
-    private static DecompiledPosition? SearchLines(string[] lines, string? pattern, string plainName)
+    private static DecompiledPosition? SearchLines(
+        string[] lines,
+        string? pattern,
+        string plainName
+    )
     {
         if (pattern is not null)
         {

@@ -683,10 +683,7 @@ internal sealed partial class WorkspaceManager : IDisposable
                 project.FilePath is not null
                 && project.FilePath.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase)
             )
-            .ToDictionary(
-                project => NormalizedPath(project.FilePath!),
-                project => project.Id
-            );
+            .ToDictionary(project => NormalizedPath(project.FilePath!), project => project.Id);
 
         foreach (var projectId in solution.ProjectIds.ToList())
         {

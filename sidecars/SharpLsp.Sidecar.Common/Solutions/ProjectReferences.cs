@@ -32,8 +32,9 @@ public static class ProjectReferences
                     .Where(element => element.Name.LocalName == "ProjectReference")
                     .Select(element => element.Attribute("Include")?.Value)
                     .Where(include => !string.IsNullOrWhiteSpace(include))
-                    .Select(include => Path.GetFullPath(
-                        Path.Combine(projectDir, NormalizeSeparators(include!)))),
+                    .Select(include =>
+                        Path.GetFullPath(Path.Combine(projectDir, NormalizeSeparators(include!)))
+                    ),
             ];
         }
         catch (Exception)
