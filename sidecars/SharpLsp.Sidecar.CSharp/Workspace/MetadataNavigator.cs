@@ -1,41 +1,21 @@
-using System.Collections.Concurrent;
-using ICSharpCode.Decompiler;
-using ICSharpCode.Decompiler.CSharp;
 using Microsoft.CodeAnalysis;
-using Serilog;
+using SharpLsp.Sidecar.Common;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
 /// <summary>
-/// Decompiles metadata symbols for go-to-definition navigation.
-/// Caches decompiled source to avoid repeated decompilation of the same type.
+/// Maps a Roslyn metadata symbol to a decompiled source location for
+/// go-to-definition navigation. The decompilation itself lives in the shared
+/// <see cref="MetadataDecompiler"/> so the C# and F# sidecars produce
+/// metadata-as-source the same way.
 /// </summary>
 internal static class MetadataNavigator
 {
-    /// <summary>Cache key: (assemblyPath, typeFullName) -> temp file path.</summary>
-    private static readonly ConcurrentDictionary<string, string> Cache = new();
-
     /// <summary>
     /// Try to resolve a metadata symbol to a decompiled source location.
     /// Returns null if decompilation fails or the symbol cannot be found.
     /// </summary>
     public static LocationResult? ResolveMetadataSymbol(ISymbol symbol, Compilation compilation)
-    {
-        try
-        {
-            return ResolveMetadataSymbolCore(symbol, compilation);
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "[MetadataNav] Decompilation failed");
-            return null;
-        }
-    }
-
-    private static LocationResult? ResolveMetadataSymbolCore(
-        ISymbol symbol,
-        Compilation compilation
-    )
     {
         var assemblyPath = GetAssemblyPath(symbol, compilation);
         if (assemblyPath is null)
@@ -49,14 +29,29 @@ internal static class MetadataNavigator
             return null;
         }
 
-        var typeFullName = containingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        var cacheKey = $"{assemblyPath}|{typeFullName}";
+        var typeName = BuildDecompilerTypeName(containingType);
+        var displayName = containingType.ToDisplayString();
+        var filePath = MetadataDecompiler.DecompileTypeToFile(assemblyPath, typeName, displayName);
+        if (string.IsNullOrEmpty(filePath))
+        {
+            return null;
+        }
 
-        var filePath = Cache.GetOrAdd(cacheKey, _ => DecompileType(assemblyPath, containingType));
+        var name = symbol.MetadataName;
+        var position = MetadataDecompiler.FindDeclaration(
+            filePath,
+            name,
+            BuildSearchPattern(symbol, name)
+        );
 
-        return string.IsNullOrEmpty(filePath)
-            ? null
-            : FindSymbolInDecompiledSource(filePath, symbol);
+        return new LocationResult
+        {
+            FilePath = filePath,
+            Line = position.Line,
+            Character = position.Character,
+            EndLine = position.Line,
+            EndCharacter = position.Character + name.Length,
+        };
     }
 
     /// <summary>
@@ -114,43 +109,6 @@ internal static class MetadataNavigator
     }
 
     /// <summary>
-    /// Decompile a type and write it to a temp file.
-    /// Returns the temp file path, or empty string on failure.
-    /// </summary>
-    private static string DecompileType(string assemblyPath, INamedTypeSymbol containingType)
-    {
-        try
-        {
-            return DecompileTypeCore(assemblyPath, containingType);
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "[MetadataNav] DecompileType failed");
-            return "";
-        }
-    }
-
-    private static string DecompileTypeCore(string assemblyPath, INamedTypeSymbol containingType)
-    {
-        var decompiler = new CSharpDecompiler(
-            assemblyPath,
-            new DecompilerSettings { ThrowOnAssemblyResolveErrors = false }
-        );
-
-        var typeName = BuildDecompilerTypeName(containingType);
-        var fullTypeName = new ICSharpCode.Decompiler.TypeSystem.FullTypeName(typeName);
-
-        Log.Debug(
-            "[MetadataNav] Decompiling {TypeName} from {AssemblyPath}",
-            fullTypeName,
-            assemblyPath
-        );
-
-        var source = decompiler.DecompileTypeAsString(fullTypeName);
-        return WriteToTempFile(containingType, source);
-    }
-
-    /// <summary>
     /// Build the type name in the format ICSharpCode.Decompiler expects:
     /// Namespace.TypeName (using metadata name with arity suffix).
     /// </summary>
@@ -160,67 +118,6 @@ internal static class MetadataNavigator
         var metadataName = containingType.MetadataName;
 
         return string.IsNullOrEmpty(ns) ? metadataName : $"{ns}.{metadataName}";
-    }
-
-    /// <summary>Write decompiled source to a temp file and return path.</summary>
-    private static string WriteToTempFile(INamedTypeSymbol type, string source)
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "sharplsp-decompiled");
-        _ = Directory.CreateDirectory(dir);
-
-        var safeName = SanitizeFileName(type.ToDisplayString());
-        var filePath = Path.Combine(dir, $"{safeName}.cs");
-        File.WriteAllText(filePath, source);
-
-        Log.Debug("[MetadataNav] Wrote decompiled source to {FilePath}", filePath);
-
-        return filePath;
-    }
-
-    /// <summary>Replace characters not allowed in file names.</summary>
-    private static string SanitizeFileName(string name)
-    {
-        return name.Replace('<', '_')
-            .Replace('>', '_')
-            .Replace(',', '_')
-            .Replace(' ', '_')
-            .Replace(':', '_');
-    }
-
-    /// <summary>
-    /// Find a symbol's position within decompiled source.
-    /// Uses the symbol name to locate the declaration line.
-    /// </summary>
-    private static LocationResult FindSymbolInDecompiledSource(string filePath, ISymbol symbol)
-    {
-        try
-        {
-            return FindSymbolInDecompiledSourceCore(filePath, symbol);
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "[MetadataNav] FindSymbol failed");
-            return FallbackLocation(filePath);
-        }
-    }
-
-    private static LocationResult FindSymbolInDecompiledSourceCore(string filePath, ISymbol symbol)
-    {
-        var lines = File.ReadAllLines(filePath);
-        var name = symbol.MetadataName;
-        var pattern = BuildSearchPattern(symbol, name);
-        var position = SearchLines(lines, pattern, name);
-
-        return position is not null
-            ? new LocationResult
-            {
-                FilePath = filePath,
-                Line = position.Value.line,
-                Character = position.Value.column,
-                EndLine = position.Value.line,
-                EndCharacter = position.Value.column + name.Length,
-            }
-            : FallbackLocation(filePath);
     }
 
     /// <summary>Build a search pattern based on the symbol kind.</summary>
@@ -236,65 +133,6 @@ internal static class MetadataNavigator
             IEventSymbol => $" {plainName}",
             INamedTypeSymbol => $" {plainName}",
             _ => null,
-        };
-    }
-
-    /// <summary>
-    /// Search lines for a pattern, falling back to plain name match.
-    /// Returns (line, column) or null.
-    /// </summary>
-    private static (int line, int column)? SearchLines(string[] lines, string? pattern, string name)
-    {
-        if (pattern is not null)
-        {
-            var result = SearchLinesForPattern(lines, pattern);
-            if (result is not null)
-            {
-                return result;
-            }
-        }
-
-        return SearchLinesForName(lines, name.Split('`')[0]);
-    }
-
-    private static (int line, int column)? SearchLinesForPattern(string[] lines, string pattern)
-    {
-        return SearchLines(lines, pattern, columnOffset: 1);
-    }
-
-    private static (int line, int column)? SearchLinesForName(string[] lines, string name)
-    {
-        return SearchLines(lines, name, columnOffset: 0);
-    }
-
-    private static (int line, int column)? SearchLines(
-        string[] lines,
-        string term,
-        int columnOffset
-    )
-    {
-        for (var i = 0; i < lines.Length; i++)
-        {
-            var col = lines[i].IndexOf(term, StringComparison.Ordinal);
-            if (col >= 0)
-            {
-                return (i, col + columnOffset);
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>Fall back to line 0, col 0 of the decompiled file.</summary>
-    private static LocationResult FallbackLocation(string filePath)
-    {
-        return new LocationResult
-        {
-            FilePath = filePath,
-            Line = 0,
-            Character = 0,
-            EndLine = 0,
-            EndCharacter = 0,
         };
     }
 }

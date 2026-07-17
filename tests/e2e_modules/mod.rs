@@ -30,6 +30,7 @@
 
 // ── Infrastructure sub-modules ────────────────────────────────────
 pub mod fixtures;
+pub mod fixtures_cross_language;
 pub mod fixtures_medium;
 pub mod nav_helpers;
 pub mod session_helpers;
@@ -41,6 +42,7 @@ pub mod coverage_boost;
 pub mod coverage_boost2;
 pub mod coverage_boost3;
 pub mod definition;
+pub mod definition_cross_language;
 pub mod definition_full_stack;
 pub mod definition_no_sidecar;
 pub mod diagnostics;
@@ -79,6 +81,7 @@ pub mod workspace_symbols;
 
 // ── Re-exports so `use super::*;` in test modules gets everything ─
 pub use fixtures::*;
+pub use fixtures_cross_language::*;
 pub use fixtures_medium::*;
 pub use nav_helpers::*;
 pub use session_helpers::*;

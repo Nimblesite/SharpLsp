@@ -190,16 +190,18 @@ When a symbol's definition is in metadata (referenced assembly, NuGet package) r
 | Module function | Navigate to the `let` binding |
 | Pattern binding (`let (x, y) = ...`) | Navigate to the binding site |
 
-## 6. Cross-Language Navigation (P2)
+## 6. Cross-Language Navigation `[DEFINITION-CROSSLANG]`
 
-When a C# project references an F# project (or vice versa), go-to-definition must cross the language boundary. This requires coordination between both sidecars.
+When a C# project references an F# project (or vice versa), go-to-definition crosses the language boundary. Each engine sees the *other* language only as a compiled assembly — Roslyn's `MSBuildWorkspace` has no F# language service, and FCS does not resolve a `<ProjectReference>` to a C# project — so the mechanism is **metadata-as-source**: wire the referenced project's built output DLL into the resolving engine, then decompile the target type to a navigable location. This is what mature IDEs do for a compiled cross-language reference, and it needs no cross-sidecar symbol index.
 
 | Scenario | Approach |
 |---|---|
-| C# code references F# type | C# sidecar resolves symbol to metadata → Rust host dispatches to F# sidecar for source location |
-| F# code references C# type | F# sidecar resolves to external declaration → Rust host dispatches to C# sidecar for source location |
+| C# code references F# type | Roslyn drops the F# `<ProjectReference>` (loads it as an empty stub); `WorkspaceManager.AddCrossLanguageMetadataReferences` re-attaches the built F# DLL as a metadata reference and removes the stub, then `MetadataNavigator` decompiles the resolved symbol |
+| F# code references C# type | `buildProjectOptions` wires each referenced C# project's output DLL into the FCS `-r:` options so the symbol resolves; `FSharpMetadataNavigator` decompiles the external symbol in `extractDefinition` |
 
-Cross-language navigation is a P2 feature targeting Phase 4. It requires the Rust host to maintain a cross-sidecar symbol index.
+Both directions decompile through the shared `MetadataDecompiler` (`SharpLsp.Sidecar.Common`), and the referenced project must be built (its output DLL must exist) for resolution to succeed. Requirement: navigating from a use site in one language onto a symbol defined in the other resolves to a decompiled metadata-as-source location for that symbol's type.
+
+**Not yet implemented (P2, Phase 4):** *source-to-source* cross-language navigation — landing in the original `.fs`/`.cs` file rather than decompiled metadata — which requires the Rust host to maintain a cross-sidecar symbol index.
 
 ## 7. Caching Strategy
 

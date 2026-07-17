@@ -2,9 +2,17 @@ import * as vscode from 'vscode';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFile } from 'child_process';
-import { XMLParser } from 'fast-xml-parser';
 import { info } from './log';
-import { buildWithDiagnostics } from './build';
+import * as state from './state';
+import { listTests } from './test-discovery';
+import { findCoberturaFile, parseCoberturaXml, loadDetailedCoverage } from './test-coverage';
+
+/**
+ * Debounce for reactive re-discovery. Loading a solution can churn the
+ * `solutionPath` signal several times in quick succession; collapse the burst
+ * into a single `dotnet test --list-tests` sweep.
+ */
+const DISCOVERY_DEBOUNCE_MS = 1_000;
 
 /** Cached result for a single test, keyed by fully qualified name. */
 export interface CachedTestResult {
@@ -23,6 +31,19 @@ export class SharpLspTestController {
   private readonly runProfiles: vscode.TestRunProfile[] = [];
   private readonly results = new Map<string, CachedTestResult>();
   private readonly resultsChangedEmitter = new vscode.EventEmitter<void>();
+  /** Cancels the reactive solution-change subscription. */
+  private readonly solutionSubscription: () => void;
+  /** Pending debounced discovery timer, if any. */
+  private debounceHandle: ReturnType<typeof setTimeout> | undefined;
+  /** Monotonic id so a superseded discovery sweep never clobbers a newer one. */
+  private discoverGeneration = 0;
+  /**
+   * True once the user has engaged the Test Explorer (revealed the view or hit
+   * refresh). Discovery runs `dotnet test` — a full build — so we do NOT do that
+   * as a side effect of merely loading a solution; only once tests are actually
+   * being shown does a solution change reactively re-discover.
+   */
+  private active = false;
 
   /** Fires after any test run completes and results are cached. */
   public readonly onResultsChanged = this.resultsChangedEmitter.event;
@@ -81,12 +102,38 @@ export class SharpLspTestController {
       async (_run, fileCoverage, _token) => loadDetailedCoverage(fileCoverage);
     this.runProfiles.push(coverageProfile);
 
-    this.controller.resolveHandler = async (item): Promise<void> => {
-      await this.discoverTests(item);
+    // VS Code's refresh affordance and the initial view reveal drive the first
+    // discovery and mark the controller active.
+    this.controller.refreshHandler = async (): Promise<void> => {
+      await this.activateAndDiscover();
     };
+    this.controller.resolveHandler = async (item): Promise<void> => {
+      if (item === undefined) {
+        await this.activateAndDiscover();
+      }
+    };
+    // Reactive: once tests are being shown, a change to the loaded solution must
+    // reactively re-discover with no manual refresh. Debounced to collapse the
+    // burst a solution load emits. Gated on `active` so merely loading a solution
+    // never triggers a background build before the user looks at tests.
+    this.solutionSubscription = state.solutionPath.subscribe(() => {
+      if (this.active) {
+        this.scheduleDiscovery();
+      }
+    });
+  }
+
+  /** Mark the Test Explorer active and run a discovery sweep. */
+  public async activateAndDiscover(): Promise<void> {
+    this.active = true;
+    await this.discover();
   }
 
   public dispose(): void {
+    this.solutionSubscription();
+    if (this.debounceHandle !== undefined) {
+      clearTimeout(this.debounceHandle);
+    }
     for (const profile of this.runProfiles) {
       profile.dispose();
     }
@@ -94,70 +141,59 @@ export class SharpLspTestController {
     this.controller.dispose();
   }
 
-  private async discoverTests(_item: vscode.TestItem | undefined): Promise<void> {
-    const folders = vscode.workspace.workspaceFolders;
-    if (folders === undefined) {
+  /** Debounced trigger for reactive re-discovery on solution change. */
+  private scheduleDiscovery(): void {
+    if (this.debounceHandle !== undefined) {
+      clearTimeout(this.debounceHandle);
+    }
+    this.debounceHandle = setTimeout(() => {
+      this.debounceHandle = undefined;
+      void this.discover();
+    }, DISCOVERY_DEBOUNCE_MS);
+  }
+
+  /**
+   * Discover every test in the loaded solution (or, absent one, each workspace
+   * folder) and replace the tree. A superseded sweep never clobbers a newer one.
+   */
+  public async discover(): Promise<void> {
+    const generation = ++this.discoverGeneration;
+    const targets = discoveryTargets();
+    const items: vscode.TestItem[] = [];
+    for (const target of targets) {
+      const uri = vscode.Uri.file(dirOf(target));
+      for (const fqn of await this.safeList(target)) {
+        items.push(this.makeTestItem(fqn, uri));
+      }
+    }
+    if (generation !== this.discoverGeneration) {
       return;
     }
+    this.controller.items.replace(items);
+    info(`Test discovery: ${String(items.length)} test(s) from ${String(targets.length)} target(s)`);
+  }
 
-    // Auto-build before test discovery to ensure up-to-date binaries.
+  /** List one target, swallowing failures into an empty result. */
+  private async safeList(target: string): Promise<string[]> {
     try {
-      await buildWithDiagnostics('build');
-      info('Auto-build completed before test discovery');
+      return await listTests(target);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      info(`Auto-build before test discovery failed: ${message}`);
-    }
-
-    for (const folder of folders) {
-      await this.discoverTestsInFolder(folder);
+      info(`Test discovery failed for ${target}: ${message}`);
+      return [];
     }
   }
 
-  private async discoverTestsInFolder(folder: vscode.WorkspaceFolder): Promise<void> {
-    try {
-      const output = await runProcess(
-        'dotnet',
-        ['test', '--list-tests', '--verbosity', 'quiet'],
-        folder.uri.fsPath,
-      );
-
-      const lines = output
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0 && !l.startsWith('The following'));
-
-      let inTestList = false;
-      for (const line of lines) {
-        if (line === 'The following Tests are available:') {
-          inTestList = true;
-          continue;
-        }
-        if (!inTestList && !isTestName(line)) {
-          continue;
-        }
-        inTestList = true;
-        this.addTestItem(folder, line);
-      }
-      info(`Discovered ${String(this.controller.items.size)} tests`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      info(`Test discovery failed: ${message}`);
-    }
-  }
-
-  private addTestItem(folder: vscode.WorkspaceFolder, fullName: string): void {
+  /** Build a flat TestItem for a fully-qualified name, tagging F# tests. */
+  private makeTestItem(fullName: string, uri: vscode.Uri): vscode.TestItem {
     const parts = fullName.split('.');
     const label = parts.at(-1) ?? fullName;
-    const id = fullName;
-
-    const item = this.controller.createTestItem(id, label, folder.uri);
+    const item = this.controller.createTestItem(fullName, label, uri);
     item.description = fullName;
-    // Detect F# test frameworks.
     if (isExpectoTest(fullName) || isFsCheckTest(fullName)) {
       item.tags = [new vscode.TestTag('fsharp')];
     }
-    this.controller.items.add(item);
+    return item;
   }
 
   private async runTests(
@@ -278,11 +314,15 @@ export class SharpLspTestController {
     this.resultsChangedEmitter.fire();
   }
 
-  private async executeTest(testId: string, debug: boolean): Promise<TestResult> {
+  private async executeTest(
+    testId: string,
+    debug: boolean,
+    cwdOverride?: string,
+  ): Promise<TestResult> {
     try {
-      const folder = vscode.workspace.workspaceFolders?.[0];
-      if (folder === undefined) {
-        return { passed: false, message: 'No workspace folder' };
+      const cwd = cwdOverride ?? runCwd();
+      if (cwd === undefined) {
+        return { passed: false, message: 'No workspace folder or solution' };
       }
 
       if (debug) {
@@ -296,7 +336,7 @@ export class SharpLspTestController {
       const output = await runProcess(
         'dotnet',
         ['test', '--filter', `FullyQualifiedName=${testId}`, '--verbosity', 'quiet'],
-        folder.uri.fsPath,
+        cwd,
       );
       const duration = Date.now() - start;
 
@@ -311,6 +351,45 @@ export class SharpLspTestController {
       return { passed: false, message: 'Test execution error' };
     }
   }
+
+  /**
+   * Run a single test by id, cache the result, and notify listeners. `cwd`
+   * overrides the working directory (the loaded solution's folder by default) —
+   * used by callers targeting a project outside the workspace.
+   */
+  public async runSingle(testId: string, cwd?: string): Promise<CachedTestResult> {
+    const result = await this.executeTest(testId, false, cwd);
+    this.results.set(testId, result);
+    this.resultsChangedEmitter.fire();
+    return result;
+  }
+}
+
+/** The paths to enumerate: the loaded solution, else each workspace folder. */
+function discoveryTargets(): string[] {
+  const solution = state.solutionPath.value;
+  if (solution !== undefined) {
+    return [solution];
+  }
+  return (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
+}
+
+/** Directory containing a target path (the path itself when it is a directory). */
+function dirOf(target: string): string {
+  try {
+    return fs.statSync(target).isDirectory() ? target : path.dirname(target);
+  } catch {
+    return path.dirname(target);
+  }
+}
+
+/** Working directory for `dotnet test` runs: the loaded solution's folder. */
+function runCwd(): string | undefined {
+  const solution = state.solutionPath.value;
+  if (solution !== undefined) {
+    return path.dirname(solution);
+  }
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
 interface TestResult {
@@ -351,98 +430,6 @@ export function buildFilterArgs(tests: vscode.TestItem[]): string[] {
   if (tests.length === 0) return [];
   const names = tests.map((t) => `FullyQualifiedName=${t.id}`);
   return ['--filter', names.join('|')];
-}
-
-// ── Cobertura XML parser ────────────────────────────────────────
-
-interface CoberturaLine {
-  readonly '@_number': string;
-  readonly '@_hits': string;
-  readonly '@_branch'?: string;
-}
-
-interface CoberturaClass {
-  readonly '@_filename': string;
-  readonly lines?: { line?: CoberturaLine | CoberturaLine[] };
-}
-
-interface CoberturaPackage {
-  readonly classes?: { class?: CoberturaClass | CoberturaClass[] };
-}
-
-interface CoberturaReport {
-  readonly coverage?: {
-    readonly packages?: { package?: CoberturaPackage | CoberturaPackage[] };
-  };
-}
-
-const coberturaParser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  isArray: (tagName) => tagName === 'package' || tagName === 'class' || tagName === 'line',
-});
-
-/** Find a `coverage.cobertura.xml` one directory below `resultsDir`, or undefined. */
-export function findCoberturaFile(resultsDir: string): string | undefined {
-  if (!fs.existsSync(resultsDir)) return undefined;
-  const entries = fs.readdirSync(resultsDir);
-  for (const entry of entries) {
-    const sub = path.join(resultsDir, entry);
-    const candidate = path.join(sub, 'coverage.cobertura.xml');
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return undefined;
-}
-
-/** Parse a cobertura XML report into VS Code FileCoverage entries. */
-export function parseCoberturaXml(filePath: string): vscode.FileCoverage[] {
-  const xml = fs.readFileSync(filePath, 'utf-8');
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- fast-xml-parser returns untyped output; CoberturaReport mirrors the known schema
-  const doc: CoberturaReport = coberturaParser.parse(xml);
-  const packages = doc.coverage?.packages?.package;
-  if (packages === undefined) return [];
-
-  const pkgList = Array.isArray(packages) ? packages : [packages];
-  const result: vscode.FileCoverage[] = [];
-
-  for (const pkg of pkgList) {
-    const classes = pkg.classes?.class;
-    if (classes === undefined) continue;
-    const classList = Array.isArray(classes) ? classes : [classes];
-
-    for (const cls of classList) {
-      const lines = cls.lines?.line;
-      if (lines === undefined) continue;
-      const lineList = Array.isArray(lines) ? lines : [lines];
-
-      let covered = 0;
-      let total = 0;
-      const details: vscode.StatementCoverage[] = [];
-
-      for (const line of lineList) {
-        const lineNo = parseInt(line['@_number'], 10) - 1;
-        const hits = parseInt(line['@_hits'], 10);
-        total++;
-        if (hits > 0) covered++;
-        details.push(new vscode.StatementCoverage(hits, new vscode.Position(lineNo, 0)));
-      }
-
-      const uri = vscode.Uri.file(cls['@_filename']);
-      const fc = new vscode.FileCoverage(uri, new vscode.TestCoverageCount(covered, total));
-      // Stash details on the instance for loadDetailedCoverage callback.
-      coverageDetails.set(uri.toString(), details);
-      result.push(fc);
-    }
-  }
-
-  return result;
-}
-
-/** Coverage details keyed by file URI string, for loadDetailedCoverage. */
-const coverageDetails = new Map<string, vscode.StatementCoverage[]>();
-
-function loadDetailedCoverage(fileCoverage: vscode.FileCoverage): vscode.FileCoverageDetail[] {
-  return coverageDetails.get(fileCoverage.uri.toString()) ?? [];
 }
 
 /**

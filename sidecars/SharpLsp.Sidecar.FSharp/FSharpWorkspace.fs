@@ -252,7 +252,23 @@ let internal buildProjectOptions (state: FSharpWorkspaceState) (fsprojPath: stri
         |> Option.map (snd >> FSharpAssets.packageReferenceArgs)
         |> Option.defaultValue [||]
 
-    let otherOptions = Array.append (frameworkReferenceArgs ()) packageRefs
+    // Cross-language project references: FCS does not resolve a `<ProjectReference>`
+    // to a C# project, so its types (e.g. a C#-defined class used from F#) stay
+    // unresolved and cross-language go-to-definition finds nothing. Wire each
+    // referenced C# project's built output DLL as a `-r:` reference so FCS
+    // resolves the symbol; FSharpMetadataNavigator then decompiles it to a
+    // navigable location. [DEFINITION-CROSSLANG]
+    let projectRefArgs =
+        ProjectReferences.ReadReferencedProjects(fsprojPath)
+        |> Seq.filter (fun proj -> proj.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+        |> Seq.choose (fun proj ->
+            ProjectReferences.FindOutputAssembly(proj)
+            |> Option.ofObj
+            |> Option.map (fun dll -> $"-r:{dll}"))
+        |> Seq.toArray
+
+    let otherOptions =
+        Array.concat [ frameworkReferenceArgs (); packageRefs; projectRefArgs ]
     // GetProjectOptionsFromCommandLineArgs deliberately returns SourceFiles =
     // [||] (sources stay buried in OtherOptions), but project-wide analyses —
     // ParseAndCheckProject for references/rename/code lens, and the
@@ -438,36 +454,59 @@ let private getTypeEntity (ty: FSharpType) =
     if ty.HasTypeDefinition then Some ty.TypeDefinition
     else None
 
+/// Metadata-as-source location for an external symbol (BCL / NuGet / a
+/// referenced C# project). Decompiles the containing type and locates the
+/// declaration. [DEFINITION-CROSSLANG]
+let private metadataLocation (symbolUse: FSharpSymbolUse option) : DefinitionLocation option =
+    symbolUse
+    |> Option.bind (fun su -> FSharpMetadataNavigator.tryResolve su.Symbol)
+    |> Option.map (fun (filePath, startLine, startCol, endLine, endCol) ->
+        { FilePath = filePath
+          Line = startLine
+          Character = startCol
+          EndLine = endLine
+          EndCharacter = endCol })
+
+/// FCS GetDeclarationLocation fallback (can follow into signature files) using
+/// the identifier island's end column.
+let private declarationLocationFallback
+    (checkResults: FSharpCheckFileResults)
+    (source: string)
+    (line: int)
+    (character: int)
+    : DefinitionLocation option =
+    let lines = source.Split('\n')
+    if line >= lines.Length then
+        None
+    else
+        let lineText = lines[line]
+        match QuickParse.GetCompleteIdentifierIsland true lineText character with
+        | None -> None
+        | Some(name, endCol, _) ->
+            match checkResults.GetDeclarationLocation(line + 1, endCol, lineText, [ name ]) with
+            | FindDeclResult.DeclFound declRange -> rangeToLocation declRange
+            | FindDeclResult.DeclNotFound _
+            | FindDeclResult.ExternalDecl _ -> None
+
 /// Extract the declaration location for the symbol at a position.
-/// Prefers the resolved FSharpSymbol's declaration location — robust for
+/// Prefers the resolved FSharpSymbol's own source declaration — robust for
 /// qualified names (Module.member), record fields, DU cases, and cross-file
-/// symbols — and falls back to FCS GetDeclarationLocation (which can follow
-/// into signature files) using the identifier island's end column.
+/// symbols — then decompiled metadata-as-source for external symbols (a C#
+/// project across the language boundary), and finally FCS GetDeclarationLocation.
 let private extractDefinition
     (checkResults: FSharpCheckFileResults)
     (source: string)
     (line: int)
     (character: int)
     : DefinitionLocation option =
-    let fromSymbol =
-        getSymbolUse checkResults source line character
+    let symbolUse = getSymbolUse checkResults source line character
+    let fromSource =
+        symbolUse
         |> Option.bind (fun su -> su.Symbol.DeclarationLocation)
         |> Option.bind rangeToLocation
-    match fromSymbol with
-    | Some _ -> fromSymbol
-    | None ->
-        let lines = source.Split('\n')
-        if line >= lines.Length then
-            None
-        else
-            let lineText = lines[line]
-            match QuickParse.GetCompleteIdentifierIsland true lineText character with
-            | None -> None
-            | Some(name, endCol, _) ->
-                match checkResults.GetDeclarationLocation(line + 1, endCol, lineText, [ name ]) with
-                | FindDeclResult.DeclFound declRange -> rangeToLocation declRange
-                | FindDeclResult.DeclNotFound _
-                | FindDeclResult.ExternalDecl _ -> None
+    fromSource
+    |> Option.orElseWith (fun () -> metadataLocation symbolUse)
+    |> Option.orElseWith (fun () -> declarationLocationFallback checkResults source line character)
 
 /// Get definition location at a position in an F# file.
 let getDefinition
