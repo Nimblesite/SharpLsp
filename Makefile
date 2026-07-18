@@ -51,6 +51,9 @@ PROFILE           ?= release
 CARGO_FLAG         = $(if $(filter release,$(PROFILE)),--release,)
 DOTNET_CFG         = $(if $(filter release,$(PROFILE)),Release,Debug)
 RUST_TEST_THREADS ?= 1
+# [DIST-CI-RUST-SHARDS] CI splits the Rust e2e suite into nextest hash
+# partitions (`_test-rust-shard`); SHARD_COUNT is the total number of slices.
+SHARD_COUNT       ?= 2
 
 VSCODE_DIR  = editors/vscode
 ZED_DIR     = editors/zed
@@ -83,7 +86,8 @@ CHECK_COV = scripts/check-coverage.sh
         _stamp-version \
         _build-rust _build-dotnet _build-vsix _build-zed _build-rider \
         _stage-vsix-binary _stage-sidecars \
-        test-rust _test-rust _test-vsix _test-vsix-smoke _test-dotnet _test-website \
+        test-rust _test-rust _prepare-rust-tests _test-rust-shard \
+        _gate-rust-coverage _test-vsix _test-vsix-smoke _test-dotnet _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
         _package-vsix \
@@ -177,19 +181,43 @@ test: _test-rust _test-vsix _test-dotnet _test-website
 # Public alias — CI and developers call this.
 test-rust: _test-rust
 
-_test-rust: _build-dotnet _stage-sidecars
+# The e2e tests spawn the real sidecars from these paths.
+RUST_E2E_SIDECARS = \
+	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
+	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp"
+
+_prepare-rust-tests: _build-dotnet _stage-sidecars
 	@echo "==> Pre-building ProfileTarget fixture..."
 	dotnet build tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
+
+_test-rust: _prepare-rust-tests
 	@echo "==> Running sharplsp tests with coverage..."
 	# --no-fail-fast is intentional ([TEST-RULES] documented exception): coverage
 	# enforcement requires every test to run so the measured line percentage is
 	# complete; stopping at the first failure would under-report coverage and make
 	# the threshold gate meaningless. A real test failure still fails the build via
 	# nextest's non-zero exit, which then fails `make test`.
-	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
-	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
+	$(RUST_E2E_SIDECARS) \
 		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --no-fail-fast --test-threads $(RUST_TEST_THREADS)
 	@$(CHECK_COV) sharplsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
+
+# [DIST-CI-RUST-SHARDS] One CI slice of the suite: identical tests, identical
+# serialization (RUST_TEST_THREADS), but only the hash:$(SHARD)/$(SHARD_COUNT)
+# nextest partition. Exports lcov instead of JSON so _gate-rust-coverage can
+# union the shards. The coverage gate deliberately does NOT run here — a
+# partition can never meet the full-suite threshold on its own.
+_test-rust-shard: _prepare-rust-tests
+	@test -n "$(SHARD)" || { echo "ERROR: SHARD is required (e.g. make _test-rust-shard SHARD=1)" >&2; exit 1; }
+	@echo "==> Running sharplsp test shard $(SHARD)/$(SHARD_COUNT) with coverage..."
+	$(RUST_E2E_SIDECARS) \
+		cargo llvm-cov nextest --lcov --output-path target/coverage-rust-shard$(SHARD).lcov \
+			--no-fail-fast --test-threads $(RUST_TEST_THREADS) --partition hash:$(SHARD)/$(SHARD_COUNT)
+
+# [DIST-CI-RUST-SHARDS] Union-merge the shard tracefiles and enforce the same
+# ratcheted threshold a single-job run enforces.
+_gate-rust-coverage:
+	@PERCENT="$$(node scripts/merge-lcov.mjs target/coverage-rust.lcov target/coverage-rust-shard*.lcov)" && \
+		$(CHECK_COV) sharplsp "$$PERCENT"
 
 _test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
 	@echo "==> Running VS Code extension tests..."

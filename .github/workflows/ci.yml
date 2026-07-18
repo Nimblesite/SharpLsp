@@ -104,6 +104,11 @@ jobs:
     if: ${{ needs.detect-changes.outputs.manifest_changed == 'true' }}
   lint:
     name: Lint
+    # Test jobs intentionally do NOT `needs:` this job: lint and tests are
+    # independent required gates, and serializing tests behind lint added
+    # ~3 minutes to every PR's critical path. A lint failure still blocks the
+    # merge; `concurrency.cancel-in-progress` bounds wasted compute on
+    # rapid-fire pushes.
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 25
     steps:
@@ -159,12 +164,20 @@ jobs:
       - detect-changes
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   test-rust:
-    name: Test Rust
+    name: Test Rust (shard ${{ matrix.shard }}/2)
     needs:
       - detect-changes
-      - lint
+    # [DIST-CI-RUST-SHARDS]: the e2e suite runs single-threaded (tests spawn
+    # real Roslyn/FCS sidecars), so wall time scales with test count, not
+    # cores. Two nextest hash partitions halve the ~11-minute serial run while
+    # duplicating only ~90s of warm-cache build. Each shard exports lcov; the
+    # single ratcheted gate runs over the union in coverage-rust below.
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -183,6 +196,11 @@ jobs:
           dotnet-version: |
             9.0.x
             10.0.300
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: "~/.nuget/packages"
+          key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}"
+          restore-keys: "${{ runner.os }}-nuget-"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
@@ -191,8 +209,65 @@ jobs:
           dotnet tool install -g dotnet-trace
           dotnet tool install -g dotnet-counters
           dotnet tool install -g dotnet-dump
-      - name: Test Rust with coverage
-        run: make _test-rust
+      - name: Test Rust shard with coverage
+        run: make _test-rust-shard SHARD=${{ matrix.shard }} SHARD_COUNT=2
+      - name: Upload shard coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-rust-shard-${{ matrix.shard }}
+          path: target/coverage-rust-shard${{ matrix.shard }}.lcov
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+  coverage-rust:
+    name: Rust Coverage Gate
+    needs:
+      - detect-changes
+      - test-rust
+    # [DIST-CI-RUST-SHARDS]: every shard tracefile carries the full
+    # instrumented line set (unexecuted lines as DA:<line>,0), so the union
+    # reproduces exactly the line percentage of an unsharded run. No shard can
+    # meet the threshold alone; the ratchet gate (check-coverage.sh) runs here
+    # once, over the merged total.
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-rust-shard-*
+          merge-multiple: true
+          path: target
+      - name: Merge shard coverage and enforce threshold
+        run: make _gate-rust-coverage
+      - name: Upload coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-rust
+          path: |
+            target/coverage-rust.lcov
+            coverage-thresholds.json
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+  version-contract:
+    name: Verify Version Contract
+    needs:
+      - detect-changes
+    # Implements [DIST-VERSION-OUTPUT] + the version line of [DIST-CI-SMOKE].
+    # Moved out of the Rust test job ([DIST-CI-RUST-SHARDS]): the release-
+    # profile build shares no artifacts with the instrumented test build, so
+    # running it there serialized ~90s onto the slowest job for zero reuse.
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
       - name: Build release binary
         run: cargo build --release --bin sharplsp
       - name: Verify sharplsp version contract
@@ -202,19 +277,11 @@ jobs:
           VERSION="$(cargo metadata --no-deps --format-version 1 | node -e 'const fs=require("node:fs"); const meta=JSON.parse(fs.readFileSync(0,"utf8")); const pkg=meta.packages.find((item)=>item.name==="sharplsp"); if(!pkg) throw new Error("sharplsp package missing"); process.stdout.write(pkg.version);')"
           ./target/release/sharplsp --version | grep -Fx "sharplsp ${VERSION}"
           ./target/release/sharplsp --version --json | VERSION="${VERSION}" node -e 'const fs=require("node:fs"); const actual=JSON.parse(fs.readFileSync(0,"utf8")); const expected={name:"sharplsp",version:process.env.VERSION,kind:"lsp",language:"rust",product:"sharplsp"}; for (const [key,value] of Object.entries(expected)) { if (actual[key] !== value) throw new Error(`${key}: expected ${value}, got ${actual[key]}`); }'
-      - name: Upload coverage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-rust
-          path: |
-            target/coverage-rust.json
-            coverage-thresholds.json
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   test-dotnet:
     name: Test .NET
     needs:
       - detect-changes
-      - lint
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 12
     steps:
@@ -244,7 +311,6 @@ jobs:
     name: Test .NET Transport (Windows)
     needs:
       - detect-changes
-      - lint
     # Implements [DIST-CI-WIN-TRANSPORT]: the named-pipe arm of the sidecar IPC
     # transport only executes on Windows. An ubuntu-only matrix never runs it,
     # which is how GitHub #110 (sidecars exit before READY on Windows) shipped.
@@ -266,7 +332,6 @@ jobs:
     name: Test VS Code
     needs:
       - detect-changes
-      - lint
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     # TIMEOUT EXCEPTION: this job builds the Rust binary + .NET sidecars,
     # installs .NET 9 + 10, downloads the VS Code test host, then runs the full
@@ -322,7 +387,6 @@ jobs:
     name: Test VS Code (Windows smoke)
     needs:
       - detect-changes
-      - lint
     # Implements [DIST-CI-WIN-VSIX]: a SUBSET of the VS Code e2e suite — the
     # headline user interactions (C# + F# completion, hover, go-to-definition,
     # find-references, diagnostics) — driven through the REAL LSP (sharplsp host
