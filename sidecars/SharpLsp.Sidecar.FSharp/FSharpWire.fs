@@ -183,7 +183,10 @@ type CompletionItemResult =
       [<Key(1)>] Kind: string
       [<Key(2)>] Detail: string
       [<Key(3)>] InsertText: string
-      [<Key(4)>] Index: int }
+      [<Key(4)>] Index: int
+      /// Edit that REPLACES the identifier span at the caret so acceptance does
+      /// not append the member name to the trigger text (GitHub #178).
+      [<Key(5)>] TextEdit: TextEditResult }
 
 [<MessagePackObject(AllowPrivate = true)>]
 [<NoComparison; NoEquality>]
@@ -362,7 +365,13 @@ module internal Helpers =
           Kind = entry.Kind
           Detail = (match entry.Detail with Some value -> value | None -> Unchecked.defaultof<string>)
           InsertText = entry.InsertText
-          Index = entry.Index }
+          Index = entry.Index
+          TextEdit =
+            { StartLine = entry.EditStartLine
+              StartCharacter = entry.EditStartCharacter
+              EndLine = entry.EditEndLine
+              EndCharacter = entry.EditEndCharacter
+              NewText = entry.InsertText } }
 
     /// Group flat rename edits into a per-document workspace edit.
     let toWorkspaceEdit (edits: FSharpCodeActions.RawEdit list) : WorkspaceEditResult =

@@ -53,6 +53,85 @@ fn test_full_stack_completion_returns_items() {
     client.wait_with_timeout();
 }
 
+/// Regression test for GitHub #178: member completion after `.` must return a
+/// `textEdit` that REPLACES the identifier at the caret, not a bare `insertText`
+/// the client appends. Accepting `Name` at `calc.|Name` must yield `calc.Name`,
+/// never `calc.NameName`. Implements [COMPLETION-EDIT-REPLACE].
+#[test]
+fn test_member_completion_replaces_identifier_not_appends_issue_178() {
+    require_dotnet();
+
+    let (_tmp, root_uri, file_uri, source) = create_test_workspace();
+    let mut client = LspClient::start_verbose();
+    let _ = client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+
+    // Wait until the sidecar has loaded the workspace (hover answers).
+    let _ = poll_hover_until_ready(&mut client, &file_uri, 3, 14, Duration::from_secs(90));
+
+    // `        var name = calc.Name;` is 0-based line 43; char 24 is right after
+    // `calc.`, with the existing `Name` identifier immediately following the caret.
+    let (comp_line, comp_char) = (43_u32, 24_u32);
+    let member = "Name";
+
+    // Poll completion until the sidecar offers the member.
+    let deadline = Instant::now() + Duration::from_mins(1);
+    let name_item = loop {
+        let resp = client.request(
+            "textDocument/completion",
+            json!({
+                "textDocument": { "uri": file_uri },
+                "position": { "line": comp_line, "character": comp_char }
+            }),
+        );
+        assert!(
+            resp.get("error").is_none(),
+            "completion must not error: {resp}"
+        );
+        let found = resp["result"]
+            .as_array()
+            .or_else(|| resp["result"]["items"].as_array())
+            .and_then(|items| {
+                items
+                    .iter()
+                    .find(|i| i["label"].as_str() == Some(member))
+                    .cloned()
+            });
+        if let Some(item) = found {
+            break item;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "completion never offered `{member}` after `calc.`: {resp}"
+        );
+        std::thread::sleep(Duration::from_secs(2));
+    };
+
+    // The bug: the item carries only `insertText`, so the editor appends it to
+    // the trigger text, producing `calc.NameName`. The fix supplies a `textEdit`
+    // whose range covers the identifier at the caret so acceptance replaces it.
+    let text_edit = name_item["textEdit"].clone();
+    assert!(
+        text_edit.is_object(),
+        "completion item `{member}` must carry a textEdit that replaces the \
+         identifier at the caret (GitHub #178), got item: {name_item}"
+    );
+
+    // Applying the edit must REPLACE the identifier, never duplicate it.
+    let edited = apply_text_edits(&source, std::slice::from_ref(&text_edit));
+    assert!(
+        edited.contains("var name = calc.Name;"),
+        "applying the completion textEdit must yield `calc.Name` (replace), got:\n{edited}"
+    );
+    assert!(
+        !edited.contains("calc.NameName"),
+        "completion textEdit must not duplicate the identifier (GitHub #178), got:\n{edited}"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
 #[test]
 fn test_full_stack_completion_no_sidecar_returns_postfix_or_null() {
     // Without a workspace root the C# sidecar is not started; completion
