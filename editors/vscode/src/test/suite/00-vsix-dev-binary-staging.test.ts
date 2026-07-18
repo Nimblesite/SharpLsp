@@ -1,13 +1,17 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { detectRuntimePlatform } from '../../platform.js';
+import { detectRuntimePlatform, exeName } from '../../platform.js';
 
 suite('VSIX dev binary staging', () => {
   test('keeps bundled sharplsp available for the development extension host', () => {
     const extensionRoot = path.resolve(__dirname, '../../..');
-    const binaryName = process.platform === 'win32' ? 'sharplsp.exe' : 'sharplsp';
-    const bundledBinary = path.join(extensionRoot, 'bin', detectRuntimePlatform(), binaryName);
+    const bundledBinary = path.join(
+      extensionRoot,
+      'bin',
+      detectRuntimePlatform(),
+      exeName('sharplsp'),
+    );
 
     assertStagedComponent(bundledBinary, 'sharplsp');
   });
@@ -15,12 +19,15 @@ suite('VSIX dev binary staging', () => {
   test('keeps both required sidecars bundled for the development extension host', () => {
     const extensionRoot = path.resolve(__dirname, '../../..');
 
+    // Sidecars are staged with the host's executable extension (`.exe` on
+    // Windows) exactly as shipwright's `bin/all/…${exe}` bundlePath resolves
+    // them; an extensionless check is a false negative on Windows.
     assertStagedComponent(
-      path.join(extensionRoot, 'bin', 'all', 'sharplsp-sidecar-csharp'),
+      path.join(extensionRoot, 'bin', 'all', exeName('sharplsp-sidecar-csharp')),
       'sharplsp-sidecar-csharp',
     );
     assertStagedComponent(
-      path.join(extensionRoot, 'bin', 'all', 'sharplsp-sidecar-fsharp'),
+      path.join(extensionRoot, 'bin', 'all', exeName('sharplsp-sidecar-fsharp')),
       'sharplsp-sidecar-fsharp',
     );
   });

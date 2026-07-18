@@ -43,6 +43,7 @@
   <ItemGroup>
     <Compile Include="Hover/FSharpHoverBuilder.fs" />
     <Compile Include="FSharpAssets.fs" />
+    <Compile Include="FSharpMetadataNavigator.fs" />
     <Compile Include="FSharpWorkspace.fs" />
     <Compile Include="FSharpPackages.fs" />
     <Compile Include="FSharpReferences.fs" />

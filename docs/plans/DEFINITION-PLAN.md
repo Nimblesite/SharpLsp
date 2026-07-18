@@ -118,11 +118,19 @@ The remaining work covers F# sidecar navigation, metadata/decompiled source navi
 
 ### Cross-Language Navigation
 
+Implemented via **metadata-as-source**: each engine wires the *other* language's
+referenced project output DLL into its own compilation and decompiles the target
+type, so navigation crosses the boundary without a cross-sidecar symbol index.
+See `[DEFINITION-CROSSLANG]`.
+
 - [x] Design cross-sidecar fallback routing in Rust host — `pick_sidecar_with_fallback` returns `(primary, fallback)`
-- [x] Implement C# → F# definition resolution — primary sidecar returns empty → Rust host retries with F# sidecar
-- [x] Implement F# → C# definition resolution — primary sidecar returns empty → Rust host retries with C# sidecar
 - [x] `is_empty_nav_result` detects null/empty responses to trigger cross-language fallback
-- [ ] E2E test: cross-language navigation on a mixed C#/F# solution
+- [x] Shared `<ProjectReference>` resolver in Common — `ProjectReferences.ReadReferencedProjects` / `FindOutputAssembly`
+- [x] Shared metadata-as-source decompiler in Common — `MetadataDecompiler` (used by both sidecars; C# `MetadataNavigator` delegates to it)
+- [x] C# → F#: re-attach the dropped F# `<ProjectReference>` output DLL as a metadata reference and drop the empty stub project — `WorkspaceManager.AddCrossLanguageMetadataReferences`
+- [x] F# → C#: wire referenced C# project output DLLs into FCS options (`buildProjectOptions`) + `FSharpMetadataNavigator` decompiles external symbols in `extractDefinition`
+- [x] E2E test: cross-language navigation on a mixed C#/F# solution — `test_cross_language_definition_csharp_to_fsharp`, `test_cross_language_definition_fsharp_to_csharp` (`tests/e2e_modules/definition_cross_language.rs`)
+- [ ] Source-to-source cross-language navigation (land in the original `.fs`/`.cs` rather than decompiled metadata) — needs a cross-sidecar symbol index (P2, Phase 4)
 
 ### Testing — Rust E2E (`tests/lsp_e2e.rs`)
 

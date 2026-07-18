@@ -20,14 +20,8 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import {
-  buildFilterArgs,
-  findCoberturaFile,
-  isExpectoTest,
-  isFsCheckTest,
-  isTestName,
-  parseCoberturaXml,
-} from '../../testing.js';
+import { buildFilterArgs, isExpectoTest, isFsCheckTest, isTestName } from '../../testing.js';
+import { findCoberturaFile, parseCoberturaXml } from '../../test-coverage.js';
 import {
   extractCSharpMethodName,
   extractFSharpFunctionName,

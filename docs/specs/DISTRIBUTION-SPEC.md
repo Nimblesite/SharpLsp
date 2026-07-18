@@ -306,6 +306,15 @@ The .NET sidecars are platform-neutral assemblies shipped identically in every V
 
 Both listener flavors MUST restrict the endpoint to the current user: `0600` on the Unix domain socket, `PipeOptions.CurrentUserOnly` on the named pipe server. The endpoint names are deterministic, so an unrestricted endpoint is claimable/connectable by any co-located local user. CI MUST run the sidecar transport tests on a Windows runner — an ubuntu-only matrix never executes the named-pipe arm, which is how GitHub #110 shipped.
 
+## [DIST-CI-WIN-VSIX]
+
+The transport tests ([DIST-CI-WIN-TRANSPORT]) prove the named pipes carry frames; they do NOT prove the whole editor experience works on top of them. CI MUST therefore also run a **subset** of the VS Code end-to-end suite on a Windows runner (`test-vsix-windows` in `ci.yml`, driven by the `_test-vsix-smoke` Make target). The subset is the headline user interactions, driven through the REAL LSP (release-built `sharplsp` host + Roslyn/FCS sidecars) inside the actual VS Code extension host over win32 named-pipe IPC:
+
+- **C#** — semantic completion (with concrete symbol kinds), hover / quick info, go-to-definition + find-references, and diagnostics.
+- **F#** — hover, go-to-definition, completion, and diagnostics (F# is a first-class citizen; its headline features are gated on Windows too, not just C#'s).
+
+Selection is by `MOCHA_GREP` regex applied by the inner mocha runner; the source of truth for the subset is `VSIX_SMOKE_GREP` in the `Makefile` (single definition, not duplicated into CI YAML). The Windows job deliberately runs **without coverage** and does not enforce the coverage gate — a subset can never meet the line threshold, so the Ubuntu-only `test-vsix` job owns the full suite and coverage. The full suite stays Ubuntu-only for wall-clock; without this Windows smoke gate, nothing exercises the extension host + sidecar IPC end-to-end on Windows (the same blind spot class as GitHub #110). The LSP e2e temp-dir helper MUST fall back to `os.tmpdir()` (never a hardcoded `/tmp`) so these suites run on Windows.
+
 ## [DIST-SECRETS]
 
 The VS Code Marketplace publishes **passwordless via Microsoft Entra ID OIDC** (workload identity federation) — there is **no** long-lived Marketplace PAT. The `release.yml` `publish-marketplace` job runs in the `release` GitHub Environment so its OIDC subject is the deterministic `repo:Nimblesite/SharpLsp:environment:release`, which one Entra federated credential trusts. Open VSX has **no** OIDC/trusted-publishing path (verified 2026), so it still requires a long-lived access token.

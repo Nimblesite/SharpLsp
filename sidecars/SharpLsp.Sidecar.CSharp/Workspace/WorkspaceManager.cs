@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.Text;
 using Outcome;
 using Serilog;
 using SharpLsp.Sidecar.Common.Logging;
+using SharpLsp.Sidecar.Common.Solutions;
 using SharpLsp.Sidecar.CSharp.Hover;
 using AllDiagnosticsResult = Outcome.Result<
     System.Collections.Generic.Dictionary<
@@ -583,7 +584,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         await _solutionMutationLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            _solution = loaded;
+            _solution = AddCrossLanguageMetadataReferences(loaded);
             ReplayPendingTextEdits();
         }
         finally
@@ -655,6 +656,154 @@ internal sealed partial class WorkspaceManager : IDisposable
             .OpenProjectAsync(target, cancellationToken: ct)
             .ConfigureAwait(false);
         return project.Solution;
+    }
+
+    /// <summary>
+    /// Replace every cross-language <c>&lt;ProjectReference&gt;</c> with a
+    /// metadata reference to the referenced project's built output assembly.
+    /// </summary>
+    /// <remarks>
+    /// Roslyn's <c>MSBuildWorkspace</c> has no F# language service, so it loads a
+    /// referenced <c>.fsproj</c> as an <em>empty</em> C# project. That empty
+    /// project still carries the F# assembly's name, so it is linked
+    /// project-to-project AND its (type-less) compilation shadows the real
+    /// built DLL — go-to-definition into F# finds nothing. The fix, per
+    /// cross-language reference: drop the empty project-to-project reference,
+    /// attach the built DLL as a metadata reference, and remove the orphaned
+    /// empty stub project so its assembly identity can no longer shadow the DLL.
+    /// The referenced symbol then resolves and <see cref="MetadataNavigator"/>
+    /// decompiles it to a navigable location. Same-language (.csproj) references
+    /// are already linked correctly and are left untouched. Implements
+    /// [DEFINITION-CROSSLANG].
+    /// </remarks>
+    private static Solution AddCrossLanguageMetadataReferences(Solution solution)
+    {
+        var fsharpStubs = solution
+            .Projects.Where(project =>
+                project.FilePath is not null
+                && project.FilePath.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase)
+            )
+            .ToDictionary(project => NormalizedPath(project.FilePath!), project => project.Id);
+
+        foreach (var projectId in solution.ProjectIds.ToList())
+        {
+            var project = solution.GetProject(projectId);
+            if (project?.FilePath?.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) != true)
+            {
+                continue;
+            }
+
+            foreach (var referenced in ProjectReferences.ReadReferencedProjects(project.FilePath))
+            {
+                if (!referenced.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                solution = ReplaceCrossLanguageReference(
+                    solution,
+                    projectId,
+                    referenced,
+                    fsharpStubs
+                );
+                project = solution.GetProject(projectId)!;
+            }
+        }
+
+        // Drop the now-unreferenced empty F# stub projects.
+        foreach (var stubId in fsharpStubs.Values)
+        {
+            if (solution.GetProject(stubId) is not null)
+            {
+                solution = solution.RemoveProject(stubId);
+            }
+        }
+
+        return solution;
+    }
+
+    /// <summary>
+    /// Swap a single C# project's reference to an F# project for a metadata
+    /// reference to that project's built DLL.
+    /// </summary>
+    private static Solution ReplaceCrossLanguageReference(
+        Solution solution,
+        ProjectId projectId,
+        string referencedFsproj,
+        Dictionary<string, ProjectId> fsharpStubs
+    )
+    {
+        var dll = ProjectReferences.FindOutputAssembly(referencedFsproj);
+        if (dll is null)
+        {
+            return solution;
+        }
+
+        var project = solution.GetProject(projectId)!;
+
+        // Remove the empty project-to-project reference to the F# stub, if any.
+        if (fsharpStubs.TryGetValue(NormalizedPath(referencedFsproj), out var stubId))
+        {
+            var stubRef = project.ProjectReferences.FirstOrDefault(reference =>
+                reference.ProjectId == stubId
+            );
+            if (stubRef is not null)
+            {
+                solution = solution.RemoveProjectReference(projectId, stubRef);
+                project = solution.GetProject(projectId)!;
+            }
+        }
+
+        // Add the referenced project's output DLL *and its sibling assemblies*.
+        // An F# assembly carries a hard dependency on FSharp.Core (and possibly
+        // other packages) that sits alongside it in the output directory; without
+        // those, Roslyn cannot fully load the F# type and the referenced symbol
+        // stays unresolved. Dedup by simple name so framework assemblies already
+        // in the compilation are never doubled.
+        var outputDir = Path.GetDirectoryName(dll);
+        if (outputDir is null)
+        {
+            return solution;
+        }
+
+        foreach (var sibling in Directory.EnumerateFiles(outputDir, "*.dll"))
+        {
+            if (!AlreadyReferencesSimpleName(solution.GetProject(projectId)!, sibling))
+            {
+                solution = solution.AddMetadataReference(
+                    projectId,
+                    MetadataReference.CreateFromFile(sibling)
+                );
+            }
+        }
+
+        Log.Debug(
+            "[CrossLang] Wired {Dll} (+ siblings from {Dir}) into project {Project}",
+            Path.GetFileName(dll),
+            outputDir,
+            project.Name
+        );
+        return solution;
+    }
+
+    /// <summary>Whether the project already references an assembly with the same simple name.</summary>
+    private static bool AlreadyReferencesSimpleName(Project project, string dll)
+    {
+        var simpleName = Path.GetFileNameWithoutExtension(dll);
+        return project
+            .MetadataReferences.OfType<PortableExecutableReference>()
+            .Any(reference =>
+                string.Equals(
+                    Path.GetFileNameWithoutExtension(reference.FilePath),
+                    simpleName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            );
+    }
+
+    private static string NormalizedPath(string path)
+    {
+        return SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath(path);
     }
 
     // Implements [RENAME-PREPARE]

@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { detectRuntimePlatform } from '../../platform.js';
+import { detectRuntimePlatform, exeName } from '../../platform.js';
 
 const extensionId = 'nimblesite.sharplsp';
 const lspComponentId = 'sharplsp';
@@ -24,8 +24,7 @@ suite('Bundled binary resolution', () => {
     const ext = vscode.extensions.getExtension(extensionId);
     assert.ok(ext !== undefined, `${extensionId} must be loaded in the VS Code test host`);
 
-    const binaryName = process.platform === 'win32' ? 'sharplsp.exe' : 'sharplsp';
-    const bundledBin = path.join(ext.extensionPath, 'bin', platform, binaryName);
+    const bundledBin = path.join(ext.extensionPath, 'bin', platform, exeName('sharplsp'));
     assert.ok(fs.existsSync(bundledBin), `Bundled binary must exist at ${bundledBin}`);
 
     for (const name of envVarsThatBypassBundledResolution) {

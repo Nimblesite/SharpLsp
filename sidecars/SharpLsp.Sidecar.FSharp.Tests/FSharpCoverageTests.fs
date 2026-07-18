@@ -1200,17 +1200,21 @@ let ``WS getTypeDefinition on a union case usage returns None`` () = task {
 }
 
 [<Fact>]
-let ``WS getDefinition on an external library symbol returns None`` () = task {
-    // External framework symbols report DeclNotFound/ExternalDecl from FCS,
-    // which the definition handler maps to None.
+let ``WS getDefinition on an external library symbol resolves to metadata-as-source`` () = task {
+    // External framework symbols have no in-source declaration; rather than
+    // returning None, the definition handler decompiles the containing type to
+    // navigable metadata-as-source (as the C# sidecar does). [DEFINITION-CROSSLANG]
     let src =
         "module M\n" +
         "let s = System.String.Empty\n"
     let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
-        // "Empty" on line 1; external — no in-source declaration found.
+        // "Empty" on line 1; external — resolves into decompiled System.String.
         let! def = FSharpWorkspace.getDefinition state paths[0] 1 24
-        Assert.True(def.IsNone)
+        Assert.True(def.IsSome, "external symbol must resolve to metadata-as-source")
+        let loc = def.Value
+        Assert.Contains("sharplsp-decompiled", loc.FilePath)
+        Assert.EndsWith(".cs", loc.FilePath)
     finally
         cleanup dir
 }

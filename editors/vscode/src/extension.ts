@@ -46,7 +46,7 @@ import { registerScaffoldingCommands } from './scaffolding.js';
 import { registerFsiCommands } from './fsi.js';
 import { registerHotReloadCommands } from './hot-reload.js';
 import { registerDebugAdapter } from './debug.js';
-import { registerTestExplorer } from './testing.js';
+import { registerTestExplorer, SharpLspTestController } from './testing.js';
 import { registerTestStatusLens } from './test-lens.js';
 import { initProjectDepsStore } from './project-deps-store.js';
 
@@ -56,12 +56,15 @@ export interface SharpLspExtensionApi {
   readonly profilerProvider: profiler.ProfilerTreeProvider;
   /** Get the active LSP client, if started. Used by tests. */
   readonly getLspClient: () => LanguageClient | undefined;
+  /** The Test Explorer controller. Exposed so tests can drive/observe discovery. */
+  readonly testController: SharpLspTestController;
 }
 
 let lspClient: LanguageClient | undefined;
 let statusBar: SharpLspStatusBar | undefined;
 let explorerProvider: SolutionExplorerProvider | undefined;
 let profilerProvider: profiler.ProfilerTreeProvider | undefined;
+let testController: SharpLspTestController | undefined;
 
 interface DeploymentDiagnostic {
   readonly componentId: string;
@@ -178,7 +181,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   registerFsiCommands(context);
   registerHotReloadCommands(context);
   registerDebugAdapter(context);
-  const testController = registerTestExplorer(context);
+  testController = registerTestExplorer(context);
   registerTestStatusLens(context, testController);
   log.info('step 10: wireDocumentChangeRefresh');
   wireDocumentChangeRefresh(context);
@@ -263,6 +266,7 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
     explorerProvider,
     profilerProvider,
     getLspClient: () => lspClient,
+    testController,
   };
 }
 
@@ -293,6 +297,7 @@ function degradedApi(): SharpLspExtensionApi {
     explorerProvider: explorerProvider ?? new SolutionExplorerProvider(),
     profilerProvider: profilerProvider ?? new profiler.ProfilerTreeProvider(),
     getLspClient: () => lspClient,
+    testController: testController ?? new SharpLspTestController(),
   };
 }
 
