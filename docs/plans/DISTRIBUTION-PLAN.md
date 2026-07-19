@@ -131,6 +131,14 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 
 - [x] Add `dotnet pack` step to `ci.yml` lint job
 
+### CI wall-clock ([DIST-CI-RUST-SHARDS])
+
+- [x] Split `test-rust` into 2 nextest hash-partition shards (`make _test-rust-shard`)
+- [x] Union-merge shard lcov + single ratchet gate (`coverage-rust` job, `scripts/merge-lcov.mjs`)
+- [x] Move the `--version` contract checks to a dedicated `version-contract` job
+- [x] Run test jobs concurrently with `lint` (removed `needs: lint`)
+- [ ] Confirm shard wall times on a real PR run; rebalance `SHARD_COUNT` if a shard drifts past ~6 min
+
 ### VS Code extension (`install.ts`)
 
 - [x] Replace HTTPS download path with package-manager-driven install

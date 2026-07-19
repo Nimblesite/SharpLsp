@@ -294,6 +294,17 @@ All CI jobs that run `vsce package` or `vsce publish` MUST use `node-version: '2
 
 Stable toolchain. Cross-compilation targets must be added via `dtolnay/rust-toolchain@stable` with explicit `targets:`.
 
+## [DIST-CI-RUST-SHARDS]
+
+The Rust e2e suite runs single-threaded (`RUST_TEST_THREADS=1` — tests spawn real Roslyn/FCS sidecars), so its wall time scales with test count, not runner cores. CI therefore splits it into `SHARD_COUNT` nextest **hash partitions** (`make _test-rust-shard SHARD=<n>`, i.e. `--partition hash:<n>/<count>`), run as a `test-rust` job matrix.
+
+Invariants:
+
+- **Same tests, same serialization.** A shard changes only *which* slice of the suite runs, never how: `--no-fail-fast` and the `--test-threads` serialization apply to every shard. Sharding MUST NOT skip, filter, or reorder tests beyond the partition itself.
+- **One gate, over the union.** Each shard exports lcov (`target/coverage-rust-shard<n>.lcov`). No shard can meet the line threshold alone, so no shard runs the coverage gate; the `coverage-rust` job union-merges the tracefiles (`scripts/merge-lcov.mjs`) and enforces the identical `check-coverage.sh` ratchet a single-job run enforces. Every shard tracefile carries the full instrumented line set (unexecuted lines as `DA:<line>,0`), so the union reproduces exactly the line percentage of an unsharded run.
+- **Local runs stay unsharded.** `make test` / `make _test-rust` remain the single-invocation JSON + inline-gate path; sharding is a CI wall-clock concern only.
+- **Version contract is its own job.** The `--version` contract checks ([DIST-VERSION-OUTPUT]) run in the `version-contract` job: the release-profile build shares no artifacts with the instrumented test build, so bundling it into a test job serializes it onto the critical path for zero reuse.
+
 ## [DIST-CI-WIN-TRANSPORT]
 
 `tokio::net::UnixStream` is **unix-only** and MUST NOT be used unconditionally. All sidecar transport code MUST be gated:
