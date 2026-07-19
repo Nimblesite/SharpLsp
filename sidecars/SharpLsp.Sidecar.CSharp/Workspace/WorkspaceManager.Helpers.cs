@@ -85,34 +85,74 @@ internal sealed partial class WorkspaceManager
 
         _lastCompletionList = completions;
         _lastCompletionDocument = document;
-        return MapCompletionItems(completions);
+        var editSpan = ComputeCompletionEditSpan(service, text, position);
+        return MapCompletionItems(completions, editSpan);
     }
 
-    private static List<CompletionItem> MapCompletionItems(CompletionList completions)
+    // Roslyn's default completion span covers the typed prefix to the LEFT of the
+    // caret; extend it over any identifier characters that already follow the caret
+    // so an accepted item REPLACES an existing member name instead of being appended
+    // to it (`Console.WriteLineWriteLine`). GitHub #178.
+    // Implements [COMPLETION-EDIT-REPLACE].
+    private static LinePositionSpan ComputeCompletionEditSpan(
+        CompletionService service,
+        SourceText text,
+        int position
+    )
     {
-        var results = new List<CompletionItem>();
+        var span = service.GetDefaultCompletionListSpan(text, position);
+        var end = span.End;
+        while (
+            end < text.Length
+            && Microsoft.CodeAnalysis.CSharp.SyntaxFacts.IsIdentifierPartCharacter(text[end])
+        )
+        {
+            end++;
+        }
+
+        return text.Lines.GetLinePositionSpan(TextSpan.FromBounds(span.Start, end));
+    }
+
+    private static List<CompletionItem> MapCompletionItems(
+        CompletionList completions,
+        LinePositionSpan editSpan
+    )
+    {
+        var results = new List<CompletionItem>(completions.ItemsList.Count);
         for (var i = 0; i < completions.ItemsList.Count; i++)
         {
-            var item = completions.ItemsList[i];
-            // Items from unimported namespaces have InlineDescription set to the namespace.
-            var hasImportHint =
-                item.InlineDescription.Length > 0 && !string.IsNullOrEmpty(item.InlineDescription);
-            var detail = hasImportHint
-                ? $"(import) {item.InlineDescription}"
-                : item.InlineDescription;
-            results.Add(
-                new CompletionItem
-                {
-                    Label = item.DisplayText,
-                    Kind = item.Tags.Length > 0 ? item.Tags[0] : "Text",
-                    Detail = detail,
-                    InsertText = item.FilterText,
-                    Index = i,
-                }
-            );
+            results.Add(MapOneCompletionItem(completions.ItemsList[i], i, editSpan));
         }
 
         return results;
+    }
+
+    private static CompletionItem MapOneCompletionItem(
+        Microsoft.CodeAnalysis.Completion.CompletionItem item,
+        int index,
+        LinePositionSpan editSpan
+    )
+    {
+        // Items from unimported namespaces have InlineDescription set to the namespace.
+        var hasImportHint =
+            item.InlineDescription.Length > 0 && !string.IsNullOrEmpty(item.InlineDescription);
+        var detail = hasImportHint ? $"(import) {item.InlineDescription}" : item.InlineDescription;
+        return new CompletionItem
+        {
+            Label = item.DisplayText,
+            Kind = item.Tags.Length > 0 ? item.Tags[0] : "Text",
+            Detail = detail,
+            InsertText = item.FilterText,
+            Index = index,
+            TextEdit = new TextEditResult
+            {
+                StartLine = editSpan.Start.Line,
+                StartCharacter = editSpan.Start.Character,
+                EndLine = editSpan.End.Line,
+                EndCharacter = editSpan.End.Character,
+                NewText = item.FilterText,
+            },
+        };
     }
 
     internal async Task<CompletionResolveResult> ResolveCompletionAsync(
