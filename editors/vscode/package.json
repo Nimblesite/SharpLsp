@@ -1045,13 +1045,13 @@
   "dependencies": {
     "@nimblesite/shipwright-vscode": "^0.10.0",
     "fast-xml-parser": "^5.10.0",
-    "vscode-languageclient": "^10.1.0"
+    "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/mocha": "^10.0.6",
     "@types/node": "^26.1.1",
-    "@types/vscode": "^1.125.0",
+    "@types/vscode": "^1.99.0",
     "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.64.0",
     "@vscode/test-cli": "^0.0.15",
@@ -1062,7 +1062,7 @@
     "glob": "^13.0.6",
     "mocha": "^11.7.6",
     "playwright": "^1.61.1",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.64.0"
   },
   "files": [
