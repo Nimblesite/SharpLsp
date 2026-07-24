@@ -1044,7 +1044,7 @@
   },
   "dependencies": {
     "@nimblesite/shipwright-vscode": "^0.10.0",
-    "fast-xml-parser": "^5.10.0",
+    "fast-xml-parser": "^5.10.1",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
