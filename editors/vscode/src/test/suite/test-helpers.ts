@@ -356,6 +356,6 @@ export async function takeScreenshot(filename: string): Promise<void> {
 
 // ── Utilities ────────────────────────────────────────────────────
 
-function sleep(ms: number): Promise<void> {
+export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

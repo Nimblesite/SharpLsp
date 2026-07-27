@@ -119,7 +119,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 | Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
-| Test discovery (xUnit, NUnit, MSTest) | Yes | No | **MISSING** |
+| Test discovery (xUnit, NUnit, MSTest) | Yes | Yes | Done — `[TEST-DISCOVERY-FQN]` |
 | Run tests from editor | Yes | No | **MISSING** |
 | Run tests from Test Explorer | Yes | No | **MISSING** |
 | Debug tests | Yes | No | **MISSING** |
@@ -254,11 +254,11 @@ Features users expect within the first day of use.
   - [ ] F# debugging support (same adapter)
 
 - [ ] **P2.2: Test Explorer**
-  - [ ] Test discovery via `dotnet test --list-tests` or Roslyn test symbol detection
-  - [ ] VS Code Test Controller API integration
-  - [ ] xUnit test discovery and execution
-  - [ ] NUnit test discovery and execution
-  - [ ] MSTest test discovery and execution
+  - [x] Test discovery by VSTest `TestCase.FullyQualifiedName` (`--ListFullyQualifiedTests`), spec `[TEST-DISCOVERY-FQN]`
+  - [x] VS Code Test Controller API integration
+  - [x] xUnit test discovery and execution
+  - [x] NUnit test discovery and execution
+  - [x] MSTest test discovery and execution
   - [ ] Run individual test, test class, test namespace
   - [ ] Debug individual test
   - [ ] Test result display (pass/fail/skip with duration)

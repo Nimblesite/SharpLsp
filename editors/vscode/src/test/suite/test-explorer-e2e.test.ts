@@ -13,17 +13,25 @@
 //   • the shared `state.solutionPath` signal (loading a solution),
 //   • the extension-owned `TestController` exposed on the public API,
 //   • `dotnet test --list-tests` / `dotnet test --filter` through the controller.
+//
+// Covers [TEST-DISCOVERY-FQN].
 import * as assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { parseTestList } from '../../test-discovery.js';
-import { pollUntilResult } from './test-helpers';
-
-const EXTENSION_ID = 'nimblesite.sharplsp';
+import {
+  XUNIT_PACKAGES,
+  collectItemIds,
+  createSolution,
+  dotnet,
+  drainDiscovery,
+  projectXml,
+  writeProject,
+} from './dotnet-fixtures';
+import { EXTENSION_ID, pollUntilResult } from './test-helpers';
 
 // Fully-qualified names the fixtures MUST expose. C#: namespace.class.method.
 // F#: module.function. The spaced name is an idiomatic F# backtick binding whose
@@ -34,20 +42,7 @@ const FS_FACT = 'Fs.Sample.Tests.addsTwoNumbers';
 const FS_FACT_2 = 'Fs.Sample.Tests.subtractsTwoNumbers';
 const FS_FACT_SPACED = 'Fs.Sample.Tests.adds two numbers with spaces';
 
-const CSPROJ = [
-  '<Project Sdk="Microsoft.NET.Sdk">',
-  '  <PropertyGroup>',
-  '    <TargetFramework>net10.0</TargetFramework>',
-  '    <Nullable>enable</Nullable>',
-  '    <IsPackable>false</IsPackable>',
-  '  </PropertyGroup>',
-  '  <ItemGroup>',
-  '    <PackageReference Include="xunit" Version="2.9.2" />',
-  '    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />',
-  '    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />',
-  '  </ItemGroup>',
-  '</Project>',
-].join('\n');
+const CSPROJ = projectXml(XUNIT_PACKAGES);
 
 const CS_TESTS = [
   'using Xunit;',
@@ -62,22 +57,7 @@ const CS_TESTS = [
   '',
 ].join('\n');
 
-const FSPROJ = [
-  '<Project Sdk="Microsoft.NET.Sdk">',
-  '  <PropertyGroup>',
-  '    <TargetFramework>net10.0</TargetFramework>',
-  '    <IsPackable>false</IsPackable>',
-  '  </PropertyGroup>',
-  '  <ItemGroup>',
-  '    <Compile Include="Tests.fs" />',
-  '  </ItemGroup>',
-  '  <ItemGroup>',
-  '    <PackageReference Include="xunit" Version="2.9.2" />',
-  '    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />',
-  '    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />',
-  '  </ItemGroup>',
-  '</Project>',
-].join('\n');
+const FSPROJ = projectXml(XUNIT_PACKAGES, 'Tests.fs');
 
 const FS_TESTS = [
   'module Fs.Sample.Tests',
@@ -97,47 +77,6 @@ const FS_TESTS = [
   '    Assert.Equal(5, 2 + 3)',
   '',
 ].join('\n');
-
-/** Run a `dotnet` command, resolving stdout or rejecting with stderr. */
-function dotnet(args: string[], cwd: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      'dotnet',
-      args,
-      { cwd, timeout: 600_000, maxBuffer: 64 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        if (error !== null) {
-          reject(new Error(`dotnet ${args.join(' ')} failed: ${stderr || error.message}`));
-        } else {
-          resolve(stdout);
-        }
-      },
-    );
-  });
-}
-
-/** Write a fixture project (project file + single source file) to disk. */
-function writeProject(
-  dir: string,
-  projName: string,
-  projXml: string,
-  srcName: string,
-  src: string,
-): void {
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, projName), projXml, 'utf8');
-  fs.writeFileSync(path.join(dir, srcName), src, 'utf8');
-}
-
-/** Recursively collect every TestItem id in a controller collection. */
-function collectItemIds(items: vscode.TestItemCollection): string[] {
-  const ids: string[] = [];
-  items.forEach((item) => {
-    ids.push(item.id);
-    ids.push(...collectItemIds(item.children));
-  });
-  return ids;
-}
 
 suite('Test Explorer e2e — real C#/F# discovery and run', () => {
   let api: SharpLspExtensionApi;
@@ -159,15 +98,7 @@ suite('Test Explorer e2e — real C#/F# discovery and run', () => {
     writeProject(csProjDir, 'CsTests.csproj', CSPROJ, 'CalculatorTests.cs', CS_TESTS);
     writeProject(fsProjDir, 'FsTests.fsproj', FSPROJ, 'Tests.fs', FS_TESTS);
 
-    // Build a REAL solution the way a user's project is laid out. Structured
-    // files (.sln/.slnx) are produced by the dotnet CLI, never hand-authored.
-    // .NET 10's `dotnet new sln` emits the XML `.slnx` format by default, so we
-    // detect the actual file rather than assuming an extension.
-    await dotnet(['new', 'sln', '--name', 'Mixed'], root);
-    const slnFile = fs.readdirSync(root).find((f) => f === 'Mixed.sln' || f === 'Mixed.slnx');
-    assert.ok(slnFile, 'dotnet new sln must produce a Mixed.sln or Mixed.slnx');
-    slnPath = path.join(root, slnFile);
-    await dotnet(['sln', slnPath, 'add', csProjDir, fsProjDir], root);
+    slnPath = await createSolution(root, 'Mixed', [csProjDir, fsProjDir]);
 
     // Warm the FULL VSTest discovery path once here (it builds both projects and
     // pays the cold `dotnet test` / adapter JIT cost), so the reactive discovery
@@ -181,7 +112,14 @@ suite('Test Explorer e2e — real C#/F# discovery and run', () => {
     api.explorerProvider.clear();
   });
 
-  suiteTeardown(() => {
+  suiteTeardown(async function () {
+    this.timeout(300_000);
+    // Drain reactive re-discovery before deleting the fixture — see
+    // `drainDiscovery`: a `dotnet test` left pointing at a removed directory
+    // hangs forever and poisons later runs.
+    await drainDiscovery(() => {
+      api.explorerProvider.clear();
+    }, api.testController);
     try {
       fs.rmSync(root, { recursive: true, force: true });
     } catch {
@@ -199,7 +137,16 @@ suite('Test Explorer e2e — real C#/F# discovery and run', () => {
     await api.explorerProvider.loadSolution(slnPath);
     await api.testController.activateAndDiscover();
 
-    const ids = collectItemIds(api.testController.items);
+    // Loading a solution also schedules a DEBOUNCED sweep, which supersedes the
+    // explicit one (`discoverGeneration`) and populates the tree slightly later.
+    // Assert on the settled tree, not on the first read, or this test's result
+    // depends on whether an earlier suite already activated the controller.
+    const ids = await pollUntilResult(
+      () => Promise.resolve(collectItemIds(api.testController.items)),
+      (found) => found.includes(CS_FACT) && found.includes(FS_FACT_SPACED),
+      120_000,
+      500,
+    );
     assert.ok(ids.includes(CS_FACT), `C# [Fact] must be discovered: ${CS_FACT}`);
     assert.ok(ids.includes(CS_FACT_2), 'the second C# [Fact] must be discovered');
     assert.ok(ids.includes(FS_FACT), `F# [<Fact>] must be discovered: ${FS_FACT}`);

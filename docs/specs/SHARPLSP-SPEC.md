@@ -42,6 +42,8 @@ The .NET tooling landscape today is excellent in places, but no single product c
 
 ### 2.1 High-Level Architecture
 
+> Diagram: [ARCHITECTURE-DIAGRAM-SPEC.md](ARCHITECTURE-DIAGRAM-SPEC.md) `[ARCH-DIAGRAM-TIERS]` renders this section — editor extension → Rust host → Roslyn/FCS sidecars — with a node-to-source map.
+
 SharpLsp uses a three-tier architecture: a Rust host process handles the LSP protocol and syntax-level analysis, communicating with two managed .NET sidecar processes (one for C#/[Roslyn](https://github.com/dotnet/roslyn), one for F#/[FCS](https://fsharp.github.io/fsharp-compiler-docs/)) that perform all semantic analysis. This is not a compromise — it is the optimal design, validated by Visual Studio's own ServiceHub architecture and [FsAutoComplete](https://github.com/fsharp/FsAutoComplete)'s production deployment.
 
 **Tier 1 — Rust LSP Host**
@@ -406,6 +408,35 @@ These tools are excellent at what they do and there is no reason to duplicate th
 | Continuous testing | Custom: `sharplsp/testWatch` | File watcher + selective re-run | P3 |
 | Code coverage | Custom: `sharplsp/coverage` | [coverlet](https://github.com/coverlet-coverage/coverlet) integration | P3 |
 | F# [Expecto](https://github.com/haf/expecto)/[FsCheck](https://github.com/fscheck/FsCheck) support | Custom: `sharplsp/testDiscovery` | Expecto test tree discovery | P1 |
+
+#### Discovered test identity `[TEST-DISCOVERY-FQN]`
+
+Every discovered test is identified by its VSTest `TestCase.FullyQualifiedName` — the
+same string `dotnet test --filter FullyQualifiedName=<id>` accepts — so the id a test
+is discovered under is always the id it is run, debugged and cached under.
+
+Discovery MUST NOT be derived from `dotnet test --list-tests` output, which prints each
+test's **DisplayName**. DisplayName is framework-defined and is only incidentally equal
+to the fully-qualified name: xUnit defaults it to `Namespace.Class.Method`, but NUnit and
+MSTest default it to the **bare method name**. Scraping that listing therefore discovered
+xUnit tests by accident while dropping every NUnit and MSTest test outright, and the bare
+names it did yield could never have been run by filter (GitHub #180).
+
+Instead the listing pass is used only to build the projects and to read back the test
+assemblies they produced (VSTest's `Test run for <assembly> (<framework>)` banners); the
+identities themselves come from `dotnet vstest <assemblies> --ListFullyQualifiedTests
+--ListTestsTargetPath:<file>`, which writes one `FullyQualifiedName` per line. That yields
+identical `Namespace.Class.Method` shapes for xUnit, NUnit and MSTest, in both C# and F#,
+and preserves idiomatic F# backtick names whose fully-qualified name contains **spaces**
+(e.g. `Ns.Module.adds two numbers`). Where no assembly can be enumerated this way (a
+[Microsoft.Testing.Platform](https://github.com/microsoft/testfx) project VSTest cannot
+load), discovery degrades to the DisplayName listing rather than returning nothing.
+
+Discovery builds the solution and a run rebuilds the same projects, so the Test Explorer
+serializes **all** of its `dotnet` invocations: two overlapping invocations race on the
+shared `bin/`/`obj/` output and VSTest dies with a missing `testhost.dll`.
+
+Implemented by `editors/vscode/src/test-discovery.ts` and `editors/vscode/src/testing.ts`.
 
 ### 4.10 Workspace Features
 

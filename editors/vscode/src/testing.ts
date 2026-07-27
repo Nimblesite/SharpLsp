@@ -23,8 +23,11 @@ export interface CachedTestResult {
 
 /**
  * Test controller integrating with VS Code's Testing API.
- * Discovers tests via `dotnet test --list-tests` and runs them via `dotnet test --filter`.
+ * Discovers tests by fully-qualified name (see `test-discovery.ts`) and runs them
+ * via `dotnet test --filter FullyQualifiedName=`.
  * Supports xUnit, NUnit, MSTest, Expecto, and FsCheck.
+ *
+ * Implements [TEST-DISCOVERY-FQN].
  */
 export class SharpLspTestController {
   private readonly controller: vscode.TestController;
@@ -44,9 +47,25 @@ export class SharpLspTestController {
    * being shown does a solution change reactively re-discover.
    */
   private active = false;
+  /**
+   * Serializes every `dotnet` invocation this controller makes. Discovery BUILDS
+   * the solution and a run rebuilds the same projects, so two overlapping
+   * invocations race on the shared `bin/`/`obj/` output — VSTest then dies with
+   * "The application to execute does not exist: ...testhost.dll". Reactive
+   * re-discovery is debounced, not cancelled, so that overlap is reachable
+   * whenever a user runs a test while a sweep is still building. One at a time.
+   */
+  private dotnetQueue: Promise<unknown> = Promise.resolve();
 
   /** Fires after any test run completes and results are cached. */
   public readonly onResultsChanged = this.resultsChangedEmitter.event;
+
+  /** Queue `work` behind any `dotnet` invocation already in flight. */
+  private async enqueue<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.dotnetQueue.then(work, work);
+    this.dotnetQueue = next.catch(() => undefined);
+    return next;
+  }
 
   /** Look up the last known result for a fully qualified test name. */
   public getResult(fullyQualifiedName: string): CachedTestResult | undefined {
@@ -178,7 +197,7 @@ export class SharpLspTestController {
   /** List one target, swallowing failures into an empty result. */
   private async safeList(target: string): Promise<string[]> {
     try {
-      return await listTests(target);
+      return await this.enqueue(async () => listTests(target, info));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       info(`Test discovery failed for ${target}: ${message}`);
@@ -283,7 +302,7 @@ export class SharpLspTestController {
         'quiet',
       ];
 
-      const output = await runProcess('dotnet', args, folder.uri.fsPath);
+      const output = await this.enqueue(async () => runProcess('dotnet', args, folder.uri.fsPath));
       const passed = output.includes('Passed!');
 
       for (const test of tests) {
@@ -335,10 +354,12 @@ export class SharpLspTestController {
       }
 
       const start = Date.now();
-      const output = await runProcess(
-        'dotnet',
-        ['test', '--filter', `FullyQualifiedName=${testId}`, '--verbosity', 'quiet'],
-        cwd,
+      const output = await this.enqueue(async () =>
+        runProcess(
+          'dotnet',
+          ['test', '--filter', `FullyQualifiedName=${testId}`, '--verbosity', 'quiet'],
+          cwd,
+        ),
       );
       const duration = Date.now() - start;
 
@@ -349,7 +370,9 @@ export class SharpLspTestController {
         duration,
         message: passed ? undefined : (failureMatch?.[1] ?? 'Test failed'),
       };
-    } catch {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      info(`Test execution error for ${testId}: ${message}`);
       return { passed: false, message: 'Test execution error' };
     }
   }
