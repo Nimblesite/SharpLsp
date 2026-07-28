@@ -196,44 +196,49 @@ fn run_server() -> Result<()> {
     // can consult it before re-syncing files from disk and clobbering live edits.
     let vfs = Arc::new(Vfs::new());
 
-    // Initialize C# sidecar manager if enabled and workspace root is available.
+    // Initialize C# sidecar manager if enabled. When no workspace root is
+    // available (single-file mode), a fallback root is used solely for IPC
+    // path generation — the actual workspace path is sent via workspace/open
+    // once the first file opens.
+    let fallback_root = std::env::temp_dir();
+    let sidecar_root = workspace_root.as_deref().unwrap_or(&fallback_root);
+
     let csharp_sidecar = if sharplsp_config.csharp.enabled {
-        workspace_root
-            .as_ref()
-            .map(|root| Arc::new(SidecarManager::csharp(root)))
+        Some(Arc::new(SidecarManager::csharp(sidecar_root)))
     } else {
         None
     };
 
-    // Initialize F# sidecar manager if enabled and workspace root is available.
     let fsharp_sidecar = if sharplsp_config.fsharp.enabled {
-        workspace_root
-            .as_ref()
-            .map(|root| Arc::new(SidecarManager::fsharp(root)))
+        Some(Arc::new(SidecarManager::fsharp(sidecar_root)))
     } else {
         None
     };
 
-    // Eagerly open workspaces in sidecars, then start health monitoring.
+    // Eagerly open workspaces in sidecars when a workspace root is available.
     // Health monitoring must wait until workspace/open completes — otherwise the
     // health check can time out on the transport lock (held by workspace/open),
     // declare a false crash, and kill the sidecar before the solution is loaded.
-    start_sidecar(
-        csharp_sidecar.as_ref(),
-        workspace_root.as_ref(),
-        Some((&sharplsp_config.diagnostics, &connection)),
-        sharplsp_config.analyzers.clone(),
-        &runtime,
-        Arc::clone(&vfs),
-    );
-    start_sidecar(
-        fsharp_sidecar.as_ref(),
-        workspace_root.as_ref(),
-        None,
-        sharplsp_config.analyzers.clone(),
-        &runtime,
-        Arc::clone(&vfs),
-    );
+    // When no workspace root exists (single-file mode), workspace/open is
+    // deferred until the first didOpen notification.
+    if workspace_root.is_some() {
+        start_sidecar(
+            csharp_sidecar.as_ref(),
+            workspace_root.as_ref(),
+            Some((&sharplsp_config.diagnostics, &connection)),
+            sharplsp_config.analyzers.clone(),
+            &runtime,
+            Arc::clone(&vfs),
+        );
+        start_sidecar(
+            fsharp_sidecar.as_ref(),
+            workspace_root.as_ref(),
+            None,
+            sharplsp_config.analyzers.clone(),
+            &runtime,
+            Arc::clone(&vfs),
+        );
+    }
 
     main_loop(
         &connection,
@@ -242,6 +247,7 @@ fn run_server() -> Result<()> {
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
         &vfs,
+        workspace_root.is_some(),
     )?;
 
     // Shut down profiler sessions.
@@ -392,6 +398,60 @@ async fn configure_analyzers(sidecar: &SidecarManager, analyzers: &config::Analy
     }
 }
 
+/// Lazily initialize workspace for the first opened file when running in single-file mode.
+fn init_workspace_for_file(
+    notif: &Notification,
+    runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+) -> bool {
+    if let Ok(params) =
+        serde_json::from_value::<lsp_types::DidOpenTextDocumentParams>(notif.params.clone())
+    {
+        if let Ok(file_path) = semantic::uri_to_path(&params.text_document.uri) {
+            if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                let parent_str = parent.to_string_lossy().to_string();
+                let ext = std::path::Path::new(&file_path)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                
+                info!("Single-file mode: initializing workspace with implicit root {}", parent_str);
+                
+                if ext == "cs" || ext == "csx" {
+                    if let Some(cs) = csharp_sidecar {
+                        let cs_clone = Arc::clone(cs);
+                        let parent_clone = parent_str.clone();
+                        drop(runtime.spawn(async move {
+                            if let Err(err) = open_workspace(&cs_clone, &parent_clone).await {
+                                error!("Failed to lazily open C# workspace: {err:#}");
+                            }
+                            cs_clone.start_health_monitor().await;
+                        }));
+                    }
+                }
+                
+                if ext == "fs" || ext == "fsx" || ext == "fsi" {
+                    if let Some(fs) = fsharp_sidecar {
+                        let fs_clone = Arc::clone(fs);
+                        let parent_clone = parent_str.clone();
+                        drop(runtime.spawn(async move {
+                            if let Err(err) = open_workspace(&fs_clone, &parent_clone).await {
+                                error!("Failed to lazily open F# workspace: {err:#}");
+                            }
+                            fs_clone.start_health_monitor().await;
+                        }));
+                    }
+                }
+                
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Start a sidecar: open workspace, optionally trigger solution diagnostics, begin health monitoring.
 fn start_sidecar(
     sidecar: Option<&Arc<SidecarManager>>,
@@ -442,11 +502,13 @@ fn main_loop(
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     vfs: &Arc<Vfs>,
+    workspace_initialized: bool,
 ) -> Result<()> {
     let parsers = TsParsers::new();
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
     let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
+    let mut workspace_initialized = workspace_initialized;
 
     for msg in &connection.receiver {
         match msg {
@@ -485,6 +547,14 @@ fn main_loop(
                 if notif.method == "exit" {
                     info!("Exit notification received");
                     return Ok(());
+                }
+                if !workspace_initialized && notif.method == DidOpenTextDocument::METHOD {
+                    workspace_initialized = init_workspace_for_file(
+                        &notif,
+                        runtime,
+                        csharp_sidecar,
+                        fsharp_sidecar,
+                    );
                 }
                 handle_notification(
                     notif,
