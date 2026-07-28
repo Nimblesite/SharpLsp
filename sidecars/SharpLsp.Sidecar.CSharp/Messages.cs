@@ -44,6 +44,15 @@ internal sealed class CompletionItem
 
     [Key(4)]
     public int Index { get; init; }
+
+    /// <summary>
+    /// Edit that REPLACES the identifier span at the caret when the item is
+    /// accepted. Without it the editor appends <see cref="InsertText"/> to the
+    /// trigger text, duplicating the member name (GitHub #178).
+    /// Implements [COMPLETION-EDIT-REPLACE].
+    /// </summary>
+    [Key(5)]
+    public TextEditResult? TextEdit { get; init; }
 }
 
 [MessagePackObject(AllowPrivate = true)]

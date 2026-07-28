@@ -245,6 +245,26 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     }
 
     [Fact]
+    public async Task Completion_supplies_text_edit_that_replaces_identifier_at_caret()
+    {
+        // GitHub #178 / [COMPLETION-EDIT-REPLACE]: the caret sits at the START of
+        // `Compute` in `var result = Compute(input);` (line 18, col 21). The item's
+        // textEdit must span the whole identifier so acceptance REPLACES it rather
+        // than appending (which would yield `ComputeCompute`).
+        using var manager = await OpenAsync();
+
+        var items = Unwrap(await manager.GetCompletionsAsync(_sourcePath, 18, 21));
+        var compute = items.Find(item => item.Label == "Compute");
+        Assert.NotNull(compute);
+        Assert.NotNull(compute!.TextEdit);
+        Assert.Equal(18, compute.TextEdit!.StartLine);
+        Assert.Equal(21, compute.TextEdit.StartCharacter);
+        Assert.Equal(18, compute.TextEdit.EndLine);
+        Assert.Equal(21 + "Compute".Length, compute.TextEdit.EndCharacter);
+        Assert.Equal("Compute", compute.TextEdit.NewText);
+    }
+
+    [Fact]
     public async Task ResolveCompletion_after_completion_returns_resolve_result()
     {
         using var manager = await OpenAsync();

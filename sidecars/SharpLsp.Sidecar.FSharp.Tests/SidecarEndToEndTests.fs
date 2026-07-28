@@ -1005,6 +1005,22 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
     }
 
     [<Fact>]
+    member _.``completion supplies a text edit that replaces the member at the caret``() = task {
+        // GitHub #178 / [COMPLETION-EDIT-REPLACE]: `greeter.|Greet` at line 28 — the
+        // accepted item must REPLACE the identifier at the caret, so the edit spans
+        // `Greet` rather than being appended (which would yield `greeter.GreetGreet`).
+        let! r = fixture.Send("textDocument/completion", posPayload fixture.Src 28 12)
+        Assert.Null(r.Error)
+        let items = deserialize<CompletionItemResult array>(r.Payload)
+        let greet = items |> Array.find (fun i -> i.Label = "Greet")
+        Assert.Equal(28, greet.TextEdit.StartLine)
+        Assert.Equal(12, greet.TextEdit.StartCharacter)
+        Assert.Equal(28, greet.TextEdit.EndLine)
+        Assert.Equal(12 + "Greet".Length, greet.TextEdit.EndCharacter)
+        Assert.Equal(greet.InsertText, greet.TextEdit.NewText)
+    }
+
+    [<Fact>]
     member _.``completion items carry a kind and index``() = task {
         let! r = fixture.Send("textDocument/completion", posPayload fixture.Src 28 12)
         Assert.Null(r.Error)

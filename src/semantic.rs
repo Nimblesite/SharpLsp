@@ -9,17 +9,17 @@ use std::sync::Arc;
 use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentHighlight,
-    DocumentHighlightKind, DocumentHighlightParams, GotoDefinitionParams, GotoDefinitionResponse,
-    Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, OneOf, Position,
-    PrepareRenameResponse, Range, ReferenceParams, RenameParams, TextDocumentPositionParams,
-    TextEdit, Uri, WorkspaceEdit,
+    CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, CompletionTextEdit,
+    DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, GotoDefinitionParams,
+    GotoDefinitionResponse, Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind,
+    OneOf, Position, PrepareRenameResponse, Range, ReferenceParams, RenameParams,
+    TextDocumentPositionParams, TextEdit, Uri, WorkspaceEdit,
 };
 use tracing::{debug, info, warn};
 
 use crate::nav_cache::is_empty_nav_result;
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{map_text_edits, SidecarTextEdit};
+use crate::utils::{map_text_edit, map_text_edits, SidecarTextEdit};
 
 /// Handle `textDocument/completion` via the .NET sidecar + postfix templates.
 pub fn handle_completion(
@@ -65,6 +65,13 @@ pub fn handle_completion(
                         kind: Some(map_completion_kind(&item.kind)),
                         detail: item.detail,
                         insert_text: item.insert_text,
+                        // A textEdit makes acceptance REPLACE the identifier span
+                        // at the caret instead of appending it (GitHub #178).
+                        // Implements [COMPLETION-EDIT-REPLACE].
+                        text_edit: item
+                            .text_edit
+                            .as_ref()
+                            .map(|edit| CompletionTextEdit::Edit(map_text_edit(edit))),
                         data: Some(data),
                         ..CompletionItem::default()
                     }
@@ -816,6 +823,10 @@ struct SidecarCompletionItem {
     insert_text: Option<String>,
     /// Sidecar-internal index used for resolve requests.
     index: i32,
+    /// Edit that replaces the identifier span at the caret so acceptance does
+    /// not append the member name to the trigger text (GitHub #178).
+    /// Implements [COMPLETION-EDIT-REPLACE].
+    text_edit: Option<SidecarTextEdit>,
 }
 
 /// Sidecar request to resolve additional details for a completion item.
