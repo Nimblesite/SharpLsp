@@ -17,6 +17,7 @@ import {
 } from '../../debug.js';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { closeAllEditors, comparablePath } from './test-helpers';
+import { removeDirRecursive } from './test-helpers.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COARSE end-to-end tests for the debug subsystem (src/debug.ts).
@@ -103,7 +104,7 @@ suite('Debug E2E — exported helpers inside real flows', () => {
     stubs.restore();
     await stopAnyDebugSession();
     await closeAllEditors();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeDirRecursive(tmpDir);
   });
 
   test('the debug command and provider type are registered by the activated extension', async function () {
@@ -278,7 +279,7 @@ suite('Debug E2E — SharpLspLaunchProvider.resolveDebugConfiguration branches',
     stubs.restore();
     await stopAnyDebugSession();
     await closeAllEditors();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeDirRecursive(tmpDir);
   });
 
   function resolve(
@@ -433,7 +434,7 @@ suite('Debug E2E — netcoredbg path resolution via the registered adapter facto
     stubs.restore();
     await stopAnyDebugSession();
     await closeAllEditors();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeDirRecursive(tmpDir);
   });
 
   function resolveCommand(): string {
@@ -508,7 +509,7 @@ suite('Debug E2E — sharplsp.debugProgram command against real temp-dir project
     stubs.restore();
     await stopAnyDebugSession();
     await closeAllEditors();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeDirRecursive(tmpDir);
   });
 
   test('warns and starts no session when the active file lives outside any project', async function () {

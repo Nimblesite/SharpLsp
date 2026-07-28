@@ -25,6 +25,7 @@ import {
   closeAllEditors,
   comparableText,
   EXTENSION_ID,
+  removeDirRecursive,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import {
@@ -140,7 +141,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
     // Remove every artifact we wrote into the committed workspace folder.
     for (const artifact of created) {
       try {
-        fs.rmSync(artifact, { recursive: true, force: true });
+        removeDirRecursive(artifact);
       } catch {
         // Best-effort: never fail teardown over a stray temp file.
       }
@@ -574,7 +575,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
       await addProjectToSolutionFile(slnPath, located);
       assert.ok(fs.readFileSync(slnPath, 'utf-8').includes('Found.csproj'));
     } finally {
-      fs.rmSync(isolated, { recursive: true, force: true });
+      removeDirRecursive(isolated);
     }
   });
 });

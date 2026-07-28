@@ -26,6 +26,7 @@ import { type NuGetSearchResult, type NuGetTarget } from '../../nuget-browser/ty
 import { Signal, effect } from '../../signals.js';
 import { findSolutions, toSolutionSelections } from '../../solution.js';
 import { isHotReloadRunning } from '../../hot-reload.js';
+import { removeDirRecursive } from './test-helpers.js';
 
 suite('Extension Workflow Coverage', () => {
   let tmpDir: string;
@@ -39,7 +40,7 @@ suite('Extension Workflow Coverage', () => {
       await vscode.commands.executeCommand('sharplsp.hotReload.stop');
     }
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeDirRecursive(tmpDir);
   });
 
   test('generates an F# signature file through the registered command', async function () {

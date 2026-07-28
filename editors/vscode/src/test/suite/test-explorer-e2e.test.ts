@@ -22,6 +22,7 @@ import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { parseTestList } from '../../test-discovery.js';
 import { pollUntilResult } from './test-helpers';
+import { removeDirRecursive } from './test-helpers.js';
 
 const EXTENSION_ID = 'nimblesite.sharplsp';
 
@@ -183,7 +184,7 @@ suite('Test Explorer e2e — real C#/F# discovery and run', () => {
 
   suiteTeardown(() => {
     try {
-      fs.rmSync(root, { recursive: true, force: true });
+      removeDirRecursive(root);
     } catch {
       /* best-effort cleanup */
     }

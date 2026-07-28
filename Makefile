@@ -267,7 +267,7 @@ _test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
 	status=0; \
 	cd $(VSCODE_DIR); \
 	$(VSIX_TEST_ENV) npm test -- --coverage || status=$$?; \
-	rm -rf "$(abspath $(VSCODE_DIR))/bin"; \
+	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
 	exit $$status
 	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
 
@@ -301,7 +301,7 @@ _test-vsix-win: _stage-vsix-binary-only
 	files="$$($(VSIX_CHUNKS) files $(CHUNK))"; \
 	cd $(VSCODE_DIR); \
 	npm run pretest && $(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test || status=$$?; \
-	rm -rf "$(abspath $(VSCODE_DIR))/bin"; \
+	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
 	exit $$status
 
 _test-dotnet: _build-dotnet
@@ -371,8 +371,15 @@ _fmt-dotnet:
 
 # ── Screenshots ───────────────────────────────────────────────────
 
-screenshots: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
+screenshots: _build-rust _build-dotnet _build-vsix
 	@echo "==> Capturing all website screenshots from real VS Code..."
+	# MUST re-stage in a fresh make process, exactly as _test-vsix does. Listing
+	# _stage-vsix-binary as a prerequisite does NOT work: _build-vsix already
+	# depends on it, so make marks it updated and skips it here — and the last
+	# thing _build-vsix's recipe does is `rm -rf $(VSCODE_DIR)/bin`. Without this
+	# line the screenshot run starts with no bundled binary at all, activation is
+	# blocked by shipwright, and every capture comes out empty.
+	@$(MAKE) _stage-vsix-binary-only
 	(cd $(VSCODE_DIR) && node src/test/suite/screenshot-watcher.mjs) & \
 	WATCHER_PID=$$!; \
 	cd $(VSCODE_DIR) && \

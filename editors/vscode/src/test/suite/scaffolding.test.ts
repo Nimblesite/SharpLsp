@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { EXTENSION_ID } from './test-helpers';
+import { EXTENSION_ID, removeDirRecursive } from './test-helpers';
 import {
   newSolutionArgs,
   newProjectArgs,
@@ -157,7 +157,7 @@ suite('Scaffolding (Create Solution / Project)', () => {
       assert.ok(slnText.includes('Api.csproj'), 'solution must reference the C# project');
       assert.ok(slnText.includes('Core.fsproj'), 'solution must reference the F# project');
     } finally {
-      fs.rmSync(work, { recursive: true, force: true });
+      removeDirRecursive(work);
     }
   });
 
@@ -166,7 +166,7 @@ suite('Scaffolding (Create Solution / Project)', () => {
     try {
       assert.strictEqual(findProjectFile(empty, 'Nope'), undefined);
     } finally {
-      fs.rmSync(empty, { recursive: true, force: true });
+      removeDirRecursive(empty);
     }
   });
 });

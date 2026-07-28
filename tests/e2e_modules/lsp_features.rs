@@ -11,7 +11,7 @@ fn test_prepare_call_hierarchy_without_sidecar_returns_null() {
         SIMPLE_CLASS,
         "textDocument/prepareCallHierarchy",
         position_params(5, 18),
-        NoSidecarResult::Null,
+        NoSidecarResult::NullOrEmptyArray,
         "prepareCallHierarchy",
     );
 }

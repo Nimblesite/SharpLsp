@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { EXTENSION_ID, waitForHoverResult } from './test-helpers';
+import { EXTENSION_ID, removeDirRecursive, waitForHoverResult } from './test-helpers';
 
 export interface RealRepoSpec {
   /** Directory name under real-world-fixtures/. */
@@ -62,7 +62,7 @@ export function ensureRepoReady(spec: RealRepoSpec): string {
   fs.mkdirSync(root, { recursive: true });
   const repoDir = path.join(root, spec.name);
   if (!fs.existsSync(path.join(repoDir, spec.sln))) {
-    fs.rmSync(repoDir, { recursive: true, force: true });
+    removeDirRecursive(repoDir);
     execFileSync('git', ['clone', '--depth', '1', '--branch', spec.tag, spec.url, spec.name], {
       cwd: root,
       stdio: 'pipe',
@@ -72,11 +72,28 @@ export function ensureRepoReady(spec: RealRepoSpec): string {
   const globalJson = path.join(repoDir, 'global.json');
   if (fs.existsSync(globalJson)) fs.rmSync(globalJson);
   if (!fs.existsSync(path.join(repoDir, RESTORED_MARKER))) {
-    execFileSync('dotnet', ['restore', spec.sln], {
-      cwd: repoDir,
-      stdio: 'pipe',
-      timeout: 900_000,
-    });
+    // NuGetAudit=false: the fixture is pinned to an upstream tag, but NuGet's
+    // advisory database moves independently. When a CVE is published against any
+    // transitive package the pinned tag happens to use, NU1903 is raised and the
+    // repo's own TreatWarningsAsErrors turns restore into a hard failure — CI breaks
+    // with no change on our side, on a repository we do not control. This fixture
+    // exists to drive the LSP against real-world code, not to audit that code's
+    // dependencies. Same normalisation as removing global.json above.
+    try {
+      execFileSync('dotnet', ['restore', spec.sln, '-p:NuGetAudit=false'], {
+        cwd: repoDir,
+        stdio: 'pipe',
+        timeout: 900_000,
+      });
+    } catch (err: unknown) {
+      // stdio:'pipe' captures NuGet's diagnostics and the default rethrow discards
+      // them, leaving only "Command failed: dotnet restore". Surface them.
+      const e = err as { stdout?: Buffer; stderr?: Buffer; message?: string };
+      const detail = `${e.stdout?.toString() ?? ''}${e.stderr?.toString() ?? ''}`.trim();
+      throw new Error(`dotnet restore ${spec.sln} failed:\n${detail || (e.message ?? '')}`, {
+        cause: err,
+      });
+    }
     fs.writeFileSync(path.join(repoDir, RESTORED_MARKER), spec.tag);
   }
   return repoDir;

@@ -4,6 +4,16 @@ use super::*;
 
 // When the LSP server has no sidecar (no workspace root given at initialize),
 // all call hierarchy requests must return null/empty without crashing.
+//
+// These expect NullOrEmptyArray rather than strictly Null. Before [SCRIPT-ROUTE-LAZY],
+// initializing without a workspace root left the sidecar manager as `None`, so the host
+// short-circuited every semantic request to `null`. A single file with no project now
+// starts its sidecar lazily on first didOpen, so the request reaches the sidecar and
+// comes back `[]` instead. LSP 3.17 types prepareCallHierarchy / incomingCalls /
+// outgoingCalls as `T[] | null`, so both encode "no results" and no client can tell them
+// apart; NullOrEmptyArray is the same convention the other no-sidecar feature tests
+// already use. What these still pin is the part that matters: no error, no crash, and
+// no fabricated results.
 
 #[test]
 fn test_prepare_call_hierarchy_without_sidecar_returns_null() {
@@ -11,7 +21,7 @@ fn test_prepare_call_hierarchy_without_sidecar_returns_null() {
         SIMPLE_CLASS,
         "textDocument/prepareCallHierarchy",
         position_params(5, 18),
-        NoSidecarResult::Null,
+        NoSidecarResult::NullOrEmptyArray,
         "prepareCallHierarchy",
     );
 }
@@ -22,7 +32,7 @@ fn test_incoming_calls_without_sidecar_returns_null() {
         SIMPLE_CLASS,
         "callHierarchy/incomingCalls",
         hierarchy_item_params("Main", 12, (5, 8, 5, 12), (5, 8, 5, 12)),
-        NoSidecarResult::Null,
+        NoSidecarResult::NullOrEmptyArray,
         "incomingCalls",
     );
 }
@@ -33,7 +43,7 @@ fn test_outgoing_calls_without_sidecar_returns_null() {
         SIMPLE_CLASS,
         "callHierarchy/outgoingCalls",
         hierarchy_item_params("Main", 12, (5, 8, 5, 12), (5, 8, 5, 12)),
-        NoSidecarResult::Null,
+        NoSidecarResult::NullOrEmptyArray,
         "outgoingCalls",
     );
 }
@@ -58,8 +68,8 @@ namespace CallHierarchyTest
     assert_eq!(prepare["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(prepare.get("error").is_none(), "prepare must not error");
     assert!(
-        prepare["result"].is_null(),
-        "prepare without sidecar must return null"
+        prepare["result"].is_null() || prepare["result"].as_array().is_some_and(Vec::is_empty),
+        "prepare without sidecar must return null or empty array"
     );
 
     // Incoming calls on Run.
@@ -70,8 +80,8 @@ namespace CallHierarchyTest
     assert_eq!(incoming["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(incoming.get("error").is_none(), "incoming must not error");
     assert!(
-        incoming["result"].is_null(),
-        "incomingCalls without sidecar must return null"
+        incoming["result"].is_null() || incoming["result"].as_array().is_some_and(Vec::is_empty),
+        "incomingCalls without sidecar must return null or empty array"
     );
 
     // Outgoing calls on Run.
@@ -82,8 +92,8 @@ namespace CallHierarchyTest
     assert_eq!(outgoing["jsonrpc"], "2.0", "must be JSON-RPC 2.0");
     assert!(outgoing.get("error").is_none(), "outgoing must not error");
     assert!(
-        outgoing["result"].is_null(),
-        "outgoingCalls without sidecar must return null"
+        outgoing["result"].is_null() || outgoing["result"].as_array().is_some_and(Vec::is_empty),
+        "outgoingCalls without sidecar must return null or empty array"
     );
 
     client.shutdown_and_exit();
@@ -96,7 +106,7 @@ fn test_prepare_call_hierarchy_complex_class_without_sidecar() {
         COMPLEX_CLASS,
         "textDocument/prepareCallHierarchy",
         position_params(16, 15),
-        NoSidecarResult::Null,
+        NoSidecarResult::NullOrEmptyArray,
         "prepareCallHierarchy",
     );
 }
