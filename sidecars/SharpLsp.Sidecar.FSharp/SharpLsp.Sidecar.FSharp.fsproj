@@ -37,7 +37,7 @@
     <PackageReference Include="FSharpLint.Core" Version="0.27.0" />
     <PackageReference Include="MessagePack" Version="3.1.8" />
     <!-- Override transitive 9.0.0 from FSharpLint.Core/Microsoft.Build chain (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, fixed in 9.0.15). -->
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.9" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.10" />
   </ItemGroup>
 
   <ItemGroup>
