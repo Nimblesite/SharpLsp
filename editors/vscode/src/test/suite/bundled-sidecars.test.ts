@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
@@ -35,6 +36,48 @@ suite('Bundled sidecar resolution', () => {
         'F# is a first-class citizen — no SharpLsp without F# support.',
       ].join(' '),
     );
+  });
+
+  // Existence is NOT proof of a usable payload. `sharplsp-sidecar-csharp(.exe)` is a
+  // .NET apphost shim: it is a few hundred KB of launcher whose only job is to load
+  // `SharpLsp.Sidecar.<lang>.dll` sitting beside it. Stage the apphost without its
+  // managed assembly and every existsSync check above still passes, while running it
+  // dies with "The application to execute does not exist: SharpLsp.Sidecar.CSharp.dll".
+  //
+  // That is not hypothetical. The staging step swallows failures
+  // (`cp/mv ... 2>/dev/null || true` in _stage-vsix-binary-only), so a partial publish,
+  // a locked file on Windows, or an interrupted stage ships a VSIX that packages
+  // cleanly, passes the existence tests, and then fails at activation. Users see
+  // "required binaries are missing or version-mismatched" naming an unrelated
+  // directory, because shipwright rejects the unusable `bundled` source and falls
+  // through to the `path` source, which reports whatever PATH entry it tried last.
+  //
+  // shipwright resolves these with `versionCheckStrategy: "version-flag"`, so running
+  // `--version` is exactly the check activation performs. Implements [DIST-FAILURE-UX].
+  test('bundled sidecars actually execute — apphost plus its managed assembly', function () {
+    this.timeout(30_000);
+    const ext = vscode.extensions.getExtension(extensionId);
+    assert.ok(ext !== undefined, `${extensionId} must be loaded in the VS Code test host`);
+    const binAll = path.join(ext.extensionPath, 'bin', 'all');
+
+    for (const sidecar of ['sharplsp-sidecar-csharp', 'sharplsp-sidecar-fsharp']) {
+      const binary = path.join(binAll, exeName(sidecar));
+      const result = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 20_000 });
+      const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
+
+      assert.equal(
+        result.status,
+        0,
+        `${sidecar} is staged but does not run (exit ${String(result.status)}): ${output}. ` +
+          'The apphost needs its managed assembly staged alongside it — an apphost on its own ' +
+          'passes every existence check and then fails at activation.',
+      );
+      assert.ok(
+        output.includes(sidecar),
+        `${sidecar} --version must report its own name and version so shipwright's ` +
+          `version-flag check can resolve the bundled source; got: ${output}`,
+      );
+    }
   });
 
   // The C# sidecar must ship its own complete Roslyn. If the publish graph

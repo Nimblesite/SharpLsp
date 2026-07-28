@@ -167,7 +167,29 @@ _stage-vsix-binary-only:
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
 	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) \
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
+	@$(VERIFY_STAGED_SIDECARS)
 	@bash scripts/fetch-netcoredbg.sh $(HOST_PLATFORM)
+
+# A .NET apphost is only a launcher: strip SharpLsp.Sidecar.<lang>.dll from beside
+# it and the executable still EXISTS but cannot run. Every copy/rename above is
+# best-effort (`2>/dev/null || true`), and a publish raced by a concurrent rebuild
+# can hand us an incomplete tree, so "the file is there" proves nothing.
+#
+# Without this check such a stage packages cleanly, passes the existence tests, and
+# only fails on the user's machine: shipwright runs `--version` (its
+# `versionCheckStrategy`), rejects the unusable `bundled` source, falls through to
+# the `path` source and reports "required binaries are missing" against whatever
+# unrelated PATH directory it tried last. Fail here instead. [DIST-FAILURE-UX]
+VERIFY_STAGED_SIDECARS = \
+	for sidecar in sharplsp-sidecar-csharp sharplsp-sidecar-fsharp; do \
+		out="$$("$(VSCODE_DIR)/bin/all/$$sidecar$(EXE_EXT)" --version 2>&1)" || { \
+			echo "ERROR: staged $$sidecar does not run: $$out" >&2; \
+			echo "       The apphost is staged without its managed assembly, or the" >&2; \
+			echo "       publish output was incomplete. Re-run: make _build-dotnet" >&2; \
+			exit 1; \
+		}; \
+		echo "    verified $$out"; \
+	done
 
 _stage-sidecars:
 	@mkdir -p target/debug/sidecar-csharp target/debug/sidecar-fsharp
