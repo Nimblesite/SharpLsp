@@ -23,7 +23,9 @@ import {
   setupLspTestSuite,
   teardownLspTestSuite,
   closeAllEditors,
+  comparableText,
   EXTENSION_ID,
+  removeDirRecursive,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import {
@@ -139,7 +141,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
     // Remove every artifact we wrote into the committed workspace folder.
     for (const artifact of created) {
       try {
-        fs.rmSync(artifact, { recursive: true, force: true });
+        removeDirRecursive(artifact);
       } catch {
         // Best-effort: never fail teardown over a stray temp file.
       }
@@ -186,7 +188,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
       assert.ok(active, 'an editor must be active after newFile');
       assert.strictEqual(active.document.uri.fsPath, filePath, 'the new file must be opened');
       assert.strictEqual(
-        active.document.getText(),
+        comparableText(active.document.getText()),
         expected,
         'editor buffer must match generateFileContent',
       );
@@ -195,7 +197,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
       const saved = await active.document.save();
       assert.ok(saved, 'the new document must save successfully');
       assert.ok(fs.existsSync(filePath), `${name}.cs should exist on disk after save`);
-      const onDisk = fs.readFileSync(filePath, 'utf-8');
+      const onDisk = comparableText(fs.readFileSync(filePath, 'utf-8'));
       assert.strictEqual(onDisk, expected, 'saved file content must match generateFileContent');
 
       // Pin the per-snippet keyword so each switch branch is asserted distinctly.
@@ -573,7 +575,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
       await addProjectToSolutionFile(slnPath, located);
       assert.ok(fs.readFileSync(slnPath, 'utf-8').includes('Found.csproj'));
     } finally {
-      fs.rmSync(isolated, { recursive: true, force: true });
+      removeDirRecursive(isolated);
     }
   });
 });

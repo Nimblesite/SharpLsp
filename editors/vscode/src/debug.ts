@@ -102,13 +102,17 @@ export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider
 }
 
 /**
- * Spawns netcoredbg as the debug adapter process.
+ * Spawns netcoredbg as the debug adapter process. The debugger is bundled in the
+ * VSIX ([DIST-DEBUGGER-BUNDLE]); `extensionPath` lets the resolver prefer that
+ * bundled copy over a user-installed one.
  */
 export class SharpLspDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
+  constructor(private readonly extensionPath?: string) {}
+
   public createDebugAdapterDescriptor(
     _session: vscode.DebugSession,
   ): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
-    const netcoredbgPath = findNetcoredbg();
+    const netcoredbgPath = findNetcoredbg(this.extensionPath);
     if (netcoredbgPath === undefined) {
       void vscode.window.showErrorMessage(
         'netcoredbg not found. Install it: https://github.com/Samsung/netcoredbg',
@@ -178,8 +182,8 @@ export function isLaunchSettings(value: unknown): value is LaunchSettings {
   return typeof value === 'object' && value !== null && 'profiles' in value;
 }
 
-function findNetcoredbg(): string | undefined {
-  // Check user setting first.
+function findNetcoredbg(extensionPath?: string): string | undefined {
+  // 1. User override always wins.
   const configured = vscode.workspace
     .getConfiguration('sharplsp')
     .get<string>('debug.netcoredbgPath');
@@ -187,31 +191,45 @@ function findNetcoredbg(): string | undefined {
     return configured;
   }
 
-  // Check common installation paths.
-  const candidates = getNetcoredbgCandidates();
+  // 2. Bundled copy (default for all users on supported platforms), then common
+  //    install locations.
+  const candidates = getNetcoredbgCandidates(extensionPath);
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
       return candidate;
     }
   }
 
-  // Fall back to PATH.
+  // 3. Fall back to PATH — the only route on platforms with no upstream prebuilt
+  //    (win32-arm64, darwin-x64), where the VSIX cannot bundle netcoredbg.
   return 'netcoredbg';
 }
 
-/** Platform-aware list of common netcoredbg installation paths. */
-export function getNetcoredbgCandidates(): string[] {
+/**
+ * Platform-aware netcoredbg search paths, most-preferred first. When
+ * `extensionPath` is supplied, the VSIX-bundled binary
+ * (`bin/<platform>/netcoredbg/netcoredbg[.exe]`, staged by
+ * `scripts/fetch-netcoredbg.sh`) is preferred over any user-installed copy.
+ */
+export function getNetcoredbgCandidates(extensionPath?: string): string[] {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
   const isWin = process.platform === 'win32';
   const exe = isWin ? 'netcoredbg.exe' : 'netcoredbg';
 
-  return [
+  const candidates: string[] = [];
+  if (extensionPath !== undefined && extensionPath.length > 0) {
+    candidates.push(
+      path.join(extensionPath, 'bin', `${process.platform}-${process.arch}`, 'netcoredbg', exe),
+    );
+  }
+  candidates.push(
     path.join(home, '.dotnet', 'tools', exe),
     path.join(home, '.local', 'share', 'netcoredbg', exe),
     `/usr/local/bin/${exe}`,
     `/usr/bin/${exe}`,
     path.join(home, 'AppData', 'Local', 'netcoredbg', exe),
-  ];
+  );
+  return candidates;
 }
 
 interface ProjectEntry {
@@ -268,7 +286,7 @@ export function registerDebugAdapter(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.debug.registerDebugAdapterDescriptorFactory(
       DEBUG_TYPE,
-      new SharpLspDebugAdapterFactory(),
+      new SharpLspDebugAdapterFactory(context.extensionPath),
     ),
   );
   context.subscriptions.push(

@@ -42,11 +42,15 @@ Read **every line** of `--log-failed` output. For each failure note the exact fi
 
 ## Step 2 — Analyze the CI workflow
 
-1. Read `.github/workflows/ci.yml` completely. Parse every job and every step.
-No 2. Extract the ordered list of commands the CI actually runs. The SharpLsp CI has these jobs:
-   - **lint**: `make lint-rust`, `make lint-zed`, `dotnet csharpier check sidecars/`, `make lint-dotnet`, sidecar dotnet pack smoke test, `cd editors/vscode && npx prettier@3 --check 'src/**/*.ts'`, `make lint-vsix`
-   - **test**: `make test-rust`, `make test-zed`, `make test-dotnet`, `xvfb-run -a make test-vsix`
-3. Note any environment variables, matrix strategies, or conditional steps that affect execution.
+1. Read **every** `.github/workflows/ci*.yml` completely — the PR pipeline is split into reusable workflows ([DIST-CI-LAYOUT]), so `ci.yml` alone only shows the orchestration:
+   - `ci.yml` — orchestrator: `detect-changes`, dependency review, manifest validation, one `uses:` job per leg
+   - `ci-lint.yml` — Rust / Zed / .NET / VS Code lint + format gates
+   - `ci-rust.yml` — sharded Rust e2e suite, coverage gate, version contract
+   - `ci-dotnet.yml` — sidecar tests (Ubuntu) + win32 named-pipe transport
+   - `ci-vsix.yml` — full VS Code suite + coverage gate (Ubuntu)
+   - `ci-vsix-windows.yml` — VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX])
+2. Parse every job and every step, then extract the ordered list of commands the CI actually runs.
+3. Note any environment variables, matrix strategies, or conditional steps that affect execution. In particular the Windows VS Code matrix expands from `editors/vscode/test-chunks.json` — enumerate the chunks with `node scripts/vsix-test-chunks.mjs matrix` and run each locally as `make _test-vsix-win CHUNK=<name>`.
 
 **Do NOT assume the steps are `make lint`, `make test`, `make build`.** The actual CI may run different commands, in a different order. Extract what the CI *actually does*.
 

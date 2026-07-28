@@ -129,7 +129,7 @@ fn test_request_on_unopened_document() {
 
 #[test]
 fn test_request_on_unsupported_file_type() {
-    let mut client = LspClient::start();
+    let mut client = LspClient::start_without_sidecars();
     let _ = client.initialize();
 
     // Open a .txt file — unsupported extension.

@@ -11,6 +11,38 @@ export const SERVER_START_TIMEOUT_MS = 30_000;
 export const LSP_RESPONSE_TIMEOUT_MS = 15_000;
 export const POLL_INTERVAL_MS = 100;
 
+// ── Path Comparison ──────────────────────────────────────────────
+
+/**
+ * Normalize a filesystem path for equality assertions.
+ *
+ * Windows paths are case-insensitive, POSIX paths are not. VS Code lowercases
+ * the drive letter whenever a path travels through `Uri.fsPath`, while
+ * `extensionPath` and `os.tmpdir()` preserve the original casing — so on win32
+ * the very same file legitimately has two spellings. Comparing them
+ * case-sensitively is a false negative that fires on every Windows run
+ * ([DIST-CI-WIN-VSIX]); comparing them case-insensitively on POSIX would be
+ * wrong, because there `/tmp/A` and `/tmp/a` really are different files.
+ */
+export function comparablePath(filePath: string): string {
+  return process.platform === 'win32' ? filePath.toLowerCase() : filePath;
+}
+
+/**
+ * Normalize line endings for text equality assertions.
+ *
+ * VS Code gives a newly created document the platform default EOL (`\r\n` on
+ * Windows) and rewrites inserted text to match it, so a generator that emits
+ * `\n` legitimately lands in the buffer — and then on disk — as `\r\n`. That is
+ * correct behaviour: a new C# file on Windows should have Windows line endings.
+ * These assertions are about CONTENT, so compare EOL-agnostically rather than
+ * asserting a byte sequence the editor is entitled to choose
+ * ([DIST-CI-WIN-VSIX]).
+ */
+export function comparableText(text: string): string {
+  return text.replace(/\r\n/g, '\n');
+}
+
 // ── Binary Discovery ─────────────────────────────────────────────
 
 /**
@@ -292,13 +324,30 @@ export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
   return { tmpDir, sharplspBinary };
 }
 
+/**
+ * Recursively delete a scratch directory, tolerating Windows file-handle races.
+ *
+ * `force: true` only swallows ENOENT — it does NOT retry. On Windows a directory
+ * whose files are still open in a spawned child (dotnet, VBCSCompiler, a sidecar)
+ * fails the delete with EPERM/EBUSY, which is why teardown hooks flaked on the
+ * Windows runners while the identical code is stable on Linux. Node retries exactly
+ * those codes when given maxRetries/retryDelay.
+ *
+ * Cleanup failure must never fail an otherwise-passing test, so this is best-effort
+ * after the retries are exhausted. Use this everywhere instead of a bare rmSync:
+ * a per-call-site copy is how the retry policy drifts. Implements [DIST-CI-WIN-VSIX].
+ */
+export function removeDirRecursive(target: string): void {
+  try {
+    fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch {
+    // Best-effort: a leaked handle in a child process must not fail the suite.
+  }
+}
+
 /** Remove the temp directory created by `setupLspTestSuite`. */
 export function teardownLspTestSuite(tmpDir: string): void {
-  try {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  } catch {
-    // Best-effort cleanup.
-  }
+  removeDirRecursive(tmpDir);
 }
 
 // ── Screenshots ──────────────────────────────────────────────────

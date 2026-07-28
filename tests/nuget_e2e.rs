@@ -64,7 +64,19 @@ struct LspClient {
 
 impl LspClient {
     fn start() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_sharplsp"))
+        Self::start_in(None)
+    }
+
+    /// Start the server with `dir` as its working directory, so a `sharplsp.toml`
+    /// placed there is picked up. Since [SCRIPT-ROUTE-LAZY] the sidecar managers are
+    /// always constructed — a single file with no project starts one lazily — so
+    /// config is the only way to get a server that genuinely has no sidecars.
+    fn start_in(dir: Option<&Path>) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_sharplsp"));
+        if let Some(cwd) = dir {
+            command.current_dir(cwd);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -1834,7 +1846,17 @@ fn nuget_unused_fsproj_routes_to_fsharp_sidecar() {
     write_file(root, "Lib.fsproj", BARE_FSPROJ);
     let fsproj = root.join("Lib.fsproj");
 
-    let mut client = LspClient::start();
+    // "Nothing loaded" must mean no sidecar. Since [SCRIPT-ROUTE-LAZY] merely omitting
+    // the workspace root no longer achieves that — the F# sidecar starts lazily and
+    // answers `unused: []` for an unloaded project — so the precondition comes from
+    // config instead.
+    write_file(
+        root,
+        "sharplsp.toml",
+        "[csharp]\nenabled = false\n\n[fsharp]\nenabled = false\n",
+    );
+
+    let mut client = LspClient::start_in(Some(root));
     client.initialize();
 
     let resp = client.request(

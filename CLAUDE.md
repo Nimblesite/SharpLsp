@@ -40,7 +40,7 @@ This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate
 - `allow(clippy::` is not permitted without a strong, documented reason. **Aggressively remove** existing allows.
 - All code files < 500 LOC. Functions < 20 LOC
 - Aggressively move shared code to shared crates/modules
-- Keep dependencies and versions in sync across: `.github/workflows/ci.yml`, `.devcontainer/Dockerfile`
+- Keep dependencies and versions in sync across: `.github/workflows/ci*.yml` (the PR pipeline is split into reusable workflows — see [DIST-CI-LAYOUT]), `.devcontainer/Dockerfile`
 - Legacy code must be deleted, not copied. Move files instead of duplicating them.
 - Never copy from C# Dev Kit, Rider, or Visual Studio. Reimplement from public APIs and protocols only
 

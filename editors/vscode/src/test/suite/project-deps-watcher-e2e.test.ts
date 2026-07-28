@@ -11,6 +11,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type * as vscode from 'vscode';
+import { removeDirRecursive } from './test-helpers';
 import {
   ensureTracked,
   initProjectDepsStore,
@@ -62,7 +63,7 @@ suite('Project-deps node watcher survives project dir deletion', () => {
     // Delete the tree out from under the node fs.watch. On Windows this fires
     // the watcher's async 'error' (EPERM); without an 'error' listener Node
     // raises it as an uncaught exception, which mocha attributes to this test.
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeDirRecursive(dir);
 
     const removed = await pollUntil(() => !projectDependencies.value.has(projectPath), 10_000);
     assert.ok(removed, 'deleted project must be dropped from projectDependencies');

@@ -36,6 +36,7 @@ import {
   client as clientSignal,
 } from '../../state.js';
 import { notifyActivationFailure } from '../../extension.js';
+import { removeDirRecursive } from './test-helpers.js';
 
 /**
  * Coarse end-to-end coverage for the extension lifecycle plumbing:
@@ -78,7 +79,7 @@ suite('Lifecycle E2E', () => {
     sortOrder.value = savedSortOrder;
     solutionPath.value = savedSolutionPath;
     symbolsState.value = { kind: 'empty' };
-    fs.rmSync(scratchDir, { recursive: true, force: true });
+    removeDirRecursive(scratchDir);
   });
 
   // ── client.ts: restart + live wiring ────────────────────────────

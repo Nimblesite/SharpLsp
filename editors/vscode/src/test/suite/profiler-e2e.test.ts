@@ -57,6 +57,7 @@ import {
   type LeakSuspect,
 } from '../../profiler-diff.js';
 import { ObjectGraphPanel, promptAndOpenGraph } from '../../profiler-graph.js';
+import { removeDirRecursive } from './test-helpers.js';
 
 // ── Extension API access ─────────────────────────────────────────
 
@@ -259,7 +260,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   suiteTeardown(async () => {
     await closeAllEditors();
     teardownLspTestSuite(tmpDir);
-    fs.rmSync(dumpDir, { recursive: true, force: true });
+    removeDirRecursive(dumpDir);
   });
 
   teardown(async () => {

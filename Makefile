@@ -85,9 +85,10 @@ CHECK_COV = scripts/check-coverage.sh
         print-publish-commands \
         _stamp-version \
         _build-rust _build-dotnet _build-vsix _build-zed _build-rider \
-        _stage-vsix-binary _stage-sidecars \
+        _stage-vsix-binary _stage-vsix-binary-only _stage-sidecars \
         test-rust _test-rust _prepare-rust-tests _test-rust-shard \
-        _gate-rust-coverage _test-vsix _test-vsix-smoke _test-dotnet _test-website \
+        _gate-rust-coverage _test-vsix _test-vsix-win _check-vsix-chunks \
+        _test-dotnet _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
         _package-vsix \
@@ -146,6 +147,13 @@ _build-rider:
 		cp "$$zip" $(RIDER_ZIP)
 
 _stage-vsix-binary: _build-rust _build-dotnet
+	@$(MAKE) _stage-vsix-binary-only
+
+# Staging with the build prerequisites stripped off. CI's Windows VSIX feature
+# chunks ([DIST-CI-WIN-VSIX]) download the host binary + both sidecars as
+# artifacts from a single build job and fan out, so each chunk must stage what
+# is already on disk instead of rebuilding Rust and .NET seven times over.
+_stage-vsix-binary-only:
 	@echo "==> Staging required VSIX binaries ($(HOST_PLATFORM))..."
 	rm -rf $(VSCODE_DIR)/bin
 	mkdir -p $(dir $(HOST_VSIX_BIN)) $(VSCODE_DIR)/bin/all
@@ -159,6 +167,29 @@ _stage-vsix-binary: _build-rust _build-dotnet
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
 	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) \
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
+	@$(VERIFY_STAGED_SIDECARS)
+	@bash scripts/fetch-netcoredbg.sh $(HOST_PLATFORM)
+
+# A .NET apphost is only a launcher: strip SharpLsp.Sidecar.<lang>.dll from beside
+# it and the executable still EXISTS but cannot run. Every copy/rename above is
+# best-effort (`2>/dev/null || true`), and a publish raced by a concurrent rebuild
+# can hand us an incomplete tree, so "the file is there" proves nothing.
+#
+# Without this check such a stage packages cleanly, passes the existence tests, and
+# only fails on the user's machine: shipwright runs `--version` (its
+# `versionCheckStrategy`), rejects the unusable `bundled` source, falls through to
+# the `path` source and reports "required binaries are missing" against whatever
+# unrelated PATH directory it tried last. Fail here instead. [DIST-FAILURE-UX]
+VERIFY_STAGED_SIDECARS = \
+	for sidecar in sharplsp-sidecar-csharp sharplsp-sidecar-fsharp; do \
+		out="$$("$(VSCODE_DIR)/bin/all/$$sidecar$(EXE_EXT)" --version 2>&1)" || { \
+			echo "ERROR: staged $$sidecar does not run: $$out" >&2; \
+			echo "       The apphost is staged without its managed assembly, or the" >&2; \
+			echo "       publish output was incomplete. Re-run: make _build-dotnet" >&2; \
+			exit 1; \
+		}; \
+		echo "    verified $$out"; \
+	done
 
 _stage-sidecars:
 	@mkdir -p target/debug/sidecar-csharp target/debug/sidecar-fsharp
@@ -219,54 +250,58 @@ _gate-rust-coverage:
 	@PERCENT="$$(node scripts/merge-lcov.mjs target/coverage-rust.lcov target/coverage-rust-shard*.lcov)" && \
 		$(CHECK_COV) sharplsp "$$PERCENT"
 
+# Every SharpLsp path override the extension honours, cleared so the test host
+# resolves ONLY the freshly-staged bundled binaries — never a dev copy that
+# leaked onto PATH or into the environment.
+VSIX_TEST_ENV = env -u SHARPLSP_EXECUTABLE_PATH \
+	-u SHARPLSP_LSP_PATH \
+	-u SHARPLSP_BINARY_DIR \
+	-u SHARPLSP_CSHARP_SIDECAR_PATH \
+	-u SHARPLSP_FSHARP_SIDECAR_PATH \
+	-u FORGE_LSP_PATH \
+	-u FORGE_BINARY_DIR
+
 _test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
 	@echo "==> Running VS Code extension tests..."
-	$(MAKE) _stage-vsix-binary
-	cd $(VSCODE_DIR) && \
-		env -u SHARPLSP_EXECUTABLE_PATH \
-			-u SHARPLSP_LSP_PATH \
-				-u SHARPLSP_BINARY_DIR \
-				-u SHARPLSP_CSHARP_SIDECAR_PATH \
-				-u SHARPLSP_FSHARP_SIDECAR_PATH \
-				-u FORGE_LSP_PATH \
-				-u FORGE_BINARY_DIR \
-				npm test -- --coverage; \
-	status=$$?; \
-	rm -rf "$(abspath $(VSCODE_DIR))/bin"; \
+	@$(MAKE) _stage-vsix-binary
+	status=0; \
+	cd $(VSCODE_DIR); \
+	$(VSIX_TEST_ENV) npm test -- --coverage || status=$$?; \
+	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
 	exit $$status
 	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
 
-# ── VSIX smoke subset (Windows CI) ────────────────────────────────
-# Runs a curated SUBSET of the VS Code end-to-end suite that drives the REAL
-# LSP (sharplsp host + Roslyn/FCS sidecars) through the actual VS Code
-# extension host: the headline user interactions — C# and F# completion, hover,
-# go-to-definition, find-references, and diagnostics. This is the Windows smoke
-# gate ([DIST-CI-WIN-VSIX]): it proves the bundled binary + sidecars start and
-# answer LSP requests over win32 named-pipe IPC end-to-end, which the Linux-only
-# _test-vsix job can never exercise (mirrors the rationale for
-# test-dotnet-windows / [DIST-CI-WIN-TRANSPORT]).
+# ── VSIX Windows feature chunks ───────────────────────────────────
+# [DIST-CI-WIN-VSIX] Runs ONE declared feature chunk of the VS Code end-to-end
+# suite — the same suites the Ubuntu `_test-vsix` job runs, sliced so each
+# chunk is one parallel Windows CI job. Every chunk drives the REAL LSP
+# (sharplsp host + Roslyn/FCS sidecars) through the actual VS Code extension
+# host over win32 named-pipe IPC, which the Linux-only `_test-vsix` job can
+# never exercise (same rationale as test-dotnet-windows /
+# [DIST-CI-WIN-TRANSPORT], one level up: that job checks the pipes, these check
+# the whole editor experience on top of them — debugging, profiling, the test
+# explorer, the solution tree, scaffolding, NuGet, and both languages' LSP).
 #
-# Deliberately runs WITHOUT --coverage and skips the coverage gate: a subset
-# can't meet the line threshold, so the Linux _test-vsix job owns coverage. The
-# MOCHA_GREP regex is applied by the inner mocha in out/test/suite/index.js. The
-# `#` in `F#` is escaped for Make; `.` matches the em dash in the suite titles.
-VSIX_SMOKE_GREP ?= Real Semantic LSP|Visible Completions|Hover / Quick Info|Diagnostics / Problems Panel|F\# LSP . Hover|F\# LSP . Go to Definition|F\# LSP . Completion|F\# LSP . Diagnostics
+# Chunk membership lives in editors/vscode/test-chunks.json (single source of
+# truth, never duplicated into CI YAML); scripts/vsix-test-chunks.mjs turns a
+# chunk name into the MOCHA_FILES glob list the inner mocha runner applies, and
+# `_check-vsix-chunks` fails lint if any suite escapes every chunk.
+#
+# Deliberately runs WITHOUT --coverage and skips the coverage gate: one chunk
+# can't meet the line threshold, so the Ubuntu `_test-vsix` job owns coverage.
+VSIX_CHUNKS = node scripts/vsix-test-chunks.mjs
 
-_test-vsix-smoke: _stage-vsix-binary
-	@echo "==> Running VS Code extension SMOKE subset (real LSP, C# + F#, no coverage)..."
-	cd $(VSCODE_DIR) && \
-		npm run pretest && \
-		env -u SHARPLSP_EXECUTABLE_PATH \
-			-u SHARPLSP_LSP_PATH \
-				-u SHARPLSP_BINARY_DIR \
-				-u SHARPLSP_CSHARP_SIDECAR_PATH \
-				-u SHARPLSP_FSHARP_SIDECAR_PATH \
-				-u FORGE_LSP_PATH \
-				-u FORGE_BINARY_DIR \
-				MOCHA_GREP="$(VSIX_SMOKE_GREP)" \
-				npx vscode-test; \
-	status=$$?; \
-	rm -rf "$(abspath $(VSCODE_DIR))/bin"; \
+_check-vsix-chunks:
+	@$(VSIX_CHUNKS) check
+
+_test-vsix-win: _stage-vsix-binary-only
+	@test -n "$(CHUNK)" || { echo "ERROR: CHUNK is required (e.g. make _test-vsix-win CHUNK=debug)" >&2; exit 1; }
+	@echo "==> Running VS Code extension chunk '$(CHUNK)' (real LSP, no coverage)..."
+	status=0; \
+	files="$$($(VSIX_CHUNKS) files $(CHUNK))"; \
+	cd $(VSCODE_DIR); \
+	npm run pretest && $(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test || status=$$?; \
+	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
 	exit $$status
 
 _test-dotnet: _build-dotnet
@@ -305,7 +340,7 @@ _lint-zed:
 	cargo fmt --manifest-path $(ZED_DIR)/Cargo.toml --check
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
-_lint-vsix:
+_lint-vsix: _check-vsix-chunks
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
 
@@ -336,8 +371,15 @@ _fmt-dotnet:
 
 # ── Screenshots ───────────────────────────────────────────────────
 
-screenshots: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
+screenshots: _build-rust _build-dotnet _build-vsix
 	@echo "==> Capturing all website screenshots from real VS Code..."
+	# MUST re-stage in a fresh make process, exactly as _test-vsix does. Listing
+	# _stage-vsix-binary as a prerequisite does NOT work: _build-vsix already
+	# depends on it, so make marks it updated and skips it here — and the last
+	# thing _build-vsix's recipe does is `rm -rf $(VSCODE_DIR)/bin`. Without this
+	# line the screenshot run starts with no bundled binary at all, activation is
+	# blocked by shipwright, and every capture comes out empty.
+	@$(MAKE) _stage-vsix-binary-only
 	(cd $(VSCODE_DIR) && node src/test/suite/screenshot-watcher.mjs) & \
 	WATCHER_PID=$$!; \
 	cd $(VSCODE_DIR) && \
@@ -452,6 +494,7 @@ _package-vsix:
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
 	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) \
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
+	@bash scripts/fetch-netcoredbg.sh $(VSIX_PLAT)
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p dist
 	# vsce/ovsx refuse to PUBLISH with --pre-release unless the VSIX was also

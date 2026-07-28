@@ -12,10 +12,19 @@ name: Dependabot auto-merge
 # Lives at the repo root so it is present on `dependabot-upgrades` (which is cut
 # from main): `pull_request` runs the workflow from the PR merge ref, so the
 # staging branch must carry this file for auto-merge to fire.
+#
+# TWO CHANNELS, because Dependabot splits its output across two base branches:
+#   * VERSION updates -> `dependabot-upgrades` (via dependabot.yml target-branch).
+#     Merged immediately; no CI on the staging branch by design.
+#   * SECURITY updates -> ALWAYS `main`. GitHub ignores `target-branch` for these
+#     ("security updates always use the default branch"), so they cannot be
+#     routed to staging and would otherwise pile up on main forever. They are
+#     auto-merged too, but ONLY behind main's required status checks.
 on:
   pull_request:
     branches:
       - dependabot-upgrades
+      - main
 
 permissions:
   contents: write
@@ -24,7 +33,9 @@ permissions:
 jobs:
   auto-merge:
     name: Auto-merge into dependabot-upgrades
-    if: github.actor == 'dependabot[bot]'
+    if: >-
+      github.actor == 'dependabot[bot]'
+      && github.event.pull_request.base.ref == 'dependabot-upgrades'
     # Deliberately the standard runner, NOT vars.UBUNTU_RUNNER: a trivial merge
     # bot should not consume the larger (paid) runner.
     runs-on: ubuntu-latest
@@ -40,3 +51,32 @@ jobs:
         run: |
           gh pr merge --auto --squash --delete-branch "$PR_URL" \
             || gh pr merge --squash --delete-branch "$PR_URL"
+
+  auto-merge-security:
+    name: Auto-merge security fix into main
+    if: >-
+      github.actor == 'dependabot[bot]'
+      && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Reads the bump's semver class from the PR without parsing its title.
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      # NOTE: `--auto` ONLY — no immediate-merge fallback here, unlike the
+      # staging job. The fallback exists there because the staging branch has no
+      # required checks; on main it would squash the bump in WITHOUT waiting for
+      # ci.yml/codeql.yml, defeating the gate. `--auto` queues the merge and
+      # GitHub releases it only once main's required status checks pass. If
+      # auto-merge cannot be enabled the step fails loudly and the PR stays open.
+      #
+      # Majors are deliberately excluded: a breaking bump reaching main
+      # unattended needs a human, even when CI is green.
+      - name: Queue auto-merge behind main's required checks
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash --delete-branch "$PR_URL"

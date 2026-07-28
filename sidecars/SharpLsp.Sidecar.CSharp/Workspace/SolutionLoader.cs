@@ -21,11 +21,30 @@ internal static class SolutionLoader
         }
     }
 
+    // Only .sln/.slnx/.csproj are loadable targets. Returning any existing file here would
+    // route a plain .cs or .csx document into MSBuildWorkspace.OpenProjectAsync, which fails —
+    // and would prevent it ever reaching file-based/script loading. Implements [SCRIPT-DETECT].
+    private static readonly string[] ProjectOrSolutionExtensions = [".sln", ".slnx", ".csproj"];
+
+    internal static bool IsProjectOrSolutionFile(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return Array.Exists(
+            ProjectOrSolutionExtensions,
+            candidate => string.Equals(extension, candidate, StringComparison.OrdinalIgnoreCase)
+        );
+    }
+
     private static string? FindExplicitOrRootMatch(string workspacePath)
     {
-        return File.Exists(workspacePath) ? workspacePath
+        return File.Exists(workspacePath) ? ExplicitFileTarget(workspacePath)
             : Directory.Exists(workspacePath) ? FindInRootDirectory(workspacePath)
             : null;
+    }
+
+    private static string? ExplicitFileTarget(string workspacePath)
+    {
+        return IsProjectOrSolutionFile(workspacePath) ? workspacePath : null;
     }
 
     private static string? FindInRootDirectory(string workspacePath)

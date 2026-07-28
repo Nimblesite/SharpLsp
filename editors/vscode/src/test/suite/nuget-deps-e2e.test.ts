@@ -43,6 +43,7 @@ import {
 import { effect } from '../../signals.js';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { closeAllEditors } from './test-helpers';
+import { removeDirRecursive } from './test-helpers.js';
 
 // ── Fake nuget.org search responses ───────────────────────────────
 
@@ -148,7 +149,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     fetchStub?.restore();
     fetchStub = undefined;
     await closeAllEditors();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeDirRecursive(tmpDir);
   });
 
   test('sharplsp.nuget.add cancels cleanly when the search box is dismissed', async function () {
@@ -398,7 +399,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
   });
 
   teardown(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeDirRecursive(tmpDir);
   });
 
   test('parses and alphabetically sorts package + project references', () => {
@@ -516,7 +517,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
   teardown(async () => {
     stubs.restore();
     await closeAllEditors();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeDirRecursive(tmpDir);
   });
 
   test('removeNuGetPackage strips the PackageReference from the project XML', async function () {
@@ -731,7 +732,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
 
   teardown(() => {
     resetForTests();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeDirRecursive(tmpDir);
   });
 
   test('ensureTracked parses a project and pushes it into the projectDependencies map', () => {

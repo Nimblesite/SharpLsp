@@ -27,6 +27,7 @@ import { extractSignature, isFSharpSourceDocument, fsiTerminalOptions } from '..
 import { isRelevantLanguage, isHotReloadRunning } from '../../hot-reload.js';
 import { openFSharpFile, openCSharpFile, closeAllEditors, pollUntilResult } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
+import { removeDirRecursive } from './test-helpers.js';
 
 // ── Fake OutputChannel ────────────────────────────────────────────
 
@@ -112,7 +113,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
       .getConfiguration('sharplsp')
       .update('hotReload.onSave', undefined, vscode.ConfigurationTarget.Workspace);
     await closeAllEditors();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeDirRecursive(tmpDir);
   });
 
   // ── output-filter.ts ────────────────────────────────────────────

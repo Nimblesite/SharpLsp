@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { detectRuntimePlatform, exeName } from '../../platform.js';
+import { comparablePath } from './test-helpers.js';
 
 const extensionId = 'nimblesite.sharplsp';
 const lspComponentId = 'sharplsp';
@@ -45,7 +46,12 @@ suite('Bundled binary resolution', () => {
     assert.ok(lspDiag !== undefined, `${lspComponentId} diagnostic must be present`);
     assert.strictEqual(lspDiag.resolution.status, 'ok');
     assert.strictEqual(lspDiag.resolution.source, 'bundled');
-    assert.strictEqual(lspDiag.resolution.path, bundledBin);
+    const resolvedPath = lspDiag.resolution.path;
+    assert.ok(
+      typeof resolvedPath === 'string',
+      'a bundled resolution must report the path it resolved to',
+    );
+    assert.strictEqual(comparablePath(resolvedPath), comparablePath(bundledBin));
   });
 });
 

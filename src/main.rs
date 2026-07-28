@@ -174,10 +174,18 @@ fn run_server() -> Result<()> {
         })
         .map(PathBuf::from);
 
-    let sharplsp_config = if let Some(ref root) = workspace_root {
+    // Single-file mode still honours a `sharplsp.toml`: discovery falls back to the
+    // process's current directory, which is the directory the editor launched the
+    // server in. Opening one file inside a configured tree must not silently ignore
+    // that tree's configuration just because no workspace folder was sent.
+    // Implements [SCRIPT-DETECT].
+    let config_root = workspace_root
+        .clone()
+        .or_else(|| std::env::current_dir().ok());
+    let sharplsp_config = if let Some(ref root) = config_root {
         config::load_config(root)?
     } else {
-        info!("No workspace root — using default configuration");
+        info!("No workspace root or current directory — using default configuration");
         config::SharpLspConfig::default()
     };
 
@@ -196,44 +204,49 @@ fn run_server() -> Result<()> {
     // can consult it before re-syncing files from disk and clobbering live edits.
     let vfs = Arc::new(Vfs::new());
 
-    // Initialize C# sidecar manager if enabled and workspace root is available.
+    // Initialize C# sidecar manager if enabled. When no workspace root is
+    // available (single-file mode), a fallback root is used solely for IPC
+    // path generation — the actual workspace path is sent via workspace/open
+    // once the first file opens.
+    let fallback_root = std::env::temp_dir();
+    let sidecar_root = workspace_root.as_deref().unwrap_or(&fallback_root);
+
     let csharp_sidecar = if sharplsp_config.csharp.enabled {
-        workspace_root
-            .as_ref()
-            .map(|root| Arc::new(SidecarManager::csharp(root)))
+        Some(Arc::new(SidecarManager::csharp(sidecar_root)))
     } else {
         None
     };
 
-    // Initialize F# sidecar manager if enabled and workspace root is available.
     let fsharp_sidecar = if sharplsp_config.fsharp.enabled {
-        workspace_root
-            .as_ref()
-            .map(|root| Arc::new(SidecarManager::fsharp(root)))
+        Some(Arc::new(SidecarManager::fsharp(sidecar_root)))
     } else {
         None
     };
 
-    // Eagerly open workspaces in sidecars, then start health monitoring.
+    // Eagerly open workspaces in sidecars when a workspace root is available.
     // Health monitoring must wait until workspace/open completes — otherwise the
     // health check can time out on the transport lock (held by workspace/open),
     // declare a false crash, and kill the sidecar before the solution is loaded.
-    start_sidecar(
-        csharp_sidecar.as_ref(),
-        workspace_root.as_ref(),
-        Some((&sharplsp_config.diagnostics, &connection)),
-        sharplsp_config.analyzers.clone(),
-        &runtime,
-        Arc::clone(&vfs),
-    );
-    start_sidecar(
-        fsharp_sidecar.as_ref(),
-        workspace_root.as_ref(),
-        None,
-        sharplsp_config.analyzers.clone(),
-        &runtime,
-        Arc::clone(&vfs),
-    );
+    // When no workspace root exists (single-file mode), workspace/open is
+    // deferred until the first didOpen notification.
+    if workspace_root.is_some() {
+        start_sidecar(
+            csharp_sidecar.as_ref(),
+            workspace_root.as_ref(),
+            Some((&sharplsp_config.diagnostics, &connection)),
+            sharplsp_config.analyzers.clone(),
+            &runtime,
+            Arc::clone(&vfs),
+        );
+        start_sidecar(
+            fsharp_sidecar.as_ref(),
+            workspace_root.as_ref(),
+            None,
+            sharplsp_config.analyzers.clone(),
+            &runtime,
+            Arc::clone(&vfs),
+        );
+    }
 
     main_loop(
         &connection,
@@ -242,6 +255,7 @@ fn run_server() -> Result<()> {
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
         &vfs,
+        workspace_root.is_some(),
     )?;
 
     // Shut down profiler sessions.
@@ -392,6 +406,72 @@ async fn configure_analyzers(sidecar: &SidecarManager, analyzers: &config::Analy
     }
 }
 
+/// Lazily open the workspace for the first opened document when the client supplied no
+/// workspace root.
+///
+/// Returns `true` only when a sidecar workspace was actually opened. Returning `true` for an
+/// unsupported document would latch `workspace_initialized` on, so opening a `.md` or `.json`
+/// before any source file would permanently prevent the real workspace from loading.
+/// Implements [SCRIPT-ROUTE-LAZY].
+fn init_workspace_for_file(
+    notif: &Notification,
+    runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+) -> bool {
+    let Some(file_path) = opened_document_path(notif) else {
+        return false;
+    };
+    let Some(sidecar) = sidecar_for_path(&file_path, csharp_sidecar, fsharp_sidecar) else {
+        return false;
+    };
+
+    // The sidecar is given the FILE PATH, not its parent directory. Sending a directory is what
+    // forces the sidecar to glob the folder and compile unrelated programs together.
+    // Implements [SCRIPT-ROUTE-TARGET].
+    info!("No workspace root — opening single-document workspace for {file_path}");
+    let sidecar = Arc::clone(sidecar);
+    drop(runtime.spawn(async move {
+        if let Err(err) = open_workspace(&sidecar, &file_path).await {
+            error!("Failed to lazily open workspace: {err:#}");
+        }
+        // Health monitoring starts only after workspace/open completes, matching the eager
+        // path — a health check that races the load can kill a healthy sidecar.
+        // Implements [SCRIPT-ROUTE-HEALTH].
+        sidecar.start_health_monitor().await;
+    }));
+    true
+}
+
+/// Extract the file path from a `textDocument/didOpen` notification.
+fn opened_document_path(notif: &Notification) -> Option<String> {
+    let params =
+        serde_json::from_value::<lsp_types::DidOpenTextDocumentParams>(notif.params.clone())
+            .ok()?;
+    semantic::uri_to_path(&params.text_document.uri).ok()
+}
+
+/// Map a document to the sidecar that owns its language. Implements [SCRIPT-DETECT].
+///
+/// `.fsi` is deliberately absent: a signature file with no owning project has no meaningful
+/// semantic closure and is served syntax-only by the host. Implements [FSX-FSI].
+fn sidecar_for_path<'a>(
+    file_path: &str,
+    csharp_sidecar: Option<&'a Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&'a Arc<SidecarManager>>,
+) -> Option<&'a Arc<SidecarManager>> {
+    let extension = std::path::Path::new(file_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match extension.as_str() {
+        "cs" | "csx" => csharp_sidecar,
+        "fs" | "fsx" | "fsscript" => fsharp_sidecar,
+        _ => None,
+    }
+}
+
 /// Start a sidecar: open workspace, optionally trigger solution diagnostics, begin health monitoring.
 fn start_sidecar(
     sidecar: Option<&Arc<SidecarManager>>,
@@ -442,6 +522,7 @@ fn main_loop(
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     vfs: &Arc<Vfs>,
+    mut workspace_initialized: bool,
 ) -> Result<()> {
     let parsers = TsParsers::new();
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
@@ -485,6 +566,10 @@ fn main_loop(
                 if notif.method == "exit" {
                     info!("Exit notification received");
                     return Ok(());
+                }
+                if !workspace_initialized && notif.method == DidOpenTextDocument::METHOD {
+                    workspace_initialized =
+                        init_workspace_for_file(&notif, runtime, csharp_sidecar, fsharp_sidecar);
                 }
                 handle_notification(
                     notif,

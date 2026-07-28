@@ -100,7 +100,7 @@ pub fn assert_nav_null_no_sidecar(
 /// the ready client. Shared setup for the no-sidecar feature tests that issue several
 /// requests in one session (and therefore can't use [`assert_no_sidecar_request`]).
 pub fn open_no_sidecar(code: &str) -> LspClient {
-    let mut client = LspClient::start();
+    let mut client = LspClient::start_without_sidecars();
     let _ = client.initialize();
     client.open_document(TEST_URI, code);
     client
@@ -198,7 +198,7 @@ pub fn assert_no_sidecar_request(
     expect: NoSidecarResult,
     label: &str,
 ) {
-    let mut client = LspClient::start();
+    let mut client = LspClient::start_without_sidecars();
     let _ = client.initialize();
     client.open_document(TEST_URI, code);
 

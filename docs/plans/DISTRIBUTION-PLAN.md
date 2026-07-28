@@ -139,6 +139,38 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 - [x] Run test jobs concurrently with `lint` (removed `needs: lint`)
 - [ ] Confirm shard wall times on a real PR run; rebalance `SHARD_COUNT` if a shard drifts past ~6 min
 
+### Windows VS Code feature chunks ([DIST-CI-WIN-VSIX])
+
+- [x] Replace the `MOCHA_GREP` smoke subset with file-glob chunk selection (`MOCHA_FILES` in `src/test/suite/index.ts`); a glob matching nothing is a hard error
+- [x] Declare chunk membership once in `editors/vscode/test-chunks.json`, read by `scripts/vsix-test-chunks.mjs` (`files` / `matrix` / `check`)
+- [x] Cover the whole feature surface on Windows: `lifecycle`, `lsp`, `fsharp`, `debug` (netcoredbg + Test Explorer + CodeLens), `profiler` (trace/counters/dumps + FSI/build/hot-reload), `explorer` (tree + context menus), `packages` (scaffolding + NuGet)
+- [x] Guard completeness in lint (`_check-vsix-chunks`) so a new suite cannot silently skip Windows CI
+- [x] Build once / fan out: one Windows `build` job publishes host + sidecars; chunks stage via `_stage-vsix-binary-only`
+- [x] `fail-fast: false` on the chunk matrix so one feature area's failure never hides the others
+- [ ] Confirm per-chunk wall times on a real PR run; split `explorer` / `packages` if either drifts past ~30 min
+
+#### Windows-only defects the widened gate surfaced immediately
+
+Every one of these shipped green on Ubuntu and had never executed on Windows at all, because the previous `MOCHA_GREP` smoke subset did not select them:
+
+- [x] `bundled-sidecars.test.ts` asserted extensionless `bin/all/sharplsp-sidecar-*`, but Windows stages `…​.exe` (shipwright's bundlePath is `bin/all/…${exe}`). Now uses `exeName()`, matching the contract `00-vsix-dev-binary-staging.test.ts` already documented.
+- [x] `bundled-binary.test.ts` compared `extensionPath`-derived paths against shipwright's `Uri.fsPath`-derived path with `strictEqual`. VS Code lowercases the drive letter in `fsPath`, so the same file has two spellings on win32; comparison is now case-insensitive on Windows only (POSIX stays case-sensitive). Shared as `comparablePath()` in `test-helpers.ts`.
+- [x] `debug-e2e.test.ts` compared three resolved `program` paths the same way — the auto-detected `.dll` from a real `.csproj`, the `provideDebugConfigurations` default, and the `sharplsp.debugProgram` entry point. All three now use `comparablePath()`.
+- [x] `scaffolding-e2e.test.ts` compared `generateFileContent`'s `\n` output against the editor buffer and the saved file. VS Code gives a new document the platform EOL and rewrites inserted text to match, so on Windows both legitimately hold `\r\n`. Now normalized via `comparableText()`; the content assertions are unchanged.
+- [x] `testing-lens-e2e.test.ts` asserted the "no discovered test matches" warning path using a fixture method named `Adds_TwoNumbers` — the same name `test-explorer-e2e.test.ts` discovers into the shared `SharpLspTestController`. The suite therefore passed or failed on whether that discovery won the race (green on Ubuntu, red on Windows). Fixture methods are now suite-unique (`Lens_Adds*`), so the precondition holds regardless of execution order.
+  - **Open product bug this de-pressurized:** `runTestByMethodName` ([src/test-lens.ts](../../editors/vscode/src/test-lens.ts)) discards the URI its command receives and matches ANY discovered test whose id's last dot-segment equals the bare method name, last-match-wins — so run/debug-at-cursor can execute a test from a different project, and `findResultByMethodName` mis-attributes the CodeLens badge the same way. The rename is still correct (suites must be order-independent), but the collision is now untested. Needs a URI/project-scoped lookup plus a regression test.
+
+Two further failure classes were investigated and turned out **not** to be defects, so no code changed:
+
+- C# completion (`completions-visible`, `lsp-integration`) reporting kind `Text(0)` instead of `Property(9)`, and all four F# completion suites exhausting their poll, were both traced to a **stale sidecar build in the working tree**, not to the suites and not to the product. Once the sidecars were rebuilt, `lsp` ran 63/0 and `fsharp` 35/0. Do not "fix" these by loosening the poll predicates: waiting for a Roslyn-backed `CompletionItemKind` converts a clear `0 !== 9` assertion failure into an opaque 90-second mocha timeout, which is strictly worse to diagnose. Rebuild the sidecars first (`make _build-dotnet`) before believing a completion failure.
+
+### CI workflow layout ([DIST-CI-LAYOUT])
+
+- [x] Split `ci.yml` into reusable workflows: `ci-lint`, `ci-rust`, `ci-dotnet`, `ci-vsix`, `ci-vsix-windows`
+- [x] De-duplicate the PATH-purge step into `scripts/purge-path-binaries.sh` (was inline in three jobs)
+- [x] De-duplicate the test-host env scrubbing into the `VSIX_TEST_ENV` Make variable
+- [x] Fix the Rust test job's NuGet cache step (was `actions/setup-node` with `actions/cache` inputs, so it never cached)
+
 ### VS Code extension (`install.ts`)
 
 - [x] Replace HTTPS download path with package-manager-driven install

@@ -297,6 +297,49 @@ let private loadFirstProject (state: FSharpWorkspaceState) (fsprojFiles: string 
         with ex ->
             Error ex.Message
 
+let private isScriptPath (path: string) =
+    path.EndsWith(".fsx", StringComparison.OrdinalIgnoreCase)
+    || path.EndsWith(".fsscript", StringComparison.OrdinalIgnoreCase)
+
+/// Load an F# script (`.fsx`/`.fsscript`).
+///
+/// FCS resolves `#r`, `#r "nuget:"`, `#I` and the `#load` closure itself, so no directive
+/// parsing happens here — reimplementing it would duplicate the compiler. `useFsiAuxLib`
+/// is what makes the `fsi` object (and therefore `fsi.CommandLineArgs`) bind.
+/// Implements [FSX-OPTIONS].
+let private loadScript (state: FSharpWorkspaceState) (scriptPath: string) (ct: CancellationToken) =
+    task {
+        let text =
+            match state.Overlays.TryGetValue(overlayKey scriptPath) with
+            | true, overlay -> overlay
+            | _ -> File.ReadAllText scriptPath
+
+        // A script open in an editor defines INTERACTIVE and EDITING; COMPILED is not
+        // defined. Getting this wrong greys out live `#if INTERACTIVE` blocks as dead
+        // code while they are live at run time. Implements [FSX-SYMBOLS].
+        let otherFlags = [| "--define:INTERACTIVE"; "--define:EDITING" |]
+
+        let computation =
+            state.Checker.GetProjectOptionsFromScript(
+                scriptPath,
+                SourceText.ofString text,
+                otherFlags = otherFlags,
+                useFsiAuxLib = true,
+                useSdkRefs = true,
+                assumeDotNetFramework = false)
+
+        let! options, diagnostics = Async.StartAsTask(computation, cancellationToken = ct)
+
+        for diagnostic in diagnostics do
+            Log.Debug("F# script option diagnostic for {Path}: {Message}", scriptPath, diagnostic.Message)
+
+        state.ProjectOptions <- Some options
+        state.IsLoaded <- true
+        let fileList = String.Join(", ", options.SourceFiles |> Array.map Path.GetFileName)
+        Log.Debug("F# script loaded from {Path} with files: [{Files}]", scriptPath, fileList)
+        return Ok()
+    }
+
 /// Load a project from a path, explicit solution, or workspace directory.
 let loadProjectWithCancellation
     (state: FSharpWorkspaceState)
@@ -305,6 +348,12 @@ let loadProjectWithCancellation
     =
     task {
         try
+            // A script is self-describing and never belongs to an .fsproj, so it is
+            // dispatched before project discovery. Implements [SCRIPT-DETECT].
+            if File.Exists(path) && isScriptPath path then
+                return! loadScript state (Path.GetFullPath path) ct
+            else
+
             let! discovered = discoverFsprojFiles path ct
             match discovered with
             | Error msg ->

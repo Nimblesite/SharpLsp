@@ -80,6 +80,15 @@ indexing_slicing     = "deny"
 as_conversions       = "deny"
 # Forgotten debug macros leaking info to stderr
 dbg_macro            = "deny"
+# No raw stdout writes — an LSP server speaks JSON-RPC over stdio, so a stray
+# `print!`/`println!` corrupts the protocol frame. Diagnostics MUST go through
+# `tracing` (CLAUDE.md logging principle #1). This macro-only lint does not touch
+# the framed writes lsp-server makes via io::stdout(), so protocol output is fine.
+# NOTE: `print_stderr` is deliberately NOT denied — stderr is a separate stream
+# inherited into the editor's log panel, and it is the correct last-resort sink
+# for the pre-tracing bootstrap error in main.rs (before the subscriber exists)
+# and for skip/status diagnostics in integration tests.
+print_stdout         = "deny"
 # Resource leaks from skipped destructors — use ManuallyDrop if needed
 mem_forget           = "deny"
 # From impls that can panic should be TryFrom instead

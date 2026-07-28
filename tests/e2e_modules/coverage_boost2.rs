@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn test_document_highlight_on_fsharp_file_without_sidecar() {
-    let mut client = LspClient::start();
+    let mut client = LspClient::start_without_sidecars();
     let _ = client.initialize();
 
     let fs_uri = "file:///test/Highlight.fs";

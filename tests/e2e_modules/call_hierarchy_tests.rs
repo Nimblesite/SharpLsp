@@ -4,6 +4,10 @@ use super::*;
 
 // When the LSP server has no sidecar (no workspace root given at initialize),
 // all call hierarchy requests must return null/empty without crashing.
+//
+// "No sidecar" is produced by config (see LspClient::start_without_sidecars), NOT by
+// omitting the workspace root: since [SCRIPT-ROUTE-LAZY] a single file with no project
+// starts its sidecar lazily, so an initialize-without-root server DOES have one.
 
 #[test]
 fn test_prepare_call_hierarchy_without_sidecar_returns_null() {

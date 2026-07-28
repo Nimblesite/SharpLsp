@@ -433,6 +433,243 @@ fn locate_nettrace_sample() -> Option<std::path::PathBuf> {
     None
 }
 
+// ── Real captured flame graph: capture -> convert -> assert content ──
+
+/// C# workload that burns CPU inside distinctly-named methods, so a real flame
+/// graph MUST attribute the overwhelming majority of time to them.
+const FLAMEGRAPH_WORKLOAD_CS: &str = r#"using System.Diagnostics;
+namespace FlameProof;
+internal static class Program
+{
+    private static void Main()
+    {
+        var sw = Stopwatch.StartNew();
+        long total = 0;
+        while (sw.Elapsed.TotalSeconds < 4.0) { total += ComputePrimeSumUpTo(60000); }
+        System.Console.Error.WriteLine($"done {total}");
+    }
+    private static long ComputePrimeSumUpTo(int limit)
+    {
+        long sum = 0;
+        for (int n = 2; n < limit; n++) { if (IsPrimeNumber(n)) { sum += n; } }
+        return sum;
+    }
+    private static bool IsPrimeNumber(int value)
+    {
+        if (value < 2) { return false; }
+        for (int d = 2; (long)d * d <= value; d++) { if (value % d == 0) { return false; } }
+        return true;
+    }
+}
+"#;
+
+/// Workload project. Optimization off + portable PDBs keep managed frames
+/// attributable to the sampling profiler.
+const FLAMEGRAPH_WORKLOAD_CSPROJ: &str = r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>FlameProof</AssemblyName>
+    <Optimize>false</Optimize>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+</Project>
+"#;
+
+/// Resolve a usable `dotnet-trace`, installing the global tool if absent. NEVER
+/// skips: like `require_dotnet`, a missing profiler tool is a setup failure.
+fn ensure_dotnet_trace() -> String {
+    if has_dotnet_trace() {
+        return "dotnet-trace".to_string();
+    }
+    let _ = std::process::Command::new("dotnet")
+        .args(["tool", "install", "--global", "dotnet-trace"])
+        .status();
+    if has_dotnet_trace() {
+        return "dotnet-trace".to_string();
+    }
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .expect("no home directory");
+    let exe = if cfg!(windows) {
+        "dotnet-trace.exe"
+    } else {
+        "dotnet-trace"
+    };
+    let full = std::path::Path::new(&home)
+        .join(".dotnet")
+        .join("tools")
+        .join(exe);
+    assert!(
+        full.exists(),
+        "dotnet-trace is unavailable and could not be installed"
+    );
+    full.to_string_lossy().into_owned()
+}
+
+/// Build the workload and capture a real `.nettrace` by running it under
+/// `dotnet-trace collect`. Returns the captured trace path.
+fn capture_workload_nettrace(dir: &std::path::Path) -> std::path::PathBuf {
+    std::fs::write(dir.join("FlameProof.csproj"), FLAMEGRAPH_WORKLOAD_CSPROJ).unwrap();
+    std::fs::write(dir.join("Program.cs"), FLAMEGRAPH_WORKLOAD_CS).unwrap();
+
+    let build = std::process::Command::new("dotnet")
+        .args([
+            "build", "-c", "Release", "-o", "out", "--nologo", "-v", "quiet",
+        ])
+        .current_dir(dir)
+        .output()
+        .expect("dotnet build");
+    assert!(
+        build.status.success(),
+        "workload build failed: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let trace = ensure_dotnet_trace();
+    let nettrace = dir.join("trace.nettrace");
+    let collect = std::process::Command::new(&trace)
+        .args([
+            "collect",
+            "--profile",
+            "dotnet-sampled-thread-time",
+            "--output",
+        ])
+        .arg(&nettrace)
+        .args(["--", "dotnet", "out/FlameProof.dll"])
+        .current_dir(dir)
+        .output()
+        .expect("dotnet-trace collect");
+    assert!(
+        collect.status.success(),
+        "dotnet-trace collect failed: {}",
+        String::from_utf8_lossy(&collect.stderr)
+    );
+    let size = std::fs::metadata(&nettrace).map_or(0, |m| m.len());
+    assert!(
+        size > 1024,
+        "captured .nettrace is only {size} bytes — no real data"
+    );
+    nettrace
+}
+
+/// Reconstruct inclusive time per frame and the max stack depth from an evented
+/// speedscope profile. Returns `(inclusive_ms_by_frame, max_depth, span_ms)`.
+fn evented_inclusive(profile: &Value, frame_count: usize) -> (Vec<f64>, usize, f64) {
+    let mut inclusive = vec![0.0_f64; frame_count];
+    let mut stack: Vec<(usize, f64)> = Vec::new();
+    let mut max_depth = 0_usize;
+    for event in profile["events"].as_array().expect("events array") {
+        let at = event["at"].as_f64().expect("event.at");
+        match event["type"].as_str().expect("event.type") {
+            "O" => {
+                let frame = usize::try_from(event["frame"].as_u64().expect("frame")).unwrap();
+                stack.push((frame, at));
+                max_depth = max_depth.max(stack.len());
+            }
+            "C" => {
+                if let Some((frame, opened)) = stack.pop() {
+                    if frame < frame_count {
+                        inclusive[frame] += at - opened;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let span =
+        profile["endValue"].as_f64().unwrap_or(0.0) - profile["startValue"].as_f64().unwrap_or(0.0);
+    (inclusive, max_depth, span)
+}
+
+/// [PROFILER-TRACE] Capture a REAL trace of a CPU-bound .NET process, convert it
+/// through the live `sharplsp/profiler/convertTrace` handler, and assert the
+/// speedscope flame graph attributes the overwhelming majority of CPU time to
+/// the workload's own hot method. This proves profiling yields real, verifiable
+/// results — a non-crashing round-trip is not enough. Never skips (unlike the
+/// convert round-trip tests above, which need a pre-seeded sample).
+#[test]
+fn test_profiler_captures_real_flamegraph_with_cpu_attribution() {
+    require_dotnet();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let nettrace = capture_workload_nettrace(tmp.path());
+
+    let mut client = LspClient::start();
+    let _ = client.initialize();
+    let resp = client.request(
+        "sharplsp/profiler/convertTrace",
+        json!({ "input_path": nettrace.to_str().unwrap(), "format": "speedscope" }),
+    );
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+
+    assert!(resp.get("error").is_none(), "convertTrace failed: {resp}");
+    let output_path = resp["result"]["output_path"]
+        .as_str()
+        .expect("result.output_path");
+    assert!(
+        std::path::Path::new(output_path).exists(),
+        "speedscope output missing at {output_path}"
+    );
+
+    let doc: Value = serde_json::from_str(&std::fs::read_to_string(output_path).unwrap()).unwrap();
+    assert!(
+        doc["$schema"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("speedscope"),
+        "output is not a speedscope document: {}",
+        doc["$schema"]
+    );
+
+    let frames = doc["shared"]["frames"].as_array().expect("shared.frames");
+    assert!(!frames.is_empty(), "frame table must be non-empty");
+
+    let is_prime = frames
+        .iter()
+        .position(|f| {
+            f["name"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("IsPrimeNumber")
+        })
+        .expect("IsPrimeNumber must appear as a captured flame-graph frame");
+    let compute = frames
+        .iter()
+        .position(|f| {
+            f["name"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("ComputePrimeSumUpTo")
+        })
+        .expect("ComputePrimeSumUpTo must appear as a captured frame");
+
+    let profile = &doc["profiles"][0];
+    assert_eq!(
+        profile["type"].as_str(),
+        Some("evented"),
+        "dotnet-trace emits evented speedscope profiles"
+    );
+    let (inclusive, max_depth, span) = evented_inclusive(profile, frames.len());
+
+    assert!(
+        max_depth >= 3,
+        "flame graph call-stack depth must be >= 3, got {max_depth}"
+    );
+    assert!(span > 0.0, "captured time span must be > 0");
+    assert!(
+        inclusive[compute] > 0.0,
+        "ComputePrimeSumUpTo must carry inclusive time"
+    );
+    let pct = 100.0 * inclusive[is_prime] / span;
+    assert!(
+        pct >= 50.0,
+        "IsPrimeNumber must own >=50% of captured CPU time; got {pct:.1}% \
+         ({:.0}ms of {span:.0}ms)",
+        inclusive[is_prime]
+    );
+}
+
 // ── Profiler Performance Benchmarks ──────────────────────────────
 
 /// Benchmark: `sharplsp/profiler/listProcesses` completes within 500ms.
