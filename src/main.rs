@@ -174,10 +174,18 @@ fn run_server() -> Result<()> {
         })
         .map(PathBuf::from);
 
-    let sharplsp_config = if let Some(ref root) = workspace_root {
+    // Single-file mode still honours a `sharplsp.toml`: discovery falls back to the
+    // process's current directory, which is the directory the editor launched the
+    // server in. Opening one file inside a configured tree must not silently ignore
+    // that tree's configuration just because no workspace folder was sent.
+    // Implements [SCRIPT-DETECT].
+    let config_root = workspace_root
+        .clone()
+        .or_else(|| std::env::current_dir().ok());
+    let sharplsp_config = if let Some(ref root) = config_root {
         config::load_config(root)?
     } else {
-        info!("No workspace root — using default configuration");
+        info!("No workspace root or current directory — using default configuration");
         config::SharpLspConfig::default()
     };
 

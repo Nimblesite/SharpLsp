@@ -111,6 +111,10 @@ pub struct LspClient {
     pub stdin: Option<ChildStdin>,
     pub reader: BufReader<ChildStdout>,
     pub stderr: Option<ChildStderr>,
+    /// Holds the generated config directory for [`LspClient::start_without_sidecars`]
+    /// so it outlives the server process running inside it. Never read: dropping it
+    /// deletes the directory, so ownership is the whole point.
+    config_dir: Option<tempfile::TempDir>,
 }
 
 impl LspClient {
@@ -130,12 +134,40 @@ impl LspClient {
         Self::spawn(Stdio::piped())
     }
 
+    /// Spawn a server that genuinely has NO sidecars, by starting it in a directory
+    /// whose `sharplsp.toml` disables both.
+    ///
+    /// Initializing without a workspace root is no longer sufficient: since
+    /// [SCRIPT-ROUTE-LAZY] the sidecar managers are always constructed (a single file
+    /// with no project starts its sidecar lazily on first didOpen), so a request would
+    /// reach the sidecar and the "no sidecar" contract would not be under test at all.
+    /// Config is the only switch that actually removes them.
+    pub fn start_without_sidecars() -> Self {
+        let dir = tempfile::tempdir().expect("temp dir for sidecar-less config");
+        std::fs::write(
+            dir.path().join("sharplsp.toml"),
+            "[csharp]\nenabled = false\n\n[fsharp]\nenabled = false\n",
+        )
+        .expect("write sharplsp.toml");
+        let mut client = Self::spawn_in(Stdio::null(), Some(dir.path()));
+        client.config_dir = Some(dir);
+        client
+    }
+
     pub fn spawn(stderr: Stdio) -> Self {
+        Self::spawn_in(stderr, None)
+    }
+
+    pub fn spawn_in(stderr: Stdio, cwd: Option<&std::path::Path>) -> Self {
         let binary = sharplsp_binary_path();
         let debug = launcher_debug(&binary);
         let failure = format!("failed to spawn sharplsp\n{debug}");
         eprintln!("{debug}");
-        let mut child = Command::new(&binary)
+        let mut command = Command::new(&binary);
+        if let Some(dir) = cwd {
+            let _ = command.current_dir(dir);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(stderr)
@@ -150,6 +182,7 @@ impl LspClient {
             stdin: Some(stdin),
             reader,
             stderr,
+            config_dir: None,
         }
     }
 

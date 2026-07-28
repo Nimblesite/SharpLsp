@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn test_fsharp_file_errors_gracefully() {
-    let mut client = LspClient::start();
+    let mut client = LspClient::start_without_sidecars();
     let _ = client.initialize();
 
     let fs_uri = "file:///test/Module.fs";
@@ -36,7 +36,7 @@ fn test_fsharp_file_errors_gracefully() {
 
 #[test]
 fn test_fsharp_fsx_extension() {
-    let mut client = LspClient::start();
+    let mut client = LspClient::start_without_sidecars();
     let _ = client.initialize();
 
     let fsx_uri = "file:///test/Script.fsx";
@@ -65,7 +65,7 @@ fn test_fsharp_fsx_extension() {
 
 #[test]
 fn test_fsharp_fsi_extension() {
-    let mut client = LspClient::start();
+    let mut client = LspClient::start_without_sidecars();
     let _ = client.initialize();
 
     let fsi_uri = "file:///test/Signature.fsi";

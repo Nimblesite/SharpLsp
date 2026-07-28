@@ -39,7 +39,7 @@ fn test_references_on_comment_returns_null() {
 
 #[test]
 fn test_references_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
+    let mut client = LspClient::start_without_sidecars();
     let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
@@ -69,7 +69,7 @@ fn test_document_highlight_on_comment_returns_null() {
 
 #[test]
 fn test_document_highlight_without_sidecar_returns_null() {
-    let mut client = LspClient::start();
+    let mut client = LspClient::start_without_sidecars();
     let _ = client.initialize();
 
     client.open_document(TEST_URI, SIMPLE_CLASS);
