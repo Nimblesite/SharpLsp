@@ -60,16 +60,8 @@ function chunkGlobs(manifest, chunk) {
 }
 
 /**
- * A glob with no wildcard is a literal filename; otherwise `*` matches any run
- * of characters and `?` exactly one. `?` MUST be translated rather than left
- * alone: as a bare regex quantifier it would make the preceding character
- * optional, so the guard would claim ownership of suites the real `glob`
- * matcher never selects — the one way a suite can read as "owned" yet run in no
- * chunk.
- */
-/**
  * Regex metacharacters that must be escaped to match literally. `*` and `?` are
- * absent deliberately — they are the glob wildcards, translated above.
+ * absent deliberately — they are the glob wildcards, translated by `globToRegExp`.
  */
 const REGEXP_METACHARACTERS = new Set([
     ".",
@@ -86,6 +78,14 @@ const REGEXP_METACHARACTERS = new Set([
     "\\",
 ]);
 
+/**
+ * A glob with no wildcard is a literal filename; otherwise `*` matches any run
+ * of characters and `?` exactly one. `?` MUST be translated rather than left
+ * alone: as a bare regex quantifier it would make the preceding character
+ * optional, so the guard would claim ownership of suites the real `glob`
+ * matcher never selects — the one way a suite can read as "owned" yet run in no
+ * chunk.
+ */
 function globToRegExp(glob) {
     let pattern = "";
     for (const char of glob) {
