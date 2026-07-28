@@ -10,7 +10,9 @@
       "Bash(grep -rl \"too-many-cooks\" ~/.claude/ ~/.claude.json ~/AppData/Roaming/Claude/ 2>/dev/null | head -5)",
       "Read(//c/Users/chris/.claude/**)",
       "Bash(dotnet build *)",
-      "Bash(dotnet test *)"
+      "Bash(dotnet test *)",
+      "Bash(gh pr *)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\)\")"
     ]
   },
   "autoMemoryEnabled": false

@@ -47,6 +47,11 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
         </PackageReference>
+        <!-- Feeds the (otherwise dormant) BannedApiAnalyzers RS0030 rule: bans
+             non-deterministic wall-clock time and thread-blocking in the C#
+             sidecars. See BannedSymbols.txt for the list + rationale. -->
+        <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
+
 
         <PackageReference Include="Outcome" Version="1.0.0" />
         <PackageReference Include="Exhaustion" Version="1.0.0">

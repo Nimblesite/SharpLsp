@@ -80,6 +80,12 @@ indexing_slicing     = "deny"
 as_conversions       = "deny"
 # Forgotten debug macros leaking info to stderr
 dbg_macro            = "deny"
+# No raw stdout/stderr writes — diagnostics MUST go through `tracing`, never
+# `print!`/`println!`/`eprint!`/`eprintln!` (CLAUDE.md logging principle #1). The
+# LSP stdio transport writes via io::stdout() through lsp-server, which these
+# macro-only lints deliberately do not touch, so protocol output is unaffected.
+print_stdout         = "deny"
+print_stderr         = "deny"
 # Resource leaks from skipped destructors — use ManuallyDrop if needed
 mem_forget           = "deny"
 # From impls that can panic should be TryFrom instead

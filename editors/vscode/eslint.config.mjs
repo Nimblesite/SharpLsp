@@ -100,6 +100,12 @@ export default tseslint.config(
       // Conflicts with no-non-null-assertion — disable the weaker rule.
       '@typescript-eslint/non-nullable-type-assertion-style': 'off',
 
+      // ── 17. No raw console — diagnostics go through the `log` module ─────
+      // Enforces CLAUDE.md logging principle #1 ("No raw console.log for
+      // diagnostics"). Source uses the OutputChannel-backed `./log` wrapper;
+      // test files keep console access via the relaxed test override below.
+      'no-console': 'error',
+
       // ── Bonus rules ────────────────────────────────────────────────
       'eqeqeq': ['error', 'always'],
       'no-param-reassign': 'error',
