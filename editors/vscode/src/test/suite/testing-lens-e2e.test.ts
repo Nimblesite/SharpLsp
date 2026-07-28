@@ -99,6 +99,13 @@ const CSPROJ_XML = [
   '</Project>',
 ].join('\n');
 
+// The method names are deliberately prefixed and unique to THIS suite. The
+// at-cursor tests below assert the "no discovered test matches" warning path,
+// which only holds while nothing else has put a same-named item into the shared
+// SharpLspTestController. test-explorer-e2e discovers a real
+// `…CalculatorTests.Adds_TwoNumbers`, so reusing that name makes this suite pass
+// or fail depending on whether that suite's discovery won the race — green on
+// Ubuntu, red on Windows ([DIST-CI-WIN-VSIX]). Keep these names suite-unique.
 const CSHARP_TESTS = [
   'using Xunit;',
   '',
@@ -107,14 +114,14 @@ const CSHARP_TESTS = [
   '    public class CalculatorTests',
   '    {',
   '        [Fact]',
-  '        public void Adds_TwoNumbers()',
+  '        public void Lens_AddsTwoNumbers()',
   '        {',
   '            Assert.Equal(3, 1 + 2);',
   '        }',
   '',
   '        [Theory]',
   '        [InlineData(2, 2, 4)]',
-  '        public void Adds_Theory(int a, int b, int expected)',
+  '        public void Lens_AddsTheory(int a, int b, int expected)',
   '        {',
   '            Assert.Equal(expected, a + b);',
   '        }',
@@ -183,7 +190,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     const factLine = doc
       .getText()
       .split('\n')
-      .findIndex((line) => line.includes('Adds_TwoNumbers()'));
+      .findIndex((line) => line.includes('Lens_AddsTwoNumbers()'));
     assert.ok(factLine > 0, 'fixture must contain the [Fact] method');
     editor.selection = new vscode.Selection(factLine, 8, factLine, 8);
 
@@ -192,12 +199,12 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     // warning — which we capture via the stub instead of a real modal.
     stubs.queueWarning(undefined);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, 'Adds_TwoNumbers');
+      await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, 'Lens_AddsTwoNumbers');
     });
 
     assert.strictEqual(stubs.log.warningMessages.length, 1, 'one warning must be shown');
     const warning = stubs.log.warningMessages[0] ?? '';
-    assert.ok(warning.includes('Adds_TwoNumbers'), 'warning names the missing test method');
+    assert.ok(warning.includes('Lens_AddsTwoNumbers'), 'warning names the missing test method');
     assert.ok(warning.includes('discovery'), 'warning points the user at discovery');
   });
 
@@ -213,17 +220,17 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     const theoryLine = doc
       .getText()
       .split('\n')
-      .findIndex((line) => line.includes('Adds_Theory('));
+      .findIndex((line) => line.includes('Lens_AddsTheory('));
     assert.ok(theoryLine > 0);
     editor.selection = new vscode.Selection(theoryLine, 8, theoryLine, 8);
 
     stubs.queueWarning(undefined);
     await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand(CMD_TEST_DEBUG_AT_CURSOR, uri, 'Adds_Theory');
+      await vscode.commands.executeCommand(CMD_TEST_DEBUG_AT_CURSOR, uri, 'Lens_AddsTheory');
     });
 
     assert.strictEqual(stubs.log.warningMessages.length, 1);
-    assert.ok((stubs.log.warningMessages[0] ?? '').includes('Adds_Theory'));
+    assert.ok((stubs.log.warningMessages[0] ?? '').includes('Lens_AddsTheory'));
   });
 
   test('both at-cursor commands are registered and stay registered', async function () {
@@ -397,8 +404,8 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     const runTargets = runLenses
       .map((l) => l.command?.arguments?.[1])
       .filter((name): name is string => typeof name === 'string');
-    assert.ok(runTargets.includes('Adds_TwoNumbers'));
-    assert.ok(runTargets.includes('Adds_Theory'));
+    assert.ok(runTargets.includes('Lens_AddsTwoNumbers'));
+    assert.ok(runTargets.includes('Lens_AddsTheory'));
     assert.ok(!runTargets.includes('NotATest'), 'plain methods get no test lens');
 
     // The Run lens title matches the rendered "play" action.

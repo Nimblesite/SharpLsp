@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { exeName } from '../../platform.js';
 
 const extensionId = 'nimblesite.sharplsp';
 
@@ -10,8 +11,12 @@ suite('Bundled sidecar resolution', () => {
     const ext = vscode.extensions.getExtension(extensionId);
     assert.ok(ext !== undefined, `${extensionId} must be loaded in the VS Code test host`);
 
-    const csharpSidecar = path.join(ext.extensionPath, 'bin', 'all', 'sharplsp-sidecar-csharp');
-    const fsharpSidecar = path.join(ext.extensionPath, 'bin', 'all', 'sharplsp-sidecar-fsharp');
+    // Sidecars are staged with the host's executable extension (`.exe` on
+    // Windows) exactly as shipwright's `bin/all/…${exe}` bundlePath resolves
+    // them; an extensionless check is a false negative on Windows.
+    const binAll = path.join(ext.extensionPath, 'bin', 'all');
+    const csharpSidecar = path.join(binAll, exeName('sharplsp-sidecar-csharp'));
+    const fsharpSidecar = path.join(binAll, exeName('sharplsp-sidecar-fsharp'));
 
     assert.ok(
       fs.existsSync(csharpSidecar),

@@ -19,7 +19,7 @@ permissions:
   contents: read
 jobs:
   lint:
-    name: Lint
+    name: All Languages
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 25
     steps:

@@ -12,7 +12,11 @@
       "Bash(dotnet build *)",
       "Bash(dotnet test *)",
       "Bash(gh pr *)",
-      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\)\")"
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\)\")",
+      "Bash(mkdir -p /c/Users/chris/AppData/Local/Temp/claude/c--Code-SharpLsp/b0bff274-5638-4008-9a57-ef580d5c7404/scratchpad)",
+      "Bash(make _test-vsix-win CHUNK=lifecycle)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(git ls-tree *)"
     ]
   },
   "autoMemoryEnabled": false

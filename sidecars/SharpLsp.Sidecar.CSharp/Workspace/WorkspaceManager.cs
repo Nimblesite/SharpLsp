@@ -569,7 +569,9 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         if (target is null)
         {
-            return await OpenSingleFileModeAsync(path, ct).ConfigureAwait(false);
+            // No solution or project owns this path: load it as a file-based app or script.
+            // Implements [SCRIPT-DETECT].
+            return await OpenProjectlessAsync(path, ct).ConfigureAwait(false);
         }
 
         var properties = new Dictionary<string, string>

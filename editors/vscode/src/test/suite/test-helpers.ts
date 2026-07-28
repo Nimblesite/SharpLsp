@@ -11,6 +11,23 @@ export const SERVER_START_TIMEOUT_MS = 30_000;
 export const LSP_RESPONSE_TIMEOUT_MS = 15_000;
 export const POLL_INTERVAL_MS = 100;
 
+// ── Path Comparison ──────────────────────────────────────────────
+
+/**
+ * Normalize a filesystem path for equality assertions.
+ *
+ * Windows paths are case-insensitive, POSIX paths are not. VS Code lowercases
+ * the drive letter whenever a path travels through `Uri.fsPath`, while
+ * `extensionPath` and `os.tmpdir()` preserve the original casing — so on win32
+ * the very same file legitimately has two spellings. Comparing them
+ * case-sensitively is a false negative that fires on every Windows run
+ * ([DIST-CI-WIN-VSIX]); comparing them case-insensitively on POSIX would be
+ * wrong, because there `/tmp/A` and `/tmp/a` really are different files.
+ */
+export function comparablePath(filePath: string): string {
+  return process.platform === 'win32' ? filePath.toLowerCase() : filePath;
+}
+
 // ── Binary Discovery ─────────────────────────────────────────────
 
 /**

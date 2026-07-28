@@ -31,7 +31,7 @@ permissions:
   contents: read
 jobs:
   build:
-    name: Build Windows LSP + sidecars
+    name: Build host + sidecars
     runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
     timeout-minutes: 40
     outputs:
@@ -73,7 +73,7 @@ jobs:
             target/sidecar-csharp
             target/sidecar-fsharp
   test:
-    name: VS Code ${{ matrix.chunk }} (Windows)
+    name: ${{ matrix.chunk }}
     needs:
       - build
     runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
@@ -112,7 +112,7 @@ jobs:
         # Force the test host onto the freshly-staged bundled binaries, never a
         # dev copy that leaked onto the runner PATH. Mirrors the Ubuntu job.
         shell: bash
-        run: scripts/purge-path-binaries.sh
+        run: bash scripts/purge-path-binaries.sh
       - name: Run VS Code feature chunk (real LSP)
         # No xvfb: the GitHub Windows runner has an interactive desktop session,
         # so the VS Code test host launches directly. `make` + Git-Bash on the

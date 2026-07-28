@@ -16,7 +16,7 @@ import {
   readLaunchProfiles,
 } from '../../debug.js';
 import { installUiStubs, type UiStubs } from './ui-stubs';
-import { closeAllEditors } from './test-helpers';
+import { closeAllEditors, comparablePath } from './test-helpers';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COARSE end-to-end tests for the debug subsystem (src/debug.ts).
@@ -218,7 +218,7 @@ suite('Debug E2E — exported helpers inside real flows', () => {
     // Unbuilt project -> net10.0 fallback path (deterministic).
     const unbuilt = path.join(tmpDir, 'Unbuilt.csproj');
     const fallback = projectEntryFromFile(unbuilt);
-    assert.strictEqual(fallback.cwd, tmpDir);
+    assert.strictEqual(comparablePath(fallback.cwd), comparablePath(tmpDir));
     assert.strictEqual(fallback.dll, path.join(tmpDir, 'bin', 'Debug', TFM, 'Unbuilt.dll'));
 
     // Simulate net9.0 being the only built TFM -> it is preferred over the missing net10.0.
@@ -231,14 +231,14 @@ suite('Debug E2E — exported helpers inside real flows', () => {
     fs.writeFileSync(path.join(tmpDir, 'Root.csproj'), '<Project />', 'utf-8');
     const entry = findEntryProject(tmpDir);
     assert.ok(entry !== undefined);
-    assert.strictEqual(entry.cwd, tmpDir);
+    assert.strictEqual(comparablePath(entry.cwd), comparablePath(tmpDir));
 
     // findProjectFile walks up from a child to the nearest project.
     const child = path.join(tmpDir, 'a', 'b');
     fs.mkdirSync(child, { recursive: true });
     const walked = findProjectFile(child, tmpDir);
     assert.ok(walked !== undefined);
-    assert.strictEqual(walked.cwd, tmpDir);
+    assert.strictEqual(comparablePath(walked.cwd), comparablePath(tmpDir));
 
     // Missing dir and stop-boundary cases return undefined.
     assert.strictEqual(findProjectFile(path.join(tmpDir, 'ghost', 'x'), tmpDir), undefined);
@@ -291,8 +291,11 @@ suite('Debug E2E — SharpLspLaunchProvider.resolveDebugConfiguration branches',
       name: 'Launch',
       request: 'launch',
     });
-    assert.strictEqual(auto.program, path.join(tmpDir, 'bin', 'Debug', TFM, 'WebApp.dll'));
-    assert.strictEqual(auto.cwd, tmpDir);
+    assert.strictEqual(
+      comparablePath(String(auto.program)),
+      comparablePath(path.join(tmpDir, 'bin', 'Debug', TFM, 'WebApp.dll')),
+    );
+    assert.strictEqual(comparablePath(String(auto.cwd)), comparablePath(tmpDir));
     assert.strictEqual(auto.justMyCode, true);
 
     // Explicit program branch -> untouched.
@@ -349,7 +352,10 @@ suite('Debug E2E — SharpLspLaunchProvider.resolveDebugConfiguration branches',
     assert.ok(Array.isArray(defaults));
     assert.strictEqual(defaults.length, 1);
     assert.strictEqual(defaults[0]?.name, 'Launch .NET Project');
-    assert.strictEqual(defaults[0]?.program, path.join(tmpDir, 'bin', 'Debug', TFM, 'Solo.dll'));
+    assert.strictEqual(
+      comparablePath(String(defaults[0]?.program)),
+      comparablePath(path.join(tmpDir, 'bin', 'Debug', TFM, 'Solo.dll')),
+    );
 
     // Add two Project profiles + a skipped IISExpress -> two generated configs.
     writeLaunchSettings(
@@ -534,7 +540,7 @@ suite('Debug E2E — sharplsp.debugProgram command against real temp-dir project
     // project and points at the dll path the build would produce.
     const entry = findProjectFile(projectDir, projectDir);
     assert.ok(entry !== undefined, 'findProjectFile must locate ConsoleApp.csproj');
-    assert.strictEqual(entry.cwd, projectDir);
+    assert.strictEqual(comparablePath(entry.cwd), comparablePath(projectDir));
     assert.strictEqual(entry.dll, path.join(projectDir, 'bin', 'Debug', TFM, 'ConsoleApp.dll'));
     if (built) {
       assert.ok(
@@ -561,8 +567,8 @@ suite('Debug E2E — sharplsp.debugProgram command against real temp-dir project
       name: 'Debug Program',
       request: 'launch',
     }) as vscode.DebugConfiguration;
-    assert.strictEqual(resolved.program, entry.dll);
-    assert.strictEqual(resolved.cwd, projectDir);
+    assert.strictEqual(comparablePath(String(resolved.program)), comparablePath(entry.dll));
+    assert.strictEqual(comparablePath(String(resolved.cwd)), comparablePath(projectDir));
     assert.strictEqual(resolved.justMyCode, true);
   });
 

@@ -119,6 +119,7 @@ The project system is the hardest engineering problem in .NET tooling. [MSBuild]
 - **Solution files:** SharpLsp treats legacy `.sln` and XML `.slnx` as first-class solution inputs. Shared sidecar code reads both formats through `Microsoft.VisualStudio.SolutionPersistence` and exposes a neutral `solution/read` DTO so host/editor code does not parse solution text.
 - **File watching:** The Rust host watches .csproj, .fsproj, .sln, .slnx, Directory.Build.props, Directory.Packages.props, NuGet.config, and global.json for changes. On change, the affected sidecar is notified to reload the project model.
 - **Multi-targeting:** Projects targeting multiple TFMs (e.g., `net8.0;net48;netstandard2.0`) present multiple analysis contexts. SharpLsp exposes a custom LSP extension for users to select the active TFM, defaulting to the first.
+- **Project-less files:** A `.cs` [file-based app](https://learn.microsoft.com/en-us/dotnet/core/sdk/file-based-apps), a `.csx` Roslyn script, and a `.fsx` F# script are all first-class editing targets with no owning project. Their compilation closure is derived from the root file — `#:include` for file-based apps, `#load` for scripts — and never from the containing directory. See [SCRIPTING-FILEBASED-SPEC.md](SCRIPTING-FILEBASED-SPEC.md).
 
 ### 2.6 Binary Layout & Installation
 

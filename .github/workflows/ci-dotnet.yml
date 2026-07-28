@@ -11,7 +11,7 @@ permissions:
   contents: read
 jobs:
   test-dotnet:
-    name: Test .NET
+    name: Sidecars
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 12
     steps:
@@ -37,7 +37,7 @@ jobs:
           name: coverage-dotnet
           path: coverage-thresholds.json
   test-dotnet-windows:
-    name: Test .NET Transport (Windows)
+    name: Named-Pipe Transport (Windows)
     # Implements [DIST-CI-WIN-TRANSPORT]: the named-pipe arm of the sidecar IPC
     # transport only executes on Windows. An ubuntu-only matrix never runs it,
     # which is how GitHub #110 (sidecars exit before READY on Windows) shipped.

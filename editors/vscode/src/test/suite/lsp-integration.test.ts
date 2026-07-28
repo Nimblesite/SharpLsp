@@ -508,7 +508,15 @@ suite('LSP Integration — Real Semantic LSP', () => {
         );
         return result ?? new vscode.CompletionList();
       },
-      (list) => list.items.some((item) => item.label.toString() === 'Add'),
+      // Wait for a ROSLYN-backed list, not merely a list containing `Add`:
+      // VS Code's word-based fallback also offers `Add` (it appears in the file
+      // text) with kind Text, so a label-only predicate exits before the sidecar
+      // has answered and the kind assertions below then read the fallback.
+      (list) =>
+        list.items.some(
+          (item) =>
+            item.label.toString() === 'Add' && item.kind === vscode.CompletionItemKind.Method,
+        ),
       90_000,
       2_000,
     );
@@ -538,7 +546,15 @@ suite('LSP Integration — Real Semantic LSP', () => {
         );
         return result ?? new vscode.CompletionList();
       },
-      (list) => list.items.some((item) => item.label.toString() === 'Add'),
+      // Wait for a ROSLYN-backed list, not merely a list containing `Add`:
+      // VS Code's word-based fallback also offers `Add` (it appears in the file
+      // text) with kind Text, so a label-only predicate exits before the sidecar
+      // has answered and the kind assertions below then read the fallback.
+      (list) =>
+        list.items.some(
+          (item) =>
+            item.label.toString() === 'Add' && item.kind === vscode.CompletionItemKind.Method,
+        ),
       90_000,
       2_000,
     );

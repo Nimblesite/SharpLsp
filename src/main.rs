@@ -398,58 +398,70 @@ async fn configure_analyzers(sidecar: &SidecarManager, analyzers: &config::Analy
     }
 }
 
-/// Lazily initialize workspace for the first opened file when running in single-file mode.
+/// Lazily open the workspace for the first opened document when the client supplied no
+/// workspace root.
+///
+/// Returns `true` only when a sidecar workspace was actually opened. Returning `true` for an
+/// unsupported document would latch `workspace_initialized` on, so opening a `.md` or `.json`
+/// before any source file would permanently prevent the real workspace from loading.
+/// Implements [SCRIPT-ROUTE-LAZY].
 fn init_workspace_for_file(
     notif: &Notification,
     runtime: &tokio::runtime::Runtime,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> bool {
-    if let Ok(params) =
-        serde_json::from_value::<lsp_types::DidOpenTextDocumentParams>(notif.params.clone())
-    {
-        if let Ok(file_path) = semantic::uri_to_path(&params.text_document.uri) {
-            if let Some(parent) = std::path::Path::new(&file_path).parent() {
-                let parent_str = parent.to_string_lossy().to_string();
-                let ext = std::path::Path::new(&file_path)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                
-                info!("Single-file mode: initializing workspace with implicit root {}", parent_str);
-                
-                if ext == "cs" || ext == "csx" {
-                    if let Some(cs) = csharp_sidecar {
-                        let cs_clone = Arc::clone(cs);
-                        let parent_clone = parent_str.clone();
-                        drop(runtime.spawn(async move {
-                            if let Err(err) = open_workspace(&cs_clone, &parent_clone).await {
-                                error!("Failed to lazily open C# workspace: {err:#}");
-                            }
-                            cs_clone.start_health_monitor().await;
-                        }));
-                    }
-                }
-                
-                if ext == "fs" || ext == "fsx" || ext == "fsi" {
-                    if let Some(fs) = fsharp_sidecar {
-                        let fs_clone = Arc::clone(fs);
-                        let parent_clone = parent_str.clone();
-                        drop(runtime.spawn(async move {
-                            if let Err(err) = open_workspace(&fs_clone, &parent_clone).await {
-                                error!("Failed to lazily open F# workspace: {err:#}");
-                            }
-                            fs_clone.start_health_monitor().await;
-                        }));
-                    }
-                }
-                
-                return true;
-            }
+    let Some(file_path) = opened_document_path(notif) else {
+        return false;
+    };
+    let Some(sidecar) = sidecar_for_path(&file_path, csharp_sidecar, fsharp_sidecar) else {
+        return false;
+    };
+
+    // The sidecar is given the FILE PATH, not its parent directory. Sending a directory is what
+    // forces the sidecar to glob the folder and compile unrelated programs together.
+    // Implements [SCRIPT-ROUTE-TARGET].
+    info!("No workspace root — opening single-document workspace for {file_path}");
+    let sidecar = Arc::clone(sidecar);
+    drop(runtime.spawn(async move {
+        if let Err(err) = open_workspace(&sidecar, &file_path).await {
+            error!("Failed to lazily open workspace: {err:#}");
         }
+        // Health monitoring starts only after workspace/open completes, matching the eager
+        // path — a health check that races the load can kill a healthy sidecar.
+        // Implements [SCRIPT-ROUTE-HEALTH].
+        sidecar.start_health_monitor().await;
+    }));
+    true
+}
+
+/// Extract the file path from a `textDocument/didOpen` notification.
+fn opened_document_path(notif: &Notification) -> Option<String> {
+    let params =
+        serde_json::from_value::<lsp_types::DidOpenTextDocumentParams>(notif.params.clone())
+            .ok()?;
+    semantic::uri_to_path(&params.text_document.uri).ok()
+}
+
+/// Map a document to the sidecar that owns its language. Implements [SCRIPT-DETECT].
+///
+/// `.fsi` is deliberately absent: a signature file with no owning project has no meaningful
+/// semantic closure and is served syntax-only by the host. Implements [FSX-FSI].
+fn sidecar_for_path<'a>(
+    file_path: &str,
+    csharp_sidecar: Option<&'a Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&'a Arc<SidecarManager>>,
+) -> Option<&'a Arc<SidecarManager>> {
+    let extension = std::path::Path::new(file_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match extension.as_str() {
+        "cs" | "csx" => csharp_sidecar,
+        "fs" | "fsx" | "fsscript" => fsharp_sidecar,
+        _ => None,
     }
-    false
 }
 
 /// Start a sidecar: open workspace, optionally trigger solution diagnostics, begin health monitoring.
@@ -502,13 +514,12 @@ fn main_loop(
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     vfs: &Arc<Vfs>,
-    workspace_initialized: bool,
+    mut workspace_initialized: bool,
 ) -> Result<()> {
     let parsers = TsParsers::new();
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
     let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
-    let mut workspace_initialized = workspace_initialized;
 
     for msg in &connection.receiver {
         match msg {
@@ -549,12 +560,8 @@ fn main_loop(
                     return Ok(());
                 }
                 if !workspace_initialized && notif.method == DidOpenTextDocument::METHOD {
-                    workspace_initialized = init_workspace_for_file(
-                        &notif,
-                        runtime,
-                        csharp_sidecar,
-                        fsharp_sidecar,
-                    );
+                    workspace_initialized =
+                        init_workspace_for_file(&notif, runtime, csharp_sidecar, fsharp_sidecar);
                 }
                 handle_notification(
                     notif,

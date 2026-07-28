@@ -14,7 +14,7 @@ permissions:
   contents: read
 jobs:
   test-rust:
-    name: Test Rust (shard ${{ matrix.shard }}/2)
+    name: Shard ${{ matrix.shard }}/2
     # [DIST-CI-RUST-SHARDS]: the e2e suite runs single-threaded (tests spawn
     # real Roslyn/FCS sidecars), so wall time scales with test count, not
     # cores. Two nextest hash partitions halve the ~11-minute serial run while
@@ -65,7 +65,7 @@ jobs:
           name: coverage-rust-shard-${{ matrix.shard }}
           path: target/coverage-rust-shard${{ matrix.shard }}.lcov
   coverage-rust:
-    name: Rust Coverage Gate
+    name: Coverage Gate
     needs:
       - test-rust
     # [DIST-CI-RUST-SHARDS]: every shard tracefile carries the full
@@ -95,7 +95,7 @@ jobs:
             target/coverage-rust.lcov
             coverage-thresholds.json
   version-contract:
-    name: Verify Version Contract
+    name: Version Contract
     # Implements [DIST-VERSION-OUTPUT] + the version line of [DIST-CI-SMOKE].
     # Separate from the Rust test job ([DIST-CI-RUST-SHARDS]): the release-
     # profile build shares no artifacts with the instrumented test build, so

@@ -149,6 +149,16 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 - [x] `fail-fast: false` on the chunk matrix so one feature area's failure never hides the others
 - [ ] Confirm per-chunk wall times on a real PR run; split `explorer` / `packages` if either drifts past ~30 min
 
+#### Windows-only defects the widened gate surfaced immediately
+
+Every one of these shipped green on Ubuntu. Most had never executed on Windows at all, because the previous `MOCHA_GREP` smoke subset did not select them; the last two were latent races that a colder, smaller chunk reliably loses:
+
+- [x] `bundled-sidecars.test.ts` asserted extensionless `bin/all/sharplsp-sidecar-*`, but Windows stages `…​.exe` (shipwright's bundlePath is `bin/all/…${exe}`). Now uses `exeName()`, matching the contract `00-vsix-dev-binary-staging.test.ts` already documented.
+- [x] `bundled-binary.test.ts` compared `extensionPath`-derived paths against shipwright's `Uri.fsPath`-derived path with `strictEqual`. VS Code lowercases the drive letter in `fsPath`, so the same file has two spellings on win32; comparison is now case-insensitive on Windows only (POSIX stays case-sensitive). Shared as `comparablePath()` in `test-helpers.ts`.
+- [x] `debug-e2e.test.ts` compared three resolved `program` paths the same way — the auto-detected `.dll` from a real `.csproj`, the `provideDebugConfigurations` default, and the `sharplsp.debugProgram` entry point. All three now use `comparablePath()`.
+- [x] `testing-lens-e2e.test.ts` asserted the "no discovered test matches" warning path using a fixture method named `Adds_TwoNumbers` — the same name `test-explorer-e2e.test.ts` discovers into the shared `SharpLspTestController`. The suite therefore passed or failed on whether that discovery won the race (green on Ubuntu, red on Windows). Fixture methods are now suite-unique (`Lens_Adds*`), so the precondition holds regardless of execution order.
+- [x] `completions-visible.test.ts` sampled completions once after `waitForDocumentSymbols`, and `lsp-integration.test.ts` polled only until a `Add`-labelled item appeared. Document symbols come from tree-sitter in the Rust host and are ready long before Roslyn has loaded the workspace, and VS Code's word-based fallback offers the same labels with kind `Text` — so both read the fallback and failed the kind assertions with `Text(0)` vs `Property(9)`. Both now poll until a genuinely Roslyn-backed kind appears; the kind assertions are unchanged. (The next test in the same file, on the same position, passed in 104 ms — it was purely a warm-up race that a colder chunk is far likelier to lose.)
+
 ### CI workflow layout ([DIST-CI-LAYOUT])
 
 - [x] Split `ci.yml` into reusable workflows: `ci-lint`, `ci-rust`, `ci-dotnet`, `ci-vsix`, `ci-vsix-windows`

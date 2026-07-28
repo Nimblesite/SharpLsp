@@ -360,6 +360,11 @@ Invariants:
 - **Ubuntu owns coverage.** Windows chunks run **without** `--coverage` and enforce no coverage gate — one chunk can never meet the line threshold. The Ubuntu `test-vsix` job owns the full single-process run plus the ratcheted gate, and is the only job that runs the `real-repo-*` stress suites (each clones and restores a pinned third-party repository; that is repo ingestion, not platform behaviour).
 - **No PATH leakage.** Every VS Code job runs `scripts/purge-path-binaries.sh` first, so the test host can only resolve the freshly-staged bundled binaries. A dev copy on `PATH` would substitute itself for the artifact under test and turn a broken bundle green.
 
+Two assertion rules follow from running on win32 at all, and both are load-bearing — each one silently passed on Ubuntu for the life of the suite and failed on the first Windows run:
+
+- **Compare paths case-insensitively on Windows.** VS Code lowercases the drive letter whenever a path travels through `Uri.fsPath`, while `extensionPath` and `os.tmpdir()` preserve the original casing, so the same file legitimately has two spellings. Any assertion comparing a `Uri`-derived path against a directly-constructed one MUST go through `comparablePath()` (`test-helpers.ts`), which lowercases on win32 only — POSIX paths stay case-sensitive, because there `/tmp/A` and `/tmp/a` really are different files.
+- **Suites MUST be order-independent.** Chunking changes which suites share an extension host, so no suite may depend on state another suite left in a shared singleton. Fixture identifiers that feed a shared registry — notably test method names discovered into the `SharpLspTestController` — MUST be unique per suite, or a test asserting "nothing matches" passes or fails on whichever suite's discovery won the race.
+
 The LSP e2e temp-dir helper MUST fall back to `os.tmpdir()` (never a hardcoded `/tmp`) so these suites run on Windows.
 
 ## [DIST-SECRETS]

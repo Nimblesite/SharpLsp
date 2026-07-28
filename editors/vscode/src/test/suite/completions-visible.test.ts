@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   closeAllEditors,
+  pollUntilResult,
   setupLspTestSuite,
   teardownLspTestSuite,
   waitForDocumentSymbols,
@@ -41,10 +42,27 @@ suite('Visible Completions', () => {
     await vscode.window.showTextDocument(document);
     await waitForDocumentSymbols(uri, 30_000);
 
-    const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
-      'vscode.executeCompletionItemProvider',
-      uri,
-      new vscode.Position(11, 24),
+    // Document symbols come from tree-sitter in the Rust host, so they are ready
+    // long before Roslyn has loaded the workspace. Poll for a ROSLYN-backed list
+    // rather than sampling once: VS Code's word-based fallback offers the same
+    // labels with kind Text, so a single early request reads the fallback and the
+    // kind assertions below fail with Text(0) instead of Property(9).
+    const completions = await pollUntilResult(
+      async () => {
+        const result = await vscode.commands.executeCommand<vscode.CompletionList>(
+          'vscode.executeCompletionItemProvider',
+          uri,
+          new vscode.Position(11, 24),
+        );
+        return result ?? new vscode.CompletionList();
+      },
+      (list) =>
+        list.items.some(
+          (item) =>
+            item.label.toString() === 'Name' && item.kind === vscode.CompletionItemKind.Property,
+        ),
+      60_000,
+      2_000,
     );
 
     assert.ok(completions, 'Member-access completion request must return a completion list');

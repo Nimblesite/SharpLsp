@@ -15,7 +15,7 @@ permissions:
   contents: read
 jobs:
   test-vsix:
-    name: Test VS Code
+    name: Full Suite + Coverage
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     # TIMEOUT EXCEPTION: this job builds the Rust binary + .NET sidecars,
     # installs .NET 9 + 10, downloads the VS Code test host, then runs the full
@@ -46,7 +46,7 @@ jobs:
         run: npm ci --prefix editors/vscode
       - name: Remove PATH-installed SharpLsp binaries
         shell: bash
-        run: scripts/purge-path-binaries.sh
+        run: bash scripts/purge-path-binaries.sh
       - name: Test VS Code extension with coverage
         run: xvfb-run -a make _test-vsix
       - name: Verify VSIX contains platform binary
