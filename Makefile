@@ -167,6 +167,7 @@ _stage-vsix-binary-only:
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
 	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) \
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
+	@bash scripts/fetch-netcoredbg.sh $(HOST_PLATFORM)
 
 _stage-sidecars:
 	@mkdir -p target/debug/sidecar-csharp target/debug/sidecar-fsharp
@@ -464,6 +465,7 @@ _package-vsix:
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
 	chmod +x $(VSCODE_DIR)/bin/all/sharplsp-sidecar-csharp$(EXE_EXT) \
 		$(VSCODE_DIR)/bin/all/sharplsp-sidecar-fsharp$(EXE_EXT) 2>/dev/null || true
+	@bash scripts/fetch-netcoredbg.sh $(VSIX_PLAT)
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p dist
 	# vsce/ovsx refuse to PUBLISH with --pre-release unless the VSIX was also

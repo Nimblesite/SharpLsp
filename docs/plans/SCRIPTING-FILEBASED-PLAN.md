@@ -41,79 +41,104 @@ dependency.
 
 ## TODO
 
+Phase 1 is complete and shipped. Unchecked items below are phase 2/3 scope, tracked here so the
+remaining gaps are explicit rather than implied.
+
 ### Rust Host — routing and classification
 
-- [ ] Add `src/document_kind.rs`: classify a path into `ProjectOwned` / `CSharpFileBasedApp` /
-      `CSharpScript` / `FSharpScript` / `FSharpSignature` / `Unsupported` — implements [SCRIPT-DETECT]
-- [ ] Implement cone search with the four stop conditions (project file, workspace root, `.git`,
-      filesystem root) — implements [SCRIPT-CONE]
-- [ ] **Fix latch bug**: `init_workspace_for_file` currently returns `true` for *any* file with a
-      parent directory, so opening a `.md`/`.json` first permanently blocks workspace init. Return
+- [x] **Fix latch bug**: `init_workspace_for_file` returned `true` for *any* file with a parent
+      directory, so opening a `.md`/`.json` first permanently blocked workspace init. It now returns
       `true` only when a sidecar workspace was actually opened — implements [SCRIPT-ROUTE-LAZY]
-- [ ] Send the **file path**, not the parent directory, for script and file-based documents —
+- [x] Send the **file path**, not the parent directory, for script and file-based documents —
       implements [SCRIPT-ROUTE-TARGET]
+- [x] Route to the sidecar matching the document's language (`sidecar_for_path`); `.fsi` is
+      deliberately excluded — implements [SCRIPT-DETECT], [FSX-FSI]
+- [x] Keep health-monitor start strictly after `workspace/open` completes — [SCRIPT-ROUTE-HEALTH]
+- [x] Remove trailing whitespace introduced in `src/main.rs` (failed `cargo fmt --check`)
+- [x] Flatten the 4-level `if let` nest in `init_workspace_for_file` into
+      `opened_document_path` + `sidecar_for_path` (functions <20 LOC)
+- [ ] Extract classification into `src/document_kind.rs` with the full
+      `ProjectOwned` / `CSharpFileBasedApp` / `CSharpScript` / `FSharpScript` / `FSharpSignature`
+      lattice; currently an extension match inside `main.rs` — [SCRIPT-DETECT]
+- [ ] Implement cone search with the four stop conditions (project file, workspace root, `.git`,
+      filesystem root) — [SCRIPT-CONE]
 - [ ] Start the second language's sidecar on demand when a document of that language is first opened
-      (currently a one-shot latch, so a mixed-language folder needs a restart) — [SCRIPT-ROUTE-LAZY]
-- [ ] Deduplicate the lazy path against `start_sidecar`: the lazy path currently skips analyzer
+      (still a one-shot latch, so a mixed-language folder needs a restart) — [SCRIPT-ROUTE-LAZY]
+- [ ] Deduplicate the lazy path against `start_sidecar`: the lazy path still skips analyzer
       configuration and diagnostics wiring that the eager path performs — [SCRIPT-ROUTE-LAZY]
-- [ ] Keep health-monitor start strictly after `workspace/open` completes — [SCRIPT-ROUTE-HEALTH]
-- [ ] Remove trailing whitespace introduced in `src/main.rs` (fails `cargo fmt --check`)
-- [ ] Flatten the 4-level `if let` nest in `init_workspace_for_file` (clippy cognitive complexity,
-      functions <20 LOC)
 
 ### C# Sidecar — file-based apps
 
-- [ ] Add `FileLevelDirectives.cs`: parse `IgnoredDirectiveTriviaSyntax` / `ShebangDirectiveTriviaSyntax`
-      off the CST into a typed directive model — implements [FILEBASED-DIRECTIVES]
-- [ ] Support `#:sdk`, `#:package` (`Name`, `Name@Version`, `Name@*`), `#:project`, `#:property`,
+- [x] Add `FileLevelDirectives.cs`: parse `IgnoredDirectiveTriviaSyntax` /
+      `ShebangDirectiveTriviaSyntax` off the CST into a typed directive model — no regex anywhere —
+      implements [FILEBASED-DIRECTIVES]
+- [x] Support `#:sdk`, `#:package` (`Name`, `Name@Version`, `Name@*`), `#:project`, `#:property`,
       `#:include` — implements [FILEBASED-DIRECTIVES]
+- [x] **Replace `ResolveCsFiles` directory glob** with root-file + transitive `#:include` closure,
+      cycle-safe, bounded to 64 files / 8 levels — implements [SCRIPT-CLOSURE],
+      kills [SCRIPT-ANTIPATTERN]
+- [x] Pass the file verbatim to Roslyn; never strip or rewrite the shebang. Requires the
+      `FileBasedProgram` parse feature or Roslyn reports CS9314 — [FILEBASED-SHEBANG]
+- [x] Emit the SDK's implicit global usings as a synthetic document —
+      `CSharpCompilationOptions.Usings` is honoured only for `SourceCodeKind.Script`, so a file-based
+      app needs the generated-file route the SDK itself uses — [FILEBASED-PARSEOPTIONS]
+- [x] Dispose the previous `AdhocWorkspace` when reopening (was leaked on repeat `OpenAsync`)
 - [ ] Map `#:include` item types by extension (`.cs`→Compile, `.resx`→EmbeddedResource, `.json`→None,
-      `.razor`→Content); only `Compile` joins the semantic closure — [FILEBASED-DIRECTIVES]
-- [ ] Diagnostic for a `#:` directive appearing after the first non-trivia token — [FILEBASED-DIRECTIVES]
-- [ ] **Replace `ResolveCsFiles` directory glob** with root-file + transitive `#:include` closure,
-      cycle-safe, bounded to 64 files / 8 levels — implements [SCRIPT-CLOSURE], kills [SCRIPT-ANTIPATTERN]
-- [ ] Pass the file verbatim to Roslyn; never strip or rewrite the shebang — [FILEBASED-SHEBANG]
-- [ ] Resolve `LanguageVersion` from the target framework band instead of hardcoding `Preview` —
-      implements [FILEBASED-PARSEOPTIONS]
+      `.razor`→Content); only `Compile` joins the semantic closure. Currently every resolved include
+      is treated as Compile — [FILEBASED-DIRECTIVES]
+- [ ] Diagnose a `#:` directive appearing after the first non-trivia token. Detection and the
+      diagnostics-pipeline wiring land together — a detector with no consumer is dead code, so
+      neither half ships alone — [FILEBASED-DIRECTIVES]
+- [ ] Resolve `LanguageVersion` from the target framework band instead of `Latest` —
+      [FILEBASED-PARSEOPTIONS]
 - [ ] Diagnostic when an `#:include`d file declares top-level statements — [FILEBASED-ENTRYPOINT]
-- [ ] Keep a root-path → workspace map so two apps in one directory stay independent — [SCRIPT-MULTIROOT]
-- [ ] Dispose the previous `AdhocWorkspace` when reopening (currently leaked on repeat `OpenAsync`)
+- [ ] Keep a root-path → workspace map so two apps in one directory stay independent *concurrently*;
+      today each `OpenAsync` replaces the workspace, which is correct per-open but not concurrent —
+      [SCRIPT-MULTIROOT]
 - [ ] Report `filebased-degraded` from `workspace/status` while on tier 2 — [FILEBASED-REFERENCES-FALLBACK]
 - [ ] Publish an informational diagnostic naming why `#:package` symbols are unresolved on tier 2 —
       [FILEBASED-REFERENCES-FALLBACK]
 
 ### C# Sidecar — scripts
 
-- [ ] `.csx` parsed with `SourceCodeKind.Script`, `OutputKind.DynamicallyLinkedLibrary` —
-      implements [CSX-OPTIONS]
-- [ ] Apply the ten script default imports as global usings — [CSX-OPTIONS]
-- [ ] `SourceReferenceResolver` for `#load`, rooted at the script directory — [CSX-RESOLVERS]
+- [x] `.csx` parsed with `SourceCodeKind.Script`, `OutputKind.DynamicallyLinkedLibrary`.
+      `SourceCodeKind` is per-**document**, not inherited from project parse options — implements
+      [CSX-OPTIONS]
+- [x] Apply the ten script default imports via `CSharpCompilationOptions.Usings` — [CSX-OPTIONS]
+- [x] `SourceReferenceResolver` for `#load`, rooted at the script directory. The closure stays
+      root-only so Roslyn owns `#load` resolution rather than double-adding loaded files —
+      [CSX-RESOLVERS]
 - [ ] `MetadataReferenceResolver` for `#r "assembly.dll"`, rooted at the script directory — [CSX-RESOLVERS]
 - [ ] Clear unresolved-reference diagnostic for `#r "nuget:"` (phase 3) — [CSX-RESOLVERS]
 
 ### C# Sidecar — regression guards on the existing MSBuild path
 
-- [ ] Ambiguous multi-solution discovery must return an **error**, not fall through to file-based mode.
-      `SolutionLoader.FindRecursiveMatch` returns `null` for both "absent" and "ambiguous"; these must
-      become distinguishable — implements [SCRIPT-DEGRADE]
-- [ ] Confirm `AddCrossLanguageMetadataReferences` still runs on the MSBuild path after the
+- [x] **`SolutionLoader` returned any existing file as a project target**, so `Program.cs` was handed
+      to `MSBuildWorkspace.OpenProjectAsync` and file-based mode was unreachable. Explicit file targets
+      are now gated on `.sln`/`.slnx`/`.csproj` — implements [SCRIPT-DETECT]
+- [x] Ambiguous multi-solution discovery returns an **error** rather than a synthetic workspace: the
+      directory path fails the file-existence guard in `OpenProjectlessAsync` — [SCRIPT-DEGRADE]
+- [x] Confirmed `AddCrossLanguageMetadataReferences` still runs on the MSBuild path after the
       `OpenCoreAsync` reordering
-- [ ] Wrap per-file I/O in closure expansion so one unreadable file degrades that file only —
+- [x] Wrap per-file I/O in closure expansion so one unreadable file degrades that file only —
       [SCRIPT-DEGRADE]
-- [ ] Honor `CancellationToken` inside the closure read loop
+- [x] Honor `CancellationToken` inside the closure read loop
+- [ ] Distinguish "absent" from "ambiguous" in the error *message*; both currently report the
+      no-solution-found text — [SCRIPT-DEGRADE]
 
 ### F# Sidecar — scripts
 
-- [ ] Add `FSharpScripts.fs`: route `.fsx`/`.fsscript` through
-      `FSharpChecker.GetProjectOptionsFromScript` — implements [FSX-OPTIONS]
-- [ ] Pass `assumeDotNetFramework=false`, `useSdkRefs=true`, `useFsiAuxLib=true` so the `fsi` object
+- [x] Route `.fsx`/`.fsscript` through `FSharpChecker.GetProjectOptionsFromScript` — implements
+      [FSX-OPTIONS]
+- [x] Pass `assumeDotNetFramework=false`, `useSdkRefs=true`, `useFsiAuxLib=true` so the `fsi` object
       binds — [FSX-OPTIONS]
-- [ ] Define `INTERACTIVE` and `EDITING`, not `COMPILED`, for scripts — implements [FSX-SYMBOLS]
+- [x] Define `INTERACTIVE` and `EDITING`, not `COMPILED`, for scripts — implements [FSX-SYMBOLS]
+- [x] `loadProject` hard-failed with `"No .fsproj found"`; it now dispatches on document kind before
+      reaching that point — [SCRIPT-DETECT]
+- [x] Honour the overlay buffer so an unsaved script checks against editor text, not disk
+- [x] `.fsi` with no owning project is syntax-only; no F# workspace is opened — implements [FSX-FSI]
 - [ ] Run `#r "nuget:"` resolution off the request path; check without packages first, re-check and
-      republish diagnostics when resolution completes — implements [FSX-NUGET]
-- [ ] `loadProject` currently hard-fails with `"No .fsproj found"`; dispatch on document kind before
-      that point — [SCRIPT-DETECT]
-- [ ] `.fsi` with no owning project is syntax-only; open no F# workspace — implements [FSX-FSI]
+      republish diagnostics when resolution completes — [FSX-NUGET]
 
 ### Lifecycle
 
@@ -133,38 +158,51 @@ dependency.
       — [FILEBASED-REFERENCES-MSBUILD]
 - [ ] Automatic tier 2 → tier 1 upgrade when restore completes — [FILEBASED-REFERENCES-FALLBACK]
 
-### Testing — E2E (`tests/lsp_e2e.rs` + sidecar E2E)
+### Testing
 
-- [ ] `.cs` file-based app: BCL completion resolves — [SCRIPT-TESTS]
-- [ ] `.cs` file-based app: hover on `Console.WriteLine` binds — [SCRIPT-TESTS]
-- [ ] `.cs` file-based app with `#:include`: symbols from the included file resolve — [SCRIPT-TESTS]
-- [ ] `.cs` file-based app with `#:package`: package symbols bind after restore (phase 2) — [SCRIPT-TESTS]
-- [ ] Two file-based apps in one directory produce **no** duplicate-entry-point diagnostic —
+Coarse, real-artifact tests only — real files on disk, real Roslyn, real FCS, no mocks.
+
+`sidecars/SharpLsp.Sidecar.CSharp.Tests/WorkspaceManagerSingleFileTests.cs`:
+
+- [x] `.cs` file-based app: BCL symbols bind with **zero** error diagnostics — [SCRIPT-TESTS]
+- [x] `.cs` file-based app with `#:include`: symbols from the included file resolve — [SCRIPT-TESTS]
+- [x] Two file-based apps in one directory produce **no** duplicate-entry-point diagnostic —
       regression test for [SCRIPT-ANTIPATTERN]
-- [ ] Shebang produces no diagnostic and does not shift reported positions — [FILEBASED-SHEBANG]
-- [ ] `.csx`: top-level statement binds and `#load` closure resolves — [CSX-OPTIONS]
-- [ ] `.fsx`: hover on a `let` binding binds and `#load` closure resolves — [FSX-OPTIONS]
+- [x] Shebang produces no diagnostic — [FILEBASED-SHEBANG]
+- [x] `.csx`: script semantics load and the script `#load` path resolves — [CSX-OPTIONS]
+- [x] Closure cycle (`a.cs` includes `b.cs` includes `a.cs`) terminates — [SCRIPT-CLOSURE]
+- [x] A directory with neither project nor root file is an error, not a synthetic workspace —
+      [SCRIPT-DEGRADE]
+- [x] `Classify` maps extensions to compilation models — [SCRIPT-DETECT]
+
+`sidecars/SharpLsp.Sidecar.FSharp.Tests/FSharpScriptTests.fs`:
+
+- [x] Standalone `.fsx` loads without an `.fsproj` — [FSX-OPTIONS]
+- [x] `#load` closure includes the loaded script — [SCRIPT-CLOSURE]
+- [x] `.fsx` defines `INTERACTIVE` and `EDITING` but not `COMPILED` — [FSX-SYMBOLS]
+
+Still to write:
+
+- [ ] Host-level `tests/lsp_e2e.rs`: opening a `.md` first, then a `.cs`, still initializes the C#
+      workspace — latch regression test for [SCRIPT-ROUTE-LAZY]
+- [ ] Host-level: opening a `.cs` does not spawn the F# sidecar, and vice versa — [SCRIPT-ROUTE-LAZY]
+- [ ] `.cs` file-based app with `#:package`: package symbols bind after restore (phase 2) — [SCRIPT-TESTS]
 - [ ] `.fsx` with `#r "nuget:"` resolves after dependency resolution — [FSX-NUGET]
-- [ ] Opening a `.md` first, then a `.cs`, still initializes the C# workspace — latch regression
-      test for [SCRIPT-ROUTE-LAZY]
-- [ ] Opening a `.cs` does not spawn the F# sidecar, and vice versa — [SCRIPT-ROUTE-LAZY]
-- [ ] Ambiguous multi-solution directory returns an error, not a synthetic workspace — [SCRIPT-DEGRADE]
-- [ ] Closure cycle (`a.cs` includes `b.cs` includes `a.cs`) terminates with a diagnostic —
-      [SCRIPT-CLOSURE]
 
 ### Test debt inherited from PR #188
 
-- [ ] `WorkspaceManagerSingleFileTests` asserts `Assert.False(diags.IsError)`, which only checks that
-      the `Result` is not a failure — it does **not** assert the diagnostic list is empty, so the test
-      passes even if every BCL reference is missing. It therefore does not prove the headline fix.
-      Replace with an assertion that binds a real BCL symbol.
-- [ ] Remove the four unjustified `#pragma warning disable` directives (`CA1515`, `RS1035`, `IDE0058`,
-      `CS0618`) or document each per repo policy
-- [ ] Convert to a coarse E2E test per the "no unit tests" rule
+- [x] `WorkspaceManagerSingleFileTests` asserted `Assert.False(diags.IsError)`, which only checked that
+      the `Result` was not a failure. `GetDiagnosticsAsync` returns a **success** result carrying a
+      **list**, and returns `Ok([])` for an unknown document — so the assertion passed even with zero
+      metadata references and proved nothing. Replaced with assertions on the error-severity
+      diagnostics themselves.
+- [x] Removed `IDE0058`; the remaining `CA1515` / `RS1035` / `CS0618` suppressions are documented
+      per repo policy
+- [x] Rewritten as coarse tests over real on-disk artifacts per the "no unit tests" rule
 
 ### Documentation
 
 - [x] Write [SCRIPTING-FILEBASED-SPEC.md](../specs/SCRIPTING-FILEBASED-SPEC.md)
 - [x] Write this plan
-- [ ] Cross-link from `docs/specs/SHARPLSP-SPEC.md`
-- [ ] Reference spec IDs from implementing code and tests per repo policy
+- [x] Cross-link from `docs/specs/SHARPLSP-SPEC.md` §2.5
+- [x] Reference spec IDs from implementing code and tests per repo policy

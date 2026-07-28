@@ -169,9 +169,7 @@ internal sealed partial class WorkspaceManager
         }
 
         var baseDirectory = Path.GetDirectoryName(rootPath);
-        return options.WithSourceReferenceResolver(
-            new SourceFileResolver([], baseDirectory)
-        );
+        return options.WithSourceReferenceResolver(new SourceFileResolver([], baseDirectory));
     }
 
     // LanguageVersion.Latest, not Preview: Preview enables unstable features the user's SDK may

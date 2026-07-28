@@ -23,6 +23,7 @@ import {
   setupLspTestSuite,
   teardownLspTestSuite,
   closeAllEditors,
+  comparableText,
   EXTENSION_ID,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
@@ -186,7 +187,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
       assert.ok(active, 'an editor must be active after newFile');
       assert.strictEqual(active.document.uri.fsPath, filePath, 'the new file must be opened');
       assert.strictEqual(
-        active.document.getText(),
+        comparableText(active.document.getText()),
         expected,
         'editor buffer must match generateFileContent',
       );
@@ -195,7 +196,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
       const saved = await active.document.save();
       assert.ok(saved, 'the new document must save successfully');
       assert.ok(fs.existsSync(filePath), `${name}.cs should exist on disk after save`);
-      const onDisk = fs.readFileSync(filePath, 'utf-8');
+      const onDisk = comparableText(fs.readFileSync(filePath, 'utf-8'));
       assert.strictEqual(onDisk, expected, 'saved file content must match generateFileContent');
 
       // Pin the per-snippet keyword so each switch branch is asserted distinctly.

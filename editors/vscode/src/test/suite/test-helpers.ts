@@ -28,6 +28,21 @@ export function comparablePath(filePath: string): string {
   return process.platform === 'win32' ? filePath.toLowerCase() : filePath;
 }
 
+/**
+ * Normalize line endings for text equality assertions.
+ *
+ * VS Code gives a newly created document the platform default EOL (`\r\n` on
+ * Windows) and rewrites inserted text to match it, so a generator that emits
+ * `\n` legitimately lands in the buffer — and then on disk — as `\r\n`. That is
+ * correct behaviour: a new C# file on Windows should have Windows line endings.
+ * These assertions are about CONTENT, so compare EOL-agnostically rather than
+ * asserting a byte sequence the editor is entitled to choose
+ * ([DIST-CI-WIN-VSIX]).
+ */
+export function comparableText(text: string): string {
+  return text.replace(/\r\n/g, '\n');
+}
+
 // ── Binary Discovery ─────────────────────────────────────────────
 
 /**

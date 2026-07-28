@@ -214,6 +214,24 @@ suite('Debug E2E — exported helpers inside real flows', () => {
     assert.deepStrictEqual(getNetcoredbgCandidates(), getNetcoredbgCandidates());
   });
 
+  test('getNetcoredbgCandidates prefers the VSIX-bundled binary when an extensionPath is given', () => {
+    const exe = process.platform === 'win32' ? 'netcoredbg.exe' : 'netcoredbg';
+    const extPath = path.join(tmpDir, 'ext');
+
+    const withBundle = getNetcoredbgCandidates(extPath);
+    // The bundled binary under the extension's bin/<platform>/ is scanned FIRST.
+    assert.strictEqual(withBundle.length, 6, 'bundled candidate is prepended to the five defaults');
+    assert.strictEqual(
+      withBundle[0],
+      path.join(extPath, 'bin', `${process.platform}-${process.arch}`, 'netcoredbg', exe),
+      'the bundled netcoredbg (staged by scripts/fetch-netcoredbg.sh) is preferred over PATH copies',
+    );
+    // The remaining five are the no-extensionPath list, order preserved.
+    assert.deepStrictEqual(withBundle.slice(1), getNetcoredbgCandidates());
+    // An empty extensionPath contributes no bundled candidate (defensive).
+    assert.deepStrictEqual(getNetcoredbgCandidates(''), getNetcoredbgCandidates());
+  });
+
   test('projectEntryFromFile + findProjectFile + findEntryProject resolve the built dll path', () => {
     // Unbuilt project -> net10.0 fallback path (deterministic).
     const unbuilt = path.join(tmpDir, 'Unbuilt.csproj');

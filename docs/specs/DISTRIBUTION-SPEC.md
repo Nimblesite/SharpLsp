@@ -20,6 +20,22 @@ SharpLsp has three executable components. All three are REQUIRED and MUST be bun
 
 All three are verified by Shipwright on every VS Code activation via `activationVerifies` in `shipwright.json`.
 
+## [DIST-DEBUGGER-BUNDLE]
+
+Debugging uses **netcoredbg** — the managed-code DAP adapter the `sharplsp-coreclr` debug type launches (`editors/vscode/src/debug.ts`, `SharpLspDebugAdapterFactory`). It is bundled in the VSIX so debugging works out of the box, mirroring how C# Dev Kit ships its own debugger.
+
+| Aspect | Requirement |
+|---|---|
+| Source | `Samsung/netcoredbg`, pinned to `3.2.0-1092`, MIT-licensed |
+| Staging | `scripts/fetch-netcoredbg.sh <platform>` downloads + extracts the upstream archive into `bin/<platform>/netcoredbg/` (with an archive cache under `target/netcoredbg-cache/`); wired into `_stage-vsix-binary-only` and `_package-vsix` in the Makefile |
+| Layout | `bin/<platform>/netcoredbg/netcoredbg[.exe]` **plus** its sibling managed assemblies (`ManagedPart.dll`, `dbgshim.dll`, `Microsoft.CodeAnalysis*.dll`) — the whole directory ships, since the executable loads them |
+| Resolution | `getNetcoredbgCandidates(extensionPath)` prefers the bundled binary; scan order is user-setting (`sharplsp.debug.netcoredbgPath`) → **bundled** → common install paths → `PATH` |
+| Platform coverage | Upstream ships prebuilt binaries for `win32-x64`, `linux-x64`, `linux-arm64`, `darwin-arm64` only. On `win32-arm64` and `darwin-x64` the VSIX cannot bundle netcoredbg; debugging falls back to a `PATH` copy / the setting. The fetch script skips those platforms cleanly (exit 0). |
+
+Unlike the three [DIST-COMPONENTS], a missing netcoredbg degrades **only** the debugging feature (surfaced via an error toast pointing at the install), not whole-extension activation.
+
+**Licensing.** netcoredbg (MIT, © 2017 Samsung Electronics Co., LTD) and every other bundled third-party component are acknowledged in [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md); all bundled licenses are permissive and compatible with SharpLsp's MIT license. Bumping the pinned netcoredbg version MUST update `scripts/fetch-netcoredbg.sh` and the notices file in lockstep.
+
 ## [DIST-RUNTIME-ACQUIRE]
 
 The sidecars are framework-dependent .NET assemblies that target `net10.0`. They require a .NET 10 **SDK** — not merely a runtime — because the C# sidecar runs an in-process MSBuild design-time build and locates MSBuild via `MSBuildLocator.QueryVisualStudioInstances(options)` (see `sidecars/SharpLsp.Sidecar.CSharp/MSBuildInstanceSelector.cs` and [DIST-SDK-DISCOVERY] for why the query is workspace-independent), which **only enumerates installed SDKs**. A machine with a runtime alone — or with only an older SDK such as the .NET 9 SDK — has no MSBuild whose Roslyn matches the bundled `Microsoft.CodeAnalysis`, so every project load fails (`FUSION_E_REF_DEF_MISMATCH`) or MSBuild cannot be located at all. SharpLsp therefore acquires the **SDK** automatically via Microsoft's [`ms-dotnettools.vscode-dotnet-runtime`](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.vscode-dotnet-runtime) extension (the .NET Install Tool) — the same mechanism used by C# Dev Kit, the C# extension, .NET MAUI, Unity, CMake, and Bicep.

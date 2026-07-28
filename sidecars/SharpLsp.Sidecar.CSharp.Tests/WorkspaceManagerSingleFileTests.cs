@@ -42,6 +42,15 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
         return path;
     }
 
+    private string WriteIn(string relativeDirectory, string name, string text)
+    {
+        var directory = Path.Combine(_root, relativeDirectory);
+        _ = Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, name);
+        File.WriteAllText(path, text);
+        return path;
+    }
+
     // OpenAsync is [Obsolete] as a design placeholder, not because it is unsafe. The tests must
     // exercise the real entry point rather than a private shim, so the warning is suppressed at
     // this single call site.
@@ -179,6 +188,168 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
         using var manager = new WorkspaceManager();
 
         var result = await OpenAsync(manager, _root);
+
+        Assert.True(result.IsError);
+        Assert.False(manager.IsLoaded);
+    }
+
+    /// <summary>
+    /// The whole .NET 10 directive vocabulary must parse cleanly. Roslyn lexes <c>#:</c> as
+    /// IGNORED trivia — the SDK owns their meaning — so a correct header contributes zero compiler
+    /// diagnostics. Both payload shapes are exercised: <c>name@version</c> and bare <c>name</c> for
+    /// <c>#:package</c>, <c>name=value</c> and bare <c>name</c> for <c>#:property</c>.
+    /// Implements [FILEBASED-DIRECTIVES].
+    /// </summary>
+    [Fact]
+    public async Task FileBasedApp_full_directive_header_produces_no_errors()
+    {
+        var app = Write(
+            "Full.cs",
+            "#:sdk Microsoft.NET.Sdk.Web\n"
+                + "#:package Newtonsoft.Json@13.0.3\n"
+                + "#:package Humanizer\n"
+                + "#:property LangVersion=preview\n"
+                + "#:property Nullable\n"
+                + "#:project ../Lib/Lib.csproj\n"
+                + "Console.WriteLine(1);\n"
+        );
+        using var manager = new WorkspaceManager();
+
+        Assert.False((await OpenAsync(manager, app)).IsError);
+        Assert.Empty(await ErrorsAsync(manager, app));
+    }
+
+    /// <summary>
+    /// A malformed or unresolvable directive degrades that directive ONLY — the rest of the file
+    /// must still bind. An editor that drops the whole compilation because one
+    /// <c>#:include</c> target is missing is worse than one that ignores the include.
+    /// Implements [SCRIPT-DEGRADE].
+    /// </summary>
+    [Fact]
+    public async Task FileBasedApp_unresolvable_directives_still_bind_the_rest_of_the_file()
+    {
+        var app = Write(
+            "Degraded.cs",
+            "#:frobnicate nonsense\n"
+                + "#:include $(SomeMsBuildProperty)/generated.cs\n"
+                + "#:include definitely-not-here.cs\n"
+                + "Console.WriteLine(\"still binds\".Length);\n"
+        );
+        using var manager = new WorkspaceManager();
+
+        Assert.False((await OpenAsync(manager, app)).IsError);
+        Assert.True(manager.IsLoaded);
+
+        // CS0103 is "name does not exist in the current context" — proof the root file's own
+        // code lost its references, which is the failure mode this guards against.
+        Assert.DoesNotContain(
+            await ErrorsAsync(manager, app),
+            d => string.Equals(d.Code, "CS0103", StringComparison.Ordinal)
+        );
+    }
+
+    /// <summary>
+    /// <c>#:include</c> accepts a glob. Every matched file must join the closure — asserted by
+    /// binding a symbol from each. Implements [FILEBASED-DIRECTIVES], [SCRIPT-CLOSURE].
+    /// </summary>
+    [Fact]
+    public async Task FileBasedApp_glob_include_pulls_every_match_into_the_closure()
+    {
+        _ = WriteIn(
+            "helpers",
+            "One.cs",
+            "internal static class One { public static int V() { return 1; } }\n"
+        );
+        _ = WriteIn(
+            "helpers",
+            "Two.cs",
+            "internal static class Two { public static int V() { return 2; } }\n"
+        );
+        var app = Write(
+            "Globbed.cs",
+            "#:include helpers/*.cs\nConsole.WriteLine(One.V() + Two.V());\n"
+        );
+        using var manager = new WorkspaceManager();
+
+        Assert.False((await OpenAsync(manager, app)).IsError);
+        Assert.Empty(await ErrorsAsync(manager, app));
+    }
+
+    /// <summary>
+    /// A <c>**</c> glob must descend. A top-directory-only search would silently miss nested
+    /// sources and report them as unresolved symbols. Implements [FILEBASED-DIRECTIVES].
+    /// </summary>
+    [Fact]
+    public async Task FileBasedApp_recursive_glob_include_reaches_nested_files()
+    {
+        _ = WriteIn(
+            Path.Combine("deep", "a", "b"),
+            "Nested.cs",
+            "internal static class Nested { public static int V() { return 3; } }\n"
+        );
+        var app = Write("Recursive.cs", "#:include deep/**/*.cs\nConsole.WriteLine(Nested.V());\n");
+        using var manager = new WorkspaceManager();
+
+        Assert.False((await OpenAsync(manager, app)).IsError);
+        Assert.Empty(await ErrorsAsync(manager, app));
+    }
+
+    /// <summary>
+    /// The closure is bounded so a runaway glob cannot exhaust memory. Asserted on the closure
+    /// itself rather than through the workspace: "it loaded" would pass even if the bound never
+    /// engaged, which is the only thing worth proving here. Implements [SCRIPT-CLOSURE].
+    /// </summary>
+    [Fact]
+    public async Task FileBasedApp_closure_file_count_is_bounded()
+    {
+        for (var i = 0; i < 70; i++)
+        {
+            _ = WriteIn("many", $"F{i}.cs", $"internal static class F{i} {{ }}\n");
+        }
+        var app = Write("Many.cs", "#:include many/*.cs\nConsole.WriteLine(1);\n");
+
+        var closure = await DocumentClosure.ExpandFileBasedAsync(app, CancellationToken.None);
+
+        Assert.Equal(64, closure.Files.Count);
+        Assert.Contains(
+            closure.Issues,
+            issue => issue.Contains("exceeded 64 files", StringComparison.Ordinal)
+        );
+    }
+
+    /// <summary>
+    /// Include nesting is depth-bounded, so a deep chain terminates with an explicit issue rather
+    /// than recursing until the stack gives out. Implements [SCRIPT-CLOSURE].
+    /// </summary>
+    [Fact]
+    public async Task FileBasedApp_include_depth_is_bounded()
+    {
+        for (var i = 0; i < 12; i++)
+        {
+            var next = i < 11 ? $"#:include chain{i + 1}.cs\n" : string.Empty;
+            _ = Write($"chain{i}.cs", $"{next}internal static class C{i} {{ }}\n");
+        }
+        var app = Write("Chain.cs", "#:include chain0.cs\nConsole.WriteLine(1);\n");
+
+        var closure = await DocumentClosure.ExpandFileBasedAsync(app, CancellationToken.None);
+
+        Assert.Contains(
+            closure.Issues,
+            issue => issue.Contains("levels of #:include nesting", StringComparison.Ordinal)
+        );
+    }
+
+    /// <summary>
+    /// A document that is neither a project nor a loadable C# model is a load FAILURE. Returning
+    /// success would leave the host believing a workspace exists. Implements [SCRIPT-DEGRADE].
+    /// </summary>
+    [Fact]
+    public async Task Unsupported_document_is_a_load_error()
+    {
+        var notes = Write("notes.txt", "not code\n");
+        using var manager = new WorkspaceManager();
+
+        var result = await OpenAsync(manager, notes);
 
         Assert.True(result.IsError);
         Assert.False(manager.IsLoaded);

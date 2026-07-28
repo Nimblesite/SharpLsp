@@ -1,5 +1,4 @@
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
@@ -124,24 +123,5 @@ internal static class FileLevelDirectives
         return index < 0
             ? (argument, null)
             : (argument[..index].Trim(), argument[(index + 1)..].Trim());
-    }
-
-    /// <summary>
-    /// Directives must precede the first non-trivia token. Implements [FILEBASED-DIRECTIVES].
-    /// </summary>
-    public static IReadOnlyList<FileDirective> FindMisplaced(
-        SyntaxNode root,
-        IReadOnlyList<FileDirective> directives
-    )
-    {
-        var firstTokenStart = FirstCodeTokenStart(root);
-        return [.. directives.Where(d => d.Location.Start > firstTokenStart)];
-    }
-
-    private static int FirstCodeTokenStart(SyntaxNode root)
-    {
-        var token = root.DescendantTokens()
-            .FirstOrDefault(t => !t.IsKind(SyntaxKind.EndOfFileToken));
-        return token.IsKind(SyntaxKind.None) ? int.MaxValue : token.SpanStart;
     }
 }
