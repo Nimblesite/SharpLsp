@@ -118,14 +118,19 @@ jobs:
         # so the VS Code test host launches directly. `make` + Git-Bash on the
         # Windows runner is the same path the release workflow already uses.
         shell: bash
+        env:
+          # Pin the test host's user-data dir (honoured by .vscode-test.mjs) so
+          # the diagnostics step below knows where the extension-host logs land
+          # instead of guessing at the runner's os.tmpdir().
+          VSCODE_TEST_USER_DATA_DIR: ${{ runner.temp }}/vsx-${{ matrix.chunk }}
         run: make _test-vsix-win CHUNK=${{ matrix.chunk }}
       - name: Upload failure diagnostics
+        # A chunk failing on Windows and nowhere else is exactly the case this
+        # gate exists to catch, so keep the extension-host logs for triage.
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: win-vsix-logs-${{ matrix.chunk }}
           retention-days: 3
           if-no-files-found: ignore
-          path: |
-            editors/vscode/.vscode-test/**/*.log
-            ${{ runner.temp }}/slsp-vsx/**/logs/**
+          path: ${{ runner.temp }}/vsx-${{ matrix.chunk }}/logs

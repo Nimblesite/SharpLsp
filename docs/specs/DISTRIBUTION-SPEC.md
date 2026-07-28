@@ -278,6 +278,24 @@ Tag-triggered (`v*`). Jobs:
 3. **`build-vsix`** — for each platform: stages `bin/<platform>/sharplsp[.exe]` + `bin/all/sharplsp-sidecar-*`, runs `vsce package --target <platform>`. Produces 6 per-platform `.vsix` files, each fully self-contained.
 4. **`release`** — creates GitHub release with all archives and VSIXs, updates Homebrew tap, updates Scoop bucket, publishes VSIXs to VS Code Marketplace.
 
+## [DIST-CI-LAYOUT]
+
+The PR pipeline is split across reusable workflows (`on: workflow_call`) rather than one monolith, so no CI file outgrows comprehension and each leg is readable and editable in isolation:
+
+| Workflow | Leg |
+|---|---|
+| `ci.yml` | Orchestrator: `detect-changes`, dependency review, manifest validation, and one `uses:` job per leg |
+| `ci-lint.yml` | Rust / Zed / .NET / VS Code lint + format gates |
+| `ci-rust.yml` | Sharded Rust e2e suite ([DIST-CI-RUST-SHARDS]), the union coverage gate, the version contract |
+| `ci-dotnet.yml` | Sidecar tests (Ubuntu) + win32 named-pipe transport ([DIST-CI-WIN-TRANSPORT]) |
+| `ci-vsix.yml` | Full VS Code suite + coverage gate (Ubuntu) |
+| `ci-vsix-windows.yml` | VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX]) |
+
+Invariants:
+
+- **`detect-changes` is the only gate.** Every leg is `needs: detect-changes` and guarded by `code_changed`; no leg `needs:` another. Lint and tests are independent required gates — serializing tests behind lint added ~3 minutes to every PR's critical path, and a lint failure still blocks the merge.
+- **Legs are called, never duplicated.** Shared shell logic lives in `scripts/` (e.g. `purge-path-binaries.sh`, `vsix-test-chunks.mjs`) and shared build logic in the `Makefile`, so a step is written once and called from every workflow that needs it.
+
 ## [DIST-CI-NODE]
 
 **Minimum: Node.js 20.x.x.** This is the minimum required by `@vscode/vsce` v3.x.
@@ -319,12 +337,30 @@ Both listener flavors MUST restrict the endpoint to the current user: `0600` on 
 
 ## [DIST-CI-WIN-VSIX]
 
-The transport tests ([DIST-CI-WIN-TRANSPORT]) prove the named pipes carry frames; they do NOT prove the whole editor experience works on top of them. CI MUST therefore also run a **subset** of the VS Code end-to-end suite on a Windows runner (`test-vsix-windows` in `ci.yml`, driven by the `_test-vsix-smoke` Make target). The subset is the headline user interactions, driven through the REAL LSP (release-built `sharplsp` host + Roslyn/FCS sidecars) inside the actual VS Code extension host over win32 named-pipe IPC:
+The transport tests ([DIST-CI-WIN-TRANSPORT]) prove the named pipes carry frames; they do NOT prove the whole editor experience works on top of them. CI MUST therefore run the VS Code end-to-end suite's **whole feature surface** on Windows runners (`ci-vsix-windows.yml`, driven by the `_test-vsix-win` Make target), through the REAL LSP — release-built `sharplsp` host plus the Roslyn and FCS sidecars — inside the actual VS Code extension host over win32 named-pipe IPC. A grep-selected smoke subset is NOT sufficient: the features most likely to break on Windows are the ones that shell out to platform-specific executables (`netcoredbg.exe`, `dotnet-trace`, `dotnet test`, `dotnet new`) and manipulate Windows paths, none of which a completion/hover subset touches.
 
-- **C#** — semantic completion (with concrete symbol kinds), hover / quick info, go-to-definition + find-references, and diagnostics.
-- **F#** — hover, go-to-definition, completion, and diagnostics (F# is a first-class citizen; its headline features are gated on Windows too, not just C#'s).
+The suite is sliced into **feature chunks**, one Windows CI job each, run with `fail-fast: false` so one failing feature area never hides the state of the others:
 
-Selection is by `MOCHA_GREP` regex applied by the inner mocha runner; the source of truth for the subset is `VSIX_SMOKE_GREP` in the `Makefile` (single definition, not duplicated into CI YAML). The Windows job deliberately runs **without coverage** and does not enforce the coverage gate — a subset can never meet the line threshold, so the Ubuntu-only `test-vsix` job owns the full suite and coverage. The full suite stays Ubuntu-only for wall-clock; without this Windows smoke gate, nothing exercises the extension host + sidecar IPC end-to-end on Windows (the same blind spot class as GitHub #110). The LSP e2e temp-dir helper MUST fall back to `os.tmpdir()` (never a hardcoded `/tmp`) so these suites run on Windows.
+| Chunk | Feature surface |
+|---|---|
+| `lifecycle` | Activation, configuration, bundled binary/sidecar resolution, client lifecycle + restart, cross-cutting command workflows |
+| `lsp` | C# intelligence over the real LSP: completion, hover, diagnostics, document symbols, folding, selection ranges, code actions, document sync, client lifecycle |
+| `fsharp` | The whole F# LSP surface — navigation, intelligence, syntax, diagnostics, code fixes, hierarchy, workspace symbol (F# is a first-class citizen, so it is gated on Windows in full, not sampled) |
+| `debug` | Debugging: launch/attach configuration resolution, the `netcoredbg` adapter factory, `sharplsp.debugProgram` against real projects, plus Test Explorer discovery/run/debug and the test-status CodeLens |
+| `profiler` | Profiling: `dotnet-trace` sessions, live counters, memory dumps, `.nettrace` conversion, profiler webviews — plus FSI, build, output filtering and hot reload |
+| `explorer` | Solution Explorer tree, reactive sort/state signals, tooltips and reveal, the full context-menu surface, project-dependency watcher |
+| `packages` | Scaffolding (create solution/project) and the NuGet surface: browser panel, search/add/update/restore, real `.csproj` dependency edits |
+
+Invariants:
+
+- **One declaration.** Chunk membership lives in `editors/vscode/test-chunks.json` and is read by `scripts/vsix-test-chunks.mjs` (`files <chunk>` → `MOCHA_FILES` globs, `matrix` → the CI job matrix, `check` → the completeness guard). It MUST NOT be duplicated into CI YAML.
+- **Nothing escapes.** `make _lint-vsix` runs `vsix-test-chunks.mjs check`, which fails if any `*.test.ts` suite is claimed by no chunk or by more than one. A new suite is therefore gated on Windows by default; opting out requires an explicit entry under `excluded` with a written reason.
+- **Selection is by file, not by title.** The inner mocha runner selects suites via the `MOCHA_FILES` glob list. Title-regex selection (`MOCHA_GREP`) is a local debugging aid only — it silently drops tests when a suite is renamed. A glob matching zero compiled suites is a hard error, so a mistyped chunk fails instead of reporting a green run of nothing.
+- **Build once, fan out.** A single `build` job compiles the Rust host and both sidecars and publishes them as an artifact; each chunk job downloads and stages them (`_stage-vsix-binary-only`). Rebuilding per chunk would cost one cold Windows Rust build per feature area.
+- **Ubuntu owns coverage.** Windows chunks run **without** `--coverage` and enforce no coverage gate — one chunk can never meet the line threshold. The Ubuntu `test-vsix` job owns the full single-process run plus the ratcheted gate, and is the only job that runs the `real-repo-*` stress suites (each clones and restores a pinned third-party repository; that is repo ingestion, not platform behaviour).
+- **No PATH leakage.** Every VS Code job runs `scripts/purge-path-binaries.sh` first, so the test host can only resolve the freshly-staged bundled binaries. A dev copy on `PATH` would substitute itself for the artifact under test and turn a broken bundle green.
+
+The LSP e2e temp-dir helper MUST fall back to `os.tmpdir()` (never a hardcoded `/tmp`) so these suites run on Windows.
 
 ## [DIST-SECRETS]
 

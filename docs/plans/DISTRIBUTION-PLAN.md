@@ -139,6 +139,23 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 - [x] Run test jobs concurrently with `lint` (removed `needs: lint`)
 - [ ] Confirm shard wall times on a real PR run; rebalance `SHARD_COUNT` if a shard drifts past ~6 min
 
+### Windows VS Code feature chunks ([DIST-CI-WIN-VSIX])
+
+- [x] Replace the `MOCHA_GREP` smoke subset with file-glob chunk selection (`MOCHA_FILES` in `src/test/suite/index.ts`); a glob matching nothing is a hard error
+- [x] Declare chunk membership once in `editors/vscode/test-chunks.json`, read by `scripts/vsix-test-chunks.mjs` (`files` / `matrix` / `check`)
+- [x] Cover the whole feature surface on Windows: `lifecycle`, `lsp`, `fsharp`, `debug` (netcoredbg + Test Explorer + CodeLens), `profiler` (trace/counters/dumps + FSI/build/hot-reload), `explorer` (tree + context menus), `packages` (scaffolding + NuGet)
+- [x] Guard completeness in lint (`_check-vsix-chunks`) so a new suite cannot silently skip Windows CI
+- [x] Build once / fan out: one Windows `build` job publishes host + sidecars; chunks stage via `_stage-vsix-binary-only`
+- [x] `fail-fast: false` on the chunk matrix so one feature area's failure never hides the others
+- [ ] Confirm per-chunk wall times on a real PR run; split `explorer` / `packages` if either drifts past ~30 min
+
+### CI workflow layout ([DIST-CI-LAYOUT])
+
+- [x] Split `ci.yml` into reusable workflows: `ci-lint`, `ci-rust`, `ci-dotnet`, `ci-vsix`, `ci-vsix-windows`
+- [x] De-duplicate the PATH-purge step into `scripts/purge-path-binaries.sh` (was inline in three jobs)
+- [x] De-duplicate the test-host env scrubbing into the `VSIX_TEST_ENV` Make variable
+- [x] Fix the Rust test job's NuGet cache step (was `actions/setup-node` with `actions/cache` inputs, so it never cached)
+
 ### VS Code extension (`install.ts`)
 
 - [x] Replace HTTPS download path with package-manager-driven install
