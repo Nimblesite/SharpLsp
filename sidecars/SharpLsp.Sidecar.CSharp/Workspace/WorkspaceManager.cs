@@ -66,6 +66,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     public void Dispose()
     {
         _workspace?.Dispose();
+        _adhocWorkspace?.Dispose();
         _solutionMutationLock.Dispose();
     }
 
@@ -556,16 +557,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
     private async Task<VoidResult> OpenCoreAsync(string path, CancellationToken ct)
     {
-        var properties = new Dictionary<string, string>
-        {
-            ["DesignTimeBuild"] = "true",
-            ["BuildingInsideVisualStudio"] = "true",
-            ["SkipCompilerExecution"] = "true",
-        };
-
         _loggedWorkspaceFailures.Clear();
-        _workspace = MSBuildWorkspace.Create(properties);
-        _ = _workspace.RegisterWorkspaceFailedHandler(LogWorkspaceFailure);
 
         var findResult = SolutionLoader.FindSolutionOrProject(path);
         if (findResult.IsError)
@@ -573,11 +565,22 @@ internal sealed partial class WorkspaceManager : IDisposable
             return VoidResult.Failure(!findResult ?? "Search failed");
         }
 
-        var target =
-            findResult.Match(value => value, _ => null)
-            ?? throw new FileNotFoundException(
-                $"No .sln, .slnx, or .csproj found at or under '{path}'."
-            );
+        var target = findResult.Match(value => value, _ => null);
+
+        if (target is null)
+        {
+            return await OpenSingleFileModeAsync(path, ct).ConfigureAwait(false);
+        }
+
+        var properties = new Dictionary<string, string>
+        {
+            ["DesignTimeBuild"] = "true",
+            ["BuildingInsideVisualStudio"] = "true",
+            ["SkipCompilerExecution"] = "true",
+        };
+
+        _workspace = MSBuildWorkspace.Create(properties);
+        _ = _workspace.RegisterWorkspaceFailedHandler(LogWorkspaceFailure);
 
         var loaded = await LoadSolutionOrProjectAsync(target, ct).ConfigureAwait(false);
 
