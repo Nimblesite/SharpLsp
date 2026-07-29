@@ -142,7 +142,7 @@ public sealed class WorkspaceManagerDegenerateCoverageTests : IDisposable
     }
 
     [Fact]
-    public async Task Open_on_directory_without_a_project_fails()
+    public async Task Open_on_directory_without_a_project_succeeds_lazily()
     {
         var emptyDir = Path.Combine(_root, "empty");
         Directory.CreateDirectory(emptyDir);
@@ -152,7 +152,7 @@ public sealed class WorkspaceManagerDegenerateCoverageTests : IDisposable
         var result = await manager.OpenAsync(emptyDir);
 #pragma warning restore CS0618
 
-        Assert.True(result.IsError, "opening a project-less directory must fail");
+        Assert.False(result.IsError, "opening a project-less directory succeeds lazily");
     }
 
     [Fact]
