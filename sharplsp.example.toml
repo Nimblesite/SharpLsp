@@ -11,7 +11,9 @@ debounce_ms = 150
 [csharp]
 # Enable C# language support
 enabled = true
-# Path to .sln or .slnx file (auto-detected if empty)
+# Path to .sln or .slnx file, absolute or relative to the workspace root
+# (auto-detected if empty). Required when the root holds more than one solution:
+# auto-detection refuses to guess between them and loads nothing.
 solution_path = ""
 
 [fsharp]

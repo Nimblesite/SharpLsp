@@ -121,6 +121,33 @@ The project system is the hardest engineering problem in .NET tooling. [MSBuild]
 - **Multi-targeting:** Projects targeting multiple TFMs (e.g., `net8.0;net48;netstandard2.0`) present multiple analysis contexts. SharpLsp exposes a custom LSP extension for users to select the active TFM, defaulting to the first.
 - **Project-less files:** A `.cs` [file-based app](https://learn.microsoft.com/en-us/dotnet/core/sdk/file-based-apps), a `.csx` Roslyn script, and a `.fsx` F# script are all first-class editing targets with no owning project. Their compilation closure is derived from the root file — `#:include` for file-based apps, `#load` for scripts — and never from the containing directory. See [SCRIPTING-FILEBASED-SPEC.md](SCRIPTING-FILEBASED-SPEC.md).
 
+#### Choosing the Solution to Open `[WORKSPACE-SOLUTION-PATH]`
+
+The host sends one path to each sidecar's `workspace/open`. When that path is a
+directory, the C# sidecar discovers a target under it: an unambiguous `.sln`,
+`.slnx`, or `.csproj` is opened directly. Discovery **never guesses** between
+several nested solutions — a monorepo root holding `app/App.sln` and
+`other/Other.sln` is ambiguous, and guessing would silently load the wrong half
+of the repository.
+
+`csharp.solution_path` in `sharplsp.toml` resolves that ambiguity by naming the
+solution to open, absolute or relative to the workspace root:
+
+```toml
+[csharp]
+solution_path = "app/App.sln"
+```
+
+The host resolves the setting and sends the **solution file** rather than the
+root, so the sidecar opens it without running discovery at all. The setting
+falls back to workspace-root discovery when unset, and when it names a path that
+is not an existing file — a stale or misspelled entry degrades to auto-discovery
+instead of wedging the workspace on a path that cannot load.
+
+Without this, an ambiguous root loads no solution, and every semantic
+request — hover, completion, diagnostics, navigation — returns empty for the
+whole workspace.
+
 ### 2.6 Binary Layout & Installation
 
 **The `sharplsp` binary is bundled inside every per-platform VSIX.** A user who installs the VS Code extension gets a fully working LSP server with zero additional steps. Extensions are NOT thin clients that require a system-installed binary — the binary ships inside the extension.

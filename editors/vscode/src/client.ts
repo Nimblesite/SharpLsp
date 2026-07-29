@@ -126,6 +126,13 @@ function wireStatusBar(
         statusBar.setState(ServerState.Stopped);
         log.info('Server stopped.');
         break;
+      // vscode-languageclient v10 splits a failed launch out of `Stopped`. It
+      // is a hard failure — the server never came up — so it must surface as an
+      // error rather than the benign "stopped" resting state.
+      case State.StartFailed:
+        statusBar.setState(ServerState.Error);
+        log.info('Server failed to start.');
+        break;
     }
   });
   context.subscriptions.push(listener);
