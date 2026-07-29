@@ -62,6 +62,27 @@ public sealed class MetadataDecompilerTests
     }
 
     [Fact]
+    public void DecompileTypeToFile_sanitizes_colons_identically_on_every_platform()
+    {
+        // `Path.GetInvalidFileNameChars()` omits ':' on Unix (it returns only
+        // { '\0', '/' } there), so a sanitizer that delegates to it alone strips
+        // `global::`-style names on Windows and leaves them intact on Linux. The
+        // decompiled file name must not depend on the host OS, so this asserts the
+        // exact name rather than merely the absence of a colon.
+        // Implements [DEFINITION-CROSSLANG].
+        var path = MetadataDecompiler.DecompileTypeToFile(
+            CoreLib,
+            "System.Int32",
+            "global::System.Int32"
+        );
+
+        Assert.NotNull(path);
+        var fileName = Path.GetFileName(path!);
+        Assert.False(fileName.Contains(':', StringComparison.Ordinal), fileName);
+        Assert.Equal("global__System.Int32.cs", fileName);
+    }
+
+    [Fact]
     public void DecompileTypeToFile_returns_null_for_a_missing_assembly()
     {
         var path = MetadataDecompiler.DecompileTypeToFile(

@@ -193,6 +193,29 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
     }
 
     /// <summary>
+    /// Ambiguity is NOT absence. A root holding several solutions must surface an error
+    /// naming the knob that resolves it, never degrade to lazy per-file ad-hoc projects:
+    /// loose-file analysis of a real repository resolves no project reference and reports
+    /// a wall of phantom "type not found" diagnostics across the whole tree, which is
+    /// strictly worse than refusing to load. Implements [SCRIPT-DEGRADE].
+    /// </summary>
+    [Fact]
+    public async Task Ambiguous_multi_solution_root_is_an_error_not_lazy_loading()
+    {
+        _ = WriteIn("app", "App.sln", "");
+        _ = WriteIn("other", "Other.sln", "");
+        using var manager = new WorkspaceManager();
+
+        var result = await OpenAsync(manager, _root);
+
+        Assert.True(result.IsError, "an ambiguous multi-solution root must not load lazily");
+        var message = result.Match(_ => "", error => error);
+        Assert.Contains("solution_path", message, StringComparison.Ordinal);
+        Assert.Contains("App.sln", message, StringComparison.Ordinal);
+        Assert.Contains("Other.sln", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Opening multiple independent script files in a projectless directory lazily creates
     /// a new ad-hoc project for each of them simultaneously.
     /// </summary>

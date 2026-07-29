@@ -116,15 +116,18 @@ remaining gaps are explicit rather than implied.
 - [x] **`SolutionLoader` returned any existing file as a project target**, so `Program.cs` was handed
       to `MSBuildWorkspace.OpenProjectAsync` and file-based mode was unreachable. Explicit file targets
       are now gated on `.sln`/`.slnx`/`.csproj` — implements [SCRIPT-DETECT]
-- [x] Ambiguous multi-solution discovery returns an **error** rather than a synthetic workspace: the
-      directory path fails the file-existence guard in `OpenProjectlessAsync` — [SCRIPT-DEGRADE]
+- [x] Ambiguous multi-solution discovery returns an **error** rather than a synthetic workspace, and
+      keeps doing so now that a project-less directory defers instead of failing:
+      `SolutionLoader.FindAmbiguousSolutions` separates ambiguity from absence, so only the genuinely
+      empty root takes the deferred path — [SCRIPT-DEGRADE]
 - [x] Confirmed `AddCrossLanguageMetadataReferences` still runs on the MSBuild path after the
       `OpenCoreAsync` reordering
 - [x] Wrap per-file I/O in closure expansion so one unreadable file degrades that file only —
       [SCRIPT-DEGRADE]
 - [x] Honor `CancellationToken` inside the closure read loop
-- [ ] Distinguish "absent" from "ambiguous" in the error *message*; both currently report the
-      no-solution-found text — [SCRIPT-DEGRADE]
+- [x] Distinguish "absent" from "ambiguous" in the error *message*: absent now defers to lazy
+      per-file loading, and ambiguous reports every candidate solution plus the
+      `csharp.solution_path` setting that resolves it — [SCRIPT-DEGRADE]
 
 ### F# Sidecar — scripts
 
@@ -171,8 +174,11 @@ Coarse, real-artifact tests only — real files on disk, real Roslyn, real FCS, 
 - [x] Shebang produces no diagnostic — [FILEBASED-SHEBANG]
 - [x] `.csx`: script semantics load and the script `#load` path resolves — [CSX-OPTIONS]
 - [x] Closure cycle (`a.cs` includes `b.cs` includes `a.cs`) terminates — [SCRIPT-CLOSURE]
-- [x] A directory with neither project nor root file is an error, not a synthetic workspace —
+- [x] A directory with neither project nor root file defers to lazy per-file loading rather than
+      building a synthetic workspace, and each loose file becomes its own ad-hoc project —
       [SCRIPT-DEGRADE]
+- [x] A directory holding several solutions is an **error** naming the candidates and
+      `csharp.solution_path`, never the deferred path — [SCRIPT-DEGRADE]
 - [x] `Classify` maps extensions to compilation models — [SCRIPT-DETECT]
 
 `sidecars/SharpLsp.Sidecar.FSharp.Tests/FSharpScriptTests.fs`:

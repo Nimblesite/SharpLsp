@@ -580,6 +580,17 @@ internal sealed partial class WorkspaceManager : IDisposable
         );
     }
 
+    // Names every candidate so the user can copy one straight into sharplsp.toml, and names
+    // the setting so the message is actionable rather than merely descriptive.
+    // Implements [SCRIPT-DEGRADE] and [WORKSPACE-SOLUTION-PATH].
+    private static string AmbiguousSolutionMessage(string path, string[] candidates)
+    {
+        var names = string.Join(", ", candidates.Select(Path.GetFileName));
+        return $"Found {candidates.Length} solutions under '{path}' ({names}), so which one to "
+            + "load is ambiguous. Set `csharp.solution_path` in sharplsp.toml to the solution "
+            + "you want, relative to the workspace root.";
+    }
+
     private async Task<VoidResult> OpenCoreAsync(string path, CancellationToken ct)
     {
         _loggedWorkspaceFailures.Clear();
@@ -596,6 +607,17 @@ internal sealed partial class WorkspaceManager : IDisposable
         {
             if (Directory.Exists(path))
             {
+                // Ambiguity is not absence. Discovery also returns "no target" when the root
+                // holds SEVERAL solutions and it refused to guess; deferring there would
+                // analyse a real repository as loose files, resolving no project reference
+                // and reporting phantom diagnostics across the whole tree. Surface the
+                // choice instead. Implements [SCRIPT-DEGRADE].
+                var candidates = SolutionLoader.FindAmbiguousSolutions(path);
+                if (candidates.Length > 0)
+                {
+                    return VoidResult.Failure(AmbiguousSolutionMessage(path, candidates));
+                }
+
                 // The host eagerly opened a workspace folder, but it contains no projects.
                 // We cannot load a directory as a file-based app. Instead, we succeed
                 // initialization but defer actual workspace creation until a file is opened.

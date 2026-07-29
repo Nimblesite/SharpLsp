@@ -83,6 +83,24 @@ internal static class SolutionLoader
         return match ?? solutionFiles[0];
     }
 
+    /// <summary>
+    /// The competing solutions under <paramref name="workspacePath"/> when recursive discovery
+    /// found more than one and therefore returned no target. Empty when the root resolves
+    /// unambiguously or holds no solution at all, which lets a caller tell AMBIGUITY apart from
+    /// ABSENCE — <see cref="FindSolutionOrProject"/> reports both as a null target.
+    /// Implements [SCRIPT-DEGRADE].
+    /// </summary>
+    internal static string[] FindAmbiguousSolutions(string workspacePath)
+    {
+        if (!Directory.Exists(workspacePath) || FindExplicitOrRootMatch(workspacePath) is not null)
+        {
+            return [];
+        }
+
+        var solutionFiles = EnumerateSolutionFiles(workspacePath, SearchOption.AllDirectories);
+        return solutionFiles.Length > 1 ? solutionFiles : [];
+    }
+
     private static string? FindRecursiveMatch(string workspacePath)
     {
         if (!Directory.Exists(workspacePath))

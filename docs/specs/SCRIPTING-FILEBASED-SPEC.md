@@ -306,12 +306,23 @@ yields two closures, not one project containing both.
 
 ## 8. Error handling and degradation `[SCRIPT-DEGRADE]`
 
-- A path that resolves to no supported document kind returns a `Result` failure. It must not be
-  silently converted into an empty synthetic workspace — that turns a real "I could not load your
+- A **file** path that resolves to no supported document kind returns a `Result` failure. It must not
+  be silently converted into an empty synthetic workspace — that turns a real "I could not load your
   code" into a wall of phantom diagnostics.
-- Ambiguous solution discovery (multiple `.sln` under the root) already returns "no target" from
-  `SolutionLoader`. That case is **ambiguity, not absence**, and must surface as an error asking the
-  user to choose. Treating it as file-based mode would silently mis-analyze an entire repository.
+- A **directory** holding no solution or project at all is not a failure. The host opens a workspace
+  folder eagerly, before any document exists, so `OpenCoreAsync` records the root as project-less and
+  returns success, deferring workspace creation to the first document update. That document is then
+  loaded as a file-based app or script, and each subsequent loose file is added as its own ad-hoc
+  project — two independent files in one folder stay two compilations, per [SCRIPT-ANTIPATTERN].
+  `IsLoaded` stays false until a document arrives, so nothing claims a workspace exists before one
+  does.
+- Ambiguous solution discovery (multiple `.sln` under the root) also returns "no target" from
+  `SolutionLoader`. That case is **ambiguity, not absence**, and must surface as an error naming every
+  candidate and the `csharp.solution_path` setting that resolves it — never the project-less deferral
+  above. Treating it as file-based mode would silently mis-analyze an entire repository: no project
+  reference resolves, and every cross-project type becomes a phantom "not found" diagnostic.
+  `SolutionLoader.FindAmbiguousSolutions` is what distinguishes the two, and
+  [WORKSPACE-SOLUTION-PATH] specifies the setting the message points at.
 - Any I/O during closure expansion is wrapped; a failure to read one included file degrades that file
   only and is reported as a diagnostic, leaving the rest of the closure loaded.
 

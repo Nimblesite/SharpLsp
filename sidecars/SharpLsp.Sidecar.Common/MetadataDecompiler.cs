@@ -80,19 +80,39 @@ public static class MetadataDecompiler
         return filePath;
     }
 
+    /// <summary>
+    /// Every character neutralised in a decompiled file name. The leading literals
+    /// are replaced on <em>every</em> platform so the same type yields the same
+    /// file name everywhere: <see cref="Path.GetInvalidFileNameChars"/> is
+    /// platform-specific — on Unix it is only <c>{ '\0', '/' }</c> — so relying on
+    /// it alone would leave <c>&lt;</c>, <c>&gt;</c>, <c>:</c>, <c>,</c> and spaces
+    /// intact on Linux while stripping them on Windows.
+    /// </summary>
+    private static readonly char[] UnsafeNameChars =
+    [
+        '<',
+        '>',
+        ':',
+        ',',
+        ' ',
+        .. Path.GetInvalidFileNameChars(),
+    ];
+
     private static string SanitizeFileName(string name)
     {
-        var sanitized = name.Replace('<', '_')
-            .Replace('>', '_')
-            .Replace(',', '_')
-            .Replace(' ', '_');
-
-        foreach (var c in Path.GetInvalidFileNameChars())
-        {
-            sanitized = sanitized.Replace(c, '_');
-        }
-
-        return sanitized;
+        return string.Create(
+            name.Length,
+            name,
+            static (destination, source) =>
+            {
+                for (var index = 0; index < source.Length; index++)
+                {
+                    var candidate = source[index];
+                    destination[index] =
+                        Array.IndexOf(UnsafeNameChars, candidate) >= 0 ? '_' : candidate;
+                }
+            }
+        );
     }
 
     /// <summary>
