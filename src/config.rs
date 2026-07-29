@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Top-level configuration loaded from `sharplsp.toml`.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -82,6 +82,45 @@ impl Default for CSharpConfig {
             enabled: true,
             solution_path: String::new(),
         }
+    }
+}
+
+impl CSharpConfig {
+    /// The path to hand the C# sidecar's `workspace/open`.
+    ///
+    /// A workspace root holding more than one `.sln`/`.slnx` is ambiguous, and
+    /// the sidecar's recursive discovery deliberately refuses to guess — it
+    /// returns no target, and the whole solution fails to load. `solution_path`
+    /// is how the user resolves that: it names the solution to open, absolute
+    /// or relative to the workspace root.
+    ///
+    /// Falls back to the root — restoring plain auto-discovery — when unset, or
+    /// when the configured path names no existing file. Implements
+    /// [WORKSPACE-SOLUTION-PATH].
+    pub fn open_target(&self, workspace_root: &Path) -> PathBuf {
+        let configured = self.solution_path.trim();
+        if configured.is_empty() {
+            return workspace_root.to_path_buf();
+        }
+
+        let candidate = Path::new(configured);
+        let resolved = if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            workspace_root.join(candidate)
+        };
+
+        if resolved.is_file() {
+            info!("Opening configured solution {}", resolved.display());
+            return resolved;
+        }
+
+        warn!(
+            "csharp.solution_path `{configured}` does not name an existing file ({}); \
+             falling back to workspace-root discovery",
+            resolved.display()
+        );
+        workspace_root.to_path_buf()
     }
 }
 
@@ -245,6 +284,85 @@ project_filter = ["MyApp.Core", "MyApp.Api"]
         );
         // Defaults still apply for unset fields
         assert!(config.fsharp.enabled);
+    }
+
+    /// A configured `solution_path` must be the path opened, not the workspace
+    /// root. Sending the root leaves the sidecar to rediscover, and in a root
+    /// holding several solutions that discovery is ambiguous and loads nothing —
+    /// no hover, no completions, no diagnostics. Implements
+    /// [WORKSPACE-SOLUTION-PATH].
+    #[test]
+    fn test_relative_solution_path_is_opened_not_workspace_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let app = root.join("app");
+        fs::create_dir_all(&app).unwrap();
+        let sln = app.join("App.sln");
+        fs::write(&sln, "").unwrap();
+        // A second solution elsewhere is what makes discovery ambiguous.
+        fs::create_dir_all(root.join("other")).unwrap();
+        fs::write(root.join("other").join("Other.sln"), "").unwrap();
+
+        let config = CSharpConfig {
+            enabled: true,
+            solution_path: "app/App.sln".to_string(),
+        };
+
+        assert_eq!(config.open_target(root), sln);
+    }
+
+    #[test]
+    fn test_absolute_solution_path_is_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let sln = root.join("Explicit.sln");
+        fs::write(&sln, "").unwrap();
+
+        let config = CSharpConfig {
+            enabled: true,
+            solution_path: sln.to_string_lossy().to_string(),
+        };
+
+        assert_eq!(config.open_target(root), sln);
+    }
+
+    #[test]
+    fn test_empty_solution_path_falls_back_to_workspace_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        assert_eq!(CSharpConfig::default().open_target(root), root);
+    }
+
+    /// A stale or misspelled `solution_path` must not wedge the sidecar on a
+    /// path that does not exist — auto-discovery is the safer fallback.
+    #[test]
+    fn test_missing_solution_path_falls_back_to_workspace_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let config = CSharpConfig {
+            enabled: true,
+            solution_path: "does/not/exist.sln".to_string(),
+        };
+
+        assert_eq!(config.open_target(root), root);
+    }
+
+    /// A directory is not a solution; treat it as unset rather than opening it
+    /// as though it were a file the user chose.
+    #[test]
+    fn test_directory_solution_path_falls_back_to_workspace_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("app")).unwrap();
+
+        let config = CSharpConfig {
+            enabled: true,
+            solution_path: "app".to_string(),
+        };
+
+        assert_eq!(config.open_target(root), root);
     }
 
     #[test]

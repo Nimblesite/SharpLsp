@@ -229,10 +229,17 @@ fn run_server() -> Result<()> {
     // declare a false crash, and kill the sidecar before the solution is loaded.
     // When no workspace root exists (single-file mode), workspace/open is
     // deferred until the first didOpen notification.
+    // The C# sidecar opens the configured solution when `csharp.solution_path`
+    // names one; a root holding several solutions is otherwise ambiguous and
+    // loads nothing. Implements [WORKSPACE-SOLUTION-PATH].
+    let csharp_open_root = workspace_root
+        .as_deref()
+        .map(|root| sharplsp_config.csharp.open_target(root));
+
     if workspace_root.is_some() {
         start_sidecar(
             csharp_sidecar.as_ref(),
-            workspace_root.as_ref(),
+            csharp_open_root.as_ref(),
             Some((&sharplsp_config.diagnostics, &connection)),
             sharplsp_config.analyzers.clone(),
             &runtime,

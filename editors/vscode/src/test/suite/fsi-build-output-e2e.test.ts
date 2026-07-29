@@ -31,11 +31,13 @@ import { removeDirRecursive } from './test-helpers.js';
 
 // ── Fake OutputChannel ────────────────────────────────────────────
 
-/** Records everything an OutputChannel receives so we can assert on it. */
-interface RecordingChannel extends vscode.OutputChannel {
+/** Records everything a LogOutputChannel receives so we can assert on it. */
+interface RecordingChannel extends vscode.LogOutputChannel {
   readonly appended: string[];
   readonly appendedLines: string[];
   readonly replaced: string[];
+  /** Level-tagged log calls, as `level:message`. */
+  readonly logged: string[];
   cleared: number;
   shown: number;
   hidden: number;
@@ -47,15 +49,19 @@ function recordingChannel(name: string): RecordingChannel {
   const appended: string[] = [];
   const appendedLines: string[] = [];
   const replaced: string[] = [];
+  const logged: string[] = [];
   const channel: RecordingChannel = {
     name,
     appended,
     appendedLines,
     replaced,
+    logged,
     cleared: 0,
     shown: 0,
     hidden: 0,
     disposed: 0,
+    logLevel: vscode.LogLevel.Info,
+    onDidChangeLogLevel: new vscode.EventEmitter<vscode.LogLevel>().event,
     append(value: string): void {
       appended.push(value);
     },
@@ -64,6 +70,21 @@ function recordingChannel(name: string): RecordingChannel {
     },
     replace(value: string): void {
       replaced.push(value);
+    },
+    trace(message: string): void {
+      logged.push(`trace:${message}`);
+    },
+    debug(message: string): void {
+      logged.push(`debug:${message}`);
+    },
+    info(message: string): void {
+      logged.push(`info:${message}`);
+    },
+    warn(message: string): void {
+      logged.push(`warn:${message}`);
+    },
+    error(error: string | Error): void {
+      logged.push(`error:${typeof error === 'string' ? error : error.message}`);
     },
     clear(): void {
       channel.cleared += 1;
@@ -169,6 +190,33 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     // Plain text passes through untouched.
     wrapped.append('plain line');
     assert.strictEqual(inner.appended[inner.appended.length - 1], 'plain line');
+  });
+
+  test('createAnsiStrippingChannel strips ANSI from the level-tagged log methods', function () {
+    this.timeout(20_000);
+    const inner = recordingChannel('SharpLsp');
+    const wrapped = createAnsiStrippingChannel(inner);
+
+    wrapped.trace('[2mtrace line[0m');
+    wrapped.debug('[2mdebug line[0m');
+    wrapped.info('[32minfo line[0m');
+    wrapped.warn('[33mwarn line[0m');
+    wrapped.error('[31merror line[0m');
+
+    assert.deepStrictEqual(inner.logged, [
+      'trace:trace line',
+      'debug:debug line',
+      'info:info line',
+      'warn:warn line',
+      'error:error line',
+    ]);
+
+    // An Error forwards intact — its message is rendered, never written raw.
+    wrapped.error(new Error('boom'));
+    assert.strictEqual(inner.logged[inner.logged.length - 1], 'error:boom');
+
+    // logLevel delegates live rather than snapshotting at wrap time.
+    assert.strictEqual(wrapped.logLevel, inner.logLevel);
   });
 
   // ── build.ts ────────────────────────────────────────────────────
