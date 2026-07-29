@@ -58,6 +58,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     // is a non-atomic read-modify-write. Concurrent didChange and workspace-load
     // mutations would drop edits, leaving Roslyn with stale text.
     private readonly SemaphoreSlim _solutionMutationLock = new(1, 1);
+    private readonly SemaphoreSlim _projectlessLoadLock = new(1, 1);
 
     // Distinct workspace-load failure summaries already logged. MSBuild reports
     // the same type-load failure once per project, so de-duplicating prevents the
@@ -69,6 +70,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         _workspace?.Dispose();
         _adhocWorkspace?.Dispose();
         _solutionMutationLock.Dispose();
+        _projectlessLoadLock.Dispose();
     }
 
     // Pending text edits keyed by file path that arrived BEFORE the workspace
@@ -111,11 +113,22 @@ internal sealed partial class WorkspaceManager : IDisposable
         {
             if (_isProjectlessDirectory)
             {
-                _isProjectlessDirectory = false;
-                var initResult = await OpenProjectlessAsync(filePath, ct).ConfigureAwait(false);
-                if (initResult.IsError)
+                await _projectlessLoadLock.WaitAsync(ct).ConfigureAwait(false);
+                try
                 {
-                    return initResult;
+                    var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
+                    if (document is null)
+                    {
+                        var initResult = await OpenProjectlessAsync(filePath, ct).ConfigureAwait(false);
+                        if (initResult.IsError)
+                        {
+                            return initResult;
+                        }
+                    }
+                }
+                finally
+                {
+                    _ = _projectlessLoadLock.Release();
                 }
             }
 

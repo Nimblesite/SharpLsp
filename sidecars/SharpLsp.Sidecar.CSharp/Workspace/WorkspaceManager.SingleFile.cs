@@ -105,8 +105,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        _adhocWorkspace?.Dispose();
-        _adhocWorkspace = new AdhocWorkspace();
+        _adhocWorkspace ??= new AdhocWorkspace();
 
         var project = _adhocWorkspace.AddProject(BuildProjectInfo(kind, rootPath));
         foreach (var file in closure.Files)
