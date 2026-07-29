@@ -51,6 +51,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 {
     private MSBuildWorkspace? _workspace;
     private Solution? _solution;
+    private bool _isProjectlessDirectory;
     private readonly CodeActionResolver _codeActionResolver = new();
 
     // Roslyn's Solution is immutable; mutating _solution = _solution.WithX(...)
@@ -108,6 +109,16 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         try
         {
+            if (_isProjectlessDirectory)
+            {
+                _isProjectlessDirectory = false;
+                var initResult = await OpenProjectlessAsync(filePath, ct).ConfigureAwait(false);
+                if (initResult.IsError)
+                {
+                    return initResult;
+                }
+            }
+
             await _solutionMutationLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
@@ -569,6 +580,15 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         if (target is null)
         {
+            if (Directory.Exists(path))
+            {
+                // The host eagerly opened a workspace folder, but it contains no projects.
+                // We cannot load a directory as a file-based app. Instead, we succeed
+                // initialization but defer actual workspace creation until a file is opened.
+                _isProjectlessDirectory = true;
+                return new VoidResult.Ok<Unit, string>(Unit.Value);
+            }
+
             // No solution or project owns this path: load it as a file-based app or script.
             // Implements [SCRIPT-DETECT].
             return await OpenProjectlessAsync(path, ct).ConfigureAwait(false);
