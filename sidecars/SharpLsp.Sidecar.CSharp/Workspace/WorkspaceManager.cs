@@ -119,7 +119,8 @@ internal sealed partial class WorkspaceManager : IDisposable
                     var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
                     if (document is null)
                     {
-                        var initResult = await OpenProjectlessAsync(filePath, ct).ConfigureAwait(false);
+                        var initResult = await OpenProjectlessAsync(filePath, ct)
+                            .ConfigureAwait(false);
                         if (initResult.IsError)
                         {
                             return initResult;

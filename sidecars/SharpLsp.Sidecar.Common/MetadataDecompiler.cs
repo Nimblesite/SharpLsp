@@ -82,8 +82,7 @@ public static class MetadataDecompiler
 
     private static string SanitizeFileName(string name)
     {
-        var sanitized = name
-            .Replace('<', '_')
+        var sanitized = name.Replace('<', '_')
             .Replace('>', '_')
             .Replace(',', '_')
             .Replace(' ', '_');
