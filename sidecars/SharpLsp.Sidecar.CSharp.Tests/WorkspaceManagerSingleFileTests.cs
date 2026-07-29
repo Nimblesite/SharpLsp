@@ -178,19 +178,43 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
     }
 
     /// <summary>
-    /// A directory with no project and no root file is a load FAILURE, not a synthetic empty
-    /// workspace. Silently succeeding turns "I could not load your code" into phantom
-    /// diagnostics across the whole repo. Implements [SCRIPT-DEGRADE].
+    /// A directory with no project and no root file defers loading, returning success so that
+    /// the workspace can lazily inject independently requested files as ad-hoc projects.
     /// </summary>
     [Fact]
-    public async Task Directory_without_project_or_root_file_is_an_error()
+    public async Task Directory_without_project_or_root_file_succeeds_for_lazy_loading()
     {
         using var manager = new WorkspaceManager();
 
         var result = await OpenAsync(manager, _root);
 
-        Assert.True(result.IsError);
+        Assert.False(result.IsError);
         Assert.False(manager.IsLoaded);
+    }
+
+    /// <summary>
+    /// Opening multiple independent script files in a projectless directory lazily creates
+    /// a new ad-hoc project for each of them simultaneously.
+    /// </summary>
+    [Fact]
+    public async Task Independent_scripts_in_projectless_directory_are_lazily_loaded_simultaneously()
+    {
+        using var manager = new WorkspaceManager();
+        var result = await OpenAsync(manager, _root);
+        Assert.False(result.IsError);
+
+        var file1 = Write("file1.cs", "Console.WriteLine(1);\n");
+        var file2 = Write("file2.cs", "Console.WriteLine(2);\n");
+
+        var update1 = await manager.UpdateDocumentTextAsync(file1, "Console.WriteLine(1);\n");
+        Assert.False(update1.IsError);
+
+        var update2 = await manager.UpdateDocumentTextAsync(file2, "Console.WriteLine(2);\n");
+        Assert.False(update2.IsError);
+
+        Assert.True(manager.IsLoaded);
+        Assert.Empty(await ErrorsAsync(manager, file1));
+        Assert.Empty(await ErrorsAsync(manager, file2));
     }
 
     /// <summary>
