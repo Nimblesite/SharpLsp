@@ -197,11 +197,16 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     const inner = recordingChannel('SharpLsp');
     const wrapped = createAnsiStrippingChannel(inner);
 
-    wrapped.trace('[2mtrace line[0m');
-    wrapped.debug('[2mdebug line[0m');
-    wrapped.info('[32minfo line[0m');
-    wrapped.warn('[33mwarn line[0m');
-    wrapped.error('[31merror line[0m');
+    // The sequences below embed real ESC control bytes, matching the convention
+    // the stripAnsi assertions above already use. This matters: if the ESC bytes
+    // are ever lost, the literals degrade to bare "[2m" text and the test
+    // silently asserts nothing at all, because stripAnsi correctly leaves
+    // non-ANSI text alone. It is the ESC that makes a sequence a sequence.
+    wrapped.trace('[2mtrace line[0m');
+    wrapped.debug('[2mdebug line[0m');
+    wrapped.info('[32minfo line[0m');
+    wrapped.warn('[33mwarn line[0m');
+    wrapped.error('[31merror line[0m');
 
     assert.deepStrictEqual(inner.logged, [
       'trace:trace line',
