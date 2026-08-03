@@ -8,4 +8,4 @@ authorRole: Nimblesite Engineering
 authorImage: /assets/images/sharplsp-logo.svg
 ---
 
-SharpLsp is built by the engineering team at [Nimblesite](https://nimblesite.co), led by Christian Findlay. SharpLsp is MIT-licensed and developed in public — contributions welcome on [GitHub](https://github.com/Nimblesite/SharpLsp).
+SharpLsp is built by the engineering team at [Nimblesite](https://nimblesite.co), led by [Christian Findlay](https://www.christianfindlay.com/). SharpLsp is MIT-licensed and developed in public — contributions welcome on [GitHub](https://github.com/Nimblesite/SharpLsp).

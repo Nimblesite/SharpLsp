@@ -10,6 +10,9 @@
 #   make clean                        remove build artifacts
 #   make setup                        install toolchain dependencies
 #   make screenshots                  capture website screenshots from real VS Code
+#   make website-build                build the website
+#   make website-test                 test the website in Playwright
+#   make website-dev                  serve the website locally
 #   make package-vsix-linux-x64 [VERSION=x.y.z]     build + package VSIX for linux-x64
 #   make package-vsix-linux-arm64 [VERSION=x.y.z]   build + package VSIX for linux-arm64
 #   make package-vsix-darwin-arm64 [VERSION=x.y.z]  build + package VSIX for darwin-arm64
@@ -54,6 +57,7 @@ RUST_TEST_THREADS ?= 1
 # [DIST-CI-RUST-SHARDS] CI splits the Rust e2e suite into nextest hash
 # partitions (`_test-rust-shard`); SHARD_COUNT is the total number of slices.
 SHARD_COUNT       ?= 2
+PLAYWRIGHT_DEPS_FLAG = $(if $(filter windows,$(DETECTED_OS)),,--with-deps)
 
 VSCODE_DIR  = editors/vscode
 ZED_DIR     = editors/zed
@@ -80,7 +84,7 @@ PREFIX   ?= $(HOME)/.local
 BINDIR    = $(PREFIX)/bin
 CHECK_COV = bash scripts/coverage/check-coverage.sh
 
-.PHONY: build ci test lint fmt clean setup screenshots \
+.PHONY: build ci test lint fmt clean setup screenshots website-build website-test website-dev \
         package-vsix-linux-x64 package-vsix-linux-arm64 \
         package-vsix-darwin-arm64 package-vsix-darwin-x64 \
         package-vsix-win32-x64 package-vsix-win32-arm64 \
@@ -328,9 +332,21 @@ _test-dotnet: _build-dotnet
 	 _check_cov SharpLsp.Sidecar.FSharp sharplsp-sidecar-fsharp ; \
 	 _check_cov SharpLsp.Sidecar.Common sharplsp-sidecar-common
 
+website-build:
+	@echo "==> Building website..."
+	npm run build --prefix website
+
+website-test: _test-website
+
+website-dev:
+	@echo "==> Starting website development server..."
+	npm run dev --prefix website
+
 _test-website:
 	@echo "==> Running website Playwright tests..."
-	cd website && npm ci && npx playwright install --with-deps chromium && npx playwright test
+	npm ci --prefix website
+	npm exec --prefix website -- playwright install $(PLAYWRIGHT_DEPS_FLAG) chromium webkit
+	npm test --prefix website
 
 # ── Lint ─────────────────────────────────────────────────────────
 
@@ -586,7 +602,7 @@ clean: _clean-rider
 	rm -rf $(SIDECAR_CS_OUT) $(SIDECAR_FS_OUT)
 	rm -rf $(VSCODE_DIR)/bin $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
 	rm -rf $(ZED_PKG_DIR) $(DIST_DIR)
-	rm -f sharplsp.vsix $(ZED_PKG_TAR)
+	rm -f $(DEV_VSIX) $(ZED_PKG_TAR)
 	@echo "==> Clean."
 
 _clean-rider:

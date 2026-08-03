@@ -362,7 +362,7 @@ suite('NuGet Browser', () => {
   /**
    * REGRESSION: The mockup includes chrome (activity bar, status bar) that
    * belongs to VS Code itself, not the webview panel. None of those
-   * elements may appear in the rendered HTML. See docs/designs/DESIGN.md § 0.
+   * elements may appear in the rendered HTML. See [NUGET-WEBVIEW-DESIGN].
    */
   test('rendered HTML does not include VS Code chrome (regression)', async function () {
     this.timeout(30_000);
@@ -793,7 +793,7 @@ suite('NuGet Browser', () => {
       assert.ok(
         !detailsAfter.includes('uninstallPackage'),
         'After csproj removes PackageReference, details panel MUST NOT render Remove button. ' +
-          'Snapshot-vs-live-derivation regression — see VSCODE-REACTIVITY-SPEC.md §8.',
+          'Snapshot-vs-live-derivation regression — see [VSCODE-REACTIVITY-STATE].',
       );
 
       // selectedPackage is intentionally NOT cleared by an external edit

@@ -82,14 +82,14 @@ A reference-count lens above every top-level definition (functions, values, type
 union cases, members). Counts come from project-wide uses; the title format
 (`"N references"`) matches C#'s `CodeLensResolver`.
 
-### [FS-CALLHIER-*]
+### Call hierarchy — [FS-CALLHIER-PREPARE], [FS-CALLHIER-INCOMING], [FS-CALLHIER-OUTGOING]
 FCS has no built-in call graph, so the enclosing caller/callee is resolved from the
 untyped AST (`ParsedInput`) via `SyntaxTraversal`: incoming = project-wide call sites
 of the symbol mapped to their enclosing binding/member; outgoing = function/member
 applications inside the symbol's own binding range. Kind strings are capitalized to
 match the host's `parse_symbol_kind`.
 
-### [FS-TYPEHIER-*]
+### Type hierarchy — [FS-TYPEHIER-PREPARE], [FS-TYPEHIER-SUPER], [FS-TYPEHIER-SUB]
 Supertypes come from `FSharpEntity.BaseType` + `AllInterfaces`. Subtypes are found by
 scanning project entities for any whose base type or interfaces include the target.
 

@@ -1,4 +1,4 @@
-//! Build-configuration e2e test for [BUILD-DEPSFILE-LOCK] (GitHub issue #111).
+//! Build-configuration e2e test for [DIST-CI-DOTNET-DEPSFILE] (GitHub issue #111).
 //!
 //! `SharpLsp.Sidecar.Common` is a *referenced-only* class library: it is consumed
 //! by the executable sidecars (`SharpLsp.Sidecar.CSharp`) and the test project,
@@ -57,7 +57,7 @@ fn evaluate_property(csproj: &str, property: &str) -> String {
         .to_owned()
 }
 
-/// [BUILD-DEPSFILE-LOCK] The Common library must NOT generate a `deps.json`.
+/// [DIST-CI-DOTNET-DEPSFILE] The Common library must NOT generate a `deps.json`.
 ///
 /// Pre-fix this evaluates to `true` (the SDK default), so the lock-prone
 /// `deps.json` is emitted and this test fails. Post-fix it evaluates to `false`.

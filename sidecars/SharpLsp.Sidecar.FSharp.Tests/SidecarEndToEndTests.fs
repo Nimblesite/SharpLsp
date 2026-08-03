@@ -1136,7 +1136,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.NotEmpty(help.Signatures)
     }
 
-    // ── Call Hierarchy [FS-CALLHIER-*] ──────────────────────────
+    // ── Call Hierarchy [FS-CALLHIER-PREPARE] [FS-CALLHIER-INCOMING] [FS-CALLHIER-OUTGOING] ──
 
     [<Fact>]
     member _.``prepare call hierarchy returns the function``() = task {
@@ -1168,7 +1168,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Contains(items, fun i -> i.Name = "Greet")
     }
 
-    // ── Type Hierarchy [FS-TYPEHIER-*] ──────────────────────────
+    // ── Type Hierarchy [FS-TYPEHIER-PREPARE] [FS-TYPEHIER-SUPER] [FS-TYPEHIER-SUB] ──
 
     [<Fact>]
     member _.``prepare type hierarchy returns the type``() = task {

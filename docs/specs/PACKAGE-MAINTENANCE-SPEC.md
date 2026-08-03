@@ -77,4 +77,4 @@ Because hoisted packages apply solution-wide, the result MUST name each moved pa
 
 - Transitive / framework / analyzer package pruning (cannot be proven unused).
 - Rewriting version ranges, floating versions, or condition-bearing references.
-- Per-`<PackageReference>` metadata (`PrivateAssets`, `IncludeAssets`) merging beyond a straight hoist; references carrying item metadata are reported and skipped rather than silently flattened.
+- Per-`<PackageReference>` metadata (`PrivateAssets`, `IncludeAssets`) merging beyond a straight hoist; references carrying item metadata or conditions are skipped rather than flattened.

@@ -70,11 +70,12 @@ Radii are `0.35rem`, `0.65rem`, and `1rem` through `--radius-sm`, `--radius-md`,
 | Context | Token | Limit |
 |---|---|---:|
 | Main shell | `--max-width` | `1120px` |
-| Docs and article prose | `--content-width` | `72ch` |
+| Docs and article frame | `--content-width` | `56rem` |
+| Long-form reading measure | `--reading-width` | `46rem` |
 | Docs sidebar | `--sidebar-width` | `16rem` |
 | Site header | `--header-height` | `4rem` |
 
-Main page sections center within the shell and retain fluid side gutters. Prose stays at the readable measure even when its docs layout has a sidebar. Images are responsive by default, and wide code blocks, diagrams, and tables scroll within their own bounds rather than widening the page.
+Main page sections center within the shell and retain fluid side gutters. Article titles, media, code, and tables use the full editorial frame; paragraphs, lists, quotes, and secondary headings use the narrower reading measure. The docs sidebar collapses below `1024px` so it never crushes the prose column. Images are responsive by default, and wide code blocks, diagrams, and tables scroll within their own bounds rather than widening the page.
 
 ## [WEB-DESIGN-COMPONENTS] Components
 

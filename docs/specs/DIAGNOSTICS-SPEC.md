@@ -38,7 +38,7 @@ Editors without pull support receive `textDocument/publishDiagnostics` pushes tr
 
 1. Each `didOpen`/`didChange`/`didClose` registers a monotonically increasing push generation for the document URI.
 2. A completed sidecar fetch publishes only if its generation is still newest; older results are dropped.
-3. A failed fetch for the newest generation is retried at 1s intervals with a bounded budget long enough for a sidecar kill and respawn, until it publishes or a newer generation supersedes it. Dropping the fetch could leave the previous publication on screen indefinitely.
+3. A failed fetch for the newest generation is retried at 1s intervals for up to 120 attempts, until it publishes or a newer generation supersedes it. Dropping the fetch could leave the previous publication on screen indefinitely.
 4. Generations are never reused after `didClose`, preventing an old in-flight fetch from matching a new document generation.
 
 The last publication for a document MUST reflect its newest known text.

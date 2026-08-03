@@ -210,5 +210,5 @@ Still to write:
 
 - [x] Write [SCRIPTING-FILEBASED-SPEC.md](../specs/SCRIPTING-FILEBASED-SPEC.md)
 - [x] Write this plan
-- [x] Cross-link from `docs/specs/SHARPLSP-SPEC.md` §2.5
+- [x] Cross-link from [SHARPLSP-ARCHITECTURE-PROJECTS](../specs/SHARPLSP-SPEC.md)
 - [x] Reference spec IDs from implementing code and tests per repo policy

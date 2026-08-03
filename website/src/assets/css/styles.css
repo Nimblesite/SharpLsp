@@ -31,7 +31,8 @@
   --space-12: 3rem;
   --space-16: 4rem;
   --max-width: 1120px;
-  --content-width: 72ch;
+  --content-width: 56rem;
+  --reading-width: 46rem;
   --sidebar-width: 16rem;
   --header-height: 4rem;
 }

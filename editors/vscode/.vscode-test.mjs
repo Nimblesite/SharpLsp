@@ -20,7 +20,7 @@ export default defineConfig({
       extensionDevelopmentPath: '.',
       workspaceFolder: 'test-fixtures/workspace',
       // The extension declares ms-dotnettools.vscode-dotnet-runtime as an
-      // extensionDependency ([DIST-RUNTIME-ACQUIRE] / [SWR-IDE-DOTNET-RUNTIME]).
+      // extensionDependency ([DIST-RUNTIME-ACQUIRE]).
       // VS Code refuses to activate SharpLsp unless that dependency is installed
       // AND enabled in the test host. Installing it into the isolated test
       // extensions dir replaces the previous '--disable-extensions' flag, which

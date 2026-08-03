@@ -1,5 +1,5 @@
-//! Full-stack e2e for the dump-analysis pipeline (PROFILER-SPEC §4.2.1, §4.5,
-//! §5.1, §5A): object retention graphs, GC roots, object inspection, and heap
+//! Full-stack e2e for the dump-analysis pipeline ([PROFILER-TRACE-CONVERSION],
+//! [PROFILER-PROTOCOL-DUMP-ANALYZE], [PROFILER-LEAKS-WORKFLOW], [PROFILER-GRAPH]): object retention graphs, GC roots, object inspection, and heap
 //! snapshot diffing — all against REAL heap dumps of a live .NET process, plus
 //! trace conversion of a REAL `.nettrace` capture. No mocks anywhere.
 
@@ -95,7 +95,7 @@ fn collect_heap_dump(client: &mut LspClient, pid: u32, dir: &Path, file_name: &s
     dump_path
 }
 
-/// PROFILER-SPEC §5A + §4.5 + §5.1 — the complete memory-analysis workflow a
+/// [PROFILER-GRAPH] [PROFILER-PROTOCOL-DUMP-ANALYZE] [PROFILER-LEAKS-WORKFLOW] — the complete memory-analysis workflow a
 /// user actually performs: snapshot a live process twice, walk a real object's
 /// retention graph, trace its GC roots, inspect its fields, and diff the two
 /// snapshots for leak suspects.
@@ -105,7 +105,7 @@ fn test_profiler_object_graph_roots_inspect_and_diff_full_stack() {
     let tmp_dir = tempfile::tempdir().expect("create temp dir");
 
     // 1. Baseline heap snapshot, then let the target allocate, then compare
-    //    snapshot — the §5.1 baseline → exercise → compare workflow.
+    //    snapshot — the [PROFILER-LEAKS-WORKFLOW] baseline → exercise → compare workflow.
     let baseline_dump = collect_heap_dump(&mut client, target_pid, tmp_dir.path(), "baseline.dmp");
     std::thread::sleep(Duration::from_secs(2));
     let comparison_dump =
@@ -234,7 +234,7 @@ fn test_profiler_object_graph_roots_inspect_and_diff_full_stack() {
         );
     }
 
-    // 5. GC roots of the same real object (§4.5). Chains depend on GC timing,
+    // 5. GC roots of the same real object ([PROFILER-PROTOCOL-DUMP-ANALYZE]). Chains depend on GC timing,
     //    but the request must succeed and any chain returned must be sound.
     let resp = client.request(
         "sharplsp/profiler/findGCRoots",
@@ -262,7 +262,7 @@ fn test_profiler_object_graph_roots_inspect_and_diff_full_stack() {
         }
     }
 
-    // 6. Inspect the same real object (§5A.2).
+    // 6. Inspect the same real object ([PROFILER-GRAPH-INSPECTION]).
     let resp = client.request(
         "sharplsp/profiler/inspectObject",
         json!({ "dump_path": &baseline_dump, "object_address": &address }),
@@ -303,7 +303,7 @@ fn test_profiler_object_graph_roots_inspect_and_diff_full_stack() {
         );
     }
 
-    // 7. Diff the two snapshots (§5.1 compare step). With growing_only=false
+    // 7. Diff the two snapshots ([PROFILER-LEAKS-WORKFLOW]). With growing_only=false
     //    and a 0% floor every stable-or-growing type is reported.
     let resp = client.request(
         "sharplsp/profiler/diffHeapSnapshots",
@@ -392,7 +392,7 @@ fn test_profiler_object_graph_roots_inspect_and_diff_full_stack() {
     stop_profile_target(&mut target);
 }
 
-/// PROFILER-SPEC §4.2.1 — `convertTrace` converts a previously captured REAL
+/// [PROFILER-TRACE-CONVERSION] — `convertTrace` converts a previously captured REAL
 /// `.nettrace` through the explicit handler (chromium format — distinct from
 /// the speedscope conversion `stopTrace` performs automatically).
 #[test]

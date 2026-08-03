@@ -37,7 +37,8 @@ cargo clippy
 cargo test
 
 # Build the VS Code extension VSIX
-cd editors/vscode && npm install && npm run compile
+npm --prefix editors/vscode install
+npm --prefix editors/vscode run package
 ```
 
 ## Repository Structure

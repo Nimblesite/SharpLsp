@@ -1,4 +1,4 @@
-// Covers VSCODE-REACTIVITY-SPEC §4 (project-dependencies watcher).
+// Covers [VSCODE-REACTIVITY-WATCHERS] (project-dependencies watcher).
 //
 // Reproduces the Windows crash where deleting a tracked project's directory
 // fired the node FSWatcher's async 'error' event (EPERM) with no listener

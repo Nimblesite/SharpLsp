@@ -14,7 +14,7 @@ repository = "https://github.com/Nimblesite/SharpLsp"
 formatting = []
 
 [dependencies]
-# Version dispatch — Shipwright binary version contract [SWR-VERSION-RUST]
+# Version dispatch — Shipwright binary version contract [DIST-VERSION-OUTPUT]
 shipwright = "0.10"
 shipwright-manifest = "0.10"
 

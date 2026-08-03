@@ -15,6 +15,13 @@ test.describe('Site layout regressions', () => {
     await expect(main).toContainText(/open-source alternative to Visual Studio, Rider, and C# Dev Kit/i);
     await expect(main).toContainText(/C# and F#/i);
 
+    const installLinks = main.getByRole('link', { name: 'Install in VS Code' });
+    const guideLinks = main.getByRole('link', { name: 'Installation guide' });
+    await expect(installLinks).toHaveCount(2);
+    await expect(installLinks.first()).toHaveAttribute('href', 'vscode:extension/nimblesite.sharplsp');
+    await expect(guideLinks).toHaveCount(2);
+    await expect(guideLinks.first()).toHaveAttribute('href', '/docs/');
+
     const screenshot = page.locator('.product-shot img[src^="/assets/screenshots/"]');
     await expect(screenshot).toHaveCount(1);
     await expect(screenshot).toBeVisible();
@@ -77,6 +84,26 @@ test.describe('Site layout regressions', () => {
       expect(response?.status(), `${route} should return 200`).toBe(200);
       await expect(page.locator('article.prose')).toHaveCount(1);
     }
+  });
+
+  test('blog articles use a wide frame and readable body measure', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto('/blog/pull-diagnostics-without-phantom-errors/');
+
+    const dimensions = await page.locator('article.prose').evaluate((article) => {
+      const paragraph = article.querySelector(':scope > p');
+      const hero = article.querySelector('.article-hero');
+      return {
+        body: paragraph?.getBoundingClientRect().width ?? 0,
+        frame: article.getBoundingClientRect().width,
+        hero: hero?.getBoundingClientRect().width ?? 0,
+      };
+    });
+
+    expect(dimensions.frame).toBeGreaterThanOrEqual(850);
+    expect(dimensions.body).toBeGreaterThanOrEqual(700);
+    expect(dimensions.body).toBeLessThanOrEqual(740);
+    expect(dimensions.hero).toBeGreaterThan(dimensions.body);
   });
 
   test('mobile docs menu opens the sidebar independently of primary navigation', async ({ page }) => {

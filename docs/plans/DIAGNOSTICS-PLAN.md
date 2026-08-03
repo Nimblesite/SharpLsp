@@ -2,7 +2,7 @@
 
 Implementation plan for [DIAGNOSTICS-SPEC](../specs/DIAGNOSTICS-SPEC.md).
 
-> **Architecture pivot (current).** The previous push-based, eager-solution-scan plan produced phantom CS0246/CS0234 errors during workspace load and could not be repaired by the verification pass. The plan now mirrors `Microsoft.CodeAnalysis.LanguageServer` (the engine behind C# Dev Kit): NuGet restore gate → workspace open → pull-driven diagnostics with `global_state_version`-keyed `resultId` → debounced `workspace/diagnostic/refresh`. See [DIAGNOSTICS-SPEC §1.1](../specs/DIAGNOSTICS-SPEC.md#11-the-pull--refresh-cycle). Phases 1–2 below are partially completed; the parts that still apply are kept, the parts that contradict the new architecture are marked obsolete with rationale.
+> **Architecture pivot (current).** The previous push-based, eager-solution-scan plan produced phantom CS0246/CS0234 errors during workspace load and could not be repaired by the verification pass. The plan now mirrors `Microsoft.CodeAnalysis.LanguageServer` (the engine behind C# Dev Kit): NuGet restore gate → workspace open → pull-driven diagnostics with `global_state_version`-keyed `resultId` → debounced `workspace/diagnostic/refresh`. See [DIAG-ARCHITECTURE-PULL-REFRESH](../specs/DIAGNOSTICS-SPEC.md). Phases 1–2 below are partially completed; the parts that still apply are kept, the parts that contradict the new architecture are marked obsolete with rationale.
 
 ## Phase 1: Per-Document Diagnostics IPC (P0) — DONE
 
@@ -18,7 +18,7 @@ The sidecar's per-document diagnostics path is correct and survives the pivot. T
 - [x] On `textDocument/didOpen` / `textDocument/didChange` / `textDocument/didSave`: request diagnostics from sidecar (background task) — kept as the push fallback path
 - [x] Send `textDocument/publishDiagnostics` notification with mapped results — push fallback only; pull is primary (Phase 5)
 - [x] Clear diagnostics on `textDocument/didClose`
-- [x] Version-gate the push pipeline ([DIAG-PUSH-GATE](../specs/DIAGNOSTICS-SPEC.md#13-diag-push-gate-push-convergence-guarantee)): per-URI push generations, stale results never published, failed fetch for the newest generation retried until published or superseded. Hardening found while investigating GitHub #160 — that issue's actual root cause was path-qualified `_._` placeholder references poisoning FCS ([PKG-ASSETS-FS](../specs/PACKAGE-MAINTENANCE-SPEC.md)), fixed in `FSharpAssets.packageAssemblies` with regression test `path-qualified placeholder compile entries are never handed to FCS as references`. Rust test: `failed_fetch_after_revert_must_not_strand_stale_published_diagnostics`; F# sidecar guard: `diagnostics clear after an error edit is reverted`
+- [x] Version-gate the push pipeline ([DIAG-PUSH-GATE](../specs/DIAGNOSTICS-SPEC.md)): per-URI push generations, stale results never published, failed fetch for the newest generation retried until published or superseded. Hardening found while investigating GitHub #160 — that issue's actual root cause was path-qualified `_._` placeholder references poisoning FCS ([PKG-ASSETS-FS](../specs/PACKAGE-MAINTENANCE-SPEC.md)), fixed in `FSharpAssets.packageAssemblies` with regression test `path-qualified placeholder compile entries are never handed to FCS as references`. Rust test: `failed_fetch_after_revert_must_not_strand_stale_published_diagnostics`; F# sidecar guard: `diagnostics clear after an error edit is reverted`
 - [ ] Add debounce (150ms window) before sidecar push request — superseded by Phase 5's 2000ms refresh debounce; only relevant if push fallback is in use
 - [x] Rust e2e tests: `test_diagnostics_cleared_on_close`, `test_request_works_after_diagnostic_notification`
 - [x] VSCode extension tests: `diagnostics.test.ts` (6 tests — error detection, missing type, clean file, edit cycle, range check, close clears)
@@ -32,7 +32,7 @@ The sidecar's per-document diagnostics path is correct and survives the pivot. T
 
 ## Phase 2: Solution-Wide Eager Scan (P0) — REMOVED
 
-> ⚠️ **Removed by architecture pivot.** This phase implemented the eager `workspace/diagnostics/all` bulk RPC and the post-load solution scan. The eager scan iterates `Solution.Projects` and calls `GetCompilationAsync()` on each, which produces phantom CS0246/CS0234 because consumer projects are compiled before their dependencies are cached as `CompilationReference`s. The replacement is Phase 5 (pull-driven workspace diagnostics) plus Phase 5.6 (NuGet restore gate). See [DIAGNOSTICS-SPEC §1.2](../specs/DIAGNOSTICS-SPEC.md#12-why-no-eager-solution-scan).
+> ⚠️ **Removed by architecture pivot.** This phase implemented the eager `workspace/diagnostics/all` bulk RPC and the post-load solution scan. The eager scan iterates `Solution.Projects` and calls `GetCompilationAsync()` on each, which produces phantom CS0246/CS0234 because consumer projects are compiled before their dependencies are cached as `CompilationReference`s. The replacement is Phase 5 (pull-driven workspace diagnostics) plus Phase 5.6 (NuGet restore gate). See [DIAG-ARCHITECTURE-EAGER-SCAN](../specs/DIAGNOSTICS-SPEC.md).
 
 ### Rust LSP Host
 
@@ -83,7 +83,7 @@ for both C# and F#.
 
 ## Phase 5: Pull Diagnostics + Refresh Cycle (P0 — primary path)
 
-This is now the **primary** diagnostic pipeline. Pull is mandatory for editors that advertise `textDocument.diagnostic` client capability; push (Phase 1 wiring) is fallback only. Implements [DIAGNOSTICS-SPEC §1.1](../specs/DIAGNOSTICS-SPEC.md#11-the-pull--refresh-cycle), [§4.2](../specs/DIAGNOSTICS-SPEC.md#42-pull-model-primary-textdocumentdiagnostic-workspacediagnostic), [§4.3](../specs/DIAGNOSTICS-SPEC.md#43-refresh-notifications-workspacediagnosticrefresh).
+This is now the **primary** diagnostic pipeline. Pull is mandatory for editors that advertise `textDocument.diagnostic` client capability; push (Phase 1 wiring) is fallback only. Implements [DIAG-ARCHITECTURE-PULL-REFRESH](../specs/DIAGNOSTICS-SPEC.md), [DIAG-LSP-PULL](../specs/DIAGNOSTICS-SPEC.md), and [DIAG-LSP-REFRESH](../specs/DIAGNOSTICS-SPEC.md).
 
 ### Rust LSP Host
 
@@ -93,7 +93,7 @@ This is now the **primary** diagnostic pipeline. Pull is mandatory for editors t
 - [ ] Return `RelatedFullDocumentDiagnosticReport` when changed, `RelatedUnchangedDocumentDiagnosticReport` (`{ kind: "unchanged" }`) when sidecar reports `Changed = false`
 - [ ] Construct `resultId = "p:{project_version}|d:{doc_version}|g:{global_state_version}"` from sidecar response fields
 - [ ] `workspace/diagnostic` partial-result streaming via `WorkDoneProgress` partialResultToken — emit one `WorkspaceDocumentDiagnosticReport` per project as it completes
-- [ ] Subscribe to sidecar `diagnostics/refresh` IPC notification (defined in [SPEC §5.4](../specs/DIAGNOSTICS-SPEC.md#54-notification-diagnosticsrefresh))
+- [ ] Subscribe to the [DIAG-IPC-REFRESH](../specs/DIAGNOSTICS-SPEC.md) sidecar notification
 - [ ] Implement debounced refresh queue: `tokio::sync::Notify` + 2000ms `tokio::time::sleep` collapse, matches `Microsoft.CodeAnalysis.LanguageServer`'s `AsyncBatchingWorkQueue`
 - [ ] Send LSP `workspace/diagnostic/refresh` notification when the debounce drains
 - [ ] **Delete** `request_solution_in_background` from `src/diagnostics.rs` (the eager-scan trigger)
@@ -126,7 +126,7 @@ This is now the **primary** diagnostic pipeline. Pull is mandatory for editors t
 
 ## Phase 5.5: Diagnostic Verification (P0) — REMOVED
 
-> ⚠️ **Removed by architecture pivot.** The verification pass re-sent `textDocument/didChange` with the same disk text and re-fetched diagnostics, expecting Roslyn to clear false positives. It does not work — `Solution.WithDocumentText` does not re-resolve metadata references or re-run source generators, so the same phantom errors come back. The pull + refresh model in Phase 5 removes the pass's reason to exist: SharpLsp no longer asserts diagnostics until the editor pulls. See [DIAGNOSTICS-SPEC §10.3](../specs/DIAGNOSTICS-SPEC.md#103-why-the-previous-verification-pass-is-gone).
+> ⚠️ **Removed by architecture pivot.** The verification pass re-sent `textDocument/didChange` with the same disk text and re-fetched diagnostics, expecting Roslyn to clear false positives. It does not work — `Solution.WithDocumentText` does not re-resolve metadata references or re-run source generators, so the same phantom errors come back. The pull + refresh model in Phase 5 removes the pass's reason to exist: SharpLsp no longer asserts diagnostics until the editor pulls. See [DIAG-ARCHITECTURE-EAGER-SCAN](../specs/DIAGNOSTICS-SPEC.md).
 
 Original tasks (kept here for traceability — every item is undone in Phase 5):
 
@@ -140,7 +140,7 @@ Original tasks (kept here for traceability — every item is undone in Phase 5):
 
 ## Phase 5.6: NuGet Restore Gate (P0)
 
-The single biggest source of phantom CS0246 is unresolved NuGet `<PackageReference>` items at workspace open. Mirrors `Microsoft.CodeAnalysis.LanguageServer.HostWorkspace.ProjectDependencyHelper`. Implements [DIAGNOSTICS-SPEC §6](../specs/DIAGNOSTICS-SPEC.md#6-nuget-restore-gate).
+The single biggest source of phantom CS0246 is unresolved NuGet `<PackageReference>` items at workspace open. Mirrors `Microsoft.CodeAnalysis.LanguageServer.HostWorkspace.ProjectDependencyHelper`. Implements [DIAG-RESTORE](../specs/DIAGNOSTICS-SPEC.md).
 
 ### C# Sidecar
 

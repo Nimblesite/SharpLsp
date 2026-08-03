@@ -6,7 +6,7 @@ Implementation plan for [DISTRIBUTION-SPEC.md](../specs/DISTRIBUTION-SPEC.md).
 
 The v0.1.0 GitHub release shipped framework-dependent sidecars (`dotnet publish --no-self-contained`, target `net10.0`) without any mechanism to acquire .NET 10 on the user's machine. On any host that doesn't already have .NET 10 installed, the apphost exits with code 150 ("You must install or update .NET") and Shipwright's startup probe reports `version check failed... no resolved source` — a useless diagnostic. The previous spec demanded the extension "MUST crash with a clear error" if .NET 10 was missing, which is the wrong UX.
 
-This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vscode-dotnet-runtime` extension (the .NET Install Tool) — the same mechanism C# Dev Kit, the C# extension, .NET MAUI, Unity, CMake, and Bicep use. SharpLsp acquires .NET 10 silently on activation while showing a non-interactive progress notification + status-bar spinner. The user is informed but never asked to do anything. See DISTRIBUTION-SPEC.md §2 (rewritten) and §12 (updated forbidden patterns).
+This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vscode-dotnet-runtime` extension (the .NET Install Tool) — the same mechanism C# Dev Kit, the C# extension, .NET MAUI, Unity, CMake, and Bicep use. SharpLsp acquires .NET 10 silently on activation while showing a non-interactive progress notification + status-bar spinner. The user is informed but never asked to do anything. See [DIST-RUNTIME-ACQUIRE](../specs/DISTRIBUTION-SPEC.md) and [DIST-FORBIDDEN](../specs/DISTRIBUTION-SPEC.md).
 
 ## TODO Checklist — .NET Install Tool integration (priority)
 
@@ -33,12 +33,12 @@ This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vsc
 
 ### Specs & docs
 
-- [x] Rewrite DISTRIBUTION-SPEC.md §2 "Runtime Prerequisite" → "Runtime Acquisition — .NET 10 via .NET Install Tool"
-- [x] Add DISTRIBUTION-SPEC.md §2 reference paragraph noting C# Dev Kit's `extensionDependencies` declaration as the authoritative pattern
-- [x] Update DISTRIBUTION-SPEC.md §7 Editor Extension Contract item 4 (degraded mode for missing .NET) and item 6 (acquire instead of crash)
-- [x] Update DISTRIBUTION-SPEC.md §12 Forbidden Patterns: replace "crash on missing .NET" with "no modal/asking UI", remove blanket "no graceful degradation", add "no hand-rolled .NET acquisition" and "no required-action UI"
+- [x] Rewrite [DIST-RUNTIME-ACQUIRE](../specs/DISTRIBUTION-SPEC.md) from a runtime prerequisite into .NET 10 SDK acquisition via the .NET Install Tool
+- [x] Add the C# Dev Kit `extensionDependencies` pattern to [DIST-RUNTIME-ACQUIRE](../specs/DISTRIBUTION-SPEC.md)
+- [x] Update [DIST-EDITOR-CONTRACT](../specs/DISTRIBUTION-SPEC.md) for degraded mode and SDK acquisition
+- [x] Update [DIST-FORBIDDEN](../specs/DISTRIBUTION-SPEC.md): prohibit required-action UI and hand-rolled .NET acquisition
 - [x] Update DISTRIBUTION-PLAN.md (this file) with the new TODO block and Context section
-- [x] Add a brief callout to [docs/specs/SHARPLSP-SPEC.md](../specs/SHARPLSP-SPEC.md) Distribution section linking to the rewritten §2
+- [x] Add a callout from [SHARPLSP-DISTRIBUTION](../specs/SHARPLSP-SPEC.md) to [DIST-RUNTIME-ACQUIRE](../specs/DISTRIBUTION-SPEC.md)
 
 ### Verification (clean Windows machine, no .NET 10 installed)
 

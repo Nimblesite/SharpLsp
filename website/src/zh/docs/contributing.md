@@ -38,7 +38,8 @@ cargo clippy
 cargo test
 
 # 构建 VS Code 扩展 VSIX
-cd editors/vscode && npm install && npm run compile
+npm --prefix editors/vscode install
+npm --prefix editors/vscode run package
 ```
 
 ## 仓库结构

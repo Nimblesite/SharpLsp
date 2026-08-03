@@ -38,7 +38,8 @@ cargo clippy
 cargo test
 
 # VS Code 拡張機能の VSIX をビルド
-cd editors/vscode && npm install && npm run compile
+npm --prefix editors/vscode install
+npm --prefix editors/vscode run package
 ```
 
 ## リポジトリ構成
