@@ -12,9 +12,9 @@
 
 The site has three CSS layers, loaded in this order:
 
-1. `styles.css` — tokens, reset/base rules, navigation, buttons, shared headings, and footer.
-2. `pages.css` — homepage, blog index, releases, grids, cards, and page-specific composition.
-3. `prose.css` — long-form docs, blog posts, release notes, and documentation navigation.
+1. [`styles.css`](../../website/src/assets/css/styles.css) — tokens, reset/base rules, navigation, buttons, shared headings, and footer.
+2. [`pages.css`](../../website/src/assets/css/pages.css) — homepage, blog index, releases, grids, cards, and page-specific composition.
+3. [`prose.css`](../../website/src/assets/css/prose.css) — long-form docs, blog posts, release notes, and documentation navigation.
 
 Shared primitives belong in `styles.css`; page composition belongs in `pages.css`; rendered Markdown and its supporting article/docs components belong in `prose.css`. Do not duplicate rules across layers.
 

@@ -8,7 +8,7 @@ SharpLsp debugging MUST use redistributable open-source components, work through
 
 ### Phase Four Adapter `[DEBUG-ADAPTER-NETCOREDBG]`
 
-Phase Four uses the MIT-licensed netcoredbg `3.1.3-1062` adapter over DAP `1.71.0` on stdin/stdout. It provides line, conditional, function, and exception breakpoints; step in/over/out; variables; call stacks; and Linux x64/ARM64 mixed-mode debugging. Phase Five replaces it with the native SharpLsp Debug Sidecar specified in [DEBUG-ARCHITECTURE-SIDECAR].
+Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.0` on stdin/stdout. It provides line, conditional, function, and exception breakpoints; step in/over/out; variables; call stacks; and Linux x64/ARM64 mixed-mode debugging. Phase Five replaces it with the native SharpLsp Debug Sidecar specified in [DEBUG-ARCHITECTURE-SIDECAR].
 
 ### netcoredbg Gaps `[DEBUG-ADAPTER-GAPS]`
 
@@ -29,7 +29,6 @@ Phase Four uses the MIT-licensed netcoredbg `3.1.3-1062` adapter over DAP `1.71.
 | No parallel stacks data | Multi-threaded debugging crippled — can't visualize all thread stacks at once | Not documented |
 | C# 12 primary constructor params not inspectable | Compiler-generated fields not mapped back to source syntax | Issue #203 |
 | `Nullable<T>` expansion broken | `Nullable<Guid>` and similar value types cannot be expanded in debugger | Issue #213 |
-| Version 3.1.3 stability regression | Crashes on every run in some configurations | Issue #217, #206 |
 
 SharpDbg `0.1.0-preview5` MAY replace a from-scratch Phase Five sidecar only after its missing lambda stepping and Source Link behavior is implemented and its DAP behavior passes SharpLsp acceptance tests. ICorDebug wrapper fixes SHOULD be contributed upstream; SharpLsp MUST NOT maintain a product fork.
 
@@ -55,7 +54,7 @@ The Rust host runs a `DapRouter` module responsible for:
 netcoredbg is managed as an external subprocess:
 
 - **Distribution**: [`debug.ts`](../../editors/vscode/src/debug.ts) resolves a configured path, bundled platform artifact, standard user install, or `PATH`; downloaded artifacts require SHA-256 verification
-- **Version pinning**: SharpLsp pins a specific netcoredbg release (currently 3.1.3-1062) and upgrades on a tested cadence
+- **Version pinning**: [`scripts/vsix/fetch-netcoredbg.sh`](../../scripts/vsix/fetch-netcoredbg.sh) pins `3.2.0-1092`; upgrades require the debug end-to-end suite
 - **Transport**: DAP over stdin/stdout; DapRouter opens the child process and pipes JSON-RPC
 - **Launch modes**:
   - `launch`: spawn a new .NET process
@@ -183,6 +182,7 @@ SharpLsp targets **DAP specification version 1.71.0**.
 **Logpoint emulation (Phase 4):**
 
 netcoredbg does not support logpoints natively. DapRouter intercepts `setBreakpoints` requests containing `logMessage`, rewrites them as conditional breakpoints with an expression that:
+
 1. Evaluates the interpolated log string (referencing frame-local variables)
 2. Calls `System.Diagnostics.Debug.WriteLine(msg)` to emit the output
 3. Returns `false` so execution is never paused
@@ -404,6 +404,7 @@ The F# compiler does not emit the following PDB tables that debuggers rely on:
 | `DynamicLocalVariables` | Dynamic-typed locals lose type info | Minor impact |
 
 **SharpLsp's approach:**
+
 - Phase 4: implement heuristic PDB mapping for F# state machines via FCS sidecar symbol analysis
 - Phase 5: contribute `StateMachineMethod` table emission to dotnet/fsharp; until accepted, maintain SharpLsp-local patch or workaround
 
@@ -420,6 +421,7 @@ F# `async { }` desugars into CPS (continuation-passing style) library calls. Ste
 DUs compile to class hierarchies. Without F# semantic knowledge, a variable `Some 42` displays as `FSharpOption`1 { Tag = 1, Value = 42 }` instead of `Some(42)`.
 
 SharpLsp addresses this in three layers:
+
 1. **Phase 4 DapRouter**: queries FCS sidecar for DU type metadata; rewrites `variables` response display values to F# syntax
 2. **Phase 5 Debug Sidecar**: native DU-aware `variables` formatting via FCS sidecar channel
 3. **Longer term**: contribute `[DebuggerDisplay]` attribute emission in F# compiler for DU cases
@@ -427,6 +429,7 @@ SharpLsp addresses this in three layers:
 ### Mailbox Processor Inspection `[DEBUG-FSHARP-MAILBOX]`
 
 For `MailboxProcessor<'Msg>`, SharpLsp exposes:
+
 - Current message queue depth as a pseudo-variable in the variables panel (Phase 5)
 - Ability to inspect pending messages (Phase 5, best-effort)
 
@@ -480,11 +483,11 @@ For `MailboxProcessor<'Msg>`, SharpLsp exposes:
 
 | Dependency | Version | License | Use |
 |---|---|---|---|
-| [netcoredbg](https://github.com/Samsung/netcoredbg) | 3.1.3-1062+ | MIT | Phase 4 debug adapter |
+| [netcoredbg](https://github.com/Samsung/netcoredbg) | 3.2.0-1092 | MIT | Phase 4 debug adapter |
 | [ClrDebug](https://github.com/lordmilko/ClrDebug) | 0.3.4+ | MIT | Phase 5 managed ICorDebug wrapper |
 | [Microsoft.Diagnostics.DbgShim](https://www.nuget.org/packages/Microsoft.Diagnostics.DbgShim) | 9.0.661903+ | MIT | DbgShim for runtime discovery |
 | [Microsoft.Diagnostics.NETCore.Client](https://www.nuget.org/packages/Microsoft.Diagnostics.NETCore.Client) | 9.0.661903+ | MIT | EventPipe / diagnostics IPC |
-| [Microsoft.CodeAnalysis.CSharp.Scripting](https://www.nuget.org/packages/Microsoft.CodeAnalysis.CSharp.Scripting) | 5.3.0+ | MIT | Expression compilation for C# eval |
+| [Microsoft.CodeAnalysis.CSharp.Scripting](https://www.nuget.org/packages/Microsoft.CodeAnalysis.CSharp.Scripting) | 5.6.0 | MIT | Expression compilation; keep aligned with `Directory.Build.props` |
 | [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) | 43.12+ | MIT | F# expression compilation + DU analysis |
 | DAP specification | 1.71.0 | CC-BY 4.0 | Protocol reference |
 

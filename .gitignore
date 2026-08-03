@@ -35,6 +35,10 @@ nohup.out
 
 # Coverage artifacts (all languages)
 coverage/
+!.config/coverage/
+!.config/coverage/**
+!scripts/coverage/
+!scripts/coverage/**
 lcov.info
 *.profraw
 *.profdata

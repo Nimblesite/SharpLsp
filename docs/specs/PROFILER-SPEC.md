@@ -16,7 +16,7 @@ Collects performance traces from running .NET processes using EventPipe. Produce
 
 | Capability | CLI Equivalent | Description |
 |-----------|---------------|-------------|
-| List processes | `dotnet-trace ps` | Discover running .NET processes |
+| List processes | Native process table | Discover running .NET processes without starting a diagnostic CLI |
 | Collect trace | `dotnet-trace collect -p <pid>` | Attach and record EventPipe trace |
 | Stop trace | Ctrl+C equivalent | Gracefully stop collection |
 | Convert trace | `dotnet-trace convert` | Convert `.nettrace` to `.speedscope.json` or Chromium format |
@@ -68,17 +68,17 @@ Editor  ──LSP custom request──▶  Rust Host  ──spawns──▶  dot
 
 On startup (lazy, first use), the host locates diagnostic tools:
 
-| Step | Action | Fallback |
-|------|--------|----------|
-| 1 | Check `PATH` for `dotnet-trace`, `dotnet-counters`, `dotnet-dump` | — |
-| 2 | Check `dotnet tool list -g` output | — |
-| 3 | If missing, prompt user to install via `dotnet tool install -g` | Return error with install instructions |
+| Step | Action |
+|------|--------|
+| 1 | Check `PATH` for `dotnet-trace`, `dotnet-counters`, and `dotnet-dump` |
+| 2 | Check `<home>/.dotnet/tools` roots derived from `DOTNET_CLI_HOME`, `HOME`, and `USERPROFILE` on Windows |
+| 3 | If missing, return an error containing the corresponding `dotnet tool install -g <tool>` command |
 
 ## [PROFILER-PROTOCOL] LSP Custom Requests
 
 All profiler requests use the `sharplsp/` namespace.
 
-### [PROFILER-PROCESS-LIST] Process Discovery
+### [PROFILER-PROCESS-LIST] Process Discovery and Termination
 
 **Method:** `sharplsp/profiler/listProcesses`
 
@@ -92,13 +92,30 @@ interface ListProcessesParams {}
 interface DotNetProcess {
   pid: number;
   name: string;
-  commandLine: string;
+  command_line: string;
+  /** Shared-framework version or target framework; null when unknown. Always present. */
+  runtime_version: string | null;
 }
 
 type ListProcessesResult = DotNetProcess[];
 ```
 
-Calls `dotnet-trace ps` and parses output. Returns all discoverable .NET processes.
+The host enumerates the native process table through `ps` on Unix and `sysinfo` on Windows. It returns only `dotnet` host processes and apphosts whose output directory contains a `*.runtimeconfig.json`, sorted case-insensitively by name and then by PID.
+
+**Method:** `sharplsp/profiler/killProcess`
+
+```typescript
+interface KillProcessParams {
+  pid: number;
+}
+
+interface KillProcessResult {
+  killed: true;
+  pid: number;
+}
+```
+
+The host MUST re-enumerate processes and refuse a PID that is not currently a .NET process. A valid target is forcibly terminated with `SIGKILL` on Unix or `taskkill /F` on Windows; a missing or non-.NET PID returns an error without terminating any process.
 
 ### [PROFILER-TRACE] Trace Session
 
@@ -115,15 +132,15 @@ interface StartTraceParams {
   /** Max duration in seconds. 0 = unlimited. Default: 30 */
   duration?: number;
   /** Output file path. Auto-generated if omitted */
-  outputPath?: string;
+  output_path?: string;
 }
 ```
 
 **Result:**
 ```typescript
 interface StartTraceResult {
-  sessionId: string;
-  outputPath: string;
+  session_id: string;
+  output_path: string;
 }
 ```
 
@@ -132,16 +149,16 @@ interface StartTraceResult {
 **Params:**
 ```typescript
 interface StopTraceParams {
-  sessionId: string;
+  session_id: string;
 }
 ```
 
 **Result:**
 ```typescript
 interface StopTraceResult {
-  outputPath: string;
-  fileSizeBytes: number;
-  durationMs: number;
+  output_path: string;
+  file_size_bytes: number;
+  duration_ms: number;
 }
 ```
 
@@ -155,7 +172,7 @@ A `.nettrace` file MUST be converted to SpeedScope or Chromium JSON before visua
 ```typescript
 interface ConvertTraceParams {
   /** Absolute path to a `.nettrace` file. */
-  inputPath: string;
+  input_path: string;
   /** Output format: "speedscope" (default) or "chromium". */
   format?: "speedscope" | "chromium";
 }
@@ -164,10 +181,10 @@ interface ConvertTraceParams {
 **Result:**
 ```typescript
 interface ConvertTraceResult {
-  /** Path to the converted file — always a sibling of inputPath. */
-  outputPath: string;
+  /** Path to the converted file — always a sibling of input_path. */
+  output_path: string;
   /** Size of the converted file in bytes. */
-  fileSizeBytes: number;
+  file_size_bytes: number;
 }
 ```
 
@@ -175,8 +192,8 @@ Invokes `dotnet-trace convert <input> --format <format>`. The resulting sibling 
 
 | Format | Output sibling |
 |--------|----------------|
-| `speedscope` | `<input>.speedscope.json` |
-| `chromium` | `<input>.chromium.json` |
+| `speedscope` | Replace `.nettrace` with `.speedscope.json` |
+| `chromium` | Replace `.nettrace` with `.chromium.json` |
 
 `sharplsp/profiler/stopTrace` automatically converts a session that produced data; `convertTrace` handles files with no live session.
 
@@ -191,14 +208,14 @@ interface StartCountersParams {
   /** Counter providers. Default: ["System.Runtime"] */
   providers?: string[];
   /** Refresh interval in seconds. Default: 1 */
-  refreshInterval?: number;
+  refresh_interval?: number;
 }
 ```
 
 **Result:**
 ```typescript
 interface StartCountersResult {
-  sessionId: string;
+  session_id: string;
 }
 ```
 
@@ -208,14 +225,14 @@ Counter values streamed via LSP notification:
 
 ```typescript
 interface CounterUpdateParams {
-  sessionId: string;
+  session_id: string;
   counters: CounterValue[];
 }
 
 interface CounterValue {
   provider: string;
   name: string;
-  displayName: string;
+  display_name: string;
   value: number;
   unit: string;
 }
@@ -226,7 +243,7 @@ interface CounterValue {
 **Params:**
 ```typescript
 interface StopCountersParams {
-  sessionId: string;
+  session_id: string;
 }
 ```
 
@@ -238,18 +255,18 @@ interface StopCountersParams {
 ```typescript
 interface CollectDumpParams {
   pid: number;
-  /** Dump type: "full" | "heap" | "mini". Default: "heap" */
-  dumpType?: string;
+  /** Dump type. Default: "Heap". */
+  dump_type?: "Full" | "Heap" | "Mini";
   /** Output file path. Auto-generated if omitted */
-  outputPath?: string;
+  output_path?: string;
 }
 ```
 
 **Result:**
 ```typescript
 interface CollectDumpResult {
-  outputPath: string;
-  fileSizeBytes: number;
+  output_path: string;
+  file_size_bytes: number;
 }
 ```
 
@@ -260,26 +277,26 @@ interface CollectDumpResult {
 **Params:**
 ```typescript
 interface AnalyzeHeapParams {
-  dumpPath: string;
+  dump_path: string;
   /** Max rows to return. Default: 50 */
   limit?: number;
   /** Filter by type name substring */
-  typeFilter?: string;
+  type_filter?: string;
 }
 ```
 
 **Result:**
 ```typescript
 interface HeapStats {
-  totalObjects: number;
-  totalSizeBytes: number;
+  total_objects: number;
+  total_size_bytes: number;
   types: HeapTypeInfo[];
 }
 
 interface HeapTypeInfo {
-  typeName: string;
+  type_name: string;
   count: number;
-  totalSizeBytes: number;
+  total_size_bytes: number;
 }
 ```
 
@@ -288,9 +305,9 @@ interface HeapTypeInfo {
 **Params:**
 ```typescript
 interface FindGCRootsParams {
-  dumpPath: string;
+  dump_path: string;
   /** Object address (hex string) */
-  objectAddress: string;
+  object_address: string;
 }
 ```
 
@@ -302,8 +319,8 @@ interface GCRootChain {
 
 interface GCRootNode {
   address: string;
-  typeName: string;
-  rootKind: string;
+  type_name: string;
+  root_kind: string;
 }
 
 type FindGCRootsResult = GCRootChain[];
@@ -349,13 +366,13 @@ Automated leak detection compares baseline and comparison heap snapshots.
 ```typescript
 interface DiffHeapSnapshotsParams {
   /** Path to the baseline dump file */
-  baselineDumpPath: string;
+  baseline_dump_path: string;
   /** Path to the comparison dump file */
-  comparisonDumpPath: string;
+  comparison_dump_path: string;
   /** Only show types where count or size grew. Default: true */
-  growingOnly?: boolean;
+  growing_only?: boolean;
   /** Minimum growth percentage to report. Default: 10.0 */
-  minGrowthPercent?: number;
+  min_growth_percent?: number;
   /** Max rows to return. Default: 50 */
   limit?: number;
 }
@@ -364,33 +381,33 @@ interface DiffHeapSnapshotsParams {
 **Result:**
 ```typescript
 interface HeapDiffResult {
-  baselineTotalObjects: number;
-  baselineTotalSizeBytes: number;
-  comparisonTotalObjects: number;
-  comparisonTotalSizeBytes: number;
+  baseline_total_objects: number;
+  baseline_total_size_bytes: number;
+  comparison_total_objects: number;
+  comparison_total_size_bytes: number;
   /** Types sorted by size growth descending */
   diffs: HeapTypeDiff[];
   /** Types flagged as probable leaks */
-  leakSuspects: LeakSuspect[];
+  leak_suspects: LeakSuspect[];
 }
 
 interface HeapTypeDiff {
-  typeName: string;
-  baselineCount: number;
-  comparisonCount: number;
-  countDelta: number;
-  baselineSizeBytes: number;
-  comparisonSizeBytes: number;
-  sizeDeltaBytes: number;
-  growthPercent: number;
+  type_name: string;
+  baseline_count: number;
+  comparison_count: number;
+  count_delta: number;
+  baseline_size_bytes: number;
+  comparison_size_bytes: number;
+  size_delta_bytes: number;
+  growth_percent: number;
 }
 
 interface LeakSuspect {
-  typeName: string;
+  type_name: string;
   severity: "high" | "medium" | "low";
   reason: string;
-  countDelta: number;
-  sizeDeltaBytes: number;
+  count_delta: number;
+  size_delta_bytes: number;
 }
 ```
 
@@ -439,15 +456,15 @@ SharpLsp provides an interactive graph of objects and the reference chains retai
 **Params:**
 ```typescript
 interface GetObjectGraphParams {
-  dumpPath: string;
-  /** Starting object address (hex). If omitted, starts from leak suspects */
-  rootAddress?: string;
+  dump_path: string;
+  /** Required starting object address (hex). */
+  root_address: string;
   /** Max depth to traverse from root. Default: 5 */
-  maxDepth?: number;
-  /** Max nodes to return. Default: 200 */
-  maxNodes?: number;
+  max_depth?: number;
+  /** Max nodes to return. Default: 100 */
+  max_nodes?: number;
   /** Filter: only include paths through this type name (substring match) */
-  typeFilter?: string;
+  type_filter?: string;
 }
 ```
 
@@ -464,19 +481,19 @@ interface ObjectGraphNode {
   /** Unique node ID (object address) */
   id: string;
   /** Fully qualified type name */
-  typeName: string;
+  type_name: string;
   /** Short display name (last segment of type) */
-  displayName: string;
+  display_name: string;
   /** Size in bytes of this single object */
-  sizeBytes: number;
+  size_bytes: number;
   /** Total retained size (this object + everything it keeps alive) */
-  retainedSizeBytes: number;
+  retained_size_bytes: number;
   /** Number of instances of this type on the heap */
-  instanceCount: number;
+  instance_count: number;
   /** Whether this node is a GC root */
-  isRoot: boolean;
-  /** The kind of root if isRoot is true */
-  rootKind?: "Static" | "ThreadLocal" | "Pinned" | "Finalizer" | "Stack";
+  is_root: boolean;
+  /** Root classification when is_root is true. */
+  root_kind?: string;
   /** Depth from the query root */
   depth: number;
 }
@@ -487,15 +504,15 @@ interface ObjectGraphEdge {
   /** Target node ID (the held object) */
   to: string;
   /** Field name or index that holds the reference */
-  fieldName: string;
-  /** Whether this is a strong or weak reference */
-  referenceKind: "Strong" | "Weak";
+  field_name: string;
+  /** Current implementation emits strong references only. */
+  reference_kind: "Strong";
 }
 
 interface ObjectGraphStats {
-  totalNodesTraversed: number;
-  totalEdgesTraversed: number;
-  maxDepthReached: number;
+  total_nodes_traversed: number;
+  total_edges_traversed: number;
+  max_depth_reached: number;
   truncated: boolean;
 }
 ```
@@ -507,9 +524,9 @@ interface ObjectGraphStats {
 **Params:**
 ```typescript
 interface InspectObjectParams {
-  dumpPath: string;
+  dump_path: string;
   /** Object address (hex string) */
-  objectAddress: string;
+  object_address: string;
 }
 ```
 
@@ -517,25 +534,25 @@ interface InspectObjectParams {
 ```typescript
 interface ObjectInspection {
   address: string;
-  typeName: string;
-  sizeBytes: number;
+  type_name: string;
+  size_bytes: number;
   /** Field values for this object */
   fields: ObjectField[];
   /** Generation (0, 1, 2, LOH, POH) */
   generation: string;
   /** Whether the object is pinned */
-  isPinned: boolean;
+  is_pinned: boolean;
 }
 
 interface ObjectField {
   name: string;
-  typeName: string;
+  type_name: string;
   /** Value for primitives/strings, address for reference types */
   value: string;
   /** Whether this field holds a reference to another managed object */
-  isReference: boolean;
-  /** If isReference, the address of the referenced object */
-  referenceAddress?: string;
+  is_reference: boolean;
+  /** If is_reference, the referenced object's address. */
+  reference_address?: string;
 }
 ```
 
@@ -547,7 +564,7 @@ The object graph is assembled from `dotnet-dump analyze` commands:
 flowchart LR
     A[getObjectGraph Request] --> B[dumpobj root_addr]
     B --> C[Parse Fields + References]
-    C --> D{Depth < maxDepth?}
+    C --> D{Depth < max_depth?}
     D -->|Yes| E[dumpobj each reference]
     E --> C
     D -->|No| F[Return Graph]
@@ -647,7 +664,7 @@ Created  ──start──▶  Running  ──stop──▶  Stopped  ──clea
                         └──error──▶  Failed
 ```
 
-- Each session gets a unique ID (UUID v4)
+- Each session ID has the form `prof-<unix-epoch-ms>-<process-local-sequence>`
 - Sessions tracked in a `DashMap<String, ProfileSession>` on the Rust host
 - Maximum concurrent sessions: 5 (configurable via `sharplsp.toml`)
 - Orphaned sessions (editor disconnect) cleaned up on LSP shutdown
@@ -736,6 +753,7 @@ Clicking a node performs the most common action for that node kind — never a n
 - Start Trace on This Process (inline icon = `record`)
 - Start Counters on This Process
 - Collect Memory Dump of This Process
+- Kill Process; show a destructive modal naming the process and PID, then invoke `sharplsp/profiler/killProcess` only after explicit confirmation
 - Copy PID
 
 ##### [PROFILER-EDITOR-VSCODE-TREE-TOOLTIPS] Tooltips
@@ -790,6 +808,7 @@ Stopping a trace session uses the same conversion-and-open pipeline.
 | `sharplsp.profiler.traceProcess` | SharpLsp: Start Trace on This Process |
 | `sharplsp.profiler.countersProcess` | SharpLsp: Start Counters on This Process |
 | `sharplsp.profiler.dumpProcess` | SharpLsp: Collect Memory Dump of This Process |
+| `sharplsp.profiler.killProcess` | SharpLsp: Kill Process |
 | `sharplsp.profiler.copyPid` | SharpLsp: Copy PID |
 
 ## [PROFILER-PERFORMANCE] Performance Requirements

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Exclude>[*]*.Generated*,[*]*.g.*</Exclude>
+          <ExcludeByFile>**/obj/**/*,**/bin/**/*,**/Migrations/**/*,**/FormattingResolver.cs</ExcludeByFile>
+          <ExcludeByAttribute>
+            DebuggerNonUserCode,DebuggerHidden,EditorBrowsable,
+            ExcludeFromCodeCoverage,GeneratorAttribute,CompilerGenerated
+          </ExcludeByAttribute>
+          <SkipAutoProps>true</SkipAutoProps>
+          <DeterministicReport>true</DeterministicReport>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

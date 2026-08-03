@@ -79,7 +79,7 @@ Triggered by the v0.1.0 production log captured 2026-04-30: missing bundled bina
 A full audit of the retired `fixrelease` branch (39 commits, 90 files) found everything absorbed by main except two items, restored here:
 
 - [x] Restore the `[DIST-RUNTIME-ACQUIRE]` manifest guards dropped by the #125 e2e conversion — `extension.test.ts` now asserts `extensionDependencies` declares the .NET Install Tool and that it resolves in the test host (the test host installs it unconditionally via `.vscode-test.mjs`, so nothing else fails when the declaration is removed)
-- [x] Salvage `scripts/resolve-symlink-stubs.mjs` (from the branch's auto-stash) — resolves Git text-symlink stubs for the icon assets on `core.symlinks=false` checkouts; wired into `pretest`/`vscode:prepublish` per [DIST-VSIX-ASSET-INTEGRITY], invariant asserted e2e in `bundled-binary.test.ts`
+- [x] Salvage `scripts/vsix/resolve-symlink-stubs.mjs` (from the branch's auto-stash) — resolves Git text-symlink stubs for the icon assets on `core.symlinks=false` checkouts; wired into `pretest`/`vscode:prepublish` per [DIST-VSIX-ASSET-INTEGRITY], invariant asserted e2e in `bundled-binary.test.ts`
 
 ### Spec hygiene — sweep numbered headings (CLAUDE.md violation)
 
@@ -134,7 +134,7 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 ### CI wall-clock ([DIST-CI-RUST-SHARDS])
 
 - [x] Split `test-rust` into 2 nextest hash-partition shards (`make _test-rust-shard`)
-- [x] Union-merge shard lcov + single ratchet gate (`coverage-rust` job, `scripts/merge-lcov.mjs`)
+- [x] Union-merge shard lcov + single ratchet gate (`coverage-rust` job, `scripts/coverage/merge-lcov.mjs`)
 - [x] Move the `--version` contract checks to a dedicated `version-contract` job
 - [x] Run test jobs concurrently with `lint` (removed `needs: lint`)
 - [ ] Confirm shard wall times on a real PR run; rebalance `SHARD_COUNT` if a shard drifts past ~6 min
@@ -142,7 +142,7 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 ### Windows VS Code feature chunks ([DIST-CI-WIN-VSIX])
 
 - [x] Replace the `MOCHA_GREP` smoke subset with file-glob chunk selection (`MOCHA_FILES` in `src/test/suite/index.ts`); a glob matching nothing is a hard error
-- [x] Declare chunk membership once in `editors/vscode/test-chunks.json`, read by `scripts/vsix-test-chunks.mjs` (`files` / `matrix` / `check`)
+- [x] Declare chunk membership once in `editors/vscode/test-chunks.json`, read by `scripts/vsix/vsix-test-chunks.mjs` (`files` / `matrix` / `check`)
 - [x] Cover the whole feature surface on Windows: `lifecycle`, `lsp`, `fsharp`, `debug` (netcoredbg + Test Explorer + CodeLens), `profiler` (trace/counters/dumps + FSI/build/hot-reload), `explorer` (tree + context menus), `packages` (scaffolding + NuGet)
 - [x] Guard completeness in lint (`_check-vsix-chunks`) so a new suite cannot silently skip Windows CI
 - [x] Build once / fan out: one Windows `build` job publishes host + sidecars; chunks stage via `_stage-vsix-binary-only`
@@ -167,7 +167,7 @@ Two further failure classes were investigated and turned out **not** to be defec
 ### CI workflow layout ([DIST-CI-LAYOUT])
 
 - [x] Split `ci.yml` into reusable workflows: `ci-lint`, `ci-rust`, `ci-dotnet`, `ci-vsix`, `ci-vsix-windows`
-- [x] De-duplicate the PATH-purge step into `scripts/purge-path-binaries.sh` (was inline in three jobs)
+- [x] De-duplicate the PATH-purge step into `scripts/vsix/purge-path-binaries.sh` (was inline in three jobs)
 - [x] De-duplicate the test-host env scrubbing into the `VSIX_TEST_ENV` Make variable
 - [x] Fix the Rust test job's NuGet cache step (was `actions/setup-node` with `actions/cache` inputs, so it never cached)
 

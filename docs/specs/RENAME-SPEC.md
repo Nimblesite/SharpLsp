@@ -99,14 +99,17 @@ The C# sidecar MUST use Roslyn semantics.
 
 The F# sidecar MUST use FCS symbol resolution and rename support rather than text matching.
 
-Code references use `[FS-RENAME-PREPARE]` for the F# prepare path and `[FS-RENAME-APPLY]` for the F# edit path; both implement [RENAME-PREPARE] and [RENAME-APPLY].
+### [FS-RENAME-PREPARE] Prepare
 
 1. Get checked file results for the current document.
 2. Resolve the `FSharpSymbolUse` at the requested position.
 3. Validate that the symbol kind is renameable and that the new name is valid F# syntax for that symbol kind.
-4. Compute all symbol uses across the project or solution scope required for a safe rename.
-5. Produce file-scoped text edits for every declaration and usage location.
-6. Preserve F# file ordering semantics and avoid edits in generated or metadata-only files.
+
+### [FS-RENAME-APPLY] Apply
+
+1. Compute all symbol uses across the project or solution scope required for a safe rename.
+2. Produce file-scoped text edits for every declaration and usage location.
+3. Preserve F# file ordering semantics and avoid edits in generated or metadata-only files.
 
 ## [RENAME-CROSSLANGUAGE] Cross-Language Rename
 

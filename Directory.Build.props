@@ -48,7 +48,7 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
         </PackageReference>
         <!-- The BannedApiAnalyzers package is referenced repo-wide, but its RS0030
-             rule stays dormant until a BannedSymbols.txt is supplied. That is done
+             rule stays dormant until sidecars/config/BannedSymbols.txt is supplied. That is done
              in sidecars/Directory.Build.props, deliberately NOT here: the list
              encodes sidecar rules, and test fixtures must stay free to block a
              thread on purpose. -->

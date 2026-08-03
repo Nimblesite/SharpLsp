@@ -58,7 +58,7 @@ suite('Bundled binary resolution', () => {
 // Implements [DIST-VSIX-ASSET-INTEGRITY]. The icon files are tracked as
 // symlinks into docs/designs/logo/; on checkouts without core.symlinks Git
 // materializes them as text stubs, which vsce would package as broken icons.
-// `npm run pretest` resolves the stubs (scripts/resolve-symlink-stubs.mjs)
+// `npm run pretest` resolves the stubs (scripts/vsix/resolve-symlink-stubs.mjs)
 // before this suite runs, so a failure here means the resolver regressed or
 // was unwired.
 suite('[DIST-VSIX-ASSET-INTEGRITY] packaged icon assets', () => {
@@ -80,7 +80,7 @@ suite('[DIST-VSIX-ASSET-INTEGRITY] packaged icon assets', () => {
       assert.ok(
         !looksLikeStub,
         `${name} is a symlink text stub — packaging would ship a broken icon. ` +
-          'Run `node scripts/resolve-symlink-stubs.mjs editors/vscode/icons` ' +
+          'Run `node scripts/vsix/resolve-symlink-stubs.mjs editors/vscode/icons` ' +
           '(auto-run by npm pretest / vscode:prepublish).',
       );
       if (name.endsWith('.png')) {

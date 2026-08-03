@@ -1,8 +1,6 @@
 # VSCode Extension Reactivity Spec `[VSCODE-REACTIVITY]`
 
-**Status:** active
-**Owner:** VSCode extension (`editors/vscode/src/`)
-**Invariant (CLAUDE.md):** _"All screens MUST BE 100% reactive. If underlying data changes, the screen must be listening and update accordingly."_
+**Status:** active · **Owner:** VSCode extension (`editors/vscode/src/`) · **Invariant (CLAUDE.md):** _"All screens MUST BE 100% reactive. If underlying data changes, the screen must be listening and update accordingly."_
 
 ---
 
@@ -78,20 +76,22 @@ After an external `.csproj` or `.fsproj` write, every surface that reads `projec
 Implementation: [`tree.ts`](../../editors/vscode/src/tree.ts).
 
 `SolutionExplorerProvider` subscribes to:
+
 - `symbolsState` → full rebuild
 - `sortOrder` → full rebuild
 - `projectDependencies` → full rebuild
 
-The tree's Dependencies → Packages node reads the parsed package list from `projectDependencies.value.get(projectPath)`. **It does NOT call `parseProjectDependencies` directly.** The file watcher is the only code path that calls the parser.
+The tree's Dependencies → Packages node reads `projectDependencies.value.get(projectPath)` and MUST NOT call `parseProjectDependencies` directly. Parsing and signal updates belong to the store's watcher, mtime-guard, and explicit rescan paths.
 
 ### NuGet Browser Panel `[VSCODE-REACTIVITY-SURFACES-NUGET]`
 
 Implementation: [`nuget-browser.ts`](../../editors/vscode/src/nuget-browser.ts).
 
 `NuGetBrowserPanel` subscribes to:
+
 - `projectDependencies` → reload installed packages via LSP (picks up external csproj edits)
 
-The Install/Remove button label is driven by the csproj content as surfaced through `projectDependencies` plus the LSP's `sharplsp/nuget/installed` response. Editing the csproj on disk must flip the button without any user action.
+The Install/Remove button label is driven by the csproj content as surfaced through `projectDependencies` plus the LSP's `sharplsp/nuget/installed` response. Editing the csproj on disk MUST flip the button without any user action.
 
 ## Shared Rendering `[VSCODE-REACTIVITY-RENDERING]`
 
@@ -103,6 +103,7 @@ Identical visual elements MUST use one renderer:
 ## Required Tests `[VSCODE-REACTIVITY-TESTING]`
 
 Every reactive surface MUST have an end-to-end test that:
+
 1. Opens the surface with a known initial state.
 2. Mutates the underlying source (file on disk, LSP state, etc.) _without calling any refresh API_.
 3. Polls the surface and asserts the new state appears within a timeout.

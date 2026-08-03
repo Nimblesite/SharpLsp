@@ -188,7 +188,7 @@ Stale requests for superseded document versions MUST be cancelled.
 | Find references (medium solution, ~1000 files) | <2 seconds | Time to enumerate all references |
 | Find references (large solution, ~5000 files) | <5 seconds | Time to enumerate all references |
 | Document highlights | <100ms | Time to highlight all occurrences in current document |
-| Cached reference lookup | <1ms | salsa cache hit |
+| Cached reference lookup | <1ms | `NavCache` hit |
 | Tree-sitter pre-validation | <1ms | Whitespace/comment/literal rejection |
 
 Large result sets MAY use the LSP `partialResult` token.
@@ -210,13 +210,13 @@ Reference requests MUST NOT hang or return protocol errors to the client; failur
 ### Request `[REFERENCES-IPC-REQUEST]`
 
 ```csharp
-[MessagePackObject]
-public class ReferencesRequest
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class ReferencesRequest
 {
-    [Key(0)] public string FilePath { get; set; }
-    [Key(1)] public int Line { get; set; }
-    [Key(2)] public int Character { get; set; }
-    [Key(3)] public bool IncludeDeclaration { get; set; }
+    [Key(0)] public string FilePath { get; set; } = "";
+    [Key(1)] public int Line { get; init; }
+    [Key(2)] public int Character { get; init; }
+    [Key(3)] public bool IncludeDeclaration { get; init; }
 }
 ```
 
@@ -227,30 +227,30 @@ For document highlights, reuses `PositionRequest` (shared with hover/definition)
 Reuses `LocationListResult` from the definition spec for references:
 
 ```csharp
-[MessagePackObject]
-public class LocationListResult
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class LocationListResult
 {
-    [Key(0)] public List<LocationResult> Locations { get; set; }
+    [Key(0)] public List<LocationResult> Locations { get; set; } = [];
 }
 ```
 
 For document highlights, a new response type with highlight kind:
 
 ```csharp
-[MessagePackObject]
-public class DocumentHighlightResult
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class DocumentHighlightResult
 {
-    [Key(0)] public int StartLine { get; set; }
-    [Key(1)] public int StartCharacter { get; set; }
-    [Key(2)] public int EndLine { get; set; }
-    [Key(3)] public int EndCharacter { get; set; }
-    [Key(4)] public int Kind { get; set; } // 1=Text, 2=Read, 3=Write
+    [Key(0)] public int StartLine { get; init; }
+    [Key(1)] public int StartCharacter { get; init; }
+    [Key(2)] public int EndLine { get; init; }
+    [Key(3)] public int EndCharacter { get; init; }
+    [Key(4)] public int Kind { get; init; } // 1=Text, 2=Read, 3=Write
 }
 
-[MessagePackObject]
-public class DocumentHighlightListResult
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class DocumentHighlightListResult
 {
-    [Key(0)] public List<DocumentHighlightResult> Highlights { get; set; }
+    [Key(0)] public List<DocumentHighlightResult> Highlights { get; set; } = [];
 }
 ```
 
