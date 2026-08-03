@@ -1,4 +1,5 @@
 //! Custom `sharplsp/workspaceSymbols` request handler.
+//! Implements [SE-WORKSPACE-SYMBOLS-REQUEST], [SE-SYMBOL-KINDS], and [SE-FSHARP-SYMBOLS].
 //!
 //! Walks all `.cs` / `.fs` files discovered via `.csproj` / `.fsproj` files
 //! referenced by a `.sln` or `.slnx`, parses each with tree-sitter, and returns the

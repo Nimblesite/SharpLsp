@@ -815,6 +815,19 @@ Stopping a trace session uses the same conversion-and-open pipeline.
 | Tool produces unexpected output | Log raw output at `warn` level, return parse error |
 | Editor disconnects during session | Clean up all sessions on LSP shutdown |
 
-## [PROFILER-SCOPE] Deferred Scope
+## [PROFILER-SCOPE] Target Scope
 
-Allocation tracking is deferred; this specification defines no request or UI contract for it.
+| Capability | Target | Priority |
+|------------|--------|----------|
+| CPU trace collection | Required | P0 |
+| Live performance counters | Required | P0 |
+| Memory dump collection | Required | P0 |
+| Heap analysis | Basic analysis | P1 |
+| GC root analysis | Basic analysis | P1 |
+| Leak detection heuristics | Counter-based | P1 |
+| Automated leak detection | Snapshot diff | P1 |
+| Heap snapshot diffing | Required | P1 |
+| Object retention graph | Interactive | P1 |
+| Object inspection | Required | P1 |
+| Flame graph visualization | External SpeedScope viewer | P1 |
+| Allocation tracking | Deferred; no request or UI contract | P2 |

@@ -1,3 +1,4 @@
+/** Implements [SE-TREE], [SE-SORT], [SE-HOVER], and [SE-CONTEXT-MENUS]. */
 import * as path from 'node:path';
 import {
   type CancellationToken,

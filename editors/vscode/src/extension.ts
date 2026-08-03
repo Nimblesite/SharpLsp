@@ -1,3 +1,4 @@
+/** Implements [SE-COMMANDS], [SE-ACTIONS], [SE-SOLUTION], and [SE-NAVIGATION]. */
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { type ExtensionContext, commands, window, workspace } from 'vscode';

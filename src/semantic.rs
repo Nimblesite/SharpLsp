@@ -1,4 +1,5 @@
 //! Semantic request handlers routed through the .NET sidecar.
+//! Navigation requests implement [DEFINITION-ROUTING].
 //!
 //! Each handler serializes the LSP params into a sidecar request,
 //! forwards it via the `SidecarManager`, and translates the response

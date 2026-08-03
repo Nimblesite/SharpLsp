@@ -10,6 +10,7 @@ import com.intellij.platform.lsp.api.LspServerSupportProvider
  *
  * Registered via the `com.intellij.platform.lsp.serverSupportProvider`
  * extension point in `plugin.xml`.
+ * Implements [RIDER-LSP-PROVIDER].
  */
 class ForgeLspServerSupportProvider : LspServerSupportProvider {
     override fun fileOpened(

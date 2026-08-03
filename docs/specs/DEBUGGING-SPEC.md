@@ -66,9 +66,11 @@ netcoredbg is managed as an external subprocess:
 |---|---|---|
 | Linux x64 | Official Samsung release binary | Full feature set including interop debugging |
 | Linux ARM64 | Official Samsung release binary | Full feature set |
+| Linux ARM / RISCV64 | Official Samsung release binary | Managed debugging; validate architecture-specific release availability |
 | macOS x64 | Official Samsung release binary | No interop/native debugging |
 | macOS ARM64 | SharpLsp CI build from source | Samsung does not ship official ARM64 macOS binaries |
 | Windows x64 | Official Samsung release binary | Full feature set |
+| Windows x86 | Official Samsung release binary | Full feature set |
 | Windows ARM64 | Official Samsung release binary | Full feature set |
 | Alpine/musl x64 | SharpLsp CI musl-linked build | Workaround for SIGSEGV on musl; see [DEBUG-GAPS] |
 | Alpine/musl ARM64 | SharpLsp CI musl-linked build | Same musl workaround |

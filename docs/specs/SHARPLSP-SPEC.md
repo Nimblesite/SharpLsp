@@ -395,9 +395,9 @@ See [DEBUGGING-SPEC.md](DEBUGGING-SPEC.md) for the DAP router and debug-sidecar 
 | NuGet uninstall package | Custom: `sharplsp/nuget/uninstall` | `dotnet remove <project> package` + sidecar reload | P2 |
 | Multi-TFM selection | Custom: `sharplsp/targetFramework` | Active TFM switching per project | P1 |
 | File watching & reload | `workspace/didChangeWatchedFiles` | [notify](https://crates.io/crates/notify) crate + sidecar reload | P0 |
-| Workspace diagnostics (pull) | `workspace/diagnostic` + `workspace/diagnostic/refresh` | Solution-wide error analysis via LSP 3.17 pull model + 2000ms-debounced refresh; primary diagnostic path (see [DIAG-ARCHITECTURE-PULL-REFRESH](DIAGNOSTICS-SPEC.md#diag-architecture-pull-refresh)) | P0 |
+| Workspace diagnostics (pull) | `workspace/diagnostic` + `workspace/diagnostic/refresh` | Solution-wide error analysis via LSP 3.17 pull model + 2000ms-debounced refresh; primary diagnostic path (see [DIAG-ARCHITECTURE-PULL-REFRESH](DIAGNOSTICS-SPEC.md)) | P0 |
 | Monorepo static analyzers | `workspace/diagnostic` partial results | SharpLsp-owned unused-public-code analyzers for C# and F#; gated by `workspace.repository_kind = "monorepo"` | P0 |
-| NuGet restore gate | (internal, before `workspace/open`) | `dotnet restore` if `obj/project.assets.json` is stale; eliminates phantom CS0246 for NuGet types ([DIAG-RESTORE](DIAGNOSTICS-SPEC.md#diag-restore)) | P0 |
+| NuGet restore gate | (internal, before `workspace/open`) | `dotnet restore` if `obj/project.assets.json` is stale; eliminates phantom CS0246 for NuGet types ([DIAG-RESTORE](DIAGNOSTICS-SPEC.md)) | P0 |
 | Project init complete | Custom: `workspace/projectInitializationComplete` | Notification fired once per workspace open after restore + `MSBuildWorkspace.OpenSolutionAsync`; matches Roslyn LSP contract | P0 |
 | Configuration | `workspace/didChangeConfiguration` | [.editorconfig](https://editorconfig.org/) + sharplsp.toml | P0 |
 

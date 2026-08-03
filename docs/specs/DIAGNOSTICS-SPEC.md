@@ -108,7 +108,7 @@ When empty (default), every project in the solution is included. Per-document pu
 
 Diagnostics settings are hot-reloadable via `workspace/didChangeConfiguration`. Changing `solution_wide_analysis`, `project_filter`, or `min_severity` bumps `global_state_version` and triggers `workspace/diagnostic/refresh` so the editor re-pulls under the new policy.
 
-Static analyzer configuration and its monorepo-only gate are specified by [ANALYZERS-MONOREPO-GATE](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md#analyzers-monorepo-gate).
+Static analyzer configuration and its monorepo-only gate are specified by [ANALYZERS-MONOREPO-GATE](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md#analyzers-monorepo-gate-monorepo-gate).
 
 ## [DIAG-CATEGORIES] Diagnostic Categories
 
@@ -131,7 +131,7 @@ Static analyzer configuration and its monorepo-only gate are specified by [ANALY
 | FSharp.Analyzers.SDK | Plugin-based analyzers | Community F# analyzers |
 | SharpLsp static analyzers | Solution-wide symbol/reference index | Monorepo-only unused public C#/F# code elements |
 
-Monorepo-only unused-public-code behavior is specified by [ANALYZERS-UNUSED-PUBLIC](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md#analyzers-unused-public).
+Monorepo-only unused-public-code behavior is specified by [ANALYZERS-UNUSED-PUBLIC](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md#analyzers-unused-public-unused-public-code-elements).
 
 ### [DIAG-CATEGORIES-LIVE] Live Squiggles
 

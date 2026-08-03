@@ -163,6 +163,10 @@ When a C# project references an F# project (or vice versa), find-all-references 
 
 The Rust host merges results from both sidecars and deduplicates by location.
 
+## Extended Results `[REFERENCES-EXTENSIONS]`
+
+Metadata-symbol references, grouped find-usages results, and reference-count code lenses are supported extensions to the base methods. Large result sets SHOULD stream through `partialResult`; metadata and grouped results MUST retain the sorting, declaration-inclusion, and deduplication rules in this specification.
+
 ## Caching Strategy `[REFERENCES-CACHE]`
 
 Reference results are cached via the [salsa](https://salsa-rs.github.io/salsa/) incremental computation database in the Rust host.

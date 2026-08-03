@@ -14,6 +14,7 @@ import com.intellij.openapi.components.Storage
  *  - `logLevel`  — env var passed as RUST_LOG to forge-lsp.
  *  - `autoLoadSolution` — whether to send `forge/loadSolution` on project
  *    open if we can find a single .sln or .slnx in the project root.
+ * Implements [RIDER-SETTINGS].
  */
 @Service(Service.Level.PROJECT)
 @State(

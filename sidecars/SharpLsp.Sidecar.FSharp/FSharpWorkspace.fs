@@ -1,4 +1,5 @@
 /// Manages the F# workspace: project loading and semantic queries via FCS.
+/// Navigation methods implement [DEFINITION-FSHARP].
 module SharpLsp.Sidecar.FSharp.FSharpWorkspace
 
 open System

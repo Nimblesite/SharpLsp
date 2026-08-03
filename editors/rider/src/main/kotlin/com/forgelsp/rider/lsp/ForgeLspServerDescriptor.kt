@@ -16,6 +16,7 @@ import java.nio.file.Paths
  * One descriptor instance per project. The platform keys servers by
  * `presentableName` equality, so we include the project's basePath to
  * guarantee one server per project.
+ * Implements [RIDER-LSP-DESCRIPTOR].
  */
 class ForgeLspServerDescriptor(
     project: Project,

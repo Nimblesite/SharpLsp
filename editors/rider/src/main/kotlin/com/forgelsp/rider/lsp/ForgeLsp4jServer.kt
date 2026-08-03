@@ -15,6 +15,7 @@ import java.util.concurrent.CompletableFuture
  * All DTO fields are camelCase to match the Rust wire format — no Gson
  * `@SerializedName` needed because the names already line up, and we'd
  * rather not take a transitive dependency on a specific Gson version.
+ * Implements [RIDER-LSP-INTERFACE].
  */
 interface ForgeLsp4jServer : LanguageServer {
     @JsonRequest("forge/workspaceSymbols")

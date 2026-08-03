@@ -41,6 +41,7 @@ import javax.swing.tree.TreePath
  * [DefaultMutableTreeNode] whose `userObject` is always a
  * [ForgeTreeNode] from the `nodes` package — the node objects encode
  * their own rendering, icons, and child-loading logic.
+ * Implements [RIDER-SOLUTION], [RIDER-SOLUTION-ASYNC], and [RIDER-SOLUTION-REFRESH].
  */
 class ForgeSolutionToolWindow(
     private val project: Project,

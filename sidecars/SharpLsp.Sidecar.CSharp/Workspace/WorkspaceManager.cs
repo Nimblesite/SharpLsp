@@ -1,3 +1,4 @@
+// Navigation methods implement [DEFINITION-CSHARP].
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;

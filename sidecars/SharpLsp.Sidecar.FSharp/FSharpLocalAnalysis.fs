@@ -6,6 +6,7 @@
 ///   * [FSharpAnalyzers] turns them into always-on diagnostic hints
 ///     ([FS-ANALYZER-UNUSEDOPEN]/[FS-ANALYZER-SIMPLIFYNAME]).
 /// Keeping one source of truth means hints and fixes can never disagree.
+/// Implements [ANALYZERS-FSAC-PARITY].
 module SharpLsp.Sidecar.FSharp.FSharpLocalAnalysis
 
 open FSharp.Compiler.CodeAnalysis
