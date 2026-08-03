@@ -285,6 +285,34 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     }
 
     [Fact]
+    public async Task ResolveCompletion_with_empty_span_skips_primary_edit_in_additional_edits()
+    {
+        // GitHub double-insertion bug: triggering completion immediately after a dot
+        // produces a length-0 completion span. ResolveCompletion must use IntersectsWith
+        // to correctly skip the primary edit so it doesn't get double-applied.
+        using var manager = await OpenAsync();
+
+        // Add a dot to trigger completion on an empty span.
+        var newSource = Source.Replace("Total = result;", "Total = result.;");
+        await manager.UpdateDocumentTextAsync(_sourcePath, newSource);
+
+        // Position: line 19, char 23 (immediately after `result.`)
+        var completions = await manager.GetCompletionsAsync(_sourcePath, 19, 23);
+        var items = Unwrap(completions);
+
+        // Find a valid completion like "ToString"
+        var toString = items.Find(item => item.Label == "ToString");
+        Assert.NotNull(toString);
+
+        var resolved = await manager.ResolveCompletionAsync(toString!.Index, CancellationToken.None);
+        Assert.NotNull(resolved);
+
+        // The primary edit (inserting "ToString") MUST be skipped. AdditionalEdits
+        // should be empty (or at least not contain "ToString" at the cursor).
+        Assert.DoesNotContain(resolved.AdditionalEdits, edit => edit.NewText == "ToString");
+    }
+
+    [Fact]
     public async Task CodeLenses_report_reference_counts_for_members()
     {
         using var manager = await OpenAsync();
