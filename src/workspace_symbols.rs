@@ -529,6 +529,7 @@ fn is_source_file(path: &Path) -> bool {
 
 /// Parse a single source file and extract symbols.
 /// Prefers VFS content (unsaved buffer) over disk for open documents.
+/// Implements [SE-LIVE-BUFFER].
 fn parse_file_symbols(file_path: &str, parsers: &TsParsers, vfs: &Vfs) -> Result<FileSymbol> {
     let source = vfs.read_live_or_disk(file_path)?;
 
