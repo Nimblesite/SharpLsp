@@ -14,16 +14,17 @@ SharpLsp provides a built-in NuGet package manager UI accessible from the Soluti
 
 ### [NUGET-ARCHITECTURE-PLACEMENT] Component Placement
 
-NuGet operations live in the **Rust LSP host** (Tier 1). The host runs `dotnet` as a managed child process and calls the NuGet API directly; sidecars and editor extensions MUST NOT perform either operation. Package management MUST remain available after a sidecar crash.
+The **Rust LSP host** owns requests, target discovery, NuGet API calls, `dotnet` child processes, restore notifications, and sidecar reloads. It delegates package-file mutations to the C# sidecar's MSBuild editor as specified by [NUGET-XML-DOM]. Editor extensions MUST NOT perform package operations.
 
 ```
-Editor Webview ──postMessage──> Extension ──LSP custom request──> Rust Host ──spawns──> dotnet CLI
-                                                                      │
-                                                                      ├── dotnet list <project> package
-                                                                      ├── edit MSBuild package references
-                                                                      ├── dotnet restore
-                                                                      └── HTTP fetch to nuget.org API
+Editor Webview ──postMessage──> Extension ──LSP request──> Rust Host
+                                                               ├── HTTP / dotnet list / dotnet restore
+                                                               └── IPC edit ──> C# Sidecar ──> MSBuild DOM
 ```
+
+## [NUGET-XML-DOM] MSBuild XML Mutation
+
+All `.csproj`, `.fsproj`, and `.props` package mutations MUST be delegated to the C# sidecar and performed with `Microsoft.Build.Construction.ProjectRootElement` using formatting preservation. String replacement, line splicing, and regex mutation are forbidden. Untouched whitespace, comments, attribute order, and conditional item groups MUST survive the edit. The Rust host orchestrates edits and starts background restore after the sidecar commits them.
 
 ## [NUGET-REQUESTS] LSP Custom Requests
 
@@ -37,9 +38,9 @@ A target is one of:
 
 | Kind | Example path | `dotnet` command | Notes |
 |------|--------------|------------------|-------|
-| `project` | `/repo/src/Foo/Foo.csproj` | Direct XML edit + `dotnet restore` | A single `.csproj` / `.fsproj`. |
-| `project` | `/repo/src/Bar/Bar.fsproj` | Direct XML edit + `dotnet restore` | Same as above for F#. |
-| `buildProps` | `/repo/Directory.Build.props` | **Direct XML edit** — NOT `dotnet add` | `dotnet add` does not support props files. The Rust host edits the `<ItemGroup><PackageReference .../></ItemGroup>` block directly, preserving formatting. Requires follow-up `dotnet restore` at the props file's directory. |
+| `project` | `/repo/src/Foo/Foo.csproj` | MSBuild DOM edit + restore | A single `.csproj` / `.fsproj`. |
+| `project` | `/repo/src/Bar/Bar.fsproj` | MSBuild DOM edit + restore | Same as above for F#. |
+| `buildProps` | `/repo/Directory.Build.props` | MSBuild DOM edit + restore | The sidecar adds or updates `<PackageReference>` through [NUGET-XML-DOM], followed by restore at the props file's directory. |
 | `buildProps` | `/repo/src/Directory.Packages.props` | Central Package Management | When CPM is enabled (`ManagePackageVersionsCentrally=true`), version lives in `Directory.Packages.props` as `<PackageVersion>`, and the `<PackageReference>` in the csproj has no `Version=`. The host must detect CPM and route accordingly. |
 
 #### [NUGET-REQUESTS-TARGET-ENUMERATE] `sharplsp/nuget/targets`
@@ -218,10 +219,10 @@ interface NuGetInstallResponse {
 **Behavior by target kind:**
 
 - `target.kind === "project"`:
-  - **CPM disabled:** edit the project XML to add or update `<PackageReference Include="..." Version="..."/>`, preserving trivia, then start `dotnet restore` in the background.
-  - **CPM enabled:** edit `Directory.Packages.props` to add/update `<PackageVersion Include="..." Version="..."/>`, then edit the project to add `<PackageReference Include="..."/>` without `Version`, and start background restore.
+  - **CPM disabled:** the sidecar adds or updates `<PackageReference Include="..." Version="..."/>` through [NUGET-XML-DOM], then the host starts background `dotnet restore`.
+  - **CPM enabled:** the sidecar adds or updates `<PackageVersion Include="..." Version="..."/>` in `Directory.Packages.props`, then adds `<PackageReference Include="..."/>` without `Version` to the project; the host starts background restore.
 - `target.kind === "buildProps"`:
-  - Parse the props XML (preserving whitespace / comments), locate an `<ItemGroup>` containing `<PackageReference>` (create one if none exists), and add/update `<PackageReference Include="<id>" Version="<version>"/>`. When the file is `Directory.Packages.props`, use `<PackageVersion>` instead of `<PackageReference>`.
+  - Through [NUGET-XML-DOM], locate an `<ItemGroup>` containing `<PackageReference>` (create one if absent) and add or update `<PackageReference Include="<id>" Version="<version>"/>`. For `Directory.Packages.props`, use `<PackageVersion>`.
   - After writing, start `dotnet restore` at the props file's directory in the background so the lockfile and `obj/project.assets.json` for every consuming project refresh.
 - On success, trigger sidecar workspace reload for every project that transitively imports the modified file.
 - Return `modifiedFiles` so the UI can show a toast like `Updated Directory.Build.props`.
@@ -289,7 +290,7 @@ Install and restore MUST NOT block the UI:
 
 - **< 100 ms**: the [NUGET-FEEDBACK-OPTIMISTIC] update is visible.
 - **< 500 ms**: the [NUGET-FEEDBACK-SPINNERS] spinner and toast are visible.
-- **Host-side fast path**: for `kind: "project"` without CPM, the host MUST edit the project XML to add the `<PackageReference>`, then run `dotnet restore` in the background. The `install` response returns after the XML edit commits, typically in <50 ms. [NUGET-FEEDBACK-RESTORE] keeps the spinner active until restore finishes without blocking further package operations.
+- **Edit fast path**: for `kind: "project"` without CPM, the host delegates the `<PackageReference>` edit through [NUGET-XML-DOM], then runs `dotnet restore` in the background. The `install` response returns after the edit commits, typically in <50 ms. [NUGET-FEEDBACK-RESTORE] keeps the spinner active until restore finishes without blocking further package operations.
 
 ### [NUGET-FEEDBACK-RESTORE] `sharplsp/nuget/restoreProgress`
 
@@ -369,7 +370,7 @@ User clicks "Install" in webview
   -> webview postMessage({ command: "install", data: { packageId, version } })
   -> extension receives message
   -> extension sends LSP request: sharplsp/nuget/install { target, packageId, version }
-  -> Rust host edits the target XML and starts background restore
+  -> Rust host delegates the target edit to the C# sidecar and starts background restore
   -> Rust host returns { success: true, message: "...", modifiedFiles: [...] }
   -> extension forwards result to webview
   -> webview updates UI
@@ -395,9 +396,9 @@ Every target below is end-to-end, measured from click to UI update. [NUGET-FEEDB
 | Search | < 50 ms (spinner) | < 500 ms p95 | < 500 ms p95 | HTTP GET with 60 s cache; 250 ms debounce before firing. |
 | List installed | < 50 ms (spinner over stale cache) | < 300 ms from cache, < 2 s cold | < 2 s | `dotnet list` cold; subsequent calls served from in-memory cache keyed by target + csproj mtime. |
 | Version list | < 50 ms (spinner) | < 500 ms | < 500 ms | HTTP GET with 5 min cache. |
-| Install (project, no CPM) | < 100 ms (optimistic) | **< 150 ms** (XML fast path) | restore < 10 s (background, reported via `restoreProgress`) | Host edits csproj XML directly, returns immediately, fires `dotnet restore` in background. |
-| Install (project, CPM) | < 100 ms (optimistic) | **< 150 ms** (XML fast path) | restore < 10 s (background) | Host edits `Directory.Packages.props` + csproj, then background restore. |
-| Install (buildProps) | < 100 ms (optimistic) | **< 200 ms** (XML edit) | restore < 10 s (background) | Host edits props XML, then background restore at the props directory. |
+| Install (project, no CPM) | < 100 ms (optimistic) | **< 150 ms** (XML fast path) | restore < 10 s (background, reported via `restoreProgress`) | Sidecar commits [NUGET-XML-DOM], host starts background restore. |
+| Install (project, CPM) | < 100 ms (optimistic) | **< 150 ms** (XML fast path) | restore < 10 s (background) | Sidecar edits `Directory.Packages.props` + project, host starts restore. |
+| Install (buildProps) | < 100 ms (optimistic) | **< 200 ms** (XML edit) | restore < 10 s (background) | Sidecar edits props, host restores at the props directory. |
 | Uninstall | < 100 ms (optimistic) | < 200 ms (XML edit) | restore < 10 s (background) | Same fast-path model as install. |
 
 ## [NUGET-TESTS] Testing

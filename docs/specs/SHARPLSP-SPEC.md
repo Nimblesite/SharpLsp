@@ -78,27 +78,16 @@ Key optimization: on every keystroke, tree-sitter re-parses in <1ms and provides
 
 The normative state machine and platform contract are in [SIDECAR-LIFECYCLE-SPEC.md](SIDECAR-LIFECYCLE-SPEC.md).
 
-- **Startup:** A per-language supervisor lazily launches one direct, version-matched sidecar process,
-  using a new current-user-only IPC endpoint for every generation. `READY` identifies the generation,
-  process, protocol, and effective bound endpoint; semantic readiness follows workspace bootstrap.
-- **Health monitoring:** The connection driver pings only while `Ready` and idle (every 5s, with a 2s
-  response budget). An in-flight request is governed by its own deadline and cannot race a second
-  transport-locking health caller.
-- **Request timeouts** `[SIDECAR-REQUEST-TIMEOUT]`: Every host-to-sidecar request carries a response
-  budget—600s for `workspace/open` (a full MSBuild design-time build on a cold NuGet cache is
-  legitimately slow), 120s for everything else. A request that exceeds its budget is failed to the
-  client, the IPC connection is poisoned, and the contained sidecar process tree is terminated: a
-  late response can therefore never be handed to the next caller.
-- **Crash recovery:** Startup and runtime failures share one exponential backoff sequence (1s, 2s,
-  4s, up to 30s). A replacement generation replays workspace, configuration, and current VFS document
-  state before becoming ready. Last-known-good feature caches may provide explicitly stale graceful
-  degradation.
-- **Isolation and containment:** C# and F# supervisors, backoff, endpoints, and process trees are
-  independent. Windows Job Objects and Unix process groups/parent-death handling prevent orphaned
-  sidecars and compiler descendants.
-- **Shutdown:** The sidecar flushes a correlated shutdown acknowledgement before cancelling its loop.
-  The host allows up to 5s for clean exit, then terminates and reaps only that generation's contained
-  process tree.
+- **Startup:** A per-language supervisor lazily launches one direct, version-matched sidecar process, using a new current-user-only IPC endpoint for every generation. `READY` identifies the generation, process, protocol, and effective bound endpoint; semantic readiness follows workspace bootstrap.
+- **Health monitoring:** The connection driver pings only while `Ready` and idle (every 5s, with a 2s response budget). An in-flight request is governed by its own deadline and cannot race a second transport-locking health caller.
+
+#### [SIDECAR-REQUEST-TIMEOUT] Request Timeouts
+
+Every host-to-sidecar request carries a response budget: 600s for `workspace/open` and 120s for everything else. A request that exceeds its budget fails, poisons the IPC connection, and terminates the contained sidecar process tree, so a late response cannot reach the next caller.
+
+- **Crash recovery:** Startup and runtime failures share one exponential backoff sequence (1s, 2s, 4s, up to 30s). A replacement generation replays workspace, configuration, and current VFS document state before becoming ready. Last-known-good feature caches may provide explicitly stale graceful degradation.
+- **Isolation and containment:** C# and F# supervisors, backoff, endpoints, and process trees are independent. Windows Job Objects and Unix process groups/parent-death handling prevent orphaned sidecars and compiler descendants.
+- **Shutdown:** The sidecar flushes a correlated shutdown acknowledgement before cancelling its loop. The host allows up to 5s for clean exit, then terminates and reaps only that generation's contained process tree.
 
 ### [SHARPLSP-ARCHITECTURE-PROJECTS] Project System
 
@@ -192,6 +181,10 @@ On activation, the VS Code extension follows this sequence:
 2. **Shipwright resolves sidecars:** Checks user setting → env vars → bundled `bin/all/` sidecar → PATH. Bundled sidecars are the default for VSIX installs.
 3. **Version verification:** Shipwright probes each resolved binary with `--version` and compares against the manifest's `expectedVersion`.
 4. **Start LSP client:** Pass the resolved `sharplsp` path to `LanguageClient`. Never hardcode a path.
+
+#### [SIDECAR-RESOLVE-ENV] Sidecar Environment Overrides
+
+`SHARPLSP_CSHARP_SIDECAR_PATH` and `SHARPLSP_FSHARP_SIDECAR_PATH` take precedence when they name an existing path. A missing override path MUST emit a warning and continue with PATH, installed-layout, and development-build resolution.
 
 **Missing required components fail activation:**
 
