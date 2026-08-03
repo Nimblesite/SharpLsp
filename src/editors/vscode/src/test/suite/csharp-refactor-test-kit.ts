@@ -60,6 +60,12 @@ export interface ActionLifecycleCase {
   readonly mustDisappear?: boolean;
   readonly requeryTitleCount?: number;
   readonly skipOutsideRange?: boolean;
+  /**
+   * Query with a collapsed caret at the focus start instead of a selection.
+   * Roslyn gates several member-level providers (Generate Equals, argument
+   * wrapping) on a caret; a selection suppresses them exactly as it does in VS.
+   */
+  readonly caretOnly?: boolean;
 }
 
 export function codeOf(diagnostic: vscode.Diagnostic): string {
@@ -122,7 +128,10 @@ export function rangeAfterAction(
   return snippet ? rangeOf(fixture.document, snippet, focus ?? snippet) : original;
 }
 
-function toLspPosition(position: vscode.Position): { readonly line: number; readonly character: number } {
+function toLspPosition(position: vscode.Position): {
+  readonly line: number;
+  readonly character: number;
+} {
   return { line: position.line, character: position.character };
 }
 
@@ -212,9 +221,14 @@ export function assertRawTitles(
   titles: readonly string[],
   kind: string,
 ): void {
+  const offered = actions.map((action) => `${action.kind}::${action.title}`).join(' | ');
   for (const title of titles) {
     const matches = actions.filter((action) => action.title === title);
-    assert.strictEqual(matches.length, 1, `expected exactly one raw action titled ${title}`);
+    assert.strictEqual(
+      matches.length,
+      1,
+      `expected exactly one raw action titled ${title}; offered: ${offered === '' ? '(none)' : offered}`,
+    );
     assert.strictEqual(matches[0]?.kind, kind, `wrong kind for ${title}`);
     assert.strictEqual(matches[0]?.edit, undefined, `${title} must initially be unresolved`);
   }
@@ -264,10 +278,7 @@ async function captureErrorBaseline(fixture: OpenFixture): Promise<readonly stri
   return errorSignatures(await pullDiagnostics(fixture.uri));
 }
 
-async function assertNoNewErrors(
-  fixture: OpenFixture,
-  baseline: readonly string[],
-): Promise<void> {
+async function assertNoNewErrors(fixture: OpenFixture, baseline: readonly string[]): Promise<void> {
   const current = errorSignatures(await pullDiagnostics(fixture.uri));
   const newErrors = current.filter((signature) => !baseline.includes(signature));
   assert.deepStrictEqual(newErrors, [], 'the refactor must not introduce diagnostics errors');
@@ -344,11 +355,19 @@ async function assertOutsideActionRange(
   assert.ok(!actions.some((action) => action.title === actionCase.title));
 }
 
+function discoveryRange(
+  document: vscode.TextDocument,
+  actionCase: ActionLifecycleCase,
+): vscode.Range {
+  const range = rangeOf(document, actionCase.snippet, actionCase.focus);
+  return actionCase.caretOnly ? new vscode.Range(range.start, range.start) : range;
+}
+
 async function discoverAction(
   fixture: OpenFixture,
   actionCase: ActionLifecycleCase,
 ): Promise<{ readonly range: vscode.Range; readonly raw: RawCodeAction[] }> {
-  const range = rangeOf(fixture.document, actionCase.snippet, actionCase.focus);
+  const range = discoveryRange(fixture.document, actionCase);
   const actions = await waitForCodeActions({
     uri: fixture.uri,
     range,
@@ -402,10 +421,14 @@ async function applyAction(
 async function assertActionRequery(
   fixture: OpenFixture,
   actionCase: ActionLifecycleCase,
-  originalRange: vscode.Range, before: readonly RawCodeAction[],
+  originalRange: vscode.Range,
+  before: readonly RawCodeAction[],
 ): Promise<readonly RawCodeAction[]> {
   const range = rangeAfterAction(
-    fixture, originalRange, actionCase.postApplySnippet, actionCase.postApplyFocus,
+    fixture,
+    originalRange,
+    actionCase.postApplySnippet,
+    actionCase.postApplyFocus,
   );
   const after = await rawCodeActions(fixture.uri, range);
   assertRawActionData(after, fixture.uri);
@@ -470,7 +493,9 @@ async function restoreCommitted(fixture: OpenFixture, committedText: string): Pr
 }
 
 export async function exerciseCodeAction(
-  fixture: OpenFixture, committedText: string, actionCase: ActionLifecycleCase,
+  fixture: OpenFixture,
+  committedText: string,
+  actionCase: ActionLifecycleCase,
 ): Promise<void> {
   const baseline = await prepareSource(fixture, actionCase);
   const discovered = await discoverAction(fixture, actionCase);

@@ -257,7 +257,8 @@ function errorDiagnosticKeys(uri: vscode.Uri): string[] {
     .getDiagnostics(uri)
     .filter((item) => item.severity === vscode.DiagnosticSeverity.Error)
     .map((item) => {
-      const code = typeof item.code === 'object' && item.code !== null ? item.code.value : item.code;
+      const code =
+        typeof item.code === 'object' && item.code !== null ? item.code.value : item.code;
       return JSON.stringify([
         item.source ?? '',
         String(code ?? ''),

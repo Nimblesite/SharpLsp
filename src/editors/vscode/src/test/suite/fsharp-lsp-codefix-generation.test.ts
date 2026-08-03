@@ -34,7 +34,7 @@ import {
   uniqueAction,
 } from './fsharp-refactor-test-kit';
 import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
-import { closeAllEditors } from './test-helpers';
+import { closeAllEditors, comparableText } from './test-helpers';
 
 // Union, record, and interface generators through shipped FCS. [ANALYZERS-FSAC-PARITY]
 const TARGET_FILE = 'fsharp/DiagnosticsTarget.fs';
@@ -109,7 +109,8 @@ function matchBangSpec(): GenerationSpec {
     target: 'match! pending with',
     title: 'Generate 1 missing union case(s)',
     diagnostic: 'FS0025',
-    editText: '    | Second -> failwith "todo"\n',
+    // `match!` arms sit in a value-producing CE, so the stub must `return`.
+    editText: '    | Second -> return failwith "todo"\n',
     expectedFragments: ['| Second ->'],
     preservedFragments: ['| First ->'],
     absentFragments: ['| Second _ ->'],
@@ -205,12 +206,14 @@ function interfaceGenerationSpec(
   preservedFragments: readonly string[] = [],
 ): GenerationSpec {
   return {
-    name, source,
+    name,
+    source,
     target: 'IShape',
     occurrence: 1,
     title: 'Implement interface',
     diagnostic: 'FS0366',
-    editPosition, editPrefix,
+    editPosition,
+    editPrefix,
     expectedFragments: ['member _.Area', 'Not implemented yet'],
     preservedFragments,
     absentFragments: ['member _.Name = failwith'],
@@ -301,7 +304,7 @@ function recordStub(): string {
   return (
     '; Text = ""; Number = 0; Number32 = 0; Number64 = 0; Float = 0; ' +
     'Double = 0; Money = 0; Flag = false; Maybe = None; Items = []; ' +
-    'Values = [||]; Other = Unchecked.defaultof<Guid>'
+    'Values = [||]; Other = Unchecked.defaultof<System.Guid>'
   );
 }
 
@@ -318,7 +321,7 @@ function recordFragments(): readonly string[] {
     'Maybe = None',
     'Items = []',
     'Values = [||]',
-    'Other = Unchecked.defaultof<Guid>',
+    'Other = Unchecked.defaultof<System.Guid>',
   ];
 }
 
@@ -382,8 +385,17 @@ function inspectGenerationEdit(
   assert.ok(edit.range.isEmpty);
   if (spec.editText !== undefined) assertInsertion(edit, spec.editText);
   if (spec.editPosition !== undefined) assertEditPosition(edit.range, spec.editPosition);
-  if (spec.editPrefix !== undefined) assert.ok(edit.newText.startsWith(spec.editPrefix));
-  for (const fragment of spec.expectedFragments) assert.ok(edit.newText.includes(fragment));
+  if (spec.editPrefix !== undefined)
+    // The stub adopts the document's own line endings, so compare EOL-insensitively.
+    assert.ok(
+      comparableText(edit.newText).startsWith(comparableText(spec.editPrefix)),
+      `generated text must start with ${JSON.stringify(spec.editPrefix)}; got ${JSON.stringify(edit.newText)}`,
+    );
+  for (const fragment of spec.expectedFragments)
+    assert.ok(
+      edit.newText.includes(fragment),
+      `generated text must contain ${JSON.stringify(fragment)}; got ${JSON.stringify(edit.newText)}`,
+    );
   for (const fragment of spec.preservedFragments ?? []) assert.ok(!edit.newText.includes(fragment));
   for (const fragment of spec.absentFragments) assert.ok(!edit.newText.includes(fragment));
 }
@@ -420,8 +432,10 @@ async function applyGeneration(
 
 async function assertAllErrorsGone(uri: vscode.Uri, diagnostic: string): Promise<void> {
   const diagnostics = await diagnosticGone(uri, diagnostic);
-  assert.ok(
-    diagnostics.every((item) => item.severity !== vscode.DiagnosticSeverity.Error),
+  const errors = diagnostics.filter((item) => item.severity === vscode.DiagnosticSeverity.Error);
+  assert.deepStrictEqual(
+    errors.map((item) => `${item.range.start.line}:${diagnosticCode(item)} ${item.message}`),
+    [],
     'generation must leave the real F# document free of compiler errors',
   );
 }

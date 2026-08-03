@@ -3,25 +3,20 @@ import * as vscode from 'vscode';
 import {
   applyWorkspaceEdit,
   openFixtureDocument,
+  preparedRenameAt,
   replaceDocumentText,
-  sendRealLspRequest,
   waitForCodeActions,
   waitForMatchingDiagnostics,
   waitForResolvedCodeActions,
   type OpenFixture,
+  type PrepareRenameResult,
   type WorkspaceEditSnapshot,
 } from './refactor-test-helpers';
 import { pollUntilResult } from './test-helpers';
 
 // Assertion helpers shared by the real-LSP F# suites. [ANALYZERS-FSAC-PARITY]
 
-export interface PrepareRenameResult {
-  readonly range: {
-    readonly start: { readonly line: number; readonly character: number };
-    readonly end: { readonly line: number; readonly character: number };
-  };
-  readonly placeholder: string;
-}
+export type { PrepareRenameResult } from './refactor-test-helpers';
 
 export const FSHARP_REFACTOR_TIMEOUT_MS = 120_000;
 
@@ -110,6 +105,45 @@ export function tokenRange(
   return new vscode.Range(start, document.positionAt(index + needle.length));
 }
 
+function candidateRanges(document: vscode.TextDocument, needle: string): vscode.Range[] {
+  const text = document.getText();
+  const ranges: vscode.Range[] = [];
+  let index = text.indexOf(needle);
+  while (index >= 0) {
+    ranges.push(
+      new vscode.Range(document.positionAt(index), document.positionAt(index + needle.length)),
+    );
+    index = text.indexOf(needle, index + 1);
+  }
+  return ranges;
+}
+
+function sameRange(left: vscode.Range, right: PrepareRenameResult['range']): boolean {
+  return (
+    left.start.line === right.start.line &&
+    left.start.character === right.start.character &&
+    left.end.line === right.end.line &&
+    left.end.character === right.end.character
+  );
+}
+
+export async function semanticTokenRange(
+  uri: vscode.Uri,
+  document: vscode.TextDocument,
+  needle: string,
+  occurrence = 0,
+): Promise<vscode.Range> {
+  const matches: vscode.Range[] = [];
+  for (const candidate of candidateRanges(document, needle)) {
+    const prepare = await requestPrepareRename(uri, candidate.start);
+    if (prepare?.placeholder === needle && sameRange(candidate, prepare.range))
+      matches.push(candidate);
+  }
+  const match = matches[occurrence];
+  assert.ok(match, `missing semantic occurrence ${occurrence} of ${needle}`);
+  return match;
+}
+
 export function uniqueAction(
   actions: readonly vscode.CodeAction[],
   title: string,
@@ -183,10 +217,7 @@ export async function requestPrepareRename(
   uri: vscode.Uri,
   position: vscode.Position,
 ): Promise<PrepareRenameResult | null> {
-  return sendRealLspRequest<PrepareRenameResult | null>('textDocument/prepareRename', {
-    textDocument: { uri: uri.toString() },
-    position: { line: position.line, character: position.character },
-  });
+  return preparedRenameAt(uri, position);
 }
 
 export function editCount(edit: vscode.WorkspaceEdit): number {

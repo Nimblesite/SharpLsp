@@ -58,15 +58,26 @@ let private existingCaseNames (clauses: SynMatchClause list) : Set<string> =
         | _ -> None)
     |> Set.ofList
 
+/// True when the existing arms `return` their result, as they must inside a
+/// value-producing computation expression (`match!` in a `task { }`). A bare
+/// expression there is a unit statement, so the stub has to `return` too or the
+/// arms disagree on type (FS0193).
+let private clausesReturn (clauses: SynMatchClause list) : bool =
+    clauses
+    |> List.exists (fun (SynMatchClause(resultExpr = body)) ->
+        match body with
+        | SynExpr.YieldOrReturn _ -> true
+        | _ -> false)
+
 /// Format a single union case as a match arm stub.
-let private formatCaseStub (case: FSharpUnionCase) : string =
+let private formatCaseStub (body: string) (case: FSharpUnionCase) : string =
     if case.Fields.Count = 0 then
-        $"| {case.Name} -> failwith \"todo\""
+        $"| {case.Name} -> {body}"
     elif case.Fields.Count = 1 then
-        $"| {case.Name} _ -> failwith \"todo\""
+        $"| {case.Name} _ -> {body}"
     else
         let args = case.Fields |> Seq.map (fun _ -> "_") |> String.concat ", "
-        $"| {case.Name}({args}) -> failwith \"todo\""
+        $"| {case.Name}({args}) -> {body}"
 
 /// Try to resolve the DU type from the match expression's subject.
 let private resolveMatchType
@@ -130,9 +141,12 @@ let tryGenerateUnionStubs
                             if pipeIdx >= 0 then String.replicate pipeIdx " "
                             else "    "
                         else "    "
+                    let caseBody =
+                        if clausesReturn clauses then "return failwith \"todo\""
+                        else "failwith \"todo\""
                     let stubText =
                         missing
-                        |> List.map (fun c -> $"{indent}{formatCaseStub c}")
+                        |> List.map (fun c -> $"{indent}{formatCaseStub caseBody c}")
                         |> String.concat "\n"
                     Some
                         { Title = $"Generate {missing.Length} missing union case(s)"
@@ -161,7 +175,10 @@ let private findRecordExpr
             { new SyntaxVisitorBase<SynExprRecordField list * Range>() with
                 member _.VisitExpr(_path, _traverse, defaultTraverse, expr) =
                     match expr with
-                    | SynExpr.Record(recordFields = fields; range = range)
+                    // copyInfo = None excludes `{ record with Field = x }`: a
+                    // copy-and-update expression inherits every other field, so
+                    // it is never missing any and must offer no generation.
+                    | SynExpr.Record(copyInfo = None; recordFields = fields; range = range)
                         when Range.rangeContainsPos range pos ->
                         Some(fields, range)
                     | _ -> defaultTraverse expr }
@@ -192,7 +209,10 @@ let private defaultValue (ty: FSharpType) : string =
     | _ when name.StartsWith("option") -> "None"
     | _ when name.StartsWith("list") -> "[]"
     | _ when name.StartsWith("array") -> "[||]"
-    | _ -> $"Unchecked.defaultof<{name}>"
+    // Every primitive is matched above by short name, so the fallback can use the
+    // fully-qualified form: a bare `Guid` only compiles when the target file
+    // happens to `open System`, which generated code must never assume.
+    | _ -> $"Unchecked.defaultof<{ty.Format(FSharpDisplayContext.Empty)}>"
 
 /// Resolve record entity from symbol uses at the record expression.
 let private resolveRecordType
@@ -400,14 +420,30 @@ let private formatInterfaceStub
     (displayContext: FSharpDisplayContext)
     implemented
     (entity: FSharpEntity) =
+    // verboseMode: emit fully typed member signatures so generic interfaces keep
+    // their substituted type arguments instead of collapsing to bare `arg1`.
     InterfaceStubGenerator.FormatInterface
         insertion.StartColumn 4 interfaceData.TypeParameters "_"
         "failwith \"Not implemented yet\""
-        displayContext implemented entity false
+        displayContext implemented entity true
+
+/// Drop trailing spaces/tabs from one line while keeping its CR, so generated
+/// stubs never carry trailing whitespace into the user's file.
+let private trimLineEnd (segment: string) =
+    if segment.EndsWith "\r" then
+        segment.Substring(0, segment.Length - 1).TrimEnd([| ' '; '\t' |]) + "\r"
+    else
+        segment.TrimEnd([| ' '; '\t' |])
+
+/// InterfaceStubGenerator indents before breaking the line, which leaves
+/// trailing whitespace the repository's own `git diff --check` gate rejects.
+let private trimTrailingWhitespace (text: string) =
+    text.Split('\n') |> Array.map trimLineEnd |> String.concat "\n"
 
 let private generatedInterfaceAction filePath (insertion: InterfaceInsertion) stub =
     if System.String.IsNullOrWhiteSpace stub then None
     else
+        let stub = trimTrailingWhitespace stub
         let insertAt = insertion.InsertAt
         let prefix = if insertion.InsertWith then " with" else ""
         Some

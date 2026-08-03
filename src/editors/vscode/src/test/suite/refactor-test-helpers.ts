@@ -33,6 +33,28 @@ export interface OpenFixture {
   readonly uri: vscode.Uri;
 }
 
+export interface LspPosition {
+  readonly line: number;
+  readonly character: number;
+}
+
+export interface LspRange {
+  readonly start: LspPosition;
+  readonly end: LspPosition;
+}
+
+/** Wire shape returned by textDocument/prepareRename. */
+export interface PrepareRenameResult {
+  readonly range: LspRange;
+  readonly placeholder: string;
+}
+
+/** Shape VS Code's own `vscode.prepareRename` command resolves to. */
+export interface UiPrepareRename {
+  readonly range: vscode.Range;
+  readonly placeholder: string;
+}
+
 export interface WorkspaceEditSnapshot {
   readonly uri: vscode.Uri;
   readonly document?: vscode.TextDocument;
@@ -68,6 +90,70 @@ export async function sendRealLspRequest<T>(method: string, params: unknown): Pr
   return client.sendRequest<T>(method, params);
 }
 
+/** Drive VS Code's real F2 prepare-rename command; undefined when the editor refuses. */
+export async function uiPrepareRename(
+  uri: vscode.Uri,
+  position: vscode.Position,
+): Promise<UiPrepareRename | undefined> {
+  try {
+    return await vscode.commands.executeCommand<UiPrepareRename | undefined>(
+      'vscode.prepareRename',
+      uri,
+      position,
+    );
+  } catch (error: unknown) {
+    assert.ok(String(error).length > 0, 'a refused rename must carry an explanatory error');
+    return undefined;
+  }
+}
+
+/**
+ * Ask the real server for prepareRename and prove VS Code's own F2 UI command agrees.
+ * Both language kits share this so the protocol and the editor can never drift apart.
+ */
+export async function preparedRenameAt(
+  uri: vscode.Uri,
+  position: vscode.Position,
+): Promise<PrepareRenameResult | null> {
+  const raw = await sendRealLspRequest<PrepareRenameResult | null>('textDocument/prepareRename', {
+    textDocument: { uri: uri.toString() },
+    position: { line: position.line, character: position.character },
+  });
+  assertUiAgreesWithProtocol(await uiPrepareRename(uri, position), raw, uri);
+  return raw;
+}
+
+function assertUiAgreesWithProtocol(
+  ui: UiPrepareRename | undefined,
+  raw: PrepareRenameResult | null,
+  uri: vscode.Uri,
+): void {
+  const where = uri.fsPath;
+  if (raw === null) {
+    assert.strictEqual(
+      ui,
+      undefined,
+      `VS Code must also refuse F2 where the server does: ${where}`,
+    );
+    return;
+  }
+  assert.ok(ui, `VS Code F2 must allow the rename the server allows: ${where}`);
+  assert.strictEqual(
+    ui.placeholder,
+    raw.placeholder,
+    `F2 placeholder must match protocol: ${where}`,
+  );
+  assert.deepStrictEqual(
+    { start: lspPosition(ui.range.start), end: lspPosition(ui.range.end) },
+    raw.range,
+    `F2 rename range must match protocol: ${where}`,
+  );
+}
+
+function lspPosition(position: vscode.Position): LspPosition {
+  return { line: position.line, character: position.character };
+}
+
 /** Poll the real VS Code code-action provider without resolving returned actions. */
 export async function waitForCodeActions(query: CodeActionQuery): Promise<vscode.CodeAction[]> {
   return waitForActions(query, undefined);
@@ -90,8 +176,17 @@ async function waitForActions(
     query.timeoutMs ?? LSP_RESPONSE_TIMEOUT_MS,
     POLL_INTERVAL_MS,
   );
-  assert.ok(query.predicate(actions), `code actions never became ready for ${query.uri.fsPath}`);
+  assert.ok(
+    query.predicate(actions),
+    `code actions never became ready for ${query.uri.fsPath}; offered: ${describeActions(actions)}`,
+  );
   return actions;
+}
+
+/** Name every action the server really offered, so a miss says what it got instead. */
+function describeActions(actions: readonly vscode.CodeAction[]): string {
+  if (actions.length === 0) return '(none)';
+  return actions.map((action) => `${action.kind?.value ?? 'nokind'}::${action.title}`).join(' | ');
 }
 
 async function requestCodeActions(

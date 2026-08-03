@@ -5,9 +5,13 @@ import { positionOf, rangeOf } from './csharp-refactor-test-kit';
 import {
   applyWorkspaceEdit,
   openFixtureDocument,
+  preparedRenameAt,
   revertDocument,
   sendRealLspRequest,
+  type LspPosition,
+  type LspRange,
   type OpenFixture,
+  type PrepareRenameResult,
   type WorkspaceEditSnapshot,
 } from './refactor-test-helpers';
 import { LSP_RESPONSE_TIMEOUT_MS, pollUntilResult } from './test-helpers';
@@ -34,20 +38,7 @@ export interface RenameCase {
   readonly after?: Readonly<Partial<Record<RenameFixtureKey, readonly string[]>>>;
 }
 
-export interface LspPosition {
-  readonly line: number;
-  readonly character: number;
-}
-
-export interface LspRange {
-  readonly start: LspPosition;
-  readonly end: LspPosition;
-}
-
-export interface PrepareRenameResult {
-  readonly range: LspRange;
-  readonly placeholder: string;
-}
+export type { LspPosition, LspRange, PrepareRenameResult } from './refactor-test-helpers';
 
 export interface RawRenameDocumentEdit {
   readonly textDocument: { readonly uri: string; readonly version: number | null };
@@ -90,10 +81,7 @@ export async function prepareAt(
   uri: vscode.Uri,
   position: vscode.Position,
 ): Promise<PrepareRenameResult | null> {
-  return sendRealLspRequest<PrepareRenameResult | null>('textDocument/prepareRename', {
-    textDocument: { uri: uri.toString() },
-    position: lspPosition(position),
-  });
+  return preparedRenameAt(uri, position);
 }
 
 export async function waitForPrepare(

@@ -15,7 +15,7 @@ import {
   openOverlay,
   requestPrepareRename,
   requestRename,
-  tokenRange,
+  semanticTokenRange,
   undoAction,
 } from './fsharp-refactor-test-kit';
 import {
@@ -53,7 +53,7 @@ suite('F# real LSP — rename every symbol category', () => {
 async function runRename(scenario: RenameScenario): Promise<void> {
   const fixture = await openRenameFixture();
   try {
-    const range = scenarioRange(fixture.declarations.document, scenario);
+    const range = await scenarioRange(fixture.declarations, scenario);
     const position = interiorPosition(range);
     await assertPrepare(fixture.declarations.uri, range, position, scenario.target);
     const edit = await requestRename(
@@ -84,8 +84,16 @@ function interiorPosition(range: vscode.Range): vscode.Position {
   return range.start.translate(0, Math.min(1, Math.max(0, width - 1)));
 }
 
-function scenarioRange(document: vscode.TextDocument, scenario: RenameScenario): vscode.Range {
-  return tokenRange(document, scenario.target, scenario.targetOccurrence ?? 0);
+async function scenarioRange(
+  fixture: Awaited<ReturnType<typeof openOverlay>>,
+  scenario: RenameScenario,
+): Promise<vscode.Range> {
+  return semanticTokenRange(
+    fixture.uri,
+    fixture.document,
+    scenario.target,
+    scenario.targetOccurrence ?? 0,
+  );
 }
 
 async function assertPrepare(
@@ -144,7 +152,9 @@ async function applyAndVerify(
 ): Promise<void> {
   const declarationVersion = fixture.declarations.document.version;
   const usageVersion = fixture.usages.document.version;
-  const expected = new Map(before.map((snapshot) => [snapshot.uri.toString(), editedText(snapshot)]));
+  const expected = new Map(
+    before.map((snapshot) => [snapshot.uri.toString(), editedText(snapshot)]),
+  );
   const snapshots = await applyWorkspaceEdit(edit);
   assert.strictEqual(snapshots.length, scenario.crossFile ? 2 : 1);
   assert.ok(fixture.declarations.document.version > declarationVersion);
@@ -194,7 +204,10 @@ function assertOccurrenceDeltas(
   const afterCode = sourceWithoutSentinels(after);
   for (const needle of [scenario.newName, scenario.target]) {
     const expected = snapshot.edits.length * occurrenceDelta(scenario, needle);
-    assert.strictEqual(countOccurrences(afterCode, needle) - countOccurrences(beforeCode, needle), expected);
+    assert.strictEqual(
+      countOccurrences(afterCode, needle) - countOccurrences(beforeCode, needle),
+      expected,
+    );
   }
 }
 
@@ -206,7 +219,11 @@ async function assertRenamedPrepare(
   fixture: RenameFixture,
   scenario: RenameScenario,
 ): Promise<void> {
-  const newRange = tokenRange(fixture.declarations.document, scenario.newName);
+  const newRange = await semanticTokenRange(
+    fixture.declarations.uri,
+    fixture.declarations.document,
+    scenario.newName,
+  );
   await assertPrepare(
     fixture.declarations.uri,
     newRange,
@@ -261,7 +278,7 @@ async function undoAndRequery(fixture: RenameFixture, scenario: RenameScenario):
   await undoAction(fixture.declarations.document, RENAME_DECLARATIONS_SOURCE);
   assert.strictEqual(fixture.usages.document.getText(), RENAME_USAGES_SOURCE);
   assert.ok(fixture.usages.document.isDirty);
-  const range = scenarioRange(fixture.declarations.document, scenario);
+  const range = await scenarioRange(fixture.declarations, scenario);
   const position = interiorPosition(range);
   await assertPrepare(fixture.declarations.uri, range, position, scenario.target);
   const replay = await requestRename(

@@ -984,7 +984,7 @@ pub fn handle_rename(
     let result = if result.document_changes.is_empty() {
         result
     } else {
-        add_foreign_rename(runtime, sidecar, fallback, &request, result)?
+        add_foreign_rename(runtime, sidecar, fallback, &request, result)
     };
     workspace_edit_value(result)
 }
@@ -1000,21 +1000,58 @@ fn sidecar_rename_request(params: RenameParams) -> Result<SidecarRenameRequest> 
 }
 
 /// Append edits produced by the sidecar that owns the other language.
+///
+/// Enrichment is **best-effort**: the primary sidecar has already produced a
+/// correct rename, so a crashed, restarting or wedged fallback sidecar must never
+/// discard it. Any fault is logged and the primary edits are returned unchanged.
 fn add_foreign_rename(
     runtime: &tokio::runtime::Runtime,
     primary: &Arc<SidecarManager>,
     fallback: Option<&Arc<SidecarManager>>,
     request: &SidecarRenameRequest,
     result: SidecarWorkspaceEditResult,
-) -> Result<SidecarWorkspaceEditResult> {
+) -> SidecarWorkspaceEditResult {
+    match foreign_rename_edits(runtime, primary, fallback, request) {
+        Ok(Some(foreign)) => merge_or_keep(result, foreign),
+        Ok(None) => result,
+        Err(err) => {
+            warn!("Cross-language rename enrichment failed, keeping primary edits: {err:#}");
+            result
+        }
+    }
+}
+
+/// Merge foreign edits in, falling back to the primary edits if the merge conflicts.
+fn merge_or_keep(
+    result: SidecarWorkspaceEditResult,
+    foreign: SidecarWorkspaceEditResult,
+) -> SidecarWorkspaceEditResult {
+    let primary = result.clone();
+    match merge_workspace_edits(result, foreign) {
+        Ok(merged) => merged,
+        Err(err) => {
+            warn!("Cross-language rename merge conflicted, keeping primary edits: {err:#}");
+            primary
+        }
+    }
+}
+
+/// Ask the other-language sidecar for its edits, if it has a workspace that could hold any.
+fn foreign_rename_edits(
+    runtime: &tokio::runtime::Runtime,
+    primary: &Arc<SidecarManager>,
+    fallback: Option<&Arc<SidecarManager>>,
+    request: &SidecarRenameRequest,
+) -> Result<Option<SidecarWorkspaceEditResult>> {
     let Some(fallback) = fallback else {
-        return Ok(result);
+        return Ok(None);
     };
     if !sidecar_workspace_loaded(runtime, fallback)? {
-        return Ok(result);
+        return Ok(None);
     }
-    let foreign = request_foreign_rename(runtime, primary, fallback, request)?;
-    merge_workspace_edits(result, foreign)
+    Ok(Some(request_foreign_rename(
+        runtime, primary, fallback, request,
+    )?))
 }
 
 /// Check whether the other-language sidecar has a project that can contain references.
@@ -1084,11 +1121,19 @@ fn empty_workspace_edit() -> SidecarWorkspaceEditResult {
 /// Convert the merged sidecar result into an LSP workspace edit or `null`.
 fn workspace_edit_value(result: SidecarWorkspaceEditResult) -> Result<serde_json::Value> {
     let result = canonicalize_workspace_edit(result)?;
+    // One unconvertible document path must not sink an otherwise valid rename —
+    // skip it and keep every edit we can represent.
     let edits: Vec<_> = result
         .document_changes
         .into_iter()
-        .map(lsp_document_edit)
-        .collect::<Result<_>>()?;
+        .filter_map(|change| match lsp_document_edit(change) {
+            Ok(edit) => Some(edit),
+            Err(err) => {
+                warn!("Skipping rename edit for an unconvertible document path: {err:#}");
+                None
+            }
+        })
+        .collect();
     if edits.is_empty() {
         return Ok(serde_json::Value::Null);
     }
@@ -1334,7 +1379,7 @@ struct SidecarPrepareRenameResult {
 }
 
 /// A single text replacement from the sidecar.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 struct SidecarTextEditResult {
     /// Start line of the range to replace.
     start_line: u32,
@@ -1349,7 +1394,7 @@ struct SidecarTextEditResult {
 }
 
 /// Edits to a single document from the sidecar.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 struct SidecarDocumentEditResult {
     /// Absolute path to the file.
     file_path: String,
@@ -1358,7 +1403,7 @@ struct SidecarDocumentEditResult {
 }
 
 /// A workspace-wide set of edits from the sidecar rename operation.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 struct SidecarWorkspaceEditResult {
     /// Per-document edits.
     document_changes: Vec<SidecarDocumentEditResult>,
@@ -1387,6 +1432,35 @@ mod rename_merge_tests {
         assert_overlap_conflicts()?;
         assert_insertion_conflict();
         assert_invalid_and_adjacent_ranges()
+    }
+
+    /// A document whose path cannot be turned into a URI must not sink the whole
+    /// rename — the remaining documents still have to reach the editor.
+    #[test]
+    fn unconvertible_document_path_is_skipped_not_fatal() -> Result<()> {
+        let absolute = if cfg!(windows) {
+            r"C:\repo\Good.cs"
+        } else {
+            "/repo/Good.cs"
+        };
+        let result = SidecarWorkspaceEditResult {
+            document_changes: vec![
+                document_edit("relative/Bad.cs", vec![rename_edit(0, 0, 3, "New")]),
+                document_edit(absolute, vec![rename_edit(1, 0, 3, "New")]),
+            ],
+        };
+
+        let rendered = workspace_edit_value(result)?.to_string();
+
+        assert!(
+            rendered.contains("Good.cs"),
+            "the convertible document must survive: {rendered}"
+        );
+        assert!(
+            !rendered.contains("Bad.cs"),
+            "the unconvertible document must be skipped: {rendered}"
+        );
+        Ok(())
     }
 
     fn assert_overlap_conflicts() -> Result<()> {

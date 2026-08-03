@@ -24,6 +24,7 @@ import {
   teardownLspTestSuite,
   waitForDocumentSymbols,
 } from './test-helpers';
+import { installUiStubs } from './ui-stubs';
 
 // ── Shared interfaces ─────────────────────────────────────────────
 
@@ -1896,11 +1897,15 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
     assert.ok(resp, 'unused must resolve — the Roslyn GetUsedAssemblyReferences pipeline ran');
     assert.strictEqual(resp.projectPath, projectPath, 'projectPath is echoed back exactly');
     assert.ok(Array.isArray(resp.unused), 'unused is an array');
-    // TestFixtures declares no <PackageReference Include=...> → nothing to flag.
-    assert.strictEqual(
-      resp.unused.length,
-      0,
-      'a project with no direct refs has no unused packages',
+    // TestFixtures declares exactly one direct <PackageReference> — Serilog — and
+    // no source compiled into the project references it, so detection must flag
+    // precisely that package. Asserting the identity (not just a count) is what
+    // proves GetUsedAssemblyReferences actually ran: an empty result would also
+    // be produced by a pipeline that silently returned nothing.
+    assert.deepEqual(
+      resp.unused.map((pkg) => ({ id: pkg.id, version: pkg.version })),
+      [{ id: 'Serilog', version: '4.4.0' }],
+      'the declared-but-unreferenced package is flagged, with its declared version',
     );
     for (const pkg of resp.unused) {
       assert.strictEqual(typeof pkg.id, 'string', 'each unused id is a string');
@@ -1925,16 +1930,43 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
     const lsp = getPkgLspClient();
     const projectPath = fixtureProjectPath();
     const projectNode = { contextValue: 'project', projectFilePath: projectPath, children: [] };
+    const before = fs.readFileSync(projectPath, 'utf8');
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.removeUnusedPackages', projectNode);
-    }, 'the command must complete against the real LSP');
+    // The fixture has a genuinely unused package, so the command reaches its
+    // modal confirmation. Dismiss it (the stub cancels by default) and assert the
+    // destructive path stayed shut — a checked-in fixture must survive the run.
+    const ui = installUiStubs();
+    try {
+      await assert.doesNotReject(async () => {
+        await vscode.commands.executeCommand('sharplsp.removeUnusedPackages', projectNode);
+      }, 'the command must complete against the real LSP');
+
+      assert.strictEqual(ui.log.warningMessages.length, 1, 'exactly one confirmation was shown');
+      const prompt = ui.log.warningMessages[0] ?? '';
+      assert.ok(
+        prompt.includes('Remove 1 unused package'),
+        `the prompt states the removal count, got: ${prompt}`,
+      );
+      assert.ok(prompt.includes('Serilog'), 'the prompt names the package it would remove');
+      assert.ok(prompt.includes('TestFixtures.csproj'), 'the prompt names the owning project');
+    } finally {
+      ui.restore();
+    }
+
+    assert.strictEqual(
+      fs.readFileSync(projectPath, 'utf8'),
+      before,
+      'cancelling the confirmation must leave the project file byte-identical',
+    );
 
     // The detection truth the command relied on, asserted directly over the LSP.
     const resp = await lsp.sendRequest<UnusedResp>('sharplsp/nuget/unused', { projectPath });
     assert.strictEqual(resp.projectPath, projectPath, 'projectPath echoed');
-    assert.ok(Array.isArray(resp.unused), 'unused is an array');
-    assert.strictEqual(resp.unused.length, 0, 'fixture project has nothing to remove');
+    assert.deepEqual(
+      resp.unused.map((pkg) => pkg.id),
+      ['Serilog'],
+      'the package the command offered to remove is still declared after cancelling',
+    );
   });
 
   test('consolidatePackages command runs end-to-end through the real LSP', async function () {

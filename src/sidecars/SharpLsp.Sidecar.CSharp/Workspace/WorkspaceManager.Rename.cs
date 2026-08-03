@@ -205,11 +205,35 @@ internal sealed partial class WorkspaceManager
 
     private static bool HasDeclarationConflict(ISymbol symbol, string valueText)
     {
+        if (CanShadowContainingTypeMembers(symbol))
+        {
+            return false;
+        }
+
         var target = RenameConflictTarget(symbol);
         return target.ContainingType is { } type
                 ? HasDifferentSymbol(type.GetMembers(valueText), target)
             : target is INamedTypeSymbol named ? HasNamedTypeConflict(named, valueText)
             : target is INamespaceSymbol ns && HasNamespaceConflict(ns, valueText);
+    }
+
+    /// <summary>
+    /// Locals, parameters, type parameters and range variables legally shadow a
+    /// same-named member of the enclosing type, so a member collision is not a
+    /// redeclaration conflict for them. <see cref="ISymbol.ContainingType"/> is
+    /// non-null for all of these (it is the type owning the enclosing method), so
+    /// without this guard the member scan below would reject a legal rename and
+    /// return an empty edit — which the host maps to LSP <c>null</c>, making the
+    /// rename silently do nothing. Their real scope conflicts are detected by
+    /// Roslyn's <c>Renamer</c>, which is what resolves them.
+    /// </summary>
+    private static bool CanShadowContainingTypeMembers(ISymbol symbol)
+    {
+        return symbol.Kind
+            is SymbolKind.Local
+                or SymbolKind.Parameter
+                or SymbolKind.TypeParameter
+                or SymbolKind.RangeVariable;
     }
 
     private static ISymbol RenameConflictTarget(ISymbol symbol)

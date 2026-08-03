@@ -23,7 +23,7 @@ import {
 
 const FILE = 'RefactorCore.cs';
 const TEST_TIMEOUT_MS = 180_000;
-const TITLE = 'Organize Usings';
+const TITLE = 'Sort Usings';
 const SOURCE = 'using System.Text;\nusing System;\nnamespace SharpLsp.TestFixtures.Refactors;\n';
 
 suite('C# real LSP - organize imports', () => {

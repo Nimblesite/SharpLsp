@@ -123,7 +123,9 @@ export const RENAME_SCENARIOS: readonly RenameScenario[] = [
   rename(['record field', 'Field', 'Amount', 4, true]),
   rename(['union case', 'CaseOne', 'PrimaryCase', 3, true]),
   rename(['enum case', 'Ready', 'Available', 2, true]),
-  { ...rename(['type alias', 'Alias', 'RecordAlias', 2, true]), targetOccurrence: 2 },
+  // Occurrences are counted over renameable tokens, so the substrings inside
+  // `ModuleAlias` and the sentinel comment do not shift this index.
+  rename(['type alias', 'Alias', 'RecordAlias', 2, true]),
   rename(['class', 'ClassThing', 'RenamedClass', 2, true]),
   rename(['struct type', 'StructThing', 'RenamedStruct', 2, true]),
   rename(['object-model type', 'ObjectModelThing', 'RenamedObject', 2, true]),

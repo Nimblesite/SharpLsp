@@ -42,13 +42,20 @@ function pruneOwnedProcesses(samples: readonly ProcessSample[]): void {
   const live = new Map(samples.map((sample) => [sample.pid, sample]));
   for (const [pid, identity] of ownedProcessIdentities) {
     const sample = live.get(pid);
-    if (sample === undefined || !isSharpLspProcess(sample) || processIdentity(sample) !== identity) {
+    if (
+      sample === undefined ||
+      !isSharpLspProcess(sample) ||
+      processIdentity(sample) !== identity
+    ) {
       ownedProcessIdentities.delete(pid);
     }
   }
 }
 
-function rememberOwnedProcesses(samples: readonly ProcessSample[], descendants: ReadonlySet<number>): void {
+function rememberOwnedProcesses(
+  samples: readonly ProcessSample[],
+  descendants: ReadonlySet<number>,
+): void {
   for (const sample of samples) {
     if (descendants.has(sample.pid) && isSharpLspProcess(sample)) {
       ownedProcessIdentities.set(sample.pid, processIdentity(sample));
@@ -105,7 +112,8 @@ function parsePosixSample(line: string): ProcessSample | undefined {
     rssKb === undefined ||
     time === undefined ||
     args === undefined
-  ) return undefined;
+  )
+    return undefined;
   return {
     pid: Number(pid),
     parentPid: Number(parentPid),

@@ -1,4 +1,17 @@
 //! Formatting handlers (`textDocument/formatting`, `rangeFormatting`, `onTypeFormatting`).
+//!
+//! Sequestered: this module only compiles under `--features formatting`, which is
+//! off by default and never enabled by CI or any shipped build. `main.rs` advertises
+//! no formatting capabilities and never routes to these handlers, so every item here
+//! is unreachable by construction. `CSharpier` (C#) and Fantomas via Ionide (F#) are the
+//! recommended formatters — see `docs/formatting/README.md`.
+
+// Justification for the allow (CLAUDE.md requires one): the module is dead *by design*,
+// kept compiling behind a feature flag so it stays refactor-safe until formatting is
+// revived. Without this, `cargo clippy --all-features` fails on items that are
+// deliberately never called. Delete this attribute the moment `main.rs` wires the
+// handlers up.
+#![allow(dead_code)]
 
 use std::sync::Arc;
 
@@ -106,23 +119,35 @@ pub fn handle_on_type_formatting(
 
 // ── Wire types ────────────────────────────────────────────────────
 
+/// Whole-document formatting request sent to the sidecar.
 #[derive(serde::Serialize)]
 struct SidecarFileReq {
+    /// Absolute path of the document to format.
     file_path: String,
 }
 
+/// Range formatting request sent to the sidecar.
 #[derive(serde::Serialize)]
 struct SidecarRangeReq {
+    /// Absolute path of the document to format.
     file_path: String,
+    /// Zero-based line of the range start.
     start_line: u32,
+    /// Zero-based UTF-16 column of the range start.
     start_character: u32,
+    /// Zero-based line of the range end.
     end_line: u32,
+    /// Zero-based UTF-16 column of the range end.
     end_character: u32,
 }
 
+/// On-type formatting request sent to the sidecar.
 #[derive(serde::Serialize)]
 struct SidecarPositionReq {
+    /// Absolute path of the document to format.
     file_path: String,
+    /// Zero-based line of the trigger position.
     line: u32,
+    /// Zero-based UTF-16 column of the trigger position.
     character: u32,
 }

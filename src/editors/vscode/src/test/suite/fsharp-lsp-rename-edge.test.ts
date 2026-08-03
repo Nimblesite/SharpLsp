@@ -165,7 +165,12 @@ async function assertReverseRenameAtBoundaries(
   range: vscode.Range,
   currentName: string,
 ): Promise<void> {
-  const positions = [range.start, range.start.translate(0, 1), range.end.translate(0, -2), range.end.translate(0, -1)];
+  const positions = [
+    range.start,
+    range.start.translate(0, 1),
+    range.end.translate(0, -2),
+    range.end.translate(0, -1),
+  ];
   for (const position of positions) {
     const reverse = await requestRename(uri, position, 'unsavedName', FSHARP_REFACTOR_TIMEOUT_MS);
     await assertUnsavedEdit(reverse, uri, currentName, 'unsavedName');
@@ -256,7 +261,7 @@ async function assertIndexerRejected(): Promise<void> {
     const range = tokenRange(fixture.document, 'Item');
     const prepare = await requestPrepareRename(fixture.uri, range.start.translate(0, 1));
     assert.strictEqual(prepare, null, 'F# indexer call sites use .[i], not the Item token');
-    const result = await executeRenameOnce(fixture.uri, range.start, 'Lookup');
+    const result = await executeRenameWithoutEdit(fixture.uri, range.start, 'Lookup');
     assert.ok(result === undefined || result.size === 0);
     assert.strictEqual(fixture.document.getText(), RENAME_DECLARATIONS_SOURCE);
     assert.ok(fixture.document.isDirty);
@@ -359,7 +364,9 @@ async function executeRenameWithoutEdit(
       newName,
     );
   } catch (error: unknown) {
-    assert.match(String(error), /No result/i);
+    // VS Code resolves the rename location before editing, so a server that
+    // refuses prepareRename surfaces the editor's own refusal, not "No result".
+    assert.match(String(error), /No result|can't be renamed/i);
     return undefined;
   }
 }
@@ -370,12 +377,13 @@ async function assertInvalidRenameError(
   newName: string,
 ): Promise<void> {
   await assert.rejects(
-    vscode.commands.executeCommand<vscode.WorkspaceEdit>(
-      'vscode.executeDocumentRenameProvider',
-      uri,
-      position,
-      newName,
-    ),
+    async () =>
+      vscode.commands.executeCommand<vscode.WorkspaceEdit>(
+        'vscode.executeDocumentRenameProvider',
+        uri,
+        position,
+        newName,
+      ),
     /Invalid F# rename name:/,
   );
 }
