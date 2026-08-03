@@ -19,14 +19,18 @@ internal sealed class MergeDeclarationAssignmentCodeRefactoringProvider : CodeRe
 
     public override async Task ComputeRefactoringsAsync(CodeRefactoringContext context)
     {
-        var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken).ConfigureAwait(false);
+        var root = await context
+            .Document.GetSyntaxRootAsync(context.CancellationToken)
+            .ConfigureAwait(false);
         var candidate = root is null ? null : FindCandidate(root, context.Span.Start);
         if (candidate is null)
         {
             return;
         }
 
-        var model = await context.Document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
+        var model = await context
+            .Document.GetSemanticModelAsync(context.CancellationToken)
+            .ConfigureAwait(false);
         if (model is null || !TargetsDeclaredLocal(model, candidate, context.CancellationToken))
         {
             return;
@@ -70,10 +74,12 @@ internal sealed class MergeDeclarationAssignmentCodeRefactoringProvider : CodeRe
     }
 
     private static Candidate? CreateCandidate(
-        LocalDeclarationStatementSyntax declaration, ExpressionStatementSyntax assignmentStatement
+        LocalDeclarationStatementSyntax declaration,
+        ExpressionStatementSyntax assignmentStatement
     )
     {
-        return IsEligibleDeclaration(declaration)
+        return
+            IsEligibleDeclaration(declaration)
             && !assignmentStatement.ContainsDirectives
             && HasSafeTrivia(declaration, assignmentStatement)
             && assignmentStatement.Expression is AssignmentExpressionSyntax assignment
@@ -173,8 +179,8 @@ internal sealed class MergeDeclarationAssignmentCodeRefactoringProvider : CodeRe
         var declaration = candidate.Declaration.Declaration.WithVariables(
             SyntaxFactory.SingletonSeparatedList(variable)
         );
-        return candidate.Declaration
-            .WithDeclaration(declaration)
+        return candidate
+            .Declaration.WithDeclaration(declaration)
             .WithLeadingTrivia(candidate.Declaration.GetLeadingTrivia())
             .WithTrailingTrivia(MergedTrailingTrivia(candidate))
             .WithAdditionalAnnotations(Formatter.Annotation);
@@ -182,8 +188,8 @@ internal sealed class MergeDeclarationAssignmentCodeRefactoringProvider : CodeRe
 
     private static SyntaxToken AssignmentOperator(Candidate candidate)
     {
-        var leadingTrivia = candidate.Target
-            .GetTrailingTrivia()
+        var leadingTrivia = candidate
+            .Target.GetTrailingTrivia()
             .AddRange(candidate.Assignment.OperatorToken.LeadingTrivia);
         return candidate.Assignment.OperatorToken.WithLeadingTrivia(leadingTrivia);
     }

@@ -24,12 +24,16 @@ internal sealed class CodeActionResolver
         ImmutableArray<CodeRefactoringProvider>
     > CachedRefactoringProviders = new(LoadRefactoringProviders);
 
-    private static readonly Lazy<ImmutableArray<DiagnosticAnalyzer>> CachedDiagnosticAnalyzers = new(
-        () => AnalyzerDiagnosticResolver.DiscoverFixableAnalyzers(CachedFixProviders.Value)
-    );
+    private static readonly Lazy<ImmutableArray<DiagnosticAnalyzer>> CachedDiagnosticAnalyzers =
+        new(() => AnalyzerDiagnosticResolver.DiscoverFixableAnalyzers(CachedFixProviders.Value));
 
-    private static readonly ImmutableHashSet<string> RewriteDiagnosticIds =
-        ImmutableHashSet.Create(StringComparer.Ordinal, "IDE0007", "IDE0008", "IDE0160", "IDE0161");
+    private static readonly ImmutableHashSet<string> RewriteDiagnosticIds = ImmutableHashSet.Create(
+        StringComparer.Ordinal,
+        "IDE0007",
+        "IDE0008",
+        "IDE0160",
+        "IDE0161"
+    );
 
     private readonly ConcurrentDictionary<int, CodeAction> _pendingActions = new();
     private int _nextId;
@@ -127,7 +131,8 @@ internal sealed class CodeActionResolver
         ImmutableArray<Diagnostic> diagnostics
     )
     {
-        return diagnostics.GroupBy(diagnostic => diagnostic.Id)
+        return diagnostics
+            .GroupBy(diagnostic => diagnostic.Id)
             .ToDictionary(group => group.Key, group => group.ToImmutableArray());
     }
 
@@ -180,8 +185,11 @@ internal sealed class CodeActionResolver
     }
 
     private async Task TryRegisterFixAsync(
-        CodeFixProvider provider, Document document, Diagnostic diagnostic,
-        List<CodeActionItem> items, CancellationToken ct
+        CodeFixProvider provider,
+        Document document,
+        Diagnostic diagnostic,
+        List<CodeActionItem> items,
+        CancellationToken ct
     )
     {
         try
@@ -200,8 +208,11 @@ internal sealed class CodeActionResolver
     }
 
     private async Task RegisterFixCoreAsync(
-        CodeFixProvider provider, Document document, Diagnostic diagnostic,
-        List<CodeActionItem> items, CancellationToken ct
+        CodeFixProvider provider,
+        Document document,
+        Diagnostic diagnostic,
+        List<CodeActionItem> items,
+        CancellationToken ct
     )
     {
         var context = CreateFixContext(document, diagnostic, items, ct);
@@ -230,7 +241,8 @@ internal sealed class CodeActionResolver
         CancellationToken ct
     )
     {
-        var action = await HeadlessOverrideCodeAction.TryCreateAsync(document, span, ct)
+        var action = await HeadlessOverrideCodeAction
+            .TryCreateAsync(document, span, ct)
             .ConfigureAwait(false);
         if (action is not null)
         {
@@ -259,13 +271,19 @@ internal sealed class CodeActionResolver
     }
 
     private async Task TryRegisterRefactoringAsync(
-        CodeRefactoringProvider provider, Document document, TextSpan span,
-        List<CodeActionItem> items, CancellationToken ct
+        CodeRefactoringProvider provider,
+        Document document,
+        TextSpan span,
+        List<CodeActionItem> items,
+        CancellationToken ct
     )
     {
         try
         {
-            await provider.ComputeRefactoringsAsync(CreateRefactoringContext(provider, document, span, items, ct))
+            await provider
+                .ComputeRefactoringsAsync(
+                    CreateRefactoringContext(provider, document, span, items, ct)
+                )
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -274,7 +292,11 @@ internal sealed class CodeActionResolver
         }
         catch (Exception ex)
         {
-            Log.Debug(ex, "[CodeAction] Refactoring provider {Provider} failed", provider.GetType().Name);
+            Log.Debug(
+                ex,
+                "[CodeAction] Refactoring provider {Provider} failed",
+                provider.GetType().Name
+            );
         }
     }
 
@@ -329,11 +351,7 @@ internal sealed class CodeActionResolver
         items.Add(CacheAction(action, kind));
     }
 
-    private bool CacheNestedActions(
-        CodeAction action,
-        string kind,
-        List<CodeActionItem> items
-    )
+    private bool CacheNestedActions(CodeAction action, string kind, List<CodeActionItem> items)
     {
         if (action.NestedActions.IsEmpty)
         {
@@ -348,11 +366,7 @@ internal sealed class CodeActionResolver
         return true;
     }
 
-    private static bool IsDuplicate(
-        CodeAction action,
-        string kind,
-        List<CodeActionItem> items
-    )
+    private static bool IsDuplicate(CodeAction action, string kind, List<CodeActionItem> items)
     {
         return items.Any(item => item.Title == action.Title && item.Kind == kind);
     }
@@ -406,8 +420,11 @@ internal sealed class CodeActionResolver
     }
 
     private static async Task CollectChangedDocumentAsync(
-        Solution oldSolution, Solution newSolution, DocumentId docId,
-        WorkspaceEditResult result, CancellationToken ct
+        Solution oldSolution,
+        Solution newSolution,
+        DocumentId docId,
+        WorkspaceEditResult result,
+        CancellationToken ct
     )
     {
         var oldDoc = oldSolution.GetDocument(docId);
@@ -420,7 +437,9 @@ internal sealed class CodeActionResolver
         var edits = await DocumentText.ComputeEditsAsync(oldDoc, newDoc, ct).ConfigureAwait(false);
         if (edits.Count > 0)
         {
-            result.DocumentChanges.Add(new DocumentEditResult { FilePath = newDoc.FilePath, Edits = edits });
+            result.DocumentChanges.Add(
+                new DocumentEditResult { FilePath = newDoc.FilePath, Edits = edits }
+            );
         }
     }
 
@@ -438,7 +457,10 @@ internal sealed class CodeActionResolver
     }
 
     private static async Task CollectAddedDocumentAsync(
-        Solution solution, DocumentId docId, WorkspaceEditResult result, CancellationToken ct
+        Solution solution,
+        DocumentId docId,
+        WorkspaceEditResult result,
+        CancellationToken ct
     )
     {
         var document = solution.GetDocument(docId);
@@ -485,5 +507,4 @@ internal sealed class CodeActionResolver
             new MergeDeclarationAssignmentCodeRefactoringProvider(),
         ];
     }
-
 }

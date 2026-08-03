@@ -36,7 +36,12 @@ internal static class HeadlessOverrideSyntax
         return member switch
         {
             IMethodSymbol method => GenerateMethod(generator, method, exceptionType),
-            IPropertySymbol property => GenerateProperty(generator, property, exceptionType, target),
+            IPropertySymbol property => GenerateProperty(
+                generator,
+                property,
+                exceptionType,
+                target
+            ),
             IEventSymbol @event => GenerateEvent(generator, @event, exceptionType),
             _ => throw new InvalidOperationException($"Unsupported override member {member.Kind}"),
         };
@@ -59,8 +64,8 @@ internal static class HeadlessOverrideSyntax
         IMethodSymbol method
     )
     {
-        var clauses = method.TypeParameters
-            .Where(parameter => HasNullableUsage(parameter, method))
+        var clauses = method
+            .TypeParameters.Where(parameter => HasNullableUsage(parameter, method))
             .Select(OverrideConstraint)
             .OfType<TypeParameterConstraintClauseSyntax>();
         return declaration.WithConstraintClauses(SyntaxFactory.List(clauses));
@@ -70,11 +75,12 @@ internal static class HeadlessOverrideSyntax
         ITypeParameterSymbol parameter
     )
     {
-        var constraint = !HasSomeConstraint(parameter)
-            ? (TypeParameterConstraintSyntax)SyntaxFactory.DefaultConstraint()
+        var constraint =
+            !HasSomeConstraint(parameter)
+                ? (TypeParameterConstraintSyntax)SyntaxFactory.DefaultConstraint()
             : !parameter.HasValueTypeConstraint
                 ? SyntaxFactory.ClassOrStructConstraint(SyntaxKind.ClassConstraint)
-                : null;
+            : null;
         return constraint is null ? null : ConstraintClause(parameter.Name, constraint);
     }
 
@@ -83,7 +89,9 @@ internal static class HeadlessOverrideSyntax
         TypeParameterConstraintSyntax constraint
     )
     {
-        return SyntaxFactory.TypeParameterConstraintClause(parameterName).AddConstraints(constraint);
+        return SyntaxFactory
+            .TypeParameterConstraintClause(parameterName)
+            .AddConstraints(constraint);
     }
 
     private static bool HasSomeConstraint(ITypeParameterSymbol parameter)
@@ -100,18 +108,21 @@ internal static class HeadlessOverrideSyntax
             || method.Parameters.Any(item => ContainsAnnotatedParameter(item.Type, parameter));
     }
 
-    private static bool ContainsAnnotatedParameter(
-        ITypeSymbol type,
-        ITypeParameterSymbol parameter
-    )
+    private static bool ContainsAnnotatedParameter(ITypeSymbol type, ITypeParameterSymbol parameter)
     {
         return IsAnnotatedParameter(type, parameter)
             || type switch
             {
                 IArrayTypeSymbol array => ContainsAnnotatedParameter(array.ElementType, parameter),
-                IPointerTypeSymbol pointer => ContainsAnnotatedParameter(pointer.PointedAtType, parameter),
+                IPointerTypeSymbol pointer => ContainsAnnotatedParameter(
+                    pointer.PointedAtType,
+                    parameter
+                ),
                 INamedTypeSymbol named => ContainsAnnotatedArgument(named, parameter),
-                IFunctionPointerTypeSymbol pointer => ContainsAnnotatedSignature(pointer.Signature, parameter),
+                IFunctionPointerTypeSymbol pointer => ContainsAnnotatedSignature(
+                    pointer.Signature,
+                    parameter
+                ),
                 _ => false,
             };
     }
@@ -152,7 +163,10 @@ internal static class HeadlessOverrideSyntax
         var declaration = property.IsIndexer
             ? generator.IndexerDeclaration(property, getter, setter)
             : generator.PropertyDeclaration(property, getter, setter);
-        var initialized = NormalizeInitAccessor((BasePropertyDeclarationSyntax)declaration, property);
+        var initialized = NormalizeInitAccessor(
+            (BasePropertyDeclarationSyntax)declaration,
+            property
+        );
         var normalized = NormalizeAccessorAccessibility(generator, initialized, property, target);
         return WithAccessorBodies(generator, normalized, exceptionType);
     }
@@ -198,7 +212,8 @@ internal static class HeadlessOverrideSyntax
             SyntaxKind.InitKeyword,
             accessor.Keyword.TrailingTrivia
         );
-        return SyntaxFactory.AccessorDeclaration(SyntaxKind.InitAccessorDeclaration)
+        return SyntaxFactory
+            .AccessorDeclaration(SyntaxKind.InitAccessorDeclaration)
             .WithAttributeLists(accessor.AttributeLists)
             .WithModifiers(accessor.Modifiers)
             .WithKeyword(keyword)
@@ -208,8 +223,10 @@ internal static class HeadlessOverrideSyntax
     }
 
     private static BasePropertyDeclarationSyntax NormalizeAccessorAccessibility(
-        SyntaxGenerator generator, BasePropertyDeclarationSyntax declaration,
-        IPropertySymbol property, INamedTypeSymbol target
+        SyntaxGenerator generator,
+        BasePropertyDeclarationSyntax declaration,
+        IPropertySymbol property,
+        INamedTypeSymbol target
     )
     {
         if (declaration.AccessorList is null)
@@ -258,9 +275,8 @@ internal static class HeadlessOverrideSyntax
             ? property.GetMethod
             : property.SetMethod;
         var accessorAccess = symbol is null ? memberAccess : OverrideAccessibility(symbol, target);
-        var declaredAccess = accessorAccess == memberAccess
-            ? Accessibility.NotApplicable
-            : accessorAccess;
+        var declaredAccess =
+            accessorAccess == memberAccess ? Accessibility.NotApplicable : accessorAccess;
         return (AccessorDeclarationSyntax)generator.WithAccessibility(accessor, declaredAccess);
     }
 
@@ -270,11 +286,12 @@ internal static class HeadlessOverrideSyntax
         ITypeSymbol exceptionType
     )
     {
-        var declaration = (EventDeclarationSyntax)generator.CustomEventDeclaration(
-            @event,
-            ThrowNotImplemented(generator, exceptionType),
-            ThrowNotImplemented(generator, exceptionType)
-        );
+        var declaration = (EventDeclarationSyntax)
+            generator.CustomEventDeclaration(
+                @event,
+                ThrowNotImplemented(generator, exceptionType),
+                ThrowNotImplemented(generator, exceptionType)
+            );
         return WithAccessorBodies(generator, declaration, exceptionType);
     }
 

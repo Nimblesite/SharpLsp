@@ -16,11 +16,19 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// </summary>
 internal static class AnalyzerDiagnosticResolver
 {
-    private static readonly ImmutableHashSet<string> RewriteDiagnosticIds =
-        ImmutableHashSet.Create(StringComparer.Ordinal, "IDE0007", "IDE0008", "IDE0160", "IDE0161");
+    private static readonly ImmutableHashSet<string> RewriteDiagnosticIds = ImmutableHashSet.Create(
+        StringComparer.Ordinal,
+        "IDE0007",
+        "IDE0008",
+        "IDE0160",
+        "IDE0161"
+    );
 
     private static readonly ImmutableArray<string> FeatureAssemblyNames =
-        ["Microsoft.CodeAnalysis.Features", "Microsoft.CodeAnalysis.CSharp.Features"];
+    [
+        "Microsoft.CodeAnalysis.Features",
+        "Microsoft.CodeAnalysis.CSharp.Features",
+    ];
 
     public static async Task<ImmutableArray<Diagnostic>> ResolveAsync(
         Document document,
@@ -130,12 +138,12 @@ internal static class AnalyzerDiagnosticResolver
 
     private static bool MatchesSpan(Diagnostic diagnostic, SyntaxTree tree, TextSpan span)
     {
-        return DiagnosticLocations(diagnostic).Any(location => MatchesLocation(location, tree, span))
+        return DiagnosticLocations(diagnostic)
+                .Any(location => MatchesLocation(location, tree, span))
             || (
                 IsNamespaceStyle(diagnostic.Id)
-                && DiagnosticLocations(diagnostic).Any(location =>
-                    MatchesNamespaceKeyword(location, tree, span)
-                )
+                && DiagnosticLocations(diagnostic)
+                    .Any(location => MatchesNamespaceKeyword(location, tree, span))
             );
     }
 
@@ -166,8 +174,7 @@ internal static class AnalyzerDiagnosticResolver
         }
 
         var declaration = FindNamespaceDeclaration(tree, location.SourceSpan);
-        return declaration is not null
-            && SpansTouch(declaration.NamespaceKeyword.Span, requested);
+        return declaration is not null && SpansTouch(declaration.NamespaceKeyword.Span, requested);
     }
 
     private static BaseNamespaceDeclarationSyntax? FindNamespaceDeclaration(
@@ -206,7 +213,11 @@ internal static class AnalyzerDiagnosticResolver
             "\u001e",
             diagnostic.Properties.OrderBy(pair => pair.Key).Select(PropertyKey)
         );
-        return (core, properties, string.Join("\u001e", diagnostic.AdditionalLocations.Select(LocationKey)));
+        return (
+            core,
+            properties,
+            string.Join("\u001e", diagnostic.AdditionalLocations.Select(LocationKey))
+        );
     }
 
     private static string PropertyKey(KeyValuePair<string, string?> property)
@@ -226,11 +237,17 @@ internal static class AnalyzerDiagnosticResolver
     {
         try
         {
-            return analyzer.SupportedDiagnostics.Any(descriptor => fixableIds.Contains(descriptor.Id));
+            return analyzer.SupportedDiagnostics.Any(descriptor =>
+                fixableIds.Contains(descriptor.Id)
+            );
         }
         catch (Exception ex)
         {
-            Log.Debug(ex, "[CodeAction] Could not inspect analyzer {Analyzer}", analyzer.GetType().Name);
+            Log.Debug(
+                ex,
+                "[CodeAction] Could not inspect analyzer {Analyzer}",
+                analyzer.GetType().Name
+            );
             return false;
         }
     }
@@ -243,7 +260,11 @@ internal static class AnalyzerDiagnosticResolver
         }
         catch (ReflectionTypeLoadException ex)
         {
-            Log.Debug(ex, "[CodeAction] Some types in {Assembly} could not load", assembly.GetName().Name);
+            Log.Debug(
+                ex,
+                "[CodeAction] Some types in {Assembly} could not load",
+                assembly.GetName().Name
+            );
             return ex.Types.OfType<Type>().Select(type => type.GetTypeInfo());
         }
     }
@@ -268,10 +289,7 @@ internal static class AnalyzerDiagnosticResolver
 
     private static ImmutableArray<Assembly> GetFeatureAssemblies()
     {
-        return
-        [
-            .. FeatureAssemblyNames.Select(TryLoadAssembly).OfType<Assembly>(),
-        ];
+        return [.. FeatureAssemblyNames.Select(TryLoadAssembly).OfType<Assembly>()];
     }
 
     private static Assembly? TryLoadAssembly(string name)

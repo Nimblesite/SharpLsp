@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
@@ -168,10 +168,6 @@ suite('LSP Lifecycle', () => {
   // closes. This test SIGKILLs the real server process and asserts the client
   // recovers on its own — WITHOUT any `restartServer` command.
   test('unexpected SIGKILL of the server auto-recovers without manual restart', async function () {
-    if (process.platform === 'win32') {
-      // Relies on POSIX `ps`; the e2e host runs on macOS/Linux.
-      this.skip();
-    }
     this.timeout(90_000);
 
     // Resolve the exact staged server binary the extension launched. Matching
@@ -318,29 +314,71 @@ suite('LSP Lifecycle', () => {
 // ── Helpers ──────────────────────────────────────────────────────
 
 /**
- * SIGKILL every running language-server process launched from `binaryPath` and
- * return how many were killed. Matches the exact executable path so it targets
- * the test host's own server only — the sidecars run as `sharplsp-sidecar-csharp`
- * / `-fsharp` or `dotnet` (distinct executables) and are left alone, as is any
- * `sharplsp` a developer is running from a different location. POSIX-only (`ps`).
+ * `[pid, executablePath]` for every running process, on every host platform.
+ *
+ * `ps` prints the full command line, so the executable is its first
+ * whitespace-delimited field. Windows has no `ps`; `Get-CimInstance
+ * Win32_Process` is the supported replacement for the removed `wmic` and yields
+ * the executable path on its own — which matters, because Windows program paths
+ * routinely contain spaces and could not be recovered by splitting a command
+ * line. Processes whose path cannot be read (privileged, or exited mid-query)
+ * project to a bare pid and are skipped by the no-separator check.
  */
-function killLspServerProcesses(binaryPath: string): number {
-  const listing = execSync('ps -ax -o pid=,command=', { encoding: 'utf8' });
-  let killed = 0;
+function runningProcesses(): [number, string][] {
+  const listing =
+    process.platform === 'win32'
+      ? execFileSync(
+          'powershell',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ExecutablePath)" }',
+          ],
+          { encoding: 'utf8' },
+        )
+      : execSync('ps -ax -o pid=,command=', { encoding: 'utf8' });
+
+  const processes: [number, string][] = [];
   for (const line of listing.split('\n')) {
     const trimmed = line.trim();
     const firstSpace = trimmed.indexOf(' ');
     if (firstSpace < 0) continue;
     const pid = Number.parseInt(trimmed.slice(0, firstSpace), 10);
-    const command = trimmed.slice(firstSpace + 1);
-    const executable = command.split(' ')[0] ?? '';
-    if (!Number.isNaN(pid) && executable === binaryPath) {
-      try {
-        process.kill(pid, 'SIGKILL');
-        killed += 1;
-      } catch {
-        // Process already exited between listing and kill — fine.
-      }
+    if (Number.isNaN(pid)) continue;
+    const rest = trimmed.slice(firstSpace + 1);
+    processes.push([pid, process.platform === 'win32' ? rest : (rest.split(' ')[0] ?? '')]);
+  }
+  return processes;
+}
+
+/** Compare executable paths using the host filesystem's case sensitivity. */
+function isSameExecutable(candidate: string, target: string): boolean {
+  return process.platform === 'win32'
+    ? candidate.toLowerCase() === target.toLowerCase()
+    : candidate === target;
+}
+
+/**
+ * Force-kill every running language-server process launched from `binaryPath`
+ * and return how many were killed. Matches the exact executable path so it
+ * targets the test host's own server only — the sidecars run as
+ * `sharplsp-sidecar-csharp` / `-fsharp` or `dotnet` (distinct executables) and
+ * are left alone, as is any `sharplsp` a developer is running from a different
+ * location.
+ */
+function killLspServerProcesses(binaryPath: string): number {
+  let killed = 0;
+  for (const [pid, executable] of runningProcesses()) {
+    if (!isSameExecutable(executable, binaryPath)) continue;
+    try {
+      // Node maps SIGKILL to TerminateProcess on Windows: uncatchable there too,
+      // so the server dies without a chance to shut down cleanly — which is
+      // exactly the #8 scenario being reproduced.
+      process.kill(pid, 'SIGKILL');
+      killed += 1;
+    } catch {
+      // Process already exited between listing and kill — fine.
     }
   }
   return killed;

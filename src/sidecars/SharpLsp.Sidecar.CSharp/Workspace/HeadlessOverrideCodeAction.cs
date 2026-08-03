@@ -47,7 +47,9 @@ internal static class HeadlessOverrideCodeAction
     )
     {
         var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
-        var declaration = root?.FindToken(span.Start).Parent?.AncestorsAndSelf()
+        var declaration = root
+            ?.FindToken(span.Start)
+            .Parent?.AncestorsAndSelf()
             .OfType<TypeDeclarationSyntax>()
             .FirstOrDefault();
         return declaration is not null && SpansTouch(declaration.Identifier.Span, span)
@@ -115,8 +117,11 @@ internal static class HeadlessOverrideCodeAction
     }
 
     private static bool CollectCandidate(
-        ISymbol member, INamedTypeSymbol target, Compilation compilation,
-        List<ISymbol> occupied, ImmutableArray<ISymbol>.Builder candidates
+        ISymbol member,
+        INamedTypeSymbol target,
+        Compilation compilation,
+        List<ISymbol> occupied,
+        ImmutableArray<ISymbol>.Builder candidates
     )
     {
         if (!TryOccupy(member, occupied))
@@ -157,7 +162,13 @@ internal static class HeadlessOverrideCodeAction
 
     private static int MemberKindOrder(ISymbol member)
     {
-        return member switch { IMethodSymbol => 0, IPropertySymbol => 1, IEventSymbol => 2, _ => 3 };
+        return member switch
+        {
+            IMethodSymbol => 0,
+            IPropertySymbol => 1,
+            IEventSymbol => 2,
+            _ => 3,
+        };
     }
 
     private static string MemberDisplay(ISymbol member)
@@ -167,9 +178,10 @@ internal static class HeadlessOverrideCodeAction
 
     private static bool IsSlotMember(ISymbol member)
     {
-        return member is IMethodSymbol { MethodKind: MethodKind.Ordinary }
-            or IPropertySymbol
-            or IEventSymbol;
+        return member
+            is IMethodSymbol { MethodKind: MethodKind.Ordinary }
+                or IPropertySymbol
+                or IEventSymbol;
     }
 
     private static bool CanGenerate(
@@ -232,7 +244,8 @@ internal static class HeadlessOverrideCodeAction
 
     private static bool SamePropertySignature(IPropertySymbol left, IPropertySymbol right)
     {
-        return left.IsIndexer == right.IsIndexer && SameParameters(left.Parameters, right.Parameters);
+        return left.IsIndexer == right.IsIndexer
+            && SameParameters(left.Parameters, right.Parameters);
     }
 
     private static bool SameParameters(
@@ -255,8 +268,12 @@ internal static class HeadlessOverrideCodeAction
             || (left, right) switch
             {
                 (ITypeParameterSymbol a, ITypeParameterSymbol b) => SameTypeParameter(a, b),
-                (IArrayTypeSymbol a, IArrayTypeSymbol b) => a.Rank == b.Rank && SameType(a.ElementType, b.ElementType),
-                (IPointerTypeSymbol a, IPointerTypeSymbol b) => SameType(a.PointedAtType, b.PointedAtType),
+                (IArrayTypeSymbol a, IArrayTypeSymbol b) => a.Rank == b.Rank
+                    && SameType(a.ElementType, b.ElementType),
+                (IPointerTypeSymbol a, IPointerTypeSymbol b) => SameType(
+                    a.PointedAtType,
+                    b.PointedAtType
+                ),
                 (INamedTypeSymbol a, INamedTypeSymbol b) => SameNamedType(a, b),
                 _ => false,
             };
@@ -269,9 +286,13 @@ internal static class HeadlessOverrideCodeAction
 
     private static bool SameNamedType(INamedTypeSymbol left, INamedTypeSymbol right)
     {
-        return SymbolEqualityComparer.Default.Equals(left.OriginalDefinition, right.OriginalDefinition)
+        return SymbolEqualityComparer.Default.Equals(
+                left.OriginalDefinition,
+                right.OriginalDefinition
+            )
             && left.TypeArguments.Length == right.TypeArguments.Length
-            && left.TypeArguments.Zip(right.TypeArguments).All(pair => SameType(pair.First, pair.Second));
+            && left.TypeArguments.Zip(right.TypeArguments)
+                .All(pair => SameType(pair.First, pair.Second));
     }
 
     private static async Task<Solution> ApplyAsync(
@@ -283,7 +304,13 @@ internal static class HeadlessOverrideCodeAction
         var generator = SyntaxGenerator.GetGenerator(document);
         var annotation = new SyntaxAnnotation();
         var members = plan.Members.Select(member =>
-            HeadlessOverrideSyntax.Generate(generator, member, plan.ExceptionType, plan.Target, annotation)
+            HeadlessOverrideSyntax.Generate(
+                generator,
+                member,
+                plan.ExceptionType,
+                plan.Target,
+                annotation
+            )
         );
         var replacement = generator.AddMembers(plan.Declaration, members);
         var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
@@ -297,9 +324,11 @@ internal static class HeadlessOverrideCodeAction
         CancellationToken ct
     )
     {
-        var simplified = await Simplifier.ReduceAsync(document, annotation, null, ct)
+        var simplified = await Simplifier
+            .ReduceAsync(document, annotation, null, ct)
             .ConfigureAwait(false);
-        var formatted = await Formatter.FormatAsync(simplified, annotation, null, ct)
+        var formatted = await Formatter
+            .FormatAsync(simplified, annotation, null, ct)
             .ConfigureAwait(false);
         return formatted.Project.Solution;
     }
