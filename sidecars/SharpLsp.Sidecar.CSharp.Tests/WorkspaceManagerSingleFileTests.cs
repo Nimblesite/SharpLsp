@@ -355,7 +355,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
         }
         var app = Write("Many.cs", "#:include many/*.cs\nConsole.WriteLine(1);\n");
 
-        var closure = await DocumentClosure.ExpandFileBasedAsync(app, CancellationToken.None);
+        var closure = await DocumentClosure.ExpandFileBasedAsync(app, rootText: null, CancellationToken.None);
 
         Assert.Equal(64, closure.Files.Count);
         Assert.Contains(
@@ -378,7 +378,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
         }
         var app = Write("Chain.cs", "#:include chain0.cs\nConsole.WriteLine(1);\n");
 
-        var closure = await DocumentClosure.ExpandFileBasedAsync(app, CancellationToken.None);
+        var closure = await DocumentClosure.ExpandFileBasedAsync(app, rootText: null, CancellationToken.None);
 
         Assert.Contains(
             closure.Issues,
