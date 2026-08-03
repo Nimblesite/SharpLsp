@@ -169,14 +169,14 @@ Metadata-symbol references, grouped find-usages results, and reference-count cod
 
 ## Caching Strategy `[REFERENCES-CACHE]`
 
-Reference results are cached via the [salsa](https://salsa-rs.github.io/salsa/) incremental computation database in the Rust host.
+Reference results use the Rust host [`NavCache`](../../src/nav_cache.rs).
 
 | Cache Key | Invalidation Trigger |
 |---|---|
-| `(document_uri, document_version, position, include_declaration)` for references | Any document change in the project |
-| `(document_uri, document_version, position)` for document highlights | Document edit (version change) |
+| `(document_uri, document_version, position, references:decl|nodecl)` | Any document change in the solution |
+| `(document_uri, document_version, position, documentHighlight)` | Requested document edit or close |
 
-References results SHOULD be invalidated when any document in the solution changes, since references are solution-wide. The Rust host MAY use a coarse invalidation strategy (invalidate all reference caches on any edit) for simplicity.
+Because references are solution-wide, invalidating only the requested URI is nonconforming; the host MAY invalidate all reference entries on any solution edit. `null` and `[]` MUST NOT be cached because they may represent a sidecar that has not finished loading.
 
 Stale requests for superseded document versions MUST be cancelled.
 

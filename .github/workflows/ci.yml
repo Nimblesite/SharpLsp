@@ -143,7 +143,7 @@ jobs:
   # thresholds was removed. On a pull_request, actions/checkout is a detached
   # HEAD, so `git push` failed the moment coverage changed — a latent red build,
   # and a direct push to a protected branch ([BRANCH-RULES]). Coverage is
-  # already enforced inside `make test` (scripts/check-coverage.sh reads
-  # coverage-thresholds.json and fails below threshold in each test-* job).
+  # already enforced inside `make test` (scripts/coverage/check-coverage.sh reads
+  # .config/coverage/thresholds.json and fails below threshold in each test-* job).
   # Thresholds ratchet via the reviewed PR diff, not a bot commit.
   # [COVERAGE-THRESHOLDS-JSON]

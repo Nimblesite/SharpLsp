@@ -8,7 +8,7 @@ SharpLsp provides a built-in NuGet package manager UI accessible from the Soluti
 
 **Priority:** P2 (Phase 4 - Essential Features)
 
-**Design reference:** `docs/designs/code.html`, `docs/designs/screen.png`
+**Design reference:** [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md)
 
 ## [NUGET-ARCHITECTURE] Architecture
 
@@ -260,7 +260,7 @@ interface NuGetUninstallResponse {
 
 ### [NUGET-FEEDBACK-SPINNERS] Spinners
 
-Every LSP round trip MUST show a spinner at a location that tells the user *what* is loading. Spinners use the Material Symbols `progress_activity` icon with a CSS `@keyframes spin` rotation (1 s linear infinite). No emoji, no text-only "Loading…".
+Every LSP round trip MUST show a spinner at a location that identifies what is loading. Spinners use a local accessible inline SVG or text symbol with a CSS `@keyframes spin` rotation (1s linear infinite); remote icon fonts, emoji, and text-only "Loading…" are forbidden by [WEB-DESIGN-TYPE].
 
 | Operation | Spinner location | Extra UI |
 |-----------|------------------|----------|
@@ -308,12 +308,12 @@ Fired by the Rust host while `dotnet restore` runs in the background after a fas
 
 ### [NUGET-WEBVIEW-DESIGN] Design
 
-The NuGet browser uses a webview panel rendered by the editor extension and the Material Design 3 dark theme in `docs/designs/code.html`. The mockups also show VS Code's activity and status bars for context; the webview MUST render only its header, package list, and details panel. See [`docs/designs/DESIGN.md`](../designs/DESIGN.md).
+The NuGet browser uses a webview panel rendered by the editor extension and MUST follow [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md). It renders only its header, package list, and details panel; VS Code supplies the surrounding activity and status bars.
 
 **Key design requirements:**
-- Material Symbols Outlined icons (NOT emoji)
-- Inter font family
-- M3 dark color tokens (see `docs/designs/code.html` tailwind config)
+- Local accessible text symbols or inline SVG icons, never emoji or external icon fonts ([WEB-DESIGN-TYPE])
+- System UI font stack ([WEB-DESIGN-TYPE])
+- Semantic light and dark tokens ([WEB-DESIGN-COLOR])
 - Two-column layout: package list | details panel
 - Tabs: Browse | Installed
 - **Target dropdown** ([NUGET-REQUESTS-TARGET-UI]) between tabs and search — lists projects AND `Directory.Build.props` / `Directory.Packages.props`

@@ -371,6 +371,19 @@ The versioned handshake is the only intended startup-protocol change. MessagePac
 
 `SHARPLSP-SPEC.md`, [DIST-CLEAN-OUTPUT], [DIST-CI-WIN-TRANSPORT], [SCRIPT-ROUTE-HEALTH], and [SIDECAR-REQUEST-TIMEOUT] remain compatible summaries; this document is the normative detailed lifecycle contract when a summary is ambiguous.
 
+## Implementation Anchors `[SIDECAR-IMPLEMENTATION]`
+
+These paths identify the current implementation and verification surface; they do not imply that every acceptance scenario is complete.
+
+| Contract | Implementation | Verification |
+|---|---|---|
+| Resolution, spawn, request budgets, health, and shutdown | [`src/sidecar/manager.rs`](../../src/sidecar/manager.rs) | In-module tests and [SIDECAR-TESTING] |
+| MessagePack envelope | [`src/sidecar/protocol.rs`](../../src/sidecar/protocol.rs) | Rust protocol tests |
+| Rust framing and endpoint transport | [`src/sidecar/transport.rs`](../../src/sidecar/transport.rs) | Rust transport tests |
+| Managed framing and dispatch | [`FramedTransport.cs`](../../sidecars/SharpLsp.Sidecar.Common/Ipc/FramedTransport.cs), [`IpcConnection.cs`](../../sidecars/SharpLsp.Sidecar.Common/Ipc/IpcConnection.cs), [`MessageRouter.cs`](../../sidecars/SharpLsp.Sidecar.Common/Ipc/MessageRouter.cs) | [`IpcConnectionTests.cs`](../../sidecars/SharpLsp.Sidecar.Common.Tests/IpcConnectionTests.cs) |
+| Managed listener, readiness, parent watch, and shutdown | [`SidecarHost.cs`](../../sidecars/SharpLsp.Sidecar.Common/SidecarHost.cs) | [`SidecarHostEndToEndTests.cs`](../../sidecars/SharpLsp.Sidecar.Common.Tests/SidecarHostEndToEndTests.cs) |
+| Workspace open and analyzer bootstrap | [`src/main.rs`](../../src/main.rs) | Release host/sidecar suites required by [SIDECAR-TESTING] |
+
 ## End-to-end Acceptance `[SIDECAR-TESTING]`
 
 Tests MUST be coarse end-to-end tests using real processes, real platform IPC, real files, and either the published C#/F# sidecars or a separately spawned lifecycle fixture built on the production shared `SidecarHost`. In-memory transports, mocked process APIs, sleeps as the only assertion, and test-only branches in production code are prohibited.

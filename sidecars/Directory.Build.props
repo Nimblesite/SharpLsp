@@ -14,6 +14,7 @@
         <!-- Feeds the (otherwise dormant) BannedApiAnalyzers RS0030 rule: bans
              non-deterministic wall-clock time and thread-blocking. See
              BannedSymbols.txt for the list + rationale. -->
-        <AdditionalFiles Include="$(MSBuildThisFileDirectory)../BannedSymbols.txt" />
+        <AdditionalFiles Include="$(MSBuildThisFileDirectory)config/BannedSymbols.txt" />
     </ItemGroup>
 </Project>
+

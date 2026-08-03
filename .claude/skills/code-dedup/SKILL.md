@@ -13,7 +13,7 @@ Carefully search for duplicate code, duplicate tests, and dead code across the r
 Before touching ANY code, verify these conditions. If any fail, stop and report why.
 
 1. Run `make test` — all tests must pass. If tests fail, stop. Do not dedup a broken codebase.
-2. Run `make test` — tests are fail-fast AND enforce the coverage threshold from `coverage-thresholds.json`. If anything fails, stop and fix it before deduping.
+2. Run `make test` — tests are fail-fast AND enforce the coverage threshold from `.config/coverage/thresholds.json`. If anything fails, stop and fix it before deduping.
 3. Verify the project uses **static typing**. Check for:
    - Rust, C#, F#: typed by default — proceed
    - TypeScript: `tsconfig.json` must have `"strict": true` — proceed
@@ -38,7 +38,7 @@ Dedup Progress:
 
 Before deciding what to touch, understand what is tested.
 
-1. Run `make test` to confirm green baseline. `make test` is fail-fast AND enforces the coverage threshold from `coverage-thresholds.json`. It exits non-zero on any test failure OR coverage shortfall.
+1. Run `make test` to confirm green baseline. `make test` is fail-fast AND enforces the coverage threshold from `.config/coverage/thresholds.json`. It exits non-zero on any test failure OR coverage shortfall.
 2. Note the current coverage percentage per project — this is the floor. It must not drop.
 3. Identify which files/modules have coverage and which do not. Only files WITH coverage are candidates for dedup.
 

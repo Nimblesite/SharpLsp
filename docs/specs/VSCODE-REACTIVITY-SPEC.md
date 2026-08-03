@@ -43,6 +43,7 @@ The extension maintains these **global signals** (module-level exports). Every U
 |--------|--------|---------|
 | `client` | [state.ts](../../editors/vscode/src/state.ts) | Active LSP LanguageClient |
 | `solutionPath` | [state.ts](../../editors/vscode/src/state.ts) | Absolute path of the loaded `.sln` or `.slnx` file |
+| `dotnetPath` | [state.ts](../../editors/vscode/src/state.ts) | Resolved .NET executable path |
 | `symbolsState` | [state.ts](../../editors/vscode/src/state.ts) | `empty \| loaded \| error` union of workspace symbols |
 | `sortOrder` | [state.ts](../../editors/vscode/src/state.ts) | Solution Explorer sort cycle |
 | `projectDependencies` | [project-deps-store.ts](../../editors/vscode/src/project-deps-store.ts) | `Map<projectPath, ProjectDependencies>` — PackageReferences & ProjectReferences per csproj/fsproj |
@@ -51,7 +52,7 @@ New source-of-truth state MUST live in one of these modules or a peer store and 
 
 ## File-System Watchers Drive Derived State `[VSCODE-REACTIVITY-WATCHERS]`
 
-State derived from files on disk is refreshed by a `vscode.workspace.createFileSystemWatcher` whose change events write to the corresponding signal. There is **no polling**, and the user never has to trigger a refresh manually.
+State derived from disk is refreshed by [`project-deps-store.ts`](../../editors/vscode/src/project-deps-store.ts) watchers whose events write to the corresponding signal. A 250 ms mtime guard MAY cover missed events for already tracked projects; it MUST NOT replace event-driven updates or require manual refresh.
 
 ### Project-dependencies Watcher `[VSCODE-REACTIVITY-WATCHERS-PROJECTS]`
 
@@ -68,7 +69,7 @@ Registered once during `activate()` by [project-deps-store.ts](../../editors/vsc
 
 ### Update Latency `[VSCODE-REACTIVITY-WATCHERS-LATENCY]`
 
-After an external `.csproj` or `.fsproj` write, every surface that reads `projectDependencies` MUST re-render within approximately 200 ms, including the 150 ms debounce and VSCode file-watcher latency.
+After an external `.csproj` or `.fsproj` write, every surface that reads `projectDependencies` MUST re-render within approximately 200 ms on the watcher path, including the 150 ms debounce, or within 400 ms when the 250 ms mtime guard detects a missed event.
 
 ## UI Surfaces and Their Subscriptions `[VSCODE-REACTIVITY-SURFACES]`
 

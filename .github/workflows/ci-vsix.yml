@@ -46,7 +46,7 @@ jobs:
         run: npm ci --prefix editors/vscode
       - name: Remove PATH-installed SharpLsp binaries
         shell: bash
-        run: bash scripts/purge-path-binaries.sh
+        run: bash scripts/vsix/purge-path-binaries.sh
       - name: Test VS Code extension with coverage
         run: xvfb-run -a make _test-vsix
       - name: Verify VSIX contains platform binary
@@ -54,9 +54,9 @@ jobs:
         run: |-
           set -euo pipefail
           platform="$(node -e 'process.stdout.write(`${process.platform}-${process.arch}`)')"
-          unzip -l sharplsp.vsix | grep -F "bin/${platform}/sharplsp"
+          unzip -l dist/sharplsp.vsix | grep -F "bin/${platform}/sharplsp"
       - name: Upload coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-vsix
-          path: coverage-thresholds.json
+          path: .config/coverage/thresholds.json

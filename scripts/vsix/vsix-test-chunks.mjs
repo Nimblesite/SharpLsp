@@ -7,9 +7,9 @@
 // adding a chunk or a suite is a one-file edit.
 //
 // Usage:
-//   node scripts/vsix-test-chunks.mjs files <chunk>  -> comma-separated globs for MOCHA_FILES
-//   node scripts/vsix-test-chunks.mjs matrix         -> JSON array of chunk names (GitHub matrix)
-//   node scripts/vsix-test-chunks.mjs check          -> fail if any suite is in no chunk / two chunks
+//   node scripts/vsix/vsix-test-chunks.mjs files <chunk>  -> comma-separated globs for MOCHA_FILES
+//   node scripts/vsix/vsix-test-chunks.mjs matrix         -> JSON array of chunk names (GitHub matrix)
+//   node scripts/vsix/vsix-test-chunks.mjs check          -> fail if any suite is in no chunk / two chunks
 //
 // stdout carries the answer only (safe for command substitution); diagnostics
 // and failures go to stderr with a non-zero exit.
@@ -17,7 +17,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const MANIFEST = join(REPO_ROOT, "editors", "vscode", "test-chunks.json");
 const SUITE_DIR = join(REPO_ROOT, "editors", "vscode", "src", "test", "suite");
 

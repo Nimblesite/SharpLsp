@@ -46,7 +46,7 @@ SharpLsp uses a Rust host for the LSP protocol and syntax analysis, plus managed
 - [FSharpLint](https://github.com/fsprojects/FSharpLint) for linting
 - Same RPC interface and transport as the C# sidecar
 
-### [SIDECAR-IPC-OVERVIEW] IPC Transport Protocol
+### [SHARPLSP-ARCHITECTURE-IPC] IPC Transport Protocol
 
 Communication between the Rust host and .NET sidecars uses a custom binary RPC protocol:
 
@@ -74,7 +74,7 @@ The Rust host classifies every incoming LSP request and routes it to the fastest
 
 Key optimization: on every keystroke, tree-sitter re-parses in <1ms and provides immediate feedback for syntax-level features, while semantic requests are coalesced with a debounce window (default 150ms) before dispatching to sidecars. Stale in-flight semantic requests are cancelled when superseded.
 
-### [SIDECAR-LIFECYCLE-OVERVIEW] Sidecar Lifecycle Management
+### [SHARPLSP-ARCHITECTURE-SIDECARS] Sidecar Lifecycle Management
 
 The normative state machine and platform contract are in [SIDECAR-LIFECYCLE-SPEC.md](SIDECAR-LIFECYCLE-SPEC.md).
 

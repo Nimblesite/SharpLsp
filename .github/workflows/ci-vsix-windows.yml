@@ -17,7 +17,7 @@
 # Rebuilding per chunk would cost seven cold Windows Rust builds.
 #
 # Chunk membership is declared in editors/vscode/test-chunks.json and read here
-# via scripts/vsix-test-chunks.mjs — never duplicated into this YAML. `make
+# via scripts/vsix/vsix-test-chunks.mjs — never duplicated into this YAML. `make
 # _lint-vsix` fails if a suite belongs to no chunk.
 name: CI / VS Code (Windows)
 'on':
@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |-
           set -euo pipefail
-          chunks="$(node scripts/vsix-test-chunks.mjs matrix)"
+          chunks="$(node scripts/vsix/vsix-test-chunks.mjs matrix)"
           echo "chunks=${chunks}" >> "$GITHUB_OUTPUT"
           echo "Windows VS Code feature chunks: ${chunks}"
       - name: Build sharplsp host and both sidecars
@@ -112,7 +112,7 @@ jobs:
         # Force the test host onto the freshly-staged bundled binaries, never a
         # dev copy that leaked onto the runner PATH. Mirrors the Ubuntu job.
         shell: bash
-        run: bash scripts/purge-path-binaries.sh
+        run: bash scripts/vsix/purge-path-binaries.sh
       - name: Run VS Code feature chunk (real LSP)
         # No xvfb: the GitHub Windows runner has an interactive desktop session,
         # so the VS Code test host launches directly. `make` + Git-Bash on the

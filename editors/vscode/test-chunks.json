@@ -1,8 +1,10 @@
 {
-  "description": "[DIST-CI-WIN-VSIX] Feature chunks of the VS Code end-to-end suite. Each chunk is one Windows CI job running a slice of the SAME suite through the real LSP inside the real extension host. Single source of truth: the Makefile (_test-vsix-win), the CI matrix, and the coverage guard all read this file. Consumed via scripts/vsix-test-chunks.mjs.",
+  "description": "[DIST-CI-WIN-VSIX] Feature chunks of the VS Code end-to-end suite. Each chunk is one Windows CI job running a slice of the SAME suite through the real LSP inside the real extension host. Single source of truth: the Makefile (_test-vsix-win), the CI matrix, and the coverage guard all read this file. Consumed via scripts/vsix/vsix-test-chunks.mjs.",
   "shared": {
     "description": "Prepended to every chunk. Asserts the bundled host + sidecars were staged before the extension host started, so a staging regression fails as itself instead of as a wall of LSP timeouts.",
-    "files": ["00-vsix-dev-binary-staging.test.js"]
+    "files": [
+      "00-vsix-dev-binary-staging.test.js"
+    ]
   },
   "chunks": {
     "lifecycle": {
@@ -28,7 +30,9 @@
     },
     "fsharp": {
       "description": "F# is a first-class citizen, so its whole LSP surface is gated on Windows: navigation, intelligence, syntax, diagnostics, code fixes, hierarchy, workspace symbol.",
-      "files": ["fsharp-lsp-*.test.js"]
+      "files": [
+        "fsharp-lsp-*.test.js"
+      ]
     },
     "debug": {
       "description": "Debugging end to end (launch/attach config resolution, netcoredbg adapter factory, sharplsp.debugProgram against real projects) plus Test Explorer discovery/run/debug and the test-status CodeLens.",

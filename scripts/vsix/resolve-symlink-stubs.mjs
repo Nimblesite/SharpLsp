@@ -17,7 +17,7 @@
 // files — Git would record the binary content as the symlink's target text.
 // Restore with `git restore <dir>` if you need the pristine checkout back.
 //
-// Usage: node scripts/resolve-symlink-stubs.mjs <dir> [<dir> ...]
+// Usage: node scripts/vsix/resolve-symlink-stubs.mjs <dir> [<dir> ...]
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -78,7 +78,7 @@ function resolveDir(dir) {
 
 const dirs = process.argv.slice(2);
 if (dirs.length === 0) {
-  console.error('usage: resolve-symlink-stubs.mjs <dir> [<dir> ...]');
+  console.error('usage: scripts/vsix/resolve-symlink-stubs.mjs <dir> [<dir> ...]');
   process.exit(2);
 }
 const total = dirs.reduce((count, dir) => count + resolveDir(dir), 0);

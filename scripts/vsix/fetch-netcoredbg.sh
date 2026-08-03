@@ -15,7 +15,7 @@ NETCOREDBG_VERSION="3.2.0-1092"
 REPO="Samsung/netcoredbg"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VSCODE_BIN="$ROOT/editors/vscode/bin"
 
 # VS Code platform id: "<platform>-<arch>". Default to the host platform.

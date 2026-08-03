@@ -30,7 +30,7 @@ It may become the foundation for a built-in SharpLsp formatter in the future, bu
 2. **Cargo.toml**: Declares a `formatting` feature flag (off by default).
 3. **C# sidecar**: Handler registrations still exist (the sidecar responds if asked) but the Rust host never asks. `FormattingResolver` and workspace formatting methods are marked `[ExcludeFromCodeCoverage]`.
 4. **F# sidecar**: Handler registrations still exist but the Rust host never asks. Formatting functions are marked as sequestered in comments.
-5. **Coverage**: `FormattingResolver.cs` is excluded via `coverlet.runsettings` `ExcludeByFile`. Workspace formatting methods have `[ExcludeFromCodeCoverage]` attributes.
+5. **Coverage**: `FormattingResolver.cs` is excluded via `.config/coverage/coverlet.runsettings` `ExcludeByFile`. Workspace formatting methods have `[ExcludeFromCodeCoverage]` attributes.
 
 ## Supported Formatting Features (If Re-enabled)
 

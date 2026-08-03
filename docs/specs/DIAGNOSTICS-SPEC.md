@@ -320,7 +320,21 @@ The gate is mandatory because unresolved `<PackageReference>` items can produce 
 
 ## [DIAG-SCOPE] Supported Scope
 
-This specification covers compiler errors and warnings, Roslyn and F# analyzer diagnostics, solution-wide analysis, unused using/open detection, nullable analysis, `.editorconfig`, third-party NuGet analyzers, and monorepo-gated unused public code. Code metrics, value tracking, IL inspection, and heap-allocation viewing are outside this specification.
+| Capability | Priority | Phase |
+|------------|----------|-------|
+| Compiler errors and warnings | P0 | Two |
+| Roslyn analyzer diagnostics | P0 | Two |
+| Solution-wide error analysis, default enabled | P0 | Two |
+| Unused using/open detection | P0 | Two |
+| Monorepo-only unused public code detection | P0 | Four |
+| Nullable reference analysis | P1 | Three |
+| `.editorconfig` code-style enforcement | P1 | Three |
+| Third-party NuGet analyzers | P1 | Four |
+| FSharp.Analyzers.SDK support | P1 | Four |
+| Code metrics | P2 | Four |
+| Value tracking and data flow | P2 | Four |
+| IL inspection | P3 | Five |
+| Heap allocation viewing | P3 | Five |
 
 ## [DIAG-ANALYSIS] Background Analysis Strategy
 
