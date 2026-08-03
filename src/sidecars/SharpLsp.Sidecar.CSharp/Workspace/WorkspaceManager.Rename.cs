@@ -18,6 +18,14 @@ internal sealed partial class WorkspaceManager
         SyntaxToken Token
     );
 
+    private readonly record struct RenameSolutions(
+        Solution Original,
+        Solution Renamed,
+        string NewName
+    );
+
+    private readonly record struct RenameDocuments(Document Old, Document New, string NewName);
+
     // Implements [RENAME-PREPARE]
     /// <summary>Check whether the source identifier at the position can be renamed.</summary>
     public async Task<PrepareRenameQueryResult> PrepareRenameAsync(
@@ -77,7 +85,7 @@ internal sealed partial class WorkspaceManager
 
         var renamed = await RenameSolutionAsync(_solution, target.Value.Symbol, newName, ct)
             .ConfigureAwait(false);
-        return await BuildRenameResultAsync(_solution, renamed, ct).ConfigureAwait(false);
+        return await BuildRenameResultAsync(_solution, renamed, newName, ct).ConfigureAwait(false);
     }
 
     private async Task<RenameTarget?> FindRenameTargetAsync(
@@ -87,7 +95,8 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false)
+        var document =
+            await FindDocumentAsync(filePath, ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Document not found");
         return await FindRenameTargetAsync(document, line, character, ct).ConfigureAwait(false);
     }
@@ -121,8 +130,8 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        return await Microsoft.CodeAnalysis.FindSymbols.SymbolFinder
-            .FindSymbolAtPositionAsync(document, position, ct)
+        return await Microsoft
+            .CodeAnalysis.FindSymbols.SymbolFinder.FindSymbolAtPositionAsync(document, position, ct)
             .ConfigureAwait(false);
     }
 
@@ -198,10 +207,9 @@ internal sealed partial class WorkspaceManager
     {
         var target = RenameConflictTarget(symbol);
         return target.ContainingType is { } type
-            ? HasDifferentSymbol(type.GetMembers(valueText), target)
-            : target is INamedTypeSymbol named
-                ? HasNamedTypeConflict(named, valueText)
-                : target is INamespaceSymbol ns && HasNamespaceConflict(ns, valueText);
+                ? HasDifferentSymbol(type.GetMembers(valueText), target)
+            : target is INamedTypeSymbol named ? HasNamedTypeConflict(named, valueText)
+            : target is INamespaceSymbol ns && HasNamespaceConflict(ns, valueText);
     }
 
     private static ISymbol RenameConflictTarget(ISymbol symbol)
@@ -213,22 +221,22 @@ internal sealed partial class WorkspaceManager
 
     private static bool HasDifferentSymbol(IEnumerable<ISymbol> candidates, ISymbol target)
     {
-        return candidates.Any(candidate => !SymbolEqualityComparer.Default.Equals(candidate, target));
+        return candidates.Any(candidate =>
+            !SymbolEqualityComparer.Default.Equals(candidate, target)
+        );
     }
 
     private static bool HasNamedTypeConflict(INamedTypeSymbol symbol, string valueText)
     {
-        var candidates = symbol.ContainingType?.GetTypeMembers(valueText).Cast<ISymbol>()
+        var candidates =
+            symbol.ContainingType?.GetTypeMembers(valueText).Cast<ISymbol>()
             ?? symbol.ContainingNamespace.GetTypeMembers(valueText);
         return HasDifferentSymbol(candidates, symbol);
     }
 
     private static bool HasNamespaceConflict(INamespaceSymbol symbol, string valueText)
     {
-        return HasDifferentSymbol(
-            symbol.ContainingNamespace.GetMembers(valueText),
-            symbol
-        );
+        return HasDifferentSymbol(symbol.ContainingNamespace.GetMembers(valueText), symbol);
     }
 
     private static Task<Solution> RenameSolutionAsync(
@@ -250,13 +258,15 @@ internal sealed partial class WorkspaceManager
     private static async Task<RenameEditResult> BuildRenameResultAsync(
         Solution original,
         Solution renamed,
+        string newName,
         CancellationToken ct
     )
     {
         var edits = new List<DocumentEditResult>();
+        var solutions = new RenameSolutions(original, renamed, newName);
         foreach (var projectChange in renamed.GetChanges(original).GetProjectChanges())
         {
-            await AddChangedDocumentsAsync(original, renamed, projectChange, edits, ct)
+            await AddChangedDocumentsAsync(solutions, projectChange, edits, ct)
                 .ConfigureAwait(false);
         }
 
@@ -264,8 +274,7 @@ internal sealed partial class WorkspaceManager
     }
 
     private static async Task AddChangedDocumentsAsync(
-        Solution original,
-        Solution renamed,
+        RenameSolutions solutions,
         ProjectChanges projectChange,
         List<DocumentEditResult> result,
         CancellationToken ct
@@ -273,7 +282,7 @@ internal sealed partial class WorkspaceManager
     {
         foreach (var documentId in projectChange.GetChangedDocuments())
         {
-            var edit = await BuildDocumentRenameEditAsync(original, renamed, documentId, ct)
+            var edit = await BuildDocumentRenameEditAsync(solutions, documentId, ct)
                 .ConfigureAwait(false);
             if (edit is not null)
             {
@@ -283,24 +292,118 @@ internal sealed partial class WorkspaceManager
     }
 
     private static async Task<DocumentEditResult?> BuildDocumentRenameEditAsync(
-        Solution original,
-        Solution renamed,
+        RenameSolutions solutions,
         DocumentId documentId,
         CancellationToken ct
     )
     {
-        var oldDocument = original.GetDocument(documentId);
-        var newDocument = renamed.GetDocument(documentId);
-        if (oldDocument?.FilePath is null || newDocument is null)
-        {
-            return null;
-        }
+        var documents = GetRenameDocuments(solutions, documentId);
+        return documents is null
+            ? null
+            : await CreateDocumentRenameEditAsync(documents.Value, ct).ConfigureAwait(false);
+    }
 
-        var edits = await DocumentText.ComputeEditsAsync(oldDocument, newDocument, ct)
+    private static RenameDocuments? GetRenameDocuments(
+        RenameSolutions solutions,
+        DocumentId documentId
+    )
+    {
+        var oldDocument = solutions.Original.GetDocument(documentId);
+        var newDocument = solutions.Renamed.GetDocument(documentId);
+        return oldDocument?.FilePath is null || newDocument is null
+            ? null
+            : new RenameDocuments(oldDocument, newDocument, solutions.NewName);
+    }
+
+    private static async Task<DocumentEditResult?> CreateDocumentRenameEditAsync(
+        RenameDocuments documents,
+        CancellationToken ct
+    )
+    {
+        var edits = await ComputeRenameEditsAsync(
+                documents.Old,
+                documents.New,
+                documents.NewName,
+                ct
+            )
             .ConfigureAwait(false);
         return edits.Count == 0
             ? null
-            : new DocumentEditResult { FilePath = oldDocument.FilePath, Edits = edits };
+            : new DocumentEditResult { FilePath = documents.Old.FilePath!, Edits = edits };
+    }
+
+    private static async Task<List<TextEditResult>> ComputeRenameEditsAsync(
+        Document oldDocument,
+        Document newDocument,
+        string newName,
+        CancellationToken ct
+    )
+    {
+        var oldText = await oldDocument.GetTextAsync(ct).ConfigureAwait(false);
+        var oldRoot = await oldDocument.GetSyntaxRootAsync(ct).ConfigureAwait(false);
+        var changes = await newDocument.GetTextChangesAsync(oldDocument, ct).ConfigureAwait(false);
+        return
+        [
+            .. changes
+                .Select(change => ExpandRenameEdit(oldText, oldRoot, change, newName))
+                .DistinctBy(EditLocation),
+        ];
+    }
+
+    private static TextEditResult ExpandRenameEdit(
+        SourceText oldText,
+        SyntaxNode? oldRoot,
+        TextChange change,
+        string newName
+    )
+    {
+        var token = FindChangedIdentifier(oldRoot, change, newName);
+        var expanded = token.RawKind == 0 ? change : new TextChange(token.Span, newName);
+        return DocumentText.ToTextEdit(oldText, expanded);
+    }
+
+    private static SyntaxToken FindChangedIdentifier(
+        SyntaxNode? root,
+        TextChange change,
+        string newName
+    )
+    {
+        return root is null
+            ? default
+            : ChangeCandidatePositions(root, change)
+                .Select(position => root.FindToken(position, findInsideTrivia: true))
+                .FirstOrDefault(token => RewritesIdentifierTo(token, change, newName));
+    }
+
+    private static IEnumerable<int> ChangeCandidatePositions(SyntaxNode root, TextChange change)
+    {
+        return new[]
+        {
+            change.Span.Start,
+            change.Span.End,
+            change.Span.Start - 1,
+            change.Span.End - 1,
+        }
+            .Where(position => position >= 0 && position < root.FullSpan.End)
+            .Distinct();
+    }
+
+    private static bool RewritesIdentifierTo(SyntaxToken token, TextChange change, string newName)
+    {
+        if (!token.IsKind(SyntaxKind.IdentifierToken) || !token.Span.Contains(change.Span))
+        {
+            return false;
+        }
+
+        var start = change.Span.Start - token.Span.Start;
+        var end = change.Span.End - token.Span.Start;
+        var rewritten = token.Text[..start] + (change.NewText ?? "") + token.Text[end..];
+        return string.Equals(rewritten, newName, StringComparison.Ordinal);
+    }
+
+    private static (int, int, int, int) EditLocation(TextEditResult edit)
+    {
+        return (edit.StartLine, edit.StartCharacter, edit.EndLine, edit.EndCharacter);
     }
 
     private static RenameEditResult EmptyRenameResult()

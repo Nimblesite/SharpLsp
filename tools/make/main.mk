@@ -13,6 +13,8 @@
 #   make website-build                build the website
 #   make website-test                 test the website in Playwright
 #   make website-dev                  serve the website locally
+#   make install-dotnet-10             install a user-local .NET 10 SDK + runtime
+#   make uninstall-dotnet-10           remove the user-local .NET 10 SDK + runtime
 #   make package-vsix-linux-x64 [VERSION=x.y.z]     build + package VSIX for linux-x64
 #   make package-vsix-linux-arm64 [VERSION=x.y.z]   build + package VSIX for linux-arm64
 #   make package-vsix-darwin-arm64 [VERSION=x.y.z]  build + package VSIX for darwin-arm64
@@ -54,6 +56,10 @@ PROFILE           ?= release
 CARGO_FLAG         = $(if $(filter release,$(PROFILE)),--release,)
 DOTNET_CFG         = $(if $(filter release,$(PROFILE)),Release,Debug)
 RUST_TEST_THREADS ?= 1
+# Keep the test host's startup banner observable even when a developer's shell
+# exports a quieter RUST_LOG. Tests may opt into another filter explicitly via
+# RUST_TEST_LOG without inheriting editor/session logging preferences.
+RUST_TEST_LOG     ?= info
 # [DIST-CI-RUST-SHARDS] CI splits the Rust e2e suite into nextest hash
 # partitions (`_test-rust-shard`); SHARD_COUNT is the total number of slices.
 SHARD_COUNT       ?= 2
@@ -82,9 +88,11 @@ HOST_VSIX_BIN = $(VSCODE_DIR)/bin/$(HOST_PLATFORM)/sharplsp$(EXE_EXT)
 
 PREFIX   ?= $(HOME)/.local
 BINDIR    = $(PREFIX)/bin
-CHECK_COV = bash tools/coverage/check-coverage.sh
+CHECK_COV = node tools/coverage/check-coverage.mjs
+MERGE_COBERTURA = dotnet run --file tools/coverage/merge-cobertura.cs --
 
 .PHONY: build ci test lint fmt clean setup screenshots website-build website-test website-dev \
+        install-dotnet-10 uninstall-dotnet-10 \
         package-vsix-linux-x64 package-vsix-linux-arm64 \
         package-vsix-darwin-arm64 package-vsix-darwin-x64 \
         package-vsix-win32-x64 package-vsix-win32-arm64 \
@@ -149,7 +157,30 @@ _build-zed:
 _build-rider:
 	@command -v java >/dev/null 2>&1 || { echo "==> Skipping Rider plugin (no java on PATH)"; exit 0; }
 	@echo "==> Building Rider plugin..."
+ifeq ($(DETECTED_OS),windows)
+	@cd $(RIDER_DIR) && { \
+		rider_java_home=""; \
+		for candidate in \
+			"$${JAVA_HOME:-}" \
+			/c/Program\ Files/Microsoft/jdk-* \
+			/c/Program\ Files/Eclipse\ Adoptium/jdk-* \
+			/c/Program\ Files/Java/jdk-* \
+			/c/Program\ Files/Android/Android\ Studio/jbr \
+			/c/Program\ Files\ \(x86\)/Android/openjdk/jdk-* \
+			/c/Program\ Files\ \(x86\)/JetBrains/JetBrains\ Rider*/jbr; do \
+			[ -x "$$candidate/bin/java.exe" ] || continue; \
+			version=$$("$$candidate/bin/java.exe" -XshowSettings:properties -version 2>&1 | sed -n 's/^[[:space:]]*java.specification.version = //p' | head -n1); \
+			major=$${version%%.*}; \
+			case "$$major" in ''|*[!0-9]*) continue ;; esac; \
+			if [ "$$major" -ge 21 ]; then rider_java_home="$$candidate"; break; fi; \
+		done; \
+		[ -n "$$rider_java_home" ] || { echo "ERROR: Rider 2026.1 requires JDK 21+. Install one or set JAVA_HOME to it." >&2; exit 1; }; \
+		echo "    using JDK $$rider_java_home"; \
+		JAVA_HOME="$$rider_java_home" PATH="$$rider_java_home/bin:$$PATH" ./gradlew buildPlugin --no-daemon; \
+	}
+else
 	cd $(RIDER_DIR) && ./gradlew buildPlugin --no-daemon
+endif
 	mkdir -p $(DIST_DIR)
 	@zip=$$(ls $(RIDER_DIR)/build/distributions/sharplsp-rider-*.zip 2>/dev/null | head -n1); \
 		test -n "$$zip" || { echo "ERROR: no Rider plugin zip in $(RIDER_DIR)/build/distributions/" >&2; exit 1; }; \
@@ -223,8 +254,9 @@ test-rust: _test-rust
 
 # The e2e tests spawn the real sidecars from these paths.
 RUST_E2E_SIDECARS = \
-	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
-	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp"
+	RUST_LOG="$(RUST_TEST_LOG)" \
+	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp$(EXE_EXT)" \
+	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp$(EXE_EXT)"
 
 _prepare-rust-tests: _build-dotnet _stage-sidecars
 	@echo "==> Pre-building ProfileTarget fixture..."
@@ -239,7 +271,7 @@ _test-rust: _prepare-rust-tests
 	# nextest's non-zero exit, which then fails `make test`.
 	$(RUST_E2E_SIDECARS) \
 		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --no-fail-fast --test-threads $(RUST_TEST_THREADS)
-	@$(CHECK_COV) sharplsp "$$(jq '.data[0].totals.lines.percent' target/coverage-rust.json)"
+	@$(CHECK_COV) sharplsp --json target/coverage-rust.json data.0.totals.lines.percent
 
 # [DIST-CI-RUST-SHARDS] One CI slice of the suite: identical tests, identical
 # serialization (RUST_TEST_THREADS), but only the hash:$(SHARD)/$(SHARD_COUNT)
@@ -278,7 +310,7 @@ _test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
 	$(VSIX_TEST_ENV) npm test -- --coverage || status=$$?; \
 	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
 	exit $$status
-	@$(CHECK_COV) vscode-extension "$$(jq '.total.lines.pct' $(VSCODE_DIR)/coverage/coverage-summary.json)"
+	@$(CHECK_COV) vscode-extension --json $(VSCODE_DIR)/coverage/coverage-summary.json total.lines.pct
 
 # ── VSIX Windows feature chunks ───────────────────────────────────
 # [DIST-CI-WIN-VSIX] Runs ONE declared feature chunk of the VS Code end-to-end
@@ -323,10 +355,8 @@ _test-dotnet: _build-dotnet
 		-- RunConfiguration.FailFastEnabled=true
 	@_check_cov() { \
 	   local pkg=$$1 label=$$2 ; \
-	   pct=$$(for f in target/coverage-dotnet/*/coverage.cobertura.xml; do \
-	     sed -n "s/.*package name=\"$$pkg\" line-rate=\"\([^\"]*\)\".*/\1/p" "$$f" 2>/dev/null | head -1; \
-	   done | sort -rn | head -1) ; \
-	   $(CHECK_COV) "$$label" "$$(echo "$${pct:-0} * 100" | bc 2>/dev/null || echo 0)" ; \
+	   pct=$$($(MERGE_COBERTURA) "$$pkg" target/coverage-dotnet/*/coverage.cobertura.xml) ; \
+	   $(CHECK_COV) "$$label" "$$pct" ; \
 	 } ; \
 	 _check_cov SharpLsp.Sidecar.CSharp sharplsp-sidecar-csharp ; \
 	 _check_cov SharpLsp.Sidecar.FSharp sharplsp-sidecar-fsharp ; \
@@ -346,7 +376,9 @@ _test-website:
 	@echo "==> Running website Playwright tests..."
 	npm ci --prefix src/website
 	npm exec --prefix src/website -- playwright install $(PLAYWRIGHT_DEPS_FLAG) chromium webkit
-	npm test --prefix src/website
+	# Use Playwright's serialized CI mode locally too. The locale-parity matrix
+	# performs many navigations per page and is intentionally deterministic in CI.
+	CI=1 npm test --prefix src/website
 
 # ── Lint ─────────────────────────────────────────────────────────
 
@@ -387,7 +419,7 @@ _fmt-vsix:
 	cd $(VSCODE_DIR) && npx prettier --write 'src/**/*.ts'
 
 _fmt-dotnet:
-	dotnet csharpier format $(SIDECAR_SLN)/..
+	dotnet csharpier format $(dir $(SIDECAR_SLN))
 	dotnet format $(SIDECAR_SLN)
 
 # ── Screenshots ───────────────────────────────────────────────────
@@ -408,8 +440,8 @@ screenshots: _build-rust _build-dotnet _build-vsix
 			-u SHARPLSP_LSP_PATH \
 			-u SHARPLSP_BINARY_DIR \
 			SHARPLSP_SCREENSHOTS=1 \
-			SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp" \
-			SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp" \
+			SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp$(EXE_EXT)" \
+			SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp$(EXE_EXT)" \
 			npm test -- --coverage; \
 	STATUS=$$?; \
 	kill $$WATCHER_PID 2>/dev/null || true; \
@@ -474,7 +506,7 @@ _stamp-version:
 package-vsix-linux-x64:   RUST_TARGET ?= x86_64-unknown-linux-gnu
 package-vsix-linux-arm64:  RUST_TARGET ?= aarch64-unknown-linux-gnu
 package-vsix-darwin-arm64: RUST_TARGET ?= aarch64-apple-darwin
-# package-vsix-darwin-x64:   RUST_TARGET ?= x86_64-apple-darwin
+package-vsix-darwin-x64:   RUST_TARGET ?= x86_64-apple-darwin
 package-vsix-win32-x64:    RUST_TARGET ?= x86_64-pc-windows-msvc
 package-vsix-win32-arm64:  RUST_TARGET ?= aarch64-pc-windows-msvc
 
@@ -625,6 +657,18 @@ setup:
 
 DOTNET_INSTALL_SCRIPT = $(HOME)/.dotnet-install/dotnet-install.sh
 
+ifeq ($(DETECTED_OS),windows)
+
+install-dotnet-10:
+	@echo "==> Installing .NET 10 SDK + runtime for the current Windows user..."
+	powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/dotnet-10.ps1 -Action Install
+
+uninstall-dotnet-10:
+	@echo "==> Uninstalling user-local .NET 10 SDK + runtime..."
+	powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/dotnet-10.ps1 -Action Uninstall
+
+else
+
 install-dotnet-10:
 	@echo "==> Installing .NET 10 SDK + runtime via dotnet-install.sh..."
 	@mkdir -p $(HOME)/.dotnet-install
@@ -655,3 +699,5 @@ uninstall-dotnet-10:
 	@echo "==> .NET 10 removed. Remaining:"
 	@dotnet --list-sdks || true
 	@dotnet --list-runtimes || true
+
+endif

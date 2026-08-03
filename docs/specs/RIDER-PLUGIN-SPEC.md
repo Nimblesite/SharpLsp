@@ -179,5 +179,5 @@ A manual dev-loop test, run from `make test-rider`:
 
 1. `make install` — binaries in `~/.local/bin` and `~/.local/lib/sharplsp`.
 2. `./gradlew runIde` — boots a sandboxed Rider instance with the plugin.
-3. Open `src/examples/HelloSharpLsp.sln` or `src/examples/HelloSharpLsp.slnx`.
+3. Open `src/examples/Test.sln`.
 4. Assert the SharpLsp Solution tool window renders the project tree.

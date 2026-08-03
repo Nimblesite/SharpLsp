@@ -7,8 +7,10 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpOverlayTests
 
 open System
 open System.IO
+open System.Xml.Linq
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Diagnostics
+open FSharp.Compiler.Symbols
 open Xunit
 open MessagePack
 open SharpLsp.Sidecar.FSharp
@@ -22,6 +24,237 @@ let private freshWorkspace () =
         let ws = FSharpWorkspace.create ()
         let! _ = FSharpWorkspace.loadProject ws dir
         return ws, dir, Path.Combine(dir, "Library.fs")
+    }
+
+let private isLibraryCompile (element: XElement) =
+    match element.Attribute(XName.Get("Include")) with
+    | null -> false
+    | attribute -> attribute.Value = "Library.fs"
+
+let private configureIdentityProject dir =
+    let project = Path.Combine(dir, "TestProject.fsproj")
+    let document = XDocument.Load(project)
+    let properties = document.Descendants(XName.Get("PropertyGroup")) |> Seq.head
+    properties.Add(XElement(XName.Get("AssemblyName"), "FSharpFixtures"))
+    document.Descendants(XName.Get("Compile"))
+    |> Seq.filter (isLibraryCompile >> not)
+    |> Seq.toArray
+    |> Array.iter _.Remove()
+    document.Save(project)
+    let source = Path.Combine(dir, "Library.fs")
+    File.WriteAllText(source, "namespace FSharpFixtures.CrossLanguage\n\ntype FSharpOrigin(value: int) =\n    member _.Value = value\n")
+    project, source
+
+[<Fact>]
+let ``rename identity uses the real project assembly name`` () =
+    task {
+        let dir = createTestProject ()
+        try
+            let project, source = configureIdentityProject dir
+            let workspace = FSharpWorkspace.create ()
+            let! loaded = FSharpWorkspace.loadProject workspace project
+            Assert.True(match loaded with | Ok _ -> true | Error _ -> false)
+            let options = workspace.ProjectOptions |> Option.map _.OtherOptions |> Option.defaultValue [||]
+            Assert.Contains("--out:FSharpFixtures.dll", options)
+            let! identity = FSharpRename.getRenameIdentity workspace source 2 7
+            match identity with
+            | Some value ->
+                Assert.Equal("FSharpFixtures", value.AssemblyName)
+                Assert.Equal("T:FSharpFixtures.CrossLanguage.FSharpOrigin", value.XmlDocSig)
+                Assert.NotEqual<string>("DiagnosticsTarget", value.AssemblyName)
+            | None -> Assert.Fail("FSharpOrigin must expose a cross-sidecar rename identity")
+        finally
+            try Directory.Delete(dir, true) with _ -> ()
+    }
+
+[<NoComparison; NoEquality>]
+type private ForeignRenameScenario =
+    { Workspace: FSharpWorkspace.FSharpWorkspaceState
+      Directory: string; SourcePath: string; OriginalText: string
+      AssemblyName: string; OriginalXml: string }
+
+let private foreignRenameSource =
+    "namespace ForeignReverse\n\nopen System.Text\n\nmodule Uses =\n"
+    + "    let length = function | \"RenamedStringBuilder\", (builder: StringBuilder) -> builder.Length | _ -> 0\n"
+    + "    let ``RenamedStringBuilder`` = 42\n"
+    + "    let literal = \"RenamedStringBuilder RenamedStringBuilder\"\n"
+    + "    let comment = 1 // RenamedStringBuilder RenamedStringBuilder\n"
+
+let private entityIdentity (entity: FSharpEntity) =
+    string entity.Assembly.SimpleName, entity.XmlDocSig
+
+let private externalEntityIdentity workspace sourcePath line character =
+    task {
+        let! checkedFile = FSharpWorkspace.checkFile workspace sourcePath
+        match checkedFile with
+        | None -> return failwith "real FCS check must complete"
+        | Some(checkResults, source) ->
+            match FSharpWorkspace.getSymbolUse checkResults source line character with
+            | Some symbolUse ->
+                match symbolUse.Symbol with
+                | :? FSharpEntity as entity -> return entityIdentity entity
+                | :? FSharpMemberOrFunctionOrValue as memberValue ->
+                    match memberValue.DeclaringEntity with
+                    | Some entity -> return entityIdentity entity
+                    | None -> return failwith "constructor must have a declaring entity"
+                | symbol -> return failwith $"expected entity, got {symbol.GetType().Name}"
+            | None -> return failwith "StringBuilder must bind through real FCS"
+    }
+
+let private createForeignRenameScenario () =
+    task {
+        let dir = createTestProject ()
+        let project, sourcePath = configureIdentityProject dir
+        File.WriteAllText(sourcePath, foreignRenameSource)
+        let workspace = FSharpWorkspace.create ()
+        let! loaded = FSharpWorkspace.loadProject workspace project
+        match loaded with
+        | Error message -> return failwith $"real project failed to load: {message}"
+        | Ok _ ->
+            let line = foreignRenameSource.Split('\n')[5]
+            let character = line.LastIndexOf("StringBuilder", StringComparison.Ordinal) + 1
+            let! assemblyName, xmlDocSig = externalEntityIdentity workspace sourcePath 5 character
+            return
+                { Workspace = workspace; Directory = dir; SourcePath = sourcePath
+                  OriginalText = foreignRenameSource; AssemblyName = assemblyName
+                  OriginalXml = xmlDocSig }
+    }
+
+let private applySingleLineEdit (source: string) (edit: FSharpCodeActions.RawEdit) =
+    let lines = source.Split('\n')
+    let line = lines[edit.StartLine]
+    let before = line.Substring(0, edit.StartCharacter)
+    let after = line.Substring(edit.EndCharacter)
+    lines[edit.StartLine] <- before + edit.NewText + after
+    String.Join("\n", lines)
+
+let private assertSingleEdit
+    (path: string) (line: int) (startCharacter: int)
+    (oldName: string) (newName: string) (source: string)
+    (edits: FSharpCodeActions.RawEdit list) =
+    let edit = Assert.Single<FSharpCodeActions.RawEdit>(edits)
+    Assert.Equal<string>(path, edit.FilePath)
+    Assert.Equal(line, edit.StartLine)
+    Assert.Equal(line, edit.EndLine)
+    Assert.Equal(startCharacter, edit.StartCharacter)
+    Assert.Equal(startCharacter + oldName.Length, edit.EndCharacter)
+    Assert.Equal<string>(newName, edit.NewText)
+    let sourceLine = source.Split('\n')[line]
+    let actualName = sourceLine.Substring(startCharacter, oldName.Length)
+    Assert.Equal<string>(oldName, actualName)
+    edit
+
+let private workspaceErrors (scenario: ForeignRenameScenario) =
+    task {
+        let! checkedFile = FSharpWorkspace.checkFile scenario.Workspace scenario.SourcePath
+        return
+            checkedFile
+            |> Option.map (fun (result, _) ->
+                result.Diagnostics |> Array.filter (fun item -> item.Severity = FSharpDiagnosticSeverity.Error))
+            |> Option.defaultWith (fun () -> failwith "real FCS check must complete")
+    }
+
+let private runForeignForward (scenario: ForeignRenameScenario) =
+    task {
+        let! edits = FSharpRename.renameForeign scenario.Workspace scenario.AssemblyName
+                         scenario.OriginalXml "RenamedStringBuilder"
+        let line = scenario.OriginalText.Split('\n')[5]
+        let startCharacter = line.LastIndexOf("StringBuilder", StringComparison.Ordinal)
+        let edit = assertSingleEdit scenario.SourcePath 5 startCharacter "StringBuilder"
+                       "RenamedStringBuilder" scenario.OriginalText edits
+        let forwardText = applySingleLineEdit scenario.OriginalText edit
+        Assert.Contains("(builder: RenamedStringBuilder)", forwardText)
+        Assert.Contains("let ``RenamedStringBuilder`` = 42", forwardText)
+        Assert.Equal(7, Text.RegularExpressions.Regex.Matches(forwardText, "RenamedStringBuilder").Count)
+        FSharpWorkspace.applyDidChange scenario.Workspace scenario.SourcePath forwardText
+        let! errors = workspaceErrors scenario
+        Assert.NotEmpty(errors)
+        let renamedXml = FSharpRename.renameXmlDocSignature scenario.OriginalXml "StringBuilder" "RenamedStringBuilder"
+        Assert.Equal("T:System.Text.RenamedStringBuilder", renamedXml)
+        return forwardText, renamedXml
+    }
+
+let private assertReverseNegatives (scenario: ForeignRenameScenario) (renamedXml: string) =
+    task {
+        let! wrongAssembly =
+            FSharpRename.renameForeign
+                scenario.Workspace (scenario.AssemblyName + ".Wrong") renamedXml "StringBuilder"
+        Assert.Empty(wrongAssembly)
+        let! wrongIdentity =
+            FSharpRename.renameForeign
+                scenario.Workspace scenario.AssemblyName "T:System.Text.NotTheBuilder" "StringBuilder"
+        Assert.Empty(wrongIdentity)
+        let! noOp =
+            FSharpRename.renameForeign
+                scenario.Workspace scenario.AssemblyName renamedXml "RenamedStringBuilder"
+        Assert.Empty(noOp)
+    }
+
+let private runForeignReverse
+    (scenario: ForeignRenameScenario) (forwardText: string) (renamedXml: string) =
+    task {
+        let! edits =
+            FSharpRename.renameForeign
+                scenario.Workspace scenario.AssemblyName renamedXml "StringBuilder"
+        let line = forwardText.Split('\n')[5]
+        let startCharacter = line.LastIndexOf("RenamedStringBuilder", StringComparison.Ordinal)
+        let edit = assertSingleEdit scenario.SourcePath 5 startCharacter
+                       "RenamedStringBuilder" "StringBuilder" forwardText edits
+        let restored = applySingleLineEdit forwardText edit
+        Assert.Equal<string>(scenario.OriginalText, restored)
+        Assert.Equal(6, Text.RegularExpressions.Regex.Matches(restored, "RenamedStringBuilder").Count)
+        Assert.Contains("let ``RenamedStringBuilder`` = 42", restored)
+        Assert.DoesNotContain("(builder: RenamedStringBuilder)", restored)
+        FSharpWorkspace.applyDidChange scenario.Workspace scenario.SourcePath restored
+    }
+
+let private assertRestoredSemantics (scenario: ForeignRenameScenario) =
+    task {
+        let! errors = workspaceErrors scenario
+        Assert.Empty(errors)
+        let line = scenario.OriginalText.Split('\n')[5]
+        let character = line.LastIndexOf("StringBuilder", StringComparison.Ordinal) + 1
+        let! assemblyName, xmlDocSig =
+            externalEntityIdentity scenario.Workspace scenario.SourcePath 5 character
+        Assert.Equal<string>(scenario.AssemblyName, assemblyName)
+        Assert.Equal<string>(scenario.OriginalXml, xmlDocSig)
+        Assert.Equal("T:System.Text.StringBuilder", xmlDocSig)
+        Assert.NotEqual<string>("FSharpFixtures", assemblyName)
+    }
+
+/// [SHARPLSP-FEATURES-REFACTORING] Complete unsaved cross-language lifecycle.
+/// Same-line negatives also exercise shifted columns in the batched real-FCS check.
+[<Fact>]
+let ``foreign rename reverses an unresolved overlay without touching same-name text`` () =
+    task {
+        let! scenario = createForeignRenameScenario ()
+        try
+            Assert.False(String.IsNullOrWhiteSpace(scenario.AssemblyName))
+            Assert.Equal("T:System.Text.StringBuilder", scenario.OriginalXml)
+            Assert.Equal(6, Text.RegularExpressions.Regex.Matches(scenario.OriginalText, "RenamedStringBuilder").Count)
+            let! forwardText, renamedXml = runForeignForward scenario
+            do! assertReverseNegatives scenario renamedXml
+            do! runForeignReverse scenario forwardText renamedXml
+            do! assertRestoredSemantics scenario
+        finally
+            try Directory.Delete(scenario.Directory, true) with _ -> ()
+    }
+
+[<Fact>]
+let ``cross-sidecar rename analysis failures propagate instead of returning partial success`` () =
+    task {
+        let workspace = FSharpWorkspace.create ()
+        let identityCall () =
+            FSharpRename.getRenameIdentity workspace "missing.fs" 0 0 :> Threading.Tasks.Task
+        let foreignCall () =
+            FSharpRename.renameForeign workspace "Any" "T:Any.Type" "Other" :> Threading.Tasks.Task
+        let! identityError = Assert.ThrowsAsync<InvalidOperationException>(Func<Threading.Tasks.Task>(identityCall))
+        let! foreignError = Assert.ThrowsAsync<InvalidOperationException>(Func<Threading.Tasks.Task>(foreignCall))
+        Assert.Equal("F# workspace is not loaded", identityError.Message)
+        Assert.Equal("F# workspace is not loaded", foreignError.Message)
+        Assert.NotSame(identityError, foreignError)
+        Assert.IsType<InvalidOperationException>(identityError) |> ignore
+        Assert.IsType<InvalidOperationException>(foreignError) |> ignore
     }
 
 /// Store `overlayText` under `storePath`, then hover over the binding named by

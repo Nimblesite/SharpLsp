@@ -122,17 +122,15 @@ src/website/test-results/
 
 test-results/
 
-docs/plans/editors/zed/target/
+/src/editors/zed/target/
 
 .deslop-cache/
 # Deslop report artifacts (generated locally by `deslop`, never committed).
 deslop-report.*
 deslop-*.log
+/debug.log
 .ghissues/
 .vscode/code-navigator/
 # Real-world repos cloned by the e2e stress suites (src/editors/vscode real-repo tests).
 # Never committed - fetched on demand at pinned tags.
 /src/fixtures/real-world/
-
-
-/tools/migration/cargo-split/target/debug/

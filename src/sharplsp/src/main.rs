@@ -627,7 +627,7 @@ fn handle_request(
 
     let result = match req.method.as_str() {
         // Syntax-only (tree-sitter, Rust) for C#; F# has no host grammar, so its
-        // symbols come from the sidecar's FCS navigation items. [FS-DOCSYMBOL]
+        // symbols come from the sidecar's FCS items. [SHARPLSP-FEATURES-NAVIGATION]
         DocumentSymbolRequest::METHOD => {
             if is_fsharp_request(&req) {
                 let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
@@ -676,7 +676,8 @@ fn handle_request(
             fsharp_sidecar,
         ),
         // Formatting intentionally disabled — use CSharpier (C#) / Fantomas via Ionide (F#).
-        // Handler code is sequestered in src/formatting.rs (see docs/formatting/README.md).
+        // Handler code is sequestered in src/sharplsp/src/formatting.rs
+        // (see docs/formatting/README.md).
         // Semantic tokens
         SemanticTokensFullRequest::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
@@ -695,7 +696,7 @@ fn handle_request(
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             inlay_hints::handle_inlay_hint(req, runtime, sidecar, vfs)
         }
-        // Signature help [FS-SIGHELP]
+        // Signature help [SHARPLSP-FEATURES-INTELLIGENCE]
         SignatureHelpRequest::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             signature_help::handle(req, runtime, sidecar)
@@ -705,14 +706,15 @@ fn handle_request(
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             code_lens::handle_code_lens(req, runtime, sidecar)
         }
-        // Rename — Implements [RENAME-PREPARE] and [RENAME-APPLY]
+        // Rename — [RENAME-PREPARE], [RENAME-APPLY], [RENAME-CROSSLANGUAGE].
         PrepareRenameRequest::METHOD => {
             let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
             semantic::handle_prepare_rename(req, runtime, sidecar)
         }
         Rename::METHOD => {
-            let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
-            semantic::handle_rename(req, runtime, sidecar)
+            let (primary, fallback) =
+                pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
+            semantic::handle_rename(req, runtime, primary, fallback)
         }
         // Call hierarchy
         CallHierarchyPrepare::METHOD => {
@@ -1065,7 +1067,7 @@ fn handle_workspace_symbols(
 
 /// Standard `workspace/symbol` handler. C#/syntax files are matched by tree-sitter
 /// over the VFS; F# files are matched via the FCS sidecar's document symbols, since
-/// the host has no F# tree-sitter grammar. [FS-WORKSPACE-SYMBOL]
+/// the host has no F# tree-sitter grammar. `[SHARPLSP-FEATURES-NAVIGATION]`
 fn handle_standard_workspace_symbol(
     req: Request,
     parsers: &TsParsers,
@@ -1098,7 +1100,7 @@ fn handle_standard_workspace_symbol(
 
 /// Append the FCS-sourced workspace symbols matching `query` for one open F#
 /// document. No sidecar / unresolvable path / sidecar error → contributes
-/// nothing, never fails the whole search. [FS-WORKSPACE-SYMBOL]
+/// nothing, never fails the whole search. `[SHARPLSP-FEATURES-NAVIGATION]`
 fn collect_fsharp_ws_symbols(
     uri: &Uri,
     runtime: &tokio::runtime::Runtime,

@@ -6,7 +6,7 @@ import path from 'node:path';
 // dir, not the repo-relative `.vscode-test/`. VS Code's main IPC handle is a
 // Unix domain socket (`<user-data-dir>/<v>-main.sock`); on macOS/Linux the
 // `sun_path` limit is ~104 chars, so a deep checkout path (e.g.
-// `~/Documents/Code/SharpLsp/editors/vscode/.vscode-test/...`) overflows it and
+// `~/Documents/Code/SharpLsp/src/editors/vscode/.vscode-test/...`) overflows it and
 // the host dies at startup with `listen EINVAL` before any test runs. The OS
 // temp dir keeps the socket path well under the limit (and Windows uses named
 // pipes, so it's unaffected either way). Overridable via the env var.

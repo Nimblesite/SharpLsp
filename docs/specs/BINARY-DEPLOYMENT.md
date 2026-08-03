@@ -95,8 +95,7 @@ Replace the current monolithic archive job with:
 - Upload artifact
 
 **Job B: `pack-sidecars`** (single ubuntu job — framework-dependent, no RID matrix)
-- `dotnet pack src/sidecars/SharpLsp.Sidecar.CSharp -p:PackageVersion=<version>
-   -c Release -o nupkgs` → one cross-platform `.nupkg`
+- `dotnet pack src/sidecars/SharpLsp.Sidecar.CSharp -p:PackageVersion=<version> -c Release -o nupkgs` → one cross-platform `.nupkg`
 - Same for `SharpLsp.Sidecar.FSharp`
 - Total: 2 nupkgs per release
 - Upload nupkg artifacts
@@ -105,8 +104,7 @@ Replace the current monolithic archive job with:
 - `gh release create` with all tar.gz/zip assets (sharplsp only)
 
 **Job D: `publish-nuget`** (needs [B])
-- `dotnet nuget push *.nupkg --api-key ${{ secrets.NUGET_API_KEY }}
-   --source https://api.nuget.org/v3/index.json`
+- `dotnet nuget push *.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json`
 
 **Job E: `update-homebrew`** (needs [release])
 - Checkout `Nimblesite/homebrew-tap` with `BREW_SCOOP_PAT`
@@ -177,7 +175,7 @@ Before running any install command, run `getVersion("brew")` / `getVersion("scoo
 **Deletions:**
 
 - `downloadAndInstall`, `downloadToFile`, `extractTarGz`, `platformRid`, `bundledBinaryPath`, and the whole GitHub-release HTTPS path.
-- The `bin/` VSIX bundling path and the `~/.local/lib/sharplsp/` staging from both the Makefile `install` target and `.github/workflows/test-vscode.yml` (recent commits `c6f29f0` and `e1dd2ca` become partially obsolete).
+- The `bin/` VSIX bundling path and the `~/.local/lib/sharplsp/` staging from both the Makefile `install` target and `.github/workflows/ci-vsix.yml` (recent commits `c6f29f0` and `e1dd2ca` become partially obsolete).
 
 **Forbidden patterns (encoded as lint / code review):**
 
@@ -187,7 +185,7 @@ Before running any install command, run `getVersion("brew")` / `getVersion("scoo
 
 ### Makefile installation targets `[BINARY-MAKEFILE]`
 
-`Makefile:370-383` — the `install` target currently stages sharplsp + sidecars into `$PREFIX`. Replace with:
+`tools/make/main.mk:584-600` — the install targets currently stage sharplsp + sidecars into `$PREFIX`. Replace with:
 
 - `install-rust`: just copies `sharplsp` to `$PREFIX/bin` (for local dev)
 - `install-sidecars`: runs `dotnet tool install -g` from locally packed nupkgs so contributors can test the tool install flow end-to-end

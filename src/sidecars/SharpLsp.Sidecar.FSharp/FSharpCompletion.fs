@@ -1,6 +1,5 @@
 /// Code completion for the F# sidecar via FCS GetDeclarationListInfo.
-/// Implements [FS-COMPLETION] / [FS-COMPLETION-RESOLVE] from
-/// docs/plans/FSHARP-FEATURES-PLAN.md.
+/// Completion and resolve portion of [SHARPLSP-FEATURES-INTELLIGENCE].
 module SharpLsp.Sidecar.FSharp.FSharpCompletion
 
 open FSharp.Compiler.CodeAnalysis
@@ -25,7 +24,7 @@ type CompletionEntry =
       EditEndCharacter: int }
 
 /// Map an FCS glyph to the kind strings the Rust host's `map_completion_kind`
-/// understands (see src/semantic.rs). Anything unmapped falls back to "Keyword".
+/// understands (see src/sharplsp/src/semantic.rs). Anything unmapped falls back to "Keyword".
 let private glyphToKind (glyph: FSharpGlyph) : string =
     match glyph with
     | FSharpGlyph.Class

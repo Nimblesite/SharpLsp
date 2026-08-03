@@ -1,7 +1,6 @@
 // Real command/LSP harness for [SE-CONTEXT-SORT-IMPLEMENTATION]. No providers are mocked.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import type { LanguageClient } from 'vscode-languageclient/node';
 import {
   activateRealSharpLsp,
   openFixtureDocument,
@@ -27,6 +26,18 @@ import {
   assertOrderedSymbols,
   assertTreeChildren,
 } from './sort-members-assertions';
+import type {
+  ExplorerProvider,
+  ExtensionApi,
+  LspRange,
+  SavedSettings,
+  SortOutcome,
+  SortPolicy,
+  SurfaceCase,
+  TreeNode,
+} from './sort-members-types';
+
+export type { SortOutcome, SortPolicy, SurfaceCase } from './sort-members-types';
 
 export { assertBlankLineBetween, assertLiveSentinels };
 
@@ -35,65 +46,6 @@ const FIXTURE_FILE = 'SortMembersCommand.cs';
 const FIXTURE_SOLUTION = workspaceFixturePath('TestFixtures.sln');
 const CLASS_NAME = 'SortMembersCommand';
 const MEMBER_TIMEOUT_MS = LSP_RESPONSE_TIMEOUT_MS + 30_000;
-
-interface LspPosition {
-  readonly line: number;
-  readonly character: number;
-}
-
-interface LspRange {
-  readonly start: LspPosition;
-  readonly end: LspPosition;
-}
-
-interface TreeNode extends vscode.TreeItem {
-  readonly nodeType: string;
-  readonly children: TreeNode[];
-  readonly sortName: string;
-  readonly symbolKind?: string;
-  readonly symbolUri?: string;
-  readonly symbolRange?: LspRange;
-  readonly parent?: TreeNode;
-}
-
-interface ExplorerProvider {
-  refresh(): Promise<void>;
-  getChildren(element?: TreeNode): TreeNode[] | undefined;
-}
-
-interface ExtensionApi {
-  readonly explorerProvider: ExplorerProvider;
-  readonly getLspClient: () => LanguageClient | undefined;
-}
-
-interface SavedSettings {
-  readonly hierarchy: string[] | undefined;
-  readonly accessibilityOrder: string[] | undefined;
-  readonly categoryOrder: string[] | undefined;
-}
-
-export interface SortPolicy {
-  readonly hierarchy: readonly string[];
-  readonly accessibilityOrder: readonly string[];
-  readonly categoryOrder: readonly string[];
-}
-
-export interface SortOutcome {
-  readonly beforeText: string;
-  readonly beforeVersion: number;
-  readonly afterText: string;
-  readonly afterVersion: number;
-}
-
-export interface SurfaceCase {
-  readonly typeName: string;
-  readonly kinds: readonly string[];
-  readonly contexts: readonly string[];
-  readonly initial: readonly string[];
-  readonly expected: readonly string[];
-  readonly anchors: Readonly<Record<string, string>>;
-  readonly validateSorted?: (text: string) => void;
-}
 
 let document: vscode.TextDocument;
 let provider: ExplorerProvider;
@@ -234,7 +186,10 @@ function assertCommonNode(node: TreeNode, name: string): void {
   assert.ok(nodeLabel(node).includes(name));
   assert.ok(node.parent, `${name} must retain its explorer parent`);
   assert.ok(node.symbolUri, `${name} must have a file URI`);
-  assert.strictEqual(vscode.Uri.parse(node.symbolUri).fsPath.toLowerCase(), document.uri.fsPath.toLowerCase());
+  assert.strictEqual(
+    vscode.Uri.parse(node.symbolUri).fsPath.toLowerCase(),
+    document.uri.fsPath.toLowerCase(),
+  );
 }
 
 function nodeLabel(node: TreeNode): string {
@@ -316,7 +271,10 @@ function assertSymbolContract(
 async function executeSortCommand(node: TreeNode): Promise<void> {
   const commands = await vscode.commands.getCommands(true);
   assert.ok(commands.includes(COMMAND), `${COMMAND} must be registered by the real extension`);
-  assert.strictEqual(vscode.window.activeTextEditor?.document.uri.toString(), document.uri.toString());
+  assert.strictEqual(
+    vscode.window.activeTextEditor?.document.uri.toString(),
+    document.uri.toString(),
+  );
   await assert.doesNotReject(async () => {
     await vscode.commands.executeCommand(COMMAND, node);
   });
@@ -349,22 +307,30 @@ export async function sortAndObserve(expected: readonly string[]): Promise<SortO
   return { beforeText, beforeVersion, afterText, afterVersion };
 }
 
-export async function assertNoOp(
-  outcome: SortOutcome,
-  expected: readonly string[],
-): Promise<void> {
+export async function assertNoOp(outcome: SortOutcome, expected: readonly string[]): Promise<void> {
   const node = await refreshNode(CLASS_NAME);
   assertClassNodeContract(node, expected);
   const beforeVersion = document.version;
   await executeSortCommand(node);
-  assert.strictEqual(document.version, beforeVersion, 'already-sorted command is version-idempotent');
-  assert.strictEqual(document.getText(), outcome.afterText, 'already-sorted command is text-idempotent');
+  assert.strictEqual(
+    document.version,
+    beforeVersion,
+    'already-sorted command is version-idempotent',
+  );
+  assert.strictEqual(
+    document.getText(),
+    outcome.afterText,
+    'already-sorted command is text-idempotent',
+  );
   assert.strictEqual(document.version, outcome.afterVersion);
   assert.ok(document.isDirty, 'no-op sorting does not silently save the buffer');
   await waitForTypeOrder(CLASS_NAME, expected);
 }
 
-export async function undoCleanSort(outcome: SortOutcome, initial: readonly string[]): Promise<void> {
+export async function undoCleanSort(
+  outcome: SortOutcome,
+  initial: readonly string[],
+): Promise<void> {
   const beforeVersion = document.version;
   await runEditorCommand('undo');
   await waitForText(outcome.beforeText);
@@ -411,7 +377,10 @@ export function buildLiveText(): string {
     .replace('_zeta = 7;', '_zeta = 99;');
 }
 
-export async function installLiveBuffer(liveText: string, initial: readonly string[]): Promise<void> {
+export async function installLiveBuffer(
+  liveText: string,
+  initial: readonly string[],
+): Promise<void> {
   await replaceDocumentText(document, liveText);
   assert.notStrictEqual(liveText, originalText);
   assert.strictEqual(document.getText(), liveText);
@@ -459,7 +428,10 @@ export async function exerciseTypeSurface(surface: SurfaceCase): Promise<void> {
 function assertSurfaceNode(node: TreeNode, surface: SurfaceCase): void {
   assertCommonNode(node, surface.typeName);
   assert.ok(surface.kinds.includes(node.symbolKind ?? ''), `${surface.typeName} has a type kind`);
-  assert.ok(surface.contexts.includes(node.contextValue ?? ''), `${surface.typeName} has a type context`);
+  assert.ok(
+    surface.contexts.includes(node.contextValue ?? ''),
+    `${surface.typeName} has a type context`,
+  );
   assert.ok(node.symbolRange, `${surface.typeName} must have a real type range`);
   const text = document.getText(toRange(node.symbolRange));
   assert.ok(text.includes(surface.typeName));

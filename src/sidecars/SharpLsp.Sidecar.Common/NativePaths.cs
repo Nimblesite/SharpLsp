@@ -7,7 +7,7 @@ namespace SharpLsp.Sidecar.Common;
 /// (<c>std::fs::canonicalize</c>) which produces the prefixed form on
 /// Windows, while MSBuild, Roslyn, and FCS report normal-form paths — both
 /// spellings must compare equal. Mirrors <c>strip_verbatim</c> in the host
-/// (<c>src/vfs.rs</c>). [GitHub #110]
+/// (<c>src/sharplsp/src/vfs.rs</c>). [GitHub #110]
 /// </summary>
 public static class NativePaths
 {

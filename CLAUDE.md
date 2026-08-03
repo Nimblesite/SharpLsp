@@ -193,15 +193,15 @@ Mapping (current → toolkit crate):
 
 | Current path | Toolkit crate |
 |---|---|
-| `src/main.rs:138–262` `lsp-server`-based entrypoint | `lspkit-server` (hand-rolled JSON-RPC + `Dispatcher` + `Capabilities`) |
-| `src/vfs.rs` `Vfs` document state | `lspkit-vfs::Vfs` + `lspkit-vfs::PositionEncoding` |
-| `src/sidecar/protocol.rs` `Envelope` framing | `lspkit-sidecar::transport` (length-prefixed frames, payload format is consumer's choice) |
-| `src/sidecar/transport.rs` `FramedTransport` | `lspkit-sidecar::transport::{read_frame, write_frame}` |
-| `src/sidecar/manager.rs` `SidecarManager` (spawn / health / restart / correlation) | `lspkit-sidecar::lifecycle::Sidecar` + `lspkit-sidecar::correlator::Correlator` |
-| `src/diagnostics.rs` + `pull_diagnostics.rs` diagnostic publication | `lspkit-server::diagnostics::DiagnosticsBus` |
-| `src/config.rs` `sharplsp.toml` loader | `lspkit-config::load_from_ancestor` |
-| `src/handlers.rs` syntax-only handlers | `lspkit-server::Dispatcher::register` per method name |
-| `src/semantic_tokens.rs` `TokenCache` | (consumer-side cache; not in toolkit) |
+| `src/sharplsp/src/main.rs:138–262` `lsp-server`-based entrypoint | `lspkit-server` (hand-rolled JSON-RPC + `Dispatcher` + `Capabilities`) |
+| `src/sharplsp/src/vfs.rs` `Vfs` document state | `lspkit-vfs::Vfs` + `lspkit-vfs::PositionEncoding` |
+| `src/sharplsp/src/sidecar/protocol.rs` `Envelope` framing | `lspkit-sidecar::transport` (length-prefixed frames, payload format is consumer's choice) |
+| `src/sharplsp/src/sidecar/transport.rs` `FramedTransport` | `lspkit-sidecar::transport::{read_frame, write_frame}` |
+| `src/sharplsp/src/sidecar/manager.rs` `SidecarManager` (spawn / health / restart / correlation) | `lspkit-sidecar::lifecycle::Sidecar` + `lspkit-sidecar::correlator::Correlator` |
+| `src/sharplsp/src/diagnostics.rs` + `pull_diagnostics.rs` diagnostic publication | `lspkit-server::diagnostics::DiagnosticsBus` |
+| `src/sharplsp/src/config.rs` `sharplsp.toml` loader | `lspkit-config::load_from_ancestor` |
+| `src/sharplsp/src/handlers.rs` syntax-only handlers | `lspkit-server::Dispatcher::register` per method name |
+| `src/sharplsp/src/semantic_tokens.rs` `TokenCache` | (consumer-side cache; not in toolkit) |
 | .NET sidecar projects (`src/sidecars/SharpLsp.Sidecar.*`) | (engine — stays here. `lspkit-sidecar` is pure transport and does not bundle .NET- or Roslyn-specific code) |
 
 Code in this repo is **not** being removed — it stays canonical until the toolkit matures. This note exists so future agents reuse `lspkit` for new servers and avoid widening this repo's scaffolding.

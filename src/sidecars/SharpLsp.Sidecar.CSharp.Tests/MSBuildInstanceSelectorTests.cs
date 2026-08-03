@@ -128,6 +128,30 @@ public class MSBuildInstanceSelectorTests
     }
 
     [Fact]
+    public void NewestInstancePath_selects_the_highest_discovered_sdk()
+    {
+        // [DIST-SDK-DISCOVERY] The degraded fallback must be deterministic.
+        var instances = MSBuildLocator.QueryVisualStudioInstances().ToList();
+        var expected = instances.MaxBy(instance => instance.Version);
+
+        Assert.NotNull(expected);
+        Assert.Equal(expected.MSBuildPath, MSBuildInstanceSelector.NewestInstancePath(instances));
+    }
+
+    [Fact]
+    public void BuildDiscoveryFailedHint_explains_degraded_mode_and_the_remedy()
+    {
+        // [DIST-SDK-DISCOVERY] Discovery failure remains actionable and non-fatal.
+        var hint = MSBuildInstanceSelector.BuildDiscoveryFailedHint(
+            new InvalidOperationException("sdk pin missing")
+        );
+        Assert.Contains("WARNING", hint, StringComparison.Ordinal);
+        Assert.Contains("solution browsing still works", hint, StringComparison.Ordinal);
+        Assert.Contains("global.json", hint, StringComparison.Ordinal);
+        Assert.Contains("sdk pin missing", hint, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WarnNoMatch_reports_the_bundled_roslyn_and_installed_sdks()
     {
         using var writer = new StringWriter();

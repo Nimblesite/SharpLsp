@@ -277,11 +277,11 @@ Both C# and F# columns require full support unless noted.
 
 | Feature | LSP Method | C# API (Roslyn) | F# API (FCS) | Priority |
 |---|---|---|---|---|
-| Auto-completion | `textDocument/completion` | [CompletionService.GetCompletionsAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getcompletionsasync) | GetDeclarationListInfo() `[FS-COMPLETION]` | P0 |
-| Completion resolve | `completionItem/resolve` | [CompletionService.GetDescriptionAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdescriptionasync) | GetDeclarationListInfo (detail) `[FS-COMPLETION-RESOLVE]` | P0 |
+| Auto-completion | `textDocument/completion` | [CompletionService.GetCompletionsAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getcompletionsasync) | GetDeclarationListInfo() | P0 |
+| Completion resolve | `completionItem/resolve` | [CompletionService.GetDescriptionAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdescriptionasync) | GetDeclarationListInfo (detail) | P0 |
 | Completion edit semantics | `textDocument/completion` | `GetDefaultCompletionListSpan` + trailing-ident extension → `textEdit` — `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]` | `QuickParse.GetPartialLongNameEx` island + trailing-ident extension → `textEdit` — `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]` | P0 |
 | Hover / Quick Info | `textDocument/hover` | See [HOVER-SPEC.md](HOVER-SPEC.md) | See [HOVER-SPEC.md](HOVER-SPEC.md) | P0 |
-| Signature help | `textDocument/signatureHelp` | SignatureHelpService.GetItemsAsync() | GetMethods() `[FS-SIGHELP]` | P0 |
+| Signature help | `textDocument/signatureHelp` | SignatureHelpService.GetItemsAsync() | GetMethods() | P0 |
 | Parameter hints | `textDocument/signatureHelp` | Same (active parameter tracking) | Same (active parameter tracking) | P0 |
 | Inlay hints (types) | `textDocument/inlayHint` | Type inference display | Type inference display | P1 |
 | Inlay hints (params) | `textDocument/inlayHint` | Parameter name hints | Parameter name hints | P1 |
@@ -303,14 +303,14 @@ The C# sidecar derives the span from [`CompletionService.GetDefaultCompletionLis
 | Go to implementation | See [DEFINITION-SPEC.md](DEFINITION-SPEC.md) | | | P0 |
 | Find all references | `textDocument/references` | [SymbolFinder.FindReferencesAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.findusages.symbolfinder.findreferencesasync) | GetUsesOfSymbolInFile/Project() | P0 |
 | Document highlights | `textDocument/documentHighlight` | SymbolFinder (scoped to doc) | GetUsesOfSymbolInFile() | P0 |
-| Workspace symbol search | `workspace/symbol` | tree-sitter over open docs (host) | FCS document symbols via sidecar — `[FS-WORKSPACE-SYMBOL]` (host has no F# tree-sitter grammar) | P0 |
+| Workspace symbol search | `workspace/symbol` | tree-sitter over open docs (host) | FCS document symbols via sidecar (host has no F# tree-sitter grammar) | P0 |
 | Document symbols | `textDocument/documentSymbol` | tree-sitter structural extraction | tree-sitter structural extraction | P0 |
-| Call hierarchy prepare | `textDocument/prepareCallHierarchy` | Symbol resolution | FCS symbol resolution `[FS-CALLHIER-PREPARE]` | P1 |
-| Incoming calls | `callHierarchy/incomingCalls` | SymbolFinder.FindCallersAsync() | Project-wide FCS symbol uses `[FS-CALLHIER-INCOMING]` | P1 |
-| Outgoing calls | `callHierarchy/outgoingCalls` | Semantic model invocation walk | FCS parse/check traversal `[FS-CALLHIER-OUTGOING]` | P1 |
-| Type hierarchy prepare | `textDocument/prepareTypeHierarchy` | Symbol resolution | FCS entity resolution `[FS-TYPEHIER-PREPARE]` | P1 |
-| Supertypes | `typeHierarchy/supertypes` | Base type and interface symbols | `BaseType` + `DeclaredInterfaces` `[FS-TYPEHIER-SUPER]` | P1 |
-| Subtypes | `typeHierarchy/subtypes` | FindDerivedClasses | Project entity scan `[FS-TYPEHIER-SUB]` | P1 |
+| Call hierarchy prepare | `textDocument/prepareCallHierarchy` | Symbol resolution | FCS symbol resolution | P1 |
+| Incoming calls | `callHierarchy/incomingCalls` | SymbolFinder.FindCallersAsync() | Project-wide FCS symbol uses | P1 |
+| Outgoing calls | `callHierarchy/outgoingCalls` | Semantic model invocation walk | FCS parse/check traversal | P1 |
+| Type hierarchy prepare | `textDocument/prepareTypeHierarchy` | Symbol resolution | FCS entity resolution | P1 |
+| Supertypes | `typeHierarchy/supertypes` | Base type and interface symbols | `BaseType` + `DeclaredInterfaces` | P1 |
+| Subtypes | `typeHierarchy/subtypes` | FindDerivedClasses | Project entity scan | P1 |
 | Breadcrumbs | `textDocument/documentSymbol` | Hierarchical symbol tree | Hierarchical symbol tree | P1 |
 | Go to decompiled source | Custom: `sharplsp/decompileSource` | [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) | ICSharpCode.Decompiler | P1 |
 | Go to source generator output | Custom: `sharplsp/generatorOutput` | GeneratorDriverRunResult | N/A | P2 |
@@ -369,7 +369,7 @@ SharpLsp does **not** provide document formatting. Use dedicated formatters:
 
 | Feature | LSP Method | C# API | F# API | Priority |
 |---|---|---|---|---|
-| Reference count | `textDocument/codeLens` | SymbolFinder.FindReferences() | GetUsesOfSymbol() `[FS-CODELENS]` | P1 |
+| Reference count | `textDocument/codeLens` | SymbolFinder.FindReferences() | GetUsesOfSymbol() | P1 |
 | Implementation count | `textDocument/codeLens` | SymbolFinder.FindImplementations() | Custom implementation count | P1 |
 | Test indicators | `textDocument/codeLens` | Test framework attribute detection | Test framework attribute detection | P1 |
 | Run/debug test | `textDocument/codeLens` | Custom test runner integration | Custom test runner integration | P2 |

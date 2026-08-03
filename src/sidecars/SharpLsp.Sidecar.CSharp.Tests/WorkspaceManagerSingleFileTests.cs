@@ -192,6 +192,43 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
         Assert.False(manager.IsLoaded);
     }
 
+    /// <summary>A missing loose C# file is a load failure. Implements [SCRIPT-DEGRADE].</summary>
+    [Fact]
+    public async Task Projectless_directory_rejects_update_for_a_missing_file()
+    {
+        using var manager = new WorkspaceManager();
+        var missing = Path.Combine(_root, "missing.cs");
+        Assert.False((await OpenAsync(manager, _root)).IsError);
+
+        var result = await manager.UpdateDocumentTextAsync(missing, "Console.WriteLine(1);");
+
+        Assert.True(result.IsError);
+        Assert.Contains(
+            "not a file-based app or script",
+            result.Match(_ => "", error => error),
+            StringComparison.Ordinal
+        );
+        Assert.False(manager.IsLoaded);
+    }
+
+    [Fact]
+    public async Task Projectless_update_reports_cancellation_as_a_result_failure()
+    {
+        using var manager = new WorkspaceManager();
+        Assert.False((await OpenAsync(manager, _root)).IsError);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        var result = await manager.UpdateDocumentTextAsync(
+            Path.Combine(_root, "cancelled.cs"),
+            "Console.WriteLine(1);",
+            cancellation.Token
+        );
+
+        Assert.True(result.IsError);
+        Assert.False(manager.IsLoaded);
+    }
+
     /// <summary>
     /// Ambiguity is NOT absence. A root holding several solutions must surface an error
     /// naming the knob that resolves it, never degrade to lazy per-file ad-hoc projects:

@@ -161,6 +161,26 @@ fn source_tag_for_uri(uri: &Uri) -> String {
     }
 }
 
+/// Determine the diagnostic source tag from a native document path.
+fn source_tag_for_path(file_path: &str) -> &'static str {
+    let Some(extension) = std::path::Path::new(file_path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+    else {
+        return "sharplsp-csharp";
+    };
+
+    if extension.eq_ignore_ascii_case("fs")
+        || extension.eq_ignore_ascii_case("fsx")
+        || extension.eq_ignore_ascii_case("fsi")
+        || extension.eq_ignore_ascii_case("fsscript")
+    {
+        "sharplsp-fsharp"
+    } else {
+        "sharplsp-csharp"
+    }
+}
+
 /// Spawn a background task to fetch solution-wide diagnostics.
 ///
 /// Results are published incrementally — one notification per file —
@@ -236,12 +256,7 @@ async fn verify_error_files(
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     for file_path in error_files {
-        let source_tag = match std::path::Path::new(file_path.as_str()).extension() {
-            Some(ext) if ext.eq_ignore_ascii_case("fs") || ext.eq_ignore_ascii_case("fsx") => {
-                "sharplsp-fsharp"
-            }
-            _ => "sharplsp-csharp",
-        };
+        let source_tag = source_tag_for_path(file_path);
 
         // Skip the disk-resync step for documents the editor has open. The
         // VFS holds the live, possibly-unsaved text — overwriting the sidecar
@@ -329,7 +344,7 @@ pub async fn fetch_from_sidecar(
     sidecar: &SidecarManager,
     file_path: &str,
 ) -> Result<Vec<Diagnostic>> {
-    fetch(sidecar, file_path, "sharplsp-csharp").await
+    fetch(sidecar, file_path, source_tag_for_path(file_path)).await
 }
 
 /// Fetch diagnostics from the sidecar for a single file.

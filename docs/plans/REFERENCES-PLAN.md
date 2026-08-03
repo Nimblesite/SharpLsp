@@ -6,15 +6,15 @@
 
 Implements `textDocument/references` and `textDocument/documentHighlight` for C# (Roslyn) and F# (FCS). The Rust host routes requests to the appropriate sidecar, which resolves the symbol and returns all reference locations across the solution (references) or within the current document (highlights). Both methods are P0 features targeting Phase 2.
 
-**Current status:** Core implementation complete for Rust host, C# sidecar, and F# sidecar. Caching enabled. Remaining: edge-case handling (override chains, interface members, partial classes), E2E tests, and performance validation.
+**Current status:** Core routing exists for the Rust host and both sidecars. The current `nav_cache.rs` `HashMap` is interim and nonconformant with [REFERENCES-SALSA]; solution-wide invalidation, salsa migration, cancellation, edge cases, E2E tests, and performance validation remain.
 
-**Dependencies:** The definition infrastructure (symbol resolution pipeline, `PositionRequest`/`LocationListResult` wire types, tree-sitter pre-validation, nav cache, sidecar IPC routing) is fully implemented and can be reused. `SymbolFinder.FindReferencesAsync()` in Roslyn and `GetUsesOfSymbolInFile/Project()` in FCS are the primary APIs.
+**Dependencies:** The definition infrastructure supplies symbol resolution, `PositionRequest`/`LocationListResult` wire types, tree-sitter pre-validation, and sidecar IPC routing. Its interim `nav_cache.rs` must not be treated as the target architecture. `SymbolFinder.FindReferencesAsync()` in Roslyn and `GetUsesOfSymbolInFile/Project()` in FCS are the primary APIs.
 
 **Architecture notes:**
-- References reuse the same request routing pattern as definition (Rust host → sidecar dispatch → cache result).
+- References reuse the same request routing pattern as definition (Rust host → sidecar dispatch → salsa query result).
 - `ReferencesRequest` extends `PositionRequest` with an `IncludeDeclaration` boolean.
 - References return `LocationListResult` (reused from definition). Document highlights need a new `DocumentHighlightListResult` with read/write kind annotation.
-- Document highlights are document-scoped and cheaper than solution-wide references — cache more aggressively.
+- Document highlights are document-scoped; their memoization still belongs only to Rust-host salsa.
 
 ## TODO
 
@@ -37,8 +37,10 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [x] Pass `context.includeDeclaration` through to sidecar via `ReferencesRequest`
 - [x] Add tree-sitter pre-validation to short-circuit on whitespace/comments/string literals
 - [ ] Support partial result streaming for large result sets (P1)
-- [x] Add references cache keyed by `(document_uri, document_version, position, include_declaration)`
-- [x] Invalidate references cache on any document change in the solution
+- [x] Add the interim `nav_cache.rs` references map keyed by `(document_uri, document_version, position, include_declaration)` (nonconformant)
+- [ ] Replace the interim map with a Rust-host salsa query and remove `nav_cache.rs`
+- [ ] Make every solution document, project graph, and sidecar generation/readiness value a salsa input so any relevant change invalidates references; current code invalidates only entries requested from the edited URI
+- [ ] Cancel superseded references requests and prevent late results from updating newer inputs
 - [x] Add fallback behavior: return `null` when sidecar is unavailable or loading
 - [x] Add tracing/logging for references request lifecycle (dispatch, cache hit/miss, result count, latency)
 
@@ -48,8 +50,9 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [x] Add `textDocument/documentHighlight` handler registration in LSP request dispatcher
 - [x] Implement request routing: identify language from VFS, dispatch to correct sidecar
 - [x] Add tree-sitter pre-validation to short-circuit on whitespace/comments/string literals
-- [x] Add highlights cache keyed by `(document_uri, document_version, position)`
-- [x] Invalidate highlights cache on document edit (version change)
+- [x] Add the interim `nav_cache.rs` highlight map keyed by `(document_uri, document_version, position)` (nonconformant)
+- [ ] Replace the interim map with a Rust-host salsa query driven by document/version and sidecar-generation inputs
+- [ ] Cancel superseded highlight requests; version invalidation alone does not cancel in-flight work
 - [x] Add fallback behavior: return `null` when sidecar is unavailable or loading
 - [x] Add tracing/logging for highlight request lifecycle
 
@@ -131,5 +134,5 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [ ] Benchmark references latency on small solution (<100 files): target <500ms
 - [ ] Benchmark references latency on medium solution (~1000 files): target <2s
 - [ ] Benchmark document highlight latency: target <100ms
-- [ ] Benchmark references cache hit: target <1ms
+- [ ] Benchmark references salsa hit: target <1ms
 - [ ] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms

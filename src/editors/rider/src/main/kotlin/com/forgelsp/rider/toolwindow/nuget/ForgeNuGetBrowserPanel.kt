@@ -48,7 +48,7 @@ import javax.swing.border.EmptyBorder
 
 /**
  * Main UI for the Forge NuGet browser. Visual parity with the VS Code
- * webview in `editors/vscode/src/nuget-browser/`.
+ * webview in `src/editors/vscode/src/nuget-browser/`.
  *
  * Layout:
  *

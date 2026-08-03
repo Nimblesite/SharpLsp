@@ -405,7 +405,7 @@ struct ProjectInfo {
 /// `.cs` files are parsed syntactically with tree-sitter; `.fs` files have no
 /// host grammar, so their symbols are sourced from the FCS sidecar's
 /// documentSymbol — the same path the editor outline uses — so F# projects show
-/// their files and symbols exactly like C# projects (#119). [FS-DOCSYMBOL]
+/// their files and symbols exactly like C# projects (#119). `[SE-FSHARP-SYMBOLS]`
 fn build_project_node(
     project: &ProjectInfo,
     parsers: &TsParsers,
@@ -449,7 +449,7 @@ fn file_symbols(
 }
 
 /// Extract an F# file's symbols via the FCS sidecar's documentSymbol, mapping
-/// the result into the Solution Explorer's symbol model. [FS-DOCSYMBOL]
+/// the result into the Solution Explorer's symbol model. `[SE-FSHARP-SYMBOLS]`
 fn parse_fsharp_file_symbols(
     file_path: &str,
     runtime: &tokio::runtime::Runtime,

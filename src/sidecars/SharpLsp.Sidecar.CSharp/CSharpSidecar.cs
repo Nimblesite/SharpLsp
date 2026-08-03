@@ -48,6 +48,8 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("textDocument/inlayHint", HandleInlayHintAsync);
         Register("textDocument/prepareRename", HandlePrepareRenameAsync);
         Register("textDocument/rename", HandleRenameAsync);
+        Register("textDocument/renameIdentity", HandleRenameIdentityAsync);
+        Register("workspace/renameForeign", HandleRenameForeignAsync);
         Register("project/unusedPackages", HandleUnusedPackagesAsync);
         Register("project/addPackage", HandleAddPackageAsync);
         Register("project/removePackage", HandleRemovePackageAsync);

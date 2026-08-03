@@ -17,7 +17,7 @@
 // files — Git would record the binary content as the symlink's target text.
 // Restore with `git restore <dir>` if you need the pristine checkout back.
 //
-// Usage: node scripts/vsix/resolve-symlink-stubs.mjs <dir> [<dir> ...]
+// Usage: node tools/vsix/resolve-symlink-stubs.mjs <dir> [<dir> ...]
 
 import fs from 'node:fs';
 import path from 'node:path';

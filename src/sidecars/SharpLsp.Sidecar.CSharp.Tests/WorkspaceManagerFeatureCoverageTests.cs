@@ -1,3 +1,4 @@
+using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
@@ -107,6 +108,26 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
         return result.Match(value => value, _ => throw new InvalidOperationException("error"));
     }
 
+    private static string ApplyEdits(string source, IEnumerable<TextEditResult> edits)
+    {
+        var text = SourceText.From(source);
+        var changes = edits.Select(edit => new TextChange(EditSpan(text, edit), edit.NewText));
+        return text.WithChanges(changes).ToString();
+    }
+
+    private static TextSpan EditSpan(SourceText text, TextEditResult edit)
+    {
+        var start = text.Lines.GetPosition(new LinePosition(edit.StartLine, edit.StartCharacter));
+        var end = text.Lines.GetPosition(new LinePosition(edit.EndLine, edit.EndCharacter));
+        return TextSpan.FromBounds(start, end);
+    }
+
+    private static string ReplacedText(string source, TextEditResult edit)
+    {
+        var text = SourceText.From(source);
+        return text.ToString(EditSpan(text, edit));
+    }
+
     [Fact]
     public async Task PrepareRename_on_field_reports_renamable_with_placeholder()
     {
@@ -163,12 +184,13 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
         Assert.NotEmpty(edit.DocumentChanges);
         var doc = Assert.Single(edit.DocumentChanges);
         Assert.Equal(_sourcePath, doc.FilePath);
-        Assert.NotEmpty(doc.Edits);
-        // The combined replacement text must use the new name (declaration +
-        // both usages) and must no longer contain the original field name.
-        var combined = string.Concat(doc.Edits.Select(e => e.NewText));
-        Assert.Contains("_count", combined);
-        Assert.DoesNotContain("_counter", combined);
+        Assert.Equal(3, doc.Edits.Count);
+        Assert.All(doc.Edits, edit => Assert.Equal("_counter", ReplacedText(Source, edit)));
+        Assert.All(doc.Edits, edit => Assert.Equal("_count", edit.NewText));
+        var rewritten = ApplyEdits(Source, doc.Edits);
+        Assert.Equal(Source.Replace("_counter", "_count"), rewritten);
+        Assert.DoesNotContain("_counter", rewritten);
+        Assert.Equal(3, rewritten.Split("_count").Length - 1);
     }
 
     [Fact]
@@ -180,14 +202,15 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
         var result = await manager.RenameAsync(_sourcePath, 13, 24, "Evaluate");
 
         var edit = Unwrap(result);
-        Assert.NotEmpty(edit.DocumentChanges);
-        var allEdits = edit.DocumentChanges.SelectMany(c => c.Edits).ToList();
-        Assert.NotEmpty(allEdits);
-        var combined = string.Concat(allEdits.Select(e => e.NewText));
-        // The override declaration and the `Compute(input)` call site both adopt
-        // the new name; the old identifier disappears entirely.
-        Assert.Contains("Evaluate(input)", combined);
-        Assert.DoesNotContain("Compute", combined);
+        var document = Assert.Single(edit.DocumentChanges);
+        Assert.Equal(_sourcePath, document.FilePath);
+        Assert.Equal(3, document.Edits.Count);
+        Assert.All(document.Edits, edit => Assert.Equal("Compute", ReplacedText(Source, edit)));
+        Assert.All(document.Edits, edit => Assert.Equal("Evaluate", edit.NewText));
+        var rewritten = ApplyEdits(Source, document.Edits);
+        Assert.Equal(Source.Replace("Compute", "Evaluate"), rewritten);
+        Assert.DoesNotContain("Compute", rewritten);
+        Assert.Equal(3, rewritten.Split("Evaluate").Length - 1);
     }
 
     [Fact]

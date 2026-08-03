@@ -1,7 +1,7 @@
 /// Document symbols for the F# sidecar via FCS GetNavigationItems.
 /// Purely syntactic (parse-only) so it responds without a cracked project —
 /// matching the host's "syntax-only" latency budget for textDocument/documentSymbol.
-/// Implements [FS-DOCSYMBOL].
+/// F# symbol-extraction contract [SE-FSHARP-SYMBOLS].
 module SharpLsp.Sidecar.FSharp.FSharpSymbols
 
 open FSharp.Compiler.CodeAnalysis
@@ -27,7 +27,7 @@ type SymbolItem =
       Children: SymbolItem list }
 
 /// Map an FCS glyph to a capitalized kind string the Rust host understands
-/// (see `parse_document_symbol_kind` in src/document_symbols.rs).
+/// (see `parse_document_symbol_kind` in src/sharplsp/src/document_symbols.rs).
 let private kindOfGlyph (glyph: FSharpGlyph) : string =
     match glyph with
     | FSharpGlyph.Module

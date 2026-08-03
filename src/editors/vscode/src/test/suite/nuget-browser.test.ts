@@ -20,9 +20,9 @@ interface SharpLspApiForNuGetTests {
 
 /** Absolute path to the NuGetTest fixture project (has Newtonsoft.Json installed). */
 function nugetTestProjectPath(): string {
-  // __dirname: editors/vscode/out/test/suite/ → repo root is 5 levels up.
-  const repoRoot = path.resolve(__dirname, '../../../../..');
-  return path.join(repoRoot, 'tests', 'fixtures', 'NuGetTest', 'NuGetTest.csproj');
+  // __dirname: src/editors/vscode/out/test/suite/ → <repo>/src is 5 levels up.
+  const sourceRoot = path.resolve(__dirname, '../../../../..');
+  return path.join(sourceRoot, 'sharplsp', 'tests', 'fixtures', 'NuGetTest', 'NuGetTest.csproj');
 }
 
 suite('NuGet Browser', () => {

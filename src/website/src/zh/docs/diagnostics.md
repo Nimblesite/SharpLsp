@@ -62,5 +62,3 @@ monorepo = false
 | Hidden / hint | 4 — 提示 |
 
 `server.debounce_ms` 字段会被接受以确保配置兼容性，但目前尚未应用。诊断请求会立即启动，过时的结果则由版本代次门控抑制。
-
-\n

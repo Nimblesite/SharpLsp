@@ -13,7 +13,7 @@ public sealed class FramedTransport : IAsyncDisposable
     /// same-user processes, so this is a robustness/DoS guard rather than a
     /// trust boundary: it stops a corrupt or runaway 4-byte length prefix from
     /// forcing a multi-gigabyte allocation. Mirrors <c>MAX_FRAME_LEN</c> in the
-    /// Rust host transport (src/sidecar/transport.rs).
+    /// Rust host transport (src/sharplsp/src/sidecar/transport.rs).
     /// </summary>
     private const uint MaxFrameLength = 64 * 1024 * 1024;
 

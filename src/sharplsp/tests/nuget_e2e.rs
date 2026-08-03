@@ -1458,7 +1458,7 @@ fn nuget_install_missing_params_returns_error() {
 
 // ── sharplsp/nuget/consolidate ─────────────────────────────────────
 // Implements [PKG-CONSOLIDATE-REQUEST]. The pure consolidation logic is unit
-// tested in `src/nuget/consolidate.rs`; these drive the LSP request end to end
+// tested in `src/sharplsp/src/nuget/consolidate.rs`; these drive the LSP request end to end
 // through the spawned server, asserting the wire contract and on-disk effects.
 
 /// A `.csproj` referencing two shared packages plus one unique to it.

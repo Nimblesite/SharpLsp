@@ -131,13 +131,20 @@ const SCENARIOS: readonly QuickFixScenario[] = [
     focus: 'IQuickContract',
     diagnosticCode: 'CS0535',
     title: 'Implement interface',
-    options: ['Implement interface', 'Implement interface explicitly'],
-    presentAfter: ['public int Compute(int input)', 'public string Name', 'implement-interface-sentinel'],
+    options: ['Implement interface', 'Implement all members explicitly'],
+    presentAfter: [
+      'public int Compute(int input)',
+      'public string Name',
+      'implement-interface-sentinel',
+    ],
     absentAfter: [],
   },
 ];
 
-async function assertNegativeRange(fixture: OpenFixture, scenario: QuickFixScenario): Promise<void> {
+async function assertNegativeRange(
+  fixture: OpenFixture,
+  scenario: QuickFixScenario,
+): Promise<void> {
   const outside = rangeOf(fixture.document, 'namespace', 'namespace');
   const raw = await rawCodeActions(fixture.uri, outside);
   assert.ok(!raw.some((action) => action.title === scenario.title));
@@ -160,7 +167,10 @@ async function assertDiagnostic(fixture: OpenFixture, scenario: QuickFixScenario
   assert.ok(matches.every((item) => !item.range.isEmpty));
 }
 
-async function discoverInside(fixture: OpenFixture, scenario: QuickFixScenario): Promise<vscode.Range> {
+async function discoverInside(
+  fixture: OpenFixture,
+  scenario: QuickFixScenario,
+): Promise<vscode.Range> {
   const range = rangeOf(fixture.document, scenario.snippet, scenario.focus);
   const actions = await waitForCodeActions({
     uri: fixture.uri,

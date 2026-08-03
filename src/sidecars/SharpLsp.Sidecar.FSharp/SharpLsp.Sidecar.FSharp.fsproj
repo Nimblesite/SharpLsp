@@ -44,6 +44,9 @@
     <Compile Include="Hover/FSharpHoverBuilder.fs" />
     <Compile Include="FSharpAssets.fs" />
     <Compile Include="FSharpMetadataNavigator.fs" />
+    <Compile Include="FSharpWorkspaceRuntime.fs" />
+    <Compile Include="FSharpProjectLoading.fs" />
+    <Compile Include="FSharpSemanticNavigation.fs" />
     <Compile Include="FSharpWorkspace.fs" />
     <Compile Include="FSharpPackages.fs" />
     <Compile Include="FSharpReferences.fs" />
@@ -53,6 +56,9 @@
     <Compile Include="FSharpCodeActions.fs" />
     <Compile Include="FSharpCodeFixes.fs" />
     <Compile Include="FSharpCompletion.fs" />
+    <Compile Include="FSharpRenameToken.fs" />
+    <Compile Include="FSharpRenameAliases.fs" />
+    <Compile Include="FSharpRenameIndexers.fs" />
     <Compile Include="FSharpRename.fs" />
     <Compile Include="FSharpCodeLens.fs" />
     <Compile Include="FSharpHierarchy.fs" />
@@ -64,4 +70,3 @@
     <Compile Include="Program.fs" />
   </ItemGroup>
 </Project>
-

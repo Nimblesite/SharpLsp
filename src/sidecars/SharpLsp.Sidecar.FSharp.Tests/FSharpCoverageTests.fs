@@ -1227,20 +1227,20 @@ let private fixFindByTitle (actions: FSharpCodeFixes.CodeActionItem list) (needl
     actions |> List.tryFind (fun a -> a.Title.Contains(needle))
 
 [<Fact>]
-let ``FIX getCodeActions adds open for undefined name matching List heuristic`` () = task {
-    // FS0039 'MyList' contains "List" → suggests System.Collections.Generic.
-    let src = "module M\nlet ys = MyList 1\n"
+let ``FIX getCodeActions adds open for the exact generic Dictionary type`` () = task {
+    // Only an exact unresolved generic type maps to System.Collections.Generic.
+    let src = "module M\nlet ys = Dictionary<int, string>()\n"
     let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
             FSharpCodeFixes.getCodeActions cfState wsState paths[0] 1 0 1 20
         let opt = fixFindByTitle actions "Add 'open System.Collections.Generic'"
-        Assert.True(opt.IsSome, "expected an 'Add open' action from the List heuristic")
+        Assert.True(opt.IsSome, "expected an exact Dictionary namespace action")
         let action = opt.Value
         Assert.Equal("quickfix", action.Kind)
         Assert.False(action.IsPreferred)
-        // Resolve the cached edit and assert it inserts the open at the top.
+        // Resolve the cached edit and assert it inserts after the module header.
         let resolved = FSharpCodeFixes.resolveCodeAction cfState action.Id
         Assert.True(resolved.IsSome)
         let edit = resolved.Value
@@ -1248,7 +1248,7 @@ let ``FIX getCodeActions adds open for undefined name matching List heuristic`` 
         Assert.Equal(paths[0], docEdit.FilePath)
         let textEdit = List.exactlyOne docEdit.Edits
         Assert.Equal("open System.Collections.Generic\n", textEdit.NewText)
-        Assert.Equal(0, textEdit.StartLine)
+        Assert.Equal(1, textEdit.StartLine)
         Assert.Equal(0, textEdit.StartCharacter)
     finally
         cleanup dir
@@ -1269,8 +1269,8 @@ let ``FIX getCodeActions returns no fix for undefined name without namespace hin
 }
 
 [<Fact>]
-let ``FIX getCodeActions adds open System.IO for Path heuristic`` () = task {
-    let src = "module M\nlet p = MyPath 1\n"
+let ``FIX getCodeActions adds open System.IO for exact Path name`` () = task {
+    let src = "module M\nlet p = Path.GetTempPath()\n"
     let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
         let cfState = FSharpCodeFixes.createState ()
@@ -1288,8 +1288,8 @@ let ``FIX getCodeActions adds open System.IO for Path heuristic`` () = task {
 }
 
 [<Fact>]
-let ``FIX getCodeActions adds open System.Text.RegularExpressions for Regex heuristic`` () = task {
-    let src = "module M\nlet r = MyRegex 1\n"
+let ``FIX getCodeActions adds open System.Text.RegularExpressions for exact Regex name`` () = task {
+    let src = "module M\nlet r = Regex.IsMatch(\"abc\", \"a\")\n"
     let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
         let cfState = FSharpCodeFixes.createState ()
@@ -1307,8 +1307,8 @@ let ``FIX getCodeActions adds open System.Text.RegularExpressions for Regex heur
 }
 
 [<Fact>]
-let ``FIX getCodeActions adds open System.Threading.Tasks for Task heuristic`` () = task {
-    let src = "module M\nlet t = MyTask 1\n"
+let ``FIX getCodeActions adds open System.Threading.Tasks for exact Task name`` () = task {
+    let src = "module M\nlet t = Task.Delay(1)\n"
     let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
         let cfState = FSharpCodeFixes.createState ()

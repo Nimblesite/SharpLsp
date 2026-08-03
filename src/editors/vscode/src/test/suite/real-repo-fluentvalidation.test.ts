@@ -7,6 +7,7 @@
 import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { codeOf } from './csharp-refactor-test-kit';
 import { hoverText } from './fsharp-helpers';
 import {
   FLUENT_VALIDATION,
@@ -15,7 +16,6 @@ import {
   assertServerResourceBounds,
   ensureRepoReady,
   completionLabel,
-  firstError,
   firstLocation,
   fixtureSolutionPath,
   loadSolutionInServer,
@@ -23,14 +23,15 @@ import {
   positionOf,
   sampleServerProcesses,
   selectionDepth,
-  waitForErrorsCleared,
+  waitForError,
+  waitForErrorBaseline,
+  waitForStableErrorBaseline,
   waitForSemanticReady,
 } from './real-repo-helpers';
 import {
   closeAllEditors,
   flattenSymbolNames,
   pollUntilResult,
-  waitForDiagnostics,
   waitForDocumentSymbols,
   waitForFoldingRanges,
   waitForHoverResult,
@@ -197,21 +198,38 @@ suite('Real repo stress — FluentValidation (C#)', () => {
     this.timeout(180_000);
     const { doc, uri, editor } = await openRepoFile(repoDir, IVALIDATOR_CS);
     await waitForDocumentSymbols(uri, 120_000);
+    const baseline = await waitForStableErrorBaseline(uri, 120_000, 18);
+    assert.strictEqual(baseline.length, 18, 'pinned FluentValidation baseline must be complete');
+    const pristineText = doc.getText();
+    const pristineVersion = doc.version;
     const insertAt = positionOf(doc, 'public interface IValidator {');
+    const probe = 'file class __SharpLspBad { string S = 42; }\n';
     const applied = await editor.edit((edit) => {
-      edit.insert(insertAt, 'file class __SharpLspBad { string S = 42; }\n');
+      edit.insert(insertAt, probe);
     });
     assert.ok(applied, 'error-inducing edit must apply');
+    assert.ok(doc.version > pristineVersion, 'error edit must advance the version');
+    assert.ok(doc.getText().includes('__SharpLspBad'));
+    const insertedVersion = doc.version;
 
     try {
-      const diagnostics = await waitForDiagnostics(uri, 120_000);
-      const error = firstError(diagnostics, 'bad field initializer');
-      assert.ok(error.message.length > 0, 'diagnostic must carry a message');
-      assertSaneRange(doc, error.range, 'error diagnostic');
+      const error = await waitForError(
+        uri,
+        120_000,
+        (item) => codeOf(item) === 'CS0029' && item.range.start.line === insertAt.line,
+      );
+      assert.strictEqual(codeOf(error), 'CS0029');
+      assert.strictEqual(error.source, 'sharplsp-csharp');
+      assert.ok(error.message.includes("'int'"));
+      assert.ok(error.message.includes("'string'"));
+      assertSaneRange(doc, error.range, 'injected CS0029');
     } finally {
       await vscode.commands.executeCommand('undo');
     }
-    await waitForErrorsCleared(uri, 120_000);
+    assert.ok(doc.version > insertedVersion, 'undo must advance the document version');
+    assert.strictEqual(doc.getText(), pristineText, 'undo must restore the exact source');
+    assert.ok(!doc.getText().includes('__SharpLspBad'));
+    await waitForErrorBaseline(uri, baseline, 120_000);
   });
 
   test('structure + rename dry-run: folding, selections, and a safe local rename plan', async function () {

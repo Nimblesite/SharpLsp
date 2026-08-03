@@ -15,7 +15,7 @@
   -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <!-- [FSAC-PARITY-FIX] Preserve mismatch diagnostics needed to drive every
+    <!-- [ANALYZERS-FSAC-PARITY] Preserve mismatch diagnostics needed to drive every
          explicit numeric-conversion refactor direction. -->
     <LangVersion>8.0</LangVersion>
     <OutputType>Library</OutputType>

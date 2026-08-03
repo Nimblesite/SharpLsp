@@ -43,7 +43,8 @@ This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vsc
 ### Verification (clean Windows machine, no .NET 10 installed)
 
 - [ ] `make package-vsix-win32-x64 VERSION=0.1.1` succeeds
-- [ ] Uninstall both extensions: `code --uninstall-extension nimblesite.sharplsp && code --uninstall-extension ms-dotnettools.vscode-dotnet-runtime`
+- [ ] Uninstall SharpLsp: `code --uninstall-extension nimblesite.sharplsp`
+- [ ] Uninstall the .NET Install Tool: `code --uninstall-extension ms-dotnettools.vscode-dotnet-runtime`
 - [ ] `code --install-extension dist/sharplsp-win32-x64.vsix` — VS Code auto-installs the .NET Install Tool dependency without prompting
 - [ ] `code --list-extensions | grep ms-dotnettools.vscode-dotnet-runtime` prints the ID
 - [ ] Open a `.csproj`-containing folder. Observe the `SharpLsp: Installing .NET 10 runtime` toast appear with spinner, plus the status-bar message. No buttons. 30-90 s later toast disappears.

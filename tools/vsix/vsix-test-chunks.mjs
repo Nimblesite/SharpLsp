@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 // Implements [DIST-CI-WIN-VSIX].
 //
-// Single reader for editors/vscode/test-chunks.json — the one place the
+// Single reader for src/editors/vscode/test-chunks.json — the one place the
 // Windows VS Code feature chunks are declared. The Makefile (`_test-vsix-win`),
 // the CI job matrix, and the completeness guard all go through this script, so
 // adding a chunk or a suite is a one-file edit.
 //
 // Usage:
-//   node scripts/vsix/vsix-test-chunks.mjs files <chunk>  -> comma-separated globs for MOCHA_FILES
-//   node scripts/vsix/vsix-test-chunks.mjs matrix         -> JSON array of chunk names (GitHub matrix)
-//   node scripts/vsix/vsix-test-chunks.mjs check          -> fail if any suite is in no chunk / two chunks
+//   node tools/vsix/vsix-test-chunks.mjs files <chunk>  -> comma-separated globs for MOCHA_FILES
+//   node tools/vsix/vsix-test-chunks.mjs matrix         -> JSON array of chunk names (GitHub matrix)
+//   node tools/vsix/vsix-test-chunks.mjs check          -> fail if any suite is in no chunk / two chunks
 //
 // stdout carries the answer only (safe for command substitution); diagnostics
 // and failures go to stderr with a non-zero exit.
@@ -154,7 +154,7 @@ function check(manifest) {
     const problems = [
         ...orphans.map(
             (suite) =>
-                `${suite} belongs to no chunk — add it to a chunk in editors/vscode/test-chunks.json ` +
+                `${suite} belongs to no chunk — add it to a chunk in src/editors/vscode/test-chunks.json ` +
                 `(or to "excluded" with a reason) so it cannot silently skip Windows CI.`,
         ),
         ...duplicates.map(

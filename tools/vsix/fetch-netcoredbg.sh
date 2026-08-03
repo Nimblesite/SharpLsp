@@ -6,7 +6,7 @@
 # is in THIRD-PARTY-NOTICES.md. Upstream ships prebuilt binaries for a subset of
 # platforms; the two without a prebuilt (win32-arm64, darwin-x64) skip cleanly
 # and fall back at runtime to a PATH copy / the sharplsp.debug.netcoredbgPath
-# setting (see editors/vscode/src/debug.ts).
+# setting (see src/editors/vscode/src/debug.ts).
 set -euo pipefail
 
 # Pinned deliberately: a floating "latest" would silently change the bundled

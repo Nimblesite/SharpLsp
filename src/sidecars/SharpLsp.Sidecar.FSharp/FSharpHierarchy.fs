@@ -1,9 +1,7 @@
 /// Call hierarchy and type hierarchy for the F# sidecar via FCS.
 /// FCS has no built-in call graph, so callers/callees are resolved from the
 /// untyped AST (SyntaxTraversal) plus project-wide symbol uses.
-/// Implements [FS-CALLHIER-PREPARE], [FS-CALLHIER-INCOMING],
-/// [FS-CALLHIER-OUTGOING], [FS-TYPEHIER-PREPARE], [FS-TYPEHIER-SUPER],
-/// and [FS-TYPEHIER-SUB].
+/// Call- and type-hierarchy portions of [SHARPLSP-FEATURES-NAVIGATION].
 module SharpLsp.Sidecar.FSharp.FSharpHierarchy
 
 open System.Collections.Generic

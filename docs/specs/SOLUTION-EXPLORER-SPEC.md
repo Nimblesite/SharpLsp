@@ -26,7 +26,7 @@ Per-file symbols are sourced by language, never by a single parser:
 | Language | Source | Rationale |
 |----------|--------|-----------|
 | C# (`.cs`) | tree-sitter parsing in the Rust host | The host owns the C# grammar. |
-| F# (`.fs`) | FCS sidecar `textDocument/documentSymbol` ([FS-DOCSYMBOL]) | The host has no F# grammar; every `.fs` file and its symbols MUST appear under an `.fsproj` exactly as C# does under `.csproj`. |
+| F# (`.fs`) | FCS sidecar `textDocument/documentSymbol` | The host has no F# grammar; every `.fs` file and its symbols MUST appear under an `.fsproj` exactly as C# does under `.csproj`. |
 
 The F# path reuses the sidecar `documentSymbol` request that powers the editor outline. It maps nested FCS modules, namespaces, types, DU cases, and members into the shared `FileSymbol`/`SymbolNode` tree using full ranges. `workspace_symbols::handle` receives the F# sidecar; when unavailable, `.fs` files contribute no symbols without failing the request.
 

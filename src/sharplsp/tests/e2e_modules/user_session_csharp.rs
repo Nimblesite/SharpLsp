@@ -169,7 +169,7 @@ fn test_full_stack_csharp_user_session_medium_codebase() {
 
     // ── Signature help inside ApplyDiscount(...) ──
     // C# signature help is not implemented sidecar-side yet — the host routes
-    // the request and must answer null rather than erroring ([FS-SIGHELP];
+    // the request and must answer null rather than erroring ([SHARPLSP-FEATURES-INTELLIGENCE];
     // C# parity tracked in GitHub #174). Once it lands, the shape assertions
     // below take over.
     let sig = position_request(

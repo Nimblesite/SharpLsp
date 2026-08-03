@@ -8,6 +8,7 @@ open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Syntax
 open FSharp.Compiler.Text
+open Serilog
 
 /// A raw text edit (no MessagePack annotations — internal use only).
 type RawEdit =
@@ -268,12 +269,180 @@ let private resolveInterfaceEntity
     (interfaceRange: Range)
     : FSharpSymbolUse option =
     checkResults.GetAllUsesOfAllSymbolsInFile()
-    |> Seq.tryPick (fun su ->
-        match su.Symbol with
-        | :? FSharpEntity as ent when
-            InterfaceStubGenerator.IsInterface ent
-            && Range.rangeContainsRange interfaceRange su.Range -> Some su
-        | _ -> None)
+    |> Seq.filter (fun symbolUse ->
+        match symbolUse.Symbol with
+        | :? FSharpEntity as entity ->
+            InterfaceStubGenerator.IsInterface entity
+            && Range.rangeContainsRange interfaceRange symbolUse.Range
+        | _ -> false)
+    |> Seq.sortBy (fun symbolUse ->
+        let symbolRange = symbolUse.Range
+        symbolRange.StartLine, symbolRange.StartColumn)
+    |> Seq.tryHead
+
+[<NoComparison; NoEquality>]
+type private InterfaceSyntax =
+    { StartColumn: int
+      WithKeyword: Range option
+      TypeRange: Range }
+
+[<NoComparison; NoEquality>]
+type private InterfaceInsertion =
+    { StartColumn: int
+      InsertAt: Position
+      InsertWith: bool }
+
+[<NoComparison; NoEquality>]
+type private InterfaceContext =
+    { Data: InterfaceData
+      Syntax: InterfaceSyntax option
+      EntityRange: Range }
+
+let private lastBindingOfMember = function
+    | SynMemberDefn.Member(memberDefn = binding) -> Some binding
+    | SynMemberDefn.GetSetMember(
+        memberDefnForGet = Some(SynBinding(range = getRange) as getter)
+        memberDefnForSet = Some(SynBinding(range = setRange) as setter)) ->
+        if (getRange.EndLine, getRange.EndColumn) < (setRange.EndLine, setRange.EndColumn) then
+            Some setter
+        else Some getter
+    | SynMemberDefn.GetSetMember(memberDefnForGet = Some binding; memberDefnForSet = None)
+    | SynMemberDefn.GetSetMember(memberDefnForGet = None; memberDefnForSet = Some binding) ->
+        Some binding
+    | _ -> None
+
+let private tryLastBinding = function
+    | InterfaceData.Interface(_, Some members) ->
+        members |> List.choose lastBindingOfMember |> List.tryLast
+    | InterfaceData.ObjExpr(_, bindings) -> List.tryLast bindings
+    | InterfaceData.Interface(_, None) -> None
+
+let private insertionAfterBinding
+    (SynBinding(attributes = attributes; expr = expr; trivia = trivia)) =
+    let leadingKeywordRange = trivia.LeadingKeyword.Range
+    let startColumn =
+        attributes
+        |> List.tryHead
+        |> Option.map (fun attributes ->
+            let attributeRange = attributes.Range
+            attributeRange.StartColumn)
+        |> Option.defaultValue leadingKeywordRange.StartColumn
+    let expressionRange = expr.Range
+    { StartColumn = startColumn
+      InsertAt = expressionRange.End
+      InsertWith = false }
+
+let private interfaceSyntaxAt pos = function
+    | SyntaxNode.SynMemberDefn(
+        SynMemberDefn.Interface(
+            interfaceType = interfaceType
+            withKeyword = withKeyword
+            range = declarationRange)) :: _ ->
+        let typeRange = interfaceType.Range
+        if Range.rangeContainsPos typeRange pos then
+            Some
+                { StartColumn = declarationRange.StartColumn
+                  WithKeyword = withKeyword
+                  TypeRange = typeRange }
+        else None
+    | _ -> None
+
+let private findInterfaceSyntax (parseResults: FSharpParseFileResults) pos =
+    let visitor =
+        { new SyntaxVisitorBase<InterfaceSyntax>() with
+            member _.VisitInterfaceSynMemberDefnType(path, _visitedType) =
+                interfaceSyntaxAt pos path }
+    SyntaxTraversal.Traverse(pos, parseResults.ParseTree, visitor)
+
+let private interfaceInsertion (context: InterfaceContext) =
+    match tryLastBinding context.Data, context.Syntax with
+    | Some binding, _ -> Some(insertionAfterBinding binding)
+    | None, Some syntax ->
+        match syntax.WithKeyword with
+        | Some withKeyword ->
+            Some
+                { StartColumn = syntax.StartColumn + 4
+                  InsertAt = withKeyword.End
+                  InsertWith = false }
+        | None ->
+            let interfaceRange = context.Data.Range
+            Some
+                { StartColumn = syntax.StartColumn + 4
+                  InsertAt = interfaceRange.End
+                  InsertWith = true }
+    | None, None -> None
+
+let private tryInterfaceAtPosition (parseResults: FSharpParseFileResults) line col =
+    let pos = Position.mkPos (line + 1) col
+    InterfaceStubGenerator.TryFindInterfaceDeclaration pos parseResults.ParseTree
+    |> Option.map (fun interfaceData ->
+        let syntax = findInterfaceSyntax parseResults pos
+        let entityRange = syntax |> Option.map _.TypeRange |> Option.defaultValue interfaceData.Range
+        { Data = interfaceData
+          Syntax = syntax
+          EntityRange = entityRange })
+
+let private implementedMemberSignatures
+    (checkResults: FSharpCheckFileResults)
+    (source: string)
+    (displayContext: FSharpDisplayContext)
+    (interfaceData: InterfaceData) =
+    let getLine = FSharpLocalAnalysis.lineGetter source
+    let getMemberByLocation (name: string, range: Range) =
+        checkResults.GetSymbolUseAtLocation(
+            range.EndLine, range.EndColumn, getLine range.EndLine, [ name ])
+    InterfaceStubGenerator.GetImplementedMemberSignatures
+        getMemberByLocation displayContext interfaceData
+
+let private formatInterfaceStub
+    (interfaceData: InterfaceData)
+    (insertion: InterfaceInsertion)
+    (displayContext: FSharpDisplayContext)
+    implemented
+    (entity: FSharpEntity) =
+    InterfaceStubGenerator.FormatInterface
+        insertion.StartColumn 4 interfaceData.TypeParameters "_"
+        "failwith \"Not implemented yet\""
+        displayContext implemented entity false
+
+let private generatedInterfaceAction filePath (insertion: InterfaceInsertion) stub =
+    if System.String.IsNullOrWhiteSpace stub then None
+    else
+        let insertAt = insertion.InsertAt
+        let prefix = if insertion.InsertWith then " with" else ""
+        Some
+            { Title = "Implement interface"
+              Kind = "quickfix"
+              IsPreferred = true
+              Edits =
+                [ { FilePath = filePath
+                    StartLine = insertAt.Line - 1
+                    StartCharacter = insertAt.Column
+                    EndLine = insertAt.Line - 1
+                    EndCharacter = insertAt.Column
+                    NewText = prefix + stub } ] }
+
+let private generateInterfaceStub
+    checkResults source filePath (context: InterfaceContext) (symbolUse: FSharpSymbolUse) =
+    async {
+        let entity = symbolUse.Symbol :?> FSharpEntity
+        if InterfaceStubGenerator.HasNoInterfaceMember entity then return None
+        else
+            let displayContext = symbolUse.DisplayContext
+            let! implemented =
+                implementedMemberSignatures checkResults source displayContext context.Data
+            match interfaceInsertion context with
+            | None -> return None
+            | Some insertion ->
+                let stub = formatInterfaceStub context.Data insertion displayContext implemented entity
+                return generatedInterfaceAction filePath insertion stub
+    }
+
+let private tryResolvedInterfaceContext checkResults parseResults line col =
+    tryInterfaceAtPosition parseResults line col
+    |> Option.bind (fun context ->
+        resolveInterfaceEntity checkResults context.EntityRange
+        |> Option.map (fun symbolUse -> context, symbolUse))
 
 /// Generate stub implementations for the unimplemented members of an interface.
 let tryGenerateInterfaceStub
@@ -286,63 +455,11 @@ let tryGenerateInterfaceStub
     : Async<GeneratedAction option> =
     async {
         try
-            let pos = Position.mkPos (line + 1) col
-
-            match InterfaceStubGenerator.TryFindInterfaceDeclaration pos parseResults.ParseTree with
+            match tryResolvedInterfaceContext checkResults parseResults line col with
             | None -> return None
-            | Some interfaceData ->
-                // Bind the struct range to a local so property access doesn't trip FS0052.
-                let interfaceRange = interfaceData.Range
-
-                match resolveInterfaceEntity checkResults interfaceRange with
-                | None -> return None
-                | Some symbolUse ->
-                    let entity = symbolUse.Symbol :?> FSharpEntity
-
-                    if InterfaceStubGenerator.HasNoInterfaceMember entity then
-                        return None
-                    else
-                        let getLine = FSharpLocalAnalysis.lineGetter source
-
-                        let getMemberByLocation (name: string, range: Range) =
-                            checkResults.GetSymbolUseAtLocation(
-                                range.EndLine, range.EndColumn, getLine range.EndLine, [ name ])
-
-                        let displayContext = symbolUse.DisplayContext
-
-                        let! implemented =
-                            InterfaceStubGenerator.GetImplementedMemberSignatures
-                                getMemberByLocation displayContext interfaceData
-
-                        let stubIndent = interfaceRange.StartColumn + 4
-
-                        let stub =
-                            InterfaceStubGenerator.FormatInterface
-                                stubIndent 4 [||] "_"
-                                "failwith \"Not implemented yet\""
-                                displayContext implemented entity false
-
-                        if System.String.IsNullOrWhiteSpace stub then
-                            return None
-                        else
-                            let insertLine = interfaceRange.EndLine - 1
-                            let insertCol = interfaceRange.EndColumn
-                            // Prefix `with` only when the declaration lacks it.
-                            let declText = getLine interfaceRange.EndLine
-                            let prefix = if declText.Contains(" with") then "\n" else " with\n"
-
-                            return
-                                Some
-                                    { Title = "Implement interface"
-                                      Kind = "quickfix"
-                                      IsPreferred = true
-                                      Edits =
-                                        [ { FilePath = filePath
-                                            StartLine = insertLine
-                                            StartCharacter = insertCol
-                                            EndLine = insertLine
-                                            EndCharacter = insertCol
-                                            NewText = prefix + stub } ] }
-        with _ ->
+            | Some(context, symbolUse) ->
+                return! generateInterfaceStub checkResults source filePath context symbolUse
+        with ex ->
+            Log.Debug(ex, "[F# CodeAction] Interface stub generation failed")
             return None
     }

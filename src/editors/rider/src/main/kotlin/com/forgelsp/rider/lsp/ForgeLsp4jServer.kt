@@ -9,7 +9,7 @@ import java.util.concurrent.CompletableFuture
  *
  * JetBrains's LSP API lets us override `LspServerDescriptor.lsp4jServerClass`
  * with a subinterface of [LanguageServer] that adds `@JsonRequest` methods.
- * Method names match exactly what the Rust host in `src/main.rs` routes
+ * Method names match exactly what the Rust host in `src/sharplsp/src/main.rs` routes
  * under `handle_custom_request()`.
  *
  * All DTO fields are camelCase to match the Rust wire format — no Gson

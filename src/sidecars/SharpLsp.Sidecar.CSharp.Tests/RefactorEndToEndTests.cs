@@ -62,6 +62,17 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     }
 
     [Fact]
+    public async Task PrepareRename_on_string_literal_is_rejected()
+    {
+        // [RENAME-ERRORS] Non-identifiers are a successful negative result.
+        var result = await fixture.SendAndDeserializeAsync<PrepareRenameResult>(
+            "textDocument/prepareRename",
+            fixture.PosPayload(124, 23)
+        );
+        Assert.False(result.CanRename);
+    }
+
+    [Fact]
     public async Task Rename_method_produces_edits_across_declaration_and_call()
     {
         // Rename `Add` (declared L9, called L32) — RenameAsync must surface
@@ -113,6 +124,37 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
             }
         );
         Assert.Empty(edit.DocumentChanges);
+    }
+
+    [Theory]
+    [InlineData(3, 13, "Calculator")]
+    [InlineData(3, 13, "   ")]
+    [InlineData(3, 13, "bad-name")]
+    [InlineData(3, 13, "Program")]
+    [InlineData(0, 12, "MetaProbe")]
+    public async Task Rename_rejects_invalid_unchanged_and_conflicting_names(
+        int line,
+        int character,
+        string newName
+    )
+    {
+        // [RENAME-ERRORS] Rejected names never leak partial Roslyn edits.
+        var edit = await fixture.SendAndDeserializeAsync<RenameRequest, WorkspaceEditResult>(
+            "textDocument/rename",
+            RenameRequestAt(line, character, newName)
+        );
+        Assert.Empty(edit.DocumentChanges);
+    }
+
+    private RenameRequest RenameRequestAt(int line, int character, string newName)
+    {
+        return new RenameRequest
+        {
+            FilePath = fixture.SourceFile,
+            Line = line,
+            Character = character,
+            NewName = newName,
+        };
     }
 
     [Fact]

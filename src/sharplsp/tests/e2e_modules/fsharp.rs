@@ -610,7 +610,7 @@ fn test_full_stack_fsharp_language_surface() {
 // ── F# Workspace Symbol (Full-Stack) ────────────────────────────
 // The editor's "Go to Symbol in Workspace" (Ctrl-T) must reach F# symbols. The
 // host has no F# tree-sitter grammar, so the standard `workspace/symbol` handler
-// routes F# files to the FCS sidecar's document symbols. [FS-WORKSPACE-SYMBOL]
+// routes F# files to the FCS sidecar's document symbols. [SHARPLSP-FEATURES-NAVIGATION]
 
 #[test]
 fn test_full_stack_fsharp_workspace_symbol() {

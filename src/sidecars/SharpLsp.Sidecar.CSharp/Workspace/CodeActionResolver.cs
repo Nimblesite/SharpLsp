@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
-using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CodeRefactorings;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 using Serilog;
 
@@ -24,6 +24,13 @@ internal sealed class CodeActionResolver
         ImmutableArray<CodeRefactoringProvider>
     > CachedRefactoringProviders = new(LoadRefactoringProviders);
 
+    private static readonly Lazy<ImmutableArray<DiagnosticAnalyzer>> CachedDiagnosticAnalyzers = new(
+        () => AnalyzerDiagnosticResolver.DiscoverFixableAnalyzers(CachedFixProviders.Value)
+    );
+
+    private static readonly ImmutableHashSet<string> RewriteDiagnosticIds =
+        ImmutableHashSet.Create(StringComparer.Ordinal, "IDE0007", "IDE0008", "IDE0160", "IDE0161");
+
     private readonly ConcurrentDictionary<int, CodeAction> _pendingActions = new();
     private int _nextId;
 
@@ -39,6 +46,7 @@ internal sealed class CodeActionResolver
     {
         var items = new List<CodeActionItem>();
         await CollectCodeFixesAsync(document, span, items, ct).ConfigureAwait(false);
+        await CollectHeadlessOverridesAsync(document, span, items, ct).ConfigureAwait(false);
         await CollectRefactoringsAsync(document, span, items, ct).ConfigureAwait(false);
         return items;
     }
@@ -78,23 +86,62 @@ internal sealed class CodeActionResolver
             return;
         }
 
-        var diagnostics = model.GetDiagnostics(span, ct);
+        await CollectResolvedFixesAsync(document, model, span, items, ct).ConfigureAwait(false);
+    }
 
+    private async Task CollectResolvedFixesAsync(
+        Document document,
+        SemanticModel model,
+        TextSpan span,
+        List<CodeActionItem> items,
+        CancellationToken ct
+    )
+    {
+        var diagnostics = await ResolveDiagnosticsAsync(document, model, span, ct)
+            .ConfigureAwait(false);
         if (diagnostics.IsEmpty)
         {
             return;
         }
 
-        var diagById = diagnostics
-            .GroupBy(d => d.Id)
-            .ToDictionary(g => g.Key, g => g.ToImmutableArray());
+        await RegisterFixProvidersAsync(document, GroupDiagnostics(diagnostics), items, ct)
+            .ConfigureAwait(false);
+    }
 
+    private async Task RegisterFixProvidersAsync(
+        Document document,
+        Dictionary<string, ImmutableArray<Diagnostic>> diagnostics,
+        List<CodeActionItem> items,
+        CancellationToken ct
+    )
+    {
         foreach (var provider in CachedFixProviders.Value)
         {
             ct.ThrowIfCancellationRequested();
-            await TryRegisterFixesAsync(provider, document, diagById, items, ct)
+            await TryRegisterFixesAsync(provider, document, diagnostics, items, ct)
                 .ConfigureAwait(false);
         }
+    }
+
+    private static Dictionary<string, ImmutableArray<Diagnostic>> GroupDiagnostics(
+        ImmutableArray<Diagnostic> diagnostics
+    )
+    {
+        return diagnostics.GroupBy(diagnostic => diagnostic.Id)
+            .ToDictionary(group => group.Key, group => group.ToImmutableArray());
+    }
+
+    private static async Task<ImmutableArray<Diagnostic>> ResolveDiagnosticsAsync(
+        Document document,
+        SemanticModel model,
+        TextSpan span,
+        CancellationToken ct
+    )
+    {
+        var analyzerDiagnostics = await AnalyzerDiagnosticResolver
+            .ResolveAsync(document, model, span, CachedDiagnosticAnalyzers.Value, ct)
+            .ConfigureAwait(false);
+        return model.GetDiagnostics(span, ct).AddRange(analyzerDiagnostics);
     }
 
     private async Task TryRegisterFixesAsync(
@@ -112,28 +159,88 @@ internal sealed class CodeActionResolver
                 continue;
             }
 
-            foreach (var diag in matchingDiags)
-            {
-                try
-                {
-                    var context = new CodeFixContext(
-                        document,
-                        diag,
-                        (action, _) => CacheAndAdd(action, "quickfix", items),
-                        ct
-                    );
-                    await provider.RegisterCodeFixesAsync(context).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    Log.Debug(
-                        ex,
-                        "[CodeAction] Fix provider {Provider} failed",
-                        provider.GetType().Name
-                    );
-                }
-            }
+            await RegisterMatchingFixesAsync(provider, document, matchingDiags, items, ct)
+                .ConfigureAwait(false);
         }
+    }
+
+    private async Task RegisterMatchingFixesAsync(
+        CodeFixProvider provider,
+        Document document,
+        ImmutableArray<Diagnostic> diagnostics,
+        List<CodeActionItem> items,
+        CancellationToken ct
+    )
+    {
+        foreach (var diagnostic in diagnostics)
+        {
+            await TryRegisterFixAsync(provider, document, diagnostic, items, ct)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task TryRegisterFixAsync(
+        CodeFixProvider provider, Document document, Diagnostic diagnostic,
+        List<CodeActionItem> items, CancellationToken ct
+    )
+    {
+        try
+        {
+            await RegisterFixCoreAsync(provider, document, diagnostic, items, ct)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[CodeAction] Fix provider {Provider} failed", provider.GetType().Name);
+        }
+    }
+
+    private async Task RegisterFixCoreAsync(
+        CodeFixProvider provider, Document document, Diagnostic diagnostic,
+        List<CodeActionItem> items, CancellationToken ct
+    )
+    {
+        var context = CreateFixContext(document, diagnostic, items, ct);
+        await provider.RegisterCodeFixesAsync(context).ConfigureAwait(false);
+    }
+
+    private CodeFixContext CreateFixContext(
+        Document document,
+        Diagnostic diagnostic,
+        List<CodeActionItem> items,
+        CancellationToken ct
+    )
+    {
+        return new CodeFixContext(
+            document,
+            diagnostic,
+            (action, _) => CacheAndAdd(action, FixKind(diagnostic.Id), items),
+            ct
+        );
+    }
+
+    private async Task CollectHeadlessOverridesAsync(
+        Document document,
+        TextSpan span,
+        List<CodeActionItem> items,
+        CancellationToken ct
+    )
+    {
+        var action = await HeadlessOverrideCodeAction.TryCreateAsync(document, span, ct)
+            .ConfigureAwait(false);
+        if (action is not null)
+        {
+            CacheAndAdd(action, "refactor.rewrite", items);
+        }
+    }
+
+    private static string FixKind(string diagnosticId)
+    {
+        return RewriteDiagnosticIds.Contains(diagnosticId) ? "refactor.rewrite" : "quickfix";
     }
 
     private async Task CollectRefactoringsAsync(
@@ -146,40 +253,55 @@ internal sealed class CodeActionResolver
         foreach (var provider in CachedRefactoringProviders.Value)
         {
             ct.ThrowIfCancellationRequested();
-            try
-            {
-                var context = new CodeRefactoringContext(
-                    document,
-                    span,
-                    action => CacheAndAdd(action, RefactoringKind(provider, action), items),
-                    ct
-                );
-                await provider.ComputeRefactoringsAsync(context).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Log.Debug(
-                    ex,
-                    "[CodeAction] Refactoring provider {Provider} failed",
-                    provider.GetType().Name
-                );
-            }
+            await TryRegisterRefactoringAsync(provider, document, span, items, ct)
+                .ConfigureAwait(false);
         }
     }
 
-    private static string RefactoringKind(
-        CodeRefactoringProvider provider,
-        CodeAction action
+    private async Task TryRegisterRefactoringAsync(
+        CodeRefactoringProvider provider, Document document, TextSpan span,
+        List<CodeActionItem> items, CancellationToken ct
     )
     {
+        try
+        {
+            await provider.ComputeRefactoringsAsync(CreateRefactoringContext(provider, document, span, items, ct))
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[CodeAction] Refactoring provider {Provider} failed", provider.GetType().Name);
+        }
+    }
+
+    private CodeRefactoringContext CreateRefactoringContext(
+        CodeRefactoringProvider provider,
+        Document document,
+        TextSpan span,
+        List<CodeActionItem> items,
+        CancellationToken ct
+    )
+    {
+        return new CodeRefactoringContext(
+            document,
+            span,
+            action => CacheAndAdd(action, RefactoringKind(provider, action), items),
+            ct
+        );
+    }
+
+    private static string RefactoringKind(CodeRefactoringProvider provider, CodeAction action)
+    {
         var providerName = provider.GetType().Name;
-        return IsOrganizeImports(providerName, action.Title)
-            ? "source.organizeImports"
+        return IsOrganizeImports(providerName, action.Title) ? "source.organizeImports"
             : providerName.Contains("Inline", StringComparison.OrdinalIgnoreCase)
                 ? "refactor.inline"
-                : IsExtractionProvider(providerName)
-                    ? "refactor.extract"
-                    : "refactor.rewrite";
+            : IsExtractionProvider(providerName) ? "refactor.extract"
+            : "refactor.rewrite";
     }
 
     private static bool IsOrganizeImports(string providerName, string title)
@@ -199,33 +321,53 @@ internal sealed class CodeActionResolver
 
     private void CacheAndAdd(CodeAction action, string kind, List<CodeActionItem> items)
     {
-        // Flatten nested actions (e.g. "Fix all occurrences in...").
-        if (action.NestedActions.Length > 0)
-        {
-            foreach (var nested in action.NestedActions)
-            {
-                CacheAndAdd(nested, kind, items);
-            }
-
-            return;
-        }
-
-        if (items.Any(item => item.Title == action.Title && item.Kind == kind))
+        if (CacheNestedActions(action, kind, items) || IsDuplicate(action, kind, items))
         {
             return;
         }
 
+        items.Add(CacheAction(action, kind));
+    }
+
+    private bool CacheNestedActions(
+        CodeAction action,
+        string kind,
+        List<CodeActionItem> items
+    )
+    {
+        if (action.NestedActions.IsEmpty)
+        {
+            return false;
+        }
+
+        foreach (var nested in action.NestedActions)
+        {
+            CacheAndAdd(nested, kind, items);
+        }
+
+        return true;
+    }
+
+    private static bool IsDuplicate(
+        CodeAction action,
+        string kind,
+        List<CodeActionItem> items
+    )
+    {
+        return items.Any(item => item.Title == action.Title && item.Kind == kind);
+    }
+
+    private CodeActionItem CacheAction(CodeAction action, string kind)
+    {
         var id = Interlocked.Increment(ref _nextId);
         _pendingActions[id] = action;
-        items.Add(
-            new CodeActionItem
-            {
-                Id = id,
-                Title = action.Title,
-                Kind = kind,
-                IsPreferred = action.Priority == CodeActionPriority.High,
-            }
-        );
+        return new CodeActionItem
+        {
+            Id = id,
+            Title = action.Title,
+            Kind = kind,
+            IsPreferred = action.Priority == CodeActionPriority.High,
+        };
     }
 
     private static async Task<WorkspaceEditResult> BuildWorkspaceEditAsync(
@@ -258,22 +400,27 @@ internal sealed class CodeActionResolver
     {
         foreach (var docId in projectChange.GetChangedDocuments())
         {
-            var oldDoc = oldSolution.GetDocument(docId);
-            var newDoc = newSolution.GetDocument(docId);
-            if (oldDoc is null || newDoc is null)
-            {
-                continue;
-            }
-
-            var edits = await DocumentText
-                .ComputeEditsAsync(oldDoc, newDoc, ct)
+            await CollectChangedDocumentAsync(oldSolution, newSolution, docId, result, ct)
                 .ConfigureAwait(false);
-            if (edits.Count > 0 && newDoc.FilePath is not null)
-            {
-                result.DocumentChanges.Add(
-                    new DocumentEditResult { FilePath = newDoc.FilePath, Edits = edits }
-                );
-            }
+        }
+    }
+
+    private static async Task CollectChangedDocumentAsync(
+        Solution oldSolution, Solution newSolution, DocumentId docId,
+        WorkspaceEditResult result, CancellationToken ct
+    )
+    {
+        var oldDoc = oldSolution.GetDocument(docId);
+        var newDoc = newSolution.GetDocument(docId);
+        if (oldDoc is null || newDoc?.FilePath is null)
+        {
+            return;
+        }
+
+        var edits = await DocumentText.ComputeEditsAsync(oldDoc, newDoc, ct).ConfigureAwait(false);
+        if (edits.Count > 0)
+        {
+            result.DocumentChanges.Add(new DocumentEditResult { FilePath = newDoc.FilePath, Edits = edits });
         }
     }
 
@@ -286,118 +433,57 @@ internal sealed class CodeActionResolver
     {
         foreach (var docId in projectChange.GetAddedDocuments())
         {
-            var newDoc = newSolution.GetDocument(docId);
-            if (newDoc?.FilePath is null)
-            {
-                continue;
-            }
-
-            var text = await newDoc.GetTextAsync(ct).ConfigureAwait(false);
-            result.DocumentChanges.Add(
-                new DocumentEditResult
-                {
-                    FilePath = newDoc.FilePath,
-                    Edits =
-                    [
-                        new TextEditResult
-                        {
-                            StartLine = 0,
-                            StartCharacter = 0,
-                            EndLine = 0,
-                            EndCharacter = 0,
-                            NewText = text.ToString(),
-                        },
-                    ],
-                }
-            );
+            await CollectAddedDocumentAsync(newSolution, docId, result, ct).ConfigureAwait(false);
         }
     }
 
-    private static ImmutableArray<CodeFixProvider> LoadFixProviders()
-    {
-        return DiscoverProviders<CodeFixProvider>();
-    }
-
-    private static ImmutableArray<CodeRefactoringProvider> LoadRefactoringProviders()
-    {
-        return DiscoverProviders<CodeRefactoringProvider>();
-    }
-
-    private static ImmutableArray<T> DiscoverProviders<T>()
-        where T : class
-    {
-        var providers = new List<T>();
-        foreach (var assembly in GetFeatureAssemblies())
-        {
-            CollectProvidersFromAssembly(assembly, providers);
-        }
-
-        Log.Debug(
-            "[CodeAction] Discovered {Count} {ProviderType} providers",
-            providers.Count,
-            typeof(T).Name
-        );
-        return [.. providers];
-    }
-
-    private static void CollectProvidersFromAssembly<T>(Assembly assembly, List<T> providers)
-        where T : class
-    {
-        try
-        {
-            foreach (var type in assembly.DefinedTypes)
-            {
-                TryInstantiateProvider(type, providers);
-            }
-        }
-        catch (ReflectionTypeLoadException ex)
-        {
-            // Assembly has unresolvable types — skip it, noting why (file log only).
-            Log.Debug(
-                ex,
-                "[CodeAction] Skipped assembly {Assembly} (unresolvable types)",
-                assembly.GetName().Name
-            );
-        }
-    }
-
-    private static void TryInstantiateProvider<T>(
-        System.Reflection.TypeInfo type,
-        List<T> providers
+    private static async Task CollectAddedDocumentAsync(
+        Solution solution, DocumentId docId, WorkspaceEditResult result, CancellationToken ct
     )
-        where T : class
     {
-        if (type.IsAbstract || type.IsInterface || !typeof(T).IsAssignableFrom(type))
+        var document = solution.GetDocument(docId);
+        if (document?.FilePath is null)
         {
             return;
         }
 
-        try
-        {
-            if (Activator.CreateInstance(type.AsType(), nonPublic: true) is T provider)
-            {
-                providers.Add(provider);
-            }
-        }
-        catch
-        {
-            // Some providers need MEF dependencies — skip them.
-        }
+        var text = await document.GetTextAsync(ct).ConfigureAwait(false);
+        result.DocumentChanges.Add(CreateAddedDocumentEdit(document.FilePath, text.ToString()));
     }
 
-    private static Assembly[] GetFeatureAssemblies()
+    private static DocumentEditResult CreateAddedDocumentEdit(string filePath, string text)
     {
-        try
+        return new DocumentEditResult
         {
-            return
-            [
-                Assembly.Load("Microsoft.CodeAnalysis.Features"),
-                Assembly.Load("Microsoft.CodeAnalysis.CSharp.Features"),
-            ];
-        }
-        catch
-        {
-            return [];
-        }
+            FilePath = filePath,
+            Edits = [CreateWholeDocumentEdit(text)],
+        };
     }
+
+    private static TextEditResult CreateWholeDocumentEdit(string text)
+    {
+        return new TextEditResult
+        {
+            StartLine = 0,
+            StartCharacter = 0,
+            EndLine = 0,
+            EndCharacter = 0,
+            NewText = text,
+        };
+    }
+
+    private static ImmutableArray<CodeFixProvider> LoadFixProviders()
+    {
+        return AnalyzerDiagnosticResolver.DiscoverProviders<CodeFixProvider>();
+    }
+
+    private static ImmutableArray<CodeRefactoringProvider> LoadRefactoringProviders()
+    {
+        return
+        [
+            .. AnalyzerDiagnosticResolver.DiscoverProviders<CodeRefactoringProvider>(),
+            new MergeDeclarationAssignmentCodeRefactoringProvider(),
+        ];
+    }
+
 }

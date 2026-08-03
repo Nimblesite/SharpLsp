@@ -48,7 +48,7 @@
     },
     "home": {
       "eyebrow": "Open-source .NET tooling · C# + F#",
-      "title": "A complete .NET development experience.",
+      "title": "SharpLsp: full C# and F# development. The complete .NET development experience.",
       "titleAccent": "In your editor.",
       "lede": "SharpLsp is the open-source alternative to Visual Studio, Rider, and C# Dev Kit — language intelligence, solution tooling, refactoring, NuGet, debugging, and profiling for C# and F# without subscriptions or vendor lock-in.",
       "engines": "C# via Roslyn. F# via FSharp.Compiler.Service.",
@@ -240,7 +240,7 @@
     },
     "home": {
       "eyebrow": "开源 .NET 工具 · C# + F#",
-      "title": "完整的 .NET 开发体验。",
+      "title": "SharpLsp：全面支持 C# 和 F# 开发。完整的 .NET 开发体验。",
       "titleAccent": "就在你的编辑器中。",
       "lede": "SharpLsp 是 Visual Studio、Rider 和 C# Dev Kit 的开源替代方案，为 C# 与 F# 提供语言智能、解决方案工具、重构、NuGet、调试和性能分析，无需订阅，也没有厂商锁定。",
       "engines": "C# 由 Roslyn 驱动，F# 由 FSharp.Compiler.Service 驱动。",
@@ -420,7 +420,7 @@
     },
     "home": {
       "eyebrow": "オープンソース .NET ツール · C# + F#",
-      "title": "SharpLsp で完全な .NET 開発体験を。",
+      "title": "SharpLsp：C# と F# の開発をフルサポート。完全な .NET 開発体験を。",
       "titleAccent": "いつものエディターで。",
       "lede": "SharpLsp は Visual Studio、Rider、C# Dev Kit に代わるオープンソースの選択肢です。C# と F# の言語機能、ソリューション管理、リファクタリング、NuGet、デバッグ、プロファイリングを、サブスクリプションやベンダーロックインなしで提供します。",
       "engines": "C# は Roslyn、F# は FSharp.Compiler.Service を使用。",

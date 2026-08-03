@@ -57,5 +57,3 @@ SharpLsp 的大多数上下文菜单命令都位于 VS Code 解决方案资源�
 ## 编辑器菜单
 
 对于 C# 和 F# 编辑器，SharpLsp 会添加 **Debug Program**。代码操作、重命名、导航和其他语言功能使用 VS Code 的标准 LSP 菜单和命令，而不是 SharpLsp 专用的上下文菜单项。
-
-\n

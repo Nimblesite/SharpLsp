@@ -1,8 +1,5 @@
 // Full-lifecycle real-LSP matrix for remaining [SHARPLSP-FEATURES-REFACTORING] families.
-import {
-  exerciseCodeAction,
-  type ActionLifecycleCase,
-} from './csharp-refactor-test-kit';
+import { exerciseCodeAction, type ActionLifecycleCase } from './csharp-refactor-test-kit';
 import {
   activateRealSharpLsp,
   openFixtureDocument,
@@ -79,10 +76,11 @@ public class EqualityTarget
 `;
 
 const RECORD_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
+// record-sentinel
 public class RecordTarget
 {
     public int X { get; }
-    public RecordTarget(int x) { X = x; } // record-sentinel
+    public RecordTarget(int x) { X = x; }
 }
 `;
 
@@ -92,10 +90,10 @@ const NAMESPACE_SOURCE = `namespace SharpLsp.TestFixtures.Refactors
 }
 `;
 
-const SPLIT_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
-public class SplitTarget
+const BLOCK_METHOD_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
+public class BlockMethodTarget
 {
-    public int Compute() { int left = 1, right = 2; return left + right; } // split-sentinel
+    public int Compute(int value) => value + 1; // block-method-sentinel
 }
 `;
 
@@ -103,6 +101,13 @@ const MERGE_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
 public class MergeTarget
 {
     public int Compute() { int value; value = 1; return value; } // merge-sentinel
+}
+`;
+
+const INLINE_DECLARATION_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
+public class InlineDeclarationTarget
+{
+    public bool Parse(string text) { int value; return int.TryParse(text, out value); } // inline-declaration-sentinel
 }
 `;
 
@@ -126,12 +131,19 @@ const FIELD_SOURCE = `using System;
 namespace SharpLsp.TestFixtures.Refactors;
 public class IntroduceFieldTarget
 {
-    public IntroduceFieldTarget(int input) { Console.WriteLine(input * 2); } // field-sentinel
+    public IntroduceFieldTarget() { Console.WriteLine(DateTime.Now.Year); } // field-sentinel
 }
 `;
 
-const OVERRIDE_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
-public abstract class OverrideBase { public abstract int Compute(int value); }
+const OVERRIDE_SOURCE = `using System;
+namespace SharpLsp.TestFixtures.Refactors;
+public abstract class OverrideBase
+{
+    public abstract int Compute(int value);
+    public abstract string Name { get; }
+    public abstract int this[int index] { get; }
+    public abstract event EventHandler? Changed;
+}
 public class OverrideTarget : OverrideBase { } // override-sentinel
 `;
 
@@ -161,120 +173,261 @@ const CONSTANT_OPTIONS = [
 
 const CASES: readonly ActionLifecycleCase[] = [
   {
-    label: 'introduce class constant', source: CONSTANT_SOURCE, snippet: '1 + 2', focus: '1 + 2',
-    title: CONSTANT_OPTIONS[0], kind: 'refactor.extract', options: CONSTANT_OPTIONS,
-    presentAfter: ['constant-sentinel'], absentAfter: [], patternsAfter: [/const int \w+ = 1 \+ 2;/],
+    label: 'introduce class constant',
+    source: CONSTANT_SOURCE,
+    snippet: '1 + 2',
+    focus: '1 + 2',
+    title: CONSTANT_OPTIONS[0],
+    kind: 'refactor.extract',
+    options: CONSTANT_OPTIONS,
+    presentAfter: ['constant-sentinel'],
+    absentAfter: [],
+    patternsAfter: [/const int \w+ = 1 \+ 2;/],
   },
   {
-    label: 'introduce local constant', source: CONSTANT_SOURCE, snippet: '1 + 2', focus: '1 + 2',
-    title: CONSTANT_OPTIONS[2], kind: 'refactor.extract', options: CONSTANT_OPTIONS,
-    presentAfter: ['constant-sentinel'], absentAfter: [], patternsAfter: [/const int \w+ = 1 \+ 2;/],
+    label: 'introduce local constant',
+    source: CONSTANT_SOURCE,
+    snippet: '1 + 2',
+    focus: '1 + 2',
+    title: CONSTANT_OPTIONS[2],
+    kind: 'refactor.extract',
+    options: CONSTANT_OPTIONS,
+    presentAfter: ['constant-sentinel'],
+    absentAfter: [],
+    patternsAfter: [/const int \w+ = 1 \+ 2;/],
   },
   {
-    label: 'explicit type to var', source: TYPE_SOURCE, snippet: 'int value = 1', focus: 'int',
-    title: 'Use implicit type', kind: 'refactor.rewrite', presentAfter: ['var value = 1', 'type-sentinel'],
+    label: 'explicit type to var',
+    source: TYPE_SOURCE,
+    snippet: 'int value = 1',
+    focus: 'int',
+    title: 'Use implicit type',
+    kind: 'quickfix',
+    presentAfter: ['var value = 1', 'type-sentinel'],
     absentAfter: ['int value = 1'],
   },
   {
-    label: 'var to explicit type', source: VAR_SOURCE, snippet: 'var value = 1', focus: 'var',
-    title: 'Use explicit type', kind: 'refactor.rewrite', presentAfter: ['int value = 1', 'var-sentinel'],
+    label: 'var to explicit type',
+    source: VAR_SOURCE,
+    snippet: 'var value = 1',
+    focus: 'var',
+    title: 'Use explicit type',
+    kind: 'refactor.rewrite',
+    presentAfter: ['int value = 1', 'var-sentinel'],
     absentAfter: ['var value = 1'],
   },
   {
-    label: 'method to expression body', source: METHOD_SOURCE, snippet: 'Compute(int value)', focus: 'Compute',
-    title: 'Use expression body for method', kind: 'refactor.rewrite',
-    presentAfter: ['=> value + 1;', 'method-sentinel'], absentAfter: ['{ return value + 1; }'],
+    label: 'method to expression body',
+    source: METHOD_SOURCE,
+    snippet: 'Compute(int value)',
+    focus: 'Compute',
+    title: 'Use expression body for method',
+    kind: 'refactor.rewrite',
+    presentAfter: ['=> value + 1;', 'method-sentinel'],
+    absentAfter: ['{ return value + 1; }'],
   },
   {
-    label: 'foreach to for', source: LOOP_SOURCE, snippet: 'foreach (var value in values)', focus: 'foreach',
-    title: "Convert to 'for'", kind: 'refactor.rewrite', presentAfter: ['for (', 'loop-sentinel'],
+    label: 'foreach to for',
+    source: LOOP_SOURCE,
+    snippet: 'foreach (var value in values)',
+    focus: 'foreach',
+    title: "Convert to 'for'",
+    kind: 'refactor.rewrite',
+    presentAfter: ['for (', 'loop-sentinel'],
     absentAfter: ['foreach ('],
   },
   {
-    label: 'reverse for loop', source: FOR_SOURCE, snippet: 'for (var index = 0;', focus: 'for',
-    title: "Reverse 'for' statement", kind: 'refactor.rewrite', presentAfter: ['for-sentinel'],
-    absentAfter: ['index = 0; index < 10; index++'], patternsAfter: [/index = 9; index >= 0; index--/],
+    label: 'reverse for loop',
+    source: FOR_SOURCE,
+    snippet: 'for (var index = 0;',
+    focus: 'for',
+    title: "Reverse 'for' statement",
+    kind: 'refactor.rewrite',
+    presentAfter: ['for-sentinel'],
+    absentAfter: ['index = 0; index < 10; index++'],
+    patternsAfter: [/index = 10 - 1; index >= 0; index--/],
   },
   {
-    label: 'concatenation to interpolated string', source: STRING_SOURCE,
-    snippet: 'left + "-" + right', focus: 'left + "-" + right', title: 'Convert to interpolated string',
-    kind: 'refactor.rewrite', presentAfter: ['$"{left}-{right}"', 'string-sentinel'], absentAfter: ['left + "-" + right'],
+    label: 'concatenation to interpolated string',
+    source: STRING_SOURCE,
+    snippet: 'left + "-" + right',
+    focus: 'left + "-" + right',
+    title: 'Convert to interpolated string',
+    kind: 'refactor.rewrite',
+    presentAfter: ['$"{left}-{right}"', 'string-sentinel'],
+    absentAfter: ['left + "-" + right'],
   },
   {
-    label: 'inline and remove method', source: INLINE_METHOD_SOURCE, snippet: 'Double(3)', focus: 'Double(3)',
-    title: "Inline 'Double(int value)'", kind: 'refactor.inline',
+    label: 'inline and remove method',
+    source: INLINE_METHOD_SOURCE,
+    snippet: 'Double(3)',
+    focus: 'Double(3)',
+    title: "Inline 'Double(int value)'",
+    kind: 'refactor.inline',
     options: ["Inline 'Double(int value)'", "Inline and keep 'Double(int value)'"],
-    presentAfter: ['3 * 2', 'inline-method-sentinel'], absentAfter: ['private int Double'],
+    postApplySnippet: '3 * 2',
+    presentAfter: ['3 * 2', 'inline-method-sentinel'],
+    absentAfter: ['private int Double'],
   },
   {
-    label: 'inline and retain method', source: INLINE_METHOD_SOURCE, snippet: 'Double(3)', focus: 'Double(3)',
-    title: "Inline and keep 'Double(int value)'", kind: 'refactor.inline',
+    label: 'inline and retain method',
+    source: INLINE_METHOD_SOURCE,
+    snippet: 'Double(3)',
+    focus: 'Double(3)',
+    title: "Inline and keep 'Double(int value)'",
+    kind: 'refactor.inline',
     options: ["Inline 'Double(int value)'", "Inline and keep 'Double(int value)'"],
-    presentAfter: ['private int Double', '3 * 2', 'inline-method-sentinel'], absentAfter: [],
+    presentAfter: ['private int Double', '3 * 2', 'inline-method-sentinel'],
+    absentAfter: [],
   },
   {
-    label: 'generate Equals', source: EQUALITY_SOURCE,
-    snippet: 'public int X;\n    public string Name', focus: 'public int X;\n    public string Name',
-    title: 'Generate Equals(...)', kind: 'refactor.rewrite',
+    label: 'generate Equals',
+    source: EQUALITY_SOURCE,
+    snippet: 'public int X;\n    public string Name',
+    focus: 'public int X;\n    public string Name',
+    title: 'Generate Equals(...)',
+    kind: 'refactor.rewrite',
     options: ['Generate Equals(...)', 'Generate Equals and GetHashCode'],
-    presentAfter: ['override bool Equals', 'equality-sentinel'], absentAfter: [],
+    presentAfter: ['override bool Equals', 'equality-sentinel'],
+    absentAfter: [],
   },
   {
-    label: 'generate Equals and GetHashCode', source: EQUALITY_SOURCE,
-    snippet: 'public int X;\n    public string Name', focus: 'public int X;\n    public string Name',
-    title: 'Generate Equals and GetHashCode', kind: 'refactor.rewrite',
+    label: 'generate Equals and GetHashCode',
+    source: EQUALITY_SOURCE,
+    snippet: 'public int X;\n    public string Name',
+    focus: 'public int X;\n    public string Name',
+    title: 'Generate Equals and GetHashCode',
+    kind: 'refactor.rewrite',
     options: ['Generate Equals(...)', 'Generate Equals and GetHashCode'],
-    presentAfter: ['override bool Equals', 'override int GetHashCode', 'equality-sentinel'], absentAfter: [],
+    presentAfter: ['override bool Equals', 'override int GetHashCode', 'equality-sentinel'],
+    absentAfter: [],
   },
   {
-    label: 'class to positional record', source: RECORD_SOURCE, snippet: 'class RecordTarget', focus: 'RecordTarget',
-    title: 'Convert to positional record', kind: 'refactor.rewrite',
-    presentAfter: ['record RecordTarget(', 'record-sentinel'], absentAfter: ['class RecordTarget'],
+    label: 'class to positional record',
+    source: RECORD_SOURCE,
+    snippet: 'class RecordTarget',
+    focus: 'RecordTarget',
+    title: 'Convert to positional record',
+    kind: 'refactor.rewrite',
+    presentAfter: ['record RecordTarget(', 'record-sentinel'],
+    absentAfter: ['class RecordTarget'],
   },
   {
-    label: 'block to file-scoped namespace', source: NAMESPACE_SOURCE, snippet: 'namespace SharpLsp', focus: 'namespace',
-    outsideSnippet: 'class NamespaceTarget', title: 'Convert to file-scoped namespace', kind: 'refactor.rewrite',
-    presentAfter: ['namespace SharpLsp.TestFixtures.Refactors;', 'namespace-sentinel'], absentAfter: ['namespace SharpLsp.TestFixtures.Refactors\n{'],
+    label: 'block to file-scoped namespace',
+    source: NAMESPACE_SOURCE,
+    snippet: 'namespace SharpLsp',
+    focus: 'namespace',
+    outsideSnippet: 'class NamespaceTarget',
+    title: 'Convert to file-scoped namespace',
+    kind: 'quickfix',
+    presentAfter: ['namespace SharpLsp.TestFixtures.Refactors;', 'namespace-sentinel'],
+    absentAfter: ['namespace SharpLsp.TestFixtures.Refactors\n{'],
   },
   {
-    label: 'split declaration', source: SPLIT_SOURCE, snippet: 'int left = 1, right = 2;',
-    focus: 'int left = 1, right = 2;', title: 'Split declaration', kind: 'refactor.rewrite',
-    presentAfter: ['int left = 1;', 'int right = 2;', 'split-sentinel'], absentAfter: ['left = 1, right = 2'],
+    label: 'expression body to block body',
+    source: BLOCK_METHOD_SOURCE,
+    snippet: 'Compute(int value) => value + 1;',
+    focus: 'Compute',
+    title: 'Use block body for method',
+    kind: 'refactor.rewrite',
+    presentAfter: ['return value + 1;', 'block-method-sentinel'],
+    absentAfter: ['=> value + 1;'],
+    patternsAfter: [/Compute\(int value\)\s*\{\s*return value \+ 1;/],
   },
   {
-    label: 'merge declaration and assignment', source: MERGE_SOURCE, snippet: 'int value; value = 1;',
-    focus: 'int value; value = 1;', title: 'Merge declaration and assignment', kind: 'refactor.rewrite',
-    presentAfter: ['int value = 1;', 'merge-sentinel'], absentAfter: ['int value; value = 1;'],
+    label: 'merge declaration and assignment',
+    source: MERGE_SOURCE,
+    snippet: 'int value; value = 1;',
+    focus: 'int value; value = 1;',
+    title: 'Merge declaration and assignment',
+    kind: 'refactor.rewrite',
+    presentAfter: ['int value = 1;', 'merge-sentinel'],
+    absentAfter: ['int value; value = 1;'],
   },
   {
-    label: 'wrap arguments', source: WRAP_SOURCE, snippet: 'Add(1, 2)', focus: '1, 2',
-    title: 'Wrap arguments', kind: 'refactor.rewrite', presentAfter: ['wrap-sentinel'],
-    absentAfter: ['Add(1, 2)'], patternsAfter: [/Add\(\s*1,\s*2\s*\)/],
+    label: 'inline declaration into out argument',
+    source: INLINE_DECLARATION_SOURCE,
+    snippet: 'int value; return int.TryParse(text, out value);',
+    focus: 'int value; return int.TryParse(text, out value);',
+    title: 'Inline variable declaration',
+    kind: 'quickfix',
+    presentAfter: ['out var value', 'inline-declaration-sentinel'],
+    absentAfter: ['int value;'],
   },
   {
-    label: 'imperative loop to LINQ', source: LINQ_SOURCE, snippet: 'foreach (var value in values)', focus: 'foreach',
-    title: 'Convert to LINQ', kind: 'refactor.rewrite', presentAfter: ['.Where(', '.Select(', 'linq-sentinel'],
+    label: 'wrap arguments',
+    source: WRAP_SOURCE,
+    snippet: 'Add(1, 2)',
+    focus: '1, 2',
+    title: 'Wrap every argument',
+    kind: 'refactor.rewrite',
+    presentAfter: ['wrap-sentinel'],
+    absentAfter: ['Add(1, 2)'],
+    patternsAfter: [/Add\(\s*1,\s*2\s*\)/],
+  },
+  {
+    label: 'imperative loop to LINQ',
+    source: LINQ_SOURCE,
+    snippet: 'foreach (var value in values)',
+    focus: 'foreach',
+    title: 'Convert to LINQ (call form)',
+    kind: 'refactor.rewrite',
+    options: ['Convert to LINQ', 'Convert to LINQ (call form)'],
+    presentAfter: ['.Where(', '.Select(', 'linq-sentinel'],
     absentAfter: ['foreach ('],
   },
   {
-    label: 'introduce field', source: FIELD_SOURCE, snippet: 'input * 2', focus: 'input * 2',
-    title: "Introduce field for 'input * 2'", kind: 'refactor.extract',
-    presentAfter: ['field-sentinel'], absentAfter: [], patternsAfter: [/private readonly int \w+;/],
+    label: 'introduce field',
+    source: FIELD_SOURCE,
+    snippet: 'DateTime.Now.Year',
+    focus: 'DateTime.Now.Year',
+    title: "Introduce field for 'DateTime.Now.Year'",
+    kind: 'refactor.extract',
+    presentAfter: ['field-sentinel'],
+    absentAfter: [],
+    patternsAfter: [/private readonly int \w+ = DateTime\.Now\.Year;/],
   },
   {
-    label: 'generate overrides', source: OVERRIDE_SOURCE, snippet: 'class OverrideTarget', focus: 'OverrideTarget',
-    title: 'Generate overrides...', kind: 'refactor.rewrite',
-    presentAfter: ['override int Compute', 'override-sentinel'], absentAfter: ['OverrideTarget : OverrideBase { }'],
+    label: 'generate overrides',
+    source: OVERRIDE_SOURCE,
+    snippet: 'class OverrideTarget',
+    focus: 'OverrideTarget',
+    title: 'Generate overrides...',
+    kind: 'refactor.rewrite',
+    presentAfter: [
+      'override int Compute',
+      'override string Name',
+      'override int this[int index]',
+      'override event EventHandler? Changed',
+      'override-sentinel',
+    ],
+    absentAfter: ['OverrideTarget : OverrideBase { }'],
+    patternsAfter: [
+      /override int Compute\(int value\)/,
+      /override string Name\s*\{\s*get/,
+      /override int this\[int index\]\s*\{\s*get/,
+      /override event EventHandler\? Changed\s*\{\s*add[\s\S]*remove/,
+    ],
   },
   {
-    label: 'generate comparison operators', source: COMPARISON_SOURCE, snippet: 'class ComparisonTarget', focus: 'ComparisonTarget',
-    title: 'Generate comparison operators', kind: 'refactor.rewrite',
-    presentAfter: ['operator <', 'operator >'], absentAfter: [],
+    label: 'generate comparison operators',
+    source: COMPARISON_SOURCE,
+    snippet: 'class ComparisonTarget',
+    focus: 'ComparisonTarget',
+    title: 'Generate comparison operators',
+    kind: 'refactor.rewrite',
+    presentAfter: ['operator <', 'operator >'],
+    absentAfter: [],
   },
   {
-    label: 'add constructor null checks', source: NULL_SOURCE, snippet: 'NullTarget(string name)', focus: 'name',
-    title: 'Add null checks', kind: 'refactor.rewrite',
-    presentAfter: ['ArgumentNullException', 'null-check-sentinel'], absentAfter: [],
+    label: 'add constructor null checks',
+    source: NULL_SOURCE,
+    snippet: 'NullTarget(string name)',
+    focus: 'name',
+    title: 'Add null check',
+    kind: 'refactor.rewrite',
+    presentAfter: ['ArgumentNullException', 'null-check-sentinel'],
+    absentAfter: [],
   },
 ];
 

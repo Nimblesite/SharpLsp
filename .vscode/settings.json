@@ -5,5 +5,7 @@
     "titleBar.inactiveBackground": "#005826",
     "titleBar.inactiveForeground": "#ffffffcc"
   },
-  "deslop.topOffenders.splitByLanguage": true
+  "deslop.topOffenders.splitByLanguage": true,
+  "makefile.makefilePath": "${workspaceFolder}/tools/make/vscode.mk",
+  "makefile.phonyOnlyTargets": true
 }

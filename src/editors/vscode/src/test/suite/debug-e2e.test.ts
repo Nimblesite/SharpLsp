@@ -226,7 +226,7 @@ suite('Debug E2E — exported helpers inside real flows', () => {
     assert.strictEqual(
       withBundle[0],
       path.join(extPath, 'bin', `${process.platform}-${process.arch}`, 'netcoredbg', exe),
-      'the bundled netcoredbg (staged by scripts/vsix/fetch-netcoredbg.sh) is preferred over PATH copies',
+      'the bundled netcoredbg (staged by tools/vsix/fetch-netcoredbg.sh) is preferred over PATH copies',
     );
     // The remaining five are the no-extensionPath list, order preserved.
     assert.deepStrictEqual(withBundle.slice(1), getNetcoredbgCandidates());

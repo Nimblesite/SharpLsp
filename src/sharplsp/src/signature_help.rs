@@ -3,7 +3,8 @@
 //! Routed to the language sidecar, which resolves the enclosing method or
 //! constructor call and returns its overloads. The F# sidecar (FCS
 //! `GetMethods`) implements this; C# requests for which the sidecar has no
-//! handler resolve to null. Implements [FS-SIGHELP].
+//! handler resolve to null. This is the signature-help portion of
+//! `[SHARPLSP-FEATURES-INTELLIGENCE]`.
 
 use std::sync::Arc;
 

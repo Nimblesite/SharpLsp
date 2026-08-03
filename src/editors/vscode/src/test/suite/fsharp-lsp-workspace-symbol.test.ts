@@ -11,7 +11,7 @@ import { FSHARP_COLD_TIMEOUT_MS, openFSharpFixture } from './fsharp-helpers';
  * sidecar's document symbols and merged into the standard workspace-symbol
  * response. The search covers OPEN documents, so each test opens the relevant F#
  * fixtures first, then drives several `executeWorkspaceSymbolProvider` queries with
- * many assertions per query. [FS-WORKSPACE-SYMBOL]
+ * many assertions per query. [SHARPLSP-FEATURES-NAVIGATION]
  */
 
 // VS Code numeric SymbolKind values (LSP enum).

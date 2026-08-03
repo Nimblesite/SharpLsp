@@ -64,10 +64,8 @@ public sealed class HoverBuilderCoverageEndToEndTests(CSharpSidecarFixture fixtu
         Assert.NotNull(h.StartLine);
     }
 
-    // Hovering the 'var' keyword of a concrete-typed local. When 'var' surfaces as
-    // a VarKeyword token this drives BuildVarHover's inferred-signature path;
-    // otherwise the inferred type is resolved through ResolveSymbol. Either way the
-    // concrete type name must appear in the hover.
+    // Hovering the contextual 'var' identifier of a concrete-typed local drives
+    // BuildVarHover's inferred-signature path.
     [Fact]
     public async Task Hover_on_var_keyword_of_named_local_resolves_type()
     {
@@ -75,6 +73,8 @@ public sealed class HoverBuilderCoverageEndToEndTests(CSharpSidecarFixture fixtu
             "textDocument/hover",
             fixture.PosPayload(126, 8)
         );
+        // [HOVER-CSHARP-CASES] `var` must identify the result as an inferred type.
+        Assert.Contains("(inferred)", h.Contents);
         Assert.Contains("LegacyCalculator", h.Contents);
         Assert.NotNull(h.StartLine);
     }
@@ -88,6 +88,7 @@ public sealed class HoverBuilderCoverageEndToEndTests(CSharpSidecarFixture fixtu
             "textDocument/hover",
             fixture.PosPayload(123, 8)
         );
+        Assert.Contains("(inferred)", h.Contents);
         Assert.Contains("IEnumerable", h.Contents);
         Assert.NotNull(h.StartLine);
     }

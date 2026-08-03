@@ -32,164 +32,201 @@ import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
  * and exceed C# parity.
  */
 
-suite('F# LSP — Completion', () => {
+suite('F# LSP — Completion', defineCompletionSuite);
+
+function defineCompletionSuite(): void {
   suiteTeardown(closeAllEditors);
   teardown(closeAllEditors);
+  test('member completion after `.` on a class instance', verifyClassCompletion);
+  test('member completion after `.` on a record value', verifyRecordCompletion);
+  test('module-qualified completion after `.`', verifyModuleCompletion);
+  test('completion items carry concrete F# symbol kinds', verifyCompletionKind);
+}
 
-  test('member completion after `.` on a class instance', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
-    const usage = await openFSharpFixture('Usage.fs');
-    // Cursor immediately after `greeter.` in `greeter.Greet alice.Name`.
-    const position = positionOf(usage.doc, 'greeter.Greet', 'greeter.'.length);
-    const labels = await pollCompletionLabels(usage.uri, position, (set) => set.has('Greet'));
-    assert.ok(labels.has('Greet'), 'completion after greeter. must include the Greet member');
-  });
+suite('F# LSP — Signature Help', defineSignatureSuite);
 
-  test('member completion after `.` on a record value', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
-    const usage = await openFSharpFixture('Usage.fs');
-    const position = positionOf(usage.doc, 'alice.Name', 'alice.'.length);
-    const labels = await pollCompletionLabels(
-      usage.uri,
-      position,
-      (set) => set.has('Name') && set.has('Age'),
-    );
-    assert.ok(labels.has('Name'), 'record completion must include Name');
-    assert.ok(labels.has('Age'), 'record completion must include Age');
-  });
-
-  test('module-qualified completion after `.`', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
-    const usage = await openFSharpFixture('Usage.fs');
-    const position = positionOf(usage.doc, 'Geometry.totalArea shapes', 'Geometry.'.length);
-    const labels = await pollCompletionLabels(
-      usage.uri,
-      position,
-      (set) => set.has('totalArea') && set.has('area'),
-    );
-    assert.ok(labels.has('area'), 'module completion must include area');
-    assert.ok(labels.has('totalArea'), 'module completion must include totalArea');
-    assert.ok(labels.has('describeParity'), 'module completion must include describeParity');
-  });
-
-  test('completion items carry concrete F# symbol kinds', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
-    const usage = await openFSharpFixture('Usage.fs');
-    const position = positionOf(usage.doc, 'alice.Name', 'alice.'.length);
-    const list = await pollCompletion(usage.uri, position, (l) =>
-      l.items.some((i) => i.label.toString() === 'Name'),
-    );
-    const name = list.items.find((i) => i.label.toString() === 'Name');
-    assert.ok(name, 'Name completion item must be present');
-    assert.strictEqual(
-      name?.kind,
-      vscode.CompletionItemKind.Field,
-      'record field completion must be reported as a Field',
-    );
-  });
-});
-
-suite('F# LSP — Signature Help', () => {
+function defineSignatureSuite(): void {
   suiteTeardown(closeAllEditors);
   teardown(closeAllEditors);
+  test('signature help inside a constructor call', verifySignatureHelp);
+}
 
-  test('signature help inside a constructor call', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 15_000);
-    const usage = await openFSharpFixture('Usage.fs');
-    // Inside `Greeter("Hello")` — just after the opening paren.
-    const position = positionOf(usage.doc, 'Greeter("Hello")', 'Greeter('.length);
-    const help = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.SignatureHelp>(
-          'vscode.executeSignatureHelpProvider',
-          usage.uri,
-          position,
-          '(',
-        )) ?? new vscode.SignatureHelp(),
-      (h) => h.signatures.length > 0,
-      FSHARP_COLD_TIMEOUT_MS,
-      2_000,
-    );
-    assert.ok(
-      help.signatures.length > 0,
-      'signature help must surface at least one signature for the Greeter constructor',
-    );
-  });
-});
+suite('F# LSP — Rename', defineRenameSuite);
 
-suite('F# LSP — Rename', () => {
+function defineRenameSuite(): void {
   suiteTeardown(closeAllEditors);
   teardown(closeAllEditors);
+  test('rename a function updates the declaration and every use site', verifySimpleRename);
+}
 
-  test('rename a function updates the declaration and every use site', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
-    const library = await openFSharpFixture('Library.fs');
-    const position = positionOf(library.doc, 'let area', 'let '.length);
-    const edit = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
-          'vscode.executeDocumentRenameProvider',
-          library.uri,
-          position,
-          'computeArea',
-        )) ?? new vscode.WorkspaceEdit(),
-      (e) => e.size > 0,
-      FSHARP_COLD_TIMEOUT_MS,
-      2_000,
-    );
-    assert.ok(edit.size > 0, 'rename must produce a workspace edit');
-    const libEdits = edit.get(library.uri);
-    assert.ok(
-      libEdits.length >= 2,
-      `rename must touch the declaration and the use site (got ${libEdits.length} edits)`,
-    );
-    assert.ok(
-      libEdits.every((e) => e.newText === 'computeArea'),
-      'every rename edit must insert the new name',
-    );
-  });
-});
+suite('F# LSP — Inlay Hints', defineInlaySuite);
 
-suite('F# LSP — Inlay Hints', () => {
+function defineInlaySuite(): void {
   suiteTeardown(closeAllEditors);
   teardown(closeAllEditors);
+  test('type inlay hints appear on unannotated let bindings', verifyInlayHints);
+}
 
-  test('type inlay hints appear on unannotated let bindings', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 15_000);
-    const usage = await openFSharpFixture('Usage.fs');
-    const fullRange = new vscode.Range(
-      new vscode.Position(0, 0),
-      new vscode.Position(usage.doc.lineCount, 0),
-    );
-    const hints = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.InlayHint[]>(
-          'vscode.executeInlayHintProvider',
-          usage.uri,
-          fullRange,
-        )) ?? [],
-      (items) => items.length >= 1,
-      FSHARP_COLD_TIMEOUT_MS,
-      2_000,
-    );
-    assert.ok(hints.length >= 1, `Usage.fs must surface ≥1 inlay hint, got ${hints.length}`);
-    const labels = hints.map(inlayLabel).join(' ');
-    assert.match(labels, /Greeter|float|string|int/, 'inlay hints must reveal inferred types');
-  });
-});
+suite('F# LSP — Code Actions', defineCodeActionSuite);
 
-suite('F# LSP — Code Actions', () => {
+function defineCodeActionSuite(): void {
   suiteSetup(activateRealSharpLsp);
   suiteTeardown(closeAllEditors);
   teardown(closeAllEditors);
-
-  test('offers a fix to ignore an implicitly-discarded result', async function () {
-    this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
-    await verifyIgnoreCodeAction();
-  });
-});
+  test('offers a fix to ignore an implicitly-discarded result', verifyIgnoreCodeActionTest);
+}
 
 // ── Local helpers ─────────────────────────────────────────────────
+
+async function verifyClassCompletion(this: Mocha.Context): Promise<void> {
+  this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+  const usage = await openFSharpFixture('Usage.fs');
+  const position = positionOf(usage.doc, 'greeter.Greet', 'greeter.'.length);
+  const labels = await pollCompletionLabels(usage.uri, position, (set) => set.has('Greet'));
+  assert.ok(labels.has('Greet'), 'completion after greeter. must include the Greet member');
+}
+
+async function verifyRecordCompletion(this: Mocha.Context): Promise<void> {
+  this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+  const usage = await openFSharpFixture('Usage.fs');
+  const position = positionOf(usage.doc, 'alice.Name', 'alice.'.length);
+  const labels = await pollCompletionLabels(
+    usage.uri,
+    position,
+    (set) => set.has('Name') && set.has('Age'),
+  );
+  assert.ok(labels.has('Name'), 'record completion must include Name');
+  assert.ok(labels.has('Age'), 'record completion must include Age');
+}
+
+async function verifyModuleCompletion(this: Mocha.Context): Promise<void> {
+  this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+  const usage = await openFSharpFixture('Usage.fs');
+  const position = positionOf(usage.doc, 'Geometry.totalArea shapes', 'Geometry.'.length);
+  const labels = await pollCompletionLabels(
+    usage.uri,
+    position,
+    (set) => set.has('totalArea') && set.has('area'),
+  );
+  assert.ok(labels.has('area'), 'module completion must include area');
+  assert.ok(labels.has('totalArea'), 'module completion must include totalArea');
+  assert.ok(labels.has('describeParity'), 'module completion must include describeParity');
+}
+
+async function verifyCompletionKind(this: Mocha.Context): Promise<void> {
+  this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+  const usage = await openFSharpFixture('Usage.fs');
+  const position = positionOf(usage.doc, 'alice.Name', 'alice.'.length);
+  const list = await pollCompletion(usage.uri, position, completionHasName);
+  const name = list.items.find((item) => item.label.toString() === 'Name');
+  assert.ok(name, 'Name completion item must be present');
+  assert.strictEqual(
+    name.kind,
+    vscode.CompletionItemKind.Field,
+    'record field completion must be reported as a Field',
+  );
+}
+
+function completionHasName(list: vscode.CompletionList): boolean {
+  return list.items.some((item) => item.label.toString() === 'Name');
+}
+
+async function verifySignatureHelp(this: Mocha.Context): Promise<void> {
+  this.timeout(FSHARP_COLD_TIMEOUT_MS + 15_000);
+  const usage = await openFSharpFixture('Usage.fs');
+  const position = positionOf(usage.doc, 'Greeter("Hello")', 'Greeter('.length);
+  const help = await requestSignatureHelp(usage.uri, position);
+  assert.ok(
+    help.signatures.length > 0,
+    'signature help must surface at least one signature for the Greeter constructor',
+  );
+}
+
+async function requestSignatureHelp(
+  uri: vscode.Uri,
+  position: vscode.Position,
+): Promise<vscode.SignatureHelp> {
+  return pollUntilResult(
+    async () =>
+      (await vscode.commands.executeCommand<vscode.SignatureHelp>(
+        'vscode.executeSignatureHelpProvider',
+        uri,
+        position,
+        '(',
+      )) ?? new vscode.SignatureHelp(),
+    (help) => help.signatures.length > 0,
+    FSHARP_COLD_TIMEOUT_MS,
+    2_000,
+  );
+}
+
+async function verifySimpleRename(this: Mocha.Context): Promise<void> {
+  this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+  const library = await openFSharpFixture('Library.fs');
+  const position = positionOf(library.doc, 'let area', 'let '.length);
+  const edit = await requestRenameEdit(library.uri, position);
+  assert.ok(edit.size > 0, 'rename must produce a workspace edit');
+  const libEdits = edit.get(library.uri);
+  assert.ok(
+    libEdits.length >= 2,
+    `rename must touch the declaration and the use site (got ${libEdits.length} edits)`,
+  );
+  assert.ok(libEdits.every(isComputeAreaEdit), 'every rename edit must insert the new name');
+}
+
+function isComputeAreaEdit(edit: vscode.TextEdit): boolean {
+  return edit.newText === 'computeArea';
+}
+
+async function requestRenameEdit(
+  uri: vscode.Uri,
+  position: vscode.Position,
+): Promise<vscode.WorkspaceEdit> {
+  return pollUntilResult(
+    async () =>
+      (await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
+        'vscode.executeDocumentRenameProvider',
+        uri,
+        position,
+        'computeArea',
+      )) ?? new vscode.WorkspaceEdit(),
+    (edit) => edit.size > 0,
+    FSHARP_COLD_TIMEOUT_MS,
+    2_000,
+  );
+}
+
+async function verifyInlayHints(this: Mocha.Context): Promise<void> {
+  this.timeout(FSHARP_COLD_TIMEOUT_MS + 15_000);
+  const usage = await openFSharpFixture('Usage.fs');
+  const range = new vscode.Range(0, 0, usage.doc.lineCount, 0);
+  const hints = await requestInlayHints(usage.uri, range);
+  assert.ok(hints.length >= 1, `Usage.fs must surface ≥1 inlay hint, got ${hints.length}`);
+  const labels = hints.map(inlayLabel).join(' ');
+  assert.match(labels, /Greeter|float|string|int/, 'inlay hints must reveal inferred types');
+}
+
+async function requestInlayHints(
+  uri: vscode.Uri,
+  range: vscode.Range,
+): Promise<vscode.InlayHint[]> {
+  return pollUntilResult(
+    async () =>
+      (await vscode.commands.executeCommand<vscode.InlayHint[]>(
+        'vscode.executeInlayHintProvider',
+        uri,
+        range,
+      )) ?? [],
+    (items) => items.length >= 1,
+    FSHARP_COLD_TIMEOUT_MS,
+    2_000,
+  );
+}
+
+async function verifyIgnoreCodeActionTest(this: Mocha.Context): Promise<void> {
+  this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+  await verifyIgnoreCodeAction();
+}
 
 async function pollCompletion(
   uri: vscode.Uri,

@@ -62,7 +62,10 @@ export function assertChildSymbol(
   symbol: vscode.DocumentSymbol,
 ): void {
   assert.ok(symbol.name.length > 0, 'member symbol has a name');
-  assert.ok(symbol.range.contains(symbol.selectionRange), `${symbol.name} selection stays in range`);
+  assert.ok(
+    symbol.range.contains(symbol.selectionRange),
+    `${symbol.name} selection stays in range`,
+  );
   assert.strictEqual(document.getText(symbol.selectionRange), symbol.name);
   assert.ok(symbol.range.start.isBeforeOrEqual(symbol.range.end));
   assert.ok(symbol.selectionRange.start.isBeforeOrEqual(symbol.selectionRange.end));

@@ -32,6 +32,7 @@ const NAMESPACE_FILE = 'fsharp/RenameNamespace.fs';
 const NAMESPACE_USAGE_FILE = 'fsharp/RenameNamespaceUsage.fs';
 const VALID_NAMES = ['renamedName', "renamedName'", '``renamed value``'] as const;
 const INVALID_NAMES = ['', '1bad', 'bad-name', 'two words', 'let', 'value.with.dot'] as const;
+type OpenOverlay = Awaited<ReturnType<typeof openOverlay>>;
 
 suite('F# real LSP — rename edge cases', defineRenameEdgeSuite);
 
@@ -94,9 +95,12 @@ async function runUnsavedRename(newName: string): Promise<void> {
     const range = tokenRange(fixture.document, 'unsavedName');
     await assertPrepareAtEveryTokenPosition(fixture.uri, range, 'unsavedName');
     const edit = await requestRename(
-      fixture.uri, range.start.translate(0, 1), newName, FSHARP_REFACTOR_TIMEOUT_MS,
+      fixture.uri,
+      range.start.translate(0, 1),
+      newName,
+      FSHARP_REFACTOR_TIMEOUT_MS,
     );
-    await assertUnsavedEdit(edit, fixture.uri, newName);
+    await assertUnsavedEdit(edit, fixture.uri, 'unsavedName', newName);
     await applyUnsavedEdit(fixture, edit, newName);
     await undoUnsavedEdit(fixture, newName);
   } finally {
@@ -109,11 +113,15 @@ async function assertPrepareAtEveryTokenPosition(
   range: vscode.Range,
   placeholder: string,
 ): Promise<void> {
-  for (const position of [range.start, range.start.translate(0, 1), range.end.translate(0, -1)]) {
+  assert.ok(range.isSingleLine && !range.isEmpty);
+  for (let offset = 0; offset < range.end.character - range.start.character; offset += 1) {
+    const position = range.start.translate(0, offset);
     const prepare = await requestPrepareRename(uri, position);
     assert.ok(prepare);
     assert.strictEqual(prepare.placeholder, placeholder);
+    assert.strictEqual(prepare.range.start.line, range.start.line);
     assert.strictEqual(prepare.range.start.character, range.start.character);
+    assert.strictEqual(prepare.range.end.line, range.end.line);
     assert.strictEqual(prepare.range.end.character, range.end.character);
   }
 }
@@ -121,6 +129,7 @@ async function assertPrepareAtEveryTokenPosition(
 async function assertUnsavedEdit(
   edit: vscode.WorkspaceEdit,
   uri: vscode.Uri,
+  oldName: string,
   newName: string,
 ): Promise<void> {
   assert.strictEqual(edit.size, 1);
@@ -128,9 +137,9 @@ async function assertUnsavedEdit(
   assert.strictEqual(edit.get(uri).length, 2);
   const snapshots = await assertWorkspaceEditSafe(edit);
   assert.strictEqual(snapshots.length, 1);
-  assert.deepStrictEqual(snapshots[0]?.replacedText, ['unsavedName', 'unsavedName']);
+  assert.deepStrictEqual(snapshots[0]?.replacedText, [oldName, oldName]);
   assert.ok(snapshots[0]?.edits.every((item) => item.newText === newName));
-  assert.ok(snapshots[0]?.edits.every((item) => !item.range.isEmpty));
+  assert.ok(snapshots[0]?.edits.every((item) => !item.range.isEmpty && item.range.isSingleLine));
 }
 
 async function applyUnsavedEdit(
@@ -147,9 +156,20 @@ async function applyUnsavedEdit(
   assert.ok(fixture.document.isDirty);
   await assertNoErrors(fixture.uri);
   const renamedRange = tokenRange(fixture.document, newName);
-  const prepare = await requestPrepareRename(fixture.uri, renamedRange.start.translate(0, 1));
-  assert.ok(prepare);
-  assert.strictEqual(prepare.placeholder, newName);
+  await assertPrepareAtEveryTokenPosition(fixture.uri, renamedRange, newName);
+  await assertReverseRenameAtBoundaries(fixture.uri, renamedRange, newName);
+}
+
+async function assertReverseRenameAtBoundaries(
+  uri: vscode.Uri,
+  range: vscode.Range,
+  currentName: string,
+): Promise<void> {
+  const positions = [range.start, range.start.translate(0, 1), range.end.translate(0, -2), range.end.translate(0, -1)];
+  for (const position of positions) {
+    const reverse = await requestRename(uri, position, 'unsavedName', FSHARP_REFACTOR_TIMEOUT_MS);
+    await assertUnsavedEdit(reverse, uri, currentName, 'unsavedName');
+  }
 }
 
 async function undoUnsavedEdit(
@@ -159,17 +179,20 @@ async function undoUnsavedEdit(
   await undoAction(fixture.document, RENAME_EDGE_SOURCE);
   const range = tokenRange(fixture.document, 'unsavedName');
   const replay = await requestRename(
-    fixture.uri, range.start.translate(0, 1), newName, FSHARP_REFACTOR_TIMEOUT_MS,
+    fixture.uri,
+    range.start.translate(0, 1),
+    newName,
+    FSHARP_REFACTOR_TIMEOUT_MS,
   );
-  assert.strictEqual(editCount(replay), 2);
-  assert.ok(replay.get(fixture.uri).every((item) => item.newText === newName));
+  await assertUnsavedEdit(replay, fixture.uri, 'unsavedName', newName);
   assert.strictEqual(fixture.document.getText(), RENAME_EDGE_SOURCE);
 }
 
 function renamedEdgeSource(newName: string): string {
-  return RENAME_EDGE_SOURCE
-    .replace('let unsavedName value', `let ${newName} value`)
-    .replace('= unsavedName 2', `= ${newName} 2`);
+  return RENAME_EDGE_SOURCE.replace('let unsavedName value', `let ${newName} value`).replace(
+    '= unsavedName 2',
+    `= ${newName} 2`,
+  );
 }
 
 async function assertInvalidName(invalidName: string): Promise<void> {
@@ -179,8 +202,7 @@ async function assertInvalidName(invalidName: string): Promise<void> {
     const prepare = await requestPrepareRename(fixture.uri, range.start.translate(0, 1));
     assert.ok(prepare, 'the source symbol itself must remain renameable');
     const beforeVersion = fixture.document.version;
-    const result = await executeRenameOnce(fixture.uri, range.start, invalidName);
-    assert.ok(result === undefined || result.size === 0, 'invalid name must produce no edits');
+    await assertInvalidRenameError(fixture.uri, range.start, invalidName);
     assert.strictEqual(fixture.document.version, beforeVersion);
     assert.strictEqual(fixture.document.getText(), RENAME_EDGE_SOURCE);
     assert.ok(fixture.document.isDirty);
@@ -195,7 +217,7 @@ async function assertTriviaRejected(): Promise<void> {
     const positions = triviaPositions(fixture.document);
     for (const position of positions) {
       assert.strictEqual(await requestPrepareRename(fixture.uri, position), null);
-      const result = await executeRenameOnce(fixture.uri, position, 'renamedTrivia');
+      const result = await executeRenameWithoutEdit(fixture.uri, position, 'renamedTrivia');
       assert.ok(result === undefined || result.size === 0);
     }
     assert.strictEqual(fixture.document.getText(), RENAME_EDGE_SOURCE);
@@ -219,7 +241,7 @@ async function assertMetadataRejected(name: string): Promise<void> {
   try {
     const range = tokenRange(fixture.document, name);
     assert.strictEqual(await requestPrepareRename(fixture.uri, range.start.translate(0, 1)), null);
-    const result = await executeRenameOnce(fixture.uri, range.start, `Renamed${name}`);
+    const result = await executeRenameWithoutEdit(fixture.uri, range.start, `Renamed${name}`);
     assert.ok(result === undefined || result.size === 0);
     assert.strictEqual(fixture.document.getText(), RENAME_EDGE_SOURCE);
     assert.ok(fixture.document.isDirty);
@@ -247,21 +269,28 @@ async function assertNamespaceRename(): Promise<void> {
   const definition = await openOverlay(NAMESPACE_FILE, RENAME_NAMESPACE_SOURCE);
   const usage = await openOverlay(NAMESPACE_USAGE_FILE, RENAME_NAMESPACE_USAGE_SOURCE);
   try {
-    const range = tokenRange(definition.document, 'RenameNamespace');
-    await assertPrepareAtEveryTokenPosition(definition.uri, range, 'RenameNamespace');
-    const edit = await requestRename(
-      definition.uri, range.start.translate(0, 1), 'RenamedNamespace', FSHARP_REFACTOR_TIMEOUT_MS,
-    );
-    await assertNamespaceEdit(edit, 'RenameNamespace', 'RenamedNamespace');
-    await applyWorkspaceEdit(edit);
-    assertNamespaceTexts(definition.document, usage.document, 'RenamedNamespace');
-    await assertNoErrors(definition.uri);
-    await assertNoErrors(usage.uri);
-    await reverseNamespaceRename(definition, usage);
+    await runNamespaceLifecycle(definition, usage);
   } finally {
     await revertDocument(usage.document);
     await revertDocument(definition.document);
   }
+}
+
+async function runNamespaceLifecycle(definition: OpenOverlay, usage: OpenOverlay): Promise<void> {
+  const range = tokenRange(definition.document, 'RenameNamespace');
+  await assertPrepareAtEveryTokenPosition(definition.uri, range, 'RenameNamespace');
+  const edit = await requestRename(
+    definition.uri,
+    range.start.translate(0, 1),
+    'RenamedNamespace',
+    FSHARP_REFACTOR_TIMEOUT_MS,
+  );
+  await assertNamespaceEdit(edit, 'RenameNamespace', 'RenamedNamespace');
+  await applyWorkspaceEdit(edit);
+  assertNamespaceTexts(definition.document, usage.document, 'RenamedNamespace');
+  await assertNoErrors(definition.uri);
+  await assertNoErrors(usage.uri);
+  await reverseNamespaceRename(definition, usage);
 }
 
 async function assertNamespaceEdit(
@@ -271,9 +300,10 @@ async function assertNamespaceEdit(
 ): Promise<void> {
   assert.strictEqual(edit.size, 2);
   assert.strictEqual(editCount(edit), 2);
-  assert.deepStrictEqual(
-    changedFileNames(edit).sort(), ['RenameNamespace.fs', 'RenameNamespaceUsage.fs'],
-  );
+  assert.deepStrictEqual(changedFileNames(edit).sort(), [
+    'RenameNamespace.fs',
+    'RenameNamespaceUsage.fs',
+  ]);
   const snapshots = await assertWorkspaceEditSafe(edit);
   assert.strictEqual(snapshots.length, 2);
   assert.ok(snapshots.flatMap((item) => item.replacedText).every((text) => text === oldName));
@@ -286,10 +316,12 @@ function assertNamespaceTexts(
   name: string,
 ): void {
   assert.strictEqual(
-    definition.getText(), RENAME_NAMESPACE_SOURCE.replace('RenameNamespace', name),
+    definition.getText(),
+    RENAME_NAMESPACE_SOURCE.replace('RenameNamespace', name),
   );
   assert.strictEqual(
-    usage.getText(), RENAME_NAMESPACE_USAGE_SOURCE.replace('RenameNamespace', name),
+    usage.getText(),
+    RENAME_NAMESPACE_USAGE_SOURCE.replace('RenameNamespace', name),
   );
   assert.ok(definition.isDirty);
   assert.ok(usage.isDirty);
@@ -302,7 +334,10 @@ async function reverseNamespaceRename(
   const range = tokenRange(definition.document, 'RenamedNamespace');
   await assertPrepareAtEveryTokenPosition(definition.uri, range, 'RenamedNamespace');
   const reverse = await requestRename(
-    definition.uri, range.start.translate(0, 1), 'RenameNamespace', FSHARP_REFACTOR_TIMEOUT_MS,
+    definition.uri,
+    range.start.translate(0, 1),
+    'RenameNamespace',
+    FSHARP_REFACTOR_TIMEOUT_MS,
   );
   await assertNamespaceEdit(reverse, 'RenamedNamespace', 'RenameNamespace');
   await applyWorkspaceEdit(reverse);
@@ -311,19 +346,38 @@ async function reverseNamespaceRename(
   await assertPrepareAtEveryTokenPosition(definition.uri, restored, 'RenameNamespace');
 }
 
-async function executeRenameOnce(
+async function executeRenameWithoutEdit(
   uri: vscode.Uri,
   position: vscode.Position,
   newName: string,
 ): Promise<vscode.WorkspaceEdit | undefined> {
   try {
     return await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
-      'vscode.executeDocumentRenameProvider', uri, position, newName,
+      'vscode.executeDocumentRenameProvider',
+      uri,
+      position,
+      newName,
     );
   } catch (error: unknown) {
-    assert.match(String(error), /rename|invalid|request/i);
+    assert.match(String(error), /No result/i);
     return undefined;
   }
+}
+
+async function assertInvalidRenameError(
+  uri: vscode.Uri,
+  position: vscode.Position,
+  newName: string,
+): Promise<void> {
+  await assert.rejects(
+    vscode.commands.executeCommand<vscode.WorkspaceEdit>(
+      'vscode.executeDocumentRenameProvider',
+      uri,
+      position,
+      newName,
+    ),
+    /Invalid F# rename name:/,
+  );
 }
 
 async function assertNoErrors(uri: vscode.Uri): Promise<void> {

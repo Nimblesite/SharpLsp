@@ -17,7 +17,7 @@ It may become the foundation for a built-in SharpLsp formatter in the future, bu
 
 | Component | File(s) | Engine |
 |-----------|---------|--------|
-| Rust LSP handler | `src/formatting.rs` | Routes to sidecar (gated behind `cfg(feature = "formatting")`) |
+| Rust LSP handler | `src/sharplsp/src/formatting.rs` | Routes to sidecar (gated behind `cfg(feature = "formatting")`) |
 | C# sidecar resolver | `src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/FormattingResolver.cs` | Roslyn `Formatter.FormatAsync()` |
 | C# sidecar handlers | `src/sidecars/SharpLsp.Sidecar.CSharp/CSharpSidecar.Features.cs` (formatting methods) | Delegates to resolver |
 | C# workspace manager | `src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.Features.cs` (formatting methods) | Delegates to resolver |

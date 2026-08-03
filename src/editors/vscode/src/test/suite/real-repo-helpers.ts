@@ -1,6 +1,6 @@
 // Shared harness for the real-world repository e2e stress suites.
 //
-// Clones pinned tags of real, popular .NET repos into <repo-root>/real-world-fixtures/
+// Clones pinned tags of real, popular .NET repos into <repo-root>/src/fixtures/real-world/
 // (gitignored — never committed), restores them once, and exposes interaction
 // + resource-sampling helpers. Tests drive REAL solutions through the REAL
 // extension host and assert on the LSP results and on the server processes'
@@ -11,9 +11,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { EXTENSION_ID, removeDirRecursive, waitForHoverResult } from './test-helpers';
+export {
+  assertCpuSettles,
+  assertServerResourceBounds,
+  sampleServerProcesses,
+  type ProcessSample,
+} from './real-repo-process-helpers';
 
 export interface RealRepoSpec {
-  /** Directory name under real-world-fixtures/. */
+  /** Directory name under src/fixtures/real-world/. */
   name: string;
   url: string;
   /** Pinned tag — keeps anchors deterministic across runs. */
@@ -43,9 +49,9 @@ export const FSTOOLKIT: RealRepoSpec = {
   sln: 'FsToolkit.ErrorHandling.sln',
 };
 
-/** <repo-root>/real-world-fixtures — out/test/suite is five levels down. */
+/** <repo-root>/src/fixtures/real-world — out/test/suite is five levels below src. */
 export function realWorldFixturesRoot(): string {
-  return path.resolve(__dirname, '..', '..', '..', '..', '..', 'real-world-fixtures');
+  return path.resolve(__dirname, '..', '..', '..', '..', '..', 'fixtures', 'real-world');
 }
 
 const RESTORED_MARKER = '.sharplsp-restored';
@@ -193,98 +199,6 @@ export function assertSaneRange(
 
 // ── Server process sampling (memory / CPU stress assertions) ──────
 
-export interface ProcessSample {
-  pid: number;
-  name: string;
-  rssBytes: number;
-  cpuSeconds: number;
-  commandLine: string;
-}
-
-/**
- * Sample every SharpLsp server process: the Rust host binary plus the C#/F#
- * sidecars (matched by name or command line, however they were spawned).
- * Read-only: never signals or kills anything.
- */
-export function sampleServerProcesses(): ProcessSample[] {
-  const all = process.platform === 'win32' ? sampleWindows() : samplePosix();
-  return all.filter(
-    (proc) =>
-      proc.name.toLowerCase().includes('sharplsp') ||
-      proc.commandLine.toLowerCase().includes('sharplsp'),
-  );
-}
-
-interface Win32ProcessRow {
-  ProcessId: number;
-  Name: string;
-  CommandLine: string | null;
-  WorkingSetSize: number;
-  UserModeTime: number;
-  KernelModeTime: number;
-}
-
-function sampleWindows(): ProcessSample[] {
-  const script =
-    "Get-CimInstance Win32_Process -Filter \"Name LIKE 'sharplsp%' OR Name='dotnet.exe'\" | " +
-    'Select-Object ProcessId,Name,CommandLine,WorkingSetSize,UserModeTime,KernelModeTime | ConvertTo-Json -Compress';
-  const raw = execFileSync(
-    'powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-Command', script],
-    {
-      encoding: 'utf8',
-      timeout: 30_000,
-    },
-  ).trim();
-  if (raw.length === 0) return [];
-  const parsed = JSON.parse(raw) as Win32ProcessRow | Win32ProcessRow[];
-  const rows = Array.isArray(parsed) ? parsed : [parsed];
-  return rows.map((row) => ({
-    pid: row.ProcessId,
-    name: row.Name,
-    rssBytes: row.WorkingSetSize,
-    // Win32_Process times are in 100ns units.
-    cpuSeconds: (row.UserModeTime + row.KernelModeTime) / 1e7,
-    commandLine: row.CommandLine ?? '',
-  }));
-}
-
-function samplePosix(): ProcessSample[] {
-  const raw = execFileSync('ps', ['-eo', 'pid=,rss=,time=,args='], {
-    encoding: 'utf8',
-    timeout: 30_000,
-  });
-  return raw
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => {
-      const match = /^(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
-      const [, pid, rssKb, time, args] = match ?? [];
-      if (pid === undefined || rssKb === undefined || time === undefined || args === undefined) {
-        return undefined;
-      }
-      return {
-        pid: Number(pid),
-        name: path.basename(args.split(' ')[0] ?? ''),
-        rssBytes: Number(rssKb) * 1024,
-        cpuSeconds: parsePsTime(time),
-        commandLine: args,
-      };
-    })
-    .filter((sample): sample is ProcessSample => sample !== undefined);
-}
-
-/** Parse ps TIME ([[dd-]hh:]mm:ss) into seconds. */
-function parsePsTime(time: string): number {
-  const dashIndex = time.indexOf('-');
-  const days = dashIndex >= 0 ? Number(time.slice(0, dashIndex)) : 0;
-  const clock = dashIndex >= 0 ? time.slice(dashIndex + 1) : time;
-  const parts = clock.split(':').map(Number).reverse();
-  const [seconds = 0, minutes = 0, hours = 0] = parts;
-  return days * 86_400 + hours * 3_600 + minutes * 60 + seconds;
-}
-
 // ── Shared assertion helpers (used identically by every suite) ─────
 
 /** CompletionItem.label is string | CompletionItemLabel — normalize to text. */
@@ -320,18 +234,79 @@ export function firstError(diagnostics: vscode.Diagnostic[], label: string): vsc
  * lint), so waiting for *any* diagnostic returns long before the semantic
  * check of an injected error completes — the wait must be severity-aware.
  */
-export async function waitForError(uri: vscode.Uri, timeoutMs: number): Promise<vscode.Diagnostic> {
+export async function waitForError(
+  uri: vscode.Uri,
+  timeoutMs: number,
+  predicate: (diagnostic: vscode.Diagnostic) => boolean = () => true,
+): Promise<vscode.Diagnostic> {
   const currentError = (): vscode.Diagnostic | undefined =>
     vscode.languages
       .getDiagnostics(uri)
-      .find((d) => d.severity === vscode.DiagnosticSeverity.Error);
+      .find((item) => item.severity === vscode.DiagnosticSeverity.Error && predicate(item));
   const deadline = Date.now() + timeoutMs;
   while (currentError() === undefined && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   const error = currentError();
-  assert.ok(error, 'an Error diagnostic must surface for the broken buffer');
+  assert.ok(error, 'the requested Error diagnostic must surface');
   return error;
+}
+
+function errorDiagnosticKeys(uri: vscode.Uri): string[] {
+  return vscode.languages
+    .getDiagnostics(uri)
+    .filter((item) => item.severity === vscode.DiagnosticSeverity.Error)
+    .map((item) => {
+      const code = typeof item.code === 'object' && item.code !== null ? item.code.value : item.code;
+      return JSON.stringify([
+        item.source ?? '',
+        String(code ?? ''),
+        item.message,
+        item.range.start.line,
+        item.range.start.character,
+        item.range.end.line,
+        item.range.end.character,
+      ]);
+    })
+    .sort();
+}
+
+export async function waitForStableErrorBaseline(
+  uri: vscode.Uri,
+  timeoutMs: number,
+  minimumErrors = 0,
+): Promise<string[]> {
+  const deadline = Date.now() + timeoutMs;
+  let previous = errorDiagnosticKeys(uri);
+  let stableSince = Date.now();
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const current = errorDiagnosticKeys(uri);
+    if (JSON.stringify(current) !== JSON.stringify(previous)) {
+      previous = current;
+      stableSince = Date.now();
+    } else if (current.length >= minimumErrors && Date.now() - stableSince >= 2_000) {
+      return current;
+    }
+  }
+  assert.fail('Error diagnostic baseline never stabilized');
+}
+
+export async function waitForErrorBaseline(
+  uri: vscode.Uri,
+  expected: readonly string[],
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (JSON.stringify(errorDiagnosticKeys(uri)) === JSON.stringify(expected)) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  assert.deepStrictEqual(
+    errorDiagnosticKeys(uri),
+    expected,
+    'Error diagnostics must return to their exact pre-edit baseline',
+  );
 }
 
 /**
@@ -349,60 +324,4 @@ export async function waitForErrorsCleared(uri: vscode.Uri, timeoutMs: number): 
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   assert.strictEqual(currentErrors().length, 0, 'Error diagnostics must clear after the revert');
-}
-
-const HOST_RSS_MAX_BYTES = 2 * 1024 ** 3; // Rust host: 2 GiB is already pathological.
-const SIDECAR_RSS_MAX_BYTES = 4 * 1024 ** 3; // Roslyn/FCS on a medium repo stays well under 4 GiB.
-const MAX_SIDECARS_PER_LANGUAGE = 2; // >2 of one language = the orphaned-process leak (#133).
-
-/**
- * Assert the server fleet is alive and within resource bounds. Bounds are
- * deliberately generous — they exist to catch runaway leaks and process
- * storms, not to flake on GC timing.
- */
-export function assertServerResourceBounds(samples: ProcessSample[]): void {
-  assert.ok(samples.length >= 1, 'at least one SharpLsp server process must be running');
-  for (const proc of samples) {
-    const isHost =
-      proc.name.toLowerCase().startsWith('sharplsp') && !proc.commandLine.includes('sidecar');
-    const cap = isHost ? HOST_RSS_MAX_BYTES : SIDECAR_RSS_MAX_BYTES;
-    const mib = Math.round(proc.rssBytes / 1024 ** 2);
-    assert.ok(
-      proc.rssBytes < cap,
-      `${proc.name} (pid ${proc.pid.toString()}) rss ${mib.toString()} MiB exceeds ${Math.round(cap / 1024 ** 2).toString()} MiB cap`,
-    );
-    assert.ok(proc.cpuSeconds >= 0, `${proc.name} cpu time must be readable`);
-  }
-  for (const language of ['sidecar-csharp', 'sidecar-fsharp']) {
-    const count = samples.filter((proc) => proc.commandLine.includes(language)).length;
-    assert.ok(
-      count <= MAX_SIDECARS_PER_LANGUAGE,
-      `${count.toString()} ${language} processes running — process leak (expected <= ${MAX_SIDECARS_PER_LANGUAGE.toString()})`,
-    );
-  }
-}
-
-/**
- * Assert CPU settles after a burst. Background analysis (solution-wide
- * diagnostics sweeps, FCS checks) legitimately runs hot right after a storm,
- * so "settles" means SOME `windowMs` window stays under `maxCpuSeconds`
- * within a minute — only a permanently pegged fleet (runaway loop) fails.
- */
-export async function assertCpuSettles(windowMs: number, maxCpuSeconds: number): Promise<void> {
-  const attempts = 12;
-  let lastDelta = 0;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const before = totalCpuSeconds(sampleServerProcesses());
-    await new Promise((resolve) => setTimeout(resolve, windowMs));
-    lastDelta = totalCpuSeconds(sampleServerProcesses()) - before;
-    if (lastDelta < maxCpuSeconds) return;
-  }
-  assert.fail(
-    `server fleet never settled: still burning ${lastDelta.toFixed(1)} cpu-seconds per ` +
-      `${windowMs.toString()}ms window after ${attempts.toString()} windows (cap ${maxCpuSeconds.toString()}s)`,
-  );
-}
-
-function totalCpuSeconds(samples: ProcessSample[]): number {
-  return samples.reduce((sum, proc) => sum + proc.cpuSeconds, 0);
 }

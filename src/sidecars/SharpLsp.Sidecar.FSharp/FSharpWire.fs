@@ -261,6 +261,22 @@ type RenameRequest =
       [<Key(2)>] Character: int
       [<Key(3)>] NewName: string }
 
+// Cross-sidecar symbol identity and foreign-reference rename payloads.
+// Implements [SHARPLSP-FEATURES-REFACTORING].
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type RenameIdentityResultWire =
+    { [<Key(0)>] Found: bool
+      [<Key(1)>] AssemblyName: string
+      [<Key(2)>] XmlDocSig: string }
+
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type RenameForeignRequest =
+    { [<Key(0)>] AssemblyName: string
+      [<Key(1)>] XmlDocSig: string
+      [<Key(2)>] NewName: string }
+
 [<MessagePackObject(AllowPrivate = true)>]
 [<NoComparison; NoEquality>]
 type PrepareRenameResultWire =
@@ -282,8 +298,7 @@ module internal Helpers =
 
     /// Serialize a value to a successful ByteResult.
     let serializeOk<'T> (value: 'T) (ct: CancellationToken) : ByteResult =
-        let bytes = MessagePackSerializer.Serialize(value, cancellationToken = ct)
-        Outcome.Result<byte[], string>.Ok<byte[], string>(bytes) :> ByteResult
+        Outcome.Result<byte[], string>.Ok<byte[], string>(MessagePackSerializer.Serialize(value, cancellationToken = ct)) :> ByteResult
 
     /// Build a location handler for workspace methods returning a single optional location.
     let locationOptionHandler
@@ -391,3 +406,80 @@ module internal Helpers =
                     |> Array.ofList })
             |> Array.ofList
         { DocumentChanges = documentChanges }
+
+    let private toPrepareRenameWire (result: FSharpRename.PrepareRename option) =
+        match result with
+        | Some prepare ->
+            { PrepareRenameResultWire.CanRename = true
+              StartLine = prepare.StartLine
+              StartCharacter = prepare.StartCharacter
+              EndLine = prepare.EndLine
+              EndCharacter = prepare.EndCharacter
+              Placeholder = prepare.Placeholder }
+        | None ->
+            { PrepareRenameResultWire.CanRename = false
+              StartLine = 0
+              StartCharacter = 0
+              EndLine = 0
+              EndCharacter = 0
+              Placeholder = "" }
+
+    let private toRenameIdentityWire (identity: FSharpRename.RenameIdentity option) =
+        { RenameIdentityResultWire.Found = Option.isSome identity
+          AssemblyName = identity |> Option.map _.AssemblyName |> Option.defaultValue ""
+          XmlDocSig = identity |> Option.map _.XmlDocSig |> Option.defaultValue "" }
+
+    let private requestHandler
+        (handle: 'Request -> Task<'Result>)
+        (toWire: 'Result -> 'Wire)
+        : Func<byte[], CancellationToken, Task<ByteResult>> =
+        Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<'Request>(payload, cancellationToken = ct)
+                    let! result = handle request
+                    return serializeOk (toWire result) ct
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            })
+
+    let private resultRequestHandler
+        (handle: 'Request -> Task<Microsoft.FSharp.Core.Result<'Result, string>>)
+        (toWire: 'Result -> 'Wire)
+        : Func<byte[], CancellationToken, Task<ByteResult>> =
+        Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<'Request>(payload, cancellationToken = ct)
+                    let! result = handle request
+                    return
+                        match result with
+                        | Ok value -> serializeOk (toWire value) ct
+                        | Error message -> ByteResult.Failure(message)
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            })
+
+    let prepareRenameHandler workspace =
+        requestHandler
+            (fun (request: PositionRequest) ->
+                FSharpRename.prepareRename workspace request.FilePath request.Line request.Character)
+            toPrepareRenameWire
+
+    let renameHandler workspace =
+        resultRequestHandler
+            (fun (request: RenameRequest) ->
+                FSharpRename.renameResult workspace request.FilePath request.Line request.Character request.NewName)
+            toWorkspaceEdit
+
+    let renameIdentityHandler workspace =
+        requestHandler
+            (fun (request: PositionRequest) ->
+                FSharpRename.getRenameIdentity workspace request.FilePath request.Line request.Character)
+            toRenameIdentityWire
+
+    let renameForeignHandler workspace =
+        requestHandler
+            (fun (request: RenameForeignRequest) ->
+                FSharpRename.renameForeign workspace request.AssemblyName request.XmlDocSig request.NewName)
+            toWorkspaceEdit

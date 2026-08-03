@@ -138,8 +138,6 @@ struct MemberInfo {
     category: String,
     /// Accessibility modifier (e.g. "public", "private").
     access: Option<String>,
-    /// Punctuation required between adjacent declarations of this kind.
-    separator: Option<char>,
     /// Byte offset where the member's leading trivia starts.
     trivia_byte: usize,
     /// Byte offset where the member ends.
@@ -212,8 +210,6 @@ fn collect_members(type_node: Node<'_>, source: &[u8]) -> Vec<MemberInfo> {
         if let Some(category) = member_category(&child, source) {
             let name = extract_member_name(&child, source).unwrap_or_default();
             let access = extract_access_modifiers(&child, source);
-            let separator = member_separator(&child);
-
             // Find leading trivia (comments/attributes) by looking at
             // the gap between previous sibling's end and this node's start.
             let trivia_byte = leading_trivia_start(&child, &parent);
@@ -223,7 +219,6 @@ fn collect_members(type_node: Node<'_>, source: &[u8]) -> Vec<MemberInfo> {
                 name,
                 category: category.to_string(),
                 access,
-                separator,
                 trivia_byte,
                 end_byte: child.end_byte(),
                 end_row: usize_to_u32(child.end_position().row),
@@ -276,15 +271,6 @@ fn member_category(node: &Node<'_>, source: &[u8]) -> Option<&'static str> {
         "struct_declaration" => Some("struct"),
         "class_declaration" | "record_declaration" => Some("class"),
         "enum_member_declaration" => Some("constant"),
-        _ => None,
-    }
-}
-
-/// Separator required when this member is followed by another sorted member.
-/// Preserves syntactic validity for [SE-CONTEXT-SORT-IMPLEMENTATION].
-fn member_separator(node: &Node<'_>) -> Option<char> {
-    match node.kind() {
-        "enum_member_declaration" => Some(','),
         _ => None,
     }
 }
@@ -492,6 +478,13 @@ fn build_edits(
     // Insert blank lines between different accessibility/category groups.
     let mut new_text = String::new();
     let mut prev_member: Option<&MemberInfo> = None;
+    let separator = members.iter().find_map(|member| {
+        source_bytes
+            .get(member.end_byte)
+            .copied()
+            .filter(|byte| *byte == b',')
+            .map(char::from)
+    });
 
     for (sorted_pos, &original_index) in sorted_indices.iter().enumerate() {
         let member = members.iter().find(|m| m.index == original_index);
@@ -514,7 +507,7 @@ fn build_edits(
         }
 
         new_text.push_str(&member_text);
-        append_separator(&mut new_text, member, sorted_pos, sorted_indices.len());
+        append_separator(&mut new_text, separator, sorted_pos, sorted_indices.len());
 
         if sorted_pos < sorted_indices.len() - 1 && !member_text.ends_with('\n') {
             new_text.push('\n');
@@ -539,11 +532,11 @@ fn build_edits(
 }
 
 /// Add punctuation that belongs between declarations rather than to either AST node.
-fn append_separator(text: &mut String, member: &MemberInfo, position: usize, total: usize) {
+fn append_separator(text: &mut String, separator: Option<char>, position: usize, total: usize) {
     if position + 1 >= total {
         return;
     }
-    if let Some(separator) = member.separator {
+    if let Some(separator) = separator {
         text.push(separator);
     }
 }

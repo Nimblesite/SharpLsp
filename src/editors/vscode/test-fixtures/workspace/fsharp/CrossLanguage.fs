@@ -4,8 +4,14 @@ namespace FSharpFixtures.CrossLanguage
 open CrossLanguageFixtures
 
 type FSharpOrigin(value: int) =
-    member _.Value = value
+    member _.FSharpValue = value
 
 module Usage =
-    let readCSharp (origin: CSharpOrigin) = origin.Value
+    let readCSharp (origin: CSharpOrigin) = origin.CSharpValue
+    let readFSharp (origin: FSharpOrigin) = origin.FSharpValue
     let makeFSharp value = FSharpOrigin(value)
+
+module Unrelated =
+    // A same-name value must never be swept into request-local foreign recovery.
+    let BridgedCSharpType = "UNCHANGED-FSHARP-SENTINEL"
+    let BridgedCSharpMember = "UNCHANGED-FSHARP-MEMBER-SENTINEL"

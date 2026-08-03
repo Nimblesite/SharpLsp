@@ -10,7 +10,7 @@ The sidecar's per-document diagnostics path is correct and survives the pivot. T
 
 ### Rust LSP Host
 
-- [x] Create `diagnostics` module in Rust host (`src/diagnostics.rs`)
+- [x] Create `diagnostics` module in Rust host (`src/sharplsp/src/diagnostics.rs`)
 - [x] Map sidecar `DiagnosticResult` → LSP `Diagnostic` struct
   - Map severity: `"Error"` → 1, `"Warning"` → 2, `"Info"` → 3, `"Hidden"` → 4
   - Map code, message, range
@@ -38,7 +38,7 @@ The sidecar's per-document diagnostics path is correct and survives the pivot. T
 
 - [x] Read `diagnostics.solution_wide_analysis` from config (default: `true`) — kept; now controls whether the server answers `workspace/diagnostic` pulls
 - [x] Read `diagnostics.project_filter` from config (default: empty = all projects) — kept; now restricts `workspace/diagnostic` results
-- [x] On solution load: request solution-wide diagnostics — ⚠️ **OBSOLETE.** Removed. The host no longer triggers a scan on load; the editor pulls when it wants data. `request_solution_in_background` in `src/diagnostics.rs` will be deleted in Phase 5.
+- [x] On solution load: request solution-wide diagnostics — ⚠️ **OBSOLETE.** Removed. The host no longer triggers a scan on load; the editor pulls when it wants data. `request_solution_in_background` in `src/sharplsp/src/diagnostics.rs` will be deleted in Phase 5.
 - [x] Stream diagnostics incrementally (batch by file) to avoid blocking — ⚠️ **OBSOLETE.** Replaced by `workspace/diagnostic` partial-result streaming in Phase 5.
 - [ ] On file change: re-request diagnostics for changed file + dependents — ⚠️ **OBSOLETE.** Replaced by `diagnostics/refresh` IPC + debounced `workspace/diagnostic/refresh` in Phase 5.
 - [x] Advertise `workspaceDiagnostics: true` in server capabilities — kept; required for pull workspace diagnostics
@@ -96,8 +96,8 @@ This is now the **primary** diagnostic pipeline. Pull is mandatory for editors t
 - [ ] Subscribe to the [DIAG-IPC-REFRESH](../specs/DIAGNOSTICS-SPEC.md) sidecar notification
 - [ ] Implement debounced refresh queue: `tokio::sync::Notify` + 2000ms `tokio::time::sleep` collapse, matches `Microsoft.CodeAnalysis.LanguageServer`'s `AsyncBatchingWorkQueue`
 - [ ] Send LSP `workspace/diagnostic/refresh` notification when the debounce drains
-- [ ] **Delete** `request_solution_in_background` from `src/diagnostics.rs` (the eager-scan trigger)
-- [ ] **Delete** `verify_error_files`, `sync_text_to_sidecar` from `src/diagnostics.rs` (verification pass — see Phase 5.5)
+- [ ] **Delete** `request_solution_in_background` from `src/sharplsp/src/diagnostics.rs` (the eager-scan trigger)
+- [ ] **Delete** `verify_error_files`, `sync_text_to_sidecar` from `src/sharplsp/src/diagnostics.rs` (verification pass — see Phase 5.5)
 - [ ] Cancel in-flight per-document IPC pulls when editor sends a fresh pull for the same document
 - [ ] Server capability: add `diagnosticProvider.identifier = "sharplsp"` so editors distinguish SharpLsp's diagnostics
 
@@ -176,7 +176,7 @@ The single biggest source of phantom CS0246 is unresolved NuGet `<PackageReferen
 ## TODO
 
 ### Done
-- [x] **Rust host**: Create `diagnostics` module (`src/diagnostics.rs`)
+- [x] **Rust host**: Create `diagnostics` module (`src/sharplsp/src/diagnostics.rs`)
 - [x] **Rust host**: Map sidecar `DiagnosticResult` → LSP `Diagnostic`
 - [x] **Rust host**: On `didOpen`/`didChange`/`didSave` → request diagnostics from sidecar (push fallback path)
 - [x] **Rust host**: Send `textDocument/publishDiagnostics` to editor (push fallback path)

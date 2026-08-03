@@ -121,7 +121,10 @@ export async function waitForMatchingDiagnostics(
     timeoutMs,
     POLL_INTERVAL_MS,
   );
-  assert.ok(predicate(diagnostics), `diagnostics never reached the requested state for ${uri.fsPath}`);
+  assert.ok(
+    predicate(diagnostics),
+    `diagnostics never reached the requested state for ${uri.fsPath}`,
+  );
   return diagnostics;
 }
 
@@ -135,10 +138,15 @@ export async function assertWorkspaceEditSafe(
   return Promise.all(entries.map(async (entry) => snapshotEntry(entry)));
 }
 
-async function snapshotEntry(
-  [uri, edits]: [vscode.Uri, vscode.TextEdit[]],
-): Promise<WorkspaceEditSnapshot> {
-  assert.strictEqual(uri.scheme, 'file', `WorkspaceEdit target must be a file URI: ${uri.toString()}`);
+async function snapshotEntry([uri, edits]: [
+  vscode.Uri,
+  vscode.TextEdit[],
+]): Promise<WorkspaceEditSnapshot> {
+  assert.strictEqual(
+    uri.scheme,
+    'file',
+    `WorkspaceEdit target must be a file URI: ${uri.toString()}`,
+  );
   assert.ok(edits.length > 0, `WorkspaceEdit entry must contain edits: ${uri.fsPath}`);
   const document = await openExistingDocument(uri);
   if (document === undefined) return snapshotNewFile(uri, edits);
@@ -204,7 +212,8 @@ function assertSeparatedEdits(
 ): void {
   assert.ok(previous && current, `edit ordering must be complete: ${uri.fsPath}`);
   assert.ok(
-    previous.range.end.isBeforeOrEqual(current.range.start) && !previous.range.isEqual(current.range),
+    previous.range.end.isBeforeOrEqual(current.range.start) &&
+      !previous.range.isEqual(current.range),
     `WorkspaceEdit contains overlapping edits: ${uri.fsPath}`,
   );
 }
@@ -247,8 +256,38 @@ export async function replaceDocumentText(
   return editor;
 }
 
+/** Drive VS Code's real undo stack and wait until the live buffer reaches the expected text. */
+export async function runEditorHistory(
+  document: vscode.TextDocument,
+  command: 'undo' | 'redo',
+  expectedText: string,
+): Promise<void> {
+  await vscode.window.showTextDocument(document, { preview: false });
+  const previousVersion = document.version;
+  await assert.doesNotReject(async () => vscode.commands.executeCommand(command));
+  await waitForDocumentText(document, expectedText);
+  assert.ok(document.version > previousVersion, `${command} must advance the document version`);
+  assert.ok(document.isDirty, `${command} must preserve the unsaved source overlay`);
+}
+
+async function waitForDocumentText(
+  document: vscode.TextDocument,
+  expectedText: string,
+): Promise<void> {
+  const text = await pollUntilResult(
+    async () => document.getText(),
+    (candidate) => comparableText(candidate) === comparableText(expectedText),
+    LSP_RESPONSE_TIMEOUT_MS,
+    100,
+  );
+  assert.strictEqual(comparableText(text), comparableText(expectedText));
+}
+
 function fullDocumentRange(document: vscode.TextDocument): vscode.Range {
-  return new vscode.Range(new vscode.Position(0, 0), document.positionAt(document.getText().length));
+  return new vscode.Range(
+    new vscode.Position(0, 0),
+    document.positionAt(document.getText().length),
+  );
 }
 
 /** Revert a dirty file through the editor, restoring the committed fixture. */

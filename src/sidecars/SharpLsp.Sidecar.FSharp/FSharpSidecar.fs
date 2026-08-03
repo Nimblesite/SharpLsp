@@ -338,7 +338,7 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
-        // Completion [FS-COMPLETION]
+        // Completion [SHARPLSP-FEATURES-INTELLIGENCE]
         base.Register("textDocument/completion", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -352,12 +352,12 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
-        // Completion resolve [FS-COMPLETION-RESOLVE] — no extra edits yet (see plan).
+        // Completion resolve [SHARPLSP-FEATURES-INTELLIGENCE] — no extra edits yet (see plan).
         base.Register("completionItem/resolve", Func<byte[], CancellationToken, Task<ByteResult>>(fun _payload ct ->
             let result: CompletionResolveResultWire = { AdditionalEdits = [||] }
             Task.FromResult<ByteResult>(Helpers.serializeOk result ct)))
 
-        // Code lens [FS-CODELENS]
+        // Code lens [SHARPLSP-FEATURES-CODE-LENS]
         base.Register("textDocument/codeLens", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -375,7 +375,7 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
-        // Document symbols [FS-DOCSYMBOL]
+        // Document symbols [SE-FSHARP-SYMBOLS]
         base.Register("textDocument/documentSymbol", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -387,7 +387,7 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
-        // Signature help [FS-SIGHELP]
+        // Signature help [SHARPLSP-FEATURES-INTELLIGENCE]
         base.Register("textDocument/signatureHelp", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -403,48 +403,14 @@ type FSharpSidecar() =
             }))
 
         // Prepare rename [RENAME-FSHARP-PREPARE]
-        base.Register("textDocument/prepareRename", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<PositionRequest>(payload, cancellationToken = ct)
-                    let! result =
-                        FSharpRename.prepareRename
-                            workspace request.FilePath request.Line request.Character
-                    let wire =
-                        match result with
-                        | Some pr ->
-                            { PrepareRenameResultWire.CanRename = true
-                              StartLine = pr.StartLine
-                              StartCharacter = pr.StartCharacter
-                              EndLine = pr.EndLine
-                              EndCharacter = pr.EndCharacter
-                              Placeholder = pr.Placeholder }
-                        | None ->
-                            { PrepareRenameResultWire.CanRename = false
-                              StartLine = 0
-                              StartCharacter = 0
-                              EndLine = 0
-                              EndCharacter = 0
-                              Placeholder = "" }
-                    return Helpers.serializeOk wire ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/prepareRename", Helpers.prepareRenameHandler workspace)
 
         // Rename [RENAME-FSHARP-APPLY]
-        base.Register("textDocument/rename", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
-            task {
-                try
-                    let request = MessagePackSerializer.Deserialize<RenameRequest>(payload, cancellationToken = ct)
-                    let! edits =
-                        FSharpRename.rename
-                            workspace request.FilePath request.Line request.Character request.NewName
-                    return Helpers.serializeOk (Helpers.toWorkspaceEdit edits) ct
-                with ex ->
-                    return ByteResult.Failure(ex.Message)
-            }))
+        base.Register("textDocument/rename", Helpers.renameHandler workspace)
+        base.Register("textDocument/renameIdentity", Helpers.renameIdentityHandler workspace)
+        base.Register("workspace/renameForeign", Helpers.renameForeignHandler workspace)
 
-        // Call hierarchy [FS-CALLHIER-PREPARE]
+        // Call hierarchy prepare [SHARPLSP-FEATURES-NAVIGATION]
         base.Register("textDocument/prepareCallHierarchy", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -459,7 +425,7 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
-        // Call hierarchy [FS-CALLHIER-INCOMING]
+        // Incoming calls [SHARPLSP-FEATURES-NAVIGATION]
         base.Register("callHierarchy/incomingCalls", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -473,7 +439,7 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
-        // Call hierarchy [FS-CALLHIER-OUTGOING]
+        // Outgoing calls [SHARPLSP-FEATURES-NAVIGATION]
         base.Register("callHierarchy/outgoingCalls", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -487,7 +453,7 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
-        // Type hierarchy [FS-TYPEHIER-PREPARE]
+        // Type hierarchy prepare [SHARPLSP-FEATURES-NAVIGATION]
         base.Register("textDocument/prepareTypeHierarchy", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -502,7 +468,7 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
-        // Type hierarchy [FS-TYPEHIER-SUPER]
+        // Supertypes [SHARPLSP-FEATURES-NAVIGATION]
         base.Register("typeHierarchy/supertypes", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -516,7 +482,7 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
-        // Type hierarchy [FS-TYPEHIER-SUB]
+        // Subtypes [SHARPLSP-FEATURES-NAVIGATION]
         base.Register("typeHierarchy/subtypes", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try

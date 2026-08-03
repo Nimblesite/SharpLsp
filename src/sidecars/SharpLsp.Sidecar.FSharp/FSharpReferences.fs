@@ -5,6 +5,7 @@ module SharpLsp.Sidecar.FSharp.FSharpReferences
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open Serilog
+open SharpLsp.Sidecar.Common
 
 /// Result type for document highlights: location + read/write kind.
 type HighlightLocation =
@@ -19,6 +20,49 @@ type HighlightLocation =
 let private isWriteUse (su: FSharpSymbolUse) =
     su.IsFromDefinition || su.IsFromPattern
 
+/// FCS models an F# `[<CLIEvent>]` member as both its F# property and the
+/// projected CLI event. Cross-file uses can bind to either symbol, so project
+/// references and rename must query both projections.
+let private projectUsageSymbols (symbol: FSharpSymbol) : FSharpSymbol array =
+    match symbol with
+    | :? FSharpMemberOrFunctionOrValue as memberOrValue ->
+        [| yield symbol
+           yield! memberOrValue.EventForFSharpProperty |> Option.toArray |> Array.map (fun event -> event :> FSharpSymbol) |]
+    | _ -> [| symbol |]
+
+let private sourceRangeKey (range: FSharp.Compiler.Text.Range) =
+    NativePaths.NormalizeFullPath range.FileName, range.StartLine, range.StartColumn, range.EndLine, range.EndColumn
+
+let private isCliEvent (memberOrValue: FSharpMemberOrFunctionOrValue) =
+    memberOrValue.IsEvent
+    || memberOrValue.IsEventAddMethod
+    || memberOrValue.IsEventRemoveMethod
+    || memberOrValue.EventForFSharpProperty.IsSome
+    || (memberOrValue.Attributes |> Seq.exists (fun attribute -> attribute.AttributeType.DisplayName = "CLIEventAttribute"))
+
+let private projectedEventKey (symbol: FSharpSymbol) =
+    match symbol with
+    | :? FSharpMemberOrFunctionOrValue as memberOrValue when isCliEvent memberOrValue ->
+        Some(string symbol.Assembly.SimpleName, sourceRangeKey memberOrValue.DeclarationLocation)
+    | _ -> None
+
+let private matchesProjectedEvent key (symbolUse: FSharpSymbolUse) =
+    projectedEventKey symbolUse.Symbol = Some key
+
+let private semanticRangeKey (symbolUse: FSharpSymbolUse) =
+    sourceRangeKey symbolUse.Range
+
+/// Projection queries can report the same semantic occurrence twice. Keep one
+/// use per source range, preferring a definition so includeDeclaration=false
+/// never accidentally retains a duplicate declaration classified as a read.
+let private deduplicateSemanticRanges (uses: FSharpSymbolUse array) =
+    uses
+    |> Array.groupBy semanticRangeKey
+    |> Array.map (fun (_, sameRange) ->
+        sameRange
+        |> Array.tryFind (fun symbolUse -> symbolUse.IsFromDefinition)
+        |> Option.defaultValue sameRange[0])
+
 let private getFileUsages
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (symbol: FSharpSymbol)
@@ -26,9 +70,13 @@ let private getFileUsages
     =
     task {
         let! checkedFile = FSharpWorkspace.checkFile state filePath
+
         return
             checkedFile
-            |> Option.map (fun (results, _) -> results.GetUsesOfSymbolInFile(symbol))
+            |> Option.map (fun (results, _) ->
+                match projectedEventKey symbol with
+                | Some key -> results.GetAllUsesOfAllSymbolsInFile() |> Seq.filter (matchesProjectedEvent key) |> Seq.toArray
+                | None -> projectUsageSymbols symbol |> Array.collect results.GetUsesOfSymbolInFile)
             |> Option.defaultValue [||]
     }
 
@@ -38,10 +86,25 @@ let private getOverlayAwareProjectUsages
     =
     task {
         let uses = ResizeArray<FSharpSymbolUse>()
+
         for filePath in state.ProjectOptions.Value.SourceFiles do
             let! fileUses = getFileUsages state symbol filePath
             uses.AddRange(fileUses)
-        return uses.ToArray()
+
+        return uses.ToArray() |> deduplicateSemanticRanges
+    }
+
+/// Resolve project-wide uses from an already-resolved symbol. Rename uses this
+/// entry point when it must retain the original semantic identity rather than
+/// resolve the symbol again from a token-normalized source position.
+let internal getProjectUsagesForSymbol
+    (state: FSharpWorkspace.FSharpWorkspaceState)
+    (symbol: FSharpSymbol)
+    =
+    task {
+        match state.ProjectOptions with
+        | None -> return [||]
+        | Some _ -> return! getOverlayAwareProjectUsages state symbol
     }
 
 /// Resolve the symbol at a position and return all of its uses across the
@@ -63,9 +126,13 @@ let getProjectUsages
                 | None -> return [||]
                 | Some symbolUse ->
                     if state.ProjectOptions.IsNone then
-                        return checkResults.GetUsesOfSymbolInFile(symbolUse.Symbol)
+                        return
+                            match projectedEventKey symbolUse.Symbol with
+                            | Some key -> checkResults.GetAllUsesOfAllSymbolsInFile() |> Seq.filter (matchesProjectedEvent key) |> Seq.toArray
+                            | None -> projectUsageSymbols symbolUse.Symbol |> Array.collect checkResults.GetUsesOfSymbolInFile
+                            |> deduplicateSemanticRanges
                     else
-                        return! getOverlayAwareProjectUsages state symbolUse.Symbol
+                        return! getProjectUsagesForSymbol state symbolUse.Symbol
         with ex ->
             Log.Debug(ex, "[F# ProjectUsages] failed")
             return [||]

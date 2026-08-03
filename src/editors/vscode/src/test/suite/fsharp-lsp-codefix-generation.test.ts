@@ -3,11 +3,18 @@ import * as vscode from 'vscode';
 import {
   COMPLETE_INTERFACE_SOURCE,
   COMPLETE_RECORD_SOURCE,
+  EMPTY_INTERFACE_SOURCE,
+  EMPTY_INTERFACE_WITH_SOURCE,
   EXHAUSTIVE_UNION_SOURCE,
+  GENERIC_INTERFACE_SOURCE,
   MATCH_BANG_SOURCE,
+  NESTED_GENERIC_INTERFACE_SOURCE,
+  OBJECT_EXPRESSION_INTERFACE_SOURCE,
   PARTIAL_INTERFACE_SOURCE,
+  RECORD_COPY_UPDATE_SOURCE,
   RECORD_SOURCE,
   UNION_SOURCE,
+  WILDCARD_UNION_SOURCE,
 } from './fsharp-refactor-fixtures';
 import {
   FSHARP_REFACTOR_TIMEOUT_MS,
@@ -41,6 +48,8 @@ interface GenerationSpec {
   readonly title: string;
   readonly diagnostic: string;
   readonly editText?: string;
+  readonly editPosition?: readonly [line: number, character: number];
+  readonly editPrefix?: string;
   readonly expectedFragments: readonly string[];
   readonly preservedFragments?: readonly string[];
   readonly absentFragments: readonly string[];
@@ -67,57 +76,216 @@ suite('F# real LSP — generated refactors', () => {
 });
 
 function generationSpecs(): readonly GenerationSpec[] {
-  return [unionSpec(), matchBangSpec(), recordSpec(), interfaceSpec()];
+  return [
+    unionSpec(),
+    matchBangSpec(),
+    recordSpec(),
+    interfaceSpec(),
+    genericInterfaceSpec(),
+    nestedGenericInterfaceSpec(),
+    objectExpressionInterfaceSpec(),
+    emptyInterfaceWithSpec(),
+    emptyInterfaceSpec(),
+  ];
 }
 
 function unionSpec(): GenerationSpec {
   return {
-    name: 'three missing DU cases', source: UNION_SOURCE, target: 'match payload with',
-    title: 'Generate 3 missing union case(s)', diagnostic: 'FS0025',
-    editText: unionStub(), expectedFragments: ['| Empty ->', '| One _ ->', '| Many(_, _) ->'],
+    name: 'three missing DU cases',
+    source: UNION_SOURCE,
+    target: 'match payload with',
+    title: 'Generate 3 missing union case(s)',
+    diagnostic: 'FS0025',
+    editText: unionStub(),
+    expectedFragments: ['| Empty ->', '| One _ ->', '| Many(_, _) ->'],
     absentFragments: ['| Anchor _ ->'],
   };
 }
 
 function matchBangSpec(): GenerationSpec {
   return {
-    name: 'missing match! case', source: MATCH_BANG_SOURCE, target: 'match! pending with',
-    title: 'Generate 1 missing union case(s)', diagnostic: 'FS0025',
-    editText: '    | Second -> failwith "todo"\n', expectedFragments: ['| First ->', '| Second ->'],
+    name: 'missing match! case',
+    source: MATCH_BANG_SOURCE,
+    target: 'match! pending with',
+    title: 'Generate 1 missing union case(s)',
+    diagnostic: 'FS0025',
+    editText: '    | Second -> failwith "todo"\n',
+    expectedFragments: ['| Second ->'],
+    preservedFragments: ['| First ->'],
     absentFragments: ['| Second _ ->'],
   };
 }
 
 function recordSpec(): GenerationSpec {
   return {
-    name: 'twelve typed record defaults', source: RECORD_SOURCE, target: '{ Keep = 1 }',
+    name: 'twelve typed record defaults',
+    source: RECORD_SOURCE,
+    target: '{ Keep = 1 }',
     postTarget: 'let value',
-    title: 'Generate 12 missing record field(s)', diagnostic: 'FS0764',
-    editText: recordStub(), expectedFragments: recordFragments(), absentFragments: ['Keep = 0'],
+    title: 'Generate 12 missing record field(s)',
+    diagnostic: 'FS0764',
+    editText: recordStub(),
+    expectedFragments: recordFragments(),
+    absentFragments: ['Keep = 0'],
   };
 }
 
 function interfaceSpec(): GenerationSpec {
+  return interfaceGenerationSpec(
+    'only unimplemented interface member',
+    PARTIAL_INTERFACE_SOURCE,
+    [8, 32],
+    '\n        member _.Area',
+    ['member _.Name = "square"'],
+  );
+}
+
+function genericInterfaceSpec(): GenerationSpec {
   return {
-    name: 'only unimplemented interface member', source: PARTIAL_INTERFACE_SOURCE,
-    target: 'IShape', occurrence: 1, title: 'Implement interface', diagnostic: 'FS0366',
+    name: 'closed generic interface preserves substituted type parameters',
+    source: GENERIC_INTERFACE_SOURCE,
+    target: 'IBox<string>',
+    title: 'Implement interface',
+    diagnostic: 'FS0366',
+    editPosition: [8, 32],
+    editPrefix: '\n        member _.Map',
+    expectedFragments: ['member _.Map', 'string', 'Not implemented yet'],
+    preservedFragments: ['member _.Value = "ready"'],
+    absentFragments: ['member _.Value = failwith', "member _.Map(arg1: 'T)"],
+  };
+}
+
+function nestedGenericInterfaceSpec(): GenerationSpec {
+  return {
+    name: 'nested generic interface resolves the outer interface symbol',
+    source: NESTED_GENERIC_INTERFACE_SOURCE,
+    target: 'IWrapper<IOther>',
+    title: 'Implement interface',
+    diagnostic: 'FS0366',
+    editPosition: [9, 35],
+    editPrefix: '\n        member _.Wrap',
+    expectedFragments: ['member _.Wrap', 'IOther', 'Not implemented yet'],
+    absentFragments: ['member _.Code'],
+  };
+}
+
+function objectExpressionInterfaceSpec(): GenerationSpec {
+  return interfaceGenerationSpec(
+    'partial object expression keeps its existing member and closing brace',
+    OBJECT_EXPRESSION_INTERFACE_SOURCE,
+    [8, 31],
+    '\n        member _.Area',
+    ['member _.Name = "shape"', '}'],
+  );
+}
+
+function emptyInterfaceWithSpec(): GenerationSpec {
+  return interfaceGenerationSpec(
+    'empty interface declaration with existing with keyword',
+    EMPTY_INTERFACE_WITH_SOURCE,
+    [6, 25],
+    '\n        member _.Area',
+  );
+}
+
+function emptyInterfaceSpec(): GenerationSpec {
+  return interfaceGenerationSpec(
+    'empty interface declaration without with keyword',
+    EMPTY_INTERFACE_SOURCE,
+    [6, 20],
+    ' with\n        member _.Area',
+  );
+}
+
+function interfaceGenerationSpec(
+  name: string,
+  source: string,
+  editPosition: readonly [number, number],
+  editPrefix: string,
+  preservedFragments: readonly string[] = [],
+): GenerationSpec {
+  return {
+    name, source,
+    target: 'IShape',
+    occurrence: 1,
+    title: 'Implement interface',
+    diagnostic: 'FS0366',
+    editPosition, editPrefix,
     expectedFragments: ['member _.Area', 'Not implemented yet'],
-    preservedFragments: ['member _.Name = "square"'],
+    preservedFragments,
     absentFragments: ['member _.Name = failwith'],
   };
 }
 
 function completeSpecs(): readonly GenerationSpec[] {
   return [
-    { name: 'exhaustive DU', source: EXHAUSTIVE_UNION_SOURCE, target: 'match value with',
-      title: 'Generate 1 missing union case(s)', diagnostic: 'FS0025',
-      expectedFragments: [], absentFragments: [] },
-    { name: 'complete record', source: COMPLETE_RECORD_SOURCE, target: '{ X = 1; Y = 2 }',
-      title: 'Generate 1 missing record field(s)', diagnostic: 'FS0764',
-      expectedFragments: [], absentFragments: [] },
-    { name: 'complete interface', source: COMPLETE_INTERFACE_SOURCE, target: 'IShape', occurrence: 1,
-      title: 'Implement interface', diagnostic: 'FS0366', expectedFragments: [], absentFragments: [] },
+    completeUnionSpec(),
+    wildcardUnionSpec(),
+    completeRecordSpec(),
+    recordCopyUpdateSpec(),
+    completeInterfaceSpec(),
   ];
+}
+
+function completeUnionSpec(): GenerationSpec {
+  return {
+    name: 'exhaustive DU',
+    source: EXHAUSTIVE_UNION_SOURCE,
+    target: 'match value with',
+    title: 'Generate 1 missing union case(s)',
+    diagnostic: 'FS0025',
+    expectedFragments: [],
+    absentFragments: [],
+  };
+}
+
+function completeRecordSpec(): GenerationSpec {
+  return {
+    name: 'complete record',
+    source: COMPLETE_RECORD_SOURCE,
+    target: '{ X = 1; Y = 2 }',
+    title: 'Generate 1 missing record field(s)',
+    diagnostic: 'FS0764',
+    expectedFragments: [],
+    absentFragments: [],
+  };
+}
+
+function wildcardUnionSpec(): GenerationSpec {
+  return {
+    name: 'wildcard-covered DU match',
+    source: WILDCARD_UNION_SOURCE,
+    target: 'match value with',
+    title: 'Generate 3 missing union case(s)',
+    diagnostic: 'FS0025',
+    expectedFragments: [],
+    absentFragments: [],
+  };
+}
+
+function recordCopyUpdateSpec(): GenerationSpec {
+  return {
+    name: 'record copy-and-update expression',
+    source: RECORD_COPY_UPDATE_SOURCE,
+    target: '{ point with X = 3 }',
+    title: 'Generate 1 missing record field(s)',
+    diagnostic: 'FS0764',
+    expectedFragments: [],
+    absentFragments: [],
+  };
+}
+
+function completeInterfaceSpec(): GenerationSpec {
+  return {
+    name: 'complete interface',
+    source: COMPLETE_INTERFACE_SOURCE,
+    target: 'IShape',
+    occurrence: 1,
+    title: 'Implement interface',
+    diagnostic: 'FS0366',
+    expectedFragments: [],
+    absentFragments: [],
+  };
 }
 
 function unionStub(): string {
@@ -130,16 +298,27 @@ function unionStub(): string {
 }
 
 function recordStub(): string {
-  return '; Text = ""; Number = 0; Number32 = 0; Number64 = 0; Float = 0; '
-    + 'Double = 0; Money = 0; Flag = false; Maybe = None; Items = []; '
-    + 'Values = [||]; Other = Unchecked.defaultof<Guid>';
+  return (
+    '; Text = ""; Number = 0; Number32 = 0; Number64 = 0; Float = 0; ' +
+    'Double = 0; Money = 0; Flag = false; Maybe = None; Items = []; ' +
+    'Values = [||]; Other = Unchecked.defaultof<Guid>'
+  );
 }
 
 function recordFragments(): readonly string[] {
   return [
-    'Text = ""', 'Number = 0', 'Number32 = 0', 'Number64 = 0', 'Float = 0',
-    'Double = 0', 'Money = 0', 'Flag = false', 'Maybe = None', 'Items = []',
-    'Values = [||]', 'Other = Unchecked.defaultof<Guid>',
+    'Text = ""',
+    'Number = 0',
+    'Number32 = 0',
+    'Number64 = 0',
+    'Float = 0',
+    'Double = 0',
+    'Money = 0',
+    'Flag = false',
+    'Maybe = None',
+    'Items = []',
+    'Values = [||]',
+    'Other = Unchecked.defaultof<Guid>',
   ];
 }
 
@@ -202,8 +381,21 @@ function inspectGenerationEdit(
   const edit = singleEdit(action, uri);
   assert.ok(edit.range.isEmpty);
   if (spec.editText !== undefined) assertInsertion(edit, spec.editText);
+  if (spec.editPosition !== undefined) assertEditPosition(edit.range, spec.editPosition);
+  if (spec.editPrefix !== undefined) assert.ok(edit.newText.startsWith(spec.editPrefix));
   for (const fragment of spec.expectedFragments) assert.ok(edit.newText.includes(fragment));
+  for (const fragment of spec.preservedFragments ?? []) assert.ok(!edit.newText.includes(fragment));
   for (const fragment of spec.absentFragments) assert.ok(!edit.newText.includes(fragment));
+}
+
+function assertEditPosition(
+  range: vscode.Range,
+  expected: readonly [line: number, character: number],
+): void {
+  assert.strictEqual(range.start.line, expected[0]);
+  assert.strictEqual(range.start.character, expected[1]);
+  assert.strictEqual(range.end.line, expected[0]);
+  assert.strictEqual(range.end.character, expected[1]);
 }
 
 async function applyGeneration(
@@ -218,12 +410,20 @@ async function applyGeneration(
   assert.ok(fixture.document.version > beforeVersion);
   assert.ok(fixture.document.isDirty);
   assertGeneratedDocument(fixture.document, spec);
-  await diagnosticGone(fixture.uri, spec.diagnostic);
+  await assertAllErrorsGone(fixture.uri, spec.diagnostic);
   const actions = await quickFixes(
     fixture.uri,
     tokenRange(fixture.document, spec.postTarget ?? spec.target, spec.occurrence),
   );
   assertNoAction(actions, spec.title);
+}
+
+async function assertAllErrorsGone(uri: vscode.Uri, diagnostic: string): Promise<void> {
+  const diagnostics = await diagnosticGone(uri, diagnostic);
+  assert.ok(
+    diagnostics.every((item) => item.severity !== vscode.DiagnosticSeverity.Error),
+    'generation must leave the real F# document free of compiler errors',
+  );
 }
 
 function assertGeneratedDocument(document: vscode.TextDocument, spec: GenerationSpec): void {
@@ -249,12 +449,15 @@ async function assertComplete(spec: GenerationSpec): Promise<void> {
   const fixture = await openOverlay(TARGET_FILE, spec.source);
   try {
     const range = tokenRange(fixture.document, spec.target, spec.occurrence);
-    await diagnosticGone(fixture.uri, spec.diagnostic);
+    await assertAllErrorsGone(fixture.uri, spec.diagnostic);
     const actions = await quickFixes(fixture.uri, range);
     assertNoAction(actions, spec.title);
     assert.ok(!actions.some((action) => action.title.startsWith('Generate ')));
-    assert.ok(!vscode.languages.getDiagnostics(fixture.uri)
-      .some((item) => diagnosticCode(item) === spec.diagnostic));
+    assert.ok(
+      !vscode.languages
+        .getDiagnostics(fixture.uri)
+        .some((item) => diagnosticCode(item) === spec.diagnostic),
+    );
     assert.strictEqual(fixture.document.getText(), spec.source);
     assert.ok(fixture.document.isDirty);
   } finally {

@@ -301,7 +301,7 @@ internal sealed class ExternalSidecar : IAsyncDisposable
 
     /// <summary>
     /// Finds the sidecar apphost built alongside this test assembly:
-    /// <c>sidecars/SharpLsp.Sidecar.CSharp/bin/&lt;Config&gt;/&lt;tfm&gt;/</c>.
+    /// <c>src/sidecars/SharpLsp.Sidecar.CSharp/bin/&lt;Config&gt;/&lt;tfm&gt;/</c>.
     /// </summary>
     private static string LocateAppHost()
     {

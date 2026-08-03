@@ -1,6 +1,7 @@
 /// Signature help for the F# sidecar via FCS GetMethods.
 /// Resolves the method/constructor call enclosing the caret and surfaces its
-/// overloads as LSP SignatureInformation. Implements [FS-SIGHELP].
+/// overloads as LSP SignatureInformation; the signature-help portion of
+/// [SHARPLSP-FEATURES-INTELLIGENCE].
 module SharpLsp.Sidecar.FSharp.FSharpSignature
 
 open FSharp.Compiler.EditorServices

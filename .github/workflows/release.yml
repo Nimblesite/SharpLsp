@@ -216,8 +216,8 @@ jobs:
             artifacts/*.vsix \
             artifacts/SHA256SUMS
 
-  # Website deploys on every v* release tag (never on push to main) so the site
-  # never gets ahead of the released artifact. [DIST-CI-LAYOUT]
+  # Release tags deploy their exact website revision. Website-only changes also
+  # deploy after merging to main through deploy-pages.yml's push trigger.
   deploy-pages:
     name: Deploy website to GitHub Pages
     needs: release

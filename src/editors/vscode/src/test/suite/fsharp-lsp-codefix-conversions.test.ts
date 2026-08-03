@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import {
   CONVERSION_SCENARIOS,
+  IMPLICIT_CONVERSION_SCENARIOS,
   UNSUPPORTED_CONVERSION_SOURCE,
   type CodeFixScenario,
 } from './fsharp-refactor-fixtures';
@@ -16,6 +17,7 @@ import {
   diagnosticWithCode,
   openOverlay,
   quickFixes,
+  requestPrepareRename,
   resolvedQuickFixes,
   singleEdit,
   tokenRange,
@@ -35,6 +37,7 @@ function defineConversionSuite(): void {
   teardown(closeAllEditors);
   suiteTeardown(closeAllEditors);
   registerConversionTests();
+  registerImplicitConversionTests();
   registerUnsupportedConversionTest();
 }
 
@@ -45,6 +48,69 @@ function registerConversionTests(): void {
       await runConversion(scenario);
     });
   }
+}
+
+function registerImplicitConversionTests(): void {
+  for (const scenario of IMPLICIT_CONVERSION_SCENARIOS) {
+    test(`${scenario.name}: implicit widening stays action-free across every token position`, async function () {
+      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+      await runImplicitConversion(scenario);
+    });
+  }
+}
+
+async function runImplicitConversion(scenario: CodeFixScenario): Promise<void> {
+  const fixture = await openOverlay(TARGET_FILE, scenario.source);
+  try {
+    const version = fixture.document.version;
+    const range = tokenRange(fixture.document, scenario.target, scenario.occurrence);
+    const diagnostics = await diagnosticGone(fixture.uri, scenario.diagnostic);
+    assert.ok(diagnostics.every((item) => diagnosticCode(item) !== scenario.diagnostic));
+    assert.ok(diagnostics.every((item) => item.severity !== vscode.DiagnosticSeverity.Error));
+    await assertPrepareAcrossRange(fixture.uri, range, scenario.target);
+    await assertNoImplicitConversionActions(fixture, range, scenario);
+    assert.strictEqual(fixture.document.version, version);
+    assert.strictEqual(fixture.document.getText(), scenario.source);
+    assert.ok(fixture.document.isDirty);
+  } finally {
+    await revertDocument(fixture.document);
+    assert.ok(!fixture.document.isDirty);
+  }
+}
+
+async function assertPrepareAcrossRange(
+  uri: vscode.Uri,
+  range: vscode.Range,
+  placeholder: string,
+): Promise<void> {
+  assert.ok(range.isSingleLine && !range.isEmpty);
+  for (let offset = 0; offset < range.end.character - range.start.character; offset += 1) {
+    const prepare = await requestPrepareRename(uri, range.start.translate(0, offset));
+    assert.ok(prepare);
+    assert.strictEqual(prepare.placeholder, placeholder);
+    assert.strictEqual(prepare.range.start.line, range.start.line);
+    assert.strictEqual(prepare.range.start.character, range.start.character);
+    assert.strictEqual(prepare.range.end.line, range.end.line);
+    assert.strictEqual(prepare.range.end.character, range.end.character);
+  }
+}
+
+async function assertNoImplicitConversionActions(
+  fixture: Awaited<ReturnType<typeof openOverlay>>,
+  range: vscode.Range,
+  scenario: CodeFixScenario,
+): Promise<void> {
+  const atDeclaration = await quickFixes(
+    fixture.uri,
+    tokenRange(fixture.document, scenario.target),
+  );
+  const atUse = await quickFixes(fixture.uri, range);
+  const outside = await quickFixes(fixture.uri, tokenRange(fixture.document, 'sentinel'));
+  for (const actions of [atDeclaration, atUse, outside]) {
+    assertNoAction(actions, scenario.title);
+    assert.ok(!actions.some((action) => action.title.startsWith('Convert to')));
+  }
+  assert.ok(atUse.every((action) => action.edit === undefined || action.edit.size > 0));
 }
 
 function registerUnsupportedConversionTest(): void {
@@ -142,9 +208,17 @@ async function applyConversion(
   assert.strictEqual(fixture.document.getText(), expectedSource(scenario));
   assert.ok(fixture.document.getText().includes('let sentinel = 48'));
   assert.ok(fixture.document.isDirty);
-  await diagnosticGone(fixture.uri, scenario.diagnostic);
+  await assertConversionClean(fixture.uri, scenario.diagnostic);
   const actions = await quickFixes(fixture.uri, tokenRange(fixture.document, scenario.replacement));
   assertNoAction(actions, scenario.title);
+}
+
+async function assertConversionClean(uri: vscode.Uri, diagnostic: string): Promise<void> {
+  const diagnostics = await diagnosticGone(uri, diagnostic);
+  assert.ok(
+    diagnostics.every((item) => item.severity !== vscode.DiagnosticSeverity.Error),
+    'conversion must leave the real F# document free of compiler errors',
+  );
 }
 
 async function undoConversion(
@@ -159,8 +233,5 @@ async function undoConversion(
 }
 
 function expectedSource(scenario: CodeFixScenario): string {
-  return scenario.source.replace(
-    `accept ${scenario.target}\n`,
-    `accept ${scenario.replacement}\n`,
-  );
+  return scenario.source.replace(`accept ${scenario.target}\n`, `accept ${scenario.replacement}\n`);
 }

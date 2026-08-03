@@ -56,7 +56,7 @@ class ForgeLspServerDescriptor(
          * Resolve the `forge-lsp` binary path.
          *
          * Priority (matches the VS Code extension in
-         * `editors/vscode/src/install.ts`):
+         * `src/editors/vscode/src/install.ts`):
          *   1. `forge.server.path` project setting
          *   2. `~/.local/bin/forge-lsp`
          *   3. Anything on $PATH (best-effort via `which`)

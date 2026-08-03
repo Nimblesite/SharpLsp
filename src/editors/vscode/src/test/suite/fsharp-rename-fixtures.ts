@@ -3,6 +3,7 @@
 export interface RenameScenario {
   readonly name: string;
   readonly target: string;
+  readonly targetOccurrence?: number;
   readonly newName: string;
   readonly minimumEdits: number;
   readonly crossFile: boolean;
@@ -11,9 +12,9 @@ export interface RenameScenario {
 type RenameInput = readonly [string, string, string, number, boolean];
 
 export const RENAME_SENTINEL =
-  'NestedModule IService Choice Status RecordThing Field CaseOne Ready Alias ClassThing '
-  + 'Property Method ModuleAlias StructThing ObjectModelThing Changed Item moduleValue '
-  + 'functionName parameter localValue localFunction lambdaParameter firstValue T Positive .+.';
+  'NestedModule IService Choice Status RecordThing Field CaseOne Ready Alias ClassThing ' +
+  'Property Method ModuleAlias StructThing ObjectModelThing Changed Item moduleValue ' +
+  'functionName parameter localValue localFunction lambdaParameter firstValue T Positive .+.';
 
 export const RENAME_DECLARATIONS_SOURCE = `module FSharpFixtures.RenameDeclarations
 
@@ -113,7 +114,7 @@ let textSentinel = "${RENAME_SENTINEL}"
 `;
 
 export const RENAME_SCENARIOS: readonly RenameScenario[] = [
-  rename(['nested module', 'NestedModule', 'RenamedModule', 3, true]),
+  rename(['nested module', 'NestedModule', 'RenamedModule', 4, true]),
   rename(['module abbreviation', 'ModuleAlias', 'RenamedAlias', 2, false]),
   rename(['interface type', 'IService', 'IRenamedService', 3, true]),
   rename(['union type', 'Choice', 'Selection', 3, true]),
@@ -122,7 +123,7 @@ export const RENAME_SCENARIOS: readonly RenameScenario[] = [
   rename(['record field', 'Field', 'Amount', 4, true]),
   rename(['union case', 'CaseOne', 'PrimaryCase', 3, true]),
   rename(['enum case', 'Ready', 'Available', 2, true]),
-  rename(['type alias', 'Alias', 'RecordAlias', 2, true]),
+  { ...rename(['type alias', 'Alias', 'RecordAlias', 2, true]), targetOccurrence: 2 },
   rename(['class', 'ClassThing', 'RenamedClass', 2, true]),
   rename(['struct type', 'StructThing', 'RenamedStruct', 2, true]),
   rename(['object-model type', 'ObjectModelThing', 'RenamedObject', 2, true]),
@@ -137,7 +138,7 @@ export const RENAME_SCENARIOS: readonly RenameScenario[] = [
   rename(['lambda parameter', 'lambdaParameter', 'mappedValue', 2, false]),
   rename(['pattern parameter', 'firstValue', 'leftValue', 2, false]),
   rename(['generic type parameter', "'T", "'U", 3, false]),
-  rename(['active pattern case', 'Positive', 'AboveZero', 3, true]),
+  rename(['active pattern case', 'Positive', 'AboveZero', 4, true]),
   rename(['custom operator', '.+.', '.*.', 2, true]),
 ];
 

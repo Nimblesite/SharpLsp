@@ -1,8 +1,8 @@
 # Sidecar Lifecycle Reliability Implementation Plan `[SIDECAR-PLAN]`
 
-**Status:** Active — implements the normative specification; checklist state records completion  
-**Normative specification:** [SIDECAR-LIFECYCLE-SPEC.md](../specs/SIDECAR-LIFECYCLE-SPEC.md)  
-**Primary cluster:** `cluster:sidecar-startup` + `cluster:sidecar-lifecycle`  
+**Status:** Active — implements the normative specification; checklist state records completion
+**Normative specification:** [SIDECAR-LIFECYCLE-SPEC.md](../specs/SIDECAR-LIFECYCLE-SPEC.md)
+**Primary cluster:** `cluster:sidecar-startup` + `cluster:sidecar-lifecycle`
 **Issues:** [#150](https://github.com/Nimblesite/SharpLsp/issues/150),
 [#151](https://github.com/Nimblesite/SharpLsp/issues/151),
 [#152](https://github.com/Nimblesite/SharpLsp/issues/152),
@@ -163,7 +163,7 @@ in the diagnostics plan.
 | `src/sharplsp/src/sidecar/transport.rs` | Keep bounded framing; distinguish clean EOF from truncated frame; split/ownership support if required by driver |
 | `src/sharplsp/src/sidecar/mod.rs` | Export only facade/public status types; keep internal modules private |
 | `src/sharplsp/src/main.rs` | Replace eager/lazy health tasks with session updates; provide target/config/VFS replay and notification sink |
-| `src/diagnostics.rs` / pull diagnostics path | Invalidate on generation change and consume sidecar notifications without owning lifecycle |
+| `src/sharplsp/src/diagnostics.rs` / pull diagnostics path | Invalidate on generation change and consume sidecar notifications without owning lifecycle |
 | `src/sidecars/SharpLsp.Sidecar.Common/SidecarStartupOptions.cs` | Shared strict argument parser for endpoint, parent PID, generation, protocol |
 | `src/sidecars/SharpLsp.Sidecar.Common/SidecarRunResult.cs` | Shared typed terminal outcome and failure category |
 | `src/sidecars/SharpLsp.Sidecar.Common/ParentProcessWatchdog.cs` | Pre-READY hard-parent-death detection |

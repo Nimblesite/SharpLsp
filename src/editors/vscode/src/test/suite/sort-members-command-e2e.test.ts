@@ -26,11 +26,29 @@ import {
 } from './sort-members-test-kit';
 
 const DEFAULT_ACCESS = [
-  'public', 'protected internal', 'internal', 'protected', 'private protected', 'private',
+  'public',
+  'protected internal',
+  'internal',
+  'protected',
+  'private protected',
+  'private',
 ] as const;
 const DEFAULT_CATEGORIES = [
-  'constant', 'field', 'constructor', 'finalizer', 'delegate', 'event', 'enum', 'interface',
-  'property', 'indexer', 'operator', 'method', 'struct', 'class', 'record',
+  'constant',
+  'field',
+  'constructor',
+  'finalizer',
+  'delegate',
+  'event',
+  'enum',
+  'interface',
+  'property',
+  'indexer',
+  'operator',
+  'method',
+  'struct',
+  'class',
+  'record',
 ] as const;
 const DEFAULT_POLICY: SortPolicy = {
   hierarchy: ['accessibility', 'category', 'alphabetical'],
@@ -52,19 +70,49 @@ const ALPHABETICAL_FIRST_POLICY: SortPolicy = {
 };
 
 const INITIAL_ORDER = [
-  'Zebra', 'Beta', 'Omega', '_zeta', 'AlphaConstant', 'SortMembersCommand', 'Alpha',
+  'Zebra',
+  'Beta',
+  'Omega',
+  '_zeta',
+  'AlphaConstant',
+  'SortMembersCommand',
+  'Alpha',
 ] as const;
 const DEFAULT_ORDER = [
-  'AlphaConstant', 'SortMembersCommand', 'Omega', 'Alpha', 'Beta', '_zeta', 'Zebra',
+  'AlphaConstant',
+  'SortMembersCommand',
+  'Omega',
+  'Alpha',
+  'Beta',
+  '_zeta',
+  'Zebra',
 ] as const;
 const CATEGORY_FIRST_ORDER = [
-  'AlphaConstant', '_zeta', 'SortMembersCommand', 'Omega', 'Alpha', 'Beta', 'Zebra',
+  'AlphaConstant',
+  '_zeta',
+  'SortMembersCommand',
+  'Omega',
+  'Alpha',
+  'Beta',
+  'Zebra',
 ] as const;
 const REVERSED_ORDER = [
-  'Zebra', '_zeta', 'Alpha', 'Beta', 'Omega', 'SortMembersCommand', 'AlphaConstant',
+  'Zebra',
+  '_zeta',
+  'Alpha',
+  'Beta',
+  'Omega',
+  'SortMembersCommand',
+  'AlphaConstant',
 ] as const;
 const ALPHABETICAL_ORDER = [
-  '_zeta', 'Alpha', 'AlphaConstant', 'Beta', 'Omega', 'SortMembersCommand', 'Zebra',
+  '_zeta',
+  'Alpha',
+  'AlphaConstant',
+  'Beta',
+  'Omega',
+  'SortMembersCommand',
+  'Zebra',
 ] as const;
 
 const STRUCT_SURFACE: SurfaceCase = {
@@ -147,7 +195,9 @@ async function runReversedPolicy(): Promise<void> {
   assertBlankLineBetween(outcome.afterText, 'Zebra', '_zeta');
   assertBlankLineBetween(outcome.afterText, '_zeta', 'Alpha');
   assert.ok(outcome.afterText.indexOf('Alpha()') < outcome.afterText.indexOf('Beta()'));
-  assert.ok(outcome.afterText.indexOf('SortMembersCommand()') < outcome.afterText.indexOf('AlphaConstant'));
+  assert.ok(
+    outcome.afterText.indexOf('SortMembersCommand()') < outcome.afterText.indexOf('AlphaConstant'),
+  );
   await assertNoOp(outcome, REVERSED_ORDER);
 }
 

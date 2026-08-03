@@ -1,5 +1,5 @@
-/// Reference-count code lenses for the F# sidecar via FCS. Implements
-/// [FS-CODELENS] — a "N references" lens above every top-level definition.
+/// Reference-count portion of [SHARPLSP-FEATURES-CODE-LENS]: an FCS-backed
+/// "N references" lens above every top-level definition.
 module SharpLsp.Sidecar.FSharp.FSharpCodeLens
 
 open FSharp.Compiler.CodeAnalysis

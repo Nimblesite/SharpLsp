@@ -256,7 +256,6 @@ test.describe('Site layout regressions', () => {
     const docsSidebar = page.locator('#docs-sidebar');
     const primaryToggle = page.locator('#mobile-menu-toggle');
     const primaryMenu = page.locator('#nav-menu');
-    const languageToggle = page.locator('.language-btn');
 
     await expect(docsToggle).toBeVisible();
     await expect(docsToggle).toHaveAttribute('aria-expanded', 'false');
@@ -276,12 +275,11 @@ test.describe('Site layout regressions', () => {
     expect(sidebarBox).not.toBeNull();
     expect(sidebarBox.x).toBeLessThan(390);
 
-    await languageToggle.click();
-    await expect(languageToggle).toHaveAttribute('aria-expanded', 'true');
     await page.keyboard.press('Escape');
     await expect(docsToggle).toHaveAttribute('aria-expanded', 'false');
     await expect(docsSidebar).not.toHaveClass(/\bopen\b/);
-    await expect(languageToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(primaryToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(primaryMenu).not.toHaveClass(/\bopen\b/);
   });
 
   test('wide prose tables scroll locally without overflowing the page', async ({ page }) => {

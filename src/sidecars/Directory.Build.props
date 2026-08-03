@@ -17,4 +17,3 @@
         <AdditionalFiles Include="$(MSBuildThisFileDirectory)config/BannedSymbols.txt" />
     </ItemGroup>
 </Project>
-

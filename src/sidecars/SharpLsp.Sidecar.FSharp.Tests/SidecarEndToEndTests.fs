@@ -991,7 +991,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.NotNull(r.Error)
     }
 
-    // ── Completion [FS-COMPLETION] ──────────────────────────────
+    // ── Completion [SHARPLSP-FEATURES-INTELLIGENCE] ─────────────
 
     [<Fact>]
     member _.``completion after dot lists the member``() = task {
@@ -1091,7 +1091,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
             Assert.Equal("sum", e.NewText)
     }
 
-    // ── Code Lens [FS-CODELENS] ─────────────────────────────────
+    // ── Code Lens [SHARPLSP-FEATURES-CODE-LENS] ─────────────────
 
     [<Fact>]
     member _.``code lens reports reference counts``() = task {
@@ -1106,7 +1106,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Contains(lenses, fun l -> l.Line = 6)
     }
 
-    // ── Document Symbols [FS-DOCSYMBOL] ─────────────────────────
+    // ── Document Symbols [SE-FSHARP-SYMBOLS] ────────────────────
 
     [<Fact>]
     member _.``document symbols list types and nested members``() = task {
@@ -1121,7 +1121,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Contains(symbols, fun s -> s.Children.Length > 0)
     }
 
-    // ── Signature Help [FS-SIGHELP] ─────────────────────────────
+    // ── Signature Help [SHARPLSP-FEATURES-INTELLIGENCE] ─────────
 
     [<Fact>]
     member _.``signature help surfaces a constructor overload``() = task {
@@ -1136,7 +1136,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.NotEmpty(help.Signatures)
     }
 
-    // ── Call Hierarchy [FS-CALLHIER-PREPARE] [FS-CALLHIER-INCOMING] [FS-CALLHIER-OUTGOING] ──
+    // ── Call Hierarchy [SHARPLSP-FEATURES-NAVIGATION] ───────────
 
     [<Fact>]
     member _.``prepare call hierarchy returns the function``() = task {
@@ -1168,7 +1168,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Contains(items, fun i -> i.Name = "Greet")
     }
 
-    // ── Type Hierarchy [FS-TYPEHIER-PREPARE] [FS-TYPEHIER-SUPER] [FS-TYPEHIER-SUB] ──
+    // ── Type Hierarchy [SHARPLSP-FEATURES-NAVIGATION] ───────────
 
     [<Fact>]
     member _.``prepare type hierarchy returns the type``() = task {

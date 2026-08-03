@@ -52,10 +52,16 @@ export async function diagnosticGone(uri: vscode.Uri, code: string): Promise<vsc
   );
 }
 
-export async function quickFixes(uri: vscode.Uri, range: vscode.Range): Promise<vscode.CodeAction[]> {
+export async function quickFixes(
+  uri: vscode.Uri,
+  range: vscode.Range,
+): Promise<vscode.CodeAction[]> {
   return waitForCodeActions({
-    uri, range, kind: vscode.CodeActionKind.QuickFix,
-    predicate: () => true, timeoutMs: FSHARP_REFACTOR_TIMEOUT_MS,
+    uri,
+    range,
+    kind: vscode.CodeActionKind.QuickFix,
+    predicate: () => true,
+    timeoutMs: FSHARP_REFACTOR_TIMEOUT_MS,
   });
 }
 
@@ -65,7 +71,9 @@ export async function resolvedQuickFixes(
   title: string,
 ): Promise<vscode.CodeAction[]> {
   return waitForResolvedCodeActions({
-    uri, range, kind: vscode.CodeActionKind.QuickFix,
+    uri,
+    range,
+    kind: vscode.CodeActionKind.QuickFix,
     predicate: (actions) => actions.some((action) => action.title === title),
     timeoutMs: FSHARP_REFACTOR_TIMEOUT_MS,
   });
@@ -76,7 +84,10 @@ export async function applyAction(action: vscode.CodeAction): Promise<WorkspaceE
   return applyWorkspaceEdit(action.edit);
 }
 
-export async function undoAction(document: vscode.TextDocument, expectedText: string): Promise<void> {
+export async function undoAction(
+  document: vscode.TextDocument,
+  expectedText: string,
+): Promise<void> {
   const appliedVersion = document.version;
   await vscode.window.showTextDocument(document, { preview: false });
   await vscode.commands.executeCommand('undo');
@@ -99,7 +110,10 @@ export function tokenRange(
   return new vscode.Range(start, document.positionAt(index + needle.length));
 }
 
-export function uniqueAction(actions: readonly vscode.CodeAction[], title: string): vscode.CodeAction {
+export function uniqueAction(
+  actions: readonly vscode.CodeAction[],
+  title: string,
+): vscode.CodeAction {
   const matches = actions.filter((action) => action.title === title);
   assert.strictEqual(matches.length, 1, `expected one ${title}; got ${matches.length}`);
   const action = matches[0];
@@ -107,11 +121,7 @@ export function uniqueAction(actions: readonly vscode.CodeAction[], title: strin
   return action;
 }
 
-export function assertQuickFix(
-  action: vscode.CodeAction,
-  title: string,
-  preferred: boolean,
-): void {
+export function assertQuickFix(action: vscode.CodeAction, title: string, preferred: boolean): void {
   assert.strictEqual(action.title, title);
   assert.strictEqual(action.kind?.value, vscode.CodeActionKind.QuickFix.value);
   assert.strictEqual(action.isPreferred, preferred);
@@ -158,7 +168,10 @@ export async function requestRename(
   return pollUntilResult(
     async () =>
       (await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
-        'vscode.executeDocumentRenameProvider', uri, position, newName,
+        'vscode.executeDocumentRenameProvider',
+        uri,
+        position,
+        newName,
       )) ?? new vscode.WorkspaceEdit(),
     (edit) => edit.size > 0,
     timeoutMs,

@@ -513,8 +513,11 @@ internal sealed partial class WorkspaceManager : IDisposable
             }
 
             var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-            var startPos = text.Lines.GetPosition(new LinePosition(startLine, startCharacter));
-            var endPos = text.Lines.GetPosition(new LinePosition(endLine, endCharacter));
+            if (!TryGetPosition(text, startLine, startCharacter, out var startPos)
+                || !TryGetPosition(text, endLine, endCharacter, out var endPos))
+            {
+                return new CodeActionsResult.Ok<List<CodeActionItem>, string>([]);
+            }
             var span = TextSpan.FromBounds(startPos, Math.Max(startPos, endPos));
 
             var items = await _codeActionResolver
@@ -526,6 +529,22 @@ internal sealed partial class WorkspaceManager : IDisposable
         {
             return CodeActionsResult.Failure(ex.Message);
         }
+    }
+
+    private static bool TryGetPosition(SourceText text, int line, int character, out int position)
+    {
+        position = 0;
+        if (line < 0 || line >= text.Lines.Count || character < 0)
+        {
+            return false;
+        }
+        var sourceLine = text.Lines[line];
+        if (character > sourceLine.Span.Length)
+        {
+            return false;
+        }
+        position = sourceLine.Start + character;
+        return true;
     }
 
     /// <summary>Resolve a code action by ID to a workspace edit.</summary>
@@ -862,5 +881,4 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         return SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath(path);
     }
-
 }

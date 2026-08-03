@@ -57,7 +57,7 @@ remaining gaps are explicit rather than implied.
 - [x] Remove trailing whitespace introduced in `src/sharplsp/src/main.rs` (failed `cargo fmt --check`)
 - [x] Flatten the 4-level `if let` nest in `init_workspace_for_file` into
       `opened_document_path` + `sidecar_for_path` (functions <20 LOC)
-- [ ] Extract classification into `src/document_kind.rs` with the full
+- [ ] Extract classification into `src/sharplsp/src/document_kind.rs` with the full
       `ProjectOwned` / `CSharpFileBasedApp` / `CSharpScript` / `FSharpScript` / `FSharpSignature`
       lattice; currently an extension match inside `main.rs` — [SCRIPT-DETECT]
 - [ ] Implement cone search with the four stop conditions (project file, workspace root, `.git`,

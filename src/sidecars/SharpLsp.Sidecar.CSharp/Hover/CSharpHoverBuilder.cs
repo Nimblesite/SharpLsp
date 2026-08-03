@@ -61,9 +61,17 @@ internal static class CSharpHoverBuilder
             return null;
         }
 
-        if (token.IsKind(SyntaxKind.VarKeyword))
+        // [HOVER-CSHARP-CASES] Roslyn represents contextual `var` as an
+        // IdentifierToken whose ContextualKind is VarKeyword. Preserve the
+        // general fallback for forms such as foreach when no local-variable
+        // hover can be built.
+        if (token.IsKind(SyntaxKind.IdentifierToken) && token.Text == "var")
         {
-            return BuildVarHover(model, token, ct);
+            var hover = BuildVarHover(model, token, ct);
+            if (hover is not null)
+            {
+                return hover;
+            }
         }
 
         if (IsNumericLiteral(token))

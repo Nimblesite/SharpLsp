@@ -409,7 +409,7 @@ F# `async { }` desugars into CPS (continuation-passing style) library calls. Ste
 
 ### Discriminated Union Inspection `[DEBUG-FSHARP-UNIONS]`
 
-DUs compile to class hierarchies. Without F# semantic knowledge, a variable `Some 42` displays as `FSharpOption`1 { Tag = 1, Value = 42 }` instead of `Some(42)`.
+DUs compile to class hierarchies. Without F# semantic knowledge, a variable `Some 42` displays as ``FSharpOption`1 { Tag = 1, Value = 42 }`` instead of `Some(42)`.
 
 SharpLsp addresses this in three layers:
 
@@ -478,7 +478,7 @@ For `MailboxProcessor<'Msg>`, SharpLsp exposes:
 | [ClrDebug](https://github.com/lordmilko/ClrDebug) | 0.3.4+ | MIT | Phase 5 managed ICorDebug wrapper |
 | [Microsoft.Diagnostics.DbgShim](https://www.nuget.org/packages/Microsoft.Diagnostics.DbgShim) | 9.0.661903+ | MIT | DbgShim for runtime discovery |
 | [Microsoft.Diagnostics.NETCore.Client](https://www.nuget.org/packages/Microsoft.Diagnostics.NETCore.Client) | 9.0.661903+ | MIT | EventPipe / diagnostics IPC |
-| [Microsoft.CodeAnalysis.CSharp.Scripting](https://www.nuget.org/packages/Microsoft.CodeAnalysis.CSharp.Scripting) | 5.6.0 | MIT | Expression compilation; keep aligned with `Directory.Build.props` |
+| [Microsoft.CodeAnalysis.CSharp.Scripting](https://www.nuget.org/packages/Microsoft.CodeAnalysis.CSharp.Scripting) | 5.6.0 | MIT | Expression compilation; keep aligned with `.config/dotnet/common.props` |
 | [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) | 43.12+ | MIT | F# expression compilation + DU analysis |
 | DAP specification | 1.71.0 | CC-BY 4.0 | Protocol reference |
 

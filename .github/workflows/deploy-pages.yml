@@ -1,23 +1,30 @@
 ---
 # agent-pmo:0b21609
 name: Deploy Pages
-# workflow_call lets release.yml deploy the site at the release ref via `uses:`.
-# workflow_dispatch keeps manual deploys available.
+# Website changes merged to main deploy immediately. workflow_call keeps release
+# tags deployable at the release ref, and workflow_dispatch remains the manual
+# recovery path.
 'on':
+  push:
+    branches:
+      - main
+    paths:
+      - src/website/**
+      - docs/designs/logo/**
+      - .github/workflows/deploy-pages.yml
   workflow_call:
   workflow_dispatch:
 concurrency:
   group: pages
+  queue: max
   cancel-in-progress: false
-permissions:
-  contents: read
-  pages: write
-  id-token: write
 jobs:
   build:
     name: Build
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: src/website
@@ -30,11 +37,13 @@ jobs:
           node-version: '20'
           cache: npm
           cache-dependency-path: src/website/package-lock.json
-      - run: npm install
+      - run: npm ci
       - name: Build site
         run: npm run build
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - name: Stamp deployment
+        run: printf '%s\n' "$GITHUB_SHA" > _site/deployment-sha.txt
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
@@ -43,7 +52,10 @@ jobs:
     name: Deploy
     needs: build
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 5
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: "${{ steps.deployment.outputs.page_url }}"
@@ -51,3 +63,40 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+      - name: Verify production website
+        shell: bash
+        env:
+          PRODUCTION_URL: https://sharplsp.dev
+        run: |
+          set -euo pipefail
+          expected_headline='SharpLsp: full C# and F# development.'
+          expected_install='href="vscode:extension/nimblesite.sharplsp"'
+          fetch() {
+            curl --fail --silent --show-error --location \
+              --connect-timeout 5 \
+              --max-time 10 \
+              --header 'Cache-Control: no-cache' \
+              --header 'Pragma: no-cache' \
+              "$1" || true
+          }
+
+          for attempt in {1..30}; do
+            probe="run_id=${GITHUB_RUN_ID}&run_attempt=${GITHUB_RUN_ATTEMPT}&attempt=${attempt}"
+            deployed_sha="$(fetch "${PRODUCTION_URL}/deployment-sha.txt?${probe}")"
+
+            if [[ "$deployed_sha" == "$GITHUB_SHA" ]]; then
+              html="$(fetch "${PRODUCTION_URL}/?${probe}")"
+
+              if grep --fixed-strings --quiet "$expected_headline" <<<"$html" \
+                && grep --fixed-strings --quiet "$expected_install" <<<"$html"; then
+                echo "Production is serving commit ${GITHUB_SHA} with the new SharpLsp experience."
+                exit 0
+              fi
+            fi
+
+            echo "Production has not converged yet (attempt ${attempt}/30)."
+            sleep 10
+          done
+
+          echo "ERROR: ${PRODUCTION_URL} did not serve commit ${GITHUB_SHA} with the expected experience." >&2
+          exit 1

@@ -1,3 +1,4 @@
+using Microsoft.CodeAnalysis.Text;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
 #pragma warning disable CA1307 // StringComparison for Assert.Contains
@@ -48,6 +49,26 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
     {
         Assert.False(result.IsError, result.Match(_ => "ok", err => err));
         return +result;
+    }
+
+    private static string ApplyEdits(string source, IEnumerable<TextEditResult> edits)
+    {
+        var text = SourceText.From(source);
+        var changes = edits.Select(edit => new TextChange(EditSpan(text, edit), edit.NewText));
+        return text.WithChanges(changes).ToString();
+    }
+
+    private static TextSpan EditSpan(SourceText text, TextEditResult edit)
+    {
+        var start = text.Lines.GetPosition(new LinePosition(edit.StartLine, edit.StartCharacter));
+        var end = text.Lines.GetPosition(new LinePosition(edit.EndLine, edit.EndCharacter));
+        return TextSpan.FromBounds(start, end);
+    }
+
+    private static string ReplacedText(string source, TextEditResult edit)
+    {
+        var text = SourceText.From(source);
+        return text.ToString(EditSpan(text, edit));
     }
 
     // ── Hover ────────────────────────────────────────────────────────
@@ -216,14 +237,17 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
         // Rename the `Add` declaration on line 12; the call on line 29 must
         // also be rewritten.
         var edit = AssertOk(await Manager.RenameAsync(SourcePath, 12, 24, "Renamed"));
-        Assert.NotEmpty(edit.DocumentChanges);
-
-        var allEdits = edit.DocumentChanges.SelectMany(change => change.Edits).ToList();
-        Assert.NotEmpty(allEdits);
-        // Depending on the SourceText subtype Roslyn may emit either granular
-        // token edits or a single whole-document replacement; in both cases the
-        // new name must appear in the produced text.
-        Assert.Contains(allEdits, textEdit => textEdit.NewText.Contains("Renamed"));
+        var document = Assert.Single(edit.DocumentChanges);
+        Assert.Equal(SourcePath, document.FilePath);
+        Assert.Equal(5, document.Edits.Count);
+        Assert.All(
+            document.Edits,
+            edit => Assert.Equal("Add", ReplacedText(WorkspaceManagerQueryFixture.Source, edit))
+        );
+        Assert.All(document.Edits, edit => Assert.Equal("Renamed", edit.NewText));
+        var rewritten = ApplyEdits(WorkspaceManagerQueryFixture.Source, document.Edits);
+        Assert.Equal(WorkspaceManagerQueryFixture.Source.Replace("Add", "Renamed"), rewritten);
+        Assert.Equal(5, rewritten.Split("Renamed").Length - 1);
     }
 
     // ── Code Lens ────────────────────────────────────────────────────

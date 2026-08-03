@@ -1,5 +1,5 @@
 {
-  "description": "[DIST-CI-WIN-VSIX] Feature chunks of the VS Code end-to-end suite. Each chunk is one Windows CI job running a slice of the SAME suite through the real LSP inside the real extension host. Single source of truth: the Makefile (_test-vsix-win), the CI matrix, and the coverage guard all read this file. Consumed via scripts/vsix/vsix-test-chunks.mjs.",
+  "description": "[DIST-CI-WIN-VSIX] Feature chunks of the VS Code end-to-end suite. Each chunk is one Windows CI job running a slice of the SAME suite through the real LSP inside the real extension host. Single source of truth: the Makefile (_test-vsix-win), the CI matrix, and the coverage guard all read this file. Consumed via tools/vsix/vsix-test-chunks.mjs.",
   "shared": {
     "description": "Prepended to every chunk. Asserts the bundled host + sidecars were staged before the extension host started, so a staging regression fails as itself instead of as a wall of LSP timeouts.",
     "files": [
@@ -27,6 +27,7 @@
         "lsp-document-sync.test.js",
         "lsp-lifecycle.test.js",
         "lsp-refactor-quickfixes.test.js",
+        "lsp-refactor-organize-imports.test.js",
         "lsp-refactor-core.test.js",
         "lsp-refactor-rewrite-matrix.test.js",
         "lsp-rename-symbols.test.js",

@@ -167,7 +167,7 @@ fn test_full_stack_fsharp_user_session_medium_codebase() {
 
     client.change_document(&calculations_uri, 3, CALCULATIONS_FS);
 
-    // ── Signature help contract at the settle call site ([FS-SIGHELP]) ──
+    // ── Signature help contract ([SHARPLSP-FEATURES-INTELLIGENCE]) ──
     let sig = position_request(
         &mut client,
         "textDocument/signatureHelp",

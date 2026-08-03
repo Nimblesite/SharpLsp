@@ -13,7 +13,8 @@ export interface CodeFixScenario {
 export const OPEN_SCENARIOS: readonly CodeFixScenario[] = [
   {
     name: 'System.IO Path',
-    source: 'module FSharpFixtures.RefactorOpen\n\nlet value = Path.GetTempPath()\nlet sentinel = 41\n',
+    source:
+      'module FSharpFixtures.RefactorOpen\n\nlet value = Path.GetTempPath()\nlet sentinel = 41\n',
     target: 'Path.GetTempPath',
     title: "Add 'open System.IO'",
     diagnostic: 'FS0039',
@@ -21,7 +22,8 @@ export const OPEN_SCENARIOS: readonly CodeFixScenario[] = [
   },
   {
     name: 'System.IO File',
-    source: 'module FSharpFixtures.RefactorOpen\n\nlet value = File.Exists("item")\nlet sentinel = 41\n',
+    source:
+      'module FSharpFixtures.RefactorOpen\n\nlet value = File.Exists("item")\nlet sentinel = 41\n',
     target: 'File.Exists',
     title: "Add 'open System.IO'",
     diagnostic: 'FS0039',
@@ -54,9 +56,10 @@ export const OPEN_SCENARIOS: readonly CodeFixScenario[] = [
     replacement: 'open System.Threading.Tasks\n',
   },
   {
-    name: 'generic List',
-    source: 'module FSharpFixtures.RefactorOpen\n\nlet value = List<int>()\nlet sentinel = 44\n',
-    target: 'List<int>',
+    name: 'generic Dictionary',
+    source:
+      'module FSharpFixtures.RefactorOpen\n\nlet value = Dictionary<int, string>()\nlet sentinel = 44\n',
+    target: 'Dictionary<int, string>',
     title: "Add 'open System.Collections.Generic'",
     diagnostic: 'FS0039',
     replacement: 'open System.Collections.Generic\n',
@@ -95,27 +98,83 @@ let redundant shape =
 let sentinel = 47
 `;
 
-const CONVERSION_INPUTS: readonly (readonly [string, string, string, string, string, string])[] = [
+type ConversionInput = readonly [string, string, string, string, string, string];
+
+const CONVERSION_INPUTS: readonly ConversionInput[] = [
   ['float from int', 'float', 'int', '1', "Convert to float using 'float'", '(float actualValue)'],
+  [
+    'float from decimal',
+    'float',
+    'decimal',
+    '1M',
+    "Convert to float using 'float'",
+    '(float actualValue)',
+  ],
   ['int from float', 'int', 'float', '1.0', "Convert to int using 'int'", '(int actualValue)'],
-  ['string from int', 'string', 'int', '1', "Convert to string using 'string'", '(string actualValue)'],
-  ['float32 from float', 'float32', 'float', '1.0', "Convert to float32 using 'float32'", '(float32 actualValue)'],
-  ['float from float32', 'float', 'float32', '1.0f', "Convert to float using 'float'", '(float actualValue)'],
+  [
+    'string from int',
+    'string',
+    'int',
+    '1',
+    "Convert to string using 'string'",
+    '(string actualValue)',
+  ],
+  [
+    'float32 from float',
+    'float32',
+    'float',
+    '1.0',
+    "Convert to float32 using 'float32'",
+    '(float32 actualValue)',
+  ],
+  [
+    'float from float32',
+    'float',
+    'float32',
+    '1.0f',
+    "Convert to float using 'float'",
+    '(float actualValue)',
+  ],
   ['int64 from int', 'int64', 'int', '1', "Convert to int64 using 'int64'", '(int64 actualValue)'],
+  [
+    'int64 from float',
+    'int64',
+    'float',
+    '1.0',
+    "Convert to int64 using 'int64'",
+    '(int64 actualValue)',
+  ],
   ['int from int64', 'int', 'int64', '1L', "Convert to int using 'int'", '(int actualValue)'],
 ];
 
-export const CONVERSION_SCENARIOS: readonly CodeFixScenario[] = CONVERSION_INPUTS.map(
-  ([name, expected, actualType, literal, title, replacement]) => ({
+const IMPLICIT_CONVERSION_NAMES = new Set(['float from int', 'int64 from int']);
+
+function conversionScenario([
   name,
-  source: `module FSharpFixtures.RefactorConversion\n\nlet accept (value: ${expected}) = value\nlet actualValue: ${actualType} = ${literal}\nlet value = accept actualValue\nlet sentinel = 48\n`,
-  target: 'actualValue',
+  expected,
+  actualType,
+  literal,
   title,
-  diagnostic: 'FS0001',
   replacement,
-  occurrence: 1,
-  }),
-);
+]: ConversionInput): CodeFixScenario {
+  return {
+    name,
+    source: `module FSharpFixtures.RefactorConversion\n\nlet accept (value: ${expected}) = value\nlet actualValue: ${actualType} = ${literal}\nlet value = accept actualValue\nlet sentinel = 48\n`,
+    target: 'actualValue',
+    title,
+    diagnostic: 'FS0001',
+    replacement,
+    occurrence: 1,
+  };
+}
+
+export const CONVERSION_SCENARIOS: readonly CodeFixScenario[] = CONVERSION_INPUTS.filter(
+  ([name]) => !IMPLICIT_CONVERSION_NAMES.has(name),
+).map(conversionScenario);
+
+export const IMPLICIT_CONVERSION_SCENARIOS: readonly CodeFixScenario[] = CONVERSION_INPUTS.filter(
+  ([name]) => IMPLICIT_CONVERSION_NAMES.has(name),
+).map(conversionScenario);
 
 export const UNSUPPORTED_CONVERSION_SOURCE =
   'module FSharpFixtures.RefactorConversion\n\nlet value : bool = 1\nlet sentinel = 49\n';
@@ -185,6 +244,23 @@ type Point = { X: int; Y: int }
 let point: Point = { X = 1; Y = 2 }
 `;
 
+export const RECORD_COPY_UPDATE_SOURCE = `module FSharpFixtures.RefactorRecord
+
+type Point = { X: int; Y: int }
+let point: Point = { X = 1; Y = 2 }
+let updated = { point with X = 3 }
+let sentinel = 56
+`;
+
+export const WILDCARD_UNION_SOURCE = `module FSharpFixtures.RefactorUnion
+
+type Choice = First | Second | Third
+let choose value =
+    match value with
+    | _ -> 0
+let sentinel = 57
+`;
+
 export const PARTIAL_INTERFACE_SOURCE = `module FSharpFixtures.RefactorInterface
 
 type IShape =
@@ -194,6 +270,68 @@ type IShape =
 type Square() =
     interface IShape with
         member _.Name = "square"
+
+let sentinel = 52
+`;
+
+export const GENERIC_INTERFACE_SOURCE = `module FSharpFixtures.RefactorInterface
+
+type IBox<'T> =
+    abstract member Value: 'T
+    abstract member Map: 'T -> 'T
+
+type StringBox() =
+    interface IBox<string> with
+        member _.Value = "ready"
+
+let sentinel = 53
+`;
+
+export const NESTED_GENERIC_INTERFACE_SOURCE = `module FSharpFixtures.RefactorInterface
+
+type IOther =
+    abstract member Code: string
+
+type IWrapper<'T> =
+    abstract member Wrap: 'T -> 'T
+
+type Wrapper() =
+    interface IWrapper<IOther> with
+
+let sentinel = 54
+`;
+
+export const OBJECT_EXPRESSION_INTERFACE_SOURCE = `module FSharpFixtures.RefactorInterface
+
+type IShape =
+    abstract member Area: unit -> float
+    abstract member Name: string
+
+let shape =
+    { new IShape with
+        member _.Name = "shape" }
+
+let sentinel = 55
+`;
+
+export const EMPTY_INTERFACE_WITH_SOURCE = `module FSharpFixtures.RefactorInterface
+
+type IShape =
+    abstract member Area: unit -> float
+
+type Square() =
+    interface IShape with
+
+let sentinel = 52
+`;
+
+export const EMPTY_INTERFACE_SOURCE = `module FSharpFixtures.RefactorInterface
+
+type IShape =
+    abstract member Area: unit -> float
+
+type Square() =
+    interface IShape
 
 let sentinel = 52
 `;

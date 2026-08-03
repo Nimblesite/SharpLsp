@@ -32,8 +32,10 @@ import { closeAllEditors } from './test-helpers';
 // Full real-LSP lifecycle coverage for [ANALYZERS-FSAC-PARITY]. No mocked providers.
 const TARGET_FILE = 'fsharp/DiagnosticsTarget.fs';
 const FALSE_OPEN_CASES: readonly (readonly [string, string])[] = [
-  ['MyPath', "Add 'open System.IO'"], ['MyFile', "Add 'open System.IO'"],
-  ['MyDirectory', "Add 'open System.IO'"], ['MyTask', "Add 'open System.Threading.Tasks'"],
+  ['MyPath', "Add 'open System.IO'"],
+  ['MyFile', "Add 'open System.IO'"],
+  ['MyDirectory', "Add 'open System.IO'"],
+  ['MyTask', "Add 'open System.Threading.Tasks'"],
   ['MyAsync', "Add 'open System.Threading.Tasks'"],
   ['MyRegex', "Add 'open System.Text.RegularExpressions'"],
   ['MyList', "Add 'open System.Collections.Generic'"],
@@ -121,38 +123,65 @@ function basicSpecs(): readonly BasicFixSpec[] {
 
 function unusedSpec(): BasicFixSpec {
   return {
-    name: 'unused value', source: UNUSED_VALUE_SOURCE, target: 'unusedValue',
-    title: "Prefix 'unusedValue' with _", diagnostic: 'FS1182', replacement: '_unusedValue',
-    preferred: true, expected: UNUSED_VALUE_SOURCE.replace('unusedValue', '_unusedValue'),
-    editText: '_unusedValue', insertion: false,
+    name: 'unused value',
+    source: UNUSED_VALUE_SOURCE,
+    target: 'unusedValue',
+    title: "Prefix 'unusedValue' with _",
+    diagnostic: 'FS1182',
+    replacement: '_unusedValue',
+    preferred: true,
+    expected: UNUSED_VALUE_SOURCE.replace('unusedValue', '_unusedValue'),
+    editText: '_unusedValue',
+    insertion: false,
   };
 }
 
 function ignoreSpec(): BasicFixSpec {
   return {
-    name: 'ignored result', source: IGNORE_SOURCE, target: '1 + 1', title: "Add '|> ignore'",
-    diagnostic: 'FS0020', replacement: ' |> ignore', preferred: true,
+    name: 'ignored result',
+    source: IGNORE_SOURCE,
+    target: '1 + 1',
+    title: "Add '|> ignore'",
+    diagnostic: 'FS0020',
+    replacement: ' |> ignore',
+    preferred: true,
     expected: IGNORE_SOURCE.replace('1 + 1', '1 + 1 |> ignore'),
-    editText: ' |> ignore', insertion: true,
+    editText: ' |> ignore',
+    insertion: true,
   };
 }
 
 function wildcardSpec(): BasicFixSpec {
   const added = '    | A -> 1\n    | _ -> failwith "Unhandled case"\n';
   return {
-    name: 'incomplete match', source: MATCH_FIX_SOURCE, target: 'match shape with',
-    title: "Add wildcard case '| _ ->'", diagnostic: 'FS0025', replacement: added,
-    preferred: false, expected: MATCH_FIX_SOURCE.replace('    | A -> 1\n', added),
-    editText: '    | _ -> failwith "Unhandled case"\n', insertion: true,
+    name: 'incomplete match',
+    source: MATCH_FIX_SOURCE,
+    target: 'match shape with',
+    title: "Add wildcard case '| _ ->'",
+    diagnostic: 'FS0025',
+    replacement: added,
+    preferred: false,
+    expected: MATCH_FIX_SOURCE.replace('    | A -> 1\n', added),
+    editText: '    | _ -> failwith "Unhandled case"\n',
+    insertion: true,
   };
 }
 
 function redundantSpec(): BasicFixSpec {
   return {
-    name: 'redundant case', source: MATCH_FIX_SOURCE, target: '| A -> 300', occurrence: 0,
-    title: 'Remove redundant pattern case', diagnostic: 'FS0026', replacement: '',
-    preferred: false, expected: MATCH_FIX_SOURCE.replace('    | A -> 300\n', ''),
-    editText: '', insertion: false, beforeText: '    | A -> 300\n', postTarget: 'redundant shape',
+    name: 'redundant case',
+    source: MATCH_FIX_SOURCE,
+    target: '| A -> 300',
+    occurrence: 0,
+    title: 'Remove redundant pattern case',
+    diagnostic: 'FS0026',
+    replacement: '',
+    preferred: false,
+    expected: MATCH_FIX_SOURCE.replace('    | A -> 300\n', ''),
+    editText: '',
+    insertion: false,
+    beforeText: '    | A -> 300\n',
+    postTarget: 'redundant shape',
   };
 }
 
@@ -213,7 +242,9 @@ async function assertOutsideRange(
   const outside = tokenRange(fixture.document, 'sentinel');
   const actions = await quickFixes(fixture.uri, outside);
   assertNoAction(actions, title);
-  assert.ok(actions.every((action) => action.kind?.contains(vscode.CodeActionKind.QuickFix) ?? true));
+  assert.ok(
+    actions.every((action) => action.kind?.contains(vscode.CodeActionKind.QuickFix) ?? true),
+  );
 }
 
 function inspectEdit(

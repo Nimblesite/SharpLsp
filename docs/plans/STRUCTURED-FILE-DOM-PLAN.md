@@ -6,11 +6,11 @@
 
 ## Status
 
-**✅ Done (issue #4 — NuGet package editing).** The line-oriented `src/nuget/xml_edit.rs` is deleted. `PackageReference` / `PackageVersion` add / update / remove now go through the C# sidecar's `Microsoft.Build.Construction.ProjectRootElement` (`preserveFormatting: true`), covering install, uninstall, and consolidate for `.csproj` / `.fsproj` / `.props`. Verified full-stack in `src/sharplsp/tests/nuget_e2e.rs` (multi-line children, wrapped attributes, conditional `ItemGroup`, comments, CPM `Directory.Packages.props`, multi-ItemGroup).
+**✅ Done (issue #4 — NuGet package editing).** The line-oriented `src/sharplsp/src/nuget/xml_edit.rs` is deleted. `PackageReference` / `PackageVersion` add / update / remove now go through the C# sidecar's `Microsoft.Build.Construction.ProjectRootElement` (`preserveFormatting: true`), covering install, uninstall, and consolidate for `.csproj` / `.fsproj` / `.props`. Verified full-stack in `src/sharplsp/tests/nuget_e2e.rs` (multi-line children, wrapped attributes, conditional `ItemGroup`, comments, CPM `Directory.Packages.props`, multi-ItemGroup).
 
 Deviations from the original design below (all functionally equivalent):
 - Editor lives in `src/sidecars/SharpLsp.Sidecar.CSharp/PackageEditor.cs` (+ handler in `CSharpSidecar.Packages.cs`), not `Workspace/ProjectEditor.cs`.
-- IPC types live in the C# sidecar `Messages.cs`; the Rust wrapper is `src/nuget/edit.rs` (not `src/sharplsp/src/sidecar/project_editor.rs`).
+- IPC types live in the C# sidecar `Messages.cs`; the Rust wrapper is `src/sharplsp/src/nuget/edit.rs` (not `src/sharplsp/src/sidecar/project_editor.rs`).
 - `updatePackageVersion` is folded into `addPackage` (upsert), so there are two methods: `project/addPackage`, `project/removePackage`.
 - `.fsproj` edits route to the **C# sidecar** rather than a mirrored F# handler: `MSBuildLocator` (MSBL001) forbids a shared `Microsoft.Build` reference in the F#/Common projects, and `ProjectRootElement` is language-agnostic (the issue itself notes "it's not F#-specific").
 
@@ -30,15 +30,15 @@ No `std::fs::write` of concatenated strings. No `.replace()` / `.splice()` / `.l
 
 ### CRITICAL (writes corrupt output for real-world inputs)
 
-#### V1 — `src/nuget/xml_edit.rs` (entire file)
+#### V1 — `src/sharplsp/src/nuget/xml_edit.rs` (entire file)
 - **What:** Line-oriented "fast-path" editor for `PackageReference`/`PackageVersion` in csproj/fsproj/props.
 - **Why broken:** The module's own docstring defends this as a deliberate choice to preserve whitespace. It can't handle multi-line `<PackageReference>` with children (`<PrivateAssets>`, `<IncludeAssets>`, conditions), CDATA, comments mid-attribute list, namespaces, or `<Choose>/<When>` blocks. **This is the file that caused issue #4.**
 - **Callers:**
-  - `src/nuget/handlers.rs:195` — `handle_install`
-  - `src/nuget/handlers.rs:204` — CPM `Directory.Packages.props` write
-  - `src/nuget/handlers.rs:238` — `handle_remove`
-  - `src/nuget/handlers.rs:253` — `pick_install_element`
-- **Tests that pin the existing contract:** `src/sharplsp/tests/nuget_e2e.rs` + `src/nuget/xml_edit.rs` `mod tests`.
+  - `src/sharplsp/src/nuget/handlers.rs:195` — `handle_install`
+  - `src/sharplsp/src/nuget/handlers.rs:204` — CPM `Directory.Packages.props` write
+  - `src/sharplsp/src/nuget/handlers.rs:238` — `handle_remove`
+  - `src/sharplsp/src/nuget/handlers.rs:253` — `pick_install_element`
+- **Tests that pin the existing contract:** `src/sharplsp/tests/nuget_e2e.rs` + `src/sharplsp/src/nuget/xml_edit.rs` `mod tests`.
 
 #### V2 — `src/editors/vscode/src/scaffolding.ts` lines 123-144 (`autoAddFileToProject`)
 - **What:** When scaffolding a new `.cs` file, splices `<Compile Include="..." />` into the `.csproj` by finding `</ItemGroup>` with `.lastIndexOf()` and concatenating strings.
@@ -91,8 +91,8 @@ project.Save(path);                                   // trivia-preserving write
 
 ### Rust host changes
 
-- Delete `src/nuget/xml_edit.rs` entirely.
-- `src/nuget/handlers.rs` becomes a thin IPC forwarder: serialize the request, send to the C# sidecar (or F# sidecar for `.fsproj`), return the response.
+- Delete `src/sharplsp/src/nuget/xml_edit.rs` entirely.
+- `src/sharplsp/src/nuget/handlers.rs` becomes a thin IPC forwarder: serialize the request, send to the C# sidecar (or F# sidecar for `.fsproj`), return the response.
 - No XML parsing in Rust. No line manipulation in Rust. The Rust host only routes.
 
 ### TypeScript client changes
@@ -128,11 +128,11 @@ project.Save(path);                                   // trivia-preserving write
 
 ### Phase 2 — Route Rust host through the sidecar, delete `xml_edit.rs` ✅
 
-- [x] Add the Rust wrapper (`src/nuget/edit.rs`) — thin wrappers that serialize/send each request.
-- [x] Rewrite `src/nuget/handlers.rs::handle_install`, `handle_uninstall`, the CPM props-file case, **and** `consolidate.rs` to call the sidecar instead of `xml_edit::*`.
-- [x] Delete `src/nuget/xml_edit.rs`.
-- [x] Delete the `xml_edit` module export from `src/nuget/mod.rs`.
-- [x] Update `src/nuget/cli.rs` (and `parse.rs`) header comments that referenced `xml_edit`.
+- [x] Add the Rust wrapper (`src/sharplsp/src/nuget/edit.rs`) — thin wrappers that serialize/send each request.
+- [x] Rewrite `src/sharplsp/src/nuget/handlers.rs::handle_install`, `handle_uninstall`, the CPM props-file case, **and** `consolidate.rs` to call the sidecar instead of `xml_edit::*`.
+- [x] Delete `src/sharplsp/src/nuget/xml_edit.rs`.
+- [x] Delete the `xml_edit` module export from `src/sharplsp/src/nuget/mod.rs`.
+- [x] Update `src/sharplsp/src/nuget/cli.rs` (and `parse.rs`) header comments that referenced `xml_edit`.
 - [x] `src/sharplsp/tests/nuget_e2e.rs` — every existing scenario green (now full-stack via the sidecar), plus new multi-line-child, wrapped-attribute, conditional-`ItemGroup`, and comment scenarios from issue #4.
 - [x] Remove the now-dead `xml_edit` tests (coverage moved to `nuget_e2e.rs`) and the `quick-xml` dependency.
 
@@ -164,7 +164,7 @@ project.Save(path);                                   // trivia-preserving write
 
 ## Acceptance Criteria
 
-- [ ] `src/nuget/xml_edit.rs` **does not exist**.
+- [ ] `src/sharplsp/src/nuget/xml_edit.rs` **does not exist**.
 - [ ] No source file under `src/`, `src/editors/vscode/src/`, or `src/sidecars/**/*.{cs,fs}` writes to a `.csproj`/`.fsproj`/`.props`/`.targets`/`.sln`/`.vsixmanifest`/`.json` via string concatenation, `.replace()`, regex, or line-array joins. Verified by grep.
 - [ ] Issue #4's exact reproduction case (multi-line `<PackageReference>` with `<PrivateAssets>`/`<IncludeAssets>` children) is covered by a test and passes.
 - [ ] Scaffolding a new `.cs` into a project whose comments contain `</ItemGroup>` works correctly.

@@ -66,7 +66,11 @@ export async function openRenameFixtures(): Promise<RenameFixtureSet> {
     symbols,
     usage,
     edge,
-    baselines: { symbols: symbols.document.getText(), usage: usage.document.getText(), edge: edge.document.getText() },
+    baselines: {
+      symbols: symbols.document.getText(),
+      usage: usage.document.getText(),
+      edge: edge.document.getText(),
+    },
   };
 }
 
@@ -122,8 +126,17 @@ async function assertPrepareCoverage(
   document: vscode.TextDocument,
   renameCase: RenameCase,
 ): Promise<vscode.Range> {
-  const range = rangeOf(document, renameCase.snippet, renameCase.focus ?? renameCase.oldName, renameCase.occurrence);
-  const positions = [range.start, range.start.translate(0, Math.floor(renameCase.oldName.length / 2)), range.end.translate(0, -1)];
+  const range = rangeOf(
+    document,
+    renameCase.snippet,
+    renameCase.focus ?? renameCase.oldName,
+    renameCase.occurrence,
+  );
+  const positions = [
+    range.start,
+    range.start.translate(0, Math.floor(renameCase.oldName.length / 2)),
+    range.end.translate(0, -1),
+  ];
   for (const position of positions) {
     assertPrepareResult(await prepareAt(document.uri, position), range, renameCase.oldName);
   }
@@ -148,7 +161,10 @@ export async function providerRename(
   newName: string,
 ): Promise<vscode.WorkspaceEdit | undefined> {
   return vscode.commands.executeCommand<vscode.WorkspaceEdit | undefined>(
-    'vscode.executeDocumentRenameProvider', uri, position, newName,
+    'vscode.executeDocumentRenameProvider',
+    uri,
+    position,
+    newName,
   );
 }
 
@@ -167,7 +183,9 @@ function assertRawEdit(
 ): void {
   assert.ok(edit?.documentChanges, 'raw textDocument/rename must return documentChanges');
   const changes = edit.documentChanges;
-  const paths = changes.map((item) => vscode.Uri.parse(item.textDocument.uri).fsPath.toLowerCase()).sort();
+  const paths = changes
+    .map((item) => vscode.Uri.parse(item.textDocument.uri).fsPath.toLowerCase())
+    .sort();
   assert.deepStrictEqual(paths, expectedPaths(fixtures, renameCase.files));
   assert.ok(changes.every((item) => item.textDocument.version === null));
   const edits = changes.flatMap((item) => item.edits);
@@ -180,7 +198,10 @@ function assertSnapshotFiles(
   fixtures: RenameFixtureSet,
   keys: readonly RenameFixtureKey[],
 ): void {
-  assert.deepStrictEqual(snapshots.map((item) => item.uri.toString()).sort(), expectedUris(fixtures, keys));
+  assert.deepStrictEqual(
+    snapshots.map((item) => item.uri.toString()).sort(),
+    expectedUris(fixtures, keys),
+  );
   assert.ok(snapshots.every((item) => item.document !== undefined));
 }
 
@@ -192,10 +213,17 @@ function assertTokenEdits(
 ): void {
   const edits = snapshots.flatMap((item) => item.edits);
   const replaced = snapshots.flatMap((item) => item.replacedText);
-  assert.strictEqual(edits.length, editCount, 'rename must produce one granular edit per occurrence');
+  assert.strictEqual(
+    edits.length,
+    editCount,
+    'rename must produce one granular edit per occurrence',
+  );
   assert.ok(edits.every((item) => item.newText === newName));
   assert.ok(edits.every((item) => !item.range.isEmpty && item.range.isSingleLine));
-  assert.ok(replaced.every((text) => text === oldName), `every replaced token must be ${oldName}`);
+  assert.ok(
+    replaced.every((text) => text === oldName),
+    `every replaced token must be ${oldName}`,
+  );
 }
 
 function captureVersions(fixtures: RenameFixtureSet): ReadonlyMap<string, number> {
@@ -217,18 +245,23 @@ function assertAppliedVersions(
 function assertLiteralAndCommentSentinels(fixtures: RenameFixtureSet): void {
   const symbols = fixtures.symbols.document.getText();
   assert.ok(symbols.includes('"RenameClass RenameMethod renameLocal"'));
-  assert.ok(symbols.includes('// RenameClass RenameMethod renameLocal must remain untouched in comments.'));
+  assert.ok(
+    symbols.includes('// RenameClass RenameMethod renameLocal must remain untouched in comments.'),
+  );
   const edge = fixtures.edge.document.getText();
   if (fixtures.baselines.edge.includes('"PartialRenameTarget PartialMember"')) {
     assert.ok(edge.includes('"PartialRenameTarget PartialMember"'));
-    assert.ok(edge.includes('// PartialRenameTarget and PartialMember stay unchanged in this comment.'));
+    assert.ok(
+      edge.includes('// PartialRenameTarget and PartialMember stay unchanged in this comment.'),
+    );
   }
 }
 
 function assertCaseFragments(fixtures: RenameFixtureSet, renameCase: RenameCase): void {
   for (const key of ['symbols', 'usage', 'edge'] as const) {
     const source = fixtureOf(fixtures, key).document.getText();
-    for (const fragment of renameCase.after?.[key] ?? []) assert.ok(source.includes(fragment), fragment);
+    for (const fragment of renameCase.after?.[key] ?? [])
+      assert.ok(source.includes(fragment), fragment);
   }
 }
 
@@ -253,7 +286,10 @@ async function assertRenamedPrepare(
   newName: string,
 ): Promise<void> {
   const result = await waitForPrepare(document.uri, originalRange.start, newName);
-  const expected = new vscode.Range(originalRange.start, originalRange.start.translate(0, newName.length));
+  const expected = new vscode.Range(
+    originalRange.start,
+    originalRange.start.translate(0, newName.length),
+  );
   assertPrepareResult(result, expected, newName);
 }
 
@@ -263,7 +299,11 @@ async function obtainRenameEdit(
   renameCase: RenameCase,
   fixtures: RenameFixtureSet,
 ): Promise<vscode.WorkspaceEdit> {
-  assertRawEdit(await rawRenameAt(fixture.uri, range.start, renameCase.newName), fixtures, renameCase);
+  assertRawEdit(
+    await rawRenameAt(fixture.uri, range.start, renameCase.newName),
+    fixtures,
+    renameCase,
+  );
   const edit = await providerRename(fixture.uri, range.start, renameCase.newName);
   assert.ok(edit, `VS Code rename provider must return an edit for ${renameCase.label}`);
   assert.strictEqual(edit.size, renameCase.files.length);
@@ -314,5 +354,10 @@ export function positionForCase(
   renameCase: RenameCase,
 ): vscode.Position {
   const document = fixtureOf(fixtures, renameCase.fixture).document;
-  return positionOf(document, renameCase.snippet, renameCase.focus ?? renameCase.oldName, renameCase.occurrence);
+  return positionOf(
+    document,
+    renameCase.snippet,
+    renameCase.focus ?? renameCase.oldName,
+    renameCase.occurrence,
+  );
 }

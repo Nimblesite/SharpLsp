@@ -211,7 +211,7 @@ function findNetcoredbg(extensionPath?: string): string | undefined {
  * Platform-aware netcoredbg search paths, most-preferred first. When
  * `extensionPath` is supplied, the VSIX-bundled binary
  * (`bin/<platform>/netcoredbg/netcoredbg[.exe]`, staged by
- * `scripts/vsix/fetch-netcoredbg.sh`) is preferred over any user-installed copy.
+ * `tools/vsix/fetch-netcoredbg.sh`) is preferred over any user-installed copy.
  */
 export function getNetcoredbgCandidates(extensionPath?: string): string[] {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? '';

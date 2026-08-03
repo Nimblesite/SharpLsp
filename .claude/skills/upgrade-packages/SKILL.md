@@ -23,7 +23,7 @@ Scan the repo for these package ecosystems:
 |---|---|---|
 | `Cargo.toml` (workspace) | Rust (cargo) | Repo root |
 | `package.json` / `package-lock.json` | Node.js (npm) | `src/editors/vscode/` |
-| `*.csproj` / `*.fsproj` / `Directory.Build.props` | C#/F# (.NET / NuGet) | `src/sidecars/SharpLsp.Sidecars.sln` |
+| `*.csproj` / `*.fsproj` / `.config/dotnet/common.props` | C#/F# (.NET / NuGet) | `src/sidecars/SharpLsp.Sidecars.sln` |
 
 ## Step 2 — List Outdated Packages
 
@@ -88,7 +88,7 @@ If `dotnet-outdated` tool is not installed: `dotnet tool install -g dotnet-outda
 
 **Read the docs:** https://github.com/dotnet-outdated/dotnet-outdated
 
-Shared NuGet package versions live in `Directory.Build.props` — check there first and update centrally when possible, rather than editing individual `.csproj`/`.fsproj` files.
+Shared NuGet package versions live in `.config/dotnet/common.props` — check there first and update centrally when possible, rather than editing individual `.csproj`/`.fsproj` files.
 
 ## Step 5 — Verify the upgrade
 
@@ -125,6 +125,6 @@ Provide a summary:
 - **Never modify lockfiles manually** (`Cargo.lock`, `package-lock.json`) — let the package manager regenerate them
 - **Keep `Cargo.lock` changes** in the same commit as `Cargo.toml` changes
 - **Keep `package-lock.json` changes** in the same commit as `package.json` changes
-- **`Directory.Build.props`** is the source of truth for shared .NET package versions — update there first
+- **`.config/dotnet/common.props`** is the source of truth for shared .NET package versions — update there first
 - **If stuck after 3 attempts**, revert and report — do not loop forever
 - **Commit nothing** — leave changes in the working tree for the user to review

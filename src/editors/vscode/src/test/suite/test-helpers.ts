@@ -62,7 +62,7 @@ export function findSharpLspBinary(): string | undefined {
   const binaryName = exeName('sharplsp');
   const platform = detectRuntimePlatform();
 
-  // __dirname at runtime: editors/vscode/out/test/suite/
+  // __dirname at runtime: src/editors/vscode/out/test/suite/
   const extensionRoot = path.resolve(__dirname, '../../..');
 
   const bundled = path.join(extensionRoot, 'bin', platform, binaryName);

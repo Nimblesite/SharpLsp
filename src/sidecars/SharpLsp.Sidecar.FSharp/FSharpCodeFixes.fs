@@ -95,7 +95,7 @@ let private namespaceForUndefinedName =
     | "Path" | "File" | "Directory" -> Some "System.IO"
     | "Task" -> Some "System.Threading.Tasks"
     | "Regex" -> Some "System.Text.RegularExpressions"
-    | "List" -> Some "System.Collections.Generic"
+    | "Dictionary" -> Some "System.Collections.Generic"
     | _ -> None
 
 let private isOpenHeaderLine (line: string) =
@@ -108,9 +108,10 @@ let private isOpenHeaderLine (line: string) =
     || trimmed.StartsWith("//", StringComparison.Ordinal)
 
 let private openInsertionLine (source: string) =
-    source.Split('\n')
+    let lines = source.Split('\n')
+    lines
     |> Array.tryFindIndex (isOpenHeaderLine >> not)
-    |> Option.defaultValue 0
+    |> Option.defaultValue lines.Length
 
 /// FS0039: "The value or constructor 'X' is not defined."
 /// Suggests adding an open declaration for known namespaces.
@@ -225,47 +226,48 @@ let private tryFixRedundantCase
                 NewText = "" } ]
     [ cacheAction state "Remove redundant pattern case" "quickfix" false edit ]
 
-/// FS0040: "This expression was expected to have type X but here has type Y."
-/// Suggests wrapping with a type conversion for int/float/etc.
-let private tryFixTypeMismatch
-    (state: CodeFixState)
-    (filePath: string)
-    (source: string)
-    (diag: FSharpDiagnostic)
-    : CodeActionItem list =
-    let msg = diag.Message
-    let m = Regex.Match(msg, @"type\s+'([^']+)'\s+but\s+here\s+has\s+type\s+'([^']+)'")
-    if not m.Success then []
+let private conversionFunction = function
+    | "float", "int"
+    | "float", "decimal" -> Some "float"
+    | "int", "float" -> Some "int"
+    | "string", _ -> Some "string"
+    | "float32", "float" -> Some "float32"
+    | "float", "float32" -> Some "float"
+    | "int64", "int"
+    | "int64", "float" -> Some "int64"
+    | "int", "int64" -> Some "int"
+    | _ -> None
+
+let private mismatchTypes message =
+    let found = Regex.Match(message, @"type\s+'([^']+)'\s+but\s+here\s+has\s+type\s+'([^']+)'")
+    if found.Success then Some(found.Groups[1].Value, found.Groups[2].Value) else None
+
+let private diagnosticExpression (source: string) (diag: FSharpDiagnostic) =
+    let startLine, startCol, endLine, endCol = diagPositions diag
+    let lines = source.Split('\n')
+    if startLine <> endLine || startLine >= lines.Length then None
     else
-        let expected = m.Groups[1].Value
-        let actual = m.Groups[2].Value
-        let conversionFunc =
-            match expected, actual with
-            | "float", "int" -> Some "float"
-            | "int", "float" -> Some "int"
-            | "string", _ -> Some "string"
-            | "float32", "float" -> Some "float32"
-            | "float", "float32" -> Some "float"
-            | "int64", "int" -> Some "int64"
-            | "int", "int64" -> Some "int"
-            | _ -> None
-        match conversionFunc with
+        let expression = lines[startLine].Substring(startCol, endCol - startCol)
+        if expression = "" then None
+        else Some(startLine, startCol, endLine, endCol, expression)
+
+let private conversionAction state filePath expected conversion details =
+    let startLine, startCol, endLine, endCol, expression = details
+    let edit =
+        singleFileEdit filePath
+            [ { StartLine = startLine; StartCharacter = startCol
+                EndLine = endLine; EndCharacter = endCol
+                NewText = $"({conversion} {expression})" } ]
+    cacheAction state $"Convert to {expected} using '{conversion}'" "quickfix" false edit
+
+/// FS0001: suggest an explicit conversion when FCS reports a supported primitive mismatch.
+let private tryFixTypeMismatch state filePath source (diag: FSharpDiagnostic) =
+    match mismatchTypes diag.Message, diagnosticExpression source diag with
+    | Some(expected, actual), Some details ->
+        match conversionFunction (expected, actual) with
+        | Some conversion -> [ conversionAction state filePath expected conversion details ]
         | None -> []
-        | Some func ->
-            let (startLine, startCol, endLine, endCol) = diagPositions diag
-            let lines = source.Split('\n')
-            let exprText =
-                if startLine = endLine && startLine < lines.Length then
-                    lines[startLine].Substring(startCol, endCol - startCol)
-                else ""
-            if exprText = "" then []
-            else
-                let edit =
-                    singleFileEdit filePath
-                        [ { StartLine = startLine; StartCharacter = startCol
-                            EndLine = endLine; EndCharacter = endCol
-                            NewText = $"({func} {exprText})" } ]
-                [ cacheAction state $"Convert to {expected} using '{func}'" "quickfix" false edit ]
+    | _ -> []
 
 // ── Main Entry Points ────────────────────────────────────────────
 
@@ -396,6 +398,56 @@ let private collectAnalyzerActions
             @ simplifyNameActions state filePath findings.SimplifiableNames startLine endLine
     }
 
+let private diagnosticActions state filePath source startLine endLine (diagnostics: FSharpDiagnostic array) =
+    diagnostics
+    |> Array.filter (fun diagnostic ->
+        let range = diagnostic.Range
+        overlapsRange (range.StartLine - 1) (range.EndLine - 1) startLine endLine)
+    |> Array.toList
+    |> List.collect (getFixesForDiagnostic state filePath source)
+
+let private interfaceActions
+    state filePath source
+    (checkResults: FSharpCheckFileResults)
+    (parseResults: FSharpParseFileResults)
+    line character =
+    async {
+        let! generated =
+            FSharpCodeActions.tryGenerateInterfaceStub
+                checkResults parseResults source filePath line character
+        return generated |> Option.map (wrapGeneratedAction state >> List.singleton) |> Option.defaultValue []
+    }
+
+let private collectCodeActions
+    state filePath source parseResults (checkResults: FSharpCheckFileResults)
+    startLine startCharacter endLine =
+    task {
+        let diagnostics = diagnosticActions state filePath source startLine endLine checkResults.Diagnostics
+        let typed =
+            collectTypeInformedActions
+                state filePath source checkResults parseResults startLine startCharacter
+        let! analyzed = collectAnalyzerActions state filePath checkResults source startLine endLine
+        let! interfaces =
+            interfaceActions state filePath source checkResults parseResults startLine startCharacter
+        return diagnostics @ typed @ analyzed @ interfaces
+    }
+
+let private getCodeActionsCore state workspace filePath startLine startCharacter endLine =
+    task {
+        try
+            let! checkedFile = FSharpWorkspace.checkFileWithParse workspace filePath
+            match checkedFile with
+            | None -> return []
+            | Some(parseResults, checkResults, source) ->
+                return!
+                    collectCodeActions
+                        state filePath source parseResults checkResults
+                        startLine startCharacter endLine
+        with ex ->
+            Log.Debug(ex, "[F# CodeFixes] failed")
+            return []
+    }
+
 /// Get all code actions for a file range.
 let getCodeActions
     (state: CodeFixState)
@@ -406,49 +458,7 @@ let getCodeActions
     (endLine: int)
     (_endCharacter: int)
     =
-    task {
-        try
-            // Overlay-aware check: fixes are computed from the live buffer,
-            // never stale disk text. [HOVER-FSHARP-OVERLAY]
-            let! checkedFile = FSharpWorkspace.checkFileWithParse workspace filePath
-            match checkedFile with
-            | None -> return []
-            | Some(parseResults, checkResults, source) ->
-                // Phase 1: Diagnostic-based fixes.
-                let diagnostics = checkResults.Diagnostics
-                let diagActions =
-                    diagnostics
-                    |> Array.filter (fun d ->
-                        let r = d.Range
-                        let diagStart = r.StartLine - 1
-                        let diagEnd = r.EndLine - 1
-                        overlapsRange diagStart diagEnd startLine endLine)
-                    |> Array.toList
-                    |> List.collect (getFixesForDiagnostic state filePath source)
-                // Phase 2: Type-informed actions (union/record stubs).
-                let typeActions =
-                    collectTypeInformedActions
-                        state filePath source
-                        checkResults parseResults
-                        startLine startCharacter
-                // Phase 3: Analyzer-driven fixes (remove unused open, simplify name).
-                let! analyzerActions =
-                    collectAnalyzerActions
-                        state filePath checkResults source startLine endLine
-                // Phase 4: Interface implementation stub [ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB].
-                let! interfaceStub =
-                    FSharpCodeActions.tryGenerateInterfaceStub
-                        checkResults parseResults source
-                        filePath startLine startCharacter
-                let interfaceActions =
-                    match interfaceStub with
-                    | Some action -> [ wrapGeneratedAction state action ]
-                    | None -> []
-                return diagActions @ typeActions @ analyzerActions @ interfaceActions
-        with ex ->
-            Log.Debug(ex, "[F# CodeFixes] failed")
-            return []
-    }
+    getCodeActionsCore state workspace filePath startLine startCharacter endLine
 
 /// Resolve a cached code action by ID.
 let resolveCodeAction (state: CodeFixState) (actionId: int) : WorkspaceEdit option =

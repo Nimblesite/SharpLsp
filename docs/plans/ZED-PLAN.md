@@ -76,13 +76,13 @@ src/editors/zed/
 
 ```bash
 # Native check (development)
-cd src/editors/zed && cargo check
+cargo check --manifest-path src/editors/zed/Cargo.toml
 
 # WASM build (release)
-cd src/editors/zed && cargo build --release --target wasm32-wasip1
+cargo build --manifest-path src/editors/zed/Cargo.toml --release --target wasm32-wasip1
 
 # Run tests
-cd src/editors/zed && cargo test
+cargo test --manifest-path src/editors/zed/Cargo.toml
 ```
 
 Requires `rustup target add wasm32-wasip1` for WASM builds.
