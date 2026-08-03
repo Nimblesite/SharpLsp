@@ -1,0 +1,29 @@
+{% set homeText = i18n[lang or defaultLanguage].home %}
+{% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
+{% if release.recent and release.recent.length %}
+<section class="home-section shipping" aria-labelledby="releases-heading">
+  <header class="section-heading split-heading">
+    <div>
+      <p class="eyebrow">{{ homeText.releaseEyebrow | default("Latest releases") }}</p>
+      <h2 id="releases-heading">{{ homeText.releasesTitle }}</h2>
+      <p>{{ homeText.releasesSubtitle }}</p>
+    </div>
+    <a class="text-link" href="{{ langPrefix }}/releases/">{{ homeText.releasesViewAll }} <span aria-hidden="true">→</span></a>
+  </header>
+
+  <div class="release-list">
+    {% for item in release.recent %}
+    <article class="release-card{% if not item.summary %} compact{% endif %}">
+      <div class="release-meta">
+        <span>{{ item.tag }}</span>
+        {% if item.publishedAt %}<time datetime="{{ item.publishedAt }}">{{ item.publishedAt | dateFormat(lang) }}</time>{% endif %}
+        {% if item.prerelease %}<small>{{ homeText.releasePrerelease }}</small>{% endif %}
+      </div>
+      <h3><a href="{{ item.url }}" rel="noopener">{{ item.title }}</a></h3>
+      {% if item.summary %}<p>{{ item.summary }}</p>{% endif %}
+      <a class="text-link" href="{{ item.url }}" rel="noopener">{{ homeText.releaseNotes }} <span aria-hidden="true">→</span></a>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}

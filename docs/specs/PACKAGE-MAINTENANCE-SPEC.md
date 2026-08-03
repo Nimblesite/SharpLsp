@@ -1,10 +1,12 @@
-# [PKG] Package Maintenance Specification
+# [PKG-MAINTENANCE] Package Maintenance Specification
 
 The Rust host and sidecars implement two NuGet-maintenance operations exposed through Solution Explorer; the VS Code extension is a thin client.
 
-Both operations MUST reuse `src/nuget/`: `edit` delegates formatting-preserving `PackageReference`/`PackageVersion` mutations to the C# sidecar's `Microsoft.Build.Construction.ProjectRootElement`, `parse` reads package items, `targets` enumerates workspaces and detects CPM, and `cli` runs `dotnet list`/`restore`. They MUST NOT introduce another XML editor or restore pipeline.
+Both operations MUST reuse [the Rust NuGet modules](../../src/sharplsp/src/nuget/): `edit` delegates formatting-preserving `PackageReference`/`PackageVersion` mutations to the C# sidecar's `Microsoft.Build.Construction.ProjectRootElement`, `parse` reads package items, `targets` enumerates workspaces and detects CPM, and `cli` runs `dotnet list`/`restore`. They MUST NOT introduce another XML editor or restore pipeline.
 
 Unused-package detection MUST support Roslyn `.csproj` and FSharp.Compiler.Service `.fsproj` projects.
+
+Primary entry points: [unused.rs](../../src/sharplsp/src/nuget/unused.rs), [consolidate.rs](../../src/sharplsp/src/nuget/consolidate.rs), [WorkspaceManager.Packages.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.Packages.cs), and [package-maintenance.ts](../../src/editors/vscode/src/package-maintenance.ts).
 
 ## [PKG-UNUSED] Remove Unused Packages
 

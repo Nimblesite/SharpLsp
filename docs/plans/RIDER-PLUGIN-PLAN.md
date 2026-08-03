@@ -26,7 +26,7 @@ The Rider plugin is "done" when:
 
 ## Phase summaries
 
-**Phase 1 — Gradle scaffold.** Stand up `editors/rider/` with a Gradle
+**Phase 1 — Gradle scaffold.** Stand up `src/editors/rider/` with a Gradle
 wrapper, `build.gradle.kts` using the 2.x `org.jetbrains.intellij.platform`
 plugin targeting Rider 2024.3, a `plugin.xml` that depends on
 `com.intellij.modules.lsp`, and just enough Kotlin stubs for
@@ -94,7 +94,7 @@ only — Community editions are not supported.
 
 ### Phase 1: Gradle scaffold
 
-- [x] Create `editors/rider/` directory
+- [x] Create `src/editors/rider/` directory
 - [x] Write `settings.gradle.kts` — `rootProject.name = "sharplsp-rider"`
 - [x] Write `build.gradle.kts` using `org.jetbrains.intellij.platform` 2.14
 - [x] Write `gradle.properties` pinning platform version (Rider 2024.3)

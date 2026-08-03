@@ -1,4 +1,4 @@
-# [SHARPLSP] SHARPLSP
+# [SHARPLSP-SPEC] SHARPLSP
 
 **TECHNICAL SPECIFICATION v0.1**
 
@@ -19,6 +19,8 @@ SharpLsp is an open-source, editor-agnostic [LSP 3.17](https://microsoft.github.
 ### [SHARPLSP-ARCHITECTURE-TIERS] High-Level Architecture
 
 SharpLsp uses a Rust host for the LSP protocol and syntax analysis, plus managed .NET sidecars for C#/[Roslyn](https://github.com/dotnet/roslyn) and F#/[FCS](https://fsharp.github.io/fsharp-compiler-docs/) semantic analysis.
+
+Primary implementations: [main.rs](../../src/sharplsp/src/main.rs), [handlers.rs](../../src/sharplsp/src/handlers.rs), [semantic.rs](../../src/sharplsp/src/semantic.rs), and the [sidecar protocol](../../src/sharplsp/src/sidecar/protocol.rs).
 
 **Tier 1 — Rust LSP Host**
 
@@ -289,7 +291,7 @@ Both C# and F# columns require full support unless noted.
 
 Every completion item returned by either sidecar carries an explicit LSP `textEdit`, not just an `insertText`. Its range is the identifier span **at the caret** — the typed prefix to the left of the cursor *plus any identifier characters that already follow it on the same line*. Accepting an item therefore **replaces** that identifier instead of being appended to it: completing `WriteLine` at `Console.|WriteLine` yields `Console.WriteLine`, never `Console.WriteLineWriteLine` (GitHub #178). Without a `textEdit` the editor falls back to its own word-boundary heuristic, which appends after a member-access trigger character and duplicates the identifier.
 
-The C# sidecar derives the span from [`CompletionService.GetDefaultCompletionListSpan`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdefaultcompletionlistspan) extended over trailing identifier characters; the F# sidecar derives it from the FCS partial-name island (`QuickParse.GetPartialLongNameEx`) with the same trailing-character extension. The `NewText` is the item's insert text. The Rust host maps the flat sidecar edit onto `CompletionItem.textEdit` in `src/semantic.rs`.
+The C# sidecar derives the span from [`CompletionService.GetDefaultCompletionListSpan`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdefaultcompletionlistspan) extended over trailing identifier characters; the F# sidecar derives it from the FCS partial-name island (`QuickParse.GetPartialLongNameEx`) with the same trailing-character extension. The `NewText` is the item's insert text. The Rust host maps the flat sidecar edit onto `CompletionItem.textEdit` in `src/sharplsp/src/semantic.rs`.
 
 ### [SHARPLSP-FEATURES-NAVIGATION] Navigation
 

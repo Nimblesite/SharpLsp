@@ -54,7 +54,7 @@ remaining gaps are explicit rather than implied.
 - [x] Route to the sidecar matching the document's language (`sidecar_for_path`); `.fsi` is
       deliberately excluded — implements [SCRIPT-DETECT], [SCRIPT-FSX-FSI]
 - [x] Keep health-monitor start strictly after `workspace/open` completes — [SCRIPT-ROUTE-HEALTH]
-- [x] Remove trailing whitespace introduced in `src/main.rs` (failed `cargo fmt --check`)
+- [x] Remove trailing whitespace introduced in `src/sharplsp/src/main.rs` (failed `cargo fmt --check`)
 - [x] Flatten the 4-level `if let` nest in `init_workspace_for_file` into
       `opened_document_path` + `sidecar_for_path` (functions <20 LOC)
 - [ ] Extract classification into `src/document_kind.rs` with the full
@@ -165,7 +165,7 @@ remaining gaps are explicit rather than implied.
 
 Coarse, real-artifact tests only — real files on disk, real Roslyn, real FCS, no mocks.
 
-`sidecars/SharpLsp.Sidecar.CSharp.Tests/WorkspaceManagerSingleFileTests.cs`:
+`src/sidecars/SharpLsp.Sidecar.CSharp.Tests/WorkspaceManagerSingleFileTests.cs`:
 
 - [x] `.cs` file-based app: BCL symbols bind with **zero** error diagnostics — [SCRIPT-TESTS]
 - [x] `.cs` file-based app with `#:include`: symbols from the included file resolve — [SCRIPT-TESTS]
@@ -181,7 +181,7 @@ Coarse, real-artifact tests only — real files on disk, real Roslyn, real FCS, 
       `csharp.solution_path`, never the deferred path — [SCRIPT-DEGRADE]
 - [x] `Classify` maps extensions to compilation models — [SCRIPT-DETECT]
 
-`sidecars/SharpLsp.Sidecar.FSharp.Tests/FSharpScriptTests.fs`:
+`src/sidecars/SharpLsp.Sidecar.FSharp.Tests/FSharpScriptTests.fs`:
 
 - [x] Standalone `.fsx` loads without an `.fsproj` — [SCRIPT-FSX-OPTIONS]
 - [x] `#load` closure includes the loaded script — [SCRIPT-CLOSURE]
@@ -189,7 +189,7 @@ Coarse, real-artifact tests only — real files on disk, real Roslyn, real FCS, 
 
 Still to write:
 
-- [ ] Host-level `tests/lsp_e2e.rs`: opening a `.md` first, then a `.cs`, still initializes the C#
+- [ ] Host-level `src/sharplsp/tests/lsp_e2e.rs`: opening a `.md` first, then a `.cs`, still initializes the C#
       workspace — latch regression test for [SCRIPT-ROUTE-LAZY]
 - [ ] Host-level: opening a `.cs` does not spawn the F# sidecar, and vice versa — [SCRIPT-ROUTE-LAZY]
 - [ ] `.cs` file-based app with `#:package`: package symbols bind after restore (phase 2) — [SCRIPT-TESTS]

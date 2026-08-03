@@ -1,4 +1,4 @@
-# [RENAME] Rename Specification
+# [RENAME-SPEC] Rename Specification
 
 **Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
@@ -73,6 +73,8 @@ SharpLsp MUST support rename for these code element categories before rename is 
 ## [RENAME-ROUTING] Request Routing
 
 Rename requests are semantic requests.
+
+Implementations: [semantic.rs](../../src/sharplsp/src/semantic.rs), [CSharpSidecar.Features.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/CSharpSidecar.Features.cs), [FSharpRename.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpRename.fs), and the [full-stack feature tests](../../src/sharplsp/tests/e2e_modules/full_stack_features.rs).
 
 | Step | Component | Action |
 |---|---|---|

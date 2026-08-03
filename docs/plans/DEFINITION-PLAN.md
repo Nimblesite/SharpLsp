@@ -129,10 +129,10 @@ See `[DEFINITION-CROSSLANG]`.
 - [x] Shared metadata-as-source decompiler in Common — `MetadataDecompiler` (used by both sidecars; C# `MetadataNavigator` delegates to it)
 - [x] C# → F#: re-attach the dropped F# `<ProjectReference>` output DLL as a metadata reference and drop the empty stub project — `WorkspaceManager.AddCrossLanguageMetadataReferences`
 - [x] F# → C#: wire referenced C# project output DLLs into FCS options (`buildProjectOptions`) + `FSharpMetadataNavigator` decompiles external symbols in `extractDefinition`
-- [x] E2E test: cross-language navigation on a mixed C#/F# solution — `test_cross_language_definition_csharp_to_fsharp`, `test_cross_language_definition_fsharp_to_csharp` (`tests/e2e_modules/definition_cross_language.rs`)
+- [x] E2E test: cross-language navigation on a mixed C#/F# solution — `test_cross_language_definition_csharp_to_fsharp`, `test_cross_language_definition_fsharp_to_csharp` (`src/sharplsp/tests/e2e_modules/definition_cross_language.rs`)
 - [ ] Source-to-source cross-language navigation (land in the original `.fs`/`.cs` rather than decompiled metadata) — needs a cross-sidecar symbol index (P2, Phase 4)
 
-### Testing — Rust E2E (`tests/lsp_e2e.rs`)
+### Testing — Rust E2E (`src/sharplsp/tests/lsp_e2e.rs`)
 
 - [x] E2E test: C# go-to-definition on class name navigates to class declaration
 - [x] E2E test: C# go-to-definition on method call navigates to method body

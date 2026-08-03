@@ -1,4 +1,4 @@
-# Scripting and File-Based Apps Specification `[SCRIPT]`
+# Scripting and File-Based Apps Specification `[SCRIPT-SPEC]`
 
 **Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
@@ -42,7 +42,7 @@ Every opened document resolves to exactly one `DocumentKind` before any workspac
 
 Classification uses extension plus cone search, never content sniffing. `Unsupported` documents MUST NOT initialize or latch a sidecar workspace; a later supported document must still initialize it.
 
-Implementations: `src/main.rs`, `sidecars/SharpLsp.Sidecar.CSharp/Workspace/SolutionLoader.cs`, and `sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.SingleFile.cs`.
+Implementations: [main.rs](../../src/sharplsp/src/main.rs), [SolutionLoader.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/SolutionLoader.cs), and [WorkspaceManager.SingleFile.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.SingleFile.cs).
 
 ### Project cone precedence `[SCRIPT-CONE]`
 
@@ -72,7 +72,7 @@ Closure expansion does not re-add files and reports cycles as diagnostics. It is
 
 Targets the [.NET 10 file-based app model](https://learn.microsoft.com/en-us/dotnet/core/sdk/file-based-apps).
 
-Implementations: `sidecars/SharpLsp.Sidecar.CSharp/Workspace/FileLevelDirectives.cs`, `DocumentClosure.cs`, and `WorkspaceManager.SingleFile.cs`.
+Implementations: [FileLevelDirectives.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/FileLevelDirectives.cs), [DocumentClosure.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/DocumentClosure.cs), and [WorkspaceManager.SingleFile.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.SingleFile.cs).
 
 ### Directive parsing `[SCRIPT-FILEBASED-DIRECTIVES]`
 
@@ -149,7 +149,7 @@ A file-based app root file carries top-level statements. `#:include`d `.cs` file
 
 F# scripts use FCS directive resolution; SharpLsp MUST NOT reimplement it.
 
-Implementation: `sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs`.
+Implementation: [FSharpWorkspace.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs).
 
 ### Project options `[SCRIPT-FSX-OPTIONS]`
 
@@ -235,7 +235,7 @@ Cone search is bounded by [SCRIPT-CONE] and must not stat the whole tree.
 
 ## Testing `[SCRIPT-TESTS]`
 
-Tests drive real sidecars over IPC with real files. Implementations: `sidecars/SharpLsp.Sidecar.CSharp.Tests/WorkspaceManagerSingleFileTests.cs` and `sidecars/SharpLsp.Sidecar.FSharp.Tests/FSharpScriptTests.fs`.
+Tests drive real sidecars over IPC with real files: [WorkspaceManagerSingleFileTests.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp.Tests/WorkspaceManagerSingleFileTests.cs) and [FSharpScriptTests.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp.Tests/FSharpScriptTests.fs).
 
 Required coverage:
 - `.cs` file-based app: BCL completion resolves; hover on `Console.WriteLine` binds.

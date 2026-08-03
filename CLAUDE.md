@@ -202,6 +202,6 @@ Mapping (current → toolkit crate):
 | `src/config.rs` `sharplsp.toml` loader | `lspkit-config::load_from_ancestor` |
 | `src/handlers.rs` syntax-only handlers | `lspkit-server::Dispatcher::register` per method name |
 | `src/semantic_tokens.rs` `TokenCache` | (consumer-side cache; not in toolkit) |
-| .NET sidecar projects (`sidecars/SharpLsp.Sidecar.*`) | (engine — stays here. `lspkit-sidecar` is pure transport and does not bundle .NET- or Roslyn-specific code) |
+| .NET sidecar projects (`src/sidecars/SharpLsp.Sidecar.*`) | (engine — stays here. `lspkit-sidecar` is pure transport and does not bundle .NET- or Roslyn-specific code) |
 
 Code in this repo is **not** being removed — it stays canonical until the toolkit matures. This note exists so future agents reuse `lspkit` for new servers and avoid widening this repo's scaffolding.

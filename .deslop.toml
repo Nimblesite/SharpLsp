@@ -23,14 +23,14 @@ max_duplication_percent = 20.0
 # gitignore-style globs, matched relative to this file.
 exclude = [
     # Example / sample projects (test input, not codebase).
-    "examples/**",
+    "src/examples/**",
     # Test-input fixtures (sample sources consumed by the suites).
-    "tests/fixtures/**",
-    "editors/vscode/test-fixtures/**",
+    "src/sharplsp/tests/fixtures/**",
+    "src/editors/vscode/test-fixtures/**",
     # Rust end-to-end test suite (coarse e2e request/response scaffolding).
-    "tests/**",
+    "src/sharplsp/tests/**",
     # .NET sidecar test projects.
-    "sidecars/SharpLsp.Sidecar.CSharp.Tests/**",
-    "sidecars/SharpLsp.Sidecar.FSharp.Tests/**",
-    "sidecars/SharpLsp.Sidecar.Common.Tests/**",
+    "src/sidecars/SharpLsp.Sidecar.CSharp.Tests/**",
+    "src/sidecars/SharpLsp.Sidecar.FSharp.Tests/**",
+    "src/sidecars/SharpLsp.Sidecar.Common.Tests/**",
 ]

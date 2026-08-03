@@ -7,7 +7,7 @@ name: Release
 
 # Least-privilege default: every job is read-only unless it explicitly
 # escalates (the GitHub Release job needs contents: write; deploy-pages needs
-# pages/id-token). [SWR-SEC-TOKEN-PRIVILEGE]
+# pages/id-token). [DIST-SECRETS]
 permissions:
   contents: read
 
@@ -19,7 +19,7 @@ env:
 jobs:
   # Tag → release. The tagged SHA is built verbatim: NO branch detection, NO
   # commit, NO push. Stamping happens runner-local in each build job.
-  # [CI-RELEASE] [SWR-VERSION-BUILD-STAMPING]
+  # [DIST-RELEASE] [DIST-VERSION-INVARIANT]
   version:
     name: Prepare release version
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
@@ -45,14 +45,14 @@ jobs:
           npm install --prefix "$tmp" @nimblesite/shipwright-validate-manifest@0.9.0
           "$tmp/node_modules/.bin/shipwright-validate-manifest" \
             --schema .github/shipwright/deployment-toolkit.schema.json \
-            shipwright.json editors/vscode/shipwright.json
+            shipwright.json src/editors/vscode/shipwright.json
 
   # CodeQL release gate. Scans the tagged SHA with the current query set and
   # FAILS on any High/Critical finding. The `release` job `needs:` this, so a
   # failed scan blocks the GitHub Release and every downstream publish
   # (marketplace, open-vsx, pages). Runs in PARALLEL with build-vsix — rebuilding
   # is cheap; shipping an unscanned release is not. Reuses codeql.yml via
-  # workflow_call (DRY — no duplicated matrix). [GITHUB-CODE-SCANNING] [CI-RELEASE]
+  # workflow_call (DRY — no duplicated matrix). [DIST-CI-SECURITY] [DIST-RELEASE]
   codeql:
     name: CodeQL release gate
     permissions:
@@ -101,7 +101,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # Each build job stamps the version into the runner working tree from the
       # tag — deterministic, no artifact hand-off, nothing committed.
-      # [CI-RELEASE] [SWR-VERSION-BUILD-STAMPING]
+      # [DIST-RELEASE] [DIST-VERSION-INVARIANT]
       - name: Stamp release version
         shell: bash
         run: make _stamp-version VERSION="${{ needs.version.outputs.version }}"
@@ -121,9 +121,9 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: editors/vscode/package-lock.json
+          cache-dependency-path: src/editors/vscode/package-lock.json
       - name: Install VS Code extension dependencies
-        run: npm ci --prefix editors/vscode
+        run: npm ci --prefix src/editors/vscode
       - name: Install Linux ARM64 cross linker
         if: matrix.rust_target == 'aarch64-unknown-linux-gnu'
         shell: bash
@@ -160,7 +160,7 @@ jobs:
           unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/all/sharplsp-sidecar-csharp"
           unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -F "bin/all/sharplsp-sidecar-fsharp"
           # Negative check: no foreign-platform binary dirs leaked into the VSIX.
-          # [SWR-VSIX-VERIFY]
+          # [DIST-CI-SMOKE]
           if unzip -l "dist/sharplsp-${{ matrix.platform }}.vsix" | grep -Eo 'bin/[a-z0-9]+-[a-z0-9]+/sharplsp' | grep -v "bin/${{ matrix.platform }}/sharplsp"; then
             echo "::error::foreign-platform binary found in dist/sharplsp-${{ matrix.platform }}.vsix"
             exit 1
@@ -199,7 +199,7 @@ jobs:
           done
           cat SHA256SUMS
       # Hyphenated SemVer tags (v0.2.0-rc.1, v0.2.0-beta) are marked prerelease so
-      # they never become the "Latest release". [BRANCH] [CI-RELEASE]
+      # they never become the "Latest release". [DIST-RELEASE] [DIST-RELEASE]
       - name: Create GitHub release
         env:
           GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
@@ -217,7 +217,7 @@ jobs:
             artifacts/SHA256SUMS
 
   # Website deploys on every v* release tag (never on push to main) so the site
-  # never gets ahead of the released artifact. [CI-WORKFLOWS]
+  # never gets ahead of the released artifact. [DIST-CI-LAYOUT]
   deploy-pages:
     name: Deploy website to GitHub Pages
     needs: release
@@ -239,7 +239,7 @@ jobs:
     # deterministic (repo:OWNER/REPO:environment:release), so ONE federated
     # credential covers every v* tag — Entra rejects tag wildcards in an explicit
     # federated subject. Secrets (Azure app's client + tenant id, neither
-    # sensitive) live on the `release` environment. [SWR-SEC-TOKEN-PRIVILEGE]
+    # sensitive) live on the `release` environment. [DIST-SECRETS]
     environment: release
     permissions:
       contents: read

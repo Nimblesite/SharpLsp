@@ -40,7 +40,7 @@ Changing the monorepo gate or static analyzer settings via `workspace/didChangeC
 
 ### [ANALYZERS-CONFIG-IMPL] Implemented Configuration (F#)
 
-The F# sidecar gate is live. The Rust host reads an `[analyzers]` table from `sharplsp.toml` and pushes the flags to each sidecar via the `analyzers/configure` request immediately after `workspace/open` (see [config.rs](../../src/config.rs) `AnalyzersConfig` and [main.rs](../../src/main.rs) `configure_analyzers`):
+The F# sidecar gate is live. The Rust host reads an `[analyzers]` table from `sharplsp.toml` and pushes the flags to each sidecar via the `analyzers/configure` request immediately after `workspace/open` (see [config.rs](../../src/sharplsp/src/config.rs) `AnalyzersConfig` and [main.rs](../../src/sharplsp/src/main.rs) `configure_analyzers`):
 
 ```toml
 [analyzers]
@@ -140,9 +140,7 @@ By project decision the F# dead-code analyzer (`SLSPF0101`) escalates severity i
 | `monorepo = false` | **Warning** | not reported (assumed external API) |
 | `monorepo = true`  | **Error**   | **Error** |
 
-Reporting private/internal dead code (regardless of monorepo mode) extends beyond
-[ANALYZERS-UNUSED-PUBLIC]: a private/internal symbol can never be reached from
-outside its assembly, so its deadness is sound without the monorepo gate.
+Reporting private/internal dead code (regardless of monorepo mode) extends beyond [ANALYZERS-UNUSED-PUBLIC]: a private/internal symbol can never be reached from outside its assembly, so its deadness is sound without the monorepo gate.
 
 ### [ANALYZERS-FSAC-PARITY] File-Local Analyzers (F#, FSAC parity)
 
@@ -160,11 +158,11 @@ These are independent of the monorepo gate and the `dead_code` flag.
 
 Diagnostics include stable symbol identity in `Diagnostic.data`.
 
-The raw FCS findings (`open` ranges and `(range, relativeName)` simplifications) are computed once in [FSharpLocalAnalysis.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpLocalAnalysis.fs) (`getFileAnalyzerFindings`) and shared by both the hint producer above and the code fixes below, so the greyed range and the offered fix can never disagree.
+The raw FCS findings (`open` ranges and `(range, relativeName)` simplifications) are computed once in [FSharpLocalAnalysis.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpLocalAnalysis.fs) (`getFileAnalyzerFindings`) and shared by both the hint producer above and the code fixes below, so the greyed range and the offered fix can never disagree.
 
 #### [ANALYZERS-FSAC-CODEFIX-UNUSED-OPEN] "Remove unused open" code fix
 
-The `textDocument/codeAction` handler turns each `SLSPF0102` finding overlapping the request range into a `Remove unused open` quick fix ([FSharpCodeFixes.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeFixes.fs) `removeUnusedOpenActions`). Resolving it deletes the whole `open` line — from the start of its first line through the start of the line after its last — matching FsAutoComplete. E2E: the F# sidecar IPC suite (`code action offers remove-unused-open …`) and the VSIX suite (`F# LSP — Code Fixes`).
+The `textDocument/codeAction` handler turns each `SLSPF0102` finding overlapping the request range into a `Remove unused open` quick fix ([FSharpCodeFixes.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeFixes.fs) `removeUnusedOpenActions`). Resolving it deletes the whole `open` line — from the start of its first line through the start of the line after its last — matching FsAutoComplete. E2E: the F# sidecar IPC suite (`code action offers remove-unused-open …`) and the VSIX suite (`F# LSP — Code Fixes`).
 
 #### [ANALYZERS-FSAC-CODEFIX-SIMPLIFY-NAME] "Simplify name" code fix
 
@@ -172,7 +170,7 @@ Each `SLSPF0103` finding overlapping the request range becomes a `Simplify name`
 
 #### [ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB] "Implement interface" code fix
 
-A type-informed code action handles missing **interface members**. When the cursor is on an `interface IFoo …` declaration with unimplemented members, FCS `InterfaceStubGenerator` (`TryFindInterfaceDeclaration` → `GetImplementedMemberSignatures` → `FormatInterface`) generates `member _.X … = failwith "…"` stubs for the missing members ([FSharpCodeActions.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeActions.fs) `tryGenerateInterfaceStub`, wired into `getCodeActions` Phase 4). E2E: the IPC suite (`code action offers implement-interface stub …`) and the VSIX suite (`F# LSP — Implement Interface`).
+A type-informed code action handles missing **interface members**. When the cursor is on an `interface IFoo …` declaration with unimplemented members, FCS `InterfaceStubGenerator` (`TryFindInterfaceDeclaration` → `GetImplementedMemberSignatures` → `FormatInterface`) generates `member _.X … = failwith "…"` stubs for the missing members ([FSharpCodeActions.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeActions.fs) `tryGenerateInterfaceStub`, wired into `getCodeActions` Phase 4). E2E: the IPC suite (`code action offers implement-interface stub …`) and the VSIX suite (`F# LSP — Implement Interface`).
 
 ## [ANALYZERS-PERFORMANCE] Performance And Salsa Queries
 

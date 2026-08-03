@@ -37,8 +37,8 @@ nohup.out
 coverage/
 !.config/coverage/
 !.config/coverage/**
-!scripts/coverage/
-!scripts/coverage/**
+!tools/coverage/
+!tools/coverage/**
 lcov.info
 *.profraw
 *.profdata
@@ -74,7 +74,7 @@ scratch/
 # RUST
 # =============================================================================
 /target
-editors/zed/target/
+src/editors/zed/target/
 
 # =============================================================================
 # TYPESCRIPT / NODE
@@ -116,9 +116,9 @@ project.lock.json
 # Screenshot test artifacts at root
 /*.png
 
-editors/rider/.intellijPlatform/
+src/editors/rider/.intellijPlatform/
 
-website/test-results/
+src/website/test-results/
 
 test-results/
 
@@ -130,6 +130,9 @@ deslop-report.*
 deslop-*.log
 .ghissues/
 .vscode/code-navigator/
-# Real-world repos cloned by the e2e stress suites (editors/vscode real-repo tests).
+# Real-world repos cloned by the e2e stress suites (src/editors/vscode real-repo tests).
 # Never committed - fetched on demand at pinned tags.
-/real-world-fixtures/
+/src/fixtures/real-world/
+
+
+/tools/migration/cargo-split/target/debug/

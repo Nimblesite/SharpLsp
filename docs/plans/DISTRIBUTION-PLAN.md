@@ -12,23 +12,23 @@ This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vsc
 
 ### VS Code extension wiring
 
-- [x] Add `"extensionDependencies": ["ms-dotnettools.vscode-dotnet-runtime"]` to [editors/vscode/package.json](../../editors/vscode/package.json) (insert after the `engines` block, around line 11)
-- [x] Create new file `editors/vscode/src/dotnetRuntime.ts` exporting `acquireDotnet10(log, statusBar): Promise<string>` returning the path to `dotnet` / `dotnet.exe`
+- [x] Add `"extensionDependencies": ["ms-dotnettools.vscode-dotnet-runtime"]` to [src/editors/vscode/package.json](../../src/editors/vscode/package.json) (insert after the `engines` block, around line 11)
+- [x] Create new file `src/editors/vscode/src/dotnetRuntime.ts` exporting `acquireDotnet10(log, statusBar): Promise<string>` returning the path to `dotnet` / `dotnet.exe`
 - [x] In `dotnetRuntime.ts`, first call `dotnet.findPath` with `{ acquireContext: { version: '10.0', mode: 'runtime', requestingExtensionId: 'nimblesite.sharplsp' }, versionSpecRequirement: 'greater_than_or_equal' }` — if it returns a path, skip acquisition
 - [x] Otherwise call `dotnet.acquire` with `{ version: '10.0', mode: 'runtime', requestingExtensionId: 'nimblesite.sharplsp' }`
 - [x] Wrap the call in `vscode.window.withProgress({ location: vscode.window.ProgressLocation.Notification, title: 'SharpLsp: Installing .NET 10 runtime', cancellable: false }, ...)` — non-interactive toast spinner
 - [x] Update `SharpLspStatusBar` to show "Installing .NET 10…" via `statusBar.setState(ServerState.Starting)` plus a custom message during acquisition
 - [x] Define a typed `DotnetAcquireError` thrown on acquisition failure
-- [x] In [editors/vscode/src/extension.ts](../../editors/vscode/src/extension.ts), insert `step 10c: acquireDotnet10` between line 133 (`initProjectDepsStore`) and line 135 (`activateDeploymentToolkit`); store `dotnetPath` for downstream use
+- [x] In [src/editors/vscode/src/extension.ts](../../src/editors/vscode/src/extension.ts), insert `step 10c: acquireDotnet10` between line 133 (`initProjectDepsStore`) and line 135 (`activateDeploymentToolkit`); store `dotnetPath` for downstream use
 - [x] On `DotnetAcquireError`, render a non-modal error notification with `[Open dot.net]` (uses `vscode.env.openExternal`) and `[Show log]` buttons — both informational, no required action; enter degraded state without throwing
 - [x] Register a `sharplsp.retryDotnetAcquisition` command for the degraded-state recovery path (re-runs `acquireDotnet10` and resumes activation if it succeeds)
-- [x] In [editors/vscode/src/client.ts](../../editors/vscode/src/client.ts), extend `sidecarEnv` (lines 78–87) to accept `dotnetPath` and set `DOTNET_ROOT` to its directory on the env passed to the Rust LSP host
+- [x] In [src/editors/vscode/src/client.ts](../../src/editors/vscode/src/client.ts), extend `sidecarEnv` (lines 78–87) to accept `dotnetPath` and set `DOTNET_ROOT` to its directory on the env passed to the Rust LSP host
 - [x] Update `client.start(...)` signature in extension.ts to thread `dotnetPath` through
 
 ### Rust host (sidecar spawn)
 
-- [x] Locate the Rust sidecar spawn site — `src/sidecar/manager.rs` lines 168–179 (`tokio::process::Command::new(&self.spawn_command)`)
-- [x] Verify `Command::spawn` inherits the parent process env — confirmed: no `env_clear` / `env_remove` / explicit `.env(…)` calls anywhere in `src/sidecar/`, so `DOTNET_ROOT` flows VS Code → sharplsp → sidecar via tokio's default env inheritance
+- [x] Locate the Rust sidecar spawn site — `src/sharplsp/src/sidecar/manager.rs` lines 168–179 (`tokio::process::Command::new(&self.spawn_command)`)
+- [x] Verify `Command::spawn` inherits the parent process env — confirmed: no `env_clear` / `env_remove` / explicit `.env(…)` calls anywhere in `src/sharplsp/src/sidecar/`, so `DOTNET_ROOT` flows VS Code → sharplsp → sidecar via tokio's default env inheritance
 - [~] Unit test for `DOTNET_ROOT` propagation — skipped per CLAUDE.md ("No unit tests. Only COARSE e2e tests."). The end-to-end activation checklist below validates the full path.
 
 ### Specs & docs
@@ -60,26 +60,26 @@ This rev replaces that stance with delegation to Microsoft's `ms-dotnettools.vsc
 
 Triggered by the v0.1.0 production log captured 2026-04-30: missing bundled binaries caused `activate()` to throw, which VS Code logs to its developer console where users do not see it. Spec section: `[DIST-FAILURE-UX]`.
 
-- [x] Introduce `editors/vscode/src/result.ts` with `Result<T, E>`, `ok()`, `err()` per CLAUDE.md "all fallible functions return Result<T, E>"
-- [x] Rewrite `editors/vscode/src/dotnetRuntime.ts` so `acquireDotnet10` returns `Result<string>` (no throws); `safeExecuteCommand` adapts upstream rejections into `Err`
+- [x] Introduce `src/editors/vscode/src/result.ts` with `Result<T, E>`, `ok()`, `err()` per CLAUDE.md "all fallible functions return Result<T, E>"
+- [x] Rewrite `src/editors/vscode/src/dotnetRuntime.ts` so `acquireDotnet10` returns `Result<string>` (no throws); `safeExecuteCommand` adapts upstream rejections into `Err`
 - [x] Add the missing `architecture` field to both `dotnet.acquire` and `dotnet.findPath` payloads (per `[DIST-API-PARAMETERS]`); export `dotnetArchitecture()` for tests
-- [x] In `editors/vscode/src/extension.ts`, make `activate()` always resolve — outer catch surfaces a non-modal toast and returns a degraded API
+- [x] In `src/editors/vscode/src/extension.ts`, make `activate()` always resolve — outer catch surfaces a non-modal toast and returns a degraded API
 - [x] Replace the `throw new Error(msg)` on the deployment-toolkit failure path with a non-modal toast + degraded return
 - [x] Replace the deferred `window.showErrorMessage` on the `client.start` failure with `notifyActivationFailure(headline, detail)` (consistent UX)
 - [x] Add `notifyActivationFailure(headline, detail)` exported helper with `[Show Log]` and `[Restart Window]` buttons
 - [x] Add `degradedApi()` helper so every error path returns a usable API surface
 - [x] Convert the retry command to consume `Result` from `acquireDotnet10`
 - [x] Tag every Result-based path with `Implements [DIST-FAILURE-UX]` / `Implements [DIST-API-PARAMETERS]` per CLAUDE.md spec-ID rule
-- [x] Add `editors/vscode/src/test/suite/unit-result.test.ts` — pins the Result type contract *(deleted in the #125 e2e conversion; coverage lives in the e2e suites)*
-- [x] Add `editors/vscode/src/test/suite/unit-dotnet-runtime.test.ts` — patches `vscode.commands.executeCommand`, asserts the four required fields are sent, asserts no path throws *(deleted in the #125 e2e conversion; `lifecycle-e2e.test.ts` covers the acquisition flow end-to-end)*
-- [x] Add `editors/vscode/src/test/suite/unit-failure-ux.test.ts` — asserts `activate()` resolves (never rejects), the retry command is registered, `extensionDependencies` declares the .NET Install Tool, `notifyActivationFailure` is exported *(deleted in the #125 e2e conversion; most coverage moved to `lifecycle-e2e.test.ts`/`extension.test.ts` — the `extensionDependencies` guards were dropped and restored below)*
+- [x] Add `src/editors/vscode/src/test/suite/unit-result.test.ts` — pins the Result type contract *(deleted in the #125 e2e conversion; coverage lives in the e2e suites)*
+- [x] Add `src/editors/vscode/src/test/suite/unit-dotnet-runtime.test.ts` — patches `vscode.commands.executeCommand`, asserts the four required fields are sent, asserts no path throws *(deleted in the #125 e2e conversion; `lifecycle-e2e.test.ts` covers the acquisition flow end-to-end)*
+- [x] Add `src/editors/vscode/src/test/suite/unit-failure-ux.test.ts` — asserts `activate()` resolves (never rejects), the retry command is registered, `extensionDependencies` declares the .NET Install Tool, `notifyActivationFailure` is exported *(deleted in the #125 e2e conversion; most coverage moved to `lifecycle-e2e.test.ts`/`extension.test.ts` — the `extensionDependencies` guards were dropped and restored below)*
 
 ### Salvaged from the `fixrelease` branch (2026-07-16 audit)
 
 A full audit of the retired `fixrelease` branch (39 commits, 90 files) found everything absorbed by main except two items, restored here:
 
 - [x] Restore the `[DIST-RUNTIME-ACQUIRE]` manifest guards dropped by the #125 e2e conversion — `extension.test.ts` now asserts `extensionDependencies` declares the .NET Install Tool and that it resolves in the test host (the test host installs it unconditionally via `.vscode-test.mjs`, so nothing else fails when the declaration is removed)
-- [x] Salvage `scripts/vsix/resolve-symlink-stubs.mjs` (from the branch's auto-stash) — resolves Git text-symlink stubs for the icon assets on `core.symlinks=false` checkouts; wired into `pretest`/`vscode:prepublish` per [DIST-VSIX-ASSET-INTEGRITY], invariant asserted e2e in `bundled-binary.test.ts`
+- [x] Salvage `tools/vsix/resolve-symlink-stubs.mjs` (from the branch's auto-stash) — resolves Git text-symlink stubs for the icon assets on `core.symlinks=false` checkouts; wired into `pretest`/`vscode:prepublish` per [DIST-VSIX-ASSET-INTEGRITY], invariant asserted e2e in `bundled-binary.test.ts`
 
 ### Spec hygiene — sweep numbered headings (CLAUDE.md violation)
 
@@ -134,7 +134,7 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 ### CI wall-clock ([DIST-CI-RUST-SHARDS])
 
 - [x] Split `test-rust` into 2 nextest hash-partition shards (`make _test-rust-shard`)
-- [x] Union-merge shard lcov + single ratchet gate (`coverage-rust` job, `scripts/coverage/merge-lcov.mjs`)
+- [x] Union-merge shard lcov + single ratchet gate (`coverage-rust` job, `tools/coverage/merge-lcov.mjs`)
 - [x] Move the `--version` contract checks to a dedicated `version-contract` job
 - [x] Run test jobs concurrently with `lint` (removed `needs: lint`)
 - [ ] Confirm shard wall times on a real PR run; rebalance `SHARD_COUNT` if a shard drifts past ~6 min
@@ -142,7 +142,7 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 ### Windows VS Code feature chunks ([DIST-CI-WIN-VSIX])
 
 - [x] Replace the `MOCHA_GREP` smoke subset with file-glob chunk selection (`MOCHA_FILES` in `src/test/suite/index.ts`); a glob matching nothing is a hard error
-- [x] Declare chunk membership once in `editors/vscode/test-chunks.json`, read by `scripts/vsix/vsix-test-chunks.mjs` (`files` / `matrix` / `check`)
+- [x] Declare chunk membership once in `src/editors/vscode/test-chunks.json`, read by `tools/vsix/vsix-test-chunks.mjs` (`files` / `matrix` / `check`)
 - [x] Cover the whole feature surface on Windows: `lifecycle`, `lsp`, `fsharp`, `debug` (netcoredbg + Test Explorer + CodeLens), `profiler` (trace/counters/dumps + FSI/build/hot-reload), `explorer` (tree + context menus), `packages` (scaffolding + NuGet)
 - [x] Guard completeness in lint (`_check-vsix-chunks`) so a new suite cannot silently skip Windows CI
 - [x] Build once / fan out: one Windows `build` job publishes host + sidecars; chunks stage via `_stage-vsix-binary-only`
@@ -158,7 +158,7 @@ Every one of these shipped green on Ubuntu and had never executed on Windows at 
 - [x] `debug-e2e.test.ts` compared three resolved `program` paths the same way — the auto-detected `.dll` from a real `.csproj`, the `provideDebugConfigurations` default, and the `sharplsp.debugProgram` entry point. All three now use `comparablePath()`.
 - [x] `scaffolding-e2e.test.ts` compared `generateFileContent`'s `\n` output against the editor buffer and the saved file. VS Code gives a new document the platform EOL and rewrites inserted text to match, so on Windows both legitimately hold `\r\n`. Now normalized via `comparableText()`; the content assertions are unchanged.
 - [x] `testing-lens-e2e.test.ts` asserted the "no discovered test matches" warning path using a fixture method named `Adds_TwoNumbers` — the same name `test-explorer-e2e.test.ts` discovers into the shared `SharpLspTestController`. The suite therefore passed or failed on whether that discovery won the race (green on Ubuntu, red on Windows). Fixture methods are now suite-unique (`Lens_Adds*`), so the precondition holds regardless of execution order.
-  - **Open product bug this de-pressurized:** `runTestByMethodName` ([src/test-lens.ts](../../editors/vscode/src/test-lens.ts)) discards the URI its command receives and matches ANY discovered test whose id's last dot-segment equals the bare method name, last-match-wins — so run/debug-at-cursor can execute a test from a different project, and `findResultByMethodName` mis-attributes the CodeLens badge the same way. The rename is still correct (suites must be order-independent), but the collision is now untested. Needs a URI/project-scoped lookup plus a regression test.
+  - **Open product bug this de-pressurized:** `runTestByMethodName` ([src/test-lens.ts](../../src/editors/vscode/src/test-lens.ts)) discards the URI its command receives and matches ANY discovered test whose id's last dot-segment equals the bare method name, last-match-wins — so run/debug-at-cursor can execute a test from a different project, and `findResultByMethodName` mis-attributes the CodeLens badge the same way. The rename is still correct (suites must be order-independent), but the collision is now untested. Needs a URI/project-scoped lookup plus a regression test.
 
 Two further failure classes were investigated and turned out **not** to be defects, so no code changed:
 
@@ -167,7 +167,7 @@ Two further failure classes were investigated and turned out **not** to be defec
 ### CI workflow layout ([DIST-CI-LAYOUT])
 
 - [x] Split `ci.yml` into reusable workflows: `ci-lint`, `ci-rust`, `ci-dotnet`, `ci-vsix`, `ci-vsix-windows`
-- [x] De-duplicate the PATH-purge step into `scripts/vsix/purge-path-binaries.sh` (was inline in three jobs)
+- [x] De-duplicate the PATH-purge step into `tools/vsix/purge-path-binaries.sh` (was inline in three jobs)
 - [x] De-duplicate the test-host env scrubbing into the `VSIX_TEST_ENV` Make variable
 - [x] Fix the Rust test job's NuGet cache step (was `actions/setup-node` with `actions/cache` inputs, so it never cached)
 

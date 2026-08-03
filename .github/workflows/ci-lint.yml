@@ -37,30 +37,30 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: "~/.nuget/packages"
-          key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}"
+          key: "${{ runner.os }}-nuget-${{ hashFiles('src/sidecars/**/*.csproj', 'src/sidecars/Directory.Build.props') }}"
           restore-keys: "${{ runner.os }}-nuget-"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: editors/vscode/package-lock.json
+          cache-dependency-path: src/editors/vscode/package-lock.json
       - name: Install dependencies
         run: |
           dotnet tool restore
-          npm ci --prefix editors/vscode
+          npm ci --prefix src/editors/vscode
       - name: Lint (Rust)
         run: make _lint-rust PROFILE=debug
       - name: Lint (Zed)
         run: make _lint-zed
       - name: Format check (.NET)
-        run: dotnet csharpier check sidecars/
+        run: dotnet csharpier check src/sidecars/
       - name: Lint (.NET)
         run: make _lint-dotnet
       - name: Sidecar pack smoke test
         run: |
-          dotnet pack sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
+          dotnet pack src/sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
             -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-          dotnet pack sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
+          dotnet pack src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
             -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
           ls -la /tmp/nupkg-smoke/*.nupkg
       - name: Format check (VS Code)
@@ -68,7 +68,7 @@ jobs:
         # so a new patch release can reformat previously-clean files and fail
         # this gate non-deterministically (local prettier drifts from CI's).
         # Bump this deliberately, in lockstep with a repo-wide `--write`.
-        run: cd editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
+        run: cd src/editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
       - name: Lint (VS Code)
         # Includes `_check-vsix-chunks`: fails if any VS Code suite belongs to no
         # Windows feature chunk, so a new suite cannot silently skip

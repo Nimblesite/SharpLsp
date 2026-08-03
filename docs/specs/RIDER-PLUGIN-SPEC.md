@@ -29,7 +29,7 @@ Rider JVM ──lsp4j──> sharplsp (stdio; sidecars remain host-owned)
                           nugetInstalled()
 ```
 
-The plugin owns no sidecar, webview, or MessagePack transport; it launches the Rust host and renders LSP responses. Implementations: [`lsp/`](../../editors/rider/src/main/kotlin/com/forgelsp/rider/lsp) and [`toolwindow/`](../../editors/rider/src/main/kotlin/com/forgelsp/rider/toolwindow).
+The plugin owns no sidecar, webview, or MessagePack transport; it launches the Rust host and renders LSP responses. Implementations: [`lsp/`](../../src/editors/rider/src/main/kotlin/com/forgelsp/rider/lsp) and [`toolwindow/`](../../src/editors/rider/src/main/kotlin/com/forgelsp/rider/toolwindow).
 
 ## Build and Packaging `[RIDER-BUILD]`
 
@@ -37,9 +37,9 @@ The plugin owns no sidecar, webview, or MessagePack transport; it launches the R
 - **Build tool:** Gradle with `org.jetbrains.intellij.platform` 2.14. The older `gradle-intellij-plugin` (1.x) is legacy and must not be used.
 - **JVM target:** 21 for Rider 2026.1.
 - **Kotlin target:** JVM toolchain 21, stdlib from the platform — do NOT bundle `kotlin-stdlib` to avoid classpath conflicts.
-- **Source layout:** `editors/rider/` with the conventional Gradle structure:
+- **Source layout:** `src/editors/rider/` with the conventional Gradle structure:
   ```
-  editors/rider/
+  src/editors/rider/
   ├── build.gradle.kts
   ├── settings.gradle.kts
   ├── gradle.properties
@@ -57,7 +57,7 @@ The plugin owns no sidecar, webview, or MessagePack transport; it launches the R
           ├── META-INF/plugin.xml
           └── icons/forge.svg
   ```
-- **Distribution artifact:** `sharplsp-rider-plugin.zip`, produced by the `buildPlugin` Gradle task at `editors/rider/build/distributions/`. Copied to `dist/sharplsp-rider.zip` alongside the other packaged editor artifacts.
+- **Distribution artifact:** `sharplsp-rider-plugin.zip`, produced by the `buildPlugin` Gradle task at `src/editors/rider/build/distributions/`. Copied to `dist/sharplsp-rider.zip` alongside the other packaged editor artifacts.
 - **Gradle wrapper:** committed so contributors and CI don't need a system Gradle.
 - **Binary resolution:** the plugin does **not** bundle `sharplsp`. It resolves the binary identically to the VS Code extension:
   1. `sharplsp.lspPath` setting (per-project, stored in workspace.xml)
@@ -69,7 +69,7 @@ The plugin owns no sidecar, webview, or MessagePack transport; it launches the R
 
 ### `ForgeLspServerSupportProvider` `[RIDER-LSP-PROVIDER]`
 
-[`ForgeLspServerSupportProvider.kt`](../../editors/rider/src/main/kotlin/com/forgelsp/rider/lsp/ForgeLspServerSupportProvider.kt) is registered via `com.intellij.platform.lsp.serverSupportProvider`. On `fileOpened()` it checks the file extension (`.cs`, `.csx`, `.fs`, `.fsx`, `.fsi`) and returns a shared `ForgeLspServerDescriptor` keyed by project. One server per Rider project, not per file.
+[`ForgeLspServerSupportProvider.kt`](../../src/editors/rider/src/main/kotlin/com/forgelsp/rider/lsp/ForgeLspServerSupportProvider.kt) is registered via `com.intellij.platform.lsp.serverSupportProvider`. On `fileOpened()` it checks the file extension (`.cs`, `.csx`, `.fs`, `.fsx`, `.fsi`) and returns a shared `ForgeLspServerDescriptor` keyed by project. One server per Rider project, not per file.
 
 ### `ForgeLspServerDescriptor` `[RIDER-LSP-DESCRIPTOR]`
 
@@ -95,7 +95,7 @@ interface ForgeLsp4jServer : LanguageServer {
 }
 ```
 
-DTO camel-case fields MUST match the Rust JSON wire format. Implementation: [`ForgeLsp4jServer.kt`](../../editors/rider/src/main/kotlin/com/forgelsp/rider/lsp/ForgeLsp4jServer.kt).
+DTO camel-case fields MUST match the Rust JSON wire format. Implementation: [`ForgeLsp4jServer.kt`](../../src/editors/rider/src/main/kotlin/com/forgelsp/rider/lsp/ForgeLsp4jServer.kt).
 
 ## Solution Explorer Tool Window `[RIDER-SOLUTION]`
 
@@ -179,5 +179,5 @@ A manual dev-loop test, run from `make test-rider`:
 
 1. `make install` — binaries in `~/.local/bin` and `~/.local/lib/sharplsp`.
 2. `./gradlew runIde` — boots a sandboxed Rider instance with the plugin.
-3. Open `examples/HelloSharpLsp.sln` or `examples/HelloSharpLsp.slnx`.
+3. Open `src/examples/HelloSharpLsp.sln` or `src/examples/HelloSharpLsp.slnx`.
 4. Assert the SharpLsp Solution tool window renders the project tree.

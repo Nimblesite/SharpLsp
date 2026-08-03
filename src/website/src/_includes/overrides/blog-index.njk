@@ -1,0 +1,47 @@
+---
+layout: layouts/base.njk
+title: Blog
+permalink: /blog/
+eleventyComputed:
+  title: "{{ i18n[lang or defaultLanguage].blog.title }} — SharpLsp"
+  description: "{{ i18n[lang or defaultLanguage].blog.subtitle }}"
+---
+{% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
+{% set blogText = i18n[lang or defaultLanguage].blog %}
+<div class="blog-container">
+  <header class="blog-header">
+    <p class="eyebrow">{{ blogText.eyebrow | default("SharpLsp journal") }}</p>
+    <h1>{{ blogText.title | default("Blog") }}</h1>
+    <p>{{ blogText.subtitle | default(site.description) }}</p>
+  </header>
+
+  <div class="blog-toolbar">
+    <nav class="filter-list" aria-label="{{ blogText.filterLabel | default('Blog filters') }}">
+      <a class="filter-chip active" href="{{ langPrefix }}/blog/">{{ blogText.all | default("All") }}</a>
+      <a class="filter-chip" href="{{ langPrefix }}/blog/tags/">{{ blogText.tags | default("Tags") }}</a>
+      <a class="filter-chip" href="{{ langPrefix }}/blog/categories/">{{ blogText.categories | default("Categories") }}</a>
+    </nav>
+    <label class="search-box">
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
+      <input type="search" aria-label="{{ blogText.search | default('Search articles') }}" placeholder="{{ blogText.search | default('Search articles') }}">
+    </label>
+  </div>
+
+  {% set postCollection = collections.posts %}
+  {% if lang and lang != defaultLanguage %}
+    {% set postCollection = collections[lang + "posts"] | default(collections.posts) %}
+  {% endif %}
+
+  {% if postCollection | length > 0 %}
+  <section class="blog-grid" aria-label="{{ blogText.articles | default('Articles') }}">
+    {% for post in postCollection %}
+      {% set currentPost = post %}
+      {% set featuredPost = loop.first %}
+      {% include "partials/post-card.njk" %}
+    {% endfor %}
+  </section>
+  <p class="blog-empty" id="blog-search-empty" role="status" hidden>{{ blogText.noResults | default("No articles match your search.") }}</p>
+  {% else %}
+  <p class="blog-empty">{{ blogText.empty | default("No blog posts yet. Check back soon!") }}</p>
+  {% endif %}
+</div>

@@ -56,7 +56,7 @@ All four definition-family requests are **semantic** requests. The Rust host rou
 
 The Rust host MAY use tree-sitter to pre-validate the position (e.g., reject whitespace, comments, string literals) and short-circuit with `null` before dispatching to the sidecar.
 
-Implementations: `src/main.rs`, `src/semantic.rs`, and `src/syntax.rs`.
+Implementations: [semantic.rs](../../src/sharplsp/src/semantic.rs) and [syntax.rs](../../src/sharplsp/src/syntax.rs).
 
 ## C# Implementation (Roslyn) `[DEFINITION-CSHARP]`
 
@@ -116,7 +116,7 @@ When a symbol's definition is in metadata (referenced assembly, NuGet package) r
 1. **Phase 2 (MVP):** Return `null` — no navigation for metadata symbols.
 2. **Phase 3 (P1):** Use [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile the containing type, write it to a temporary file, and return a `Location` pointing to the decompiled source. Use the custom `sharplsp/decompileSource` method to serve decompiled content on demand.
 
-Implementation: `sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.cs`.
+Implementation: [DefinitionResolver.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/DefinitionResolver.cs).
 
 ## F# Implementation (FCS) `[DEFINITION-FSHARP]`
 
@@ -162,7 +162,7 @@ Implementation: `sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.cs`
 | Module function | Navigate to the `let` binding |
 | Pattern binding (`let (x, y) = ...`) | Navigate to the binding site |
 
-Implementation: `sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs`.
+Implementation: [FSharpWorkspace.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs).
 
 ## Cross-Language Navigation `[DEFINITION-CROSSLANG]`
 

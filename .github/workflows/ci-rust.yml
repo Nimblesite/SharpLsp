@@ -47,7 +47,7 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: "~/.nuget/packages"
-          key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}"
+          key: "${{ runner.os }}-nuget-${{ hashFiles('src/sidecars/**/*.csproj', 'src/sidecars/Directory.Build.props') }}"
           restore-keys: "${{ runner.os }}-nuget-"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:

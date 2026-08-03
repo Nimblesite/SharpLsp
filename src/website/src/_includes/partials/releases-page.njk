@@ -1,0 +1,38 @@
+{% set releaseText = i18n[lang or defaultLanguage].releases %}
+
+<section class="masthead releases-masthead">
+  <div class="copy-block">
+    <h1>{{ releaseText.title }}</h1>
+    <p>{{ releaseText.subtitle }}</p>
+    <p class="release-more">
+      <a href="{{ release.releasesUrl }}" rel="noopener">{{ releaseText.viewAllGitHub }}</a>
+    </p>
+  </div>
+</section>
+
+<section class="panel">
+  {% if lang and lang != defaultLanguage %}<p class="release-language-note">{{ releaseText.notesLanguage }}</p>{% endif %}
+  {% if release.available and release.items.length %}
+  <div class="release-log">
+    {% for item in release.items %}
+    <article class="release-entry" id="{{ item.tag }}">
+      <div class="release-card-header">
+        <h2><a href="{{ item.url }}" rel="noopener">{{ item.title }}</a></h2>
+        <span class="release-tag">{{ item.tag }}</span>
+      </div>
+      <p class="release-meta">
+        {% if item.publishedAt %}<time datetime="{{ item.publishedAt }}">{{ item.publishedAt | dateFormat(lang) }}</time>{% endif %}
+        {% if item.prerelease %}<span class="release-state">{{ releaseText.prerelease }}</span>{% endif %}
+      </p>
+      {% if item.body %}
+      <div class="release-notes" lang="en">{{ item.body | releaseNotes | safe }}</div>
+      {% else %}
+      <p class="release-notes-empty"><a href="{{ item.url }}" rel="noopener">{{ releaseText.viewOnGitHub }}</a></p>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p>{{ releaseText.empty }} <a href="{{ release.releasesUrl }}" rel="noopener">{{ releaseText.viewAllGitHub }}</a></p>
+  {% endif %}
+</section>

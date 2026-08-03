@@ -1,6 +1,6 @@
 # VSCode Extension Reactivity Spec `[VSCODE-REACTIVITY]`
 
-**Status:** active · **Owner:** VSCode extension (`editors/vscode/src/`) · **Invariant (CLAUDE.md):** _"All screens MUST BE 100% reactive. If underlying data changes, the screen must be listening and update accordingly."_
+**Status:** active · **Owner:** VSCode extension (`src/editors/vscode/src/`) · **Invariant (CLAUDE.md):** _"All screens MUST BE 100% reactive. If underlying data changes, the screen must be listening and update accordingly."_
 
 ---
 
@@ -10,7 +10,7 @@ Every webview, tree view, status bar, and code lens MUST be a projection of reac
 
 ## Signal Primitives `[VSCODE-REACTIVITY-SIGNALS]`
 
-The extension uses the in-repo `Signal<T>` primitive in [`signals.ts`](../../editors/vscode/src/signals.ts); no external signal library is introduced.
+The extension uses the in-repo `Signal<T>` primitive in [`signals.ts`](../../src/editors/vscode/src/signals.ts); no external signal library is introduced.
 
 ### Signal<T> `[VSCODE-REACTIVITY-SIGNALS-VALUE]`
 
@@ -39,22 +39,22 @@ The extension maintains these **global signals** (module-level exports). Every U
 
 | Signal | Module | Purpose |
 |--------|--------|---------|
-| `client` | [state.ts](../../editors/vscode/src/state.ts) | Active LSP LanguageClient |
-| `solutionPath` | [state.ts](../../editors/vscode/src/state.ts) | Absolute path of the loaded `.sln` or `.slnx` file |
-| `dotnetPath` | [state.ts](../../editors/vscode/src/state.ts) | Resolved .NET executable path |
-| `symbolsState` | [state.ts](../../editors/vscode/src/state.ts) | `empty \| loaded \| error` union of workspace symbols |
-| `sortOrder` | [state.ts](../../editors/vscode/src/state.ts) | Solution Explorer sort cycle |
-| `projectDependencies` | [project-deps-store.ts](../../editors/vscode/src/project-deps-store.ts) | Authoritative `Map<projectPath, ProjectDependencies>` state for PackageReferences and ProjectReferences; not memoization |
+| `client` | [state.ts](../../src/editors/vscode/src/state.ts) | Active LSP LanguageClient |
+| `solutionPath` | [state.ts](../../src/editors/vscode/src/state.ts) | Absolute path of the loaded `.sln` or `.slnx` file |
+| `dotnetPath` | [state.ts](../../src/editors/vscode/src/state.ts) | Resolved .NET executable path |
+| `symbolsState` | [state.ts](../../src/editors/vscode/src/state.ts) | `empty \| loaded \| error` union of workspace symbols |
+| `sortOrder` | [state.ts](../../src/editors/vscode/src/state.ts) | Solution Explorer sort cycle |
+| `projectDependencies` | [project-deps-store.ts](../../src/editors/vscode/src/project-deps-store.ts) | Authoritative `Map<projectPath, ProjectDependencies>` state for PackageReferences and ProjectReferences; not memoization |
 
 New source-of-truth state MUST live in one of these modules or a peer store and MUST NOT be shadowed in a UI field. Derived flags and version strings, including package installation state, MUST be computed from live signals during rendering rather than stored in selection snapshots.
 
 ## File-System Watchers Drive Derived State `[VSCODE-REACTIVITY-WATCHERS]`
 
-State derived from disk is refreshed by [`project-deps-store.ts`](../../editors/vscode/src/project-deps-store.ts) watchers whose events write to the corresponding signal. A 250 ms mtime guard MAY cover missed events for already tracked projects; it MUST NOT replace event-driven updates or require manual refresh.
+State derived from disk is refreshed by [`project-deps-store.ts`](../../src/editors/vscode/src/project-deps-store.ts) watchers whose events write to the corresponding signal. A 250 ms mtime guard MAY cover missed events for already tracked projects; it MUST NOT replace event-driven updates or require manual refresh.
 
 ### Project-dependencies Watcher `[VSCODE-REACTIVITY-WATCHERS-PROJECTS]`
 
-Registered once during `activate()` by [project-deps-store.ts](../../editors/vscode/src/project-deps-store.ts) on the glob:
+Registered once during `activate()` by [project-deps-store.ts](../../src/editors/vscode/src/project-deps-store.ts) on the glob:
 
 ```
 **/{*.csproj,*.fsproj,Directory.Packages.props}
@@ -73,7 +73,7 @@ After an external `.csproj` or `.fsproj` write, every surface that reads `projec
 
 ### Solution Explorer Tree `[VSCODE-REACTIVITY-SURFACES-TREE]`
 
-Implementation: [`tree.ts`](../../editors/vscode/src/tree.ts).
+Implementation: [`tree.ts`](../../src/editors/vscode/src/tree.ts).
 
 `SolutionExplorerProvider` subscribes to:
 
@@ -85,7 +85,7 @@ The tree's Dependencies → Packages node reads `projectDependencies.value.get(p
 
 ### NuGet Browser Panel `[VSCODE-REACTIVITY-SURFACES-NUGET]`
 
-Implementation: [`nuget-browser.ts`](../../editors/vscode/src/nuget-browser.ts).
+Implementation: [`nuget-browser.ts`](../../src/editors/vscode/src/nuget-browser.ts).
 
 `NuGetBrowserPanel` subscribes to:
 
@@ -112,8 +112,8 @@ Current coverage:
 
 | Surface | Test | File |
 |---------|------|------|
-| NuGet panel — Remove → Install on csproj edit | `panel reacts to external csproj edit (package removed)` | [nuget-browser.test.ts](../../editors/vscode/src/test/suite/nuget-browser.test.ts) |
-| NuGet panel — Install → Remove on csproj edit | `panel reacts to external csproj edit (package added)` | [nuget-browser.test.ts](../../editors/vscode/src/test/suite/nuget-browser.test.ts) |
-| NuGet details panel icon | `details panel renders package icon image when iconUrl present` | [nuget-browser.test.ts](../../editors/vscode/src/test/suite/nuget-browser.test.ts) |
-| NuGet installed tab icons (DRY) | `installed tab renders icons (no DRY violation)` | [nuget-browser.test.ts](../../editors/vscode/src/test/suite/nuget-browser.test.ts) |
-| Solution Explorer packages node | `Dependencies → Packages tree reacts to external csproj edit` | [solution-explorer.test.ts](../../editors/vscode/src/test/suite/solution-explorer.test.ts) |
+| NuGet panel — Remove → Install on csproj edit | `panel reacts to external csproj edit (package removed)` | [nuget-browser.test.ts](../../src/editors/vscode/src/test/suite/nuget-browser.test.ts) |
+| NuGet panel — Install → Remove on csproj edit | `panel reacts to external csproj edit (package added)` | [nuget-browser.test.ts](../../src/editors/vscode/src/test/suite/nuget-browser.test.ts) |
+| NuGet details panel icon | `details panel renders package icon image when iconUrl present` | [nuget-browser.test.ts](../../src/editors/vscode/src/test/suite/nuget-browser.test.ts) |
+| NuGet installed tab icons (DRY) | `installed tab renders icons (no DRY violation)` | [nuget-browser.test.ts](../../src/editors/vscode/src/test/suite/nuget-browser.test.ts) |
+| Solution Explorer packages node | `Dependencies → Packages tree reacts to external csproj edit` | [solution-explorer.test.ts](../../src/editors/vscode/src/test/suite/solution-explorer.test.ts) |

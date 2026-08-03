@@ -34,7 +34,7 @@ The F# path reuses the sidecar `documentSymbol` request that powers the editor o
 
 `sharplsp/workspaceSymbols` MUST parse the latest open VFS text, including unsaved successive edits; disk content is used only when no open document denotes the source file.
 
-Editor URIs and project models can name one file differently: for example, Windows can supply `C:\Users\RUNNER~1\...` while the sidecar supplies `C:\Users\runneradmin\...`. On open, the VFS stores the resolved editor path as document state, then native-path lookup compares both the original URI path and its canonical path. Comparison ignores Windows verbatim prefixes and casing. The VS Code explorer tests cover unsaved and burst edits; VFS regression tests cover reverse-alias lookup. Implementations: `src/vfs.rs`, `src/workspace_symbols.rs`, and `editors/vscode/src/test/suite/solution-explorer.test.ts`.
+Editor URIs and project models can name one file differently: for example, Windows can supply `C:\Users\RUNNER~1\...` while the sidecar supplies `C:\Users\runneradmin\...`. On open, the VFS stores the resolved editor path as document state, then native-path lookup compares both the original URI path and its canonical path. Comparison ignores Windows verbatim prefixes and casing. The VS Code explorer tests cover unsaved and burst edits; VFS regression tests cover reverse-alias lookup. Implementations: `src/sharplsp/src/vfs.rs`, `src/sharplsp/src/workspace_symbols.rs`, and `src/editors/vscode/src/test/suite/solution-explorer.test.ts`.
 
 ### Request: `sharplsp/workspaceSymbols` `[SE-WORKSPACE-SYMBOLS-REQUEST]`
 
@@ -418,7 +418,7 @@ Project nodes expose **Run** and **Debug**.
 - Per-project args stored in workspace state: `sharplsp.buildArgs.${projectPath}` and `sharplsp.runArgs.${projectPath}`
 - Global defaults configured via settings:
   - `sharplsp.build.extraArgs` — default args for all build operations
-  - `sharplsp.run.extraArgs` — default args for all run operations  
+  - `sharplsp.run.extraArgs` — default args for all run operations
   - `sharplsp.test.extraArgs` — default args for test operations
 
 **Argument Precedence:**
@@ -509,9 +509,9 @@ When a C# or F# document becomes active through open, focus, navigation, Quick O
 
 | File | Purpose |
 |------|---------|
-| `editors/vscode/src/tree.ts` | Tree data provider, node construction, sorting |
-| `editors/vscode/src/extension.ts` | Command registration, tree view creation |
-| `editors/vscode/src/constants.ts` | Command and view ID constants |
-| `editors/vscode/package.json` | VS Code contribution points |
-| `src/workspace_symbols.rs` | Rust handler: sidecar solution model routing, tree-sitter symbol extraction |
-| `editors/vscode/src/test/suite/solution-explorer.test.ts` | Coarse tree, command, reactivity, and live-buffer coverage |
+| [tree.ts](../../src/editors/vscode/src/tree.ts) | Tree data provider, node construction, sorting |
+| [extension.ts](../../src/editors/vscode/src/extension.ts) | Command registration, tree view creation |
+| [constants.ts](../../src/editors/vscode/src/constants.ts) | Command and view ID constants |
+| [package.json](../../src/editors/vscode/package.json) | VS Code contribution points |
+| [workspace_symbols.rs](../../src/sharplsp/src/workspace_symbols.rs) | Rust handler: sidecar solution model routing, tree-sitter symbol extraction |
+| [solution-explorer.test.ts](../../src/editors/vscode/src/test/suite/solution-explorer.test.ts) | Coarse tree, command, reactivity, and live-buffer coverage |

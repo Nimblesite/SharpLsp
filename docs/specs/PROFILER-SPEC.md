@@ -1,4 +1,4 @@
-# [PROFILER] Profiler Integration Specification
+# [PROFILER-INTEGRATION] Profiler Integration Specification
 
 **Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
@@ -14,55 +14,46 @@ SharpLsp exposes `dotnet-trace`, `dotnet-counters`, and `dotnet-dump` through LS
 
 Collects performance traces from running .NET processes using EventPipe. Produces `.nettrace` files convertible to Chromium/SpeedScope formats for visualization.
 
-| Capability | CLI Equivalent | Description |
-|-----------|---------------|-------------|
-| List processes | Native process table | Discover running .NET processes without starting a diagnostic CLI |
-| Collect trace | `dotnet-trace collect -p <pid>` | Attach and record EventPipe trace |
-| Stop trace | Ctrl+C equivalent | Gracefully stop collection |
-| Convert trace | `dotnet-trace convert` | Convert `.nettrace` to `.speedscope.json` or Chromium format |
+| Capability | CLI equivalent |
+|---|---|
+| List processes | Native process table |
+| Collect trace | `dotnet-trace collect -p <pid>` |
+| Stop trace | Ctrl+C equivalent |
+| Convert trace | `dotnet-trace convert` to `.speedscope.json` or Chromium |
 
 ### [PROFILER-TOOLS-COUNTERS] dotnet-counters
 
 Real-time monitoring of .NET runtime performance counters (GC, CPU, exceptions, thread pool).
 
-| Capability | CLI Equivalent | Description |
-|-----------|---------------|-------------|
-| List processes | `dotnet-counters ps` | Discover running .NET processes |
-| Monitor counters | `dotnet-counters monitor -p <pid>` | Stream live counter values |
-| Collect counters | `dotnet-counters collect -p <pid>` | Record counters to CSV/JSON |
+| Capability | CLI equivalent |
+|---|---|
+| List processes | `dotnet-counters ps` |
+| Monitor counters | `dotnet-counters monitor -p <pid>` |
+| Collect counters | `dotnet-counters collect -p <pid>` to CSV/JSON |
 
 ### [PROFILER-TOOLS-DUMP] dotnet-dump
 
 Captures and analyzes process dumps for memory leak investigation without a native debugger.
 
-| Capability | CLI Equivalent | Description |
-|-----------|---------------|-------------|
-| Collect dump | `dotnet-dump collect -p <pid>` | Capture managed heap dump |
-| Analyze dump | `dotnet-dump analyze <file>` | Open interactive analysis session |
-| Heap stats | `dumpheap -stat` | Show object type counts and sizes |
-| GC roots | `gcroot <addr>` | Trace GC root references for an object |
-| Object references | `dumpobj <addr>` | Inspect individual managed objects |
+| Capability | CLI equivalent |
+|---|---|
+| Collect dump | `dotnet-dump collect -p <pid>` |
+| Analyze dump | `dotnet-dump analyze <file>` |
+| Heap stats | `dumpheap -stat` |
+| GC roots | `gcroot <addr>` |
+| Object references | `dumpobj <addr>` |
 
 ## [PROFILER-ARCHITECTURE] Architecture
 
+Implementations: [handlers.rs](../../src/sharplsp/src/profiler/handlers.rs), [session.rs](../../src/sharplsp/src/profiler/session.rs), [object_graph.rs](../../src/sharplsp/src/profiler/object_graph.rs), [profiler.ts](../../src/editors/vscode/src/profiler.ts), and the [full-stack profiler tests](../../src/sharplsp/tests/e2e_modules/profiler_full_stack.rs).
+
 ### [PROFILER-ARCHITECTURE-PLACEMENT] Component Placement
 
-Profiler integration lives in the **Rust LSP host** (Tier 1). The diagnostic CLI tools run as child processes managed by the host — no sidecar involvement.
-
-```
-Editor  ──LSP custom request──▶  Rust Host  ──spawns──▶  dotnet-trace / dotnet-counters / dotnet-dump
-                                     │
-                                     ├── Process discovery (dotnet-trace ps)
-                                     ├── Session lifecycle (start / stop / convert)
-                                     └── Output parsing + streaming to editor
-```
+The Rust host spawns the diagnostic CLIs and owns discovery, session lifecycle, output parsing, and editor streaming; no sidecar or workspace is involved.
 
 ### [PROFILER-ARCHITECTURE-HOST] Rust Host Ownership
 
-- Diagnostic tools are standalone CLI executables, not Roslyn/FCS APIs
-- No workspace or compilation context needed
-- Direct process spawning from Rust is simpler and lower latency
-- Sidecar crash must not kill profiling sessions
+Profiler sessions MUST survive a sidecar crash and MUST be cleaned up when the LSP host shuts down.
 
 ### [PROFILER-ARCHITECTURE-DISCOVERY] Tool Discovery
 
@@ -424,7 +415,7 @@ SharpLsp classifies leak suspects by combining snapshot diff data with heuristic
 Additional signals that elevate severity:
 - Type is a known leak-prone pattern (event handlers, delegates, `CancellationTokenSource`, timers)
 - Type contains `[]` or `List` (collection growth)
-- Multiple instances of the same generic type growing (e.g., `Dictionary<TKey, TValue>` with different type args)
+- Multiple instantiations of the same growing generic collection type
 
 #### [PROFILER-LEAKS-AUTOMATION-FLOW] Automated Leak Detection Flow
 
@@ -665,7 +656,7 @@ Created  ──start──▶  Running  ──stop──▶  Stopped  ──clea
 ```
 
 - Each session ID has the form `prof-<unix-epoch-ms>-<process-local-sequence>`
-- Sessions tracked in a `DashMap<String, ProfileSession>` on the Rust host
+- The Rust host keeps a concurrent session registry containing live child-process state; this registry is state, not memoization
 - Maximum concurrent sessions: 5 (configurable via `sharplsp.toml`)
 - Orphaned sessions (editor disconnect) cleaned up on LSP shutdown
 

@@ -1,8 +1,8 @@
-# Sidecar Lifecycle and IPC Reliability Specification `[SIDECAR]`
+# Sidecar Lifecycle and IPC Reliability Specification `[SIDECAR-LIFECYCLE]`
 
-**Status:** Normative — required behavior; implementation completeness is tracked in the plan · **Applies to:** Rust LSP host, shared .NET sidecar host, C# sidecar, F# sidecar · **Implementation plan:** [SIDECAR-LIFECYCLE-PLAN.md](../plans/SIDECAR-LIFECYCLE-PLAN.md)
+**Status:** Normative · **Applies to:** Rust host and C#/.NET/F# sidecars · **Plan:** [SIDECAR-LIFECYCLE-PLAN.md](../plans/SIDECAR-LIFECYCLE-PLAN.md)
 
-The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative. Implementations and tests cite the most specific applicable stable ID.
+**MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative. Code and tests cite the most specific stable ID.
 
 ## Objective `[SIDECAR-LIFECYCLE-OBJECTIVE]`
 
@@ -12,22 +12,19 @@ The lifecycle subsystem MUST make that sequence one state machine. A request, he
 
 ### Scope `[SIDECAR-LIFECYCLE-SCOPE]`
 
-This specification defines:
+This specification covers:
 
-- C# and F# sidecar executable resolution and launch fallback;
-- per-spawn IPC endpoint allocation and the pre-IPC `READY` handshake;
-- supervisor states, generation fencing, request admission, and restart backoff;
-- frame ownership, response correlation, notification dispatch, cancellation, and timeouts;
-- health checks that distinguish idle, busy, stalled, and dead sidecars;
-- workspace/configuration/document rehydration after a new generation starts;
-- graceful shutdown, hard termination, parent-death detection, and descendant cleanup;
-- cross-platform security, observability, performance budgets, and end-to-end acceptance tests.
+- executable resolution and fallback;
+- per-spawn endpoints and the pre-IPC `READY` handshake;
+- supervisor state, generation fencing, request admission, and backoff;
+- framing, correlation, notifications, cancellation, and timeouts;
+- health, state rehydration, shutdown, parent-death handling, containment, security, observability, budgets, and acceptance tests.
 
-The contract is identical for the Roslyn and FCS sidecars unless a requirement explicitly names a platform. C# and F# retain separate supervisor instances, endpoint generations, backoff counters, and process-containment scopes.
+The contract is identical for Roslyn and FCS unless stated otherwise. Each has its own supervisor, endpoint generation, backoff counter, and containment scope.
 
 ### Non-goals `[SIDECAR-LIFECYCLE-NONGOALS]`
 
-This work does not change Roslyn/FCS feature behavior, MessagePack DTO payloads owned by individual features, LSP client restart policy, or editor binary acquisition. It does not introduce a remote IPC transport or treat sidecar IPC as a cross-user trust boundary. It also does not make semantic handlers concurrent: the v1 connection driver deliberately admits one host-to-sidecar request at a time while still receiving interleaved sidecar notifications.
+Out of scope: Roslyn/FCS feature behavior, feature-owned MessagePack payloads, LSP client restart policy, editor binary acquisition, remote IPC, and cross-user trust. The v1 driver admits one host request at a time while receiving interleaved notifications.
 
 ## Ownership and State `[SIDECAR-ARCHITECTURE]`
 
@@ -71,7 +68,7 @@ flowchart LR
 | `Backoff` | Failure record and monotonic `retry_not_before` | Calls fail promptly with retry metadata; they do not spawn |
 | `Stopping` | Resources being drained or terminated | New calls fail as shutting down; queued calls are cancelled |
 
-`Ready` means the current generation is semantically usable, not merely that an operating-system listener exists. The `READY` stdout record advances `AwaitingReady` to `Connecting`; only successful bootstrap advances `Bootstrapping` to `Ready`.
+`Ready` means semantically usable. The stdout record advances `AwaitingReady` to `Connecting`; only successful bootstrap reaches `Ready`.
 
 ### Transition Rules `[SIDECAR-STATE-TRANSITIONS]`
 
@@ -85,9 +82,9 @@ flowchart LR
 
 ### Generation Fencing `[SIDECAR-STATE-GENERATION]`
 
-The supervisor assigns a monotonically increasing `u64` generation before each spawn attempt. Generation zero is reserved for “not started”. The generation is included in launch arguments, the `READY` record, connection-driver events, process-exit events, logs, and bootstrap completion.
+Before each spawn, the supervisor assigns a monotonically increasing `u64` generation; zero means “not started”. Launch arguments, `READY`, driver/exit events, logs, and bootstrap completion carry it.
 
-Generation fencing MUST prevent all stale asynchronous work from publishing state. In particular, a late process-exit event, response, timeout, health tick, or bootstrap result from generation N MUST NOT kill, disconnect, mark ready, or reset backoff for generation N+1.
+Generation fencing MUST prevent stale work from publishing state. A late exit, response, timeout, health tick, or bootstrap result from N MUST NOT affect N+1.
 
 ## Resolution and Startup `[SIDECAR-STARTUP]`
 
@@ -95,7 +92,7 @@ Generation fencing MUST prevent all stale asynchronous work from publishing stat
 
 The language-specific environment override in [SHARPLSP-ARCHITECTURE-EXTENSIONS-SIDECAR-ENV] is authoritative and MUST be evaluated before every other launch source.
 
-Resolution produces typed `LaunchCandidate` values and runs again for each generation. It MUST return the absolute executable path actually passed to `CreateProcess`/`exec`, not a bare command name.
+Each generation resolves typed `LaunchCandidate` values. Resolution MUST return the absolute executable passed to `CreateProcess`/`exec`, not a bare name.
 
 | Priority | Source | Accepted form | Failure policy |
 |---|---|---|---|
@@ -106,9 +103,9 @@ Resolution produces typed `LaunchCandidate` values and runs again for each gener
 
 On Windows, a direct candidate MUST be a real `.exe`. `.cmd`, `.bat`, PowerShell scripts, and extensionless command shims MUST NOT be selected or invoked through a shell. A `.dll` is valid only as an argument to a resolved `dotnet.exe`. On Unix, a direct candidate MUST be a regular file with an executable mode. All platforms reject directories and inaccessible files.
 
-`dotnet run` MUST NOT be a launch candidate: it inserts an intermediary process, makes direct-child termination unreliable, and can rebuild during an editor request. Development builds are produced before launch and executed as an apphost or with `dotnet <dll>`.
+`dotnet run` MUST NOT be a candidate because its intermediary breaks direct-child termination and may rebuild during requests. Launch prebuilt development output as an apphost or `dotnet <dll>`.
 
-Candidate-local mechanical failures may advance to the next non-explicit candidate within one startup attempt. Listener, handshake, protocol-version, or application-initialization failures are generation failures and MUST NOT be hidden by silently trying a different binary. Backoff begins only after the allowed candidate chain is exhausted.
+Mechanical failure may advance to the next non-explicit candidate. Listener, handshake, protocol-version, or initialization failures terminate the generation and MUST NOT silently try another binary. Backoff starts after the candidate chain is exhausted.
 
 ### Spawn Contract `[SIDECAR-STARTUP-SPAWN]`
 
@@ -120,11 +117,11 @@ The host launches a sidecar with explicit arguments equivalent to:
 
 The sidecar MUST validate all arguments before binding. The production host MUST always supply the parent PID. The child inherits only the intended environment (including `DOTNET_ROOT`), has stdin closed, has stdout and stderr piped, and is created without a visible console window on Windows.
 
-Before the sidecar emits `READY`, it MUST install its parent-death watcher and platform containment, initialize structured file logging, create the listener, and know the listener's effective bound endpoint. Engine initialization that is allowed to degrade per [DIST-SDK-DISCOVERY] may complete before `READY`; it MUST NOT bypass the lifecycle setup.
+Before `READY`, the sidecar MUST install parent-death watching and containment, initialize file logging, create the listener, and obtain its effective endpoint. Degradable engine initialization per [DIST-SDK-DISCOVERY] MUST NOT bypass this setup.
 
 ### Endpoint Allocation and Ownership `[SIDECAR-STARTUP-ENDPOINT]`
 
-Every spawn attempt receives a new unpredictable endpoint. The endpoint key includes language, host PID, generation, and at least 64 bits from an operating-system CSPRNG. A workspace hash MAY be included for diagnostics but MUST NOT be the uniqueness mechanism.
+Each spawn gets a new endpoint keyed by language, host PID, generation, and at least 64 OS-CSPRNG bits. A workspace hash MAY aid diagnostics but MUST NOT provide uniqueness.
 
 Recommended shapes are:
 
@@ -140,7 +137,7 @@ Requirements:
 - The Windows listener uses `PipeOptions.CurrentUserOnly` and one server instance.
 - The Unix socket is created in an owner-only directory where possible and has mode `0600`.
 - Neither host nor sidecar may delete an arbitrary pre-existing socket before bind. A random collision is treated as bind failure and retried with a fresh generation/nonce.
-- The listener tracks whether it created a Unix socket and removes only that owned path on disposal. Stale unique paths from hard crashes may be age-cleaned only inside the validated SharpLsp runtime directory; they are never unlinked merely because a new host wants the same name.
+- The listener removes only its owned Unix socket. Age-clean stale paths only inside the validated SharpLsp runtime directory; never unlink one merely to reuse its name.
 - The requested path stays below the common 107-byte Unix limit where possible. If the listener must relocate it, that relocation is authoritative and is reported by the handshake.
 
 The host logs an endpoint fingerprint, not the full workspace-derived value, at normal levels.
@@ -162,7 +159,7 @@ The JSON object has these required fields:
 | `pid` | unsigned integer | Actual sidecar process PID, used for diagnostics and containment verification |
 | `endpoint` | string | Exact bound endpoint; it may differ from the requested Unix path |
 
-The host rejects malformed JSON, missing/unknown protocol versions, generation mismatch, zero PID, an endpoint with the wrong platform shape, or an endpoint not attributable to the requested lease. The startup budget is 30 seconds. Waiting is a race among a valid handshake, child exit, stdout EOF, and the timeout; every losing child is terminated and reaped.
+The host rejects malformed JSON, an unknown/missing protocol, generation mismatch, zero PID, wrong-platform endpoints, and endpoints outside the lease. Within 30 seconds, a valid handshake must win against child exit, stdout EOF, and timeout; every losing child is terminated and reaped.
 
 The host then retries connection only for transient listener-visibility errors (`not found` or Windows `ERROR_PIPE_BUSY`) with bounded exponential delays from 25ms to 250ms for at most 2 seconds. Other connect errors fail immediately. A successful connection consumes the endpoint lease.
 
@@ -177,9 +174,9 @@ Any failure before `READY` MUST:
 3. return a non-zero process exit code; and
 4. dispose any listener and owned Unix path.
 
-The host continuously drains capped stdout/stderr so a verbose child cannot deadlock. It retains at most the final 16KiB per stream, forwards sanctioned lines through structured logging, reaps the child, and reports the exit status, failure category, launch source, and sidecar log path. Raw stack traces, ANSI control sequences, workspace source text, and unbounded output MUST NOT enter the editor output panel.
+The host continuously drains stdout/stderr, forwards allowed lines to structured logs, and retains their final 16KiB each. It reaps the child and reports exit status, category, launch source, and log path. Raw stacks, ANSI controls, source text, and unbounded output MUST NOT reach the editor panel.
 
-Expected startup failures return `Result`; no startup path may `panic`, `unwrap`, or silently return success. The `FATAL:` line is an explicit exception to the normal no-sidecar-stderr rule in [DIST-CLEAN-OUTPUT].
+Startup failures return `Result`; startup MUST NOT `panic`, `unwrap`, or report success. `FATAL:` is the exception to [DIST-CLEAN-OUTPUT]'s no-sidecar-stderr rule.
 
 ## Process Lifetime and Containment `[SIDECAR-PROCESS]`
 
@@ -193,7 +190,7 @@ The sidecar installs the watcher before listener creation and `READY`:
 - If the parent is already gone or cannot be validated, startup fails before `READY`.
 - Normal supervisor shutdown wins over the watcher and follows [SIDECAR-SHUTDOWN-PROTOCOL].
 
-Hard parent death triggers descendant termination, listener disposal, and sidecar exit without waiting for an IPC request. Waiting indefinitely in `AcceptStreamAsync` is forbidden.
+Parent death terminates descendants, disposes the listener, and exits without awaiting IPC. `AcceptStreamAsync` MUST remain cancellable.
 
 ### Descendant Containment `[SIDECAR-PROCESS-TREE]`
 
@@ -206,7 +203,7 @@ Production launch MUST be direct, so the Rust `Child` PID and handshake PID iden
 
 ### Exit Detection and Reaping `[SIDECAR-PROCESS-EXIT]`
 
-A generation-scoped process watcher reports exit status to the supervisor in every active state. Expected zero exit after acknowledged shutdown transitions to `Stopped`. Any other exit before or while `Ready` is classified as failure and enters backoff. The child is always awaited/reaped, even after timeout or hard kill. Dropping a `Child` handle is a safety net, not the primary cleanup path.
+A generation-scoped watcher reports every exit. Zero exit after acknowledged shutdown reaches `Stopped`; any other active-state exit enters backoff. The child is always reaped, including after timeout or hard kill; dropping its handle is only a safety net.
 
 ## IPC Session `[SIDECAR-IPC]`
 
@@ -259,7 +256,7 @@ No request is automatically replayed after an ambiguous post-write failure. Read
 
 ### Health and Activity `[SIDECAR-HEALTH-ACTIVITY]`
 
-Health is part of the connection driver, not a second caller racing for the transport lock.
+The connection driver owns health checks.
 
 - No ping is sent during `Resolving` through `Bootstrapping`, `Backoff`, or `Stopping`.
 - While an ordinary request is active and within its response budget, the sidecar is **busy**, not unhealthy. The request's own deadline detects a stall.
@@ -278,9 +275,9 @@ The failure counter resets only after a complete valid message/response cycle. T
 
 ### Failure Taxonomy `[SIDECAR-RECOVERY-FAILURES]`
 
-The supervisor records one of: `resolution`, `spawn`, `pre-ready-exit`, `ready-timeout`, `listener-bind`, `handshake`, `connect`, `bootstrap`, `protocol`, `request-timeout`, `health`, `process-exit`, or `shutdown-timeout`. The category is stable for logs and user-facing summaries; platform exception details remain diagnostic context.
+The stable failure categories are `resolution`, `spawn`, `pre-ready-exit`, `ready-timeout`, `listener-bind`, `handshake`, `connect`, `bootstrap`, `protocol`, `request-timeout`, `health`, `process-exit`, and `shutdown-timeout`; platform details remain diagnostic context.
 
-Resolution, spawn, pre-READY, connect, bootstrap, runtime crash, health, and protocol failures all advance the same per-language backoff sequence. There is no health-loop-only crash path.
+All startup, runtime, health, and protocol failures advance the same per-language backoff sequence.
 
 ### Backoff Algorithm `[SIDECAR-RECOVERY-BACKOFF]`
 
@@ -290,7 +287,7 @@ Backoff resets to 1s only after 60 seconds continuously in `Ready` or an explici
 
 ### Bootstrap and Rehydration `[SIDECAR-RECOVERY-REHYDRATE]`
 
-The Rust host is the source of truth for desired session state. It retains, per language:
+Per language, the Rust host retains the authoritative desired session state:
 
 - selected workspace/solution or project-less root-file target;
 - current analyzer/configuration payload;
@@ -304,7 +301,7 @@ Every new connection is bootstrapped in this order:
 3. replay of latest open documents owned by that language in stable URI order; and
 4. registration/activation of notification consumers.
 
-Only then does the generation become `Ready`. A bootstrap failure enters normal backoff. Eager workspace startup, lazy project-less startup, second-language startup, explicit solution selection, and crash recovery MUST call this one bootstrap implementation. The generation and readiness state are Rust-host salsa inputs; changing either invalidates dependent semantic queries and triggers feature-specific refresh/retry behavior, including diagnostic generation rules in [DIAG-PUSH-GATE]. Sidecars and lifecycle components MUST NOT maintain independent semantic result caches.
+Only then is the generation `Ready`; failure enters backoff. Eager, lazy/project-less, second-language, explicit-solution, and recovery paths MUST use this bootstrap. Generation and readiness are salsa inputs whose changes invalidate dependent queries and trigger feature refresh/retry, including [DIAG-PUSH-GATE]. Sidecars and lifecycle code MUST NOT keep semantic result caches.
 
 ### Degraded Behavior `[SIDECAR-RECOVERY-DEGRADED]`
 
@@ -374,20 +371,18 @@ The versioned handshake is the only intended startup-protocol change. MessagePac
 
 ## Implementation Anchors `[SIDECAR-IMPLEMENTATION]`
 
-These paths identify the current implementation and verification surface; they do not imply that every acceptance scenario is complete.
-
 | Contract | Implementation | Verification |
 |---|---|---|
-| Resolution, spawn, request budgets, health, and shutdown | [`src/sidecar/manager.rs`](../../src/sidecar/manager.rs) | In-module tests and [SIDECAR-TESTING] |
-| MessagePack envelope | [`src/sidecar/protocol.rs`](../../src/sidecar/protocol.rs) | Rust protocol tests |
-| Rust framing and endpoint transport | [`src/sidecar/transport.rs`](../../src/sidecar/transport.rs) | Rust transport tests |
-| Managed framing and dispatch | [`FramedTransport.cs`](../../sidecars/SharpLsp.Sidecar.Common/Ipc/FramedTransport.cs), [`IpcConnection.cs`](../../sidecars/SharpLsp.Sidecar.Common/Ipc/IpcConnection.cs), [`MessageRouter.cs`](../../sidecars/SharpLsp.Sidecar.Common/Ipc/MessageRouter.cs) | [`IpcConnectionTests.cs`](../../sidecars/SharpLsp.Sidecar.Common.Tests/IpcConnectionTests.cs) |
-| Managed listener, readiness, parent watch, and shutdown | [`SidecarHost.cs`](../../sidecars/SharpLsp.Sidecar.Common/SidecarHost.cs) | [`SidecarHostEndToEndTests.cs`](../../sidecars/SharpLsp.Sidecar.Common.Tests/SidecarHostEndToEndTests.cs) |
-| Workspace open and analyzer bootstrap | [`src/main.rs`](../../src/main.rs) | Release host/sidecar suites required by [SIDECAR-TESTING] |
+| Resolution, spawn, request budgets, health, and shutdown | [`manager.rs`](../../src/sharplsp/src/sidecar/manager.rs) | [`manager.rs` tests](../../src/sharplsp/src/sidecar/manager.rs) and [SIDECAR-TESTING] |
+| MessagePack envelope | [`protocol.rs`](../../src/sharplsp/src/sidecar/protocol.rs) | [`protocol.rs` tests](../../src/sharplsp/src/sidecar/protocol.rs) |
+| Rust framing and endpoint transport | [`transport.rs`](../../src/sharplsp/src/sidecar/transport.rs) | [`transport.rs` tests](../../src/sharplsp/src/sidecar/transport.rs) |
+| Managed framing and dispatch | [`FramedTransport.cs`](../../src/sidecars/SharpLsp.Sidecar.Common/Ipc/FramedTransport.cs), [`IpcConnection.cs`](../../src/sidecars/SharpLsp.Sidecar.Common/Ipc/IpcConnection.cs), [`MessageRouter.cs`](../../src/sidecars/SharpLsp.Sidecar.Common/Ipc/MessageRouter.cs) | [`IpcConnectionTests.cs`](../../src/sidecars/SharpLsp.Sidecar.Common.Tests/IpcConnectionTests.cs) |
+| Managed listener, readiness, parent watch, and shutdown | [`SidecarHost.cs`](../../src/sidecars/SharpLsp.Sidecar.Common/SidecarHost.cs) | [`SidecarHostEndToEndTests.cs`](../../src/sidecars/SharpLsp.Sidecar.Common.Tests/SidecarHostEndToEndTests.cs) |
+| Workspace open and analyzer bootstrap | [`src/sharplsp/src/main.rs`](../../src/sharplsp/src/main.rs) | Release host/sidecar suites required by [SIDECAR-TESTING] |
 
 ## End-to-end Acceptance `[SIDECAR-TESTING]`
 
-Tests MUST be coarse end-to-end tests using real processes, real platform IPC, real files, and either the published C#/F# sidecars or a separately spawned lifecycle fixture built on the production shared `SidecarHost`. In-memory transports, mocked process APIs, sleeps as the only assertion, and test-only branches in production code are prohibited.
+Acceptance tests MUST use real processes, platform IPC, files, and published sidecars or a separate fixture built on production `SidecarHost`. In-memory transports, mocked process APIs, sleep-only assertions, and production test branches are prohibited.
 
 Required scenarios:
 

@@ -33,23 +33,15 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
         </PackageReference>
-        <PackageReference
-            Include="Microsoft.CodeAnalysis.CSharp"
-            Version="5.6.0"
-            PrivateAssets="all"
-        />
-        <PackageReference
-            Include="Microsoft.CodeAnalysis.Analyzers"
-            Version="5.6.0"
-            PrivateAssets="all"
-        />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" PrivateAssets="all" />
+        <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.6.0" PrivateAssets="all" />
         <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
         </PackageReference>
         <!-- The BannedApiAnalyzers package is referenced repo-wide, but its RS0030
-             rule stays dormant until sidecars/config/BannedSymbols.txt is supplied. That is done
-             in sidecars/Directory.Build.props, deliberately NOT here: the list
+             rule stays dormant until src/sidecars/config/BannedSymbols.txt is supplied. That is done
+             in src/sidecars/Directory.Build.props, deliberately NOT here: the list
              encodes sidecar rules, and test fixtures must stay free to block a
              thread on purpose. -->
 

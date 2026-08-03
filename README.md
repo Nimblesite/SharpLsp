@@ -58,7 +58,7 @@ Rider, Zed, Neovim, Helix, and Emacs support is coming soon.
 
 Full documentation is available at [sharplsp.dev/docs](https://sharplsp.dev/docs).
 
-The repository includes a complete [`sharplsp.toml` configuration template](examples/config/sharplsp.example.toml).
+The repository includes a complete [`sharplsp.toml` configuration template](src/examples/config/sharplsp.example.toml).
 
 For the full argument behind the project, read [Why .NET Needs Editor-Agnostic Tooling](https://sharplsp.dev/blog/editor-agnostic-dotnet-lsp/).
 

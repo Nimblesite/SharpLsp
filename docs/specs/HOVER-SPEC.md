@@ -1,4 +1,4 @@
-# [HOVER] Hover / Quick Info Specification
+# [HOVER-SPEC] Hover / Quick Info Specification
 
 **Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
@@ -39,6 +39,8 @@ SharpLsp MUST return `MarkupContent` with `kind: "markdown"`. Plain-text fallbac
 ## [HOVER-ROUTING] Request Routing
 
 Hover is a **semantic** request. The Rust host routes it to the appropriate sidecar based on document language.
+
+Implementations: [semantic.rs](../../src/sharplsp/src/semantic.rs), [CSharpHoverBuilder.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Hover/CSharpHoverBuilder.cs), [FSharpHoverBuilder.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/Hover/FSharpHoverBuilder.fs), and the [C# hover end-to-end tests](../../src/sidecars/SharpLsp.Sidecar.CSharp.Tests/HoverEndToEndTests.cs).
 
 | Step | Component | Action |
 |---|---|---|

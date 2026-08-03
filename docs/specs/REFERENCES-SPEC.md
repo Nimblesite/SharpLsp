@@ -1,4 +1,4 @@
-# Find All References & Document Highlights Specification `[REFERENCES]`
+# Find All References & Document Highlights Specification `[REFERENCES-SPEC]`
 
 **Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
@@ -76,7 +76,7 @@ enum DocumentHighlightKind {
 
 The Rust host MAY use tree-sitter to reject whitespace, comments, and string literals with `null` before sidecar dispatch.
 
-Implementation anchors: Rust routing and DTO conversion live in [`src/semantic.rs`](../../src/semantic.rs); C# dispatch, symbol resolution, and wire types live in [`CSharpSidecar.cs`](../../sidecars/SharpLsp.Sidecar.CSharp/CSharpSidecar.cs), [`DefinitionResolver.cs`](../../sidecars/SharpLsp.Sidecar.CSharp/Workspace/DefinitionResolver.cs), and [`Messages.cs`](../../sidecars/SharpLsp.Sidecar.CSharp/Messages.cs); F# behavior and wire types live in [`FSharpReferences.fs`](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpReferences.fs) and [`FSharpWire.fs`](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpWire.fs). Coarse protocol coverage is in [`tests/e2e_modules/references.rs`](../../tests/e2e_modules/references.rs).
+Implementation anchors: Rust routing and DTO conversion live in [`src/sharplsp/src/semantic.rs`](../../src/sharplsp/src/semantic.rs); C# dispatch, symbol resolution, and wire types live in [`CSharpSidecar.cs`](../../src/sidecars/SharpLsp.Sidecar.CSharp/CSharpSidecar.cs), [`DefinitionResolver.cs`](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/DefinitionResolver.cs), and [`Messages.cs`](../../src/sidecars/SharpLsp.Sidecar.CSharp/Messages.cs); F# behavior and wire types live in [`FSharpReferences.fs`](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpReferences.fs) and [`FSharpWire.fs`](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpWire.fs). Coarse protocol coverage is in [`src/sharplsp/tests/e2e_modules/references.rs`](../../src/sharplsp/tests/e2e_modules/references.rs).
 
 ## C# Implementation (Roslyn) `[REFERENCES-CSHARP]`
 
@@ -207,7 +207,7 @@ Reference requests MUST NOT hang or return protocol errors to the client; failur
 
 ### Request `[REFERENCES-IPC-REQUEST]`
 
-The C# [`Messages.cs`](../../sidecars/SharpLsp.Sidecar.CSharp/Messages.cs) and F# [`FSharpWire.fs`](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpWire.fs) definitions MUST encode identical keys.
+The C# [`Messages.cs`](../../src/sidecars/SharpLsp.Sidecar.CSharp/Messages.cs) and F# [`FSharpWire.fs`](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpWire.fs) definitions MUST encode identical keys.
 
 | Type | MessagePack keys |
 |---|---|

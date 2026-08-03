@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 5
     defaults:
       run:
-        working-directory: website
+        working-directory: src/website
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: website/package-lock.json
+          cache-dependency-path: src/website/package-lock.json
       - run: npm install
       - name: Build site
         run: npm run build
@@ -38,7 +38,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: website/_site
+          path: src/website/_site
   deploy:
     name: Deploy
     needs: build

@@ -1,4 +1,4 @@
-# [NUGET] NuGet Browser Specification
+# [NUGET-BROWSER] NuGet Browser Specification
 
 **Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
@@ -15,6 +15,8 @@ SharpLsp provides a built-in NuGet package manager UI accessible from the Soluti
 ### [NUGET-ARCHITECTURE-PLACEMENT] Component Placement
 
 The **Rust LSP host** owns requests, target discovery, NuGet API calls, `dotnet` child processes, restore notifications, and sidecar reloads. It delegates package-file mutations to the C# sidecar's MSBuild editor as specified by [NUGET-XML-DOM]. Editor extensions MUST NOT perform package operations.
+
+Implementations: [handlers.rs](../../src/sharplsp/src/nuget/handlers.rs), [nuget-browser.ts](../../src/editors/vscode/src/nuget-browser.ts), and the [host end-to-end tests](../../src/sharplsp/tests/nuget_e2e.rs).
 
 ```
 Editor Webview ──postMessage──> Extension ──LSP request──> Rust Host
@@ -450,11 +452,4 @@ Every target below is end-to-end, measured from click to UI update. [NUGET-FEEDB
 
 ## [NUGET-EDITORS] Editor Support Matrix
 
-| Editor | NuGet Search | Install/Remove | Browse UI |
-|--------|-------------|----------------|-----------|
-| VS Code | LSP request | LSP request | Webview panel |
-| Neovim | LSP request | LSP request | Telescope picker (future) |
-| Helix | LSP request | LSP request | CLI prompt (future) |
-| Zed | LSP request | LSP request | Custom panel (future) |
-
-All editors share the same LSP requests. Only the UI layer differs per editor.
+VS Code provides the webview in [NUGET-WEBVIEW]; other editors may consume the same custom requests, but this specification mandates no additional editor UI.

@@ -2,15 +2,13 @@
 
 ## Context `[BINARY-CONTEXT]`
 
-SharpLsp currently ships a single tagged GitHub release containing one monolithic archive per platform with `bin/sharplsp` + `sidecar-csharp/` + `sidecar-fsharp/` folders. The VS Code extension downloads that archive and extracts it into `~/.local/` (see [`install.ts`](../../editors/vscode/src/install.ts)).
+SharpLsp currently ships a single tagged GitHub release containing one monolithic archive per platform with `bin/sharplsp` + `sidecar-csharp/` + `sidecar-fsharp/` folders. The VS Code extension downloads that archive and extracts it into `~/.local/` (see [`install.ts`](../../src/editors/vscode/src/install.ts)).
 
 The distribution contract defines three channels:
 
 1. **Rust `sharplsp` binary** — Homebrew (macOS/Linux) and Scoop (Windows), driven by GitHub release assets.
 2. **C# and F# sidecars** — published as global `dotnet tool` packages (`dotnet tool install -g SharpLsp.Sidecar.CSharp` / `.FSharp`).
-3. **VS Code extension (and any future editor extension)** — at activation, MUST verify that all three components are installed at the exact version the VSIX expects by spawning each binary with `--version` and comparing the output to the version in `package.json`. This is non-negotiable: no trust-on-presence, no bundled fallback, no version drift.
-
-   If any component is missing or mismatched, the extension MUST actively run the matching package manager (`brew` / `scoop` / `dotnet tool install`) to install or update it — after prompting the user once with a modal. Editor extensions are forbidden from downloading binaries directly; all installation goes through Homebrew, Scoop, or the dotnet tool CLI.
+3. **VS Code and future editor extensions** — on activation, MUST spawn each component with `--version` and compare it with `package.json`; file presence, bundled fallback, and version drift are invalid. A missing or mismatched component MUST trigger one modal prompt, then installation or update through `brew`, `scoop`, or `dotnet tool`. Editor extensions MUST NOT download binaries directly.
 
 ## Architecture `[BINARY-ARCHITECTURE]`
 
@@ -69,7 +67,7 @@ Rules:
 
 ### Framework-dependent sidecar tools `[BINARY-SIDECARS]`
 
-`sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj` `sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj`
+`src/sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj` `src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj`
 
 Changes:
 
@@ -85,7 +83,7 @@ Changes:
 
 ### Rust binary version contract `[BINARY-RUST]`
 
-No changes needed in the Rust source. Already verified at [`install.ts`](../../editors/vscode/src/install.ts).
+No changes needed in the Rust source. Already verified at [`install.ts`](../../src/editors/vscode/src/install.ts).
 
 ### Release workflow `[BINARY-RELEASE]`
 
@@ -97,7 +95,7 @@ Replace the current monolithic archive job with:
 - Upload artifact
 
 **Job B: `pack-sidecars`** (single ubuntu job — framework-dependent, no RID matrix)
-- `dotnet pack sidecars/SharpLsp.Sidecar.CSharp -p:PackageVersion=<version>
+- `dotnet pack src/sidecars/SharpLsp.Sidecar.CSharp -p:PackageVersion=<version>
    -c Release -o nupkgs` → one cross-platform `.nupkg`
 - Same for `SharpLsp.Sidecar.FSharp`
 - Total: 2 nupkgs per release
@@ -126,7 +124,7 @@ Replace the current monolithic archive job with:
 
 ### VS Code installation flow `[BINARY-VSCODE]`
 
-Replace `ensureBinaries` and the entire download path in [`install.ts`](../../editors/vscode/src/install.ts) with a verify-then-install-via-package-manager layer.
+Replace `ensureBinaries` and the entire download path in [`install.ts`](../../src/editors/vscode/src/install.ts) with a verify-then-install-via-package-manager layer.
 
 **Version check (mandatory, always via `--version`):**
 
@@ -202,11 +200,11 @@ Before running any install command, run `getVersion("brew")` / `getVersion("scoo
 ## Critical files `[BINARY-FILES]`
 
 - [`.github/workflows/release.yml`](../../.github/workflows/release.yml) — rewrite
-- [`editors/vscode/src/install.ts`](../../editors/vscode/src/install.ts) — replace the download path
-- [`sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj`](../../sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj) — add `PackAsTool`
-- [`sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj`](../../sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj) — add `PackAsTool`
-- [`sidecars/SharpLsp.Sidecar.CSharp/Program.cs`](../../sidecars/SharpLsp.Sidecar.CSharp/Program.cs) — add `--version`
-- [`sidecars/SharpLsp.Sidecar.FSharp/Program.fs`](../../sidecars/SharpLsp.Sidecar.FSharp/Program.fs) — add `--version`
+- [`src/editors/vscode/src/install.ts`](../../src/editors/vscode/src/install.ts) — replace the download path
+- [`src/sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj`](../../src/sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj) — add `PackAsTool`
+- [`src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj`](../../src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj) — add `PackAsTool`
+- [`src/sidecars/SharpLsp.Sidecar.CSharp/Program.cs`](../../src/sidecars/SharpLsp.Sidecar.CSharp/Program.cs) — add `--version`
+- [`src/sidecars/SharpLsp.Sidecar.FSharp/Program.fs`](../../src/sidecars/SharpLsp.Sidecar.FSharp/Program.fs) — add `--version`
 - [`Makefile`](../../Makefile) — simplify `install` target
 - `docs/specs/DISTRIBUTION-SPEC.md` — new
 - `docs/plans/DISTRIBUTION-PLAN.md` — new
@@ -225,7 +223,7 @@ These must exist before the release workflow will succeed. Create them before me
 
 1. **Local dry-run of sidecar packaging**
    ```
-   dotnet pack sidecars/SharpLsp.Sidecar.CSharp -p:PackageVersion=0.1.1 -o /tmp/nupkgs
+   dotnet pack src/sidecars/SharpLsp.Sidecar.CSharp -p:PackageVersion=0.1.1 -o /tmp/nupkgs
    dotnet tool install -g --add-source /tmp/nupkgs SharpLsp.Sidecar.CSharp
    sharplsp-sidecar-csharp --version   # must print "sharplsp-sidecar-csharp 0.1.1"
    ```

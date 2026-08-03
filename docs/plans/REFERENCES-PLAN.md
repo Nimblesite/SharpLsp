@@ -107,7 +107,7 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [x] Implement F# symbol → C# references (Rust host dispatches to C# sidecar for C# projects)
 - [ ] E2E test: cross-language references on a mixed C#/F# solution
 
-### Testing — Rust E2E (`tests/lsp_e2e.rs`)
+### Testing — Rust E2E (`src/sharplsp/tests/lsp_e2e.rs`)
 
 - [ ] E2E test: C# find-all-references on method returns all call sites
 - [ ] E2E test: C# find-all-references on class returns all type usages

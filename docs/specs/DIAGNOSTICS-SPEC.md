@@ -1,19 +1,12 @@
-# [DIAG] Diagnostics Specification
+# [DIAG-SPEC] Diagnostics Specification
 
 SharpLsp MUST surface compiler errors, warnings, and analyzer diagnostics across the solution without reporting stale compilation state.
 
 ## [DIAG-ARCHITECTURE] Architecture
 
-SharpLsp uses the LSP 3.17 pull-diagnostics model with workspace refresh.
+SharpLsp uses LSP 3.17 pull diagnostics: the Rust host answers editor pulls through Roslyn/FCS sidecars, and sidecar workspace changes trigger `workspace/diagnostic/refresh`.
 
-```
-Editor ←→ Rust LSP Host ←→ C#/F# Sidecar (Roslyn / FCS)
-  ↑           ↑                    ↑
-  Problems    workspace/diagnostic Workspace.RegisterWorkspaceChangedHandler
-  window      ←refresh notifs      DocumentDiagnosticsService (per-doc)
-              textDocument/        (no eager solution scan — ever)
-              diagnostic←pull
-```
+Implementations: [diagnostics.rs](../../src/sharplsp/src/diagnostics.rs), [pull_diagnostics.rs](../../src/sharplsp/src/pull_diagnostics.rs), and the [full-stack diagnostics tests](../../src/sharplsp/tests/e2e_modules/diagnostics_full_stack.rs).
 
 ### [DIAG-ARCHITECTURE-PULL-REFRESH] Pull and Refresh Cycle
 
@@ -23,7 +16,7 @@ Instead:
 
 1. **Workspace open**: Rust host opens the workspace in the sidecar. Sidecar runs [DIAG-RESTORE] before creating `MSBuildWorkspace`. Once the workspace is created, the sidecar subscribes to `Workspace.RegisterWorkspaceChangedHandler` and seeds a monotonic `global_state_version: u64`.
 2. **Server advertises pull**: capabilities include `diagnosticProvider.workspaceDiagnostics: true` and `interFileDependencies: true`.
-3. **Editor pulls**: editor sends `textDocument/diagnostic` (per file) and/or `workspace/diagnostic` (whole workspace) on its own schedule. A request may carry the opaque `previousResultId` returned earlier; the SharpLsp extension MUST NOT maintain a separate diagnostic-result cache.
+3. **Editor pulls**: editor sends `textDocument/diagnostic` (per file) and/or `workspace/diagnostic` (whole workspace) on its own schedule. A request may carry the opaque `previousResultId` returned earlier; the SharpLsp extension MUST NOT retain diagnostic results.
 4. **Host queries salsa**: the Rust host evaluates the per-document diagnostic salsa query. On a memoized hit it reuses the query value; on a miss it asks the sidecar to call `Project.GetCompilationAsync().GetSemanticModel(tree).GetDiagnostics()` and `CompilationWithAnalyzers` for only the requested document, then supplies the result to salsa.
 5. **Result identity**: response carries `resultId = "{project_version}:{doc_version}:{global_state_version}"`. If `previousResultId` matches the current salsa query identity, the host returns `DiagnosticReport.Unchanged` and skips IPC and semantic analysis.
 6. **Refresh on change**: any sidecar-side `WorkspaceChanged` event (`ProjectAdded`, `ProjectReloaded`, `SolutionChanged`, `DocumentChanged`, restore completion) bumps `global_state_version` and emits `diagnostics/refresh`. The Rust host updates the corresponding salsa inputs, coalesces refreshes for 2000ms, and sends LSP `workspace/diagnostic/refresh`; the editor then re-pulls.
@@ -202,19 +195,19 @@ Per-document request:
 }
 ```
 
-`resultId` format is `p:{project_version}|d:{doc_version}|g:{global_state_version}`. When the editor's `previousResultId` matches the current key for that document, the server returns `{ kind: "unchanged" }` (per LSP 3.17 §10.6.1) and skips both the IPC round-trip and the Roslyn semantic analysis.
+`resultId` format is `p:{project_version}|d:{doc_version}|g:{global_state_version}`. When `previousResultId` matches the current salsa query identity, the host returns `{ kind: "unchanged" }` (LSP 3.17 §10.6.1) and skips both IPC and semantic analysis.
 
 Workspace request (`workspace/diagnostic`) is supported with partial-result streaming so large solutions don't block on a single response.
 
 ### [DIAG-LSP-REFRESH] Refresh Notifications (`workspace/diagnostic/refresh`)
 
-When sidecar state changes invalidate cached diagnostics, the host sends:
+When sidecar state changes update diagnostic salsa inputs, the host sends:
 
 ```json
 { "method": "workspace/diagnostic/refresh" }
 ```
 
-This tells the editor to discard its cached `previousResultId`s and re-pull. Refreshes are **debounced 2000ms** (matching `Microsoft.CodeAnalysis.LanguageServer`'s `AsyncBatchingWorkQueue`) — multiple workspace events within the debounce window collapse into one refresh.
+This tells the editor that prior result identities are invalid and it must re-pull. The SharpLsp extension retains no diagnostic result data. Refreshes are debounced 2000ms, collapsing multiple workspace events within the window into one notification.
 
 Refresh triggers (sidecar → host IPC notification `diagnostics/refresh` carrying the new `global_state_version`):
 
@@ -252,11 +245,11 @@ Payload (MessagePack):
 class DiagnosticsRequest
 {
     [Key(0)] string FilePath;
-    [Key(1)] string? PreviousResultId;   // sidecar can short-circuit if unchanged
+    [Key(1)] string? PreviousResultId;   // reserved for wire compatibility; host sends null
 }
 ```
 
-Response: `DiagnosticResult[]` (see [DIAG-IPC-DOCUMENT-RESPONSE]) plus `ResultId` and a `Changed` flag. When `Changed = false`, the items array is empty and the host returns `{ kind: "unchanged" }` to the editor.
+The sidecar always returns `DiagnosticResult[]` and MUST NOT memoize results or decide `unchanged`. The Rust host's [DIAG-ARCHITECTURE-SALSA] query owns result reuse, assigns `ResultId`, and returns the LSP `Changed`/`Unchanged` report.
 
 ### [DIAG-IPC-DOCUMENT-RESPONSE] Response: `DiagnosticResult[]`
 
@@ -277,13 +270,13 @@ class DiagnosticResult
 
 ### [DIAG-IPC-WORKSPACE-PULL] Workspace Pull: `workspace/diagnostics/pull`
 
-Called by the Rust host in response to LSP `workspace/diagnostic`. The sidecar streams per-document results (one `WorkspaceDocumentDiagnosticReport` per document) so the editor sees results progressively. Results omit unchanged documents (matching `DiagnosticReport.Unchanged` semantics).
+Called by the Rust host for salsa misses during LSP `workspace/diagnostic`. The host streams one `WorkspaceDocumentDiagnosticReport` per document; salsa hits produce `DiagnosticReport.Unchanged` without sidecar IPC.
 
 The legacy `workspace/diagnostics/all` bulk RPC MUST NOT be restored; workspace-wide analysis happens lazily through per-document pulls as specified by [DIAG-ARCHITECTURE-EAGER-SCAN].
 
 ### [DIAG-IPC-REFRESH] Notification: `diagnostics/refresh`
 
-Sidecar → host notification fired when any input invalidates cached diagnostics. Payload:
+Sidecar → host notification fired when an input changes and the host must update diagnostic salsa inputs. Payload:
 
 ```csharp
 [MessagePackObject]
@@ -315,14 +308,14 @@ The gate is mandatory because unresolved `<PackageReference>` items can produce 
 
 | Metric | Target |
 |--------|--------|
-| Per-document pull (cached) | <5ms (returns `unchanged`) |
+| Per-document pull (salsa memoized) | <5ms (returns `unchanged`) |
 | Per-document pull (cold) | <200ms p50, <500ms p95 |
 | Workspace pull, partial result for first document | <500ms after restore completes |
 | Workspace pull, full result for 50-project solution | <10s after restore completes |
 | Refresh debounce window | 2000ms (matches Roslyn LSP) |
-| NuGet restore (cached / `assets.json` valid) | <100ms (gate skipped) |
+| NuGet restore (`assets.json` valid) | <100ms (gate skipped) |
 | NuGet restore (cold) | bounded only by `dotnet restore` itself; surface via `$/progress` |
-| Memory overhead (per-document caching) | <200MB additional for 50-project solution |
+| Memory overhead (salsa diagnostic memoization) | <200MB additional for 50-project solution |
 
 ## [DIAG-SCOPE] Supported Scope
 
@@ -348,8 +341,8 @@ The gate is mandatory because unresolved `<PackageReference>` items can produce 
 
 There is no background scan thread. Roslyn analysis happens only when the editor pulls:
 
-- **Lazy compilation**: `Project.GetCompilationAsync()` is invoked on demand for the project of the document being pulled. Roslyn topologically resolves and caches dependency compilations as `CompilationReference`s. Subsequent pulls within the same `Solution` snapshot reuse the cache — the second pull on any file in the same project completes in milliseconds.
-- **Caching by `resultId`**: per [DIAG-LSP-PULL], repeat pulls for unchanged documents return `{ kind: "unchanged" }` without re-running Roslyn. The cache key includes `global_state_version`, so any workspace mutation invalidates the entire cache atomically.
+- **Lazy compilation**: on a salsa miss, the sidecar invokes `Project.GetCompilationAsync()` for the requested document's project and returns the resulting diagnostics without retaining a SharpLsp memo table.
+- **Salsa query identity**: per [DIAG-LSP-PULL], repeat pulls for unchanged documents return `{ kind: "unchanged" }` from the Rust-host salsa query without re-running Roslyn. The tracked inputs include `global_state_version`, so workspace mutations invalidate affected query values.
 - **Workspace event subscription**: the sidecar's `Workspace.RegisterWorkspaceChangedHandler` is the only active background work. It mutates `global_state_version` and emits `diagnostics/refresh`. It does not analyze anything itself.
 
 ### [DIAG-ANALYSIS-CANCELLATION] Cancellation
@@ -364,7 +357,7 @@ When a file changes:
 
 - The host updates its VFS, sends `textDocument/didChange` IPC to the sidecar (which calls `_solution.WithDocumentText(...)`), and the sidecar emits `diagnostics/refresh` carrying only the affected project's IDs in `AffectedProjectIds`.
 - The host's debounced refresh queue collapses bursts; the LSP `workspace/diagnostic/refresh` notification fires once per debounce window.
-- The editor re-pulls. Files unaffected by the change return `{ kind: "unchanged" }` cheaply because their `resultId` (which incorporates project version) hasn't moved.
+- The editor re-pulls. Files whose salsa inputs did not change return `{ kind: "unchanged" }` because their `resultId` remains valid.
 
 ## [DIAG-TRUTH] Truth Guarantees
 

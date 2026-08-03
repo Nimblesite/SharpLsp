@@ -1,4 +1,4 @@
-# SharpLsp Debugging Technical Specification `[DEBUG]`
+# SharpLsp Debugging Technical Specification `[DEBUG-SPEC]`
 
 ## Mission `[DEBUG-MISSION]`
 
@@ -8,7 +8,7 @@ SharpLsp debugging MUST use redistributable open-source components, work through
 
 ### Phase Four Adapter `[DEBUG-ADAPTER-NETCOREDBG]`
 
-Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.0` on stdin/stdout. It provides line, conditional, function, and exception breakpoints; step in/over/out; variables; call stacks; and Linux x64/ARM64 mixed-mode debugging. Phase Five replaces it with the native SharpLsp Debug Sidecar specified in [DEBUG-ARCHITECTURE-SIDECAR].
+Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.0` on stdin/stdout. Phase Five replaces it with the native SharpLsp Debug Sidecar in [DEBUG-ARCHITECTURE-SIDECAR].
 
 ### netcoredbg Gaps `[DEBUG-ADAPTER-GAPS]`
 
@@ -30,31 +30,29 @@ Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.
 | C# 12 primary constructor params not inspectable | Compiler-generated fields not mapped back to source syntax | Issue #203 |
 | `Nullable<T>` expansion broken | `Nullable<Guid>` and similar value types cannot be expanded in debugger | Issue #213 |
 
-SharpDbg `0.1.0-preview5` MAY replace a from-scratch Phase Five sidecar only after its missing lambda stepping and Source Link behavior is implemented and its DAP behavior passes SharpLsp acceptance tests. ICorDebug wrapper fixes SHOULD be contributed upstream; SharpLsp MUST NOT maintain a product fork.
+SharpDbg `0.1.0-preview5` MAY replace a from-scratch Phase Five sidecar only after it gains lambda stepping and Source Link support and passes SharpLsp DAP acceptance tests. ICorDebug wrapper fixes SHOULD go upstream; SharpLsp MUST NOT maintain a product fork.
 
 ## Architecture `[DEBUG-ARCHITECTURE]`
 
-Editors communicate through DAP with the Rust `DapRouter`, which proxies Phase Four sessions to netcoredbg and Phase Five sessions to the C# Debug Sidecar; both adapters control the target CoreCLR process through ICorDebug/DbgShim. The current Phase Four editor adapter factory and resolution logic are in [`editors/vscode/src/debug.ts`](../../editors/vscode/src/debug.ts), with coarse coverage in [`debug-e2e.test.ts`](../../editors/vscode/src/test/suite/debug-e2e.test.ts); the Rust router and Phase Five sidecar remain target architecture.
+The current Phase Four factory and resolver in [`debug.ts`](../../src/editors/vscode/src/debug.ts) launch netcoredbg and are covered by [`debug-e2e.test.ts`](../../src/editors/vscode/src/test/suite/debug-e2e.test.ts). The target Rust `DapRouter` proxies netcoredbg or the Phase Five C# Debug Sidecar; both control CoreCLR through ICorDebug/DbgShim.
 
 ### Rust DapRouter `[DEBUG-ARCHITECTURE-ROUTER]`
 
-The Rust host runs a `DapRouter` module responsible for:
+Target `DapRouter` responsibilities:
 
-- **Adapter lifecycle**: spawning/monitoring netcoredbg (Phase 4) or the Debug Sidecar (Phase 5), auto-restart on crash with exponential backoff
-- **DAP proxy**: forwarding DAP messages between the editor and the active adapter with minimal latency overhead
-- **Capability augmentation**: intercepts DAP `initialize` responses to advertise capabilities the underlying adapter lacks but SharpLsp implements at the proxy layer (logpoints, async stack enrichment, DebuggerDisplay)
+- **Adapter lifecycle**: spawn and monitor netcoredbg or the Debug Sidecar; restart crashes with exponential backoff
+- **DAP proxy**: forward messages between the editor and active adapter
+- **Capability augmentation**: amend `initialize` responses for proxy-layer features
 - **Logpoint emulation**: translates DAP `setBreakpoints` logpoint requests into conditional breakpoints that evaluate + log + continue (Phase 4)
 - **Async stack enrichment**: post-processes `stackTrace` responses by reconstructing logical async frames using state-machine field analysis via the C# sidecar (Roslyn)
 - **DebuggerDisplay emulation**: in Phase 4, queries the C# sidecar to evaluate `[DebuggerDisplay]` format strings and rewrites `variables` responses with user-friendly display values
-- **Multi-session management**: maintains a registry of active debug sessions for multi-process/multi-project scenarios
-- **Hot Reload coordination**: integrates with `dotnet watch` / `MetadataUpdater.ApplyUpdate` for hot reload during debug sessions
+- **Multi-session management**: track active sessions for multi-process/multi-project debugging
+- **Hot Reload coordination**: integrate `dotnet watch` / `MetadataUpdater.ApplyUpdate`
 
 ### netcoredbg Integration (Phase Four) `[DEBUG-ARCHITECTURE-NETCOREDBG]`
 
-netcoredbg is managed as an external subprocess:
-
-- **Distribution**: [`debug.ts`](../../editors/vscode/src/debug.ts) resolves a configured path, bundled platform artifact, standard user install, or `PATH`; downloaded artifacts require SHA-256 verification
-- **Version pinning**: [`scripts/vsix/fetch-netcoredbg.sh`](../../scripts/vsix/fetch-netcoredbg.sh) pins `3.2.0-1092`; upgrades require the debug end-to-end suite
+- **Distribution**: [`debug.ts`](../../src/editors/vscode/src/debug.ts) resolves a configured path, bundled platform artifact, standard user install, or `PATH`; downloaded artifacts require SHA-256 verification
+- **Version pinning**: [`tools/vsix/fetch-netcoredbg.sh`](../../tools/vsix/fetch-netcoredbg.sh) pins `3.2.0-1092`; upgrades require the debug end-to-end suite
 - **Transport**: DAP over stdin/stdout; DapRouter opens the child process and pipes JSON-RPC
 - **Launch modes**:
   - `launch`: spawn a new .NET process
@@ -76,16 +74,16 @@ netcoredbg is managed as an external subprocess:
 
 ### SharpLsp Debug Sidecar (Phase Five) `[DEBUG-ARCHITECTURE-SIDECAR]`
 
-A new C# process (Tier 4) that implements the full ICorDebug-based debugger natively:
+A Tier 4 C# process implements DAP and controls CoreCLR through ICorDebug:
 
 - **Runtime**: C# sidecar targeting `net10.0`
-- **Core dependency**: [`ClrDebug`](https://github.com/lordmilko/ClrDebug) v0.3.4+ — managed type-safe P/Invoke wrappers for every ICorDebug COM interface (MIT). On .NET 8+, uses source-generated COM interop for zero-overhead marshaling.
+- **Core dependency**: [`ClrDebug`](https://github.com/lordmilko/ClrDebug) v0.3.4+ MIT wrappers for ICorDebug COM interfaces; .NET 8+ uses source-generated COM interop
 - **Bootstrap**: `Microsoft.Diagnostics.DbgShim` NuGet package (v9.0.661903+, MIT) for runtime discovery and ICorDebug bootstrapping
-- **Protocol**: DAP over stdin/stdout (same as netcoredbg, fully drop-in from the DapRouter's perspective)
+- **Protocol**: DAP over stdin/stdout, interchangeable with netcoredbg behind `DapRouter`
 - **IPC with Rust host**: MessagePack over Unix socket / named pipe for side-channel requests (async stack analysis, expression compilation via Roslyn, DebuggerDisplay/TypeProxy evaluation)
-- **Expression evaluation**: delegates expression compilation to the C# sidecar (Tier 2, Roslyn ScriptingWorkspace); receives compiled IL; evaluates via `ICorDebugEval`. Same approach as vsdbg.
-- **Async stack reconstruction**: reads state-machine fields from heap objects via `ICorDebugValue` traversal; reconstructs the logical async continuation chain
-- **DebuggerDisplay/TypeProxy**: first-class support; evaluates attribute format strings in the debuggee context and returns formatted display values
+- **Expression evaluation**: compile through the Tier 2 Roslyn sidecar and evaluate returned IL via `ICorDebugEval`
+- **Async stack reconstruction**: traverse state-machine heap fields through `ICorDebugValue`
+- **DebuggerDisplay/TypeProxy**: evaluate attribute formats in the debuggee context
 
 ## DAP Protocol `[DEBUG-PROTOCOL]`
 
@@ -181,13 +179,13 @@ SharpLsp targets **DAP specification version 1.71.0**.
 
 **Logpoint emulation (Phase 4):**
 
-netcoredbg does not support logpoints natively. DapRouter intercepts `setBreakpoints` requests containing `logMessage`, rewrites them as conditional breakpoints with an expression that:
+For Phase Four logpoints, `DapRouter` rewrites `setBreakpoints` requests containing `logMessage` as conditional breakpoints that:
 
 1. Evaluates the interpolated log string (referencing frame-local variables)
 2. Calls `System.Diagnostics.Debug.WriteLine(msg)` to emit the output
 3. Returns `false` so execution is never paused
 
-Output is captured from the debug output channel and surfaced as a DAP `output` event. Hit conditions accept `>`, `>=`, `<`, `<=`, `==`, and `%` against the hit counter. Phase Five implements logpoints with `ICorDebugBreakpoint`, immediate `ICorDebugEval`, and `ICorDebugProcess::Continue` without a visible pause.
+The debug output becomes a DAP `output` event. Hit conditions accept `>`, `>=`, `<`, `<=`, `==`, and `%`. Phase Five uses `ICorDebugBreakpoint`, immediate `ICorDebugEval`, and `ICorDebugProcess::Continue` without a visible pause.
 
 ### Stepping `[DEBUG-FEATURES-STEPPING]`
 
@@ -202,9 +200,9 @@ Output is captured from the debug output channel and surfaced as a DAP `output` 
 | Just My Code (skip non-user code) | launch config | P1 |
 | Smart Step Into (F# pipelines) | `stepIn` (targetId) | P2 — Phase 5 |
 
-**Just My Code implementation**: netcoredbg supports `justMyCode: true` in launch config. The Debug Sidecar implements full JMC by checking `[DebuggerNonUserCode]`, `[DebuggerHidden]`, and `[GeneratedCode]` attributes on methods/types, matching vsdbg behavior.
+With `justMyCode: true`, Phase Five excludes methods/types marked `[DebuggerNonUserCode]`, `[DebuggerHidden]`, or `[GeneratedCode]`, matching vsdbg.
 
-**Smart Step Into (F# Phase 5)**: When a single source line in F# calls multiple functions (pipeline operators, function composition), Smart Step Into presents a list of step targets via the DAP `stepIn` `targetId` mechanism. This requires FCS-provided source location analysis to identify callsites on the current line.
+For F# lines with multiple calls, Phase Five returns FCS-derived DAP `stepIn` targets keyed by `targetId`.
 
 ### Call Stack `[DEBUG-FEATURES-STACK]`
 
@@ -219,20 +217,17 @@ Output is captured from the debug output channel and surfaced as a DAP `output` 
 
 #### Async Call Stack Reconstruction `[DEBUG-FEATURES-STACK-ASYNC]`
 
-Inside an async state machine, netcoredbg exposes the physical `MoveNext` frame rather than the logical `await` chain.
+netcoredbg reports physical `MoveNext` frames. `DapRouter` and the C# sidecar reconstruct the logical chain:
 
-**Reconstruction algorithm (implemented in C# sidecar, called by DapRouter):**
-
-1. DapRouter receives a `stopped` event from netcoredbg
-2. DapRouter requests `stackTrace` from netcoredbg; identifies frames where the type name matches the compiler-generated state machine pattern (`<MethodName>d__N`)
-3. For each such frame, DapRouter sends a side-channel request to the C# sidecar with the type name and the `this` object address (extracted from frame locals)
-4. C# sidecar uses Roslyn's compilation model to resolve the state machine type; reads `<>1__state`, `<>4__this` (captured instance), and continuation fields from heap via `ICorDebugObjectValue::GetFieldValue`
-5. C# sidecar walks the continuation chain by reading `_continuation`/`MoveNextRunner` from the `AsyncTaskMethodBuilder._builder` field to find the next logical frame
-6. Reconstructed logical frames are injected into the `stackTrace` response before forwarding to the editor
+1. On `stopped`, request `stackTrace` and find types matching `<MethodName>d__N`.
+2. Send each type and its frame-local `this` address to the C# sidecar.
+3. Resolve the type with Roslyn; read `<>1__state`, `<>4__this`, and continuation fields through `ICorDebugObjectValue::GetFieldValue`.
+4. Follow `_continuation`/`MoveNextRunner` from `AsyncTaskMethodBuilder._builder`.
+5. Inject the logical frames before forwarding `stackTrace`.
 
 If compiler-generated fields cannot be resolved, the response retains the physical stack unchanged.
 
-**Phase 5 improvement**: Debug Sidecar reads continuation chains directly via `ICorDebugProcess::ReadMemory` without requiring a Roslyn compilation model, making reconstruction faster and more reliable.
+Phase Five reads continuation chains directly through `ICorDebugProcess::ReadMemory`, without a Roslyn compilation model.
 
 ### Variables and Inspection `[DEBUG-FEATURES-VARIABLES]`
 
@@ -257,7 +252,7 @@ If compiler-generated fields cannot be resolved, the response retains the physic
 
 **DebuggerDisplay emulation (Phase 4):**
 
-netcoredbg does not render `[DebuggerDisplay]`. DapRouter intercepts `variables` responses, queries the C# sidecar to evaluate `[DebuggerDisplay]` format strings using Roslyn expression evaluation against the frame context, and replaces the default `toString()` value in the response. This is best-effort; complex format strings may fall back to the raw class name.
+For Phase Four, `DapRouter` asks the C# sidecar to evaluate `[DebuggerDisplay]` formats against the frame and replaces the `variables` response's default `toString()` value. Failure falls back to the raw class name.
 
 **Expression evaluation quality tiers:**
 
@@ -273,7 +268,7 @@ netcoredbg does not render `[DebuggerDisplay]`. DapRouter intercepts `variables`
 | T3 | Generic type inference in expressions | Fails | Works |
 | T3 | `dynamic` type evaluation | Fails | Partial |
 
-The Debug Sidecar achieves T3 by delegating `CSharpScriptCompilation` to the C# sidecar, loading the compiled IL into the debuggee, and evaluating it through `ICorDebugEval`.
+For T3, the Debug Sidecar loads C#-sidecar `CSharpScriptCompilation` output into the debuggee and evaluates it through `ICorDebugEval`.
 
 ### Exception Handling `[DEBUG-FEATURES-EXCEPTIONS]`
 
@@ -291,19 +286,15 @@ Configuration via `setExceptionBreakpoints` with `filterOptions` and `exceptionO
 
 ### Hot Reload During Debug `[DEBUG-FEATURES-HOT-RELOAD]`
 
-SharpLsp uses `.NET Hot Reload` (`MetadataUpdater.ApplyUpdate`), not legacy Edit and Continue (`ICorDebugModule2::ApplyChanges`):
-
-- `MetadataUpdater.ApplyUpdate` is cross-platform (Linux, macOS, Windows) since .NET 6
-- Classic EnC via `ICorDebugModule2::ApplyChanges` requires the debugger to generate delta files; no open-source client generates these deltas for Linux/macOS targets (netcoredbg issue #214)
-- `MetadataUpdater.ApplyUpdate` and debugger-based EnC **cannot be used simultaneously** (documented limitation); SharpLsp uses Hot Reload exclusively
+SharpLsp uses cross-platform `.NET Hot Reload` (`MetadataUpdater.ApplyUpdate`, .NET 6+) exclusively. It MUST NOT run alongside debugger-based Edit and Continue; no open-source client currently generates `ICorDebugModule2::ApplyChanges` deltas for Linux/macOS (netcoredbg #214).
 
 **Architecture:**
 
-1. SharpLsp VFS monitors document changes during active debug session
-2. On save, C# sidecar computes delta: uses Roslyn `WatchHotReloadService` to generate metadata delta + IL delta + PDB delta as binary blobs
-3. DapRouter delivers the delta to the target process via DAP `evaluate` injection (Phase 4) or direct `MetadataUpdater.ApplyUpdate` call (Phase 5)
-4. The debug session continues without interruption; next method invocation uses new IL
-5. Rude edits (unsupported changes) are detected and reported with reason; user prompted to restart
+1. During an active session, the VFS detects a save.
+2. Roslyn `WatchHotReloadService` produces metadata, IL, and PDB deltas.
+3. `DapRouter` applies them through DAP `evaluate` injection in Phase Four or directly in Phase Five.
+4. Subsequent calls use the new IL without interrupting the session.
+5. Unsupported rude edits report the reason and prompt a restart.
 
 **Supported hot reload edits:**
 
@@ -328,7 +319,7 @@ SharpLsp uses `.NET Hot Reload` (`MetadataUpdater.ApplyUpdate`), not legacy Edit
 | Docker container attach | P2 |
 | WSL process attach (Windows) | P3 |
 
-**Implementation:** DapRouter maintains a `DebugSessionRegistry` indexed by session ID. Each session owns an independent adapter process. The editor communicates with multiple sessions via session-ID-prefixed DAP messages. Compound launch configs define multiple named configurations that start simultaneously.
+`DapRouter` indexes independent adapter processes by session ID. Session-prefixed DAP messages multiplex them; compound configs start multiple named sessions.
 
 ### Remote Debugging `[DEBUG-FEATURES-REMOTE]`
 
@@ -371,7 +362,7 @@ SharpLsp creates the SSH tunnel; DapRouter connects to its local forwarded socke
 | Debug entire test class/suite | DAP + `sharplsp/testDebug` | P2 |
 | Expecto/FsCheck test debugging | DAP + `sharplsp/testDebug` | P1 (F# parity) |
 
-**Test host process attach**: `dotnet test` spawns a separate test host process (`testhost.exe`/`dotnet-testhost`). SharpLsp must attach to the child test host, not the parent `dotnet test` process. The `VSTEST_HOST_DEBUG=1` environment variable causes the test host to pause and wait for a debugger attach before executing tests. SharpLsp sets this variable in the test debug launch and attaches to the waiting process.
+For test debugging, SharpLsp sets `VSTEST_HOST_DEBUG=1` and attaches to the waiting `testhost.exe`/`dotnet-testhost` child, not the parent `dotnet test` process.
 
 ### Diagnostic Tools Integration `[DEBUG-FEATURES-DIAGNOSTICS]`
 

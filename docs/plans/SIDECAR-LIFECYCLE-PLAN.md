@@ -38,7 +38,7 @@ The finished system will:
 The cluster affects every Roslyn- and FCS-backed feature. A startup storm, endpoint collision,
 protocol desynchronization, or orphaned sidecar can disable completion, hover, navigation,
 diagnostics, refactoring, and Solution Explorer together. The root problem is not any language
-engine; it is fragmented lifecycle ownership in `src/sidecar/manager.rs` and
+engine; it is fragmented lifecycle ownership in `src/sharplsp/src/sidecar/manager.rs` and
 `SidecarHost.MessageLoopAsync`.
 
 The supervisor architecture directly resolves or supplies the necessary foundation for every issue:
@@ -141,7 +141,7 @@ instead of re-entering the broken read.
 ### 4.4 Session recovery `[SIDECAR-PLAN-DESIGN-RECOVERY]`
 
 Extract the duplicated eager startup, lazy project-less startup, second-language startup, and
-`sharplsp/loadSolution` code in `src/main.rs` into one session-update path. The supervisor stores the
+`sharplsp/loadSolution` code in `src/sharplsp/src/main.rs` into one session-update path. The supervisor stores the
 desired target and analyzer configuration; a VFS snapshot provider supplies current open documents.
 On every generation it performs the ordered bootstrap in [SIDECAR-RECOVERY-REHYDRATE] before making
 the request queue available.
@@ -154,26 +154,26 @@ in the diagnostics plan.
 
 | Path | Planned responsibility/change |
 |---|---|
-| `src/sidecar/manager.rs` | Thin facade, public request/session/status/shutdown API; remove child/transport/backoff lock ownership |
-| `src/sidecar/supervisor.rs` | New actor, state transitions, generation fencing, launch/bootstrap/backoff/shutdown orchestration |
-| `src/sidecar/connection.rs` | New sole transport owner, request queue, ID validation, notifications, activity/deadlines |
-| `src/sidecar/launch.rs` | New typed resolution candidates, spawn validation, versioned READY parsing, capped output collection, endpoint leases |
-| `src/sidecar/process_tree.rs` | New safe platform abstraction for direct child/process group and hard termination; no Rust unsafe code |
-| `src/sidecar/protocol.rs` | Envelope shape validators, READY DTO, notification classification, typed protocol faults |
-| `src/sidecar/transport.rs` | Keep bounded framing; distinguish clean EOF from truncated frame; split/ownership support if required by driver |
-| `src/sidecar/mod.rs` | Export only facade/public status types; keep internal modules private |
-| `src/main.rs` | Replace eager/lazy health tasks with session updates; provide target/config/VFS replay and notification sink |
+| `src/sharplsp/src/sidecar/manager.rs` | Thin facade, public request/session/status/shutdown API; remove child/transport/backoff lock ownership |
+| `src/sharplsp/src/sidecar/supervisor.rs` | New actor, state transitions, generation fencing, launch/bootstrap/backoff/shutdown orchestration |
+| `src/sharplsp/src/sidecar/connection.rs` | New sole transport owner, request queue, ID validation, notifications, activity/deadlines |
+| `src/sharplsp/src/sidecar/launch.rs` | New typed resolution candidates, spawn validation, versioned READY parsing, capped output collection, endpoint leases |
+| `src/sharplsp/src/sidecar/process_tree.rs` | New safe platform abstraction for direct child/process group and hard termination; no Rust unsafe code |
+| `src/sharplsp/src/sidecar/protocol.rs` | Envelope shape validators, READY DTO, notification classification, typed protocol faults |
+| `src/sharplsp/src/sidecar/transport.rs` | Keep bounded framing; distinguish clean EOF from truncated frame; split/ownership support if required by driver |
+| `src/sharplsp/src/sidecar/mod.rs` | Export only facade/public status types; keep internal modules private |
+| `src/sharplsp/src/main.rs` | Replace eager/lazy health tasks with session updates; provide target/config/VFS replay and notification sink |
 | `src/diagnostics.rs` / pull diagnostics path | Invalidate on generation change and consume sidecar notifications without owning lifecycle |
-| `sidecars/SharpLsp.Sidecar.Common/SidecarStartupOptions.cs` | Shared strict argument parser for endpoint, parent PID, generation, protocol |
-| `sidecars/SharpLsp.Sidecar.Common/SidecarRunResult.cs` | Shared typed terminal outcome and failure category |
-| `sidecars/SharpLsp.Sidecar.Common/ParentProcessWatchdog.cs` | Pre-READY hard-parent-death detection |
-| `sidecars/SharpLsp.Sidecar.Common/ProcessContainment.cs` | Windows safe Job Object lifetime and Unix group termination support |
-| `sidecars/SharpLsp.Sidecar.Common/SidecarHost.cs` | Versioned READY, terminal loop faults, ack-before-cancel, typed run outcome |
-| `sidecars/SharpLsp.Sidecar.Common/Ipc/IpcConnection.cs` | No blind socket deletion; owned path cleanup; effective endpoint; current-user access |
+| `src/sidecars/SharpLsp.Sidecar.Common/SidecarStartupOptions.cs` | Shared strict argument parser for endpoint, parent PID, generation, protocol |
+| `src/sidecars/SharpLsp.Sidecar.Common/SidecarRunResult.cs` | Shared typed terminal outcome and failure category |
+| `src/sidecars/SharpLsp.Sidecar.Common/ParentProcessWatchdog.cs` | Pre-READY hard-parent-death detection |
+| `src/sidecars/SharpLsp.Sidecar.Common/ProcessContainment.cs` | Windows safe Job Object lifetime and Unix group termination support |
+| `src/sidecars/SharpLsp.Sidecar.Common/SidecarHost.cs` | Versioned READY, terminal loop faults, ack-before-cancel, typed run outcome |
+| `src/sidecars/SharpLsp.Sidecar.Common/Ipc/IpcConnection.cs` | No blind socket deletion; owned path cleanup; effective endpoint; current-user access |
 | C# and F# `Program` entry points | Use shared options/outcome; emit correct non-zero status once; remove duplicated lifecycle decisions |
-| `tests/fixtures/SidecarLifecycleFixture/` | Real separately spawned shared-host fixture for protocol faults, delayed handlers, and child-process containment |
-| `tests/e2e_modules/sidecar_lifecycle.rs` | Full host/process/IPC recovery scenarios and issue traceability |
-| `sidecars/SharpLsp.Sidecar.Common.Tests/SidecarHostEndToEndTests.cs` | Keep only coarse real-IPC host lifecycle coverage; add ack and process-exit assertions |
+| `src/sharplsp/tests/fixtures/SidecarLifecycleFixture/` | Real separately spawned shared-host fixture for protocol faults, delayed handlers, and child-process containment |
+| `src/sharplsp/tests/e2e_modules/sidecar_lifecycle.rs` | Full host/process/IPC recovery scenarios and issue traceability |
+| `src/sidecars/SharpLsp.Sidecar.Common.Tests/SidecarHostEndToEndTests.cs` | Keep only coarse real-IPC host lifecycle coverage; add ack and process-exit assertions |
 | `.github/workflows/ci-rust.yml` / `ci-dotnet.yml` | Run platform-relevant real-process lifecycle cases |
 | `.github/workflows/ci-vsix-windows.yml` | Gate the lifecycle chunk on concurrent hosts, restart, and Windows tree cleanup |
 
@@ -373,7 +373,7 @@ item and its required evidence are complete.
 
 ### 11.2 Real-process test harness first `[SIDECAR-PLAN-CHECKLIST-HARNESS]`
 
-- [ ] Add `tests/fixtures/SidecarLifecycleFixture` as a separately built executable referencing the
+- [ ] Add `src/sharplsp/tests/fixtures/SidecarLifecycleFixture` as a separately built executable referencing the
       production shared sidecar host and IPC assemblies.
 - [ ] Give the fixture a normal echo/ping handler for healthy request/response verification.
 - [ ] Give the fixture a bounded delayed handler to exercise busy-within-budget and deadline-expired
