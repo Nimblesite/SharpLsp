@@ -36,6 +36,26 @@ Per-file symbols are sourced by language, never by a single parser:
 
 The F# path reuses the **same** sidecar `documentSymbol` request that powers the editor outline, mapping the nested FCS symbols (module, namespace, type, DU case, member) into the shared `FileSymbol`/`SymbolNode` tree model using each symbol's full range. The F# sidecar must be threaded into `workspace_symbols::handle`; when it is unavailable the project's `.fs` files contribute no symbols rather than failing the whole request.
 
+### Live-Buffer Path Identity [SE-LIVE-BUFFER]
+
+`sharplsp/workspaceSymbols` MUST parse the latest open-buffer text, including
+unsaved and rapid successive edits. Disk content is used only when no open VFS
+document denotes the source file.
+
+The editor URI and the project model can use different native paths for the same
+file. In particular, Windows runners can send an 8.3 path such as
+`C:\Users\RUNNER~1\...`, while the sidecar reports the expanded
+`C:\Users\runneradmin\...` path. The VFS therefore resolves and caches the
+editor path when the document opens, then compares both the original URI path
+and that canonical path during native-path lookup. Canonicalizing only the
+project-model path is insufficient because it leaves the editor's aliased path
+unchanged and incorrectly falls back to stale disk text.
+
+Path comparison also ignores Windows verbatim prefixes and casing differences.
+The coarse VS Code explorer tests prove that the tree reflects an unsaved rename
+and the final value in a burst of renames; the VFS alias regression test covers
+the reverse-alias lookup independently of hosted-runner path spelling.
+
 ### Request: `sharplsp/workspaceSymbols`
 
 **Params:**

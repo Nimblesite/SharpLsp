@@ -33,7 +33,9 @@ debounce_ms = 150
 # Enable the C# sidecar
 enabled = true
 
-# Path to the .sln file to load. Empty = auto-detect.
+# Path to the .sln/.slnx file to load, absolute or relative to the workspace
+# root. Empty = auto-detect. Required when the root holds more than one
+# solution: auto-detection refuses to guess between them and loads nothing.
 solution_path = ""
 
 # ─── F# ────────────────────────────────────────────────────────────────────────

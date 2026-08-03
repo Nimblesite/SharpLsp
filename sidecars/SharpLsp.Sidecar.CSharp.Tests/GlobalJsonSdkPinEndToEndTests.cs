@@ -49,6 +49,7 @@ public sealed class GlobalJsonSdkPinEndToEndTests
             // SDK satisfies it — the exact shape of the Fantomas failure.
             await File.WriteAllTextAsync(
                 Path.Combine(workspace, "global.json"),
+                /*lang=json,strict*/
                 """
                 { "sdk": { "version": "999.999.100", "rollForward": "latestPatch" } }
                 """

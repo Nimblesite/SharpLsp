@@ -51,12 +51,14 @@ internal sealed partial class WorkspaceManager : IDisposable
 {
     private MSBuildWorkspace? _workspace;
     private Solution? _solution;
+    private bool _isProjectlessDirectory;
     private readonly CodeActionResolver _codeActionResolver = new();
 
     // Roslyn's Solution is immutable; mutating _solution = _solution.WithX(...)
     // is a non-atomic read-modify-write. Concurrent didChange and workspace-load
     // mutations would drop edits, leaving Roslyn with stale text.
     private readonly SemaphoreSlim _solutionMutationLock = new(1, 1);
+    private readonly SemaphoreSlim _projectlessLoadLock = new(1, 1);
 
     // Distinct workspace-load failure summaries already logged. MSBuild reports
     // the same type-load failure once per project, so de-duplicating prevents the
@@ -68,6 +70,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         _workspace?.Dispose();
         _adhocWorkspace?.Dispose();
         _solutionMutationLock.Dispose();
+        _projectlessLoadLock.Dispose();
     }
 
     // Pending text edits keyed by file path that arrived BEFORE the workspace
@@ -108,6 +111,28 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         try
         {
+            if (_isProjectlessDirectory)
+            {
+                await _projectlessLoadLock.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
+                    if (document is null)
+                    {
+                        var initResult = await OpenProjectlessAsync(filePath, ct)
+                            .ConfigureAwait(false);
+                        if (initResult.IsError)
+                        {
+                            return initResult;
+                        }
+                    }
+                }
+                finally
+                {
+                    _ = _projectlessLoadLock.Release();
+                }
+            }
+
             await _solutionMutationLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
@@ -555,6 +580,17 @@ internal sealed partial class WorkspaceManager : IDisposable
         );
     }
 
+    // Names every candidate so the user can copy one straight into sharplsp.toml, and names
+    // the setting so the message is actionable rather than merely descriptive.
+    // Implements [SCRIPT-DEGRADE] and [WORKSPACE-SOLUTION-PATH].
+    private static string AmbiguousSolutionMessage(string path, string[] candidates)
+    {
+        var names = string.Join(", ", candidates.Select(Path.GetFileName));
+        return $"Found {candidates.Length} solutions under '{path}' ({names}), so which one to "
+            + "load is ambiguous. Set `csharp.solution_path` in sharplsp.toml to the solution "
+            + "you want, relative to the workspace root.";
+    }
+
     private async Task<VoidResult> OpenCoreAsync(string path, CancellationToken ct)
     {
         _loggedWorkspaceFailures.Clear();
@@ -569,6 +605,26 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         if (target is null)
         {
+            if (Directory.Exists(path))
+            {
+                // Ambiguity is not absence. Discovery also returns "no target" when the root
+                // holds SEVERAL solutions and it refused to guess; deferring there would
+                // analyse a real repository as loose files, resolving no project reference
+                // and reporting phantom diagnostics across the whole tree. Surface the
+                // choice instead. Implements [SCRIPT-DEGRADE].
+                var candidates = SolutionLoader.FindAmbiguousSolutions(path);
+                if (candidates.Length > 0)
+                {
+                    return VoidResult.Failure(AmbiguousSolutionMessage(path, candidates));
+                }
+
+                // The host eagerly opened a workspace folder, but it contains no projects.
+                // We cannot load a directory as a file-based app. Instead, we succeed
+                // initialization but defer actual workspace creation until a file is opened.
+                _isProjectlessDirectory = true;
+                return new VoidResult.Ok<Unit, string>(Unit.Value);
+            }
+
             // No solution or project owns this path: load it as a file-based app or script.
             // Implements [SCRIPT-DETECT].
             return await OpenProjectlessAsync(path, ct).ConfigureAwait(false);

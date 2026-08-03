@@ -669,7 +669,7 @@ public class EventSource
     }
   });
 
-  // ── VFS vs Disk Stale Data Bug ───────────────────────────────
+  // ── Live-buffer fidelity [SE-LIVE-BUFFER] ───────────────────────────────
 
   test('documentSymbol reflects unsaved edits (VFS-based, should pass)', async function () {
     this.timeout(15_000);
