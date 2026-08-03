@@ -4,7 +4,7 @@
 ///   * [FSharpCodeFixes] turns the findings into "Remove unused open" /
 ///     "Simplify name" code fixes ([FS-CODEFIX-UNUSEDOPEN]/[FS-CODEFIX-SIMPLIFYNAME]);
 ///   * [FSharpAnalyzers] turns them into always-on diagnostic hints
-///     ([FS-ANALYZER-UNUSEDOPEN]/[FS-ANALYZER-SIMPLIFYNAME]).
+///     ([ANALYZERS-FSAC-UNUSED-OPEN]/[ANALYZERS-FSAC-SIMPLIFY-NAME]).
 /// Keeping one source of truth means hints and fixes can never disagree.
 /// Implements [ANALYZERS-FSAC-PARITY].
 module SharpLsp.Sidecar.FSharp.FSharpLocalAnalysis

@@ -2,6 +2,7 @@
 name = "sharplsp"
 version = "0.1.0"
 edition = "2021"
+build = "build/build.rs"
 description = "SharpLsp: The .NET Language Server Platform"
 license = "MIT"
 homepage = "https://github.com/Nimblesite/SharpLsp"

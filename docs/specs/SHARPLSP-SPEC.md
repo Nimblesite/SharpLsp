@@ -271,11 +271,11 @@ Both C# and F# columns require full support unless noted.
 
 | Feature | LSP Method | C# API (Roslyn) | F# API (FCS) | Priority |
 |---|---|---|---|---|
-| Auto-completion | `textDocument/completion` | [CompletionService.GetCompletionsAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getcompletionsasync) | GetDeclarationListInfo() | P0 |
-| Completion resolve | `completionItem/resolve` | [CompletionService.GetDescriptionAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdescriptionasync) | GetDeclarationListInfo (detail) | P0 |
+| Auto-completion | `textDocument/completion` | [CompletionService.GetCompletionsAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getcompletionsasync) | GetDeclarationListInfo() `[FS-COMPLETION]` | P0 |
+| Completion resolve | `completionItem/resolve` | [CompletionService.GetDescriptionAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdescriptionasync) | GetDeclarationListInfo (detail) `[FS-COMPLETION-RESOLVE]` | P0 |
 | Completion edit semantics | `textDocument/completion` | `GetDefaultCompletionListSpan` + trailing-ident extension → `textEdit` — `[COMPLETION-EDIT-REPLACE]` | `QuickParse.GetPartialLongNameEx` island + trailing-ident extension → `textEdit` — `[COMPLETION-EDIT-REPLACE]` | P0 |
 | Hover / Quick Info | `textDocument/hover` | See [HOVER-SPEC.md](HOVER-SPEC.md) | See [HOVER-SPEC.md](HOVER-SPEC.md) | P0 |
-| Signature help | `textDocument/signatureHelp` | SignatureHelpService.GetItemsAsync() | GetMethods() | P0 |
+| Signature help | `textDocument/signatureHelp` | SignatureHelpService.GetItemsAsync() | GetMethods() `[FS-SIGHELP]` | P0 |
 | Parameter hints | `textDocument/signatureHelp` | Same (active parameter tracking) | Same (active parameter tracking) | P0 |
 | Inlay hints (types) | `textDocument/inlayHint` | Type inference display | Type inference display | P1 |
 | Inlay hints (params) | `textDocument/inlayHint` | Parameter name hints | Parameter name hints | P1 |
@@ -299,8 +299,12 @@ The C# sidecar derives the span from [`CompletionService.GetDefaultCompletionLis
 | Document highlights | `textDocument/documentHighlight` | SymbolFinder (scoped to doc) | GetUsesOfSymbolInFile() | P0 |
 | Workspace symbol search | `workspace/symbol` | tree-sitter over open docs (host) | FCS document symbols via sidecar — `[FS-WORKSPACE-SYMBOL]` (host has no F# tree-sitter grammar) | P0 |
 | Document symbols | `textDocument/documentSymbol` | tree-sitter structural extraction | tree-sitter structural extraction | P0 |
-| Call hierarchy | `textDocument/prepareCallHierarchy` | SymbolFinder.FindCallersAsync() | Custom call graph analysis | P1 |
-| Type hierarchy | `textDocument/prepareTypeHierarchy` | FindDerivedClasses + base types | Type hierarchy via FCS symbols | P1 |
+| Call hierarchy prepare | `textDocument/prepareCallHierarchy` | Symbol resolution | FCS symbol resolution `[FS-CALLHIER-PREPARE]` | P1 |
+| Incoming calls | `callHierarchy/incomingCalls` | SymbolFinder.FindCallersAsync() | Project-wide FCS symbol uses `[FS-CALLHIER-INCOMING]` | P1 |
+| Outgoing calls | `callHierarchy/outgoingCalls` | Semantic model invocation walk | FCS parse/check traversal `[FS-CALLHIER-OUTGOING]` | P1 |
+| Type hierarchy prepare | `textDocument/prepareTypeHierarchy` | Symbol resolution | FCS entity resolution `[FS-TYPEHIER-PREPARE]` | P1 |
+| Supertypes | `typeHierarchy/supertypes` | Base type and interface symbols | `BaseType` + `DeclaredInterfaces` `[FS-TYPEHIER-SUPER]` | P1 |
+| Subtypes | `typeHierarchy/subtypes` | FindDerivedClasses | Project entity scan `[FS-TYPEHIER-SUB]` | P1 |
 | Breadcrumbs | `textDocument/documentSymbol` | Hierarchical symbol tree | Hierarchical symbol tree | P1 |
 | Go to decompiled source | Custom: `sharplsp/decompileSource` | [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) | ICSharpCode.Decompiler | P1 |
 | Go to source generator output | Custom: `sharplsp/generatorOutput` | GeneratorDriverRunResult | N/A | P2 |
@@ -359,7 +363,7 @@ SharpLsp does **not** provide document formatting. Use dedicated formatters:
 
 | Feature | LSP Method | C# API | F# API | Priority |
 |---|---|---|---|---|
-| Reference count | `textDocument/codeLens` | SymbolFinder.FindReferences() | GetUsesOfSymbol() | P1 |
+| Reference count | `textDocument/codeLens` | SymbolFinder.FindReferences() | GetUsesOfSymbol() `[FS-CODELENS]` | P1 |
 | Implementation count | `textDocument/codeLens` | SymbolFinder.FindImplementations() | Custom implementation count | P1 |
 | Test indicators | `textDocument/codeLens` | Test framework attribute detection | Test framework attribute detection | P1 |
 | Run/debug test | `textDocument/codeLens` | Custom test runner integration | Custom test runner integration | P2 |
@@ -540,45 +544,45 @@ Priorities: P0 = launch blocker, P1 = fast follow, P2 = parity, P3 = later.
 
 ### [SHARPLSP-TODO-INTELLIGENCE] Code Intelligence
 
-| Feature | VS | CDK | R | Priority | Phase |
-|---|---|---|---|---|---|
-| Auto-completion with full semantic context | ✓ | ✓ | ✓ | P0 | 2 |
-| Completion with import suggestions | ✓ | ✓ | ✓ | P0 | 2 |
-| AI-powered completion ranking | ✓ | ✓ | ✓ | P3 | 5 |
-| Snippet completion | ✓ | ✓ | ✓ | P0 | 2 |
-| Override member completion | ✓ | ✓ | ✓ | P1 | 3 |
-| Postfix completion templates | ✗ | ✗ | ✓ | P2 | 4 |
-| Hover / Quick Info | See [HOVER-SPEC.md](HOVER-SPEC.md) | | | P0 | 2 |
-| Signature help / parameter info | ✓ | ✓ | ✓ | P0 | 2 |
-| Inlay hints — type inference | ✓ | ✓ | ✓ | P1 | 3 |
-| Inlay hints — parameter names | ✓ | ✓ | ✓ | P1 | 3 |
-| Inlay hints — lambda return types | ✓ | ✗ | ✓ | P2 | 3 |
-| Regex syntax highlighting in strings | ✓ | ✗ | ✓ | P2 | 4 |
-| Date/time format string validation | ✗ | ✗ | ✓ | P3 | 5 |
+| Feature | Priority | Phase |
+| --- | --- | --- |
+| Auto-completion with full semantic context | P0 | 2 |
+| Completion with import suggestions | P0 | 2 |
+| AI-powered completion ranking | P3 | 5 |
+| Snippet completion | P0 | 2 |
+| Override member completion | P1 | 3 |
+| Postfix completion templates | P2 | 4 |
+| Hover / Quick Info (see [HOVER-SPEC.md](HOVER-SPEC.md)) | P0 | 2 |
+| Signature help / parameter info | P0 | 2 |
+| Inlay hints — type inference | P1 | 3 |
+| Inlay hints — parameter names | P1 | 3 |
+| Inlay hints — lambda return types | P2 | 3 |
+| Regex syntax highlighting in strings | P2 | 4 |
+| Date/time format string validation | P3 | 5 |
 
 ### [SHARPLSP-TODO-NAVIGATION] Navigation
 
-| Feature | VS | CDK | R | Priority | Phase |
-|---|---|---|---|---|---|
-| Go to definition | ✓ | ✓ | ✓ | P0 | 2 |
-| Go to declaration | ✓ | ✓ | ✓ | P0 | 2 |
-| Go to type definition | ✓ | ✓ | ✓ | P0 | 2 |
-| Go to implementation | ✓ | ✓ | ✓ | P0 | 2 |
-| Go to base member | ✓ | ✗ | ✓ | P1 | 3 |
-| Find all references | ✓ | ✓ | ✓ | P0 | 2 |
-| Find usages (advanced, grouped) | ✓ | ✗ | ✓ | P1 | 3 |
-| Workspace symbol search | ✓ | ✓ | ✓ | P0 | 2 |
-| Document symbol outline | ✓ | ✓ | ✓ | P0 | 1 |
-| Call hierarchy (incoming) | ✓ | ✓ | ✓ | P1 | 3 |
-| Call hierarchy (outgoing) | ✓ | ✓ | ✓ | P1 | 3 |
-| Type hierarchy (supertypes) | ✓ | ✗ | ✓ | P1 | 3 |
-| Type hierarchy (subtypes) | ✓ | ✗ | ✓ | P1 | 3 |
-| Navigate to decompiled source | ✓ | ✓ | ✓ | P1 | 3 |
-| Navigate to source generator output | ✓ | ✓ | ✗ | P2 | 4 |
-| Navigate to metadata as source | ✓ | ✓ | ✓ | P1 | 3 |
-| Go to related files | ✓ | ✗ | ✓ | P2 | 4 |
-| Breadcrumb / scope bar | ✓ | ✓ | ✓ | P1 | 3 |
-| Structural navigation (next/prev member) | ✓ | ✗ | ✓ | P2 | 4 |
+| Feature | Priority | Phase |
+| --- | --- | --- |
+| Go to definition | P0 | 2 |
+| Go to declaration | P0 | 2 |
+| Go to type definition | P0 | 2 |
+| Go to implementation | P0 | 2 |
+| Go to base member | P1 | 3 |
+| Find all references | P0 | 2 |
+| Find usages (advanced, grouped) | P1 | 3 |
+| Workspace symbol search | P0 | 2 |
+| Document symbol outline | P0 | 1 |
+| Call hierarchy (incoming) | P1 | 3 |
+| Call hierarchy (outgoing) | P1 | 3 |
+| Type hierarchy (supertypes) | P1 | 3 |
+| Type hierarchy (subtypes) | P1 | 3 |
+| Navigate to decompiled source | P1 | 3 |
+| Navigate to source generator output | P2 | 4 |
+| Navigate to metadata as source | P1 | 3 |
+| Go to related files | P2 | 4 |
+| Breadcrumb / scope bar | P1 | 3 |
+| Structural navigation (next/prev member) | P2 | 4 |
 
 ### [SHARPLSP-TODO-DIAGNOSTICS] Diagnostics and Analysis
 
@@ -586,43 +590,43 @@ Priorities: P0 = launch blocker, P1 = fast follow, P2 = parity, P3 = later.
 
 ### [SHARPLSP-TODO-REFACTORING] Code Actions and Refactoring
 
-| Feature | VS | CDK | R | Priority | Phase |
-|---|---|---|---|---|---|
-| All Roslyn built-in code fixes | ✓ | ✓ | ✓ | P0 | 3 |
-| All Roslyn built-in refactorings | ✓ | ✓ | ✓ | P0 | 3 |
-| Extract method | ✓ | ✓ | ✓ | P0 | 3 |
-| Extract variable / constant / field | ✓ | ✓ | ✓ | P0 | 3 |
-| Extract interface | ✓ | ✓ | ✓ | P1 | 3 |
-| Extract superclass | ✓ | ✗ | ✓ | P2 | 4 |
-| Inline variable / method / constant | ✓ | ✓ | ✓ | P1 | 3 |
-| Rename symbol (all code elements and references) | ✓ | ✓ | ✓ | P0 | 2 |
-| Rename file to match type | ✓ | ✓ | ✓ | P1 | 3 |
-| Move type to file | ✓ | ✓ | ✓ | P1 | 3 |
-| Move type to namespace | ✓ | ✗ | ✓ | P2 | 4 |
-| Safe delete | ✓ | ✗ | ✓ | P2 | 4 |
-| Change signature | ✓ | ✓ | ✓ | P2 | 4 |
-| Introduce parameter | ✓ | ✓ | ✓ | P2 | 4 |
-| Generate constructor | ✓ | ✓ | ✓ | P0 | 3 |
-| Generate equals / GetHashCode | ✓ | ✓ | ✓ | P1 | 3 |
-| Generate interface implementation | ✓ | ✓ | ✓ | P0 | 3 |
-| Generate overrides | ✓ | ✓ | ✓ | P1 | 3 |
-| Generate property from field | ✓ | ✓ | ✓ | P1 | 3 |
-| Add using / open directive | ✓ | ✓ | ✓ | P0 | 3 |
-| Organize usings / opens | ✓ | ✓ | ✓ | P0 | 3 |
-| Convert between expression forms | ✓ | ✓ | ✓ | P1 | 3 |
-| Surround with (try, if, using, etc.) | ✓ | ✗ | ✓ | P1 | 3 |
-| Convert to LINQ / from LINQ | ✓ | ✓ | ✓ | P2 | 4 |
-| Convert string concatenation ↔ interpolation | ✓ | ✓ | ✓ | P1 | 3 |
-| Convert var ↔ explicit type | ✓ | ✓ | ✓ | P1 | 3 |
-| Invert if | ✓ | ✓ | ✓ | P1 | 3 |
-| Convert method group ↔ lambda | ✓ | ✓ | ✓ | P1 | 3 |
-| Pull members up / push members down | ✓ | ✗ | ✓ | P2 | 4 |
-| Convert class to record (C#) | ✓ | ✓ | ✓ | P2 | 4 |
-| Convert anonymous type to class/record | ✓ | ✓ | ✓ | P2 | 4 |
-| F#: Generate match cases from DU | ✗ | ✗ | ✗ | P1 | 3 |
-| F#: Generate record field stubs | ✗ | ✗ | ✗ | P1 | 3 |
-| F#: Convert pipe ↔ nested function calls | ✗ | ✗ | ✗ | P1 | 4 |
-| F#: Convert to/from computation expression | ✗ | ✗ | ✗ | P2 | 4 |
+| Feature | Priority | Phase |
+| --- | --- | --- |
+| All Roslyn built-in code fixes | P0 | 3 |
+| All Roslyn built-in refactorings | P0 | 3 |
+| Extract method | P0 | 3 |
+| Extract variable / constant / field | P0 | 3 |
+| Extract interface | P1 | 3 |
+| Extract superclass | P2 | 4 |
+| Inline variable / method / constant | P1 | 3 |
+| Rename symbol (all code elements and references) | P0 | 2 |
+| Rename file to match type | P1 | 3 |
+| Move type to file | P1 | 3 |
+| Move type to namespace | P2 | 4 |
+| Safe delete | P2 | 4 |
+| Change signature | P2 | 4 |
+| Introduce parameter | P2 | 4 |
+| Generate constructor | P0 | 3 |
+| Generate equals / GetHashCode | P1 | 3 |
+| Generate interface implementation | P0 | 3 |
+| Generate overrides | P1 | 3 |
+| Generate property from field | P1 | 3 |
+| Add using / open directive | P0 | 3 |
+| Organize usings / opens | P0 | 3 |
+| Convert between expression forms | P1 | 3 |
+| Surround with (try, if, using, etc.) | P1 | 3 |
+| Convert to LINQ / from LINQ | P2 | 4 |
+| Convert string concatenation ↔ interpolation | P1 | 3 |
+| Convert var ↔ explicit type | P1 | 3 |
+| Invert if | P1 | 3 |
+| Convert method group ↔ lambda | P1 | 3 |
+| Pull members up / push members down | P2 | 4 |
+| Convert class to record (C#) | P2 | 4 |
+| Convert anonymous type to class/record | P2 | 4 |
+| F#: Generate match cases from DU | P1 | 3 |
+| F#: Generate record field stubs | P1 | 3 |
+| F#: Convert pipe ↔ nested function calls | P1 | 4 |
+| F#: Convert to/from computation expression | P2 | 4 |
 
 ### [SHARPLSP-TODO-FORMATTING] Formatting and Style
 
@@ -630,92 +634,91 @@ SharpLsp does **not** provide formatting. Use [CSharpier](https://csharpier.com/
 
 ### [SHARPLSP-TODO-HIGHLIGHTING] Semantic Highlighting and Visual Features
 
-| Feature | VS | CDK | R | Priority | Phase |
-|---|---|---|---|---|---|
-| Full semantic tokens | ✓ | ✓ | ✓ | P0 | 2 |
-| Delta semantic tokens | ✓ | ✓ | ✓ | P1 | 3 |
-| Folding ranges (tree-sitter) | ✓ | ✓ | ✓ | P0 | 1 |
-| Selection ranges (tree-sitter) | ✓ | ✓ | ✓ | P0 | 1 |
-| Linked editing ranges | ✓ | ✓ | ✓ | P1 | 1 |
-| Color information (CSS in Razor) | ✓ | ✗ | ✓ | P3 | 5 |
+| Feature | Priority | Phase |
+| --- | --- | --- |
+| Full semantic tokens | P0 | 2 |
+| Delta semantic tokens | P1 | 3 |
+| Folding ranges (tree-sitter) | P0 | 1 |
+| Selection ranges (tree-sitter) | P0 | 1 |
+| Linked editing ranges | P1 | 1 |
+| Color information (CSS in Razor) | P3 | 5 |
 
 ### [SHARPLSP-TODO-DEBUGGING] Debugging and Testing
 
 > Full debugging feature parity details: [DEBUGGING-SPEC.md](./DEBUGGING-SPEC.md)
 
-| Feature | VS | CDK | R | Priority | Phase |
-|---|---|---|---|---|---|
-| Launch/attach .NET process | ✓ | ✓ | ✓ | P1 | 4 |
-| Breakpoints (line, conditional, logpoint) | ✓ | ✓ | ✓ | P1 | 4 |
-| Step in/out/over | ✓ | ✓ | ✓ | P1 | 4 |
-| Variable inspection | ✓ | ✓ | ✓ | P1 | 4 |
-| Watch expressions | ✓ | ✓ | ✓ | P2 | 4 |
-| Call stack navigation | ✓ | ✓ | ✓ | P1 | 4 |
-| Async logical call stack | ✓ | ✓ | ✓ | P1 | 4 |
-| Exception breakpoints | ✓ | ✓ | ✓ | P2 | 4 |
-| Data breakpoints | ✓ | ✗ | ✓ | P2 | 5 |
-| Return value display | ✓ | ✗ | ✓ | P2 | 5 |
-| Hot reload (method body edits) | ✓ | ✓ | ✓ | P2 | 4 |
-| Full expression eval (LINQ, lambdas) | ✓ | ✓ | ✓ | P1 | 5 |
-| Remote debugging (SSH) | ✓ | ✓ | ✓ | P2 | 5 |
-| Multi-process / compound launch | ✓ | ✗ | ✓ | P2 | 4 |
-| Test discovery (xUnit/NUnit/MSTest) | ✓ | ✓ | ✓ | P1 | 4 |
-| Test discovery (Expecto/FsCheck) | ✗ | ✗ | ✗ | P1 | 4 |
-| Run/debug individual test | ✓ | ✓ | ✓ | P1 | 4 |
-| Test result inline display | ✓ | ✓ | ✓ | P2 | 4 |
-| Continuous testing | ✓ | ✗ | ✓ | P3 | 5 |
-| Code coverage overlay | ✓ | ✗ | ✓ | P3 | 5 |
+| Feature | Priority | Phase |
+| --- | --- | --- |
+| Launch/attach .NET process | P1 | 4 |
+| Breakpoints (line, conditional, logpoint) | P1 | 4 |
+| Step in/out/over | P1 | 4 |
+| Variable inspection | P1 | 4 |
+| Watch expressions | P2 | 4 |
+| Call stack navigation | P1 | 4 |
+| Async logical call stack | P1 | 4 |
+| Exception breakpoints | P2 | 4 |
+| Data breakpoints | P2 | 5 |
+| Return value display | P2 | 5 |
+| Hot reload (method body edits) | P2 | 4 |
+| Full expression eval (LINQ, lambdas) | P1 | 5 |
+| Remote debugging (SSH) | P2 | 5 |
+| Multi-process / compound launch | P2 | 4 |
+| Test discovery (xUnit/NUnit/MSTest) | P1 | 4 |
+| Test discovery (Expecto/FsCheck) | P1 | 4 |
+| Run/debug individual test | P1 | 4 |
+| Test result inline display | P2 | 4 |
+| Continuous testing | P3 | 5 |
+| Code coverage overlay | P3 | 5 |
 
 ### [SHARPLSP-TODO-WORKSPACE] Workspace and Project Management
 
-| Feature | VS | CDK | R | Priority | Phase |
-|---|---|---|---|---|---|
-| Solution/project loading | ✓ | ✓ | ✓ | P0 | 2 |
-| SDK-style project support | ✓ | ✓ | ✓ | P0 | 2 |
-| Legacy .csproj/.fsproj support | ✓ | ✓ | ✓ | P1 | 3 |
-| Multi-targeting support | ✓ | ✓ | ✓ | P1 | 3 |
-| Central Package Management | ✓ | ✓ | ✓ | P1 | 3 |
-| Project dependency visualization | ✓ | ✗ | ✓ | P2 | 4 |
-| NuGet package search & install | ✓ | ✗ | ✓ | P2 | 4 |
-| NuGet package update suggestions | ✓ | ✗ | ✓ | P2 | 4 |
-| Add/remove project reference | ✓ | ✓ | ✓ | P2 | 4 |
-| File watching & auto-reload | ✓ | ✓ | ✓ | P0 | 2 |
-| Configuration via sharplsp.toml | ✗ | ✗ | ✗ | P0 | 1 |
-| Bundled required sidecars in VSIX | ✓ | ✗ | ✓ | P0 | 1 |
+| Feature | Priority | Phase |
+| --- | --- | --- |
+| Solution/project loading | P0 | 2 |
+| SDK-style project support | P0 | 2 |
+| Legacy .csproj/.fsproj support | P1 | 3 |
+| Multi-targeting support | P1 | 3 |
+| Central Package Management | P1 | 3 |
+| Project dependency visualization | P2 | 4 |
+| NuGet package search & install | P2 | 4 |
+| NuGet package update suggestions | P2 | 4 |
+| Add/remove project reference | P2 | 4 |
+| File watching & auto-reload | P0 | 2 |
+| Configuration via sharplsp.toml | P0 | 1 |
+| Bundled required sidecars in VSIX | P0 | 1 |
 
 ### [SHARPLSP-TODO-FSHARP] F#-Specific Features
 
-| Feature | VS | CDK | R | Priority | Phase |
-|---|---|---|---|---|---|
-| Pipeline type hints | ✓ | ✗ | ✓ | P1 | 3 |
-| Signature file generation (.fsi) | ✓ | ✗ | ✓ | P1 | 4 |
-| Union case generation | ✗ | ✗ | ✗ | P1 | 3 |
-| Record stub generation | ✗ | ✗ | ✗ | P1 | 3 |
-| Computation expression completions | ✓ | ✗ | ✓ | P1 | 3 |
-| Type provider navigation | ✓ | ✗ | ✓ | P2 | 4 |
-| F# Interactive (FSI) integration | ✓ | ✗ | ✓ | P2 | 4 |
-| File ordering awareness & reorder | ✓ | ✗ | ✓ | P1 | 4 |
-| Open statement management | ✓ | ✗ | ✓ | P0 | 3 |
-| Fantomas integration | ✗ | ✗ | ✗ | P0 | 3 |
-| FSharpLint integration | ✗ | ✗ | ✗ | P1 | 4 |
-| FSharp.Analyzers.SDK support | ✗ | ✗ | ✗ | P1 | 4 |
+| Feature | Priority | Phase |
+| --- | --- | --- |
+| Pipeline type hints | P1 | 3 |
+| Signature file generation (.fsi) | P1 | 4 |
+| Union case generation | P1 | 3 |
+| Record stub generation | P1 | 3 |
+| Computation expression completions | P1 | 3 |
+| Type provider navigation | P2 | 4 |
+| F# Interactive (FSI) integration | P2 | 4 |
+| File ordering awareness & reorder | P1 | 4 |
+| Open statement management | P0 | 3 |
+| Fantomas integration | P0 | 3 |
+| FSharpLint integration | P1 | 4 |
+| FSharp.Analyzers.SDK support | P1 | 4 |
 
 ### [SHARPLSP-TODO-DIFFERENTIATORS] Differentiating Features
 
-| Feature | VS | CDK | R | Priority | Phase |
-|---|---|---|---|---|---|
-| Unified C# + F# in one LSP server | ✗ | ✗ | ✓* | P0 | 2 |
-| True editor-agnostic (10+ editors) | ✗ | ✗ | ✗ | P0 | 1 |
-| Cross-language go-to-definition (C#↔F#) | ✗ | ✗ | ✓* | P2 | 4 |
-| Cross-language find references (C#↔F#) | ✗ | ✗ | ✓* | P2 | 4 |
-| Zero-config, zero-license instant setup | ✗ | ✗ | ✗ | P0 | 1 |
-| Sub-millisecond syntax features (Rust+TS) | ✗ | ✗ | ✗ | P0 | 1 |
-| Architecture analysis & visualization | ✗ | ✗ | ✓ | P3 | 5 |
-| AI-assisted code actions via MCP | ✗ | ✗ | ✗ | P3 | 5 |
-| Database-aware string analysis (SQL) | ✗ | ✗ | ✓ | P3 | 5 |
-| Open governance & community-driven | ✗ | ✗ | ✗ | P0 | 1 |
+| Feature | Priority | Phase |
+| --- | --- | --- |
+| Unified C# + F# in one LSP server | P0 | 2 |
+| True editor-agnostic (10+ editors) | P0 | 1 |
+| Cross-language go-to-definition (C#↔F#) | P2 | 4 |
+| Cross-language find references (C#↔F#) | P2 | 4 |
+| Zero-config, zero-license instant setup | P0 | 1 |
+| Sub-millisecond syntax features (Rust+TS) | P0 | 1 |
+| Architecture analysis & visualization | P3 | 5 |
+| AI-assisted code actions via MCP | P3 | 5 |
+| Database-aware string analysis (SQL) | P3 | 5 |
+| Open governance & community-driven | P0 | 1 |
 
-*\* Rider supports both C# and F# but via proprietary code, not LSP, and not available to any other editor.*
 
 ## [SHARPLSP-SUCCESS] Success Metrics
 

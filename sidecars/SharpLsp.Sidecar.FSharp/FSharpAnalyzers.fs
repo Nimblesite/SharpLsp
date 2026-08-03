@@ -2,7 +2,7 @@
 /// surfaced by `workspace/diagnostics`. These go beyond what FsAutoComplete /
 /// Ionide ships:
 ///
-///   * [FS-ANALYZER-DEADCODE] — monorepo-wide dead-code detection. A symbol whose
+///   * [ANALYZERS-DEADCODE-SEVERITY] — monorepo-wide dead-code detection. A symbol whose
 ///     only use is its own definition is dead. When the workspace is declared a
 ///     **monorepo** (`[analyzers] monorepo = true` in `sharplsp.toml`), the whole
 ///     repository is the world, so an unused *public* symbol is genuinely dead and
@@ -99,7 +99,7 @@ let private classifyDead
             Some(buildDiagnostic "SLSPF0101" severity message declRange)
     | _ -> None
 
-/// [FS-ANALYZER-DEADCODE] Project-wide dead-code diagnostics. A declaration is
+/// [ANALYZERS-DEADCODE-SEVERITY] Project-wide dead-code diagnostics. A declaration is
 /// dead when no *non-definition* use of the same symbol exists in the project.
 /// `allUses` comes from `FSharpCheckProjectResults.GetAllUsesOfAllSymbols()`.
 let deadCodeDiagnostics
@@ -151,13 +151,13 @@ let deadCodeDiagnosticsForFile
 let lineGetter (source: string) : int -> string =
     FSharpLocalAnalysis.lineGetter source
 
-/// [FS-ANALYZER-UNUSEDOPEN] Unused `open` declarations, surfaced as hints so the
+/// [ANALYZERS-FSAC-UNUSED-OPEN] Unused `open` declarations, surfaced as hints so the
 /// editor can grey them out and offer removal (FSAC's "remove unused open").
 let unusedOpenDiagnostics (ranges: range list) : DiagnosticResult list =
     ranges
     |> List.map (buildDiagnostic "SLSPF0102" "Hint" "Unused 'open' statement; safe to remove.")
 
-/// [FS-ANALYZER-SIMPLIFYNAME] Redundant qualifiers that can be shortened (FSAC's
+/// [ANALYZERS-FSAC-SIMPLIFY-NAME] Redundant qualifiers that can be shortened (FSAC's
 /// "simplify name" / "remove redundant qualifier").
 let simplifyNameDiagnostics (items: (range * string) list) : DiagnosticResult list =
     items

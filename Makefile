@@ -67,8 +67,10 @@ SIDECAR_CS_OUT = target/sidecar-csharp
 SIDECAR_FS_OUT = target/sidecar-fsharp
 ZED_WASM       = $(ZED_DIR)/target/wasm32-wasip1/$(PROFILE)/sharplsp_zed.wasm
 ZED_PKG_DIR    = target/zed-extension
-ZED_PKG_TAR    = sharplsp-zed-extension.tar.gz
-RIDER_ZIP      = sharplsp-rider.zip
+DIST_DIR       = dist
+DEV_VSIX       = $(DIST_DIR)/sharplsp.vsix
+ZED_PKG_TAR    = $(DIST_DIR)/sharplsp-zed-extension.tar.gz
+RIDER_ZIP      = $(DIST_DIR)/sharplsp-rider.zip
 
 # Host platform for local VSIX dev builds
 HOST_PLATFORM = $(shell node -e "process.stdout.write(process.platform + '-' + process.arch)")
@@ -76,7 +78,7 @@ HOST_VSIX_BIN = $(VSCODE_DIR)/bin/$(HOST_PLATFORM)/sharplsp$(EXE_EXT)
 
 PREFIX   ?= $(HOME)/.local
 BINDIR    = $(PREFIX)/bin
-CHECK_COV = scripts/coverage/check-coverage.sh
+CHECK_COV = bash scripts/coverage/check-coverage.sh
 
 .PHONY: build ci test lint fmt clean setup screenshots \
         package-vsix-linux-x64 package-vsix-linux-arm64 \
@@ -125,7 +127,8 @@ _build-dotnet:
 _build-vsix: _stage-vsix-binary
 	@echo "==> Packaging VS Code extension (host: $(HOST_PLATFORM))..."
 	npm run build --prefix $(VSCODE_DIR)
-	cd $(VSCODE_DIR) && npx @vscode/vsce package --no-dependencies -o ../../sharplsp.vsix
+	mkdir -p $(DIST_DIR)
+	cd $(VSCODE_DIR) && npx @vscode/vsce package --no-dependencies -o ../../$(DEV_VSIX)
 	rm -rf $(VSCODE_DIR)/bin
 
 _build-zed:
@@ -134,6 +137,7 @@ _build-zed:
 	cargo build $(CARGO_FLAG) --manifest-path $(ZED_DIR)/Cargo.toml --target wasm32-wasip1
 	@test -f $(ZED_WASM) || { echo "ERROR: $(ZED_WASM) not found" >&2; exit 1; }
 	@rm -rf $(ZED_PKG_DIR) && mkdir -p $(ZED_PKG_DIR)
+	mkdir -p $(DIST_DIR)
 	cp $(ZED_DIR)/extension.toml $(ZED_DIR)/Cargo.toml $(ZED_DIR)/Cargo.lock $(ZED_PKG_DIR)/
 	cp -R $(ZED_DIR)/src $(ZED_PKG_DIR)/src
 	rm -f $(ZED_PKG_TAR) && tar -czf $(ZED_PKG_TAR) -C $(dir $(ZED_PKG_DIR)) $(notdir $(ZED_PKG_DIR))
@@ -142,6 +146,7 @@ _build-rider:
 	@command -v java >/dev/null 2>&1 || { echo "==> Skipping Rider plugin (no java on PATH)"; exit 0; }
 	@echo "==> Building Rider plugin..."
 	cd $(RIDER_DIR) && ./gradlew buildPlugin --no-daemon
+	mkdir -p $(DIST_DIR)
 	@zip=$$(ls $(RIDER_DIR)/build/distributions/sharplsp-rider-*.zip 2>/dev/null | head -n1); \
 		test -n "$$zip" || { echo "ERROR: no Rider plugin zip in $(RIDER_DIR)/build/distributions/" >&2; exit 1; }; \
 		cp "$$zip" $(RIDER_ZIP)
@@ -580,7 +585,7 @@ clean: _clean-rider
 	cargo clean --manifest-path $(ZED_DIR)/Cargo.toml
 	rm -rf $(SIDECAR_CS_OUT) $(SIDECAR_FS_OUT)
 	rm -rf $(VSCODE_DIR)/bin $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
-	rm -rf $(ZED_PKG_DIR) dist
+	rm -rf $(ZED_PKG_DIR) $(DIST_DIR)
 	rm -f sharplsp.vsix $(ZED_PKG_TAR)
 	@echo "==> Clean."
 

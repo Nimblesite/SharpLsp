@@ -57,7 +57,7 @@ The plugin owns no sidecar, webview, or MessagePack transport; it launches the R
           ├── META-INF/plugin.xml
           └── icons/forge.svg
   ```
-- **Distribution artifact:** `sharplsp-rider-plugin.zip`, produced by the `buildPlugin` Gradle task at `editors/rider/build/distributions/`. Copied to the repo root as `sharplsp-rider.zip` (alongside `sharplsp.vsix`).
+- **Distribution artifact:** `sharplsp-rider-plugin.zip`, produced by the `buildPlugin` Gradle task at `editors/rider/build/distributions/`. Copied to `dist/sharplsp-rider.zip` alongside the other packaged editor artifacts.
 - **Gradle wrapper:** committed so contributors and CI don't need a system Gradle.
 - **Binary resolution:** the plugin does **not** bundle `sharplsp`. It resolves the binary identically to the VS Code extension:
   1. `sharplsp.lspPath` setting (per-project, stored in workspace.xml)

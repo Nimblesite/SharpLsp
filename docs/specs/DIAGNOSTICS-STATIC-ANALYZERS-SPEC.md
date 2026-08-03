@@ -148,10 +148,13 @@ outside its assembly, so its deadness is sound without the monorepo gate.
 
 The F# sidecar also runs two always-on file-local analyzers via FCS `EditorServices`, surfaced as `Hint` diagnostics so editors grey the range and can offer the matching code fix (parity with FsAutoComplete / Ionide):
 
-| Code | Source rule | Message |
-|---|---|---|
-| `SLSPF0102` | `UnusedOpens.getUnusedOpens` | `Unused 'open' statement; safe to remove.` |
-| `SLSPF0103` | `SimplifyNames.getSimplifiableNames` | `Redundant qualifier; '{name}' is sufficient here.` |
+#### [ANALYZERS-FSAC-UNUSED-OPEN] Unused open diagnostics
+
+`UnusedOpens.getUnusedOpens` emits `SLSPF0102` with message `Unused 'open' statement; safe to remove.`
+
+#### [ANALYZERS-FSAC-SIMPLIFY-NAME] Simplifiable name diagnostics
+
+`SimplifyNames.getSimplifiableNames` emits `SLSPF0103` with message `Redundant qualifier; '{name}' is sufficient here.`
 
 These are independent of the monorepo gate and the `dead_code` flag.
 

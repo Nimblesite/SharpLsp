@@ -302,12 +302,12 @@ type FSharpSidecar() =
                                   Message = d.Message
                                   Severity = severity
                                   Code = $"FS{d.ErrorNumber:D4}" })
-                        // [FS-ANALYZER-UNUSEDOPEN]/[FS-ANALYZER-SIMPLIFYNAME]
+                        // [ANALYZERS-FSAC-UNUSED-OPEN]/[ANALYZERS-FSAC-SIMPLIFY-NAME]
                         // FSAC-parity file-local analyzers (always-on hints).
                         let! fileDiags = FSharpAnalyzers.fileAnalyzerDiagnostics check source
                         fileDiags |> List.iter results.Add
                     | None -> ()
-                    // [FS-ANALYZER-DEADCODE] Merge project-wide dead-code diagnostics
+                    // [ANALYZERS-DEADCODE-SEVERITY] Merge project-wide dead-code diagnostics
                     // for this file (monorepo mode promotes public deadness to errors).
                     if workspace.IsLoaded && analyzerConfig.DeadCodeEnabled then
                         let! proj = FSharpWorkspace.checkProject workspace

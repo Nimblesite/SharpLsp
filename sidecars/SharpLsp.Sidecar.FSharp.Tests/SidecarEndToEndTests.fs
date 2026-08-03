@@ -163,7 +163,7 @@ let createTestProject () =
         Path.Combine(dir, "Consumer.fs"),
         "module TestProject.Consumer\n\nopen TestProject.Library\n\nlet consumeAdd () = add 100 200\n")
     // A self-contained file with deliberate dead code, driving the dead-code
-    // analyzer ([FS-ANALYZER-DEADCODE]). It references no Library symbols, so it
+    // analyzer ([ANALYZERS-DEADCODE-SEVERITY]). It references no Library symbols, so it
     // never perturbs cross-file reference/rename counts:
     //   * sharedConst  — private, referenced by every fn below → ALIVE
     //   * deadPrivateFn — private, never used → Warning (always), Error (monorepo)
@@ -179,7 +179,7 @@ let createTestProject () =
         + "let liveOne () = sharedConst + 3\n\n"
         + "let liveResult = liveOne ()\n")
     // Drives the FSAC-parity file-local analyzers: an unused 'open' that nothing
-    // references → [FS-ANALYZER-UNUSEDOPEN].
+    // references → [ANALYZERS-FSAC-UNUSED-OPEN].
     File.WriteAllText(
         Path.Combine(dir, "Hints.fs"),
         "module TestProject.Hints\n\nopen System.Text\n\nlet hintValue = 1\n")
@@ -509,7 +509,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.NotNull(items)
     }
 
-    // ── Analyzers: monorepo dead-code [FS-ANALYZER-DEADCODE] ─────
+    // ── Analyzers: monorepo dead-code [ANALYZERS-DEADCODE-SEVERITY] ─────
 
     [<Fact>]
     member _.``analyzers configure acknowledges the flags``() = task {

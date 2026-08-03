@@ -124,11 +124,6 @@ test-results/
 
 docs/plans/editors/zed/target/
 
-sharplsp-rider.zip
-
-sharplsp-zed-extension.tar.gz
-
-
 .deslop-cache/
 # Deslop report artifacts (generated locally by `deslop`, never committed).
 deslop-report.*

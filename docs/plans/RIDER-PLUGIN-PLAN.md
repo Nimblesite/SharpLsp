@@ -72,8 +72,8 @@ server launch.
 **Phase 7 — Build infrastructure.** New Makefile targets: `build-rider`,
 `package-rider` (alias), `test-rider`, `lint-rider`, `clean-rider`. Wire
 `build-rider` into the top-level `build` and `test-rider` into `test`.
-Copy the produced plugin zip to the repo root as `sharplsp-rider.zip` for
-parity with `sharplsp.vsix` and `sharplsp-zed-extension.tar.gz`. Gracefully skip
+Copy the produced plugin zip to `dist/sharplsp-rider.zip` for parity with
+`dist/sharplsp.vsix` and `dist/sharplsp-zed-extension.tar.gz`. Gracefully skip
 with a warning if no JVM is available so the rest of the repo still
 builds.
 
@@ -173,7 +173,7 @@ only — Community editions are not supported.
 ### Phase 7: Build infrastructure
 
 - [ ] Add `build-rider` Makefile target — calls `./gradlew buildPlugin`
-      and copies the zip to repo root as `sharplsp-rider.zip` — **but only if**
+      and copies the zip to `dist/sharplsp-rider.zip` — **but only if**
       the environment has a JVM; otherwise skip with a warning
 - [ ] Add `package-rider` Makefile target — alias for `build-rider` for
       naming symmetry with `package-zed`

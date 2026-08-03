@@ -124,9 +124,9 @@ the headline differentiator: when `[analyzers] monorepo = true`, an unreferenced
 public symbol is a hard **error** (the repo is the whole world), which no FSAC/Ionide
 rule offers. Private/internal dead code is reported even outside monorepo mode.
 
-- [x] [FS-ANALYZER-DEADCODE] monorepo dead-code (`GetAllUsesOfAllSymbols`, config-gated severity)
-- [x] [FS-ANALYZER-UNUSEDOPEN] unused `open` detection (FCS `UnusedOpens`)
-- [x] [FS-ANALYZER-SIMPLIFYNAME] simplify-name (FCS `SimplifyNames`)
+- [x] [ANALYZERS-DEADCODE-SEVERITY] monorepo dead-code (`GetAllUsesOfAllSymbols`, config-gated severity)
+- [x] [ANALYZERS-FSAC-UNUSED-OPEN] unused `open` detection (FCS `UnusedOpens`)
+- [x] [ANALYZERS-FSAC-SIMPLIFY-NAME] simplify-name (FCS `SimplifyNames`)
 - [x] e2e + unit coverage (dead-code fixture, unused-open fixture, pure-helper unit tests)
 - [x] C# parity: Roslyn `SymbolFinder` monorepo dead-code (`SLSPC0101`) + `analyzers/configure`
       ([DeadCodeAnalyzer.cs](../../sidecars/SharpLsp.Sidecar.CSharp/Workspace/DeadCodeAnalyzer.cs),
@@ -187,4 +187,3 @@ rename, code lens, and call/type hierarchy).
 > not `params.textDocument`. `extract_document_uri`
 > ([main.rs](../../src/main.rs)) now also reads `params.item.uri` so these
 > follow-up requests route to the **F#** sidecar instead of defaulting to C#.
-

@@ -1,6 +1,7 @@
 # Sidecar Lifecycle and IPC Reliability Specification `[SIDECAR]`
 
 **Status:** Normative — required behavior; implementation completeness is tracked in the plan · **Applies to:** Rust LSP host, shared .NET sidecar host, C# sidecar, F# sidecar · **Implementation plan:** [SIDECAR-LIFECYCLE-PLAN.md](../plans/SIDECAR-LIFECYCLE-PLAN.md)
+
 The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative. Implementations and tests cite the most specific applicable stable ID.
 
 ## Objective `[SIDECAR-LIFECYCLE-OBJECTIVE]`

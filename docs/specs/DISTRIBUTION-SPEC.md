@@ -21,14 +21,14 @@ Debugging uses **netcoredbg**, the managed-code DAP adapter launched for the `sh
 | Aspect | Requirement |
 |---|---|
 | Source | `Samsung/netcoredbg`, pinned to `3.2.0-1092`, MIT-licensed |
-| Staging | `scripts/fetch-netcoredbg.sh <platform>` downloads + extracts the upstream archive into `bin/<platform>/netcoredbg/` (with an archive cache under `target/netcoredbg-cache/`); wired into `_stage-vsix-binary-only` and `_package-vsix` in the Makefile |
+| Staging | `scripts/vsix/fetch-netcoredbg.sh <platform>` downloads + extracts the upstream archive into `bin/<platform>/netcoredbg/` (with an archive cache under `target/netcoredbg-cache/`); wired into `_stage-vsix-binary-only` and `_package-vsix` in the Makefile |
 | Layout | `bin/<platform>/netcoredbg/netcoredbg[.exe]` **plus** its sibling managed assemblies (`ManagedPart.dll`, `dbgshim.dll`, `Microsoft.CodeAnalysis*.dll`) — the whole directory ships, since the executable loads them |
 | Resolution | `getNetcoredbgCandidates(extensionPath)` prefers the bundled binary; scan order is user-setting (`sharplsp.debug.netcoredbgPath`) → **bundled** → common install paths → `PATH` |
 | Platform coverage | Upstream ships prebuilt binaries for `win32-x64`, `linux-x64`, `linux-arm64`, `darwin-arm64` only. On `win32-arm64` and `darwin-x64` the VSIX cannot bundle netcoredbg; debugging falls back to a `PATH` copy / the setting. The fetch script skips those platforms cleanly (exit 0). |
 
 Unlike the three [DIST-COMPONENTS], a missing netcoredbg degrades **only** the debugging feature (surfaced via an error toast pointing at the install), not whole-extension activation.
 
-**Licensing.** netcoredbg (MIT, © 2017 Samsung Electronics Co., LTD) and every other bundled third-party component are acknowledged in [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md); all bundled licenses are permissive and compatible with SharpLsp's MIT license. Bumping the pinned netcoredbg version MUST update `scripts/fetch-netcoredbg.sh` and the notices file in lockstep.
+**Licensing.** netcoredbg (MIT, © 2017 Samsung Electronics Co., LTD) and every other bundled third-party component are acknowledged in [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md); all bundled licenses are permissive and compatible with SharpLsp's MIT license. Bumping the pinned netcoredbg version MUST update `scripts/vsix/fetch-netcoredbg.sh` and the notices file in lockstep.
 
 ## [DIST-RUNTIME-ACQUIRE]
 
@@ -168,7 +168,7 @@ The sidecar binaries are identical across all platform VSIXs — they are manage
 The extension's icon assets in `editors/vscode/icons/` are symlinks into `docs/designs/logo/`. With `core.symlinks=false`, Git materializes target paths as text files, which `vsce` would package as broken icons.
 
 1. Every image asset referenced by the extension manifest MUST be packaged as real image content. A VSIX containing symlink text stubs is broken.
-2. `scripts/resolve-symlink-stubs.mjs` rewrites stub files in place with their target's content. It MUST leave real OS symlinks untouched (macOS/Linux, and Windows checkouts with `core.symlinks=true`), making it a cross-platform no-op wherever symlinks work. It only rewrites plain files whose entire content is a relative POSIX path resolving to an existing file.
+2. `scripts/vsix/resolve-symlink-stubs.mjs` rewrites stub files in place with their target's content. It MUST leave real OS symlinks untouched (macOS/Linux, and Windows checkouts with `core.symlinks=true`), making it a cross-platform no-op wherever symlinks work. It only rewrites plain files whose entire content is a relative POSIX path resolving to an existing file.
 3. The resolver MUST run automatically before packaging (`vscode:prepublish`) and before the e2e suite (`pretest`), so both the packaged VSIX and the extension-development host load real images. The e2e suite asserts the invariant (`bundled-binary.test.ts`).
 4. Resolved stubs modify the working tree and MUST NOT be committed — Git would record the binary content as the symlink's target text, corrupting the symlink for every other platform. Restore with `git restore editors/vscode/icons`.
 
@@ -311,6 +311,10 @@ All CI jobs that run `vsce package` or `vsce publish` MUST use `node-version: '2
 
 **Required: .NET 10.** All sidecar publish steps use `dotnet publish --no-self-contained` targeting `net10.0`.
 
+### [DIST-CI-DOTNET-DEPSFILE]
+
+`sidecars/SharpLsp.Sidecar.Common/SharpLsp.Sidecar.Common.csproj` is a referenced-only class library and MUST set `<GenerateDependencyFile>false</GenerateDependencyFile>`. Its consumers generate their own runtime dependency files; emitting the unused `SharpLsp.Sidecar.Common.deps.json` lets concurrent builds or indexers lock the shared `bin/` artifact and fail `GenerateDepsFile` with MSB4018. `tests/build_deps_file_e2e.rs` MUST verify the evaluated MSBuild property, not project-file text (GitHub #111).
+
 ## [DIST-CI-RUST]
 
 Stable toolchain. Cross-compilation targets must be added via `dtolnay/rust-toolchain@stable` with explicit `targets:`.
@@ -322,7 +326,7 @@ The Rust e2e suite runs single-threaded (`RUST_TEST_THREADS=1` — tests spawn r
 Invariants:
 
 - **Same tests, same serialization.** A shard changes only *which* slice of the suite runs, never how: `--no-fail-fast` and the `--test-threads` serialization apply to every shard. Sharding MUST NOT skip, filter, or reorder tests beyond the partition itself.
-- **One gate, over the union.** Each shard exports lcov (`target/coverage-rust-shard<n>.lcov`). No shard can meet the line threshold alone, so no shard runs the coverage gate; the `coverage-rust` job union-merges the tracefiles (`scripts/merge-lcov.mjs`) and enforces the identical `check-coverage.sh` ratchet a single-job run enforces. Every shard tracefile carries the full instrumented line set (unexecuted lines as `DA:<line>,0`), so the union reproduces exactly the line percentage of an unsharded run.
+- **One gate, over the union.** Each shard exports lcov (`target/coverage-rust-shard<n>.lcov`). No shard can meet the line threshold alone, so no shard runs the coverage gate; the `coverage-rust` job union-merges the tracefiles (`scripts/coverage/merge-lcov.mjs`) and enforces the identical `scripts/coverage/check-coverage.sh` ratchet a single-job run enforces. Every shard tracefile carries the full instrumented line set (unexecuted lines as `DA:<line>,0`), so the union reproduces exactly the line percentage of an unsharded run.
 - **Local runs stay unsharded.** `make test` / `make _test-rust` remain the single-invocation JSON + inline-gate path; sharding is a CI wall-clock concern only.
 - **Version contract is its own job.** The `--version` contract checks ([DIST-VERSION-OUTPUT]) run in the `version-contract` job: the release-profile build shares no artifacts with the instrumented test build, so bundling it into a test job serializes it onto the critical path for zero reuse.
 
@@ -356,12 +360,12 @@ The suite is sliced into **feature chunks**, one Windows CI job each, run with `
 
 Invariants:
 
-- **One declaration.** Chunk membership lives in `editors/vscode/test-chunks.json` and is read by `scripts/vsix-test-chunks.mjs` (`files <chunk>` → `MOCHA_FILES` globs, `matrix` → the CI job matrix, `check` → the completeness guard). It MUST NOT be duplicated into CI YAML.
+- **One declaration.** Chunk membership lives in `editors/vscode/test-chunks.json` and is read by `scripts/vsix/vsix-test-chunks.mjs` (`files <chunk>` → `MOCHA_FILES` globs, `matrix` → the CI job matrix, `check` → the completeness guard). It MUST NOT be duplicated into CI YAML.
 - **Nothing escapes.** `make _lint-vsix` runs `vsix-test-chunks.mjs check`, which fails if any `*.test.ts` suite is claimed by no chunk or by more than one. A new suite is therefore gated on Windows by default; opting out requires an explicit entry under `excluded` with a written reason.
 - **Selection is by file, not by title.** The inner mocha runner selects suites via the `MOCHA_FILES` glob list. Title-regex selection (`MOCHA_GREP`) is a local debugging aid only — it silently drops tests when a suite is renamed. A glob matching zero compiled suites is a hard error, so a mistyped chunk fails instead of reporting a green run of nothing.
 - **Build once, fan out.** A single `build` job compiles the Rust host and both sidecars and publishes them as an artifact; each chunk job downloads and stages them (`_stage-vsix-binary-only`). Rebuilding per chunk would cost one cold Windows Rust build per feature area.
 - **Ubuntu owns coverage.** Windows chunks run **without** `--coverage` and enforce no coverage gate — one chunk can never meet the line threshold. The Ubuntu `test-vsix` job owns the full single-process run plus the ratcheted gate, and is the only job that runs the `real-repo-*` stress suites (each clones and restores a pinned third-party repository; that is repo ingestion, not platform behaviour).
-- **No PATH leakage.** Every VS Code job runs `scripts/purge-path-binaries.sh` first, so the test host can only resolve the freshly-staged bundled binaries. A dev copy on `PATH` would substitute itself for the artifact under test and turn a broken bundle green.
+- **No PATH leakage.** Every VS Code job runs `scripts/vsix/purge-path-binaries.sh` first, so the test host can only resolve the freshly-staged bundled binaries. A dev copy on `PATH` would substitute itself for the artifact under test and turn a broken bundle green.
 
 - **Compare paths case-insensitively on Windows.** VS Code lowercases the drive letter whenever a path travels through `Uri.fsPath`, while `extensionPath` and `os.tmpdir()` preserve the original casing, so the same file legitimately has two spellings. Any assertion comparing a `Uri`-derived path against a directly-constructed one MUST go through `comparablePath()` (`test-helpers.ts`), which lowercases on win32 only — POSIX paths stay case-sensitive, because there `/tmp/A` and `/tmp/a` really are different files.
 - **Suites MUST be order-independent.** Chunking changes which suites share an extension host, so no suite may depend on state another suite left in a shared singleton. Fixture identifiers that feed a shared registry — notably test method names discovered into the `SharpLspTestController` — MUST be unique per suite, or a test asserting "nothing matches" passes or fails on whichever suite's discovery won the race.

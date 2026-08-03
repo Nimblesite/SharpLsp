@@ -82,7 +82,7 @@ fn error_code_i32(code: lsp_server::ErrorCode) -> i32 {
 }
 
 fn main() -> ExitCode {
-    // Implements [SWR-VERSION-RUST] — Shipwright binary version contract.
+    // Implements [DIST-VERSION-OUTPUT] — Shipwright binary version contract.
     let spec = shipwright::VersionSpec {
         name: "sharplsp",
         version: env!("CARGO_PKG_VERSION"),
@@ -385,7 +385,7 @@ async fn open_workspace(sidecar: &SidecarManager, root: &str) -> Result<()> {
 /// Push analyzer flags from `[analyzers]` in `sharplsp.toml` to a sidecar via
 /// `analyzers/configure`. Sidecars that do not register the method ignore it; any
 /// failure is logged and never aborts startup. The flags drive the monorepo
-/// dead-code analyzer ([FS-ANALYZER-DEADCODE]) in both the F# and C# sidecars.
+/// dead-code analyzer ([ANALYZERS-DEADCODE-SEVERITY]) in both the F# and C# sidecars.
 async fn configure_analyzers(sidecar: &SidecarManager, analyzers: &config::AnalyzersConfig) {
     #[derive(serde::Serialize)]
     struct ConfigureRequest {

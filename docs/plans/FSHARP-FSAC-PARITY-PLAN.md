@@ -73,9 +73,9 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 
 | FSAC capability | SharpLsp | Spec / notes |
 |---|---|---|
-| Unused declarations analyzer | ✅ | `[FS-ANALYZER-DEADCODE]` (monorepo-aware; SharpLsp1 extending) |
-| Unused opens analyzer | ✅ | `[FS-ANALYZER-UNUSEDOPEN]` — `SLSPF0102` hint (`UnusedOpens.getUnusedOpens`) |
-| SimplifyName analyzer | ✅ | `[FS-ANALYZER-SIMPLIFYNAME]` — `SLSPF0103` hint (`SimplifyNames.getSimplifiableNames`) |
+| Unused declarations analyzer | ✅ | `[ANALYZERS-DEADCODE-SEVERITY]` (monorepo-aware; SharpLsp1 extending) |
+| Unused opens analyzer | ✅ | `[ANALYZERS-FSAC-UNUSED-OPEN]` — `SLSPF0102` hint (`UnusedOpens.getUnusedOpens`) |
+| SimplifyName analyzer | ✅ | `[ANALYZERS-FSAC-SIMPLIFY-NAME]` — `SLSPF0103` hint (`SimplifyNames.getSimplifiableNames`) |
 | FSharpLint linting | ❌ | **gap** — in tech stack (`FSharpLint.Core`), not yet wired |
 | FSI / `.fsx` script type-check (`UseSdkScripts`, `fsiExtraParameters`) | 🟡 | `.fsx`/`.fsi` recognized + routed; full FSI script checking missing — **gap** |
 | `fsharp/workspacePeek` / `workspaceLoad` / `project` / `compile` | 🟡 | workspace loading + `.fsproj` cracking exist; Ionide custom endpoints not exposed |
@@ -91,7 +91,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 | Call hierarchy (incoming/outgoing) | `[FS-CALLHIER-PREPARE/INCOMING/OUTGOING]` — FSAC has none |
 | Type hierarchy (super/subtypes) | `[FS-TYPEHIER-PREPARE/SUPER/SUB]` — FSAC has none |
 | Project-wide references & rename | `[FS-REFS-PROJECT]`, `[FS-RENAME-*]` |
-| Monorepo dead-code (errors vs warnings) | `[FS-ANALYZER-DEADCODE]` |
+| Monorepo dead-code (errors vs warnings) | `[ANALYZERS-DEADCODE-SEVERITY]` |
 | Unused NuGet package detection | `[PKG-UNUSED-DETECT-FS]` |
 | F# file-order dependency analysis | `FSharpFileOrder.fs` |
 
@@ -106,9 +106,9 @@ Each item is sized to one focused change with e2e + sidecar tests.
    [document_symbols.rs](../../src/document_symbols.rs) `fsharp_workspace_symbols`).
 3. **FSharpLint integration** — wire `FSharpLint.Core` into the diagnostics pipeline.
 4. ~~**Unused-opens** analyzer + "remove unused open" code fix.~~ — ✅ **done**: analyzer
-   `[FS-ANALYZER-UNUSEDOPEN]` (`SLSPF0102`) + fix `[FS-CODEFIX-UNUSEDOPEN]`.
+   `[ANALYZERS-FSAC-UNUSED-OPEN]` (`SLSPF0102`) + fix `[FS-CODEFIX-UNUSEDOPEN]`.
 5. ~~**SimplifyName** analyzer + "remove redundant qualifier" code fix.~~ — ✅ **done**: analyzer
-   `[FS-ANALYZER-SIMPLIFYNAME]` (`SLSPF0103`) + fix `[FS-CODEFIX-SIMPLIFYNAME]`.
+   `[ANALYZERS-FSAC-SIMPLIFY-NAME]` (`SLSPF0103`) + fix `[FS-CODEFIX-SIMPLIFYNAME]`.
 6. ~~**Interface-implementation stub** code action~~ — ✅ **done** `[FS-CODEFIX-INTERFACESTUB]`: FCS
    `InterfaceStubGenerator` ("Implement interface"), completing the union/record/interface stub trio
    ([FSharpCodeActions.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeActions.fs) `tryGenerateInterfaceStub`).

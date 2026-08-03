@@ -1,5 +1,5 @@
 /// Pure unit tests for the dead-code analyzer's FCS-independent surface
-/// ([FS-ANALYZER-DEADCODE]). The semantic, project-wide behavior is covered by
+/// ([ANALYZERS-DEADCODE-SEVERITY]). The semantic, project-wide behavior is covered by
 /// the IPC end-to-end suite; these lock in the config, path, and range-mapping
 /// helpers that the e2e fixtures cannot easily drive.
 module SharpLsp.Sidecar.FSharp.Tests.FSharpAnalyzersTests
