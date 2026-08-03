@@ -1,11 +1,12 @@
 ---
 layout: layouts/base.njk
 ---
+{% set blogText = i18n[lang or defaultLanguage].blog %}
 <article class="prose">
   <header class="article-header">
     <div class="article-kicker">
-      <span>{{ category | default("Engineering") | capitalize }}</span>
-      <time datetime="{{ date | isoDate }}">{{ date | dateFormat }}</time>
+      <span>{{ category | default(blogText.engineering) | capitalize }}</span>
+      <time datetime="{{ date | isoDate }}">{{ date | dateFormat(lang) }}</time>
     </div>
     <h1>{{ title }}</h1>
     {% include "partials/article-author.njk" %}

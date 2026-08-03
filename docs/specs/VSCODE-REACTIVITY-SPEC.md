@@ -44,7 +44,7 @@ The extension maintains these **global signals** (module-level exports). Every U
 | `dotnetPath` | [state.ts](../../editors/vscode/src/state.ts) | Resolved .NET executable path |
 | `symbolsState` | [state.ts](../../editors/vscode/src/state.ts) | `empty \| loaded \| error` union of workspace symbols |
 | `sortOrder` | [state.ts](../../editors/vscode/src/state.ts) | Solution Explorer sort cycle |
-| `projectDependencies` | [project-deps-store.ts](../../editors/vscode/src/project-deps-store.ts) | `Map<projectPath, ProjectDependencies>` — PackageReferences & ProjectReferences per csproj/fsproj |
+| `projectDependencies` | [project-deps-store.ts](../../editors/vscode/src/project-deps-store.ts) | Authoritative `Map<projectPath, ProjectDependencies>` state for PackageReferences and ProjectReferences; not memoization |
 
 New source-of-truth state MUST live in one of these modules or a peer store and MUST NOT be shadowed in a UI field. Derived flags and version strings, including package installation state, MUST be computed from live signals during rendering rather than stored in selection snapshots.
 

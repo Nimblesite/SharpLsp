@@ -58,7 +58,7 @@ monorepo = false
 
 Static analyzer diagnostics are IDE-level workspace diagnostics. They are computed from the complete loaded solution graph and surfaced through `workspace/diagnostic` partial results.
 
-`textDocument/diagnostic` may include cached static analyzer diagnostics for the requested file after a solution-wide snapshot has been computed. It must not start a local-only unused-public-code analysis, because that would create false positives for symbols referenced outside the open document.
+`textDocument/diagnostic` may include salsa-memoized static analyzer diagnostics for the requested file after a solution-wide snapshot has been computed. It must not start a local-only unused-public-code analysis, because that would create false positives for symbols referenced outside the open document.
 
 The analysis scope is every loaded C# and F# project in the configured `.sln` or `.slnx`.
 
@@ -174,11 +174,11 @@ Each `SLSPF0103` finding overlapping the request range becomes a `Simplify name`
 
 A type-informed code action handles missing **interface members**. When the cursor is on an `interface IFoo …` declaration with unimplemented members, FCS `InterfaceStubGenerator` (`TryFindInterfaceDeclaration` → `GetImplementedMemberSignatures` → `FormatInterface`) generates `member _.X … = failwith "…"` stubs for the missing members ([FSharpCodeActions.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeActions.fs) `tryGenerateInterfaceStub`, wired into `getCodeActions` Phase 4). E2E: the IPC suite (`code action offers implement-interface stub …`) and the VSIX suite (`F# LSP — Implement Interface`).
 
-## [ANALYZERS-PERFORMANCE] Performance And Caching
+## [ANALYZERS-PERFORMANCE] Performance And Salsa Queries
 
 Static analyzers are lower priority than compiler diagnostics. A `workspace/diagnostic` request must stream compiler/analyzer diagnostics first and static analyzer diagnostics as later partial results.
 
-Each sidecar owns a language-specific static analysis index keyed by:
+Static-analysis memoization belongs exclusively to the Rust host's salsa database. Sidecars compute requested language results and MUST NOT retain a second result cache. Salsa query inputs are:
 
 - Solution snapshot identity.
 - Project version.
@@ -194,7 +194,7 @@ Targets:
 |---|---|
 | First static analyzer partial result | <2s after workspace initialization for a 50-project solution |
 | Full unused-public-code pass | <15s for a 50-project solution |
-| Cached repeat workspace pull | <50ms before partial-result streaming completes |
+| Salsa-memoized repeat workspace pull | <50ms before partial-result streaming completes |
 | Additional memory | <250MB for a 50-project solution |
 
 ## [ANALYZERS-TRUTH] Truth Guarantees

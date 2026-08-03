@@ -82,7 +82,7 @@ let internal readSource (state: FSharpWorkspaceState) (filePath: string) : strin
 /// that differs from `ProjectOptions.SourceFiles` yields symbols whose
 /// declaration ranges never match any project-wide use, so references,
 /// rename, and code lens silently return nothing while single-file analyses
-/// keep working. [FS-REFS-PROJECT] [GitHub #110]
+/// keep working. [REFERENCES-FSHARP-FIND] [GitHub #110]
 let internal projectFilePath (state: FSharpWorkspaceState) (filePath: string) : string =
     let normalized = NativePaths.NormalizeFullPath filePath
     match state.ProjectOptions with
@@ -275,7 +275,7 @@ let internal buildProjectOptions (state: FSharpWorkspaceState) (fsprojPath: stri
     // ParseAndCheckProject for references/rename/code lens, and the
     // isSymbolInProject rename gate — read options.SourceFiles. Leaving it
     // empty makes every cross-file query silently return nothing, so populate
-    // it explicitly from the parsed compile items. [FS-REFS-PROJECT]
+    // it explicitly from the parsed compile items. [REFERENCES-FSHARP-FIND]
     let options =
         state.Checker.GetProjectOptionsFromCommandLineArgs(
             fsprojPath, Array.append otherOptions sourceFiles)

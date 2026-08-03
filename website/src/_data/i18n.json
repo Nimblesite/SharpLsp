@@ -11,6 +11,8 @@
       "search": "Search articles",
       "filterLabel": "Blog filters",
       "articles": "Articles",
+      "engineering": "Engineering",
+      "readTime": "8 min read",
       "empty": "No blog posts yet. Check back soon!"
     },
     "home": {
@@ -90,7 +92,11 @@
     "nav": {
       "docs": "Docs",
       "blog": "Blog",
-      "releases": "Releases"
+      "releases": "Releases",
+      "primaryLabel": "Primary navigation",
+      "menuLabel": "Main menu",
+      "selectLanguage": "Select language",
+      "toggleTheme": "Toggle color theme"
     },
     "docs": {
       "title": "Documentation",
@@ -106,7 +112,17 @@
       "refactoring": "Refactoring & Code Actions",
       "contextMenus": "Context Menus",
       "nuget": "NuGet Package Manager",
-      "profiler": "Profiler"
+      "profiler": "Profiler",
+      "menuLabel": "Documentation menu",
+      "related": {
+        "title": "Related Documentation",
+        "architectureKicker": "Architecture",
+        "architectureTitle": "How SharpLsp Works",
+        "architectureDescription": "The three-tier Rust host + .NET sidecar architecture explained.",
+        "setupKicker": "Setup",
+        "setupTitle": "Editor Setup",
+        "setupDescription": "Configure SharpLsp for VS Code, Neovim, Helix, Emacs, Zed, and more."
+      }
     },
     "footer": {
       "documentation": "Documentation",
@@ -120,7 +136,9 @@
       "codeCompletions": "Code Completions",
       "github": "GitHub",
       "issues": "Issues",
-      "blog": "Blog"
+      "blog": "Blog",
+      "tagline": "C# and F# development without the IDE lock-in.",
+      "navigationLabel": "Footer navigation"
     }
   },
   "zh": {
@@ -135,6 +153,8 @@
       "search": "搜索文章",
       "filterLabel": "博客筛选",
       "articles": "文章",
+      "engineering": "工程",
+      "readTime": "阅读约 8 分钟",
       "empty": "暂无博客文章，请稍后再来！"
     },
     "home": {
@@ -202,7 +222,11 @@
     "nav": {
       "docs": "文档",
       "blog": "博客",
-      "releases": "版本"
+      "releases": "版本",
+      "primaryLabel": "主导航",
+      "menuLabel": "主菜单",
+      "selectLanguage": "选择语言",
+      "toggleTheme": "切换颜色主题"
     },
     "docs": {
       "title": "文档",
@@ -218,7 +242,17 @@
       "refactoring": "重构与代码操作",
       "contextMenus": "上下文菜单",
       "nuget": "NuGet 包管理器",
-      "profiler": "性能分析器"
+      "profiler": "性能分析器",
+      "menuLabel": "文档菜单",
+      "related": {
+        "title": "相关文档",
+        "architectureKicker": "架构",
+        "architectureTitle": "SharpLsp 的工作原理",
+        "architectureDescription": "详解由 Rust 主机和 .NET 边车组成的三层架构。",
+        "setupKicker": "设置",
+        "setupTitle": "编辑器设置",
+        "setupDescription": "为 VS Code、Neovim、Helix、Emacs、Zed 等编辑器配置 SharpLsp。"
+      }
     },
     "footer": {
       "documentation": "文档",
@@ -232,7 +266,9 @@
       "codeCompletions": "代码补全",
       "github": "GitHub",
       "issues": "问题反馈",
-      "blog": "博客"
+      "blog": "博客",
+      "tagline": "不受 IDE 锁定的 C# 与 F# 开发体验。",
+      "navigationLabel": "页脚导航"
     }
   },
   "ja": {
@@ -247,6 +283,8 @@
       "search": "記事を検索",
       "filterLabel": "ブログの絞り込み",
       "articles": "記事",
+      "engineering": "エンジニアリング",
+      "readTime": "読了時間 8 分",
       "empty": "ブログ記事はまだありません。しばらくしてからご確認ください。"
     },
     "home": {
@@ -314,7 +352,11 @@
     "nav": {
       "docs": "ドキュメント",
       "blog": "ブログ",
-      "releases": "リリース"
+      "releases": "リリース",
+      "primaryLabel": "メインナビゲーション",
+      "menuLabel": "メインメニュー",
+      "selectLanguage": "言語を選択",
+      "toggleTheme": "カラーテーマを切り替え"
     },
     "docs": {
       "title": "ドキュメント",
@@ -330,7 +372,17 @@
       "refactoring": "リファクタリングとコードアクション",
       "contextMenus": "コンテキストメニュー",
       "nuget": "NuGet パッケージマネージャー",
-      "profiler": "プロファイラー"
+      "profiler": "プロファイラー",
+      "menuLabel": "ドキュメントメニュー",
+      "related": {
+        "title": "関連ドキュメント",
+        "architectureKicker": "アーキテクチャ",
+        "architectureTitle": "SharpLsp の仕組み",
+        "architectureDescription": "Rust ホストと .NET サイドカーで構成される 3 層アーキテクチャを解説します。",
+        "setupKicker": "セットアップ",
+        "setupTitle": "エディター設定",
+        "setupDescription": "VS Code、Neovim、Helix、Emacs、Zed などで SharpLsp を設定します。"
+      }
     },
     "footer": {
       "documentation": "ドキュメント",
@@ -344,7 +396,9 @@
       "codeCompletions": "コード補完",
       "github": "GitHub",
       "issues": "Issue",
-      "blog": "ブログ"
+      "blog": "ブログ",
+      "tagline": "IDE に縛られない C# と F# の開発体験。",
+      "navigationLabel": "フッターナビゲーション"
     }
   }
 }

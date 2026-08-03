@@ -1,5 +1,5 @@
 /// References and document highlights for the F# sidecar.
-/// References are project-wide ([FS-REFS-PROJECT]); highlights stay file-local.
+/// References are project-wide ([REFERENCES-FSHARP-FIND]); highlights stay file-local.
 module SharpLsp.Sidecar.FSharp.FSharpReferences
 
 open FSharp.Compiler.CodeAnalysis
@@ -21,7 +21,7 @@ let private isWriteUse (su: FSharpSymbolUse) =
 
 /// Resolve the symbol at a position and return all of its uses across the
 /// loaded project. Falls back to current-file uses if the project check is
-/// unavailable. Shared by references ([FS-REFS-PROJECT]), rename, and code lens.
+/// unavailable. Shared by references ([REFERENCES-FSHARP-FIND]), rename, and code lens.
 let getProjectUsages
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (filePath: string)

@@ -9,4 +9,4 @@ authorRole: Nimblesite エンジニアリング
 authorImage: /assets/images/sharplsp-logo.svg
 ---
 
-SharpLsp は Christian Findlay が率いる [Nimblesite](https://nimblesite.co) のエンジニアリングチームによって構築されています。SharpLsp は MIT ライセンスで、公開された場で開発されています。[GitHub](https://github.com/Nimblesite/SharpLsp) でのコントリビューションを歓迎します。
+SharpLsp は [Christian Findlay](https://www.christianfindlay.com/) が率いる [Nimblesite](https://nimblesite.co) のエンジニアリングチームによって構築されています。SharpLsp は MIT ライセンスで、公開された場で開発されています。[GitHub](https://github.com/Nimblesite/SharpLsp) でのコントリビューションを歓迎します。

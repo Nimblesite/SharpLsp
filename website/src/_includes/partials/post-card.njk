@@ -8,6 +8,7 @@
 {% set _authorSlug = _authorData.authorSlug | default(_defaultAuthorSlug) %}
 {% set _langPrefix = "/" + _postLang if _postLang and _postLang != defaultLanguage else "" %}
 {% set _authorImage = _authorData.authorImage | default('/assets/images/sharplsp-logo.svg') %}
+{% set _blogText = i18n[_postLang].blog %}
 <article class="post-card{% if featuredPost %} post-card-featured{% endif %}">
   <a class="post-media{% if not currentPost.data.image %} post-media-symbol{% endif %}" href="{{ currentPost.url }}" aria-label="{{ currentPost.data.title }}">
     {% if currentPost.data.image %}
@@ -35,10 +36,10 @@
         <img src="{{ _authorImage }}" alt="{{ _authorName }}">
         <div>
           <span>{{ _authorName }}</span>
-          <small>{{ currentPost.date | dateFormat }}</small>
+          <small>{{ currentPost.date | dateFormat(_postLang) }}</small>
         </div>
       </a>
-      {% if featuredPost %}<span class="read-time">{% if _postLang == "zh" %}8 分钟阅读{% else %}8 min read{% endif %}</span>{% endif %}
+      {% if featuredPost %}<span class="read-time">{{ _blogText.readTime | default("8 min read") }}</span>{% endif %}
     </div>
   </div>
 </article>

@@ -30,7 +30,7 @@ that feature — that is the parity gap.
 | `textDocument/prepareTypeHierarchy` | [type_hierarchy.rs:18](../../src/type_hierarchy.rs#L18) | ✅ | ✅ **(this plan)** | [FS-TYPEHIER-PREPARE] |
 | `typeHierarchy/supertypes` | [type_hierarchy.rs:58](../../src/type_hierarchy.rs#L58) | ✅ | ✅ **(this plan)** | [FS-TYPEHIER-SUPER] |
 | `typeHierarchy/subtypes` | [type_hierarchy.rs:93](../../src/type_hierarchy.rs#L93) | ✅ | ✅ **(this plan)** | [FS-TYPEHIER-SUB] |
-| `textDocument/references` | [semantic.rs](../../src/semantic.rs) | ✅ solution-wide | ✅ **project-wide (this plan)** | [FS-REFS-PROJECT] |
+| `textDocument/references` | [semantic.rs](../../src/semantic.rs) | ✅ solution-wide | ✅ **project-wide (this plan)** | [REFERENCES-FSHARP-FIND] |
 | `textDocument/hover` | [semantic.rs:134](../../src/semantic.rs#L134) | ✅ | ✅ | — |
 | `textDocument/definition` etc. | [main.rs:657](../../src/main.rs#L657) | ✅ | ✅ | — |
 | `textDocument/typeDefinition` | nav | ✅ | ✅ | — |
@@ -70,7 +70,7 @@ unopened namespaces expose `NamespaceToOpen`, surfaced as an `(open <ns>)` detai
 hint (mirrors C#'s `(import) <ns>`). `completionItem/resolve` returns the wire-empty
 `AdditionalEdits` for now; **auto-`open` insertion is a follow-up** (see below).
 
-### [RENAME-FSHARP-PREPARE] / [RENAME-FSHARP-APPLY] / [FS-REFS-PROJECT]
+### [RENAME-FSHARP-PREPARE] / [RENAME-FSHARP-APPLY] / [REFERENCES-FSHARP-FIND]
 Rename and references both need **project-wide** symbol uses, not just the current
 file. A shared `getProjectUsages` helper runs `ParseAndCheckProject` and
 `GetUsesOfSymbol` so `textDocument/references` becomes project-wide (was current-file
@@ -167,7 +167,7 @@ rename, code lens, and call/type hierarchy).
 
 - [x] [FS-COMPLETION] `textDocument/completion` via `GetDeclarationListInfo`
 - [x] [FS-COMPLETION-RESOLVE] `completionItem/resolve` (wire-empty edits + ns hint)
-- [x] [FS-REFS-PROJECT] project-wide `textDocument/references`
+- [x] [REFERENCES-FSHARP-FIND] project-wide `textDocument/references`
 - [x] [RENAME-FSHARP-PREPARE] `textDocument/prepareRename`
 - [x] [RENAME-FSHARP-APPLY] `textDocument/rename` (project-wide edits)
 - [x] [FS-CODELENS] `textDocument/codeLens` reference counts

@@ -103,7 +103,7 @@ Reference resolution has two tiers. Tier 1 is correct; tier 2 is a bounded degra
 #### Tier 1 — synthesized project + real restore `[SCRIPT-FILEBASED-REFERENCES-MSBUILD]`
 
 1. Synthesize an MSBuild project equivalent to the SDK's virtual project from the parsed directives. The project is constructed through `Microsoft.Build.Construction.ProjectRootElement` — an actual XML DOM — and never by string concatenation, per the repo's structured-file rule.
-2. Write it to a per-app cache directory keyed by a hash of the root file's full path, mirroring the SDK's own `<temp>/dotnet/runfile/<appname>-<appfilesha>/` scheme.
+2. Write it to a deterministic per-app work directory keyed by a hash of the root file's full path, mirroring the SDK's `<temp>/dotnet/runfile/<appname>-<appfilesha>/` scheme. This is build state, not a semantic-result cache.
 3. Run `dotnet restore` on it.
 4. Load it through the **existing** `MSBuildWorkspace` path.
 
@@ -167,7 +167,7 @@ Scripts opened in the editor define both `INTERACTIVE` and `EDITING`. `COMPILED`
 
 ### NuGet references `[SCRIPT-FSX-NUGET]`
 
-`#r "nuget: ..."` resolution is performed by FCS's dependency manager and requires network and cache access. It is slow on first use (seconds). Resolution runs off the request path; the script is first checked without the package references so the editor is responsive, then re-checked once resolution completes and diagnostics are republished.
+`#r "nuget: ..."` resolution is performed by FCS's dependency manager and requires network or local package-store access. It is slow on first use (seconds). Resolution runs off the request path; the script is first checked without the package references so the editor is responsive, then re-checked once resolution completes and diagnostics are republished.
 
 ### Signature files `[SCRIPT-FSX-FSI]`
 
@@ -220,7 +220,7 @@ Two file-based apps in one directory are two independent compilations. The sidec
 |---|---|
 | Classification + cone search | <5ms |
 | Tier 2 workspace ready (first IntelliSense) | <300ms |
-| Tier 1 workspace ready (restore cached) | <1.5s |
+| Tier 1 workspace ready (restore assets current) | <1.5s |
 | Tier 1 workspace ready (cold restore) | <10s, non-blocking |
 | Directive re-parse on keystroke | <1ms |
 

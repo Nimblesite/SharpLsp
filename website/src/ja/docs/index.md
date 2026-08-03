@@ -9,7 +9,7 @@ eleventyNavigation:
 
 # SharpLsp を始める
 
-SharpLsp は Rust で構築された、オープンソースの .NET（C# + F#）向け Language Server Protocol（LSP）実装です。1 つのサーバーで、どのエディターでも動作します。Visual Studio、Rider、C# Dev Kit と同等の機能を目指しながら、プロプライエタリな依存関係、ライセンス、ベンダーロックインをなくします。
+SharpLsp は Rust で構築された、オープンソースの .NET（C# + F#）向け Language Server Protocol（LSP）実装です。1 つのサーバーで、どのエディターでも動作します。Visual Studio、Rider、C# Dev Kit と完全に同等の機能を提供し、プロプライエタリな依存関係も、ライセンスも、ベンダーロックインもありません。
 
 ## インストール
 
@@ -17,7 +17,7 @@ SharpLsp は Rust で構築された、オープンソースの .NET（C# + F#�
 
 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp) から SharpLsp 拡張機能をインストールします。
 
-拡張機能には <code>sharplsp</code> バイナリと両方のサイドカーが VSIX 内に同梱されています。Rust ツールチェーンは不要です。別途バイナリをインストールする必要もありません。<code>.sln</code> または <code>.csproj</code> を開くと、SharpLsp が自動的に起動します。
+拡張機能には `sharplsp` バイナリと両方のサイドカーが VSIX 内に同梱されています。Rust ツールチェーンは不要です。別途バイナリをインストールする必要もありません。`.sln` または `.csproj` を開くと、SharpLsp が自動的に起動します。
 
 <section class="callout">
   <h2>前提条件</h2>

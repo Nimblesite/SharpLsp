@@ -93,7 +93,7 @@ Generation fencing MUST prevent all stale asynchronous work from publishing stat
 
 ### Launch Candidates `[SIDECAR-STARTUP-RESOLUTION]`
 
-**Established implementation alias `[SHARPLSP-ARCHITECTURE-EXTENSIONS-SIDECAR-ENV]`:** the language-specific environment override is authoritative and MUST be evaluated before every other launch source.
+The language-specific environment override in [SHARPLSP-ARCHITECTURE-EXTENSIONS-SIDECAR-ENV] is authoritative and MUST be evaluated before every other launch source.
 
 Resolution produces typed `LaunchCandidate` values and runs again for each generation. It MUST return the absolute executable path actually passed to `CreateProcess`/`exec`, not a bare command name.
 

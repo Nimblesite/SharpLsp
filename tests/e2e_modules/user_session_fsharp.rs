@@ -81,7 +81,7 @@ fn test_full_stack_fsharp_user_session_medium_codebase() {
     // ── References: charge is used from the sibling file ──
     // Project-wide references need FCS's whole-project check; the first
     // responses are legitimately empty while it warms, so poll like every
-    // other references test ([FS-REFS-PROJECT]).
+    // other references test ([REFERENCES-FSHARP-FIND]).
     let refs = poll_references_until_ready(
         &mut client,
         &domain_uri,

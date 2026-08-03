@@ -23,14 +23,20 @@ Instead:
 
 1. **Workspace open**: Rust host opens the workspace in the sidecar. Sidecar runs [DIAG-RESTORE] before creating `MSBuildWorkspace`. Once the workspace is created, the sidecar subscribes to `Workspace.RegisterWorkspaceChangedHandler` and seeds a monotonic `global_state_version: u64`.
 2. **Server advertises pull**: capabilities include `diagnosticProvider.workspaceDiagnostics: true` and `interFileDependencies: true`.
-3. **Editor pulls**: editor sends `textDocument/diagnostic` (per file) and/or `workspace/diagnostic` (whole workspace) on its own schedule. Each request includes any `previousResultId` it has cached.
-4. **Sidecar answers per-document**: for each pull, the sidecar calls `Project.GetCompilationAsync().GetSemanticModel(tree).GetDiagnostics()` (and `CompilationWithAnalyzers` for analyzer diagnostics) for **just the requested document(s)**. Roslyn's lazy compilation transparently forces topological resolution of the requested project's dependencies.
-5. **Result identity**: response carries `resultId = "{project_version}:{doc_version}:{global_state_version}"`. If the editor's `previousResultId` matches, the server returns `DiagnosticReport.Unchanged` (per LSP 3.17) and skips re-computation.
-6. **Refresh on change**: any sidecar-side `WorkspaceChanged` event (`ProjectAdded`, `ProjectReloaded`, `SolutionChanged`, `DocumentChanged`, restore completion) bumps `global_state_version` and emits a `diagnostics/refresh` IPC notification. Rust host coalesces these via a 2000ms debounced batch (matching Roslyn LSP's `AsyncBatchingWorkQueue`) and sends LSP `workspace/diagnostic/refresh` to the editor. The editor re-pulls — diagnostics converge to truth.
+3. **Editor pulls**: editor sends `textDocument/diagnostic` (per file) and/or `workspace/diagnostic` (whole workspace) on its own schedule. A request may carry the opaque `previousResultId` returned earlier; the SharpLsp extension MUST NOT maintain a separate diagnostic-result cache.
+4. **Host queries salsa**: the Rust host evaluates the per-document diagnostic salsa query. On a memoized hit it reuses the query value; on a miss it asks the sidecar to call `Project.GetCompilationAsync().GetSemanticModel(tree).GetDiagnostics()` and `CompilationWithAnalyzers` for only the requested document, then supplies the result to salsa.
+5. **Result identity**: response carries `resultId = "{project_version}:{doc_version}:{global_state_version}"`. If `previousResultId` matches the current salsa query identity, the host returns `DiagnosticReport.Unchanged` and skips IPC and semantic analysis.
+6. **Refresh on change**: any sidecar-side `WorkspaceChanged` event (`ProjectAdded`, `ProjectReloaded`, `SolutionChanged`, `DocumentChanged`, restore completion) bumps `global_state_version` and emits `diagnostics/refresh`. The Rust host updates the corresponding salsa inputs, coalesces refreshes for 2000ms, and sends LSP `workspace/diagnostic/refresh`; the editor then re-pulls.
+
+### [DIAG-ARCHITECTURE-SALSA] Salsa Ownership
+
+Rust-host salsa is the only diagnostic memoization mechanism. Its inputs include document text and version, project version, `global_state_version`, and effective diagnostic configuration; its tracked query returns the per-document diagnostic report and result identity.
+
+The extension and sidecars may retain protocol, UI, compiler-workspace, and process state, but MUST NOT retain diagnostic arrays, result lookups, compilation-result memoization, or other client-side/sidecar-local caches. A sidecar computes a document on a salsa miss and returns the value without storing a SharpLsp cache. Workspace and configuration changes update salsa inputs, and salsa dependency tracking performs invalidation; no LRU, map-backed memo table, or parallel ad-hoc cache is permitted.
 
 ### [DIAG-ARCHITECTURE-EAGER-SCAN] No Eager Solution Scan
 
-The server MUST NOT scan `Solution.Projects` eagerly with `GetCompilationAsync()` during load: consumer projects can compile before dependencies become cached `CompilationReference`s, and source generators or restore can still be incomplete. It also MUST NOT simulate a verification pass by sending unchanged text through `textDocument/didChange`; `WithDocumentText` does not rebuild metadata references or generator state. Pull responses report the current snapshot, and a later `global_state_version` bump causes the editor to re-pull.
+The server MUST NOT scan `Solution.Projects` eagerly with `GetCompilationAsync()` during load: consumer projects can compile before dependency `CompilationReference`s are ready, and source generators or restore can still be incomplete. It also MUST NOT simulate a verification pass by sending unchanged text through `textDocument/didChange`; `WithDocumentText` does not rebuild metadata references or generator state. Pull responses report the current snapshot, and a later `global_state_version` bump causes the editor to re-pull.
 
 ### [DIAG-PUSH-GATE] Push Convergence Guarantee
 

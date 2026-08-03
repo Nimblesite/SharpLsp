@@ -158,17 +158,18 @@
     <div class="footer-content">
       {% set currentLang = lang | default('en') %}
       {% set footerPrefix = "/" + currentLang if currentLang != defaultLanguage else "" %}
+      {% set footerText = i18n[currentLang].footer %}
       <div class="footer-brand">
         <a class="logo" href="{{ footerPrefix }}/">
           <img class="logo-mark" src="/assets/images/sharplsp-logo.svg" alt="" width="28" height="28">
           <span>SharpLsp</span>
         </a>
-        <p>C# and F# development without the IDE lock-in.</p>
+        <p>{{ footerText.tagline | default("C# and F# development without the IDE lock-in.") }}</p>
       </div>
-      <nav class="footer-links" aria-label="Footer navigation">
+      <nav class="footer-links" aria-label="{{ footerText.navigationLabel | default('Footer navigation') }}">
         <a href="{{ footerPrefix }}/docs/">{{ "nav.docs" | t(currentLang) | default("Docs") }}</a>
         <a href="{{ footerPrefix }}/blog/">{{ "nav.blog" | t(currentLang) | default("Blog") }}</a>
-        <a href="/releases/">{{ "nav.releases" | t(currentLang) | default("Releases") }}</a>
+        <a href="{{ footerPrefix }}/releases/">{{ "nav.releases" | t(currentLang) | default("Releases") }}</a>
         <a href="https://github.com/Nimblesite/SharpLsp">GitHub</a>
       </nav>
       <div class="footer-bottom">

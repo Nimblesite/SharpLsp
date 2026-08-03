@@ -52,7 +52,7 @@ All four definition-family requests are **semantic** requests. The Rust host rou
 | 2 | Rust host | Checks salsa cache for matching `(uri, version, position, method)` |
 | 3 | Rust host | On cache miss, dispatches to C# sidecar (Roslyn) or F# sidecar (FCS) via IPC |
 | 4 | Sidecar | Resolves symbol at position, finds definition location(s) |
-| 5 | Rust host | Caches result, returns LSP response to client |
+| 5 | Rust host | Records the query result in salsa and returns the LSP response |
 
 The Rust host MAY use tree-sitter to pre-validate the position (e.g., reject whitespace, comments, string literals) and short-circuit with `null` before dispatching to the sidecar.
 
@@ -188,7 +188,7 @@ Definition results are cached via the [salsa](https://salsa-rs.github.io/salsa/)
 
 The `method` component distinguishes between `definition`, `typeDefinition`, `declaration`, and `implementation` results for the same position.
 
-The Rust host SHOULD cache the most recent result per document per method and return it immediately if the position and version match. Stale requests for superseded document versions MUST be cancelled.
+The salsa query returns its memoized result when document, method, position, and version inputs match. Stale requests for superseded document versions MUST be cancelled. No second navigation cache is permitted.
 
 ## Performance Requirements `[DEFINITION-PERFORMANCE]`
 

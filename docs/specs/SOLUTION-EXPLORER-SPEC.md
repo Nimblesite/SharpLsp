@@ -34,7 +34,7 @@ The F# path reuses the sidecar `documentSymbol` request that powers the editor o
 
 `sharplsp/workspaceSymbols` MUST parse the latest open VFS text, including unsaved successive edits; disk content is used only when no open document denotes the source file.
 
-Editor URIs and project models can name one file differently: for example, Windows can supply `C:\Users\RUNNER~1\...` while the sidecar supplies `C:\Users\runneradmin\...`. On open, the VFS resolves and caches the editor path, then native-path lookup compares both the original URI path and its canonical path. Comparison ignores Windows verbatim prefixes and casing. The VS Code explorer tests cover unsaved and burst edits; VFS regression tests cover reverse-alias lookup. Implementations: `src/vfs.rs`, `src/workspace_symbols.rs`, and `editors/vscode/src/test/suite/solution-explorer.test.ts`.
+Editor URIs and project models can name one file differently: for example, Windows can supply `C:\Users\RUNNER~1\...` while the sidecar supplies `C:\Users\runneradmin\...`. On open, the VFS stores the resolved editor path as document state, then native-path lookup compares both the original URI path and its canonical path. Comparison ignores Windows verbatim prefixes and casing. The VS Code explorer tests cover unsaved and burst edits; VFS regression tests cover reverse-alias lookup. Implementations: `src/vfs.rs`, `src/workspace_symbols.rs`, and `editors/vscode/src/test/suite/solution-explorer.test.ts`.
 
 ### Request: `sharplsp/workspaceSymbols` `[SE-WORKSPACE-SYMBOLS-REQUEST]`
 
@@ -177,7 +177,7 @@ Within each access group, symbols are sorted alphabetically.
 
 - Sorting applies recursively to namespace children, type children, and nested members
 - Project order within a solution is preserved (follows `.sln` or `.slnx` declaration order)
-- Sorting is client-side only — the LSP response is cached and re-sorted without a new request
+- Sorting is client-side only — the current LSP response remains in shared reactive state and is re-sorted without a new request
 
 ### Context Key `[SE-SORT-CONTEXT]`
 

@@ -11,7 +11,7 @@ SharpLsp is an open-source, editor-agnostic [LSP 3.17](https://microsoft.github.
 - **Editor-agnostic:** use LSP 3.17+ without editor-specific APIs.
 - **Language parity:** C# and F# share infrastructure, feature targets, and test standards.
 - **Open dependencies:** use Roslyn and FCS without proprietary Visual Studio or C# Dev Kit components.
-- **Rust hot path:** keep protocol handling, document state, syntax parsing, routing, and all memoization in Rust; salsa is the only cache.
+- **Rust hot path:** keep protocol handling, document state, syntax parsing, routing, and memoization in Rust.
 - **Compiler semantics:** delegate semantic analysis to Roslyn and FCS; do not reimplement type checkers.
 
 ## [SHARPLSP-ARCHITECTURE] Architecture
@@ -45,6 +45,10 @@ SharpLsp uses a Rust host for the LSP protocol and syntax analysis, plus managed
 - [Ionide.ProjInfo](https://github.com/ionide/proj-info) for project cracking (MSBuild evaluation for F# projects)
 - [FSharpLint](https://github.com/fsprojects/FSharpLint) for linting
 - Same RPC interface and transport as the C# sidecar
+
+### [SHARPLSP-ARCHITECTURE-CACHING] Cache Ownership
+
+Rust-host salsa MUST be the only memoization mechanism. Sidecars and clients MAY retain authoritative compiler, document, protocol, and rendered UI state, but MUST NOT cache feature results. LRU, dictionary/map-backed, sidecar-local, client-local, and other ad-hoc result caches are forbidden.
 
 ### [SHARPLSP-ARCHITECTURE-IPC] IPC Transport Protocol
 

@@ -124,7 +124,7 @@ Implementation anchors: Rust routing and DTO conversion live in [`src/semantic.r
 
 ### textDocument/references `[REFERENCES-FSHARP-FIND]`
 
-**Established implementation alias `[FS-REFS-PROJECT]`:** F# references MUST search every compile item in the loaded project; a file-local result is nonconforming.
+F# references MUST search every compile item in the loaded project; a file-local result is nonconforming.
 
 1. Get `FSharpCheckFileResults` for the document via `FSharpChecker.CheckFileInProject()`.
 2. Call `GetSymbolUseAtLocation(line, col, lineText, names)` to obtain the `FSharpSymbolUse` at the cursor.

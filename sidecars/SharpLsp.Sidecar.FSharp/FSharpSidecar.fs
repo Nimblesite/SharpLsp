@@ -276,7 +276,7 @@ type FSharpSidecar() =
                     let requestPath = MessagePackSerializer.Deserialize<string>(payload, cancellationToken = ct)
                     // Resolve onto the project's spelling of the file — FCS
                     // filename comparisons are case-sensitive while hosts vary
-                    // the casing. [FS-REFS-PROJECT]
+                    // the casing. [REFERENCES-FSHARP-FIND]
                     let filePath = FSharpWorkspace.projectFilePath workspace requestPath
                     let mutable results = ResizeArray<DiagnosticResult>()
                     // FCS compiler diagnostics, computed from the live buffer

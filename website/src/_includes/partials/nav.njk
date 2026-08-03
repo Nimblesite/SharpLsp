@@ -1,10 +1,10 @@
-<nav class="nav" aria-label="Primary navigation">
+<nav class="nav" aria-label="{{ 'nav.primaryLabel' | t(lang) | default('Primary navigation') }}">
   <a href="{% if lang and lang != defaultLanguage %}/{{ lang }}/{% else %}/{% endif %}" class="logo">
     <img class="logo-mark" src="/assets/images/sharplsp-logo.svg" alt="" width="28" height="28">
     <span>{{ site.name | default(site.title) }}</span>
   </a>
 
-  <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-label="Open menu" aria-controls="nav-menu" aria-expanded="false">
+  <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-label="{{ 'nav.menuLabel' | t(lang) | default('Main menu') }}" aria-controls="nav-menu" aria-expanded="false">
     <span></span><span></span><span></span>
   </button>
 
@@ -14,7 +14,7 @@
     <ul class="nav-links">
       <li><a class="nav-link {% if page.url.startsWith('/docs/') or page.url.startsWith('/' + lang + '/docs/') %}active{% endif %}" href="{{ docsRoot }}">{{ "nav.docs" | t(lang) | default("Docs") }}</a></li>
       <li><a class="nav-link {% if page.url.startsWith('/blog/') or page.url.startsWith('/' + lang + '/blog/') %}active{% endif %}" href="{{ lp }}blog/">{{ "nav.blog" | t(lang) | default("Blog") }}</a></li>
-      <li><a class="nav-link {% if page.url.startsWith('/releases/') %}active{% endif %}" href="/releases/">{{ "nav.releases" | t(lang) | default("Releases") }}</a></li>
+      <li><a class="nav-link {% if page.url.startsWith(lp + 'releases/') %}active{% endif %}" href="{{ lp }}releases/">{{ "nav.releases" | t(lang) | default("Releases") }}</a></li>
       <li><a class="nav-link" href="https://github.com/Nimblesite/SharpLsp">GitHub</a></li>
     </ul>
 
@@ -23,7 +23,7 @@
       {% set currentLangCode = lang | default('en') %}
       {% set currentLanguage = languages[currentLangCode] if languages and languages[currentLangCode] else null %}
       <div class="language-switcher">
-        <button class="language-btn" aria-label="Select language" aria-expanded="false">
+        <button class="language-btn" aria-label="{{ 'nav.selectLanguage' | t(lang) | default('Select language') }}" aria-expanded="false">
           {% if currentLanguage and currentLanguage.flag %}<span aria-hidden="true">{{ currentLanguage.flag }}</span>{% endif %}
           <span>{% if currentLanguage %}{{ currentLanguage.nativeName }}{% else %}{{ currentLangCode | upper }}{% endif %}</span>
         </button>
@@ -42,7 +42,7 @@
       {% endif %}
 
       {% if techdocOptions.features.darkMode %}
-      <button id="theme-toggle" class="theme-toggle" aria-label="Toggle color theme">
+      <button id="theme-toggle" class="theme-toggle" aria-label="{{ 'nav.toggleTheme' | t(lang) | default('Toggle color theme') }}">
         <span class="theme-icon-light" aria-hidden="true">☀</span>
         <span class="theme-icon-dark" aria-hidden="true">☾</span>
       </button>

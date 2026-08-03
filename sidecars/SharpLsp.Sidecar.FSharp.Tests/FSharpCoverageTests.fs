@@ -56,7 +56,7 @@ let private loadWorkspace (files: (string * string) list) =
             return failwith $"Failed to load workspace: {msg}"
     }
 
-// ── Workspace project options ([FS-REFS-PROJECT]) ───────────────
+// ── Workspace project options ([REFERENCES-FSHARP-FIND]) ───────────────
 
 /// References and rename are project-wide: FCS can only search files present
 /// in `ProjectOptions.SourceFiles`. A loaded multi-file project MUST surface
@@ -89,7 +89,7 @@ let ``loadProject carries every compile item into the FCS source file set`` () =
 /// `ProjectOptions.SourceFiles` yields symbols whose declaration ranges never
 /// match any project-wide use, so references/rename silently return nothing.
 /// Windows-only: case-sensitive filesystems have no alternate spellings.
-/// [FS-REFS-PROJECT]
+/// [REFERENCES-FSHARP-FIND]
 [<Fact>]
 let ``project usages resolve through a request path with different drive casing`` () = task {
     if OperatingSystem.IsWindows() then

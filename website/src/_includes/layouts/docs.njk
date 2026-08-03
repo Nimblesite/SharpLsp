@@ -1,7 +1,9 @@
 ---
 layout: layouts/base.njk
 ---
-<button class="docs-menu-toggle" id="docs-menu-toggle" aria-controls="docs-sidebar" aria-expanded="false">
+{% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
+{% set relatedText = i18n[lang or defaultLanguage].docs.related %}
+<button class="docs-menu-toggle" id="docs-menu-toggle" aria-label="{{ 'docs.menuLabel' | t(lang) | default('Documentation menu') }}" aria-controls="docs-sidebar" aria-expanded="false">
   <span aria-hidden="true">☰</span> {{ "docs.title" | t(lang) | default("Documentation") }}
 </button>
 <div class="docs-layout">
@@ -10,17 +12,17 @@ layout: layouts/base.njk
     {{ content | safe }}
 
     <section class="related-panel">
-      <h2>Related Documentation</h2>
+      <h2>{{ relatedText.title }}</h2>
       <div class="related-grid">
-        <a href="/docs/architecture/">
-          <span>Architecture</span>
-          <strong>How SharpLsp Works</strong>
-          <small>The three-tier Rust host + .NET sidecar architecture explained.</small>
+        <a href="{{ langPrefix }}/docs/architecture/">
+          <span>{{ relatedText.architectureKicker }}</span>
+          <strong>{{ relatedText.architectureTitle }}</strong>
+          <small>{{ relatedText.architectureDescription }}</small>
         </a>
-        <a href="/docs/editors/">
-          <span>Setup</span>
-          <strong>Editor Setup</strong>
-          <small>Configure SharpLsp for VS Code, Neovim, Helix, Emacs, Zed, and more.</small>
+        <a href="{{ langPrefix }}/docs/editors/">
+          <span>{{ relatedText.setupKicker }}</span>
+          <strong>{{ relatedText.setupTitle }}</strong>
+          <small>{{ relatedText.setupDescription }}</small>
         </a>
       </div>
     </section>

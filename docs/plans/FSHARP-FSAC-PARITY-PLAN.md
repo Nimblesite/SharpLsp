@@ -18,8 +18,8 @@ identically for `.cs` and `.fs`. **This** doc tracks the *external* target:
 matching and beating **FsAutoComplete/Ionide**. Complementary — keep the
 internal-parity matrix there and the FSAC-parity matrix here; do not duplicate.
 
-Spec IDs use the `[FSAC-PARITY-*]` group; existing per-feature IDs (`[FS-*]`,
-`[PKG-*]`) are referenced where they already implement a row.
+Spec IDs use the `FSAC-PARITY-...` group; existing `FS-...` and `PKG-...`
+feature IDs are referenced where they already implement a row.
 
 ## How F# requests are served
 
@@ -42,7 +42,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 | Type definition | `textDocument/typeDefinition` | ✅ | resolves to the type decl; `test_full_stack_fsharp_navigation` (was gap [#112] — invalid-fixture artifact) |
 | Implementation | `textDocument/implementation` | ✅ | |
 | Declaration | `textDocument/declaration` | ⭐✅ | not in FSAC's list |
-| Find references | `textDocument/references` | ✅ | `[FS-REFS-PROJECT]` project-wide incl. type use-sites; `test_full_stack_fsharp_references_type_use_sites` (was gap [#112] — invalid-fixture artifact) |
+| Find references | `textDocument/references` | ✅ | `[REFERENCES-FSHARP-FIND]` project-wide incl. type use-sites; `test_full_stack_fsharp_references_type_use_sites` (was gap [#112] — invalid-fixture artifact) |
 | Hover | `textDocument/hover` | ✅ | XML-doc rendering; e2e covered |
 | Signature help | `textDocument/signatureHelp` | ✅ | `[FS-SIGHELP]` |
 | Document symbols | `textDocument/documentSymbol` | ✅ | `[FS-DOCSYMBOL]` (parse-only) |
@@ -90,7 +90,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 |---|---|
 | Call hierarchy (incoming/outgoing) | `[FS-CALLHIER-PREPARE/INCOMING/OUTGOING]` — FSAC has none |
 | Type hierarchy (super/subtypes) | `[FS-TYPEHIER-PREPARE/SUPER/SUB]` — FSAC has none |
-| Project-wide references & rename | `[FS-REFS-PROJECT]`, `[FS-RENAME-*]` |
+| Project-wide references & rename | `[REFERENCES-FSHARP-FIND]`, `[RENAME-FSHARP-PREPARE]`, `[RENAME-FSHARP-APPLY]` |
 | Monorepo dead-code (errors vs warnings) | `[ANALYZERS-DEADCODE-SEVERITY]` |
 | Unused NuGet package detection | `[PKG-UNUSED-DETECT-FS]` |
 | F# file-order dependency analysis | `FSharpFileOrder.fs` |

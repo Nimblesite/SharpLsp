@@ -78,7 +78,7 @@ output_directory = ".sharplsp/profiles"
 
 ## ファイルの場所
 
-SharpLsp はワークスペースルートから親ディレクトリへたどり、最初に見つかった `sharplsp.toml` を使います。見つからない場合は、すべて既定値が適用されます。
+SharpLsp はワークスペースルートから親ディレクトリへたどり、最初に見つかった `sharplsp.toml` を使います。`sharplsp.toml` が見つからない場合は、すべて既定値が適用されます。
 
 ```
 my-solution/

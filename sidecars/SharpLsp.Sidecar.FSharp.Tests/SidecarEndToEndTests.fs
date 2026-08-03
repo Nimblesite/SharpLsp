@@ -1042,7 +1042,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Empty(result.AdditionalEdits)
     }
 
-    // ── References are project-wide [FS-REFS-PROJECT] ───────────
+    // ── References are project-wide [REFERENCES-FSHARP-FIND] ───────────
 
     [<Fact>]
     member _.``references span multiple files``() = task {

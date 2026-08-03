@@ -128,7 +128,7 @@ max_sessions = 5
 | **Size Delta** | メモリ変化（+/-） |
 | **Growth %** | 増加率 |
 
-任意の行をクリックすると、comparison ダンプ内のその型に対する Object Retention Graph が開きます。
+**任意の行をクリック**すると、comparison ダンプ内のその型に対する Object Retention Graph が開きます。
 
 ### リーク候補テーブル
 
@@ -136,9 +136,9 @@ max_sessions = 5
 
 | 重大度 | 条件 |
 |--------|------|
-| **High** | 件数が >100% 増加、かつサイズ差分 >1 MB |
-| **Medium** | 件数が >50% 増加、かつサイズ差分 >100 KB |
-| **Low** | 件数が >10% 増加、かつサイズ差分 >10 KB |
+| 🔴 **High** | 件数が >100% 増加、かつサイズ差分 >1 MB |
+| 🟡 **Medium** | 件数が >50% 増加、かつサイズ差分 >100 KB |
+| 🟢 **Low** | 件数が >10% 増加、かつサイズ差分 >10 KB |
 
 リークしやすい既知の型（`EventHandler`、`CancellationTokenSource`、`Timer`、delegate）は最低でも Low へ引き上げられます。増加するコレクション（`List`、`Dictionary`、配列）は、上限のない蓄積の可能性としてフラグ付けされます。
 
@@ -148,7 +148,7 @@ baseline → exercise → compare のガイド付きワークフローを自動�
 
 1. `SharpLsp: Detect Memory Leaks` を実行します
 2. .NET プロセスを選びます。SharpLsp が baseline ダンプを収集します
-3. アプリケーションで疑わしいリーク経路を実行します
+3. アプリケーションで疑わしいリーク経路を**実行**します
 4. SharpLsp が comparison ダンプを収集し、完全なヒープ差分を自動実行します
 5. 差分パネルが開き、候補が強調表示されます
 
@@ -163,7 +163,7 @@ baseline → exercise → compare のガイド付きワークフローを自動�
 3. ルートオブジェクトアドレスを入力します（16 進数、例: `00007ff812345678`）
 4. 対話型の force-directed graph が webview パネルに描画されます
 
-または、Heap Diff パネルの任意の行をクリックすると、comparison ダンプをプリロードした状態でグラフが開きます。
+または、Heap Diff パネルの**任意の行をクリック**すると、comparison ダンプをプリロードした状態でグラフが開きます。
 
 ### グラフ操作
 
@@ -178,10 +178,10 @@ baseline → exercise → compare のガイド付きワークフローを自動�
 
 | 色 | 意味 |
 |----|------|
-| 赤 | リーク候補、または保持サイズが大きい GC root |
-| オレンジ | 保持サイズが大きい（>1 MB） |
-| 青 | GC root（static field、thread stack、pinned、finalizer） |
-| 灰色 | 通常オブジェクト |
+| 🔴 赤 | リーク候補、または保持サイズが大きい GC root |
+| 🟠 オレンジ | 保持サイズが大きい（>1 MB） |
+| 🔵 青 | GC root（static field、thread stack、pinned、finalizer） |
+| ⚫ 灰色 | 通常オブジェクト |
 
 破線枠 = GC root。破線エッジ = weak reference。
 
