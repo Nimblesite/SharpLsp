@@ -66,8 +66,6 @@ enum DocumentHighlightKind {
 
 ## Request Routing `[REFERENCES-ROUTING]`
 
-Both requests are **semantic** requests. The Rust host routes them to the appropriate sidecar based on document language.
-
 | Step | Component | Action |
 |---|---|---|
 | 1 | Rust host | Receives request, identifies language from VFS |
@@ -211,50 +209,20 @@ Reference requests MUST NOT hang or return protocol errors to the client; failur
 
 ### Request `[REFERENCES-IPC-REQUEST]`
 
-```csharp
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class ReferencesRequest
-{
-    [Key(0)] public string FilePath { get; set; } = "";
-    [Key(1)] public int Line { get; init; }
-    [Key(2)] public int Character { get; init; }
-    [Key(3)] public bool IncludeDeclaration { get; init; }
-}
-```
+The C# [`Messages.cs`](../../sidecars/SharpLsp.Sidecar.CSharp/Messages.cs) and F# [`FSharpWire.fs`](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpWire.fs) definitions MUST encode identical keys.
 
-For document highlights, reuses `PositionRequest` (shared with hover/definition).
+| Type | MessagePack keys |
+|---|---|
+| `ReferencesRequest` | `0: FilePath string`, `1: Line int`, `2: Character int`, `3: IncludeDeclaration bool` |
+| `PositionRequest` for highlights | `0: FilePath string`, `1: Line int`, `2: Character int` |
 
 ### Response `[REFERENCES-IPC-RESPONSE]`
 
-Reuses `LocationListResult` from the definition spec for references:
-
-```csharp
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class LocationListResult
-{
-    [Key(0)] public List<LocationResult> Locations { get; set; } = [];
-}
-```
-
-For document highlights, a new response type with highlight kind:
-
-```csharp
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class DocumentHighlightResult
-{
-    [Key(0)] public int StartLine { get; init; }
-    [Key(1)] public int StartCharacter { get; init; }
-    [Key(2)] public int EndLine { get; init; }
-    [Key(3)] public int EndCharacter { get; init; }
-    [Key(4)] public int Kind { get; init; } // 1=Text, 2=Read, 3=Write
-}
-
-[MessagePackObject(AllowPrivate = true)]
-internal sealed class DocumentHighlightListResult
-{
-    [Key(0)] public List<DocumentHighlightResult> Highlights { get; set; } = [];
-}
-```
+| Type | MessagePack keys |
+|---|---|
+| `LocationListResult` | `0: Locations list<LocationResult>` |
+| `DocumentHighlightResult` | `0: StartLine int`, `1: StartCharacter int`, `2: EndLine int`, `3: EndCharacter int`, `4: Kind int` (`Text=1`, `Read=2`, `Write=3`) |
+| `DocumentHighlightListResult` | `0: Highlights list<DocumentHighlightResult>` |
 
 ### IPC Methods `[REFERENCES-IPC-METHODS]`
 

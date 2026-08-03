@@ -33,7 +33,7 @@
         { "title": "Open source", "detail": "MIT, forever" }
       ],
       "workflowEyebrow": "The whole workflow",
-      "workflowTitle": "One server. Everything you need to ship .NET.",
+      "workflowTitle": "One Dev Experience. Everything you need to ship .NET.",
       "workflowIntro": "SharpLsp goes beyond autocomplete. It brings the connected, project-aware experience developers expect from a full IDE to the editor they already use.",
       "workflows": [
         {

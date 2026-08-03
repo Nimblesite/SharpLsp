@@ -2,7 +2,7 @@
 
 The Rust host and sidecars implement two NuGet-maintenance operations exposed through Solution Explorer; the VS Code extension is a thin client.
 
-Both operations MUST reuse `src/nuget/`: `xml_edit` for trivia-preserving `PackageReference`/`PackageVersion` edits, `targets` for workspace/solution enumeration and CPM detection, `cli` for `dotnet list`/`restore`, and the `sharplsp/nuget/*` request family. They MUST NOT introduce another XML editor or restore pipeline.
+Both operations MUST reuse `src/nuget/`: `edit` delegates formatting-preserving `PackageReference`/`PackageVersion` mutations to the C# sidecar's `Microsoft.Build.Construction.ProjectRootElement`, `parse` reads package items, `targets` enumerates workspaces and detects CPM, and `cli` runs `dotnet list`/`restore`. They MUST NOT introduce another XML editor or restore pipeline.
 
 Unused-package detection MUST support Roslyn `.csproj` and FSharp.Compiler.Service `.fsproj` projects.
 
@@ -36,7 +36,7 @@ A package is reported unused only when it has a resolvable compile assembly that
 
 ### [PKG-UNUSED-REQUEST] Request flow
 
-`sharplsp/nuget/unused` params carry the project path and optional solution-wide flag. The host selects the sidecar by file extension, forwards `project/unusedPackages`, intersects returned candidate IDs with direct `<PackageReference>` IDs so transitive dependencies are never removed, and returns `{ projectPath, unused: [{ id, version }] }`.
+`sharplsp/nuget/unused` accepts `{ projectPath }` for one `.csproj` or `.fsproj`. The host selects the sidecar by file extension, forwards `project/unusedPackages`, intersects returned candidate IDs with direct `<PackageReference>` IDs so transitive dependencies are never removed, and returns `{ projectPath, unused: [{ id, version }] }`. Solution-node analysis enumerates descendant projects in the editor and sends one request per project.
 
 Removal MUST reuse `sharplsp/nuget/uninstall` per package ID, including trivia-preserving XML removal and a background restore.
 
@@ -58,15 +58,15 @@ Enumerate every project under the solution directory through `targets` and parse
 ### [PKG-CONSOLIDATE-APPLY] Apply
 
 1. Ensure a `Directory.Build.props` exists at the solution root; create a minimal `<Project></Project>` if absent.
-2. For each shared package, use `xml_edit` to add it to `Directory.Build.props` and remove it from every declaring project.
-3. With Central Package Management (`Directory.Packages.props` and `ManagePackageVersionsCentrally=true`), write a versionless `Directory.Build.props` entry and ensure its `<PackageVersion>` in `Directory.Packages.props`.
+2. For each shared package, use the C# sidecar's MSBuild DOM edit requests to add it to `Directory.Build.props` and remove it from every declaring project.
+3. With Central Package Management (`Directory.Packages.props` and `ManagePackageVersionsCentrally=true`), write a versionless `Directory.Build.props` entry; the existing central `<PackageVersion>` remains authoritative.
 4. Fire a single background restore for the modified files.
 
 Because hoisted packages apply solution-wide, the result MUST name each moved package, selected version, and edited project.
 
 ### [PKG-CONSOLIDATE-REQUEST] Request flow
 
-`sharplsp/nuget/consolidate` params carry the solution path and/or workspace root. The Rust host handles it without a sidecar and returns `{ moved: [{ id, version, fromProjects: [...] }], propsFile, modifiedFiles }`.
+`sharplsp/nuget/consolidate` accepts `{ solutionPath, dryRun }`. With `dryRun: true`, it returns the preview without modifying files. Apply mode uses the C# sidecar for MSBuild DOM edits and returns `{ message, moved: [{ id, version, fromProjects: [...] }], propsFile: string | null, modifiedFiles }`; a non-empty edit set triggers one background restore.
 
 ### [PKG-CONSOLIDATE-UI] UX
 
