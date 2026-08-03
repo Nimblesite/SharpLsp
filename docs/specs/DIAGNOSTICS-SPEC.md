@@ -1,10 +1,10 @@
-# DIAGNOSTICS-SPEC
+# [DIAG] Diagnostics Specification
 
-Diagnostics are the core feedback loop for developers. SharpLsp must surface all compiler errors, warnings, and analyzer diagnostics across the entire solution in real-time, matching Visual Studio's Solution-Wide Error Analysis (SWEA) from day one — **without ever lying about compilation state**.
+SharpLsp MUST surface compiler errors, warnings, and analyzer diagnostics across the solution without reporting stale compilation state.
 
-## 1. Architecture
+## [DIAG-ARCHITECTURE] Architecture
 
-SharpLsp uses the **LSP 3.17 pull-diagnostics model with workspace refresh**, mirroring `Microsoft.CodeAnalysis.LanguageServer` (the engine behind C# Dev Kit). This is the only architecture that produces correct diagnostics during workspace load.
+SharpLsp uses the LSP 3.17 pull-diagnostics model with workspace refresh.
 
 ```
 Editor ←→ Rust LSP Host ←→ C#/F# Sidecar (Roslyn / FCS)
@@ -15,58 +15,35 @@ Editor ←→ Rust LSP Host ←→ C#/F# Sidecar (Roslyn / FCS)
               diagnostic←pull
 ```
 
-### 1.1 The Pull + Refresh Cycle
+### [DIAG-ARCHITECTURE-PULL-REFRESH] Pull and Refresh Cycle
 
-**SharpLsp never proactively asserts diagnostics.** It does not push errors during workspace load, because at that moment Roslyn cannot tell the truth — NuGet may be restoring, source generators are lazy, cross-project `CompilationReference`s are still resolving. Pushing during this window produces phantom CS0246/CS0234 errors that contradict `dotnet build`. SharpLsp does not lie.
+SharpLsp MUST NOT push errors during workspace load while NuGet restore, source generators, or cross-project `CompilationReference` resolution is incomplete; doing so can produce phantom CS0246/CS0234 errors.
 
 Instead:
 
-1. **Workspace open**: Rust host opens the workspace in the sidecar. Sidecar runs the NuGet restore gate (see §6) BEFORE creating `MSBuildWorkspace`. Once the workspace is created, the sidecar subscribes to `Workspace.RegisterWorkspaceChangedHandler` and seeds a monotonic `global_state_version: u64`.
+1. **Workspace open**: Rust host opens the workspace in the sidecar. Sidecar runs [DIAG-RESTORE] before creating `MSBuildWorkspace`. Once the workspace is created, the sidecar subscribes to `Workspace.RegisterWorkspaceChangedHandler` and seeds a monotonic `global_state_version: u64`.
 2. **Server advertises pull**: capabilities include `diagnosticProvider.workspaceDiagnostics: true` and `interFileDependencies: true`.
 3. **Editor pulls**: editor sends `textDocument/diagnostic` (per file) and/or `workspace/diagnostic` (whole workspace) on its own schedule. Each request includes any `previousResultId` it has cached.
 4. **Sidecar answers per-document**: for each pull, the sidecar calls `Project.GetCompilationAsync().GetSemanticModel(tree).GetDiagnostics()` (and `CompilationWithAnalyzers` for analyzer diagnostics) for **just the requested document(s)**. Roslyn's lazy compilation transparently forces topological resolution of the requested project's dependencies.
 5. **Result identity**: response carries `resultId = "{project_version}:{doc_version}:{global_state_version}"`. If the editor's `previousResultId` matches, the server returns `DiagnosticReport.Unchanged` (per LSP 3.17) and skips re-computation.
 6. **Refresh on change**: any sidecar-side `WorkspaceChanged` event (`ProjectAdded`, `ProjectReloaded`, `SolutionChanged`, `DocumentChanged`, restore completion) bumps `global_state_version` and emits a `diagnostics/refresh` IPC notification. Rust host coalesces these via a 2000ms debounced batch (matching Roslyn LSP's `AsyncBatchingWorkQueue`) and sends LSP `workspace/diagnostic/refresh` to the editor. The editor re-pulls — diagnostics converge to truth.
 
-This is the **only** way to give correct diagnostics during multi-second workspace loads. OmniSharp (event-driven push) and Roslyn LSP (pull + refresh) both refuse to assert correctness at any single instant; they converge via invalidation. SharpLsp does the same.
+### [DIAG-ARCHITECTURE-EAGER-SCAN] No Eager Solution Scan
 
-### 1.2 Why no eager solution scan
+The server MUST NOT scan `Solution.Projects` eagerly with `GetCompilationAsync()` during load: consumer projects can compile before dependencies become cached `CompilationReference`s, and source generators or restore can still be incomplete. It also MUST NOT simulate a verification pass by sending unchanged text through `textDocument/didChange`; `WithDocumentText` does not rebuild metadata references or generator state. Pull responses report the current snapshot, and a later `global_state_version` bump causes the editor to re-pull.
 
-Earlier versions of this spec described a one-shot solution-wide scan on workspace load, followed by a "verification pass" that re-checked files with errors. **Both have been removed.** They are incompatible with not lying:
+### [DIAG-PUSH-GATE] Push Convergence Guarantee
 
-- The eager scan iterates `Solution.Projects` and calls `GetCompilationAsync()` on each. The first compilation a consumer project produces — before its dependencies have been cached as `CompilationReference`s — is missing types and emits phantom CS0246s. Topological iteration only partially mitigates this; source generators and NuGet restore still produce wrong-then-right state transitions during load.
-- The verification pass tried to repair stale diagnostics by sending `textDocument/didChange` with the same disk text and re-fetching. Roslyn's `WithDocumentText` creates a new immutable `Solution` snapshot, but it does not re-run source generators, re-resolve NuGet, or rebuild metadata references — the underlying compilation is still incomplete, so the same phantom errors come back. It was a band-aid on the wrong premise.
+Editors without pull support receive `textDocument/publishDiagnostics` pushes triggered by `didOpen`/`didChange`. Because a push persists until replaced, the Rust host version-gates every push:
 
-The pull model removes the failure mode entirely: there is no moment at which SharpLsp proactively claims a file has errors. The editor asks; SharpLsp answers with whatever Roslyn currently knows. When Roslyn learns more, the `global_state_version` bumps and the editor re-asks.
+1. Each `didOpen`/`didChange`/`didClose` registers a monotonically increasing push generation for the document URI.
+2. A completed sidecar fetch publishes only if its generation is still newest; older results are dropped.
+3. A failed fetch for the newest generation is retried at 1s intervals with a bounded budget long enough for a sidecar kill and respawn, until it publishes or a newer generation supersedes it. Dropping the fetch could leave the previous publication on screen indefinitely.
+4. Generations are never reused after `didClose`, preventing an old in-flight fetch from matching a new document generation.
 
-### 1.3 [DIAG-PUSH-GATE] Push Convergence Guarantee
+The last publication for a document MUST reflect its newest known text.
 
-Editors without pull support still receive `textDocument/publishDiagnostics`
-pushes triggered by `didOpen`/`didChange`. Because a push asserts state until
-the *next* push replaces it, the push pipeline must never let a result for
-older text stand as the final published state. The Rust host therefore
-version-gates every push:
-
-1. Each `didOpen`/`didChange`/`didClose` for a document registers a new,
-   monotonically increasing **push generation** for that URI.
-2. A completed sidecar fetch publishes **only if its generation is still the
-   newest** — a slower fetch for older text is dropped, never published.
-3. A **failed** fetch for the newest generation is **retried** (1s interval,
-   bounded budget that outlasts a sidecar kill + respawn) until it publishes
-   or a newer generation supersedes it. Dropping it would strand the previous
-   publication — possibly an error set for text that no longer exists — on
-   screen forever. (Hardening found while investigating GitHub #160; that
-   issue's actual root cause was `_._` placeholder references poisoning FCS —
-   see [PKG-ASSETS-FS](PACKAGE-MAINTENANCE-SPEC.md).)
-4. Generations are never reused: reusing a counter after `didClose` would let
-   an ancient in-flight fetch match a fresh generation and publish stale
-   results.
-
-The guarantee: **the last publication for a document always reflects its
-newest known text** — phantom diagnostics cannot outlive the edit that
-resolved them.
-
-### 1.4 Analysis Scope
+### [DIAG-ARCHITECTURE-SCOPE] Analysis Scope
 
 | Mode | Scope | Default | Use Case |
 |------|-------|---------|----------|
@@ -74,9 +51,9 @@ resolved them.
 | **Open files only** | Editor only pulls `textDocument/diagnostic` for documents it has opened | Optional | Editors that don't issue `workspace/diagnostic` |
 | **Per-project filter** | `workspace/diagnostic` partial-result handler restricts to filtered projects | Optional | Focus analysis on active development targets |
 
-Solution-wide analysis is the default because developers need to see errors **everywhere**. The C# Dev Kit limitation is not that it lacks SWEA semantically — it serves `workspace/diagnostic` — but that VS Code's UI doesn't surface workspace diagnostics until the file is opened. SharpLsp's VS Code extension explicitly drives the workspace pull and renders results in the Problems panel before files are opened. This is the SWEA win.
+Solution-wide analysis is the default. The VS Code extension explicitly drives the workspace pull and renders results in the Problems panel before files are opened.
 
-## 2. Configuration
+## [DIAG-CONFIG] Configuration
 
 ```toml
 # sharplsp.toml
@@ -115,7 +92,7 @@ refresh_debounce_ms = 2000
 auto_restore_on_open = true
 ```
 
-### 2.1 Project Filter
+### [DIAG-CONFIG-PROJECT-FILTER] Project Filter
 
 The `project_filter` field accepts glob patterns matched against project names or relative paths:
 
@@ -127,32 +104,15 @@ project_filter = ["MyApp.Core", "MyApp.Api", "MyApp.Tests.*"]
 
 When empty (default), every project in the solution is included. Per-document pulls (`textDocument/diagnostic`) are never filtered — the editor asked for that file specifically, so the server always answers.
 
-### 2.2 Runtime Reconfiguration
+### [DIAG-CONFIG-RELOAD] Runtime Reconfiguration
 
 Diagnostics settings are hot-reloadable via `workspace/didChangeConfiguration`. Changing `solution_wide_analysis`, `project_filter`, or `min_severity` bumps `global_state_version` and triggers `workspace/diagnostic/refresh` so the editor re-pulls under the new policy.
 
-### 2.3 [ANALYZERS-MONOREPO-GATE] Static Analyzer Monorepo Gate
+Static analyzer configuration and its monorepo-only gate are specified by [ANALYZERS-MONOREPO-GATE](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md#analyzers-monorepo-gate).
 
-SharpLsp-owned static analyzers are specified in
-[DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md).
-Unused-public-code analyzers for C# and F# run only when the workspace is
-explicitly configured as a monorepo:
+## [DIAG-CATEGORIES] Diagnostic Categories
 
-```toml
-[workspace]
-repository_kind = "monorepo"
-
-[diagnostics.static_analyzers]
-enabled = true
-unused_public_symbols = true
-```
-
-The default `repository_kind` is `"standard"`, which disables unused-public-code
-diagnostics even if ordinary compiler/analyzer diagnostics are enabled.
-
-## 3. Diagnostic Categories
-
-### 3.1 Compiler Diagnostics (P0)
+### [DIAG-CATEGORIES-COMPILER] Compiler Diagnostics
 
 | Source | C# (Roslyn) | F# (FCS) |
 |--------|------------|----------|
@@ -161,7 +121,7 @@ diagnostics even if ordinary compiler/analyzer diagnostics are enabled.
 | Missing references | `CS0246`, `CS0103`, ... | `FS0039`, ... |
 | Nullable warnings | `CS8600`–`CS8798` | N/A (F# uses `option`) |
 
-### 3.2 Analyzer Diagnostics (P0)
+### [DIAG-CATEGORIES-ANALYZER] Analyzer Diagnostics
 
 | Source | API | Examples |
 |--------|-----|----------|
@@ -171,25 +131,19 @@ diagnostics even if ordinary compiler/analyzer diagnostics are enabled.
 | FSharp.Analyzers.SDK | Plugin-based analyzers | Community F# analyzers |
 | SharpLsp static analyzers | Solution-wide symbol/reference index | Monorepo-only unused public C#/F# code elements |
 
-### 3.3 [ANALYZERS-UNUSED-PUBLIC] Monorepo-Only Unused Public Code
+Monorepo-only unused-public-code behavior is specified by [ANALYZERS-UNUSED-PUBLIC](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md#analyzers-unused-public).
 
-SharpLsp reports unused public C# and F# symbols only when the workspace is
-configured as a monorepo. The analyzer is solution-wide, uses compiler symbol
-APIs rather than text matching, and reports through `workspace/diagnostic`
-partial results. See
-[DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md).
+### [DIAG-CATEGORIES-LIVE] Live Squiggles
 
-### 3.4 Live Squiggles (P0)
-
-Live diagnostics flow through the **pull + refresh cycle** described in §1.1:
+Live diagnostics flow through [DIAG-ARCHITECTURE-PULL-REFRESH]:
 
 - **On document change**: editor's pull-diagnostic client sends `textDocument/diagnostic` after its own debounce. Sidecar's `LspWorkspaceManager` change handler bumps `global_state_version`, host emits debounced `workspace/diagnostic/refresh`, editor re-pulls anything else that may have been affected by inter-file dependencies.
 - **On project change**: sidecar's `Workspace.RegisterWorkspaceChangedHandler` fires for `ProjectReloaded` / `ProjectAdded`. Sidecar bumps `global_state_version` and signals `diagnostics/refresh`.
 - **On workspace load**: NO eager analysis. After NuGet restore + workspace open complete, the sidecar fires `diagnostics/refresh` once. The editor pulls — that pull is the first diagnostic computation, and it is correct because restore has finished.
 
-## 4. LSP Protocol
+## [DIAG-LSP] LSP Protocol
 
-### 4.1 Server Capabilities
+### [DIAG-LSP-CAPABILITIES] Server Capabilities
 
 ```json
 {
@@ -203,7 +157,7 @@ Live diagnostics flow through the **pull + refresh cycle** described in §1.1:
 
 `workspaceDiagnostics: true` is mandatory — it is how the editor knows it can ask SharpLsp for solution-wide errors. `identifier: "sharplsp"` lets the editor distinguish SharpLsp's diagnostics from other servers.
 
-### 4.2 Pull Model (PRIMARY: `textDocument/diagnostic`, `workspace/diagnostic`)
+### [DIAG-LSP-PULL] Pull Model (`textDocument/diagnostic`, `workspace/diagnostic`)
 
 LSP 3.17 pull diagnostics is the **primary** model. The server returns whatever Roslyn currently knows for the requested document(s); it never preemptively asserts.
 
@@ -246,7 +200,7 @@ Per-document request:
 
 Workspace request (`workspace/diagnostic`) is supported with partial-result streaming so large solutions don't block on a single response.
 
-### 4.3 Refresh Notifications (`workspace/diagnostic/refresh`)
+### [DIAG-LSP-REFRESH] Refresh Notifications (`workspace/diagnostic/refresh`)
 
 When sidecar state changes invalidate cached diagnostics, the host sends:
 
@@ -264,13 +218,13 @@ Refresh triggers (sidecar → host IPC notification `diagnostics/refresh` carryi
 - `.editorconfig` file change inside the solution
 - Analyzer reference added/removed
 
-### 4.4 Push Model (FALLBACK: `textDocument/publishDiagnostics`)
+### [DIAG-LSP-PUSH] Push Model (`textDocument/publishDiagnostics`)
 
 Push exists only as a fallback for editors that do not advertise `textDocument.diagnostic.dynamicRegistration` (i.e. older LSP clients that predate 3.17 pull). When push is the only option, the host treats every refresh trigger as a per-document publish, reusing the same per-document analysis pipeline.
 
 SharpLsp's VS Code extension always negotiates pull. Push fallback exists for editor coverage (some Vim plugins, older Eclipse JDT-LSP-style clients), not as the canonical path.
 
-### 4.4 Severity Mapping
+### [DIAG-LSP-SEVERITY] Severity Mapping
 
 | Roslyn Severity | LSP DiagnosticSeverity |
 |-----------------|----------------------|
@@ -279,9 +233,9 @@ SharpLsp's VS Code extension always negotiates pull. Push fallback exists for ed
 | `Info` | 3 (Information) |
 | `Hidden` | 4 (Hint) |
 
-## 5. Sidecar IPC Messages
+## [DIAG-IPC] Sidecar IPC Messages
 
-### 5.1 Request: `workspace/diagnostics`
+### [DIAG-IPC-DOCUMENT-REQUEST] Request: `workspace/diagnostics`
 
 Per-document pull. Called by the Rust host in response to LSP `textDocument/diagnostic`.
 
@@ -296,9 +250,9 @@ class DiagnosticsRequest
 }
 ```
 
-Response: `DiagnosticResult[]` (see §5.2) plus `ResultId` and a `Changed` flag. When `Changed = false`, the items array is empty and the host returns `{ kind: "unchanged" }` to the editor.
+Response: `DiagnosticResult[]` (see [DIAG-IPC-DOCUMENT-RESPONSE]) plus `ResultId` and a `Changed` flag. When `Changed = false`, the items array is empty and the host returns `{ kind: "unchanged" }` to the editor.
 
-### 5.2 Response: `DiagnosticResult[]`
+### [DIAG-IPC-DOCUMENT-RESPONSE] Response: `DiagnosticResult[]`
 
 ```csharp
 [MessagePackObject]
@@ -315,13 +269,13 @@ class DiagnosticResult
 }
 ```
 
-### 5.3 Workspace Pull: `workspace/diagnostics/pull`
+### [DIAG-IPC-WORKSPACE-PULL] Workspace Pull: `workspace/diagnostics/pull`
 
 Called by the Rust host in response to LSP `workspace/diagnostic`. The sidecar streams per-document results (one `WorkspaceDocumentDiagnosticReport` per document) so the editor sees results progressively. Results omit unchanged documents (matching `DiagnosticReport.Unchanged` semantics).
 
-The legacy `workspace/diagnostics/all` bulk RPC has been **removed**. It eagerly iterated every project and ran `GetCompilationAsync` synchronously, producing the phantom CS0246s described in §1.2. There is no replacement — workspace-wide analysis happens lazily via per-document pulls.
+The legacy `workspace/diagnostics/all` bulk RPC MUST NOT be restored; workspace-wide analysis happens lazily through per-document pulls as specified by [DIAG-ARCHITECTURE-EAGER-SCAN].
 
-### 5.4 Notification: `diagnostics/refresh`
+### [DIAG-IPC-REFRESH] Notification: `diagnostics/refresh`
 
 Sidecar → host notification fired when any input invalidates cached diagnostics. Payload:
 
@@ -336,22 +290,22 @@ class RefreshNotification
 
 The host coalesces refreshes via a 2000ms debounced batch and emits LSP `workspace/diagnostic/refresh`.
 
-### 5.5 Notification: `workspace/initializationComplete`
+### [DIAG-IPC-INITIALIZED] Notification: `workspace/initializationComplete`
 
 Sidecar → host notification fired exactly once after NuGet restore + `MSBuildWorkspace.OpenSolutionAsync` complete. The host forwards as the LSP custom notification `workspace/projectInitializationComplete` (matching `Microsoft.CodeAnalysis.LanguageServer`'s contract). Editors use this to dismiss "Loading projects…" UI.
 
-## 6. NuGet Restore Gate
+## [DIAG-RESTORE] NuGet Restore Gate
 
-Phantom CS0246 for NuGet types is the most common false-positive class. SharpLsp mirrors `Microsoft.CodeAnalysis.LanguageServer.HostWorkspace.ProjectDependencyHelper`:
+Before workspace creation, SharpLsp applies this restore gate:
 
 1. Before calling `MSBuildWorkspace.OpenSolutionAsync`, the sidecar inspects each project's `obj/project.assets.json`.
 2. If `assets.json` is missing, older than the `.csproj`, or its `PackageReference` set differs from the `.csproj`, the sidecar shells `dotnet restore <path>` via a `DotnetCliHelper` equivalent. Restore progress is reported via LSP `$/progress` (work-done token established at workspace open).
 3. Only after restore completes does the sidecar create `MSBuildWorkspace`.
 4. Restore completion bumps `global_state_version` and triggers an initial `diagnostics/refresh`.
 
-Without this gate, the editor's first pull happens against a workspace with unresolved `<PackageReference>` items, producing CS0246/CS0234 for every NuGet type. The gate is non-optional — `dotnet restore` may take several seconds, but the alternative is a lie.
+The gate is mandatory because unresolved `<PackageReference>` items can produce CS0246/CS0234 diagnostics on the first pull.
 
-## 7. Performance Targets
+## [DIAG-PERFORMANCE] Performance Targets
 
 | Metric | Target |
 |--------|--------|
@@ -364,51 +318,27 @@ Without this gate, the editor's first pull happens against a workspace with unre
 | NuGet restore (cold) | bounded only by `dotnet restore` itself; surface via `$/progress` |
 | Memory overhead (per-document caching) | <200MB additional for 50-project solution |
 
-## 8. Competitive Analysis
+## [DIAG-SCOPE] Supported Scope
 
-**Legend:** VS = Visual Studio, CDK = C# Dev Kit, R = Rider. ✓ = the tool has this feature.
+This specification covers compiler errors and warnings, Roslyn and F# analyzer diagnostics, solution-wide analysis, unused using/open detection, nullable analysis, `.editorconfig`, third-party NuGet analyzers, and monorepo-gated unused public code. Code metrics, value tracking, IL inspection, and heap-allocation viewing are outside this specification.
 
-| Feature | VS | CDK | R | SharpLsp | Priority | Phase |
-|---|---|---|---|---|---|---|
-| Compiler errors and warnings | ✓ | ✓ | ✓ | **P0** | P0 | 2 |
-| Roslyn analyzer diagnostics | ✓ | ✓ | ✓ | **P0** | P0 | 2 |
-| Solution-wide error analysis (SWEA) | ✓ | ✗ | ✓ | **P0 (default on)** | P0 | 2 |
-| Unused using/open detection | ✓ | ✓ | ✓ | **P0** | P0 | 2 |
-| Monorepo-only unused public code detection | ✗ | ✗ | ✓ | **P0** | P0 | 4 |
-| Nullable reference analysis | ✓ | ✓ | ✓ | **P1** | P1 | 3 |
-| Code style enforcement (.editorconfig) | ✓ | ✓ | ✓ | **P1** | P1 | 3 |
-| Third-party NuGet analyzers | ✓ | ✓ | ✓ | **P1** | P1 | 4 |
-| FSharp.Analyzers.SDK support | ✗ | ✗ | ✗ | **P1** | P1 | 4 |
-| Code metrics (cyclomatic complexity) | ✓ | ✗ | ✓ | **P2** | P2 | 4 |
-| Value tracking / data flow | ✓ | ✗ | ✓ | **P2** | P2 | 4 |
-| IL inspection / viewer | ✓ | ✗ | ✓ | **P3** | P3 | 5 |
-| Heap allocation viewer | ✗ | ✗ | ✓ | **P3** | P3 | 5 |
+## [DIAG-ANALYSIS] Background Analysis Strategy
 
-Key differentiators:
+### [DIAG-ANALYSIS-PULL] Pull-Driven Analysis
 
-- **SWEA surfaced in Problems panel without opening files.** C# Dev Kit's underlying server (`Microsoft.CodeAnalysis.LanguageServer`) implements `workspace/diagnostic` correctly — the gap is the VS Code extension UX, which doesn't drive the workspace pull. SharpLsp's extension does, so SWEA actually works for the user.
-- **Pull + refresh from day one.** SharpLsp ships LSP 3.17 pull diagnostics as the primary path. OmniSharp uses event-driven push (correct semantics, but every editor sees the convergence flicker). SharpLsp uses pull, so editors with cached `previousResultId`s avoid the flicker entirely.
-- **No phantom errors.** SharpLsp's NuGet restore gate (§6) and pull-only model (§1.1) eliminate the false-positive class that haunts every other LSP-based .NET tool.
-
-## 9. Background Analysis Strategy
-
-### 9.1 Pull-driven, lazy by construction
-
-There is no background scan thread. Roslyn analysis happens **only when the editor pulls**. The `Microsoft.CodeAnalysis.LanguageServer` model proves this is sufficient: editors pull aggressively for visible documents, lazily for the rest, and the server amortizes computation across pulls. Adding a background scanner on top would either duplicate work or race with pulls.
-
-What replaces the old "background scan":
+There is no background scan thread. Roslyn analysis happens only when the editor pulls:
 
 - **Lazy compilation**: `Project.GetCompilationAsync()` is invoked on demand for the project of the document being pulled. Roslyn topologically resolves and caches dependency compilations as `CompilationReference`s. Subsequent pulls within the same `Solution` snapshot reuse the cache — the second pull on any file in the same project completes in milliseconds.
-- **Caching by `resultId`**: per §4.2, repeat pulls for unchanged documents return `{ kind: "unchanged" }` without re-running Roslyn. The cache key includes `global_state_version`, so any workspace mutation invalidates the entire cache atomically.
+- **Caching by `resultId`**: per [DIAG-LSP-PULL], repeat pulls for unchanged documents return `{ kind: "unchanged" }` without re-running Roslyn. The cache key includes `global_state_version`, so any workspace mutation invalidates the entire cache atomically.
 - **Workspace event subscription**: the sidecar's `Workspace.RegisterWorkspaceChangedHandler` is the only active background work. It mutates `global_state_version` and emits `diagnostics/refresh`. It does not analyze anything itself.
 
-### 9.2 Cancellation
+### [DIAG-ANALYSIS-CANCELLATION] Cancellation
 
 - The Rust host cancels in-flight per-document IPC requests when the editor sends a fresh pull for the same document with a higher `previousResultId`-implied version (or a different `previousResultId`).
 - The sidecar passes the IPC `CancellationToken` straight into `GetSemanticModelAsync` / `GetAnalyzerSemanticDiagnosticsAsync`.
 - A `WorkspaceChanged` event mid-pull does not cancel the pull. The pull completes against its snapshot, returns its `resultId`, and the bumped `global_state_version` causes the next refresh to invalidate it. This matches `AbstractPullDiagnosticHandler`'s snapshot-isolation behavior in `dotnet/roslyn`.
 
-### 9.3 Incremental updates
+### [DIAG-ANALYSIS-INCREMENTAL] Incremental Updates
 
 When a file changes:
 
@@ -416,23 +346,15 @@ When a file changes:
 - The host's debounced refresh queue collapses bursts; the LSP `workspace/diagnostic/refresh` notification fires once per debounce window.
 - The editor re-pulls. Files unaffected by the change return `{ kind: "unchanged" }` cheaply because their `resultId` (which incorporates project version) hasn't moved.
 
-Roslyn's `Compilation` is immutable — there is no incremental analyzer state to manage on our side. Roslyn handles fork-and-cache internally.
+## [DIAG-TRUTH] Truth Guarantees
 
-## 10. Truth Guarantees (No False Positives)
-
-**SharpLsp does not lie.** Every diagnostic shown to the developer must reflect Roslyn's current best understanding of the workspace.
-
-### 10.1 What we promise
+### [DIAG-TRUTH-GUARANTEES] Guarantees
 
 - If `dotnet build` succeeds with zero errors against the same source, the next pull (after refresh debounce + restore completion) returns zero Error-severity diagnostics.
 - A diagnostic in the Problems panel corresponds to a real Roslyn compiler or analyzer diagnostic from the current `Solution` snapshot.
 - A workspace mutation that changes a file's diagnostics produces an LSP `workspace/diagnostic/refresh` within 2000ms (the debounce window). Editors converge to truth one pull cycle after that.
 
-### 10.2 What we do not promise
+### [DIAG-TRUTH-LIMITS] Limits
 
-- We do not promise that the **first** pull during workspace load is complete. NuGet restore may still be running for some projects; source generators may not yet have produced output. The pull will return whatever Roslyn knows at that instant — which after the §6 restore gate is correct for project-reference and NuGet types, but may be missing generator output.
+- The first pull during workspace load may be incomplete. The response reflects the current snapshot; after [DIAG-RESTORE], project-reference and NuGet types are resolved, but source-generator output may still be missing.
 - The remedy for "incomplete but not wrong" is `workspace/diagnostic/refresh`. Generator output materializing fires a `WorkspaceChanged` event → refresh → re-pull → complete result.
-
-### 10.3 Why the previous "verification pass" is gone
-
-Earlier revisions of this spec mandated a low-priority verification pass that re-checked files with errors and cleared false positives. **It has been deleted.** The pass was based on a wrong premise: it assumed re-sending `textDocument/didChange` with the same disk text would cause Roslyn to re-resolve missing references. It does not — `Solution.WithDocumentText` invalidates only the per-document syntax tree, not the metadata-reference graph or the generator-driver state. The pass therefore re-fetched the same phantom errors. The pull + refresh model removes the pass's reason to exist: SharpLsp no longer asserts diagnostics until the editor pulls, so there is nothing stale to repair.

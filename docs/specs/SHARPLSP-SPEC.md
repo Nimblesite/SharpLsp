@@ -1,48 +1,24 @@
-# SHARPLSP
-
-**The .NET Language Server Platform**
+# [SHARPLSP] SHARPLSP
 
 **TECHNICAL SPECIFICATION v0.1**
 
-C# + F# | Editor-Agnostic | Rust-Hosted | Open Source
+## [SHARPLSP-MISSION] Mission
 
-*March 2026 | DRAFT*
+SharpLsp is an open-source, editor-agnostic [LSP 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) implementation for C# and F#, with a Rust host and compiler-backed .NET sidecars.
 
-## 1. Mission Statement
+### [SHARPLSP-MISSION-PRINCIPLES] Design Principles
 
-SharpLsp is an open-source, editor-agnostic [Language Server Protocol (LSP)](https://microsoft.github.io/language-server-protocol/) implementation for the .NET ecosystem, written in Rust, aiming to match — and ultimately go beyond — what Visual Studio, [JetBrains Rider](https://www.jetbrains.com/rider/), and [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) deliver today, with C# and F# as equal first-class citizens.
+- **Editor-agnostic:** use LSP 3.17+ without editor-specific APIs.
+- **Language parity:** C# and F# share infrastructure, feature targets, and test standards.
+- **Open dependencies:** use Roslyn and FCS without proprietary Visual Studio or C# Dev Kit components.
+- **Rust hot path:** keep protocol handling, document state, syntax parsing, routing, and caching in Rust.
+- **Compiler semantics:** delegate semantic analysis to Roslyn and FCS; do not reimplement type checkers.
 
-SharpLsp exists because .NET developers deserve world-class tooling that is not gated behind proprietary licenses, vendor lock-in, or single-editor coupling. Every .NET developer, in every editor, on every platform, should have access to the best possible development experience.
+## [SHARPLSP-ARCHITECTURE] Architecture
 
-### 1.1 Design Principles
+### [SHARPLSP-ARCHITECTURE-TIERS] High-Level Architecture
 
-- **Editor-agnostic:** Pure [LSP 3.17+](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) protocol. No editor-specific APIs. Works in [VS Code](https://code.visualstudio.com/), [Neovim](https://neovim.io/), [Helix](https://helix-editor.com/), [Zed](https://zed.dev/), [Emacs](https://www.gnu.org/software/emacs/), [Sublime](https://www.sublimetext.com/), or any LSP-capable editor.
-
-- **C# and F# are equals:** F# is not a second-class citizen bolted on later. Both languages share infrastructure, both hit feature parity targets, both are tested to the same standard.
-
-- **Zero proprietary dependencies:** The only Microsoft components are the open-source, MIT-licensed [Roslyn compiler](https://github.com/dotnet/roslyn) and [F# Compiler Services](https://fsharp.github.io/fsharp-compiler-docs/). No Visual Studio licensing. No C# Dev Kit EULA.
-
-- **Rust for the hot path:** Protocol handling, document management, syntax parsing, request routing, and caching all happen in Rust for maximum throughput and minimum latency.
-
-- **Correctness over cleverness:** Semantic analysis is delegated to the official compilers via managed sidecar processes. We do not reimplement type checkers.
-
-- **Match the leaders, then go further:** Not approximate parity. Not a lightweight alternative. Full feature-for-feature coverage of what Visual Studio, Rider, and C# Dev Kit do best — and then more. Every refactoring Rider has. Every code fix Visual Studio has. Every diagnostic, every navigation feature.
-
-### 1.2 Where SharpLsp Fits
-
-The .NET tooling landscape today is excellent in places, but no single product covers every developer. SharpLsp is positioned to complement three established tools by closing the gaps each leaves behind:
-
-| Tool | Gap SharpLsp Addresses |
-|---|---|
-| Visual Studio | Windows-only, closed-source IDE. Most language features are tied to the full IDE install. No LSP surface for external editors. |
-| JetBrains Rider | Excellent product, but proprietary and paid ($169–$399/yr). Uses a custom protocol, not LSP. Dual-process JVM/.NET architecture is resource-heavy. |
-| C# Dev Kit | VS Code-only. Proprietary license for teams >5. No F# support. Custom non-standard LSP extensions don't carry across other editors. |
-
-## 2. Architecture
-
-### 2.1 High-Level Architecture
-
-SharpLsp uses a three-tier architecture: a Rust host process handles the LSP protocol and syntax-level analysis, communicating with two managed .NET sidecar processes (one for C#/[Roslyn](https://github.com/dotnet/roslyn), one for F#/[FCS](https://fsharp.github.io/fsharp-compiler-docs/)) that perform all semantic analysis. This is not a compromise — it is the optimal design, validated by Visual Studio's own ServiceHub architecture and [FsAutoComplete](https://github.com/fsharp/FsAutoComplete)'s production deployment.
+SharpLsp uses a Rust host for the LSP protocol and syntax analysis, plus managed .NET sidecars for C#/[Roslyn](https://github.com/dotnet/roslyn) and F#/[FCS](https://fsharp.github.io/fsharp-compiler-docs/) semantic analysis.
 
 **Tier 1 — Rust LSP Host**
 
@@ -68,9 +44,9 @@ SharpLsp uses a three-tier architecture: a Rust host process handles the LSP pro
 - [FSharpChecker](https://fsharp.github.io/fsharp-compiler-docs/reference/fsharp-compiler-codeanalysis-fsharpchecker.html) with incremental build caching (MRU caches for parse/check results)
 - [Ionide.ProjInfo](https://github.com/ionide/proj-info) for project cracking (MSBuild evaluation for F# projects)
 - [FSharpLint](https://github.com/fsprojects/FSharpLint) for linting
-- Same RPC interface and transport as C# sidecar for architectural symmetry
+- Same RPC interface and transport as the C# sidecar
 
-### 2.2 IPC Transport Protocol
+### [SIDECAR-IPC-OVERVIEW] IPC Transport Protocol
 
 Communication between the Rust host and .NET sidecars uses a custom binary RPC protocol:
 
@@ -79,13 +55,13 @@ Communication between the Rust host and .NET sidecars uses a custom binary RPC p
 | Transport | Named pipes (Windows) / Unix domain sockets (Linux, macOS) |
 | Serialization | [MessagePack](https://msgpack.org/) via [rmp-serde](https://crates.io/crates/rmp-serde) (Rust) and [MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp) (.NET) |
 | Framing | 4-byte little-endian length prefix + MessagePack payload |
-| Concurrency | Request IDs for multiplexed async request/response + server-initiated notifications |
+| Concurrency | One active host-to-sidecar request per connection; request IDs provide exact correlation, while a single connection driver dispatches interleaved server-initiated notifications |
 | Cancellation | Dedicated cancel notification matching LSP `$/cancelRequest` semantics |
 | Performance target | <500µs round-trip overhead (excluding compiler work) |
 
-MessagePack was chosen over JSON-RPC because it is 2.3x faster to serialize and 57% smaller on the wire, and because Roslyn's own out-of-process ServiceHub uses MessagePack in production, proving it works at IDE scale.
+The detailed frame ownership, correlation, notification, health, and poisoning rules are normative in [SIDECAR-LIFECYCLE-SPEC.md](SIDECAR-LIFECYCLE-SPEC.md).
 
-### 2.3 Request Routing Strategy
+### [SHARPLSP-ARCHITECTURE-ROUTING] Request Routing Strategy
 
 The Rust host classifies every incoming LSP request and routes it to the fastest handler:
 
@@ -98,20 +74,35 @@ The Rust host classifies every incoming LSP request and routes it to the fastest
 
 Key optimization: on every keystroke, tree-sitter re-parses in <1ms and provides immediate feedback for syntax-level features, while semantic requests are coalesced with a debounce window (default 150ms) before dispatching to sidecars. Stale in-flight semantic requests are cancelled when superseded.
 
-### 2.4 Sidecar Lifecycle Management
+### [SIDECAR-LIFECYCLE-OVERVIEW] Sidecar Lifecycle Management
 
-- **Startup:** Sidecars are spawned lazily on first request for their language. Published as self-contained single-file executables (AOT is incompatible with Roslyn, FSharp.Compiler.Service, and other reflection-heavy dependencies).
-- **Health monitoring:** Periodic heartbeat pings (every 5s). If a sidecar fails to respond within 2s, it is marked unhealthy.
-- **Request timeouts** `[SIDECAR-REQUEST-TIMEOUT]`: Every host→sidecar request carries a response budget — 600s for `workspace/open` (a full MSBuild design-time build on a cold NuGet cache is legitimately slow), 120s for everything else. A request that exceeds its budget is failed to the client, the IPC connection is dropped, and the sidecar process is killed: the late response would otherwise be handed to the next caller and desync the framed protocol, and the health monitor deliberately skips pinging while a request is in flight, so a wedged handler would never be detected. The next request respawns a clean sidecar via the normal crash-recovery path.
-- **Crash recovery:** On sidecar death, cache last-known-good results for graceful degradation. Restart with exponential backoff (1s, 2s, 4s, max 30s). Notify editor via LSP `window/showMessage`.
-- **Isolation:** C# and F# sidecars are independent processes. A Roslyn OOM does not affect FCS, and vice versa.
-- **Shutdown:** On LSP `shutdown` notification, send cancellation to sidecars, wait up to 5s for graceful exit, then SIGKILL.
+The normative state machine and platform contract are in [SIDECAR-LIFECYCLE-SPEC.md](SIDECAR-LIFECYCLE-SPEC.md).
 
-### 2.5 Project System
+- **Startup:** A per-language supervisor lazily launches one direct, version-matched sidecar process,
+  using a new current-user-only IPC endpoint for every generation. `READY` identifies the generation,
+  process, protocol, and effective bound endpoint; semantic readiness follows workspace bootstrap.
+- **Health monitoring:** The connection driver pings only while `Ready` and idle (every 5s, with a 2s
+  response budget). An in-flight request is governed by its own deadline and cannot race a second
+  transport-locking health caller.
+- **Request timeouts** `[SIDECAR-REQUEST-TIMEOUT]`: Every host-to-sidecar request carries a response
+  budget—600s for `workspace/open` (a full MSBuild design-time build on a cold NuGet cache is
+  legitimately slow), 120s for everything else. A request that exceeds its budget is failed to the
+  client, the IPC connection is poisoned, and the contained sidecar process tree is terminated: a
+  late response can therefore never be handed to the next caller.
+- **Crash recovery:** Startup and runtime failures share one exponential backoff sequence (1s, 2s,
+  4s, up to 30s). A replacement generation replays workspace, configuration, and current VFS document
+  state before becoming ready. Last-known-good feature caches may provide explicitly stale graceful
+  degradation.
+- **Isolation and containment:** C# and F# supervisors, backoff, endpoints, and process trees are
+  independent. Windows Job Objects and Unix process groups/parent-death handling prevent orphaned
+  sidecars and compiler descendants.
+- **Shutdown:** The sidecar flushes a correlated shutdown acknowledgement before cancelling its loop.
+  The host allows up to 5s for clean exit, then terminates and reaps only that generation's contained
+  process tree.
 
-The project system is the hardest engineering problem in .NET tooling. [MSBuild](https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild) project files are Turing-complete, and correct evaluation requires handling SDK-style projects, legacy .csproj/.fsproj, multi-targeting, [Directory.Build.props](https://learn.microsoft.com/en-us/visualstudio/msbuild/customize-by-directory), [Directory.Packages.props](https://learn.microsoft.com/en-us/nuget/consume-packages/central-package-management) (Central Package Management), [global.json](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json) SDK pinning, conditional compilation symbols, and NuGet package resolution.
+### [SHARPLSP-ARCHITECTURE-PROJECTS] Project System
 
-**SharpLsp's approach:**
+Project evaluation MUST handle SDK-style and legacy `.csproj`/`.fsproj` files, multi-targeting, [Directory.Build.props](https://learn.microsoft.com/en-us/visualstudio/msbuild/customize-by-directory), [Directory.Packages.props](https://learn.microsoft.com/en-us/nuget/consume-packages/central-package-management), [global.json](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json), conditional symbols, and NuGet resolution.
 
 - **C# projects:** [MSBuildWorkspace](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.msbuild.msbuildworkspace) ([Microsoft.CodeAnalysis.Workspaces.MSBuild](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Workspaces.MSBuild) + [Microsoft.Build.Locator](https://github.com/microsoft/MSBuildLocator)) performs design-time builds to extract source files, references, and compiler options.
 - **F# projects:** [Ionide.ProjInfo](https://github.com/ionide/proj-info) performs MSBuild evaluation with F#-specific handling (file ordering, which is semantically significant in F#).
@@ -121,40 +112,26 @@ The project system is the hardest engineering problem in .NET tooling. [MSBuild]
 - **Multi-targeting:** Projects targeting multiple TFMs (e.g., `net8.0;net48;netstandard2.0`) present multiple analysis contexts. SharpLsp exposes a custom LSP extension for users to select the active TFM, defaulting to the first.
 - **Project-less files:** A `.cs` [file-based app](https://learn.microsoft.com/en-us/dotnet/core/sdk/file-based-apps), a `.csx` Roslyn script, and a `.fsx` F# script are all first-class editing targets with no owning project. Their compilation closure is derived from the root file — `#:include` for file-based apps, `#load` for scripts — and never from the containing directory. See [SCRIPTING-FILEBASED-SPEC.md](SCRIPTING-FILEBASED-SPEC.md).
 
-#### Choosing the Solution to Open `[WORKSPACE-SOLUTION-PATH]`
+#### [WORKSPACE-SOLUTION-PATH] Choosing the Solution to Open
 
-The host sends one path to each sidecar's `workspace/open`. When that path is a
-directory, the C# sidecar discovers a target under it: an unambiguous `.sln`,
-`.slnx`, or `.csproj` is opened directly. Discovery **never guesses** between
-several nested solutions — a monorepo root holding `app/App.sln` and
-`other/Other.sln` is ambiguous, and guessing would silently load the wrong half
-of the repository.
+The host sends one path to each sidecar's `workspace/open`. When that path is a directory, the C# sidecar discovers a target under it: an unambiguous `.sln`, `.slnx`, or `.csproj` is opened directly. Discovery **never guesses** between several nested solutions — a monorepo root holding `app/App.sln` and `other/Other.sln` is ambiguous, and guessing would silently load the wrong half of the repository.
 
-`csharp.solution_path` in `sharplsp.toml` resolves that ambiguity by naming the
-solution to open, absolute or relative to the workspace root:
+`csharp.solution_path` in `sharplsp.toml` resolves that ambiguity by naming the solution to open, absolute or relative to the workspace root:
 
 ```toml
 [csharp]
 solution_path = "app/App.sln"
 ```
 
-The host resolves the setting and sends the **solution file** rather than the
-root, so the sidecar opens it without running discovery at all. The setting
-falls back to workspace-root discovery when unset, and when it names a path that
-is not an existing file — a stale or misspelled entry degrades to auto-discovery
-instead of wedging the workspace on a path that cannot load.
+The host resolves the setting and sends the **solution file** rather than the root, so the sidecar opens it without running discovery at all. The setting falls back to workspace-root discovery when unset, and when it names a path that is not an existing file — a stale or misspelled entry degrades to auto-discovery instead of wedging the workspace on a path that cannot load.
 
-Without this, an ambiguous root loads no solution, and every semantic
-request — hover, completion, diagnostics, navigation — returns empty for the
-whole workspace.
+### [SHARPLSP-ARCHITECTURE-BINARIES] Binary Layout and Installation
 
-### 2.6 Binary Layout & Installation
-
-**The `sharplsp` binary is bundled inside every per-platform VSIX.** A user who installs the VS Code extension gets a fully working LSP server with zero additional steps. Extensions are NOT thin clients that require a system-installed binary — the binary ships inside the extension.
+Every per-platform VSIX MUST bundle `sharplsp`.
 
 **Per-platform VSIX layout:**
 
-Each platform gets its own VSIX. The `sharplsp` binary lives at:
+The binary lives at:
 
 ```
 bin/<platform>/sharplsp        (Unix)
@@ -181,8 +158,7 @@ bin/<platform>/sharplsp.exe    (Windows)
 
 **Sidecar install locations:**
 
-Sidecars are required framework-dependent .NET executables. Every VSIX bundles them
-under `bin/all/`; users do not install sidecars separately.
+Sidecars are framework-dependent .NET 10 executables bundled under `bin/all/`; a missing runtime or sidecar is an activation failure.
 
 | Artifact | VSIX path | Resolver sources |
 |---|---|---|
@@ -204,18 +180,9 @@ $ sharplsp-sidecar-fsharp --version
 sharplsp-sidecar-fsharp 0.1.0
 ```
 
-Extensions use this to verify the correct version is active before starting.
+Extensions use this output to verify all versions before starting.
 
-**Sidecar distribution:**
-
-Both sidecars are required framework-dependent .NET assemblies. Every VSIX bundles
-`sharplsp-sidecar-csharp` and `sharplsp-sidecar-fsharp` under `bin/all/`. They require
-.NET 10 on the host machine. Missing .NET 10, a missing sidecar, or a failed sidecar
-version probe is an activation failure.
-
-### 2.7 Editor Extension Binary Strategy
-
-**The VS Code extension bundles the `sharplsp` binary.** It ships as a per-platform VSIX with the correct pre-built binary for each OS/architecture combination. No system-level install is required for the LSP server.
+### [SHARPLSP-ARCHITECTURE-EXTENSIONS] Editor Extension Binary Strategy
 
 Binary resolution is handled exclusively by `@nimblesite/shipwright-vscode` (`activateDeploymentToolkit`). Extensions MUST NOT hand-roll binary resolution.
 
@@ -226,17 +193,16 @@ On activation, the VS Code extension follows this sequence:
 3. **Version verification:** Shipwright probes each resolved binary with `--version` and compares against the manifest's `expectedVersion`.
 4. **Start LSP client:** Pass the resolved `sharplsp` path to `LanguageClient`. Never hardcode a path.
 
-**CRITICAL — Missing required components fail activation:**
+**Missing required components fail activation:**
 
-When any required component step above fails — version mismatch, binary not found, missing
-.NET 10, or `--version` returns garbage — the extension MUST:
+When any required component step above fails — version mismatch, binary not found, missing .NET 10, or `--version` returns garbage — the extension MUST:
 
 - Show a clear, user-facing error message explaining what happened and how to fix it (e.g., "SharpLsp: sharplsp v0.1.0 required but v0.0.9 found.")
-- Crash activation instead of starting without C# or F# support
-- NEVER block the editor's main thread or event loop waiting for a binary that will never arrive
-- NEVER leave the extension in a half-initialized zombie state where it eats CPU or holds locks
+- Fail activation instead of starting without C# or F# support
+- MUST NOT block the editor's main thread or event loop
+- MUST release resources after partial initialization
 
-This applies to ALL editor extensions: VS Code, Zed, Neovim, Helix, etc. An extension that locks up the editor because the binary version is wrong is a critical bug of the highest severity.
+These requirements apply to every editor extension.
 
 **Version contract:**
 
@@ -262,11 +228,9 @@ The Rust binary MUST have a test that proves:
 1. `--version` prints the correct format: `sharplsp X.Y.Z` where X.Y.Z matches `Cargo.toml`
 2. The process exits with code 0
 
-This is editor-agnostic by design. One set of binaries serves VS Code, Zed, Neovim, Helix, and any future editor. A user who runs `make install` already has everything every extension needs. An extension that auto-installs binaries provides them for every other extension too.
+## [SHARPLSP-TECHNOLOGY] Technology Stack
 
-## 3. Technology Stack
-
-### 3.1 Rust Host Crates
+### [SHARPLSP-TECHNOLOGY-RUST] Rust Host Crates
 
 | Crate | Version | Purpose |
 |---|---|---|
@@ -284,7 +248,7 @@ This is editor-agnostic by design. One set of binaries serves VS Code, Zed, Neov
 | [notify](https://crates.io/crates/notify) | 7.x | Cross-platform filesystem watcher |
 | [dashmap](https://crates.io/crates/dashmap) | 6.x | Concurrent hash map for shared caches |
 
-### 3.2 C# Sidecar Packages
+### [SHARPLSP-TECHNOLOGY-CSHARP] C# Sidecar Packages
 
 | Package | Version | Purpose |
 |---|---|---|
@@ -296,7 +260,7 @@ This is editor-agnostic by design. One set of binaries serves VS Code, Zed, Neov
 | [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy/tree/master/ICSharpCode.Decompiler) | latest | Decompiled metadata source navigation |
 | [MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp) | latest | IPC serialization |
 
-### 3.3 F# Sidecar Packages
+### [SHARPLSP-TECHNOLOGY-FSHARP] F# Sidecar Packages
 
 | Package | Version | Purpose |
 |---|---|---|
@@ -306,11 +270,11 @@ This is editor-agnostic by design. One set of binaries serves VS Code, Zed, Neov
 | [FSharp.Analyzers.SDK](https://github.com/ionide/FSharp.Analyzers.SDK) | latest | Third-party F# analyzer support |
 | [MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp) | latest | IPC serialization |
 
-## 4. Feature Specification
+## [SHARPLSP-FEATURES] Feature Specification
 
-This section specifies every feature SharpLsp will implement, mapped to the LSP protocol method, implementation source, and the Roslyn/FCS API that powers it. Features are organized by category. Both C# and F# columns indicate full support unless otherwise noted.
+Both C# and F# columns require full support unless noted.
 
-### 4.1 Code Intelligence
+### [SHARPLSP-FEATURES-INTELLIGENCE] Code Intelligence
 
 | Feature | LSP Method | C# API (Roslyn) | F# API (FCS) | Priority |
 |---|---|---|---|---|
@@ -324,13 +288,13 @@ This section specifies every feature SharpLsp will implement, mapped to the LSP 
 | Inlay hints (params) | `textDocument/inlayHint` | Parameter name hints | Parameter name hints | P1 |
 | Inline values | `textDocument/inlineValue` | Debugger expression eval | Debugger expression eval | P2 |
 
-#### Completion edit semantics `[COMPLETION-EDIT-REPLACE]`
+#### [COMPLETION-EDIT-REPLACE] Completion Edit Semantics
 
 Every completion item returned by either sidecar carries an explicit LSP `textEdit`, not just an `insertText`. Its range is the identifier span **at the caret** — the typed prefix to the left of the cursor *plus any identifier characters that already follow it on the same line*. Accepting an item therefore **replaces** that identifier instead of being appended to it: completing `WriteLine` at `Console.|WriteLine` yields `Console.WriteLine`, never `Console.WriteLineWriteLine` (GitHub #178). Without a `textEdit` the editor falls back to its own word-boundary heuristic, which appends after a member-access trigger character and duplicates the identifier.
 
 The C# sidecar derives the span from [`CompletionService.GetDefaultCompletionListSpan`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdefaultcompletionlistspan) extended over trailing identifier characters; the F# sidecar derives it from the FCS partial-name island (`QuickParse.GetPartialLongNameEx`) with the same trailing-character extension. The `NewText` is the item's insert text. The Rust host maps the flat sidecar edit onto `CompletionItem.textEdit` in `src/semantic.rs`.
 
-### 4.2 Navigation
+### [SHARPLSP-FEATURES-NAVIGATION] Navigation
 
 | Feature | LSP Method | C# API (Roslyn) | F# API (FCS) | Priority |
 |---|---|---|---|---|
@@ -348,21 +312,15 @@ The C# sidecar derives the span from [`CompletionService.GetDefaultCompletionLis
 | Go to decompiled source | Custom: `sharplsp/decompileSource` | [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) | ICSharpCode.Decompiler | P1 |
 | Go to source generator output | Custom: `sharplsp/generatorOutput` | GeneratorDriverRunResult | N/A | P2 |
 
-### 4.3 Diagnostics & Analysis
+### [SHARPLSP-FEATURES-DIAGNOSTICS] Diagnostics and Analysis
 
 SharpLsp uses the LSP 3.17 **pull-diagnostics + workspace-refresh** model (`textDocument/diagnostic`, `workspace/diagnostic`, `workspace/diagnostic/refresh`), mirroring `Microsoft.CodeAnalysis.LanguageServer` (the engine behind C# Dev Kit). The Rust host never proactively pushes errors during workspace load — that is the only architecture that produces correct diagnostics while NuGet restore, source generators, and cross-project `CompilationReference`s are still resolving. A NuGet restore gate runs before `MSBuildWorkspace.OpenSolutionAsync` to eliminate the largest class of phantom CS0246s.
 
 See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) for the full specification, including the pull + refresh cycle, the NuGet restore gate, project filtering, and the truth guarantees SharpLsp makes (and doesn't make) about diagnostic completeness during workspace load.
 
-SharpLsp also owns custom static analyzers that run through the same workspace
-diagnostics channel. The first rules detect unused public C# and F# code
-elements at solution scope, but only when `sharplsp.toml` explicitly marks the
-workspace as a monorepo. See
-[DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md).
+SharpLsp also owns custom static analyzers that run through the same workspace diagnostics channel. The first rules detect unused public C# and F# code elements at solution scope, but only when `sharplsp.toml` explicitly marks the workspace as a monorepo. See [DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md).
 
-### 4.4 Code Actions & Refactoring
-
-This is where SharpLsp must match Rider's 2,200+ inspections and 60+ refactorings. Roslyn provides a substantial base of [CodeFixProviders](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.codefixes.codefixprovider) and [CodeRefactoringProviders](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.coderefactorings.coderefactoringprovider) out of the box. SharpLsp will expose all of them and add custom ones.
+### [SHARPLSP-FEATURES-REFACTORING] Code Actions and Refactoring
 
 | Feature | LSP Method | C# API | F# API | Priority |
 |---|---|---|---|---|
@@ -389,16 +347,14 @@ This is where SharpLsp must match Rider's 2,200+ inspections and 60+ refactoring
 | Convert auto-prop ↔ full prop | `textDocument/codeAction` | Roslyn property conversion | N/A | P1 |
 | Convert method ↔ property | `textDocument/codeAction` | Custom implementation | N/A | P2 |
 
-### 4.5 Formatting
+### [SHARPLSP-FEATURES-FORMATTING] Formatting
 
 SharpLsp does **not** provide document formatting. Use dedicated formatters:
 
 - **C#**: [CSharpier](https://csharpier.com/) — the community-standard opinionated C# formatter
 - **F#**: [Fantomas](https://github.com/fsprojects/fantomas) via the [Ionide](https://ionide.io/) extension — the standard F# formatter
 
-These tools are excellent at what they do and there is no reason to duplicate their work inside an LSP server.
-
-### 4.6 Semantic Highlighting
+### [SHARPLSP-FEATURES-HIGHLIGHTING] Semantic Highlighting
 
 | Feature | LSP Method | C# API | F# API | Priority |
 |---|---|---|---|---|
@@ -406,7 +362,7 @@ These tools are excellent at what they do and there is no reason to duplicate th
 | Delta semantic tokens | `textDocument/semanticTokens/full/delta` | Incremental classification | Incremental classification | P1 |
 | Range semantic tokens | `textDocument/semanticTokens/range` | Classifier (range-scoped) | GetSemanticClassification (range) | P0 |
 
-### 4.7 Code Lens
+### [SHARPLSP-FEATURES-CODE-LENS] Code Lens
 
 | Feature | LSP Method | C# API | F# API | Priority |
 |---|---|---|---|---|
@@ -416,13 +372,11 @@ These tools are excellent at what they do and there is no reason to duplicate th
 | Run/debug test | `textDocument/codeLens` | Custom test runner integration | Custom test runner integration | P2 |
 | Recent changes (git) | `textDocument/codeLens` | git log integration | git log integration | P3 |
 
-### 4.8 Debugging (DAP Integration)
+### [SHARPLSP-FEATURES-DEBUGGING] Debugging
 
-> **Full specification:** [DEBUGGING-SPEC.md](./DEBUGGING-SPEC.md)
->
-> SharpLsp delivers a fully open-source .NET debugging experience via [DAP](https://microsoft.github.io/debug-adapter-protocol/specification). Phase 4 uses [netcoredbg](https://github.com/Samsung/netcoredbg) (MIT) with a `DapRouter` layer in the Rust host for capability augmentation (logpoints, async call stack reconstruction, Hot Reload). Phase 5 replaces netcoredbg with a SharpLsp-native C# Debug Sidecar (Tier 4) built on [ClrDebug](https://github.com/lordmilko/ClrDebug) + ICorDebug, achieving full feature parity with Microsoft's proprietary vsdbg.
+See [DEBUGGING-SPEC.md](DEBUGGING-SPEC.md) for the DAP router and debug-sidecar contract.
 
-### 4.9 Test Discovery & Execution
+### [SHARPLSP-FEATURES-TESTING] Test Discovery and Execution
 
 | Feature | Protocol | Implementation | Priority |
 |---|---|---|---|
@@ -435,7 +389,7 @@ These tools are excellent at what they do and there is no reason to duplicate th
 | Code coverage | Custom: `sharplsp/coverage` | [coverlet](https://github.com/coverlet-coverage/coverlet) integration | P3 |
 | F# [Expecto](https://github.com/haf/expecto)/[FsCheck](https://github.com/fscheck/FsCheck) support | Custom: `sharplsp/testDiscovery` | Expecto test tree discovery | P1 |
 
-### 4.10 Workspace Features
+### [SHARPLSP-FEATURES-WORKSPACE] Workspace Features
 
 | Feature | LSP Method | Implementation | Priority |
 |---|---|---|---|
@@ -448,15 +402,13 @@ These tools are excellent at what they do and there is no reason to duplicate th
 | NuGet uninstall package | Custom: `sharplsp/nuget/uninstall` | `dotnet remove <project> package` + sidecar reload | P2 |
 | Multi-TFM selection | Custom: `sharplsp/targetFramework` | Active TFM switching per project | P1 |
 | File watching & reload | `workspace/didChangeWatchedFiles` | [notify](https://crates.io/crates/notify) crate + sidecar reload | P0 |
-| Workspace diagnostics (pull) | `workspace/diagnostic` + `workspace/diagnostic/refresh` | Solution-wide error analysis via LSP 3.17 pull model + 2000ms-debounced refresh; primary diagnostic path (see [DIAGNOSTICS-SPEC §1.1](DIAGNOSTICS-SPEC.md#11-the-pull--refresh-cycle)) | P0 |
+| Workspace diagnostics (pull) | `workspace/diagnostic` + `workspace/diagnostic/refresh` | Solution-wide error analysis via LSP 3.17 pull model + 2000ms-debounced refresh; primary diagnostic path (see [DIAG-ARCHITECTURE-PULL-REFRESH](DIAGNOSTICS-SPEC.md#diag-architecture-pull-refresh)) | P0 |
 | Monorepo static analyzers | `workspace/diagnostic` partial results | SharpLsp-owned unused-public-code analyzers for C# and F#; gated by `workspace.repository_kind = "monorepo"` | P0 |
-| NuGet restore gate | (internal, before `workspace/open`) | `dotnet restore` if `obj/project.assets.json` is stale; eliminates phantom CS0246 for NuGet types ([DIAGNOSTICS-SPEC §6](DIAGNOSTICS-SPEC.md#6-nuget-restore-gate)) | P0 |
+| NuGet restore gate | (internal, before `workspace/open`) | `dotnet restore` if `obj/project.assets.json` is stale; eliminates phantom CS0246 for NuGet types ([DIAG-RESTORE](DIAGNOSTICS-SPEC.md#diag-restore)) | P0 |
 | Project init complete | Custom: `workspace/projectInitializationComplete` | Notification fired once per workspace open after restore + `MSBuildWorkspace.OpenSolutionAsync`; matches Roslyn LSP contract | P0 |
 | Configuration | `workspace/didChangeConfiguration` | [.editorconfig](https://editorconfig.org/) + sharplsp.toml | P0 |
 
-### 4.11 F#-Specific Features
-
-F# has unique language features that require dedicated support beyond what the shared infrastructure provides:
+### [SHARPLSP-FEATURES-FSHARP] F#-Specific Features
 
 | Feature | LSP Method | Implementation | Priority |
 |---|---|---|---|
@@ -470,7 +422,7 @@ F# has unique language features that require dedicated support beyond what the s
 | F# Interactive integration | Custom: `sharplsp/fsi` | Send selection to FSI, evaluate | P2 |
 | File ordering awareness | Custom: `sharplsp/fileOrder` | Semantic file reorder suggestions | P1 |
 
-## 5. Performance Requirements
+## [SHARPLSP-PERFORMANCE] Performance Requirements
 
 | Metric | Target | Measurement Method |
 |---|---|---|
@@ -487,13 +439,11 @@ F# has unique language features that require dedicated support beyond what the s
 | Incremental re-parse on keystroke | <1ms | tree-sitter incremental parse time |
 | Sidecar crash recovery | <3 seconds | Time from crash detection to restored functionality |
 
-## 6. Implementation Plan
+## [SHARPLSP-PLAN] Implementation Plan
 
-### Phase 1: Protocol Skeleton & Syntax Features (Months 1–3)
+### [SHARPLSP-PLAN-PROTOCOL] Protocol Skeleton and Syntax Features
 
-**Goal:** A working LSP server that handles all syntax-level features for both C# and F#, with a VS Code extension as test harness.
-
-**Deliverables:**
+**Schedule:** Months 1–3.
 
 - Rust binary implementing [LSP 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) lifecycle (initialize, initialized, shutdown, exit)
 - Full document synchronization (open, change, close, save) with VFS
@@ -504,11 +454,9 @@ F# has unique language features that require dedicated support beyond what the s
 - CI/CD pipeline with cross-platform builds (Linux, macOS, Windows)
 - Logging infrastructure via [tracing](https://crates.io/crates/tracing) crate with [OpenTelemetry](https://opentelemetry.io/) export
 
-### Phase 2: Sidecar Integration & Core Semantics (Months 4–8)
+### [SHARPLSP-PLAN-SEMANTICS] Sidecar Integration and Core Semantics
 
-**Goal:** Full semantic analysis for both languages. This is the phase where SharpLsp becomes genuinely useful.
-
-**Deliverables:**
+**Schedule:** Months 4–8.
 
 - C# sidecar with MSBuildWorkspace, full project loading, design-time build evaluation
 - F# sidecar with FSharpChecker, Ionide.ProjInfo, project cracking
@@ -522,11 +470,9 @@ F# has unique language features that require dedicated support beyond what the s
 - [salsa](https://salsa-rs.github.io/salsa/) database for incremental caching of semantic results
 - Request coalescing and cancellation
 
-### Phase 3: Code Actions & Refactoring (Months 9–14)
+### [SHARPLSP-PLAN-REFACTORING] Code Actions and Refactoring
 
-**Goal:** Feature parity with C# Dev Kit for code actions. Approach Rider's refactoring depth.
-
-**Deliverables:**
+**Schedule:** Months 9–14.
 
 - All Roslyn built-in CodeFixProviders exposed via LSP code actions
 - All Roslyn built-in CodeRefactoringProviders exposed via LSP code actions
@@ -538,11 +484,9 @@ F# has unique language features that require dedicated support beyond what the s
 - Code lens (reference count, implementation count)
 - Decompiled source navigation via [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy)
 
-### Phase 4: Advanced Features & Ecosystem (Months 15–20)
+### [SHARPLSP-PLAN-ECOSYSTEM] Advanced Features and Ecosystem
 
-**Goal:** Feature parity with Rider. Go beyond what any single tool offers today.
-
-**Deliverables:**
+**Schedule:** Months 15–20.
 
 - Solution-wide error analysis (SWEA equivalent)
 - Test discovery and execution ([xUnit](https://xunit.net/), [NUnit](https://nunit.org/), [MSTest](https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-mstest-intro), [Expecto](https://github.com/haf/expecto), [FsCheck](https://github.com/fscheck/FsCheck))
@@ -557,11 +501,9 @@ F# has unique language features that require dedicated support beyond what the s
 - Performance optimization pass (memory budgets, cache eviction, lazy loading)
 - Custom Rider-class inspections beyond Roslyn's built-in set
 
-### Phase 5: Beyond Parity (Months 21+)
+### [SHARPLSP-PLAN-LEADERSHIP] Beyond Parity
 
-**Goal:** Features no existing tool has. This is where SharpLsp moves from matching the field to leading it.
-
-**Stretch deliverables:**
+**Schedule:** Month 21 onward.
 
 - AI-assisted code actions (LLM-powered refactoring suggestions via [MCP](https://modelcontextprotocol.io/) or custom protocol)
 - Cross-language navigation (C# ↔ F# within the same solution, via binary references initially, source-level eventually)
@@ -571,7 +513,7 @@ F# has unique language features that require dedicated support beyond what the s
 - Database-aware analysis (SQL-in-string validation, [EF Core](https://learn.microsoft.com/en-us/ef/core/) migration awareness)
 - Collaborative editing support (operational transform / CRDT)
 
-## 7. Risks & Mitigations
+## [SHARPLSP-RISKS] Risks and Mitigations
 
 | Risk | Impact | Likelihood | Mitigation |
 |---|---|---|---|
@@ -580,10 +522,8 @@ F# has unique language features that require dedicated support beyond what the s
 | Memory pressure in large solutions | High | Medium | Implement per-project sidecar pooling. Add memory budget enforcement with cache eviction. Consider separate sidecar instances per project in extreme cases. |
 | F# tree-sitter grammar incomplete | Medium | Medium | Fall back to FCS for any syntax feature where tree-sitter produces incorrect results. Contribute upstream to improve the grammar. |
 | Roslyn version coupling | Medium | Certain | Pin Roslyn version per SharpLsp release. Test against multiple Roslyn versions in CI. Abstract sidecar RPC to isolate version dependencies. |
-| Microsoft ships improvements to Roslyn LSP server | Low | High | SharpLsp's value is unified C#+F#, editor-agnostic, open governance, and performance. These remain regardless of Microsoft's progress. |
-| Adoption challenge | Medium | Medium | Ship early with partial features. Demonstrate clear value in editors Microsoft ignores (Neovim, Helix, Emacs). Build community around open governance. |
 
-## 8. Licensing
+## [SHARPLSP-LICENSING] Licensing
 
 SharpLsp is MIT-licensed. All dependencies are compatible:
 
@@ -601,13 +541,11 @@ SharpLsp is MIT-licensed. All dependencies are compatible:
 
 **Critical:** SharpLsp must never incorporate code from C# Dev Kit's proprietary components (Solution Explorer, IntelliCode, test explorer). These are closed-source under Visual Studio licensing. All equivalent features must be reimplemented from publicly documented APIs and protocols.
 
-## 9. Complete Feature TODO List
+## [SHARPLSP-TODO] Complete Feature List
 
-Every feature SharpLsp must implement to match — and ultimately go beyond — Visual Studio, Rider, and C# Dev Kit. Features are grouped by category, prioritized (P0 = launch blocker, P1 = fast follow, P2 = competitive parity, P3 = beyond parity), and marked with their implementation status.
+Priorities: P0 = launch blocker, P1 = fast follow, P2 = parity, P3 = later.
 
-**Legend:** VS = Visual Studio, CDK = C# Dev Kit, R = Rider. ✓ = the tool has this feature.
-
-### 9.1 Code Intelligence
+### [SHARPLSP-TODO-INTELLIGENCE] Code Intelligence
 
 | Feature | VS | CDK | R | Priority | Phase |
 |---|---|---|---|---|---|
@@ -625,7 +563,7 @@ Every feature SharpLsp must implement to match — and ultimately go beyond — 
 | Regex syntax highlighting in strings | ✓ | ✗ | ✓ | P2 | 4 |
 | Date/time format string validation | ✗ | ✗ | ✓ | P3 | 5 |
 
-### 9.2 Navigation
+### [SHARPLSP-TODO-NAVIGATION] Navigation
 
 | Feature | VS | CDK | R | Priority | Phase |
 |---|---|---|---|---|---|
@@ -649,11 +587,11 @@ Every feature SharpLsp must implement to match — and ultimately go beyond — 
 | Breadcrumb / scope bar | ✓ | ✓ | ✓ | P1 | 3 |
 | Structural navigation (next/prev member) | ✓ | ✗ | ✓ | P2 | 4 |
 
-### 9.3 Diagnostics & Analysis
+### [SHARPLSP-TODO-DIAGNOSTICS] Diagnostics and Analysis
 
-See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) § Competitive Analysis for the full feature comparison table. Key change from this document: **solution-wide analysis is now P0 (Phase 2), default enabled** — not P1/Phase 4. SharpLsp-owned monorepo static analyzers are specified separately in [DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md).
+[DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) defines default-enabled P0 solution-wide analysis. SharpLsp-owned monorepo analyzers are specified in [DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md](DIAGNOSTICS-STATIC-ANALYZERS-SPEC.md).
 
-### 9.4 Code Actions & Refactoring
+### [SHARPLSP-TODO-REFACTORING] Code Actions and Refactoring
 
 | Feature | VS | CDK | R | Priority | Phase |
 |---|---|---|---|---|---|
@@ -693,11 +631,11 @@ See [DIAGNOSTICS-SPEC.md](DIAGNOSTICS-SPEC.md) § Competitive Analysis for the f
 | F#: Convert pipe ↔ nested function calls | ✗ | ✗ | ✗ | P1 | 4 |
 | F#: Convert to/from computation expression | ✗ | ✗ | ✗ | P2 | 4 |
 
-### 9.5 Formatting & Style
+### [SHARPLSP-TODO-FORMATTING] Formatting and Style
 
 SharpLsp does **not** provide formatting. Use [CSharpier](https://csharpier.com/) for C# and [Fantomas](https://github.com/fsprojects/fantomas) (via [Ionide](https://ionide.io/)) for F#.
 
-### 9.6 Semantic Highlighting & Visual Features
+### [SHARPLSP-TODO-HIGHLIGHTING] Semantic Highlighting and Visual Features
 
 | Feature | VS | CDK | R | Priority | Phase |
 |---|---|---|---|---|---|
@@ -708,7 +646,7 @@ SharpLsp does **not** provide formatting. Use [CSharpier](https://csharpier.com/
 | Linked editing ranges | ✓ | ✓ | ✓ | P1 | 1 |
 | Color information (CSS in Razor) | ✓ | ✗ | ✓ | P3 | 5 |
 
-### 9.7 Debugging & Testing
+### [SHARPLSP-TODO-DEBUGGING] Debugging and Testing
 
 > Full debugging feature parity details: [DEBUGGING-SPEC.md](./DEBUGGING-SPEC.md)
 
@@ -735,7 +673,7 @@ SharpLsp does **not** provide formatting. Use [CSharpier](https://csharpier.com/
 | Continuous testing | ✓ | ✗ | ✓ | P3 | 5 |
 | Code coverage overlay | ✓ | ✗ | ✓ | P3 | 5 |
 
-### 9.8 Workspace & Project Management
+### [SHARPLSP-TODO-WORKSPACE] Workspace and Project Management
 
 | Feature | VS | CDK | R | Priority | Phase |
 |---|---|---|---|---|---|
@@ -752,7 +690,7 @@ SharpLsp does **not** provide formatting. Use [CSharpier](https://csharpier.com/
 | Configuration via sharplsp.toml | ✗ | ✗ | ✗ | P0 | 1 |
 | Bundled required sidecars in VSIX | ✓ | ✗ | ✓ | P0 | 1 |
 
-### 9.9 F#-Specific Features
+### [SHARPLSP-TODO-FSHARP] F#-Specific Features
 
 | Feature | VS | CDK | R | Priority | Phase |
 |---|---|---|---|---|---|
@@ -769,9 +707,7 @@ SharpLsp does **not** provide formatting. Use [CSharpier](https://csharpier.com/
 | FSharpLint integration | ✗ | ✗ | ✗ | P1 | 4 |
 | FSharp.Analyzers.SDK support | ✗ | ✗ | ✗ | P1 | 4 |
 
-### 9.10 Features That Set SharpLsp Apart
-
-These are features no single tool offers today. This is where SharpLsp moves beyond parity and aims to set the bar:
+### [SHARPLSP-TODO-DIFFERENTIATORS] Differentiating Features
 
 | Feature | VS | CDK | R | Priority | Phase |
 |---|---|---|---|---|---|
@@ -788,7 +724,7 @@ These are features no single tool offers today. This is where SharpLsp moves bey
 
 *\* Rider supports both C# and F# but via proprietary code, not LSP, and not available to any other editor.*
 
-## 10. Success Metrics
+## [SHARPLSP-SUCCESS] Success Metrics
 
 | Milestone | Criteria | Target Date |
 |---|---|---|
@@ -798,35 +734,8 @@ These are features no single tool offers today. This is where SharpLsp moves bey
 | Community adoption | 1,000+ GitHub stars, 100+ daily active users | Month 24 |
 | Feature leadership | Features no other tool has (cross-language nav, AI actions, architecture analysis) | Month 24+ |
 
-## 11. Distribution
+## [SHARPLSP-DISTRIBUTION] Distribution
 
-SharpLsp is distributed as per-platform VSIXs with the `sharplsp` binary and both
-required sidecars bundled inside each one. Installing the VS Code extension is all
-a user needs.
+Per-platform VSIX paths and binary resolution are specified by [SHARPLSP-ARCHITECTURE-BINARIES] and [SHARPLSP-ARCHITECTURE-EXTENSIONS]. [DISTRIBUTION-SPEC.md](DISTRIBUTION-SPEC.md) is normative for version invariants, packaging, release workflow, and editor activation.
 
-- **`sharplsp`** — bundled inside each per-platform VSIX (`bin/<platform>/sharplsp[.exe]`). Also available via Homebrew (macOS/Linux) and Scoop (Windows) for users who want it on PATH.
-- **`sharplsp-sidecar-csharp`** — bundled inside every VSIX at `bin/all/sharplsp-sidecar-csharp`.
-- **`sharplsp-sidecar-fsharp`** — bundled inside every VSIX at `bin/all/sharplsp-sidecar-fsharp`.
-
-Binary resolution is handled by `@nimblesite/shipwright-vscode`. The bundled
-binary is the default resolution source. The `sharplsp.lspPath` setting
-overrides it for advanced users.
-
-**.NET 10 runtime acquisition.** The C# and F# sidecars are framework-dependent
-.NET 10 assemblies. SharpLsp does NOT bundle a runtime. Instead, the VS Code
-extension declares `ms-dotnettools.vscode-dotnet-runtime` (Microsoft's .NET
-Install Tool) as an `extensionDependencies` entry, then calls `dotnet.acquire`
-on activation to obtain a per-user .NET 10 runtime. Acquisition shows a
-non-interactive progress notification + status-bar indicator; the user is
-informed but never asked to do anything. See
-[DISTRIBUTION-SPEC.md `[DIST-RUNTIME-ACQUIRE]`](DISTRIBUTION-SPEC.md#dist-runtime-acquire).
-
-See [DISTRIBUTION-SPEC.md](DISTRIBUTION-SPEC.md) for the full distribution
-specification including version invariants, release workflow, and the
-editor extension contract.
-
----
-
-**END OF SPECIFICATION**
-
-*SharpLsp: Because .NET developers deserve better.*
+Under `[DIST-RUNTIME-ACQUIRE]`, the VS Code extension declares `ms-dotnettools.vscode-dotnet-runtime` as an `extensionDependencies` entry and calls `dotnet.acquire` for a per-user .NET 10 runtime. Acquisition MUST show non-interactive progress and a status-bar indicator.

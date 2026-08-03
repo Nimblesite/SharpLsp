@@ -49,6 +49,13 @@ test.describe('F# Language Support docs page', () => {
     await page.goto('/docs/');
     const sidebar = page.locator('#docs-sidebar');
     const fsharpLink = sidebar.locator('a[href$="/docs/fsharp/"]');
+    const docsMenuToggle = page.locator('#docs-menu-toggle');
+
+    if (await docsMenuToggle.isVisible()) {
+      await docsMenuToggle.click();
+      await expect(docsMenuToggle).toHaveAttribute('aria-expanded', 'true');
+    }
+
     await expect(fsharpLink).toBeVisible();
     await expect(fsharpLink).toContainText('F#');
 

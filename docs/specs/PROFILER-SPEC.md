@@ -1,18 +1,16 @@
-# Profiler Integration Specification
+# [PROFILER] Profiler Integration Specification
 
 **Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
-## 1. Overview
+## [PROFILER-OVERVIEW] Overview
 
-SharpLsp integrates .NET diagnostic tools (`dotnet-trace`, `dotnet-counters`, `dotnet-dump`) directly into the editor via LSP custom requests, giving developers a simple UI around the standard .NET diagnostics CLI. No external tools, no terminal juggling — profile, trace, and analyze memory leaks from your editor.
+SharpLsp exposes `dotnet-trace`, `dotnet-counters`, and `dotnet-dump` through LSP custom requests and editor UI.
 
 **Reference:** [dotnet-trace documentation](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-trace)
 
-**Priority:** P2 (Phase 5 — Beyond Parity)
+## [PROFILER-TOOLS] Diagnostic Tools
 
-## 2. Diagnostic Tools
-
-### 2.1 dotnet-trace
+### [PROFILER-TOOLS-TRACE] dotnet-trace
 
 Collects performance traces from running .NET processes using EventPipe. Produces `.nettrace` files convertible to Chromium/SpeedScope formats for visualization.
 
@@ -23,7 +21,7 @@ Collects performance traces from running .NET processes using EventPipe. Produce
 | Stop trace | Ctrl+C equivalent | Gracefully stop collection |
 | Convert trace | `dotnet-trace convert` | Convert `.nettrace` to `.speedscope.json` or Chromium format |
 
-### 2.2 dotnet-counters
+### [PROFILER-TOOLS-COUNTERS] dotnet-counters
 
 Real-time monitoring of .NET runtime performance counters (GC, CPU, exceptions, thread pool).
 
@@ -33,7 +31,7 @@ Real-time monitoring of .NET runtime performance counters (GC, CPU, exceptions, 
 | Monitor counters | `dotnet-counters monitor -p <pid>` | Stream live counter values |
 | Collect counters | `dotnet-counters collect -p <pid>` | Record counters to CSV/JSON |
 
-### 2.3 dotnet-dump (Memory Leak Tracing)
+### [PROFILER-TOOLS-DUMP] dotnet-dump
 
 Captures and analyzes process dumps for memory leak investigation without a native debugger.
 
@@ -45,9 +43,9 @@ Captures and analyzes process dumps for memory leak investigation without a nati
 | GC roots | `gcroot <addr>` | Trace GC root references for an object |
 | Object references | `dumpobj <addr>` | Inspect individual managed objects |
 
-## 3. Architecture
+## [PROFILER-ARCHITECTURE] Architecture
 
-### 3.1 Component Placement
+### [PROFILER-ARCHITECTURE-PLACEMENT] Component Placement
 
 Profiler integration lives in the **Rust LSP host** (Tier 1). The diagnostic CLI tools run as child processes managed by the host — no sidecar involvement.
 
@@ -59,14 +57,14 @@ Editor  ──LSP custom request──▶  Rust Host  ──spawns──▶  dot
                                      └── Output parsing + streaming to editor
 ```
 
-### 3.2 Why Rust Host, Not Sidecar
+### [PROFILER-ARCHITECTURE-HOST] Rust Host Ownership
 
 - Diagnostic tools are standalone CLI executables, not Roslyn/FCS APIs
 - No workspace or compilation context needed
 - Direct process spawning from Rust is simpler and lower latency
 - Sidecar crash must not kill profiling sessions
 
-### 3.3 Tool Discovery
+### [PROFILER-ARCHITECTURE-DISCOVERY] Tool Discovery
 
 On startup (lazy, first use), the host locates diagnostic tools:
 
@@ -76,11 +74,11 @@ On startup (lazy, first use), the host locates diagnostic tools:
 | 2 | Check `dotnet tool list -g` output | — |
 | 3 | If missing, prompt user to install via `dotnet tool install -g` | Return error with install instructions |
 
-## 4. LSP Custom Requests
+## [PROFILER-PROTOCOL] LSP Custom Requests
 
 All profiler requests use the `sharplsp/` namespace.
 
-### 4.1 Process Discovery
+### [PROFILER-PROCESS-LIST] Process Discovery
 
 **Method:** `sharplsp/profiler/listProcesses`
 
@@ -102,7 +100,7 @@ type ListProcessesResult = DotNetProcess[];
 
 Calls `dotnet-trace ps` and parses output. Returns all discoverable .NET processes.
 
-### 4.2 Trace Session
+### [PROFILER-TRACE] Trace Session
 
 **Method:** `sharplsp/profiler/startTrace`
 
@@ -147,9 +145,9 @@ interface StopTraceResult {
 }
 ```
 
-### 4.2.1 Trace File Conversion
+#### [PROFILER-TRACE-CONVERSION] Trace File Conversion
 
-A `.nettrace` file is not directly viewable — it must be converted to SpeedScope JSON (or Chromium JSON) before it can be opened in a visualizer. SharpLsp exposes an explicit conversion entrypoint so that any trace file on disk (including orphaned files from a previous session, a colleague's dump, or a CI artifact) can be opened in SharpLsp without re-recording.
+A `.nettrace` file MUST be converted to SpeedScope or Chromium JSON before visualization. The conversion request accepts any trace file on disk and does not require a live session.
 
 **Method:** `sharplsp/profiler/convertTrace`
 
@@ -180,9 +178,9 @@ Invokes `dotnet-trace convert <input> --format <format>`. The resulting sibling 
 | `speedscope` | `<input>.speedscope.json` |
 | `chromium` | `<input>.chromium.json` |
 
-Stopping a trace session (`sharplsp/profiler/stopTrace`) already runs this conversion automatically when the session produced data. `convertTrace` is for files where no live session exists — for example, when the editor was closed during recording, or when opening a `.nettrace` the user recorded elsewhere.
+`sharplsp/profiler/stopTrace` automatically converts a session that produced data; `convertTrace` handles files with no live session.
 
-### 4.3 Counter Monitoring
+### [PROFILER-PROTOCOL-COUNTERS] Counter Monitoring
 
 **Method:** `sharplsp/profiler/startCounters`
 
@@ -232,7 +230,7 @@ interface StopCountersParams {
 }
 ```
 
-### 4.4 Memory Dump Collection
+### [PROFILER-PROTOCOL-DUMP-COLLECT] Memory Dump Collection
 
 **Method:** `sharplsp/profiler/collectDump`
 
@@ -255,7 +253,7 @@ interface CollectDumpResult {
 }
 ```
 
-### 4.5 Memory Dump Analysis
+### [PROFILER-PROTOCOL-DUMP-ANALYZE] Memory Dump Analysis
 
 **Method:** `sharplsp/profiler/analyzeHeap`
 
@@ -311,11 +309,11 @@ interface GCRootNode {
 type FindGCRootsResult = GCRootChain[];
 ```
 
-## 5. Memory Leak Tracing Workflow
+## [PROFILER-LEAKS] Memory Leak Tracing Workflow
 
 Memory leak investigation follows a structured workflow exposed through the UI:
 
-### 5.1 Baseline → Exercise → Compare
+### [PROFILER-LEAKS-WORKFLOW] Baseline → Exercise → Compare
 
 | Step | Action | Tool |
 |------|--------|------|
@@ -326,7 +324,7 @@ Memory leak investigation follows a structured workflow exposed through the UI:
 | 5 | Identify growing types | Editor diff view of heap stats |
 | 6 | Trace GC roots of suspect objects | `sharplsp/profiler/findGCRoots` |
 
-### 5.2 Live Counter Monitoring for Leak Detection
+### [PROFILER-LEAKS-COUNTERS] Live Counter Monitoring
 
 Monitor `System.Runtime` counters to detect leaks in real-time:
 
@@ -339,11 +337,11 @@ Monitor `System.Runtime` counters to detect leaks in real-time:
 
 The editor highlights counters that show sustained growth patterns.
 
-### 5.3 Automated Leak Detection
+### [PROFILER-LEAKS-AUTOMATION] Automated Leak Detection
 
-SharpLsp automatically detects memory leaks by comparing two heap snapshots taken at different points in time. The user triggers "Baseline → Exercise → Compare" and SharpLsp does the analysis automatically.
+Automated leak detection compares baseline and comparison heap snapshots.
 
-#### 5.3.1 Heap Snapshot Diffing
+#### [PROFILER-LEAKS-AUTOMATION-DIFF] Heap Snapshot Diffing
 
 **Method:** `sharplsp/profiler/diffHeapSnapshots`
 
@@ -396,7 +394,7 @@ interface LeakSuspect {
 }
 ```
 
-#### 5.3.2 Leak Classification Heuristics
+#### [PROFILER-LEAKS-AUTOMATION-HEURISTICS] Leak Classification Heuristics
 
 SharpLsp classifies leak suspects by combining snapshot diff data with heuristics:
 
@@ -411,7 +409,7 @@ Additional signals that elevate severity:
 - Type contains `[]` or `List` (collection growth)
 - Multiple instances of the same generic type growing (e.g., `Dictionary<TKey, TValue>` with different type args)
 
-#### 5.3.3 Automated Leak Detection Flow
+#### [PROFILER-LEAKS-AUTOMATION-FLOW] Automated Leak Detection Flow
 
 ```mermaid
 flowchart TD
@@ -430,11 +428,11 @@ flowchart TD
     M --> N[Show Retention Path]
 ```
 
-## 5A. Object Graph Visualization
+## [PROFILER-GRAPH] Object Graph Visualization
 
-SharpLsp provides an interactive object retention graph that shows what objects exist in memory and what's holding on to them. This is the killer feature for memory leak investigation — you see the actual reference chains keeping objects alive.
+SharpLsp provides an interactive graph of objects and the reference chains retaining them.
 
-### 5A.1 Object Graph Data Model
+### [PROFILER-GRAPH-DATA] Object Graph Data Model
 
 **Method:** `sharplsp/profiler/getObjectGraph`
 
@@ -502,7 +500,7 @@ interface ObjectGraphStats {
 }
 ```
 
-### 5A.2 Object Inspection
+### [PROFILER-GRAPH-INSPECTION] Object Inspection
 
 **Method:** `sharplsp/profiler/inspectObject`
 
@@ -541,7 +539,7 @@ interface ObjectField {
 }
 ```
 
-### 5A.3 Architecture — How the Object Graph is Built
+### [PROFILER-GRAPH-BUILD] Object Graph Construction
 
 The object graph is assembled from `dotnet-dump analyze` commands:
 
@@ -566,34 +564,15 @@ Commands used per node:
 | `dumpheap -mt <MT>` | Count all instances of a specific method table |
 | `objsize <addr>` | Calculate retained size (object + transitive refs) |
 
-### 5A.4 Interactive Graph Webview
+### [PROFILER-GRAPH-WEBVIEW] Interactive Graph Webview
 
-The object graph renders as an interactive force-directed graph in a VSCode webview panel.
+The object graph renders as an interactive force-directed graph in a VS Code webview panel.
 
-#### Graph Layout
+#### [PROFILER-GRAPH-WEBVIEW-LAYOUT] Graph Layout
 
-```mermaid
-graph LR
-    subgraph GC Roots
-        R1[Static Field<br/>AppState._cache]
-        R2[Thread Stack<br/>Main]
-    end
+GC roots and retention chains MUST be connected by labelled reference edges; roots appear before retained objects in the initial layout.
 
-    subgraph Retention Chain
-        A[Dictionary&lt;string,Widget&gt;<br/>1.2 MB retained]
-        B[Widget[]<br/>entries array]
-        C[Widget<br/>48 bytes]
-        D[EventHandler<br/>leak suspect ⚠️]
-    end
-
-    R1 -->|_cache| A
-    A -->|entries| B
-    B -->|[42]| C
-    C -->|OnClick| D
-    R2 -->|local| A
-```
-
-#### Webview Features
+#### [PROFILER-GRAPH-WEBVIEW-FEATURES] Webview Features
 
 | Feature | Description |
 |---------|-------------|
@@ -610,35 +589,19 @@ graph LR
 | **Export** | Save graph as SVG or PNG |
 | **Depth slider** | Control max traversal depth (1–10) |
 
-#### Node Visual Encoding
+#### [PROFILER-GRAPH-WEBVIEW-ENCODING] Node Visual Encoding
 
-```mermaid
-graph TD
-    subgraph Legend
-        L1[🔴 Leak Suspect<br/>High severity]
-        L2[🟠 Large Retained Size<br/>&gt; 1MB]
-        L3[🔵 GC Root<br/>Static/Thread/Pinned]
-        L4[⚪ Normal Object<br/>No concerns]
-        L5[⚠️ Warning Border<br/>Growing type from diff]
-    end
-```
+| Node state | Encoding |
+|------------|----------|
+| High-severity leak suspect | Red |
+| Retained size greater than 1MB | Orange |
+| GC root | Blue |
+| Normal object | Gray |
+| Type growing between snapshots | Warning border |
 
-### 5A.5 Retention Path View
+### [PROFILER-GRAPH-RETENTION] Retention Path View
 
-For any selected object, SharpLsp shows the complete chain from GC root to the object. This answers the question: **"Why isn't this being garbage collected?"**
-
-```mermaid
-graph TD
-    Root["🔵 GC Root<br/>Static: AppState._instance"] --> A["AppState<br/>retains 4.2 MB"]
-    A -->|_subscriptions| B["List&lt;EventHandler&gt;<br/>retains 2.1 MB"]
-    B -->|[0]| C["EventHandler<br/>retains 1.0 MB"]
-    C -->|_target| D["🔴 LeakyService<br/>48 bytes<br/>⚠️ 1,247 instances"]
-    D -->|_buffer| E["byte[]<br/>1.0 MB"]
-
-    style Root fill:#4488ff,color:#fff
-    style D fill:#ff4444,color:#fff
-    style E fill:#ff8844,color:#fff
-```
+For any selected object, SharpLsp shows the complete chain from a GC root to that object.
 
 Each node in the retention path shows:
 - Type name and size
@@ -646,26 +609,22 @@ Each node in the retention path shows:
 - Instance count (if many instances of same type exist — leak signal)
 - Retained size (total memory kept alive through this node)
 
-### 5A.6 Heap Snapshot Diff Visualization
+### [PROFILER-GRAPH-DIFF] Heap Snapshot Diff Visualization
 
-When two snapshots are compared, the diff is shown as an annotated table AND as a visual graph overlay.
+When two snapshots are compared, the diff is shown as an annotated table and a visual graph overlay.
 
-#### Diff Table View
+#### [PROFILER-GRAPH-DIFF-TABLE] Diff Table View
 
-| Type | Baseline Count | Current Count | Delta | Baseline Size | Current Size | Delta | Severity |
-|------|---------------|--------------|-------|--------------|-------------|-------|----------|
-| `EventHandler` | 12 | 1,247 | +1,235 | 576 B | 59.9 KB | +59.3 KB | 🔴 High |
-| `byte[]` | 340 | 1,580 | +1,240 | 1.2 MB | 5.6 MB | +4.4 MB | 🔴 High |
-| `String` | 8,200 | 9,100 | +900 | 320 KB | 355 KB | +35 KB | 🟡 Low |
+The table MUST show type, baseline and current counts, count delta, baseline and current sizes, size delta, and severity.
 
-#### Diff Graph Overlay
+#### [PROFILER-GRAPH-DIFF-OVERLAY] Diff Graph Overlay
 
 In graph view, nodes from the comparison snapshot are annotated with growth indicators:
 - **Pulsing red border** — count grew >100%
 - **Growing arrow** — size delta shown on hover
 - **New nodes** (not in baseline) appear with dashed border
 
-### 5A.7 Performance Requirements
+### [PROFILER-GRAPH-PERFORMANCE] Performance Requirements
 
 | Metric | Target |
 |--------|--------|
@@ -677,9 +636,9 @@ In graph view, nodes from the comparison snapshot are annotated with growth indi
 | Graph webview node expansion | <1s |
 | Retained size calculation | <5s per node |
 
-## 6. Session Management
+## [PROFILER-SESSIONS] Session Management
 
-### 6.1 Session Lifecycle
+### [PROFILER-SESSIONS-LIFECYCLE] Session Lifecycle
 
 ```
 Created  ──start──▶  Running  ──stop──▶  Stopped  ──cleanup──▶  Disposed
@@ -693,7 +652,7 @@ Created  ──start──▶  Running  ──stop──▶  Stopped  ──clea
 - Maximum concurrent sessions: 5 (configurable via `sharplsp.toml`)
 - Orphaned sessions (editor disconnect) cleaned up on LSP shutdown
 
-### 6.2 Configuration
+### [PROFILER-SESSIONS-CONFIG] Configuration
 
 `sharplsp.toml` settings:
 
@@ -707,9 +666,9 @@ default_counter_interval = 1
 output_directory = ".sharplsp/profiles"
 ```
 
-## 7. Editor Integration
+## [PROFILER-EDITOR] Editor Integration
 
-### 7.1 VSCode Extension
+### [PROFILER-EDITOR-VSCODE] VS Code Extension
 
 | UI Element | Purpose |
 |-----------|---------|
@@ -723,11 +682,11 @@ output_directory = ".sharplsp/profiles"
 | Quick pick | Process selection from discovered .NET processes |
 | File open | Open `.speedscope.json` output in browser/SpeedScope viewer |
 
-### 7.1.1 Profiler Tree View — Intent-Revealing UX
+#### [PROFILER-EDITOR-VSCODE-TREE] Profiler Tree View
 
-The PROFILER tree view MUST make every action discoverable **directly from the node the user is looking at**. A user who right-clicks a session must be able to stop it. A user who right-clicks a process must be able to profile it. No toolbar hunting. No blind QuickPicks.
+The PROFILER tree view MUST expose session and process actions directly from the corresponding node: sessions can be stopped and processes can be profiled from their context menus.
 
-#### Tree Structure
+##### [PROFILER-EDITOR-VSCODE-TREE-STRUCTURE] Tree Structure
 
 ```
 PROFILER  [refresh]  [open-trace]  [⋯ overflow]
@@ -739,7 +698,7 @@ PROFILER  [refresh]  [open-trace]  [⋯ overflow]
     └── Claude (PID 98153)
 ```
 
-#### Context Values
+##### [PROFILER-EDITOR-VSCODE-TREE-CONTEXT] Context Values
 
 Every tree item MUST set a `contextValue` that the `view/item/context` menu `when` clauses key off:
 
@@ -751,18 +710,18 @@ Every tree item MUST set a `contextValue` that the `view/item/context` menu `whe
 | Counters session | `profiler-session-counters` |
 | Process entry | `profiler-process` |
 
-#### Default Click Behavior
+##### [PROFILER-EDITOR-VSCODE-TREE-CLICK] Default Click Behavior
 
 Clicking a node performs the most common action for that node kind — never a no-op.
 
-| Node | Default Click | Rationale |
-|------|--------------|-----------|
-| Trace session | Stop trace + open result in SpeedScope | Click = "I'm done, show me the flamegraph." |
-| Counters session | Reveal the live counters webview | Click = "Show me the numbers" (stopping is a menu item). |
-| Process | Start trace on this PID | Click = "profile this." |
-| Header / empty | No-op | Informational. |
+| Node | Default Click |
+|------|---------------|
+| Trace session | Stop trace and open the result in SpeedScope |
+| Counters session | Reveal the live counters webview |
+| Process | Start trace on this PID |
+| Header / empty | No-op |
 
-#### Context Menu (Right-Click) Entries
+##### [PROFILER-EDITOR-VSCODE-TREE-MENU] Context Menu Entries
 
 **On a trace session:**
 - Stop & Open (inline icon = `debug-stop`)
@@ -779,16 +738,14 @@ Clicking a node performs the most common action for that node kind — never a n
 - Collect Memory Dump of This Process
 - Copy PID
 
-#### Tooltips
+##### [PROFILER-EDITOR-VSCODE-TREE-TOOLTIPS] Tooltips
 
 Every session and process node MUST have a Markdown tooltip that includes:
 - Node identity (PID, session ID, kind)
 - Output path if any
 - A one-line hint describing what clicking does
 
-This eliminates "what is this thing and what do I do with it?" confusion.
-
-#### Toolbar Organisation
+##### [PROFILER-EDITOR-VSCODE-TREE-TOOLBAR] Toolbar Organisation
 
 The view title bar keeps only actions that don't belong to a specific node:
 
@@ -798,20 +755,18 @@ The view title bar keeps only actions that don't belong to a specific node:
 | `navigation@2` | Open Trace File… | `folder-opened` |
 | `overflow` | Start Trace (picker), Start Counters (picker), Collect Dump (picker), Convert .nettrace, Analyze Heap, Compare Snapshots, Detect Leaks | — |
 
-The overflow menu (`⋯`) holds picker-based workflows that don't need a visible button. All direct-action equivalents live on the tree node context menus.
+#### [PROFILER-EDITOR-VSCODE-TRACE] Trace File Opening
 
-### 7.1.2 Trace File Opening
-
-SharpLsp MUST let the user open a `.nettrace` **file** as a first-class action, not just as a side-effect of stopping a session. Users who find an orphaned `.nettrace` (e.g. because the editor was closed mid-recording) need a path forward.
+SharpLsp MUST let the user open a `.nettrace` file independently of a live session.
 
 The `sharplsp.profiler.openTrace` command:
 1. Shows an open-file dialog filtering for `.nettrace`, `.speedscope.json`, and `.json` files.
 2. If the chosen file is `.nettrace`, invokes `sharplsp/profiler/convertTrace` to produce a sibling `.speedscope.json`.
 3. Opens the resulting SpeedScope file in the external SpeedScope web viewer.
 
-Stopping a trace session uses the same pipeline, so the UX is consistent: every trace — freshly captured or loaded from disk — ends up in SpeedScope with one interaction.
+Stopping a trace session uses the same conversion-and-open pipeline.
 
-### 7.2 Commands
+### [PROFILER-EDITOR-COMMANDS] Commands
 
 | Command | Title |
 |---------|-------|
@@ -837,7 +792,7 @@ Stopping a trace session uses the same pipeline, so the UX is consistent: every 
 | `sharplsp.profiler.dumpProcess` | SharpLsp: Collect Memory Dump of This Process |
 | `sharplsp.profiler.copyPid` | SharpLsp: Copy PID |
 
-## 8. Performance Requirements
+## [PROFILER-PERFORMANCE] Performance Requirements
 
 | Metric | Target |
 |--------|--------|
@@ -848,7 +803,7 @@ Stopping a trace session uses the same pipeline, so the UX is consistent: every 
 | Heap analysis (50k types) | <5s |
 | GC root traversal | <10s |
 
-## 9. Error Handling
+## [PROFILER-ERRORS] Error Handling
 
 | Condition | Response |
 |-----------|----------|
@@ -860,19 +815,6 @@ Stopping a trace session uses the same pipeline, so the UX is consistent: every 
 | Tool produces unexpected output | Log raw output at `warn` level, return parse error |
 | Editor disconnects during session | Clean up all sessions on LSP shutdown |
 
-## 10. Competitive Parity Matrix
+## [PROFILER-SCOPE] Deferred Scope
 
-| Feature | VS | Rider | CDK | SharpLsp Target | Priority |
-|---------|----|----|-----|-------------|----------|
-| CPU trace collection | Yes | Yes | No | Yes | P0 |
-| Live performance counters | Yes (PerfView) | Yes | No | Yes | P0 |
-| Memory dump collection | Yes | Yes | No | Yes | P0 |
-| Heap analysis | Yes | Yes (dotMemory) | No | Yes (basic) | P1 |
-| GC root analysis | Yes | Yes (dotMemory) | No | Yes (basic) | P1 |
-| Leak detection heuristics | Partial | Yes | No | Yes (counter-based) | P1 |
-| Automated leak detection | No | Yes (dotMemory) | No | Yes (snapshot diff) | P1 |
-| Heap snapshot diffing | No | Yes (dotMemory) | No | Yes | P1 |
-| Object retention graph | Yes | Yes (dotMemory) | No | Yes (interactive) | P1 |
-| Object inspection | Yes | Yes (dotMemory) | No | Yes | P1 |
-| Flame graph visualization | External | Built-in | No | External (SpeedScope) | P1 |
-| Allocation tracking | Yes | Yes (dotTrace) | No | Future | P2 |
+Allocation tracking is deferred; this specification defines no request or UI contract for it.

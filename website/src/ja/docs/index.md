@@ -20,9 +20,9 @@ SharpLsp は Rust で構築された、オープンソースの .NET（C# + F#�
 拡張機能には <code>sharplsp</code> バイナリと両方のサイドカーが VSIX 内に同梱されています。Rust ツールチェーンは不要です。別途バイナリをインストールする必要もありません。<code>.sln</code> または <code>.csproj</code> を開くと、SharpLsp が自動的に起動します。
 
 <section class="callout">
-  <h2><span class="material-symbols-outlined" aria-hidden="true">deployed_code</span>前提条件</h2>
+  <h2>前提条件</h2>
   <ul class="requirement-list">
-    <li><span class="material-symbols-outlined" aria-hidden="true">deployed_code</span><div><h3>.NET 10.0 SDK</h3><p>プロジェクトの解析と MSBuild 連携に必要です。<code>dotnet</code> が PATH 上にあることを確認してください。</p></div></li>
+    <li><span class="requirement-icon" aria-hidden="true">.NET</span><div><h3>.NET 10.0 SDK</h3><p>プロジェクトの解析と MSBuild 連携に必要です。<code>dotnet</code> が PATH 上にあることを確認してください。</p></div></li>
   </ul>
 </section>
 
@@ -30,4 +30,4 @@ SharpLsp は Rust で構築された、オープンソースの .NET（C# + F#�
 
 Neovim と Zed のサポートは近日公開予定です。
 
-<p class="next-link"><a href="/ja/docs/architecture/">次へ: アーキテクチャ <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>
+<p class="next-link"><a href="/ja/docs/architecture/">次へ: アーキテクチャ <span aria-hidden="true">→</span></a></p>

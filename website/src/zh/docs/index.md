@@ -20,9 +20,9 @@ SharpLsp 是一个用 Rust 构建的开源 .NET 语言服务器协议（LSP）�
 扩展在 VSIX 内附带 `sharplsp` 二进制文件和两个 sidecar。无需 Rust 工具链，无需单独安装二进制。打开 `.sln` 或 `.csproj`，SharpLsp 会自动启动。
 
 <section class="callout">
-  <h2><span class="material-symbols-outlined" aria-hidden="true">deployed_code</span>前提条件</h2>
+  <h2>前提条件</h2>
   <ul class="requirement-list">
-    <li><span class="material-symbols-outlined" aria-hidden="true">deployed_code</span><div><h3>.NET 10.0 SDK</h3><p>用于项目解析和 MSBuild 集成。请确保 <code>dotnet</code> 在您的 PATH 中。</p></div></li>
+    <li><span class="requirement-icon" aria-hidden="true">.NET</span><div><h3>.NET 10.0 SDK</h3><p>用于项目解析和 MSBuild 集成。请确保 <code>dotnet</code> 在您的 PATH 中。</p></div></li>
   </ul>
 </section>
 
@@ -30,4 +30,4 @@ SharpLsp 是一个用 Rust 构建的开源 .NET 语言服务器协议（LSP）�
 
 Neovim 与 Zed 支持即将推出。
 
-<p class="next-link"><a href="/zh/docs/architecture/">下一节：架构 <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>
+<p class="next-link"><a href="/zh/docs/architecture/">下一节：架构 <span aria-hidden="true">→</span></a></p>

@@ -28,27 +28,26 @@ function removeOutputSymlinks(directory) {
   }
 }
 
-// Patch plugin layouts with local overrides before Eleventy registers virtual templates
-for (const file of ["base.njk", "blog.njk", "docs.njk", "prose.njk", "author.njk"]) {
+// Techdoc 0.2 registers virtual templates without an override hook. Keep the
+// site-owned sources durable and copy only the templates the plugin registers.
+for (const file of ["base.njk", "blog.njk", "docs.njk"]) {
   const local = join(localLayouts, file);
   if (existsSync(local)) {
     writeFileSync(join(pluginLayouts, file), readFileSync(local, "utf-8"));
   }
 }
 
-// Patch plugin page templates (tags, categories, blog index) with local overrides
-for (const file of ["tags-pages.njk", "categories-pages.njk"]) {
-  const local = join(localOverrides, file);
+// Patch the virtual blog pages from stable, site-owned override files. Never
+// delete or move these sources: repeated builds must produce identical output.
+for (const [target, source] of [
+  ["index.njk", "blog-index.njk"],
+  ["tags-pages.njk", "tags-pages.njk"],
+  ["categories-pages.njk", "categories-pages.njk"],
+]) {
+  const local = join(localOverrides, source);
   if (existsSync(local)) {
-    writeFileSync(join(pluginPages, "blog", file), readFileSync(local, "utf-8"));
+    writeFileSync(join(pluginPages, "blog", target), readFileSync(local, "utf-8"));
   }
-}
-
-// Patch plugin blog index with local override so the virtual template uses our version
-const localBlogIndex = join(__dirname, "src/blog/index.njk");
-if (existsSync(localBlogIndex)) {
-  writeFileSync(join(pluginPages, "blog/index.njk"), readFileSync(localBlogIndex, "utf-8"));
-  unlinkSync(localBlogIndex);
 }
 
 export default function (eleventyConfig) {
@@ -60,7 +59,7 @@ export default function (eleventyConfig) {
     site: {
       name: "SharpLsp",
       url: "https://sharplsp.dev",
-      description: "Open-source .NET language server for C# and F#. One server, every editor.",
+      description: "A complete open-source C# and F# development experience for every editor.",
       stylesheet: "/assets/css/styles.css",
     },
     features: {

@@ -1,4 +1,19 @@
 ---
-layout: layouts/prose.njk
+layout: layouts/base.njk
 ---
-{{ content | safe }}
+<article class="prose">
+  <header class="article-header">
+    <div class="article-kicker">
+      <span>{{ category | default("Engineering") | capitalize }}</span>
+      <time datetime="{{ date | isoDate }}">{{ date | dateFormat }}</time>
+    </div>
+    <h1>{{ title }}</h1>
+    {% include "partials/article-author.njk" %}
+    {% if image %}
+    <figure class="article-hero">
+      <img src="{{ image }}" alt="{{ imageAlt | default(title) }}" loading="eager">
+    </figure>
+    {% endif %}
+  </header>
+  {{ content | safe }}
+</article>

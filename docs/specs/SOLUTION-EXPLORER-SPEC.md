@@ -1,16 +1,10 @@
-# Solution Explorer Specification
+# Solution Explorer Specification `[SE-SOLUTION-EXPLORER]`
 
-**Status:** Active
-**Owner:** SharpLsp LSP
-**Last Updated:** 2026-04-26
-
-## Overview
+## Overview `[SE-OVERVIEW]`
 
 The Solution Explorer is a VS Code tree view that displays the full code hierarchy of a .NET solution: solutions, projects, namespaces, types, and members. It accepts legacy `.sln` and XML `.slnx` solution files. It is powered by a custom LSP request (`sharplsp/workspaceSymbols`) backed by the sidecar `solution/read` model, tree-sitter parsing in the Rust host for C#, and the FCS sidecar's `documentSymbol` for F# ([SE-FSHARP-SYMBOLS]).
 
-See [LSP-ARCHITECTURE-SPEC.md](specs/LSP-ARCHITECTURE-SPEC.md) for shared LSP architecture.
-
-## Architecture
+## Architecture `[SE-ARCHITECTURE]`
 
 ```
 VS Code Tree View
@@ -31,32 +25,18 @@ Per-file symbols are sourced by language, never by a single parser:
 
 | Language | Source | Rationale |
 |----------|--------|-----------|
-| C# (`.cs`) | tree-sitter parsing in the Rust host | A C# grammar is integrated in the host. |
-| F# (`.fs`) | FCS sidecar `textDocument/documentSymbol` ([FS-DOCSYMBOL]) | The host has **no** F# tree-sitter grammar, so a tree-sitter-only path silently drops every `.fs` file (issue #119). F# is a first-class language — its files and symbols MUST appear under an `.fsproj` exactly as `.cs` files appear under a `.csproj`. |
+| C# (`.cs`) | tree-sitter parsing in the Rust host | The host owns the C# grammar. |
+| F# (`.fs`) | FCS sidecar `textDocument/documentSymbol` ([FS-DOCSYMBOL]) | The host has no F# grammar; every `.fs` file and its symbols MUST appear under an `.fsproj` exactly as C# does under `.csproj`. |
 
-The F# path reuses the **same** sidecar `documentSymbol` request that powers the editor outline, mapping the nested FCS symbols (module, namespace, type, DU case, member) into the shared `FileSymbol`/`SymbolNode` tree model using each symbol's full range. The F# sidecar must be threaded into `workspace_symbols::handle`; when it is unavailable the project's `.fs` files contribute no symbols rather than failing the whole request.
+The F# path reuses the sidecar `documentSymbol` request that powers the editor outline. It maps nested FCS modules, namespaces, types, DU cases, and members into the shared `FileSymbol`/`SymbolNode` tree using full ranges. `workspace_symbols::handle` receives the F# sidecar; when unavailable, `.fs` files contribute no symbols without failing the request.
 
 ### Live-Buffer Path Identity [SE-LIVE-BUFFER]
 
-`sharplsp/workspaceSymbols` MUST parse the latest open-buffer text, including
-unsaved and rapid successive edits. Disk content is used only when no open VFS
-document denotes the source file.
+`sharplsp/workspaceSymbols` MUST parse the latest open VFS text, including unsaved successive edits; disk content is used only when no open document denotes the source file.
 
-The editor URI and the project model can use different native paths for the same
-file. In particular, Windows runners can send an 8.3 path such as
-`C:\Users\RUNNER~1\...`, while the sidecar reports the expanded
-`C:\Users\runneradmin\...` path. The VFS therefore resolves and caches the
-editor path when the document opens, then compares both the original URI path
-and that canonical path during native-path lookup. Canonicalizing only the
-project-model path is insufficient because it leaves the editor's aliased path
-unchanged and incorrectly falls back to stale disk text.
+Editor URIs and project models can name one file differently: for example, Windows can supply `C:\Users\RUNNER~1\...` while the sidecar supplies `C:\Users\runneradmin\...`. On open, the VFS resolves and caches the editor path, then native-path lookup compares both the original URI path and its canonical path. Comparison ignores Windows verbatim prefixes and casing. The VS Code explorer tests cover unsaved and burst edits; VFS regression tests cover reverse-alias lookup. Implementations: `src/vfs.rs`, `src/workspace_symbols.rs`, and `editors/vscode/src/test/suite/solution-explorer.test.ts`.
 
-Path comparison also ignores Windows verbatim prefixes and casing differences.
-The coarse VS Code explorer tests prove that the tree reflects an unsaved rename
-and the final value in a burst of renames; the VFS alias regression test covers
-the reverse-alias lookup independently of hosted-runner path spelling.
-
-### Request: `sharplsp/workspaceSymbols`
+### Request: `sharplsp/workspaceSymbols` `[SE-WORKSPACE-SYMBOLS-REQUEST]`
 
 **Params:**
 ```json
@@ -107,7 +87,7 @@ the reverse-alias lookup independently of hosted-runner path spelling.
 }
 ```
 
-### Symbol Kinds
+### Symbol Kinds `[SE-SYMBOL-KINDS]`
 
 | Kind | Tree-sitter Node | Icon | Theme Color |
 |------|-----------------|------|-------------|
@@ -125,14 +105,14 @@ the reverse-alias lookup independently of hosted-runner path spelling.
 | Function | `delegate_declaration` | `symbol-method` | `symbolIcon.functionForeground` |
 | Constant | — | `symbol-constant` | `symbolIcon.constantForeground` |
 
-### Special Node Icons
+### Special Node Icons `[SE-SYMBOL-ICONS]`
 
 | Node | Icon | Color |
 |------|------|-------|
 | Solution (.sln/.slnx) | `package` | `terminal.ansiGreen` |
 | Project (.csproj/.fsproj) | `project` | `terminal.ansiCyan` |
 
-### Access Modifier Extraction
+### Access Modifier Extraction `[SE-SYMBOL-ACCESS]`
 
 The `access` field is extracted from tree-sitter `modifier` child nodes. Recognized values:
 
@@ -145,7 +125,7 @@ The `access` field is extracted from tree-sitter `modifier` child nodes. Recogni
 
 When no access modifier is present, `access` is `null`.
 
-## Tree Hierarchy
+## Tree Hierarchy `[SE-TREE]`
 
 ```
 Solution (SharpLsp.Sidecars.sln)
@@ -161,15 +141,15 @@ Solution (SharpLsp.Sidecars.sln)
                     └── Method (HandleAsync)
 ```
 
-### File-Scoped Namespace Handling
+### File-Scoped Namespace Handling `[SE-TREE-FILE-NAMESPACE]`
 
 `tree-sitter-c-sharp` 0.23 emits `file_scoped_namespace_declaration` without nesting subsequent type declarations as children. The Rust host detects this pattern and reparents root-level types into the single file-scoped namespace.
 
-### Namespace Merging
+### Namespace Merging `[SE-TREE-NAMESPACE-MERGE]`
 
 Symbols from multiple files sharing the same namespace within a project are merged into a single namespace node.
 
-## Sort Order
+## Sort Order `[SE-SORT]`
 
 Three sort modes are available, cycled via a toolbar button:
 
@@ -179,7 +159,7 @@ Three sort modes are available, cycled via a toolbar button:
 | Alphabetical | A-Z by symbol name at every level | `$(case-sensitive)` |
 | Accessibility | Grouped by access modifier, then alphabetical | `$(shield)` |
 
-### Accessibility Sort Priority
+### Accessibility Sort Priority `[SE-SORT-ACCESS]`
 
 | Priority | Access Level |
 |----------|-------------|
@@ -193,17 +173,17 @@ Three sort modes are available, cycled via a toolbar button:
 
 Within each access group, symbols are sorted alphabetically.
 
-### Sort Scope
+### Sort Scope `[SE-SORT-SCOPE]`
 
 - Sorting applies recursively to namespace children, type children, and nested members
 - Project order within a solution is preserved (follows `.sln` or `.slnx` declaration order)
 - Sorting is client-side only — the LSP response is cached and re-sorted without a new request
 
-### Context Key
+### Context Key `[SE-SORT-CONTEXT]`
 
 The current sort order is exposed via VS Code context key `sharplsp.sortOrder` (values: `natural`, `alphabetical`, `accessibility`). This controls which toolbar icon is visible.
 
-## Commands
+## Commands `[SE-COMMANDS]`
 
 | Command | Title | Icon | When |
 |---------|-------|------|------|
@@ -215,27 +195,21 @@ The current sort order is exposed via VS Code context key `sharplsp.sortOrder` (
 
 All three sort commands cycle to the next sort mode.
 
-## Retry Logic
+## Retry Logic `[SE-REQUEST-RETRY]`
 
-The workspace symbols request retries up to 3 times with a 2-second delay when:
-- The LSP client is not yet running
-- A transient error occurs (disposed connection, etc.)
+The workspace symbols request retries up to three times with a two-second delay when the LSP client is unavailable or the connection fails transiently.
 
-## Hover / Quick Info
+## Hover / Quick Info `[SE-HOVER]`
 
-Symbol nodes in the Solution Explorer support hover tooltips showing the same rich Markdown documentation as the editor hover. This reuses the shared hover pipeline — the same sidecar hover handler and Markdown rendering code powers both surfaces.
+On symbol hover, the extension sends `textDocument/hover` at the declaration position and renders the response as a tree-item `MarkdownString`, reusing the editor pipeline specified by [HOVER-SPEC.md](HOVER-SPEC.md).
 
-See [HOVER-SPEC.md](HOVER-SPEC.md) for the full hover specification, including symbol resolution, XML doc rendering, and caching strategy.
+## Context Menus `[SE-CONTEXT-MENUS]`
 
-When the user hovers over a symbol node in the tree view, the extension sends a `textDocument/hover` request for that symbol's declaration position. The response is displayed as a VS Code tree item tooltip using `MarkdownString`.
+`view/item/context` contributions are scoped by each node's `contextValue`.
 
-## Context Menus
+### Sort Members `[SE-CONTEXT-SORT-MEMBERS]`
 
-Symbol nodes in the Solution Explorer expose context menu actions via `view/item/context` contribution points. Context menus are scoped by `contextValue` so that only relevant actions appear for each node type.
-
-### Sort Members
-
-Right-clicking a type node (Class, Struct, Interface, Enum, Record) shows a **Sort Members** action that reorders the members of that type in the source file.
+**Sort Members** reorders source members for Class, Struct, Interface, Enum, and Record nodes.
 
 | Property | Value |
 |----------|-------|
@@ -244,11 +218,9 @@ Right-clicking a type node (Class, Struct, Interface, Enum, Record) shows a **So
 | When | `view == sharplsp.solutionExplorer && viewItem =~ /^symbol\.(class\|struct\|interface\|enum\|record)$/` |
 | Group | `1_modification` |
 
-#### Sort Hierarchy
+#### Sort Hierarchy `[SE-CONTEXT-SORT-HIERARCHY]`
 
-The default sort hierarchy is **Accessibility → Category → Alphabetical**:
-
-1. **Accessibility** — members are grouped by access modifier using the same priority table as [Accessibility Sort Priority](#accessibility-sort-priority)
+1. **Accessibility** — members are grouped by access modifier using [SE-SORT-ACCESS]
 2. **Category** — within each accessibility group, members are grouped by kind:
 
 | Priority | Category |
@@ -271,7 +243,7 @@ The default sort hierarchy is **Accessibility → Category → Alphabetical**:
 
 3. **Alphabetical** — within each category group, members are sorted A-Z by name
 
-#### Settings
+#### Settings `[SE-CONTEXT-SORT-SETTINGS]`
 
 The sort hierarchy is configurable via the `sharplsp.memberSortOrder` setting:
 
@@ -314,9 +286,9 @@ The sort hierarchy is configurable via the `sharplsp.memberSortOrder` setting:
 | `sharplsp.memberSortOrder.accessibilityOrder` | `string[]` | See above | Access modifier priority (first = highest) |
 | `sharplsp.memberSortOrder.categoryOrder` | `string[]` | See above | Member kind priority (first = highest) |
 
-#### Implementation
+#### Implementation `[SE-CONTEXT-SORT-IMPLEMENTATION]`
 
-Sort Members is a **source-editing action** — it modifies the source file, not just the tree view. The flow:
+Sort Members edits the source file:
 
 1. User right-clicks a type node → selects "Sort Members"
 2. Extension reads the type's `range` from the symbol data
@@ -327,9 +299,9 @@ Sort Members is a **source-editing action** — it modifies the source file, not
 
 The tree view auto-refreshes after the edit (existing `onDidChangeTextDocument` listener).
 
-### Copy Qualified Name
+### Copy Qualified Name `[SE-CONTEXT-COPY-QUALIFIED]`
 
-Right-clicking any symbol node shows a **Copy Qualified Name** action that copies the fully-qualified name (`Namespace.Type.Member`) to the clipboard.
+**Copy Qualified Name** copies `Namespace.Type.Member` for any symbol node.
 
 | Property | Value |
 |----------|-------|
@@ -340,9 +312,9 @@ Right-clicking any symbol node shows a **Copy Qualified Name** action that copie
 
 The qualified name is built by walking the tree from the node to the root, collecting namespace and type names.
 
-### Copy Name
+### Copy Name `[SE-CONTEXT-COPY-NAME]`
 
-Right-clicking any symbol, project, or solution node shows a **Copy Name** action that copies the unqualified name to the clipboard.
+**Copy Name** copies the unqualified name of a symbol, project, or solution.
 
 | Property | Value |
 |----------|-------|
@@ -351,9 +323,9 @@ Right-clicking any symbol, project, or solution node shows a **Copy Name** actio
 | When | `view == sharplsp.solutionExplorer && viewItem =~ /^(symbol\.\|solution\|project)/ ` |
 | Group | `9_cutcopypaste` |
 
-### Reveal in File Explorer
+### Reveal in File Explorer `[SE-CONTEXT-REVEAL]`
 
-Right-clicking a symbol node shows a **Reveal in File Explorer** action that reveals the file containing the symbol in the VS Code file explorer.
+**Reveal in File Explorer** reveals a symbol's source file in VS Code's file explorer.
 
 | Property | Value |
 |----------|-------|
@@ -362,9 +334,9 @@ Right-clicking a symbol node shows a **Reveal in File Explorer** action that rev
 | When | `view == sharplsp.solutionExplorer && viewItem =~ /^symbol\./ ` |
 | Group | `3_open` |
 
-### Collapse All Children
+### Collapse All Children `[SE-CONTEXT-COLLAPSE]`
 
-Right-clicking any collapsible node shows a **Collapse All Children** action that collapses all descendant nodes.
+**Collapse All Children** collapses every descendant of a collapsible node.
 
 | Property | Value |
 |----------|-------|
@@ -373,13 +345,11 @@ Right-clicking any collapsible node shows a **Collapse All Children** action tha
 | When | `view == sharplsp.solutionExplorer` |
 | Group | `inline` |
 
-## Build, Run, and Debug Actions
+## Build, Run, and Debug Actions `[SE-ACTIONS]`
 
-The Solution Explorer provides direct access to common .NET CLI operations through context menus.
+### Build and Rebuild `[SE-ACTIONS-BUILD]`
 
-### Build and Rebuild
-
-Right-clicking a solution or project node shows **Build** and **Rebuild** actions.
+Solution and project nodes expose **Build** and **Rebuild**.
 
 | Property | Value |
 |----------|-------|
@@ -401,9 +371,9 @@ Right-clicking a solution or project node shows **Build** and **Rebuild** action
 - Output appears in VS Code terminal
 - Progress notification shown during build
 
-### Run and Debug
+### Run and Debug `[SE-ACTIONS-RUN-DEBUG]`
 
-Right-clicking a project node shows **Run** and **Debug** actions.
+Project nodes expose **Run** and **Debug**.
 
 | Property | Value |
 |----------|-------|
@@ -428,9 +398,7 @@ Right-clicking a project node shows **Run** and **Debug** actions.
 - Uses the `sharplsp` debug configuration type
 - Attaches debugger to the running process
 
-### Configure Extra Arguments
-
-Users can configure extra arguments for dotnet commands via context menu or settings.
+### Configure Extra Arguments `[SE-ACTIONS-ARGS]`
 
 | Property | Value |
 |----------|-------|
@@ -458,11 +426,11 @@ Users can configure extra arguments for dotnet commands via context menu or sett
 2. Global setting `sharplsp.*.extraArgs`
 3. No extra args (lowest priority)
 
-## Solution Management
+## Solution Management `[SE-SOLUTION]`
 
-### Add Project to Solution
+### Add Project to Solution `[SE-SOLUTION-ADD]`
 
-Right-clicking a `.csproj` or `.fsproj` file in the VS Code file explorer shows **Add to Solution** when a solution is loaded.
+When a solution is loaded, `.csproj` and `.fsproj` files expose **Add to Solution**.
 
 | Property | Value |
 |----------|-------|
@@ -476,9 +444,9 @@ Right-clicking a `.csproj` or `.fsproj` file in the VS Code file explorer shows 
 - Refreshes Solution Explorer after adding
 - Shows error if no solution is loaded
 
-### Remove Project from Solution
+### Remove Project from Solution `[SE-SOLUTION-REMOVE]`
 
-Right-clicking a project node in the Solution Explorer shows **Remove from Solution**.
+Project nodes expose **Remove from Solution**.
 
 | Property | Value |
 |----------|-------|
@@ -492,9 +460,9 @@ Right-clicking a project node in the Solution Explorer shows **Remove from Solut
 - Runs `dotnet sln <solution> remove <project-path>`
 - Refreshes Solution Explorer after removing
 
-### Context Value Mapping
+### Context Value Mapping `[SE-CONTEXT-VALUES]`
 
-To support scoped context menus, symbol nodes set `contextValue` based on their kind:
+Nodes set `contextValue` by kind:
 
 | Symbol Kind | contextValue |
 |-------------|-------------|
@@ -518,24 +486,15 @@ To support scoped context menus, symbol nodes set `contextValue` based on their 
 | Project Reference | `projectReference` |
 | Dependency Folder | `dependencyFolder` |
 
-## Navigation
+## Navigation `[SE-NAVIGATION]`
 
 Clicking a symbol node opens the file and navigates to the symbol's declaration position.
 
 ## Active Editor Synchronization `[SE-ACTIVE-EDITOR-SYNC]`
 
-The Solution Explorer MUST stay synchronized with the active text editor. When a
-C# or F# document becomes active — opened, focused, or navigated to (Go to
-Definition, Quick Open, tab switch) — the tree MUST reveal that document's node:
-expand its ancestors, scroll it into view, and **select (highlight)** it. Example:
-focusing `FSharpRename.fs` in the editor expands the tree to it and highlights it.
-Switching the active editor re-syncs the selection to the new document. This
-mirrors VS Code's built-in File Explorer `explorer.autoReveal` behaviour.
+When a C# or F# document becomes active through open, focus, navigation, Quick Open, or tab switch, the tree MUST expand its ancestors, reveal its node, and select it without stealing focus. This editor-to-tree behavior is the inverse of [SE-CONTEXT-REVEAL].
 
-This is the inverse of [Reveal in File Explorer](#reveal-in-file-explorer)
-(tree → editor); here the direction is **editor → tree**.
-
-### Requirements
+### Requirements `[SE-ACTIVE-EDITOR-SYNC-REQUIREMENTS]`
 
 | # | Requirement |
 |---|-------------|
@@ -546,9 +505,7 @@ This is the inverse of [Reveal in File Explorer](#reveal-in-file-explorer)
 | 5 | A setting (mirroring `explorer.autoReveal`, default **on**) MUST gate the behaviour so users can disable it. |
 | 6 | Revealing MUST NOT steal editor focus (`focus: false`) and MUST be a no-op when the active document has no corresponding node (e.g. files outside the loaded solution). |
 
-Tracked in [issue #118](https://github.com/Nimblesite/SharpLsp/issues/118).
-
-## Key Files
+## Key Files `[SE-FILES]`
 
 | File | Purpose |
 |------|---------|
@@ -557,3 +514,4 @@ Tracked in [issue #118](https://github.com/Nimblesite/SharpLsp/issues/118).
 | `editors/vscode/src/constants.ts` | Command and view ID constants |
 | `editors/vscode/package.json` | VS Code contribution points |
 | `src/workspace_symbols.rs` | Rust handler: sidecar solution model routing, tree-sitter symbol extraction |
+| `editors/vscode/src/test/suite/solution-explorer.test.ts` | Coarse tree, command, reactivity, and live-buffer coverage |

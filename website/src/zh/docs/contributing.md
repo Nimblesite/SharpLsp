@@ -70,4 +70,4 @@ IPC 通过命名管道（Windows）/ Unix 域套接字（Linux、macOS）使用 
 
 请参阅[架构](/zh/docs/architecture/)以查看完整分解。
 
-<p class="next-link"><a href="/zh/docs/architecture/">下一节：架构 <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>
+<p class="next-link"><a href="/zh/docs/architecture/">下一节：架构 <span aria-hidden="true">→</span></a></p>

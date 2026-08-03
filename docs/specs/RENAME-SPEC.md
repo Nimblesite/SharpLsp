@@ -1,4 +1,4 @@
-# Rename Specification
+# [RENAME] Rename Specification
 
 **Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
@@ -10,7 +10,7 @@ Rename is not a generic code action. Editors invoke it through the dedicated LSP
 
 ## [RENAME-PROTOCOL] LSP Protocol
 
-### [RENAME-PROTOCOL-PREPARE] textDocument/prepareRename
+### [RENAME-PREPARE] textDocument/prepareRename
 
 ```
 method: textDocument/prepareRename
@@ -28,7 +28,7 @@ result: Range | { range: Range; placeholder: string } | null
 - Return the current symbol name as `placeholder`.
 - Return `null` when the position is whitespace, trivia, a keyword that is not a renameable symbol, metadata-only source, generated source that cannot be edited, or a symbol kind SharpLsp does not yet support.
 
-### [RENAME-PROTOCOL-EXECUTE] textDocument/rename
+### [RENAME-APPLY] textDocument/rename
 
 ```
 method: textDocument/rename
@@ -98,6 +98,8 @@ The C# sidecar MUST use Roslyn semantics.
 ## [RENAME-FSHARP] F# Implementation
 
 The F# sidecar MUST use FCS symbol resolution and rename support rather than text matching.
+
+Code references use `[FS-RENAME-PREPARE]` for the F# prepare path and `[FS-RENAME-APPLY]` for the F# edit path; both implement [RENAME-PREPARE] and [RENAME-APPLY].
 
 1. Get checked file results for the current document.
 2. Resolve the `FSharpSymbolUse` at the requested position.

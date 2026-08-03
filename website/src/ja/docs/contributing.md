@@ -70,4 +70,4 @@ IPC は名前付きパイプ（Windows）/ Unix ドメインソケット（Linux
 
 詳細は [アーキテクチャ](/ja/docs/architecture/) を参照してください。
 
-<p class="next-link"><a href="/ja/docs/architecture/">次へ: アーキテクチャ <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>
+<p class="next-link"><a href="/ja/docs/architecture/">次へ: アーキテクチャ <span aria-hidden="true">→</span></a></p>

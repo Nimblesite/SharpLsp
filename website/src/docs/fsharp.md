@@ -139,4 +139,4 @@ Tracked in [`docs/plans/FSHARP-FEATURES-PLAN.md`](https://github.com/Nimblesite/
 - **FSDN / F1 help** — signature search and documentation lookup.
 - **Cross-language hierarchy** — F# ↔ C# call/type edges via a unified symbol index.
 
-<p class="next-link"><a href="/docs/diagnostics/">Next: Diagnostics <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>
+<p class="next-link"><a href="/docs/diagnostics/">Next: Diagnostics <span aria-hidden="true">→</span></a></p>

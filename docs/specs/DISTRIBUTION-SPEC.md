@@ -1,12 +1,6 @@
-# Distribution Specification
+# [DIST] Distribution Specification
 
-This document is the canonical specification for how SharpLsp is distributed.
-All statements below are normative requirements, not suggestions.
-
-Every section has a hierarchical ID per CLAUDE.md (`[GROUP-TOPIC]` /
-`[GROUP-TOPIC-DETAIL]`, uppercase, hyphen-separated, never numbered). Code
-that implements a section MUST reference its ID in a comment. Cross-references
-inside this spec MUST use IDs, never numbers.
+This is the normative specification for SharpLsp distribution.
 
 ## [DIST-COMPONENTS]
 
@@ -22,7 +16,7 @@ All three are verified by Shipwright on every VS Code activation via `activation
 
 ## [DIST-DEBUGGER-BUNDLE]
 
-Debugging uses **netcoredbg** — the managed-code DAP adapter the `sharplsp-coreclr` debug type launches (`editors/vscode/src/debug.ts`, `SharpLspDebugAdapterFactory`). It is bundled in the VSIX so debugging works out of the box, mirroring how C# Dev Kit ships its own debugger.
+Debugging uses **netcoredbg**, the managed-code DAP adapter launched for the `sharplsp-coreclr` debug type by `SharpLspDebugAdapterFactory` in `editors/vscode/src/debug.ts`. It is bundled in the VSIX.
 
 | Aspect | Requirement |
 |---|---|
@@ -38,9 +32,9 @@ Unlike the three [DIST-COMPONENTS], a missing netcoredbg degrades **only** the d
 
 ## [DIST-RUNTIME-ACQUIRE]
 
-The sidecars are framework-dependent .NET assemblies that target `net10.0`. They require a .NET 10 **SDK** — not merely a runtime — because the C# sidecar runs an in-process MSBuild design-time build and locates MSBuild via `MSBuildLocator.QueryVisualStudioInstances(options)` (see `sidecars/SharpLsp.Sidecar.CSharp/MSBuildInstanceSelector.cs` and [DIST-SDK-DISCOVERY] for why the query is workspace-independent), which **only enumerates installed SDKs**. A machine with a runtime alone — or with only an older SDK such as the .NET 9 SDK — has no MSBuild whose Roslyn matches the bundled `Microsoft.CodeAnalysis`, so every project load fails (`FUSION_E_REF_DEF_MISMATCH`) or MSBuild cannot be located at all. SharpLsp therefore acquires the **SDK** automatically via Microsoft's [`ms-dotnettools.vscode-dotnet-runtime`](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.vscode-dotnet-runtime) extension (the .NET Install Tool) — the same mechanism used by C# Dev Kit, the C# extension, .NET MAUI, Unity, CMake, and Bicep.
+The framework-dependent `net10.0` sidecars require a .NET 10 SDK, not merely a runtime. The C# sidecar performs an in-process MSBuild design-time build and `MSBuildLocator.QueryVisualStudioInstances(options)` enumerates installed SDKs; a runtime-only or older-SDK machine cannot provide matching MSBuild/Roslyn and project load fails with `FUSION_E_REF_DEF_MISMATCH` or no MSBuild. SharpLsp therefore acquires the SDK through Microsoft's [`ms-dotnettools.vscode-dotnet-runtime`](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.vscode-dotnet-runtime) extension. See `sidecars/SharpLsp.Sidecar.CSharp/MSBuildInstanceSelector.cs` and [DIST-SDK-DISCOVERY].
 
-> **Reference — how other extensions do this.** The .NET Install Tool exposes `dotnet.acquire` (local *runtime*), `dotnet.acquireGlobalSDK` (system-wide *SDK*), and `dotnet.findPath` (discover an existing install). C# Dev Kit ([`ms-dotnettools.csdevkit`](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit)) declares the tool via `extensionDependencies` in its `package.json`. Authoritative API documentation lives at <https://github.com/dotnet/vscode-dotnet-runtime/blob/main/Documentation/commands.md>. SharpLsp follows this exact pattern — there is no Anthropic / Nimblesite-specific mechanism here, and any future maintainer asking "how do other VS Code extensions install .NET silently?" should land on this section and the linked docs.
+> The .NET Install Tool exposes `dotnet.acquire` for a local runtime, `dotnet.acquireGlobalSDK` for a system-wide SDK, and `dotnet.findPath` for discovery. Its API contract is documented at <https://github.com/dotnet/vscode-dotnet-runtime/blob/main/Documentation/commands.md>.
 
 **Hard rules:**
 
@@ -64,7 +58,7 @@ Shipwright continues to verify sidecar startup via `verifyStartup: true`. With `
 
 The C# sidecar enumerates installed SDKs to pick the one whose Roslyn matches its bundled `Microsoft.CodeAnalysis` ([DIST-RUNTIME-ACQUIRE]). That enumeration MUST be **independent of the opened workspace**. MSBuildLocator resolves an SDK from a *working directory* via `hostfxr_resolve_sdk2`, which honours any `global.json` at or above that directory. The sidecar process inherits the workspace root as its working directory, so a naïve `MSBuildLocator.QueryVisualStudioInstances()` resolves the *workspace's* `global.json`. When that file pins a `version`/`rollForward` band with no installed match (e.g. Fantomas pins `10.0.100` on a box that has only `10.0.203`), `hostfxr_resolve_sdk2` throws `InvalidOperationException` ("A compatible .NET SDK was not found").
 
-Before this rule the throw was fatal: `Program.cs` caught it and called `Environment.Exit(1)` *before* the `READY:` handshake, so the Rust host saw "sidecar exited before READY" and restarted forever. That crash-loop broke every C#-sidecar request — including `solution/read`, which needs no MSBuild at all (it uses `Microsoft.VisualStudio.SolutionPersistence`), so the Solution Explorer failed even for **pure-F# solutions** that never touch Roslyn. Captured in issue #134.
+Discovery failure before the `READY:` handshake can cause an endless sidecar restart loop and block MSBuild-free requests such as `solution/read`, including for pure-F# solutions. It MUST therefore follow the degraded path below (issue #134).
 
 **Hard rules:**
 
@@ -97,12 +91,7 @@ Every call SharpLsp makes to the .NET Install Tool MUST include all four require
 
 `architecture` is derived from Node's `process.arch` and mapped as: `x64` → `x64`, `arm64` → `arm64`, `ia32` → `x86`, default → `x64`. This mapping lives in `editors/vscode/src/dotnetRuntime.ts`.
 
-**Reasoning — why architecture is non-optional.**
-The first SharpLsp v0.1.0 release omitted `architecture` from the `dotnet.findPath` payload. The .NET Install Tool rejected the request with `"The find path request was missing required information: a mode, version, architecture, and requestingExtensionId."` — a runtime error that our code silently swallowed via `try/catch`, falling through to `dotnet.acquire` (which also lacked `architecture` but happened to succeed because the install path uses different defaulting). This produced misleading log messages and would have failed entirely on architectures without a default. The lesson: every required field in the upstream API contract is a hard precondition, even when an "optional" code path papers over the omission.
-
-This applies symmetrically to `dotnet.findPath` — its `acquireContext` MUST include `architecture` for the same reason.
-
-**Verification:** Confirmed against the upstream contract at <https://github.com/dotnet/vscode-dotnet-runtime/blob/main/Documentation/commands.md> and against the live extension's own error message captured in the SharpLsp activation log on 2026-04-30.
+The .NET Install Tool rejects a `dotnet.findPath` payload missing `mode`, `version`, `architecture`, or `requestingExtensionId`; `acquireContext` MUST contain all four fields. See the upstream contract at <https://github.com/dotnet/vscode-dotnet-runtime/blob/main/Documentation/commands.md>.
 
 ## [DIST-FAILURE-UX]
 
@@ -117,9 +106,6 @@ Whenever activation cannot deliver a working language server — for any reason,
 5. **The error message MUST name the failure mode in plain language** ("required binaries are missing or version-mismatched", ".NET 10 install failed", "language server crashed during startup") — never just dump a stack trace into the toast. The full diagnostic text goes to the output channel reachable via `[Show Log]`.
 6. **Recovery commands MUST be registered** so the user can re-attempt without uninstalling. Examples: `sharplsp.retryDotnetAcquisition`, `sharplsp.restartServer`. These appear in the command palette under the `SharpLsp:` category.
 
-**Reasoning — why this rule exists.**
-The first v0.1.0 release threw out of `activate()` when bundled binaries were missing or had a version mismatch. VS Code logged the failure to its developer console — invisible to the user. The user opened a `.csproj` folder, saw absolutely nothing happen, and had no way to discover the problem without manually inspecting the extension log file. This is the worst possible UX: the extension is broken, the user does not know it is broken, and there is no in-product hint that anything went wrong. This section makes that mode of failure a normative bug going forward. Captured from the activation log on 2026-04-30: every error path now MUST produce a visible toast and an actionable command.
-
 **Implementation reference:**
 - `editors/vscode/src/result.ts` — `Result<T, E>`, `ok`, `err`.
 - `editors/vscode/src/extension.ts` — outer `activate()` catch surfaces the toast; inner `activateInner()` step paths return early with toast + degraded API instead of throwing.
@@ -132,12 +118,9 @@ Editors capture the language server's `stderr` into a user-facing Output panel (
 **Hard rules:**
 
 1. **No ANSI escape codes reach the panel.** The captured stream is a pipe, not a TTY, so color/cursor escapes render as garbage. The Rust host gates its `tracing` stderr layer on `std::io::IsTerminal` (`.with_ansi(stderr_is_terminal)`), emitting plain text whenever stderr is not an interactive terminal. The VS Code extension additionally strips ANSI defensively before anything reaches the channel (`createAnsiStrippingChannel`).
-2. **Sidecars MUST NOT write diagnostics to `Console.Error` / `eprintfn`.** Per the project logging rule, sidecar diagnostics use structured logging (Serilog) routed to a per-sidecar rolling file under the system temp directory (`sharplsp-logs/sidecar-<name>.log`) — never the inherited stderr. The only legitimate sidecar `stdout`/`stderr` writes are the `READY:` IPC handshake, the `--version` banner, the CLI usage message, and the one-shot actionable SDK-resolution hints ([DIST-RUNTIME-ACQUIRE] portability, below, and [DIST-SDK-DISCOVERY]) — the Roslyn-mismatch, missing-SDK, and unresolvable-`global.json` startup diagnostics, each emitted at most once per process.
+2. **Sidecars MUST NOT write routine diagnostics to `Console.Error` / `eprintfn`.** Per the project logging rule, sidecar diagnostics use structured logging (Serilog) routed to a per-sidecar rolling file under the system temp directory (`sharplsp-logs/sidecar-<name>.log`)—never the inherited stderr. The only legitimate sidecar `stdout`/`stderr` writes are the versioned `READY:` IPC handshake, the `--version` banner, the CLI usage message, one sanitized pre-READY `FATAL:` diagnostic required by [SIDECAR-STARTUP-FAILURE](SIDECAR-LIFECYCLE-SPEC.md), and the one-shot actionable SDK-resolution hints ([DIST-RUNTIME-ACQUIRE] portability, below, and [DIST-SDK-DISCOVERY])—the Roslyn-mismatch, missing-SDK, and unresolvable-`global.json` startup diagnostics, each emitted at most once per process.
 3. **Per-request chatter goes to the file log, not the panel.** Routine traces (e.g. the router's per-request `[Router] Handling …`) are logged at `Debug` to the rolling file. Genuinely user-facing failures still surface (via the host's `error!` on a failed sidecar request, or a `[Show Log]` action per [DIST-FAILURE-UX]).
 4. **A type-load failure is summarized once.** MSBuild surfaces a `ReflectionTypeLoadException` as a diagnostic carrying dozens of identical "Could not load file or assembly" lines, repeated once per project. Repeated lines MUST be collapsed (`SidecarLog.CollapseRepeatedLines`) and duplicate summaries de-duplicated so the log records one distinct, actionable line — not a flood.
-
-**Reasoning — why this rule exists.**
-The first releases piped the host's colorized `tracing` output and each sidecar's raw `Console.Error` straight into the Output panel. Activation filled it with `\x1b[2m…\x1b[0m` escape garbage, a per-request `[Router] Handling …` line, and ~200 near-identical type-load lines dumped from a single exception — making the panel unreadable and masking the real failure (a Roslyn version mismatch). Captured in issue #78.
 
 **Implementation reference:**
 - `src/main.rs` — `IsTerminal`-gated `.with_ansi(…)` on the stderr `tracing` layer.
@@ -182,20 +165,18 @@ The sidecar binaries are identical across all platform VSIXs — they are manage
 
 ## [DIST-VSIX-ASSET-INTEGRITY]
 
-The extension's icon assets (`editors/vscode/icons/`) are tracked as symlinks into `docs/designs/logo/` — a single source of truth for brand assets. On checkouts where Git cannot create symlinks (`core.symlinks=false`, the default on most Windows machines), Git materializes each symlink as a small text file containing the target path. `vsce` packages whatever is on disk, so such a checkout silently produces a VSIX whose Marketplace and activity-bar icons are broken text stubs, and the extension-development host renders broken icons.
+The extension's icon assets in `editors/vscode/icons/` are symlinks into `docs/designs/logo/`. With `core.symlinks=false`, Git materializes target paths as text files, which `vsce` would package as broken icons.
 
 1. Every image asset referenced by the extension manifest MUST be packaged as real image content. A VSIX containing symlink text stubs is broken.
 2. `scripts/resolve-symlink-stubs.mjs` rewrites stub files in place with their target's content. It MUST leave real OS symlinks untouched (macOS/Linux, and Windows checkouts with `core.symlinks=true`), making it a cross-platform no-op wherever symlinks work. It only rewrites plain files whose entire content is a relative POSIX path resolving to an existing file.
 3. The resolver MUST run automatically before packaging (`vscode:prepublish`) and before the e2e suite (`pretest`), so both the packaged VSIX and the extension-development host load real images. The e2e suite asserts the invariant (`bundled-binary.test.ts`).
 4. Resolved stubs modify the working tree and MUST NOT be committed — Git would record the binary content as the symlink's target text, corrupting the symlink for every other platform. Restore with `git restore editors/vscode/icons`.
 
-CI and releases are unaffected: GitHub's hosted runners (including `windows-latest`) check out with working symlinks, and published VSIXs contain real icons (verified against the `v0.13.0` `win32-x64` asset).
-
 ## [DIST-RESOLUTION]
 
 Resolution is driven by the `sources` array per component in `shipwright.json`. The `activateDeploymentToolkit` call verifies all three on activation. Failure to resolve any required component triggers [DIST-FAILURE-UX] (degraded mode + toast), not a host-crashing throw.
 
-## [DIST-RESOLUTION-LSP]
+### [DIST-RESOLUTION-LSP]
 
 `sharplsp` (LSP server — native binary).
 
@@ -209,7 +190,7 @@ Sources: `["user-setting", "env", "bundled", "path", "pkgmgr"]`
 | 4 | `path` | `sharplsp` on `$PATH`; exact version match required |
 | 5 | `pkgmgr` | Shows modal prompt: `brew install nimblesite/tap/sharplsp` / `scoop install nimblesite/sharplsp` |
 
-## [DIST-RESOLUTION-CSHARP]
+### [DIST-RESOLUTION-CSHARP]
 
 `sharplsp-sidecar-csharp` (C# Roslyn sidecar — .NET assembly).
 
@@ -224,7 +205,7 @@ Sources: `["user-setting", "env", "bundled", "path"]`
 
 **If bundled binary is missing the VSIX is broken — fix the build, not the resolution.** Surface per [DIST-FAILURE-UX].
 
-## [DIST-RESOLUTION-FSHARP]
+### [DIST-RESOLUTION-FSHARP]
 
 `sharplsp-sidecar-fsharp` (F# FCS sidecar — .NET assembly).
 
@@ -276,6 +257,12 @@ The VS Code extension uses `@nimblesite/shipwright-vscode` (`activateDeploymentT
 6. **Acquire the .NET 10 SDK at activation start** via `dotnet.acquireGlobalSDK` from the .NET Install Tool extension (see [DIST-RUNTIME-ACQUIRE]). Show a non-interactive progress notification + status-bar spinner. SharpLsp's own UI never prompts or blocks on user action.
 7. **Use `Result<T, E>` everywhere** per [DIST-FAILURE-UX]. No `throw` inside extension code; no unhandled rejections out of `activate()`.
 
+## [DIST-WORKSPACE-TRUST]
+
+An untrusted workspace MUST NOT select an executable or inject process arguments. `editors/vscode/package.json` declares `capabilities.untrustedWorkspaces.supported: "limited"` and restricts `sharplsp.lspPath`, `sharplsp.csharpSidecarPath`, `sharplsp.fsharpSidecarPath`, `sharplsp.server.extraArgs`, `sharplsp.fsi.extraArgs`, and `sharplsp.debug.netcoredbgPath`.
+
+While `workspace.isTrusted` is false, the runtime guards in `editors/vscode/src/config.ts` MUST return no custom LSP path, server arguments, or FSI arguments, leaving Shipwright's bundled binaries in use. When `workspace.onDidGrantWorkspaceTrust` fires, `editors/vscode/src/extension.ts` MUST restart the language client so newly trusted path and argument settings take effect without a window reload.
+
 ## [DIST-PATH-INSTALL]
 
 Users who want `sharplsp` on their system PATH outside VS Code may install via:
@@ -296,7 +283,7 @@ Tag-triggered (`v*`). Jobs:
 
 ## [DIST-CI-LAYOUT]
 
-The PR pipeline is split across reusable workflows (`on: workflow_call`) rather than one monolith, so no CI file outgrows comprehension and each leg is readable and editable in isolation:
+The PR pipeline uses reusable workflows (`on: workflow_call`):
 
 | Workflow | Leg |
 |---|---|
@@ -328,7 +315,7 @@ All CI jobs that run `vsce package` or `vsce publish` MUST use `node-version: '2
 
 Stable toolchain. Cross-compilation targets must be added via `dtolnay/rust-toolchain@stable` with explicit `targets:`.
 
-## [DIST-CI-RUST-SHARDS]
+### [DIST-CI-RUST-SHARDS]
 
 The Rust e2e suite runs single-threaded (`RUST_TEST_THREADS=1` — tests spawn real Roslyn/FCS sidecars), so its wall time scales with test count, not runner cores. CI therefore splits it into `SHARD_COUNT` nextest **hash partitions** (`make _test-rust-shard SHARD=<n>`, i.e. `--partition hash:<n>/<count>`), run as a `test-rust` job matrix.
 
@@ -343,17 +330,17 @@ Invariants:
 
 `tokio::net::UnixStream` is **unix-only** and MUST NOT be used unconditionally. All sidecar transport code MUST be gated:
 - `#[cfg(unix)]` — use `tokio::net::UnixStream`
-- `#[cfg(windows)]` — use TCP loopback (`127.0.0.1:0`) or `tokio::net::windows::named_pipe`
+- `#[cfg(windows)]` — use `tokio::net::windows::named_pipe`; TCP loopback is not an IPC fallback
 
 Both the Rust host and the .NET sidecar MUST use the same transport on each platform. Win32 builds failing to compile due to `UnixStream` is a hard blocker.
 
 The .NET sidecars are platform-neutral assemblies shipped identically in every VSIX ([DIST-VSIX-LAYOUT]), so **their transport selection MUST be a runtime decision keyed on the endpoint shape**: an endpoint starting with `\\.\pipe\` selects a named pipe server/client; anything else selects a Unix domain socket. Compile-time gating (`#if WINDOWS`) is forbidden in sidecar transport code — the symbol is never defined for the platform-neutral `net10.0` build, which silently compiles the Unix branch into the Windows VSIX and makes the sidecars exit before READY (GitHub #110).
 
-Both listener flavors MUST restrict the endpoint to the current user: `0600` on the Unix domain socket, `PipeOptions.CurrentUserOnly` on the named pipe server. The endpoint names are deterministic, so an unrestricted endpoint is claimable/connectable by any co-located local user. CI MUST run the sidecar transport tests on a Windows runner — an ubuntu-only matrix never executes the named-pipe arm, which is how GitHub #110 shipped.
+Both listener flavors MUST restrict the endpoint to the current user: `0600` on the Unix domain socket, `PipeOptions.CurrentUserOnly` on the named pipe server. Endpoint names MUST also be unpredictable and unique per spawn per [SIDECAR-STARTUP-ENDPOINT](SIDECAR-LIFECYCLE-SPEC.md), preventing concurrent hosts or an orphaned prior generation from intentionally sharing a name. Current-user restriction remains mandatory defense in depth. CI MUST run the sidecar transport tests on a Windows runner—an Ubuntu-only matrix never executes the named-pipe arm, which is how GitHub #110 shipped.
 
 ## [DIST-CI-WIN-VSIX]
 
-The transport tests ([DIST-CI-WIN-TRANSPORT]) prove the named pipes carry frames; they do NOT prove the whole editor experience works on top of them. CI MUST therefore run the VS Code end-to-end suite's **whole feature surface** on Windows runners (`ci-vsix-windows.yml`, driven by the `_test-vsix-win` Make target), through the REAL LSP — release-built `sharplsp` host plus the Roslyn and FCS sidecars — inside the actual VS Code extension host over win32 named-pipe IPC. A grep-selected smoke subset is NOT sufficient: the features most likely to break on Windows are the ones that shell out to platform-specific executables (`netcoredbg.exe`, `dotnet-trace`, `dotnet test`, `dotnet new`) and manipulate Windows paths, none of which a completion/hover subset touches.
+CI MUST run the VS Code end-to-end suite's whole feature surface on Windows runners through `ci-vsix-windows.yml` and `_test-vsix-win`: the release-built `sharplsp` host, Roslyn and FCS sidecars, actual VS Code extension host, and win32 named-pipe IPC. [DIST-CI-WIN-TRANSPORT] covers frames only, while Windows-specific executables (`netcoredbg.exe`, `dotnet-trace`, `dotnet test`, `dotnet new`) and paths require full feature coverage; a grep-selected smoke subset is insufficient.
 
 The suite is sliced into **feature chunks**, one Windows CI job each, run with `fail-fast: false` so one failing feature area never hides the state of the others:
 
@@ -375,8 +362,6 @@ Invariants:
 - **Build once, fan out.** A single `build` job compiles the Rust host and both sidecars and publishes them as an artifact; each chunk job downloads and stages them (`_stage-vsix-binary-only`). Rebuilding per chunk would cost one cold Windows Rust build per feature area.
 - **Ubuntu owns coverage.** Windows chunks run **without** `--coverage` and enforce no coverage gate — one chunk can never meet the line threshold. The Ubuntu `test-vsix` job owns the full single-process run plus the ratcheted gate, and is the only job that runs the `real-repo-*` stress suites (each clones and restores a pinned third-party repository; that is repo ingestion, not platform behaviour).
 - **No PATH leakage.** Every VS Code job runs `scripts/purge-path-binaries.sh` first, so the test host can only resolve the freshly-staged bundled binaries. A dev copy on `PATH` would substitute itself for the artifact under test and turn a broken bundle green.
-
-Two assertion rules follow from running on win32 at all, and both are load-bearing — each one silently passed on Ubuntu for the life of the suite and failed on the first Windows run:
 
 - **Compare paths case-insensitively on Windows.** VS Code lowercases the drive letter whenever a path travels through `Uri.fsPath`, while `extensionPath` and `os.tmpdir()` preserve the original casing, so the same file legitimately has two spellings. Any assertion comparing a `Uri`-derived path against a directly-constructed one MUST go through `comparablePath()` (`test-helpers.ts`), which lowercases on win32 only — POSIX paths stay case-sensitive, because there `/tmp/A` and `/tmp/a` really are different files.
 - **Suites MUST be order-independent.** Chunking changes which suites share an extension host, so no suite may depend on state another suite left in a shared singleton. Fixture identifiers that feed a shared registry — notably test method names discovered into the `SharpLspTestController` — MUST be unique per suite, or a test asserting "nothing matches" passes or fails on whichever suite's discovery won the race.

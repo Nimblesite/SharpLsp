@@ -69,4 +69,4 @@ IPC uses MessagePack over named pipes (Windows) / Unix domain sockets (Linux, ma
 
 See [Architecture](/docs/architecture/) for the full breakdown.
 
-<p class="next-link"><a href="/docs/architecture/">Next: Architecture <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a></p>
+<p class="next-link"><a href="/docs/architecture/">Next: Architecture <span aria-hidden="true">→</span></a></p>

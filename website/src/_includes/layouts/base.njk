@@ -28,11 +28,7 @@
   <meta name="robots" content="index, follow">
   <meta name="generator" content="Eleventy + techdoc">
   <meta name="theme-color" content="{{ site.themeColor | default('#0066cc') }}">
-  <link rel="icon" href="/favicon.ico" sizes="any">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png">
-  <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" href="/assets/images/sharplsp-logo.svg" type="image/svg+xml">
 
   <!-- Canonical URL -->
   <link rel="canonical" href="{{ site.url }}{{ page.url }}">
@@ -143,6 +139,8 @@
 
   <!-- Site styles -->
   <link rel="stylesheet" href="/assets/css/styles.css">
+  <link rel="stylesheet" href="/assets/css/pages.css">
+  <link rel="stylesheet" href="/assets/css/prose.css">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -158,41 +156,27 @@
 
   <footer class="site-footer">
     <div class="footer-content">
-      {% if navigation.footer %}
-      <div class="footer-grid">
-        {% set currentLang = lang | default('en') %}
-        {% set hasLocalizedDocs = currentLang != defaultLanguage and collections[currentLang + "Docs"] and (collections[currentLang + "Docs"] | length) > 0 %}
-        {% for section in navigation.footer %}
-        <div class="footer-section">
-          <h3>{% if section.i18nKey %}{{ section.i18nKey | t(currentLang) }}{% else %}{{ section.title }}{% endif %}</h3>
-          <ul>
-            {% for item in section.items %}
-            {% set footerUrl = item.url %}
-            {% if item.url.startsWith('/') and currentLang != defaultLanguage %}
-              {% if item.url == '/docs/' %}
-                {% set footerUrl = item.url | altLangUrl('en', currentLang) %}
-              {% elif item.url.startsWith('/docs/') and not hasLocalizedDocs %}
-                {% set footerUrl = item.url %}
-              {% else %}
-                {% set footerUrl = item.url | altLangUrl('en', currentLang) %}
-              {% endif %}
-            {% endif %}
-            <li><a href="{{ footerUrl }}">{% if item.i18nKey %}{{ item.i18nKey | t(currentLang) }}{% else %}{{ item.text }}{% endif %}</a></li>
-            {% endfor %}
-          </ul>
-        </div>
-        {% endfor %}
+      {% set currentLang = lang | default('en') %}
+      {% set footerPrefix = "/" + currentLang if currentLang != defaultLanguage else "" %}
+      <div class="footer-brand">
+        <a class="logo" href="{{ footerPrefix }}/">
+          <img class="logo-mark" src="/assets/images/sharplsp-logo.svg" alt="" width="28" height="28">
+          <span>SharpLsp</span>
+        </a>
+        <p>C# and F# development without the IDE lock-in.</p>
       </div>
-      {% endif %}
-
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="{{ footerPrefix }}/docs/">{{ "nav.docs" | t(currentLang) | default("Docs") }}</a>
+        <a href="{{ footerPrefix }}/blog/">{{ "nav.blog" | t(currentLang) | default("Blog") }}</a>
+        <a href="/releases/">{{ "nav.releases" | t(currentLang) | default("Releases") }}</a>
+        <a href="https://github.com/Nimblesite/SharpLsp">GitHub</a>
+      </nav>
       <div class="footer-bottom">
         <p>&copy; {% year %} {{ site.name | default(site.title) }}</p>
       </div>
     </div>
   </footer>
 
-  <!-- Theme JS -->
-  <script src="/techdoc/js/main.js" type="module"></script>
   <script src="/assets/js/custom.js"></script>
 
   <!-- Mermaid diagrams -->
