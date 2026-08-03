@@ -188,7 +188,7 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   // clear them. Fixed in FSharpAssets ([PKG-ASSETS-FS]) by filtering the
   // filename component. The investigation also hardened the push pipeline
   // ([DIAG-PUSH-GATE]) and funneled every F# per-file analysis through one
-  // canonical overlay-aware check ([FS-DIDCHANGE-OVERLAY]).
+  // canonical overlay-aware check ([HOVER-FSHARP-OVERLAY]).
   test('diagnostics round-trip: an F# type error surfaces and clears', async function () {
     this.timeout(420_000);
     const { doc, uri, editor } = await openRepoFile(repoDir, RESULT_FS);

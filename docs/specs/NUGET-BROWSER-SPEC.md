@@ -136,7 +136,7 @@ interface NuGetPackageInfo {
 - When `query` is empty, return popular packages (curated list of high-download-count packages)
 - Cross-reference results with installed packages in the target project
 - HTTP GET to `https://azuresearch-usnc.nuget.org/query?q={query}&prerelease={prerelease}&take={take}&skip={skip}`
-- Cache search results for 60s to avoid hammering the API
+- Memoize search only through a Rust-host salsa query keyed by query, prerelease flag, `take`, `skip`, and a 60-second epoch input
 
 ### [NUGET-REQUESTS-VERSIONS] `sharplsp/nuget/versions`
 
@@ -265,7 +265,7 @@ Every LSP round trip MUST show a spinner at a location that identifies what is l
 | Operation | Spinner location | Extra UI |
 |-----------|------------------|----------|
 | `sharplsp/nuget/targets` (initial) | Target dropdown shows a centered spinner in place of its label. | Tabs / search disabled. |
-| `sharplsp/nuget/installed` | Inline spinner row at the top of the package list under the "Installed" tab. | Cached stale list stays visible underneath. |
+| `sharplsp/nuget/installed` | Inline spinner row at the top of the package list under the "Installed" tab. | The currently rendered list stays visible until replacement state arrives. |
 | `sharplsp/nuget/search` | Spinner inside the search box (right edge, replacing the search icon) AND a skeleton-list in the results area on first search. | Debounce 250 ms before firing. |
 | `sharplsp/nuget/versions` | Spinner next to the version dropdown in the details panel. | Dropdown disabled until resolved. |
 | `sharplsp/nuget/install` / `update` | Spinner replaces the Install button label ("Installing…" + spinner). Details panel shows a progress strip. | Global non-blocking toast: `Installing <id> <version> into <target.displayName>…` |
@@ -392,10 +392,10 @@ Every target below is end-to-end, measured from click to UI update. [NUGET-FEEDB
 
 | Operation | First paint (spinner/optimistic) | LSP response | Full completion | Method |
 |-----------|----------------------------------|--------------|-----------------|--------|
-| Open panel | < 50 ms | `sharplsp/nuget/targets` < 300 ms | < 1 s | Targets cached per workspace; refresh in background. |
-| Search | < 50 ms (spinner) | < 500 ms p95 | < 500 ms p95 | HTTP GET with 60 s cache; 250 ms debounce before firing. |
-| List installed | < 50 ms (spinner over stale cache) | < 300 ms from cache, < 2 s cold | < 2 s | `dotnet list` cold; subsequent calls served from in-memory cache keyed by target + csproj mtime. |
-| Version list | < 50 ms (spinner) | < 500 ms | < 500 ms | HTTP GET with 5 min cache. |
+| Open panel | < 50 ms | `sharplsp/nuget/targets` < 300 ms | < 1 s | Rust-host salsa query keyed by workspace root and filesystem generation; refresh in background. |
+| Search | < 50 ms (spinner) | < 500 ms p95 | < 500 ms p95 | Rust-host salsa query with a 60s epoch input; 250ms debounce before firing. |
+| List installed | < 50 ms (spinner over rendered state) | < 300 ms from salsa, < 2 s cold | < 2 s | `dotnet list` on salsa miss; query inputs include target and project-file fingerprint. |
+| Version list | < 50 ms (spinner) | < 500 ms | < 500 ms | Rust-host salsa query with a five-minute epoch input. |
 | Install (project, no CPM) | < 100 ms (optimistic) | **< 150 ms** (XML fast path) | restore < 10 s (background, reported via `restoreProgress`) | Sidecar commits [NUGET-XML-DOM], host starts background restore. |
 | Install (project, CPM) | < 100 ms (optimistic) | **< 150 ms** (XML fast path) | restore < 10 s (background) | Sidecar edits `Directory.Packages.props` + project, host starts restore. |
 | Install (buildProps) | < 100 ms (optimistic) | **< 200 ms** (XML edit) | restore < 10 s (background) | Sidecar edits props, host restores at the props directory. |

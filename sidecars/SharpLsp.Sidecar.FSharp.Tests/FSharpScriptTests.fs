@@ -1,5 +1,5 @@
 /// F# script (.fsx) support — ALL real, NO mocks.
-/// Covers [FSX-OPTIONS], [FSX-SYMBOLS], [SCRIPT-DETECT], [SCRIPT-CLOSURE].
+/// Covers [SCRIPT-FSX-OPTIONS], [SCRIPT-FSX-SYMBOLS], [SCRIPT-DETECT], [SCRIPT-CLOSURE].
 module SharpLsp.Sidecar.FSharp.Tests.FSharpScriptTests
 
 open System
@@ -18,7 +18,7 @@ let private write (dir: string) (name: string) (text: string) =
     path
 
 /// A standalone .fsx must load through GetProjectOptionsFromScript. Before this,
-/// loadProject hard-failed with "No .fsproj found". Implements [FSX-OPTIONS].
+/// loadProject hard-failed with "No .fsproj found". Implements [SCRIPT-FSX-OPTIONS].
 [<Fact>]
 let ``standalone fsx loads without an fsproj`` () =
     task {
@@ -66,7 +66,7 @@ let ``fsx load closure includes the loaded script`` () =
     }
 
 /// A script open in an editor defines INTERACTIVE and EDITING but not COMPILED,
-/// so `#if INTERACTIVE` code is live rather than greyed out. Implements [FSX-SYMBOLS].
+/// so `#if INTERACTIVE` code is live rather than greyed out. Implements [SCRIPT-FSX-SYMBOLS].
 [<Fact>]
 let ``fsx defines INTERACTIVE and EDITING but not COMPILED`` () =
     task {

@@ -32,7 +32,7 @@ internal static class DocumentClosure
     /// <summary>
     /// A script closure is the root file alone. Roslyn resolves <c>#load</c> itself through the
     /// compilation's <c>SourceReferenceResolver</c>; adding the loaded files as documents too
-    /// would compile them twice. Implements [CSX-RESOLVERS].
+    /// would compile them twice. Implements [SCRIPT-CSX-RESOLVERS].
     /// </summary>
     public static Task<Closure> ExpandScriptAsync(string rootPath, CancellationToken ct)
     {
@@ -111,7 +111,7 @@ internal static class DocumentClosure
     }
 
     // The FileBasedProgram feature flag makes Roslyn lex `#:` as IgnoredDirectiveTrivia in a
-    // Regular compilation, matching what the SDK passes to csc. [FILEBASED-DIRECTIVES]
+    // Regular compilation, matching what the SDK passes to csc. [SCRIPT-FILEBASED-DIRECTIVES]
     private static readonly CSharpParseOptions FileBasedParseOptions = new CSharpParseOptions(
         LanguageVersion.Latest
     ).WithFeatures([new KeyValuePair<string, string>("FileBasedProgram", "true")]);
@@ -131,7 +131,7 @@ internal static class DocumentClosure
     }
 
     // `#:include` accepts a literal path, a glob, or an MSBuild property. Property expansion
-    // requires a real MSBuild evaluation and is deferred to [FILEBASED-REFERENCES-MSBUILD].
+    // requires a real MSBuild evaluation and is deferred to [SCRIPT-FILEBASED-REFERENCES-MSBUILD].
     private static string[] ResolveInclude(string pattern, string baseDir, ExpansionState state)
     {
         var usesMsBuildProperty = pattern.Contains("$(", StringComparison.Ordinal);

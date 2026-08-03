@@ -1,5 +1,5 @@
 /// Overlay-contract coverage for the F# sidecar — ALL real, NO mocks.
-/// [FS-DIDCHANGE-OVERLAY]: every per-file analysis must read the didChange
+/// [HOVER-FSHARP-OVERLAY]: every per-file analysis must read the didChange
 /// overlay (the live editor buffer) in preference to on-disk text, and the
 /// overlay must be keyed by canonical path identity so any spelling of the
 /// same file (drive-letter casing, separators, relative segments) hits it.
@@ -129,7 +129,7 @@ let private errorMessages (result: (FSharpCheckFileResults * string) option) =
 /// across repeated alternations of the same two texts. Regression guard that
 /// every per-file check reads the newest didChange overlay rather than a cached
 /// result for superseded text — the property that lets a reverted buffer clear
-/// its phantom errors. [FS-DIDCHANGE-OVERLAY]
+/// its phantom errors. [HOVER-FSHARP-OVERLAY]
 [<Fact>]
 let ``edit and revert cycles always check the newest overlay text`` () =
     task {

@@ -12,7 +12,7 @@ open Serilog
 // textDocument/rangeFormatting, and textDocument/formattingPreview against
 // these functions. Sources are read through the workspace overlay so edits
 // are computed from the live buffer, never stale disk text.
-// [FS-DIDCHANGE-OVERLAY]
+// [HOVER-FSHARP-OVERLAY]
 
 /// Fantomas defaults to the environment's newline (CRLF on Windows), but a
 /// formatter must preserve the document's own line endings — an LF file must
@@ -165,7 +165,7 @@ let private extractSemanticTokens
     data.ToArray()
 
 /// Compute semantic tokens for an F# file using FCS. The overlay-aware
-/// `checkFile` supplies the live buffer text. [FS-DIDCHANGE-OVERLAY]
+/// `checkFile` supplies the live buffer text. [HOVER-FSHARP-OVERLAY]
 let getSemanticTokens
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (filePath: string)
@@ -182,7 +182,7 @@ let getSemanticTokens
             return [||]
     }
 
-/// Compute semantic tokens for a range of an F# file. [FS-DIDCHANGE-OVERLAY]
+/// Compute semantic tokens for a range of an F# file. [HOVER-FSHARP-OVERLAY]
 let getSemanticTokensRange
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (filePath: string)
@@ -300,7 +300,7 @@ let private extractPipelineHints
             | _ -> () ]
 
 /// Get inlay hints for an F# file. The overlay-aware `checkFileWithParse`
-/// supplies the live buffer text. [FS-DIDCHANGE-OVERLAY]
+/// supplies the live buffer text. [HOVER-FSHARP-OVERLAY]
 let getInlayHints
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (filePath: string)

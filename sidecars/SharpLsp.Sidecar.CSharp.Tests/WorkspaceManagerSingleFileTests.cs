@@ -9,7 +9,7 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 
 /// <summary>
 /// Project-less document loading: .NET file-based apps and C# scripts.
-/// Covers [FILEBASED], [CSX], [SCRIPT-CLOSURE], [SCRIPT-ANTIPATTERN], [SCRIPT-DEGRADE].
+/// Covers [SCRIPT-FILEBASED], [SCRIPT-CSX], [SCRIPT-CLOSURE], [SCRIPT-ANTIPATTERN], [SCRIPT-DEGRADE].
 /// </summary>
 public sealed class WorkspaceManagerSingleFileTests : IDisposable
 {
@@ -84,7 +84,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
     /// The BCL metadata references must actually resolve. Asserting only that the result is not
     /// an error proves nothing — <c>GetDiagnosticsAsync</c> returns a SUCCESS result carrying a
     /// LIST of diagnostics, so a workspace with no references would still "pass". Asserting the
-    /// list is empty is what proves [FILEBASED-REFERENCES-FALLBACK] works.
+    /// list is empty is what proves [SCRIPT-FILEBASED-REFERENCES-FALLBACK] works.
     /// </summary>
     [Fact]
     public async Task FileBasedApp_resolves_bcl_symbols_with_no_errors()
@@ -99,7 +99,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
         Assert.Empty(await ErrorsAsync(manager, app));
     }
 
-    /// <summary>A shebang is valid in a file-based app. Implements [FILEBASED-SHEBANG].</summary>
+    /// <summary>A shebang is valid in a file-based app. Implements [SCRIPT-FILEBASED-SHEBANG].</summary>
     [Fact]
     public async Task FileBasedApp_shebang_produces_no_diagnostic()
     {
@@ -164,7 +164,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
 
     /// <summary>
     /// <c>.csx</c> is Roslyn scripting, not a file-based app: a bare top-level statement plus a
-    /// <c>#load</c> closure must bind under <c>SourceCodeKind.Script</c>. Implements [CSX-OPTIONS].
+    /// <c>#load</c> closure must bind under <c>SourceCodeKind.Script</c>. Implements [SCRIPT-CSX-OPTIONS].
     /// </summary>
     [Fact]
     public async Task CsxScript_loads_with_script_semantics()
@@ -245,7 +245,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
     /// IGNORED trivia — the SDK owns their meaning — so a correct header contributes zero compiler
     /// diagnostics. Both payload shapes are exercised: <c>name@version</c> and bare <c>name</c> for
     /// <c>#:package</c>, <c>name=value</c> and bare <c>name</c> for <c>#:property</c>.
-    /// Implements [FILEBASED-DIRECTIVES].
+    /// Implements [SCRIPT-FILEBASED-DIRECTIVES].
     /// </summary>
     [Fact]
     public async Task FileBasedApp_full_directive_header_produces_no_errors()
@@ -297,7 +297,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
 
     /// <summary>
     /// <c>#:include</c> accepts a glob. Every matched file must join the closure — asserted by
-    /// binding a symbol from each. Implements [FILEBASED-DIRECTIVES], [SCRIPT-CLOSURE].
+    /// binding a symbol from each. Implements [SCRIPT-FILEBASED-DIRECTIVES], [SCRIPT-CLOSURE].
     /// </summary>
     [Fact]
     public async Task FileBasedApp_glob_include_pulls_every_match_into_the_closure()
@@ -324,7 +324,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
 
     /// <summary>
     /// A <c>**</c> glob must descend. A top-directory-only search would silently miss nested
-    /// sources and report them as unresolved symbols. Implements [FILEBASED-DIRECTIVES].
+    /// sources and report them as unresolved symbols. Implements [SCRIPT-FILEBASED-DIRECTIVES].
     /// </summary>
     [Fact]
     public async Task FileBasedApp_recursive_glob_include_reaches_nested_files()

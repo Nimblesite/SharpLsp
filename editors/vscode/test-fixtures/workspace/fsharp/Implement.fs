@@ -1,7 +1,7 @@
 module FSharpFixtures.Implement
 
 /// An interface with two unimplemented members, used by the "Implement interface"
-/// code-action test ([FS-CODEFIX-INTERFACESTUB]).
+/// code-action test ([ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB]).
 type IShape =
     abstract member Area: unit -> float
     abstract member Name: string

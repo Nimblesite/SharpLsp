@@ -93,7 +93,7 @@ internal sealed partial class WorkspaceManager
     // caret; extend it over any identifier characters that already follow the caret
     // so an accepted item REPLACES an existing member name instead of being appended
     // to it (`Console.WriteLineWriteLine`). GitHub #178.
-    // Implements [COMPLETION-EDIT-REPLACE].
+    // Implements [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT].
     private static LinePositionSpan ComputeCompletionEditSpan(
         CompletionService service,
         SourceText text,

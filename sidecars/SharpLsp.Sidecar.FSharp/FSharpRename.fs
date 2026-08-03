@@ -1,5 +1,5 @@
 /// Rename + prepare-rename for the F# sidecar via FCS, project-wide.
-/// Implements [FS-RENAME-PREPARE] / [FS-RENAME-APPLY].
+/// Implements [RENAME-FSHARP-PREPARE] / [RENAME-FSHARP-APPLY].
 module SharpLsp.Sidecar.FSharp.FSharpRename
 
 open FSharp.Compiler.CodeAnalysis

@@ -2,7 +2,7 @@
 /// (redundantly-qualified) names. Compiled before both consumers so they share a
 /// single FCS call site:
 ///   * [FSharpCodeFixes] turns the findings into "Remove unused open" /
-///     "Simplify name" code fixes ([FS-CODEFIX-UNUSEDOPEN]/[FS-CODEFIX-SIMPLIFYNAME]);
+///     "Simplify name" code fixes ([ANALYZERS-FSAC-CODEFIX-UNUSED-OPEN]/[ANALYZERS-FSAC-CODEFIX-SIMPLIFY-NAME]);
 ///   * [FSharpAnalyzers] turns them into always-on diagnostic hints
 ///     ([ANALYZERS-FSAC-UNUSED-OPEN]/[ANALYZERS-FSAC-SIMPLIFY-NAME]).
 /// Keeping one source of truth means hints and fixes can never disagree.

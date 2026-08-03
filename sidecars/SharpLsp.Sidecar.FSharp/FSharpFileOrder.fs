@@ -39,7 +39,7 @@ let getCompileOrder (fsprojPath: string) : string array =
 
 /// Build a map of symbol name → defining file path from check results.
 /// Sources come through the overlay so unsaved edits participate in the
-/// ordering analysis. [FS-DIDCHANGE-OVERLAY]
+/// ordering analysis. [HOVER-FSHARP-OVERLAY]
 let private collectDefinitions
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (options: FSharpProjectOptions)
@@ -50,7 +50,7 @@ let private collectDefinitions
         for filePath in files do
             try
                 if File.Exists(filePath) then
-                    // Canonical overlay-aware check funnel. [FS-DIDCHANGE-OVERLAY]
+                    // Canonical overlay-aware check funnel. [HOVER-FSHARP-OVERLAY]
                     let! _parse, checkAnswer, _source =
                         FSharpWorkspace.parseAndCheckOnce state filePath options
                     match checkAnswer with
@@ -64,7 +64,7 @@ let private collectDefinitions
     }
 
 /// Collect undefined symbol errors from FCS check results for a file.
-/// Overlay-aware: checks the live buffer text. [FS-DIDCHANGE-OVERLAY]
+/// Overlay-aware: checks the live buffer text. [HOVER-FSHARP-OVERLAY]
 let private collectUndefinedErrors
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (options: FSharpProjectOptions)
@@ -75,7 +75,7 @@ let private collectUndefinedErrors
             if not (File.Exists(filePath)) then
                 return []
             else
-                // Canonical overlay-aware check funnel. [FS-DIDCHANGE-OVERLAY]
+                // Canonical overlay-aware check funnel. [HOVER-FSHARP-OVERLAY]
                 let! _parseResults, checkAnswer, _source =
                     FSharpWorkspace.parseAndCheckOnce state filePath options
                 match checkAnswer with

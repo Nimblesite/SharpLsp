@@ -305,7 +305,7 @@ let private collectTypeInformedActions
 
 // ── Analyzer-driven fixes (FSAC parity) ──────────────────────────
 
-/// [FS-CODEFIX-UNUSEDOPEN] "Remove unused open" for each unused `open` range that
+/// [ANALYZERS-FSAC-CODEFIX-UNUSED-OPEN] "Remove unused open" for each unused `open` range that
 /// overlaps the requested range. Deletes the whole `open` line (start of its first
 /// line through the start of the line after its last), mirroring FSAC's behaviour.
 let private removeUnusedOpenActions
@@ -329,7 +329,7 @@ let private removeUnusedOpenActions
 
         cacheAction state "Remove unused open" "quickfix" false edit)
 
-/// [FS-CODEFIX-SIMPLIFYNAME] "Simplify name" for each redundant qualifier that
+/// [ANALYZERS-FSAC-CODEFIX-SIMPLIFY-NAME] "Simplify name" for each redundant qualifier that
 /// overlaps the requested range. FCS reports `Range` as the unnecessary qualifier
 /// prefix (including its trailing dot), so simplification deletes that span,
 /// e.g. `System.DateTime.MinValue` → `DateTime.MinValue` when `System` is open.
@@ -386,7 +386,7 @@ let getCodeActions
     task {
         try
             // Overlay-aware check: fixes are computed from the live buffer,
-            // never stale disk text. [FS-DIDCHANGE-OVERLAY]
+            // never stale disk text. [HOVER-FSHARP-OVERLAY]
             let! checkedFile = FSharpWorkspace.checkFileWithParse workspace filePath
             match checkedFile with
             | None -> return []
@@ -412,7 +412,7 @@ let getCodeActions
                 let! analyzerActions =
                     collectAnalyzerActions
                         state filePath checkResults source startLine endLine
-                // Phase 4: Interface implementation stub [FS-CODEFIX-INTERFACESTUB].
+                // Phase 4: Interface implementation stub [ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB].
                 let! interfaceStub =
                     FSharpCodeActions.tryGenerateInterfaceStub
                         checkResults parseResults source

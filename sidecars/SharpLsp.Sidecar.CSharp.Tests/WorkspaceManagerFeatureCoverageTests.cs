@@ -247,7 +247,7 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
     [Fact]
     public async Task Completion_supplies_text_edit_that_replaces_identifier_at_caret()
     {
-        // GitHub #178 / [COMPLETION-EDIT-REPLACE]: the caret sits at the START of
+        // GitHub #178 / [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]: the caret sits at the START of
         // `Compute` in `var result = Compute(input);` (line 18, col 21). The item's
         // textEdit must span the whole identifier so acceptance REPLACES it rather
         // than appending (which would yield `ComputeCompute`).

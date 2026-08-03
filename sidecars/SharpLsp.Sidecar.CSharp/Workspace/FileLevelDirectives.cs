@@ -31,7 +31,7 @@ internal sealed record FileDirective(
 internal sealed record TextSpanLocation(int Start, int Length);
 
 /// <summary>
-/// Parses .NET file-based app <c>#:</c> directives. Implements [FILEBASED-DIRECTIVES].
+/// Parses .NET file-based app <c>#:</c> directives. Implements [SCRIPT-FILEBASED-DIRECTIVES].
 /// </summary>
 /// <remarks>
 /// Directives are read from the Roslyn CST, never by scanning text: Roslyn lexes <c>#:</c> as

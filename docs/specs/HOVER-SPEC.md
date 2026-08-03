@@ -141,11 +141,11 @@ F# hover follows the same Markdown structure as C#:
 | Discriminated union cases | Show case fields with types |
 | Record fields | Show field type and containing record |
 
-### [FS-DIDCHANGE-OVERLAY] Live-Buffer Resolution
+### [HOVER-FSHARP-OVERLAY] Live-Buffer Resolution
 
 Hover MUST resolve against the editor's **in-memory buffer**, not the on-disk file. The Rust host routes `textDocument/didOpen` and `didChange` by document language to the owning sidecar. The F# sidecar keeps an overlay keyed by absolute file path, and every per-file analysis (hover, completion, signature help, and others) reads from it, falling back to disk only when no open buffer exists. The C# sidecar updates its Roslyn workspace in place on `didChange`.
 
-#### [FS-DIDCHANGE-OVERLAY-CHECK] Canonical Check Funnel
+#### [HOVER-FSHARP-OVERLAY-CHECK] Canonical Check Funnel
 
 Every per-file FCS analysis (hover, completion, diagnostics, signature help, inlay hints, code fixes, and file ordering) MUST use the canonical `parseAndCheckOnce` operation through its `checkFileWithParse` or `checkFile` view instead of calling `FSharpChecker.ParseAndCheckFileInProject` directly. This centralizes overlay-aware source resolution and `FSharpCheckFileAnswer` handling, ensures checks use the latest `didChange` text, and lets a reverted buffer clear phantom errors on the next pull (GitHub #160).
 
@@ -153,14 +153,14 @@ Every per-file FCS analysis (hover, completion, diagnostics, signature help, inl
 
 ## [HOVER-CACHING] Caching Strategy
 
-Hover results are cached via the [salsa](https://salsa-rs.github.io/salsa/) incremental computation database in the Rust host.
+Hover results MUST be memoized only through the [salsa](https://salsa-rs.github.io/salsa/) database in the Rust host. Sidecars and clients MUST NOT maintain hover-result caches.
 
-| Cache Key | Invalidation Trigger |
+| Salsa Query Input | Invalidation Trigger |
 |---|---|
-| `(document_uri, document_version, position)` | Document edit (version change) |
-| Semantic model snapshot | Any document change in the project |
+| `(document_uri, document_version, position, language)` | Document version change |
+| Project generation | Any project or referenced-document change |
 
-The Rust host SHOULD cache the most recent hover result per document and return it immediately if the position and version match. Stale hover requests for superseded document versions MUST be cancelled.
+The Rust host SHOULD reuse the salsa result when all query inputs match. It MUST NOT maintain a separate most-recent-result slot or ad-hoc map. Stale hover requests for superseded document versions MUST be cancelled.
 
 ## [HOVER-PERFORMANCE] Performance Requirements
 

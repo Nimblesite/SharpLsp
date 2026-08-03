@@ -69,10 +69,10 @@ enum DocumentHighlightKind {
 | Step | Component | Action |
 |---|---|---|
 | 1 | Rust host | Receives request, identifies language from VFS |
-| 2 | Rust host | Checks the navigation cache for a matching key (see [REFERENCES-CACHE]) |
-| 3 | Rust host | On cache miss, dispatches to C# sidecar (Roslyn) or F# sidecar (FCS) via IPC |
+| 2 | Rust host | Evaluates the salsa query for the request (see [REFERENCES-SALSA]) |
+| 3 | Rust host | When the query is invalidated, dispatches to C# sidecar (Roslyn) or F# sidecar (FCS) via IPC |
 | 4 | Sidecar | Resolves symbol at position, finds all reference locations |
-| 5 | Rust host | Caches result, returns LSP response to client |
+| 5 | Rust host | Returns the salsa-derived LSP response to the client |
 
 The Rust host MAY use tree-sitter to reject whitespace, comments, and string literals with `null` before sidecar dispatch.
 
@@ -167,18 +167,16 @@ The Rust host merges results from both sidecars and deduplicates by location.
 
 Metadata-symbol references, grouped find-usages results, and reference-count code lenses are supported extensions to the base methods. Large result sets SHOULD stream through `partialResult`; metadata and grouped results MUST retain the sorting, declaration-inclusion, and deduplication rules in this specification.
 
-## Caching Strategy `[REFERENCES-CACHE]`
+## Salsa Queries `[REFERENCES-SALSA]`
 
-Reference results use the Rust host [`NavCache`](../../src/nav_cache.rs).
+All references and document-highlight memoization MUST be implemented as Rust-host salsa queries. The editor, sidecars, handlers, and ad-hoc Rust maps MUST NOT cache these results.
 
-| Cache Key | Invalidation Trigger |
+| Query | Inputs that invalidate the result |
 |---|---|
-| `(document_uri, document_version, position, references:decl|nodecl)` | Any document change in the solution |
-| `(document_uri, document_version, position, documentHighlight)` | Requested document edit or close |
+| `references(document_uri, position, include_declaration)` | Any solution document text/version, solution/project graph, language routing, or relevant sidecar generation/readiness change |
+| `document_highlights(document_uri, position)` | Requested document text/version or relevant sidecar generation/readiness change |
 
-Because references are solution-wide, invalidating only the requested URI is nonconforming; the host MAY invalidate all reference entries on any solution edit. `null` and `[]` MUST NOT be cached because they may represent a sidecar that has not finished loading.
-
-Stale requests for superseded document versions MUST be cancelled.
+Sidecar readiness and generation MUST be salsa inputs so a result produced while a sidecar is unavailable cannot remain memoized after recovery. A solution-wide edit invalidates reference results even when the requested URI did not change. Closing a document removes its inputs. Requests for superseded versions MUST be cancelled, and late results MUST NOT update salsa inputs for the newer version.
 
 ## Performance Requirements `[REFERENCES-PERFORMANCE]`
 
@@ -188,7 +186,7 @@ Stale requests for superseded document versions MUST be cancelled.
 | Find references (medium solution, ~1000 files) | <2 seconds | Time to enumerate all references |
 | Find references (large solution, ~5000 files) | <5 seconds | Time to enumerate all references |
 | Document highlights | <100ms | Time to highlight all occurrences in current document |
-| Cached reference lookup | <1ms | `NavCache` hit |
+| Memoized reference lookup | <1ms | Salsa query hit |
 | Tree-sitter pre-validation | <1ms | Whitespace/comment/literal rejection |
 
 Large result sets MAY use the LSP `partialResult` token.

@@ -1,4 +1,4 @@
-# Scripting and File-Based Apps Specification `[SCRIPT-FILEBASED]`
+# Scripting and File-Based Apps Specification `[SCRIPT]`
 
 **Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
@@ -37,7 +37,7 @@ Every opened document resolves to exactly one `DocumentKind` before any workspac
 | `CSharpFileBasedApp` | `.cs`, no owning project |
 | `CSharpScript` | `.csx` |
 | `FSharpScript` | `.fsx`, `.fsscript` |
-| `FSharpSignature` | `.fsi`, no owning project — syntax-only per [FSX-FSI] |
+| `FSharpSignature` | `.fsi`, no owning project — syntax-only per [SCRIPT-FSX-FSI] |
 | `Unsupported` | Any other extension |
 
 Classification uses extension plus cone search, never content sniffing. `Unsupported` documents MUST NOT initialize or latch a sidecar workspace; a later supported document must still initialize it.
@@ -68,13 +68,13 @@ A `.csx` or `.fsx` file is never `ProjectOwned`; MSBuild does not compile script
 
 Closure expansion does not re-add files and reports cycles as diagnostics. It is bounded at **64 files** and **8 levels**; exceeding either bound truncates expansion and emits a warning.
 
-## C# file-based apps `[FILEBASED]`
+## C# file-based apps `[SCRIPT-FILEBASED]`
 
 Targets the [.NET 10 file-based app model](https://learn.microsoft.com/en-us/dotnet/core/sdk/file-based-apps).
 
 Implementations: `sidecars/SharpLsp.Sidecar.CSharp/Workspace/FileLevelDirectives.cs`, `DocumentClosure.cs`, and `WorkspaceManager.SingleFile.cs`.
 
-### Directive parsing `[FILEBASED-DIRECTIVES]`
+### Directive parsing `[SCRIPT-FILEBASED-DIRECTIVES]`
 
 File-level directives are parsed **off the Roslyn CST**, never with regular expressions or string matching. Roslyn 5.6+ lexes `#:` as `IgnoredDirectiveTriviaSyntax` and `#!` as `ShebangDirectiveTriviaSyntax`. The parser walks leading trivia of the compilation unit and collects these nodes.
 
@@ -92,15 +92,15 @@ Supported directives, matching the SDK exactly:
 
 Directives must appear before the first non-trivia token. A `#:` directive that appears after real code is reported as a diagnostic at its own location, matching compiler behavior.
 
-### Shebang `[FILEBASED-SHEBANG]`
+### Shebang `[SCRIPT-FILEBASED-SHEBANG]`
 
 A leading `#!` line is valid in a file-based app and must not produce a diagnostic. Because Roslyn lexes it as `ShebangDirectiveTriviaSyntax`, no text preprocessing is required — the file is passed to Roslyn verbatim. SharpLsp must never strip, rewrite, or offset the shebang line, because doing so would desynchronize LSP positions from the on-disk text.
 
-### Reference resolution `[FILEBASED-REFERENCES]`
+### Reference resolution `[SCRIPT-FILEBASED-REFERENCES]`
 
 Reference resolution has two tiers. Tier 1 is correct; tier 2 is a bounded degradation.
 
-#### Tier 1 — synthesized project + real restore `[FILEBASED-REFERENCES-MSBUILD]`
+#### Tier 1 — synthesized project + real restore `[SCRIPT-FILEBASED-REFERENCES-MSBUILD]`
 
 1. Synthesize an MSBuild project equivalent to the SDK's virtual project from the parsed directives. The project is constructed through `Microsoft.Build.Construction.ProjectRootElement` — an actual XML DOM — and never by string concatenation, per the repo's structured-file rule.
 2. Write it to a per-app cache directory keyed by a hash of the root file's full path, mirroring the SDK's own `<temp>/dotnet/runfile/<appname>-<appfilesha>/` scheme.
@@ -113,7 +113,7 @@ Defaults applied when no directive overrides them, matching the SDK: `TargetFram
 
 Restore runs from the app directory and MUST honor `Directory.Build.props`, `Directory.Build.targets`, `Directory.Packages.props`, `nuget.config`, and `global.json`.
 
-#### Tier 2 — in-memory reference assemblies `[FILEBASED-REFERENCES-FALLBACK]`
+#### Tier 2 — in-memory reference assemblies `[SCRIPT-FILEBASED-REFERENCES-FALLBACK]`
 
 When the .NET SDK is unavailable, restore fails, or restore has not yet completed, the sidecar builds an `AdhocWorkspace` using `Basic.Reference.Assemblies` for the target framework band. This gives immediate BCL-level IntelliSense with zero I/O so the editor is never dead while restore runs.
 
@@ -121,37 +121,37 @@ Tier 2 is explicitly **incomplete**: `#:package` references are unresolved, so s
 
 Tier 2 must never be silently presented as a successful full load. `workspace/status` reports `filebased-degraded` in this state.
 
-### Parse options `[FILEBASED-PARSEOPTIONS]`
+### Parse options `[SCRIPT-FILEBASED-PARSEOPTIONS]`
 
 `LanguageVersion` is resolved from the target framework band, not hardcoded to `Preview`. `Preview` enables unstable features that the user's SDK may reject, producing editor-only false negatives. `LanguageVersion.Latest` is used when the band cannot be determined.
 
-### Entry points `[FILEBASED-ENTRYPOINT]`
+### Entry points `[SCRIPT-FILEBASED-ENTRYPOINT]`
 
 A file-based app root file carries top-level statements. `#:include`d `.cs` files may add types, methods, and namespaces but **may not** add top-level statements — the SDK forbids it. SharpLsp reports a violation as a diagnostic on the offending included file rather than allowing a confusing `CS0017` from the compiler.
 
-## C# scripts `[CSX]`
+## C# scripts `[SCRIPT-CSX]`
 
 `.csx` is Roslyn scripting, **not** a file-based app. Conflating the two is a correctness bug: `#r` and `#load` are script-only, `#:` directives are file-based-only, and the two use different `SourceCodeKind` values.
 
-### Parse and compilation options `[CSX-OPTIONS]`
+### Parse and compilation options `[SCRIPT-CSX-OPTIONS]`
 
 - `CSharpParseOptions` with `kind: SourceCodeKind.Script`. This enables top-level statements, declarations, and a trailing expression.
 - `OutputKind.DynamicallyLinkedLibrary`.
 - Script default imports applied as global usings: `System`, `System.IO`, `System.Collections.Generic`, `System.Console`, `System.Diagnostics`, `System.Dynamic`, `System.Linq`, `System.Linq.Expressions`, `System.Text`, `System.Threading.Tasks`.
 
-### Directive resolution `[CSX-RESOLVERS]`
+### Directive resolution `[SCRIPT-CSX-RESOLVERS]`
 
 - `#load` is resolved by a `SourceReferenceResolver` rooted at the script's directory, feeding [SCRIPT-CLOSURE] expansion.
 - `#r "assembly.dll"` is resolved by a `MetadataReferenceResolver` rooted at the script's directory.
 - `#r "nuget: Pkg, Version"` requires NuGet resolution and is **out of scope for phase 1**. It must produce a clearly-worded unresolved-reference diagnostic, never a silent wrong answer.
 
-## F# scripts `[FSX]`
+## F# scripts `[SCRIPT-FSX]`
 
 F# scripts use FCS directive resolution; SharpLsp MUST NOT reimplement it.
 
 Implementation: `sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs`.
 
-### Project options `[FSX-OPTIONS]`
+### Project options `[SCRIPT-FSX-OPTIONS]`
 
 `FSharpChecker.GetProjectOptionsFromScript` is the single entry point. It resolves `#r`, `#r "nuget:"`, `#I`, and `#load` closures, selects the framework references, and returns `FSharpProjectOptions` directly consumable by the existing `parseAndCheckOnce` pipeline.
 
@@ -161,15 +161,15 @@ Invocation parameters:
 - `useFsiAuxLib = true` — makes the `fsi` object bind, so `fsi.CommandLineArgs` resolves.
 - `previewEnabled` follows the resolved language version.
 
-### Preprocessor symbols `[FSX-SYMBOLS]`
+### Preprocessor symbols `[SCRIPT-FSX-SYMBOLS]`
 
 Scripts opened in the editor define both `INTERACTIVE` and `EDITING`. `COMPILED` is **not** defined. Getting this wrong makes `#if INTERACTIVE` blocks appear greyed-out-dead in the editor while being live at runtime.
 
-### NuGet references `[FSX-NUGET]`
+### NuGet references `[SCRIPT-FSX-NUGET]`
 
 `#r "nuget: ..."` resolution is performed by FCS's dependency manager and requires network and cache access. It is slow on first use (seconds). Resolution runs off the request path; the script is first checked without the package references so the editor is responsive, then re-checked once resolution completes and diagnostics are republished.
 
-### Signature files `[FSX-FSI]`
+### Signature files `[SCRIPT-FSX-FSI]`
 
 A `.fsi` signature file with no owning project has no meaningful semantic closure. It is served syntax-only (document symbols, folding, selection range) by the Rust host, and no F# sidecar workspace is opened for it.
 
@@ -211,7 +211,7 @@ Two file-based apps in one directory are two independent compilations. The sidec
 
 - A file with no supported document kind returns a `Result` failure, never an empty synthetic workspace.
 - A directory with no solution or project is valid: `OpenCoreAsync` records a project-less root and returns success, deferring workspace creation to the first document update. Each loose file becomes an independent ad-hoc project per [SCRIPT-ANTIPATTERN]. `IsLoaded` remains false until a document arrives.
-- Multiple candidate solutions are ambiguity, not project absence. `SolutionLoader.FindAmbiguousSolutions` MUST return an error naming every candidate and the `csharp.solution_path` resolution setting from [WORKSPACE-SOLUTION-PATH], never enter project-less mode.
+- Multiple candidate solutions are ambiguity, not project absence. `SolutionLoader.FindAmbiguousSolutions` MUST return an error naming every candidate and the `csharp.solution_path` resolution setting from [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH], never enter project-less mode.
 - Any I/O during closure expansion is wrapped; a failure to read one included file degrades that file only and is reported as a diagnostic, leaving the rest of the closure loaded.
 
 ## Performance `[SCRIPT-PERF]`

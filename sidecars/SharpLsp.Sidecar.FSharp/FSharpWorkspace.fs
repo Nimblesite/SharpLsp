@@ -35,13 +35,13 @@ type FSharpWorkspaceState =
       /// In-memory document buffers keyed by absolute file path, kept current by
       /// LSP `textDocument/didChange`. Per-file analyses read from here so hover,
       /// completion, etc. reflect unsaved edits instead of stale on-disk text.
-      /// [FS-DIDCHANGE-OVERLAY]
+      /// [HOVER-FSHARP-OVERLAY]
       Overlays: ConcurrentDictionary<string, string> }
 
 /// Overlay keys compare case-insensitively on Windows, where hosts vary the
 /// path's spelling (VS Code lowercases the drive letter while FCS and MSBuild
 /// report it uppercase); elsewhere Ordinal respects case-sensitive
-/// filesystems. [FS-DIDCHANGE-OVERLAY]
+/// filesystems. [HOVER-FSHARP-OVERLAY]
 let private overlayComparer: StringComparer =
     if OperatingSystem.IsWindows() then StringComparer.OrdinalIgnoreCase
     else StringComparer.Ordinal
@@ -49,7 +49,7 @@ let private overlayComparer: StringComparer =
 /// Canonical overlay key via the shared `NativePaths` normalization: collapses
 /// separator, relative-segment, and Windows extended-length (`\\?\`) spellings
 /// so the didChange writer and every reader agree on one identity per file.
-/// [FS-DIDCHANGE-OVERLAY]
+/// [HOVER-FSHARP-OVERLAY]
 let private overlayKey (filePath: string) : string =
     NativePaths.NormalizeFullPath filePath
 
@@ -65,12 +65,12 @@ let create () : FSharpWorkspaceState =
 /// Per-file FCS analyses then resolve positions against the live buffer rather
 /// than the on-disk file, restoring parity with the C# sidecar. Keys are
 /// canonicalized, so any spelling of the path the host sends on later requests
-/// finds the buffer. [FS-DIDCHANGE-OVERLAY]
+/// finds the buffer. [HOVER-FSHARP-OVERLAY]
 let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
     state.Overlays[overlayKey filePath] <- newText
 
 /// Read a file's current source: the in-memory overlay when the editor has an
-/// open buffer for it, otherwise the on-disk contents. [FS-DIDCHANGE-OVERLAY]
+/// open buffer for it, otherwise the on-disk contents. [HOVER-FSHARP-OVERLAY]
 let internal readSource (state: FSharpWorkspaceState) (filePath: string) : string =
     match state.Overlays.TryGetValue(overlayKey filePath) with
     | true, text -> text
@@ -97,7 +97,7 @@ let internal projectFilePath (state: FSharpWorkspaceState) (filePath: string) : 
 /// (the check reads the live didChange buffer, not stale on-disk text) and the
 /// `ParseAndCheckFileInProject` invocation live in exactly one place instead of
 /// being copy-pasted across hover, completion, diagnostics, and file-order
-/// analysis. [FS-DIDCHANGE-OVERLAY]
+/// analysis. [HOVER-FSHARP-OVERLAY]
 let internal parseAndCheckOnce
     (state: FSharpWorkspaceState)
     (filePath: string)
@@ -135,7 +135,7 @@ let private interpretAnswer
 /// source that was checked. The canonical per-file analysis entry point;
 /// `checkFile` is the parse-less view. The check reads the live didChange
 /// overlay, so a reverted or freshly edited buffer is always type-checked as
-/// its newest text. [FS-DIDCHANGE-OVERLAY]
+/// its newest text. [HOVER-FSHARP-OVERLAY]
 let internal checkFileWithParse (state: FSharpWorkspaceState) (filePath: string) =
     task {
         if not state.IsLoaded then
@@ -307,7 +307,7 @@ let private isScriptPath (path: string) =
 /// FCS resolves `#r`, `#r "nuget:"`, `#I` and the `#load` closure itself, so no directive
 /// parsing happens here — reimplementing it would duplicate the compiler. `useFsiAuxLib`
 /// is what makes the `fsi` object (and therefore `fsi.CommandLineArgs`) bind.
-/// Implements [FSX-OPTIONS].
+/// Implements [SCRIPT-FSX-OPTIONS].
 let private loadScript (state: FSharpWorkspaceState) (scriptPath: string) (ct: CancellationToken) =
     task {
         let text =
@@ -317,7 +317,7 @@ let private loadScript (state: FSharpWorkspaceState) (scriptPath: string) (ct: C
 
         // A script open in an editor defines INTERACTIVE and EDITING; COMPILED is not
         // defined. Getting this wrong greys out live `#if INTERACTIVE` blocks as dead
-        // code while they are live at run time. Implements [FSX-SYMBOLS].
+        // code while they are live at run time. Implements [SCRIPT-FSX-SYMBOLS].
         let otherFlags = [| "--define:INTERACTIVE"; "--define:EDITING" |]
 
         let computation =
@@ -417,7 +417,7 @@ let getHover
     =
     task {
         try
-            // Funnel through the canonical overlay-aware check. [FS-DIDCHANGE-OVERLAY]
+            // Funnel through the canonical overlay-aware check. [HOVER-FSHARP-OVERLAY]
             let! checkData = checkFileWithParse state filePath
 
             return

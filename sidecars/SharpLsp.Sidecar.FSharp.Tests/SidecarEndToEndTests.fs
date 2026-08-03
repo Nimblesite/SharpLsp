@@ -183,7 +183,7 @@ let createTestProject () =
     File.WriteAllText(
         Path.Combine(dir, "Hints.fs"),
         "module TestProject.Hints\n\nopen System.Text\n\nlet hintValue = 1\n")
-    // Drives the analyzer-backed code fixes ([FS-CODEFIX-SIMPLIFYNAME]): `open
+    // Drives the analyzer-backed code fixes ([ANALYZERS-FSAC-CODEFIX-SIMPLIFY-NAME]): `open
     // System` is genuinely used (DateTime unqualified on line 4), so it is NOT a
     // remove-unused-open candidate, while `System.DateTime` on line 6 carries a
     // redundant qualifier → "Simplify name" to `DateTime`.
@@ -194,7 +194,7 @@ let createTestProject () =
         + "let nowKind () : DateTime = DateTime.Now\n\n"
         + "let redundant = System.DateTime.MinValue\n")
     // Drives the interface-implementation stub code action
-    // ([FS-CODEFIX-INTERFACESTUB]): `Square` declares `interface IShape` but
+    // ([ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB]): `Square` declares `interface IShape` but
     // implements none of its members → "Implement interface" generates them.
     File.WriteAllText(
         Path.Combine(dir, "Interface.fs"),
@@ -1006,7 +1006,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
 
     [<Fact>]
     member _.``completion supplies a text edit that replaces the member at the caret``() = task {
-        // GitHub #178 / [COMPLETION-EDIT-REPLACE]: `greeter.|Greet` at line 28 — the
+        // GitHub #178 / [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]: `greeter.|Greet` at line 28 — the
         // accepted item must REPLACE the identifier at the caret, so the edit spans
         // `Greet` rather than being appended (which would yield `greeter.GreetGreet`).
         let! r = fixture.Send("textDocument/completion", posPayload fixture.Src 28 12)
@@ -1060,7 +1060,7 @@ type SidecarEndToEndTests(fixture: SidecarFixture) =
         Assert.Contains(loc.Locations, fun l -> l.FilePath.EndsWith("Library.fs"))
     }
 
-    // ── Rename [FS-RENAME-PREPARE] / [FS-RENAME-APPLY] ──────────
+    // ── Rename [RENAME-FSHARP-PREPARE] / [RENAME-FSHARP-APPLY] ──────────
 
     [<Fact>]
     member _.``prepare rename allows a project symbol``() = task {

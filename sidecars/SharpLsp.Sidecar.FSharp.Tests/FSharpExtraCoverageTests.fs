@@ -332,7 +332,7 @@ let ``inlay hints surface on the loaded file`` () =
 /// on-disk file: an unsaved binding that exists ONLY in the editor buffer must
 /// be hoverable. Regression for "F# hover is broken after typing". Uses an
 /// isolated workspace so the overlay never leaks into the shared `loaded`.
-/// [FS-DIDCHANGE-OVERLAY]
+/// [HOVER-FSHARP-OVERLAY]
 [<Fact>]
 let ``getHover reads the didChange overlay instead of on-disk source`` () =
     task {

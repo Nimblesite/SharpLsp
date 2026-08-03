@@ -5,7 +5,7 @@ use super::*;
 // A workspace root holding more than one `.sln`/`.slnx` is ambiguous: the C#
 // sidecar's recursive discovery deliberately refuses to guess which one to
 // load. `sharplsp.toml`'s `csharp.solution_path` is the documented way to
-// resolve that ambiguity. Implements [WORKSPACE-SOLUTION-PATH].
+// resolve that ambiguity. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
 
 /// Two solutions in sibling subdirectories — the shape of every real monorepo,
 /// and of the `SharpLsp` repo itself. `sharplsp.toml` names the one to load.
@@ -91,7 +91,7 @@ EndGlobal"#
 /// files, refuses to pick one, and the C# sidecar reports
 /// `No .sln, .slnx, or .csproj found at or under '<root>'` — no solution loads
 /// and every semantic request returns null. Implements
-/// [WORKSPACE-SOLUTION-PATH].
+/// [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
 #[test]
 fn test_full_stack_hover_uses_configured_solution_path_in_multi_solution_root() {
     require_dotnet();

@@ -68,7 +68,7 @@ pub fn handle_completion(
                         insert_text: item.insert_text,
                         // A textEdit makes acceptance REPLACE the identifier span
                         // at the caret instead of appending it (GitHub #178).
-                        // Implements [COMPLETION-EDIT-REPLACE].
+                        // Implements [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT].
                         text_edit: item
                             .text_edit
                             .as_ref()
@@ -826,7 +826,7 @@ struct SidecarCompletionItem {
     index: i32,
     /// Edit that replaces the identifier span at the caret so acceptance does
     /// not append the member name to the trigger text (GitHub #178).
-    /// Implements [COMPLETION-EDIT-REPLACE].
+    /// Implements [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT].
     text_edit: Option<SidecarTextEdit>,
 }
 

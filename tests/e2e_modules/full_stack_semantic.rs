@@ -56,7 +56,7 @@ fn test_full_stack_completion_returns_items() {
 /// Regression test for GitHub #178: member completion after `.` must return a
 /// `textEdit` that REPLACES the identifier at the caret, not a bare `insertText`
 /// the client appends. Accepting `Name` at `calc.|Name` must yield `calc.Name`,
-/// never `calc.NameName`. Implements [COMPLETION-EDIT-REPLACE].
+/// never `calc.NameName`. Implements [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT].
 #[test]
 fn test_member_completion_replaces_identifier_not_appends_issue_178() {
     require_dotnet();

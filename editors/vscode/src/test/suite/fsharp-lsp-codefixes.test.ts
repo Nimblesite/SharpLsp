@@ -226,7 +226,7 @@ suite('F# LSP — Code Fixes (FSAC parity)', () => {
 
 /**
  * "Implement interface" — completes the F# stub-generation trio (union / record /
- * interface) via FCS `InterfaceStubGenerator` ([FS-CODEFIX-INTERFACESTUB]).
+ * interface) via FCS `InterfaceStubGenerator` ([ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB]).
  * `Implement.fs` declares `interface IShape` on `Square` without implementing any
  * member; the quick fix generates stubs for `Area` and `Name`.
  */

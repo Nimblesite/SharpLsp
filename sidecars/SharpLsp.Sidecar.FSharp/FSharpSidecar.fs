@@ -88,7 +88,7 @@ type FSharpSidecar() =
 
         // Records the editor's in-memory buffer so per-file analyses (hover,
         // completion, …) reflect unsaved edits instead of stale on-disk text.
-        // Mirrors the C# sidecar's didChange overlay. [FS-DIDCHANGE-OVERLAY]
+        // Mirrors the C# sidecar's didChange overlay. [HOVER-FSHARP-OVERLAY]
         base.Register("textDocument/didChange", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -281,7 +281,7 @@ type FSharpSidecar() =
                     let mutable results = ResizeArray<DiagnosticResult>()
                     // FCS compiler diagnostics, computed from the live buffer
                     // (didChange overlay), never stale disk text — so a reverted
-                    // buffer clears its errors on the next pull. [FS-DIDCHANGE-OVERLAY]
+                    // buffer clears its errors on the next pull. [HOVER-FSHARP-OVERLAY]
                     let! checkedFile = FSharpWorkspace.checkFile workspace filePath
                     match checkedFile with
                     | Some(check, source) ->
@@ -402,7 +402,7 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
-        // Prepare rename [FS-RENAME-PREPARE]
+        // Prepare rename [RENAME-FSHARP-PREPARE]
         base.Register("textDocument/prepareRename", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try
@@ -431,7 +431,7 @@ type FSharpSidecar() =
                     return ByteResult.Failure(ex.Message)
             }))
 
-        // Rename [FS-RENAME-APPLY]
+        // Rename [RENAME-FSHARP-APPLY]
         base.Register("textDocument/rename", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             task {
                 try

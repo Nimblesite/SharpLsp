@@ -231,7 +231,7 @@ fn run_server() -> Result<()> {
     // deferred until the first didOpen notification.
     // The C# sidecar opens the configured solution when `csharp.solution_path`
     // names one; a root holding several solutions is otherwise ambiguous and
-    // loads nothing. Implements [WORKSPACE-SOLUTION-PATH].
+    // loads nothing. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
     let csharp_open_root = workspace_root
         .as_deref()
         .map(|root| sharplsp_config.csharp.open_target(root));
@@ -461,7 +461,7 @@ fn opened_document_path(notif: &Notification) -> Option<String> {
 /// Map a document to the sidecar that owns its language. Implements [SCRIPT-DETECT].
 ///
 /// `.fsi` is deliberately absent: a signature file with no owning project has no meaningful
-/// semantic closure and is served syntax-only by the host. Implements [FSX-FSI].
+/// semantic closure and is served syntax-only by the host. Implements [SCRIPT-FSX-FSI].
 fn sidecar_for_path<'a>(
     file_path: &str,
     csharp_sidecar: Option<&'a Arc<SidecarManager>>,

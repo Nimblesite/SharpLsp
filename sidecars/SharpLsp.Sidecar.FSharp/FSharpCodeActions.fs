@@ -256,7 +256,7 @@ let tryGenerateRecordStubs
     with _ -> None
 
 // ── Interface implementation stub generation ────────────────────
-// [FS-CODEFIX-INTERFACESTUB] Completes the stub-generation trio (union / record /
+// [ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB] Completes the stub-generation trio (union / record /
 // interface) using FCS `InterfaceStubGenerator` — FSAC parity. Given the cursor on
 // an `interface IFoo with` declaration, generate stubs for the not-yet-implemented
 // members (`member _.X ... = failwith "..."`).

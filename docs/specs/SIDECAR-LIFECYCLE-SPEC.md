@@ -93,7 +93,7 @@ Generation fencing MUST prevent all stale asynchronous work from publishing stat
 
 ### Launch Candidates `[SIDECAR-STARTUP-RESOLUTION]`
 
-**Established implementation alias `[SIDECAR-RESOLVE-ENV]`:** the language-specific environment override is authoritative and MUST be evaluated before every other launch source.
+**Established implementation alias `[SHARPLSP-ARCHITECTURE-EXTENSIONS-SIDECAR-ENV]`:** the language-specific environment override is authoritative and MUST be evaluated before every other launch source.
 
 Resolution produces typed `LaunchCandidate` values and runs again for each generation. It MUST return the absolute executable path actually passed to `CreateProcess`/`exec`, not a bare command name.
 
@@ -245,7 +245,7 @@ The same validation applies to `ping`, bootstrap, and `shutdown` responses.
 
 ### Cancellation and Response Budgets `[SIDECAR-IPC-TIMEOUT]`
 
-This section expands the existing [SIDECAR-REQUEST-TIMEOUT] rule:
+This section expands the existing [SHARPLSP-ARCHITECTURE-SIDECARS-TIMEOUT] rule:
 
 - `workspace/open` has a 600-second response budget.
 - Every other ordinary request has a 120-second response budget unless a more specific feature spec defines a shorter budget.
@@ -304,11 +304,11 @@ Every new connection is bootstrapped in this order:
 3. replay of latest open documents owned by that language in stable URI order; and
 4. registration/activation of notification consumers.
 
-Only then does the generation become `Ready`. A bootstrap failure enters normal backoff. Eager workspace startup, lazy project-less startup, second-language startup, explicit solution selection, and crash recovery MUST call this one bootstrap implementation. A generation change invalidates sidecar-derived caches and triggers feature-specific refresh/retry behavior, including diagnostic generation rules in [DIAG-PUSH-GATE].
+Only then does the generation become `Ready`. A bootstrap failure enters normal backoff. Eager workspace startup, lazy project-less startup, second-language startup, explicit solution selection, and crash recovery MUST call this one bootstrap implementation. The generation and readiness state are Rust-host salsa inputs; changing either invalidates dependent semantic queries and triggers feature-specific refresh/retry behavior, including diagnostic generation rules in [DIAG-PUSH-GATE]. Sidecars and lifecycle components MUST NOT maintain independent semantic result caches.
 
 ### Degraded Behavior `[SIDECAR-RECOVERY-DEGRADED]`
 
-During startup/backoff, Rust syntax-only features remain available. Semantic requests receive a typed `SidecarUnavailable` result containing language, failure category, and retry-after duration. Where a feature has a last-known-good cache, it MAY serve that cache with explicit stale provenance; it MUST NOT invent new semantic results.
+During startup/backoff, Rust syntax-only features remain available. Semantic requests receive a typed `SidecarUnavailable` result containing language, failure category, and retry-after duration. A feature MAY serve a last-known-good salsa query result with explicit stale provenance; no editor-local, handler-local, lifecycle-local, or sidecar-local cache is permitted.
 
 The editor receives at most one rate-limited, plain-language notification per failure episode, with a `Show Log` action. Repeated LSP requests during the same backoff window do not produce repeated toasts or one process per request. Recovery to `Ready` emits one structured recovery event and refreshes affected editor state.
 
@@ -370,7 +370,7 @@ No error path may spin without await/backoff, leak a child/descendant, create an
 
 The versioned handshake is the only intended startup-protocol change. MessagePack framing and existing feature DTOs remain compatible. Host and sidecars ship together and are exact-version verified by the distribution layer; the optional legacy READY parser is temporary migration support, not a permanent second protocol.
 
-`SHARPLSP-SPEC.md`, [DIST-CLEAN-OUTPUT], [DIST-CI-WIN-TRANSPORT], [SCRIPT-ROUTE-HEALTH], and [SIDECAR-REQUEST-TIMEOUT] remain compatible summaries; this document is the normative detailed lifecycle contract when a summary is ambiguous.
+`SHARPLSP-SPEC.md`, [DIST-CLEAN-OUTPUT], [DIST-CI-WIN-TRANSPORT], [SCRIPT-ROUTE-HEALTH], and [SHARPLSP-ARCHITECTURE-SIDECARS-TIMEOUT] remain compatible summaries; this document is the normative detailed lifecycle contract when a summary is ambiguous.
 
 ## Implementation Anchors `[SIDECAR-IMPLEMENTATION]`
 

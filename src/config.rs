@@ -96,7 +96,7 @@ impl CSharpConfig {
     ///
     /// Falls back to the root — restoring plain auto-discovery — when unset, or
     /// when the configured path names no existing file. Implements
-    /// [WORKSPACE-SOLUTION-PATH].
+    /// [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
     pub fn open_target(&self, workspace_root: &Path) -> PathBuf {
         let configured = self.solution_path.trim();
         if configured.is_empty() {
@@ -290,7 +290,7 @@ project_filter = ["MyApp.Core", "MyApp.Api"]
     /// root. Sending the root leaves the sidecar to rediscover, and in a root
     /// holding several solutions that discovery is ambiguous and loads nothing —
     /// no hover, no completions, no diagnostics. Implements
-    /// [WORKSPACE-SOLUTION-PATH].
+    /// [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
     #[test]
     fn test_relative_solution_path_is_opened_not_workspace_root() {
         let dir = tempfile::tempdir().unwrap();

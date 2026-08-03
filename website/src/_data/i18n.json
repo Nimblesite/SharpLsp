@@ -95,6 +95,7 @@
     "docs": {
       "title": "Documentation",
       "gettingStarted": "Getting Started",
+      "fsharp": "F# Language Support",
       "architecture": "Architecture",
       "editorSetup": "Editor Setup",
       "configuration": "Configuration",
@@ -157,7 +158,7 @@
         { "title": "开源", "detail": "永久 MIT 许可" }
       ],
       "workflowEyebrow": "完整工作流",
-      "workflowTitle": "一个服务器，覆盖交付 .NET 所需的一切。",
+      "workflowTitle": "一套开发体验，涵盖交付 .NET 所需的一切。",
       "workflowIntro": "SharpLsp 不止提供自动补全。它把开发者期望从完整 IDE 获得的、具备项目上下文的连贯体验带到你已经在用的编辑器。",
       "workflows": [
         { "title": "编写与导航", "description": "理解真实 C# 与 F# 项目的快速、全解决方案语言智能。", "features": ["补全、悬停与签名帮助", "定义、引用与符号", "解决方案资源管理器与项目上下文"] },
@@ -180,7 +181,7 @@
         { "title": "无需订阅", "description": "MIT 许可适用于个人、商业和组织用途。" },
         { "title": "跨平台", "description": "在 Windows、macOS 和 Linux 上获得一致的 C# 与 F# 开发体验。" }
       ],
-      "releasesTitle": "最新进展",
+      "releasesTitle": "正在发布的内容",
       "releaseEyebrow": "最新版本",
       "releasesSubtitle": "SharpLsp 最新的改进、修复与 .NET 工具能力。",
       "releasesViewAll": "查看所有版本",
@@ -206,6 +207,7 @@
     "docs": {
       "title": "文档",
       "gettingStarted": "快速入门",
+      "fsharp": "F# 语言支持",
       "architecture": "架构",
       "editorSetup": "编辑器配置",
       "configuration": "配置",
@@ -268,7 +270,7 @@
         { "title": "オープンソース", "detail": "永続的な MIT ライセンス" }
       ],
       "workflowEyebrow": "ワークフロー全体",
-      "workflowTitle": "1 つのサーバーで、.NET の開発から出荷まで。",
+      "workflowTitle": "1 つの開発体験。.NET の出荷に必要なすべてを。",
       "workflowIntro": "SharpLsp は自動補完だけではありません。フル IDE に期待される、プロジェクトを理解した一貫した体験を、使い慣れたエディターへ届けます。",
       "workflows": [
         { "title": "記述とナビゲーション", "description": "実際の C# / F# プロジェクトを理解する、高速でソリューション全体に及ぶ言語機能。", "features": ["補完、ホバー、シグネチャヘルプ", "定義、参照、シンボル", "ソリューションエクスプローラーとプロジェクト情報"] },
@@ -291,7 +293,7 @@
         { "title": "サブスクリプション不要", "description": "個人、商用、組織で利用できる MIT ライセンス。" },
         { "title": "クロスプラットフォーム", "description": "Windows、macOS、Linux で同じ C# / F# 開発体験。" }
       ],
-      "releasesTitle": "開発中の最新機能",
+      "releasesTitle": "現在リリースされているもの",
       "releaseEyebrow": "最新リリース",
       "releasesSubtitle": "SharpLsp に加わった最新の改善、修正、.NET ツール機能。",
       "releasesViewAll": "すべてのリリースを見る",
@@ -317,6 +319,7 @@
     "docs": {
       "title": "ドキュメント",
       "gettingStarted": "はじめに",
+      "fsharp": "F# 言語サポート",
       "architecture": "アーキテクチャ",
       "editorSetup": "エディター設定",
       "configuration": "設定",

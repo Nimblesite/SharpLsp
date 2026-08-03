@@ -358,7 +358,7 @@ item and its required evidence are complete.
 - [x] Reconcile [SIDECAR-LIFECYCLE-SPEC.md](../specs/SIDECAR-LIFECYCLE-SPEC.md) with any issue-body
       updates made after 2026-08-03; change the spec before code when behavior differs.
 - [x] Verify every heading in the lifecycle spec has one unique hierarchical uppercase ID.
-- [x] Confirm [SIDECAR-REQUEST-TIMEOUT], [SCRIPT-ROUTE-HEALTH], [DIST-CLEAN-OUTPUT], and
+- [x] Confirm [SHARPLSP-ARCHITECTURE-SIDECARS-TIMEOUT], [SCRIPT-ROUTE-HEALTH], [DIST-CLEAN-OUTPUT], and
       [DIST-CI-WIN-TRANSPORT] do not contradict the detailed lifecycle contract.
 - [x] Record the current behavior for #150–#154 so the useful partial fixes are preserved during the
       refactor rather than accidentally reverted.

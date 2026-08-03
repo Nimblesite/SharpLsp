@@ -148,7 +148,7 @@ fn test_full_stack_fsharp_user_session_medium_codebase() {
 
     // GitHub #178 (F# parity): the accepted item must carry a `textEdit` that
     // REPLACES the identifier at the caret, so `product.|Price` yields
-    // `product.Price`, never `product.PricePrice`. Implements [COMPLETION-EDIT-REPLACE].
+    // `product.Price`, never `product.PricePrice`. Implements [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT].
     let price_item = items
         .iter()
         .find(|i| i["label"].as_str() == Some("Price"))

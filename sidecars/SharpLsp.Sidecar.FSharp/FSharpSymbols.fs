@@ -94,7 +94,7 @@ let private parsingOptions (state: FSharpWorkspace.FSharpWorkspaceState) (filePa
 
 /// Document symbols for an F# file (parse-only, project-independent). Reads
 /// the live buffer through the overlay so the outline tracks unsaved edits.
-/// [FS-DIDCHANGE-OVERLAY]
+/// [HOVER-FSHARP-OVERLAY]
 let documentSymbols (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: string) =
     task {
         try

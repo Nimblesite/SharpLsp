@@ -258,7 +258,7 @@ fn test_full_stack_fsharp_hover_xml_docs() {
 // the file from DISK. As soon as the editor buffer diverged from disk, F# hover
 // resolved the editor's line/char against stale on-disk text and returned the
 // wrong symbol (or null). C# already honored the in-memory buffer; this restores
-// F# to parity. [FS-DIDCHANGE-OVERLAY]
+// F# to parity. [HOVER-FSHARP-OVERLAY]
 #[test]
 fn test_full_stack_fsharp_hover_reflects_live_edit() {
     let (_tmp, file_uri, mut client) = ready_fsharp_client();

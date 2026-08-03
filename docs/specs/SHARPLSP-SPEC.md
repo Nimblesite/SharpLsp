@@ -11,7 +11,7 @@ SharpLsp is an open-source, editor-agnostic [LSP 3.17](https://microsoft.github.
 - **Editor-agnostic:** use LSP 3.17+ without editor-specific APIs.
 - **Language parity:** C# and F# share infrastructure, feature targets, and test standards.
 - **Open dependencies:** use Roslyn and FCS without proprietary Visual Studio or C# Dev Kit components.
-- **Rust hot path:** keep protocol handling, document state, syntax parsing, routing, and caching in Rust.
+- **Rust hot path:** keep protocol handling, document state, syntax parsing, routing, and all memoization in Rust; salsa is the only cache.
 - **Compiler semantics:** delegate semantic analysis to Roslyn and FCS; do not reimplement type checkers.
 
 ## [SHARPLSP-ARCHITECTURE] Architecture
@@ -41,7 +41,7 @@ SharpLsp uses a Rust host for the LSP protocol and syntax analysis, plus managed
 **Tier 3 — F# Sidecar (FCS)**
 
 - Long-running .NET process hosting [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) v43.12+
-- [FSharpChecker](https://fsharp.github.io/fsharp-compiler-docs/reference/fsharp-compiler-codeanalysis-fsharpchecker.html) with incremental build caching (MRU caches for parse/check results)
+- [FSharpChecker](https://fsharp.github.io/fsharp-compiler-docs/reference/fsharp-compiler-codeanalysis-fsharpchecker.html) for parsing, checking, and semantic queries
 - [Ionide.ProjInfo](https://github.com/ionide/proj-info) for project cracking (MSBuild evaluation for F# projects)
 - [FSharpLint](https://github.com/fsprojects/FSharpLint) for linting
 - Same RPC interface and transport as the C# sidecar
@@ -70,7 +70,7 @@ The Rust host classifies every incoming LSP request and routes it to the fastest
 | Syntax-only | Rust (tree-sitter) | <5ms | documentSymbol, foldingRange, selectionRange, linkedEditingRange |
 | Semantic | Sidecar (Roslyn/FCS) | <200ms | completion, hover, definition, references, rename, codeAction, diagnostics |
 | Hybrid | Rust + Sidecar | <100ms | semanticTokens (tree-sitter for structure, sidecar for classification) |
-| Cached | Rust (salsa cache) | <1ms | Repeat requests for unchanged documents |
+| Memoized | Rust-host salsa | <1ms | Repeat requests for unchanged inputs |
 
 Key optimization: on every keystroke, tree-sitter re-parses in <1ms and provides immediate feedback for syntax-level features, while semantic requests are coalesced with a debounce window (default 150ms) before dispatching to sidecars. Stale in-flight semantic requests are cancelled when superseded.
 
@@ -81,11 +81,11 @@ The normative state machine and platform contract are in [SIDECAR-LIFECYCLE-SPEC
 - **Startup:** A per-language supervisor lazily launches one direct, version-matched sidecar process, using a new current-user-only IPC endpoint for every generation. `READY` identifies the generation, process, protocol, and effective bound endpoint; semantic readiness follows workspace bootstrap.
 - **Health monitoring:** The connection driver pings only while `Ready` and idle (every 5s, with a 2s response budget). An in-flight request is governed by its own deadline and cannot race a second transport-locking health caller.
 
-#### [SIDECAR-REQUEST-TIMEOUT] Request Timeouts
+#### [SHARPLSP-ARCHITECTURE-SIDECARS-TIMEOUT] Request Timeouts
 
 Every host-to-sidecar request carries a response budget: 600s for `workspace/open` and 120s for everything else. A request that exceeds its budget fails, poisons the IPC connection, and terminates the contained sidecar process tree, so a late response cannot reach the next caller.
 
-- **Crash recovery:** Startup and runtime failures share one exponential backoff sequence (1s, 2s, 4s, up to 30s). A replacement generation replays workspace, configuration, and current VFS document state before becoming ready. Last-known-good feature caches may provide explicitly stale graceful degradation.
+- **Crash recovery:** Startup and runtime failures share one exponential backoff sequence (1s, 2s, 4s, up to 30s). A replacement generation replays workspace, configuration, and current VFS document state before becoming ready. Only Rust-host salsa query results MAY provide explicitly stale graceful degradation.
 - **Isolation and containment:** C# and F# supervisors, backoff, endpoints, and process trees are independent. Windows Job Objects and Unix process groups/parent-death handling prevent orphaned sidecars and compiler descendants.
 - **Shutdown:** The sidecar flushes a correlated shutdown acknowledgement before cancelling its loop. The host allows up to 5s for clean exit, then terminates and reaps only that generation's contained process tree.
 
@@ -101,7 +101,7 @@ Project evaluation MUST handle SDK-style and legacy `.csproj`/`.fsproj` files, m
 - **Multi-targeting:** Projects targeting multiple TFMs (e.g., `net8.0;net48;netstandard2.0`) present multiple analysis contexts. SharpLsp exposes a custom LSP extension for users to select the active TFM, defaulting to the first.
 - **Project-less files:** A `.cs` [file-based app](https://learn.microsoft.com/en-us/dotnet/core/sdk/file-based-apps), a `.csx` Roslyn script, and a `.fsx` F# script are all first-class editing targets with no owning project. Their compilation closure is derived from the root file — `#:include` for file-based apps, `#load` for scripts — and never from the containing directory. See [SCRIPTING-FILEBASED-SPEC.md](SCRIPTING-FILEBASED-SPEC.md).
 
-#### [WORKSPACE-SOLUTION-PATH] Choosing the Solution to Open
+#### [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH] Choosing the Solution to Open
 
 The host sends one path to each sidecar's `workspace/open`. When that path is a directory, the C# sidecar discovers a target under it: an unambiguous `.sln`, `.slnx`, or `.csproj` is opened directly. Discovery **never guesses** between several nested solutions — a monorepo root holding `app/App.sln` and `other/Other.sln` is ambiguous, and guessing would silently load the wrong half of the repository.
 
@@ -182,7 +182,7 @@ On activation, the VS Code extension follows this sequence:
 3. **Version verification:** Shipwright probes each resolved binary with `--version` and compares against the manifest's `expectedVersion`.
 4. **Start LSP client:** Pass the resolved `sharplsp` path to `LanguageClient`. Never hardcode a path.
 
-#### [SIDECAR-RESOLVE-ENV] Sidecar Environment Overrides
+#### [SHARPLSP-ARCHITECTURE-EXTENSIONS-SIDECAR-ENV] Sidecar Environment Overrides
 
 `SHARPLSP_CSHARP_SIDECAR_PATH` and `SHARPLSP_FSHARP_SIDECAR_PATH` take precedence when they name an existing path. A missing override path MUST emit a warning and continue with PATH, installed-layout, and development-build resolution.
 
@@ -239,7 +239,7 @@ The Rust binary MUST have a test that proves:
 | [serde](https://serde.rs/) / [serde_json](https://crates.io/crates/serde_json) | 1.x | JSON handling for LSP protocol |
 | [tracing](https://crates.io/crates/tracing) | 0.1.x | Structured logging with [OpenTelemetry](https://opentelemetry.io/) export |
 | [notify](https://crates.io/crates/notify) | 7.x | Cross-platform filesystem watcher |
-| [dashmap](https://crates.io/crates/dashmap) | 6.x | Concurrent hash map for shared caches |
+| [dashmap](https://crates.io/crates/dashmap) | 6.x | Concurrent runtime state; MUST NOT store memoized feature results |
 
 ### [SHARPLSP-TECHNOLOGY-CSHARP] C# Sidecar Packages
 
@@ -273,7 +273,7 @@ Both C# and F# columns require full support unless noted.
 |---|---|---|---|---|
 | Auto-completion | `textDocument/completion` | [CompletionService.GetCompletionsAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getcompletionsasync) | GetDeclarationListInfo() `[FS-COMPLETION]` | P0 |
 | Completion resolve | `completionItem/resolve` | [CompletionService.GetDescriptionAsync()](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdescriptionasync) | GetDeclarationListInfo (detail) `[FS-COMPLETION-RESOLVE]` | P0 |
-| Completion edit semantics | `textDocument/completion` | `GetDefaultCompletionListSpan` + trailing-ident extension → `textEdit` — `[COMPLETION-EDIT-REPLACE]` | `QuickParse.GetPartialLongNameEx` island + trailing-ident extension → `textEdit` — `[COMPLETION-EDIT-REPLACE]` | P0 |
+| Completion edit semantics | `textDocument/completion` | `GetDefaultCompletionListSpan` + trailing-ident extension → `textEdit` — `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]` | `QuickParse.GetPartialLongNameEx` island + trailing-ident extension → `textEdit` — `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT]` | P0 |
 | Hover / Quick Info | `textDocument/hover` | See [HOVER-SPEC.md](HOVER-SPEC.md) | See [HOVER-SPEC.md](HOVER-SPEC.md) | P0 |
 | Signature help | `textDocument/signatureHelp` | SignatureHelpService.GetItemsAsync() | GetMethods() `[FS-SIGHELP]` | P0 |
 | Parameter hints | `textDocument/signatureHelp` | Same (active parameter tracking) | Same (active parameter tracking) | P0 |
@@ -281,7 +281,7 @@ Both C# and F# columns require full support unless noted.
 | Inlay hints (params) | `textDocument/inlayHint` | Parameter name hints | Parameter name hints | P1 |
 | Inline values | `textDocument/inlineValue` | Debugger expression eval | Debugger expression eval | P2 |
 
-#### [COMPLETION-EDIT-REPLACE] Completion Edit Semantics
+#### [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT] Completion Edit Semantics
 
 Every completion item returned by either sidecar carries an explicit LSP `textEdit`, not just an `insertText`. Its range is the identifier span **at the caret** — the typed prefix to the left of the cursor *plus any identifier characters that already follow it on the same line*. Accepting an item therefore **replaces** that identifier instead of being appended to it: completing `WriteLine` at `Console.|WriteLine` yields `Console.WriteLine`, never `Console.WriteLineWriteLine` (GitHub #178). Without a `textEdit` the editor falls back to its own word-boundary heuristic, which appends after a member-access trigger character and duplicates the identifier.
 
@@ -495,7 +495,7 @@ See [DEBUGGING-SPEC.md](DEBUGGING-SPEC.md) for the DAP router and debug-sidecar 
 - Monorepo-only unused public C# and F# code element analyzers
 - Multi-editor verification (Neovim, Helix, Zed, Emacs, Sublime)
 - Hot reload support via [dotnet watch](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-watch)
-- Performance optimization pass (memory budgets, cache eviction, lazy loading)
+- Performance optimization pass (memory budgets, salsa query/input lifecycle, lazy loading)
 - Custom Rider-class inspections beyond Roslyn's built-in set
 
 ### [SHARPLSP-PLAN-LEADERSHIP] Beyond Parity
@@ -516,7 +516,7 @@ See [DEBUGGING-SPEC.md](DEBUGGING-SPEC.md) for the DAP router and debug-sidecar 
 |---|---|---|---|
 | Roslyn Features APIs are internal | High | High | Use reflection for internal APIs. Contribute upstream PRs to make critical APIs public. Monitor Roslyn releases for API surface changes. |
 | MSBuild evaluation complexity | High | Certain | Leverage MSBuildWorkspace (proven by [OmniSharp](https://github.com/OmniSharp/omnisharp-roslyn)). Build comprehensive test suite against real-world `.sln` and `.slnx` files. Handle failure gracefully with partial project loading. |
-| Memory pressure in large solutions | High | Medium | Implement per-project sidecar pooling. Add memory budget enforcement with cache eviction. Consider separate sidecar instances per project in extreme cases. |
+| Memory pressure in large solutions | High | Medium | Implement per-project sidecar pooling. Enforce memory budgets through salsa query/input lifecycle. Consider separate sidecar instances per project in extreme cases. |
 | F# tree-sitter grammar incomplete | Medium | Medium | Fall back to FCS for any syntax feature where tree-sitter produces incorrect results. Contribute upstream to improve the grammar. |
 | Roslyn version coupling | Medium | Certain | Pin Roslyn version per SharpLsp release. Test against multiple Roslyn versions in CI. Abstract sidecar RPC to isolate version dependencies. |
 

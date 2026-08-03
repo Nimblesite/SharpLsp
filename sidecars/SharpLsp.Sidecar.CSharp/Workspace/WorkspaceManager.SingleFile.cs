@@ -17,13 +17,13 @@ internal enum ProjectlessKind
 
 /// <summary>
 /// Loads project-less C# documents: .NET file-based apps (<c>.cs</c> with <c>#:</c> directives)
-/// and Roslyn scripts (<c>.csx</c>). Implements [FILEBASED], [CSX].
+/// and Roslyn scripts (<c>.csx</c>). Implements [SCRIPT-FILEBASED], [SCRIPT-CSX].
 /// </summary>
 internal sealed partial class WorkspaceManager
 {
     private AdhocWorkspace? _adhocWorkspace;
 
-    // Script default imports, matching Roslyn's scripting host. Implements [CSX-OPTIONS].
+    // Script default imports, matching Roslyn's scripting host. Implements [SCRIPT-CSX-OPTIONS].
     private static readonly string[] ScriptImports =
     [
         "System",
@@ -147,14 +147,14 @@ internal sealed partial class WorkspaceManager
             compilationOptions: BuildCompilationOptions(isScript, rootPath),
             parseOptions: BuildParseOptions(isScript),
             // Tier 2 reference resolution: in-memory BCL only. `#:package` symbols do not bind
-            // until the synthesized-project path lands. [FILEBASED-REFERENCES-FALLBACK]
+            // until the synthesized-project path lands. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
             metadataReferences: Basic.Reference.Assemblies.Net100.References.All
         );
     }
 
     // Scripts need a SourceReferenceResolver rooted at the script's directory, otherwise Roslyn
     // reports CS8099 "Source file references are not supported" for every #load.
-    // Implements [CSX-RESOLVERS].
+    // Implements [SCRIPT-CSX-RESOLVERS].
     private static CSharpCompilationOptions BuildCompilationOptions(bool isScript, string rootPath)
     {
         var options = new CSharpCompilationOptions(
@@ -172,11 +172,11 @@ internal sealed partial class WorkspaceManager
     }
 
     // LanguageVersion.Latest, not Preview: Preview enables unstable features the user's SDK may
-    // reject, producing editor-only false negatives. Implements [FILEBASED-PARSEOPTIONS].
+    // reject, producing editor-only false negatives. Implements [SCRIPT-FILEBASED-PARSEOPTIONS].
     //
     // The FileBasedProgram feature flag is what unlocks `#!` and `#:` in a Regular compilation —
     // without it Roslyn reports CS9314/CS9313. The .NET SDK passes the same flag to csc when it
-    // builds a file-based app. Implements [FILEBASED-SHEBANG], [FILEBASED-DIRECTIVES].
+    // builds a file-based app. Implements [SCRIPT-FILEBASED-SHEBANG], [SCRIPT-FILEBASED-DIRECTIVES].
     private static CSharpParseOptions BuildParseOptions(bool isScript)
     {
         var options = new CSharpParseOptions(
@@ -190,7 +190,7 @@ internal sealed partial class WorkspaceManager
 
     // CSharpCompilationOptions.Usings is honored only for SourceCodeKind.Script. A regular
     // compilation gets its implicit usings from a generated source file, exactly as the SDK
-    // emits obj/<config>/<tfm>/<name>.GlobalUsings.g.cs. Implements [FILEBASED-REFERENCES].
+    // emits obj/<config>/<tfm>/<name>.GlobalUsings.g.cs. Implements [SCRIPT-FILEBASED-REFERENCES].
     private const string GlobalUsingsFileName = "SharpLsp.ImplicitUsings.g.cs";
 
     private static DocumentInfo BuildGlobalUsingsInfo(ProjectId projectId, string rootPath)
@@ -211,7 +211,7 @@ internal sealed partial class WorkspaceManager
 
     // A Document's SourceCodeKind is per-document and defaults to Regular; the project's
     // parseOptions kind does not propagate to it. Without this a `.csx` document reports
-    // "#load is only allowed in scripts". Implements [CSX-OPTIONS].
+    // "#load is only allowed in scripts". Implements [SCRIPT-CSX-OPTIONS].
     private static DocumentInfo BuildDocumentInfo(
         ProjectId projectId,
         ClosureFile file,

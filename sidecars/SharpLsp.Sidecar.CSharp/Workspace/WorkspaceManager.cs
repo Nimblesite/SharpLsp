@@ -583,7 +583,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
     // Names every candidate so the user can copy one straight into sharplsp.toml, and names
     // the setting so the message is actionable rather than merely descriptive.
-    // Implements [SCRIPT-DEGRADE] and [WORKSPACE-SOLUTION-PATH].
+    // Implements [SCRIPT-DEGRADE] and [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH].
     private static string AmbiguousSolutionMessage(string path, string[] candidates)
     {
         var names = string.Join(", ", candidates.Select(Path.GetFileName));

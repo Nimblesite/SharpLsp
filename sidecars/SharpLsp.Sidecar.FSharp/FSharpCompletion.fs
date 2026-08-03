@@ -66,7 +66,7 @@ let private isIdentifierPart (c: char) =
 /// 0-based line/character span the accepted item must REPLACE: the typed partial
 /// identifier to the LEFT of the caret plus any identifier characters that already
 /// follow it on the same line. Prevents `product.PricePrice` (GitHub #178).
-/// Implements [COMPLETION-EDIT-REPLACE].
+/// Implements [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT].
 let private editSpanFor (lineText: string) (line: int) (character: int) (partialIdent: string) =
     let startCharacter = max 0 (character - partialIdent.Length)
     let mutable endCharacter = min character lineText.Length

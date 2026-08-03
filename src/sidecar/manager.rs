@@ -25,7 +25,7 @@ const PING_TIMEOUT: Duration = Duration::from_secs(2);
 /// How long to wait for the sidecar READY signal.
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
 /// Response budget for ordinary sidecar requests. Anything slower is wedged,
-/// not busy — see [SIDECAR-REQUEST-TIMEOUT].
+/// not busy — see [SHARPLSP-ARCHITECTURE-SIDECARS-TIMEOUT].
 const REQUEST_TIMEOUT: Duration = Duration::from_mins(2);
 /// Response budget for `workspace/open`, which legitimately runs a full
 /// `MSBuild` design-time build (minutes on a cold `NuGet` cache).
@@ -169,7 +169,7 @@ impl SidecarManager {
     /// Bounded by a per-method budget: without one, a wedged sidecar handler
     /// blocks the LSP main loop forever — the health monitor deliberately
     /// skips pinging while a request holds the transport, so recovery would
-    /// never fire. Implements [SIDECAR-REQUEST-TIMEOUT].
+    /// never fire. Implements [SHARPLSP-ARCHITECTURE-SIDECARS-TIMEOUT].
     pub async fn request(&self, method: &str, payload: Vec<u8>) -> Result<Vec<u8>> {
         self.request_with_budget(method, payload, request_budget(method))
             .await
@@ -228,7 +228,7 @@ impl SidecarManager {
     /// Tear down the connection after a request timeout. The late response
     /// would otherwise be handed to the next caller and desync the framed
     /// protocol, so the transport is dropped and the process killed — the
-    /// next request respawns a clean sidecar. [SIDECAR-REQUEST-TIMEOUT]
+    /// next request respawns a clean sidecar. [SHARPLSP-ARCHITECTURE-SIDECARS-TIMEOUT]
     async fn fail_timed_out_request(
         &self,
         transport: &mut Option<FramedTransport>,
@@ -336,7 +336,7 @@ impl SidecarManager {
     /// Routed through [`SidecarManager::request_with_budget`] so a timed-out
     /// ping poisons the transport instead of abandoning a pending response
     /// mid-stream — an outer timeout that merely drops the read future leaves
-    /// a stale frame for the next caller. [SIDECAR-REQUEST-TIMEOUT]
+    /// a stale frame for the next caller. [SHARPLSP-ARCHITECTURE-SIDECARS-TIMEOUT]
     pub async fn health_check(&self) -> Result<()> {
         let ping_payload = rmp_serde::to_vec("ping")?;
         match self
@@ -421,7 +421,7 @@ impl SidecarManager {
 
 /// Response budget for a sidecar method. `workspace/open` legitimately runs a
 /// full `MSBuild` design-time build; anything else past two minutes is wedged.
-/// [SIDECAR-REQUEST-TIMEOUT]
+/// [SHARPLSP-ARCHITECTURE-SIDECARS-TIMEOUT]
 fn request_budget(method: &str) -> Duration {
     if method == "workspace/open" {
         WORKSPACE_OPEN_TIMEOUT
@@ -481,7 +481,7 @@ fn sidecar_launch(
         subdir, name, socket_path, "Resolving sidecar launch command"
     );
 
-    // [SIDECAR-RESOLVE-ENV]: env var override takes absolute priority.
+    // [SHARPLSP-ARCHITECTURE-EXTENSIONS-SIDECAR-ENV]: env var override takes absolute priority.
     if let Some(exe) = env_var_sidecar_override(subdir) {
         info!(exe = %exe.display(), source = "env-var", "Sidecar resolved");
         return (
@@ -930,7 +930,7 @@ mod tests {
         let exe = dir.join("SharpLsp.Sidecar.CSharp");
         fs::write(&exe, b"").unwrap();
 
-        // Implements [SIDECAR-RESOLVE-ENV]: SHARPLSP_CSHARP_SIDECAR_PATH overrides all other resolution.
+        // Implements [SHARPLSP-ARCHITECTURE-EXTENSIONS-SIDECAR-ENV]: SHARPLSP_CSHARP_SIDECAR_PATH overrides all other resolution.
         std::env::set_var("SHARPLSP_CSHARP_SIDECAR_PATH", exe.to_str().unwrap());
 
         let (command, args) = sidecar_launch(
@@ -954,7 +954,7 @@ mod tests {
     /// A wedged sidecar (accepts the request, never answers) must fail the
     /// request within its budget and poison the transport so the next request
     /// respawns a clean process — not hang the LSP main loop forever.
-    /// Implements [SIDECAR-REQUEST-TIMEOUT].
+    /// Implements [SHARPLSP-ARCHITECTURE-SIDECARS-TIMEOUT].
     #[tokio::test]
     async fn request_times_out_and_poisons_the_transport() {
         let manager = SidecarManager::new("test", "unused-command", vec![], "unused-endpoint");

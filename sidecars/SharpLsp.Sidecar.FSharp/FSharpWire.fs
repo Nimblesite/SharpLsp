@@ -18,7 +18,7 @@ type PositionRequest =
 
 /// `textDocument/didChange` payload: the full replacement text of a document.
 /// Layout mirrors the Rust host's `SidecarDidChangeReq` and the C# sidecar's
-/// `DidChangeRequest`. [FS-DIDCHANGE-OVERLAY]
+/// `DidChangeRequest`. [HOVER-FSHARP-OVERLAY]
 [<MessagePackObject(AllowPrivate = true)>]
 [<NoComparison; NoEquality>]
 type DidChangeRequest =

@@ -21,8 +21,8 @@ that feature — that is the parity gap.
 |---|---|---|---|---|
 | `textDocument/completion` | [semantic.rs:24](../../src/semantic.rs#L24) | ✅ | ✅ **(this plan)** | [FS-COMPLETION] |
 | `completionItem/resolve` | [semantic.rs:87](../../src/semantic.rs#L87) | ✅ | ✅ **(this plan)** | [FS-COMPLETION-RESOLVE] |
-| `textDocument/prepareRename` | [semantic.rs:920](../../src/semantic.rs#L920) | ✅ | ✅ **(this plan)** | [FS-RENAME-PREPARE] |
-| `textDocument/rename` | [semantic.rs:965](../../src/semantic.rs#L965) | ✅ | ✅ **(this plan)** | [FS-RENAME-APPLY] |
+| `textDocument/prepareRename` | [semantic.rs:920](../../src/semantic.rs#L920) | ✅ | ✅ **(this plan)** | [RENAME-FSHARP-PREPARE] |
+| `textDocument/rename` | [semantic.rs:965](../../src/semantic.rs#L965) | ✅ | ✅ **(this plan)** | [RENAME-FSHARP-APPLY] |
 | `textDocument/codeLens` | [code_lens.rs:15](../../src/code_lens.rs#L15) | ✅ | ✅ **(this plan)** | [FS-CODELENS] |
 | `textDocument/prepareCallHierarchy` | [call_hierarchy.rs:19](../../src/call_hierarchy.rs#L19) | ✅ | ✅ **(this plan)** | [FS-CALLHIER-PREPARE] |
 | `callHierarchy/incomingCalls` | [call_hierarchy.rs:59](../../src/call_hierarchy.rs#L59) | ✅ | ✅ **(this plan)** | [FS-CALLHIER-INCOMING] |
@@ -70,7 +70,7 @@ unopened namespaces expose `NamespaceToOpen`, surfaced as an `(open <ns>)` detai
 hint (mirrors C#'s `(import) <ns>`). `completionItem/resolve` returns the wire-empty
 `AdditionalEdits` for now; **auto-`open` insertion is a follow-up** (see below).
 
-### [FS-RENAME-PREPARE] / [FS-RENAME-APPLY] / [FS-REFS-PROJECT]
+### [RENAME-FSHARP-PREPARE] / [RENAME-FSHARP-APPLY] / [FS-REFS-PROJECT]
 Rename and references both need **project-wide** symbol uses, not just the current
 file. A shared `getProjectUsages` helper runs `ParseAndCheckProject` and
 `GetUsesOfSymbol` so `textDocument/references` becomes project-wide (was current-file
@@ -131,7 +131,7 @@ rule offers. Private/internal dead code is reported even outside monorepo mode.
 - [x] C# parity: Roslyn `SymbolFinder` monorepo dead-code (`SLSPC0101`) + `analyzers/configure`
       ([DeadCodeAnalyzer.cs](../../sidecars/SharpLsp.Sidecar.CSharp/Workspace/DeadCodeAnalyzer.cs),
       5 e2e tests; same `[analyzers]` config flows to both sidecars from the host)
-- [x] code fixes: remove-unused-open (`[FS-CODEFIX-UNUSEDOPEN]`) + simplify-name (`[FS-CODEFIX-SIMPLIFYNAME]`)
+- [x] code fixes: remove-unused-open (`[ANALYZERS-FSAC-CODEFIX-UNUSED-OPEN]`) + simplify-name (`[ANALYZERS-FSAC-CODEFIX-SIMPLIFY-NAME]`)
       — `removeUnusedOpenActions`/`simplifyNameActions` in
       [FSharpCodeFixes.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeFixes.fs), backed by the
       shared [FSharpLocalAnalysis.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpLocalAnalysis.fs)
@@ -168,8 +168,8 @@ rename, code lens, and call/type hierarchy).
 - [x] [FS-COMPLETION] `textDocument/completion` via `GetDeclarationListInfo`
 - [x] [FS-COMPLETION-RESOLVE] `completionItem/resolve` (wire-empty edits + ns hint)
 - [x] [FS-REFS-PROJECT] project-wide `textDocument/references`
-- [x] [FS-RENAME-PREPARE] `textDocument/prepareRename`
-- [x] [FS-RENAME-APPLY] `textDocument/rename` (project-wide edits)
+- [x] [RENAME-FSHARP-PREPARE] `textDocument/prepareRename`
+- [x] [RENAME-FSHARP-APPLY] `textDocument/rename` (project-wide edits)
 - [x] [FS-CODELENS] `textDocument/codeLens` reference counts
 - [x] [FS-CALLHIER-PREPARE] `textDocument/prepareCallHierarchy`
 - [x] [FS-CALLHIER-INCOMING] `callHierarchy/incomingCalls`
@@ -179,7 +179,7 @@ rename, code lens, and call/type hierarchy).
 - [x] [FS-TYPEHIER-SUB] `typeHierarchy/subtypes`
 - [x] [FS-DOCSYMBOL] `textDocument/documentSymbol` via FCS `GetNavigationItems` (parse-only; host routes `.fs` to the sidecar, `.cs` stays tree-sitter)
 - [x] [FS-SIGHELP] `textDocument/signatureHelp` via FCS `GetMethods` (capability advertised; overloads surfaced)
-- [x] [FS-DIDCHANGE-OVERLAY] canonical overlay-aware check funnel: all per-file analyses (hover, completion, diagnostics, signature help, inlay hints, code fixes, file ordering) funnel through the single `parseAndCheckOnce`/`checkFileWithParse`, so every feature type-checks the live didChange buffer and a reverted file clears its errors (GitHub #160, sidecar-side complement of the host's `[DIAG-PUSH-GATE]`; IPC dispatch is sequential so no mid-check gate is needed)
+- [x] [HOVER-FSHARP-OVERLAY] canonical overlay-aware check funnel: all per-file analyses (hover, completion, diagnostics, signature help, inlay hints, code fixes, file ordering) funnel through the single `parseAndCheckOnce`/`checkFileWithParse`, so every feature type-checks the live didChange buffer and a reverted file clears its errors (GitHub #160, sidecar-side complement of the host's `[DIAG-PUSH-GATE]`; IPC dispatch is sequential so no mid-check gate is needed)
 - [x] e2e tests for every method above (real `.fsproj`, IPC round-trip)
 
 > **Routing note:** `callHierarchy/incomingCalls`/`outgoingCalls` and
