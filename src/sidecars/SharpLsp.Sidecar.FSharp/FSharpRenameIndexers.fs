@@ -86,6 +86,14 @@ let private containsPosition line character (range: Range) =
     && range.StartColumn <= character
     && character < range.EndColumn
 
+let private isClosingBracket line character (syntax: IndexerSyntax) =
+    let range = syntax.UseRange
+    range.EndLine - 1 = line && range.EndColumn - 1 = character
+
+let private isIndexerPosition line character syntax =
+    containsPosition line character syntax.MarkerRange
+    || isClosingBracket line character syntax
+
 let private useAtSyntax (checkResults: FSharpCheckFileResults) (syntax: IndexerSyntax) =
     checkResults.GetAllUsesOfAllSymbolsInFile()
     |> Seq.tryFind (fun symbolUse ->
@@ -101,7 +109,7 @@ let private syntheticToken (symbolUse: FSharpSymbolUse) (syntax: IndexerSyntax) 
 
 let tryResolveAt checkResults parseResults line character =
     collectSyntaxes parseResults
-    |> Array.filter (fun syntax -> containsPosition line character syntax.MarkerRange)
+    |> Array.filter (isIndexerPosition line character)
     |> Array.tryPick (fun syntax ->
         useAtSyntax checkResults syntax
         |> Option.map (fun symbolUse -> symbolUse, syntheticToken symbolUse syntax))
