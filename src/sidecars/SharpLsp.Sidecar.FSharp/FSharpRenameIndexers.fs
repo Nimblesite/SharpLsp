@@ -29,9 +29,9 @@ let private accessorOfProperty
 
 let private enclosingProperties (memberValue: FSharpMemberOrFunctionOrValue) =
     try
-        memberValue.ApparentEnclosingEntity
-        |> Option.map _.MembersFunctionsAndValues
-        |> Option.defaultValue Seq.empty
+        match memberValue.ApparentEnclosingEntity with
+        | Some entity -> entity.MembersFunctionsAndValues :> seq<_>
+        | None -> Seq.empty
     with _ -> Seq.empty
 
 let private normalizeMember (memberValue: FSharpMemberOrFunctionOrValue) =
