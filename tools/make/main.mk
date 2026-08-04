@@ -266,6 +266,10 @@ _test-rust: _prepare-rust-tests
 # so it is reachable from a test.
 _test-zed:
 	@echo "==> Running Zed extension tests with coverage..."
+	# The Zed workspace builds into $(ZED_DIR)/target, so on a fresh checkout the
+	# root target/ that holds every other coverage artifact does not exist yet
+	# and llvm-cov cannot write the report into it.
+	@mkdir -p target
 	cargo llvm-cov --manifest-path $(ZED_DIR)/Cargo.toml \
 		--json --output-path target/coverage-zed.json
 	@$(CHECK_COV) sharplsp-zed --json target/coverage-zed.json data.0.totals.lines.percent
