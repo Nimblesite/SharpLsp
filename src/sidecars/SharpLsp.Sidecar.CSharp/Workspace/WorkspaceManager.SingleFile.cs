@@ -107,8 +107,11 @@ internal sealed partial class WorkspaceManager
     {
         _adhocWorkspace ??= new AdhocWorkspace();
 
-        var packageReferences = await ResolvePackagesAsync(closure.Packages, ct).ConfigureAwait(false);
-        var project = _adhocWorkspace.AddProject(BuildProjectInfo(kind, rootPath, packageReferences));
+        var packageReferences = await ResolvePackagesAsync(closure.Packages, ct)
+            .ConfigureAwait(false);
+        var project = _adhocWorkspace.AddProject(
+            BuildProjectInfo(kind, rootPath, packageReferences)
+        );
         DocumentId? rootDocumentId = null;
         foreach (var file in closure.Files)
         {
@@ -145,7 +148,11 @@ internal sealed partial class WorkspaceManager
         return new VoidResult.Ok<Unit, string>(Unit.Value);
     }
 
-    internal async Task<VoidResult> UpdateProjectlessClosureAsync(Document document, string newText, CancellationToken ct)
+    internal async Task<VoidResult> UpdateProjectlessClosureAsync(
+        Document document,
+        string newText,
+        CancellationToken ct
+    )
     {
         if (_solution is null)
         {
@@ -153,9 +160,14 @@ internal sealed partial class WorkspaceManager
         }
 
         var kind = Classify(document.FilePath!);
-        var closure = kind == ProjectlessKind.Script
-            ? await DocumentClosure.ExpandScriptAsync(document.FilePath!, newText, ct).ConfigureAwait(false)
-            : await DocumentClosure.ExpandFileBasedAsync(document.FilePath!, newText, ct).ConfigureAwait(false);
+        var closure =
+            kind == ProjectlessKind.Script
+                ? await DocumentClosure
+                    .ExpandScriptAsync(document.FilePath!, newText, ct)
+                    .ConfigureAwait(false)
+                : await DocumentClosure
+                    .ExpandFileBasedAsync(document.FilePath!, newText, ct)
+                    .ConfigureAwait(false);
 
         var currentProject = _solution.GetProject(document.Project.Id);
         if (currentProject == null)
@@ -193,12 +205,18 @@ internal sealed partial class WorkspaceManager
         }
 
         // Handle package references
-        if (_documentPackages.TryGetValue(document.Id, out var oldPackages) && !closure.Packages.SequenceEqual(oldPackages))
+        if (
+            _documentPackages.TryGetValue(document.Id, out var oldPackages)
+            && !closure.Packages.SequenceEqual(oldPackages)
+        )
         {
-            var newReferences = await ResolvePackagesAsync(closure.Packages, ct).ConfigureAwait(false);
-            var updatedProject = nextSolution.GetProject(currentProject.Id)!.WithMetadataReferences(
-                Basic.Reference.Assemblies.Net100.References.All.Concat(newReferences)
-            );
+            var newReferences = await ResolvePackagesAsync(closure.Packages, ct)
+                .ConfigureAwait(false);
+            var updatedProject = nextSolution
+                .GetProject(currentProject.Id)!
+                .WithMetadataReferences(
+                    Basic.Reference.Assemblies.Net100.References.All.Concat(newReferences)
+                );
             nextSolution = updatedProject.Solution;
             _documentPackages[document.Id] = closure.Packages;
         }
@@ -217,13 +235,22 @@ internal sealed partial class WorkspaceManager
             return [];
         }
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "SharpLsp_Packages_" + Guid.NewGuid().ToString("N"));
+        var tempDir = Path.Combine(
+            Path.GetTempPath(),
+            "SharpLsp_Packages_" + Guid.NewGuid().ToString("N")
+        );
         _ = Directory.CreateDirectory(tempDir);
         try
         {
             var projPath = Path.Combine(tempDir, "restore.csproj");
-            var packageItems = string.Join("\n", packages.Select(p => $"<PackageReference Include=\"{p.Name}\" Version=\"{p.Version}\" />"));
-            var xml = $@"<Project Sdk=""Microsoft.NET.Sdk"">
+            var packageItems = string.Join(
+                "\n",
+                packages.Select(p =>
+                    $"<PackageReference Include=\"{p.Name}\" Version=\"{p.Version}\" />"
+                )
+            );
+            var xml =
+                $@"<Project Sdk=""Microsoft.NET.Sdk"">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
@@ -245,22 +272,34 @@ internal sealed partial class WorkspaceManager
                 await process.WaitForExitAsync(ct).ConfigureAwait(false);
             }
 
-            using var workspace = Microsoft.CodeAnalysis.MSBuild.MSBuildWorkspace.Create(new Dictionary<string, string>
-            {
-                ["DesignTimeBuild"] = "true",
-                ["BuildingInsideVisualStudio"] = "true",
-                ["SkipCompilerExecution"] = "true",
-            });
-            var project = await workspace.OpenProjectAsync(projPath, cancellationToken: ct).ConfigureAwait(false);
+            using var workspace = Microsoft.CodeAnalysis.MSBuild.MSBuildWorkspace.Create(
+                new Dictionary<string, string>
+                {
+                    ["DesignTimeBuild"] = "true",
+                    ["BuildingInsideVisualStudio"] = "true",
+                    ["SkipCompilerExecution"] = "true",
+                }
+            );
+            var project = await workspace
+                .OpenProjectAsync(projPath, cancellationToken: ct)
+                .ConfigureAwait(false);
             return project.MetadataReferences.OfType<PortableExecutableReference>();
         }
         finally
         {
-            try { Directory.Delete(tempDir, true); } catch { }
+            try
+            {
+                Directory.Delete(tempDir, true);
+            }
+            catch { }
         }
     }
 
-    private static ProjectInfo BuildProjectInfo(ProjectlessKind kind, string rootPath, IEnumerable<PortableExecutableReference> extraReferences)
+    private static ProjectInfo BuildProjectInfo(
+        ProjectlessKind kind,
+        string rootPath,
+        IEnumerable<PortableExecutableReference> extraReferences
+    )
     {
         var name = Path.GetFileNameWithoutExtension(rootPath);
         var isScript = kind == ProjectlessKind.Script;
@@ -275,7 +314,9 @@ internal sealed partial class WorkspaceManager
             parseOptions: BuildParseOptions(isScript),
             // Tier 2 reference resolution: in-memory BCL only. `#:package` symbols bind
             // via MSBuildWorkspace synthetic evaluation fallback. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
-            metadataReferences: Basic.Reference.Assemblies.Net100.References.All.Concat(extraReferences)
+            metadataReferences: Basic.Reference.Assemblies.Net100.References.All.Concat(
+                extraReferences
+            )
         );
     }
 

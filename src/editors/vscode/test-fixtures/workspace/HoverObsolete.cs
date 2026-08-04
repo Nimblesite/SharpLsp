@@ -4,6 +4,7 @@ namespace HoverObsolete
     {
         [System.Obsolete("Use NewMethod instead")]
         public void OldMethod() { }
+
         public void NewMethod() { }
     }
 }

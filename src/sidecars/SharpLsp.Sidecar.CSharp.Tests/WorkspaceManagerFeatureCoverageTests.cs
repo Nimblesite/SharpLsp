@@ -332,7 +332,10 @@ public sealed class WorkspaceManagerFeatureCoverageTests : IDisposable
         var toString = items.Find(item => item.Label == "ToString");
         Assert.NotNull(toString);
 
-        var resolved = await manager.ResolveCompletionAsync(toString!.Index, CancellationToken.None);
+        var resolved = await manager.ResolveCompletionAsync(
+            toString!.Index,
+            CancellationToken.None
+        );
         Assert.NotNull(resolved);
 
         // The primary edit (inserting "ToString") MUST be skipped. AdditionalEdits

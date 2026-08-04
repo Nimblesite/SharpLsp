@@ -30,7 +30,11 @@ internal static class DocumentClosure
     private const int MaxDepth = 8;
 
     /// <summary>Expand a C# file-based app closure: root file plus transitive <c>#:include</c>.</summary>
-    public static Task<Closure> ExpandFileBasedAsync(string rootPath, string? rootText = null, CancellationToken ct = default)
+    public static Task<Closure> ExpandFileBasedAsync(
+        string rootPath,
+        string? rootText = null,
+        CancellationToken ct = default
+    )
     {
         return ExpandAsync(rootPath, rootText, IncludedPaths, ct);
     }
@@ -40,7 +44,11 @@ internal static class DocumentClosure
     /// compilation's <c>SourceReferenceResolver</c>; adding the loaded files as documents too
     /// would compile them twice. Implements [SCRIPT-CSX-RESOLVERS].
     /// </summary>
-    public static Task<Closure> ExpandScriptAsync(string rootPath, string? rootText = null, CancellationToken ct = default)
+    public static Task<Closure> ExpandScriptAsync(
+        string rootPath,
+        string? rootText = null,
+        CancellationToken ct = default
+    )
     {
         return ExpandAsync(rootPath, rootText, NoChildren, ct);
     }
@@ -62,7 +70,8 @@ internal static class DocumentClosure
     )
     {
         var state = new ExpansionState(children);
-        await VisitAsync(rootPath, rootText, isRoot: true, depth: 0, state, ct).ConfigureAwait(false);
+        await VisitAsync(rootPath, rootText, isRoot: true, depth: 0, state, ct)
+            .ConfigureAwait(false);
         return new Closure(state.Files, state.Packages, state.Issues);
     }
 
@@ -88,9 +97,10 @@ internal static class DocumentClosure
             return;
         }
 
-        var read = isRoot && textOverride != null
-            ? textOverride
-            : await ReadAsync(full, ct).ConfigureAwait(false);
+        var read =
+            isRoot && textOverride != null
+                ? textOverride
+                : await ReadAsync(full, ct).ConfigureAwait(false);
 
         if (read is null)
         {
@@ -100,13 +110,22 @@ internal static class DocumentClosure
 
         state.Files.Add(new ClosureFile(full, read, isRoot));
 
-        var tree = CSharpSyntaxTree.ParseText(read, FileBasedParseOptions, path: full, cancellationToken: ct);
+        var tree = CSharpSyntaxTree.ParseText(
+            read,
+            FileBasedParseOptions,
+            path: full,
+            cancellationToken: ct
+        );
         var root = await tree.GetRootAsync(ct).ConfigureAwait(false);
         var directives = FileLevelDirectives.Parse(root);
 
         foreach (var directive in directives)
         {
-            if (directive.Kind == FileDirectiveKind.Package && !string.IsNullOrEmpty(directive.Name) && !string.IsNullOrEmpty(directive.Value))
+            if (
+                directive.Kind == FileDirectiveKind.Package
+                && !string.IsNullOrEmpty(directive.Name)
+                && !string.IsNullOrEmpty(directive.Value)
+            )
             {
                 state.Packages.Add(new PackageRef(directive.Name, directive.Value));
             }
@@ -114,7 +133,8 @@ internal static class DocumentClosure
 
         foreach (var child in state.Children(directives, full, state))
         {
-            await VisitAsync(child, textOverride: null, isRoot: false, depth + 1, state, ct).ConfigureAwait(false);
+            await VisitAsync(child, textOverride: null, isRoot: false, depth + 1, state, ct)
+                .ConfigureAwait(false);
         }
     }
 

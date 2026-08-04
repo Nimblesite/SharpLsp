@@ -21,9 +21,7 @@ public sealed class SortMembersCommand
 
     public const int AlphaConstant = 1;
 
-    public SortMembersCommand()
-    {
-    }
+    public SortMembersCommand() { }
 
     public string Alpha()
     {
@@ -33,9 +31,7 @@ public sealed class SortMembersCommand
 
 public struct SortMembersStruct
 {
-    public void Zebra()
-    {
-    }
+    public void Zebra() { }
 
     public int Alpha;
 }
@@ -51,18 +47,14 @@ public enum SortMembersEnum
 {
     Zebra,
     Alpha,
-    Middle
+    Middle,
 }
 
 public record SortMembersRecord
 {
-    private void Zebra()
-    {
-    }
+    private void Zebra() { }
 
-    public void Beta()
-    {
-    }
+    public void Beta() { }
 
     public int Alpha { get; init; }
 }

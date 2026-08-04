@@ -76,7 +76,10 @@ internal sealed partial class WorkspaceManager : IDisposable
         StringComparer.OrdinalIgnoreCase
     );
 
-    private readonly System.Collections.Generic.Dictionary<Microsoft.CodeAnalysis.DocumentId, System.Collections.Generic.IReadOnlyList<PackageRef>> _documentPackages = new();
+    private readonly System.Collections.Generic.Dictionary<
+        Microsoft.CodeAnalysis.DocumentId,
+        System.Collections.Generic.IReadOnlyList<PackageRef>
+    > _documentPackages = new();
 
     public bool IsLoaded => _solution is not null;
 
@@ -153,7 +156,8 @@ internal sealed partial class WorkspaceManager : IDisposable
                 // Auto-update the closure and packages if they changed during a live edit
                 if (document.Project.Solution.Workspace is AdhocWorkspace)
                 {
-                    var updateResult = await UpdateProjectlessClosureAsync(document, newText, ct).ConfigureAwait(false);
+                    var updateResult = await UpdateProjectlessClosureAsync(document, newText, ct)
+                        .ConfigureAwait(false);
                     if (updateResult.IsError)
                     {
                         return updateResult;
