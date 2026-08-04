@@ -1037,13 +1037,14 @@
     "compile-tests": "node ../../../tools/npm/run-sequential.mjs clean compile-tests:typescript",
     "compile-tests:typescript": "tsc -p ./",
     "prepare:test-assets": "node ../../../tools/vsix/resolve-symlink-stubs.mjs icons",
-    "pretest": "node ../../../tools/npm/run-sequential.mjs prepare:test-assets compile-tests build",
+    "pretest": "node ../../../tools/npm/run-sequential.mjs prepare:test-assets prepare:test-fixtures compile-tests build",
     "test": "vscode-test --coverage",
     "test:run": "node out/test/runTest.js",
     "package": "vsce package --no-dependencies",
     "build:production": "node esbuild.mjs --production",
     "vscode:prepublish": "node ../../../tools/npm/run-sequential.mjs prepare:test-assets build:production",
-    "clean": "node clean-out.mjs"
+    "clean": "node clean-out.mjs",
+    "prepare:test-fixtures": "node ../../../tools/vsix/build-test-fixtures.mjs"
   },
   "dependencies": {
     "@nimblesite/shipwright-vscode": "^0.10.0",
