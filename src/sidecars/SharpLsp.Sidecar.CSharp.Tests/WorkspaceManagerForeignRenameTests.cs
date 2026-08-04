@@ -54,6 +54,7 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
     public async Task Repository_mixed_solution_resolves_the_exact_FSharp_identity_into_CSharp()
     {
         var workspace = FindRepositoryFixture();
+        await EnsureFSharpFixtureBuiltAsync(workspace);
         var sourcePath = Path.Combine(workspace, "crosslanguage", "FSharpConsumer.cs");
         using var manager = await OpenRepositoryManagerAsync(workspace);
         var (line, character) = LocateFile(sourcePath, "Read(FSharpOrigin", "FSharpOrigin");
@@ -234,6 +235,65 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
     {
         Assert.False(result.IsError, result.Match(_ => "ok", error => error));
         return +result;
+    }
+
+    private static readonly SemaphoreSlim FixtureBuildGate = new(1, 1);
+    private static bool _fSharpFixtureBuilt;
+
+    /// <summary>
+    /// Build the F# fixture assembly that the mixed-language solution binds against.
+    ///
+    /// Roslyn's MSBuildWorkspace cannot load an <c>.fsproj</c>, so
+    /// <c>CSharpConsumer</c>'s project reference degrades to a metadata reference
+    /// resolved from the F# project's build output on disk. With no assembly there
+    /// <c>FSharpOrigin</c> never binds, the foreign rename matches nothing, and the
+    /// document-change assertion fails — but only on a machine that has not already
+    /// built the fixture, which is every clean checkout, CI included. Building it
+    /// here makes the test independent of ambient build state.
+    ///
+    /// The configuration is pinned to Debug rather than inherited: MSBuildWorkspace
+    /// opens the solution under MSBuild's default configuration, so Debug is where
+    /// it looks for the reference no matter how this test assembly was built.
+    /// </summary>
+    private static async Task EnsureFSharpFixtureBuiltAsync(string workspace)
+    {
+        await FixtureBuildGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_fSharpFixtureBuilt)
+            {
+                return;
+            }
+
+            var project = Path.Combine(workspace, "fsharp", "FSharpFixtures.fsproj");
+            var (exitCode, output) = await RunDotnetBuildAsync(project).ConfigureAwait(false);
+            Assert.True(exitCode == 0, $"F# fixture build failed ({exitCode}):{output}");
+            _fSharpFixtureBuilt = true;
+        }
+        finally
+        {
+            FixtureBuildGate.Release();
+        }
+    }
+
+    /// <summary>Build one project, returning its exit code and merged output.</summary>
+    private static async Task<(int ExitCode, string Output)> RunDotnetBuildAsync(string project)
+    {
+        var startInfo = new ProcessStartInfo("dotnet")
+        {
+            ArgumentList = { "build", project, "--configuration", "Debug", "--nologo" },
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        using var build = Process.Start(startInfo);
+        Assert.NotNull(build);
+        // Drain both pipes concurrently: reading them in sequence deadlocks as soon
+        // as the un-read pipe fills its buffer.
+        var stdout = build.StandardOutput.ReadToEndAsync();
+        var stderr = build.StandardError.ReadToEndAsync();
+        await build.WaitForExitAsync().ConfigureAwait(false);
+        var text = await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false);
+        return (build.ExitCode, text);
     }
 
     private static string FindRepositoryFixture()

@@ -28,13 +28,16 @@ export default tseslint.config(
 
       // ── 2. Strict null checks — no accidental undefined ────────────
       '@typescript-eslint/no-non-null-assertion': 'error',
-      '@typescript-eslint/strict-boolean-expressions': ['error', {
-        allowNullableBoolean: false,
-        allowNullableString: false,
-        allowNullableNumber: false,
-        allowNullableObject: false,
-        allowAny: false,
-      }],
+      '@typescript-eslint/strict-boolean-expressions': [
+        'error',
+        {
+          allowNullableBoolean: false,
+          allowNullableString: false,
+          allowNullableNumber: false,
+          allowNullableObject: false,
+          allowAny: false,
+        },
+      ],
 
       // ── 3. Exhaustive switches — catch missing enum cases ──────────
       '@typescript-eslint/switch-exhaustiveness-check': 'error',
@@ -45,31 +48,40 @@ export default tseslint.config(
       'no-void': ['error', { allowAsStatement: true }],
 
       // ── 5. No unused variables — dead code is a bug vector ─────────
-      '@typescript-eslint/no-unused-vars': ['error', {
-        argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_',
-        caughtErrorsIgnorePattern: '^_',
-      }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
 
       // ── 6. Prefer const — immutability by default ──────────────────
       'prefer-const': 'error',
 
       // ── 7. Explicit return types — contracts must be clear ─────────
-      '@typescript-eslint/explicit-function-return-type': ['error', {
-        allowExpressions: true,
-        allowTypedFunctionExpressions: true,
-        allowHigherOrderFunctions: true,
-      }],
+      '@typescript-eslint/explicit-function-return-type': [
+        'error',
+        {
+          allowExpressions: true,
+          allowTypedFunctionExpressions: true,
+          allowHigherOrderFunctions: true,
+        },
+      ],
 
       // ── 8. No shadow — inner vars must not hide outer vars ─────────
       '@typescript-eslint/no-shadow': 'error',
       'no-shadow': 'off',
 
       // ── 9. Consistent type imports — enforce `import type` ─────────
-      '@typescript-eslint/consistent-type-imports': ['error', {
-        prefer: 'type-imports',
-        fixStyle: 'inline-type-imports',
-      }],
+      '@typescript-eslint/consistent-type-imports': [
+        'error',
+        {
+          prefer: 'type-imports',
+          fixStyle: 'inline-type-imports',
+        },
+      ],
 
       // ── 10. No require — ESM only ─────────────────────────────────
       '@typescript-eslint/no-require-imports': 'error',
@@ -84,18 +96,24 @@ export default tseslint.config(
       '@typescript-eslint/promise-function-async': 'error',
 
       // ── 14. Explicit visibility — no implicit public on class members ────
-      '@typescript-eslint/explicit-member-accessibility': ['error', {
-        accessibility: 'explicit',
-        overrides: { constructors: 'no-public' },
-      }],
+      '@typescript-eslint/explicit-member-accessibility': [
+        'error',
+        {
+          accessibility: 'explicit',
+          overrides: { constructors: 'no-public' },
+        },
+      ],
 
       // ── 15. No deprecated — flag usage of deprecated APIs immediately ────
       '@typescript-eslint/no-deprecated': 'error',
 
       // ── 16. No type assertions — casting is illegal ─────────────────
-      '@typescript-eslint/consistent-type-assertions': ['error', {
-        assertionStyle: 'never',
-      }],
+      '@typescript-eslint/consistent-type-assertions': [
+        'error',
+        {
+          assertionStyle: 'never',
+        },
+      ],
 
       // Conflicts with no-non-null-assertion — disable the weaker rule.
       '@typescript-eslint/non-nullable-type-assertion-style': 'off',
@@ -107,7 +125,7 @@ export default tseslint.config(
       'no-console': 'error',
 
       // ── Bonus rules ────────────────────────────────────────────────
-      'eqeqeq': ['error', 'always'],
+      eqeqeq: ['error', 'always'],
       'no-param-reassign': 'error',
       '@typescript-eslint/consistent-type-definitions': ['error', 'interface'],
     },
@@ -126,11 +144,14 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-argument': 'off',
       '@typescript-eslint/no-unsafe-return': 'off',
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
-      '@typescript-eslint/no-unused-vars': ['error', {
-        argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_',
-        caughtErrorsIgnorePattern: '^_',
-      }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
       '@typescript-eslint/require-await': 'off',
       '@typescript-eslint/dot-notation': 'off',
       '@typescript-eslint/use-unknown-in-catch-callback-variable': 'off',
@@ -142,6 +163,18 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['out/', 'dist/', 'coverage/', 'node_modules/', '**/*.mjs', '**/*.cjs', '**/*.js'],
+    ignores: [
+      'out/',
+      'dist/',
+      'coverage/',
+      'node_modules/',
+      // The VS Code build the test host downloads. Not our source, and it only
+      // exists on a machine that has run the VSIX suite — without this, `make
+      // lint` passes in CI and fails locally on thousands of vendored .d.ts.
+      '.vscode-test/',
+      '**/*.mjs',
+      '**/*.cjs',
+      '**/*.js',
+    ],
   },
 );
