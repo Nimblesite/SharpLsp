@@ -43,7 +43,7 @@ let private GENERATION_SOURCE =
           ""
           "let whole = { Alpha = 1; Beta = \"b\" }" ]
 
-let private checkedFixture state path =
+let internal checkedFixture state path =
     task {
         let! checkedFile = FSharpWorkspace.checkFileWithParse state path
         match checkedFile with
@@ -55,7 +55,7 @@ let private generationProject () = loadWorkspace [ "Generation.fs", GENERATION_S
 
 /// Generated stubs must never carry trailing whitespace: the repository's own
 /// `git diff --check` gate rejects it the moment a user accepts the fix.
-let private trailingWhitespaceLines (text: string) =
+let internal trailingWhitespaceLines (text: string) =
     text.Split('\n')
     |> Array.map _.TrimEnd('\r')
     |> Array.filter (fun line -> line.Length > 0 && line <> line.TrimEnd())

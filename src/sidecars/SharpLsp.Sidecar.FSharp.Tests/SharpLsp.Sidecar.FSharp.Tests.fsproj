@@ -23,6 +23,7 @@
     <Compile Include="FSharpScriptTests.fs" />
     <Compile Include="FSharpRenameSemanticTests.fs" />
     <Compile Include="FSharpCodeActionSemanticTests.fs" />
+    <Compile Include="FSharpAccessorStubTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
