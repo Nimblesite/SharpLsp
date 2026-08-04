@@ -18,8 +18,11 @@ type private TypeSyntax =
     { Attributes: SynAttribute list
       Anchor: Position }
 
+/// Two FCS symbol instances for the same accessor come from separate reads, so
+/// structural `Equals` does not hold. `IsEffectivelySameAs` is the compiler's own
+/// identity test and is what links a getter back to its declaring property.
 let private sameSymbol (left: FSharpSymbol) (right: FSharpSymbol) =
-    left.Equals(right)
+    left.IsEffectivelySameAs(right)
 
 let private accessorOfProperty
     (memberValue: FSharpMemberOrFunctionOrValue)
@@ -40,9 +43,16 @@ let private normalizeMember (memberValue: FSharpMemberOrFunctionOrValue) =
         enclosingProperties memberValue
         |> Seq.tryFind (fun property -> property.IsProperty && accessorOfProperty memberValue property)
 
+let private parameterCount (memberValue: FSharpMemberOrFunctionOrValue) =
+    memberValue.CurriedParameterGroups |> Seq.sumBy _.Count
+
+/// FCS reports an `x.[i]` use — and the `member _.Item` declaration itself — as the
+/// property's getter, and only that accessor carries the index parameters: the
+/// property symbol's own parameter groups are empty. A getter that takes arguments
+/// is therefore what distinguishes an indexed property from a plain one.
 let private hasIndexParameters (property: FSharpMemberOrFunctionOrValue) =
-    property.CurriedParameterGroups
-    |> Seq.exists (fun group -> group.Count > 0)
+    parameterCount property > 0
+    || (property.HasGetterMethod && parameterCount property.GetterMethod > 0)
 
 let tryNormalize (symbol: FSharpSymbol) =
     match symbol with

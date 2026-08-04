@@ -60,8 +60,13 @@ let sourceNameForSymbol (symbol: FSharpSymbol) =
     if PrettyNaming.IsOperatorDisplayName(displayName) then displayName.Trim('(', ')')
     else displayName
 
+/// FCS reports `DisplayName` carrying the ``escaping`` backticks an identifier
+/// needs, and the lexer hands back that same escaped text. Compare the logical
+/// names so an escaped identifier matches its own uses.
+let private logicalName (text: string) = text.Trim('`')
+
 let private tokenMatchesName sourceName (token: SourceToken) =
-    token.Text.Trim('`').TrimStart('\'') = sourceName
+    (logicalName token.Text).TrimStart('\'') = logicalName sourceName
 
 let tokenForRangeName
     (checker: FSharpChecker)

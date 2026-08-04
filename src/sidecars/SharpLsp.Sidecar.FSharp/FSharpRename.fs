@@ -39,7 +39,7 @@ type private LocatedUse =
 [<NoComparison; NoEquality>]
 type private LocatedUseResult =
     | TextualUse of LocatedUse
-    | ImplicitIndexerUse
+    | ImplicitUse
 
 type private TokenCandidate =
     { FilePath: string
@@ -141,6 +141,14 @@ let private locateUsesAs checker tokenized sourceName (uses: FSharpSymbolUse arr
             { LocatedUse.SymbolUse = symbolUse
               Token = token }))
 
+/// FCS reports some semantic uses at a zero-width range: a record copy-and-update
+/// expression `{ value with Field = 1 }` names its record type at the `{` with an
+/// empty span. There is no identifier text there to rewrite, so such a use is
+/// carried as implicit instead of failing the whole rename. [RENAME-FSHARP-APPLY]
+let private isInferredUse (symbolUse: FSharpSymbolUse) =
+    let range = symbolUse.Range
+    range.StartLine = range.EndLine && range.StartColumn = range.EndColumn
+
 let private classifyLocatedUse checker tokenized syntaxes symbolUse =
     tokenForUse checker tokenized symbolUse
     |> Option.map (fun token ->
@@ -148,7 +156,8 @@ let private classifyLocatedUse checker tokenized syntaxes symbolUse =
             { SymbolUse = symbolUse
               Token = token })
     |> Option.orElseWith (fun () ->
-        if isImplicitUse syntaxes symbolUse then Some ImplicitIndexerUse else None)
+        if isImplicitUse syntaxes symbolUse || isInferredUse symbolUse then Some ImplicitUse
+        else None)
 
 let private locateFileUses state (filePath, uses) =
     task {

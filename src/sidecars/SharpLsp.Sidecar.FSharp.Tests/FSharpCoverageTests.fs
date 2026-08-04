@@ -40,11 +40,11 @@ let private makeProject (files: (string * string) list) =
     (dir, fsprojPath, paths)
 
 /// Dispose a temp project directory quietly.
-let private cleanup (dir: string) =
+let internal cleanup (dir: string) =
     try Directory.Delete(dir, true) with _ -> ()
 
 /// Create and load a workspace for the given files.
-let private loadWorkspace (files: (string * string) list) =
+let internal loadWorkspace (files: (string * string) list) =
     task {
         let (dir, fsprojPath, paths) = makeProject files
         let state = FSharpWorkspace.create ()

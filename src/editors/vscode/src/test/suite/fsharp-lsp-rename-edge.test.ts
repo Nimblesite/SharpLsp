@@ -5,6 +5,7 @@ import {
   RENAME_DECLARATIONS_SOURCE,
   RENAME_NAMESPACE_SOURCE,
   RENAME_NAMESPACE_USAGE_SOURCE,
+  RENAME_USAGES_SOURCE,
 } from './fsharp-rename-fixtures';
 import {
   FSHARP_REFACTOR_TIMEOUT_MS,
@@ -28,6 +29,7 @@ import { closeAllEditors } from './test-helpers';
 // Real-LSP rejection/live-overlay boundaries. [RENAME-FSHARP-PREPARE] [RENAME-FSHARP-APPLY]
 const TARGET_FILE = 'fsharp/RenameEdge.fs';
 const DECLARATIONS_FILE = 'fsharp/RenameDeclarations.fs';
+const USAGES_FILE = 'fsharp/RenameUsages.fs';
 const NAMESPACE_FILE = 'fsharp/RenameNamespace.fs';
 const NAMESPACE_USAGE_FILE = 'fsharp/RenameNamespaceUsage.fs';
 const VALID_NAMES = ['renamedName', "renamedName'", '``renamed value``'] as const;
@@ -78,9 +80,9 @@ function registerRenameBoundaryTests(): void {
     this.timeout(FSHARP_REFACTOR_TIMEOUT_MS);
     await assertTriviaRejected();
   });
-  test('rejects an indexer Item name whose F# uses have no identifier token', async function () {
-    this.timeout(FSHARP_REFACTOR_TIMEOUT_MS);
-    await assertIndexerRejected();
+  test('renames an indexer and keeps .[i] call sites compiling via DefaultMember', async function () {
+    this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+    await assertIndexerRename();
   });
 
   test('renames a namespace across files and reverses the rename', async function () {
@@ -255,19 +257,45 @@ async function assertMetadataRejected(name: string): Promise<void> {
   }
 }
 
-async function assertIndexerRejected(): Promise<void> {
-  const fixture = await openOverlay(DECLARATIONS_FILE, RENAME_DECLARATIONS_SOURCE);
+// An `x.[i]` call site carries no `Item` token, so renaming the member alone would
+// break it. The rename must also write DefaultMember metadata for the new name —
+// the usages file staying error-free is the proof it still binds.
+async function assertIndexerRename(): Promise<void> {
+  const declarations = await openOverlay(DECLARATIONS_FILE, RENAME_DECLARATIONS_SOURCE);
+  const usages = await openOverlay(USAGES_FILE, RENAME_USAGES_SOURCE);
   try {
-    const range = tokenRange(fixture.document, 'Item');
-    const prepare = await requestPrepareRename(fixture.uri, range.start.translate(0, 1));
-    assert.strictEqual(prepare, null, 'F# indexer call sites use .[i], not the Item token');
-    const result = await executeRenameWithoutEdit(fixture.uri, range.start, 'Lookup');
-    assert.ok(result === undefined || result.size === 0);
-    assert.strictEqual(fixture.document.getText(), RENAME_DECLARATIONS_SOURCE);
-    assert.ok(fixture.document.isDirty);
+    await runIndexerLifecycle(declarations, usages);
   } finally {
-    await revertDocument(fixture.document);
+    await revertDocument(usages.document);
+    await revertDocument(declarations.document);
   }
+}
+
+async function runIndexerLifecycle(declarations: OpenOverlay, usages: OpenOverlay): Promise<void> {
+  const range = tokenRange(declarations.document, 'Item');
+  await assertPrepareAtEveryTokenPosition(declarations.uri, range, 'Item');
+  const edit = await requestRename(
+    declarations.uri,
+    range.start.translate(0, 1),
+    'Lookup',
+    FSHARP_REFACTOR_TIMEOUT_MS,
+  );
+  assert.deepStrictEqual(changedFileNames(edit).sort(), ['RenameDeclarations.fs']);
+  assert.strictEqual(editCount(edit), 2, 'the member rename and its DefaultMember metadata');
+  await applyWorkspaceEdit(edit);
+  assert.strictEqual(declarations.document.getText(), renamedIndexerSource());
+  assert.strictEqual(usages.document.getText(), RENAME_USAGES_SOURCE);
+  await assertNoErrors(declarations.uri);
+  await assertNoErrors(usages.uri);
+  await undoAction(declarations.document, RENAME_DECLARATIONS_SOURCE);
+  await assertPrepareAtEveryTokenPosition(declarations.uri, range, 'Item');
+}
+
+function renamedIndexerSource(): string {
+  return RENAME_DECLARATIONS_SOURCE.replace(
+    'type IndexerThing() =',
+    '[<System.Reflection.DefaultMemberAttribute("Lookup")>]\ntype IndexerThing() =',
+  ).replace('member _.Item with', 'member _.Lookup with');
 }
 
 async function assertNamespaceRename(): Promise<void> {
