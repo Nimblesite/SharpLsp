@@ -1,3 +1,4 @@
+mod pipeline;
 mod project;
 mod solution;
 mod tree;
@@ -94,28 +95,48 @@ impl SharpLspExtension {
     /// the binary version matches the extension version. Version validation
     /// relies on the LSP server reporting its version during initialization.
     fn resolve_binary(&mut self, worktree: &zed::Worktree) -> zed::Result<String> {
-        if let Some(ref path) = self.cached_binary_path {
-            return Ok(path.clone());
-        }
-
-        let path = worktree.which(SERVER_BINARY).ok_or_else(|| {
-            format!(
-                "{SERVER_BINARY} not found on PATH. \
-                 Install SharpLsp v{EXPECTED_VERSION} via `make install` \
-                 or download from https://github.com/Nimblesite/SharpLsp/releases"
-            )
-        })?;
-
-        self.cached_binary_path = Some(path.clone());
-        Ok(path)
+        cached_or(&mut self.cached_binary_path, || {
+            worktree.which(SERVER_BINARY)
+        })
     }
+}
+
+/// Return the cached path, otherwise look one up and cache it.
+///
+/// Split from `resolve_binary` because `zed::Worktree` exists only inside Zed's
+/// WASM host: the caching contract is testable, the `which` call is not.
+fn cached_or(
+    cache: &mut Option<String>,
+    lookup: impl FnOnce() -> Option<String>,
+) -> zed::Result<String> {
+    if let Some(path) = cache {
+        return Ok(path.clone());
+    }
+
+    let path = lookup().ok_or_else(missing_binary_error)?;
+    *cache = Some(path.clone());
+    Ok(path)
+}
+
+/// The message shown when `sharplsp` is absent from `$PATH`. Zed surfaces this
+/// verbatim, and it is the only install guidance a Zed user ever sees.
+fn missing_binary_error() -> String {
+    format!(
+        "{SERVER_BINARY} not found on PATH. \
+         Install SharpLsp v{EXPECTED_VERSION} via `make install` \
+         or download from https://github.com/Nimblesite/SharpLsp/releases"
+    )
 }
 
 /// Build environment variables for the sharplsp server process.
 fn build_server_env(worktree: &zed::Worktree) -> Vec<(String, String)> {
-    let mut env: Vec<(String, String)> = worktree.shell_env();
-    let has_rust_log = env.iter().any(|(key, _)| key == "RUST_LOG");
-    if !has_rust_log {
+    with_default_log_level(worktree.shell_env())
+}
+
+/// The server logs through `tracing`, which emits nothing without `RUST_LOG`.
+/// A shell that already sets it keeps its own value.
+fn with_default_log_level(mut env: Vec<(String, String)>) -> Vec<(String, String)> {
+    if !env.iter().any(|(key, _)| key == "RUST_LOG") {
         env.push(("RUST_LOG".to_string(), "info".to_string()));
     }
     env
@@ -137,108 +158,150 @@ fn run_tree_command(
         .read_text_file(sln_path)
         .map_err(|err| format!("Failed to read {}: {}", sln_path, err))?;
 
-    let projects = solution::parse_solution(&sln_content, sln_path);
-    let enriched = enrich_projects(wt, &projects);
-    let text = tree::format_solution_tree(sln_path, &enriched);
-    let label = format!("Solution: {}", sln_path);
+    let text = pipeline::solution_tree(sln_path, &sln_content, |path| wt.read_text_file(path).ok());
 
-    Ok(zed::SlashCommandOutput {
-        text: text.clone(),
-        sections: vec![zed::SlashCommandOutputSection {
-            range: (0..text.len()).into(),
-            label,
-        }],
-    })
+    Ok(tree_output(sln_path, text))
 }
 
-/// Read each project file and parse its dependencies.
-fn enrich_projects(
-    worktree: &zed::Worktree,
-    projects: &[solution::SolutionProject],
-) -> Vec<tree::EnrichedProject> {
-    projects
-        .iter()
-        .map(|proj| enrich_single_project(worktree, proj))
-        .collect()
-}
-
-fn enrich_single_project(
-    worktree: &zed::Worktree,
-    proj: &solution::SolutionProject,
-) -> tree::EnrichedProject {
-    let deps = worktree
-        .read_text_file(&proj.relative_path)
-        .map(|content| project::parse_project_file(&content))
-        .unwrap_or_default();
-
-    tree::EnrichedProject {
-        name: proj.name.clone(),
-        relative_path: proj.relative_path.clone(),
-        nuget_packages: deps.nuget_packages,
-        project_references: deps.project_references,
+/// Wrap the rendered tree in the single labelled section Zed renders.
+fn tree_output(sln_path: &str, text: String) -> zed::SlashCommandOutput {
+    let section = zed::SlashCommandOutputSection {
+        range: (0..text.len()).into(),
+        label: format!("Solution: {}", sln_path),
+    };
+    zed::SlashCommandOutput {
+        text,
+        sections: vec![section],
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
 
+    /// The top-level `version` declared in `extension.toml`, parsed as TOML
+    /// rather than scraped, so a moved or commented-out key is not mistaken for
+    /// a match.
+    fn manifest_version() -> Option<String> {
+        include_str!("../extension.toml")
+            .parse::<toml::Table>()
+            .ok()?
+            .get("version")?
+            .as_str()
+            .map(str::to_owned)
+    }
+
+    /// `make _stamp-version` rewrites the version in BOTH `Cargo.toml` and
+    /// `extension.toml`. Zed reads the latter; `EXPECTED_VERSION` — which the
+    /// install message quotes — comes from the former. If a release stamps one
+    /// and misses the other, the marketplace listing and the version the
+    /// extension tells users to install disagree, and nothing else in the
+    /// pipeline compares them.
     #[test]
-    fn expected_version_matches_cargo_toml() {
-        // EXPECTED_VERSION is set at compile time from Cargo.toml.
-        // This ensures the Zed extension version matches the crate version.
-        assert_eq!(EXPECTED_VERSION, env!("CARGO_PKG_VERSION"));
+    fn extension_toml_version_matches_crate_version() {
+        assert_eq!(
+            manifest_version().as_deref(),
+            Some(EXPECTED_VERSION),
+            "extension.toml and Cargo.toml versions must be stamped together",
+        );
     }
 
     #[test]
-    fn expected_version_is_valid_semver() {
+    fn crate_version_is_numeric_and_dotted() {
         let segments: Vec<&str> = EXPECTED_VERSION.split('.').collect();
         assert!(
             segments.len() >= 2,
-            "Version must have at least X.Y segments, got: {EXPECTED_VERSION}",
+            "version needs at least X.Y segments, got {EXPECTED_VERSION}",
         );
         for segment in &segments {
             assert!(
                 segment.parse::<u32>().is_ok(),
-                "Each version segment must be numeric, got: {segment} in {EXPECTED_VERSION}",
+                "every segment must be numeric, got {segment} in {EXPECTED_VERSION}",
             );
         }
     }
 
     #[test]
-    fn expected_version_matches_extension_toml_version() {
-        // extension.toml `version` and Cargo.toml `version` MUST match.
-        // Since both are set to the same value, and EXPECTED_VERSION comes
-        // from Cargo.toml, this test proves they are in sync.
-        // If they drift, the build system should catch it.
-        let version = env!("CARGO_PKG_VERSION");
-        assert!(!version.is_empty(), "CARGO_PKG_VERSION must not be empty",);
+    fn a_resolved_binary_is_returned_and_cached() {
+        let mut cache = None;
+
+        let resolved = cached_or(&mut cache, || Some("/usr/local/bin/sharplsp".to_owned()));
+
+        assert_eq!(resolved, Ok("/usr/local/bin/sharplsp".to_owned()));
+        assert_eq!(cache.as_deref(), Some("/usr/local/bin/sharplsp"));
+    }
+
+    /// The cache exists to keep `Worktree::which` off the hot path. If a second
+    /// resolve still looked up, the cache would be decorative.
+    #[test]
+    fn a_cached_binary_is_not_looked_up_again() {
+        let mut cache = Some("/cached/sharplsp".to_owned());
+        let looked_up = Cell::new(false);
+
+        let resolved = cached_or(&mut cache, || {
+            looked_up.set(true);
+            Some("/fresh/sharplsp".to_owned())
+        });
+
+        assert_eq!(resolved, Ok("/cached/sharplsp".to_owned()));
+        assert!(
+            !looked_up.get(),
+            "the cached path must short-circuit lookup"
+        );
+    }
+
+    /// This asserts on the message `cached_or` actually produces. The previous
+    /// test rebuilt the string itself and so could not have caught a change to
+    /// the real one.
+    #[test]
+    fn an_absent_binary_reports_the_install_guidance() {
+        let mut cache = None;
+
+        let resolved = cached_or(&mut cache, || None);
+
+        let Err(message) = resolved else {
+            panic!("a missing binary must not resolve");
+        };
+        assert!(message.contains(SERVER_BINARY), "{message}");
+        assert!(message.contains(EXPECTED_VERSION), "{message}");
+        assert!(message.contains("make install"), "{message}");
+        assert!(
+            message.contains("github.com/Nimblesite/SharpLsp"),
+            "{message}"
+        );
+        assert!(cache.is_none(), "a failed lookup must not poison the cache");
     }
 
     #[test]
-    fn server_binary_name_is_sharplsp() {
-        assert_eq!(SERVER_BINARY, "sharplsp");
+    fn a_shell_without_rust_log_gets_the_default_level() {
+        let env = with_default_log_level(vec![("PATH".to_owned(), "/usr/bin".to_owned())]);
+
+        assert!(
+            env.contains(&("RUST_LOG".to_owned(), "info".to_owned())),
+            "{env:?}"
+        );
     }
 
     #[test]
-    fn missing_binary_error_includes_version_and_install_instructions() {
-        // Simulate what resolve_binary returns when the binary is not found.
-        let error_msg = format!(
-            "{SERVER_BINARY} not found on PATH. \
-             Install SharpLsp v{EXPECTED_VERSION} via `make install` \
-             or download from https://github.com/Nimblesite/SharpLsp/releases"
-        );
-        assert!(
-            error_msg.contains(EXPECTED_VERSION),
-            "Error message must include the expected version",
-        );
-        assert!(
-            error_msg.contains("make install"),
-            "Error message must include install instructions",
-        );
-        assert!(
-            error_msg.contains("github.com"),
-            "Error message must include download URL",
-        );
+    fn a_shell_with_rust_log_keeps_its_own_level() {
+        let env = with_default_log_level(vec![("RUST_LOG".to_owned(), "trace".to_owned())]);
+
+        assert_eq!(env, vec![("RUST_LOG".to_owned(), "trace".to_owned())]);
+    }
+
+    /// Zed highlights the section by byte range. A range short of the text
+    /// leaves the tail unlabelled; one past it is out of bounds.
+    #[test]
+    fn the_output_section_spans_the_whole_tree() {
+        let text = "Solution: App.slnx\n└ Project: Api (Api.csproj)\n".to_owned();
+
+        let output = tree_output("App.slnx", text.clone());
+
+        assert_eq!(output.text, text);
+        assert_eq!(output.sections.len(), 1);
+        assert_eq!(output.sections[0].label, "Solution: App.slnx");
+        assert_eq!(output.sections[0].range.start, 0);
+        assert_eq!(u64::from(output.sections[0].range.end), text.len() as u64);
     }
 }

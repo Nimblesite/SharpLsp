@@ -89,7 +89,10 @@ HOST_VSIX_BIN = $(VSCODE_DIR)/bin/$(HOST_PLATFORM)/sharplsp$(EXE_EXT)
 PREFIX   ?= $(HOME)/.local
 BINDIR    = $(PREFIX)/bin
 CHECK_COV = node tools/coverage/check-coverage.mjs
+# Resolves a JDK 21+ and runs a Gradle task in the Rider project. [DIST-CI-RIDER]
+RIDER_GRADLE = sh tools/rider/gradle.sh
 MERGE_COBERTURA = dotnet run --file tools/coverage/merge-cobertura.cs --
+KOVER_PERCENT = dotnet run --file tools/coverage/kover-line-percent.cs --
 
 .PHONY: build ci test lint fmt clean setup screenshots website-build website-test website-dev \
         install-dotnet-10 uninstall-dotnet-10 \
@@ -101,6 +104,7 @@ MERGE_COBERTURA = dotnet run --file tools/coverage/merge-cobertura.cs --
         _build-rust _build-dotnet _build-vsix _build-zed _build-rider \
         _stage-vsix-binary _stage-vsix-binary-only _stage-sidecars \
         test-rust _test-rust _prepare-rust-tests _test-rust-shard \
+        test-zed _test-zed test-rider _test-rider \
         _gate-rust-coverage _test-vsix _test-vsix-win _check-vsix-chunks \
         _test-dotnet _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
@@ -155,36 +159,13 @@ _build-zed:
 	rm -f $(ZED_PKG_TAR) && tar -czf $(ZED_PKG_TAR) -C $(dir $(ZED_PKG_DIR)) $(notdir $(ZED_PKG_DIR))
 
 _build-rider:
-	@command -v java >/dev/null 2>&1 || { echo "==> Skipping Rider plugin (no java on PATH)"; exit 0; }
-	@echo "==> Building Rider plugin..."
-ifeq ($(DETECTED_OS),windows)
-	@cd $(RIDER_DIR) && { \
-		rider_java_home=""; \
-		for candidate in \
-			"$${JAVA_HOME:-}" \
-			/c/Program\ Files/Microsoft/jdk-* \
-			/c/Program\ Files/Eclipse\ Adoptium/jdk-* \
-			/c/Program\ Files/Java/jdk-* \
-			/c/Program\ Files/Android/Android\ Studio/jbr \
-			/c/Program\ Files\ \(x86\)/Android/openjdk/jdk-* \
-			/c/Program\ Files\ \(x86\)/JetBrains/JetBrains\ Rider*/jbr; do \
-			[ -x "$$candidate/bin/java.exe" ] || continue; \
-			version=$$("$$candidate/bin/java.exe" -XshowSettings:properties -version 2>&1 | sed -n 's/^[[:space:]]*java.specification.version = //p' | head -n1); \
-			major=$${version%%.*}; \
-			case "$$major" in ''|*[!0-9]*) continue ;; esac; \
-			if [ "$$major" -ge 21 ]; then rider_java_home="$$candidate"; break; fi; \
-		done; \
-		[ -n "$$rider_java_home" ] || { echo "ERROR: Rider 2026.1 requires JDK 21+. Install one or set JAVA_HOME to it." >&2; exit 1; }; \
-		echo "    using JDK $$rider_java_home"; \
-		JAVA_HOME="$$rider_java_home" PATH="$$rider_java_home/bin:$$PATH" ./gradlew buildPlugin --no-daemon; \
-	}
-else
-	cd $(RIDER_DIR) && ./gradlew buildPlugin --no-daemon
-endif
-	mkdir -p $(DIST_DIR)
+	@$(RIDER_GRADLE) buildPlugin
 	@zip=$$(ls $(RIDER_DIR)/build/distributions/sharplsp-rider-*.zip 2>/dev/null | head -n1); \
-		test -n "$$zip" || { echo "ERROR: no Rider plugin zip in $(RIDER_DIR)/build/distributions/" >&2; exit 1; }; \
-		cp "$$zip" $(RIDER_ZIP)
+		if [ -n "$$zip" ]; then \
+			mkdir -p $(DIST_DIR) && cp "$$zip" $(RIDER_ZIP); \
+		elif [ -n "$${RIDER_REQUIRED:-}" ]; then \
+			echo "ERROR: no Rider plugin zip in $(RIDER_DIR)/build/distributions/" >&2; exit 1; \
+		fi
 
 _stage-vsix-binary: _build-rust _build-dotnet
 	@$(MAKE) _stage-vsix-binary-only
@@ -246,11 +227,13 @@ ci: lint test build
 
 # ── Test ─────────────────────────────────────────────────────────
 
-test: _test-rust _test-vsix _test-dotnet _test-website
+test: _test-rust _test-zed _test-vsix _test-dotnet _test-rider _test-website
 	@echo "==> All tests passed."
 
 # Public alias — CI and developers call this.
 test-rust: _test-rust
+test-zed: _test-zed
+test-rider: _test-rider
 
 # The e2e tests spawn the real sidecars from these paths.
 RUST_E2E_SIDECARS = \
@@ -272,6 +255,24 @@ _test-rust: _prepare-rust-tests
 	$(RUST_E2E_SIDECARS) \
 		cargo llvm-cov nextest --json --output-path target/coverage-rust.json --no-fail-fast --test-threads $(RUST_TEST_THREADS)
 	@$(CHECK_COV) sharplsp --json target/coverage-rust.json data.0.totals.lines.percent
+
+# The Zed extension is a standalone workspace (it targets wasm32-wasip1), so it
+# is invisible to the root `cargo llvm-cov` run and needs its own gate. Its unit
+# tests build for the host, which is why they can run here at all.
+#
+# `lib.rs` keeps a floor of uncoverable lines: the `zed::Extension` trait impl,
+# `register_extension!`, and every function taking a `zed::Worktree` only exist
+# inside Zed's WASM host. The logic behind them lives in `pipeline.rs` precisely
+# so it is reachable from a test.
+_test-zed:
+	@echo "==> Running Zed extension tests with coverage..."
+	# The Zed workspace builds into $(ZED_DIR)/target, so on a fresh checkout the
+	# root target/ that holds every other coverage artifact does not exist yet
+	# and llvm-cov cannot write the report into it.
+	@mkdir -p target
+	cargo llvm-cov --manifest-path $(ZED_DIR)/Cargo.toml \
+		--json --output-path target/coverage-zed.json
+	@$(CHECK_COV) sharplsp-zed --json target/coverage-zed.json data.0.totals.lines.percent
 
 # [DIST-CI-RUST-SHARDS] One CI slice of the suite: identical tests, identical
 # serialization (RUST_TEST_THREADS), but only the hash:$(SHARD)/$(SHARD_COUNT)
@@ -344,6 +345,18 @@ _test-vsix-win: _stage-vsix-binary-only
 	npm run pretest && $(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test || status=$$?; \
 	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
 	exit $$status
+
+# [DIST-CI-RIDER] The Rider plugin's only automated verification. Skipped
+# locally when no JDK 21+ is installed; CI sets RIDER_REQUIRED=1 so it can never
+# silently skip there — a skipped gate that reports green is worse than none.
+_test-rider:
+	@$(RIDER_GRADLE) koverXmlReport
+	@report="$(RIDER_DIR)/build/reports/kover/report.xml"; \
+	 if [ -f "$$report" ]; then \
+	   pct=$$($(KOVER_PERCENT) "$$report") && $(CHECK_COV) sharplsp-rider "$$pct"; \
+	 elif [ -n "$${RIDER_REQUIRED:-}" ]; then \
+	   echo "ERROR: no Kover report at $$report" >&2; exit 1; \
+	 fi
 
 _test-dotnet: _build-dotnet
 	@echo "==> Running .NET sidecar tests..."
@@ -638,8 +651,7 @@ clean: _clean-rider
 	@echo "==> Clean."
 
 _clean-rider:
-	@[ -d $(RIDER_DIR) ] && command -v java >/dev/null 2>&1 && \
-		cd $(RIDER_DIR) && ./gradlew clean --no-daemon || true
+	@$(RIDER_GRADLE) clean || true
 	rm -rf $(RIDER_DIR)/build $(RIDER_DIR)/.gradle $(RIDER_ZIP)
 
 # ── Setup ─────────────────────────────────────────────────────────

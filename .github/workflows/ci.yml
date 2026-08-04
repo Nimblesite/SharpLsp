@@ -8,6 +8,7 @@
 #   ci-dotnet.yml       sidecar tests (Ubuntu) + win32 named-pipe transport
 #   ci-vsix.yml         full VS Code suite + coverage gate (Ubuntu)
 #   ci-vsix-windows.yml VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX])
+#   ci-editors.yml      Zed + Rider tests and coverage gates ([DIST-CI-EDITORS])
 #
 # Every leg is gated on `detect-changes`, and none of them `needs:` another:
 # lint and tests are independent required gates, and serializing tests behind
@@ -138,6 +139,12 @@ jobs:
     needs:
       - detect-changes
     uses: ./.github/workflows/ci-vsix-windows.yml
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+  editors:
+    name: Editors
+    needs:
+      - detect-changes
+    uses: ./.github/workflows/ci-editors.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   # NOTE: the former `coverage` job that git-committed+pushed ratcheted
   # thresholds was removed. On a pull_request, actions/checkout is a detached

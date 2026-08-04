@@ -1,8 +1,13 @@
 {
   "_agent_pmo": "2efd847",
-  "default_threshold": 90,
   "sharplsp": {
     "line_percent": 95.0
+  },
+  "sharplsp-zed": {
+    "line_percent": 85.04
+  },
+  "sharplsp-rider": {
+    "line_percent": 4.09
   },
   "vscode-extension": {
     "line_percent": 94.0

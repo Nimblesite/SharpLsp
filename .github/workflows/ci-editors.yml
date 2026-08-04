@@ -1,0 +1,84 @@
+# agent-pmo:0b21609
+---
+# Reusable editor-integration leg of the PR pipeline (called by ci.yml).
+#
+# Both of these shipped for their whole history with no CI job at all. The Zed
+# extension's 23 unit tests existed in the tree and were compiled by
+# `make _lint-zed` but never executed; the Rider plugin had a fully configured
+# JUnit harness and not one test file, and was not even compiled on a PR.
+# Each now runs its tests behind the same ratcheted coverage gate every other
+# package answers to. [DIST-CI-EDITORS]
+name: CI / Editors
+'on':
+  workflow_call: {}
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+permissions:
+  contents: read
+jobs:
+  test-zed:
+    name: Zed Extension
+    # The Zed extension is a standalone Cargo workspace (it ships as
+    # wasm32-wasip1), so the root `cargo llvm-cov` run in ci-rust.yml cannot
+    # see it and it needs its own gate. Its unit tests build for the host.
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: src/editors/zed
+      - uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
+        with:
+          tool: cargo-llvm-cov
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      - name: Test + coverage gate (Zed)
+        run: make _test-zed
+  test-rider:
+    name: Rider Plugin
+    # RIDER_REQUIRED=1 turns "no JDK 21+ found" from a local convenience skip
+    # into a hard failure. Without it a toolchain regression would present as a
+    # passing job that ran nothing.
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    env:
+      RIDER_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      # kover-line-percent.cs is a `dotnet run --file` app, matching how
+      # merge-cobertura.cs reads the sidecar reports.
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 10.0.300
+      # The IntelliJ Platform SDK is a multi-GB download resolved through
+      # Gradle. Uncached, it dominates this job's wall time.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            src/editors/rider/.intellijPlatform
+          key: "${{ runner.os }}-gradle-${{ hashFiles('src/editors/rider/build.gradle.kts', 'src/editors/rider/gradle.properties', 'src/editors/rider/gradle/**') }}"
+          restore-keys: "${{ runner.os }}-gradle-"
+      - name: Test + coverage gate (Rider)
+        run: make _test-rider
+      - name: Build plugin
+        # The plugin was never compiled on a PR before this job existed, so a
+        # Kotlin break in it could reach main behind a fully green pipeline.
+        run: make _build-rider
