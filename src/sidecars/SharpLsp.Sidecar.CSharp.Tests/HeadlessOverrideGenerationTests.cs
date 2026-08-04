@@ -69,6 +69,15 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
             public override int Compute(int seed) => seed;
 
             public override int Total { get; set; }
+
+            public override T? Pick<T>(T? value)
+                where T : default => value;
+
+            public override TRef? PickReference<TRef>(TRef? value)
+                where TRef : class => value;
+
+            public override T[]? PickArray<T>(T?[] values)
+                where T : default => null;
         }
         """;
 
@@ -124,13 +133,27 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         // candidate scan must treat an occupied slot as satisfied.
         var generated = await ApplyOverrideActionAsync(manager, "public class Circle : Shape");
 
-        Assert.Equal(1, CountOccurrences(generated, "override int Compute(int seed)"));
-        Assert.Equal(1, CountOccurrences(generated, "override int Total"));
+        // Count inside `Circle` only: the abstract declarations up in `Shape`
+        // carry the same names and would mask a duplicate.
+        var circle = generated[
+            generated.IndexOf("public class Circle", StringComparison.Ordinal)..
+        ];
+
+        Assert.Equal(1, CountOccurrences(circle, "Compute(int seed)"));
+        Assert.Equal(1, CountOccurrences(circle, "int Total"));
+
+        // Generic signatures must match too: type-parameter ordinal, array rank
+        // and element type, and constructed generic arguments all feed the
+        // "is this slot already filled" decision. A false negative here emits a
+        // duplicate member and breaks the build.
+        Assert.Equal(1, CountOccurrences(circle, "Pick<T>"));
+        Assert.Equal(1, CountOccurrences(circle, "PickReference<TRef>"));
+        Assert.Equal(1, CountOccurrences(circle, "PickArray<T>"));
 
         // The members it has not overridden are still generated.
-        Assert.Contains("override string Name", generated);
-        Assert.Contains("override int this[int index]", generated);
-        Assert.Contains("protected override void Reset()", generated);
+        Assert.Contains("override string Name", circle);
+        Assert.Contains("override int this[int index]", circle);
+        Assert.Contains("protected override void Reset()", circle);
 
         AssertParses(generated);
     }
@@ -203,9 +226,19 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         var generated = await ApplyOverrideActionAsync(manager);
 
         // An `init` accessor regenerated as `set` would not compile against the
-        // base declaration.
-        Assert.Contains("public override int Seed", generated);
-        Assert.Contains("init", generated);
+        // base declaration. Match the accessor itself, not the substring: "init"
+        // occurs inside plenty of unrelated identifiers.
+        var start = generated.IndexOf("public override int Seed", StringComparison.Ordinal);
+        Assert.True(start >= 0, "the init-only property must be overridden");
+
+        // Bound the search to this one declaration so a `set` elsewhere in the
+        // file cannot mask a wrongly regenerated accessor here.
+        var rest = generated[start..];
+        var next = rest.IndexOf("public override", 1, StringComparison.Ordinal);
+        var declaration = next < 0 ? rest : rest[..next];
+
+        Assert.Contains("init", declaration);
+        Assert.DoesNotContain("set", declaration);
     }
 
     /// <summary>Apply "Generate overrides..." on a type and return the new file text.</summary>
