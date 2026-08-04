@@ -22,8 +22,8 @@ Scan the repo for these package ecosystems:
 | Marker File | Ecosystem | Location |
 |---|---|---|
 | `Cargo.toml` (workspace) | Rust (cargo) | Repo root |
-| `package.json` / `package-lock.json` | Node.js (npm) | `editors/vscode/` |
-| `*.csproj` / `*.fsproj` / `Directory.Build.props` | C#/F# (.NET / NuGet) | `sidecars/SharpLsp.Sidecars.sln` |
+| `package.json` / `package-lock.json` | Node.js (npm) | `src/editors/vscode/` |
+| `*.csproj` / `*.fsproj` / `.config/dotnet/common.props` | C#/F# (.NET / NuGet) | `src/sidecars/SharpLsp.Sidecars.sln` |
 
 ## Step 2 — List Outdated Packages
 
@@ -40,16 +40,16 @@ If `cargo-outdated` is not installed: `cargo install cargo-outdated`
 
 ### Node.js (npm)
 ```bash
-npm outdated --prefix editors/vscode
+npm outdated --prefix src/editors/vscode
 ```
 
 **Read the docs:** https://docs.npmjs.com/cli/v10/commands/npm-update
 
 ### C#/.NET (NuGet)
 ```bash
-dotnet list sidecars/SharpLsp.Sidecars.sln package --outdated
+dotnet list src/sidecars/SharpLsp.Sidecars.sln package --outdated
 ```
-For transitive dependencies too: `dotnet list sidecars/SharpLsp.Sidecars.sln package --outdated --include-transitive`
+For transitive dependencies too: `dotnet list src/sidecars/SharpLsp.Sidecars.sln package --outdated --include-transitive`
 
 **Read the docs:** https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-list-package
 
@@ -75,20 +75,20 @@ For workspace members, run from workspace root.
 
 ### Node.js (npm)
 ```bash
-npm update --prefix editors/vscode                            # semver-compatible
+npm update --prefix src/editors/vscode                        # semver-compatible
 # --major flag:
-npx npm-check-updates -u --packageFile editors/vscode/package.json && npm install --prefix editors/vscode
+npx npm-check-updates -u --packageFile src/editors/vscode/package.json && npm install --prefix src/editors/vscode
 ```
 
 ### C#/.NET (NuGet)
 ```bash
-dotnet outdated --upgrade sidecars/SharpLsp.Sidecars.sln
+dotnet outdated --upgrade src/sidecars/SharpLsp.Sidecars.sln
 ```
 If `dotnet-outdated` tool is not installed: `dotnet tool install -g dotnet-outdated-tool`
 
 **Read the docs:** https://github.com/dotnet-outdated/dotnet-outdated
 
-Shared NuGet package versions live in `Directory.Build.props` — check there first and update centrally when possible, rather than editing individual `.csproj`/`.fsproj` files.
+Shared NuGet package versions live in `.config/dotnet/common.props` — check there first and update centrally when possible, rather than editing individual `.csproj`/`.fsproj` files.
 
 ## Step 5 — Verify the upgrade
 
@@ -125,6 +125,6 @@ Provide a summary:
 - **Never modify lockfiles manually** (`Cargo.lock`, `package-lock.json`) — let the package manager regenerate them
 - **Keep `Cargo.lock` changes** in the same commit as `Cargo.toml` changes
 - **Keep `package-lock.json` changes** in the same commit as `package.json` changes
-- **`Directory.Build.props`** is the source of truth for shared .NET package versions — update there first
+- **`.config/dotnet/common.props`** is the source of truth for shared .NET package versions — update there first
 - **If stuck after 3 attempts**, revert and report — do not loop forever
 - **Commit nothing** — leave changes in the working tree for the user to review

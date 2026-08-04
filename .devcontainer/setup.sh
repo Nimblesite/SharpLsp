@@ -11,6 +11,6 @@ cargo install cargo-llvm-cov
 dotnet tool restore
 
 # VS Code extension dependencies
-cd editors/vscode && npm ci && cd ../..
+cd src/editors/vscode && npm ci && cd ../../..
 
 echo "==> Setup complete."

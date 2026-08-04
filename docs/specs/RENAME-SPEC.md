@@ -1,4 +1,4 @@
-# Rename Specification
+# [RENAME-SPEC] Rename Specification
 
 **Parent:** [SHARPLSP-SPEC.md](SHARPLSP-SPEC.md)
 
@@ -10,7 +10,7 @@ Rename is not a generic code action. Editors invoke it through the dedicated LSP
 
 ## [RENAME-PROTOCOL] LSP Protocol
 
-### [RENAME-PROTOCOL-PREPARE] textDocument/prepareRename
+### [RENAME-PREPARE] textDocument/prepareRename
 
 ```
 method: textDocument/prepareRename
@@ -28,7 +28,7 @@ result: Range | { range: Range; placeholder: string } | null
 - Return the current symbol name as `placeholder`.
 - Return `null` when the position is whitespace, trivia, a keyword that is not a renameable symbol, metadata-only source, generated source that cannot be edited, or a symbol kind SharpLsp does not yet support.
 
-### [RENAME-PROTOCOL-EXECUTE] textDocument/rename
+### [RENAME-APPLY] textDocument/rename
 
 ```
 method: textDocument/rename
@@ -74,6 +74,8 @@ SharpLsp MUST support rename for these code element categories before rename is 
 
 Rename requests are semantic requests.
 
+Implementations: [semantic.rs](../../src/sharplsp/src/semantic.rs), [CSharpSidecar.Features.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/CSharpSidecar.Features.cs), [FSharpRename.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpRename.fs), and the [full-stack feature tests](../../src/sharplsp/tests/e2e_modules/full_stack_features.rs).
+
 | Step | Component | Action |
 |---|---|---|
 | 1 | Rust host | Receives prepare or rename request and identifies the document language from the VFS |
@@ -99,12 +101,17 @@ The C# sidecar MUST use Roslyn semantics.
 
 The F# sidecar MUST use FCS symbol resolution and rename support rather than text matching.
 
+### [RENAME-FSHARP-PREPARE] Prepare
+
 1. Get checked file results for the current document.
 2. Resolve the `FSharpSymbolUse` at the requested position.
 3. Validate that the symbol kind is renameable and that the new name is valid F# syntax for that symbol kind.
-4. Compute all symbol uses across the project or solution scope required for a safe rename.
-5. Produce file-scoped text edits for every declaration and usage location.
-6. Preserve F# file ordering semantics and avoid edits in generated or metadata-only files.
+
+### [RENAME-FSHARP-APPLY] Apply
+
+1. Compute all symbol uses across the project or solution scope required for a safe rename.
+2. Produce file-scoped text edits for every declaration and usage location.
+3. Preserve F# file ordering semantics and avoid edits in generated or metadata-only files.
 
 ## [RENAME-CROSSLANGUAGE] Cross-Language Rename
 

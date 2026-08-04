@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    F# semantic-feature test fixtures for the VS Code extension e2e suite.
+
+    This project is intentionally framework-only (no external NuGet references):
+    the F# sidecar loads it via FSharpChecker.GetProjectOptionsFromCommandLineArgs
+    using framework reference assemblies from the runtime directory, so it never
+    runs `dotnet restore`. Keep it that way — adding PackageReferences here would
+    break sidecar project cracking until Ionide.ProjInfo lands.
+
+    File order matters in F#: Domain (types) → Library (logic) → Usage
+    (cross-file references) → CodeFixes/Implement → RenameDeclarations →
+    RenameUsages → rename edge fixtures → DiagnosticsTarget. Do NOT reorder.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- [ANALYZERS-FSAC-PARITY] Preserve mismatch diagnostics needed to drive every
+         explicit numeric-conversion refactor direction. -->
+    <LangVersion>8.0</LangVersion>
+    <OutputType>Library</OutputType>
+    <!-- These fixtures are minimal F# snippets for integration tests, not
+         production code. Neutralise the strict analyzer/doc settings inherited
+         from the repo-root Directory.Build.props so a stray `dotnet build`
+         never fails on them. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <WarningLevel>5</WarningLevel>
+    <OtherFlags>$(OtherFlags) --warnon:1182</OtherFlags>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <WarningsAsErrors />
+    <!-- [ANALYZERS-FSAC-PARITY] Keep FS0025 visible: real-LSP wildcard and union-stub refactor tests
+         require the compiler diagnostic that drives those interactions. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Remove="Microsoft.CodeAnalysis.NetAnalyzers" />
+    <PackageReference Remove="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Remove="Microsoft.CodeAnalysis.Analyzers" />
+    <PackageReference Remove="Microsoft.CodeAnalysis.BannedApiAnalyzers" />
+    <PackageReference Remove="Outcome" />
+    <PackageReference Remove="Exhaustion" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TestFixtures.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Domain.fs" />
+    <Compile Include="Library.fs" />
+    <Compile Include="Usage.fs" />
+    <Compile Include="CodeFixes.fs" />
+    <Compile Include="Implement.fs" />
+    <Compile Include="RenameDeclarations.fs" />
+    <Compile Include="RenameUsages.fs" />
+    <Compile Include="RenameEdge.fs" />
+    <Compile Include="RenameNamespace.fs" />
+    <Compile Include="RenameNamespaceUsage.fs" />
+    <Compile Include="CrossLanguage.fs" />
+    <Compile Include="DiagnosticsTarget.fs" />
+  </ItemGroup>
+
+</Project>

@@ -27,15 +27,15 @@ jobs:
         shell: bash
         run: |-
           set -euo pipefail
-          CS_VERSION="$(dotnet msbuild sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj -getProperty:Version -nologo)"
-          FS_VERSION="$(dotnet msbuild sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj -getProperty:Version -nologo)"
+          CS_VERSION="$(dotnet msbuild src/sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj -getProperty:Version -nologo)"
+          FS_VERSION="$(dotnet msbuild src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj -getProperty:Version -nologo)"
           target/sidecar-csharp/SharpLsp.Sidecar.CSharp --version | grep -Fx "sharplsp-sidecar-csharp ${CS_VERSION}"
           target/sidecar-fsharp/SharpLsp.Sidecar.FSharp --version | grep -Fx "sharplsp-sidecar-fsharp ${FS_VERSION}"
       - name: Upload coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-dotnet
-          path: coverage-thresholds.json
+          path: .config/coverage/thresholds.json
   test-dotnet-windows:
     name: Named-Pipe Transport (Windows)
     # Implements [DIST-CI-WIN-TRANSPORT]: the named-pipe arm of the sidecar IPC
@@ -51,6 +51,6 @@ jobs:
             9.0.x
             10.0.300
       - name: Restore full solution (caches FCS nuspec for dependency-consistency tests)
-        run: dotnet restore sidecars/SharpLsp.Sidecars.sln
+        run: dotnet restore src/sidecars/SharpLsp.Sidecars.sln
       - name: Test sidecar IPC transport on Windows
-        run: dotnet test sidecars/SharpLsp.Sidecar.Common.Tests/SharpLsp.Sidecar.Common.Tests.csproj --blame-hang-timeout 2min --blame-hang-dump-type none
+        run: dotnet test src/sidecars/SharpLsp.Sidecar.Common.Tests/SharpLsp.Sidecar.Common.Tests.csproj --blame-hang-timeout 2min --blame-hang-dump-type none

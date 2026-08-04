@@ -1,173 +1,120 @@
-# Design System
+# [WEB-DESIGN] Design System
 
-SharpLsp's visual identity and component guidelines. All colors were generated via random color wheel selection — zero hand-picked "designer" colors, zero LLM defaults.
+## [WEB-DESIGN-PRINCIPLES] Principles
 
-## Color Palette
+- Use strong type hierarchy, whitespace, borders, and restrained surfaces to organize content.
+- Use green as the only brand accent. Do not use purple, gradients, glows, decorative noise, or competing accent colors.
+- Keep shadows functional and infrequent: menus and major product imagery only.
+- Name classes for what an element is, minimize class count, and reuse existing components.
+- Store colors and shared dimensions in custom properties. Component rules consume tokens rather than hardcoded colors.
 
-### Generation Method
+## [WEB-DESIGN-CSS] CSS Architecture
 
-Primary hue selected by RNG from 0-359 color wheel (excluding 240-330 to avoid purple/magenta). Accent hue offset by a random triadic interval. Neutrals are desaturated tints of the primary.
+The site has three CSS layers, loaded in this order:
 
-### Primary — Hue 151 (Teal-Green)
+1. [`styles.css`](../../src/website/src/assets/css/styles.css) — tokens, reset/base rules, navigation, buttons, shared headings, and footer.
+2. [`pages.css`](../../src/website/src/assets/css/pages.css) — homepage, blog index, releases, grids, cards, and page-specific composition.
+3. [`prose.css`](../../src/website/src/assets/css/prose.css) — long-form docs, blog posts, release notes, and documentation navigation.
 
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `--color-primary-300` | `#84d6ae` | Hover backgrounds, light accents |
-| `--color-primary-400` | `#49d491` | Secondary buttons, links on dark bg |
-| `--color-primary-500` | `#19d078` | **Primary brand color**, buttons, links |
-| `--color-primary-600` | `#14a35e` | Hover state for primary actions |
-| `--color-primary-700` | `#0f7f49` | Active/pressed states, dark accents |
+Shared primitives belong in `styles.css`; page composition belongs in `pages.css`; rendered Markdown and its supporting article/docs components belong in `prose.css`. Do not duplicate rules across layers.
 
-### Accent — Hue 16 (Burnt Sienna)
+## [WEB-DESIGN-COLOR] Color
 
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `--color-accent-400` | `#c67456` | Hover state for accent elements |
-| `--color-accent-500` | `#b54f2a` | **Accent color**, callouts, badges |
-| `--color-accent-600` | `#8c3d20` | Hover state for accent actions |
+Light and dark themes use the same semantic tokens. `data-theme="dark"` on `<html>` supplies the dark values and `color-scheme` informs browser controls.
 
-### Neutrals
+| Token | Light | Dark | Purpose |
+|---|---:|---:|---|
+| `--color-bg` | `#f6f7f7` | `#0d110f` | Page canvas |
+| `--color-surface` | `#ffffff` | `#131916` | Cards and menus |
+| `--color-surface-subtle` | `#eef0ef` | `#19211d` | Quiet grouping and hover states |
+| `--color-surface-strong` | `#dee1e0` | `#25302a` | Stronger neutral surface |
+| `--color-text` | `#161c19` | `#f1f4f2` | Primary text |
+| `--color-muted` | `#58625d` | `#aab4af` | Supporting text |
+| `--color-soft` | `#78827d` | `#87938d` | De-emphasized text |
+| `--color-border` | `#d4dad7` | `#28332d` | Standard dividers |
+| `--color-border-strong` | `#aeb8b3` | `#46554d` | Emphasized boundaries |
+| `--color-primary` | `#0f7f49` | `#49d491` | Links, focus, labels, primary actions |
+| `--color-primary-hover` | `#09663a` | `#84d6ae` | Primary hover state |
+| `--color-primary-soft` | `#dcefe5` | `#183a29` | Selected and quiet accent surfaces |
+| `--color-on-primary` | `#ffffff` | `#07110b` | Text on primary |
+| `--color-code` | `#101613` | `#080c0a` | Code-block surface |
+| `--color-code-text` | `#e7ece9` | `#e7ece9` | Code-block text |
 
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `--color-neutral-50` | `#f6f7f7` | Page background (light) |
-| `--color-neutral-100` | `#eef0ef` | Card/surface background (light) |
-| `--color-neutral-200` | `#dee1e0` | Borders (light) |
-| `--color-neutral-300` | `#c4c9c6` | Disabled text, subtle borders |
-| `--color-neutral-400` | `#8b928e` | Muted text, placeholders |
-| `--color-neutral-500` | `#6c7370` | Secondary text |
-| `--color-neutral-600` | `#48504c` | Body text (dark mode) |
-| `--color-neutral-700` | `#2a312e` | Headings (dark mode), borders (dark) |
-| `--color-neutral-800` | `#161c19` | Surface background (dark) |
-| `--color-neutral-900` | `#0d110f` | Page background (dark) |
+## [WEB-DESIGN-TYPE] Typography and Icons
 
-### Semantic
+Use system fonts only. The UI stack is `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`; the code stack is `"SFMono-Regular", "Cascadia Code", "Liberation Mono", Consolas, monospace`.
 
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `--color-success` | `#249c64` | Success states, passing tests |
-| `--color-warning` | `#e29d12` | Warnings, deprecation notices |
-| `--color-error` | `#c72e23` | Errors, breaking changes |
-| `--color-info` | `#277cb9` | Informational callouts |
+Body copy is `1rem/1.65`. Display headings use responsive `clamp()` sizing, tight negative letter spacing, and compact line height. Long-form prose uses a more relaxed `1.78` line height.
 
-## Typography
+Do not request web fonts or external icon fonts. Use existing local assets, text symbols, or small accessible inline SVGs with `currentColor` for interface icons.
 
-### Font Stack
+## [WEB-DESIGN-SPACING] Spacing and Shape
 
-```css
-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-  "Helvetica Neue", Arial, sans-serif;
-```
+Spacing follows a 4px base scale:
 
-System fonts only. No external font requests. Instant rendering.
+| Token | Value |
+|---|---:|
+| `--space-1` | `0.25rem` |
+| `--space-2` | `0.5rem` |
+| `--space-3` | `0.75rem` |
+| `--space-4` | `1rem` |
+| `--space-6` | `1.5rem` |
+| `--space-8` | `2rem` |
+| `--space-12` | `3rem` |
+| `--space-16` | `4rem` |
 
-### Monospace Stack
+Radii are `0.35rem`, `0.65rem`, and `1rem` through `--radius-sm`, `--radius-md`, and `--radius-lg`. Prefer borders over elevation. `--shadow-sm` and `--shadow-lg` are neutral shadows, never colored glows.
 
-```css
-font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas,
-  "Liberation Mono", Menlo, monospace;
-```
+## [WEB-DESIGN-LAYOUT] Layout
 
-### Scale
+| Context | Token | Limit |
+|---|---|---:|
+| Main shell | `--max-width` | `1120px` |
+| Docs and article frame | `--content-width` | `56rem` |
+| Long-form reading measure | `--reading-width` | `46rem` |
+| Docs sidebar | `--sidebar-width` | `16rem` |
+| Site header | `--header-height` | `4rem` |
 
-| Element | Size | Weight | Line Height |
-|---------|------|--------|-------------|
-| `h1` | 2rem | 700 | 1.2 |
-| `h2` | 1.4rem | 700 | 1.3 |
-| `h3` | 1.1rem | 600 | 1.4 |
-| Body | 1rem | 400 | 1.7 |
-| Small / Muted | 0.925rem | 400 | 1.6 |
-| Code | 0.875rem | 400 | 1.6 |
+Main page sections center within the shell and retain fluid side gutters. Article titles, media, code, and tables use the full editorial frame; paragraphs, lists, quotes, and secondary headings use the narrower reading measure. The docs sidebar collapses below `1024px` so it never crushes the prose column. Images are responsive by default, and wide code blocks, diagrams, and tables scroll within their own bounds rather than widening the page.
 
-## Spacing
+## [WEB-DESIGN-COMPONENTS] Components
 
-All spacing uses a 4px base unit. Prefer multiples: 4, 8, 12, 16, 24, 32, 48, 64.
+Primary and secondary actions use `.button` with `.primary` or `.secondary`; `.nav-button` shares the same control geometry. Controls have a minimum height of `2.75rem` (44px), a visible border or fill, and a clear hover/focus state.
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--space-1` | 0.25rem (4px) | Tight gaps, inline padding |
-| `--space-2` | 0.5rem (8px) | Button padding, small gaps |
-| `--space-3` | 0.75rem (12px) | Card padding, nav items |
-| `--space-4` | 1rem (16px) | Standard spacing |
-| `--space-6` | 1.5rem (24px) | Section gaps |
-| `--space-8` | 2rem (32px) | Page padding |
-| `--space-12` | 3rem (48px) | Section padding |
-| `--space-16` | 4rem (64px) | Major section breaks |
+Cards use a neutral surface, one-pixel border, restrained radius, and content-driven spacing. Hover may strengthen the border but must not add movement or spectacle. Grids use `minmax(0, 1fr)` where content could otherwise overflow.
 
-## Border Radius
+## [WEB-DESIGN-PROSE] Prose Contract
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--radius-sm` | 3px | Code inline, small badges |
-| `--radius-md` | 6px | Buttons, inputs |
-| `--radius-lg` | 8px | Cards, code blocks |
+Every documentation page, blog post, and other long-form rendered body must use the `.prose` wrapper. Markdown typography must never rely on unscoped element selectors.
 
-## Layout
+Within `.prose`:
 
-### Max Widths
+- headings, paragraphs, lists, links, quotes, media, tables, and code receive the canonical reading styles;
+- links are visibly underlined and use `--color-primary`;
+- inline code and code blocks remain visually distinct and horizontally safe;
+- tables are scrollable, and media never exceeds the content width;
+- article callouts, author metadata, related content, and docs navigation use the supporting rules in `prose.css`.
 
-| Context | Width |
-|---------|-------|
-| Content area | 1100px |
-| Blog / prose | 700px |
-| Docs sidebar | 240px |
+Page-level grids and marketing card styles must not leak into `.prose`. Do not recreate prose styling in templates or `pages.css`.
 
-### Breakpoints
+## [WEB-DESIGN-RESPONSIVE] Responsive Behavior
 
-| Name | Width | Behavior |
-|------|-------|----------|
-| Mobile | ≤768px | Single column, collapsed nav |
-| Desktop | >768px | Multi-column, full nav |
+Design mobile-first: content order, meaning, and actions must work in a single column without hover. `768px` is the primary responsive boundary; at and below it:
 
-## Components
+- navigation becomes an explicit menu with stacked links and actions;
+- multi-column workflows, reasons, releases, blog cards, and language sections collapse to one column;
+- featured posts return to normal card flow;
+- primary action rows stack to full-width controls where needed;
+- the docs sidebar becomes an off-canvas panel opened by a full-width menu control;
+- prose and shell gutters reduce to `1rem`.
 
-### Buttons
+At `380px`, proof items become one column and dense release metadata stacks. New components must remain usable at 320px without horizontal page overflow.
 
-```html
-<a href="#" class="btn btn-primary">Primary Action</a>
-<a href="#" class="btn btn-secondary">Secondary Action</a>
-```
+## [WEB-DESIGN-ACCESSIBILITY] Accessibility
 
-- Primary: `--color-primary-500` background, white text
-- Secondary: transparent background, border, current text color
-- All buttons: 6px radius, 600 weight, 0.75rem/1.75rem padding
-
-### Feature Cards
-
-```html
-<div class="feature-card">
-  <h3>Title</h3>
-  <p>Description</p>
-</div>
-```
-
-- 1px border using `--color-border`
-- 8px radius
-- 1.5rem padding
-- Surface background
-
-### Code Blocks
-
-- Background: `--color-code-bg`
-- 1px border
-- 6px radius
-- Syntax highlighting via Prism (eleventy-plugin-syntaxhighlight)
-
-## Dark Mode
-
-Dark mode is toggled via `data-theme="dark"` on `<html>`. The theme toggle persists to `localStorage`.
-
-Every color token must have both light and dark values defined in `:root` and `[data-theme="dark"]` respectively. Never hardcode hex values outside CSS custom properties.
-
-## Favicon
-
-SVG favicon at `/assets/favicon.svg`. The `site.json` data file drives the `<link rel="icon">` tag via the theme's `base.njk` template.
-
-## Rules
-
-1. **No purple.** Not even a little. Not even "it's more of a violet." No.
-2. **No external font/icon CDN requests.** System fonts, inline SVGs.
-3. **Name CSS classes after what the element IS**, not what section it's in.
-4. **Minimize CSS classes.** Consolidate where possible.
-5. All colors via CSS custom properties. Zero hardcoded hex in component styles.
-6. Mobile-first: single column is the default, multi-column is the enhancement.
+- Preserve semantic HTML, logical heading order, and meaningful link/control labels.
+- Preserve the skip link and the `3px` `:focus-visible` outline with a `3px` offset.
+- Interactive targets must be at least 44px in the constrained dimension and remain keyboard operable.
+- Do not communicate state by color alone. Maintain readable contrast in both themes.
+- Decorative SVGs are hidden from assistive technology; meaningful images and icons require accessible text.
+- Honor `prefers-reduced-motion`; essential information must never depend on animation or hover.

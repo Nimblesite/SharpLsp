@@ -8,7 +8,7 @@ Implements `textDocument/definition`, `textDocument/typeDefinition`, `textDocume
 
 All four C# navigation methods are implemented end-to-end: the Rust host registers all four capabilities, routes requests to the C# sidecar via MessagePack IPC, and the sidecar resolves symbols via Roslyn's `SemanticModel`, `GetSymbolInfo`, `GetTypeInfo`, and `SymbolFinder.FindImplementationsAsync`. Tree-sitter pre-validation short-circuits requests on comments, string literals, and whitespace. Multi-location responses work for both `textDocument/definition` (partial classes) and `textDocument/implementation`. The `DefinitionResolver` (in `DefinitionResolver.cs`) supports `CandidateSymbols` fallback, `GetDeclaredSymbol` fallback for cursors on declarations, override-to-base navigation, interface impl-to-interface member navigation, and partial method definition parts.
 
-**Navigation cache** (`nav_cache.rs`): Caches definition/typeDefinition/declaration results keyed by `(uri, version, line, character, method)`. Invalidated on `didChange` and `didClose`. Returns cached results in <1ms on hit.
+**Interim nonconformant memoizer** (`nav_cache.rs`): the current `HashMap` retains definition/typeDefinition/declaration results by `(uri, version, line, character, method)` and drops entries on `didChange`/`didClose`. It is not salsa, does not model solution or sidecar-generation inputs, and invalidation does not cancel in-flight requests. [DEFINITION-CACHE] remains the required design.
 
 **LocationResult** includes end positions (`EndLine`, `EndCharacter`) enabling proper range highlighting in peek preview.
 
@@ -28,8 +28,9 @@ The remaining work covers F# sidecar navigation, metadata/decompiled source navi
 - [x] Support multi-location responses (`Location[]`) for partial classes and implementations
 - [x] Support `DefinitionLink[]` response format for peek preview — `LocationResult` includes `EndLine`/`EndCharacter` for proper range highlighting
 - [x] Add tree-sitter pre-validation to short-circuit on whitespace/comments/string literals
-- [x] Add navigation cache keyed by `(document_uri, document_version, position, method)` — `nav_cache.rs`
-- [x] Implement stale request cancellation via cache invalidation on `didChange`/`didClose`
+- [x] Add the interim `nav_cache.rs` result map keyed by `(document_uri, document_version, position, method)` (nonconformant; removal tracked below)
+- [ ] Replace `nav_cache.rs` with Rust-host salsa queries keyed by document/version/position/method plus solution and sidecar-generation inputs
+- [ ] Implement cancellation for superseded requests; `didChange`/`didClose` invalidation currently prevents only later reuse
 - [x] Add fallback behavior: return `null` when sidecar is unavailable or loading
 - [x] Add tracing/logging for definition request lifecycle (dispatch, cache hit/miss, latency)
 
@@ -112,7 +113,8 @@ The remaining work covers F# sidecar navigation, metadata/decompiled source navi
 
 - [x] Integrate ICSharpCode.Decompiler v9.1.0 for metadata symbol navigation — `MetadataNavigator.cs`
 - [x] Decompile containing type to temporary file on definition request — writes to `{tempdir}/sharplsp-decompiled/{type}.cs`
-- [x] Cache decompiled sources keyed by `(assemblyPath, typeFullName)` in `ConcurrentDictionary` — avoids repeated decompilation
+- [x] Add interim decompiled-source reuse keyed by `(assemblyPath, typeFullName)` in `ConcurrentDictionary` (nonconformant)
+- [ ] Move decompiled-source memoization to the Rust-host salsa database and remove the sidecar `ConcurrentDictionary`
 - [x] Fallback in `DefinitionResolver`: when `ToAllSourceLocations` returns empty, calls `MetadataNavigator.ResolveMetadataSymbol`
 - [x] Symbol position search in decompiled source using kind-specific patterns (method, property, field, type)
 
@@ -129,10 +131,10 @@ See `[DEFINITION-CROSSLANG]`.
 - [x] Shared metadata-as-source decompiler in Common — `MetadataDecompiler` (used by both sidecars; C# `MetadataNavigator` delegates to it)
 - [x] C# → F#: re-attach the dropped F# `<ProjectReference>` output DLL as a metadata reference and drop the empty stub project — `WorkspaceManager.AddCrossLanguageMetadataReferences`
 - [x] F# → C#: wire referenced C# project output DLLs into FCS options (`buildProjectOptions`) + `FSharpMetadataNavigator` decompiles external symbols in `extractDefinition`
-- [x] E2E test: cross-language navigation on a mixed C#/F# solution — `test_cross_language_definition_csharp_to_fsharp`, `test_cross_language_definition_fsharp_to_csharp` (`tests/e2e_modules/definition_cross_language.rs`)
+- [x] E2E test: cross-language navigation on a mixed C#/F# solution — `test_cross_language_definition_csharp_to_fsharp`, `test_cross_language_definition_fsharp_to_csharp` (`src/sharplsp/tests/e2e_modules/definition_cross_language.rs`)
 - [ ] Source-to-source cross-language navigation (land in the original `.fs`/`.cs` rather than decompiled metadata) — needs a cross-sidecar symbol index (P2, Phase 4)
 
-### Testing — Rust E2E (`tests/lsp_e2e.rs`)
+### Testing — Rust E2E (`src/sharplsp/tests/lsp_e2e.rs`)
 
 - [x] E2E test: C# go-to-definition on class name navigates to class declaration
 - [x] E2E test: C# go-to-definition on method call navigates to method body
@@ -158,14 +160,14 @@ See `[DEFINITION-CROSSLANG]`.
 - [ ] E2E test: F# go-to-implementation on abstract member returns implementations
 - [x] E2E test: definition after document edit returns updated location
 - [ ] E2E test: definition after sidecar crash recovery works correctly
-- [ ] E2E test: definition cache hit returns result in <1ms
+- [ ] E2E test: definition salsa hit returns result in <1ms
 - [ ] E2E test: definition latency p50 <100ms, p95 <250ms on medium solution
 - [x] E2E test: all four nav methods interleaved in single session
 
 ### Performance Validation
 
 - [ ] Benchmark definition latency on cold start (first request after project load)
-- [ ] Benchmark definition latency on warm cache (repeated request on same position)
+- [ ] Benchmark definition latency on a warm salsa query (repeated request on the same position)
 - [ ] Benchmark definition latency on large solution (~2M LOC)
 - [ ] Benchmark find-implementations latency with 100+ implementations
 - [ ] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms

@@ -1,0 +1,33 @@
+---
+pagination:
+  data: collections.tagList
+  size: 1
+  alias: tag
+permalink: /blog/tags/{{ tag | slugify }}/
+layout: layouts/base.njk
+eleventyComputed:
+  lang: "{{ page.url | extractLangFromUrl(defaultLanguage) }}"
+  title: "{{ i18n[page.url | extractLangFromUrl(defaultLanguage)].blog.tagLabels[tag] | default(tag) }} — SharpLsp"
+  description: "{{ i18n[page.url | extractLangFromUrl(defaultLanguage)].blog.tagsDescription }} {{ i18n[page.url | extractLangFromUrl(defaultLanguage)].blog.tagLabels[tag] | default(tag) }}"
+---
+{% set pageLang = page.url | extractLangFromUrl(defaultLanguage) %}
+{% set langPrefix = "/" + pageLang if pageLang != defaultLanguage else "" %}
+{% set blogText = i18n[pageLang].blog %}
+<div class="blog-container">
+  <header class="blog-header">
+    <h1>{{ blogText.tagLabels[tag] | default(tag) }}</h1>
+    <p class="blog-subtitle"><a href="{{ langPrefix }}/blog/tags/">← {{ blogText.allTags }}</a></p>
+  </header>
+
+  {%- set tagPosts = collections.postsByTag[tag] -%}
+  {%- if tagPosts | length > 0 -%}
+  <section class="blog-grid" aria-label="{{ blogText.articles }}">
+    {%- for post in tagPosts -%}
+    {% set currentPost = post %}{% set featuredPost = loop.first %}
+    {% include "partials/post-card.njk" %}
+    {%- endfor -%}
+  </section>
+  {%- else -%}
+  <p class="blog-empty">{{ blogText.noTagPosts }}</p>
+  {%- endif -%}
+</div>

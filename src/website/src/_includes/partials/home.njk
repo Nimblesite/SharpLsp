@@ -1,0 +1,98 @@
+{% set homeText = i18n[lang or defaultLanguage].home %}
+{% set langPrefix = "/" + lang if lang and lang != defaultLanguage else "" %}
+{% set docsUrl = langPrefix + "/docs/" %}
+{% set vscodeInstallUrl = "vscode:extension/nimblesite.sharplsp" %}
+
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">{{ homeText.eyebrow }}</p>
+    <h1>{{ homeText.title }} <span>{{ homeText.titleAccent }}</span></h1>
+    <p class="hero-lede">{{ homeText.lede }}</p>
+    <p class="engine-note">{{ homeText.engines }}</p>
+    <div class="button-row">
+      <a class="button primary" href="{{ vscodeInstallUrl }}">{{ homeText.install }}</a>
+      <a class="button secondary" href="{{ docsUrl }}">{{ homeText.installGuide }}</a>
+    </div>
+    <ul class="trust-list" aria-label="{{ homeText.trustLabel }}">
+      {% for item in homeText.trust %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+  </div>
+
+  <figure class="product-shot">
+    <img
+      src="/assets/screenshots/whole_shebang.png"
+      alt="{{ homeText.screenshotAlt }}"
+      width="2048"
+      height="1152"
+      fetchpriority="high"
+    >
+    <figcaption>{{ homeText.screenshotCaption }}</figcaption>
+  </figure>
+</section>
+
+<div class="proof-strip" aria-label="{{ homeText.proofLabel }}">
+  {% for item in homeText.proof %}
+  <p><strong>{{ item.title }}</strong><span>{{ item.detail }}</span></p>
+  {% endfor %}
+</div>
+
+<section class="home-section workflows" aria-labelledby="workflow-title">
+  <header class="section-heading">
+    <p class="eyebrow">{{ homeText.workflowEyebrow }}</p>
+    <h2 id="workflow-title">{{ homeText.workflowTitle }}</h2>
+    <p>{{ homeText.workflowIntro }}</p>
+  </header>
+  <ol class="workflow-list">
+    {% for workflow in homeText.workflows %}
+    <li>
+      <span class="step">0{{ loop.index }}</span>
+      <h3>{{ workflow.title }}</h3>
+      <p>{{ workflow.description }}</p>
+      <ul>{% for feature in workflow.features %}<li>{{ feature }}</li>{% endfor %}</ul>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+
+<section class="language-section">
+  <div class="section-heading">
+    <p class="eyebrow">{{ homeText.languageEyebrow }}</p>
+    <h2>{{ homeText.languageTitle }}</h2>
+    <p>{{ homeText.languageIntro }}</p>
+  </div>
+  <div class="language-pair">
+    {% for language in homeText.languages %}
+    <article>
+      <span>{{ language.name }}</span>
+      <div><h3>{{ language.engine }}</h3><p>{{ language.description }}</p></div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="home-section alternative" aria-labelledby="alternative-title">
+  <header class="section-heading">
+    <p class="eyebrow">{{ homeText.alternativeEyebrow }}</p>
+    <h2 id="alternative-title">{{ homeText.alternativeTitle }}</h2>
+    <p>{{ homeText.alternativeIntro }}</p>
+  </header>
+  <div class="reason-list">
+    {% for reason in homeText.reasons %}
+    <article><span>0{{ loop.index }}</span><h3>{{ reason.title }}</h3><p>{{ reason.description }}</p></article>
+    {% endfor %}
+  </div>
+</section>
+
+{% include "partials/releases-section.njk" %}
+
+<section class="final-cta">
+  <div>
+    <p class="eyebrow">{{ homeText.ctaEyebrow }}</p>
+    <h2>{{ homeText.ctaTitle }}</h2>
+    <p>{{ homeText.ctaCopy }}</p>
+  </div>
+  <div class="button-row">
+    <a class="button primary" href="{{ vscodeInstallUrl }}">{{ homeText.install }}</a>
+    <a class="button secondary" href="{{ docsUrl }}">{{ homeText.installGuide }}</a>
+  </div>
+</section>

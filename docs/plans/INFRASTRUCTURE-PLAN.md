@@ -21,7 +21,9 @@ Core infrastructure improvements for the SharpLsp LSP host.
 
 ## Incremental Computation
 
-- [ ] Evaluate salsa database for incremental caching of semantic results
+- [ ] Implement the Rust-host salsa database as the only semantic-result memoization mechanism
+- [ ] Replace and remove the interim, nonconformant `nav_cache.rs` `HashMap`; model document, solution, and sidecar-generation state as salsa inputs
+- [ ] Cancel superseded semantic requests; input invalidation alone does not cancel in-flight sidecar work
 - [ ] Request coalescing and cancellation (150ms debounce window) — config exists, wire up active debouncing
 
 ## File Watching

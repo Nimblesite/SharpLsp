@@ -18,12 +18,12 @@ identically for `.cs` and `.fs`. **This** doc tracks the *external* target:
 matching and beating **FsAutoComplete/Ionide**. Complementary — keep the
 internal-parity matrix there and the FSAC-parity matrix here; do not duplicate.
 
-Spec IDs use the `[FSAC-PARITY-*]` group; existing per-feature IDs (`[FS-*]`,
-`[PKG-*]`) are referenced where they already implement a row.
+Spec IDs use the `FSAC-PARITY-...` group; existing `FS-...` and `PKG-...`
+feature IDs are referenced where they already implement a row.
 
 ## How F# requests are served
 
-The Rust host ([src/main.rs](../../src/main.rs)) routes each LSP method to exactly
+The Rust host ([src/sharplsp/src/main.rs](../../src/sharplsp/src/main.rs)) routes each LSP method to exactly
 one sidecar by document language (`pick_sidecar`): `.fs`/`.fsx`/`.fsi` → F# (FCS)
 sidecar, everything else → C# (Roslyn). A method is "at parity" only when the F#
 sidecar registers it **and** returns a wire-compatible payload. Unregistered
@@ -42,7 +42,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 | Type definition | `textDocument/typeDefinition` | ✅ | resolves to the type decl; `test_full_stack_fsharp_navigation` (was gap [#112] — invalid-fixture artifact) |
 | Implementation | `textDocument/implementation` | ✅ | |
 | Declaration | `textDocument/declaration` | ⭐✅ | not in FSAC's list |
-| Find references | `textDocument/references` | ✅ | `[FS-REFS-PROJECT]` project-wide incl. type use-sites; `test_full_stack_fsharp_references_type_use_sites` (was gap [#112] — invalid-fixture artifact) |
+| Find references | `textDocument/references` | ✅ | `[REFERENCES-FSHARP-FIND]` project-wide incl. type use-sites; `test_full_stack_fsharp_references_type_use_sites` (was gap [#112] — invalid-fixture artifact) |
 | Hover | `textDocument/hover` | ✅ | XML-doc rendering; e2e covered |
 | Signature help | `textDocument/signatureHelp` | ✅ | `[FS-SIGHELP]` |
 | Document symbols | `textDocument/documentSymbol` | ✅ | `[FS-DOCSYMBOL]` (parse-only) |
@@ -54,16 +54,16 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 
 | FSAC capability | SharpLsp | Spec / notes |
 |---|---|---|
-| Rename | ⭐✅ | `[FS-RENAME-PREPARE]`/`[FS-RENAME-APPLY]` — **project-wide** (FSAC is file-local) |
+| Rename | ⭐✅ | `[RENAME-FSHARP-PREPARE]`/`[RENAME-FSHARP-APPLY]` — **project-wide** (FSAC is file-local) |
 | Resolve namespace (auto-`open`) | ✅ | FS0039 `open` suggestions |
 | Replace unused symbol with `_` | ✅ | FS1182 |
 | Generate DU match cases | ✅ | union-case stub generation |
 | Generate record stub | ✅ | record-field stub generation |
-| Remove unused `open` | ✅ | `[FS-CODEFIX-UNUSEDOPEN]` — quick fix for the `SLSPF0102` hint (deletes the `open` line) |
-| Remove redundant qualifiers (`SimplifyName`) | ✅ | `[FS-CODEFIX-SIMPLIFYNAME]` — quick fix for the `SLSPF0103` hint (strips the qualifier prefix) |
+| Remove unused `open` | ✅ | `[ANALYZERS-FSAC-CODEFIX-UNUSED-OPEN]` — quick fix for the `SLSPF0102` hint (deletes the `open` line) |
+| Remove redundant qualifiers (`SimplifyName`) | ✅ | `[ANALYZERS-FSAC-CODEFIX-SIMPLIFY-NAME]` — quick fix for the `SLSPF0103` hint (strips the qualifier prefix) |
 | Fix typo from compiler error ("did you mean") | ❌ | **gap** |
 | Add missing `new` for `IDisposable` | ❌ | **gap** |
-| Generate interface implementation | ✅ | `[FS-CODEFIX-INTERFACESTUB]` — FCS `InterfaceStubGenerator` ("Implement interface"), completes the union/record/interface stub trio |
+| Generate interface implementation | ✅ | `[ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB]` — FCS `InterfaceStubGenerator` ("Implement interface"), completes the union/record/interface stub trio |
 | Extra fixes beyond FSAC list | ⭐✅ | FS0020 `\|> ignore`, FS0025 wildcard arm, FS0026 remove redundant case, FS0001 type conversion |
 | Formatting via Fantomas | 🟡 | implemented in `FSharpFeatures.fs` but **sequestered** — not routed by host. **gap: enable routing** |
 | Code lens (reference counts) | ✅ | `[FS-CODELENS]` |
@@ -73,9 +73,9 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 
 | FSAC capability | SharpLsp | Spec / notes |
 |---|---|---|
-| Unused declarations analyzer | ✅ | `[FS-ANALYZER-DEADCODE]` (monorepo-aware; SharpLsp1 extending) |
-| Unused opens analyzer | ✅ | `[FS-ANALYZER-UNUSEDOPEN]` — `SLSPF0102` hint (`UnusedOpens.getUnusedOpens`) |
-| SimplifyName analyzer | ✅ | `[FS-ANALYZER-SIMPLIFYNAME]` — `SLSPF0103` hint (`SimplifyNames.getSimplifiableNames`) |
+| Unused declarations analyzer | ✅ | `[ANALYZERS-DEADCODE-SEVERITY]` (monorepo-aware; SharpLsp1 extending) |
+| Unused opens analyzer | ✅ | `[ANALYZERS-FSAC-UNUSED-OPEN]` — `SLSPF0102` hint (`UnusedOpens.getUnusedOpens`) |
+| SimplifyName analyzer | ✅ | `[ANALYZERS-FSAC-SIMPLIFY-NAME]` — `SLSPF0103` hint (`SimplifyNames.getSimplifiableNames`) |
 | FSharpLint linting | ❌ | **gap** — in tech stack (`FSharpLint.Core`), not yet wired |
 | FSI / `.fsx` script type-check (`UseSdkScripts`, `fsiExtraParameters`) | 🟡 | `.fsx`/`.fsi` recognized + routed; full FSI script checking missing — **gap** |
 | `fsharp/workspacePeek` / `workspaceLoad` / `project` / `compile` | 🟡 | workspace loading + `.fsproj` cracking exist; Ionide custom endpoints not exposed |
@@ -90,8 +90,8 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 |---|---|
 | Call hierarchy (incoming/outgoing) | `[FS-CALLHIER-PREPARE/INCOMING/OUTGOING]` — FSAC has none |
 | Type hierarchy (super/subtypes) | `[FS-TYPEHIER-PREPARE/SUPER/SUB]` — FSAC has none |
-| Project-wide references & rename | `[FS-REFS-PROJECT]`, `[FS-RENAME-*]` |
-| Monorepo dead-code (errors vs warnings) | `[FS-ANALYZER-DEADCODE]` |
+| Project-wide references & rename | `[REFERENCES-FSHARP-FIND]`, `[RENAME-FSHARP-PREPARE]`, `[RENAME-FSHARP-APPLY]` |
+| Monorepo dead-code (errors vs warnings) | `[ANALYZERS-DEADCODE-SEVERITY]` |
 | Unused NuGet package detection | `[PKG-UNUSED-DETECT-FS]` |
 | F# file-order dependency analysis | `FSharpFileOrder.fs` |
 
@@ -102,16 +102,16 @@ Each item is sized to one focused change with e2e + sidecar tests.
 1. ~~**references/typeDefinition completeness**~~ — ✅ **done** `[#112]`. Root cause was the shared e2e fixture, not the sidecar: `Library.fs` placed `let area` / `let sumOfSquares` directly in a `namespace` (illegal F#, FS0201), so those bindings never type-checked and FCS recorded no `Shape` use-sites inside them — refs/typeDefinition on the `Shape` type saw only the declaration. Making the fixture a valid top-level `module` restored full parity. e2e: `test_full_stack_fsharp_references_type_use_sites` + tightened `test_full_stack_fsharp_navigation`.
 2. ~~**workspace/symbol** for F#~~ — ✅ **done** `[FS-WORKSPACE-SYMBOL]`: F# files route to the
    FCS sidecar's document symbols inside the standard `workspace/symbol` handler
-   ([main.rs](../../src/main.rs) `collect_fsharp_ws_symbols`,
-   [document_symbols.rs](../../src/document_symbols.rs) `fsharp_workspace_symbols`).
+   ([main.rs](../../src/sharplsp/src/main.rs) `collect_fsharp_ws_symbols`,
+   [document_symbols.rs](../../src/sharplsp/src/document_symbols.rs) `fsharp_workspace_symbols`).
 3. **FSharpLint integration** — wire `FSharpLint.Core` into the diagnostics pipeline.
 4. ~~**Unused-opens** analyzer + "remove unused open" code fix.~~ — ✅ **done**: analyzer
-   `[FS-ANALYZER-UNUSEDOPEN]` (`SLSPF0102`) + fix `[FS-CODEFIX-UNUSEDOPEN]`.
+   `[ANALYZERS-FSAC-UNUSED-OPEN]` (`SLSPF0102`) + fix `[ANALYZERS-FSAC-CODEFIX-UNUSED-OPEN]`.
 5. ~~**SimplifyName** analyzer + "remove redundant qualifier" code fix.~~ — ✅ **done**: analyzer
-   `[FS-ANALYZER-SIMPLIFYNAME]` (`SLSPF0103`) + fix `[FS-CODEFIX-SIMPLIFYNAME]`.
-6. ~~**Interface-implementation stub** code action~~ — ✅ **done** `[FS-CODEFIX-INTERFACESTUB]`: FCS
+   `[ANALYZERS-FSAC-SIMPLIFY-NAME]` (`SLSPF0103`) + fix `[ANALYZERS-FSAC-CODEFIX-SIMPLIFY-NAME]`.
+6. ~~**Interface-implementation stub** code action~~ — ✅ **done** `[ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB]`: FCS
    `InterfaceStubGenerator` ("Implement interface"), completing the union/record/interface stub trio
-   ([FSharpCodeActions.fs](../../sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeActions.fs) `tryGenerateInterfaceStub`).
+   ([FSharpCodeActions.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpCodeActions.fs) `tryGenerateInterfaceStub`).
 7. **Fantomas formatting** — un-sequester: route `textDocument/formatting` + `rangeFormatting` to the F# sidecar.
 8. **Compiler-error typo fix** ("did you mean") + **add `new` for IDisposable**.
 9. **FSI/`.fsx`** full script type-checking incl. `fsiExtraParameters`.
@@ -128,7 +128,7 @@ Each item is sized to one focused change with e2e + sidecar tests.
 ## E2E coverage status (`[FSAC-PARITY-E2E]`)
 
 Rust-host full-stack F# e2e lives in
-[tests/e2e_modules/fsharp.rs](../../tests/e2e_modules/fsharp.rs) and drives the
+[src/sharplsp/tests/e2e_modules/fsharp.rs](../../src/sharplsp/tests/e2e_modules/fsharp.rs) and drives the
 real `sharplsp` host + F# sidecar against `create_fsharp_test_workspace`.
 
 | Feature | E2E test | Status |

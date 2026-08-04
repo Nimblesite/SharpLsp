@@ -1,0 +1,87 @@
+{
+  "description": "[DIST-CI-WIN-VSIX] Feature chunks of the VS Code end-to-end suite. Each chunk is one Windows CI job running a slice of the SAME suite through the real LSP inside the real extension host. Single source of truth: the Makefile (_test-vsix-win), the CI matrix, and the coverage guard all read this file. Consumed via tools/vsix/vsix-test-chunks.mjs.",
+  "shared": {
+    "description": "Prepended to every chunk. Asserts the bundled host + sidecars were staged before the extension host started, so a staging regression fails as itself instead of as a wall of LSP timeouts.",
+    "files": [
+      "00-vsix-dev-binary-staging.test.js"
+    ]
+  },
+  "chunks": {
+    "lifecycle": {
+      "description": "Activation, configuration, bundled binary/sidecar resolution, client lifecycle and restart, cross-cutting command workflows.",
+      "files": [
+        "bundled-binary.test.js",
+        "bundled-sidecars.test.js",
+        "extension.test.js",
+        "lifecycle-e2e.test.js",
+        "coverage-extension-workflows.test.js"
+      ]
+    },
+    "lsp": {
+      "description": "C# language intelligence over the real LSP: completion, hover, diagnostics, document symbols, folding, selection ranges, code actions, document sync, client lifecycle.",
+      "files": [
+        "completions-visible.test.js",
+        "hover.test.js",
+        "diagnostics.test.js",
+        "lsp-integration.test.js",
+        "lsp-document-sync.test.js",
+        "lsp-lifecycle.test.js",
+        "lsp-refactor-quickfixes.test.js",
+        "lsp-refactor-organize-imports.test.js",
+        "lsp-refactor-core.test.js",
+        "lsp-refactor-rewrite-matrix.test.js",
+        "lsp-rename-symbols.test.js",
+        "lsp-rename-edge.test.js"
+      ]
+    },
+    "fsharp": {
+      "description": "F# is a first-class citizen, so its whole LSP surface is gated on Windows: navigation, intelligence, syntax, diagnostics, code fixes, hierarchy, workspace symbol.",
+      "files": [
+        "fsharp-lsp-*.test.js"
+      ]
+    },
+    "debug": {
+      "description": "Debugging end to end (launch/attach config resolution, netcoredbg adapter factory, sharplsp.debugProgram against real projects) plus Test Explorer discovery/run/debug and the test-status CodeLens.",
+      "files": [
+        "debug-e2e.test.js",
+        "test-explorer-e2e.test.js",
+        "testing-lens-e2e.test.js"
+      ]
+    },
+    "profiler": {
+      "description": "Profiling end to end (dotnet-trace sessions, live counters, memory dumps, .nettrace conversion, profiler webviews) plus FSI, build, output filtering and hot reload.",
+      "files": [
+        "profiler.test.js",
+        "profiler-e2e.test.js",
+        "fsi-build-output-e2e.test.js"
+      ]
+    },
+    "explorer": {
+      "description": "Solution Explorer tree, reactive sort/state signals, tooltips and reveal, the full context-menu surface, and the project-dependency watcher.",
+      "files": [
+        "solution-explorer.test.js",
+        "tree-config-e2e.test.js",
+        "context-menus.test.js",
+        "project-deps-watcher-e2e.test.js",
+        "sort-members-command-e2e.test.js"
+      ]
+    },
+    "packages": {
+      "description": "Scaffolding (create solution/project) and the NuGet surface: browser panel, search/add/update/restore commands, and real .csproj dependency edits.",
+      "files": [
+        "scaffolding.test.js",
+        "scaffolding-e2e.test.js",
+        "nuget-browser.test.js",
+        "nuget-deps-e2e.test.js"
+      ]
+    }
+  },
+  "excluded": {
+    "description": "Runs on Ubuntu (test-vsix) only. Each suite clones and restores a pinned real repository before cold-loading its solution, which adds ~10-15 minutes per suite; the Windows gate proves the feature surface, not third-party repo ingestion.",
+    "files": [
+      "real-repo-serilog.test.js",
+      "real-repo-fluentvalidation.test.js",
+      "real-repo-fstoolkit.test.js"
+    ]
+  }
+}

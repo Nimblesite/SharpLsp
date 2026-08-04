@@ -1,0 +1,54 @@
+<nav class="nav" aria-label="{{ 'nav.primaryLabel' | t(lang) | default('Primary navigation') }}">
+  <a href="{% if lang and lang != defaultLanguage %}/{{ lang }}/{% else %}/{% endif %}" class="logo">
+    <img class="logo-mark" src="/assets/images/sharplsp-logo.svg" alt="" width="28" height="28">
+    <span>{{ site.name | default(site.title) }}</span>
+  </a>
+
+  <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-label="{{ 'nav.menuLabel' | t(lang) | default('Main menu') }}" aria-controls="nav-menu" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+
+  {% set lp = "/" + lang + "/" if lang and lang != defaultLanguage else "/" %}
+  {% set docsRoot = lp + "docs/" %}
+  <div class="nav-menu" id="nav-menu">
+    <ul class="nav-links">
+      <li><a class="nav-link {% if page.url.startsWith('/docs/') or page.url.startsWith('/' + lang + '/docs/') %}active{% endif %}" href="{{ docsRoot }}">{{ "nav.docs" | t(lang) | default("Docs") }}</a></li>
+      <li><a class="nav-link {% if page.url.startsWith('/blog/') or page.url.startsWith('/' + lang + '/blog/') %}active{% endif %}" href="{{ lp }}blog/">{{ "nav.blog" | t(lang) | default("Blog") }}</a></li>
+      <li><a class="nav-link {% if page.url.startsWith(lp + 'releases/') %}active{% endif %}" href="{{ lp }}releases/">{{ "nav.releases" | t(lang) | default("Releases") }}</a></li>
+      <li><a class="nav-link" href="https://github.com/Nimblesite/SharpLsp">GitHub</a></li>
+    </ul>
+
+    <div class="nav-actions">
+      {% if techdocOptions.features.i18n and (supportedLanguages | length) > 1 %}
+      {% set currentLangCode = lang | default('en') %}
+      {% set currentLanguage = languages[currentLangCode] if languages and languages[currentLangCode] else null %}
+      <div class="language-switcher">
+        <button class="language-btn" aria-label="{{ 'nav.selectLanguage' | t(lang) | default('Select language') }}" aria-expanded="false">
+          {% if currentLanguage and currentLanguage.flag %}<span aria-hidden="true">{{ currentLanguage.flag }}</span>{% endif %}
+          <span>{% if currentLanguage %}{{ currentLanguage.nativeName }}{% else %}{{ currentLangCode | upper }}{% endif %}</span>
+        </button>
+        <ul class="language-dropdown" role="menu">
+          {% for langCode in supportedLanguages %}
+          {% set targetLanguage = languages[langCode] if languages and languages[langCode] else null %}
+          <li role="menuitem">
+            <a href="{{ page.url | altLangUrl(lang | default('en'), langCode) }}" class="{% if (lang | default('en')) == langCode %}active{% endif %}" lang="{{ langCode }}">
+              {% if targetLanguage and targetLanguage.flag %}<span aria-hidden="true">{{ targetLanguage.flag }}</span>{% endif %}
+              <span>{% if targetLanguage %}{{ targetLanguage.nativeName }}{% else %}{{ langCode | upper }}{% endif %}</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if techdocOptions.features.darkMode %}
+      <button id="theme-toggle" class="theme-toggle" aria-label="{{ 'nav.toggleTheme' | t(lang) | default('Toggle color theme') }}">
+        <span class="theme-icon-light" aria-hidden="true">☀</span>
+        <span class="theme-icon-dark" aria-hidden="true">☾</span>
+      </button>
+      {% endif %}
+
+      <a class="nav-button" href="{{ docsRoot }}">{{ "docs.gettingStarted" | t(lang) | default("Get Started") }}</a>
+    </div>
+  </div>
+</nav>
