@@ -133,14 +133,6 @@ let private toPrepareToken line (token: SourceToken) =
       EndCharacter = token.EndCharacter
       Placeholder = token.Text }
 
-let private locateUsesAs checker tokenized sourceName (uses: FSharpSymbolUse array) =
-    uses
-    |> Array.map (fun symbolUse ->
-        tokenForUseName checker tokenized (sourceName symbolUse) symbolUse
-        |> Option.map (fun token ->
-            { LocatedUse.SymbolUse = symbolUse
-              Token = token }))
-
 /// FCS reports some semantic uses at a zero-width range: a record copy-and-update
 /// expression `{ value with Field = 1 }` names its record type at the `{` with an
 /// empty span. There is no identifier text there to rewrite, so such a use is

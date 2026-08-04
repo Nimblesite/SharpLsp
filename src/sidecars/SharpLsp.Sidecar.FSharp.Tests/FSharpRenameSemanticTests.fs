@@ -10,7 +10,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 
 /// A string continuation (`\`) strips the leading whitespace of the next line, so
 /// indentation-sensitive fixtures must be assembled from explicit lines.
-let private source (lines: string list) = String.concat "\n" lines + "\n"
+let internal source (lines: string list) = String.concat "\n" lines + "\n"
 
 let private RECORD_DECLARATIONS =
     source [ "module Decls"; "type RecordThing = { Field: int }"; "type Alias = RecordThing" ]
@@ -36,6 +36,25 @@ let private INDEXER_SOURCE =
 let private INDEXER_USAGES =
     source [ "module IndexedUses"; "open Indexed"; "let indexerValue = IndexerThing().[0]" ]
 
+let private ALIAS_SOURCE =
+    source
+        [ "module Aliases"
+          "module Deep ="
+          "    module Nested ="
+          "        let value = 1"
+          ""
+          "module Short = Deep.Nested"
+          "let viaAlias = Short.value"
+          "let viaFull = Deep.Nested.value" ]
+
+let private DEFAULT_MEMBER_SOURCE =
+    source
+        [ "module Explicit"
+          "[<System.Reflection.DefaultMember(\"Chars\")>]"
+          "type Holder() ="
+          "    member _.Chars with get(index: int) = index"
+          "let ch = Holder().[0]" ]
+
 /// Render an edit so a failed expectation names the exact span that moved.
 let private editKey (edit: FSharpCodeActions.RawEdit) =
     let file = System.IO.Path.GetFileName edit.FilePath
@@ -59,6 +78,9 @@ let private assertEdits expected (state, uses: FSharpSymbolUse array) result =
         let actual = edits |> List.map editKey |> List.sort
         Assert.Equal<string list>(List.sort expected, actual)
 
+let private recordProject () =
+    loadWorkspace [ "Decls.fs", RECORD_DECLARATIONS; "Uses.fs", RECORD_USAGES ]
+
 // ── Uses FCS reports without renameable source text ────────────────
 
 /// A record copy-and-update expression `{ value with Field = 1 }` reports a use of
@@ -67,8 +89,7 @@ let private assertEdits expected (state, uses: FSharpSymbolUse array) result =
 /// aborts the whole rename. [RENAME-FSHARP-APPLY]
 [<Fact>]
 let ``record copy-and-update does not abort renaming the record type`` () = task {
-    let! (state, dir, _fsproj, paths) =
-        loadWorkspace [ "Decls.fs", RECORD_DECLARATIONS; "Uses.fs", RECORD_USAGES ]
+    let! (state, dir, _fsproj, paths) = recordProject ()
     try
         let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5
         let! renamed = FSharpRename.renameResult state paths[0] 1 5 "RenamedRecord"
@@ -99,6 +120,30 @@ let ``renaming an indexer rewrites the member and records DefaultMember metadata
             [ "Indexed.fs:2.13-2.17=>Lookup"
               "Indexed.fs:1.0-1.0=>[<System.Reflection.DefaultMemberAttribute(\"Lookup\")>]\n" ]
             (state, uses)
+            renamed
+    finally
+        cleanup dir
+}
+
+/// An `x.[i]` call site has no `Item` token, so prepare and rename must resolve
+/// the indexer from the parse tree at the `.[` marker and at the closing bracket.
+/// Renaming from the call site must produce the same edits as renaming from the
+/// declaration. [RENAME-FSHARP-PREPARE] [RENAME-FSHARP-APPLY]
+[<Fact>]
+let ``prepare and rename resolve an indexer from its call site`` () = task {
+    let! (state, dir, _fsproj, paths) =
+        loadWorkspace [ "Indexed.fs", INDEXER_SOURCE; "IndexedUses.fs", INDEXER_USAGES ]
+    try
+        for character in [ 33; 34; 36 ] do
+            let! prepare = FSharpRename.prepareRename state paths[1] 2 character
+            match prepare with
+            | None -> failwith $"prepare refused the indexer call site at column {character}"
+            | Some result -> Assert.Equal("Item", result.Placeholder)
+        let! renamed = FSharpRename.renameResult state paths[1] 2 34 "Lookup"
+        assertEdits
+            [ "Indexed.fs:2.13-2.17=>Lookup"
+              "Indexed.fs:1.0-1.0=>[<System.Reflection.DefaultMemberAttribute(\"Lookup\")>]\n" ]
+            (state, [||])
             renamed
     finally
         cleanup dir
@@ -140,6 +185,116 @@ let ``prepare offers an escaped identifier across its whole token`` () = task {
                 Assert.Equal("``renamed value``", result.Placeholder)
                 Assert.Equal(4, result.StartCharacter)
                 Assert.Equal(21, result.EndCharacter)
+    finally
+        cleanup dir
+}
+
+// ── Rename driven by another sidecar ───────────────────────────────
+
+/// A cross-language rename arrives as a compiler identity — assembly name plus
+/// XML doc signature — because the declaration lives in the other sidecar's
+/// language and has no position in any F# file. Resolving that identity must
+/// reach the same uses a positional rename does, or a C# rename would silently
+/// leave the F# side stale. [SHARPLSP-FEATURES-REFACTORING]
+[<Fact>]
+let ``renaming by compiler identity reaches the same uses as a positional rename`` () = task {
+    let! (state, dir, _fsproj, paths) = recordProject ()
+    try
+        let! identity = FSharpRename.getRenameIdentity state paths[0] 1 5
+        match identity with
+        | None -> failwith "the record type carried no cross-language identity"
+        | Some target ->
+            let! edits =
+                FSharpRename.renameForeign state target.AssemblyName target.XmlDocSig "RenamedRecord"
+            let actual = edits |> List.map editKey |> List.sort
+            Assert.Equal<string list>(
+                List.sort
+                    [ "Decls.fs:1.5-1.16=>RenamedRecord"
+                      "Decls.fs:2.13-2.24=>RenamedRecord"
+                      "Uses.fs:2.17-2.28=>RenamedRecord" ],
+                actual
+            )
+    finally
+        cleanup dir
+}
+
+/// A blank identity is a malformed request from the other sidecar, not a rename
+/// of everything: it must produce no edits at all.
+[<Fact>]
+let ``renaming by an empty compiler identity produces no edits`` () = task {
+    let! (state, dir, _fsproj, paths) = recordProject ()
+    try
+        Assert.NotEmpty(paths)
+        let! edits = FSharpRename.renameForeign state "" "" "RenamedRecord"
+        Assert.Empty(edits)
+    finally
+        cleanup dir
+}
+
+// ── Module abbreviations ───────────────────────────────────────────
+
+/// A module abbreviation is not a compiler symbol with uses of its own, so rename
+/// resolves it from the syntax tree. Renaming the abbreviation must rewrite its
+/// declaration and every qualified use of it. [RENAME-FSHARP-APPLY]
+[<Fact>]
+let ``renaming a module abbreviation rewrites its declaration and its uses`` () = task {
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Aliases.fs", ALIAS_SOURCE ]
+    try
+        let! renamed = FSharpRename.renameResult state paths[0] 5 8 "Brief"
+        assertEdits
+            [ "Aliases.fs:5.7-5.12=>Brief"; "Aliases.fs:6.15-6.20=>Brief" ]
+            (state, [||])
+            renamed
+    finally
+        cleanup dir
+}
+
+/// Renaming the module an abbreviation points at must rewrite the real module and
+/// the abbreviation's right-hand side, but never a use qualified by the
+/// abbreviation — `Short.value` still resolves after the target is renamed.
+[<Fact>]
+let ``renaming an abbreviated module leaves uses qualified by the abbreviation alone`` () = task {
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Aliases.fs", ALIAS_SOURCE ]
+    try
+        let! uses = FSharpReferences.getProjectUsages state paths[0] 2 12
+        let! renamed = FSharpRename.renameResult state paths[0] 2 12 "Inner"
+        assertEdits
+            [ "Aliases.fs:2.11-2.17=>Inner"
+              "Aliases.fs:5.20-5.26=>Inner"
+              "Aliases.fs:7.19-7.25=>Inner" ]
+            (state, uses)
+            renamed
+    finally
+        cleanup dir
+}
+
+/// Prepare must offer the abbreviation itself, not the module it stands for.
+[<Fact>]
+let ``prepare offers a module abbreviation under its own name`` () = task {
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Aliases.fs", ALIAS_SOURCE ]
+    try
+        let! prepare = FSharpRename.prepareRename state paths[0] 5 8
+        match prepare with
+        | None -> failwith "prepare refused the module abbreviation"
+        | Some result ->
+            Assert.Equal("Short", result.Placeholder)
+            Assert.Equal(7, result.StartCharacter)
+            Assert.Equal(12, result.EndCharacter)
+    finally
+        cleanup dir
+}
+
+/// An indexer that already carries DefaultMember metadata must have that literal
+/// rewritten in place rather than gaining a second attribute. [RENAME-FSHARP-APPLY]
+[<Fact>]
+let ``renaming an indexer rewrites existing DefaultMember metadata in place`` () = task {
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Explicit.fs", DEFAULT_MEMBER_SOURCE ]
+    try
+        let! renamed = FSharpRename.renameResult state paths[0] 3 14 "Slot"
+        assertEdits
+            [ "Explicit.fs:1.34-1.41=>\"Slot\""; "Explicit.fs:3.13-3.18=>Slot" ]
+            (state, [||])
+            renamed
     finally
         cleanup dir
 }
