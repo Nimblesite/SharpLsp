@@ -77,6 +77,34 @@ fn is_hex_address(token: &str) -> bool {
     token.len() >= 8 && token.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+/// Collect baseline heap dumps until `StringBuilder` instances are live, and
+/// return that dump's path together with one instance address.
+///
+/// `start_profiler_session` returns as soon as the target process and the LSP
+/// client are up; it does not wait for the target to reach its allocation loop.
+/// A dump taken in the first moments of process start can therefore legitimately
+/// precede the loop's first iteration and contain no instances at all. Retrying
+/// removes that start-up race without weakening anything: if the hotspot never
+/// appears, the final attempt still fails on the same requirement.
+fn baseline_with_hotspot(client: &mut LspClient, pid: u32, dir: &Path) -> (String, String) {
+    const HOTSPOT: &str = "System.Text.StringBuilder";
+
+    for attempt in 0..4 {
+        let dump = collect_heap_dump(client, pid, dir, &format!("baseline-{attempt}.dmp"));
+        if let Some(address) = harvest_heap_address(&dump, HOTSPOT) {
+            return (dump, address);
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+
+    let dump = collect_heap_dump(client, pid, dir, "baseline.dmp");
+    let address = harvest_heap_address(&dump, HOTSPOT).expect(
+        "baseline heap dump must contain StringBuilder instances \
+         (ProfileTarget allocates them constantly)",
+    );
+    (dump, address)
+}
+
 /// Collect a heap dump of `pid` through the LSP and return the dump path.
 fn collect_heap_dump(client: &mut LspClient, pid: u32, dir: &Path, file_name: &str) -> String {
     let dump_path = dir.join(file_name).to_string_lossy().to_string();
@@ -106,18 +134,15 @@ fn test_profiler_object_graph_roots_inspect_and_diff_full_stack() {
 
     // 1. Baseline heap snapshot, then let the target allocate, then compare
     //    snapshot — the [PROFILER-LEAKS-WORKFLOW] baseline → exercise → compare workflow.
-    let baseline_dump = collect_heap_dump(&mut client, target_pid, tmp_dir.path(), "baseline.dmp");
+    //
+    // 2. Harvest a REAL object address from the baseline. `ProfileTarget`'s
+    //    StringBuilder hotspot supplies the instances, and `StringBuilder`'s
+    //    `m_ChunkChars` char[] field is a never-null reference — exercising the
+    //    graph's edge traversal.
+    let (baseline_dump, address) = baseline_with_hotspot(&mut client, target_pid, tmp_dir.path());
     std::thread::sleep(Duration::from_secs(2));
     let comparison_dump =
         collect_heap_dump(&mut client, target_pid, tmp_dir.path(), "comparison.dmp");
-
-    // 2. Harvest a REAL object address. ProfileTarget's StringBuilder hotspot
-    //    guarantees instances, and StringBuilder's m_ChunkChars char[] field
-    //    is a never-null reference — exercising the graph's edge traversal.
-    let address = harvest_heap_address(&baseline_dump, "System.Text.StringBuilder").expect(
-        "baseline heap dump must contain StringBuilder instances \
-         (ProfileTarget allocates them constantly)",
-    );
 
     // 3. Object retention graph from the real root address.
     let resp = client.request(
