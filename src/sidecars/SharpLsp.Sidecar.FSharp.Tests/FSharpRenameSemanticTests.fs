@@ -47,13 +47,25 @@ let private ALIAS_SOURCE =
           "let viaAlias = Short.value"
           "let viaFull = Deep.Nested.value" ]
 
+/// The decoy type comes first so the parse-tree search has to reject a
+/// non-matching type definition before it reaches the indexer's own.
 let private DEFAULT_MEMBER_SOURCE =
     source
         [ "module Explicit"
+          "type Decoy() ="
+          "    member _.Plain = 1"
           "[<System.Reflection.DefaultMember(\"Chars\")>]"
           "type Holder() ="
           "    member _.Chars with get(index: int) = index"
           "let ch = Holder().[0]" ]
+
+/// An indexed property that is neither named `Item` nor carries DefaultMember
+/// metadata cannot be renamed without breaking its call sites.
+let private UNMARKED_INDEXER_SOURCE =
+    source
+        [ "module Unmarked"
+          "type Holder() ="
+          "    member _.Lookup with get(index: int) = index" ]
 
 /// Render an edit so a failed expectation names the exact span that moved.
 let private editKey (edit: FSharpCodeActions.RawEdit) =
@@ -290,11 +302,43 @@ let ``prepare offers a module abbreviation under its own name`` () = task {
 let ``renaming an indexer rewrites existing DefaultMember metadata in place`` () = task {
     let! (state, dir, _fsproj, paths) = loadWorkspace [ "Explicit.fs", DEFAULT_MEMBER_SOURCE ]
     try
-        let! renamed = FSharpRename.renameResult state paths[0] 3 14 "Slot"
+        let! renamed = FSharpRename.renameResult state paths[0] 5 14 "Slot"
         assertEdits
-            [ "Explicit.fs:1.34-1.41=>\"Slot\""; "Explicit.fs:3.13-3.18=>Slot" ]
+            [ "Explicit.fs:3.34-3.41=>\"Slot\""; "Explicit.fs:5.13-5.18=>Slot" ]
             (state, [||])
             renamed
+    finally
+        cleanup dir
+}
+
+/// Renaming an indexer to an escaped identifier must write the *logical* name
+/// into the DefaultMember literal — backticks are source syntax, not part of the
+/// member's name, and `[<DefaultMember("``My Slot``")>]` would not bind.
+[<Fact>]
+let ``renaming an indexer to an escaped name stores the logical name in metadata`` () = task {
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Explicit.fs", DEFAULT_MEMBER_SOURCE ]
+    try
+        let! renamed = FSharpRename.renameResult state paths[0] 5 14 "``My Slot``"
+        assertEdits
+            [ "Explicit.fs:3.34-3.41=>\"My Slot\""
+              "Explicit.fs:5.13-5.18=>``My Slot``" ]
+            (state, [||])
+            renamed
+    finally
+        cleanup dir
+}
+
+/// An indexed property that is neither named `Item` nor carries DefaultMember
+/// metadata has no way to keep `x.[i]` binding after a rename, so the request
+/// must fail loudly instead of silently producing a half-rename.
+[<Fact>]
+let ``renaming an indexer with no DefaultMember metadata is refused`` () = task {
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Unmarked.fs", UNMARKED_INDEXER_SOURCE ]
+    try
+        let! renamed = FSharpRename.renameResult state paths[0] 2 15 "Fetch"
+        match renamed with
+        | Ok edits -> failwith $"expected a refusal, got {edits.Length} edits"
+        | Error message -> Assert.Contains("DefaultMember", message)
     finally
         cleanup dir
 }
