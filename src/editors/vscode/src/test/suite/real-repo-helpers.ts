@@ -272,6 +272,16 @@ function errorDiagnosticKeys(uri: vscode.Uri): string[] {
     .sort();
 }
 
+/**
+ * Wait until the file's error diagnostics stop changing for 2s.
+ *
+ * `minimumErrors` guards against returning a baseline the language server has
+ * not finished populating. Set it only when the file genuinely must report that
+ * many errors — a value the source cannot reach makes this unsatisfiable, and
+ * the loop will burn the whole timeout waiting for a count that never arrives.
+ * The failure therefore reports what it actually observed, so a wrong
+ * expectation is distinguishable from a slow one.
+ */
 export async function waitForStableErrorBaseline(
   uri: vscode.Uri,
   timeoutMs: number,
@@ -290,7 +300,12 @@ export async function waitForStableErrorBaseline(
       return current;
     }
   }
-  assert.fail('Error diagnostic baseline never stabilized');
+  const settled = errorDiagnosticKeys(uri);
+  assert.fail(
+    `Error diagnostic baseline never stabilized: wanted at least ${String(minimumErrors)} ` +
+      `error(s) unchanged for 2s within ${String(timeoutMs)}ms, but settled on ${String(settled.length)}: ` +
+      JSON.stringify(settled),
+  );
 }
 
 export async function waitForErrorBaseline(
