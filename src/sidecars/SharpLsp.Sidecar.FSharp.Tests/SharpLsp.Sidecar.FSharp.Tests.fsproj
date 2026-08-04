@@ -22,6 +22,7 @@
     <Compile Include="FSharpOverlayTests.fs" />
     <Compile Include="FSharpScriptTests.fs" />
     <Compile Include="FSharpRenameSemanticTests.fs" />
+    <Compile Include="FSharpCodeActionSemanticTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
