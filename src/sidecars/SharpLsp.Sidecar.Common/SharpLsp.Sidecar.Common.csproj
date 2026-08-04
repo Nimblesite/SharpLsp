@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <RootNamespace>SharpLsp.Sidecar.Common</RootNamespace>
+        <AssemblyName>SharpLsp.Sidecar.Common</AssemblyName>
+        <PackageId>SharpLsp.Sidecar.Common</PackageId>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <!-- [DIST-CI-DOTNET-DEPSFILE] (GitHub #111): this is a referenced-only library;
+             its deps.json is never read at runtime (the executable sidecars + test
+             project emit their own). Suppressing it removes the unused, lock-prone
+             artifact whose GenerateDepsFile write intermittently failed with MSB4018
+             ("deps.json ... being used by another process"). -->
+        <GenerateDependencyFile>false</GenerateDependencyFile>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <WarningLevel>9999</WarningLevel>
+        <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="ICSharpCode.Decompiler" Version="10.1.0.8386" />
+        <PackageReference Include="MessagePack" Version="3.1.8" />
+        <PackageReference Include="Microsoft.VisualStudio.SolutionPersistence" Version="1.0.52" />
+        <PackageReference Include="Serilog" Version="4.4.0" />
+        <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    </ItemGroup>
+</Project>

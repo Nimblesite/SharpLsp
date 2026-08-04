@@ -1,0 +1,1087 @@
+{
+  "name": "sharplsp",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
+  "version": "0.1.0",
+  "publisher": "nimblesite",
+  "license": "MIT",
+  "icon": "icons/sharplsp.png",
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "extensionDependencies": [
+    "ms-dotnettools.vscode-dotnet-runtime"
+  ],
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "C#",
+    "F#",
+    "csharp",
+    "fsharp",
+    ".NET",
+    "dotnet",
+    "Roslyn",
+    "LSP",
+    "language server"
+  ],
+  "galleryBanner": {
+    "color": "#0a1a12",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nimblesite/SharpLsp"
+  },
+  "activationEvents": [
+    "onStartupFinished",
+    "workspaceContains:**/*.sln",
+    "workspaceContains:**/*.slnx",
+    "workspaceContains:**/*.csproj",
+    "workspaceContains:**/*.fsproj"
+  ],
+  "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In an untrusted workspace, SharpLsp ignores workspace-provided settings that select which executable to run (server/sidecar/debug-adapter paths and extra server arguments) and runs only the bundled, vetted binaries. Grant workspace trust to use custom executable paths.",
+      "restrictedConfigurations": [
+        "sharplsp.lspPath",
+        "sharplsp.csharpSidecarPath",
+        "sharplsp.fsharpSidecarPath",
+        "sharplsp.server.extraArgs",
+        "sharplsp.fsi.extraArgs",
+        "sharplsp.debug.netcoredbgPath"
+      ]
+    }
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "csharp",
+        "aliases": [
+          "C#",
+          "CSharp"
+        ],
+        "extensions": [
+          ".cs",
+          ".csx"
+        ],
+        "configuration": "./language-configuration/csharp.json"
+      },
+      {
+        "id": "fsharp",
+        "aliases": [
+          "F#",
+          "FSharp"
+        ],
+        "extensions": [
+          ".fs",
+          ".fsx",
+          ".fsi"
+        ],
+        "configuration": "./language-configuration/fsharp.json"
+      }
+    ],
+    "configuration": {
+      "title": "%configuration.title%",
+      "properties": {
+        "sharplsp.lspPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%setting.lspPath%",
+          "scope": "machine-overridable",
+          "order": 0
+        },
+        "sharplsp.csharpSidecarPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%setting.csharpSidecarPath%",
+          "scope": "machine-overridable",
+          "order": 1
+        },
+        "sharplsp.fsharpSidecarPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%setting.fsharpSidecarPath%",
+          "scope": "machine-overridable",
+          "order": 2
+        },
+        "sharplsp.server.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "%setting.server.extraArgs%",
+          "scope": "machine-overridable",
+          "order": 3
+        },
+        "sharplsp.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "%setting.trace.server%",
+          "scope": "window",
+          "order": 4
+        },
+        "sharplsp.logging.level": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "default": "info",
+          "markdownDescription": "%setting.logging.level%",
+          "scope": "window",
+          "order": 5
+        },
+        "sharplsp.fsi.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "%setting.fsi.extraArgs%",
+          "scope": "machine-overridable",
+          "order": 18
+        },
+        "sharplsp.debug.netcoredbgPath": {
+          "type": "string",
+          "default": "",
+          "description": "%setting.debug.netcoredbgPath%",
+          "scope": "machine",
+          "order": 20
+        },
+        "sharplsp.inlayHints.parameterNames": {
+          "type": "boolean",
+          "default": true,
+          "description": "%setting.inlayHints.parameterNames%",
+          "scope": "resource",
+          "order": 5
+        },
+        "sharplsp.inlayHints.typeInference": {
+          "type": "boolean",
+          "default": true,
+          "description": "%setting.inlayHints.typeInference%",
+          "scope": "resource",
+          "order": 6
+        },
+        "sharplsp.inlayHints.pipelineTypes": {
+          "type": "boolean",
+          "default": true,
+          "description": "%setting.inlayHints.pipelineTypes%",
+          "scope": "resource",
+          "order": 7
+        },
+        "sharplsp.nuget.includePrerelease": {
+          "type": "boolean",
+          "default": false,
+          "description": "%setting.nuget.includePrerelease%",
+          "scope": "resource",
+          "order": 15
+        },
+        "sharplsp.hotReload.onSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "%setting.hotReload.onSave%",
+          "scope": "resource",
+          "order": 16
+        },
+        "sharplsp.testLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "%setting.testLens.enabled%",
+          "scope": "resource",
+          "order": 17
+        },
+        "sharplsp.solutionExplorer.autoReveal": {
+          "type": "boolean",
+          "default": true,
+          "description": "%setting.solutionExplorer.autoReveal%",
+          "scope": "resource",
+          "order": 18
+        },
+        "sharplsp.memberSortOrder.hierarchy": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "accessibility",
+              "category",
+              "alphabetical"
+            ]
+          },
+          "default": [
+            "accessibility",
+            "category",
+            "alphabetical"
+          ],
+          "markdownDescription": "%setting.memberSortOrder.hierarchy%",
+          "scope": "resource",
+          "order": 10
+        },
+        "sharplsp.memberSortOrder.accessibilityOrder": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "public",
+            "protected internal",
+            "internal",
+            "protected",
+            "private protected",
+            "private"
+          ],
+          "markdownDescription": "%setting.memberSortOrder.accessibilityOrder%",
+          "scope": "resource",
+          "order": 11
+        },
+        "sharplsp.memberSortOrder.categoryOrder": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "constant",
+            "field",
+            "constructor",
+            "finalizer",
+            "delegate",
+            "event",
+            "enum",
+            "interface",
+            "property",
+            "indexer",
+            "operator",
+            "method",
+            "struct",
+            "class",
+            "record"
+          ],
+          "markdownDescription": "%setting.memberSortOrder.categoryOrder%",
+          "scope": "resource",
+          "order": 12
+        }
+      }
+    },
+    "debuggers": [
+      {
+        "type": "sharplsp-coreclr",
+        "label": "%debugger.label%",
+        "languages": [
+          "csharp",
+          "fsharp"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "%debugger.launch.program%"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "%debugger.launch.args%",
+                "default": []
+              },
+              "cwd": {
+                "type": "string",
+                "description": "%debugger.launch.cwd%"
+              },
+              "env": {
+                "type": "object",
+                "description": "%debugger.launch.env%"
+              },
+              "stopAtEntry": {
+                "type": "boolean",
+                "description": "%debugger.launch.stopAtEntry%",
+                "default": false
+              }
+            }
+          },
+          "attach": {
+            "required": [
+              "processId"
+            ],
+            "properties": {
+              "processId": {
+                "type": "number",
+                "description": "%debugger.attach.processId%"
+              }
+            }
+          }
+        },
+        "configurationSnippets": [
+          {
+            "label": "%debugger.snippet.launch.label%",
+            "description": "%debugger.snippet.launch.description%",
+            "body": {
+              "type": "sharplsp-coreclr",
+              "request": "launch",
+              "name": "Launch .NET Project",
+              "program": "${workspaceFolder}/bin/Debug/net9.0/${workspaceFolderBasename}.dll",
+              "cwd": "${workspaceFolder}",
+              "stopAtEntry": false
+            }
+          },
+          {
+            "label": "%debugger.snippet.attach.label%",
+            "description": "%debugger.snippet.attach.description%",
+            "body": {
+              "type": "sharplsp-coreclr",
+              "request": "attach",
+              "name": "Attach to Process",
+              "processId": 0
+            }
+          }
+        ]
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sharplsp-explorer",
+          "title": "%viewsContainer.title%",
+          "icon": "icons/sharplsp-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "sharplsp-explorer": [
+        {
+          "id": "sharplsp.solutionExplorer",
+          "name": "%view.solutionExplorer.name%",
+          "icon": "icons/sharplsp.svg"
+        },
+        {
+          "id": "sharplsp.profiler",
+          "name": "%view.profiler.name%",
+          "icon": "$(pulse)"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "sharplsp.solutionExplorer",
+        "contents": "%viewWelcome.solutionExplorer.contents%"
+      }
+    ],
+    "commands": [
+      {
+        "command": "sharplsp.restartServer",
+        "title": "%cmd.restartServer%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.retryDotnetAcquisition",
+        "title": "%cmd.retryDotnetAcquisition%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.showOutput",
+        "title": "%cmd.showOutput%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.showTraceOutput",
+        "title": "%cmd.showTraceOutput%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.selectSolution",
+        "title": "%cmd.selectSolution%",
+        "category": "%category%",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "sharplsp.openSolution",
+        "title": "%cmd.openSolution%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.refreshExplorer",
+        "title": "%cmd.refreshExplorer%",
+        "category": "%category%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "sharplsp.sortNatural",
+        "title": "%cmd.sortNatural%",
+        "category": "%category%",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "sharplsp.sortAlphabetical",
+        "title": "%cmd.sortAlphabetical%",
+        "category": "%category%",
+        "icon": "$(case-sensitive)"
+      },
+      {
+        "command": "sharplsp.sortAccessibility",
+        "title": "%cmd.sortAccessibility%",
+        "category": "%category%",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "sharplsp.removeNuGetPackage",
+        "title": "%cmd.removeNuGetPackage%",
+        "category": "%category%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "sharplsp.removeProjectReference",
+        "title": "%cmd.removeProjectReference%",
+        "category": "%category%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "sharplsp.removeUnusedPackages",
+        "title": "%cmd.removeUnusedPackages%",
+        "category": "%category%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "sharplsp.consolidatePackages",
+        "title": "%cmd.consolidatePackages%",
+        "category": "%category%",
+        "icon": "$(combine)"
+      },
+      {
+        "command": "sharplsp.browseNuGetPackages",
+        "title": "%cmd.browseNuGetPackages%",
+        "category": "%category%",
+        "icon": "$(package)"
+      },
+      {
+        "command": "sharplsp.sortMembers",
+        "title": "%cmd.sortMembers%",
+        "category": "%category%",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "sharplsp.copyQualifiedName",
+        "title": "%cmd.copyQualifiedName%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.copyName",
+        "title": "%cmd.copyName%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.revealInExplorer",
+        "title": "%cmd.revealInExplorer%",
+        "category": "%category%",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "sharplsp.profiler.listProcesses",
+        "title": "%cmd.profiler.listProcesses%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.profiler.startTrace",
+        "title": "%cmd.profiler.startTrace%",
+        "category": "%category%",
+        "icon": "$(record)"
+      },
+      {
+        "command": "sharplsp.profiler.stopTrace",
+        "title": "%cmd.profiler.stopTrace%",
+        "category": "%category%",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "sharplsp.profiler.startCounters",
+        "title": "%cmd.profiler.startCounters%",
+        "category": "%category%",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "sharplsp.profiler.stopCounters",
+        "title": "%cmd.profiler.stopCounters%",
+        "category": "%category%",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "sharplsp.profiler.collectDump",
+        "title": "%cmd.profiler.collectDump%",
+        "category": "%category%",
+        "icon": "$(database)"
+      },
+      {
+        "command": "sharplsp.profiler.analyzeHeap",
+        "title": "%cmd.profiler.analyzeHeap%",
+        "category": "%category%",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "sharplsp.profiler.refresh",
+        "title": "%cmd.profiler.refresh%",
+        "category": "%category%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "sharplsp.profiler.diffSnapshots",
+        "title": "%cmd.profiler.diffSnapshots%",
+        "category": "%category%",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "sharplsp.profiler.detectLeaks",
+        "title": "%cmd.profiler.detectLeaks%",
+        "category": "%category%",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "sharplsp.profiler.showObjectGraph",
+        "title": "%cmd.profiler.showObjectGraph%",
+        "category": "%category%",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "sharplsp.profiler.inspectObject",
+        "title": "%cmd.profiler.inspectObject%",
+        "category": "%category%",
+        "icon": "$(search)"
+      },
+      {
+        "command": "sharplsp.profiler.openTrace",
+        "title": "%cmd.profiler.openTrace%",
+        "category": "%category%",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "sharplsp.profiler.convertTrace",
+        "title": "%cmd.profiler.convertTrace%",
+        "category": "%category%",
+        "icon": "$(file-binary)"
+      },
+      {
+        "command": "sharplsp.profiler.stopSession",
+        "title": "%cmd.profiler.stopSession%",
+        "category": "%category%",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "sharplsp.profiler.revealOutput",
+        "title": "%cmd.profiler.revealOutput%",
+        "category": "%category%",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "sharplsp.profiler.copyOutputPath",
+        "title": "%cmd.profiler.copyOutputPath%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.profiler.showCountersPanel",
+        "title": "%cmd.profiler.showCountersPanel%",
+        "category": "%category%",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "sharplsp.profiler.traceProcess",
+        "title": "%cmd.profiler.traceProcess%",
+        "category": "%category%",
+        "icon": "$(record)"
+      },
+      {
+        "command": "sharplsp.profiler.countersProcess",
+        "title": "%cmd.profiler.countersProcess%",
+        "category": "%category%",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "sharplsp.profiler.dumpProcess",
+        "title": "%cmd.profiler.dumpProcess%",
+        "category": "%category%",
+        "icon": "$(database)"
+      },
+      {
+        "command": "sharplsp.profiler.copyPid",
+        "title": "%cmd.profiler.copyPid%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.profiler.killProcess",
+        "title": "%cmd.profiler.killProcess%",
+        "category": "%category%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "sharplsp.build",
+        "title": "%cmd.build%",
+        "category": "%category%",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "sharplsp.rebuild",
+        "title": "%cmd.rebuild%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.clean",
+        "title": "%cmd.clean%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.nuget.add",
+        "title": "%cmd.nuget.add%",
+        "category": "%category%",
+        "icon": "$(package)"
+      },
+      {
+        "command": "sharplsp.nuget.update",
+        "title": "%cmd.nuget.update%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.newSolution",
+        "title": "%cmd.newSolution%",
+        "category": "%category%",
+        "icon": "$(files)"
+      },
+      {
+        "command": "sharplsp.newProject",
+        "title": "%cmd.newProject%",
+        "category": "%category%",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "sharplsp.newFile",
+        "title": "%cmd.newFile%",
+        "category": "%category%",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "sharplsp.addProjectToSolution",
+        "title": "%cmd.addProjectToSolution%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.nuget.restore",
+        "title": "%cmd.nuget.restore%",
+        "category": "%category%",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "sharplsp.openProjectFile",
+        "title": "%cmd.openProjectFile%",
+        "category": "%category%",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "sharplsp.addProjectReference",
+        "title": "%cmd.addProjectReference%",
+        "category": "%category%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "sharplsp.nuget.addFromExplorer",
+        "title": "%cmd.nuget.add%",
+        "category": "%category%",
+        "icon": "$(package)"
+      },
+      {
+        "command": "sharplsp.fsi.send",
+        "title": "%cmd.fsi.send%",
+        "category": "%category%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "sharplsp.fsi.sendFile",
+        "title": "%cmd.fsi.sendFile%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.fsi.start",
+        "title": "%cmd.fsi.start%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.fsi.generateSignature",
+        "title": "%cmd.fsi.generateSignature%",
+        "category": "%category%"
+      },
+      {
+        "command": "sharplsp.hotReload.start",
+        "title": "%cmd.hotReload.start%",
+        "category": "%category%",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "sharplsp.hotReload.stop",
+        "title": "%cmd.hotReload.stop%",
+        "category": "%category%",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "sharplsp.hotReload.toggle",
+        "title": "%cmd.hotReload.toggle%",
+        "category": "%category%",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "sharplsp.test.runAtCursor",
+        "title": "%cmd.test.runAtCursor%",
+        "category": "%category%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "sharplsp.test.debugAtCursor",
+        "title": "%cmd.test.debugAtCursor%",
+        "category": "%category%",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "sharplsp.debugProgram",
+        "title": "%cmd.debugProgram%",
+        "category": "%category%",
+        "icon": "$(debug-alt)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "sharplsp.debugProgram",
+          "when": "editorLangId == csharp || editorLangId == fsharp",
+          "group": "navigation@1"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "sharplsp.newSolution",
+          "when": "view == sharplsp.solutionExplorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sharplsp.newProject",
+          "when": "view == sharplsp.solutionExplorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "sharplsp.selectSolution",
+          "when": "view == sharplsp.solutionExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "sharplsp.refreshExplorer",
+          "when": "view == sharplsp.solutionExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "sharplsp.sortNatural",
+          "when": "view == sharplsp.solutionExplorer && sharplsp.sortOrder == natural",
+          "group": "navigation"
+        },
+        {
+          "command": "sharplsp.sortAlphabetical",
+          "when": "view == sharplsp.solutionExplorer && sharplsp.sortOrder == alphabetical",
+          "group": "navigation"
+        },
+        {
+          "command": "sharplsp.sortAccessibility",
+          "when": "view == sharplsp.solutionExplorer && sharplsp.sortOrder == accessibility",
+          "group": "navigation"
+        },
+        {
+          "command": "sharplsp.profiler.refresh",
+          "when": "view == sharplsp.profiler",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sharplsp.profiler.openTrace",
+          "when": "view == sharplsp.profiler",
+          "group": "navigation@2"
+        },
+        {
+          "command": "sharplsp.profiler.startTrace",
+          "when": "view == sharplsp.profiler",
+          "group": "overflow@1"
+        },
+        {
+          "command": "sharplsp.profiler.startCounters",
+          "when": "view == sharplsp.profiler",
+          "group": "overflow@2"
+        },
+        {
+          "command": "sharplsp.profiler.collectDump",
+          "when": "view == sharplsp.profiler",
+          "group": "overflow@3"
+        },
+        {
+          "command": "sharplsp.profiler.convertTrace",
+          "when": "view == sharplsp.profiler",
+          "group": "overflow@4"
+        },
+        {
+          "command": "sharplsp.profiler.analyzeHeap",
+          "when": "view == sharplsp.profiler",
+          "group": "overflow@5"
+        },
+        {
+          "command": "sharplsp.profiler.diffSnapshots",
+          "when": "view == sharplsp.profiler",
+          "group": "overflow@6"
+        },
+        {
+          "command": "sharplsp.profiler.detectLeaks",
+          "when": "view == sharplsp.profiler",
+          "group": "overflow@7"
+        }
+      ],
+      "debug/toolbar": [
+        {
+          "command": "sharplsp.hotReload.toggle",
+          "when": "debugType == sharplsp-coreclr && !sharplsp.hotReloadRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "sharplsp.hotReload.stop",
+          "when": "debugType == sharplsp-coreclr && sharplsp.hotReloadRunning",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "sharplsp.sortMembers",
+          "when": "view == sharplsp.solutionExplorer && viewItem =~ /^symbol\\.(class|struct|interface|enum|record)$/",
+          "group": "1_modification"
+        },
+        {
+          "command": "sharplsp.revealInExplorer",
+          "when": "view == sharplsp.solutionExplorer && viewItem =~ /^symbol\\./",
+          "group": "3_open"
+        },
+        {
+          "command": "sharplsp.removeNuGetPackage",
+          "when": "view == sharplsp.solutionExplorer && viewItem == nugetPackage",
+          "group": "7_modification"
+        },
+        {
+          "command": "sharplsp.removeProjectReference",
+          "when": "view == sharplsp.solutionExplorer && viewItem == projectReference",
+          "group": "7_modification"
+        },
+        {
+          "command": "sharplsp.openProjectFile",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
+          "group": "3_open"
+        },
+        {
+          "command": "sharplsp.browseNuGetPackages",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
+          "group": "5_dependencies"
+        },
+        {
+          "command": "sharplsp.removeUnusedPackages",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
+          "group": "5_dependencies"
+        },
+        {
+          "command": "sharplsp.removeUnusedPackages",
+          "when": "view == sharplsp.solutionExplorer && viewItem == solution",
+          "group": "5_dependencies"
+        },
+        {
+          "command": "sharplsp.consolidatePackages",
+          "when": "view == sharplsp.solutionExplorer && viewItem == solution",
+          "group": "5_dependencies"
+        },
+        {
+          "command": "sharplsp.build",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
+          "group": "2_build"
+        },
+        {
+          "command": "sharplsp.rebuild",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
+          "group": "2_build"
+        },
+        {
+          "command": "sharplsp.clean",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
+          "group": "2_build"
+        },
+        {
+          "command": "sharplsp.build",
+          "when": "view == sharplsp.solutionExplorer && viewItem == solution",
+          "group": "2_build"
+        },
+        {
+          "command": "sharplsp.rebuild",
+          "when": "view == sharplsp.solutionExplorer && viewItem == solution",
+          "group": "2_build"
+        },
+        {
+          "command": "sharplsp.clean",
+          "when": "view == sharplsp.solutionExplorer && viewItem == solution",
+          "group": "2_build"
+        },
+        {
+          "command": "sharplsp.addProjectReference",
+          "when": "view == sharplsp.solutionExplorer && viewItem == dependencyFolder",
+          "group": "1_add"
+        },
+        {
+          "command": "sharplsp.nuget.addFromExplorer",
+          "when": "view == sharplsp.solutionExplorer && viewItem == dependencyFolder",
+          "group": "1_add"
+        },
+        {
+          "command": "sharplsp.copyQualifiedName",
+          "when": "view == sharplsp.solutionExplorer && viewItem =~ /^symbol\\./",
+          "group": "9_cutcopypaste"
+        },
+        {
+          "command": "sharplsp.copyName",
+          "when": "view == sharplsp.solutionExplorer && viewItem =~ /^(symbol\\.|solution$|project$)/",
+          "group": "9_cutcopypaste"
+        },
+        {
+          "command": "sharplsp.profiler.stopSession",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
+          "group": "inline@1"
+        },
+        {
+          "command": "sharplsp.profiler.stopSession",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
+          "group": "1_stop@1"
+        },
+        {
+          "command": "sharplsp.profiler.revealOutput",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
+          "group": "2_open@1"
+        },
+        {
+          "command": "sharplsp.profiler.copyOutputPath",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-trace",
+          "group": "9_copy@1"
+        },
+        {
+          "command": "sharplsp.profiler.showCountersPanel",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-counters",
+          "group": "inline@1"
+        },
+        {
+          "command": "sharplsp.profiler.showCountersPanel",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-counters",
+          "group": "1_show@1"
+        },
+        {
+          "command": "sharplsp.profiler.stopCounters",
+          "when": "view == sharplsp.profiler && viewItem == profiler-session-counters",
+          "group": "1_show@2"
+        },
+        {
+          "command": "sharplsp.profiler.traceProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
+          "group": "inline@1"
+        },
+        {
+          "command": "sharplsp.profiler.traceProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
+          "group": "1_profile@1"
+        },
+        {
+          "command": "sharplsp.profiler.countersProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
+          "group": "1_profile@2"
+        },
+        {
+          "command": "sharplsp.profiler.dumpProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
+          "group": "1_profile@3"
+        },
+        {
+          "command": "sharplsp.profiler.copyPid",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
+          "group": "9_copy@1"
+        },
+        {
+          "command": "sharplsp.profiler.killProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
+          "group": "inline@2"
+        },
+        {
+          "command": "sharplsp.profiler.killProcess",
+          "when": "view == sharplsp.profiler && viewItem == profiler-process",
+          "group": "9_destroy@1"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "node ../../../tools/npm/run-sequential.mjs lint:eslint typecheck",
+    "lint:eslint": "eslint src/",
+    "compile-tests": "node ../../../tools/npm/run-sequential.mjs clean compile-tests:typescript",
+    "compile-tests:typescript": "tsc -p ./",
+    "prepare:test-assets": "node ../../../tools/vsix/resolve-symlink-stubs.mjs icons",
+    "pretest": "node ../../../tools/npm/run-sequential.mjs prepare:test-assets prepare:test-fixtures compile-tests build",
+    "test": "vscode-test --coverage",
+    "test:run": "node out/test/runTest.js",
+    "package": "vsce package --no-dependencies",
+    "build:production": "node esbuild.mjs --production",
+    "vscode:prepublish": "node ../../../tools/npm/run-sequential.mjs prepare:test-assets build:production",
+    "clean": "node clean-out.mjs",
+    "prepare:test-fixtures": "node ../../../tools/vsix/build-test-fixtures.mjs"
+  },
+  "dependencies": {
+    "@nimblesite/shipwright-vscode": "^0.10.0",
+    "fast-xml-parser": "^5.10.1",
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^26.1.1",
+    "@types/vscode": "^1.125.0",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
+    "@typescript-eslint/parser": "^8.64.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.0",
+    "eslint": "^10.7.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.6",
+    "playwright": "^1.61.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.64.0"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "icons/",
+    "language-configuration/",
+    "package.nls.json",
+    "package.nls.*.json",
+    "shipwright.json",
+    "LICENSE"
+  ],
+  "overrides": {
+    "serialize-javascript": "7.0.5",
+    "brace-expansion@^2.0.0": "2.1.4",
+    "brace-expansion@^5.0.0": "5.0.9"
+  }
+}

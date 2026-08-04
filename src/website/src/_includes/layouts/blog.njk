@@ -1,0 +1,21 @@
+---
+layout: layouts/base.njk
+---
+{% set blogText = i18n[lang or defaultLanguage].blog %}
+{% set categoryKey = category | default("engineering") %}
+<article class="prose">
+  <header class="article-header">
+    <div class="article-kicker">
+      <span>{{ blogText.categoryLabels[categoryKey] | default(categoryKey) | capitalize }}</span>
+      <time datetime="{{ date | isoDate }}">{{ date | dateFormat(lang) }}</time>
+    </div>
+    <h1>{{ title }}</h1>
+    {% include "partials/article-author.njk" %}
+    {% if image %}
+    <figure class="article-hero">
+      <img src="{{ image }}" alt="{{ imageAlt | default(title) }}" loading="eager">
+    </figure>
+    {% endif %}
+  </header>
+  {{ content | safe }}
+</article>

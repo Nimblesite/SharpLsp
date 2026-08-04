@@ -17,12 +17,12 @@ It may become the foundation for a built-in SharpLsp formatter in the future, bu
 
 | Component | File(s) | Engine |
 |-----------|---------|--------|
-| Rust LSP handler | `src/formatting.rs` | Routes to sidecar (gated behind `cfg(feature = "formatting")`) |
-| C# sidecar resolver | `sidecars/SharpLsp.Sidecar.CSharp/Workspace/FormattingResolver.cs` | Roslyn `Formatter.FormatAsync()` |
-| C# sidecar handlers | `sidecars/SharpLsp.Sidecar.CSharp/CSharpSidecar.Features.cs` (formatting methods) | Delegates to resolver |
-| C# workspace manager | `sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.Features.cs` (formatting methods) | Delegates to resolver |
-| F# features | `sidecars/SharpLsp.Sidecar.FSharp/FSharpFeatures.fs` (formatting section) | Fantomas `CodeFormatter` |
-| F# sidecar handlers | `sidecars/SharpLsp.Sidecar.FSharp/FSharpSidecar.fs` (formatting registrations) | Delegates to features |
+| Rust LSP handler | `src/sharplsp/src/formatting.rs` | Routes to sidecar (gated behind `cfg(feature = "formatting")`) |
+| C# sidecar resolver | `src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/FormattingResolver.cs` | Roslyn `Formatter.FormatAsync()` |
+| C# sidecar handlers | `src/sidecars/SharpLsp.Sidecar.CSharp/CSharpSidecar.Features.cs` (formatting methods) | Delegates to resolver |
+| C# workspace manager | `src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.Features.cs` (formatting methods) | Delegates to resolver |
+| F# features | `src/sidecars/SharpLsp.Sidecar.FSharp/FSharpFeatures.fs` (formatting section) | Fantomas `CodeFormatter` |
+| F# sidecar handlers | `src/sidecars/SharpLsp.Sidecar.FSharp/FSharpSidecar.fs` (formatting registrations) | Delegates to features |
 
 ## How It's Disabled
 
@@ -30,7 +30,7 @@ It may become the foundation for a built-in SharpLsp formatter in the future, bu
 2. **Cargo.toml**: Declares a `formatting` feature flag (off by default).
 3. **C# sidecar**: Handler registrations still exist (the sidecar responds if asked) but the Rust host never asks. `FormattingResolver` and workspace formatting methods are marked `[ExcludeFromCodeCoverage]`.
 4. **F# sidecar**: Handler registrations still exist but the Rust host never asks. Formatting functions are marked as sequestered in comments.
-5. **Coverage**: `FormattingResolver.cs` is excluded via `coverlet.runsettings` `ExcludeByFile`. Workspace formatting methods have `[ExcludeFromCodeCoverage]` attributes.
+5. **Coverage**: `FormattingResolver.cs` is excluded via `.config/coverage/coverlet.runsettings` `ExcludeByFile`. Workspace formatting methods have `[ExcludeFromCodeCoverage]` attributes.
 
 ## Supported Formatting Features (If Re-enabled)
 

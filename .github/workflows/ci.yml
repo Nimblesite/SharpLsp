@@ -46,11 +46,11 @@ jobs:
           manifest_changed=false
           for file in "${files[@]}"; do
             case "$file" in
-              shipwright.json|editors/vscode/shipwright.json|.github/shipwright/deployment-toolkit.schema.json)
+              shipwright.json|src/editors/vscode/shipwright.json|.github/shipwright/deployment-toolkit.schema.json)
                 manifest_changed=true
                 code_changed=true
                 ;;
-              website/*|docs/*|.github/ISSUE_TEMPLATE/*|*.md)
+              src/website/*|docs/*|.github/ISSUE_TEMPLATE/*|*.md)
                 ;;
               *)
                 code_changed=true
@@ -76,7 +76,7 @@ jobs:
     # Owns vulnerable *dependencies* (Cargo, npm, NuGet). CodeQL (codeql.yml)
     # owns vulnerable *code* and `make lint` owns style - no overlap. There is
     # no native vuln-gate (cargo-deny/osv) in this repo, so dependency-review is
-    # the single dependency scanner. [GITHUB-DEP-REVIEW]
+    # the single dependency scanner. [DIST-CI-SECURITY]
     permissions:
       contents: read
     steps:
@@ -105,7 +105,7 @@ jobs:
           npm install --prefix "$tmp" @nimblesite/shipwright-validate-manifest@0.9.0
           "$tmp/node_modules/.bin/shipwright-validate-manifest" \
             --schema .github/shipwright/deployment-toolkit.schema.json \
-            shipwright.json editors/vscode/shipwright.json
+            shipwright.json src/editors/vscode/shipwright.json
     needs:
       - detect-changes
     if: ${{ needs.detect-changes.outputs.manifest_changed == 'true' }}
@@ -142,8 +142,8 @@ jobs:
   # NOTE: the former `coverage` job that git-committed+pushed ratcheted
   # thresholds was removed. On a pull_request, actions/checkout is a detached
   # HEAD, so `git push` failed the moment coverage changed — a latent red build,
-  # and a direct push to a protected branch ([BRANCH-RULES]). Coverage is
-  # already enforced inside `make test` (scripts/check-coverage.sh reads
-  # coverage-thresholds.json and fails below threshold in each test-* job).
+  # and a direct push to a protected branch ([DIST-CI-LAYOUT]). Coverage is
+  # already enforced inside `make test` (tools/coverage/check-coverage.sh reads
+  # .config/coverage/thresholds.json and fails below threshold in each test-* job).
   # Thresholds ratchet via the reviewed PR diff, not a bot commit.
-  # [COVERAGE-THRESHOLDS-JSON]
+  # [DIST-CI-RUST-SHARDS]

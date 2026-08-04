@@ -50,7 +50,7 @@ Read **every line** of `--log-failed` output. For each failure note the exact fi
    - `ci-vsix.yml` — full VS Code suite + coverage gate (Ubuntu)
    - `ci-vsix-windows.yml` — VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX])
 2. Parse every job and every step, then extract the ordered list of commands the CI actually runs.
-3. Note any environment variables, matrix strategies, or conditional steps that affect execution. In particular the Windows VS Code matrix expands from `editors/vscode/test-chunks.json` — enumerate the chunks with `node scripts/vsix-test-chunks.mjs matrix` and run each locally as `make _test-vsix-win CHUNK=<name>`.
+3. Note any environment variables, matrix strategies, or conditional steps that affect execution. In particular the Windows VS Code matrix expands from `src/editors/vscode/test-chunks.json` — enumerate the chunks with `node tools/vsix/vsix-test-chunks.mjs matrix` and run each locally as `make _test-vsix-win CHUNK=<name>`.
 
 **Do NOT assume the steps are `make lint`, `make test`, `make build`.** The actual CI may run different commands, in a different order. Extract what the CI *actually does*.
 
@@ -80,10 +80,10 @@ For each command extracted from the CI workflow:
 
 - **Rust clippy violations**: Fix the code. Never add `#[allow(clippy::...)]` without an extraordinary justification.
 - **Rust fmt**: Run `cargo fmt` to auto-fix, then verify with `cargo fmt --check`.
-- **TypeScript prettier**: Run `cd editors/vscode && npx prettier@3 --write 'src/**/*.ts'` to auto-fix.
+- **TypeScript prettier**: Run `cd src/editors/vscode && npx prettier@3 --write 'src/**/*.ts'` to auto-fix.
 - **TypeScript ESLint**: Fix lint errors in the source. Never add `// eslint-disable`.
 - **TypeScript tsc**: Fix type errors. Never use `any` to silence a type error.
-- **.NET csharpier**: Run `dotnet csharpier sidecars/` to auto-fix.
+- **.NET csharpier**: Run `dotnet csharpier src/sidecars/` to auto-fix.
 - **.NET build warnings**: Fix the actual warning in the source code.
 
 ### Hard constraints

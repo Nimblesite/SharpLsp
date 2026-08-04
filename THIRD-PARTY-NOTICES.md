@@ -28,7 +28,7 @@ which this file satisfies.
 
 - **Component:** `netcoredbg` (managed-code debugger / DAP adapter), bundled per
   platform at `bin/<platform>/netcoredbg/` and launched by the
-  `sharplsp-coreclr` debug adapter factory (`editors/vscode/src/debug.ts`).
+  `sharplsp-coreclr` debug adapter factory (`src/editors/vscode/src/debug.ts`).
 - **Upstream:** https://github.com/Samsung/netcoredbg
 - **Pinned version:** `3.2.0-1092`
 - **License:** MIT — **© 2017 Samsung Electronics Co., LTD** (verified against

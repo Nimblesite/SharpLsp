@@ -52,12 +52,12 @@ remaining gaps are explicit rather than implied.
 - [x] Send the **file path**, not the parent directory, for script and file-based documents —
       implements [SCRIPT-ROUTE-TARGET]
 - [x] Route to the sidecar matching the document's language (`sidecar_for_path`); `.fsi` is
-      deliberately excluded — implements [SCRIPT-DETECT], [FSX-FSI]
+      deliberately excluded — implements [SCRIPT-DETECT], [SCRIPT-FSX-FSI]
 - [x] Keep health-monitor start strictly after `workspace/open` completes — [SCRIPT-ROUTE-HEALTH]
-- [x] Remove trailing whitespace introduced in `src/main.rs` (failed `cargo fmt --check`)
+- [x] Remove trailing whitespace introduced in `src/sharplsp/src/main.rs` (failed `cargo fmt --check`)
 - [x] Flatten the 4-level `if let` nest in `init_workspace_for_file` into
       `opened_document_path` + `sidecar_for_path` (functions <20 LOC)
-- [ ] Extract classification into `src/document_kind.rs` with the full
+- [ ] Extract classification into `src/sharplsp/src/document_kind.rs` with the full
       `ProjectOwned` / `CSharpFileBasedApp` / `CSharpScript` / `FSharpScript` / `FSharpSignature`
       lattice; currently an extension match inside `main.rs` — [SCRIPT-DETECT]
 - [ ] Implement cone search with the four stop conditions (project file, workspace root, `.git`,
@@ -71,45 +71,45 @@ remaining gaps are explicit rather than implied.
 
 - [x] Add `FileLevelDirectives.cs`: parse `IgnoredDirectiveTriviaSyntax` /
       `ShebangDirectiveTriviaSyntax` off the CST into a typed directive model — no regex anywhere —
-      implements [FILEBASED-DIRECTIVES]
+      implements [SCRIPT-FILEBASED-DIRECTIVES]
 - [x] Support `#:sdk`, `#:package` (`Name`, `Name@Version`, `Name@*`), `#:project`, `#:property`,
-      `#:include` — implements [FILEBASED-DIRECTIVES]
+      `#:include` — implements [SCRIPT-FILEBASED-DIRECTIVES]
 - [x] **Replace `ResolveCsFiles` directory glob** with root-file + transitive `#:include` closure,
       cycle-safe, bounded to 64 files / 8 levels — implements [SCRIPT-CLOSURE],
       kills [SCRIPT-ANTIPATTERN]
 - [x] Pass the file verbatim to Roslyn; never strip or rewrite the shebang. Requires the
-      `FileBasedProgram` parse feature or Roslyn reports CS9314 — [FILEBASED-SHEBANG]
+      `FileBasedProgram` parse feature or Roslyn reports CS9314 — [SCRIPT-FILEBASED-SHEBANG]
 - [x] Emit the SDK's implicit global usings as a synthetic document —
       `CSharpCompilationOptions.Usings` is honoured only for `SourceCodeKind.Script`, so a file-based
-      app needs the generated-file route the SDK itself uses — [FILEBASED-PARSEOPTIONS]
+      app needs the generated-file route the SDK itself uses — [SCRIPT-FILEBASED-PARSEOPTIONS]
 - [x] Dispose the previous `AdhocWorkspace` when reopening (was leaked on repeat `OpenAsync`)
 - [ ] Map `#:include` item types by extension (`.cs`→Compile, `.resx`→EmbeddedResource, `.json`→None,
       `.razor`→Content); only `Compile` joins the semantic closure. Currently every resolved include
-      is treated as Compile — [FILEBASED-DIRECTIVES]
+      is treated as Compile — [SCRIPT-FILEBASED-DIRECTIVES]
 - [ ] Diagnose a `#:` directive appearing after the first non-trivia token. Detection and the
       diagnostics-pipeline wiring land together — a detector with no consumer is dead code, so
-      neither half ships alone — [FILEBASED-DIRECTIVES]
+      neither half ships alone — [SCRIPT-FILEBASED-DIRECTIVES]
 - [ ] Resolve `LanguageVersion` from the target framework band instead of `Latest` —
-      [FILEBASED-PARSEOPTIONS]
-- [ ] Diagnostic when an `#:include`d file declares top-level statements — [FILEBASED-ENTRYPOINT]
+      [SCRIPT-FILEBASED-PARSEOPTIONS]
+- [ ] Diagnostic when an `#:include`d file declares top-level statements — [SCRIPT-FILEBASED-ENTRYPOINT]
 - [ ] Keep a root-path → workspace map so two apps in one directory stay independent *concurrently*;
       today each `OpenAsync` replaces the workspace, which is correct per-open but not concurrent —
       [SCRIPT-MULTIROOT]
-- [ ] Report `filebased-degraded` from `workspace/status` while on tier 2 — [FILEBASED-REFERENCES-FALLBACK]
+- [ ] Report `filebased-degraded` from `workspace/status` while on tier 2 — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
 - [ ] Publish an informational diagnostic naming why `#:package` symbols are unresolved on tier 2 —
-      [FILEBASED-REFERENCES-FALLBACK]
+      [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
 
 ### C# Sidecar — scripts
 
 - [x] `.csx` parsed with `SourceCodeKind.Script`, `OutputKind.DynamicallyLinkedLibrary`.
       `SourceCodeKind` is per-**document**, not inherited from project parse options — implements
-      [CSX-OPTIONS]
-- [x] Apply the ten script default imports via `CSharpCompilationOptions.Usings` — [CSX-OPTIONS]
+      [SCRIPT-CSX-OPTIONS]
+- [x] Apply the ten script default imports via `CSharpCompilationOptions.Usings` — [SCRIPT-CSX-OPTIONS]
 - [x] `SourceReferenceResolver` for `#load`, rooted at the script directory. The closure stays
       root-only so Roslyn owns `#load` resolution rather than double-adding loaded files —
-      [CSX-RESOLVERS]
-- [ ] `MetadataReferenceResolver` for `#r "assembly.dll"`, rooted at the script directory — [CSX-RESOLVERS]
-- [ ] Clear unresolved-reference diagnostic for `#r "nuget:"` (phase 3) — [CSX-RESOLVERS]
+      [SCRIPT-CSX-RESOLVERS]
+- [ ] `MetadataReferenceResolver` for `#r "assembly.dll"`, rooted at the script directory — [SCRIPT-CSX-RESOLVERS]
+- [ ] Clear unresolved-reference diagnostic for `#r "nuget:"` (phase 3) — [SCRIPT-CSX-RESOLVERS]
 
 ### C# Sidecar — regression guards on the existing MSBuild path
 
@@ -132,16 +132,16 @@ remaining gaps are explicit rather than implied.
 ### F# Sidecar — scripts
 
 - [x] Route `.fsx`/`.fsscript` through `FSharpChecker.GetProjectOptionsFromScript` — implements
-      [FSX-OPTIONS]
+      [SCRIPT-FSX-OPTIONS]
 - [x] Pass `assumeDotNetFramework=false`, `useSdkRefs=true`, `useFsiAuxLib=true` so the `fsi` object
-      binds — [FSX-OPTIONS]
-- [x] Define `INTERACTIVE` and `EDITING`, not `COMPILED`, for scripts — implements [FSX-SYMBOLS]
+      binds — [SCRIPT-FSX-OPTIONS]
+- [x] Define `INTERACTIVE` and `EDITING`, not `COMPILED`, for scripts — implements [SCRIPT-FSX-SYMBOLS]
 - [x] `loadProject` hard-failed with `"No .fsproj found"`; it now dispatches on document kind before
       reaching that point — [SCRIPT-DETECT]
 - [x] Honour the overlay buffer so an unsaved script checks against editor text, not disk
-- [x] `.fsi` with no owning project is syntax-only; no F# workspace is opened — implements [FSX-FSI]
+- [x] `.fsi` with no owning project is syntax-only; no F# workspace is opened — implements [SCRIPT-FSX-FSI]
 - [ ] Run `#r "nuget:"` resolution off the request path; check without packages first, re-check and
-      republish diagnostics when resolution completes — [FSX-NUGET]
+      republish diagnostics when resolution completes — [SCRIPT-FSX-NUGET]
 
 ### Lifecycle
 
@@ -152,27 +152,27 @@ remaining gaps are explicit rather than implied.
 ### Phase 2 — tier 1 references
 
 - [ ] Synthesize the virtual project via `Microsoft.Build.Construction.ProjectRootElement` (XML DOM,
-      never string concatenation) — implements [FILEBASED-REFERENCES-MSBUILD]
+      never string concatenation) — implements [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
 - [ ] Cache directory keyed by hash of the root file's full path, mirroring the SDK's
-      `<temp>/dotnet/runfile/<appname>-<appfilesha>/` scheme — [FILEBASED-REFERENCES-MSBUILD]
+      `<temp>/dotnet/runfile/<appname>-<appfilesha>/` scheme — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
 - [ ] Run `dotnet restore`, then load through the existing `MSBuildWorkspace` path —
-      [FILEBASED-REFERENCES-MSBUILD]
+      [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
 - [ ] Apply SDK defaults (`ImplicitUsings`, `Nullable`, `TargetFramework`, `PublishAot`, `PackAsTool`)
-      — [FILEBASED-REFERENCES-MSBUILD]
-- [ ] Automatic tier 2 → tier 1 upgrade when restore completes — [FILEBASED-REFERENCES-FALLBACK]
+      — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
+- [ ] Automatic tier 2 → tier 1 upgrade when restore completes — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
 
 ### Testing
 
 Coarse, real-artifact tests only — real files on disk, real Roslyn, real FCS, no mocks.
 
-`sidecars/SharpLsp.Sidecar.CSharp.Tests/WorkspaceManagerSingleFileTests.cs`:
+`src/sidecars/SharpLsp.Sidecar.CSharp.Tests/WorkspaceManagerSingleFileTests.cs`:
 
 - [x] `.cs` file-based app: BCL symbols bind with **zero** error diagnostics — [SCRIPT-TESTS]
 - [x] `.cs` file-based app with `#:include`: symbols from the included file resolve — [SCRIPT-TESTS]
 - [x] Two file-based apps in one directory produce **no** duplicate-entry-point diagnostic —
       regression test for [SCRIPT-ANTIPATTERN]
-- [x] Shebang produces no diagnostic — [FILEBASED-SHEBANG]
-- [x] `.csx`: script semantics load and the script `#load` path resolves — [CSX-OPTIONS]
+- [x] Shebang produces no diagnostic — [SCRIPT-FILEBASED-SHEBANG]
+- [x] `.csx`: script semantics load and the script `#load` path resolves — [SCRIPT-CSX-OPTIONS]
 - [x] Closure cycle (`a.cs` includes `b.cs` includes `a.cs`) terminates — [SCRIPT-CLOSURE]
 - [x] A directory with neither project nor root file defers to lazy per-file loading rather than
       building a synthetic workspace, and each loose file becomes its own ad-hoc project —
@@ -181,19 +181,19 @@ Coarse, real-artifact tests only — real files on disk, real Roslyn, real FCS, 
       `csharp.solution_path`, never the deferred path — [SCRIPT-DEGRADE]
 - [x] `Classify` maps extensions to compilation models — [SCRIPT-DETECT]
 
-`sidecars/SharpLsp.Sidecar.FSharp.Tests/FSharpScriptTests.fs`:
+`src/sidecars/SharpLsp.Sidecar.FSharp.Tests/FSharpScriptTests.fs`:
 
-- [x] Standalone `.fsx` loads without an `.fsproj` — [FSX-OPTIONS]
+- [x] Standalone `.fsx` loads without an `.fsproj` — [SCRIPT-FSX-OPTIONS]
 - [x] `#load` closure includes the loaded script — [SCRIPT-CLOSURE]
-- [x] `.fsx` defines `INTERACTIVE` and `EDITING` but not `COMPILED` — [FSX-SYMBOLS]
+- [x] `.fsx` defines `INTERACTIVE` and `EDITING` but not `COMPILED` — [SCRIPT-FSX-SYMBOLS]
 
 Still to write:
 
-- [ ] Host-level `tests/lsp_e2e.rs`: opening a `.md` first, then a `.cs`, still initializes the C#
+- [ ] Host-level `src/sharplsp/tests/lsp_e2e.rs`: opening a `.md` first, then a `.cs`, still initializes the C#
       workspace — latch regression test for [SCRIPT-ROUTE-LAZY]
 - [ ] Host-level: opening a `.cs` does not spawn the F# sidecar, and vice versa — [SCRIPT-ROUTE-LAZY]
 - [ ] `.cs` file-based app with `#:package`: package symbols bind after restore (phase 2) — [SCRIPT-TESTS]
-- [ ] `.fsx` with `#r "nuget:"` resolves after dependency resolution — [FSX-NUGET]
+- [ ] `.fsx` with `#r "nuget:"` resolves after dependency resolution — [SCRIPT-FSX-NUGET]
 
 ### Test debt inherited from PR #188
 
@@ -210,5 +210,5 @@ Still to write:
 
 - [x] Write [SCRIPTING-FILEBASED-SPEC.md](../specs/SCRIPTING-FILEBASED-SPEC.md)
 - [x] Write this plan
-- [x] Cross-link from `docs/specs/SHARPLSP-SPEC.md` §2.5
+- [x] Cross-link from [SHARPLSP-ARCHITECTURE-PROJECTS](../specs/SHARPLSP-SPEC.md)
 - [x] Reference spec IDs from implementing code and tests per repo policy

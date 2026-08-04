@@ -16,8 +16,8 @@
 # time and publishes them as an artifact; each chunk downloads and stages them.
 # Rebuilding per chunk would cost seven cold Windows Rust builds.
 #
-# Chunk membership is declared in editors/vscode/test-chunks.json and read here
-# via scripts/vsix-test-chunks.mjs — never duplicated into this YAML. `make
+# Chunk membership is declared in src/editors/vscode/test-chunks.json and read here
+# via tools/vsix/vsix-test-chunks.mjs — never duplicated into this YAML. `make
 # _lint-vsix` fails if a suite belongs to no chunk.
 name: CI / VS Code (Windows)
 'on':
@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |-
           set -euo pipefail
-          chunks="$(node scripts/vsix-test-chunks.mjs matrix)"
+          chunks="$(node tools/vsix/vsix-test-chunks.mjs matrix)"
           echo "chunks=${chunks}" >> "$GITHUB_OUTPUT"
           echo "Windows VS Code feature chunks: ${chunks}"
       - name: Build sharplsp host and both sidecars
@@ -100,9 +100,9 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: editors/vscode/package-lock.json
+          cache-dependency-path: src/editors/vscode/package-lock.json
       - name: Install VS Code extension deps
-        run: npm ci --prefix editors/vscode
+        run: npm ci --prefix src/editors/vscode
       - name: Download Windows LSP artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -112,7 +112,7 @@ jobs:
         # Force the test host onto the freshly-staged bundled binaries, never a
         # dev copy that leaked onto the runner PATH. Mirrors the Ubuntu job.
         shell: bash
-        run: bash scripts/purge-path-binaries.sh
+        run: bash tools/vsix/purge-path-binaries.sh
       - name: Run VS Code feature chunk (real LSP)
         # No xvfb: the GitHub Windows runner has an interactive desktop session,
         # so the VS Code test host launches directly. `make` + Git-Bash on the

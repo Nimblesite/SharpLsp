@@ -1,17 +1,15 @@
 # CLAUDE.md
 
-⚠️ Never kill VS Code processes — not desktop, not browser. They belong to the user. ⚠️ 
+⚠️ Never kill VS Code processes — not desktop, not browser. They belong to the user. ⚠️
 
-⚠️ Don't ask the user questions — use your judgment. ⚠️ 
+⚠️ Don't ask the user questions — use your judgment. ⚠️
 
-⚠️ Don't use git. Especially critical: don't stamp yourself as coauthor on commits ⚠️
-
-> "Git" here means **version-control operations**: commits, branches, merges, rebases, tags, pushes — and never stamping yourself as coauthor. It does **NOT** mean GitHub. **GitHub issues are allowed and encouraged** — use the `gh` CLI to file, comment on, and manage issues for bugs and tracking. GitHub ≠ Git.
+⚠️ Don't perform Git version-control operations (commits, branches, merges, rebases, tags, or pushes) or add yourself as coauthor. GitHub issues are allowed and encouraged via `gh`. ⚠️
 
 SharpLsp is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
 
 **Overall aim #1: FIX THE .NET DEVELOPER EXPERIENCE.**
-Match — and ultimately go beyond — Visual Studio, Rider, and C# Dev Kit. Full feature-for-feature parity, then more. Zero proprietary dependencies. Zero licenses. Zero vendor lock-in.
+Match and surpass Visual Studio, Rider, and C# Dev Kit without proprietary dependencies, licenses, or vendor lock-in.
 
 **Overall aim #2: TREAT F# AS A FIRST CLASS CITIZEN.**
 F# ahead of C# when building new features. F# never takes the backseat.
@@ -20,23 +18,18 @@ F# ahead of C# when building new features. F# never takes the backseat.
 
 ## Principles
 
-This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate code. Grade A+. Anything less must be fixed immediately.
+Write review-ready, maintainable code with no duplication.
 
 - Logging is critical. Use structured logging: `tracing` crate in Rust, `ILogger` + Serilog in .NET. No raw `println!`/`Console.WriteLine`/`console.log` for diagnostics
-- 100% test coverage is only the start
-- Use libraries like Signals for reactivity
-- No feature is complete without e2e tests
-- Building a feature without tests is not allowed
-- No unit tests. Only COARSE e2e tests
+- Every feature requires coarse end-to-end tests; do not add unit tests
 
 ## Hard Rules
 
-- Do not use Git.
 - All screens MUST BE 100% reactive. If underlying data changes, the screen must be listening and update accordingly
 - Zero duplication. Apply DRY rigorously. Check for existing code before writing new code — highest priority
 - Any function that can throw/panic must return Result<T,E> (outcome package in .NET)
 - Avoid RegEx and string matching. Always use ACTUAL parsers and traverse the AST/CST
-- **NEVER hand-manipulate structured files.** XML (csproj/fsproj/props/vsixmanifest), JSON, TOML, YAML, solution files, etc. MUST be loaded into a proper document model, mutated via the DOM/AST, and serialized back. Line splicing, regex replacement, and string concatenation on structured files are not permitted. No exceptions for "performance" or "formatting preservation" — use a parser that preserves trivia (e.g. `Microsoft.Build.Construction` for MSBuild, `XDocument`/`quick-xml` with trivia preservation for XML, `serde_json` with `preserve_order` for JSON).
+- **Never hand-manipulate structured files.** Load XML, JSON, TOML, YAML, and solution files into a proper DOM/AST, mutate the model, and serialize it with a trivia-preserving parser where needed. Do not use line splicing, regex replacement, or string concatenation. Prefer Microsoft.Build.Construction for MSBuild, XDocument or quick-xml for XML, and serde_json with preserve_order for JSON.
 - `allow(clippy::` is not permitted without a strong, documented reason. **Aggressively remove** existing allows.
 - All code files < 500 LOC. Functions < 20 LOC
 - Aggressively move shared code to shared crates/modules
@@ -48,10 +41,8 @@ This code would pass a review at Google, Meta, or Microsoft. No bad or duplicate
 
 100% test coverage and high mutation score. Focus on assertions, not just coverage.
 
-- Never delete failing tests
-- Never remove assertions that cause test failures
-- Add more failing tests for broken/missing functionality — never remove them
-- Do not reduce test assertiveness to make tests pass
+- Never delete failing tests or remove/weaken assertions to make tests pass
+- Add failing tests for broken or missing functionality
 - Tests must not be skipped or ignored
 - Test against real .sln/.csproj/.fsproj files, not mocks
 
@@ -127,8 +118,6 @@ All documentation lives in `docs/`.
 
 Every spec section MUST have a hierarchical ID: `[GROUP-TOPIC]` or `[GROUP-TOPIC-DETAIL]`. IDs are uppercase, hyphen-separated, NEVER numbered. The first word is the group — sections sharing a group must be adjacent. All code and tests implementing a spec section MUST reference its ID in a comment (e.g., `// Implements [AUTH-TOKEN-VERIFY]`).
 
-Always propagate these to code and tests. We want as much cross-referencing as possible
-
 # Critical Docs
 
 - [LSP Specification 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
@@ -147,25 +136,14 @@ Three-tier architecture:
 
 IPC: MessagePack over named pipes (Windows) / Unix domain sockets (Linux, macOS). 4-byte LE length prefix framing. Target <500us round-trip overhead.
 
-C# and F# are equal first-class citizens. F# is NOT a second-class bolt-on.
-
 See `docs/specs/SHARPLSP-SPEC.md` for the full technical specification.
-
-## Code Structure
-
-- Small, focused functions (<20 lines)
-- Low cognitive complexity (clippy::cognitive_complexity enabled)
-- Descriptive variable names (no single letters except in closures)
-- Group related functionality into modules
-- Public APIs must have documentation
 
 ## Bug Fix Process
 
 1. Write a test that fails because of the bug
-2. Run the test — confirm it fails BECAUSE of the bug
-3. Repeat until it's failing for the right reason
-4. Fix the bug (do NOT change the test)
-5. Run the test — confirm it passes
+2. Run it and confirm the bug is the reason it fails
+3. Fix the bug without changing the test
+4. Run the test and confirm it passes
 
 ## Performance Targets
 
@@ -189,8 +167,9 @@ See `docs/specs/SHARPLSP-SPEC.md` for the full technical specification.
 ## Website and CSS
 
 - **MINIMIZE CSS CLASSES** — consolidate where possible
+- CSS Budget 2k LOC
 - Name classes after what the element IS, not what section it's in
-- **Do not use common LLM colors like purple** — use RNG and color wheels
+- Avoid default LLM palettes such as purple
 
 ## Key Technology Stack
 
@@ -214,15 +193,15 @@ Mapping (current → toolkit crate):
 
 | Current path | Toolkit crate |
 |---|---|
-| `src/main.rs:138–262` `lsp-server`-based entrypoint | `lspkit-server` (hand-rolled JSON-RPC + `Dispatcher` + `Capabilities`) |
-| `src/vfs.rs` `Vfs` document state | `lspkit-vfs::Vfs` + `lspkit-vfs::PositionEncoding` |
-| `src/sidecar/protocol.rs` `Envelope` framing | `lspkit-sidecar::transport` (length-prefixed frames, payload format is consumer's choice) |
-| `src/sidecar/transport.rs` `FramedTransport` | `lspkit-sidecar::transport::{read_frame, write_frame}` |
-| `src/sidecar/manager.rs` `SidecarManager` (spawn / health / restart / correlation) | `lspkit-sidecar::lifecycle::Sidecar` + `lspkit-sidecar::correlator::Correlator` |
-| `src/diagnostics.rs` + `pull_diagnostics.rs` diagnostic publication | `lspkit-server::diagnostics::DiagnosticsBus` |
-| `src/config.rs` `sharplsp.toml` loader | `lspkit-config::load_from_ancestor` |
-| `src/handlers.rs` syntax-only handlers | `lspkit-server::Dispatcher::register` per method name |
-| `src/semantic_tokens.rs` `TokenCache` | (consumer-side cache; not in toolkit) |
-| .NET sidecar projects (`sidecars/SharpLsp.Sidecar.*`) | (engine — stays here. `lspkit-sidecar` is pure transport and does not bundle .NET- or Roslyn-specific code) |
+| `src/sharplsp/src/main.rs:138–262` `lsp-server`-based entrypoint | `lspkit-server` (hand-rolled JSON-RPC + `Dispatcher` + `Capabilities`) |
+| `src/sharplsp/src/vfs.rs` `Vfs` document state | `lspkit-vfs::Vfs` + `lspkit-vfs::PositionEncoding` |
+| `src/sharplsp/src/sidecar/protocol.rs` `Envelope` framing | `lspkit-sidecar::transport` (length-prefixed frames, payload format is consumer's choice) |
+| `src/sharplsp/src/sidecar/transport.rs` `FramedTransport` | `lspkit-sidecar::transport::{read_frame, write_frame}` |
+| `src/sharplsp/src/sidecar/manager.rs` `SidecarManager` (spawn / health / restart / correlation) | `lspkit-sidecar::lifecycle::Sidecar` + `lspkit-sidecar::correlator::Correlator` |
+| `src/sharplsp/src/diagnostics.rs` + `pull_diagnostics.rs` diagnostic publication | `lspkit-server::diagnostics::DiagnosticsBus` |
+| `src/sharplsp/src/config.rs` `sharplsp.toml` loader | `lspkit-config::load_from_ancestor` |
+| `src/sharplsp/src/handlers.rs` syntax-only handlers | `lspkit-server::Dispatcher::register` per method name |
+| `src/sharplsp/src/semantic_tokens.rs` `TokenCache` | (consumer-side cache; not in toolkit) |
+| .NET sidecar projects (`src/sidecars/SharpLsp.Sidecar.*`) | (engine — stays here. `lspkit-sidecar` is pure transport and does not bundle .NET- or Roslyn-specific code) |
 
 Code in this repo is **not** being removed — it stays canonical until the toolkit matures. This note exists so future agents reuse `lspkit` for new servers and avoid widening this repo's scaffolding.

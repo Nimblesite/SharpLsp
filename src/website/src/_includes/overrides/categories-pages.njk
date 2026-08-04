@@ -1,0 +1,33 @@
+---
+pagination:
+  data: collections.categoryList
+  size: 1
+  alias: category
+permalink: /blog/categories/{{ category | slugify }}/
+layout: layouts/base.njk
+eleventyComputed:
+  lang: "{{ page.url | extractLangFromUrl(defaultLanguage) }}"
+  title: "{{ i18n[page.url | extractLangFromUrl(defaultLanguage)].blog.categoryLabels[category] | default(category) }} — SharpLsp"
+  description: "{{ i18n[page.url | extractLangFromUrl(defaultLanguage)].blog.categoriesDescription }} {{ i18n[page.url | extractLangFromUrl(defaultLanguage)].blog.categoryLabels[category] | default(category) }}"
+---
+{% set pageLang = page.url | extractLangFromUrl(defaultLanguage) %}
+{% set langPrefix = "/" + pageLang if pageLang != defaultLanguage else "" %}
+{% set blogText = i18n[pageLang].blog %}
+<div class="blog-container">
+  <header class="blog-header">
+    <h1>{{ blogText.categoryLabels[category] | default(category) | capitalize }}</h1>
+    <p class="blog-subtitle"><a href="{{ langPrefix }}/blog/categories/">← {{ blogText.allCategories }}</a></p>
+  </header>
+
+  {%- set catPosts = collections.postsByCategory[category] -%}
+  {%- if catPosts | length > 0 -%}
+  <section class="blog-grid" aria-label="{{ blogText.articles }}">
+    {%- for post in catPosts -%}
+    {% set currentPost = post %}{% set featuredPost = loop.first %}
+    {% include "partials/post-card.njk" %}
+    {%- endfor -%}
+  </section>
+  {%- else -%}
+  <p class="blog-empty">{{ blogText.noCategoryPosts }}</p>
+  {%- endif -%}
+</div>

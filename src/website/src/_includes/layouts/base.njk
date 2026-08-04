@@ -1,0 +1,219 @@
+{% set pageLang = lang | default(defaultLanguage) %}
+{% set pageDescription = description | default(i18n[pageLang].home.lede) | default(site.description) %}
+<!DOCTYPE html>
+<html lang="{{ pageLang }}">
+<head>
+  <script>
+    (function() {
+      var theme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-4Y2BFM0T44"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-4Y2BFM0T44');
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Primary Meta Tags -->
+  <title>{{ title | default(site.title) }}</title>
+  <meta name="title" content="{{ title | default(site.title) }}">
+  <meta name="description" content="{{ pageDescription }}">
+  {% if site.author %}<meta name="author" content="{{ site.author }}">{% endif %}
+  {% if site.keywords %}<meta name="keywords" content="{{ site.keywords }}">{% endif %}
+  <meta name="robots" content="index, follow">
+  <meta name="generator" content="Eleventy + techdoc">
+  <meta name="theme-color" content="{{ site.themeColor | default('#0066cc') }}">
+  <link rel="icon" href="/assets/images/sharplsp-logo.svg" type="image/svg+xml">
+
+  <!-- Canonical URL -->
+  <link rel="canonical" href="{{ site.url }}{{ page.url }}">
+
+  <!-- RSS Feed -->
+  <link rel="alternate" type="application/atom+xml" title="{{ site.title }} Feed" href="{{ site.url }}/feed.xml">
+
+  <!-- Hreflang for language alternates -->
+  {% for langCode in supportedLanguages %}
+  <link rel="alternate" hreflang="{{ langCode }}" href="{{ site.url }}{{ page.url | altLangUrl(lang | default('en'), langCode) }}">
+  {% endfor %}
+  <link rel="alternate" hreflang="x-default" href="{{ site.url }}{{ page.url | altLangUrl(lang | default('en'), defaultLanguage) }}">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="{% if (page.url.startsWith('/blog/') or page.url.startsWith('/' + pageLang + '/blog/')) and page.url != '/blog/' and page.url != '/' + pageLang + '/blog/' %}article{% else %}website{% endif %}">
+  <meta property="og:url" content="{{ site.url }}{{ page.url }}">
+  <meta property="og:title" content="{{ title | default(site.title) }}">
+  <meta property="og:description" content="{{ pageDescription }}">
+  <meta property="og:site_name" content="{{ site.title }}">
+  <meta property="og:locale" content="{{ (lang | default('en')) | toOgLocale }}">
+  {% for langCode in supportedLanguages %}{% if langCode != (lang | default('en')) %}
+  <meta property="og:locale:alternate" content="{{ langCode | toOgLocale }}">
+  {% endif %}{% endfor %}
+  {% if site.ogImage %}
+  <meta property="og:image" content="{{ site.url }}{{ site.ogImage }}">
+  <meta property="og:image:width" content="{{ site.ogImageWidth | default('1200') }}">
+  <meta property="og:image:height" content="{{ site.ogImageHeight | default('630') }}">
+  {% endif %}
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="{{ site.url }}{{ page.url }}">
+  <meta name="twitter:title" content="{{ title | default(site.title) }}">
+  <meta name="twitter:description" content="{{ pageDescription }}">
+  {% if site.twitterSite %}<meta name="twitter:site" content="{{ site.twitterSite }}">{% endif %}
+  {% if site.twitterCreator %}<meta name="twitter:creator" content="{{ site.twitterCreator }}">{% endif %}
+  {% if site.ogImage %}<meta name="twitter:image" content="{{ site.url }}{{ site.ogImage }}">{% endif %}
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "{{ site.url }}/#website",
+        "url": "{{ site.url }}/",
+        "name": "{{ site.title }}",
+        "description": {{ i18n[pageLang].home.lede | default(site.description) | dump | safe }},
+        "inLanguage": "{{ lang | default('en') }}"{% if site.searchUrl %},
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": "{{ site.searchUrl }}?q={search_term_string}",
+          "query-input": "required name=search_term_string"
+        }{% endif %}
+      },
+      {
+        "@type": "{% if page.url.startsWith('/docs/') or page.url.startsWith('/' + pageLang + '/docs/') %}TechArticle{% elif (page.url.startsWith('/blog/') or page.url.startsWith('/' + pageLang + '/blog/')) and page.url != '/blog/' and page.url != '/' + pageLang + '/blog/' %}BlogPosting{% else %}WebPage{% endif %}",
+        "@id": "{{ site.url }}{{ page.url }}#webpage",
+        "url": "{{ site.url }}{{ page.url }}",
+        "name": "{{ title | default(site.title) }}",
+        "description": {{ pageDescription | dump | safe }},
+        "isPartOf": { "@id": "{{ site.url }}/#website" },
+        "inLanguage": "{{ lang | default('en') }}"{% if page.date %},
+        "datePublished": "{{ page.date | isoDate }}"{% endif %}{% if author %},
+        "author": {
+          "@type": "Person",
+          "name": "{{ author }}"
+        }{% endif %}
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "{{ site.url }}{{ page.url }}#breadcrumb",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "{{ 'nav.home' | t(pageLang) | default('Home') }}",
+            "item": "{{ site.url }}/"
+          }{% if page.url != '/' %},
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "{{ title | default('Page') }}",
+            "item": "{{ site.url }}{{ page.url }}"
+          }{% endif %}
+        ]
+      }{% if site.organization %},
+      {
+        "@type": "Organization",
+        "@id": "{{ site.url }}/#organization",
+        "name": "{{ site.organization.name | default(site.title) }}",
+        "url": "{{ site.url }}"{% if site.organization.logo %},
+        "logo": {
+          "@type": "ImageObject",
+          "url": "{{ site.url }}{{ site.organization.logo }}"
+        }{% endif %}{% if site.organization.sameAs %},
+        "sameAs": {{ site.organization.sameAs | dump | safe }}{% endif %}
+      }{% endif %}
+    ]
+  }
+  </script>
+
+  <!-- Theme structural CSS (no colors) -->
+  <link rel="stylesheet" href="/techdoc/css/reset.css">
+  <link rel="stylesheet" href="/techdoc/css/layout.css">
+  <link rel="stylesheet" href="/techdoc/css/utilities.css">
+
+  <!-- Site styles -->
+  <link rel="stylesheet" href="/assets/css/styles.css">
+  <link rel="stylesheet" href="/assets/css/pages.css">
+  <link rel="stylesheet" href="/assets/css/prose.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a href="#main-content" class="skip-link">{{ "nav.skipToMain" | t(pageLang) | default("Skip to main content") }}</a>
+
+  <header class="site-header">
+    {% include "partials/nav.njk" %}
+  </header>
+
+  <main id="main-content">
+    {% block content %}{{ content | safe }}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-content">
+      {% set currentLang = lang | default('en') %}
+      {% set footerPrefix = "/" + currentLang if currentLang != defaultLanguage else "" %}
+      {% set footerText = i18n[currentLang].footer %}
+      <div class="footer-brand">
+        <a class="logo" href="{{ footerPrefix }}/">
+          <img class="logo-mark" src="/assets/images/sharplsp-logo.svg" alt="" width="28" height="28">
+          <span>SharpLsp</span>
+        </a>
+        <p>{{ footerText.tagline | default("C# and F# development without the IDE lock-in.") }}</p>
+      </div>
+      <nav class="footer-links" aria-label="{{ footerText.navigationLabel | default('Footer navigation') }}">
+        <a href="{{ footerPrefix }}/docs/">{{ "nav.docs" | t(currentLang) | default("Docs") }}</a>
+        <a href="{{ footerPrefix }}/blog/">{{ "nav.blog" | t(currentLang) | default("Blog") }}</a>
+        <a href="{{ footerPrefix }}/releases/">{{ "nav.releases" | t(currentLang) | default("Releases") }}</a>
+        <a href="https://github.com/Nimblesite/SharpLsp">GitHub</a>
+      </nav>
+      <div class="footer-bottom">
+        <p>&copy; {% year %} {{ site.name | default(site.title) }}</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/assets/js/custom.js"></script>
+
+  <!-- Mermaid diagrams -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    function mermaidTheme() {
+      return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+    }
+    function initMermaid() {
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: mermaidTheme(),
+        flowchart: { useMaxWidth: true, htmlLabels: true },
+        useMaxWidth: true,
+      });
+    }
+    initMermaid();
+    document.addEventListener('themechange', () => {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: mermaidTheme(),
+        flowchart: { useMaxWidth: true, htmlLabels: true },
+        useMaxWidth: true,
+      });
+      document.querySelectorAll('pre.mermaid').forEach(el => {
+        const src = el.getAttribute('data-src') || el.textContent;
+        el.removeAttribute('data-processed');
+        el.textContent = src;
+        el.setAttribute('data-src', src);
+      });
+      mermaid.run({ nodes: document.querySelectorAll('pre.mermaid') });
+    });
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

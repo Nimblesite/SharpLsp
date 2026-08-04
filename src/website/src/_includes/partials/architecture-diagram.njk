@@ -1,0 +1,42 @@
+{% set diagramText = i18n[lang or defaultLanguage].docs.diagram %}
+<pre class="mermaid">
+graph LR
+    Editor([{{ diagramText.editor }}])
+
+    subgraph T1[{{ diagramText.tierOne }}]
+        direction TB
+        LSP[{{ diagramText.lspServer }}\nJSON-RPC over stdio]
+        Router[{{ diagramText.requestRouter }}]
+        VFS[{{ diagramText.virtualFileSystem }}]
+        TS[tree-sitter\nC#]
+        LSP --> Router
+        LSP --> VFS
+        VFS --> TS
+    end
+
+    IPC[[IPC\nMessagePack\n{{ diagramText.transport }}]]
+
+    subgraph T2[{{ diagramText.tierTwo }}]
+        direction TB
+        Roslyn[Roslyn\nMSBuildWorkspace]
+        Decompiler[ICSharpCode.Decompiler]
+        CSharpFeatures[{{ diagramText.features }}]
+        Roslyn --> Decompiler
+        Roslyn --> CSharpFeatures
+    end
+
+    subgraph T3[{{ diagramText.tierThree }}]
+        direction TB
+        FCS[FSharpChecker]
+        Project[F# project options]
+        FSharpFeatures[{{ diagramText.features }}]
+        Project --> FCS
+        FCS --> FSharpFeatures
+    end
+
+    Editor -- LSP 3.17 --> LSP
+    Router -- C# syntax --> TS
+    Router -- C# / F# semantics --> IPC
+    IPC <--> Roslyn
+    IPC <--> FCS
+</pre>

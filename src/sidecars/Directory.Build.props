@@ -1,0 +1,19 @@
+<Project>
+    <!-- Scopes the RS0030 banned-API list to the sidecars, which is exactly what
+         config/BannedSymbols.txt says it governs. It was previously wired into the ROOT
+         Directory.Build.props, so it also bound every test fixture — and
+         src/sharplsp/tests/fixtures/ProfileTarget blocks with Thread.Sleep deliberately, so the
+         sampling profiler has real blocked frames to capture. Rewriting that fixture
+         to Task.Delay would change the flame graph the profiler e2e test asserts on.
+
+         MSBuild uses the NEAREST Directory.Build.props and does not chain, so this
+         file must import the root one explicitly. -->
+    <Import Project="$(MSBuildThisFileDirectory)../../Directory.Build.props" />
+
+    <ItemGroup>
+        <!-- Feeds the (otherwise dormant) BannedApiAnalyzers RS0030 rule: bans
+             non-deterministic wall-clock time and thread-blocking. See
+             config/BannedSymbols.txt for the list + rationale. -->
+        <AdditionalFiles Include="$(MSBuildThisFileDirectory)config/BannedSymbols.txt" />
+    </ItemGroup>
+</Project>
