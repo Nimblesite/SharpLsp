@@ -6,6 +6,9 @@ plugins {
     // 2.14 is the current stable intellij-platform Gradle plugin release;
     // 2.2 was rejected by the platform with an "outdated" warning.
     id("org.jetbrains.intellij.platform") version "2.14.0"
+    // Line coverage for the Rider plugin, gated by the repo-wide ratchet in
+    // .config/coverage/thresholds.json. [DIST-CI-RIDER]
+    id("org.jetbrains.kotlinx.kover") version "0.9.2"
 }
 
 group = providers.gradleProperty("pluginGroup").get()
@@ -52,6 +55,13 @@ dependencies {
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // The platform test framework registers `com.intellij.tests.
+    // JUnit5TestSessionListener`, whose constructor loads `junit.framework.
+    // TestCase`. Without JUnit 4 on the runtime classpath the listener fails to
+    // instantiate and the whole test task dies before a single test runs --
+    // NoClassDefFoundError, not a test failure. Required even though every test
+    // here is JUnit 5.
+    testRuntimeOnly("junit:junit:4.13.2")
 }
 
 intellijPlatform {
@@ -89,7 +99,20 @@ intellijPlatform {
 
 tasks {
     test {
-        useJUnitPlatform()
+        useJUnitPlatform {
+            // The platform test framework also puts junit-vintage on the
+            // classpath, and that build is compiled against a newer
+            // junit-platform-commons than junit-jupiter 5.11.3 ships
+            // (`support.scanning.ClassFilter`). Vintage then dies during
+            // DISCOVERY, which aborts the whole task before any test runs.
+            // Every test here is JUnit 5, so only Jupiter is asked to discover.
+            includeEngines("junit-jupiter")
+        }
+
+        // A `test` task that discovers nothing reports BUILD SUCCESSFUL. This
+        // project had a fully configured test harness and not one test file for
+        // its entire history, so the green was meaningless. Fail instead.
+        failOnNoDiscoveredTests = true
     }
 
     // Let Gradle wire the wrapper task so `./gradlew wrapper` regenerates.
