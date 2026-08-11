@@ -1181,9 +1181,9 @@ dependencies = [
 
 [[package]]
 name = "shipwright"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44e64d9067b1b69ed2ee282294d6671df7b0f3185e41ac28bc78a76576a4c1b8"
+checksum = "82265de413078da593ba2a67b0d1e2b340ba4af20fd82e2ba6aba311b8d82a25"
 dependencies = [
  "serde_json",
  "shipwright-manifest",
@@ -1192,9 +1192,9 @@ dependencies = [
 
 [[package]]
 name = "shipwright-manifest"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e90748d7c705f11412d8f2f3ee18364eb4d71e51b358c1260ef29a014960245d"
+checksum = "b580e0278cd73ef2d4e35c02c2a4836d37bb35b59d527aeb6c0785782f384d58"
 dependencies = [
  "serde",
  "serde_json",
