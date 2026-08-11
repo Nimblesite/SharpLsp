@@ -14,8 +14,8 @@ formatting = []
 
 [dependencies]
 # Version dispatch — Shipwright binary version contract [SWR-VERSION-RUST]
-shipwright = "0.10"
-shipwright-manifest = "0.10"
+shipwright = "0.11"
+shipwright-manifest = "0.11"
 
 # LSP
 lsp-server = "0.10"
