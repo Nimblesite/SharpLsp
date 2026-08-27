@@ -3,8 +3,7 @@
 // Spec: [DEBUG-FEATURES-LAUNCH-SCRIPT] (docs/specs/DEBUGGING-SPEC.md), leaning on
 // [DEBUG-FEATURES-LAUNCH-TARGET]'s cone search. F# FIRST: the `.fsx` cases lead.
 //
-// Every fixture sits one level BELOW a `.git`-fenced scratch root INSIDE the
-// workspace folder (B25 refuses documents outside it), so the cone
+// Every fixture sits one level BELOW a `.git`-fenced `mkdtemp` root, so the cone
 // walk is real and provably ends without a project — `assertNoOwningProject`
 // fails as itself if a regression reclassifies these as project-owned. Refusals
 // are asserted four ways, per rule 6: exactly one message, it names the real
@@ -12,6 +11,7 @@
 // and zero tasks.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { findEntryProject, findProjectFile } from '../../debug.js';
@@ -36,7 +36,6 @@ import {
   comparablePath,
   pollUntilResult,
   removeDirRecursive,
-  requireWorkspaceRoot,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
@@ -256,14 +255,14 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
   let probe: Probe;
 
   function newRoot(prefix: string): string {
-    // Inside the workspace, not a system temp directory. These commands resolve
-    // through the
-    // active document's OWNING workspace folder, and a document outside every
-    // folder is refused on purpose so it can never borrow folders[0] and launch
-    // an unrelated project ([DEBUG-FEATURES-LAUNCH-TARGET], asserted by B25).
-    // The `.git` fence below is what keeps the cone walk honest — that is what
-    // this suite needs from the layout, not the temp directory.
-    const root = fs.mkdtempSync(path.join(requireWorkspaceRoot(), prefix));
+    // A temp root, NEVER inside test-fixtures/workspace: a project created under
+    // that folder is swept up by TestFixtures.csproj's compile glob and every
+    // build then fails with CS0579 duplicate-AssemblyInfo, for every suite.
+    // These documents still need to be workspace-OWNED, because the run/debug
+    // commands resolve through the active document's owning folder and refuse
+    // anything outside one ([DEBUG-FEATURES-LAUNCH-TARGET], asserted by B25);
+    // the suite registers each root as a workspace folder instead.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
     fixtures.markGitRoot(root);
     roots.push(root);
     return root;

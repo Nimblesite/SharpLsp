@@ -1,3 +1,4 @@
+
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
@@ -11,23 +12,26 @@
         <EnableNETAnalyzers>false</EnableNETAnalyzers>
         <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>
         <AnalysisMode>None</AnalysisMode>
-        <WarningsAsErrors />
+        <WarningsAsErrors/>
         <NoWarn>$(NoWarn);CS8618;CS0169;CS0649;CS1591;CS0168;CA1822;CA1051;CA1815</NoWarn>
     </PropertyGroup>
     <!-- Remove analyzer packages inherited from Directory.Build.props -->
     <ItemGroup>
-        <PackageReference Remove="Microsoft.CodeAnalysis.NetAnalyzers" />
-        <PackageReference Remove="Microsoft.CodeAnalysis.CSharp" />
-        <PackageReference Remove="Microsoft.CodeAnalysis.Analyzers" />
-        <PackageReference Remove="Microsoft.CodeAnalysis.BannedApiAnalyzers" />
-        <PackageReference Remove="Outcome" />
-        <PackageReference Remove="Exhaustion" />
+        <PackageReference Remove="Microsoft.CodeAnalysis.NetAnalyzers"/>
+        <PackageReference Remove="Microsoft.CodeAnalysis.CSharp"/>
+        <PackageReference Remove="Microsoft.CodeAnalysis.Analyzers"/>
+        <PackageReference Remove="Microsoft.CodeAnalysis.BannedApiAnalyzers"/>
+        <PackageReference Remove="Outcome"/>
+        <PackageReference Remove="Exhaustion"/>
     </ItemGroup>
     <ItemGroup>
-      <!-- Owned by the downstream project in the mixed-language rename DAG. -->
-      <Compile Remove="crosslanguage/**/*.cs" />
+        <!-- Owned by the downstream project in the mixed-language rename DAG. -->
+        <Compile Remove="crosslanguage/**/*.cs"/>
+        <!-- A test that creates a project under this folder makes its generated obj/*.AssemblyInfo.cs part of THIS compilation (CS0579), which breaks every VS Code chunk at pretest. Nested build output is never fixture source. -->
+        <Compile Remove="*/obj/**/*.cs"/>
+        <Compile Remove="*/bin/**/*.cs"/>
     </ItemGroup>
     <ItemGroup>
-      <PackageReference Include="Serilog" Version="4.4.0" />
+        <PackageReference Include="Serilog" Version="4.4.0"/>
     </ItemGroup>
 </Project>
