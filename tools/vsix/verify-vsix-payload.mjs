@@ -58,8 +58,14 @@ const FORBIDDEN = [
     [(entry) => entry.endsWith(".map"), "source maps"],
 ];
 
+// npm ships `npx` as `npx.cmd` on Windows. `execFileSync` does not consult
+// PATHEXT, so the bare name is ENOENT there — which failed every Windows VSIX
+// chunk ([DIST-CI-WIN-VSIX]) before it could check a single file. Naming the
+// real executable keeps the call shell-free, so no argument needs quoting.
+const NPX = process.platform === "win32" ? "npx.cmd" : "npx";
+
 function packagedEntries() {
-    const stdout = execFileSync("npx", ["vsce", "ls", "--no-dependencies"], {
+    const stdout = execFileSync(NPX, ["vsce", "ls", "--no-dependencies"], {
         encoding: "utf8",
         maxBuffer: 64 * 1024 * 1024,
     });
