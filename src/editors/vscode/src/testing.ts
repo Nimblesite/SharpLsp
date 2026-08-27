@@ -84,7 +84,7 @@ export class SharpLspTestController {
   private async enqueue<T>(work: () => Promise<T>): Promise<T> {
     const next = this.dotnetQueue.then(work, work);
     this.dotnetQueue = next.catch(() => undefined);
-    return next;
+    return await next;
   }
 
   /**
@@ -265,7 +265,7 @@ export class SharpLspTestController {
 
   /** List one target, logging whatever diagnostics the enumeration produced. */
   private async safeList(target: string): Promise<TestListing> {
-    const listing = await this.enqueue(async () => listTests(target));
+    const listing = await this.enqueue(async () => await listTests(target));
     for (const warning of listing.warnings) {
       info(`Test discovery (${target}): ${warning}`);
     }
@@ -317,16 +317,17 @@ export class SharpLspTestController {
     for (const test of tests) run.started(test);
     const resultsDirectory = coverage ? freshCoverageDir(cwd) : undefined;
     const target = runTarget();
-    const outcome = await this.enqueue(async () =>
-      runTests(
-        tests.map((test) => test.id),
-        cwd,
-        {
-          coverage,
-          ...(resultsDirectory === undefined ? {} : { resultsDirectory }),
-          ...(target === undefined ? {} : { target }),
-        },
-      ),
+    const outcome = await this.enqueue(
+      async () =>
+        await runTests(
+          tests.map((test) => test.id),
+          cwd,
+          {
+            coverage,
+            ...(resultsDirectory === undefined ? {} : { resultsDirectory }),
+            ...(target === undefined ? {} : { target }),
+          },
+        ),
     );
     this.reportOutcome(run, tests, outcome);
     if (coverage && resultsDirectory !== undefined) addCoverage(run, resultsDirectory);
@@ -436,8 +437,8 @@ export class SharpLspTestController {
     // that overrode `cwd` is pointing at a specific project, and naming the
     // solution as well would run the wrong thing.
     const target = useTarget ? runTarget() : undefined;
-    const outcome = await this.enqueue(async () =>
-      runTests([testId], cwd, target === undefined ? {} : { target }),
+    const outcome = await this.enqueue(
+      async () => await runTests([testId], cwd, target === undefined ? {} : { target }),
     );
     const result = outcome.results.get(testId);
     if (result !== undefined) return cachedFrom(result);

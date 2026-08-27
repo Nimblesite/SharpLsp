@@ -704,7 +704,9 @@ fn fxhash(bytes: &[u8]) -> u32 {
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
-    reason = "test code — panics are the correct failure mode"
+    clippy::panic_in_result_fn,
+    reason = "test code — panics are the correct failure mode; returning Err \
+              instead would hide which condition broke"
 )]
 mod tests {
     use super::*;

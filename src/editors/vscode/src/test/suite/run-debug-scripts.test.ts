@@ -3,15 +3,15 @@
 // Spec: [DEBUG-FEATURES-LAUNCH-SCRIPT] (docs/specs/DEBUGGING-SPEC.md), leaning on
 // [DEBUG-FEATURES-LAUNCH-TARGET]'s cone search. F# FIRST: the `.fsx` cases lead.
 //
-// Every fixture sits one level BELOW a `.git`-fenced `mkdtemp` root, so the cone
-// walk is real and provably ends without a project — `assertNoOwningProject`
+// Every fixture sits one level BELOW a `.git`-fenced `mkdtemp` root INSIDE the
+// committed workspace folder, so the cone walk is real and provably ends without
+// a project — `assertNoOwningProject`
 // fails as itself if a regression reclassifies these as project-owned. Refusals
 // are asserted four ways, per rule 6: exactly one message, it names the real
 // reason, it is NOT today's generic project-not-found sentence, zero sessions
 // and zero tasks.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { findEntryProject, findProjectFile } from '../../debug.js';
@@ -36,6 +36,7 @@ import {
   comparablePath,
   pollUntilResult,
   removeDirRecursive,
+  requireWorkspaceRoot,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
@@ -255,15 +256,20 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
   let probe: Probe;
 
   function newRoot(prefix: string): string {
-    // A temp root, NEVER inside test-fixtures/workspace: a project created under
-    // that folder is swept up by TestFixtures.csproj's compile glob and every
-    // build then fails with CS0579 duplicate-AssemblyInfo, for every suite.
-    // These documents still need to be workspace-OWNED, because the run/debug
-    // commands resolve through the active document's owning folder and refuse
-    // anything outside one ([DEBUG-FEATURES-LAUNCH-TARGET], asserted by B25);
-    // the suite registers each root as a workspace folder instead.
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    // INSIDE the committed workspace folder, never `os.tmpdir()`: the run/debug
+    // commands resolve through the active document's OWNING workspace folder and
+    // refuse anything outside every folder ([DEBUG-FEATURES-LAUNCH-TARGET],
+    // asserted by B25), so a fixture in the OS temp dir is refused before its
+    // document kind is ever consulted and none of these cases can be observed.
+    // Two fences make that safe. `.git` stops the cone walk, so the fixtures stay
+    // provably project-less. `Directory.Build.props` stops MSBuild: it isolates
+    // the fixture build from the repository's analyzers and package references,
+    // and it is what keeps these sources out of TestFixtures.csproj's compile
+    // glob — an unfenced `.cs` with top-level statements joins that compilation
+    // and fails it (CS8805) for every suite in the run.
+    const root = fs.mkdtempSync(path.join(requireWorkspaceRoot(), prefix));
     fixtures.markGitRoot(root);
+    fixtures.isolateFromRepoMsbuild(root);
     roots.push(root);
     return root;
   }

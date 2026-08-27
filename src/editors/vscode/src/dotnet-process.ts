@@ -82,7 +82,7 @@ export async function runDotnet(
   cwd: string,
   timeoutMs: number = DOTNET_TIMEOUT_MS,
 ): Promise<DotnetRun> {
-  return new Promise<DotnetRun>((resolve) => {
+  return await new Promise<DotnetRun>((resolve) => {
     execFile(
       dotnetExecutable,
       [...args],

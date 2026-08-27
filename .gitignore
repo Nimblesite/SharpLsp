@@ -145,3 +145,12 @@ deslop-*.log
 # the live rules; these two only stop a stale local checkout being committed.
 /editors/
 /real-world-fixtures/
+
+# Scratch projects the VS Code debug suites materialise inside the fixture
+# workspace. They MUST live there — VS Code only resolves breakpoints and launch
+# targets for files inside an open workspace folder — but they are per-run
+# detritus, not fixtures. A crashed or killed run leaks one, and once committed
+# its StepTarget/Program.cs is globbed into TestFixtures.csproj alongside the
+# next run's copy: CS0101/CS0111 duplicate types, and every .NET and VS Code
+# job fails at fixture build before a single test runs.
+/src/editors/vscode/test-fixtures/workspace/debug-*/

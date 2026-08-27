@@ -166,11 +166,15 @@ fn test_sort_members_enum_sorts_members() {
         "sorting must preserve the two required enum separators: {new_text}",
     );
     assert!(
-        new_text[alpha_pos..middle_pos].contains(','),
+        new_text
+            .get(alpha_pos..middle_pos)
+            .is_some_and(|span| span.contains(',')),
         "Alpha must remain comma-separated from Middle: {new_text}",
     );
     assert!(
-        new_text[middle_pos..zebra_pos].contains(','),
+        new_text
+            .get(middle_pos..zebra_pos)
+            .is_some_and(|span| span.contains(',')),
         "Middle must remain comma-separated from Zebra: {new_text}",
     );
 }

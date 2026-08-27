@@ -1410,6 +1410,11 @@ struct SidecarWorkspaceEditResult {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "test code — a failed assert IS the failure mode; returning Err \
+              instead would hide which condition broke"
+)]
 mod rename_merge_tests {
     use super::*;
 

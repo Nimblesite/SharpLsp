@@ -72,13 +72,13 @@ export async function acquireDotnet10Sdk(statusBar: SharpLspStatusBar): Promise<
     `no existing .NET ${DOTNET_VERSION} SDK found — invoking ${CMD_ACQUIRE_GLOBAL_SDK} via .NET Install Tool…`,
   );
   statusBar.setState(ServerState.Starting);
-  return vscode.window.withProgress(
+  return await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
       title: 'SharpLsp: Installing .NET 10 SDK',
       cancellable: false,
     },
-    async (progress) => callAcquireSdk(progress),
+    async (progress) => await callAcquireSdk(progress),
   );
 }
 

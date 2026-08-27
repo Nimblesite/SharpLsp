@@ -129,7 +129,7 @@ export async function resolveTargetPath(
   if (frameworks.length === 0) {
     return err(`MSBuild reported no TargetPath for ${path.basename(projectFile)}`);
   }
-  return pickFramework(projectFile, frameworks, exists);
+  return await pickFramework(projectFile, frameworks, exists);
 }
 
 /** First multi-target framework whose output exists, else the first declared. */

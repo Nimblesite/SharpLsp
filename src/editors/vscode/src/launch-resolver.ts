@@ -190,7 +190,7 @@ async function projectTarget(
     program: properties.targetPath,
     cwd: path.dirname(projectFile),
   };
-  return withProfile(base, projectFile, options);
+  return await withProfile(base, projectFile, options);
 }
 
 /** Resolve a project target from a set of candidate project files. */
@@ -241,16 +241,16 @@ export async function resolveLaunchTarget(
   options: ResolveOptions = {},
 ): Promise<Result<LaunchTarget>> {
   if (options.projectFile !== undefined) {
-    return fromCandidates([options.projectFile], options);
+    return await fromCandidates([options.projectFile], options);
   }
   const root = folder?.uri.fsPath;
   if (file === undefined) {
     if (root === undefined) return err(NO_TARGET_MESSAGE);
-    return fromCandidates(candidatesAt(walkCone(root, root)), options);
+    return await fromCandidates(candidatesAt(walkCone(root, root)), options);
   }
   if (root === undefined) return err(NO_TARGET_MESSAGE);
 
   const kind = classifyDocument(file, root);
-  if (kind !== 'projectOwned') return projectlessTarget(kind, file, options);
-  return fromCandidates(candidatesAt(walkCone(path.dirname(file), root)), options);
+  if (kind !== 'projectOwned') return await projectlessTarget(kind, file, options);
+  return await fromCandidates(candidatesAt(walkCone(path.dirname(file), root)), options);
 }

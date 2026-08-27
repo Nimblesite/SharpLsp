@@ -322,9 +322,14 @@ export async function notifyActivationFailure(headline: string, detail: string):
 }
 
 export async function deactivate(): Promise<void> {
-  if (lspClient !== undefined) {
-    await lspClient.stop();
-    lspClient = undefined;
+  // Take the handle and clear it in one synchronous step. Assigning after the
+  // await instead lets an activate() that runs during the stop install a NEW
+  // client, which this function would then discard — leaving a live client
+  // nobody can reach and a `lspClient` of undefined.
+  const running = lspClient;
+  lspClient = undefined;
+  if (running !== undefined) {
+    await running.stop();
   }
   log.dispose();
 }

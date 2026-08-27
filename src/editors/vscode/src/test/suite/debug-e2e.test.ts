@@ -99,6 +99,63 @@ suite('Debug E2E — F5 with no launch.json', () => {
   });
 
   // Implements [DEBUG-FEATURES-LAUNCH-NOCONFIG] rule 2, [DEBUG-FEATURES-LAUNCH-PROFILES] rules 2, 4.
+  // Restores coverage deleted in efd2bab6 with no replacement: `debug.ts` bails
+  // out of target resolution when `config.program !== undefined`, and nothing
+  // asserted it. Implements [DEBUG-FEATURES-LAUNCH-NOCONFIG] rule 4.
+  test('an explicit program is preserved verbatim while a missing one is resolved', async function () {
+    this.timeout(BUILD_TIMEOUT_MS);
+    const { tmpDir, stubs, recorder } = harness();
+    const project = writeCSharpConsole(path.join(tmpDir, 'Explicit'), 'Explicit');
+    const folder = fakeFolder(project.dir);
+    await buildProject(project);
+    const built = path.join(project.dir, 'bin', 'Debug', TFM, `${project.assemblyName}.dll`);
+    assert.strictEqual(fs.existsSync(built), true, 'the premise: the project really built');
+
+    // 1. No program at all — the resolver must find the project's own output.
+    const detected = await resolveConfig(folder, emptyF5Config());
+    assertSynthesised(detected, 'auto-detected');
+    assertSamePath(detected.program, built, 'a missing program resolves to the built assembly');
+    assertSamePath(detected.cwd, project.dir, 'and cwd is the project directory');
+
+    // 2. An explicit program the user wrote in launch.json is NOT re-resolved.
+    const chosen = path.join(project.dir, 'bin', 'Debug', TFM, 'HandPicked.dll');
+    const explicit = await resolveConfig(folder, {
+      type: DEBUG_TYPE_ID,
+      request: 'launch',
+      name: 'Mine',
+      program: chosen,
+    });
+    assert.strictEqual(explicit.program, chosen, 'an explicit program survives byte-for-byte');
+    assert.notStrictEqual(
+      comparablePath(String(explicit.program)),
+      comparablePath(built),
+      'the resolver must not swap the user choice for the project output',
+    );
+    assert.strictEqual(explicit.name, 'Mine', 'a user-named configuration keeps its name');
+
+    // 3. Resolving twice is idempotent — VS Code re-enters this chain.
+    const again = await resolveConfig(folder, { ...explicit });
+    assert.strictEqual(again.program, chosen, 're-resolving never rewrites the explicit program');
+
+    // 4. An explicit program that does NOT exist is still the user's decision at
+    //    this stage; refusing it belongs to the post-substitution pass, which is
+    //    the only place that can see the final expanded path.
+    const absent = path.join(project.dir, 'bin', 'Debug', TFM, 'NeverBuilt.dll');
+    assert.strictEqual(fs.existsSync(absent), false, 'the premise: that path is absent');
+    const kept = await resolveConfig(folder, {
+      type: DEBUG_TYPE_ID,
+      request: 'launch',
+      name: 'Absent',
+      program: absent,
+    });
+    assert.strictEqual(kept.program, absent, 'a missing explicit program is still preserved here');
+
+    // 5. Nothing was launched or complained about by merely resolving.
+    assert.deepStrictEqual(stubs.log.quickPickItems, [], 'one project needs no prompt');
+    assert.deepStrictEqual(stubs.log.errorMessages, [], 'resolving raises no error dialog');
+    await recorder.assertNoSession('resolving a configuration starts no debug session');
+  });
+
   test('an unsound launchSettings.json never blocks F5; a sound one supplies env and args', async function () {
     this.timeout(60_000);
     const { tmpDir, stubs, recorder } = harness();

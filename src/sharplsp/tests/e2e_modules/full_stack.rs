@@ -401,8 +401,10 @@ fn test_full_stack_hover_latency_benchmark() {
     }
 
     latencies.sort_unstable();
-    let p50 = latencies[latencies.len() / 2];
-    let p95 = latencies[latencies.len() * 95 / 100];
+    // div_euclid, not `/`: flooring is the intended percentile rule here, and
+    // spelling it out keeps a silent truncation from ever being mistaken for one.
+    let p50 = latencies[latencies.len().div_euclid(2)];
+    let p95 = latencies[(latencies.len() * 95).div_euclid(100)];
     eprintln!("Hover latency: p50={p50}ms p95={p95}ms (all: {latencies:?})");
 
     assert!(p50 < 200, "p50 must be <200ms, got {p50}ms");

@@ -106,7 +106,9 @@ fn test_sort_members_inserts_blank_lines_between_groups() {
     let priv_method = new_text.find("PrivMethod").expect("PrivMethod");
     assert!(pub_field < priv_method, "public before private");
     // There should be a double newline (blank line) between the groups.
-    let between = &new_text[pub_field..priv_method];
+    let between = new_text
+        .get(pub_field..priv_method)
+        .expect("the span between the two members must be a valid slice");
     assert!(
         between.contains("\n\n"),
         "blank line between accessibility groups"

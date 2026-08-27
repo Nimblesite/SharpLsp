@@ -116,7 +116,8 @@ impl FramedTransport {
     unix,
     expect(
         clippy::expect_used,
-        reason = "test code — expect() is the correct failure mode"
+        clippy::panic_in_result_fn,
+        reason = "test code — a failed assert IS the failure mode; returning Err                   instead would hide which condition broke"
     )
 )]
 mod tests {
