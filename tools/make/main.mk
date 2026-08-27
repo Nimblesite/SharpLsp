@@ -350,7 +350,25 @@ VSIX_STAGE_TARGET = $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-bi
 # same file list `vsce package` writes, so this catches a .vscodeignore that
 # swallowed the host, a sidecar or the debugger BEFORE 40 minutes of chunk time
 # is spent proving it at the other end.
+# Self-staging, because two different things delete `bin/` out from under it.
+#
+# `_build-vsix` ends with `rm -rf bin`, and a phony prerequisite is built at
+# most ONCE per make invocation — so in `_test-vsix: ... _build-vsix
+# _stage-vsix-binary _verify-vsix-payload` the staging prerequisite is already
+# satisfied by the time make reaches it and never re-runs. Verification then
+# reads the `bin/` that `_build-vsix` just removed and reports the host, both
+# sidecars and the debug adapter missing. The `$(MAKE)` sub-invocation is what
+# makes staging happen again; a plain prerequisite cannot.
+#
+# The production bundle is rebuilt for the same reason of accuracy: `vsce
+# package` runs `vscode:prepublish` and so the production build, but `vsce ls`
+# — which the verifier calls — does NOT. Without it the verifier judges
+# whatever `dist/` happens to hold, and `npm run pretest` leaves the DEV
+# bundle's sourcemap there, so the first chunk on a clean tree passes and every
+# chunk after it fails on a file that would never have shipped.
 _verify-vsix-payload:
+	@$(MAKE) _stage-vsix-binary-only
+	@cd $(VSCODE_DIR) && npm run build:production --silent
 	@cd $(VSCODE_DIR) && node ../../../tools/vsix/verify-vsix-payload.mjs
 
 _test-vsix-win: $(VSIX_STAGE_TARGET) _verify-vsix-payload
