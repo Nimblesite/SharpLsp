@@ -12,7 +12,6 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { SharpLspBuildTaskProvider } from '../../build.js';
-import * as constants from '../../constants.js';
 import { TFM } from './run-debug-fixtures';
 import {
   CMD_DEBUG_PROGRAM,
@@ -25,149 +24,35 @@ import {
   packageJson,
 } from './run-debug-kit';
 import { EXTENSION_ID } from './test-helpers';
-
-const { DEBUG_TYPE } = constants;
-/** Every command this extension owns carries this prefix. */
-const PREFIX = 'sharplsp.';
-/** The languages both the breakpoint and the debugger contribution must serve. */
-const LANGS = ['csharp', 'fsharp'];
-/** The two run/debug command ids, in the order the menus must present them. */
-const RUN_DEBUG = [CMD_RUN_PROGRAM, CMD_DEBUG_PROGRAM];
-/** The task type `build.ts` registers with `vscode.tasks.registerTaskProvider`. */
-const BUILD_TYPE = SharpLspBuildTaskProvider.Type;
-/** The verbs `SharpLspBuildTaskProvider.provideTasks` emits, in order. */
-const VERBS = ['build', 'rebuild', 'clean'];
-/** The menus [DEBUG-FEATURES-LAUNCH-CONTRIBUTIONS] places both commands in. */
-const MENUS = ['editor/title/run', 'editor/context', 'view/item/context'];
-/** Menus that already carry SharpLsp items and must survive the run/debug work. */
-const EXISTING_MENUS = ['editor/context', 'view/title', 'debug/toolbar', 'view/item/context'];
-/** Attributes core injects and overwrites; a hand-rolled copy misdescribes them. */
-const CORE_INJECTED = (
-  'name type request preLaunchTask postDebugTask presentation ' +
-  'internalConsoleOptions debugServer suppressMultipleSessionWarning serverReadyAction'
-).split(' ');
-/** The launch schema of [DEBUG-FEATURES-LAUNCH-OUTPUT] rule 3, sorted. */
-const LAUNCH_SCHEMA = (
-  'args console cwd env hotReload justMyCode program ' +
-  'requireExactSource stopAtEntry symbolOptions'
-).split(' ');
-const ACCIDENT =
-  'both must be listed: C# breakpoints are impossible today, and F# works only by accident ' +
-  'because the built-in ms-vscode.js-debug happens to contribute fsharp (rule 3)';
-const UNCONDITIONAL =
-  'an entry declares only `language`: a `when` tied to server state makes the gutter appear ' +
-  'and disappear as the language server cycles (rule 2)';
-const DECLARED_SCHEMA =
-  'the declared schema must match [DEBUG-FEATURES-LAUNCH-OUTPUT] rule 3 exactly — debug.ts ' +
-  'writes justMyCode on every resolve, so leaving it undeclared makes launch.json IntelliSense ' +
-  'flag a valid, extension-authored attribute as an error';
-const CORE_OWNED =
-  'attributes VS Code core injects must NOT be re-declared: core overwrites them and a ' +
-  'hand-rolled copy misdescribes them in launch.json';
-
-/** Assert `value` is a non-empty string — two independently failing checks. */
-function assertNonEmptyString(value: unknown, label: string): void {
-  assert.strictEqual(typeof value, 'string', `${label} must be declared as a string`);
-  assert.notStrictEqual(String(value).trim(), '', `${label} must not be empty`);
-}
-
-/** Assert one JSON-schema property: it exists, has `type`, and documents itself. */
-function assertSchemaProperty(props: Record<string, any>, key: string, type: string): void {
-  const property: unknown = props[key];
-  assert.strictEqual(typeof property, 'object', `'${key}' must be declared as a schema object`);
-  assert.strictEqual(props[key].type, type, `'${key}' must be declared with type '${type}'`);
-  assertNonEmptyString(props[key].description, `the '${key}' description`);
-}
-
-/** `contributes.commands`, checked to be a list before anything reads it. */
-function commandEntries(): Record<string, any>[] {
-  const commands: unknown = contributes().commands;
-  assert.ok(Array.isArray(commands), 'contributes.commands must be an array');
-  return commands;
-}
-
-/** Contributed ids this extension owns, sorted — the diagnosable failure set. */
-function sharpLspIds(): string[] {
-  return commandEntries()
-    .map((entry) => String(entry.command))
-    .filter((id) => id.startsWith(PREFIX))
-    .sort();
-}
-
-/** The single manifest entry for `id`; fails naming what IS contributed. */
-function commandEntry(id: string): Record<string, any> {
-  const matches = commandEntries().filter((entry) => entry.command === id);
-  const seen = sharpLspIds().join(', ');
-  assert.strictEqual(matches.length, 1, `'${id}' contributed exactly once; have: ${seen}`);
-  return matches[0]!;
-}
-
-/** Every `CMD_*` value the constants module exports — each one names a command. */
-function commandConstants(): string[] {
-  return Object.entries(constants)
-    .filter(([name]) => name.startsWith('CMD_'))
-    .map(([, value]) => String(value))
-    .sort();
-}
-
-/** The `[command, group]` pairs `menu` declares for run and debug, in order. */
-function runDebugPlacement(menu: string): string[][] {
-  return menuItems(menu)
-    .filter((item) => RUN_DEBUG.includes(String(item.command)))
-    .map((item) => [String(item.command), String(item.group)]);
-}
-
-/** The `[command, group]` pairs a menu must declare — run first, debug second. */
-function expectedPairs(group: string): string[][] {
-  return RUN_DEBUG.map((id, index) => [id, `${group}@${index + 1}`]);
-}
-
-/** The `configurationAttributes` block of the debugger contribution. */
-function configurationAttributes(): Record<string, any> {
-  const attributes = debuggerContribution().configurationAttributes;
-  assert.ok(attributes?.launch, 'the debugger must declare configurationAttributes.launch');
-  return attributes;
-}
-
-/** The `configurationSnippets` array of the debugger contribution. */
-function snippets(): Record<string, any>[] {
-  const list: unknown = debuggerContribution().configurationSnippets;
-  assert.ok(Array.isArray(list), 'contributes.debuggers[].configurationSnippets must exist');
-  return list;
-}
-
-/** The `body` of every `configurationSnippets` entry. */
-function snippetBodies(): Record<string, any>[] {
-  return snippets().map((snippet) => snippet.body ?? {});
-}
-
-/** `initialConfigurations` — [DEBUG-FEATURES-LAUNCH-DYNAMIC] rule 3. */
-function initialConfigurations(): Record<string, any>[] {
-  const entry = debuggerContribution();
-  const configurations: unknown = entry.initialConfigurations;
-  const keys = Object.keys(entry).join(', ');
-  const reason = `initialConfigurations must supply a launch.json body; keys: ${keys}`;
-  assert.ok(Array.isArray(configurations), reason);
-  return configurations;
-}
-
-/** `contributes.taskDefinitions` — [DEBUG-FEATURES-LAUNCH-BUILD] rule 2. */
-function taskDefinitions(): Record<string, any>[] {
-  const block = contributes();
-  const definitions: unknown = block.taskDefinitions;
-  const keys = Object.keys(block).join(', ');
-  const reason = `contributes.taskDefinitions must declare build.ts's type; keys: ${keys}`;
-  assert.ok(Array.isArray(definitions), reason);
-  return definitions;
-}
-
-/** The `netX.Y` PATH SEGMENTS of a program path — never a substring match. */
-function frameworkSegments(program: string): string[] {
-  return program
-    .split('/')
-    .flatMap((segment) => segment.split('\\'))
-    .filter((segment) => segment.startsWith('net'));
-}
+import {
+  ACCIDENT,
+  BUILD_TYPE,
+  CORE_INJECTED,
+  CORE_OWNED,
+  DECLARED_SCHEMA,
+  EXISTING_MENUS,
+  LANGS,
+  LAUNCH_SCHEMA,
+  MENUS,
+  PREFIX,
+  RUN_DEBUG,
+  UNCONDITIONAL,
+  VERBS,
+  assertNonEmptyString,
+  assertSchemaProperty,
+  commandConstants,
+  commandEntry,
+  configurationAttributes,
+  expectedPairs,
+  frameworkSegments,
+  initialConfigurations,
+  runDebugPlacement,
+  sharpLspIds,
+  snippetBodies,
+  snippets,
+  taskDefinitions,
+  DEBUG_TYPE,
+} from './run-debug-manifest-kit';
 
 suite('Run/Debug manifest contributions', () => {
   suiteSetup(async function () {
