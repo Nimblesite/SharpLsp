@@ -91,10 +91,16 @@ export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider
     // attach request has no program at all.
     if (config.request !== 'launch' || config.program !== undefined) return config;
     if (folder === undefined) return config;
-    // A cancelled pick is a decision, not a failure: returning `undefined` aborts
-    // the launch silently, which is exactly what VS Code's contract asks for.
-    // Returning the configuration instead starts a session with no program.
-    if ((await applyTarget(folder, config)) === 'cancelled') return undefined;
+    // Both non-`applied` outcomes abort. `undefined` is VS Code's "stop, quietly"
+    // contract; handing back a configuration with no `program` instead starts a
+    // session that cannot run. A cancelled pick is already the user's decision,
+    // so it stays silent — an unresolvable one gets the reason said out loud.
+    const outcome = await applyTarget(folder, config);
+    if (outcome === 'unresolved') {
+      void vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
+      return undefined;
+    }
+    if (outcome === 'cancelled') return undefined;
     return config;
   }
 

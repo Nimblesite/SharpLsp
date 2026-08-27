@@ -250,14 +250,24 @@ function walkFiles(dir: string, budget: number): string[] {
  * never existed. Returns undefined when nothing is built: a launch target must
  * never be fabricated.
  */
-export function discoverAssembly(projectDir: string): string | undefined {
+export function discoverAssembly(projectDir: string, assemblyName?: string): string | undefined {
   const candidates: string[] = [];
   for (const root of OUTPUT_ROOTS) {
     const outputRoot = path.join(projectDir, root);
     if (!fs.existsSync(outputRoot)) continue;
     candidates.push(...walkFiles(outputRoot, 6).filter(isApplicationAssembly));
   }
-  return preferDebug(candidates)[0];
+  const ordered = preferDebug(candidates);
+  if (assemblyName === undefined) return ordered[0];
+  // Named lookups do NOT fall back to "any assembly": the caller asks by name
+  // precisely because the directory holds more than one project, and answering
+  // with a neighbour's output is worse than answering with nothing.
+  return ordered.find((candidate) => stemOf(candidate) === assemblyName.toLowerCase());
+}
+
+/** A file's name without its extension, lowercased for comparison. */
+function stemOf(candidate: string): string {
+  return path.basename(candidate, path.extname(candidate)).toLowerCase();
 }
 
 /** A dll is an application when the SDK emitted a runtimeconfig beside it. */
@@ -289,7 +299,15 @@ function modifiedAt(candidate: string): number {
 /** The launch entry for a project file. */
 export function projectEntryFromFile(projectFile: string): ProjectEntry {
   const cwd = path.dirname(projectFile);
-  return { projectFile, dll: discoverAssembly(cwd), cwd };
+  // Two projects in one directory SHARE bin/, so an unfiltered scan gives each
+  // of them whichever assembly sorted first — one project reported as the
+  // other's. Disambiguate by name only when it is genuinely ambiguous: a lone
+  // project may legitimately emit a differently named assembly via
+  // <AssemblyName>, and must still be found.
+  const ambiguous = projectFilesIn(cwd).length > 1;
+  const stem = path.basename(projectFile, path.extname(projectFile));
+  const dll = ambiguous ? discoverAssembly(cwd, stem) : discoverAssembly(cwd);
+  return { projectFile, dll, cwd };
 }
 
 /**
