@@ -118,7 +118,10 @@ internal static class DocumentClosure
             cancellationToken: ct
         );
         var root = await tree.GetRootAsync(ct).ConfigureAwait(false);
-        var directives = FileLevelDirectives.Parse(root);
+        var directives = FileLevelDirectives
+            .Parse(root)
+            .Where(directive => directive.IsValidPlacement)
+            .ToArray();
         state.Directives.AddRange(directives);
 
         foreach (var directive in directives)

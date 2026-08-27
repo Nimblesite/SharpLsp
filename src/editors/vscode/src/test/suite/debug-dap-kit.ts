@@ -18,7 +18,7 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
-import { pollUntilResult, sleep } from './test-helpers';
+import { pollUntilResult, requireAt, sleep } from './test-helpers';
 
 /** How long a launch, a step or a stop may take before a suite gives up. */
 export const DAP_TIMEOUT_MS = 60_000;
@@ -247,6 +247,43 @@ export class DapRecorder implements vscode.Disposable {
         `Stops seen: ${JSON.stringify(stops.map((stop) => stop.reason))}`,
     );
     return stops;
+  }
+
+  /**
+   * The `command` request the caller sent, found by POSITION rather than by
+   * being first, and waited for rather than assumed to have landed.
+   *
+   * `requests()` is the whole wire, and the wire carries the workbench's own
+   * traffic as well as the suite's. On `initialized` VS Code sends its
+   * configuration burst, and for an adapter that advertises
+   * `exceptionBreakpointFilters` — netcoredbg advertises `all` and
+   * `user-unhandled`, neither marked `default` — that burst includes a
+   * `setExceptionBreakpoints` carrying the filters the Breakpoints view has
+   * ticked, which on a fresh profile is none:
+   * `{"filters":[],"filterOptions":[]}`. Reading index 0 after sending one
+   * therefore asserts against THAT request, whose `filters` is empty, instead
+   * of the suite's own — and whether it is on the wire at all is VS Code's
+   * scheduling, not the extension's, so the mistake shows up on one OS and
+   * hides on another.
+   *
+   * Snapshot `requests(command).length` BEFORE sending, and the request at that
+   * index is the first one to arrive afterwards: the caller's own, whatever
+   * preceded it. The wait is what makes it deterministic — the tracker sees the
+   * wire across the extension-host boundary, so `customRequest` resolving is not
+   * proof the recording has caught up.
+   */
+  public async requestAfter(
+    command: string,
+    baseline: number,
+    timeoutMs = DAP_TIMEOUT_MS,
+  ): Promise<DapRequest> {
+    const seen = await pollUntilResult(
+      async () => this.requests(command),
+      (all) => all.length > baseline,
+      timeoutMs,
+      50,
+    );
+    return requireAt(seen, baseline, `the '${command}' request the suite sent`);
   }
 
   /** Wait until at least `count` `name` events have arrived; returns them all. */

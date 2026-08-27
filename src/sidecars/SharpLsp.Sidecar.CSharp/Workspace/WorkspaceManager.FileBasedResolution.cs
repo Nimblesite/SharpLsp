@@ -92,7 +92,7 @@ internal sealed partial class WorkspaceManager
         try
         {
             var resolution = await FileBasedPackageResolver
-                .ResolveAsync(closure, rootPath, ct)
+                .ResolveAsync(closure, rootPath, generation, ct)
                 .ConfigureAwait(false);
             if (resolution.IsError)
             {

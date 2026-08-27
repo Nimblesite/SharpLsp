@@ -2,6 +2,26 @@
 
 Compared branch `fixes` with merge base `e96c1027a5a039b59da68d110adba1f9a5bd4dc4` (`origin/main`). Per request, no CI or test suite was run; findings are from static review of the production and test diffs.
 
+## PR #199 post-merge addendum
+
+PR #199 was approved and its exact head (`51ea50eb3e0680c11a54ee51265bd6baf44de6ed`) was merged into the current `fixes` branch by merge commit `d8c127a9`. `main` was not checked out, changed, or targeted.
+
+Static review of the merged package-directive implementation found these release-blocking defects before follow-up fixes:
+
+- The synthetic project was hand-built with interpolated XML, including unescaped package input, instead of `ProjectRootElement`.
+- Restore used a random directory outside the file-based app's MSBuild configuration cone, ignored the process exit code, and swallowed cleanup failures.
+- Restore blocked the initial workspace rather than exposing immediate BCL IntelliSense and upgrading asynchronously.
+- Restore failure was silently presented as a successful load; there was no `filebased-degraded` status or informational diagnostic.
+- Package generations and degradation state could outlive a reopened root, leak stale references, or destroy a neighboring projectless root during cleanup.
+- The first follow-up made `WorkspaceManager.Dispose()` non-idempotent and a later split temporarily exceeded the repository's 500-line file limit.
+- Misplaced `#:package` directives were still collected into the semantic package set, so invalid source could activate a package despite the compiler diagnostic.
+
+The current follow-up replaces those paths with a DOM-built deterministic synthetic project, app-cone evaluation, checked restore output, immediate tier-2 fallback plus generation-safe tier-1 upgrade, explicit `SLSPC0001` degradation, per-root isolation, idempotent disposal, and CST-derived placement rejection. The plan deliberately leaves unresolved SDK-band/global.json parity and other incomplete file-based-app work unchecked rather than claiming full spec completion.
+
+The VSIX regression blanket now contains 12 real extension-host cases and 120 explicit assertions across `filebased-package-e2e.test.ts` and `filebased-package-config-e2e.test.ts`. It covers real package hover/completion, live add/remove/re-add, include closure binding, multi-root isolation, final restore failure (not the temporary pending state), exact fallback diagnostic geometry, misplaced directives, package identity swaps, completion edit geometry, central package management, `Directory.Build.props`, and live `#:property` evaluation. Both suites route through the real `sharplsp/loadSolution` request and are registered in the `lsp` Windows chunk.
+
+No PR #199 VSIX test was executed as part of this review. Prettier, ESLint, TypeScript `--noEmit`, the chunk-membership checker, C# formatting/lint, and `git diff --check` were used as static checks only. Runtime behavior therefore remains intentionally unverified under the explicit no-test instruction.
+
 ## Findings
 
 ### 1. High: Explicit launch configurations no longer receive `launchSettings.json` profile values

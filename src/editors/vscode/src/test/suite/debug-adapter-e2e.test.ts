@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import { DapRouter, INTERPRETER_ARGS } from '../../dap-router.js';
 import { SharpLspDebugAdapterFactory, getNetcoredbgCandidates } from '../../debug.js';
 import { DEBUG_TYPE_ID, fakeFolder, stopAnyDebugSession } from './run-debug-kit';
+import { writeSpawnableAdapter } from './run-debug-fixtures';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { closeAllEditors, comparablePath, removeDirRecursive } from './test-helpers';
 
@@ -36,9 +37,7 @@ function bundledPath(extensionPath: string): string {
 
 /** Materialise an executable stand-in so `existsSync` sees a real candidate. */
 function writeFakeAdapter(target: string): string {
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, '#!/bin/sh\nexit 0\n', 'utf-8');
-  return target;
+  return writeSpawnableAdapter(target);
 }
 
 /**

@@ -152,10 +152,18 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     );
 
     // Interaction 2 — tick "All Exceptions".
+    const before = recorder.requests('setExceptionBreakpoints').length;
     const response = await dap(session, 'setExceptionBreakpoints', { filters: [FILTER_ALL] });
     eq(typeof response, 'object', '`setExceptionBreakpoints` must answer');
-    const sent = recorder.requests('setExceptionBreakpoints');
-    eq(sent.length >= 1, true, 'the filter change must reach the adapter');
+    const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
+    deepEq(
+      sent.args['filters'],
+      [FILTER_ALL],
+      'the filter change must reach the adapter carrying the ticked filter. Counting the ' +
+        'requests instead cannot see that: the workbench opens every session with a ' +
+        '`setExceptionBreakpoints` of its own, so a count is satisfied before the suite ' +
+        'has sent anything at all',
+    );
 
     // Interaction 3 — continue. The FIRST-CHANCE throw must stop the debuggee,
     // even though the program catches it two lines later.
@@ -211,11 +219,11 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
     const filters = advertisedFilters(recorder.capabilities());
     const unhandled = filters.find((filter) => UNHANDLED_FILTERS.includes(filter));
     assert.ok(unhandled, `an unhandled-only filter must exist; advertised: ${filters.join(', ')}`);
+    const before = recorder.requests('setExceptionBreakpoints').length;
     await dap(session, 'setExceptionBreakpoints', { filters: [unhandled] });
+    const selection = await recorder.requestAfter('setExceptionBreakpoints', before);
     deepEq(
-      requireAt(recorder.requests('setExceptionBreakpoints'), 0, 'the filter request').args[
-        'filters'
-      ],
+      selection.args['filters'],
       [unhandled],
       'exactly the selected filter is sent; sending `all` alongside it would break on ' +
         'everything and the user would have no way to get the behaviour they asked for',

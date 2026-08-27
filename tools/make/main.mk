@@ -216,6 +216,15 @@ VERIFY_STAGED_SIDECARS = \
 _stage-sidecars:
 	@mkdir -p target/debug/sidecar-csharp target/debug/sidecar-fsharp
 	@mkdir -p target/llvm-cov-target/debug/sidecar-csharp target/llvm-cov-target/debug/sidecar-fsharp
+# Creating target/llvm-cov-target before cargo does leaves it WITHOUT the
+# CACHEDIR.TAG cargo writes for its own build directories, and
+# `cargo llvm-cov clean` then refuses the directory ("missing or invalid
+# CACHEDIR.TAG") and exits non-zero. Every later coverage run therefore piled
+# fresh objects on top of stale ones, and the merged lcov mixed several crate
+# disambiguators — which is how a clean tree measured 92.04% against a real
+# 95.73%. Write the tag ourselves so the clean cargo would have done still works.
+	@[ -f target/llvm-cov-target/CACHEDIR.TAG ] || printf '%s\n' \
+		'Signature: 8a477f597d28d172789f06886806bc55' > target/llvm-cov-target/CACHEDIR.TAG
 	@cp -r $(SIDECAR_CS_OUT)/. target/debug/sidecar-csharp/
 	@cp -r $(SIDECAR_FS_OUT)/. target/debug/sidecar-fsharp/
 	@cp -r $(SIDECAR_CS_OUT)/. target/llvm-cov-target/debug/sidecar-csharp/

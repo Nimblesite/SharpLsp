@@ -37,7 +37,7 @@ import {
   useDebuggee,
 } from './debug-suite-kit';
 import { BUILD_TIMEOUT_MS } from './run-debug-kit';
-import { deepEq, eq, requireAt } from './test-helpers';
+import { deepEq, eq } from './test-helpers';
 
 /** A type the fixture never throws — the exclude half of every filter case. */
 const NEVER_THROWN_TYPE = 'System.DivideByZeroException';
@@ -72,12 +72,9 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
     );
 
     // Interaction 2 — select the type the program is about to throw.
+    const before = recorder.requests('setExceptionBreakpoints').length;
     await dap(session, 'setExceptionBreakpoints', onlyType(CAUGHT_TYPE));
-    const sent = requireAt(
-      recorder.requests('setExceptionBreakpoints'),
-      recorder.requests('setExceptionBreakpoints').length - 1,
-      'the type-filter request',
-    );
+    const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
     deepEq(sent.args['filters'], [], 'the blanket filters are OFF — only the type filter is on');
     const options: unknown = sent.args['exceptionOptions'];
     assert.ok(Array.isArray(options), 'the request must carry exceptionOptions');
@@ -172,10 +169,11 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
     await recorder.waitForOutput(`handled ${CAUGHT_MESSAGE}`);
 
     // Interaction 3 — now tick "All Exceptions" WHILE paused.
+    const beforeChange = recorder.requests('setExceptionBreakpoints').length;
     await dap(session, 'setExceptionBreakpoints', { filters: ['all'] });
-    eq(
-      recorder.requests('setExceptionBreakpoints').length >= 2,
-      true,
+    deepEq(
+      (await recorder.requestAfter('setExceptionBreakpoints', beforeChange)).args['filters'],
+      ['all'],
       'a filter change made while the debuggee is paused must be pushed to the adapter, not ' +
         'stored for the next launch',
     );

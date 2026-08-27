@@ -152,9 +152,16 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     );
 
     // Interaction 4 — the PROGRAM must use the edited value: 100+1+2+3 = 106.
+    //
+    // The second breakpoint pauses ON the `Console.WriteLine` that prints the
+    // total, so at that stop the statement has NOT executed and the debuggee's
+    // output still ends at `env=unset`. The printed line can therefore only be
+    // waited for after the debuggee is released past the breakpoint — waiting
+    // first deadlocks on output the program cannot yet have produced.
     await vscode.commands.executeCommand(CMD_CONTINUE);
     const stops = await recorder.waitForStops(2);
     assert.ok(stops[1], 'the debuggee must reach the print statement');
+    await vscode.commands.executeCommand(CMD_CONTINUE);
     await recorder.waitForOutput('total=106');
     eq(
       recorder.outputText().includes('total=8'),
@@ -162,7 +169,6 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
       'the ORIGINAL value must not have been used: a `setVariable` that only updates the ' +
         'panel, and not the debuggee, is the defect this row exists to prevent',
     );
-    await vscode.commands.executeCommand(CMD_CONTINUE);
     await assertRanToCompletion(recorder, 0, 'a session whose local was edited');
     assertCleanSession(debuggee(), 'editing a variable at runtime');
   });

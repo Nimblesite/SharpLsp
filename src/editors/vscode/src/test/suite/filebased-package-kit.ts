@@ -102,6 +102,34 @@ export function hoverText(hovers: readonly vscode.Hover[]): string {
     .join('\n');
 }
 
+export async function waitForHoverText(
+  uri: vscode.Uri,
+  position: vscode.Position,
+  requiredText: string,
+): Promise<vscode.Hover[]> {
+  const hovers = await pollUntilResult(
+    async () => hoverAt(uri, position),
+    (items) => hoverText(items).includes(requiredText),
+    RESTORE_TIMEOUT_MS,
+    1_000,
+  );
+  assert.ok(
+    hoverText(hovers).includes(requiredText),
+    `hover must contain ${JSON.stringify(requiredText)} after tier-1 resolution`,
+  );
+  return hovers;
+}
+
+async function hoverAt(uri: vscode.Uri, position: vscode.Position): Promise<vscode.Hover[]> {
+  return (
+    (await vscode.commands.executeCommand<vscode.Hover[]>(
+      'vscode.executeHoverProvider',
+      uri,
+      position,
+    )) ?? []
+  );
+}
+
 export function assertNoPackageBindingErrors(uri: vscode.Uri): void {
   const errors = errorsFor(uri);
   const codes = errors.map(diagnosticCode);

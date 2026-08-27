@@ -34,17 +34,13 @@ internal static class FileBasedPackageResolver
     public static async Task<FileBasedProjectResult> ResolveAsync(
         Closure closure,
         string rootPath,
+        long generation,
         CancellationToken ct
     )
     {
         try
         {
-            var context = CreateContext(rootPath);
-            WriteProject(context.ProjectPath, closure);
-            var restored = await RestoreAsync(context, closure.Packages, ct).ConfigureAwait(false);
-            return restored.IsError
-                ? FileBasedProjectResult.Failure(!restored ?? "MSBuild restore failed.")
-                : await LoadReferencesAsync(context, ct).ConfigureAwait(false);
+            return await ResolveCoreAsync(closure, rootPath, generation, ct).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
@@ -52,16 +48,89 @@ internal static class FileBasedPackageResolver
         }
     }
 
-    private static RestoreContext CreateContext(string rootPath)
+    private static async Task<FileBasedProjectResult> ResolveCoreAsync(
+        Closure closure,
+        string rootPath,
+        long generation,
+        CancellationToken ct
+    )
+    {
+        var context = CreateContext(rootPath, generation);
+        using var restoreLock = await AcquireRestoreLockAsync(context.LockPath, ct)
+            .ConfigureAwait(false);
+        _ = Directory.CreateDirectory(context.ResolutionDirectory);
+        try
+        {
+            WriteProject(context.ProjectPath, closure);
+            var restored = await RestoreAsync(context, closure.Packages, ct).ConfigureAwait(false);
+            return restored.IsError
+                ? FileBasedProjectResult.Failure(!restored ?? "MSBuild restore failed.")
+                : await LoadReferencesAsync(context, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            CleanupResolutionDirectory(context.ResolutionDirectory);
+        }
+    }
+
+    private static RestoreContext CreateContext(string rootPath, long generation)
     {
         var appDirectory = Path.GetDirectoryName(Path.GetFullPath(rootPath)) ?? ".";
         var workDirectory = WorkDirectory(rootPath);
-        _ = Directory.CreateDirectory(workDirectory);
+        var resolutionDirectory = Path.Combine(
+            workDirectory,
+            "generations",
+            $"{Environment.ProcessId}-{generation}-{Guid.NewGuid():N}"
+        );
         return new RestoreContext(
-            Path.Combine(workDirectory, "restore.csproj"),
+            Path.Combine(resolutionDirectory, "restore.csproj"),
+            Path.Combine(workDirectory, ".restore.lock"),
+            resolutionDirectory,
             appDirectory,
             EvaluationProperties(appDirectory)
         );
+    }
+
+    private static void CleanupResolutionDirectory(string resolutionDirectory)
+    {
+        try
+        {
+            Directory.Delete(resolutionDirectory, recursive: true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            Log.Debug(
+                exception,
+                "Could not clean file-based restore generation {Directory}",
+                resolutionDirectory
+            );
+        }
+    }
+
+    private static async Task<FileStream> AcquireRestoreLockAsync(
+        string lockPath,
+        CancellationToken ct
+    )
+    {
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                return new FileStream(
+                    lockPath,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None,
+                    bufferSize: 1,
+                    FileOptions.Asynchronous
+                );
+            }
+            catch (IOException)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50), ct).ConfigureAwait(false);
+            }
+        }
     }
 
     private static string WorkDirectory(string rootPath)
@@ -139,9 +208,17 @@ internal static class FileBasedPackageResolver
             var item = group.AddItem("PackageReference", package.Name);
             if (!string.IsNullOrEmpty(package.Version))
             {
-                _ = item.AddMetadata("Version", package.Version, expressAsAttribute: true);
+                AddPackageVersion(item, package.Version);
             }
         }
+    }
+
+    private static void AddPackageVersion(ProjectItemElement item, string version)
+    {
+        var direct = item.AddMetadata("Version", version, expressAsAttribute: false);
+        direct.Condition = "'$(ManagePackageVersionsCentrally)' != 'true'";
+        var central = item.AddMetadata("VersionOverride", version, expressAsAttribute: false);
+        central.Condition = "'$(ManagePackageVersionsCentrally)' == 'true'";
     }
 
     private static async Task<RestoreResult> RestoreAsync(
@@ -350,6 +427,8 @@ internal static class FileBasedPackageResolver
 
     private sealed record RestoreContext(
         string ProjectPath,
+        string LockPath,
+        string ResolutionDirectory,
         string AppDirectory,
         Dictionary<string, string> Properties
     );

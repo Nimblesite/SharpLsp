@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { DapRouter } from '../../dap-router.js';
 import { SharpLspDebugAdapterFactory } from '../../debug.js';
 import { debugSessionFor } from './run-debug-kit';
+import { writeSpawnableAdapter } from './run-debug-fixtures';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { removeDirRecursive } from './test-helpers';
 
@@ -36,6 +37,50 @@ const UNSPAWNABLE = `${path.sep}sharplsp\0netcoredbg`;
 
 /** The binary name netcoredbg ships under on this platform. */
 const EXE = process.platform === 'win32' ? 'netcoredbg.exe' : 'netcoredbg';
+
+/**
+ * A live process in the extension host's OWN process group.
+ *
+ * `ChildProcess.kill()` forwards to `kill(this.pid, ...)`, and a child whose
+ * spawn FAILED carries NO pid — Node then issues `kill(0, ...)`, which POSIX
+ * defines as "every process in the CALLER'S process group". In the extension
+ * host that group is the whole VS Code tree, and under CI it also holds `make`
+ * and the runner agent, so one unstartable netcoredbg terminated the entire job
+ * with no test output at all. Only a process inside that group can witness the
+ * difference between signalling the adapter and signalling ourselves.
+ */
+function processGroupCanary(): cp.ChildProcess {
+  return cp.spawn(process.execPath, ['-e', 'setTimeout(() => undefined, 30000)'], {
+    stdio: 'ignore',
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  });
+}
+
+/** True while `canary` has neither exited nor been signalled. */
+function stillAlive(canary: cp.ChildProcess): boolean {
+  return canary.exitCode === null && canary.signalCode === null;
+}
+
+/**
+ * Count SIGTERMs aimed at the host instead of dying from them.
+ *
+ * Node terminates on SIGTERM only while nothing listens, so this turns a
+ * regression into a FAILED ASSERTION rather than a host that vanishes mid-run
+ * and reports nothing at all.
+ */
+function catchHostSigterm(): { readonly count: () => number; readonly stop: () => void } {
+  let seen = 0;
+  const onTerm = (): void => {
+    seen += 1;
+  };
+  process.on('SIGTERM', onTerm);
+  return {
+    count: () => seen,
+    stop: () => {
+      process.off('SIGTERM', onTerm);
+    },
+  };
+}
 
 suite('Debug adapter startup is total', () => {
   let tmpDir: string;
@@ -125,11 +170,81 @@ suite('Debug adapter startup is total', () => {
     );
   });
 
+  // The router's teardown must signal the ADAPTER, never the process group the
+  // extension host itself sits in. Adapter resolution builds a router purely to
+  // read which binary it would spawn and throws it away in the SAME TICK, so
+  // `dispose()` routinely runs while the asynchronous spawn failure is still in
+  // flight and the router still believes its child is open.
+  // Implements [DEBUG-ARCHITECTURE-ROUTER].
+  test('disposing a router whose adapter never started signals only that adapter', async () => {
+    const missing = path.join(tmpDir, 'never-started', EXE);
+    assert.strictEqual(fs.existsSync(missing), false, 'the premise: nothing is at that path');
+
+    const canary = processGroupCanary();
+    assert.ok(
+      typeof canary.pid === 'number' && canary.pid > 0,
+      'the premise: the canary must really be running, in our own process group',
+    );
+    const host = catchHostSigterm();
+    try {
+      const outcome = DapRouter.start(missing);
+      assert.strictEqual(outcome.ok, true, 'ENOENT fails asynchronously, not at construction');
+      if (!outcome.ok) return;
+      outcome.value.dispose();
+      await new Promise<void>((resolve) => setTimeout(resolve, 750));
+
+      assert.strictEqual(host.count(), 0, 'the extension host must never signal ITSELF');
+      assert.strictEqual(
+        stillAlive(canary),
+        true,
+        `disposing an unstarted adapter killed an unrelated sibling (signal ${String(
+          canary.signalCode,
+        )}): the kill reached our whole process group instead of the adapter`,
+      );
+    } finally {
+      host.stop();
+      canary.kill('SIGKILL');
+    }
+  });
+
+  // The same hazard on the restart path, where it is worse: `respawn` escalates
+  // to SIGKILL after a grace second, and a SIGKILL aimed at our own process
+  // group cannot be caught, logged or survived by anything in it.
+  test('respawning a router whose adapter never started signals only that adapter', async () => {
+    const missing = path.join(tmpDir, 'never-respawned', EXE);
+    assert.strictEqual(fs.existsSync(missing), false, 'the premise: nothing is at that path');
+
+    const canary = processGroupCanary();
+    assert.ok(
+      typeof canary.pid === 'number' && canary.pid > 0,
+      'the premise: the canary must really be running, in our own process group',
+    );
+    const host = catchHostSigterm();
+    try {
+      const outcome = DapRouter.start(missing);
+      assert.strictEqual(outcome.ok, true, 'ENOENT fails asynchronously, not at construction');
+      if (!outcome.ok) return;
+      outcome.value.respawn([]);
+      // Past the SIGKILL escalation, so BOTH signals have had their chance.
+      await new Promise<void>((resolve) => setTimeout(resolve, 1_750));
+      outcome.value.dispose();
+
+      assert.strictEqual(host.count(), 0, 'the extension host must never signal ITSELF');
+      assert.strictEqual(
+        stillAlive(canary),
+        true,
+        `respawning past an unstarted adapter killed an unrelated sibling (signal ${String(
+          canary.signalCode,
+        )}): the kill reached our whole process group instead of the adapter`,
+      );
+    } finally {
+      host.stop();
+      canary.kill('SIGKILL');
+    }
+  });
+
   test('a resolvable adapter still starts, so the guard did not disable debugging', () => {
-    const good = path.join(tmpDir, 'good', EXE);
-    fs.mkdirSync(path.dirname(good), { recursive: true });
-    fs.writeFileSync(good, '#!/bin/sh\nexit 0\n', 'utf-8');
-    fs.chmodSync(good, 0o755);
+    const good = writeSpawnableAdapter(path.join(tmpDir, 'good', EXE));
 
     const outcome = DapRouter.start(good);
     assert.strictEqual(outcome.ok, true, 'a spawnable adapter must still produce a router');
@@ -152,10 +267,7 @@ suite('Debug adapter startup is total', () => {
   // `Uncaught Error: write EPIPE` at `DapRouter.write`, which killed the whole
   // run rather than the one session.
   test('writing to an adapter that has died never escapes into the host', async () => {
-    const dying = path.join(tmpDir, 'dying', EXE);
-    fs.mkdirSync(path.dirname(dying), { recursive: true });
-    fs.writeFileSync(dying, '#!/bin/sh\nexit 0\n', 'utf-8');
-    fs.chmodSync(dying, 0o755);
+    const dying = writeSpawnableAdapter(path.join(tmpDir, 'dying', EXE));
 
     const outcome = DapRouter.start(dying);
     assert.strictEqual(outcome.ok, true, 'the premise: this adapter does start');

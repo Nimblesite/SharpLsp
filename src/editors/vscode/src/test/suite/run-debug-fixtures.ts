@@ -240,3 +240,29 @@ export function isolateFromRepoMsbuild(dir: string): string {
   fs.writeFileSync(props, MSBUILD_ISOLATION_PROPS, 'utf-8');
   return props;
 }
+
+/**
+ * Materialise a REALLY SPAWNABLE stand-in for netcoredbg.
+ *
+ * A `#!/bin/sh` script named `netcoredbg.exe` satisfies `existsSync` but is not
+ * a valid PE image, so Windows fails `CreateProcess` — and since the factory now
+ * refuses a descriptor it cannot spawn ([DEBUG-ADAPTER-NETCOREDBG]), a stub that
+ * cannot execute makes every "a resolvable adapter produces a router" case fail
+ * on Windows for a reason that has nothing to do with resolution. Copying a real
+ * system binary keeps the stub spawnable on every platform.
+ */
+export function writeSpawnableAdapter(target: string): string {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  if (process.platform === 'win32') {
+    // `process.execPath` — the running Electron/Node binary — is the only image
+    // guaranteed to exist AND to be spawnable by this very process. A copy of
+    // `cmd.exe` was tried first and does NOT spawn under another name, which
+    // turned every "a resolvable adapter produces a router" case red on Windows
+    // while passing on POSIX.
+    fs.copyFileSync(process.execPath, target);
+    return target;
+  }
+  fs.writeFileSync(target, '#!/bin/sh\nexit 0\n', 'utf-8');
+  fs.chmodSync(target, 0o755);
+  return target;
+}

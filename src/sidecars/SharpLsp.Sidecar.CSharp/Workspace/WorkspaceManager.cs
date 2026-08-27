@@ -48,6 +48,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     private MSBuildWorkspace? _workspace;
     private Solution? _solution;
     private bool _isProjectlessDirectory;
+    private int _disposeState;
     private readonly CodeActionResolver _codeActionResolver = new();
 
     // Roslyn's Solution is immutable; mutating _solution = _solution.WithX(...)
@@ -63,6 +64,11 @@ internal sealed partial class WorkspaceManager : IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
+
         _packageResolutionGenerations.Clear();
         _packageResolutionCancellation.Cancel();
         _packageResolutionCancellation.Dispose();

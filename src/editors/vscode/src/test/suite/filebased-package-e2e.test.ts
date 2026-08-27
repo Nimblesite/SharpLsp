@@ -26,6 +26,7 @@ import {
   positionAfter,
   positionInside,
   waitForErrorCode,
+  waitForHoverText,
 } from './filebased-package-kit';
 
 function insertionRange(item: vscode.CompletionItem): vscode.Range {
@@ -84,7 +85,7 @@ Console.WriteLine(clone.ToString());
     assert.strictEqual(fs.existsSync(path.join(tmpDir, 'Directory.Build.props')), false);
 
     const typePosition = positionInside(source, 'JObject');
-    const hovers = await waitForHoverResult(uri, typePosition, RESTORE_TIMEOUT_MS);
+    const hovers = await waitForHoverText(uri, typePosition, 'Newtonsoft.Json.Linq');
     const markdown = hoverText(hovers);
     assert.ok(hovers.length > 0, 'restored JObject must return hover information');
     assert.ok(markdown.includes('JObject'), 'hover must name the package type');
@@ -129,7 +130,7 @@ Console.WriteLine(payload.Count);
     const added = await completionList(uri, positionAfter(withDirective, 'payload.'), 'Properties');
     assert.strictEqual(itemNamed(added, 'Properties').kind, vscode.CompletionItemKind.Method);
     const packageHover = hoverText(
-      await waitForHoverResult(uri, positionInside(withDirective, 'JObject'), RESTORE_TIMEOUT_MS),
+      await waitForHoverText(uri, positionInside(withDirective, 'JObject'), 'Newtonsoft.Json.Linq'),
     );
     assert.ok(packageHover.includes('JObject'), 'adding the directive binds the package type');
     assertNoPackageBindingErrors(uri);
@@ -180,7 +181,7 @@ Console.WriteLine(payload.Count);
     assert.strictEqual(doc.getText().includes(PACKAGE), false, 'the root itself has no package');
 
     const factoryHover = hoverText(
-      await waitForHoverResult(uri, positionInside(root, 'PackageFactory'), RESTORE_TIMEOUT_MS),
+      await waitForHoverText(uri, positionInside(root, 'PackageFactory'), 'PackageFactory'),
     );
     assert.ok(factoryHover.includes('PackageFactory'), 'the included declaration binds in root');
     const members = await completionList(uri, positionAfter(root, 'payload.'), 'DeepClone');
@@ -338,7 +339,7 @@ Console.WriteLine(json.Count + plural.Length);
     assert.strictEqual(doc.getText().includes(PACKAGE), false, 'the old directive is gone');
 
     const humanizerHover = hoverText(
-      await waitForHoverResult(uri, positionInside(second, 'Pluralize'), RESTORE_TIMEOUT_MS),
+      await waitForHoverText(uri, positionInside(second, 'Pluralize'), 'Humanizer'),
     );
     assert.ok(humanizerHover.includes('Pluralize'), 'the replacement package binds');
     assert.ok(humanizerHover.includes('Humanizer'), 'hover identifies the replacement package');

@@ -20,8 +20,10 @@ import { interpolateLog, type LogToken } from './dap-emulate';
 import { BreakpointEmulator, type StopVerdict } from './dap-breakpoints';
 import { SessionReplayer, type ReplayHost } from './dap-replay';
 import { GotoEmulator } from './dap-goto';
+import { StepCoalescer, topFrameLocation, STEP_COMMANDS } from './dap-stepping';
 import { withEventCapabilities, withRouterCapabilities } from './dap-caps';
 import { HandleNamespace } from './dap-namespace';
+import { signalChild } from './child-signal';
 import { error, info, traceInfo } from './log';
 import { getErrorMessage } from './utils';
 import { err, ok, type Result } from './result';
@@ -97,6 +99,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   private nextSeq = 1_000_000;
   /** Run-to-cursor emulation ([DEBUG-FEATURES-STEPPING], P2). */
   private readonly goto: GotoEmulator;
+  /** Same-line step coalescing ([DEBUG-FEATURES-STEPPING], P1). */
+  private readonly stepper: StepCoalescer;
   /** Session-scoped handle namespacing ([DEBUG-FEATURES-MULTIPROCESS]). */
   private readonly handles = new HandleNamespace();
   /** Serializes logpoint evaluation so output stays in program order. */
@@ -135,6 +139,15 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     this.child = this.spawn([]);
     this.replayer = new SessionReplayer(this);
     this.goto = new GotoEmulator(this, (path) => this.breakpointArgsFor(path));
+    this.stepper = new StepCoalescer({
+      request: async (command, args) => await this.request(command, args),
+      forward: (outbound) => {
+        this.write(this.handles.translateRequestArguments(retarget(outbound)));
+      },
+      deliverStop: (stop) => {
+        this.deliverStop(stop);
+      },
+    });
   }
 
   /** Spawn netcoredbg and wire its output into the frame parser. */
@@ -276,6 +289,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
         this.goto.onGotoTargets(msg);
         return;
       case 'goto':
+        // Run-to-cursor resumes the debuggee, so any step in flight is over.
+        this.stepper.reset();
         this.goto.onGoto(msg);
         return;
       case 'launch':
@@ -284,8 +299,18 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
         this.debuggeeExited = false;
         this.rememberLaunchOptions(args);
         break;
+      case 'continue':
+      case 'pause':
+        // Resuming the debuggee ends any step in flight: the stop that follows
+        // is the user's new gesture, never the old one's second sequence point.
+        this.stepper.reset();
+        break;
       default:
         break;
+    }
+    if (STEP_COMMANDS.includes(command)) {
+      this.stepper.begin(msg, command, Number(args?.threadId ?? 0));
+      return;
     }
     this.write(this.handles.translateRequestArguments(retarget(msg)));
   }
@@ -297,7 +322,10 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     this.disposed = true;
     this.child.stdout.removeAllListeners('data');
     this.child.stderr.removeAllListeners('data');
-    if (!this.closed) this.child.kill();
+    // `signalChild`, not `child.kill()`: a child whose spawn failed has no pid,
+    // and Node turns that into `kill(0, ...)` — a SIGTERM to the extension
+    // host's own process group. See child-signal.ts.
+    if (!this.closed) signalChild(this.child);
     this.emitter.dispose();
   }
 
@@ -490,6 +518,22 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     if (this.transitioning) return true;
     const body = isRecord(message.body) ? message.body : {};
     const threadId = Number(body.threadId ?? 0);
+    const reason = typeof body.reason === 'string' ? body.reason : '';
+    // A step that came to rest on the line it started from is re-issued rather
+    // than shown; the coalescer hands anything it declines straight back.
+    if (this.stepper.onStopped(message, threadId, reason)) return true;
+    return this.judgeStop(message, body, threadId);
+  }
+
+  /** Deliver a stop the step coalescer declined, emulations and all. */
+  private deliverStop(message: DapMessage): void {
+    const body = isRecord(message.body) ? message.body : {};
+    if (this.judgeStop(message, body, Number(body.threadId ?? 0))) return;
+    this.fire(message);
+  }
+
+  /** Judge one stop against the breakpoint emulations. True when swallowed. */
+  private judgeStop(message: DapMessage, body: Record<string, unknown>, threadId: number): boolean {
     const rawHits = Array.isArray(body.hitBreakpointIds) ? body.hitBreakpointIds.map(Number) : [];
     if (rawHits.length === 0) {
       // netcoredbg names no breakpoint ids; judge by where the stop landed.
@@ -508,12 +552,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     this.emulationQueue = this.emulationQueue
       .then(async () => {
         const stack = await this.request('stackTrace', { threadId, startFrame: 0, levels: 1 });
-        const frame = recordList(isRecord(stack.body) ? stack.body.stackFrames : undefined)[0];
-        const source =
-          isRecord(frame?.source) && typeof frame.source.path === 'string'
-            ? frame.source.path
-            : undefined;
-        const line = Number(frame?.line ?? 0);
+        const { path: source, line } = topFrameLocation(stack.body);
         this.goto.absorbHitAt(source, line);
         const verdict =
           source !== undefined
@@ -601,6 +640,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     // restarted session answer `threads` with an empty list forever.
     this.debuggeeExited = false;
     this.breakpoints.reset();
+    this.stepper.reset();
     this.replayer.restart();
   }
 
@@ -610,11 +650,14 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     this.buffer = Buffer.alloc(0);
     const old = this.child;
     old.stdout.removeAllListeners('data');
-    old.kill();
+    // Both signals go through `signalChild`: an adapter that never started has
+    // no pid, and the escalation below would otherwise SIGKILL the extension
+    // host's own process group — a signal nothing in it can catch or survive.
+    signalChild(old);
     // A paused debuggee can make netcoredbg linger on SIGTERM; the restart
     // gesture must not wait for it. Escalate to SIGKILL after a grace second.
     const escalate = setTimeout(() => {
-      old.kill('SIGKILL');
+      signalChild(old, 'SIGKILL');
     }, 1_000);
     old.once('exit', () => {
       clearTimeout(escalate);

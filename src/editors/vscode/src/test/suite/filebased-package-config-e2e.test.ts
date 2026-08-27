@@ -8,7 +8,6 @@ import {
   replaceDocumentContent,
   setupLspTestSuite,
   teardownLspTestSuite,
-  waitForHoverResult,
 } from './test-helpers';
 import { fixtureSolutionPath, loadSolutionInServer } from './real-repo-helpers';
 import {
@@ -24,6 +23,7 @@ import {
   positionAfter,
   positionInside,
   waitForErrorCode,
+  waitForHoverText,
 } from './filebased-package-kit';
 
 function writeFixture(tmpDir: string, filename: string, content: string): string {
@@ -31,6 +31,36 @@ function writeFixture(tmpDir: string, filename: string, content: string): string
   fs.writeFileSync(target, content, 'utf8');
   assert.strictEqual(fs.readFileSync(target, 'utf8'), content, `${filename} fixture is exact`);
   return target;
+}
+
+async function waitForMarkerWithoutError(
+  uri: vscode.Uri,
+  marker: string,
+): Promise<vscode.Diagnostic[]> {
+  const diagnostics = await pollUntilResult(
+    async () => vscode.languages.getDiagnostics(uri),
+    (items) =>
+      items.some((diagnostic) => diagnostic.message.includes(marker)) &&
+      !items.some((diagnostic) => diagnosticCode(diagnostic) === 'CS1029'),
+    RESTORE_TIMEOUT_MS,
+  );
+  const warning = assertSingleMarker(diagnostics, marker);
+  assert.strictEqual(warning.severity, vscode.DiagnosticSeverity.Warning);
+  assert.strictEqual(warning.source, 'sharplsp-csharp');
+  assert.ok(!errorsFor(uri).some((diagnostic) => diagnosticCode(diagnostic) === 'CS1029'));
+  return diagnostics;
+}
+
+function assertSingleMarker(
+  diagnostics: readonly vscode.Diagnostic[],
+  marker: string,
+): vscode.Diagnostic {
+  const matches = diagnostics.filter((diagnostic) => diagnostic.message.includes(marker));
+  assert.strictEqual(matches.length, 1, `expected one diagnostic marker ${marker}`);
+  const match = matches[0];
+  assert.ok(match, `diagnostic marker ${marker} must be present`);
+  assert.strictEqual(diagnosticCode(match), 'CS1030');
+  return match;
 }
 
 suite('VSIX E2E — file-based app MSBuild configuration', () => {
@@ -77,7 +107,7 @@ Console.WriteLine(payload.Count);
     assert.strictEqual(fs.readFileSync(propsPath, 'utf8'), centralPackages);
     assert.strictEqual(fs.existsSync(path.join(tmpDir, 'CentralPackageApp.csproj')), false);
     const hover = hoverText(
-      await waitForHoverResult(uri, positionInside(source, 'JObject'), RESTORE_TIMEOUT_MS),
+      await waitForHoverText(uri, positionInside(source, 'JObject'), 'Newtonsoft.Json.Linq'),
     );
     assert.ok(hover.includes('JObject'), 'CPM-backed package type binds');
     assert.ok(hover.includes('Newtonsoft.Json.Linq'), 'CPM preserves the package namespace');
@@ -97,7 +127,9 @@ Console.WriteLine(payload.Count);
 </Project>
 `;
     const propsPath = writeFixture(tmpDir, 'Directory.Build.props', buildProps);
+    const marker = 'sharplsp-app-cone-options-applied';
     const source = `${PACKAGE}
+#warning ${marker}
 #if !FROM_APP_CONE
 #error Directory.Build.props was ignored
 #endif
@@ -107,11 +139,12 @@ Console.WriteLine(payload.Count);
 `;
     const { uri } = await openFileBasedApp(tmpDir, 'BuildPropsApp.cs', source);
     const members = await completionList(uri, positionAfter(source, 'payload.'), 'Properties');
+    const diagnostics = await waitForMarkerWithoutError(uri, marker);
 
     assert.strictEqual(fs.readFileSync(propsPath, 'utf8'), buildProps);
     assert.strictEqual(itemNamed(members, 'Properties').kind, vscode.CompletionItemKind.Method);
     assert.ok(
-      !errorsFor(uri).some((diagnostic) => diagnosticCode(diagnostic) === 'CS1029'),
+      !diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === 'CS1029'),
       'the app-cone constant must suppress the #error branch',
     );
     assertNoPackageBindingErrors(uri);
@@ -121,7 +154,9 @@ Console.WriteLine(payload.Count);
   // [SCRIPT-FILEBASED-REFERENCES-MSBUILD].
   test('#:property compiler options flow into the Roslyn project', async function () {
     this.timeout(RESTORE_TIMEOUT_MS);
+    const marker = 'sharplsp-file-directive-options-applied';
     const source = `#:property DefineConstants=FROM_FILE_DIRECTIVE
+#warning ${marker}
 #if !FROM_FILE_DIRECTIVE
 #error file directive property was ignored
 #endif
@@ -130,11 +165,12 @@ Console.WriteLine(text.Length);
 `;
     const { doc, uri } = await openFileBasedApp(tmpDir, 'PropertyDirectiveApp.cs', source);
     const members = await completionList(uri, positionAfter(source, 'text.'), 'Length');
+    const diagnostics = await waitForMarkerWithoutError(uri, marker);
 
     assert.strictEqual(doc.lineAt(0).text, '#:property DefineConstants=FROM_FILE_DIRECTIVE');
     assert.strictEqual(itemNamed(members, 'Length').kind, vscode.CompletionItemKind.Property);
     assert.ok(
-      !errorsFor(uri).some((diagnostic) => diagnosticCode(diagnostic) === 'CS1029'),
+      !diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === 'CS1029'),
       '#:property must suppress the #error branch',
     );
     assert.deepStrictEqual(errorsFor(uri), [], 'directive-derived compilation has zero errors');
