@@ -44,13 +44,19 @@ impl LangId {
 pub struct TsParsers {
     /// Compiled C# tree-sitter grammar.
     csharp_language: Language,
+    /// Compiled F# tree-sitter grammar, for implementation and script files.
+    fsharp_language: Language,
 }
 
 impl TsParsers {
-    /// Create a new parser manager with the C# grammar loaded.
+    /// Create a new parser manager with both grammars loaded.
     pub fn new() -> Self {
         let csharp_language: Language = tree_sitter_c_sharp::LANGUAGE.into();
-        Self { csharp_language }
+        let fsharp_language: Language = tree_sitter_fsharp::LANGUAGE_FSHARP.into();
+        Self {
+            csharp_language,
+            fsharp_language,
+        }
     }
 
     /// Parse source code for a given language. Returns the tree-sitter Tree.
@@ -63,7 +69,9 @@ impl TsParsers {
                     .context("failed to set C# language")?;
             }
             LangId::FSharp => {
-                anyhow::bail!("F# tree-sitter grammar not yet integrated");
+                parser
+                    .set_language(&self.fsharp_language)
+                    .context("failed to set F# language")?;
             }
         }
         parser
