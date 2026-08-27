@@ -28,6 +28,13 @@ export function recordList(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
+/** The `source.path` of a `setBreakpoints`/`gotoTargets` arguments record. */
+export function sourcePathOf(args: Record<string, unknown>): string | undefined {
+  const source = args.source;
+  if (!isRecord(source) || typeof source.path !== 'string') return undefined;
+  return source.path;
+}
+
 /** One parsed hit-count condition. `satisfies` is the whole semantics. */
 export interface HitCondition {
   /** Stop when the visit count passes this relation. */

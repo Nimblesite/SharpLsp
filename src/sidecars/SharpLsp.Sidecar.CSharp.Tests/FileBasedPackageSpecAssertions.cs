@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Xml;
 using System.Xml.Linq;
 using SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -214,71 +213,6 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
         );
     }
 
-    private static async Task<ProjectSnapshot> WaitForRestoreProjectAsync(string restoreRoot)
-    {
-        var elapsed = Stopwatch.StartNew();
-        while (elapsed.Elapsed < ResolutionTimeout)
-        {
-            var snapshot = TryReadRestoreProject(restoreRoot);
-            if (snapshot is not null)
-            {
-                return snapshot;
-            }
-            await Task.Delay(10).ConfigureAwait(false);
-        }
-        return ReadRestoreProject(restoreRoot);
-    }
-
-    private static ProjectSnapshot? TryReadRestoreProject(string restoreRoot)
-    {
-        try
-        {
-            return TryReadExistingProject(restoreRoot);
-        }
-        catch (Exception exception) when (exception is IOException or XmlException)
-        {
-            return null;
-        }
-    }
-
-    private static ProjectSnapshot? TryReadExistingProject(string restoreRoot)
-    {
-        var generations = Path.Combine(restoreRoot, "generations");
-        if (!Directory.Exists(generations))
-        {
-            return null;
-        }
-        var projects = Directory.GetFiles(
-            generations,
-            "restore.csproj",
-            SearchOption.AllDirectories
-        );
-        return projects.Length == 1 ? ReadProject(projects[0]) : null;
-    }
-
-    private static ProjectSnapshot ReadRestoreProject(string restoreRoot)
-    {
-        var generations = Path.Combine(restoreRoot, "generations");
-        var projects = Directory.GetFiles(
-            generations,
-            "restore.csproj",
-            SearchOption.AllDirectories
-        );
-        return ReadProject(Assert.Single(projects));
-    }
-
-    private static ProjectSnapshot ReadProject(string projectPath)
-    {
-        using var stream = File.Open(
-            projectPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete
-        );
-        var project = XDocument.Load(stream, LoadOptions.PreserveWhitespace);
-        return new ProjectSnapshot(projectPath, project);
-    }
-
     private static async Task<OpenObservation> OpenAndObserveProjectAsync(
         WorkspaceManager manager,
         string app,
@@ -304,16 +238,6 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
             $"{Path.GetFileNameWithoutExtension(app)}-",
             Path.GetFileName(restoreRoot),
             StringComparison.Ordinal
-        );
-    }
-
-    private static void AssertGenerationDirectory(string restoreRoot, string projectPath)
-    {
-        var generationRoot = Assert.IsType<string>(Path.GetDirectoryName(projectPath));
-        Assert.Equal($"{Environment.ProcessId}-1", Path.GetFileName(generationRoot));
-        Assert.Equal(
-            Path.Combine(restoreRoot, "generations"),
-            Path.GetDirectoryName(generationRoot)
         );
     }
 

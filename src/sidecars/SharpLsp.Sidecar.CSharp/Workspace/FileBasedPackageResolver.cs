@@ -30,6 +30,7 @@ internal sealed record ResolvedFileBasedProject(
 internal static class FileBasedPackageResolver
 {
     private static readonly string DefaultTargetFramework = $"net{Environment.Version.Major}.0";
+    private static readonly TimeSpan RestoreLockTimeout = TimeSpan.FromMinutes(5);
 
     public static async Task<FileBasedProjectResult> ResolveAsync(
         Closure closure,
@@ -77,10 +78,11 @@ internal static class FileBasedPackageResolver
     {
         var appDirectory = Path.GetDirectoryName(Path.GetFullPath(rootPath)) ?? ".";
         var workDirectory = WorkDirectory(rootPath);
+        _ = Directory.CreateDirectory(workDirectory);
         var resolutionDirectory = Path.Combine(
             workDirectory,
             "generations",
-            $"{Environment.ProcessId}-{generation}-{Guid.NewGuid():N}"
+            $"{Environment.ProcessId}-{generation}"
         );
         return new RestoreContext(
             Path.Combine(resolutionDirectory, "restore.csproj"),
@@ -112,25 +114,42 @@ internal static class FileBasedPackageResolver
         CancellationToken ct
     )
     {
+        var elapsed = Stopwatch.StartNew();
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             try
             {
-                return new FileStream(
-                    lockPath,
-                    FileMode.OpenOrCreate,
-                    FileAccess.ReadWrite,
-                    FileShare.None,
-                    bufferSize: 1,
-                    FileOptions.Asynchronous
-                );
+                return OpenExclusiveLock(lockPath);
             }
-            catch (IOException)
+            catch (IOException exception)
+                when (IsLockContention(exception) && elapsed.Elapsed < RestoreLockTimeout)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(50), ct).ConfigureAwait(false);
             }
         }
+    }
+
+    private static FileStream OpenExclusiveLock(string lockPath)
+    {
+        return new FileStream(
+            lockPath,
+            FileMode.OpenOrCreate,
+            FileAccess.ReadWrite,
+            FileShare.None,
+            bufferSize: 1,
+            FileOptions.Asynchronous
+        );
+    }
+
+    /// <summary>
+    /// Only a peer holding the lock is worth retrying. .NET exposes the relevant
+    /// POSIX errno or Win32 error in the low HResult word on each platform.
+    /// </summary>
+    private static bool IsLockContention(IOException exception)
+    {
+        var error = exception.HResult & 0xFFFF;
+        return error is 11 or 13 or 32 or 33 or 35;
     }
 
     private static string WorkDirectory(string rootPath)

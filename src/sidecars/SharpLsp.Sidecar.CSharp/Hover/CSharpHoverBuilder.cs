@@ -118,8 +118,11 @@ internal static class CSharpHoverBuilder
             return symbol;
         }
 
+        // An unresolved type binds to an IErrorTypeSymbol whose display string is
+        // empty, which would render an empty code fence. Report no symbol instead,
+        // matching the guard in BuildTypeHover.
         var typeInfo = model.GetTypeInfo(parent, ct);
-        return typeInfo.Type;
+        return typeInfo.Type is null or IErrorTypeSymbol ? null : typeInfo.Type;
     }
 
     private static HoverResult? BuildVarHover(
@@ -147,10 +150,15 @@ internal static class CSharpHoverBuilder
         return MakeResult(markdown, token);
     }
 
-    private static HoverResult BuildFromSymbol(ISymbol symbol, SyntaxToken token)
+    private static HoverResult? BuildFromSymbol(ISymbol symbol, SyntaxToken token)
     {
+        // NO hover beats an EMPTY hover. A symbol we cannot describe renders as a
+        // code fence with nothing between its rules — a blank popup over, say, an
+        // unresolvable `JsonConvert` before its package restores. `SymbolAt` and
+        // `BuildVarHover` already refuse an `IErrorTypeSymbol`; this is the same
+        // guard for every other route into `BuildMarkdown`.
         var markdown = BuildMarkdown(symbol);
-        return MakeResult(markdown, token);
+        return markdown.Length == 0 ? null : MakeResult(markdown, token);
     }
 
     private static string BuildMarkdown(ISymbol symbol)
@@ -166,6 +174,11 @@ internal static class CSharpHoverBuilder
     private static void AppendSignature(System.Text.StringBuilder sb, ISymbol symbol)
     {
         var signature = symbol.ToDisplayString(SignatureFormat);
+        if (string.IsNullOrWhiteSpace(signature))
+        {
+            return;
+        }
+
         _ = sb.AppendLine("```csharp");
         _ = sb.AppendLine(signature);
         _ = sb.AppendLine("```");

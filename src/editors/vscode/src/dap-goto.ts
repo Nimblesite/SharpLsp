@@ -6,7 +6,7 @@
 // serves the gesture with a temporary adapter-side breakpoint that is merged
 // into the source's current set, then removed the moment it hits — leaving the
 // Breakpoints view untouched, exactly as the gesture promises.
-import { isRecord, recordList, type DapMessage } from './dap-emulate';
+import { isRecord, recordList, sourcePathOf, type DapMessage } from './dap-emulate';
 
 /** What the emulator needs from its owning router. */
 export interface GotoHost {
@@ -98,11 +98,4 @@ export class GotoEmulator {
   public hasTemp(): boolean {
     return this.temp !== undefined;
   }
-}
-
-/** The `source.path` of an arguments record, if it carries one. */
-function sourcePathOf(args: Record<string, unknown>): string | undefined {
-  const source = args.source;
-  if (!isRecord(source) || typeof source.path !== 'string') return undefined;
-  return source.path;
 }

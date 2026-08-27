@@ -22,6 +22,8 @@
 // advertised because every `exceptionOptions` entry is rewritten into a
 // `filterOptions` entry the adapter honours.
 
+import { isRecord, type DapMessage } from './dap-emulate';
+
 /** netcoredbg's filter id for "break on every throw". */
 const FILTER_ALL = 'all';
 
@@ -40,14 +42,19 @@ export interface FilterOption {
   readonly condition?: string;
 }
 
-/** Narrow an unknown to an indexable object without asserting it is one. */
-function isRecord(value: unknown): value is Record<string, unknown> {
+/**
+ * Narrow an unknown to an indexable object without asserting it is one.
+ *
+ * Deliberately WIDER than `dap-emulate`'s `isRecord`: an `exceptionOptions`
+ * entry is read field by field, and an array carrying them is still indexable.
+ */
+function hasFields(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
 /** Read one field of an unknown value, or undefined when it has no fields. */
 function field(value: unknown, name: string): unknown {
-  return isRecord(value) ? value[name] : undefined;
+  return hasFields(value) ? value[name] : undefined;
 }
 
 /** Every string in an unknown array, with non-strings discarded. */
@@ -140,4 +147,19 @@ export function withTranslatedExceptionOptions(
   }
   const { exceptionOptions: _translated, ...rest } = args;
   return merged.length === 0 ? rest : { ...rest, filterOptions: merged };
+}
+
+/**
+ * Rewrite one workbench request into the dialect netcoredbg understands.
+ *
+ * Only `setExceptionBreakpoints` needs it today: VS Code expresses a per-type
+ * selection as `exceptionOptions`, which netcoredbg ignores, while the
+ * equivalent `filterOptions[].condition` is applied. Every other request is
+ * forwarded byte-for-byte.
+ */
+export function retarget(message: DapMessage): DapMessage {
+  if (message.type !== 'request' || message.command !== 'setExceptionBreakpoints') return message;
+  const args: unknown = message.arguments;
+  if (!isRecord(args)) return message;
+  return { ...message, arguments: withTranslatedExceptionOptions(args) };
 }

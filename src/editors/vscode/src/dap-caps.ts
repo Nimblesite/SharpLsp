@@ -58,3 +58,20 @@ export function withEventCapabilities(message: DapMessage): DapMessage {
   const capabilities = { ...inner, ...ROUTER_CAPABILITIES };
   return { ...message, body: { ...outer, capabilities } };
 }
+
+/**
+ * netcoredbg -> VS Code, with the router's capability enrichment applied.
+ *
+ * Only the `initialize` response carries the merge; every other message is
+ * returned untouched, so the router can pipe everything through one call.
+ */
+export function enrichResponse(
+  message: DapMessage,
+  childCaps: Record<string, unknown>,
+): DapMessage {
+  if (message.type !== 'response') return message;
+  if (message.command === 'initialize') {
+    return withRouterCapabilities(message, childCaps);
+  }
+  return message;
+}

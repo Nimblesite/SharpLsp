@@ -162,8 +162,22 @@ export class SessionReplayer {
   }
 
   /** The last `setBreakpoints` request a source's breakpoints were set by. */
-  public breakpointRequestFor(path: string): DapMessage | undefined {
+  private breakpointRequestFor(path: string): DapMessage | undefined {
     return this.breakpointRequests.get(path);
+  }
+
+  /**
+   * The last `setBreakpoints` arguments a source recorded, or a bare source.
+   *
+   * Run-to-cursor merges its temporary breakpoint into the source's CURRENT
+   * set, so it needs the arguments the client last armed that source with —
+   * which is exactly what the replayer already records.
+   */
+  public breakpointArgumentsFor(path: string): Record<string, unknown> {
+    const recorded = this.breakpointRequestFor(path);
+    return recorded !== undefined && isRecord(recorded.arguments)
+      ? recorded.arguments
+      : { source: { path } };
   }
 
   /** Consume one replayed response so it never reaches VS Code. */

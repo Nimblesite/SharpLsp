@@ -140,6 +140,26 @@ public sealed partial class FileBasedPackageSpecEndToEndTests : IDisposable
         Assert.Null(secondDispose);
     }
 
+    /// <summary>
+    /// Two real managers restoring the same app must serialize use of the same deterministic
+    /// generation path. Both managers must bind, and the shared build state must be cleaned.
+    /// Implements [SCRIPT-FILEBASED-REFERENCES-MSBUILD] and [SCRIPT-LIFECYCLE].
+    /// </summary>
+    [Fact]
+    public async Task Concurrent_managers_serialize_and_clean_same_app_generation()
+    {
+        var app = WriteConcurrentApp();
+        var restoreRoot = PrepareRestoreRoot(app);
+        using var first = new WorkspaceManager();
+        using var second = new WorkspaceManager();
+        var observed = await OpenManagersAndObserveAsync(first, second, app, restoreRoot);
+        AssertSucceeded(observed.FirstOpened);
+        AssertSucceeded(observed.SecondOpened);
+        AssertConcurrentProjects(app, restoreRoot, observed);
+        await AssertConcurrentManagersLoadedAsync(first, second, app);
+        AssertGenerationCleaned(observed.Project.ProjectPath);
+    }
+
     private string PrepareRestoreRoot(string app)
     {
         var fullPath = Path.GetFullPath(app);
@@ -157,6 +177,17 @@ public sealed partial class FileBasedPackageSpecEndToEndTests : IDisposable
         }
         _ = _restoreDirectories.Add(directory);
         return directory;
+    }
+
+    private static void AssertGenerationDirectory(string restoreRoot, string projectPath)
+    {
+        var generationRoot = Assert.IsType<string>(Path.GetDirectoryName(projectPath));
+        var directoryName = Path.GetFileName(generationRoot);
+        Assert.Equal($"{Environment.ProcessId}-1", directoryName);
+        Assert.Equal(
+            Path.Combine(restoreRoot, "generations"),
+            Path.GetDirectoryName(generationRoot)
+        );
     }
 
     private sealed record HoverProbe(string App, int Line, int Character, string Expected);

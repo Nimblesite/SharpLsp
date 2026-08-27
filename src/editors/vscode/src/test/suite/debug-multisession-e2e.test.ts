@@ -12,6 +12,7 @@
 // exists to catch is exactly "the second session answered for the first".
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
+import { DAP_TIMEOUT_MS } from './debug-dap-kit';
 import { MODE } from './debug-fixture-programs';
 import {
   CMD_CONTINUE,
@@ -164,6 +165,21 @@ suite('Debug multi-session — two debuggees paused at once', () => {
     );
 
     // Interaction 6 — the survivor must still be drivable.
+    //
+    // The workbench's breakpoint model is GLOBAL, not per-session: interaction
+    // 2's `clearAllBreakpoints()` disarmed `add-body` in the FIRST session's
+    // adapter as well as arming `inspect-list` in the second's. Re-arm it — and
+    // wait for the adapter to answer the resulting `setBreakpoints` before
+    // resuming, or the debuggee runs past the line while the request is still
+    // in flight — so the survivor has its own breakpoint left to reach.
+    const acknowledged = recorder.responses('setBreakpoints').length;
+    armBreakpoints(fixture, 'add-body');
+    await pollUntilResult(
+      async () => recorder.responses('setBreakpoints').length,
+      (seen) => seen > acknowledged,
+      DAP_TIMEOUT_MS,
+      50,
+    );
     await vscode.commands.executeCommand(CMD_CONTINUE);
     const resumed = await recorder.waitForStops(3);
     assertStoppedAt(

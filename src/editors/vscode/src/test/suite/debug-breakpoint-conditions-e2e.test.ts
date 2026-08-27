@@ -168,21 +168,27 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
     const relational = debuggee();
     const baseline = relational.recorder.stops().length;
     const secondSession = await startDebuggee(relational, { mode: MODE.plain });
+    const firstVisit = (await relational.recorder.waitForStops(baseline + 1)).slice(baseline);
+    const secondFrame = await topFrame(
+      secondSession,
+      requireAt(firstVisit, 0, 'the first stop').threadId,
+    );
+    eq(
+      variableNamed(await localsOf(secondSession, secondFrame.id), 'index').value,
+      '2',
+      'the first `>= 2` stop is the SECOND visit',
+    );
+
+    // The SECOND of the two stops is only reachable once the debuggee is
+    // resumed: a program paused on visit 2 can never reach visit 3 by itself.
+    // Its frame is read above, before the resume invalidates it.
+    await vscode.commands.executeCommand('workbench.action.debug.continue');
     const stops = await relational.recorder.waitForStops(baseline + 2);
     const sessionStops = stops.slice(baseline);
     eq(
       sessionStops.length,
       LOOP_ITERATIONS - 1,
       '`>= 2` must stop on every visit from the second on: two of three iterations',
-    );
-    const secondFrame = await topFrame(
-      secondSession,
-      requireAt(sessionStops, 0, 'the first stop').threadId,
-    );
-    eq(
-      variableNamed(await localsOf(secondSession, secondFrame.id), 'index').value,
-      '2',
-      'the first `>= 2` stop is the SECOND visit',
     );
     assertCleanSession(relational, 'hit-count breakpoints');
   });

@@ -98,7 +98,7 @@ are the acceptance criteria for every unchecked item that follows.
 - [ ] Platform targets: `linux-x64`, `linux-arm64`, `win-x64`, `win-arm64`, `osx-x64`
 - [ ] Add SharpLsp CI job: build netcoredbg from source for `osx-arm64` (Apple Silicon — Samsung does not ship official ARM64 macOS binaries)
 - [ ] Add SharpLsp CI job: build netcoredbg for Alpine/musl (`linux-musl-x64`, `linux-musl-arm64`) with patched stack size pre-reservation to work around dotnet/runtime#103741
-- [ ] Version-pin netcoredbg `3.1.3-1062` in CI config; document upgrade cadence and testing requirement
+- [x] Version-pin netcoredbg `3.2.0-1092` in `tools/vsix/fetch-netcoredbg.sh`; [DEBUG-ADAPTER-NETCOREDBG] documents that an upgrade requires the debug end-to-end suite
 - [ ] Implement first-run auto-download if bundled binary absent (SHA-256 hash verification mandatory)
 - [ ] Add `sharplsp/debugAdapterStatus` notification for download progress display
 

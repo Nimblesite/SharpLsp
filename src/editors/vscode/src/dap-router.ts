@@ -11,52 +11,39 @@
 // continuation-following via ICorDebug are NOT implemented here. What is
 // implemented is honest: a capability is advertised only when it is served,
 // natively or by the emulations in this file and its helpers.
-import * as cp from 'node:child_process';
+//
+// SHAPE. This class is the SWITCHBOARD; the work lives in narrow collaborators
+// it hands a small host interface to. `dap-wire.ts` owns the netcoredbg child
+// process and the `Content-Length` framing, `dap-stops.ts` decides whether a
+// stop reaches the user, `dap-stack.ts` delivers enriched call stacks, and
+// `dap-replay.ts` / `dap-goto.ts` / `dap-stepping.ts` / `dap-breakpoints.ts`
+// serve one emulation each.
+import type * as cp from 'node:child_process';
 import * as vscode from 'vscode';
-import { withTranslatedExceptionOptions } from './dap-exceptions';
-import { enrichAsyncFrames, type RawFrame } from './dap-frames';
-import { isRecord, recordList, type DapMessage } from './dap-emulate';
-import { interpolateLog, type LogToken } from './dap-emulate';
-import { BreakpointEmulator, type StopVerdict } from './dap-breakpoints';
+import { retarget } from './dap-exceptions';
+import { isRecord, sourcePathOf, type DapMessage } from './dap-emulate';
+import { BreakpointEmulator } from './dap-breakpoints';
 import { SessionReplayer, type ReplayHost } from './dap-replay';
 import { GotoEmulator } from './dap-goto';
-import { StepCoalescer, topFrameLocation, STEP_COMMANDS } from './dap-stepping';
-import { withEventCapabilities, withRouterCapabilities } from './dap-caps';
+import { StepCoalescer, STEP_COMMANDS } from './dap-stepping';
+import { StopJudge, type StopHost } from './dap-stops';
+import { StackDelivery, type StackHost } from './dap-stack';
+import { RequestCorrelator } from './dap-correlator';
+import { enrichResponse, withEventCapabilities } from './dap-caps';
 import { HandleNamespace } from './dap-namespace';
-import { signalChild } from './child-signal';
-import { error, info, traceInfo } from './log';
+import { AdapterWire } from './dap-wire';
+import { error, traceInfo } from './log';
 import { getErrorMessage } from './utils';
 import { err, ok, type Result } from './result';
 
-/** DAP frames are `Content-Length: N\r\n\r\n<json>`; this is the separator. */
-const HEADER_END = '\r\n\r\n';
-
 /** The DAP dialect netcoredbg speaks; without it there is no DAP at all. */
 export const INTERPRETER_ARGS: readonly string[] = ['--interpreter=vscode'];
-
-/** The header that carries the payload length. */
-const CONTENT_LENGTH = 'Content-Length: ';
-
-/** Narrow the parsed frames to the shape the transform reads. */
-function isFrameList(value: unknown): value is RawFrame[] {
-  return Array.isArray(value);
-}
-
-/** Read the body length out of one DAP header block, if well-formed. */
-function parseContentLength(header: string): number | undefined {
-  for (const line of header.split('\r\n')) {
-    if (!line.startsWith(CONTENT_LENGTH)) continue;
-    const value = Number.parseInt(line.slice(CONTENT_LENGTH.length), 10);
-    return Number.isNaN(value) ? undefined : value;
-  }
-  return undefined;
-}
 
 /**
  * Proxies DAP between VS Code and a netcoredbg child process, enriching and
  * emulating the messages the spec requires the router to serve.
  */
-export class DapRouter implements vscode.DebugAdapter, ReplayHost {
+export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, StackHost {
   /**
    * The ONLY options netcoredbg is spawned with, exposed so the contract is
    * observable rather than merely commented. No `cwd` and no `env` override is
@@ -67,10 +54,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   /** The argv netcoredbg is spawned with, before any attach arguments. */
   public readonly spawnArgs: readonly string[] = INTERPRETER_ARGS;
   private readonly emitter = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
-  private child: cp.ChildProcessWithoutNullStreams;
-  private buffer = Buffer.alloc(0);
-  /** Mirrors the launch argument so stack enrichment matches the user's choice. */
-  private justMyCode = true;
+  /** The netcoredbg child process and the DAP framing on its stdio. */
+  private readonly wire: AdapterWire;
   /** Set once the child is gone, so a late frame never reaches a dead session. */
   private closed = false;
   /** True while a respawn replays the handshake; stale events are swallowed. */
@@ -89,28 +74,26 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   private readonly pendingBreakpointArgs = new Map<number, Record<string, unknown>>();
   /** seq -> arguments, correlating client `stackTrace` requests with responses. */
   private readonly pendingStackArgs = new Map<number, Record<string, unknown>>();
-  /** The router's own in-flight requests, settled if the child dies mid-await. */
-  private readonly pendingOurs = new Map<
-    number,
-    { command: string; resolve: (message: DapMessage) => void }
-  >();
+  /** The router's own requests, and the sequence space they are issued in. */
+  private readonly correlator: RequestCorrelator;
   /** True once the child itself sent the DAP `terminated` event. */
   private childAnnouncedTerminated = false;
-  private nextSeq = 1_000_000;
   /** Run-to-cursor emulation ([DEBUG-FEATURES-STEPPING], P2). */
   private readonly goto: GotoEmulator;
   /** Same-line step coalescing ([DEBUG-FEATURES-STEPPING], P1). */
   private readonly stepper: StepCoalescer;
   /** Session-scoped handle namespacing ([DEBUG-FEATURES-MULTIPROCESS]). */
   private readonly handles = new HandleNamespace();
-  /** Serializes logpoint evaluation so output stays in program order. */
-  private emulationQueue: Promise<void> = Promise.resolve();
   /** True once the session is being torn down; nothing may fire or write. */
   private disposed = false;
   /** The child's latest advertised capabilities, from `capabilities` events. */
   private latestChildCaps: Record<string, unknown> = {};
   private readonly breakpoints = new BreakpointEmulator();
   private readonly replayer: SessionReplayer;
+  /** Whether one `stopped` event ever reaches the user, and how. */
+  private readonly stops: StopJudge;
+  /** `stackTrace` enrichment and windowing. */
+  private readonly stacks: StackDelivery;
 
   public readonly onDidSendMessage: vscode.Event<vscode.DebugProtocolMessage> = this.emitter.event;
 
@@ -136,54 +119,38 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   }
 
   constructor(public readonly adapterPath: string) {
-    this.child = this.spawn([]);
+    this.correlator = new RequestCorrelator((message) => {
+      this.write(message);
+    });
+    this.wire = this.startWire(adapterPath);
     this.replayer = new SessionReplayer(this);
-    this.goto = new GotoEmulator(this, (path) => this.breakpointArgsFor(path));
+    this.goto = new GotoEmulator(this, (path) => this.replayer.breakpointArgumentsFor(path));
+    this.stops = new StopJudge(this, this.breakpoints, this.goto, this.handles);
+    this.stacks = new StackDelivery(this, this.handles);
     this.stepper = new StepCoalescer({
       request: async (command, args) => await this.request(command, args),
       forward: (outbound) => {
         this.write(this.handles.translateRequestArguments(retarget(outbound)));
       },
       deliverStop: (stop) => {
-        this.deliverStop(stop);
+        this.stops.deliverStop(stop);
       },
     });
   }
 
-  /** Spawn netcoredbg and wire its output into the frame parser. */
-  private spawn(attachArgs: readonly string[]): cp.ChildProcessWithoutNullStreams {
-    info(`DapRouter starting netcoredbg: ${this.adapterPath}`);
-    const child = cp.spawn(this.adapterPath, [...this.spawnArgs, ...attachArgs], this.spawnOptions);
-    child.stdout.on('data', (chunk: Buffer) => {
-      this.consume(chunk);
+  /** Spawn netcoredbg, routing its frames and its death back into the router. */
+  private startWire(adapterPath: string): AdapterWire {
+    return new AdapterWire(adapterPath, this.spawnArgs, this.spawnOptions, {
+      onFrame: (frame) => {
+        this.routeChildMessage(frame);
+      },
+      onGone: (why) => {
+        this.onChildGone(why);
+      },
+      announcedTerminated: () => this.childAnnouncedTerminated,
+      isClosed: () => this.closed,
+      isDisposed: () => this.disposed,
     });
-    child.stderr.on('data', (chunk: Buffer) => {
-      error(`netcoredbg: ${chunk.toString('utf8').trimEnd()}`);
-    });
-    // A write can fail long AFTER the `writable` guard in `write()` passes:
-    // netcoredbg can die between that check and the syscall, and Node reports
-    // the broken pipe asynchronously on the stream. With no listener here an
-    // `EPIPE` is an UNCAUGHT exception in the extension host — which is how a
-    // dead adapter took the whole host down mid-session instead of ending one
-    // debug session. A broken pipe IS the child being gone, so it settles
-    // through the same idempotent path as `exit` and `error`.
-    child.stdin.on('error', (cause: Error) => {
-      this.onChildGone(`stdin closed: ${getErrorMessage(cause)}`);
-    });
-    child.on('exit', (code, signal) => {
-      info(`netcoredbg exited with code ${String(code)}`);
-      // A clean protocol shutdown (the child already sent `terminated`) needs
-      // no ceremony; anything else ends the session honestly below.
-      this.onChildGone(
-        this.childAnnouncedTerminated
-          ? undefined
-          : `exited unexpectedly (code ${String(code)}, signal ${String(signal)})`,
-      );
-    });
-    child.on('error', (cause: Error) => {
-      this.onChildGone(`failed to start: ${cause.message}`);
-    });
-    return child;
   }
 
   /**
@@ -204,19 +171,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     // session is already gone.
     if (this.closed) return;
     this.closed = true;
-    const pending = [...this.pendingOurs];
-    this.pendingOurs.clear();
-    const reason = why ?? 'exited';
-    for (const [seq, entry] of pending) {
-      entry.resolve({
-        seq,
-        type: 'response',
-        request_seq: seq,
-        command: entry.command,
-        success: false,
-        message: `netcoredbg ${reason}`,
-      });
-    }
+    this.correlator.failAll(why ?? 'exited');
     if (why === undefined || this.disposed) return;
     error(`netcoredbg ${why}; ending the debug session.`);
     this.fire({
@@ -250,24 +205,45 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     if (process.env.SHARPLSP_DAP_TRACE === '1' && command !== '') {
       traceInfo(`[dap->] ${command} ${JSON.stringify(args ?? {}).slice(0, 90)}`);
     }
-    const breakpointPath = command === 'setBreakpoints' ? this.sourcePathOf(args ?? {}) : undefined;
+    const breakpointPath = command === 'setBreakpoints' ? sourcePathOf(args ?? {}) : undefined;
     this.replayer.observe(msg, breakpointPath);
     if (command === 'launch' && this.replayer.wantsTerminal()) {
       this.replayer.startTerminalLaunch();
       return;
     }
+    if (this.interceptCommand(msg, command, args, breakpointPath)) return;
+    if (STEP_COMMANDS.includes(command)) {
+      this.stepper.begin(msg, command, Number(args?.threadId ?? 0));
+      return;
+    }
+    this.write(this.handles.translateRequestArguments(retarget(msg)));
+  }
+
+  /**
+   * Observe or answer one client request.
+   *
+   * Returns true when the router SERVED the request itself and nothing may be
+   * forwarded to the adapter; false when the adapter still owns the answer,
+   * with any bookkeeping the router needed already recorded.
+   */
+  private interceptCommand(
+    message: DapMessage,
+    command: string,
+    args: Record<string, unknown> | undefined,
+    breakpointPath: string | undefined,
+  ): boolean {
     switch (command) {
       case 'setBreakpoints': {
         this.pendingBreakpointArgs.set(this.seqOf(message), args ?? {});
         if (breakpointPath !== undefined) this.breakpoints.reset();
-        break;
+        return false;
       }
       case 'stackTrace':
         this.pendingStackArgs.set(this.seqOf(message), args ?? {});
-        break;
+        return false;
       case 'configurationDone':
         this.clientConfigured = true;
-        break;
+        return false;
       case 'threads':
         // DAP defines no failure case for `threads`: the honest answer to
         // "which threads are there" once the debuggee is gone is none, and an
@@ -276,43 +252,36 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
         // teardown that error reached the client as a session error on every
         // run. Only answered locally AFTER exit — while the debuggee lives, a
         // failure is real and must reach the client untouched.
-        if (this.debuggeeExited) {
-          this.respondTo(message, true, { threads: [] });
-          return;
-        }
-        break;
+        if (!this.debuggeeExited) return false;
+        this.respondTo(message, true, { threads: [] });
+        return true;
       case 'restart':
         this.onRestart();
         this.respondTo(message, true, {});
-        return;
+        return true;
       case 'gotoTargets':
-        this.goto.onGotoTargets(msg);
-        return;
+        this.goto.onGotoTargets(message);
+        return true;
       case 'goto':
         // Run-to-cursor resumes the debuggee, so any step in flight is over.
         this.stepper.reset();
-        this.goto.onGoto(msg);
-        return;
+        this.goto.onGoto(message);
+        return true;
       case 'launch':
       case 'attach':
         // A fresh debuggee is starting; any previous exit is history.
         this.debuggeeExited = false;
         this.rememberLaunchOptions(args);
-        break;
+        return false;
       case 'continue':
       case 'pause':
         // Resuming the debuggee ends any step in flight: the stop that follows
         // is the user's new gesture, never the old one's second sequence point.
         this.stepper.reset();
-        break;
+        return false;
       default:
-        break;
+        return false;
     }
-    if (STEP_COMMANDS.includes(command)) {
-      this.stepper.begin(msg, command, Number(args?.threadId ?? 0));
-      return;
-    }
-    this.write(this.handles.translateRequestArguments(retarget(msg)));
   }
 
   public dispose(): void {
@@ -320,12 +289,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     // frames still in flight, and firing into a disposed EventEmitter throws,
     // which takes the whole extension host down with it.
     this.disposed = true;
-    this.child.stdout.removeAllListeners('data');
-    this.child.stderr.removeAllListeners('data');
-    // `signalChild`, not `child.kill()`: a child whose spawn failed has no pid,
-    // and Node turns that into `kill(0, ...)` — a SIGTERM to the extension
-    // host's own process group. See child-signal.ts.
-    if (!this.closed) signalChild(this.child);
+    this.wire.dispose();
     this.emitter.dispose();
   }
 
@@ -342,39 +306,30 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   /** Track `justMyCode` off the launch/attach request that carries it. */
   private rememberLaunchOptions(args: Record<string, unknown> | undefined): void {
     if (args === undefined || typeof args.justMyCode !== 'boolean') return;
-    this.justMyCode = args.justMyCode;
+    this.stacks.setJustMyCode(args.justMyCode);
   }
 
   /** Serialise one message to the child using DAP's framing. */
   public write(message: DapMessage): void {
-    if (this.disposed || this.child.stdin.destroyed || !this.child.stdin.writable) return;
-    const body = JSON.stringify(message);
-    const frame = `${CONTENT_LENGTH}${String(Buffer.byteLength(body))}${HEADER_END}${body}`;
-    // `write` can also throw SYNCHRONOUSLY once the stream has been destroyed.
-    // Both failure modes mean the same thing and end the session once.
-    try {
-      this.child.stdin.write(frame);
-    } catch (cause) {
-      this.onChildGone(`stdin closed: ${getErrorMessage(cause)}`);
-    }
+    this.wire.write(message);
   }
 
   /** Send a request in the router's own name and await its response. */
   public async request(command: string, args: Record<string, unknown>): Promise<DapMessage> {
-    const seq = this.nextSeq++;
-    const reply = new Promise<DapMessage>((resolve) => {
-      this.pendingOurs.set(seq, { command, resolve });
-    });
-    this.write({ seq, type: 'request', command, arguments: args });
-    return await reply;
+    return await this.correlator.request(command, args);
   }
 
   /** Emit one message towards VS Code, filling in missing sequence numbers. */
   public fire(message: Record<string, unknown> & { seq?: unknown }): void {
     if (this.disposed) return;
-    const seq = typeof message.seq === 'number' ? message.seq : this.nextSeq++;
+    const seq = typeof message.seq === 'number' ? message.seq : this.correlator.nextSequence();
     const framed: DapMessage = { ...message, seq };
     this.emitter.fire(framed);
+  }
+
+  /** Emit one message towards VS Code exactly as the adapter framed it. */
+  public emit(message: DapMessage): void {
+    this.emitter.fire(message);
   }
 
   /** Respond to a client request on the router's behalf. */
@@ -388,51 +343,6 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     });
   }
 
-  /** Accumulate child output and dispatch every complete frame it contains. */
-  private consume(chunk: Buffer): void {
-    if (this.closed) return;
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    for (;;) {
-      const frame = this.takeFrame();
-      if (frame === undefined) return;
-      this.routeChildMessage(frame);
-    }
-  }
-
-  /**
-   * Split one complete frame off the front of the buffer, if there is one.
-   *
-   * A corrupt or malformed frame closes the router from inside this method, so
-   * the closed check lives here rather than in the caller's drain loop: the
-   * next turn of that loop stops instead of routing frames off a dead wire.
-   */
-  private takeFrame(): DapMessage | undefined {
-    if (this.closed) return undefined;
-    const end = this.buffer.indexOf(HEADER_END);
-    if (end < 0) return undefined;
-    const length = parseContentLength(this.buffer.subarray(0, end).toString('utf8'));
-    if (length === undefined) {
-      // A header without a parseable Content-Length is a corrupt wire: the
-      // buffer can never drain past it, so every later frame would be lost.
-      this.onChildGone('sent a corrupt DAP header');
-      return undefined;
-    }
-    const start = end + HEADER_END.length;
-    if (this.buffer.length < start + length) return undefined;
-    const text = this.buffer.subarray(start, start + length).toString('utf8');
-    this.buffer = this.buffer.subarray(start + length);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch (cause) {
-      // Contained here, not thrown into the extension host: a frame that is
-      // not JSON ends the session deterministically instead.
-      this.onChildGone(`sent a malformed DAP frame: ${getErrorMessage(cause)}`);
-      return undefined;
-    }
-    return isRecord(parsed) ? parsed : undefined;
-  }
-
   /** netcoredbg -> VS Code, with the router's enrichments and emulations. */
   private routeChildMessage(message: DapMessage): void {
     if (this.disposed) return;
@@ -442,33 +352,32 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
       );
     }
     if (message.type === 'response') {
-      const requestSeq = Number(message.request_seq ?? -1);
-
-      const ours = this.pendingOurs.get(requestSeq);
-      if (ours !== undefined) {
-        this.pendingOurs.delete(requestSeq);
-        ours.resolve(message);
-        return;
-      }
-      if (this.replayer.swallowResponse(requestSeq)) return;
-      if (message.command === 'initialize' && this.clientConfigured) return;
-      if (message.command === 'setBreakpoints') {
-        this.breakpoints.record(this.pendingBreakpointArgs.get(requestSeq), message.body);
-        this.pendingBreakpointArgs.delete(requestSeq);
-      }
-      if (message.command === 'stackTrace') {
-        this.deliverStackTrace(message, this.pendingStackArgs.get(requestSeq));
-        this.pendingStackArgs.delete(requestSeq);
-        return;
-      }
-      this.emitter.fire(this.handles.translateResponseBody(this.enrich(message)));
+      this.onChildResponse(message);
       return;
     }
     if (message.type === 'event') {
       this.onChildEvent(message);
       return;
     }
-    this.emitter.fire(message);
+    this.emit(message);
+  }
+
+  /** A response from netcoredbg: settle ours, or enrich and forward theirs. */
+  private onChildResponse(message: DapMessage): void {
+    const requestSeq = Number(message.request_seq ?? -1);
+    if (this.correlator.settle(requestSeq, message)) return;
+    if (this.replayer.swallowResponse(requestSeq)) return;
+    if (message.command === 'initialize' && this.clientConfigured) return;
+    if (message.command === 'setBreakpoints') {
+      this.breakpoints.record(this.pendingBreakpointArgs.get(requestSeq), message.body);
+      this.pendingBreakpointArgs.delete(requestSeq);
+    }
+    if (message.command === 'stackTrace') {
+      this.stacks.deliver(message, this.pendingStackArgs.get(requestSeq));
+      this.pendingStackArgs.delete(requestSeq);
+      return;
+    }
+    this.emit(this.handles.translateResponseBody(enrichResponse(message, this.latestChildCaps)));
   }
 
   /** Events that carry emulation state, not just data. */
@@ -481,7 +390,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
       traceInfo(`[dap<-event] ${name} ${JSON.stringify(message.body ?? {}).slice(0, 80)}`);
     }
     if (name === 'stopped') {
-      if (this.onStopped(message)) return;
+      if (this.stops.onStopped(message)) return;
     } else if (name === 'initialized') {
       // Either way the transition is over: a configured client gets the replay
       // (its own copy was already consumed), a first-time client now drives
@@ -498,139 +407,27 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     } else if (name === 'breakpoint') {
       // Keep breakpoint EVENT ids in the session-scoped space the
       // setBreakpoints responses already promised VS Code.
-      this.emitter.fire(this.handles.translateEvent(message));
+      this.emit(this.handles.translateEvent(message));
       return;
     } else if (name === 'capabilities') {
-      // netcoredbg puts some flags (e.g. `supportsDisassembleRequest`) only in
-      // this event, never in the initialize response — remember them so the
-      // initialize merge serves the union, then forward the merged event.
-      const body = isRecord(message.body) ? message.body : {};
-      const advertised = isRecord(body.capabilities) ? body.capabilities : {};
-      this.latestChildCaps = { ...this.latestChildCaps, ...advertised };
-      this.emitter.fire(withEventCapabilities(message));
+      this.rememberChildCapabilities(message);
       return;
     }
-    this.emitter.fire(message);
+    this.emit(message);
   }
 
-  /** Auto-continue stops the adapter cannot judge. Returns true when swallowed. */
-  private onStopped(message: DapMessage): boolean {
-    if (this.transitioning) return true;
+  /**
+   * Remember and forward one `capabilities` event.
+   *
+   * netcoredbg puts some flags (e.g. `supportsDisassembleRequest`) only in
+   * this event, never in the initialize response — remember them so the
+   * initialize merge serves the union, then forward the merged event.
+   */
+  private rememberChildCapabilities(message: DapMessage): void {
     const body = isRecord(message.body) ? message.body : {};
-    const threadId = Number(body.threadId ?? 0);
-    const reason = typeof body.reason === 'string' ? body.reason : '';
-    // A step that came to rest on the line it started from is re-issued rather
-    // than shown; the coalescer hands anything it declines straight back.
-    if (this.stepper.onStopped(message, threadId, reason)) return true;
-    return this.judgeStop(message, body, threadId);
-  }
-
-  /** Deliver a stop the step coalescer declined, emulations and all. */
-  private deliverStop(message: DapMessage): void {
-    const body = isRecord(message.body) ? message.body : {};
-    if (this.judgeStop(message, body, Number(body.threadId ?? 0))) return;
-    this.fire(message);
-  }
-
-  /** Judge one stop against the breakpoint emulations. True when swallowed. */
-  private judgeStop(message: DapMessage, body: Record<string, unknown>, threadId: number): boolean {
-    const rawHits = Array.isArray(body.hitBreakpointIds) ? body.hitBreakpointIds.map(Number) : [];
-    if (rawHits.length === 0) {
-      // netcoredbg names no breakpoint ids; judge by where the stop landed.
-      if (this.breakpoints.hasEmulatedAttributes() || this.goto.hasTemp()) {
-        this.judgeByLocation(message, threadId);
-        return true;
-      }
-      return false;
-    }
-    this.goto.absorbHit(rawHits);
-    return this.actOn(this.breakpoints.judge(rawHits, threadId));
-  }
-
-  /** Resolve an id-less stop asynchronously: locate, then act. */
-  private judgeByLocation(message: DapMessage, threadId: number): void {
-    this.emulationQueue = this.emulationQueue
-      .then(async () => {
-        const stack = await this.request('stackTrace', { threadId, startFrame: 0, levels: 1 });
-        const { path: source, line } = topFrameLocation(stack.body);
-        this.goto.absorbHitAt(source, line);
-        const verdict =
-          source !== undefined
-            ? this.breakpoints.judgeLocation(source, line, threadId)
-            : { action: 'forward' as const, known: false };
-        if (verdict.action === 'forward') {
-          // netcoredbg names no breakpoint ids; the location match knows which
-          // one it was, so the forwarded stop carries it for VS Code and the
-          // suites that read `hitBreakpointIds`.
-          const hitIds =
-            verdict.known && verdict.hitId !== undefined
-              ? [this.handles.outward(verdict.hitId)]
-              : undefined;
-          this.fire(
-            hitIds === undefined
-              ? message
-              : {
-                  ...message,
-                  body: {
-                    ...(isRecord(message.body) ? message.body : {}),
-                    hitBreakpointIds: hitIds,
-                  },
-                },
-          );
-          return;
-        }
-        if (verdict.action === 'log') {
-          await this.runLogpoint(verdict.tokens, verdict.threadId);
-          return;
-        }
-        await this.request('continue', { threadId });
-      })
-      .catch((cause: unknown) => {
-        error(`stop emulation failed: ${String(cause)}`);
-      });
-  }
-
-  /** Act on a folded verdict. Returns true when the stop is swallowed. */
-  private actOn(verdict: StopVerdict): boolean {
-    if (verdict.action === 'forward') return false;
-    if (verdict.action === 'continue') {
-      const threadId = verdict.threadId;
-      void this.request('continue', { threadId }).catch(() => undefined);
-      return true;
-    }
-    this.emulationQueue = this.emulationQueue
-      .then(async () => {
-        await this.runLogpoint(verdict.tokens, verdict.threadId);
-      })
-      .catch((cause: unknown) => {
-        error(`logpoint emulation failed: ${String(cause)}`);
-      });
-    return true;
-  }
-
-  /** Evaluate a logpoint message in the stopped frame, print it, resume. */
-  private async runLogpoint(tokens: LogToken[] | undefined, threadId: number): Promise<void> {
-    if (tokens === undefined || tokens.length === 0) {
-      await this.request('continue', { threadId });
-      return;
-    }
-    const stack = await this.request('stackTrace', { threadId, startFrame: 0, levels: 1 });
-    const body = isRecord(stack.body) ? stack.body : {};
-    const frameId = Number(recordList(body.stackFrames)[0]?.id ?? 0);
-    const values: string[] = [];
-    for (const token of tokens) {
-      if (token.kind !== 'expression') continue;
-      const evaluation = await this.request('evaluate', {
-        expression: token.expression,
-        frameId,
-        context: 'repl',
-      });
-      const result = isRecord(evaluation.body) ? evaluation.body.result : undefined;
-      values.push(typeof result === 'string' ? result : '{?}');
-    }
-    const output = `${interpolateLog(tokens, values)}\n`;
-    this.fire({ type: 'event', event: 'output', body: { category: 'console', output } });
-    await this.request('continue', { threadId });
+    const advertised = isRecord(body.capabilities) ? body.capabilities : {};
+    this.latestChildCaps = { ...this.latestChildCaps, ...advertised };
+    this.emit(withEventCapabilities(message));
   }
 
   /** Restart: respawn through the replayer and swallow the teardown noise. */
@@ -647,38 +444,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   /** Swap the child process for a respawn, clearing stale transport state. */
   public respawn(attachArgs: readonly string[], onReady?: () => void): void {
     this.transitioning = true;
-    this.buffer = Buffer.alloc(0);
-    const old = this.child;
-    old.stdout.removeAllListeners('data');
-    // Both signals go through `signalChild`: an adapter that never started has
-    // no pid, and the escalation below would otherwise SIGKILL the extension
-    // host's own process group — a signal nothing in it can catch or survive.
-    signalChild(old);
-    // A paused debuggee can make netcoredbg linger on SIGTERM; the restart
-    // gesture must not wait for it. Escalate to SIGKILL after a grace second.
-    const escalate = setTimeout(() => {
-      signalChild(old, 'SIGKILL');
-    }, 1_000);
-    old.once('exit', () => {
-      clearTimeout(escalate);
-      this.child = this.spawn(attachArgs);
-      onReady?.();
-    });
-  }
-
-  /** The last `setBreakpoints` arguments a source recorded, or a bare source. */
-  private breakpointArgsFor(path: string): Record<string, unknown> {
-    const recorded = this.replayer.breakpointRequestFor(path);
-    return recorded !== undefined && isRecord(recorded.arguments)
-      ? recorded.arguments
-      : { source: { path } };
-  }
-
-  /** The `source.path` of a `setBreakpoints`/`gotoTargets` arguments record. */
-  private sourcePathOf(args: Record<string, unknown>): string | undefined {
-    const source = args.source;
-    if (!isRecord(source) || typeof source.path !== 'string') return undefined;
-    return source.path;
+    this.wire.respawn(attachArgs, onReady);
   }
 
   /** The seq of a recorded client message. */
@@ -686,89 +452,13 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     return Number(message.seq ?? -1);
   }
 
-  /**
-   * Deliver a `stackTrace` response, windowing the ENRICHED stack, not the
-   * physical one.
-   *
-   * Just-My-Code filtering is meaningless on a window: a `levels: 1` request
-   * that lands on a runtime frame (paused in `Thread.Sleep`) would filter to
-   * an EMPTY stack and the user would see nothing to inspect. When the window
-   * collapses, the full stack is fetched, enriched, and the caller's original
-   * window re-applied to the logical frames.
-   */
-  private deliverStackTrace(message: DapMessage, args: Record<string, unknown> | undefined): void {
-    const body = isRecord(message.body) ? message.body : {};
-    const frames = isFrameList(body.stackFrames) ? body.stackFrames : [];
-    const logical = enrichAsyncFrames(frames, this.justMyCode);
-    if (logical.length > 0 || frames.length === 0) {
-      this.emitter.fire(
-        this.handles.translateResponseBody(
-          this.withWindow(
-            { ...message, body: { ...body, stackFrames: logical, totalFrames: logical.length } },
-            args,
-          ),
-        ),
-      );
-      return;
-    }
-    const threadId = Number(args?.threadId ?? 0);
-    void this.request('stackTrace', { threadId, startFrame: 0, levels: 1_000 })
-      .then((full) => {
-        const fullBody = isRecord(full.body) ? full.body : {};
-        const fullFrames = isFrameList(fullBody.stackFrames) ? fullBody.stackFrames : [];
-        const enriched = enrichAsyncFrames(fullFrames, this.justMyCode);
-        const stack = enriched.length > 0 ? enriched : fullFrames;
-        this.emitter.fire(
-          this.handles.translateResponseBody(
-            this.withWindow(
-              { ...message, body: { ...body, stackFrames: stack, totalFrames: stack.length } },
-              args,
-            ),
-          ),
-        );
-      })
-      .catch(() => {
-        // Never leave the caller without a stack; the physical frames are the
-        // adapter's own answer.
-        this.emitter.fire(message);
-      });
+  /** True while a respawn replays the handshake; stale stops are swallowed. */
+  public isTransitioning(): boolean {
+    return this.transitioning;
   }
 
-  /** Apply the caller's `startFrame`/`levels` window to enriched frames. */
-  private withWindow(message: DapMessage, args: Record<string, unknown> | undefined): DapMessage {
-    const body = isRecord(message.body) ? message.body : {};
-    const frames = isFrameList(body.stackFrames) ? body.stackFrames : [];
-    const start = Number(args?.startFrame ?? 0);
-    const levels = Number(args?.levels ?? 0);
-    if ((start <= 0 || !Number.isInteger(start)) && (levels <= 0 || !Number.isInteger(levels))) {
-      return message;
-    }
-    const from = Number.isInteger(start) && start > 0 ? start : 0;
-    const count = Number.isInteger(levels) && levels > 0 ? levels : frames.length;
-    return { ...message, body: { ...body, stackFrames: frames.slice(from, from + count) } };
+  /** Offer a stop to the step coalescer; true when it took ownership of it. */
+  public coalesceStep(message: DapMessage, threadId: number, reason: string): boolean {
+    return this.stepper.onStopped(message, threadId, reason);
   }
-
-  /** netcoredbg -> VS Code, with the router's enrichments applied. */
-  private enrich(message: DapMessage): DapMessage {
-    if (message.type !== 'response') return message;
-    if (message.command === 'initialize') {
-      return withRouterCapabilities(message, this.latestChildCaps);
-    }
-    return message;
-  }
-}
-
-/**
- * Rewrite one workbench request into the dialect netcoredbg understands.
- *
- * Only `setExceptionBreakpoints` needs it today: VS Code expresses a per-type
- * selection as `exceptionOptions`, which netcoredbg ignores, while the
- * equivalent `filterOptions[].condition` is applied. Every other request is
- * forwarded byte-for-byte.
- */
-function retarget(message: DapMessage): DapMessage {
-  if (message.type !== 'request' || message.command !== 'setExceptionBreakpoints') return message;
-  const args: unknown = message.arguments;
-  if (!isRecord(args)) return message;
-  return { ...message, arguments: withTranslatedExceptionOptions(args) };
 }
