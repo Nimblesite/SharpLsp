@@ -27,6 +27,9 @@ import { error, info, traceInfo } from './log';
 /** DAP frames are `Content-Length: N\r\n\r\n<json>`; this is the separator. */
 const HEADER_END = '\r\n\r\n';
 
+/** The DAP dialect netcoredbg speaks; without it there is no DAP at all. */
+export const INTERPRETER_ARGS: readonly string[] = ['--interpreter=vscode'];
+
 /** The header that carries the payload length. */
 const CONTENT_LENGTH = 'Content-Length: ';
 
@@ -91,7 +94,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
 
   public readonly onDidSendMessage: vscode.Event<vscode.DebugProtocolMessage> = this.emitter.event;
 
-  constructor(private readonly adapterPath: string) {
+  constructor(public readonly adapterPath: string) {
     this.child = this.spawn([]);
     this.replayer = new SessionReplayer(this);
     this.goto = new GotoEmulator(this, (path) => this.breakpointArgsFor(path));
@@ -100,7 +103,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   /** Spawn netcoredbg and wire its output into the frame parser. */
   private spawn(attachArgs: readonly string[]): cp.ChildProcessWithoutNullStreams {
     info(`DapRouter starting netcoredbg: ${this.adapterPath}`);
-    const child = cp.spawn(this.adapterPath, ['--interpreter=vscode', ...attachArgs], {
+    const child = cp.spawn(this.adapterPath, [...INTERPRETER_ARGS, ...attachArgs], {
       stdio: 'pipe',
     });
     child.stdout.on('data', (chunk: Buffer) => {

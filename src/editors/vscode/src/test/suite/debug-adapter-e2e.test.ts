@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { DapRouter, INTERPRETER_ARGS } from '../../dap-router.js';
 import { SharpLspDebugAdapterFactory, getNetcoredbgCandidates } from '../../debug.js';
 import { DEBUG_TYPE_ID, fakeFolder, stopAnyDebugSession } from './run-debug-kit';
 import { installUiStubs, type UiStubs } from './ui-stubs';
@@ -119,22 +120,34 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
     return result as vscode.DebugAdapterDescriptor | undefined;
   }
 
-  /** The descriptor as an executable, with its DAP flags asserted every time. */
-  function executableOf(
-    target: SharpLspDebugAdapterFactory,
-    session: vscode.DebugSession,
-  ): vscode.DebugAdapterExecutable {
+  /**
+   * The router the factory wrapped, asserting the routed descriptor contract.
+   *
+   * [DEBUG-ARCHITECTURE-ROUTER] routes every session through the DapRouter — a
+   * bare `DebugAdapterExecutable` would hand VS Code netcoredbg's raw wire with
+   * none of the proxy-layer emulation — so the resolvable outcome is an inline
+   * router, and the contract is WHICH binary that router spawns.
+   */
+  function routerOf(target: SharpLspDebugAdapterFactory, session: vscode.DebugSession): DapRouter {
     const descriptor = descriptorOf(target, session);
     assert.ok(
-      descriptor instanceof vscode.DebugAdapterExecutable,
-      'a resolvable netcoredbg must produce a DebugAdapterExecutable, not an inline/server descriptor',
+      descriptor instanceof vscode.DebugAdapterInlineImplementation,
+      'a resolvable netcoredbg must produce an inline DapRouter, not an executable/server descriptor',
+    );
+    // The API type keeps `implementation` private; at runtime it is the router
+    // the factory constructed, and asserting its identity is the whole contract.
+    const router = (descriptor as unknown as { implementation?: unknown }).implementation;
+    assert.ok(
+      router instanceof DapRouter,
+      'the inline adapter must BE the DapRouter wrapping the resolved netcoredbg',
     );
     assert.deepStrictEqual(
-      descriptor.args,
+      INTERPRETER_ARGS,
       ADAPTER_ARGS,
       'netcoredbg only speaks DAP under --interpreter=vscode',
     );
-    return descriptor;
+    router.dispose();
+    return router;
   }
 
   // B59 — the configured override outranks every discovered candidate.
@@ -144,9 +157,13 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
 
     const primary = writeFakeAdapter(path.join(tmpDir, 'configured', EXE));
     await setNetcoredbgPath(primary);
-    const first = executableOf(factory, session);
-    assert.strictEqual(first.command, primary, 'B59: the configured path is spawned verbatim');
-    assert.strictEqual(typeof first.command, 'string', 'B59: the command is a plain path string');
+    const first = routerOf(factory, session);
+    assert.strictEqual(first.adapterPath, primary, 'B59: the configured path is spawned verbatim');
+    assert.strictEqual(
+      typeof first.adapterPath,
+      'string',
+      'B59: the command is a plain path string',
+    );
     assert.strictEqual(
       first.options,
       undefined,
@@ -162,16 +179,16 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
       userInstall,
       'with HOME isolated, ~/.dotnet/tools is candidate zero',
     );
-    const second = executableOf(factory, session);
-    assert.strictEqual(second.command, primary, 'B59: an explicit setting beats a user install');
-    assert.notStrictEqual(second.command, userInstall, 'B59: the candidate must not be chosen');
+    const second = routerOf(factory, session);
+    assert.strictEqual(second.adapterPath, primary, 'B59: an explicit setting beats a user install');
+    assert.notStrictEqual(second.adapterPath, userInstall, 'B59: the candidate must not be chosen');
 
     // A VSIX-bundled copy appears too; the setting still wins.
     const extensionPath = path.join(tmpDir, 'ext');
     const bundled = writeFakeAdapter(bundledPath(extensionPath));
     const bundledFactory = new SharpLspDebugAdapterFactory(extensionPath);
     assert.strictEqual(
-      executableOf(bundledFactory, session).command,
+      routerOf(bundledFactory, session).adapterPath,
       primary,
       'B59: an explicit setting beats even the bundled binary',
     );
@@ -179,19 +196,19 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
     // Repointing the setting repoints the descriptor.
     const replacement = writeFakeAdapter(path.join(tmpDir, 'other', EXE));
     await setNetcoredbgPath(replacement);
-    const fourth = executableOf(bundledFactory, session);
-    assert.strictEqual(fourth.command, replacement, 'B59: the setting is read per descriptor');
-    assert.notStrictEqual(fourth.command, primary, 'B59: the old value must not be cached');
+    const fourth = routerOf(bundledFactory, session);
+    assert.strictEqual(fourth.adapterPath, replacement, 'B59: the setting is read per descriptor');
+    assert.notStrictEqual(fourth.adapterPath, primary, 'B59: the old value must not be cached');
 
     // Clearing the setting hands the decision back to the candidate order.
     await setNetcoredbgPath(undefined);
     assert.strictEqual(
-      executableOf(bundledFactory, session).command,
+      routerOf(bundledFactory, session).adapterPath,
       bundled,
       'B59: with no setting the bundled copy is preferred',
     );
     assert.strictEqual(
-      executableOf(factory, session).command,
+      routerOf(factory, session).adapterPath,
       userInstall,
       'B59: a factory with no extensionPath cannot see the bundled copy',
     );
@@ -245,18 +262,18 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
     const local = writeFakeAdapter(path.join(tmpDir, '.local', 'share', 'netcoredbg', EXE));
     assert.strictEqual(getNetcoredbgCandidates()[1], local, 'B61: ~/.local/share is candidate one');
     assert.strictEqual(
-      executableOf(factory, session).command,
+      routerOf(factory, session).adapterPath,
       local,
       'B61: with candidate zero absent, candidate one is used',
     );
     const tools = writeFakeAdapter(path.join(tmpDir, '.dotnet', 'tools', EXE));
     assert.strictEqual(
-      executableOf(factory, session).command,
+      routerOf(factory, session).adapterPath,
       tools,
       'B61: candidate zero takes over the moment it exists',
     );
     assert.notStrictEqual(
-      executableOf(factory, session).command,
+      routerOf(factory, session).adapterPath,
       local,
       'B61: order, not first-seen',
     );
@@ -304,13 +321,13 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
 
     // Install one: resolution succeeds and adds NO new message.
     const installed = writeFakeAdapter(path.join(tmpDir, '.dotnet', 'tools', EXE));
-    const resolved = executableOf(factory, session);
+    const resolved = routerOf(factory, session);
     assert.strictEqual(
-      comparablePath(resolved.command),
+      comparablePath(resolved.adapterPath),
       comparablePath(installed),
       'B60: once installed, that exact binary is spawned',
     );
-    assert.notStrictEqual(resolved.command, 'netcoredbg', 'B60: never a bare PATH name');
+    assert.notStrictEqual(resolved.adapterPath, 'netcoredbg', 'B60: never a bare PATH name');
     assert.strictEqual(stubs.log.errorMessages.length, 3, 'B60: success adds no message');
     assert.deepStrictEqual(stubs.log.warningMessages, [], 'B60: and still no warning');
   });
