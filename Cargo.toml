@@ -56,6 +56,19 @@ exit                 = "deny"
 rest_pat_in_fully_bound_structs = "deny"
 # Require Arc::clone(&x) syntax — make ref-counted pointer cloning visually distinct
 clone_on_ref_ptr     = "deny"
+# Byte-range slicing of a `str` panics when an index is not a char boundary. An
+# LSP slices source text on every position conversion, so the first document
+# containing an accent, an emoji or a CJK character crashes the server. Use
+# .get(), char_indices() or the UTF-16 conversion helpers instead.
+string_slice         = "deny"
+# CLAUDE.md: "Any function that can throw/panic must return Result<T,E>". A
+# function that already returns Result and still panics inside defeats its own
+# signature — the caller has error handling that never runs.
+panic_in_result_fn   = "deny"
+# Integer division truncates silently. Position math converts between UTF-8
+# bytes and UTF-16 code units, so a truncated offset is an off-by-one that
+# lands the cursor, a diagnostic or an edit on the wrong character.
+integer_division     = "deny"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
