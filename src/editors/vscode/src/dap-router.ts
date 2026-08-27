@@ -61,6 +61,14 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   private transitioning = false;
   /** True once VS Code finished its breakpoint/configuration sequence. */
   private clientConfigured = false;
+  /**
+   * Set once the debuggee is gone, so `threads` can be answered honestly.
+   *
+   * netcoredbg fails that request with `0x80004005` after exit rather than
+   * reporting an empty list, and VS Code polls it while tearing a session
+   * down — so the raw error surfaced on essentially every run.
+   */
+  private debuggeeExited = false;
   /** seq -> arguments, correlating `setBreakpoints` requests with responses. */
   private readonly pendingBreakpointArgs = new Map<number, Record<string, unknown>>();
   /** seq -> arguments, correlating client `stackTrace` requests with responses. */
@@ -147,6 +155,19 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
       case 'configurationDone':
         this.clientConfigured = true;
         break;
+      case 'threads':
+        // DAP defines no failure case for `threads`: the honest answer to
+        // "which threads are there" once the debuggee is gone is none, and an
+        // empty list is exactly what the schema expects. netcoredbg instead
+        // fails the request, and because VS Code polls `threads` during
+        // teardown that error reached the client as a session error on every
+        // run. Only answered locally AFTER exit — while the debuggee lives, a
+        // failure is real and must reach the client untouched.
+        if (this.debuggeeExited) {
+          this.respondTo(message, true, { threads: [] });
+          return;
+        }
+        break;
       case 'restart':
         this.onRestart();
         this.respondTo(message, true, {});
@@ -159,6 +180,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
         return;
       case 'launch':
       case 'attach':
+        // A fresh debuggee is starting; any previous exit is history.
+        this.debuggeeExited = false;
         this.rememberLaunchOptions(args);
         break;
       default:
@@ -314,8 +337,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
         this.replayer.replayConfiguration();
         return;
       }
-    } else if ((name === 'exited' || name === 'terminated') && this.transitioning) {
-      return;
+    } else if (name === 'exited' || name === 'terminated') {
+      this.debuggeeExited = true;
+      if (this.transitioning) return;
     } else if (name === 'breakpoint') {
       // Keep breakpoint EVENT ids in the session-scoped space the
       // setBreakpoints responses already promised VS Code.
@@ -446,6 +470,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   /** Restart: respawn through the replayer and swallow the teardown noise. */
   private onRestart(): void {
     this.transitioning = true;
+    // The NEXT debuggee has not exited. Leaving this set would make the
+    // restarted session answer `threads` with an empty list forever.
+    this.debuggeeExited = false;
     this.breakpoints.reset();
     this.replayer.restart();
   }
