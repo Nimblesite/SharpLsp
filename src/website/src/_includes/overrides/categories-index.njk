@@ -1,0 +1,33 @@
+---
+layout: layouts/base.njk
+title: Categories
+permalink: /blog/categories/
+eleventyComputed:
+  title: "{{ i18n[lang or defaultLanguage].blog.categoriesTitle }}"
+  description: "{{ i18n[lang or defaultLanguage].blog.categoriesDescription }}"
+---
+{% set blogText = i18n[lang or defaultLanguage].blog %}
+{% set categoryCollection = collections.categoryList %}
+{% set groupedPosts = collections.postsByCategory %}
+{% if lang and lang != defaultLanguage %}
+  {% set categoryCollection = collections[lang + "categoryList"] | default(collections.categoryList) %}
+  {% set groupedPosts = collections[lang + "postsByCategory"] | default(collections.postsByCategory) %}
+{% endif %}
+<div class="blog-container">
+  <header class="blog-header">
+    <h1>{{ blogText.categoriesTitle }}</h1>
+    <p class="blog-subtitle">{{ blogText.categoriesDescription }}</p>
+  </header>
+
+  <div class="category-grid">
+    {% for category in categoryCollection %}
+    {% set postCount = groupedPosts[category] | length | default(0) %}
+    <a href="{% if lang and lang != defaultLanguage %}/{{ lang }}{% endif %}/blog/categories/{{ category | slugify }}/" class="category-card">
+      <h3>{{ blogText.categoryLabels[category] | default(category) | capitalize }}</h3>
+      <p>{{ postCount }} {{ blogText.postSingular if postCount == 1 else blogText.postPlural }}</p>
+    </a>
+    {% endfor %}
+  </div>
+
+  {% if categoryCollection | length == 0 %}<p class="blog-empty">{{ blogText.noCategories }}</p>{% endif %}
+</div>

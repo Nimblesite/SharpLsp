@@ -1,5 +1,5 @@
 # Shared CodeQL configuration for the PR, weekly, and gated release scans
-# (referenced by .github/workflows/codeql.yml). [GITHUB-CODE-SCANNING]
+# (referenced by .github/workflows/codeql.yml). [DIST-CI-SECURITY]
 #
 # Test code is never shipped: the VSIX bundles dist/extension.js (esbuild output
 # of src/, excluding src/test) and the Rust/.NET binaries — never the TypeScript
@@ -14,4 +14,4 @@ queries:
 
 paths-ignore:
   - '**/*.test.ts'
-  - editors/vscode/src/test
+  - src/editors/vscode/src/test

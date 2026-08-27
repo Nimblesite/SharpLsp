@@ -17,7 +17,7 @@ All Zed screenshots show plain code only — Zed cannot trigger features program
 
 ## Root Cause Analysis
 
-The capture script (`editors/vscode/screenshots/capture.mjs`) uses `code serve-web` with Playwright. The SharpLsp VSIX is installed to `~/.vscode-server/extensions/` and the extension DOES activate (status bar shows "SharpLsp" and "C#"). The LSP sidecar IS running.
+The capture script (`src/editors/vscode/screenshots/capture.mjs`) uses `code serve-web` with Playwright. The SharpLsp VSIX is installed to `~/.vscode-server/extensions/` and the extension DOES activate (status bar shows "SharpLsp" and "C#"). The LSP sidecar IS running.
 
 However:
 
@@ -44,14 +44,14 @@ The SharpLsp activity bar icon (`sharplsp-explorer`) is not visible in `code ser
 
 ## Test Workspace
 
-The test workspace at `editors/vscode/test-fixtures/workspace/` now contains:
+The test workspace at `src/editors/vscode/test-fixtures/workspace/` now contains:
 - `Calculator.cs` — main test file for screenshots
 - `TestFixtures.csproj` — .NET 9.0 project file (added to enable Roslyn sidecar)
 - `Empty.cs`, `Nested.cs`, `Greeter.fs` — additional test files
 
 ## Capture Script
 
-`editors/vscode/screenshots/capture.mjs` handles:
+`src/editors/vscode/screenshots/capture.mjs` handles:
 1. Installing the SharpLsp VSIX to both desktop and serve-web extensions directories
 2. Writing workspace settings with `sharplsp.lspPath` pointing to `target/release/sharplsp`
 3. Launching `code serve-web` and connecting via Playwright
@@ -62,8 +62,8 @@ The test workspace at `editors/vscode/test-fixtures/workspace/` now contains:
 
 When a feature's screenshot is fixed:
 1. Replace `eleventyExcludeFromCollections: true` with the original `eleventyNavigation` frontmatter
-2. Add the page to the footer in `website/src/_data/navigation.json`
-3. Add the page to `SCREENSHOT_PAGES` in `website/tests/screenshots.spec.js`
+2. Add the page to the footer in `src/website/src/_data/navigation.json`
+3. Add the page to `SCREENSHOT_PAGES` in `src/website/tests/screenshots.spec.js`
 
 ### Frontmatter to restore
 

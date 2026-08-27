@@ -35,6 +35,10 @@ nohup.out
 
 # Coverage artifacts (all languages)
 coverage/
+!.config/coverage/
+!.config/coverage/**
+!tools/coverage/
+!tools/coverage/**
 lcov.info
 *.profraw
 *.profdata
@@ -65,12 +69,14 @@ mutants.out/
 tmp/
 temp/
 scratch/
+.tmp-*/
+.tmp-*
 
 # =============================================================================
 # RUST
 # =============================================================================
 /target
-editors/zed/target/
+src/editors/zed/target/
 
 # =============================================================================
 # TYPESCRIPT / NODE
@@ -112,25 +118,27 @@ project.lock.json
 # Screenshot test artifacts at root
 /*.png
 
-editors/rider/.intellijPlatform/
+src/editors/rider/.intellijPlatform/
 
-website/test-results/
+src/website/test-results/
 
 test-results/
 
-docs/plans/editors/zed/target/
-
-sharplsp-rider.zip
-
-sharplsp-zed-extension.tar.gz
-
+/src/editors/zed/target/
 
 .deslop-cache/
 # Deslop report artifacts (generated locally by `deslop`, never committed).
 deslop-report.*
 deslop-*.log
+/debug.log
 .ghissues/
 .vscode/code-navigator/
-# Real-world repos cloned by the e2e stress suites (editors/vscode real-repo tests).
+# Real-world repos cloned by the e2e stress suites (src/editors/vscode real-repo tests).
 # Never committed - fetched on demand at pinned tags.
-/real-world-fixtures/
+/src/fixtures/real-world/
+
+.deslop/
+
+editors/zed/target/
+
+real-world-fixtures/

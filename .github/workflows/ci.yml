@@ -1,5 +1,18 @@
 # agent-pmo:0b21609
 ---
+# PR pipeline orchestrator. Each leg lives in its own reusable workflow so a
+# single file never grows past comprehension:
+#
+#   ci-lint.yml         Rust / Zed / .NET / VS Code lint + format gates
+#   ci-rust.yml         sharded Rust e2e suite, coverage gate, version contract
+#   ci-dotnet.yml       sidecar tests (Ubuntu) + win32 named-pipe transport
+#   ci-vsix.yml         full VS Code suite + coverage gate (Ubuntu)
+#   ci-vsix-windows.yml VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX])
+#   ci-editors.yml      Zed + Rider tests and coverage gates ([DIST-CI-EDITORS])
+#
+# Every leg is gated on `detect-changes`, and none of them `needs:` another:
+# lint and tests are independent required gates, and serializing tests behind
+# lint added ~3 minutes to every PR's critical path.
 name: PR
 'on':
   pull_request:
@@ -8,11 +21,6 @@ name: PR
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
-  DOTNET_NOLOGO: true
-  DOTNET_CLI_TELEMETRY_OPTOUT: true
 permissions:
   contents: read
   pull-requests: read
@@ -39,11 +47,11 @@ jobs:
           manifest_changed=false
           for file in "${files[@]}"; do
             case "$file" in
-              shipwright.json|editors/vscode/shipwright.json|.github/shipwright/deployment-toolkit.schema.json)
+              shipwright.json|src/editors/vscode/shipwright.json|.github/shipwright/deployment-toolkit.schema.json)
                 manifest_changed=true
                 code_changed=true
                 ;;
-              website/*|docs/*|.github/ISSUE_TEMPLATE/*|*.md)
+              src/website/*|docs/*|.github/ISSUE_TEMPLATE/*|*.md)
                 ;;
               *)
                 code_changed=true
@@ -69,7 +77,7 @@ jobs:
     # Owns vulnerable *dependencies* (Cargo, npm, NuGet). CodeQL (codeql.yml)
     # owns vulnerable *code* and `make lint` owns style - no overlap. There is
     # no native vuln-gate (cargo-deny/osv) in this repo, so dependency-review is
-    # the single dependency scanner. [GITHUB-DEP-REVIEW]
+    # the single dependency scanner. [DIST-CI-SECURITY]
     permissions:
       contents: read
     steps:
@@ -98,351 +106,51 @@ jobs:
           npm install --prefix "$tmp" @nimblesite/shipwright-validate-manifest@0.9.0
           "$tmp/node_modules/.bin/shipwright-validate-manifest" \
             --schema .github/shipwright/deployment-toolkit.schema.json \
-            shipwright.json editors/vscode/shipwright.json
+            shipwright.json src/editors/vscode/shipwright.json
     needs:
       - detect-changes
     if: ${{ needs.detect-changes.outputs.manifest_changed == 'true' }}
   lint:
     name: Lint
-    # Test jobs intentionally do NOT `needs:` this job: lint and tests are
-    # independent required gates, and serializing tests behind lint added
-    # ~3 minutes to every PR's critical path. A lint failure still blocks the
-    # merge; `concurrency.cancel-in-progress` bounds wasted compute on
-    # rapid-fire pushes.
-    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
-        with:
-          dotnet-version: |
-            9.0.x
-            10.0.300
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: "~/.nuget/packages"
-          key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}"
-          restore-keys: "${{ runner.os }}-nuget-"
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: editors/vscode/package-lock.json
-      - name: Install dependencies
-        run: |
-          dotnet tool restore
-          npm ci --prefix editors/vscode
-      - name: Lint (Rust)
-        run: make _lint-rust PROFILE=debug
-      - name: Lint (Zed)
-        run: make _lint-zed
-      - name: Format check (.NET)
-        run: dotnet csharpier check sidecars/
-      - name: Lint (.NET)
-        run: make _lint-dotnet
-      - name: Sidecar pack smoke test
-        run: |
-          dotnet pack sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
-            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-          dotnet pack sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
-            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
-          ls -la /tmp/nupkg-smoke/*.nupkg
-      - name: Format check (VS Code)
-        # Pinned to an exact version: `npx prettier@3` floats to the latest 3.x,
-        # so a new patch release can reformat previously-clean files and fail
-        # this gate non-deterministically (local prettier drifts from CI's).
-        # Bump this deliberately, in lockstep with a repo-wide `--write`.
-        run: cd editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
-      - name: Lint (VS Code)
-        run: make _lint-vsix
     needs:
       - detect-changes
+    uses: ./.github/workflows/ci-lint.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  test-rust:
-    name: Test Rust (shard ${{ matrix.shard }}/2)
+  rust:
+    name: Rust
     needs:
       - detect-changes
-    # [DIST-CI-RUST-SHARDS]: the e2e suite runs single-threaded (tests spawn
-    # real Roslyn/FCS sidecars), so wall time scales with test count, not
-    # cores. Two nextest hash partitions halve the ~11-minute serial run while
-    # duplicating only ~90s of warm-cache build. Each shard exports lcov; the
-    # single ratcheted gate runs over the union in coverage-rust below.
-    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: stable
-          components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
-        with:
-          tool: cargo-llvm-cov
-      - uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
-        with:
-          tool: nextest
-      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
-        with:
-          dotnet-version: |
-            9.0.x
-            10.0.300
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          path: "~/.nuget/packages"
-          key: "${{ runner.os }}-nuget-${{ hashFiles('sidecars/**/*.csproj', 'sidecars/Directory.Build.props') }}"
-          restore-keys: "${{ runner.os }}-nuget-"
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '20'
-      - name: Install .NET diagnostic tools
-        run: |
-          dotnet tool install -g dotnet-trace
-          dotnet tool install -g dotnet-counters
-          dotnet tool install -g dotnet-dump
-      - name: Test Rust shard with coverage
-        run: make _test-rust-shard SHARD=${{ matrix.shard }} SHARD_COUNT=2
-      - name: Upload shard coverage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-rust-shard-${{ matrix.shard }}
-          path: target/coverage-rust-shard${{ matrix.shard }}.lcov
+    uses: ./.github/workflows/ci-rust.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  coverage-rust:
-    name: Rust Coverage Gate
+  dotnet:
+    name: .NET
     needs:
       - detect-changes
-      - test-rust
-    # [DIST-CI-RUST-SHARDS]: every shard tracefile carries the full
-    # instrumented line set (unexecuted lines as DA:<line>,0), so the union
-    # reproduces exactly the line percentage of an unsharded run. No shard can
-    # meet the threshold alone; the ratchet gate (check-coverage.sh) runs here
-    # once, over the merged total.
-    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '20'
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: coverage-rust-shard-*
-          merge-multiple: true
-          path: target
-      - name: Merge shard coverage and enforce threshold
-        run: make _gate-rust-coverage
-      - name: Upload coverage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-rust
-          path: |
-            target/coverage-rust.lcov
-            coverage-thresholds.json
+    uses: ./.github/workflows/ci-dotnet.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  version-contract:
-    name: Verify Version Contract
+  vsix:
+    name: VS Code
     needs:
       - detect-changes
-    # Implements [DIST-VERSION-OUTPUT] + the version line of [DIST-CI-SMOKE].
-    # Moved out of the Rust test job ([DIST-CI-RUST-SHARDS]): the release-
-    # profile build shares no artifacts with the instrumented test build, so
-    # running it there serialized ~90s onto the slowest job for zero reuse.
-    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '20'
-      - name: Build release binary
-        run: cargo build --release --bin sharplsp
-      - name: Verify sharplsp version contract
-        shell: bash
-        run: |-
-          set -euo pipefail
-          VERSION="$(cargo metadata --no-deps --format-version 1 | node -e 'const fs=require("node:fs"); const meta=JSON.parse(fs.readFileSync(0,"utf8")); const pkg=meta.packages.find((item)=>item.name==="sharplsp"); if(!pkg) throw new Error("sharplsp package missing"); process.stdout.write(pkg.version);')"
-          ./target/release/sharplsp --version | grep -Fx "sharplsp ${VERSION}"
-          ./target/release/sharplsp --version --json | VERSION="${VERSION}" node -e 'const fs=require("node:fs"); const actual=JSON.parse(fs.readFileSync(0,"utf8")); const expected={name:"sharplsp",version:process.env.VERSION,kind:"lsp",language:"rust",product:"sharplsp"}; for (const [key,value] of Object.entries(expected)) { if (actual[key] !== value) throw new Error(`${key}: expected ${value}, got ${actual[key]}`); }'
+    uses: ./.github/workflows/ci-vsix.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  test-dotnet:
-    name: Test .NET
+  vsix-windows:
+    name: VS Code (Windows)
     needs:
       - detect-changes
-    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
-        with:
-          dotnet-version: |
-            9.0.x
-            10.0.300
-      - name: Test .NET sidecars with coverage
-        run: make _test-dotnet
-      - name: Verify sidecar version flags
-        shell: bash
-        run: |-
-          set -euo pipefail
-          CS_VERSION="$(dotnet msbuild sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj -getProperty:Version -nologo)"
-          FS_VERSION="$(dotnet msbuild sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj -getProperty:Version -nologo)"
-          target/sidecar-csharp/SharpLsp.Sidecar.CSharp --version | grep -Fx "sharplsp-sidecar-csharp ${CS_VERSION}"
-          target/sidecar-fsharp/SharpLsp.Sidecar.FSharp --version | grep -Fx "sharplsp-sidecar-fsharp ${FS_VERSION}"
-      - name: Upload coverage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-dotnet
-          path: coverage-thresholds.json
+    uses: ./.github/workflows/ci-vsix-windows.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  test-dotnet-windows:
-    name: Test .NET Transport (Windows)
+  editors:
+    name: Editors
     needs:
       - detect-changes
-    # Implements [DIST-CI-WIN-TRANSPORT]: the named-pipe arm of the sidecar IPC
-    # transport only executes on Windows. An ubuntu-only matrix never runs it,
-    # which is how GitHub #110 (sidecars exit before READY on Windows) shipped.
-    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
-        with:
-          dotnet-version: |
-            9.0.x
-            10.0.300
-      - name: Restore full solution (caches FCS nuspec for dependency-consistency tests)
-        run: dotnet restore sidecars/SharpLsp.Sidecars.sln
-      - name: Test sidecar IPC transport on Windows
-        run: dotnet test sidecars/SharpLsp.Sidecar.Common.Tests/SharpLsp.Sidecar.Common.Tests.csproj --blame-hang-timeout 2min --blame-hang-dump-type none
-    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  test-vsix:
-    name: Test VS Code
-    needs:
-      - detect-changes
-    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    # TIMEOUT EXCEPTION: this job builds the Rust binary + .NET sidecars,
-    # installs .NET 9 + 10, downloads the VS Code test host, then runs the full
-    # ~300-test e2e suite (many tests spin up the Roslyn/FCS sidecars and load
-    # real solutions). 10 minutes is too tight for the end-to-end run. The real-repo stress
-    # suites additionally clone + restore three pinned real repositories
-    # (serilog, FluentValidation, FsToolkit.ErrorHandling) and cold-load their
-    # solutions in the sidecars, adding ~10-15 minutes on a cold runner.
-    timeout-minutes: 50
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
-        with:
-          dotnet-version: |
-            9.0.x
-            10.0.300
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: editors/vscode/package-lock.json
-      - name: Install VS Code extension deps
-        run: npm ci --prefix editors/vscode
-      - name: Remove PATH-installed SharpLsp binaries
-        shell: bash
-        run: |-
-          set -euo pipefail
-          for binary in sharplsp sharplsp-sidecar-csharp sharplsp-sidecar-fsharp; do
-            resolved="$(command -v "$binary" || true)"
-            if [ -n "$resolved" ]; then
-              rm -f "$resolved"
-            fi
-          done
-      - name: Test VS Code extension with coverage
-        run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR xvfb-run -a make _test-vsix
-      - name: Verify VSIX contains platform binary
-        shell: bash
-        run: |-
-          set -euo pipefail
-          platform="$(node -e 'process.stdout.write(`${process.platform}-${process.arch}`)')"
-          unzip -l sharplsp.vsix | grep -F "bin/${platform}/sharplsp"
-      - name: Upload coverage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-vsix
-          path: coverage-thresholds.json
-    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
-  test-vsix-windows:
-    name: Test VS Code (Windows smoke)
-    needs:
-      - detect-changes
-    # Implements [DIST-CI-WIN-VSIX]: a SUBSET of the VS Code e2e suite — the
-    # headline user interactions (C# + F# completion, hover, go-to-definition,
-    # find-references, diagnostics) — driven through the REAL LSP (sharplsp host
-    # + Roslyn/FCS sidecars) inside the actual VS Code extension host on Windows.
-    # The full `test-vsix` job is Ubuntu-only, so nothing else proves the bundled
-    # binary + sidecars start and answer LSP requests over win32 named-pipe IPC
-    # end-to-end. Same rationale as test-dotnet-windows ([DIST-CI-WIN-TRANSPORT]),
-    # one level up: the transport job checks the pipes; this checks the whole
-    # editor experience on top of them. Deliberately a smoke subset (no coverage)
-    # so it stays fast — Linux `test-vsix` owns the full suite + coverage gate.
-    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          key: win32-vsix
-      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
-        with:
-          dotnet-version: |
-            9.0.x
-            10.0.300
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: editors/vscode/package-lock.json
-      - name: Install VS Code extension deps
-        run: npm ci --prefix editors/vscode
-      - name: Remove PATH-installed SharpLsp binaries
-        # Force the test host onto the freshly-staged bundled binaries, never a
-        # dev copy that leaked onto the runner PATH. Mirrors the Ubuntu job.
-        shell: bash
-        run: |-
-          set -euo pipefail
-          for binary in sharplsp sharplsp-sidecar-csharp sharplsp-sidecar-fsharp; do
-            resolved="$(command -v "$binary" || true)"
-            if [ -n "$resolved" ]; then
-              rm -f "$resolved"
-            fi
-          done
-      - name: Test VS Code extension (Windows smoke subset, real LSP)
-        # No xvfb: the GitHub Windows runner has an interactive desktop session,
-        # so the VS Code test host launches directly. `make` + Git-Bash on the
-        # Windows runner is the same path the release workflow already uses.
-        shell: bash
-        run: env -u SHARPLSP_EXECUTABLE_PATH -u SHARPLSP_LSP_PATH -u SHARPLSP_BINARY_DIR make _test-vsix-smoke
+    uses: ./.github/workflows/ci-editors.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   # NOTE: the former `coverage` job that git-committed+pushed ratcheted
   # thresholds was removed. On a pull_request, actions/checkout is a detached
   # HEAD, so `git push` failed the moment coverage changed — a latent red build,
-  # and a direct push to a protected branch ([BRANCH-RULES]). Coverage is
-  # already enforced inside `make test` (scripts/check-coverage.sh reads
-  # coverage-thresholds.json and fails below threshold in each test-* job).
+  # and a direct push to a protected branch ([DIST-CI-LAYOUT]). Coverage is
+  # already enforced inside `make test` (tools/coverage/check-coverage.sh reads
+  # .config/coverage/thresholds.json and fails below threshold in each test-* job).
   # Thresholds ratchet via the reviewed PR diff, not a bot commit.
-  # [COVERAGE-THRESHOLDS-JSON]
+  # [DIST-CI-RUST-SHARDS]

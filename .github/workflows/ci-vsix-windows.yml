@@ -1,0 +1,136 @@
+# agent-pmo:0b21609
+---
+# Implements [DIST-CI-WIN-VSIX]. Reusable Windows VS Code leg of the PR
+# pipeline (called by ci.yml).
+#
+# The transport job ([DIST-CI-WIN-TRANSPORT], ci-dotnet.yml) proves win32 named
+# pipes carry frames. This workflow proves the whole EDITOR EXPERIENCE works on
+# top of them: the VS Code end-to-end suite is sliced into feature chunks
+# (debugging, profiling, test explorer, solution tree, scaffolding, NuGet, C#
+# LSP, F# LSP, lifecycle) and every chunk runs as its own Windows job, driving
+# the REAL LSP — release-built `sharplsp` host plus the Roslyn and FCS sidecars
+# — inside the real VS Code extension host. Ubuntu's `test-vsix` cannot exercise
+# any of that on win32.
+#
+# Build once, fan out: `build` compiles the Rust host + both sidecars a single
+# time and publishes them as an artifact; each chunk downloads and stages them.
+# Rebuilding per chunk would cost seven cold Windows Rust builds.
+#
+# Chunk membership is declared in src/editors/vscode/test-chunks.json and read here
+# via tools/vsix/vsix-test-chunks.mjs — never duplicated into this YAML. `make
+# _lint-vsix` fails if a suite belongs to no chunk.
+name: CI / VS Code (Windows)
+'on':
+  workflow_call: {}
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Build host + sidecars
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    timeout-minutes: 40
+    outputs:
+      chunks: ${{ steps.chunks.outputs.chunks }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: win32-vsix
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.300
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      - name: Resolve feature chunk matrix
+        id: chunks
+        shell: bash
+        run: |-
+          set -euo pipefail
+          chunks="$(node tools/vsix/vsix-test-chunks.mjs matrix)"
+          echo "chunks=${chunks}" >> "$GITHUB_OUTPUT"
+          echo "Windows VS Code feature chunks: ${chunks}"
+      - name: Build sharplsp host and both sidecars
+        shell: bash
+        run: make _build-rust _build-dotnet
+      - name: Upload Windows LSP artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win-lsp-binaries
+          retention-days: 1
+          path: |
+            target/release/sharplsp.exe
+            target/sidecar-csharp
+            target/sidecar-fsharp
+  test:
+    name: ${{ matrix.chunk }}
+    needs:
+      - build
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    # TIMEOUT EXCEPTION: a chunk installs npm deps, compiles + bundles the
+    # extension, downloads the VS Code test host, then runs its slice against
+    # real Roslyn/FCS sidecars loading real solutions. The heaviest chunks
+    # (debug, profiler, packages) shell out to `dotnet build` / `dotnet test` /
+    # `dotnet new` per test.
+    timeout-minutes: 40
+    strategy:
+      # Every chunk is an independent feature area: one failure must not cancel
+      # the rest, or a single flake hides the state of the whole surface.
+      fail-fast: false
+      matrix:
+        chunk: ${{ fromJSON(needs.build.outputs.chunks) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.300
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: src/editors/vscode/package-lock.json
+      - name: Install VS Code extension deps
+        run: npm ci --prefix src/editors/vscode
+      - name: Download Windows LSP artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: win-lsp-binaries
+          path: target
+      - name: Remove PATH-installed SharpLsp binaries
+        # Force the test host onto the freshly-staged bundled binaries, never a
+        # dev copy that leaked onto the runner PATH. Mirrors the Ubuntu job.
+        shell: bash
+        run: bash tools/vsix/purge-path-binaries.sh
+      - name: Run VS Code feature chunk (real LSP)
+        # No xvfb: the GitHub Windows runner has an interactive desktop session,
+        # so the VS Code test host launches directly. `make` + Git-Bash on the
+        # Windows runner is the same path the release workflow already uses.
+        shell: bash
+        env:
+          # Pin the test host's user-data dir (honoured by .vscode-test.mjs) so
+          # the diagnostics step below knows where the extension-host logs land
+          # instead of guessing at the runner's os.tmpdir().
+          VSCODE_TEST_USER_DATA_DIR: ${{ runner.temp }}/vsx-${{ matrix.chunk }}
+        run: make _test-vsix-win CHUNK=${{ matrix.chunk }}
+      - name: Upload failure diagnostics
+        # A chunk failing on Windows and nowhere else is exactly the case this
+        # gate exists to catch, so keep the extension-host logs for triage.
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win-vsix-logs-${{ matrix.chunk }}
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/vsx-${{ matrix.chunk }}/logs

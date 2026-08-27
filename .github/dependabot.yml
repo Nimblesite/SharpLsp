@@ -40,7 +40,7 @@ updates:
 
   # ── Rust: Zed extension crate ───────────────────────────────────────
   - package-ecosystem: cargo
-    directory: "/editors/zed"
+    directory: "/src/editors/zed"
     target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
@@ -51,7 +51,7 @@ updates:
 
   # ── .NET: C#/F# sidecars solution ───────────────────────────────────
   - package-ecosystem: nuget
-    directory: "/sidecars"
+    directory: "/src/sidecars"
     target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
@@ -62,7 +62,7 @@ updates:
 
   # ── npm: VS Code extension ──────────────────────────────────────────
   - package-ecosystem: npm
-    directory: "/editors/vscode"
+    directory: "/src/editors/vscode"
     target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly
@@ -73,7 +73,7 @@ updates:
 
   # ── npm: website ────────────────────────────────────────────────────
   - package-ecosystem: npm
-    directory: "/website"
+    directory: "/src/website"
     target-branch: "dependabot-upgrades"
     schedule:
       interval: weekly

@@ -172,7 +172,7 @@ Goal: Ship a production-quality debugging experience for all editors using netco
 
 ## Phase 5 — SharpLsp Debug Sidecar (Months 21–26)
 
-Goal: Replace netcoredbg with a C# Tier 4 sidecar achieving full vsdbg parity. Close all gaps documented in DEBUGGING-SPEC §7.
+Goal: Replace netcoredbg with a C# Tier 4 sidecar achieving full vsdbg parity. Close all gaps documented in [DEBUG-GAPS].
 
 ---
 
@@ -297,7 +297,7 @@ Goal: Replace netcoredbg with a C# Tier 4 sidecar achieving full vsdbg parity. C
 
 ### 5.12 Phase 5 Quality Gates
 
-- [ ] All DAP capability flags match Phase 5 capability matrix in DEBUGGING-SPEC §4
+- [ ] All DAP capability flags match Phase 5 capability matrix in [DEBUG-PROTOCOL-CAPABILITIES]
 - [ ] Expression evaluation: LINQ + lambda tier (T3) passes all test cases
 - [ ] Async logical stack: 100% of C# async test cases show logical frames (zero `MoveNext` frames)
 - [ ] Data breakpoints: field change detection works for reference and value types
@@ -316,7 +316,7 @@ Goal: Replace netcoredbg with a C# Tier 4 sidecar achieving full vsdbg parity. C
 - [ ] Samsung/netcoredbg: contribute logpoint native implementation (Phase 4 emulation algorithm documented for upstream adoption)
 - [ ] Samsung/netcoredbg: contribute macOS ARM64 CI and official binary release
 - [ ] Samsung/netcoredbg: contribute musl/Alpine stack size workaround + dotnet/runtime#103741 upstreaming
-- [ ] Samsung/netcoredbg: contribute async stack reconstruction (algorithm from §5.4.1)
+- [ ] Samsung/netcoredbg: contribute async stack reconstruction from [DEBUG-FEATURES-STACK-ASYNC](../specs/DEBUGGING-SPEC.md)
 - [ ] Samsung/netcoredbg: track and test fix for attach reliability issue #205
 - [ ] Samsung/netcoredbg: track and test fix for stability regression #217, #206
 - [ ] Samsung/netcoredbg: contribute `[DebuggerDisplay]` rendering (from SharpDbg implementation learnings)

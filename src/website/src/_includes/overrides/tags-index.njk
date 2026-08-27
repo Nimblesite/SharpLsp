@@ -1,0 +1,31 @@
+---
+layout: layouts/base.njk
+title: Tags
+permalink: /blog/tags/
+eleventyComputed:
+  title: "{{ i18n[lang or defaultLanguage].blog.tagsTitle }}"
+  description: "{{ i18n[lang or defaultLanguage].blog.tagsDescription }}"
+---
+{% set blogText = i18n[lang or defaultLanguage].blog %}
+{% set tagCollection = collections.tagList %}
+{% set groupedPosts = collections.postsByTag %}
+{% if lang and lang != defaultLanguage %}
+  {% set tagCollection = collections[lang + "tagList"] | default(collections.tagList) %}
+  {% set groupedPosts = collections[lang + "postsByTag"] | default(collections.postsByTag) %}
+{% endif %}
+<div class="blog-container">
+  <header class="blog-header">
+    <h1>{{ blogText.tagsTitle }}</h1>
+    <p class="blog-subtitle">{{ blogText.tagsDescription }}</p>
+  </header>
+
+  <div class="tag-cloud">
+    {% for tag in tagCollection %}
+    <a href="{% if lang and lang != defaultLanguage %}/{{ lang }}{% endif %}/blog/tags/{{ tag | slugify }}/" class="tag-link">
+      {{ blogText.tagLabels[tag] | default(tag) }} <span class="tag-count">({{ groupedPosts[tag] | length | default(0) }})</span>
+    </a>
+    {% endfor %}
+  </div>
+
+  {% if tagCollection | length == 0 %}<p class="blog-empty">{{ blogText.noTags }}</p>{% endif %}
+</div>

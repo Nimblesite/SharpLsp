@@ -62,7 +62,7 @@ When Zed adds custom panel support, the solution tree should be migrated from sl
 ## File Structure
 
 ```
-editors/zed/
+src/editors/zed/
 ├── extension.toml      Extension manifest (language server + slash commands)
 ├── Cargo.toml          Rust project (compiles to cdylib → WASM)
 └── src/
@@ -76,13 +76,13 @@ editors/zed/
 
 ```bash
 # Native check (development)
-cd editors/zed && cargo check
+cargo check --manifest-path src/editors/zed/Cargo.toml
 
 # WASM build (release)
-cd editors/zed && cargo build --release --target wasm32-wasip1
+cargo build --manifest-path src/editors/zed/Cargo.toml --release --target wasm32-wasip1
 
 # Run tests
-cd editors/zed && cargo test
+cargo test --manifest-path src/editors/zed/Cargo.toml
 ```
 
 Requires `rustup target add wasm32-wasip1` for WASM builds.
