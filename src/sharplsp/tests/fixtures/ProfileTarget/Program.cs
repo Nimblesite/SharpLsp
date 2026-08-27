@@ -6,7 +6,11 @@ using System.Text;
 using System.Text.Json;
 
 using var cts = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+Console.CancelKeyPress += (_, e) =>
+{
+    e.Cancel = true;
+    cts.Cancel();
+};
 
 // Self-terminate when orphaned: if the parent (the test host) dies abnormally —
 // e.g. nextest SIGKILLs a timed-out test — Rust-side `Drop` cleanup never runs
@@ -27,7 +31,10 @@ var tasks = new[]
     Task.Run(() => StringBuilderAllocation(cts.Token), cts.Token),
 };
 
-try { await Task.WhenAll(tasks).ConfigureAwait(false); }
+try
+{
+    await Task.WhenAll(tasks).ConfigureAwait(false);
+}
 catch (OperationCanceledException) { }
 
 // Cancel `cts` as soon as this process is reparented away from its original
@@ -102,7 +109,9 @@ static void StartWindowsParentDeathWatchdog(CancellationTokenSource cts)
             {
                 // Wait failure means we can no longer observe the ancestor;
                 // treat it as death so we never linger as an unwatched orphan.
-                WatchdogLog($"wait on ancestor {watched.Id} failed ({ex.GetType().Name}) -> cancel");
+                WatchdogLog(
+                    $"wait on ancestor {watched.Id} failed ({ex.GetType().Name}) -> cancel"
+                );
             }
 
             cts.Cancel();
@@ -220,19 +229,22 @@ static void LockContention(CancellationToken ct)
     var queue = new Queue<int>();
     var locker = new object();
     const int maxQueueDepth = 256;
-    var producer = Task.Run(() =>
-    {
-        var i = 0;
-        while (!ct.IsCancellationRequested)
+    var producer = Task.Run(
+        () =>
         {
-            lock (locker)
+            var i = 0;
+            while (!ct.IsCancellationRequested)
             {
-                if (queue.Count < maxQueueDepth)
-                    queue.Enqueue(i++);
+                lock (locker)
+                {
+                    if (queue.Count < maxQueueDepth)
+                        queue.Enqueue(i++);
+                }
+                Thread.SpinWait(128);
             }
-            Thread.SpinWait(128);
-        }
-    }, ct);
+        },
+        ct
+    );
 
     while (!ct.IsCancellationRequested)
     {
@@ -261,7 +273,8 @@ static void CountTokens(string text) => SumCharValues(text);
 static int SumCharValues(string text)
 {
     var sum = 0;
-    foreach (var c in text) sum += c;
+    foreach (var c in text)
+        sum += c;
     return sum;
 }
 
@@ -272,9 +285,7 @@ static void StringBuilderAllocation(CancellationToken ct)
     while (!ct.IsCancellationRequested)
     {
         iteration++;
-        _ = iteration % 2 == 0
-            ? BuildWithStringBuilder(64)
-            : BuildWithConcatenation(64);
+        _ = iteration % 2 == 0 ? BuildWithStringBuilder(64) : BuildWithConcatenation(64);
     }
 }
 
@@ -300,7 +311,8 @@ static string BuildLargeJsonPayload(int entries)
     sb.Append('{');
     for (var i = 0; i < entries; i++)
     {
-        if (i > 0) sb.Append(',');
+        if (i > 0)
+            sb.Append(',');
         sb.Append(System.FormattableString.Invariant($"\"key{i}\":\"value{i}\""));
     }
     sb.Append('}');
@@ -318,14 +330,16 @@ internal static class NativeMethods
     // (SYSLIB1062), not worth enabling for one getppid (suppressed in the csproj).
     [System.Runtime.InteropServices.DllImport("libc")]
     [System.Runtime.InteropServices.DefaultDllImportSearchPaths(
-        System.Runtime.InteropServices.DllImportSearchPath.System32)]
+        System.Runtime.InteropServices.DllImportSearchPath.System32
+    )]
     internal static extern int getppid();
 
     // Windows has no getppid(2); the parent PID lives in
     // PROCESS_BASIC_INFORMATION.InheritedFromUniqueProcessId, reachable only
     // via NtQueryInformationProcess (info class 0 = ProcessBasicInformation).
     [System.Runtime.InteropServices.StructLayout(
-        System.Runtime.InteropServices.LayoutKind.Sequential)]
+        System.Runtime.InteropServices.LayoutKind.Sequential
+    )]
     private struct ProcessBasicInformation
     {
         public IntPtr ExitStatus;
@@ -338,13 +352,15 @@ internal static class NativeMethods
 
     [System.Runtime.InteropServices.DllImport("ntdll.dll")]
     [System.Runtime.InteropServices.DefaultDllImportSearchPaths(
-        System.Runtime.InteropServices.DllImportSearchPath.System32)]
+        System.Runtime.InteropServices.DllImportSearchPath.System32
+    )]
     private static extern int NtQueryInformationProcess(
         IntPtr processHandle,
         int processInformationClass,
         ref ProcessBasicInformation processInformation,
         int processInformationLength,
-        out int returnLength);
+        out int returnLength
+    );
 
     /// <summary>Creator (parent) PID of the process behind <paramref name="processHandle"/>
     /// on Windows, or -1 when it cannot be determined.</summary>
@@ -356,7 +372,8 @@ internal static class NativeMethods
             0,
             ref info,
             System.Runtime.InteropServices.Marshal.SizeOf<ProcessBasicInformation>(),
-            out _);
+            out _
+        );
         return status == 0 ? unchecked((int)info.InheritedFromUniqueProcessId.ToInt64()) : -1;
     }
 }

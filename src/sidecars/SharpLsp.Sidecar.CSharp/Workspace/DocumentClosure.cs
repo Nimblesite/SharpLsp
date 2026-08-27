@@ -6,8 +6,14 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// <summary>One source file in a file-based app or script closure.</summary>
 internal sealed record ClosureFile(string Path, string Text, bool IsRoot);
 
+internal sealed record PackageRef(string Name, string Version);
+
 /// <summary>Result of expanding a closure: the files, plus any non-fatal problems.</summary>
-internal sealed record Closure(IReadOnlyList<ClosureFile> Files, IReadOnlyList<string> Issues);
+internal sealed record Closure(
+    IReadOnlyList<ClosureFile> Files,
+    IReadOnlyList<PackageRef> Packages,
+    IReadOnlyList<string> Issues
+);
 
 /// <summary>
 /// Expands the compilation closure of a project-less document. Implements [SCRIPT-CLOSURE].
@@ -24,9 +30,13 @@ internal static class DocumentClosure
     private const int MaxDepth = 8;
 
     /// <summary>Expand a C# file-based app closure: root file plus transitive <c>#:include</c>.</summary>
-    public static Task<Closure> ExpandFileBasedAsync(string rootPath, CancellationToken ct)
+    public static Task<Closure> ExpandFileBasedAsync(
+        string rootPath,
+        string? rootText = null,
+        CancellationToken ct = default
+    )
     {
-        return ExpandAsync(rootPath, IncludedPaths, ct);
+        return ExpandAsync(rootPath, rootText, IncludedPaths, ct);
     }
 
     /// <summary>
@@ -34,13 +44,17 @@ internal static class DocumentClosure
     /// compilation's <c>SourceReferenceResolver</c>; adding the loaded files as documents too
     /// would compile them twice. Implements [SCRIPT-CSX-RESOLVERS].
     /// </summary>
-    public static Task<Closure> ExpandScriptAsync(string rootPath, CancellationToken ct)
+    public static Task<Closure> ExpandScriptAsync(
+        string rootPath,
+        string? rootText = null,
+        CancellationToken ct = default
+    )
     {
-        return ExpandAsync(rootPath, NoChildren, ct);
+        return ExpandAsync(rootPath, rootText, NoChildren, ct);
     }
 
     private static IEnumerable<string> NoChildren(
-        string text,
+        IReadOnlyList<FileDirective> directives,
         string filePath,
         ExpansionState state
     )
@@ -50,23 +64,26 @@ internal static class DocumentClosure
 
     private static async Task<Closure> ExpandAsync(
         string rootPath,
+        string? rootText,
         ChildResolver children,
         CancellationToken ct
     )
     {
         var state = new ExpansionState(children);
-        await VisitAsync(rootPath, isRoot: true, depth: 0, state, ct).ConfigureAwait(false);
-        return new Closure(state.Files, state.Issues);
+        await VisitAsync(rootPath, rootText, isRoot: true, depth: 0, state, ct)
+            .ConfigureAwait(false);
+        return new Closure(state.Files, state.Packages, state.Issues);
     }
 
     private delegate IEnumerable<string> ChildResolver(
-        string text,
+        IReadOnlyList<FileDirective> directives,
         string filePath,
         ExpansionState state
     );
 
     private static async Task VisitAsync(
         string path,
+        string? textOverride,
         bool isRoot,
         int depth,
         ExpansionState state,
@@ -80,7 +97,11 @@ internal static class DocumentClosure
             return;
         }
 
-        var read = await ReadAsync(full, ct).ConfigureAwait(false);
+        var read =
+            isRoot && textOverride != null
+                ? textOverride
+                : await ReadAsync(full, ct).ConfigureAwait(false);
+
         if (read is null)
         {
             state.Issues.Add($"Could not read '{full}'; it was excluded from the closure.");
@@ -88,9 +109,32 @@ internal static class DocumentClosure
         }
 
         state.Files.Add(new ClosureFile(full, read, isRoot));
-        foreach (var child in state.Children(read, full, state))
+
+        var tree = CSharpSyntaxTree.ParseText(
+            read,
+            FileBasedParseOptions,
+            path: full,
+            cancellationToken: ct
+        );
+        var root = await tree.GetRootAsync(ct).ConfigureAwait(false);
+        var directives = FileLevelDirectives.Parse(root);
+
+        foreach (var directive in directives)
         {
-            await VisitAsync(child, isRoot: false, depth + 1, state, ct).ConfigureAwait(false);
+            if (
+                directive.Kind == FileDirectiveKind.Package
+                && !string.IsNullOrEmpty(directive.Name)
+                && !string.IsNullOrEmpty(directive.Value)
+            )
+            {
+                state.Packages.Add(new PackageRef(directive.Name, directive.Value));
+            }
+        }
+
+        foreach (var child in state.Children(directives, full, state))
+        {
+            await VisitAsync(child, textOverride: null, isRoot: false, depth + 1, state, ct)
+                .ConfigureAwait(false);
         }
     }
 
@@ -117,13 +161,11 @@ internal static class DocumentClosure
     ).WithFeatures([new KeyValuePair<string, string>("FileBasedProgram", "true")]);
 
     private static IEnumerable<string> IncludedPaths(
-        string text,
+        IReadOnlyList<FileDirective> directives,
         string filePath,
         ExpansionState state
     )
     {
-        var tree = CSharpSyntaxTree.ParseText(text, FileBasedParseOptions, path: filePath);
-        var directives = FileLevelDirectives.Parse(tree.GetRoot());
         var baseDir = Path.GetDirectoryName(filePath) ?? ".";
         return directives
             .Where(d => d.Kind == FileDirectiveKind.Include)
@@ -191,6 +233,7 @@ internal static class DocumentClosure
         public ChildResolver Children { get; } = children;
         public HashSet<string> Visited { get; } = new(StringComparer.OrdinalIgnoreCase);
         public List<ClosureFile> Files { get; } = [];
+        public List<PackageRef> Packages { get; } = [];
         public List<string> Issues { get; } = [];
     }
 }

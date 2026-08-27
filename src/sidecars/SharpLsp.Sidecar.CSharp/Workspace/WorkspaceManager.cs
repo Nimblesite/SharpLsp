@@ -76,6 +76,11 @@ internal sealed partial class WorkspaceManager : IDisposable
         StringComparer.OrdinalIgnoreCase
     );
 
+    private readonly System.Collections.Generic.Dictionary<
+        Microsoft.CodeAnalysis.DocumentId,
+        System.Collections.Generic.IReadOnlyList<PackageRef>
+    > _documentPackages = new();
+
     public bool IsLoaded => _solution is not null;
 
     /// <summary>Open a solution or project file via MSBuildWorkspace.</summary>
@@ -147,6 +152,18 @@ internal sealed partial class WorkspaceManager : IDisposable
                 }
 
                 _solution = _solution.WithDocumentText(document.Id, SourceText.From(newText));
+
+                // Auto-update the closure and packages if they changed during a live edit
+                if (document.Project.Solution.Workspace is AdhocWorkspace)
+                {
+                    var updateResult = await UpdateProjectlessClosureAsync(document, newText, ct)
+                        .ConfigureAwait(false);
+                    if (updateResult.IsError)
+                    {
+                        return updateResult;
+                    }
+                }
+
                 return new VoidResult.Ok<Unit, string>(Unit.Value);
             }
             finally
