@@ -172,3 +172,102 @@ export function hasRuntimeConfig(assemblyPath: string): boolean {
   const stem = path.basename(assemblyPath, path.extname(assemblyPath));
   return fs.existsSync(path.join(directory, `${stem}.runtimeconfig.json`));
 }
+
+/** A project's launch entry: where its assembly is, and where to run it. */
+export interface ProjectEntry {
+  /** The built assembly, or undefined when nothing has been built yet. */
+  readonly dll: string | undefined;
+  /** The project directory. */
+  readonly cwd: string;
+}
+
+/** Output roots a build can land in, most likely first. */
+const OUTPUT_ROOTS = ['bin', 'artifacts'];
+
+/** Every file under `dir`, depth-first, bounded so a huge tree cannot stall. */
+function walkFiles(dir: string, budget: number): string[] {
+  if (budget <= 0) return [];
+  const found: string[] = [];
+  for (const entry of entriesOf(dir)) {
+    const child = path.join(dir, entry);
+    if (isDirectory(child)) {
+      found.push(...walkFiles(child, budget - 1));
+    } else {
+      found.push(child);
+    }
+  }
+  return found;
+}
+
+/**
+ * The application assembly a project has actually produced, found by EVIDENCE
+ * rather than by rebuilding the SDK's path convention.
+ *
+ * Searching for a dll with a sibling `<name>.runtimeconfig.json` handles a
+ * custom `AssemblyName`, a custom `OutputPath`, a `RuntimeIdentifier` segment,
+ * a non-Debug configuration and any target framework — all cases where the old
+ * fixed `bin/Debug/<tfm>/<projectName>.dll` ladder returned a path that had
+ * never existed. Returns undefined when nothing is built: a launch target must
+ * never be fabricated.
+ */
+export function discoverAssembly(projectDir: string): string | undefined {
+  const candidates: string[] = [];
+  for (const root of OUTPUT_ROOTS) {
+    const outputRoot = path.join(projectDir, root);
+    if (!fs.existsSync(outputRoot)) continue;
+    candidates.push(...walkFiles(outputRoot, 6).filter(isApplicationAssembly));
+  }
+  return preferDebug(candidates)[0];
+}
+
+/** A dll is an application when the SDK emitted a runtimeconfig beside it. */
+function isApplicationAssembly(candidate: string): boolean {
+  return path.extname(candidate).toLowerCase() === '.dll' && hasRuntimeConfig(candidate);
+}
+
+/** Debug output first, then most recently written. */
+function preferDebug(candidates: readonly string[]): string[] {
+  return [...candidates].sort((left, right) => {
+    const byConfig = Number(isDebugOutput(right)) - Number(isDebugOutput(left));
+    if (byConfig !== 0) return byConfig;
+    return modifiedAt(right) - modifiedAt(left);
+  });
+}
+
+function isDebugOutput(candidate: string): boolean {
+  return candidate.split(path.sep).some((segment) => segment.toLowerCase() === 'debug');
+}
+
+function modifiedAt(candidate: string): number {
+  try {
+    return fs.statSync(candidate).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/** The launch entry for a project file. */
+export function projectEntryFromFile(projectFile: string): ProjectEntry {
+  const cwd = path.dirname(projectFile);
+  return { dll: discoverAssembly(cwd), cwd };
+}
+
+/**
+ * Walk up from `startPath` to the nearest project, stopping at `stopPath`.
+ *
+ * The boundary is a CONTAINMENT test, not string equality: a start path outside
+ * `stopPath` never equals it, so an equality-guarded walk escapes to the
+ * filesystem root and can select an unrelated project from an ancestor.
+ */
+export function findProjectFile(startPath: string, stopPath: string): ProjectEntry | undefined {
+  const cone = walkCone(startPath, stopPath);
+  if (cone.dir === undefined) return undefined;
+  const projects = candidatesAt(cone);
+  const first = projects[0];
+  return first === undefined ? undefined : projectEntryFromFile(first);
+}
+
+/** The launch entry for a workspace folder's own project, if it has one. */
+export function findEntryProject(rootPath: string): ProjectEntry | undefined {
+  return findProjectFile(rootPath, rootPath);
+}

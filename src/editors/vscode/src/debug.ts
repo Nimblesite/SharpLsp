@@ -25,13 +25,22 @@ import {
   hasDotnetScript,
   runTask,
 } from './launch-run';
-import { readProfiles } from './launch-profiles';
+import { applyLaunchProfile, isLaunchSettings, readLaunchProfiles, readProfiles } from './launch-profiles';
+import {
+  findEntryProject,
+  findProjectFile,
+  projectEntryFromFile,
+  type ProjectEntry,
+} from './launch-target';
 
 /** The name a synthesized F5 configuration carries. */
 export const SYNTHESIZED_NAME = 'Launch .NET Project';
 
-/** Re-exported so the Solution Explorer and tests share one profile reader. */
-export { readProfiles };
+// One implementation each, re-exported so every caller — the Solution Explorer,
+// the commands and the suites — shares the same resolver rather than growing a
+// second, divergent walk.
+export { readProfiles, readLaunchProfiles, applyLaunchProfile, isLaunchSettings };
+export { findEntryProject, findProjectFile, projectEntryFromFile, type ProjectEntry };
 
 /**
  * Fills in a debug configuration for F5 and Ctrl/Cmd+F5.

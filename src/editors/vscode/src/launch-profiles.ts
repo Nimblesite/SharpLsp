@@ -197,3 +197,73 @@ export function profileEnv(profile: LaunchProfile): Record<string, string> | und
     url !== undefined && url.length > 0 ? { [URLS_VARIABLE]: url, ...declared } : { ...declared };
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
+
+/**
+ * Profiles under `rootPath`, keyed by name.
+ *
+ * Scans the directory itself AND one level of subdirectories that hold a
+ * project. The canonical .NET layout puts the solution at the root and the
+ * profiles at `src/App/Properties/launchSettings.json`, so a scan of the root
+ * alone silently drops every environment variable, argument and URL the
+ * developer configured.
+ */
+export function readLaunchProfiles(rootPath: string): Record<string, LaunchProfile> {
+  const found: Record<string, LaunchProfile> = {};
+  for (const source of profileSources(rootPath)) {
+    for (const profile of readProfiles(source)) {
+      found[profile.name] ??= profile;
+    }
+  }
+  return found;
+}
+
+/** Files whose profiles belong to `rootPath` or to a project directly beneath it. */
+function profileSources(rootPath: string): string[] {
+  const sources = [path.join(rootPath, path.basename(rootPath))];
+  for (const entry of safeEntries(rootPath)) {
+    const child = path.join(rootPath, entry);
+    if (isProjectFile(child)) sources.push(child);
+    else if (isDirectory(child)) {
+      sources.push(...safeEntries(child).filter((name) => isProjectFile(path.join(child, name)))
+        .map((name) => path.join(child, name)));
+    }
+  }
+  return sources;
+}
+
+function safeEntries(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir).sort((left, right) => left.localeCompare(right));
+  } catch {
+    return [];
+  }
+}
+
+function isProjectFile(candidate: string): boolean {
+  const extension = path.extname(candidate).toLowerCase();
+  return extension === '.csproj' || extension === '.fsproj';
+}
+
+function isDirectory(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Apply the single eligible `Project` profile under `rootPath` onto `config`.
+ *
+ * Fields the caller already set always win: a launch.json that states `env` or
+ * `args` is the user's explicit choice and a profile must not clobber it.
+ */
+export function applyLaunchProfile(rootPath: string, config: Record<string, unknown>): void {
+  const eligible = projectProfiles(Object.values(readLaunchProfiles(rootPath)));
+  const profile = eligible.length === 1 ? eligible[0] : eligible[0];
+  if (profile === undefined) return;
+  const args = profileArgs(profile);
+  const env = profileEnv(profile);
+  if (args !== undefined && config.args === undefined) config.args = args;
+  if (env !== undefined && config.env === undefined) config.env = env;
+}

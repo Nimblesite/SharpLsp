@@ -86,6 +86,7 @@ export const CMD_FSI_GENERATE_SIGNATURE = 'sharplsp.fsi.generateSignature';
 // Debug
 export const DEBUG_TYPE = 'sharplsp-coreclr';
 export const CMD_DEBUG_PROGRAM = 'sharplsp.debugProgram';
+export const CMD_RUN_PROGRAM = 'sharplsp.runProgram';
 
 // Test Explorer
 export const CMD_TEST_RUN = 'sharplsp.test.run';

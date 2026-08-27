@@ -255,6 +255,23 @@ dotnet msbuild <project> -getProperty:TargetPath -getProperty:TargetFramework -g
 
 A hardcoded TFM list (`net10.0`, `net9.0`, `net8.0`) with a fixed `bin/Debug/<tfm>/<basename>.dll` layout is non-conforming: it fails for `net7.0`, `netstandard`, custom output paths, custom assembly names and Release builds, and it returns a **non-existent path** as if it had succeeded.
 
+**Output resolution is evidence-based and total.** Resolution yields either a
+path that EXISTS on disk, or **nothing**. It MUST NOT yield a constructed path
+that has not been observed.
+
+| Project state | Resolved assembly | `cwd` |
+|---|---|---|
+| Built | The existing file MSBuild names | Project directory |
+| Not built | **Absent** | Project directory |
+| Built for a TFM other than the one requested | The existing file | Project directory |
+
+`cwd` is always the project directory, whether or not an assembly exists — it
+identifies the project, not its output. "Absent" is a first-class result meaning
+*not built yet*; it is reported to the user with a named message per rule 3 and
+never launched. A resolver that returns a plausible-looking path it never
+verified is non-conforming even when that path would be correct after a build,
+because callers cannot distinguish it from a real one.
+
 **Multi-TFM selection**: prefer the TFM whose output already exists; if several exist, prompt; if none, use the first `TargetFrameworks` entry.
 
 **Implicit build**

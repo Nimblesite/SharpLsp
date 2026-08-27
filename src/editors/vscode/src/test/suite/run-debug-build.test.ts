@@ -293,7 +293,12 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     assertNeverFabricated('unbuilt projectEntryFromFile', entry.dll); // B28
     const entryCwd = comparablePath(entry.cwd);
     assert.strictEqual(entryCwd, comparablePath(project.dir), 'cwd is the project dir regardless');
-    assert.strictEqual(path.isAbsolute(entry.dll), true, `${entry.dll} must be absolute`);
+    assert.strictEqual(
+      entry.dll === undefined || path.isAbsolute(entry.dll),
+      true,
+      `an unbuilt project resolves to nothing, or to an absolute path (${String(entry.dll)})`,
+    );
+    assert.strictEqual(entry.dll, undefined, 'and nothing is built yet, so it resolves to nothing');
 
     // 3 — F5 with no launch.json, against a project with no output.
     const unbuiltMark = complaintMark();
