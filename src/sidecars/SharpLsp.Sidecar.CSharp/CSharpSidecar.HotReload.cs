@@ -44,6 +44,9 @@ internal sealed class HotReloadRequest
 
     [Key(4)]
     public string? NewText { get; set; }
+
+    [Key(5)]
+    public List<string>? Capabilities { get; set; }
 }
 
 [MessagePackObject(AllowPrivate = true)]

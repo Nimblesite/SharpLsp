@@ -2,7 +2,7 @@
 // window re-applied to the LOGICAL stack.
 //
 // Implements the editor-side half of the async call-stack rows of
-// [DEBUG-FEATURES-CALLSTACK] and [DEBUG-FSHARP-ASYNC]: netcoredbg reports the
+// [DEBUG-FEATURES-STACK] and [DEBUG-FEATURES-STACK-ASYNC]: netcoredbg reports the
 // physical `MoveNext` frames of a state machine, `dap-frames.ts` reconstructs
 // the logical chain from them, and this module decides what the client
 // actually receives.

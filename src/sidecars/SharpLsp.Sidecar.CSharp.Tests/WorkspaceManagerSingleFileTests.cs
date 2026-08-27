@@ -394,7 +394,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
 
         var closure = await DocumentClosure.ExpandFileBasedAsync(
             app,
-            rootText: null,
+            live: null,
             CancellationToken.None
         );
 
@@ -421,7 +421,7 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
 
         var closure = await DocumentClosure.ExpandFileBasedAsync(
             app,
-            rootText: null,
+            live: null,
             CancellationToken.None
         );
 

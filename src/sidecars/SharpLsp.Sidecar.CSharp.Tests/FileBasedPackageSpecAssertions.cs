@@ -407,6 +407,53 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
         ];
     }
 
+    /// <summary>
+    /// A root whose <c>#:package</c> lives in an <c>#:include</c>d member: the directive binds
+    /// symbols the root consumes without ever appearing in the root's own text.
+    /// </summary>
+    private ClosureProbe WriteIncludedPackageClosure()
+    {
+        const string member = """
+            #:package Newtonsoft.Json@13.0.3
+            using Newtonsoft.Json.Linq;
+
+            public static class PackageFactory
+            {
+                public static JObject Create() => new JObject();
+            }
+
+            """;
+        var memberPath = _fixture.Write(Path.Combine("closure", "PackageTypes.cs"), member);
+        var rootPath = _fixture.Write(
+            Path.Combine("closure", "IncludedPackageApp.cs"),
+            "#:include PackageTypes.cs\nvar payload = PackageFactory.Create();\n"
+                + "Console.WriteLine(payload.Count);\n"
+        );
+        return new ClosureProbe(rootPath, memberPath, member);
+    }
+
+    private static async Task AssertClosureSurvivedMemberEditAsync(
+        WorkspaceManager manager,
+        ClosureProbe closure
+    )
+    {
+        var served = await QueryHoverAsync(manager, new(closure.Root, 1, 20, "PackageFactory"))
+            .ConfigureAwait(false);
+        Assert.True(served is not null, "the closure root must stay served after a member edit");
+        Assert.Contains("PackageFactory", served.Contents, StringComparison.Ordinal);
+        await AssertNoErrorsAsync(manager, closure.Root).ConfigureAwait(false);
+        await AssertNoErrorsAsync(manager, closure.Member).ConfigureAwait(false);
+        await AwaitStatusAsync(manager, "loaded").ConfigureAwait(false);
+    }
+
+    private static async Task AssertNoErrorsAsync(WorkspaceManager manager, string path)
+    {
+        var errors = Errors(
+            AssertOk(await manager.GetDiagnosticsAsync(path).ConfigureAwait(false))
+        );
+        Assert.Empty(errors);
+    }
+
     private static TValue AssertOk<TValue>(Outcome.Result<TValue, string> result)
     {
         Assert.False(result.IsError, result.Match(_ => "ok", error => error));

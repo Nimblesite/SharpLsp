@@ -30,7 +30,7 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
 
         public static class Calculator
         {
-            public static int Value(int input) => input + 2;
+            public static int Value<T>() => 2;
         }
         """;
 
@@ -64,7 +64,12 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
         var registry = new HotReloadSessionRegistry();
         var started = await registry
             .HandleAsync(
-                new HotReloadRequest { Action = "start", ProjectPath = projectPath },
+                new HotReloadRequest
+                {
+                    Action = "start",
+                    ProjectPath = projectPath,
+                    Capabilities = ["Baseline", "AddDefinitionToExistingType", "NewTypeDefinition"],
+                },
                 CancellationToken.None
             )
             .ConfigureAwait(true);

@@ -88,7 +88,7 @@ internal sealed partial class WorkspaceManager
             return VoidResult.Failure($"'{path}' is not a supported C# document.");
         }
 
-        var closure = await ExpandAsync(kind, path, ct).ConfigureAwait(false);
+        var closure = await ExpandAsync(kind, path, live: null, ct).ConfigureAwait(false);
         return closure.Files.Count == 0
             ? VoidResult.Failure($"Could not read '{path}'.")
             : await LoadClosureAsync(kind, path, closure, ct).ConfigureAwait(false);
@@ -96,13 +96,14 @@ internal sealed partial class WorkspaceManager
 
     private static Task<Closure> ExpandAsync(
         ProjectlessKind kind,
-        string path,
+        string rootPath,
+        LiveText? live,
         CancellationToken ct
     )
     {
         return kind == ProjectlessKind.Script
-            ? DocumentClosure.ExpandScriptAsync(path, rootText: null, ct)
-            : DocumentClosure.ExpandFileBasedAsync(path, rootText: null, ct);
+            ? DocumentClosure.ExpandScriptAsync(rootPath, live, ct)
+            : DocumentClosure.ExpandFileBasedAsync(rootPath, live, ct);
     }
 
     private async Task<VoidResult> LoadClosureAsync(
@@ -143,6 +144,16 @@ internal sealed partial class WorkspaceManager
         return new VoidResult.Ok<Unit, string>(Unit.Value);
     }
 
+    /// <summary>
+    /// Re-expand the closure a live edit belongs to and reconcile the project with it.
+    /// </summary>
+    /// <remarks>
+    /// The closure is owned by the project's ROOT file, never by whichever member was edited.
+    /// Expanding from an <c>#:include</c>d file instead would produce a closure that does not
+    /// contain the real root, and the reconciliation below would then prune the root out of its
+    /// own project, leaving the document the user is editing unserved. Implements
+    /// [SCRIPT-CLOSURE], [SCRIPT-RELOAD].
+    /// </remarks>
     internal async Task<VoidResult> UpdateProjectlessClosureAsync(
         Document document,
         string newText,
@@ -154,70 +165,93 @@ internal sealed partial class WorkspaceManager
             return VoidResult.Failure("No active solution.");
         }
 
-        var kind = Classify(document.FilePath!);
-        var closure =
-            kind == ProjectlessKind.Script
-                ? await DocumentClosure
-                    .ExpandScriptAsync(document.FilePath!, newText, ct)
-                    .ConfigureAwait(false)
-                : await DocumentClosure
-                    .ExpandFileBasedAsync(document.FilePath!, newText, ct)
-                    .ConfigureAwait(false);
-
         var currentProject = _solution.GetProject(document.Project.Id);
-        if (currentProject == null)
+        if (currentProject is null)
         {
             return VoidResult.Failure("Project not found.");
         }
 
-        var currentDocIds = currentProject.Documents.ToDictionary(d => d.FilePath!, d => d.Id);
-        var closurePaths = closure.Files.Select(f => f.Path).ToHashSet();
-
-        var nextSolution = _solution;
-
-        // Add new documents
-        foreach (var file in closure.Files)
-        {
-            if (!currentDocIds.ContainsKey(file.Path))
-            {
-                var docInfo = BuildDocumentInfo(currentProject.Id, file, kind);
-                nextSolution = nextSolution.AddDocument(docInfo);
-            }
-        }
-
-        // Remove orphaned documents (except the root document)
-        foreach (var (path, docId) in currentDocIds)
-        {
-            if (path.EndsWith(GlobalUsingsFileName, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (!closurePaths.Contains(path) && path != document.FilePath)
-            {
-                nextSolution = nextSolution.RemoveDocument(docId);
-            }
-        }
-
         var rootPath = ProjectRootPath(currentProject, document.FilePath!);
-        var projectModelChanged = ProjectModelChanged(rootPath, closure);
-        if (projectModelChanged)
+        var kind = Classify(rootPath);
+        var live = new LiveText(document.FilePath!, newText);
+        var closure = await ExpandAsync(kind, rootPath, live, ct).ConfigureAwait(false);
+
+        _solution = ReconcileClosureDocuments(currentProject, document.FilePath!, closure, kind);
+        return RebuildProjectModel(kind, rootPath, currentProject.Id, closure);
+    }
+
+    /// <summary>
+    /// Add closure members the project is missing and drop the ones it no longer owns. The file
+    /// being edited is never dropped: it stays served until the host closes it.
+    /// </summary>
+    private Solution ReconcileClosureDocuments(
+        Project currentProject,
+        string editedPath,
+        Closure closure,
+        ProjectlessKind kind
+    )
+    {
+        var currentDocIds = currentProject.Documents.ToDictionary(
+            document => document.FilePath!,
+            document => document.Id,
+            StringComparer.OrdinalIgnoreCase
+        );
+        var closurePaths = closure
+            .Files.Select(file => file.Path)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var next = _solution!;
+
+        foreach (var file in closure.Files.Where(file => !currentDocIds.ContainsKey(file.Path)))
         {
-            var updatedProject = nextSolution
-                .GetProject(currentProject.Id)!
-                .WithMetadataReferences(BasicReferences())
-                .WithCompilationOptions(
-                    BuildCompilationOptions(kind == ProjectlessKind.Script, rootPath)
-                )
-                .WithParseOptions(BuildParseOptions(kind == ProjectlessKind.Script));
-            nextSolution = updatedProject.Solution;
+            next = next.AddDocument(BuildDocumentInfo(currentProject.Id, file, kind));
         }
 
-        _solution = nextSolution;
-        if (projectModelChanged)
+        foreach (var (path, documentId) in currentDocIds)
         {
-            StartPackageResolution(kind, rootPath, currentProject.Id, closure);
+            next = IsOrphanedClosureDocument(path, editedPath, closurePaths)
+                ? next.RemoveDocument(documentId)
+                : next;
         }
+
+        return next;
+    }
+
+    private static bool IsOrphanedClosureDocument(
+        string path,
+        string editedPath,
+        HashSet<string> closurePaths
+    )
+    {
+        return !path.EndsWith(GlobalUsingsFileName, StringComparison.OrdinalIgnoreCase)
+            && !closurePaths.Contains(path)
+            && !string.Equals(path, editedPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Reset the project to tier-2 BCL references and restart package resolution, but only when
+    /// the directives or packages actually changed. Implements
+    /// [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+    /// </summary>
+    private VoidResult RebuildProjectModel(
+        ProjectlessKind kind,
+        string rootPath,
+        ProjectId projectId,
+        Closure closure
+    )
+    {
+        var project = _solution!.GetProject(projectId);
+        if (project is null || !ProjectModelChanged(rootPath, closure))
+        {
+            return new VoidResult.Ok<Unit, string>(Unit.Value);
+        }
+
+        var isScript = kind == ProjectlessKind.Script;
+        _solution = project
+            .WithMetadataReferences(BasicReferences())
+            .WithCompilationOptions(BuildCompilationOptions(isScript, rootPath))
+            .WithParseOptions(BuildParseOptions(isScript))
+            .Solution;
+        StartPackageResolution(kind, rootPath, projectId, closure);
         return new VoidResult.Ok<Unit, string>(Unit.Value);
     }
 

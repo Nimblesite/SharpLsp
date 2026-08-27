@@ -212,6 +212,8 @@ Editing a `#:package`, `#:project`, `#:sdk`, or `#:include` directive changes th
 
 A file entering or leaving the `#:include` / `#:load` closure adds or removes a Roslyn document. Removal must also clear published diagnostics for that file, otherwise stale squiggles persist in files no longer part of the app.
 
+A `didChange` can arrive for **any** member of a closure, not just its root: the host re-syncs on-disk text for every file it has published diagnostics against, and an `#:include`d file the editor never opened is one of them. The refresh is therefore always re-expanded from the **root** recorded on the project, with the changed file's in-memory text substituted wherever it appears in the closure. Re-expanding from the changed file instead treats a member as if it were a root, yields a closure that does not contain the real root, and prunes the root out of its own project — leaving the document the user is editing with no Roslyn document at all.
+
 ### Multiple roots `[SCRIPT-MULTIROOT]`
 
 Two file-based apps in one directory are two independent compilations. The sidecar keeps a map of root path → workspace and never merges them. Opening `foo.cs` and `bar.cs` from the same folder yields two closures, not one project containing both.

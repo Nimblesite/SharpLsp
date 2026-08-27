@@ -12,20 +12,6 @@ namespace SharpLsp.Sidecar.CSharp.Debugging;
 /// <summary>Owns Roslyn Edit-and-Continue baselines for active debug sessions.</summary>
 internal sealed class HotReloadSessionRegistry
 {
-    private static readonly ImmutableArray<string> RuntimeCapabilities =
-    [
-        "Baseline",
-        "AddDefinitionToExistingType",
-        "AddMethodToExistingType",
-        "AddStaticFieldToExistingType",
-        "AddInstanceFieldToExistingType",
-        "NewTypeDefinition",
-        "ChangeCustomAttributes",
-        "UpdateParameters",
-        "GenericAddMethodToExistingType",
-        "GenericUpdateMethod",
-    ];
-
     private readonly Dictionary<Guid, HotReloadSession> _sessions = [];
     private readonly Lock _sync = new();
 
@@ -33,7 +19,11 @@ internal sealed class HotReloadSessionRegistry
     {
         return request.Action switch
         {
-            "start" => await StartAsync(Required(request.ProjectPath, "projectPath"), ct)
+            "start" => await StartAsync(
+                    Required(request.ProjectPath, "projectPath"),
+                    request.Capabilities ?? ["Baseline"],
+                    ct
+                )
                 .ConfigureAwait(false),
             "update" => await UpdateAsync(
                     ParseSession(request.SessionId),
@@ -49,9 +39,15 @@ internal sealed class HotReloadSessionRegistry
         };
     }
 
-    private async Task<HotReloadResponse> StartAsync(string projectPath, CancellationToken ct)
+    private async Task<HotReloadResponse> StartAsync(
+        string projectPath,
+        List<string> capabilities,
+        CancellationToken ct
+    )
     {
-        var session = await HotReloadSession.CreateAsync(projectPath, ct).ConfigureAwait(false);
+        var session = await HotReloadSession
+            .CreateAsync(projectPath, [.. capabilities], ct)
+            .ConfigureAwait(false);
         lock (_sync)
         {
             _sessions.Add(session.Id, session);
@@ -146,15 +142,34 @@ internal sealed class HotReloadSessionRegistry
 
         public static async Task<HotReloadSession> CreateAsync(
             string projectPath,
+            ImmutableArray<string> capabilities,
             CancellationToken ct
         )
         {
-            var workspace = MSBuildWorkspace.Create();
+            var workspace = MSBuildWorkspace.Create(
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Configuration"] = "Debug",
+                }
+            );
             try
             {
                 var project = await workspace
-                    .OpenProjectAsync(projectPath, cancellationToken: ct)
+                    .OpenProjectAsync(CanonicalPath(projectPath), cancellationToken: ct)
                     .ConfigureAwait(false);
+                var solution = project.Solution;
+                foreach (var loadedProject in project.Solution.Projects)
+                {
+                    if (loadedProject.OutputFilePath is { } assemblyPath)
+                    {
+                        solution = solution.WithProjectCompilationOutputInfo(
+                            loadedProject.Id,
+                            loadedProject.CompilationOutputInfo.WithAssemblyPath(assemblyPath)
+                        );
+                    }
+                }
+
+                project = solution.GetProject(project.Id)!;
                 var serviceType = Type.GetType(ServiceTypeName, throwOnError: true)!;
                 var service = Activator.CreateInstance(
                     serviceType,
@@ -164,11 +179,7 @@ internal sealed class HotReloadSessionRegistry
                     culture: null
                 )!;
                 var start = RequiredMethod(serviceType, "StartSessionAsync");
-                _ = await InvokeTaskAsync(
-                        start,
-                        service,
-                        [project.Solution, RuntimeCapabilities, ct]
-                    )
+                _ = await InvokeTaskAsync(start, service, [project.Solution, capabilities, ct])
                     .ConfigureAwait(false);
                 return new HotReloadSession(
                     workspace,
@@ -262,7 +273,7 @@ internal sealed class HotReloadSessionRegistry
 
         private static Document FindDocument(Solution solution, string filePath)
         {
-            var fullPath = Path.GetFullPath(filePath);
+            var fullPath = CanonicalPath(filePath);
             return solution
                     .Projects.SelectMany(project => project.Documents)
                     .FirstOrDefault(document => PathsEqual(document.FilePath, fullPath))
@@ -275,12 +286,40 @@ internal sealed class HotReloadSessionRegistry
         {
             return left is not null
                 && string.Equals(
-                    Path.GetFullPath(left),
+                    CanonicalPath(left),
                     right,
                     OperatingSystem.IsWindows()
                         ? StringComparison.OrdinalIgnoreCase
                         : StringComparison.Ordinal
                 );
+        }
+
+        private static string CanonicalPath(string path)
+        {
+            var fullPath = Path.GetFullPath(path);
+            if (OperatingSystem.IsWindows())
+            {
+                return fullPath;
+            }
+
+            var root = Path.GetPathRoot(fullPath)!;
+            var current = root;
+            foreach (
+                var segment in fullPath[root.Length..]
+                    .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)
+            )
+            {
+                current = Path.Combine(current, segment);
+                FileSystemInfo entry = Directory.Exists(current)
+                    ? new DirectoryInfo(current)
+                    : new FileInfo(current);
+                if (entry.ResolveLinkTarget(returnFinalTarget: true) is { } target)
+                {
+                    current = target.FullName;
+                }
+            }
+
+            return current;
         }
 
         private static MethodInfo RequiredMethod(Type type, string name)

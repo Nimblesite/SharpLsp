@@ -160,6 +160,30 @@ public sealed partial class FileBasedPackageSpecEndToEndTests : IDisposable
         AssertGenerationCleaned(observed.Project.ProjectPath);
     }
 
+    /// <summary>
+    /// The editor pushes didChange for every file it holds open, and that includes an
+    /// <c>#:include</c>d member of a file-based closure. A closure is owned by its ROOT, so a
+    /// refresh driven from a member must re-expand from the root: expanding from the member
+    /// instead yields a closure that does not contain the root, and the reconciliation then
+    /// prunes the root out of its own project, leaving the document the user is editing
+    /// completely unserved. Implements [SCRIPT-CLOSURE], [SCRIPT-FILEBASED-DIRECTIVES] and
+    /// [SCRIPT-RELOAD].
+    /// </summary>
+    [Fact]
+    public async Task Edit_of_an_included_member_keeps_the_root_served_and_bound()
+    {
+        var closure = WriteIncludedPackageClosure();
+        _ = PrepareRestoreRoot(closure.Root);
+        using var manager = new WorkspaceManager();
+        AssertSucceeded(await ProjectlessWorkspaceFixture.OpenAsync(manager, closure.Root));
+        _ = await WaitHoverAsync(manager, new(closure.Root, 1, 20, "PackageFactory"));
+        await AwaitStatusAsync(manager, "loaded");
+
+        AssertSucceeded(await manager.UpdateDocumentTextAsync(closure.Member, closure.MemberText));
+
+        await AssertClosureSurvivedMemberEditAsync(manager, closure);
+    }
+
     private string PrepareRestoreRoot(string app)
     {
         var fullPath = Path.GetFullPath(app);
@@ -189,6 +213,8 @@ public sealed partial class FileBasedPackageSpecEndToEndTests : IDisposable
             Path.GetDirectoryName(generationRoot)
         );
     }
+
+    private sealed record ClosureProbe(string Root, string Member, string MemberText);
 
     private sealed record HoverProbe(string App, int Line, int Character, string Expected);
 

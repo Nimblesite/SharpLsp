@@ -129,19 +129,39 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 
 ### Debugging
 
+See [DEBUGGING-PLAN.md](DEBUGGING-PLAN.md) §4 for per-item evidence. "Done" below
+means production code plus a green Windows CI chunk; "PARTIAL" means the code
+exists and a test names the behaviour but that test is red.
+
 | Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
-| F5 launch with auto-config | Yes | No | **MISSING** |
-| Dynamic launch configs | Yes | No | **MISSING** |
-| Attach to process | Yes | No | **MISSING** |
-| Conditional breakpoints | Yes | No | **MISSING** |
-| Function breakpoints | Yes | No | **MISSING** |
-| Logpoints | Yes | No | **MISSING** |
-| Exception handling config | Yes | No | **MISSING** |
-| Watch expressions | Yes | No | **MISSING** |
-| Just My Code | Yes | No | **MISSING** |
-| launchSettings.json integration | Yes | No | **MISSING** |
-| Hot Reload | Yes | No | **MISSING** |
+| F5 launch with auto-config | Yes | Yes | **DONE** — `[DEBUG-FEATURES-LAUNCH-NOCONFIG]`, chunk `debug` |
+| Dynamic launch configs | Yes | Yes | **DONE** — provider registered for `Dynamic`, `[DEBUG-FEATURES-LAUNCH-DYNAMIC]` |
+| Run without debugging (Ctrl/Cmd+F5) | Yes | Yes | **DONE** — `[DEBUG-FEATURES-LAUNCH-NODEBUG]` |
+| Single-file / file-based app run + debug | No | Yes | **DIFFERENTIATOR** — `dotnet run --file`, `.fsx` via `dotnet fsi --exec`, `[DEBUG-FEATURES-LAUNCH-SCRIPT]` |
+| Line breakpoints (C# and F#) | Yes | Yes | **DONE** — `contributes.breakpoints` for both languages, chunk `debug-breakpoints` |
+| Conditional breakpoints | Yes | Yes | **DONE** — `[DEBUG-FEATURES-BREAKPOINTS]` |
+| Hit-count breakpoints | Yes | Yes | **DONE** — emulated in the router; netcoredbg ignores `hitCondition` |
+| Logpoints | Yes | Yes | **DONE** — emulated; evaluates and emits `output`, never pauses |
+| Function breakpoints | Yes | Partial | **PARTIAL** — forwarded, but the debuggee does not stop; test red |
+| Exception handling config | Yes | Yes | **DONE** — `exceptionOptions` translated into netcoredbg's filter grammar, chunk `debug-exceptions` |
+| Step over / into / out, run to cursor | Yes | Partial | **PARTIAL** — F10 and run-to-cursor green; F11/Shift+F11 and end-of-scope stepping red |
+| Call stack navigation | Yes | Yes | **DONE** — physical frames, per-frame locals, threads |
+| Async logical call stack | Yes | No | **MISSING** — awaiting frames need an ICorDebug continuation walk |
+| Watch expressions / hover / REPL | Yes | Partial | **PARTIAL** — proxied with retry; the shared-answer test is red on `0x80070057` |
+| Variable inspection (locals, args, `this`) | Yes | Yes | **DONE** — chunk `debug-inspection`, 6 of 10 green |
+| Collection expansion, static-field scopes | Yes | No | **MISSING** — `List<T>` still shows `_items`/`_size`; no `Statics` scope |
+| `[DebuggerDisplay]` | Yes | No | **MISSING** — no implementation |
+| Attach to process (pid or name) | Yes | Partial | **PARTIAL** — name→pid resolution and refusals work; the attach itself does not stop the debuggee |
+| Just My Code | Yes | Partial | **PARTIAL** — flag forwarded and step stops filtered, but the framework-code test is red |
+| launchSettings.json integration | Yes | Yes | **DONE** — plus `<app>.run.json` for file-based apps, `[DEBUG-FEATURES-LAUNCH-PROFILES]` |
+| Restart, pause, stop, `stopAtEntry` | Yes | Yes | **DONE** — restart emulated by respawn + handshake replay, chunk `debug-session` |
+| `console: integratedTerminal` (working stdin) | Yes | Yes | **DONE** — router synthesizes `runInTerminal`, which netcoredbg never issues |
+| Multiple simultaneous sessions | Yes | Yes | **DONE** — per-session handle namespacing |
+| F# debugging (breakpoints, stepping, exceptions) | Partial | Yes | **DONE** — `[DEBUG-FSHARP-STEPPING]`, chunk `debug-fsharp` |
+| F# DU / list / record rendering in F# syntax | No | No | **MISSING** — specified by `debug-fsharp-inspection-e2e`, no implementation |
+| Debug a unit test | Yes | No | **MISSING** — the Debug profile opens a `dotnet test` terminal; no attach |
+| Hot Reload | Yes | No | **MISSING** — `hot-reload.ts` is a `dotnet watch` terminal; the session-level implementation is in flight and its three E2E cases are red |
 
 ### NuGet Package Management
 
@@ -238,20 +258,28 @@ These are the features users hit within the first 5 minutes. Without them, Sharp
 
 Features users expect within the first day of use.
 
-- [ ] **P2.1: Debugging (DAP Integration)**
-  - [ ] Integrate netcoredbg as debug adapter
-  - [ ] Auto-generate launch configurations from .csproj discovery
-  - [ ] Launch .NET process with F5 (no manual launch.json required)
-  - [ ] Attach to running .NET process
-  - [ ] Line breakpoints, conditional breakpoints, logpoints
-  - [ ] Step in/over/out, continue
-  - [ ] Variable inspection, watch expressions
-  - [ ] Call stack navigation
-  - [ ] Exception breakpoints (all, user-unhandled, filtered)
-  - [ ] Just My Code support
-  - [ ] launchSettings.json profile integration
-  - [ ] Debug toolbar integration
-  - [ ] F# debugging support (same adapter)
+- [ ] **P2.1: Debugging (DAP Integration)** — see [DEBUGGING-PLAN.md](DEBUGGING-PLAN.md) §4
+      for per-item implementation and test evidence
+  - [x] Integrate netcoredbg as debug adapter — bundled in the VSIX for every platform with an
+        upstream prebuilt, routed through the extension's `DapRouter`
+  - [x] Auto-generate launch configurations from project discovery — one config per launch profile
+  - [x] Launch .NET process with F5 (no manual launch.json required)
+  - [x] Line breakpoints, conditional breakpoints, hit counts, logpoints
+  - [x] Continue, pause, stop, restart, step over, run to cursor
+  - [x] Variable inspection (locals, arguments, `this`)
+  - [x] Call stack navigation (physical frames, per-frame locals, threads)
+  - [x] Exception breakpoints (all, unhandled-only, per-type include/exclude filters)
+  - [x] launchSettings.json profile integration (plus `<app>.run.json` for file-based apps)
+  - [x] Debug toolbar integration (restart / pause / stop all drive real DAP requests)
+  - [x] F# debugging support — F9, stepping and exceptions at C# density
+  - [ ] Attach to running .NET process — implemented, but the debuggee never stops; test red
+  - [ ] Step into / step out, and stepping off the end of a method — tests red
+  - [ ] Just My Code support — implemented, framework-code skip test red
+  - [ ] Watch expressions — proxied, the hover/watch/REPL agreement test is red
+  - [ ] Collection expansion, static-field scopes, `[DebuggerDisplay]` — not built
+  - [ ] Async logical call stack (awaiting frames) — not built
+  - [ ] F# discriminated union / list / record rendering in F# syntax — not built
+  - [ ] Hot Reload during a session, and debugging a unit test — not built
 
 - [ ] **P2.2: Test Explorer**
   - [x] Test discovery by VSTest `TestCase.FullyQualifiedName` (`--ListFullyQualifiedTests`), spec `[TEST-DISCOVERY-FQN]`
@@ -378,7 +406,7 @@ Features where we go beyond what C# Dev Kit offers.
 
 **Remaining gaps: ~40 items across P1-P4.**
 
-The biggest remaining gaps are **rename** (P0 parity blocker), **debugging** (P2.1), and **test explorer** (P2.2). P2 remains the next broad feature area, but rename is the critical refactoring gap inside P1.
+The biggest remaining gaps are **rename** (P0 parity blocker), **debugging inspection and attach** (P2.1 — the launch, breakpoint, exception and session surfaces are done and gated; variable expansion, `[DebuggerDisplay]`, async stacks, attach and hot reload are not), and **test debugging** (P2.2). P2 remains the next broad feature area, but rename is the critical refactoring gap inside P1.
 
 ### What SharpLsp Already Does Better
 

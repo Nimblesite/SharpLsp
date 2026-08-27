@@ -1,11 +1,6 @@
 // The DAP proxy that sits between VS Code and netcoredbg.
-// Implements [DEBUG-ARCHITECTURE-ROUTER]'s Phase Four responsibilities that are
-// reachable from the editor process: adapter lifecycle, DAP proxying, capability
-// augmentation, async stack enrichment, and the emulations [DEBUG-ADAPTER-GAPS]
-// records netcoredbg cannot serve natively — restart, hit-count breakpoints,
-// logpoints, run-to-cursor and terminal-hosted debuggees.
-// This class is the switchboard; narrow collaborators own child framing, stop
-// decisions, stack delivery, and individual emulations.
+// Implements [DEBUG-ARCHITECTURE-ROUTER]'s proxying and [DEBUG-ADAPTER-GAPS]
+// emulations. Narrow collaborators own framing, stops, stacks, and each gap.
 import type * as cp from 'node:child_process';
 import * as vscode from 'vscode';
 import { retarget } from './dap-exceptions';
@@ -23,6 +18,7 @@ import { HandleNamespace } from './dap-namespace';
 import { AdapterWire } from './dap-wire';
 import { carriesUserCode } from './dap-statement';
 import { VariableExpander } from './dap-variables';
+import { DapHotReload } from './dap-hot-reload';
 import { error, traceInfo } from './log';
 import { getErrorMessage } from './utils';
 import { err, ok, type Result } from './result';
@@ -71,6 +67,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private readonly attaches: AttachRetrier;
   private readonly evaluations: EvaluateRetrier;
   private readonly variables: VariableExpander;
+  private readonly hotReload: DapHotReload;
   /** True once the child itself sent the DAP `terminated` event. */
   private childAnnouncedTerminated = false;
   private justMyCode = true;
@@ -128,6 +125,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     this.attaches = new AttachRetrier(retryHost);
     this.evaluations = new EvaluateRetrier(retryHost);
     this.variables = new VariableExpander(retryHost);
+    this.hotReload = new DapHotReload(this);
     this.wire = this.startWire(adapterPath);
     this.replayer = new SessionReplayer(this);
     this.goto = new GotoEmulator(this, (path) => this.replayer.breakpointArgumentsFor(path));
@@ -278,6 +276,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         // A fresh debuggee is starting; any previous exit is history.
         this.debuggeeExited = false;
         this.rememberLaunchOptions(args);
+        this.hotReload.prepareLaunch(args);
         return false;
       case 'attach':
         this.debuggeeExited = false;
@@ -319,6 +318,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     // frames still in flight, and firing into a disposed EventEmitter throws,
     // which takes the whole extension host down with it.
     this.disposed = true;
+    this.hotReload.dispose();
     this.wire.dispose();
     this.emitter.dispose();
   }
@@ -421,6 +421,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       traceInfo(`[dap<-event] ${name} ${JSON.stringify(message.body ?? {}).slice(0, 80)}`);
     }
     if (name === 'stopped') {
+      this.hotReload.onStopped(Number(isRecord(message.body) ? message.body.threadId : 0));
       if (this.stops.onStopped(message)) return;
     } else if (name === 'initialized') {
       // Either way the transition is over: a configured client gets the replay
