@@ -4,11 +4,15 @@
 // Usage:
 //   node check-coverage.mjs <project-key> <actual-percent>
 //   node check-coverage.mjs <project-key> --json <file> <dotted.path>
+//
+// Thresholds live in the repo-root coverage-thresholds.json (AgentPMO
+// [COVERAGE-THRESHOLDS-JSON]): projects.<key>.threshold, falling back to
+// default_threshold. The ratchet rewrites the same file in place.
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 
-const THRESHOLDS = '.config/coverage/thresholds.json';
+const THRESHOLDS = 'coverage-thresholds.json';
 const TEMP_THRESHOLDS = `${THRESHOLDS}.tmp`;
 const TOLERANCE = 1;
 
@@ -66,7 +70,7 @@ function committedThreshold(project) {
   if (!committedJson) return undefined;
 
   try {
-    const value = JSON.parse(committedJson)?.[project]?.line_percent;
+    const value = JSON.parse(committedJson)?.projects?.[project]?.threshold;
     const number = Number(value);
     return Number.isFinite(number) ? number : undefined;
   } catch {
@@ -79,7 +83,9 @@ if (!project) fail('Usage: check-coverage.mjs <project-key> <actual-percent>', 2
 
 const actual = readActual(actualArgs);
 const thresholds = readJson(THRESHOLDS);
-const threshold = finiteNumber(thresholds?.[project]?.line_percent, `threshold for project '${project}'`);
+const entry = thresholds?.projects?.[project];
+const stored = entry?.threshold ?? thresholds?.default_threshold;
+const threshold = finiteNumber(stored, `threshold for project '${project}'`);
 const committed = committedThreshold(project);
 
 if (committed !== undefined && threshold < committed) {
@@ -109,7 +115,7 @@ if (actual > threshold) {
       `[${project}] coverage improved! Ratcheting threshold: ${threshold}% -> ${newThreshold}% ` +
         `(actual ${actual}% - ${TOLERANCE}pp)`,
     );
-    thresholds[project].line_percent = newThreshold;
+    thresholds.projects[project] = { ...(entry ?? {}), threshold: newThreshold };
     writeFileSync(TEMP_THRESHOLDS, `${JSON.stringify(thresholds, null, 2)}\n`);
     renameSync(TEMP_THRESHOLDS, THRESHOLDS);
   }

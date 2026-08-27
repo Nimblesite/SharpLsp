@@ -93,7 +93,7 @@ jobs:
           name: coverage-rust
           path: |
             target/coverage-rust.lcov
-            .config/coverage/thresholds.json
+            coverage-thresholds.json
   version-contract:
     name: Version Contract
     # Implements [DIST-VERSION-OUTPUT] + the version line of [DIST-CI-SMOKE].

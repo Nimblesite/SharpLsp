@@ -151,6 +151,6 @@ jobs:
   # HEAD, so `git push` failed the moment coverage changed — a latent red build,
   # and a direct push to a protected branch ([DIST-CI-LAYOUT]). Coverage is
   # already enforced inside `make test` (tools/coverage/check-coverage.sh reads
-  # .config/coverage/thresholds.json and fails below threshold in each test-* job).
+  # coverage-thresholds.json and fails below threshold in each test-* job).
   # Thresholds ratchet via the reviewed PR diff, not a bot commit.
   # [DIST-CI-RUST-SHARDS]

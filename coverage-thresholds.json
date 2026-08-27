@@ -1,0 +1,35 @@
+{
+  "_agent_pmo": "b636503",
+  "_doc": "Single source of truth for coverage thresholds. See REPO-STANDARDS-SPEC [COVERAGE-THRESHOLDS-JSON]. Ratchet only -- never lower. Every project `make ci` measures gets its own line-coverage floor here, enforced independently by tools/coverage/check-coverage.mjs: no roll-up can mask one project behind another. Rust entries (language=rust) are the cargo workspace measured as one lcov union across CI shards (target/coverage-rust.lcov + shard tracefiles -- every shard's tracefile carries the full instrumented line set, so the union equals an unsharded run; no shard passes alone, the gate runs once on the merged total). The sidecar entries (language=dotnet) are individual src/sidecars projects, each measured from its merged Cobertura report via tools/coverage/kover-line-percent.cs with the exclusions of .config/coverage/coverlet.runsettings. The editor entries (language=typescript) are measured from each editor's own coverage summary: vscode-extension from the V8 coverage-summary (Ubuntu job owns it -- a single Windows chunk cannot meet the floor, by design), sharplsp-zed and sharplsp-rider from their CI legs. sharplsp-rider is a floor-in-progress (4.09): the Rider test suite is young; the entry exists so the number can only go UP -- the ratchet bumps it the moment coverage improves. A threshold entry whose project stops being measured fails the gate rather than rotting silently.",
+  "default_threshold": 95,
+  "projects": {
+    "sharplsp": {
+      "threshold": 95.0,
+      "language": "rust"
+    },
+    "sharplsp-sidecar-common": {
+      "threshold": 95.02,
+      "language": "dotnet"
+    },
+    "sharplsp-sidecar-csharp": {
+      "threshold": 95.0,
+      "language": "dotnet"
+    },
+    "sharplsp-sidecar-fsharp": {
+      "threshold": 95.0,
+      "language": "dotnet"
+    },
+    "vscode-extension": {
+      "threshold": 94.0,
+      "language": "typescript"
+    },
+    "sharplsp-zed": {
+      "threshold": 85.04,
+      "language": "typescript"
+    },
+    "sharplsp-rider": {
+      "threshold": 4.09,
+      "language": "typescript"
+    }
+  }
+}
