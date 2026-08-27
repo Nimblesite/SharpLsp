@@ -33,6 +33,7 @@ import {
   applyLaunchProfile,
   isLaunchSettings,
   profileArgs,
+  mergeProfileEnv,
   profileEnv,
   projectProfiles,
   readLaunchProfiles,
@@ -87,10 +88,18 @@ export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider
     config.justMyCode ??= true;
     config.console ??= 'integratedTerminal';
 
-    // An explicit program is the user's decision and is never overwritten; an
-    // attach request has no program at all.
-    if (config.request !== 'launch' || config.program !== undefined) return config;
-    if (folder === undefined) return config;
+    // An attach request names a process, not a program: no target, no profile.
+    if (config.request !== 'launch' || folder === undefined) return config;
+    // An explicit program is the user's decision and is never overwritten — but
+    // the launch profile that OWNS it still applies. [DEBUG-FEATURES-LAUNCH-PROFILES]
+    // rule 2 scopes profiles by REQUEST kind, not by whether the configuration
+    // happened to name its own executable, so returning early here silently
+    // dropped every environment variable and argument from a hand-written
+    // launch.json.
+    if (config.program !== undefined) {
+      applyLaunchProfile(profileRootFor(folder, config.program), config);
+      return config;
+    }
     // Both non-`applied` outcomes abort. `undefined` is VS Code's "stop, quietly"
     // contract; handing back a configuration with no `program` instead starts a
     // session that cannot run. A cancelled pick is already the user's decision,
@@ -242,8 +251,28 @@ async function applyTarget(
   config.program = program;
   config.cwd = target.cwd;
   if (target.args !== undefined && config.args === undefined) config.args = [...target.args];
-  if (target.env !== undefined && config.env === undefined) config.env = { ...target.env };
+  // Per KEY, not all-or-nothing: the mapping table in
+  // [DEBUG-FEATURES-LAUNCH-PROFILES] makes an explicit `env` win variable by
+  // variable, so pinning one variable must not discard the profile's others.
+  if (target.env !== undefined) config.env = mergeProfileEnv(target.env, config.env);
   return 'applied';
+}
+
+/**
+ * The directory whose launch profiles belong to an explicitly stated program.
+ *
+ * A stated `program` is a built assembly under `<project>/bin/<config>/<tfm>/`,
+ * so its owning project is found by walking UP from it. Anything outside the
+ * workspace folder, or with no project above it, falls back to the folder —
+ * which is exactly where a file-based app keeps its own profiles
+ * ([DEBUG-FEATURES-LAUNCH-PROFILES] discovery table).
+ */
+function profileRootFor(folder: vscode.WorkspaceFolder, program: unknown): string {
+  const root = folder.uri.fsPath;
+  if (typeof program !== 'string' || program.length === 0) return root;
+  const from = path.dirname(program);
+  if (!isWithin(from, root)) return root;
+  return findProjectFile(from, root)?.cwd ?? root;
 }
 
 /** True when VS Code supplied no configuration at all. */

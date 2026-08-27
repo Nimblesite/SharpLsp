@@ -289,7 +289,7 @@ export function applyLaunchProfile(rootPath: string, config: Record<string, unkn
   const args = profileArgs(profile);
   if (args !== undefined && config.args === undefined) config.args = args;
   const env = profileEnv(profile);
-  if (env !== undefined) config.env = mergeEnv(env, config.env);
+  if (env !== undefined) config.env = mergeProfileEnv(env, config.env);
 }
 
 /**
@@ -299,7 +299,10 @@ export function applyLaunchProfile(rootPath: string, config: Record<string, unkn
  * explicit choice about THAT variable, and dropping the profile's other
  * variables because of it silently changes how the program runs.
  */
-function mergeEnv(fromProfile: Record<string, string>, existing: unknown): Record<string, string> {
+export function mergeProfileEnv(
+  fromProfile: Record<string, string>,
+  existing: unknown,
+): Record<string, string> {
   const merged: Record<string, string> = { ...fromProfile };
   if (!isRecord(existing)) return merged;
   for (const [key, value] of Object.entries(existing)) {

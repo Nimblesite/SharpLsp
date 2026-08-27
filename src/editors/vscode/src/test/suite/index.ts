@@ -1,4 +1,6 @@
 import * as path from 'node:path';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import Mocha from 'mocha';
 import { globSync } from 'glob';
 
@@ -39,7 +41,33 @@ function resolveSuiteFiles(testsRoot: string): string[] {
   return [...selected].sort();
 }
 
+/**
+ * Make the test host's temp root CANONICAL before any suite builds a fixture.
+ *
+ * On the GitHub Windows runner `os.tmpdir()` reports the 8.3 short form
+ * `C:\Users\RUNNER~1\AppData\Local\Temp`, while MSBuild, `dotnet` and every path
+ * the extension derives from a project it actually built report the long form
+ * `C:\Users\runneradmin\...`. Both name the same directory, so a fixture rooted
+ * at the short spelling makes every "program must sit under <fixture>" and
+ * "must be rooted in the fixture directory" assertion fail on Windows and
+ * nowhere else ([DIST-CI-WIN-VSIX]). Case folding cannot repair it: 8.3 is a
+ * different SPELLING of the path, not a different case, so `comparablePath`
+ * sees two unequal strings for one directory.
+ *
+ * Correcting the environment once, here, is what keeps it corrected:
+ * `os.tmpdir()` re-reads these variables on every call, so every suite, kit and
+ * spawned `dotnet` child agrees on one spelling — instead of ~25 fixture roots
+ * each having to remember to canonicalise themselves.
+ */
+function canonicaliseTempRoot(): void {
+  const canonical = fs.realpathSync.native(os.tmpdir());
+  for (const variable of ['TMPDIR', 'TEMP', 'TMP']) {
+    process.env[variable] = canonical;
+  }
+}
+
 export function run(): Promise<void> {
+  canonicaliseTempRoot();
   const mocha = new Mocha({
     ui: 'tdd',
     color: true,

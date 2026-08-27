@@ -167,7 +167,7 @@ fn test_selection_range_on_fsharp_file() {
                 "uri": fs_uri,
                 "languageId": "fsharp",
                 "version": 1,
-                "text": "module M\nlet x = 1\n",
+                "text": "module M\nlet x =\n    let y = 1\n    y + 1\n",
             }
         }),
     );
@@ -176,12 +176,42 @@ fn test_selection_range_on_fsharp_file() {
         "textDocument/selectionRange",
         json!({
             "textDocument": { "uri": fs_uri },
-            "positions": [{ "line": 0, "character": 0 }]
+            "positions": [{ "line": 2, "character": 8 }]
         }),
     );
+    // The F# tree-sitter grammar is integrated, so selection ranges serve F#
+    // exactly as they serve C# — a nested chain up to the file root.
+    assert!(resp.get("error").is_none(), "unexpected error: {resp}");
+    let ranges = resp["result"].as_array().unwrap();
+    assert_eq!(ranges.len(), 1, "one range per position");
+
+    let r = &ranges[0];
     assert!(
-        resp.get("error").is_some(),
-        "F# selectionRange should error"
+        r.get("range").is_some(),
+        "each selection range carries a range"
+    );
+    // The chain must nest: inner range up through the module to the file root.
+    let mut current = r.clone();
+    let mut depth = 0usize;
+    while let Some(parent) = current.get("parent").cloned() {
+        let inner = current["range"].clone();
+        let outer = parent["range"].clone();
+        assert!(
+            inner["start"]["line"].as_u64() >= outer["start"]["line"].as_u64()
+                && inner["end"]["line"].as_u64() <= outer["end"]["line"].as_u64(),
+            "each parent must enclose its child: inner {inner} outer {outer}"
+        );
+        current = parent;
+        depth += 1;
+    }
+    assert!(
+        depth >= 2,
+        "F# chain must nest past the binding to the module, depth {depth}"
+    );
+    assert_eq!(
+        current["range"]["start"]["line"],
+        serde_json::json!(0),
+        "the outermost range starts at the file root"
     );
 
     client.shutdown_and_exit();
@@ -210,12 +240,19 @@ fn test_linked_editing_range_on_fsharp_file() {
         "textDocument/linkedEditingRange",
         json!({
             "textDocument": { "uri": fs_uri },
-            "position": { "line": 0, "character": 0 }
+            "position": { "line": 0, "character": 2 }
         }),
     );
+    // The F# grammar is integrated, so the request is served (no error). F#
+    // `///` docs are xml_doc nodes without linked open/close tag pairs, so the
+    // honest answer is `null` — the same contract as C# comments.
     assert!(
-        resp.get("error").is_some(),
-        "F# linkedEditingRange should error"
+        resp.get("error").is_none(),
+        "F# linkedEditingRange must be served, not error: {resp}"
+    );
+    assert!(
+        resp.get("result").is_none() || resp["result"].is_null(),
+        "F# has no linked tag pairs, so the result is null: {resp}"
     );
 
     client.shutdown_and_exit();

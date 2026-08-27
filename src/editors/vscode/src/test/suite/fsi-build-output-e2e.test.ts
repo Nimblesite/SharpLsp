@@ -23,84 +23,21 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { stripAnsi, createAnsiStrippingChannel } from '../../output-filter.js';
 import { createBuildTask, dotnetArgs, targetFromNode } from '../../build.js';
+import { CMD_BUILD, CMD_REBUILD, CMD_CLEAN } from '../../constants.js';
 import { extractSignature, isFSharpSourceDocument, fsiTerminalOptions } from '../../fsi.js';
 import { isRelevantLanguage, isHotReloadRunning } from '../../hot-reload.js';
 import { openFSharpFile, openCSharpFile, closeAllEditors, pollUntilResult } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
-import { removeDirRecursive } from './test-helpers.js';
-
-// ── Fake OutputChannel ────────────────────────────────────────────
-
-/** Records everything a LogOutputChannel receives so we can assert on it. */
-interface RecordingChannel extends vscode.LogOutputChannel {
-  readonly appended: string[];
-  readonly appendedLines: string[];
-  readonly replaced: string[];
-  /** Level-tagged log calls, as `level:message`. */
-  readonly logged: string[];
-  cleared: number;
-  shown: number;
-  hidden: number;
-  disposed: number;
-}
-
-/** Build a minimal in-memory OutputChannel that records every interaction. */
-function recordingChannel(name: string): RecordingChannel {
-  const appended: string[] = [];
-  const appendedLines: string[] = [];
-  const replaced: string[] = [];
-  const logged: string[] = [];
-  const channel: RecordingChannel = {
-    name,
-    appended,
-    appendedLines,
-    replaced,
-    logged,
-    cleared: 0,
-    shown: 0,
-    hidden: 0,
-    disposed: 0,
-    logLevel: vscode.LogLevel.Info,
-    onDidChangeLogLevel: new vscode.EventEmitter<vscode.LogLevel>().event,
-    append(value: string): void {
-      appended.push(value);
-    },
-    appendLine(value: string): void {
-      appendedLines.push(value);
-    },
-    replace(value: string): void {
-      replaced.push(value);
-    },
-    trace(message: string): void {
-      logged.push(`trace:${message}`);
-    },
-    debug(message: string): void {
-      logged.push(`debug:${message}`);
-    },
-    info(message: string): void {
-      logged.push(`info:${message}`);
-    },
-    warn(message: string): void {
-      logged.push(`warn:${message}`);
-    },
-    error(error: string | Error): void {
-      logged.push(`error:${typeof error === 'string' ? error : error.message}`);
-    },
-    clear(): void {
-      channel.cleared += 1;
-    },
-    show(): void {
-      channel.shown += 1;
-    },
-    hide(): void {
-      channel.hidden += 1;
-    },
-    dispose(): void {
-      channel.disposed += 1;
-    },
-  };
-  return channel;
-}
+import { removeDirRecursive, sleep } from './test-helpers.js';
+import { QUIET_MS, TaskRecorder } from './run-debug-kit.js';
+import { libraryProjectXml, writeProject } from './dotnet-project-kit.js';
+import {
+  buildTasksOf,
+  dispatchedBuildTask,
+  expectedBuildTask,
+  recordingChannel,
+  terminateBuildTasks,
+} from './fsi-build-kit.js';
 
 // ── Suite ─────────────────────────────────────────────────────────
 
@@ -120,6 +57,9 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
 
   teardown(async () => {
     stubs.restore();
+    // A leaked build task is a live `dotnet` process holding obj/ locks that the
+    // next test in this chunk then races.
+    await terminateBuildTasks();
     // Dispose any terminals this test created (FSI, build, hot reload).
     for (const terminal of vscode.window.terminals) {
       if (!preexistingTerminals.has(terminal)) {
@@ -226,29 +166,44 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
 
   // ── build.ts ────────────────────────────────────────────────────
 
-  test('dotnet build/rebuild/clean commands resolve and create the build terminal', async function () {
-    this.timeout(60_000);
+  test('build, rebuild and clean each dispatch exactly one dotnet task with the right argv', async function () {
+    this.timeout(180_000);
 
     const before = vscode.window.terminals.length;
+    const recorder = new TaskRecorder();
+    try {
+      // [DEBUG-FEATURES-LAUNCH-BUILD] rule 4: a build is ONE observable task,
+      // never a terminal copy racing a headless one on the same obj/ lock files.
+      // The recorded task carries the whole argv, so a command that stopped
+      // dispatching, dispatched twice, or ran the wrong `dotnet` verb fails
+      // here instead of passing as an invisible no-op.
+      assert.deepStrictEqual(
+        await dispatchedBuildTask(recorder, CMD_BUILD, 0),
+        expectedBuildTask('Build', ['build']),
+        'sharplsp.build must run `dotnet build`',
+      );
+      assert.deepStrictEqual(
+        await dispatchedBuildTask(recorder, CMD_REBUILD, 1),
+        expectedBuildTask('Rebuild', ['build', '--no-incremental']),
+        'sharplsp.rebuild must run `dotnet build --no-incremental`',
+      );
+      assert.deepStrictEqual(
+        await dispatchedBuildTask(recorder, CMD_CLEAN, 2),
+        expectedBuildTask('Clean', ['clean']),
+        'sharplsp.clean must run `dotnet clean`',
+      );
+      // Settle: a fourth task arriving late means a command dispatched twice.
+      await sleep(QUIET_MS);
+      assert.strictEqual(
+        buildTasksOf(recorder).length,
+        3,
+        'three commands must dispatch three tasks, no more',
+      );
+    } finally {
+      recorder.dispose();
+      await terminateBuildTasks();
+    }
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.build');
-    }, 'sharplsp.build must not throw');
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.rebuild');
-    }, 'sharplsp.rebuild must not throw');
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.clean');
-    }, 'sharplsp.clean must not throw');
-
-    // [DEBUG-FEATURES-LAUNCH-BUILD] rule 4: a build is ONE observable task, never
-    // a terminal copy racing a headless one on the same obj/ lock files.
-    const started = await pollUntilResult(
-      async () => vscode.tasks.taskExecutions.map((execution) => execution.task),
-      (running) => running.length >= 0,
-      5_000,
-    );
-    assert.ok(Array.isArray(started), 'the task API must report what the commands dispatched');
     const opened = vscode.window.terminals.filter((t) => t.name === 'SharpLsp Build');
     assert.deepStrictEqual(opened, [], 'a build must open no "SharpLsp Build" terminal');
     assert.ok(
@@ -257,13 +212,19 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     );
   });
 
-  test('build commands accept a right-clicked project node and resolve its target file', async function () {
-    this.timeout(60_000);
+  test('a right-clicked project node dispatches one task per command targeting that project', async function () {
+    this.timeout(180_000);
 
-    const projectPath = path.join(
-      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? tmpDir,
-      'TestFixtures.csproj',
+    // A REAL .fsproj through the shared XML writer — F# first, and a scratch
+    // project so a dispatched `clean` cannot wipe the fixture workspace.
+    const projectDir = writeProject(
+      path.join(tmpDir, 'NodeScoped'),
+      'NodeScoped.fsproj',
+      libraryProjectXml('Library.fs'),
+      'Library.fs',
+      'module NodeScoped\n\nlet answer = 42\n',
     );
+    const projectPath = path.join(projectDir, 'NodeScoped.fsproj');
     const node = { projectFilePath: projectPath };
 
     // targetFromNode is the pure resolver the command relies on.
@@ -271,12 +232,27 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     assert.strictEqual(targetFromNode({ projectFilePath: '' }), undefined);
     assert.strictEqual(targetFromNode(undefined), undefined);
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.build', node);
-    }, 'sharplsp.build on a project node must not throw');
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.clean', node);
-    }, 'sharplsp.clean on a project node must not throw');
+    const recorder = new TaskRecorder();
+    try {
+      assert.deepStrictEqual(
+        await dispatchedBuildTask(recorder, CMD_BUILD, 0, node),
+        expectedBuildTask('Build', ['build', projectPath]),
+        'a node-scoped build must target the clicked project',
+      );
+      assert.deepStrictEqual(
+        await dispatchedBuildTask(recorder, CMD_REBUILD, 1, node),
+        expectedBuildTask('Rebuild', ['build', projectPath, '--no-incremental']),
+        'a node-scoped rebuild must keep --no-incremental after the target',
+      );
+      assert.deepStrictEqual(
+        await dispatchedBuildTask(recorder, CMD_CLEAN, 2, node),
+        expectedBuildTask('Clean', ['clean', projectPath]),
+        'a node-scoped clean must target the clicked project',
+      );
+    } finally {
+      recorder.dispose();
+      await terminateBuildTasks();
+    }
 
     const opened = vscode.window.terminals.filter((t) => t.name === 'SharpLsp Build');
     assert.deepStrictEqual(opened, [], 'a node-scoped build opens no terminal either');

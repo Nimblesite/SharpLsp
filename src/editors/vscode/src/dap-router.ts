@@ -76,8 +76,13 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   private readonly pendingBreakpointArgs = new Map<number, Record<string, unknown>>();
   /** seq -> arguments, correlating client `stackTrace` requests with responses. */
   private readonly pendingStackArgs = new Map<number, Record<string, unknown>>();
-  /** Synthetic request seq -> resolver, for requests this proxy issues. */
-  private readonly pendingOurs = new Map<number, (message: DapMessage) => void>();
+  /** The router's own in-flight requests, settled if the child dies mid-await. */
+  private readonly pendingOurs = new Map<
+    number,
+    { command: string; resolve: (message: DapMessage) => void }
+  >();
+  /** True once the child itself sent the DAP `terminated` event. */
+  private childAnnouncedTerminated = false;
   private nextSeq = 1_000_000;
   /** Run-to-cursor emulation ([DEBUG-FEATURES-STEPPING], P2). */
   private readonly goto: GotoEmulator;
@@ -112,14 +117,60 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     child.stderr.on('data', (chunk: Buffer) => {
       error(`netcoredbg: ${chunk.toString('utf8').trimEnd()}`);
     });
-    child.on('exit', (code) => {
+    child.on('exit', (code, signal) => {
       info(`netcoredbg exited with code ${String(code)}`);
+      // A clean protocol shutdown (the child already sent `terminated`) needs
+      // no ceremony; anything else ends the session honestly below.
+      this.onChildGone(
+        this.childAnnouncedTerminated
+          ? undefined
+          : `exited unexpectedly (code ${String(code)}, signal ${String(signal)})`,
+      );
     });
     child.on('error', (cause: Error) => {
-      error(`netcoredbg failed to start: ${cause.message}`);
-      this.closed = true;
+      this.onChildGone(`failed to start: ${cause.message}`);
     });
     return child;
+  }
+
+  /**
+   * The netcoredbg child is gone, or its wire is corrupt beyond repair.
+   *
+   * VS Code believes a session is still running, so nothing may be left
+   * hanging: every request the router issued in its own name is settled with
+   * a failure response, the user is told why on the debug console, and the
+   * session is terminated — unless the child already announced `terminated`
+   * itself (the clean path) or VS Code is disposing the router, in which case
+   * `why` is undefined and only the settlement happens.
+   */
+  private onChildGone(why: string | undefined): void {
+    this.closed = true;
+    const pending = [...this.pendingOurs];
+    this.pendingOurs.clear();
+    const reason = why ?? 'exited';
+    for (const [seq, entry] of pending) {
+      entry.resolve({
+        seq,
+        type: 'response',
+        request_seq: seq,
+        command: entry.command,
+        success: false,
+        message: `netcoredbg ${reason}`,
+      });
+    }
+    if (why === undefined || this.disposed) return;
+    error(`netcoredbg ${why}; ending the debug session.`);
+    this.fire({
+      type: 'event',
+      event: 'output',
+      body: {
+        category: 'stderr',
+        output: `SharpLsp: netcoredbg ${why}. Ending the debug session.\n`,
+      },
+    });
+    if (!this.childAnnouncedTerminated) {
+      this.fire({ type: 'event', event: 'terminated', body: {} });
+    }
   }
 
   /** VS Code -> netcoredbg, with the router's intercepts. */
@@ -233,7 +284,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   public async request(command: string, args: Record<string, unknown>): Promise<DapMessage> {
     const seq = this.nextSeq++;
     const reply = new Promise<DapMessage>((resolve) => {
-      this.pendingOurs.set(seq, resolve);
+      this.pendingOurs.set(seq, { command, resolve });
     });
     this.write({ seq, type: 'request', command, arguments: args });
     return await reply;
@@ -260,8 +311,10 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
 
   /** Accumulate child output and dispatch every complete frame it contains. */
   private consume(chunk: Buffer): void {
+    if (this.closed) return;
     this.buffer = Buffer.concat([this.buffer, chunk]);
     for (;;) {
+      if (this.closed) return;
       const frame = this.takeFrame();
       if (frame === undefined) return;
       this.routeChildMessage(frame);
@@ -273,12 +326,25 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     const end = this.buffer.indexOf(HEADER_END);
     if (end < 0) return undefined;
     const length = parseContentLength(this.buffer.subarray(0, end).toString('utf8'));
-    if (length === undefined) return undefined;
+    if (length === undefined) {
+      // A header without a parseable Content-Length is a corrupt wire: the
+      // buffer can never drain past it, so every later frame would be lost.
+      this.onChildGone('sent a corrupt DAP header');
+      return undefined;
+    }
     const start = end + HEADER_END.length;
     if (this.buffer.length < start + length) return undefined;
     const text = this.buffer.subarray(start, start + length).toString('utf8');
     this.buffer = this.buffer.subarray(start + length);
-    const parsed: unknown = JSON.parse(text);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch (cause) {
+      // Contained here, not thrown into the extension host: a frame that is
+      // not JSON ends the session deterministically instead.
+      this.onChildGone(`sent a malformed DAP frame: ${(cause as Error).message}`);
+      return undefined;
+    }
     return isRecord(parsed) ? parsed : undefined;
   }
 
@@ -296,7 +362,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
       const ours = this.pendingOurs.get(requestSeq);
       if (ours !== undefined) {
         this.pendingOurs.delete(requestSeq);
-        ours(message);
+        ours.resolve(message);
         return;
       }
       if (this.replayer.swallowResponse(requestSeq)) return;
@@ -342,6 +408,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
       }
     } else if (name === 'exited' || name === 'terminated') {
       this.debuggeeExited = true;
+      if (name === 'terminated') this.childAnnouncedTerminated = true;
       if (this.transitioning) return;
     } else if (name === 'breakpoint') {
       // Keep breakpoint EVENT ids in the session-scoped space the

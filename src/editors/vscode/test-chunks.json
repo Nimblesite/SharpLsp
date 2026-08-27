@@ -123,6 +123,7 @@
         "test-explorer-reactive.test.js",
         "test-explorer-windows.test.js",
         "test-explorer-parsers.test.js",
+        "test-explorer-cancellation.test.js",
         "testing-lens-e2e.test.js"
       ]
     },

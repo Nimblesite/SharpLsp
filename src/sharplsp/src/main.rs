@@ -626,8 +626,12 @@ fn handle_request(
     let method = req.method.clone();
 
     let result = match req.method.as_str() {
-        // Syntax-only (tree-sitter, Rust) for C#; F# has no host grammar, so its
-        // symbols come from the sidecar's FCS items. [SHARPLSP-FEATURES-NAVIGATION]
+        // Syntax-only (tree-sitter, Rust) for C#; documentSymbol for F# is
+        // deliberately served by the sidecar's FCS items (richer symbol data
+        // than a syntax tree can give). The other syntax features —
+        // foldingRange, selectionRange, linkedEditingRange — run on the F#
+        // tree-sitter grammar for both languages.
+        // [SHARPLSP-FEATURES-NAVIGATION]
         DocumentSymbolRequest::METHOD => {
             if is_fsharp_request(&req) {
                 let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);

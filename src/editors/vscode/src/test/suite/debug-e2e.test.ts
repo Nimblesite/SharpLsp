@@ -156,6 +156,83 @@ suite('Debug E2E — F5 with no launch.json', () => {
     await recorder.assertNoSession('resolving a configuration starts no debug session');
   });
 
+  // Implements [DEBUG-FEATURES-LAUNCH-PROFILES] rules 2 and 4 for the one shape
+  // the profile suite never covers: a launch.json that states BOTH its own
+  // program and relies on the project's launch profile. Resolution used to bail
+  // out entirely on `config.program !== undefined`, which silently dropped the
+  // profile's environment and arguments from every hand-written configuration.
+  test('a launch profile still applies when the configuration states its own program', async function () {
+    this.timeout(60_000);
+    const { tmpDir, stubs, recorder } = harness();
+    const project = writeCSharpConsole(path.join(tmpDir, 'ExplicitProfile'), 'ExplicitProfile');
+    const folder = fakeFolder(project.dir);
+    writeLaunchSettings(project.dir, {
+      profiles: {
+        IIS: { commandName: 'IISExpress', environmentVariables: { WHICH: 'iis' } },
+        Web: {
+          commandName: 'Project',
+          environmentVariables: { ASPNETCORE_ENVIRONMENT: 'Development' },
+          commandLineArgs: '--port 5000',
+        },
+      },
+    });
+
+    // 1. The user's own program, plus the project's profile. Both must survive.
+    const chosen = path.join(project.dir, 'bin', 'Debug', TFM, 'HandPicked.dll');
+    const resolved = await resolveConfig(folder, {
+      type: DEBUG_TYPE_ID,
+      request: 'launch',
+      name: 'Mine',
+      program: chosen,
+    });
+    assert.strictEqual(resolved.program, chosen, 'the explicit program is still never rewritten');
+    const resolvedEnv: Record<string, string> = resolved.env;
+    assert.deepStrictEqual(
+      resolvedEnv,
+      { ASPNETCORE_ENVIRONMENT: 'Development' },
+      'the Project profile supplies env even when the program was stated',
+    );
+    assert.deepStrictEqual(
+      resolved.args,
+      ['--port', '5000'],
+      'and commandLineArgs still become argv',
+    );
+    assert.deepStrictEqual(
+      Object.keys(resolvedEnv).sort(),
+      ['ASPNETCORE_ENVIRONMENT'],
+      'the IISExpress profile must not leak in on this path either',
+    );
+
+    // 2. What the configuration states itself still wins over the profile.
+    const preset = await resolveConfig(folder, {
+      type: DEBUG_TYPE_ID,
+      request: 'launch',
+      name: 'Mine',
+      program: chosen,
+      env: { WHICH: 'explicit' },
+      args: ['kept'],
+    });
+    assert.deepStrictEqual(
+      preset.env,
+      { ASPNETCORE_ENVIRONMENT: 'Development', WHICH: 'explicit' },
+      'env still merges per key when the program was stated',
+    );
+    assert.deepStrictEqual(preset.args, ['kept'], 'and explicit args still win whole');
+
+    // 3. An attach that names a program is still not a launch. Rule 2.
+    const attach = await resolveConfig(folder, {
+      type: DEBUG_TYPE_ID,
+      request: 'attach',
+      name: 'A',
+      program: chosen,
+    });
+    assertNoProfileValues(attach, 'an attach configuration that states a program');
+
+    assert.deepStrictEqual(stubs.log.errorMessages, [], 'this path raises no error dialog');
+    assert.deepStrictEqual(stubs.log.warningMessages, [], 'nor a warning');
+    await recorder.assertNoSession('resolving starts no debug session');
+  });
+
   test('an unsound launchSettings.json never blocks F5; a sound one supplies env and args', async function () {
     this.timeout(60_000);
     const { tmpDir, stubs, recorder } = harness();
@@ -244,12 +321,16 @@ suite('Debug E2E — F5 with no launch.json', () => {
       env: { WHICH: 'explicit' },
       args: ['kept'],
     });
-    assert.deepStrictEqual(preset.env, { WHICH: 'explicit' }, 'an explicit env survives');
-    assert.deepStrictEqual(preset.args, ['kept'], 'and explicit args survive');
-    assert.notDeepStrictEqual(
+    assert.deepStrictEqual(
       preset.env,
-      { ASPNETCORE_ENVIRONMENT: 'Development' },
-      'the profile must not clobber it',
+      { ASPNETCORE_ENVIRONMENT: 'Development', WHICH: 'explicit' },
+      'the mapping table merges env PER KEY: WHICH is pinned, the rest still arrives',
+    );
+    assert.deepStrictEqual(preset.args, ['kept'], 'args are a list, so explicit args win whole');
+    assert.strictEqual(
+      (preset.env as Record<string, string>)['WHICH'],
+      'explicit',
+      'the profile must not clobber a variable the configuration pinned',
     );
 
     assert.deepStrictEqual(stubs.log.errorMessages, [], 'broken profiles are not an error toast');

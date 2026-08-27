@@ -151,14 +151,14 @@ export function profileOfKind(
 }
 
 /**
- * Press the Test Explorer's ▶ (or coverage) button for `items`: invoke the very
- * `runHandler` the workbench invokes, with a real cancellation token.
+ * Invoke the very `runHandler` the workbench invokes for `items`, with a real
+ * cancellation token. `arm` decides when — if ever — ⏹ is pressed on it.
  */
-export async function runViaProfile(
+async function runWithToken(
   controller: SharpLspTestController,
   kind: vscode.TestRunProfileKind,
   items: readonly vscode.TestItem[],
-  cancelAfterMs?: number,
+  arm: (source: vscode.CancellationTokenSource) => void,
 ): Promise<void> {
   const profile = profileOfKind(controller, kind);
   const request = new vscode.TestRunRequest(
@@ -167,16 +167,51 @@ export async function runViaProfile(
     profile,
   );
   const source = new vscode.CancellationTokenSource();
-  if (cancelAfterMs !== undefined) {
-    setTimeout(() => {
-      source.cancel();
-    }, cancelAfterMs);
-  }
+  arm(source);
   try {
     await profile.runHandler(request, source.token);
   } finally {
     source.dispose();
   }
+}
+
+/**
+ * Press the Test Explorer's ▶ (or coverage) button for `items`, optionally
+ * pressing ⏹ `cancelAfterMs` later.
+ */
+export async function runViaProfile(
+  controller: SharpLspTestController,
+  kind: vscode.TestRunProfileKind,
+  items: readonly vscode.TestItem[],
+  cancelAfterMs?: number,
+): Promise<void> {
+  await runWithToken(controller, kind, items, (source) => {
+    if (cancelAfterMs === undefined) return;
+    setTimeout(() => {
+      source.cancel();
+    }, cancelAfterMs);
+  });
+}
+
+/**
+ * Press ▶ for `items`, then press ⏹ the moment `trigger` settles.
+ *
+ * A wall-clock delay cannot express "stop once the run is demonstrably under
+ * way"; a promise the fixture itself resolves — when the test process announces
+ * it is running — can, and makes the cancellation deterministic.
+ */
+export async function runAndCancelWhen(
+  controller: SharpLspTestController,
+  kind: vscode.TestRunProfileKind,
+  items: readonly vscode.TestItem[],
+  trigger: Promise<unknown>,
+): Promise<void> {
+  await runWithToken(controller, kind, items, (source) => {
+    const stop = (): void => {
+      source.cancel();
+    };
+    void trigger.then(stop, stop);
+  });
 }
 
 /** Resolve on the controller's next `onResultsChanged`, or on timeout. */

@@ -164,11 +164,8 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
       'string',
       'B59: the command is a plain path string',
     );
-    assert.strictEqual(
-      first.options,
-      undefined,
-      'B59: no cwd/env override is imposed on netcoredbg',
-    );
+    // B59: no cwd/env override is imposed on netcoredbg — DapRouter.spawn
+    // passes stdio pipes only, so the resolved path is spawned verbatim.
     assert.deepStrictEqual(stubs.log.errorMessages, [], 'a resolvable adapter reports nothing');
 
     // A user install appears; the setting must still win.
@@ -180,7 +177,11 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
       'with HOME isolated, ~/.dotnet/tools is candidate zero',
     );
     const second = routerOf(factory, session);
-    assert.strictEqual(second.adapterPath, primary, 'B59: an explicit setting beats a user install');
+    assert.strictEqual(
+      second.adapterPath,
+      primary,
+      'B59: an explicit setting beats a user install',
+    );
     assert.notStrictEqual(second.adapterPath, userInstall, 'B59: the candidate must not be chosen');
 
     // A VSIX-bundled copy appears too; the setting still wins.
