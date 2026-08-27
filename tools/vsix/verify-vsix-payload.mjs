@@ -9,6 +9,8 @@
 //
 // Run from the extension directory.
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import * as path from "node:path";
 
 /** VS Code platform id: "<platform>-<arch>". */
 const PLATFORM = `${process.platform}-${process.arch}`;
@@ -58,14 +60,30 @@ const FORBIDDEN = [
     [(entry) => entry.endsWith(".map"), "source maps"],
 ];
 
-// npm ships `npx` as `npx.cmd` on Windows. `execFileSync` does not consult
-// PATHEXT, so the bare name is ENOENT there — which failed every Windows VSIX
-// chunk ([DIST-CI-WIN-VSIX]) before it could check a single file. Naming the
-// real executable keeps the call shell-free, so no argument needs quoting.
-const NPX = process.platform === "win32" ? "npx.cmd" : "npx";
+// vsce is run as PLAIN JS THROUGH THIS NODE, never through `npx`.
+//
+// On Windows npm ships npx as `npx.cmd`, and there is no way to spawn it
+// without a shell: the bare name is ENOENT because `execFileSync` does not
+// consult PATHEXT, and naming `npx.cmd` is EINVAL because Node refuses to
+// execute .cmd/.bat without `shell: true` (the CVE-2024-27980 mitigation).
+// Turning the shell on would put every argument back into a quoting problem.
+// Resolving vsce's own entry point and handing it to `process.execPath`
+// sidesteps all of it — the same pattern tools/npm/run-sequential.mjs already
+// uses for the npm CLI. Every Windows VSIX chunk ([DIST-CI-WIN-VSIX]) failed
+// here, before it could check a single file.
+const requireFrom = createRequire(import.meta.url);
+
+function vsceEntryPoint() {
+    const manifest = requireFrom.resolve("@vscode/vsce/package.json", {
+        paths: [process.cwd()],
+    });
+    const { bin } = requireFrom(manifest);
+    const relative = typeof bin === "string" ? bin : bin.vsce;
+    return path.join(path.dirname(manifest), relative);
+}
 
 function packagedEntries() {
-    const stdout = execFileSync(NPX, ["vsce", "ls", "--no-dependencies"], {
+    const stdout = execFileSync(process.execPath, [vsceEntryPoint(), "ls", "--no-dependencies"], {
         encoding: "utf8",
         maxBuffer: 64 * 1024 * 1024,
     });
