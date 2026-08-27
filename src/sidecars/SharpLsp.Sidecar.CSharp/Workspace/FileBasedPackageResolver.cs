@@ -4,16 +4,23 @@ using System.Text;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.MSBuild;
 using Outcome;
 using Serilog;
-using PackageReferencesResult = Outcome.Result<
-    System.Collections.Generic.IReadOnlyList<Microsoft.CodeAnalysis.PortableExecutableReference>,
+using FileBasedProjectResult = Outcome.Result<
+    SharpLsp.Sidecar.CSharp.Workspace.ResolvedFileBasedProject,
     string
 >;
 using RestoreResult = Outcome.Result<Outcome.Unit, string>;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
+
+internal sealed record ResolvedFileBasedProject(
+    IReadOnlyList<PortableExecutableReference> References,
+    CSharpParseOptions ParseOptions,
+    CSharpCompilationOptions CompilationOptions
+);
 
 /// <summary>
 /// Resolves <c>#:package</c> through a real synthesized MSBuild project.
@@ -22,31 +29,26 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// </summary>
 internal static class FileBasedPackageResolver
 {
-    private const string TargetFramework = "net10.0";
+    private static readonly string DefaultTargetFramework = $"net{Environment.Version.Major}.0";
 
-    public static async Task<PackageReferencesResult> ResolveAsync(
-        IReadOnlyList<PackageRef> packages,
+    public static async Task<FileBasedProjectResult> ResolveAsync(
+        Closure closure,
         string rootPath,
         CancellationToken ct
     )
     {
-        if (packages.Count == 0)
-        {
-            return Success([]);
-        }
-
         try
         {
             var context = CreateContext(rootPath);
-            WriteProject(context.ProjectPath, packages);
-            var restored = await RestoreAsync(context, packages, ct).ConfigureAwait(false);
+            WriteProject(context.ProjectPath, closure);
+            var restored = await RestoreAsync(context, closure.Packages, ct).ConfigureAwait(false);
             return restored.IsError
-                ? PackageReferencesResult.Failure(!restored ?? "Package restore failed.")
+                ? FileBasedProjectResult.Failure(!restored ?? "MSBuild restore failed.")
                 : await LoadReferencesAsync(context, ct).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
-            return PackageReferencesResult.Failure(exception.Message);
+            return FileBasedProjectResult.Failure(exception.Message);
         }
     }
 
@@ -71,24 +73,60 @@ internal static class FileBasedPackageResolver
         return Path.Combine(Path.GetTempPath(), "dotnet", "runfile", $"{appName}-{hash}");
     }
 
-    private static void WriteProject(string projectPath, IReadOnlyList<PackageRef> packages)
+    private static void WriteProject(string projectPath, Closure closure)
     {
         using var collection = new ProjectCollection();
         var root = ProjectRootElement.Create(projectPath, collection);
-        root.Sdk = "Microsoft.NET.Sdk";
-        AddDefaults(root.AddPropertyGroup());
-        AddPackages(root.AddItemGroup(), packages);
+        root.Sdk = Sdk(closure.Directives);
+        AddProperties(root.AddPropertyGroup(), closure.Directives);
+        AddPackages(root.AddItemGroup(), closure.Packages);
         root.Save();
     }
 
-    private static void AddDefaults(ProjectPropertyGroupElement properties)
+    private static string Sdk(IReadOnlyList<FileDirective> directives)
     {
-        _ = properties.AddProperty("TargetFramework", TargetFramework);
-        _ = properties.AddProperty("ImplicitUsings", "enable");
-        _ = properties.AddProperty("Nullable", "enable");
-        _ = properties.AddProperty("OutputType", "Exe");
-        _ = properties.AddProperty("PublishAot", "true");
-        _ = properties.AddProperty("PackAsTool", "true");
+        var sdk = directives.FirstOrDefault(directive =>
+            directive.Kind == FileDirectiveKind.Sdk && !string.IsNullOrEmpty(directive.Name)
+        );
+        return sdk is null ? "Microsoft.NET.Sdk"
+            : string.IsNullOrEmpty(sdk.Value) ? sdk.Name
+            : $"{sdk.Name}/{sdk.Value}";
+    }
+
+    private static void AddProperties(
+        ProjectPropertyGroupElement group,
+        IReadOnlyList<FileDirective> directives
+    )
+    {
+        var properties = DefaultProperties();
+        foreach (var directive in directives.Where(IsPropertyWithValue))
+        {
+            properties[directive.Name] = directive.Value!;
+        }
+        foreach (var (name, value) in properties)
+        {
+            _ = group.AddProperty(name, value);
+        }
+    }
+
+    private static Dictionary<string, string> DefaultProperties()
+    {
+        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["TargetFramework"] = DefaultTargetFramework,
+            ["ImplicitUsings"] = "enable",
+            ["Nullable"] = "enable",
+            ["OutputType"] = "Exe",
+            ["PublishAot"] = "true",
+            ["PackAsTool"] = "true",
+        };
+    }
+
+    private static bool IsPropertyWithValue(FileDirective directive)
+    {
+        return directive.Kind == FileDirectiveKind.Property
+            && !string.IsNullOrEmpty(directive.Name)
+            && directive.Value is not null;
     }
 
     private static void AddPackages(
@@ -124,7 +162,14 @@ internal static class FileBasedPackageResolver
         var detail = await RestoreDetailAsync(standardOutput, standardError).ConfigureAwait(false);
         return process.ExitCode == 0
             ? new RestoreResult.Ok<Unit, string>(Unit.Value)
-            : RestoreResult.Failure($"Restore failed for {Describe(packages)}: {detail}");
+            : RestoreResult.Failure(RestoreFailure(packages, detail));
+    }
+
+    private static string RestoreFailure(IReadOnlyList<PackageRef> packages, string detail)
+    {
+        return packages.Count == 0
+            ? $"MSBuild evaluation failed: {detail}"
+            : $"Restore failed for {Describe(packages)}: {detail}";
     }
 
     private static ProcessStartInfo RestoreStartInfo(RestoreContext context)
@@ -193,7 +238,7 @@ internal static class FileBasedPackageResolver
             : "no output";
     }
 
-    private static async Task<PackageReferencesResult> LoadReferencesAsync(
+    private static async Task<FileBasedProjectResult> LoadReferencesAsync(
         RestoreContext context,
         CancellationToken ct
     )
@@ -205,9 +250,24 @@ internal static class FileBasedPackageResolver
         var failure = workspace.Diagnostics.FirstOrDefault(diagnostic =>
             diagnostic.Kind == WorkspaceDiagnosticKind.Failure
         );
-        return failure is null
-            ? Success([.. project.MetadataReferences.OfType<PortableExecutableReference>()])
-            : PackageReferencesResult.Failure(failure.Message);
+        return failure is not null
+            ? FileBasedProjectResult.Failure(failure.Message)
+            : ResolvedProject(project);
+    }
+
+    private static FileBasedProjectResult ResolvedProject(Microsoft.CodeAnalysis.Project project)
+    {
+        return
+            project.ParseOptions is CSharpParseOptions parseOptions
+            && project.CompilationOptions is CSharpCompilationOptions compilationOptions
+            ? Success(
+                new ResolvedFileBasedProject(
+                    [.. project.MetadataReferences.OfType<PortableExecutableReference>()],
+                    parseOptions,
+                    compilationOptions
+                )
+            )
+            : FileBasedProjectResult.Failure("MSBuild returned non-C# project options.");
     }
 
     private static Dictionary<string, string> EvaluationProperties(string appDirectory)
@@ -283,13 +343,9 @@ internal static class FileBasedPackageResolver
         );
     }
 
-    private static PackageReferencesResult Success(
-        IReadOnlyList<PortableExecutableReference> references
-    )
+    private static FileBasedProjectResult Success(ResolvedFileBasedProject project)
     {
-        return new PackageReferencesResult.Ok<IReadOnlyList<PortableExecutableReference>, string>(
-            references
-        );
+        return new FileBasedProjectResult.Ok<ResolvedFileBasedProject, string>(project);
     }
 
     private sealed record RestoreContext(

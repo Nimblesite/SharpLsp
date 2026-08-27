@@ -18,7 +18,7 @@
       ]
     },
     "lsp": {
-      "description": "C# language intelligence over the real LSP: completion, hover, diagnostics, document symbols, folding, selection ranges, code actions, document sync, client lifecycle, and file-based package restore/reload/isolation.",
+      "description": "C# language intelligence over the real LSP: completion, hover, diagnostics, document symbols, folding, selection ranges, code actions, document sync, client lifecycle, and file-based package restore/reload/isolation/configuration-cone parity.",
       "files": [
         "completions-visible.test.js",
         "hover.test.js",
@@ -26,6 +26,7 @@
         "lsp-integration.test.js",
         "lsp-document-sync.test.js",
         "filebased-package-e2e.test.js",
+        "filebased-package-config-e2e.test.js",
         "lsp-lifecycle.test.js",
         "lsp-refactor-quickfixes.test.js",
         "lsp-refactor-organize-imports.test.js",

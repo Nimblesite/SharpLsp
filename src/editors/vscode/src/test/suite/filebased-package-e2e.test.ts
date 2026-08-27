@@ -13,89 +13,20 @@ import {
   waitForHoverResult,
 } from './test-helpers';
 import { fixtureSolutionPath, loadSolutionInServer } from './real-repo-helpers';
-
-const PACKAGE = '#:package Newtonsoft.Json@13.0.3';
-const RESTORE_TIMEOUT_MS = 120_000;
-
-function positionAfter(text: string, marker: string): vscode.Position {
-  const offset = text.indexOf(marker);
-  assert.notStrictEqual(offset, -1, `fixture must contain ${JSON.stringify(marker)}`);
-  const prefix = text.slice(0, offset + marker.length);
-  const lines = prefix.split('\n');
-  return new vscode.Position(lines.length - 1, lines.at(-1)?.length ?? 0);
-}
-
-function positionInside(text: string, marker: string): vscode.Position {
-  const after = positionAfter(text, marker);
-  assert.ok(after.character > 0, `fixture token ${JSON.stringify(marker)} must be non-empty`);
-  return after.translate(0, -1);
-}
-
-function diagnosticCode(diagnostic: vscode.Diagnostic): string {
-  const code = diagnostic.code;
-  if (code === undefined) return '';
-  if (typeof code === 'object') return String(code.value);
-  return String(code);
-}
-
-function errorsFor(uri: vscode.Uri): vscode.Diagnostic[] {
-  return vscode.languages
-    .getDiagnostics(uri)
-    .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error);
-}
-
-async function openFileBasedApp(
-  tmpDir: string,
-  filename: string,
-  content: string,
-): Promise<{ doc: vscode.TextDocument; uri: vscode.Uri }> {
-  const uri = vscode.Uri.file(path.join(tmpDir, filename));
-  fs.writeFileSync(uri.fsPath, content, 'utf8');
-  await loadSolutionInServer(uri.fsPath);
-  const doc = await vscode.workspace.openTextDocument(uri);
-  await vscode.window.showTextDocument(doc);
-  return { doc, uri };
-}
-
-async function waitForErrorCode(uri: vscode.Uri, code: string): Promise<vscode.Diagnostic[]> {
-  const diagnostics = await pollUntilResult(
-    async () => errorsFor(uri),
-    (diagnostics) => diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === code),
-    LSP_RESPONSE_TIMEOUT_MS * 4,
-  );
-  assert.ok(
-    diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === code),
-    `expected ${code}; got ${diagnostics.map(diagnosticCode).join(', ') || 'no diagnostics'}`,
-  );
-  return diagnostics;
-}
-
-async function completionList(
-  uri: vscode.Uri,
-  position: vscode.Position,
-  requiredLabel: string,
-  resolveCount = 0,
-): Promise<vscode.CompletionList> {
-  return pollUntilResult(
-    async () =>
-      (await vscode.commands.executeCommand<vscode.CompletionList>(
-        'vscode.executeCompletionItemProvider',
-        uri,
-        position,
-        undefined,
-        resolveCount,
-      )) ?? new vscode.CompletionList(),
-    (list) => list.items.some((item) => item.label.toString() === requiredLabel),
-    RESTORE_TIMEOUT_MS,
-    1_000,
-  );
-}
-
-function itemNamed(list: vscode.CompletionList, label: string): vscode.CompletionItem {
-  const item = list.items.find((candidate) => candidate.label.toString() === label);
-  assert.ok(item, `completion list must contain ${label}`);
-  return item;
-}
+import {
+  PACKAGE,
+  RESTORE_TIMEOUT_MS,
+  assertNoPackageBindingErrors,
+  completionList,
+  diagnosticCode,
+  errorsFor,
+  hoverText,
+  itemNamed,
+  openFileBasedApp,
+  positionAfter,
+  positionInside,
+  waitForErrorCode,
+} from './filebased-package-kit';
 
 function insertionRange(item: vscode.CompletionItem): vscode.Range {
   const range = item.range;
@@ -114,26 +45,6 @@ function insertionText(item: vscode.CompletionItem): string {
     assert.fail('resolved completion must insert plain text');
   }
   return inserted;
-}
-
-function hoverText(hovers: readonly vscode.Hover[]): string {
-  return hovers
-    .flatMap((hover) => hover.contents)
-    .map((content) => {
-      if (typeof content === 'string') return content;
-      if (content instanceof vscode.MarkdownString) return content.value;
-      return JSON.stringify(content);
-    })
-    .join('\n');
-}
-
-function assertNoPackageBindingErrors(uri: vscode.Uri): void {
-  const errors = errorsFor(uri);
-  const codes = errors.map(diagnosticCode);
-  assert.ok(!codes.includes('CS0234'), `package namespace must bind; errors: ${codes.join(', ')}`);
-  assert.ok(!codes.includes('CS0246'), `package types must bind; errors: ${codes.join(', ')}`);
-  assert.ok(!codes.includes('CS0103'), `package values must bind; errors: ${codes.join(', ')}`);
-  assert.deepStrictEqual(errors, [], 'a restored package-backed file-based app has zero errors');
 }
 
 suite('VSIX E2E — C# file-based #:package directives', () => {
@@ -348,13 +259,16 @@ Console.WriteLine(text.Length);
       RESTORE_TIMEOUT_MS,
       1_000,
     );
-    const degraded = diagnostics.filter(
-      (diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Information,
-    );
-    assert.ok(degraded.length > 0, 'tier 2 must be disclosed with an informational diagnostic');
-    assert.ok(degraded.every((diagnostic) => diagnostic.source === 'sharplsp-csharp'));
-    assert.ok(degraded.some((diagnostic) => diagnostic.range.start.line === 0));
-    assert.ok(degraded.some((diagnostic) => diagnostic.message.includes('0.0.0')));
+    const degraded = diagnostics.filter((diagnostic) => diagnosticCode(diagnostic) === 'SLSPC0001');
+    assert.strictEqual(degraded.length, 1, 'tier 2 emits one explicit fallback diagnostic');
+    assert.strictEqual(degraded[0]?.severity, vscode.DiagnosticSeverity.Information);
+    assert.strictEqual(degraded[0]?.source, 'sharplsp-csharp');
+    assert.strictEqual(degraded[0]?.range.start.line, 0);
+    assert.strictEqual(degraded[0]?.range.start.character, 0);
+    assert.strictEqual(degraded[0]?.range.end.line, 0);
+    assert.strictEqual(degraded[0]?.range.end.character, 1);
+    assert.ok(degraded[0]?.message.includes('BCL-only references'));
+    assert.ok(degraded[0]?.message.includes('0.0.0'));
     assert.deepStrictEqual(errorsFor(uri), [], 'restore failure must not kill BCL analysis');
   });
 

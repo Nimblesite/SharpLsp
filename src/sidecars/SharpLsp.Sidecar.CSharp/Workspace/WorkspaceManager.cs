@@ -63,6 +63,9 @@ internal sealed partial class WorkspaceManager : IDisposable
 
     public void Dispose()
     {
+        _packageResolutionGenerations.Clear();
+        _packageResolutionCancellation.Cancel();
+        _packageResolutionCancellation.Dispose();
         _workspace?.Dispose();
         _adhocWorkspace?.Dispose();
         _solutionMutationLock.Dispose();
@@ -76,14 +79,22 @@ internal sealed partial class WorkspaceManager : IDisposable
         StringComparer.OrdinalIgnoreCase
     );
 
-    private readonly System.Collections.Generic.Dictionary<
-        Microsoft.CodeAnalysis.DocumentId,
-        System.Collections.Generic.IReadOnlyList<PackageRef>
-    > _documentPackages = new();
+    private readonly Dictionary<string, IReadOnlyList<PackageRef>> _documentPackages = new(
+        StringComparer.OrdinalIgnoreCase
+    );
+    private readonly Dictionary<string, IReadOnlyList<FileDirective>> _documentDirectives = new(
+        StringComparer.OrdinalIgnoreCase
+    );
     private readonly System.Collections.Concurrent.ConcurrentDictionary<
-        DocumentId,
+        string,
         string
-    > _projectlessDegradations = new();
+    > _projectlessDegradations = new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<
+        string,
+        long
+    > _packageResolutionGenerations = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource _packageResolutionCancellation = new();
+    private long _nextPackageResolutionGeneration;
 
     public bool IsLoaded => _solution is not null;
 
@@ -653,6 +664,8 @@ internal sealed partial class WorkspaceManager : IDisposable
             // Implements [SCRIPT-DETECT].
             return await OpenProjectlessAsync(path, ct).ConfigureAwait(false);
         }
+
+        await ResetProjectlessStateAsync(ct).ConfigureAwait(false);
 
         var properties = new Dictionary<string, string>
         {

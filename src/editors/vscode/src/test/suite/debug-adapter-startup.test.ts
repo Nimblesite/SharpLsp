@@ -25,6 +25,12 @@ import { removeDirRecursive } from './test-helpers';
 // `Result`, and the asynchronous `error` event still ends the session honestly.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** The shape of the DAP events this suite inspects. */
+interface DapEvent {
+  readonly event: string;
+  readonly body?: { readonly output?: unknown; readonly category?: unknown };
+}
+
 /** A path `cp.spawn` rejects synchronously on every platform. */
 const UNSPAWNABLE = `${path.sep}sharplsp\0netcoredbg`;
 
@@ -138,6 +144,59 @@ suite('Debug adapter startup is total', () => {
     );
   });
 
+  // Implements the write half of [DEBUG-ADAPTER-GAPS]. `write()` guards on
+  // `stdin.writable`, but that check can never be enough: netcoredbg can die
+  // between the guard and the syscall, and Node then reports the broken pipe
+  // ASYNCHRONOUSLY on the stream. With no `error` listener that EPIPE is an
+  // uncaught exception in the extension host — observed on Windows CI as
+  // `Uncaught Error: write EPIPE` at `DapRouter.write`, which killed the whole
+  // run rather than the one session.
+  test('writing to an adapter that has died never escapes into the host', async () => {
+    const dying = path.join(tmpDir, 'dying', EXE);
+    fs.mkdirSync(path.dirname(dying), { recursive: true });
+    fs.writeFileSync(dying, '#!/bin/sh\nexit 0\n', 'utf-8');
+    fs.chmodSync(dying, 0o755);
+
+    const outcome = DapRouter.start(dying);
+    assert.strictEqual(outcome.ok, true, 'the premise: this adapter does start');
+    if (!outcome.ok) return;
+    const router = outcome.value;
+
+    const seen: DapEvent[] = [];
+    const subscription = router.onDidSendMessage((message) => {
+      if (typeof (message as DapEvent).event === 'string') seen.push(message as DapEvent);
+    });
+
+    // Let it exit, so the pipe is genuinely broken rather than merely closing.
+    await new Promise<void>((resolve) => setTimeout(resolve, 1_500));
+
+    // VS Code keeps forwarding client requests until it is told the session
+    // ended, so this is the ordinary sequence, not a contrived one.
+    assert.doesNotThrow(() => {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        router.handleMessage({
+          seq: attempt,
+          type: 'request',
+          command: 'threads',
+          arguments: {},
+        });
+      }
+    }, 'writing to a dead adapter must not throw into the extension host');
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    subscription.dispose();
+    router.dispose();
+
+    const terminations = seen.filter((message) => message.event === 'terminated').length;
+    assert.strictEqual(
+      terminations,
+      1,
+      `a dead adapter ends the session exactly once; events: ${JSON.stringify(
+        seen.map((message) => message.event),
+      )}`,
+    );
+  });
+
   test('an asynchronous spawn failure still terminates the session honestly', async () => {
     const missing = path.join(tmpDir, 'absent', EXE);
     assert.strictEqual(fs.existsSync(missing), false, 'the premise: nothing is at that path');
@@ -153,20 +212,27 @@ suite('Debug adapter startup is total', () => {
     if (!outcome.ok) return;
     const router = outcome.value;
 
-    const events: string[] = [];
+    // Whole messages, not just names: the console line has to NAME the failure,
+    // and an assertion on the event name alone passes for an empty message.
+    const seen: DapEvent[] = [];
     const subscription = router.onDidSendMessage((message) => {
-      const event = (message as { event?: unknown }).event;
-      if (typeof event === 'string') events.push(event);
+      const event = (message as DapEvent).event;
+      if (typeof event === 'string') seen.push(message as DapEvent);
     });
+    const events = (): string[] => seen.map((message) => message.event);
     const terminated = await new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => {
-        resolve(events.includes('terminated'));
-      }, 5_000);
-      const poll = setInterval(() => {
-        if (!events.includes('terminated')) return;
+      // BOTH exits clear BOTH timers. Resolving out of the timeout while the
+      // interval still ran leaked a handle into every later test in the chunk.
+      const settle = (value: boolean): void => {
         clearTimeout(timer);
         clearInterval(poll);
-        resolve(true);
+        resolve(value);
+      };
+      const timer = setTimeout(() => {
+        settle(events().includes('terminated'));
+      }, 5_000);
+      const poll = setInterval(() => {
+        if (events().includes('terminated')) settle(true);
       }, 50);
     });
     subscription.dispose();
@@ -175,21 +241,29 @@ suite('Debug adapter startup is total', () => {
     assert.strictEqual(
       terminated,
       true,
-      `a dead adapter must end the session; events seen: ${JSON.stringify(events)}`,
+      `a dead adapter must end the session; events seen: ${JSON.stringify(events())}`,
     );
     // EXACTLY one of each. A failed spawn emits `error` and then `exit`, so a
     // shutdown that is not idempotent ends the session twice — and `includes`
     // cannot see that, which is how the duplicate survived review.
-    const count = (name: string): number => events.filter((event) => event === name).length;
+    const count = (name: string): number => events().filter((event) => event === name).length;
     assert.strictEqual(
       count('terminated'),
       1,
-      `the session must be terminated ONCE; events seen: ${JSON.stringify(events)}`,
+      `the session must be terminated ONCE; events seen: ${JSON.stringify(events())}`,
     );
     assert.strictEqual(
       count('output'),
       1,
-      `the user is told why ONCE; events seen: ${JSON.stringify(events)}`,
+      `the user is told why ONCE; events seen: ${JSON.stringify(events())}`,
     );
+
+    // And it must SAY something actionable. An `output` event carrying an empty
+    // string satisfies "exactly one output" while telling the user nothing.
+    const output = seen.find((message) => message.event === 'output');
+    const text = typeof output?.body?.output === 'string' ? output.body.output : '';
+    assert.match(text, /netcoredbg/i, `the console line names the adapter; got ${text}`);
+    assert.match(text, /ENOENT|failed to start/i, `and names the failure; got ${text}`);
+    assert.strictEqual(output?.body?.category, 'stderr', 'a failure belongs on stderr, not stdout');
   });
 });

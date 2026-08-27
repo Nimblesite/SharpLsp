@@ -207,8 +207,15 @@ fn collect_folding(node: Node<'_>, ranges: &mut Vec<FoldingRange>) {
         {
             Some(FoldingRangeKind::Comment)
         }
-        // Using directives group (C# `using_directive`, F# `open`)
-        "using_directive" | "open" => Some(FoldingRangeKind::Imports),
+        // Using directives group (C# `using_directive`, F# `import_decl`).
+        //
+        // `import_decl`, NOT `open`: in tree-sitter-fsharp `open` is an
+        // ANONYMOUS keyword token inside `import_decl`, so matching on it named
+        // a node this walk never visits as a fold candidate — dead code that
+        // read like F# import folding was implemented. Either way a one-line
+        // `open X` does not fold, because the `start.row < end.row` guard below
+        // drops every single-line node.
+        "using_directive" | "import_decl" => Some(FoldingRangeKind::Imports),
         _ => None,
     };
 

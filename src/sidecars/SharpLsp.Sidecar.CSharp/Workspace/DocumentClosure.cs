@@ -12,6 +12,7 @@ internal sealed record PackageRef(string Name, string? Version);
 internal sealed record Closure(
     IReadOnlyList<ClosureFile> Files,
     IReadOnlyList<PackageRef> Packages,
+    IReadOnlyList<FileDirective> Directives,
     IReadOnlyList<string> Issues
 );
 
@@ -72,7 +73,7 @@ internal static class DocumentClosure
         var state = new ExpansionState(children);
         await VisitAsync(rootPath, rootText, isRoot: true, depth: 0, state, ct)
             .ConfigureAwait(false);
-        return new Closure(state.Files, state.Packages, state.Issues);
+        return new Closure(state.Files, state.Packages, state.Directives, state.Issues);
     }
 
     private delegate IEnumerable<string> ChildResolver(
@@ -118,6 +119,7 @@ internal static class DocumentClosure
         );
         var root = await tree.GetRootAsync(ct).ConfigureAwait(false);
         var directives = FileLevelDirectives.Parse(root);
+        state.Directives.AddRange(directives);
 
         foreach (var directive in directives)
         {
@@ -233,6 +235,7 @@ internal static class DocumentClosure
         public HashSet<string> Visited { get; } = new(StringComparer.OrdinalIgnoreCase);
         public List<ClosureFile> Files { get; } = [];
         public List<PackageRef> Packages { get; } = [];
+        public List<FileDirective> Directives { get; } = [];
         public List<string> Issues { get; } = [];
     }
 }

@@ -147,6 +147,16 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     child.stderr.on('data', (chunk: Buffer) => {
       error(`netcoredbg: ${chunk.toString('utf8').trimEnd()}`);
     });
+    // A write can fail long AFTER the `writable` guard in `write()` passes:
+    // netcoredbg can die between that check and the syscall, and Node reports
+    // the broken pipe asynchronously on the stream. With no listener here an
+    // `EPIPE` is an UNCAUGHT exception in the extension host — which is how a
+    // dead adapter took the whole host down mid-session instead of ending one
+    // debug session. A broken pipe IS the child being gone, so it settles
+    // through the same idempotent path as `exit` and `error`.
+    child.stdin.on('error', (cause: Error) => {
+      this.onChildGone(`stdin closed: ${getErrorMessage(cause)}`);
+    });
     child.on('exit', (code, signal) => {
       info(`netcoredbg exited with code ${String(code)}`);
       // A clean protocol shutdown (the child already sent `terminated`) needs
@@ -311,9 +321,14 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   public write(message: DapMessage): void {
     if (this.disposed || this.child.stdin.destroyed || !this.child.stdin.writable) return;
     const body = JSON.stringify(message);
-    this.child.stdin.write(
-      `${CONTENT_LENGTH}${String(Buffer.byteLength(body))}${HEADER_END}${body}`,
-    );
+    const frame = `${CONTENT_LENGTH}${String(Buffer.byteLength(body))}${HEADER_END}${body}`;
+    // `write` can also throw SYNCHRONOUSLY once the stream has been destroyed.
+    // Both failure modes mean the same thing and end the session once.
+    try {
+      this.child.stdin.write(frame);
+    } catch (cause) {
+      this.onChildGone(`stdin closed: ${getErrorMessage(cause)}`);
+    }
   }
 
   /** Send a request in the router's own name and await its response. */

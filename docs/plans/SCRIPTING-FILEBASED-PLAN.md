@@ -151,13 +151,13 @@ remaining gaps are explicit rather than implied.
 
 ### Phase 2 — tier 1 references
 
-- [x] Synthesize the virtual project via `Microsoft.Build.Construction.ProjectRootElement` (XML DOM,
+- [ ] Synthesize the virtual project via `Microsoft.Build.Construction.ProjectRootElement` (XML DOM,
       never string concatenation) — implements [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [x] Cache directory keyed by hash of the root file's full path, mirroring the SDK's
+- [ ] Cache directory keyed by hash of the root file's full path, mirroring the SDK's
       `<temp>/dotnet/runfile/<appname>-<appfilesha>/` scheme — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [x] Run `dotnet restore`, then load through the existing `MSBuildWorkspace` path —
+- [ ] Run `dotnet restore`, then load through the existing `MSBuildWorkspace` path —
       [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [x] Apply SDK defaults (`ImplicitUsings`, `Nullable`, `TargetFramework`, `PublishAot`, `PackAsTool`)
+- [ ] Apply SDK defaults (`ImplicitUsings`, `Nullable`, `TargetFramework`, `PublishAot`, `PackAsTool`)
       — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
 - [ ] Automatic tier 2 → tier 1 upgrade when restore completes — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
 
