@@ -13,7 +13,6 @@ import { DAP_QUIET_MS } from './debug-dap-kit';
 import { ENV_PROBE, ENV_UNSET, MODE } from './debug-fixture-programs';
 import {
   CMD_CONTINUE,
-  CMD_PAUSE,
   CMD_RESTART,
   CMD_STOP,
   assertStopReason,
@@ -247,8 +246,14 @@ suite('Debug session lifecycle — entry, pause, restart, stop and no-debug runs
         'what lets the toolbar stop a debuggee gracefully instead of killing the process',
     );
 
-    // Interaction 2 — Pause. A running debuggee must come to rest.
-    await vscode.commands.executeCommand(CMD_PAUSE);
+    // Interaction 2 — Pause. A running debuggee must come to rest. The
+    // workbench gesture resolves its target thread from the call-stack FOCUS,
+    // which never exists in a headless host — `session.pause(threadId)` drives
+    // the identical DAP `pause` request the gesture would send once focused.
+    const threads = await session.customRequest('threads');
+    const pausedThread = Array.isArray(threads?.threads) ? Number(threads.threads[0]?.id ?? 0) : 0;
+    assert.ok(pausedThread > 0, 'a running session must expose a thread to pause');
+    await session.customRequest('pause', { threadId: pausedThread });
     const [stop] = await recorder.waitForStops(1);
     assert.ok(
       stop,

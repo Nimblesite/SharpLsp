@@ -162,17 +162,22 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
     ]);
 
     // Interaction 4 — a second session: `>= 2` must stop on visits 2 and 3.
+    // The recorder is per-TEST, so this interaction's stops sit AFTER the
+    // plain-count run's on the same tape — wait past that baseline and read
+    // only this session's stops.
     const relational = debuggee();
+    const baseline = relational.recorder.stops().length;
     const secondSession = await startDebuggee(relational, { mode: MODE.plain });
-    const stops = await relational.recorder.waitForStops(2);
+    const stops = await relational.recorder.waitForStops(baseline + 2);
+    const sessionStops = stops.slice(baseline);
     eq(
-      stops.length,
+      sessionStops.length,
       LOOP_ITERATIONS - 1,
       '`>= 2` must stop on every visit from the second on: two of three iterations',
     );
     const secondFrame = await topFrame(
       secondSession,
-      requireAt(stops, 0, 'the first stop').threadId,
+      requireAt(sessionStops, 0, 'the first stop').threadId,
     );
     eq(
       variableNamed(await localsOf(secondSession, secondFrame.id), 'index').value,

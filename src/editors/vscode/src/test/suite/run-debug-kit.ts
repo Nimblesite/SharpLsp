@@ -175,11 +175,13 @@ export interface ObservedSession {
 export class DebugSessionRecorder {
   private readonly startedSessions: ObservedSession[] = [];
   private readonly terminatedIds: string[] = [];
+  private readonly liveSessions: vscode.DebugSession[] = [];
   private readonly subscriptions: vscode.Disposable[] = [];
 
   constructor() {
     this.subscriptions.push(
       vscode.debug.onDidStartDebugSession((session) => {
+        this.liveSessions.push(session);
         this.startedSessions.push({
           id: session.id,
           type: session.type,
@@ -202,6 +204,11 @@ export class DebugSessionRecorder {
   /** Ids of sessions that have terminated. */
   public get terminated(): readonly string[] {
     return this.terminatedIds;
+  }
+
+  /** Live session objects of the SharpLsp debug type, in start order. */
+  public get liveOurs(): readonly vscode.DebugSession[] {
+    return this.liveSessions.filter((session) => session.type === DEBUG_TYPE_ID);
   }
 
   /** Sessions of the SharpLsp debug type only, ignoring neighbouring suites. */

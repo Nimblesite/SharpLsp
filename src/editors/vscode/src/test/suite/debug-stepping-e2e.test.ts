@@ -18,7 +18,6 @@ import * as vscode from 'vscode';
 import { MODE } from './debug-fixture-programs';
 import {
   CMD_CONTINUE,
-  CMD_RUN_TO_CURSOR,
   CMD_STEP_INTO,
   CMD_STEP_OUT,
   CMD_STEP_OVER,
@@ -284,10 +283,23 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
         'it is the row that carries "Run to cursor via goto"',
     );
 
-    // Interaction 3 — put the caret deep inside a callee and run to it.
+    // Interaction 3 — put the caret deep inside a callee and run to it. The
+    // workbench gesture resolves its target editor from UI FOCUS, which a
+    // headless host never grants; `gotoTargets` + `goto` are the exact DAP
+    // requests the gesture issues once focused, so they are driven directly.
     await focusAnchor(fixture, 'inspect-return');
     const baseline = recorder.stops().length;
-    await vscode.commands.executeCommand(CMD_RUN_TO_CURSOR);
+    const caret = fixture.source.dapLine('inspect-return');
+    const targets = await session.customRequest('gotoTargets', {
+      source: { path: fixture.uri.fsPath },
+      line: caret,
+    });
+    const target = Array.isArray(targets?.targets) ? targets.targets[0] : undefined;
+    assert.ok(target, 'the adapter must synthesize a target for the caret line');
+    await session.customRequest('goto', {
+      threadId: stop.threadId,
+      targetId: target.id,
+    });
     const stops = await recorder.waitForStops(baseline + 1);
     const landed = requireAt(stops, stops.length - 1, 'the run-to-cursor stop');
     neq(landed.reason, 'exception', 'run to cursor must not be reported as an exception stop');

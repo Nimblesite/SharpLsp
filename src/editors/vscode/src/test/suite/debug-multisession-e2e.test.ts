@@ -32,14 +32,22 @@ import {
   stopDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS, DEBUG_TYPE_ID } from './run-debug-kit';
+import { BUILD_TIMEOUT_MS, DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
 import { deepEq, eq, neq, pollUntilResult, requireAt } from './test-helpers';
 
 /** Wait for a second live session and hand back the one that is not `first`. */
-async function waitForSecondSession(firstId: string): Promise<vscode.DebugSession> {
+async function waitForSecondSession(
+  sessions: DebugSessionRecorder,
+  firstId: string,
+): Promise<vscode.DebugSession> {
+  // `activeDebugSession` follows the debug view's FOCUS, which a headless host
+  // never moves when a second launch starts while the first is paused. The
+  // workbench's own start events are the source of truth for "a second session
+  // exists" — and they hand back the live session object the rest of the test
+  // drives.
   const session = await pollUntilResult(
-    async () => vscode.debug.activeDebugSession,
-    (current) => current !== undefined && current.id !== firstId,
+    async () => sessions.liveOurs.find((live) => live.id !== firstId),
+    (current) => current !== undefined,
     60_000,
     50,
   );
@@ -81,7 +89,7 @@ suite('Debug multi-session — two debuggees paused at once', () => {
       launchConfigFor(fixture, { mode: MODE.caught }),
     );
     eq(started, true, 'a second launch must be accepted while the first session is paused');
-    const second = await waitForSecondSession(first.id);
+    const second = await waitForSecondSession(sessions, first.id);
     neq(second.id, first.id, 'the two sessions must be distinct objects');
     eq(second.type, DEBUG_TYPE_ID, 'both are SharpLsp sessions');
     deepEq(
