@@ -115,7 +115,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   public handleMessage(message: vscode.DebugProtocolMessage): void {
     if (!isRecord(message)) return;
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
-      traceInfo(`[dap->] ${String(message.command ?? message.type)} ${JSON.stringify(message.arguments ?? message.body ?? {}).slice(0, 100)}`);
+      traceInfo(
+        `[dap->] ${String(message.command ?? message.type)} ${JSON.stringify(message.arguments ?? message.body ?? {}).slice(0, 100)}`,
+      );
     }
     const msg: DapMessage = message;
     if (message.type === 'response') {
@@ -258,7 +260,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   private routeChildMessage(message: DapMessage): void {
     if (this.disposed) return;
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
-      traceInfo(`[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ${JSON.stringify(message.body ?? {}).slice(0, 80)}`);
+      traceInfo(
+        `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ${JSON.stringify(message.body ?? {}).slice(0, 80)}`,
+      );
     }
     if (message.type === 'response') {
       const requestSeq = Number(message.request_seq ?? -1);
@@ -354,9 +358,10 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
       .then(async () => {
         const stack = await this.request('stackTrace', { threadId, startFrame: 0, levels: 1 });
         const frame = recordList(isRecord(stack.body) ? stack.body.stackFrames : undefined)[0];
-        const source = isRecord(frame?.source) && typeof frame.source.path === 'string'
-          ? frame.source.path
-          : undefined;
+        const source =
+          isRecord(frame?.source) && typeof frame.source.path === 'string'
+            ? frame.source.path
+            : undefined;
         const line = Number(frame?.line ?? 0);
         this.goto.absorbHitAt(source, line);
         const verdict =
@@ -376,7 +381,10 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
               ? message
               : {
                   ...message,
-                  body: { ...(isRecord(message.body) ? message.body : {}), hitBreakpointIds: hitIds },
+                  body: {
+                    ...(isRecord(message.body) ? message.body : {}),
+                    hitBreakpointIds: hitIds,
+                  },
                 },
           );
           return;
@@ -491,17 +499,17 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
    * collapses, the full stack is fetched, enriched, and the caller's original
    * window re-applied to the logical frames.
    */
-  private deliverStackTrace(
-    message: DapMessage,
-    args: Record<string, unknown> | undefined,
-  ): void {
+  private deliverStackTrace(message: DapMessage, args: Record<string, unknown> | undefined): void {
     const body = isRecord(message.body) ? message.body : {};
     const frames = isFrameList(body.stackFrames) ? body.stackFrames : [];
     const logical = enrichAsyncFrames(frames, this.justMyCode);
     if (logical.length > 0 || frames.length === 0) {
       this.emitter.fire(
         this.handles.translateResponseBody(
-          this.withWindow({ ...message, body: { ...body, stackFrames: logical, totalFrames: logical.length } }, args),
+          this.withWindow(
+            { ...message, body: { ...body, stackFrames: logical, totalFrames: logical.length } },
+            args,
+          ),
         ),
       );
       return;
@@ -515,7 +523,10 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
         const stack = enriched.length > 0 ? enriched : fullFrames;
         this.emitter.fire(
           this.handles.translateResponseBody(
-            this.withWindow({ ...message, body: { ...body, stackFrames: stack, totalFrames: stack.length } }, args),
+            this.withWindow(
+              { ...message, body: { ...body, stackFrames: stack, totalFrames: stack.length } },
+              args,
+            ),
           ),
         );
       })

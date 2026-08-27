@@ -110,7 +110,11 @@ export class BreakpointEmulator {
     if (entry === undefined) return { action: 'forward', known: false };
     const count = (this.counts.get(key) ?? 0) + 1;
     this.counts.set(key, count);
-    return { ...this.combine([this.visitFor(entry, count)], threadId), known: true, hitId: entry.id };
+    return {
+      ...this.combine([this.visitFor(entry, count)], threadId),
+      known: true,
+      hitId: entry.id,
+    };
   }
 
   /** True once any breakpoint with emulated attributes is armed. */

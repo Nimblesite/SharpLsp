@@ -107,7 +107,8 @@ export class SessionReplayer {
     const body = isRecord(message.body) ? message.body : {};
     // Windows' terminal shells cannot `exec` the debuggee, so the shell pid is
     // NOT the dotnet process; only an explicit processId may be attached to.
-    const attachable = process.platform === 'win32' ? body.processId : (body.processId ?? body.shellProcessId);
+    const attachable =
+      process.platform === 'win32' ? body.processId : (body.processId ?? body.shellProcessId);
     const pid = Number(attachable ?? 0);
     if (message.success !== true || !Number.isInteger(pid) || pid <= 0) {
       // Degrade honestly rather than kill the session: respawn the adapter
