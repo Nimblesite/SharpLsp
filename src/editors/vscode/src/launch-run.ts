@@ -93,8 +93,12 @@ export function runTask(
  * modal, and a build the user's `debug.onTaskErrors` setting can wave past is
  * not a guarantee that the assembly exists. Exactly one MSBuild process runs.
  */
-export async function buildProject(projectFile: string): Promise<Result<void>> {
-  const run = await runDotnet(['build', projectFile], path.dirname(projectFile));
+export async function buildProject(projectFile: string, framework?: string): Promise<Result<void>> {
+  // Pinned to the ONE framework the resolver chose. A bare `dotnet build` on a
+  // multi-targeted project builds every TFM, which costs time we do not need to
+  // spend and produces output for a framework this launch will never run.
+  const pinned = framework === undefined ? [] : [`-p:TargetFramework=${framework}`];
+  const run = await runDotnet(['build', projectFile, ...pinned], path.dirname(projectFile));
   if (!run.failed) return ok(undefined);
   const reason = run.errorMessage ?? '';
   return err(reason.length > 0 ? reason : run.stderr || run.stdout);

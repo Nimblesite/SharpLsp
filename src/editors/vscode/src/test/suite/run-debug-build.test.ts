@@ -439,7 +439,11 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     // 1 — an unbuilt project, focused, with the command registered.
     await focusDocument(project.sourceFile);
     await assertCommandRegistered(CMD_BUILD);
-    await assertPreLaunchTask(project); // B33
+    // Probe preLaunchTask on a SEPARATE project. Resolving performs the
+    // pre-launch build ([DEBUG-FEATURES-LAUNCH-BUILD] rule 1), so probing it on
+    // BuildOnce would leave BuildOnce already built and this test — whose whole
+    // subject is that ONE build runs — with nothing left to observe.
+    await assertPreLaunchTask(writeCSharpConsole(path.join(caseDir, 'ProbeTask'), 'ProbeTask')); // B33
     const terminalsBefore = buildTerminalCount();
     const files = ['BuildOnce.csproj', 'Program.cs'];
     assertDirEntries(project.dir, files, 'the fixture must start unbuilt so a build has work');

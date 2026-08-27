@@ -45,6 +45,8 @@ export interface ProjectTarget {
   readonly projectFile: string;
   readonly program: string;
   readonly cwd: string;
+  /** The TFM this target resolved to; the build must be pinned to it. */
+  readonly framework?: string;
   readonly args?: readonly string[];
   readonly env?: Readonly<Record<string, string>>;
 }
@@ -202,6 +204,7 @@ async function projectTarget(
     projectFile,
     program: properties.targetPath,
     cwd: path.dirname(projectFile),
+    ...(properties.targetFramework === '' ? {} : { framework: properties.targetFramework }),
   };
   return await withProfile(base, projectFile, options);
 }

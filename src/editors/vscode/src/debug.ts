@@ -326,7 +326,7 @@ async function programFor(target: LaunchTarget): Promise<string | undefined> {
  * program MUST exist; if it does not, the session MUST NOT start.
  */
 async function builtProgram(target: ProjectTarget): Promise<string | undefined> {
-  const built = await buildProject(target.projectFile);
+  const built = await buildProject(target.projectFile, target.framework);
   const named = path.basename(target.projectFile);
   if (!built.ok) {
     void vscode.window.showWarningMessage(`Build failed for ${named}: ${built.error}`);
