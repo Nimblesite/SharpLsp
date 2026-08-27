@@ -182,6 +182,7 @@ When the user presses F5 (or Ctrl/Cmd+F5) in a workspace with no `.vscode/launch
 3. Any returned configuration MUST carry a non-empty `type` and a `request` of exactly `launch` or `attach`. VS Code discards a returned config with a falsy `type` **silently** — no session, no error.
 4. `resolveDebugConfiguration` MUST be **idempotent**. VS Code re-enters the resolve chain whenever the provider changes `config.type`, calling the provider a second time with the config it just produced. The second pass MUST return an equivalent configuration and MUST NOT duplicate `args` or re-apply profile values.
 5. The synthesized configuration MUST target the document-derived program of [DEBUG-FEATURES-LAUNCH-TARGET] and MUST NOT reference a `preLaunchTask` type SharpLsp does not contribute — see [DEBUG-FEATURES-LAUNCH-BUILD].
+6. **Chain position.** VS Code pipes each provider's RESULT into the next provider registered for the same debug type, in registration order. A provider registered *after* SharpLsp's — a test spy, or another extension — therefore observes the configuration SharpLsp has already filled in, never the bare `Object.create(null)` object; and by rule 3 that configuration always carries a non-empty `type` and a `request` of exactly `launch`. The absent-key shape is observable ONLY by calling `resolveDebugConfiguration` directly, which is where it MUST be asserted.
 
 **Synthesized configuration**
 
