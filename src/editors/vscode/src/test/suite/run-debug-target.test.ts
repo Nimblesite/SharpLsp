@@ -112,7 +112,7 @@ suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE
   test('the cone walk stops at the workspace root, a solution and a .git', async function () {
     this.timeout(BUILD_TIMEOUT_MS);
     for (const lang of LANGS) {
-      const layout = buildConeLayout(tmpDir, lang);
+      const layout = await buildConeLayout(tmpDir, lang);
       const solution = await createSolution(layout.solutionRoot, `${lang.tag}Cone`, []);
       const kind = path.extname(solution);
       assert.strictEqual(fs.existsSync(solution), true, `${lang.tag}: the solution must exist`);

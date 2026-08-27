@@ -172,12 +172,21 @@ function assertWalkersAgree(start: string, stop: string, of: ConsoleProject, dll
 
 /** Assert the cone walk from `start` refuses to leave the cone and take `decoy`. */
 function assertNoEscape(start: string, stop: string, decoy: ConsoleProject, at: string): void {
+  const strayBuilt = projectEntryFromFile(decoy.projectFile).dll;
+  assert.notStrictEqual(strayBuilt, undefined, `${at}: the decoy must be BUILT to prove anything`);
   const entry = findProjectFile(start, stop);
   const selected = comparablePath(entry?.cwd ?? '');
   const outside = comparablePath(decoy.dir);
   assert.notStrictEqual(selected, outside, `${at}: a project above the cone is never the target`);
-  const strayDll = comparablePath(projectEntryFromFile(decoy.projectFile).dll ?? '');
-  assert.notStrictEqual(comparablePath(entry?.dll ?? ''), strayDll, `${at}: nor is its assembly`);
+  // Compare PROJECT FILES, not assemblies: the decoy is never built, so its dll
+  // is undefined, and `?? ''` made "no assembly selected" compare equal to "the
+  // decoy has no assembly" — a failure that fired even when the walk was right.
+  // A project file always exists, so this can actually distinguish the two.
+  assert.notStrictEqual(
+    comparablePath(entry?.projectFile ?? ''),
+    comparablePath(decoy.projectFile),
+    `${at}: nor is its project`,
+  );
   assert.strictEqual(entry, undefined, `${at}: the walk must stop; it returned ${selected}`);
 }
 
@@ -270,9 +279,15 @@ interface ConeLayout {
   readonly above: string;
 }
 
-export function buildConeLayout(root: string, lang: LangKit): ConeLayout {
+export async function buildConeLayout(root: string, lang: LangKit): Promise<ConeLayout> {
   const outer = path.join(root, lang.tag);
   const decoy = lang.console(outer, `${lang.tag}Stray`);
+  // BUILD the decoy. `assertNoEscape` proves the walk did not return the stray
+  // project's assembly — but an unbuilt project HAS no assembly, so both sides
+  // of that comparison collapse to the same empty string and the check passes
+  // for the wrong reason, or fails for it. A built decoy is the only version of
+  // this fixture that can actually catch an escape.
+  await buildProject(decoy);
   const workspace = path.join(outer, 'ws');
   const deep = path.join(workspace, 'deep');
   const outside = path.join(outer, 'outside');

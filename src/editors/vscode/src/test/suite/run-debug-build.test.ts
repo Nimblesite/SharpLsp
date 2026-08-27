@@ -18,7 +18,6 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { currentDotnetExecutable } from '../../dotnet-process';
 import { SharpLspLaunchProvider, projectEntryFromFile } from '../../debug.js';
 import {
   BUILD_TIMEOUT_MS,
@@ -463,8 +462,18 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     // The CLI the extension actually resolves — `sharplsp.dotnetPath` when set,
     // else the SDK found on PATH. A hardcoded 'dotnet' asserts the wrong thing on
     // any machine whose SDK is not reachable by that bare name.
-    const cli = currentDotnetExecutable();
-    assert.deepStrictEqual(commands, [cli], `the one task runs the dotnet CLI (${cli})`);
+    // Assert on the executable's NAME, not its full path. The extension resolves
+    // the SDK at runtime (bare `dotnet` on PATH, an absolute path once the
+    // runtime probe finishes, or `sharplsp.dotnetPath` when set), so pinning the
+    // literal string asserts the machine's layout rather than the behaviour.
+    // What must hold is that ONE task ran the dotnet CLI directly.
+    assert.strictEqual(commands.length, 1, 'exactly one command was run');
+    const cli = path.basename(String(commands[0])).replace(/\.exe$/i, '');
+    assert.strictEqual(
+      cli,
+      'dotnet',
+      `the one task runs the dotnet CLI; got ${String(commands[0])}`,
+    );
     const args = dotnetTasks[0]?.args;
     assert.deepStrictEqual(args, ['build', project.projectFile], 'B33: builds only what was asked');
     assert.strictEqual(dotnetTasks[0]?.source, 'SharpLsp', 'the task is attributed to SharpLsp');
