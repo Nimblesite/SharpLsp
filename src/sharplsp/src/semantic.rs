@@ -1062,7 +1062,9 @@ fn sidecar_workspace_loaded(
     let bytes = runtime.block_on(sidecar.request("workspace/status", Vec::new()))?;
     let status: String = rmp_serde::from_slice(&bytes)?;
     match status.as_str() {
-        "loaded" => Ok(true),
+        // Tier 2 remains a usable BCL workspace; only package symbols are absent.
+        // Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+        "loaded" | "filebased-degraded" => Ok(true),
         "not_loaded" => Ok(false),
         other => anyhow::bail!("unexpected sidecar workspace status: {other}"),
     }

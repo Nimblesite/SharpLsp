@@ -95,8 +95,8 @@ remaining gaps are explicit rather than implied.
 - [ ] Keep a root-path → workspace map so two apps in one directory stay independent *concurrently*;
       today each `OpenAsync` replaces the workspace, which is correct per-open but not concurrent —
       [SCRIPT-MULTIROOT]
-- [ ] Report `filebased-degraded` from `workspace/status` while on tier 2 — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
-- [ ] Publish an informational diagnostic naming why `#:package` symbols are unresolved on tier 2 —
+- [x] Report `filebased-degraded` from `workspace/status` while on tier 2 — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+- [x] Publish an informational diagnostic naming why `#:package` symbols are unresolved on tier 2 —
       [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
 
 ### C# Sidecar — scripts
@@ -151,13 +151,13 @@ remaining gaps are explicit rather than implied.
 
 ### Phase 2 — tier 1 references
 
-- [ ] Synthesize the virtual project via `Microsoft.Build.Construction.ProjectRootElement` (XML DOM,
+- [x] Synthesize the virtual project via `Microsoft.Build.Construction.ProjectRootElement` (XML DOM,
       never string concatenation) — implements [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [ ] Cache directory keyed by hash of the root file's full path, mirroring the SDK's
+- [x] Cache directory keyed by hash of the root file's full path, mirroring the SDK's
       `<temp>/dotnet/runfile/<appname>-<appfilesha>/` scheme — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [ ] Run `dotnet restore`, then load through the existing `MSBuildWorkspace` path —
+- [x] Run `dotnet restore`, then load through the existing `MSBuildWorkspace` path —
       [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [ ] Apply SDK defaults (`ImplicitUsings`, `Nullable`, `TargetFramework`, `PublishAot`, `PackAsTool`)
+- [x] Apply SDK defaults (`ImplicitUsings`, `Nullable`, `TargetFramework`, `PublishAot`, `PackAsTool`)
       — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
 - [ ] Automatic tier 2 → tier 1 upgrade when restore completes — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
 

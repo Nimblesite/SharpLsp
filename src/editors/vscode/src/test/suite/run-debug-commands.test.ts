@@ -34,7 +34,7 @@ import {
   DEBUG_TYPE_ID,
   DebugSessionRecorder,
   OBSERVE_TIMEOUT_MS,
-  adapterAvailable,
+  assertAdapterAvailable,
   assertCommandRegistered,
   emptyF5Config,
   fakeFolder,
@@ -317,7 +317,9 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
   // Implements [DEBUG-FEATURES-LAUNCH-NODEBUG], [DEBUG-FEATURES-LAUNCH-TARGET].
   test('Run and Debug start one session each on the identical target', async function () {
     this.timeout(BUILD_TIMEOUT_MS);
-    if (!adapterAvailable()) this.skip();
+    // A PREMISE, not a skip: B11 starts real sessions, so a missing adapter must
+    // fail loudly here rather than turn a staging regression green.
+    assertAdapterAvailable('B11: Run and Debug on one target');
 
     // Interaction 1 — the palette must offer both commands.
     const commands = await vscode.commands.getCommands(true);
@@ -382,7 +384,9 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
   // Implements [DEBUG-FEATURES-LAUNCH-TARGET].
   test('Debug Program follows the focused document and agrees with the provider', async function () {
     this.timeout(BUILD_TIMEOUT_MS);
-    if (!adapterAvailable()) this.skip();
+    // A PREMISE, not a skip: B20 starts a real session, so a missing adapter must
+    // fail loudly here rather than turn a staging regression green.
+    assertAdapterAvailable('B20: Debug Program follows the focused document');
     const folder = fakeFolder(workspaceRoot);
     const dllA = builtDll(appA);
     const dllB = builtDll(appB);

@@ -16,13 +16,17 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { findEntryProject, findProjectFile } from '../../debug.js';
+import { configureDotnet, currentDotnetExecutable } from '../../dotnet-process.js';
+import { runExecutable, runTask } from '../../launch-run.js';
+import type { FileBasedTarget, ScriptTarget } from '../../launch-resolver.js';
+import { binaryNameOf, exeName, exeSuffixFor } from '../../platform.js';
 import {
   BUILD_TIMEOUT_MS,
   CMD_DEBUG_PROGRAM,
   CMD_RUN_PROGRAM,
   DEBUG_TYPE_ID,
   OBSERVE_TIMEOUT_MS,
-  adapterAvailable,
+  assertAdapterAvailable,
   assertCommandRegistered,
   focusDocument,
   invokeCommand,
@@ -73,7 +77,7 @@ function assertTaskIdentity(task: ObservedTask, why: string): void {
 
 /** Assert the exact `dotnet` argument vector a script run must produce. */
 function assertRunArgs(task: ObservedTask, expected: readonly string[], why: string): void {
-  const cli = path.basename(task.command ?? '', '.exe');
+  const cli = binaryNameOf(task.command ?? '');
   assert.strictEqual(cli, 'dotnet', `${why}: a script run invokes the dotnet CLI`);
   const actual = task.args.map(comparablePath);
   assert.deepStrictEqual(actual, expected.map(comparablePath), `${why}: exact argument vector`);
@@ -124,6 +128,22 @@ function assertFileBasedProgram(program: string, name: string, why: string): voi
   const tfms = program.split(/[\\/]/).filter((segment) => /^net\d/i.test(segment));
   assert.deepStrictEqual(tfms, [], `${why}: file-based output carries NO TFM segment`);
   assert.strictEqual(fs.existsSync(program), true, `${why}: the built program must exist on disk`);
+}
+
+/** Every shape [DIST-RUNTIME-ACQUIRE] can resolve `dotnet` to, on any host. */
+const RESOLVED_SDKS: readonly string[] = [
+  'dotnet',
+  '/usr/share/dotnet/dotnet',
+  '/Users/runner/.dotnet/dotnet',
+  'C:\\Program Files\\dotnet\\dotnet.exe',
+  'D:\\a\\_tool\\dotnet\\DOTNET.EXE',
+];
+
+/** A run must be a process, not a shell command line, or its args are unreadable. */
+function processExecutionOf(task: vscode.Task, why: string): vscode.ProcessExecution {
+  const execution = task.execution;
+  if (execution instanceof vscode.ProcessExecution) return execution;
+  assert.fail(`${why}: a run must be a ProcessExecution, never a shell command line`);
 }
 
 async function focusScript(file: string, ext: string, dir: string, why: string): Promise<void> {
@@ -343,7 +363,9 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
   // Implements [DEBUG-FEATURES-LAUNCH-SCRIPT] — B44.
   test('debugging a file-based .cs launches the artifacts-path assembly', async function () {
     this.timeout(BUILD_TIMEOUT_MS);
-    if (!adapterAvailable()) this.skip();
+    // A PREMISE, not a skip: B44 launches a real session, so a missing adapter
+    // must fail loudly here rather than turn a staging regression green.
+    assertAdapterAvailable('B44: debugging a file-based .cs');
 
     // 1 — focus the project-less file-based app.
     await focusScript(fileBasedApp, '.cs', appDir, 'the file-based app fixture');
@@ -392,6 +414,44 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
     assert.strictEqual(terminated.includes(session.id), true, 'stopping terminates our session');
     assert.strictEqual(probe.sessions.ours.length, 1, 'stopping must not start a second session');
     assert.deepStrictEqual(messagesOf(stubs), [], 'a clean stop shows the user nothing');
+  });
+
+  // Implements [DEBUG-FEATURES-LAUNCH-SCRIPT] rule 1.
+  //
+  // A run is only OBSERVABLE — by this suite, and by the user's task UI — if the
+  // command it carries can be recognised as the dotnet CLI. [DIST-RUNTIME-ACQUIRE]
+  // hands the extension an ABSOLUTE SDK path whose SHAPE differs per host, so a
+  // classifier written against one host's shape silently sees zero runs on the
+  // other. Every shape is asserted here from whichever host is running, because a
+  // branch only Windows CI can reach is a branch only Windows CI can catch.
+  test('a script run task names the dotnet CLI whatever SDK path was resolved', () => {
+    const fsx: ScriptTarget = { kind: 'script', runner: 'fsi', file: fsxFile, cwd: scriptDir };
+    const app: FileBasedTarget = { kind: 'fileBasedApp', file: fileBasedApp, cwd: appDir };
+    const previous = currentDotnetExecutable();
+    try {
+      for (const sdk of RESOLVED_SDKS) {
+        configureDotnet(sdk);
+        for (const target of [fsx, app]) {
+          const why = `${target.kind} under '${sdk}'`;
+          assert.strictEqual(runExecutable(target), sdk, `${why}: runs the resolved SDK`);
+          const execution = processExecutionOf(runTask(target, vscode.TaskScope.Workspace), why);
+          assert.strictEqual(execution.process, sdk, `${why}: the task carries that same CLI`);
+          assert.strictEqual(binaryNameOf(execution.process), 'dotnet', `${why}: it IS dotnet`);
+        }
+      }
+    } finally {
+      configureDotnet(previous);
+    }
+    // Not vacuous: the CLI must be named by its OWN name, never by a path that
+    // merely ends in it, and never by the third-party .csx runner.
+    const script = binaryNameOf('C:\\Users\\me\\.dotnet\\tools\\dotnet-script.exe');
+    assert.strictEqual(script, 'dotnet-script', 'the .csx runner is not the dotnet CLI');
+    assert.strictEqual(binaryNameOf('/opt/mine/mydotnet'), 'mydotnet', 'a suffix is not a name');
+    assert.strictEqual(binaryNameOf(''), '', 'an unknown command names nothing');
+    assert.strictEqual(exeSuffixFor('win32'), '.exe', 'Windows executables carry .exe');
+    assert.strictEqual(exeSuffixFor('darwin'), '', 'POSIX executables carry no extension');
+    const host = `dotnet${exeSuffixFor(process.platform)}`;
+    assert.strictEqual(exeName('dotnet'), host, 'exeName follows the host it runs on');
   });
 
   // Implements [DEBUG-FEATURES-LAUNCH-SCRIPT] — B47, B48.

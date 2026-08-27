@@ -23,6 +23,8 @@ import { GotoEmulator } from './dap-goto';
 import { withEventCapabilities, withRouterCapabilities } from './dap-caps';
 import { HandleNamespace } from './dap-namespace';
 import { error, info, traceInfo } from './log';
+import { getErrorMessage } from './utils';
+import { err, ok, type Result } from './result';
 
 /** DAP frames are `Content-Length: N\r\n\r\n<json>`; this is the separator. */
 const HEADER_END = '\r\n\r\n';
@@ -53,6 +55,15 @@ function parseContentLength(header: string): number | undefined {
  * emulating the messages the spec requires the router to serve.
  */
 export class DapRouter implements vscode.DebugAdapter, ReplayHost {
+  /**
+   * The ONLY options netcoredbg is spawned with, exposed so the contract is
+   * observable rather than merely commented. No `cwd` and no `env` override is
+   * imposed: the resolved adapter path inherits the extension host's working
+   * directory and environment ([DEBUG-ADAPTER-NETCOREDBG], B59).
+   */
+  public readonly spawnOptions: cp.SpawnOptionsWithoutStdio = { stdio: 'pipe' };
+  /** The argv netcoredbg is spawned with, before any attach arguments. */
+  public readonly spawnArgs: readonly string[] = INTERPRETER_ARGS;
   private readonly emitter = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
   private child: cp.ChildProcessWithoutNullStreams;
   private buffer = Buffer.alloc(0);
@@ -99,6 +110,27 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
 
   public readonly onDidSendMessage: vscode.Event<vscode.DebugProtocolMessage> = this.emitter.event;
 
+  /**
+   * Start a router, or report why netcoredbg could not be launched at all.
+   *
+   * Constructing a router SPAWNS the child, and `cp.spawn` throws
+   * SYNCHRONOUSLY for every failure outside its EACCES/EAGAIN/EMFILE/ENFILE/
+   * ENOENT allowlist — a wrong-architecture or corrupt `netcoredbg.exe` raises
+   * `spawn UNKNOWN` that way. An inline adapter has no executable-process
+   * boundary to contain that, so the throw escaped into the extension host.
+   * A `Result` is therefore the only honest signature: the caller refuses the
+   * descriptor and VS Code starts no session, instead of one that can never
+   * answer. Failures that DO reach the allowlist still arrive asynchronously
+   * on `child.on('error')` and end the session through `onChildGone`.
+   */
+  public static start(adapterPath: string): Result<DapRouter> {
+    try {
+      return ok(new DapRouter(adapterPath));
+    } catch (cause) {
+      return err(getErrorMessage(cause));
+    }
+  }
+
   constructor(public readonly adapterPath: string) {
     this.child = this.spawn([]);
     this.replayer = new SessionReplayer(this);
@@ -108,9 +140,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
   /** Spawn netcoredbg and wire its output into the frame parser. */
   private spawn(attachArgs: readonly string[]): cp.ChildProcessWithoutNullStreams {
     info(`DapRouter starting netcoredbg: ${this.adapterPath}`);
-    const child = cp.spawn(this.adapterPath, [...INTERPRETER_ARGS, ...attachArgs], {
-      stdio: 'pipe',
-    });
+    const child = cp.spawn(this.adapterPath, [...this.spawnArgs, ...attachArgs], this.spawnOptions);
     child.stdout.on('data', (chunk: Buffer) => {
       this.consume(chunk);
     });
@@ -144,6 +174,12 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
    * `why` is undefined and only the settlement happens.
    */
   private onChildGone(why: string | undefined): void {
+    // ONCE. A failed spawn emits `error` AND then `exit`, and a crash emits
+    // `exit` after the parser has already given up on a corrupt frame — so
+    // without this guard VS Code received two `terminated` events and two
+    // console lines for one death, and the second `terminated` lands after the
+    // session is already gone.
+    if (this.closed) return;
     this.closed = true;
     const pending = [...this.pendingOurs];
     this.pendingOurs.clear();
@@ -314,15 +350,21 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     if (this.closed) return;
     this.buffer = Buffer.concat([this.buffer, chunk]);
     for (;;) {
-      if (this.closed) return;
       const frame = this.takeFrame();
       if (frame === undefined) return;
       this.routeChildMessage(frame);
     }
   }
 
-  /** Split one complete frame off the front of the buffer, if there is one. */
+  /**
+   * Split one complete frame off the front of the buffer, if there is one.
+   *
+   * A corrupt or malformed frame closes the router from inside this method, so
+   * the closed check lives here rather than in the caller's drain loop: the
+   * next turn of that loop stops instead of routing frames off a dead wire.
+   */
   private takeFrame(): DapMessage | undefined {
+    if (this.closed) return undefined;
     const end = this.buffer.indexOf(HEADER_END);
     if (end < 0) return undefined;
     const length = parseContentLength(this.buffer.subarray(0, end).toString('utf8'));
@@ -342,7 +384,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost {
     } catch (cause) {
       // Contained here, not thrown into the extension host: a frame that is
       // not JSON ends the session deterministically instead.
-      this.onChildGone(`sent a malformed DAP frame: ${(cause as Error).message}`);
+      this.onChildGone(`sent a malformed DAP frame: ${getErrorMessage(cause)}`);
       return undefined;
     }
     return isRecord(parsed) ? parsed : undefined;

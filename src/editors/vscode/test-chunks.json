@@ -18,13 +18,14 @@
       ]
     },
     "lsp": {
-      "description": "C# language intelligence over the real LSP: completion, hover, diagnostics, document symbols, folding, selection ranges, code actions, document sync, client lifecycle.",
+      "description": "C# language intelligence over the real LSP: completion, hover, diagnostics, document symbols, folding, selection ranges, code actions, document sync, client lifecycle, and file-based package restore/reload/isolation.",
       "files": [
         "completions-visible.test.js",
         "hover.test.js",
         "diagnostics.test.js",
         "lsp-integration.test.js",
         "lsp-document-sync.test.js",
+        "filebased-package-e2e.test.js",
         "lsp-lifecycle.test.js",
         "lsp-refactor-quickfixes.test.js",
         "lsp-refactor-organize-imports.test.js",
@@ -45,6 +46,7 @@
       "files": [
         "debug-e2e.test.js",
         "debug-adapter-e2e.test.js",
+        "debug-adapter-startup.test.js",
         "run-debug-profiles.test.js",
         "run-debug-contributions.test.js"
       ]
@@ -110,7 +112,7 @@
       ]
     },
     "rundebug-commands": {
-      "description": "The run/debug user gestures at the VSIX level: F5 and Ctrl/Cmd+F5 through workbench.action.debug.start / .run, sharplsp.runProgram and sharplsp.debugProgram against built projects, and single-file targets — C# file-based apps, .fsx scripts and the .csx/.fs refusals. Split from rundebug because every test restores and builds or executes a real .NET target.",
+      "description": "The run/debug user gestures at the VSIX level: F5 and Ctrl/Cmd+F5 through workbench.action.debug.start / .run, sharplsp.runProgram and sharplsp.debugProgram against built projects, and single-file targets \u2014 C# file-based apps, .fsx scripts and the .csx/.fs refusals. Split from rundebug because every test restores and builds or executes a real .NET target.",
       "files": [
         "run-debug-commands.test.js",
         "run-debug-scripts.test.js"

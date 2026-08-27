@@ -105,12 +105,11 @@ export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider
     // session that cannot run. A cancelled pick is already the user's decision,
     // so it stays silent — an unresolvable one gets the reason said out loud.
     const outcome = await applyTarget(folder, config);
-    if (outcome === 'unresolved') {
-      void vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
-      return undefined;
+    if (outcome === 'applied') return config;
+    if (outcome !== 'cancelled' && outcome !== 'reported') {
+      void vscode.window.showWarningMessage(outcome.refused);
     }
-    if (outcome === 'cancelled') return undefined;
-    return config;
+    return undefined;
   }
 
   /**
@@ -221,8 +220,17 @@ function noPrompt(): Thenable<vscode.QuickPickItem | undefined> {
   return Promise.resolve(undefined);
 }
 
-/** What resolving the folder's target did to the configuration being filled. */
-type TargetOutcome = 'applied' | 'cancelled' | 'unresolved';
+/**
+ * What resolving the folder's target did to the configuration being filled.
+ *
+ * A refusal carries the RESOLVER'S OWN sentence, not a flag. Collapsing every
+ * `!resolved.ok` to one token made F5 answer a project-less `.fs` with the
+ * generic "no runnable project" line written for a `.txt`, throwing away the
+ * F# sentence [DEBUG-FEATURES-LAUNCH-SCRIPT] gives that case. `reported` is for
+ * the paths that already spoke for themselves — a failed build says which
+ * project failed, and saying it twice is worse than saying it once.
+ */
+type TargetOutcome = 'applied' | 'cancelled' | 'reported' | { readonly refused: string };
 
 /**
  * Resolve the folder's target, BUILD it, and copy it onto a configuration.
@@ -243,11 +251,15 @@ async function applyTarget(
 ): Promise<TargetOutcome> {
   const resolved = await resolveLaunchTarget(anchorWithin(folder), folder);
   // An empty error is a user cancellation — already silent by choice.
-  if (!resolved.ok) return resolved.error.length === 0 ? 'cancelled' : 'unresolved';
+  if (!resolved.ok) {
+    return resolved.error.length === 0 ? 'cancelled' : { refused: resolved.error };
+  }
   const target = resolved.value;
-  if (target.kind === 'script') return 'unresolved';
+  if (target.kind === 'script') return { refused: scriptDebugMessage(target.runner) };
+  // `programFor` already named the project whose build failed, or the script it
+  // cannot debug, so this path must stay quiet rather than talk over it.
   const program = await programFor(target);
-  if (program === undefined) return 'unresolved';
+  if (program === undefined) return 'reported';
   config.program = program;
   config.cwd = target.cwd;
   if (target.args !== undefined && config.args === undefined) config.args = [...target.args];
@@ -398,7 +410,22 @@ export class SharpLspDebugAdapterFactory implements vscode.DebugAdapterDescripto
     // layer responsible for capability augmentation and async stack enrichment,
     // and a bare `DebugAdapterExecutable` gives VS Code netcoredbg's raw wire
     // with none of it.
-    return new vscode.DebugAdapterInlineImplementation(new DapRouter(netcoredbgPath));
+    //
+    // Constructing the router SPAWNS netcoredbg, and `cp.spawn` throws
+    // synchronously for any failure outside its ENOENT/EACCES allowlist — a
+    // wrong-architecture `netcoredbg.exe` raises `spawn UNKNOWN` that way. An
+    // inline adapter has no executable boundary to contain that, so the throw
+    // reached the extension host; refusing the descriptor is what tells VS Code
+    // to start no session at all.
+    const started = DapRouter.start(netcoredbgPath);
+    if (!started.ok) {
+      void vscode.window.showErrorMessage(
+        `netcoredbg could not be started from ${netcoredbgPath}: ${started.error}. ` +
+          'Reinstall the extension, or set sharplsp.debug.netcoredbgPath to a working copy.',
+      );
+      return undefined;
+    }
+    return new vscode.DebugAdapterInlineImplementation(started.value);
   }
 }
 

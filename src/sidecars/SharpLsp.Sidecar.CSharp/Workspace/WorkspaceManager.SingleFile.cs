@@ -107,10 +107,12 @@ internal sealed partial class WorkspaceManager
     {
         _adhocWorkspace ??= new AdhocWorkspace();
 
-        var packageReferences = await ResolvePackagesAsync(closure.Packages, ct)
+        var packageResolution = await FileBasedPackageResolver
+            .ResolveAsync(closure.Packages, rootPath, ct)
             .ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         var project = _adhocWorkspace.AddProject(
-            BuildProjectInfo(kind, rootPath, packageReferences)
+            BuildProjectInfo(kind, rootPath, PackageReferences(packageResolution))
         );
         DocumentId? rootDocumentId = null;
         foreach (var file in closure.Files)
@@ -126,6 +128,7 @@ internal sealed partial class WorkspaceManager
         if (rootDocumentId != null)
         {
             _documentPackages[rootDocumentId] = closure.Packages;
+            TrackPackageResolution(rootDocumentId, packageResolution);
         }
 
         if (kind == ProjectlessKind.FileBasedApp)
@@ -210,89 +213,76 @@ internal sealed partial class WorkspaceManager
             && !closure.Packages.SequenceEqual(oldPackages)
         )
         {
-            var newReferences = await ResolvePackagesAsync(closure.Packages, ct)
+            var resolution = await FileBasedPackageResolver
+                .ResolveAsync(closure.Packages, document.FilePath!, ct)
                 .ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
             var updatedProject = nextSolution
                 .GetProject(currentProject.Id)!
                 .WithMetadataReferences(
-                    Basic.Reference.Assemblies.Net100.References.All.Concat(newReferences)
+                    Basic.Reference.Assemblies.Net100.References.All.Concat(
+                        PackageReferences(resolution)
+                    )
                 );
             nextSolution = updatedProject.Solution;
             _documentPackages[document.Id] = closure.Packages;
+            TrackPackageResolution(document.Id, resolution);
         }
 
         _solution = nextSolution;
         return new VoidResult.Ok<Unit, string>(Unit.Value);
     }
 
-    private static async Task<IEnumerable<PortableExecutableReference>> ResolvePackagesAsync(
-        IReadOnlyList<PackageRef> packages,
-        CancellationToken ct
+    private static IReadOnlyList<PortableExecutableReference> PackageReferences(
+        Outcome.Result<IReadOnlyList<PortableExecutableReference>, string> resolution
     )
     {
-        if (packages.Count == 0)
+        return resolution.Match(value => value, _ => []);
+    }
+
+    private void TrackPackageResolution(
+        DocumentId documentId,
+        Outcome.Result<IReadOnlyList<PortableExecutableReference>, string> resolution
+    )
+    {
+        var failure = resolution.Match<string?>(_ => null, error => error);
+        if (failure is null)
         {
-            return [];
+            _ = _projectlessDegradations.TryRemove(documentId, out _);
+            return;
         }
 
-        var tempDir = Path.Combine(
-            Path.GetTempPath(),
-            "SharpLsp_Packages_" + Guid.NewGuid().ToString("N")
-        );
-        _ = Directory.CreateDirectory(tempDir);
-        try
-        {
-            var projPath = Path.Combine(tempDir, "restore.csproj");
-            var packageItems = string.Join(
-                "\n",
-                packages.Select(p =>
-                    $"<PackageReference Include=\"{p.Name}\" Version=\"{p.Version}\" />"
-                )
-            );
-            var xml =
-                $@"<Project Sdk=""Microsoft.NET.Sdk"">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-  </PropertyGroup>
-  <ItemGroup>
-    {packageItems}
-  </ItemGroup>
-</Project>";
-            await File.WriteAllTextAsync(projPath, xml, ct).ConfigureAwait(false);
+        _projectlessDegradations[documentId] = failure;
+        Log.Warning("File-based package restore degraded to BCL references: {Reason}", failure);
+    }
 
-            var psi = new System.Diagnostics.ProcessStartInfo("dotnet", "restore --verbosity quiet")
-            {
-                WorkingDirectory = tempDir,
-                CreateNoWindow = true,
-                UseShellExecute = false,
-            };
-            using var process = System.Diagnostics.Process.Start(psi);
-            if (process != null)
-            {
-                await process.WaitForExitAsync(ct).ConfigureAwait(false);
-            }
-
-            using var workspace = Microsoft.CodeAnalysis.MSBuild.MSBuildWorkspace.Create(
-                new Dictionary<string, string>
-                {
-                    ["DesignTimeBuild"] = "true",
-                    ["BuildingInsideVisualStudio"] = "true",
-                    ["SkipCompilerExecution"] = "true",
-                }
-            );
-            var project = await workspace
-                .OpenProjectAsync(projPath, cancellationToken: ct)
-                .ConfigureAwait(false);
-            return project.MetadataReferences.OfType<PortableExecutableReference>();
-        }
-        finally
+    private void AppendProjectlessDegradation(
+        Document document,
+        string filePath,
+        List<DiagnosticResult> diagnostics
+    )
+    {
+        if (!_projectlessDegradations.TryGetValue(document.Id, out var reason))
         {
-            try
-            {
-                Directory.Delete(tempDir, true);
-            }
-            catch { }
+            return;
         }
+
+        diagnostics.Add(DegradationDiagnostic(filePath, reason));
+    }
+
+    private static DiagnosticResult DegradationDiagnostic(string filePath, string reason)
+    {
+        return new DiagnosticResult
+        {
+            FilePath = filePath,
+            StartLine = 0,
+            StartCharacter = 0,
+            EndLine = 0,
+            EndCharacter = 1,
+            Message = $"File-based package restore degraded to BCL-only references: {reason}",
+            Severity = "Info",
+            Code = "SLSPC0001",
+        };
     }
 
     private static ProjectInfo BuildProjectInfo(

@@ -19,6 +19,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { SharpLspLaunchProvider, projectEntryFromFile } from '../../debug.js';
+import { binaryNameOf } from '../../platform.js';
 import {
   BUILD_TIMEOUT_MS,
   DEBUG_TYPE_ID,
@@ -468,7 +469,7 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     // literal string asserts the machine's layout rather than the behaviour.
     // What must hold is that ONE task ran the dotnet CLI directly.
     assert.strictEqual(commands.length, 1, 'exactly one command was run');
-    const cli = path.basename(String(commands[0])).replace(/\.exe$/i, '');
+    const cli = binaryNameOf(String(commands[0]));
     assert.strictEqual(
       cli,
       'dotnet',

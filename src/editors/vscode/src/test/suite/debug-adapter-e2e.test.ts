@@ -141,10 +141,18 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
       router instanceof DapRouter,
       'the inline adapter must BE the DapRouter wrapping the resolved netcoredbg',
     );
+    // Observe what the ROUTER will spawn with, not one constant against another:
+    // comparing INTERPRETER_ARGS to ADAPTER_ARGS still passes if `spawn()` stops
+    // using it at all.
+    assert.deepStrictEqual(
+      router.spawnArgs,
+      ADAPTER_ARGS,
+      'netcoredbg only speaks DAP under --interpreter=vscode',
+    );
     assert.deepStrictEqual(
       INTERPRETER_ARGS,
       ADAPTER_ARGS,
-      'netcoredbg only speaks DAP under --interpreter=vscode',
+      'and the exported constant is that same argv',
     );
     router.dispose();
     return router;
@@ -164,8 +172,21 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
       'string',
       'B59: the command is a plain path string',
     );
-    // B59: no cwd/env override is imposed on netcoredbg — DapRouter.spawn
-    // passes stdio pipes only, so the resolved path is spawned verbatim.
+    assert.deepStrictEqual(
+      first.spawnOptions,
+      { stdio: 'pipe' },
+      'B59: no cwd/env override is imposed on netcoredbg — it is spawned verbatim',
+    );
+    assert.strictEqual(
+      Object.prototype.hasOwnProperty.call(first.spawnOptions, 'cwd'),
+      false,
+      'B59: a cwd would silently relocate the debuggee',
+    );
+    assert.strictEqual(
+      Object.prototype.hasOwnProperty.call(first.spawnOptions, 'env'),
+      false,
+      'B59: an env override would drop the extension host environment',
+    );
     assert.deepStrictEqual(stubs.log.errorMessages, [], 'a resolvable adapter reports nothing');
 
     // A user install appears; the setting must still win.

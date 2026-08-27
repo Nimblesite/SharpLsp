@@ -80,8 +80,18 @@ internal sealed partial class WorkspaceManager : IDisposable
         Microsoft.CodeAnalysis.DocumentId,
         System.Collections.Generic.IReadOnlyList<PackageRef>
     > _documentPackages = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<
+        DocumentId,
+        string
+    > _projectlessDegradations = new();
 
     public bool IsLoaded => _solution is not null;
+
+    /// <summary>Current workspace state, including visible file-based fallback mode.</summary>
+    public string Status =>
+        !_projectlessDegradations.IsEmpty ? "filebased-degraded"
+        : IsLoaded ? "loaded"
+        : "not_loaded";
 
     /// <summary>Open a solution or project file via MSBuildWorkspace.</summary>
     [Obsolete("Placeholder until workspace loading is redesigned")]
@@ -217,6 +227,7 @@ internal sealed partial class WorkspaceManager : IDisposable
             }
 
             var diagnostics = MapDiagnostics(filePath, model, ct);
+            AppendProjectlessDegradation(document, filePath, diagnostics);
             if (_deadCodeEnabled && _solution is not null)
             {
                 var dead = await DeadCodeAnalyzer

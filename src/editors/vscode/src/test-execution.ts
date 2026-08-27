@@ -61,6 +61,12 @@ export interface TestRunOptions {
    */
   readonly target?: string;
   readonly timeoutMs?: number;
+  /**
+   * The caller's ⏹. Aborting it KILLS the `dotnet test` process tree — the whole
+   * selection runs in one invocation, so without this Stop could not prevent a
+   * single selected test from running once the batch had started.
+   */
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -112,6 +118,9 @@ async function runInto(
   options: TestRunOptions,
 ): Promise<TestRunOutcome> {
   const filtered = await invoke(testIds, cwd, resultsDirectory, options);
+  // A cancelled run gets no recovery attempt: the user asked for the tests to
+  // STOP, and an unfiltered retry would start every one of them over again.
+  if (options.signal?.aborted === true) return filtered;
   if (!needsUnfilteredRetry(filtered, testIds)) return filtered;
   const unfiltered = await invoke([], cwd, resultsDirectory, options);
   return mergeRuns(filtered, unfiltered);
@@ -128,7 +137,7 @@ async function invoke(
   const before = new Set(trxFiles(resultsDirectory));
   const args = runArgs(testIds, resultsDirectory, options);
   const started = Date.now();
-  const run = await runDotnet(args, cwd, options.timeoutMs ?? DOTNET_TIMEOUT_MS);
+  const run = await runDotnet(args, cwd, options.timeoutMs ?? DOTNET_TIMEOUT_MS, options.signal);
   const durationMs = Date.now() - started;
   const output = `${run.stdout}\n${run.stderr}`;
   const report = collectReport(resultsDirectory, before);

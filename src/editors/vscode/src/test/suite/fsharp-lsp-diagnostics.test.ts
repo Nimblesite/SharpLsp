@@ -10,6 +10,7 @@ import { FSHARP_COLD_TIMEOUT_MS, fsharpFixturePath, openFSharpFixture } from './
  *
  * `DiagnosticsTarget.fs` is the designated scratch file (last in compile order).
  * Tests overwrite it on disk and restore the original content in teardown.
+ * Covers [DIAG-CATEGORIES-COMPILER] and [DIAG-CATEGORIES-LIVE].
  */
 
 const DIAG_TIMEOUT_MS = 60_000;
@@ -32,72 +33,80 @@ suite('F# LSP — Diagnostics', () => {
 
   test('reports an FCS type error for a saved file', async function () {
     this.timeout(FSHARP_COLD_TIMEOUT_MS + DIAG_TIMEOUT_MS);
-    // Write a type error to disk BEFORE opening, so the sidecar (which reads
-    // from disk) sees it on first analysis.
-    fs.writeFileSync(
-      fsharpFixturePath('DiagnosticsTarget.fs'),
-      [
-        'namespace FSharpFixtures',
-        '',
-        'module DiagnosticsTarget =',
-        '',
-        '    // Type error: int binding initialised with a string.',
-        '    let broken : int = "this is not an int"',
-      ].join('\n'),
-      'utf8',
-    );
+    try {
+      // Write a type error to disk BEFORE opening, so the sidecar (which reads
+      // from disk) sees it on first analysis.
+      fs.writeFileSync(
+        fsharpFixturePath('DiagnosticsTarget.fs'),
+        [
+          'namespace FSharpFixtures',
+          '',
+          'module DiagnosticsTarget =',
+          '',
+          '    // Type error: int binding initialised with a string.',
+          '    let broken : int = "this is not an int"',
+        ].join('\n'),
+        'utf8',
+      );
 
-    const { uri } = await openFSharpFixture('DiagnosticsTarget.fs');
-    const diagnostics = await pollUntilResult(
-      async () => vscode.languages.getDiagnostics(uri),
-      (items) => items.some((d) => d.severity === vscode.DiagnosticSeverity.Error),
-      FSHARP_COLD_TIMEOUT_MS,
-      2_000,
-    );
-    const errors = diagnostics.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
-    assert.ok(errors.length > 0, 'a type-mismatched F# binding must produce an error diagnostic');
-    assert.ok(
-      errors.some((d) => /FS\d{4}/.test(String(d.code ?? '')) || /type/i.test(d.message)),
-      'the diagnostic must look like an FCS type error',
-    );
+      const { uri } = await openFSharpFixture('DiagnosticsTarget.fs');
+      const diagnostics = await pollUntilResult(
+        async () => vscode.languages.getDiagnostics(uri),
+        (items) => items.some((d) => d.severity === vscode.DiagnosticSeverity.Error),
+        FSHARP_COLD_TIMEOUT_MS,
+        2_000,
+      );
+      const errors = diagnostics.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
+      assert.ok(errors.length > 0, 'a type-mismatched F# binding must produce an error diagnostic');
+      assert.ok(
+        errors.some((d) => /FS\d{4}/.test(String(d.code ?? '')) || /type/i.test(d.message)),
+        'the diagnostic must look like an FCS type error',
+      );
+    } finally {
+      restoreDiagnosticsTarget();
+    }
   });
 
   test('clears diagnostics when the file is corrected', async function () {
     this.timeout(FSHARP_COLD_TIMEOUT_MS + DIAG_TIMEOUT_MS);
-    // Start with an error on disk.
-    fs.writeFileSync(
-      fsharpFixturePath('DiagnosticsTarget.fs'),
-      [
-        'namespace FSharpFixtures',
-        '',
-        'module DiagnosticsTarget =',
-        '    let broken : int = "nope"',
-      ].join('\n'),
-      'utf8',
-    );
-    const { uri } = await openFSharpFixture('DiagnosticsTarget.fs');
-    await pollUntilResult(
-      async () => vscode.languages.getDiagnostics(uri),
-      (items) => items.some((d) => d.severity === vscode.DiagnosticSeverity.Error),
-      FSHARP_COLD_TIMEOUT_MS,
-      2_000,
-    );
+    try {
+      // Start with an error on disk.
+      fs.writeFileSync(
+        fsharpFixturePath('DiagnosticsTarget.fs'),
+        [
+          'namespace FSharpFixtures',
+          '',
+          'module DiagnosticsTarget =',
+          '    let broken : int = "nope"',
+        ].join('\n'),
+        'utf8',
+      );
+      const { uri } = await openFSharpFixture('DiagnosticsTarget.fs');
+      await pollUntilResult(
+        async () => vscode.languages.getDiagnostics(uri),
+        (items) => items.some((d) => d.severity === vscode.DiagnosticSeverity.Error),
+        FSHARP_COLD_TIMEOUT_MS,
+        2_000,
+      );
 
-    // Correct the file on disk and re-open to force a fresh pull.
-    restoreDiagnosticsTarget();
-    await closeAllEditors();
-    await openFSharpFixture('DiagnosticsTarget.fs');
-    const cleared = await pollUntilResult(
-      async () => vscode.languages.getDiagnostics(uri),
-      (items) => items.filter((d) => d.severity === vscode.DiagnosticSeverity.Error).length === 0,
-      DIAG_TIMEOUT_MS,
-      2_000,
-    );
-    assert.strictEqual(
-      cleared.filter((d) => d.severity === vscode.DiagnosticSeverity.Error).length,
-      0,
-      'corrected file must clear its error diagnostics',
-    );
+      // Correct the file on disk and re-open to force a fresh pull.
+      restoreDiagnosticsTarget();
+      await closeAllEditors();
+      await openFSharpFixture('DiagnosticsTarget.fs');
+      const cleared = await pollUntilResult(
+        async () => vscode.languages.getDiagnostics(uri),
+        (items) => items.filter((d) => d.severity === vscode.DiagnosticSeverity.Error).length === 0,
+        DIAG_TIMEOUT_MS,
+        2_000,
+      );
+      assert.strictEqual(
+        cleared.filter((d) => d.severity === vscode.DiagnosticSeverity.Error).length,
+        0,
+        'corrected file must clear its error diagnostics',
+      );
+    } finally {
+      restoreDiagnosticsTarget();
+    }
   });
 
   test('a valid F# fixture file has no error diagnostics', async function () {

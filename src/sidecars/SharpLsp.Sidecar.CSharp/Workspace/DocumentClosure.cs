@@ -6,7 +6,7 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// <summary>One source file in a file-based app or script closure.</summary>
 internal sealed record ClosureFile(string Path, string Text, bool IsRoot);
 
-internal sealed record PackageRef(string Name, string Version);
+internal sealed record PackageRef(string Name, string? Version);
 
 /// <summary>Result of expanding a closure: the files, plus any non-fatal problems.</summary>
 internal sealed record Closure(
@@ -124,7 +124,6 @@ internal static class DocumentClosure
             if (
                 directive.Kind == FileDirectiveKind.Package
                 && !string.IsNullOrEmpty(directive.Name)
-                && !string.IsNullOrEmpty(directive.Value)
             )
             {
                 state.Packages.Add(new PackageRef(directive.Name, directive.Value));

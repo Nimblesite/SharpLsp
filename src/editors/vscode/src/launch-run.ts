@@ -54,8 +54,17 @@ export function runArgs(target: FileBasedTarget | ScriptTarget): string[] {
   return target.runner === 'fsi' ? ['fsi', '--exec', target.file] : [target.file];
 }
 
-/** The executable a target runs under. */
-function runExecutable(target: FileBasedTarget | ScriptTarget): string {
+/**
+ * The executable a target runs under.
+ *
+ * Exported because this is the one platform-dependent decision on the run path:
+ * [DIST-RUNTIME-ACQUIRE] resolves an ABSOLUTE SDK path whose shape differs per
+ * host (`C:\...\dotnet.exe` on Windows, `/usr/share/dotnet/dotnet`
+ * elsewhere), and a caller that reads the command back off the task must name
+ * the CLI identically either way — see `binaryNameOf`. Keeping it private made
+ * that branch reachable only from a Windows CI leg.
+ */
+export function runExecutable(target: FileBasedTarget | ScriptTarget): string {
   const script = target.kind === 'script' ? target : undefined;
   return script?.runner === 'dotnet-script' ? 'dotnet-script' : currentDotnetExecutable();
 }

@@ -17,7 +17,8 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { getNetcoredbgCandidates } from '../../debug.js';
+import { findNetcoredbg, getNetcoredbgCandidates } from '../../debug.js';
+import { binaryNameOf } from '../../platform.js';
 import { EXTENSION_ID, pollUntilResult, sleep } from './test-helpers';
 
 /** Registered by the extension today. */
@@ -146,15 +147,28 @@ export function menuItems(menu: string): Record<string, any>[] {
 }
 
 /**
- * True when the bundled/installed netcoredbg is present.
+ * Assert the debug adapter a session-starting test needs, and name it.
  *
- * Session-starting tests skip on `false` rather than passing quietly: a test
- * that silently succeeds because no debugger exists is worse than no test.
+ * A PREMISE, never a `this.skip()`. [DIST-DEBUGGER-BUNDLE] makes netcoredbg a
+ * REQUIRED payload of the VSIX, so its absence is a staging regression — exactly
+ * the regression these tests exist to catch — and a conditional skip turns that
+ * regression green. Resolved through the production `findNetcoredbg`, so the
+ * premise is the adapter the launch path will really spawn rather than a second
+ * opinion that can drift from it, and the failure names every path searched.
  */
-export function adapterAvailable(): boolean {
+export function assertAdapterAvailable(why: string): string {
   const extension = vscode.extensions.getExtension(EXTENSION_ID);
-  const candidates = getNetcoredbgCandidates(extension?.extensionPath);
-  return candidates.some((candidate) => fs.existsSync(candidate));
+  assert.ok(extension, `${why}: ${EXTENSION_ID} must be installed in the VSIX host`);
+  const searched = getNetcoredbgCandidates(extension.extensionPath);
+  const resolved = findNetcoredbg(extension.extensionPath);
+  if (resolved === undefined) {
+    assert.fail(
+      `${why}: [DIST-DEBUGGER-BUNDLE] requires a bundled netcoredbg and none was found. ` +
+        `Searched, in order:\n  ${searched.join('\n  ')}`,
+    );
+  }
+  assert.strictEqual(fs.existsSync(resolved), true, `${why}: the adapter exists at ${resolved}`);
+  return resolved;
 }
 
 /** One observed debug session and the configuration it was started with. */
@@ -311,9 +325,19 @@ export class TaskRecorder {
     return this.exitCodes;
   }
 
-  /** Tasks whose command is the `dotnet` CLI — the run paths we care about. */
+  /**
+   * Tasks whose command is the `dotnet` CLI — the run paths we care about.
+   *
+   * Named through {@link binaryNameOf}, never `endsWith('dotnet')`.
+   * [DIST-RUNTIME-ACQUIRE] resolves an ABSOLUTE SDK path, so the command is
+   * `C:\Program Files\dotnet\dotnet.exe` on Windows and
+   * `/usr/share/dotnet/dotnet` elsewhere: a suffix test matched every POSIX run
+   * and NO Windows run at all, which is why every script run read as zero tasks
+   * there while passing on macOS and Linux. It also matched an unrelated
+   * `mydotnet`, so it was both too narrow and too wide.
+   */
   public get dotnetTasks(): readonly ObservedTask[] {
-    return this.startedTasks.filter((task) => task.command?.endsWith('dotnet') === true);
+    return this.startedTasks.filter((task) => binaryNameOf(task.command ?? '') === 'dotnet');
   }
 
   /** Wait for at least `count` `dotnet` tasks to start. */
@@ -442,4 +466,28 @@ export async function assertCommandRegistered(id: string): Promise<void> {
         .sort()
         .join(', '),
   );
+}
+
+/**
+ * A session shaped like the one VS Code hands a `DebugAdapterDescriptorFactory`.
+ *
+ * Carries the resolved `configuration` and the owning `workspaceFolder`, not
+ * just an id — a factory that reads either would see `undefined` against a bare
+ * `{ id }` stub and pass for the wrong reason.
+ */
+export function debugSessionFor(name: string, root: string): vscode.DebugSession {
+  return {
+    id: `sess-${name}`,
+    type: DEBUG_TYPE_ID,
+    name,
+    workspaceFolder: fakeFolder(root),
+    configuration: {
+      type: DEBUG_TYPE_ID,
+      request: 'launch',
+      name,
+      program: path.join(root, 'bin', 'Debug', 'net10.0', `${name}.dll`),
+      cwd: root,
+      justMyCode: true,
+    },
+  } as unknown as vscode.DebugSession;
 }

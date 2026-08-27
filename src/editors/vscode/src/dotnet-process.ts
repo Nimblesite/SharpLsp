@@ -15,7 +15,11 @@
  * Implements [TEST-ENV-LOCALE].
  */
 
-import { execFile } from 'node:child_process';
+import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import type { CancellationToken } from 'vscode';
+import { info } from './log.js';
+import { err, ok, type Result } from './result.js';
+import { getErrorMessage } from './utils.js';
 
 /**
  * `dotnet test` restores, builds and then runs. On a cold Windows agent the
@@ -76,61 +80,218 @@ function dotnetEnv(): NodeJS.ProcessEnv {
   return { ...process.env, DOTNET_CLI_UI_LANGUAGE: DOTNET_CLI_LANGUAGE };
 }
 
-/** Run `dotnet` and resolve with everything it produced. Never rejects. */
+/**
+ * Run `dotnet` and resolve with everything it produced. Never rejects.
+ *
+ * `signal` is the caller's STOP: aborting it TERMINATES the invocation and
+ * everything it spawned, instead of leaving the caller awaiting a process it no
+ * longer wants. Without it, a Test Explorer run that batches the whole selection
+ * into one `dotnet test` could not be stopped at all once the batch had started.
+ *
+ * Built on `spawn`, not `execFile`: `execFile` DROPS the `detached` option, and
+ * without a process group of its own only the `dotnet` parent can be signalled —
+ * leaving the testhost GRANDCHILD running the very tests the user just stopped.
+ */
 export async function runDotnet(
   args: readonly string[],
   cwd: string,
   timeoutMs: number = DOTNET_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<DotnetRun> {
+  if (signal?.aborted === true) return terminated(EMPTY, CANCELLED);
   return await new Promise<DotnetRun>((resolve) => {
-    execFile(
-      dotnetExecutable,
-      [...args],
-      { cwd, timeout: timeoutMs, maxBuffer: DOTNET_MAX_BUFFER, env: dotnetEnv() },
-      (error, stdout, stderr) => {
-        resolve(toRun(error, stdout, stderr));
-      },
-    );
+    const capture: Capture = { stdout: '', stderr: '', reason: undefined };
+    const child = spawn(dotnetExecutable, [...args], spawnOptions(cwd));
+    absorbOutput(capture, child);
+    const timer = setTimeout(() => {
+      kill(capture, child, `timed out after ${String(timeoutMs)}ms`);
+    }, timeoutMs);
+    const detach = watchAbort(capture, child, signal);
+    const settle = (run: DotnetRun): void => {
+      clearTimeout(timer);
+      detach();
+      resolve(run);
+    };
+    child.once('error', (error: Error) => {
+      settle({ ...capture, failed: true, killed: false, errorMessage: error.message });
+    });
+    child.once('close', (code, signalName) => {
+      settle(toRun(capture, code, signalName));
+    });
   });
 }
 
-/** Node's code when it kills a child for overflowing `maxBuffer`. */
-const MAXBUFFER_CODE = 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
-
-/** Shape an `execFile` callback triple into a {@link DotnetRun}. */
-function toRun(error: ExecFileError | null, stdout: string, stderr: string): DotnetRun {
-  if (error === null) {
-    return { stdout, stderr, failed: false, killed: false, errorMessage: undefined };
-  }
-  const trimmedErr = stderr.trim();
-  return {
-    stdout,
-    stderr,
-    failed: true,
-    killed: wasKilled(error),
-    errorMessage: trimmedErr === '' ? error.message : trimmedErr,
-  };
-}
-
-/** What `execFile` reports on failure, beyond a plain Error. */
-interface ExecFileError extends Error {
-  readonly killed?: boolean;
-  readonly signal?: NodeJS.Signals | null;
-  readonly code?: string | number;
+/** A live `AbortSignal`, and the subscription keeping it fed. */
+export interface Cancellation {
+  readonly signal: AbortSignal;
+  /** Unsubscribe from the token. Always call it once the run has settled. */
+  readonly dispose: () => void;
 }
 
 /**
- * True when the child was TERMINATED rather than merely exiting non-zero.
+ * Bridge VS Code's ⏹ onto the {@link AbortSignal} {@link runDotnet} takes.
  *
- * `killed` covers the timeout, a signal covers an external kill, and Node
- * reports a `maxBuffer` overflow with its own code after killing the child. All
- * three leave stdout truncated at an arbitrary point, so the output must never
- * be parsed as a complete listing.
+ * It lives here rather than at each call site so every `dotnet` invocation the
+ * extension makes can be made stoppable the same way.
  */
-function wasKilled(error: ExecFileError): boolean {
-  return (
-    error.killed === true ||
-    (error.signal !== undefined && error.signal !== null) ||
-    error.code === MAXBUFFER_CODE
-  );
+export function cancellationSignal(token: CancellationToken): Cancellation {
+  const controller = new AbortController();
+  if (token.isCancellationRequested) controller.abort();
+  const subscription = token.onCancellationRequested(() => {
+    controller.abort();
+  });
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      subscription.dispose();
+    },
+  };
+}
+
+/** Why a child was terminated, when the reason was cancellation. */
+const CANCELLED = 'cancelled';
+
+/** The output of an invocation that never produced any. */
+const EMPTY: Capture = { stdout: '', stderr: '', reason: undefined };
+
+/** Output accumulated so far, plus why (if at all) the child was terminated. */
+interface Capture {
+  stdout: string;
+  stderr: string;
+  /** Set once this module kills the child: timeout, overflow or cancellation. */
+  reason: string | undefined;
+}
+
+/**
+ * Spawn options for one invocation.
+ *
+ * On POSIX the child is `detached` so it LEADS ITS OWN PROCESS GROUP, which is
+ * what makes {@link terminateTree} able to reap the testhost grandchild too.
+ * Windows has no such groups, so `taskkill /T` walks the tree there instead.
+ */
+function spawnOptions(cwd: string): SpawnOptions {
+  return {
+    cwd,
+    env: dotnetEnv(),
+    detached: process.platform !== 'win32',
+    windowsHide: true,
+  };
+}
+
+/** Stream both pipes into `capture`, enforcing the output ceiling as they grow. */
+function absorbOutput(capture: Capture, child: ChildProcess): void {
+  child.stdout?.setEncoding('utf8');
+  child.stderr?.setEncoding('utf8');
+  child.stdout?.on('data', (chunk: string) => {
+    capture.stdout += chunk;
+    enforceCeiling(capture, child);
+  });
+  child.stderr?.on('data', (chunk: string) => {
+    capture.stderr += chunk;
+    enforceCeiling(capture, child);
+  });
+}
+
+/** A run whose output outgrew the ceiling is killed; its output is truncated. */
+function enforceCeiling(capture: Capture, child: ChildProcess): void {
+  if (capture.stdout.length + capture.stderr.length <= DOTNET_MAX_BUFFER) return;
+  kill(capture, child, `output exceeded ${String(DOTNET_MAX_BUFFER)} bytes`);
+}
+
+/** Terminate `child` when `signal` aborts; the returned function unsubscribes. */
+function watchAbort(
+  capture: Capture,
+  child: ChildProcess,
+  signal: AbortSignal | undefined,
+): () => void {
+  if (signal === undefined) return () => undefined;
+  const onAbort = (): void => {
+    kill(capture, child, CANCELLED);
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
+  return () => {
+    signal.removeEventListener('abort', onAbort);
+  };
+}
+
+/** Terminate the tree once, recording why so the caller can be told. */
+function kill(capture: Capture, child: ChildProcess, reason: string): void {
+  if (capture.reason !== undefined) return;
+  capture.reason = reason;
+  info(`Terminating dotnet (pid ${String(child.pid ?? -1)}): ${reason}`);
+  terminateTree(child);
+}
+
+/** How long a tree gets to exit on SIGTERM before it is SIGKILLed. */
+const TREE_KILL_GRACE_MS = 3_000;
+
+/** Kill the child AND everything it spawned — the tests live in a grandchild. */
+function terminateTree(child: ChildProcess): void {
+  const pid = child.pid;
+  // A REAL pid or nothing. `process.kill(-0, …)` signals the CALLER'S OWN
+  // process group, which in the extension host is every VS Code process there
+  // is; a spawn that failed reports `undefined`, and `-undefined` is `NaN`.
+  if (pid === undefined || !Number.isInteger(pid) || pid <= 0) {
+    info(`Refusing to terminate a dotnet invocation with no real pid (${String(pid)})`);
+    return;
+  }
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { windowsHide: true }).unref();
+    return;
+  }
+  report(killGroup(pid, 'SIGTERM'), pid);
+  setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null)
+      report(killGroup(pid, 'SIGKILL'), pid);
+  }, TREE_KILL_GRACE_MS).unref();
+}
+
+/** Signal a whole process GROUP, reporting rather than throwing on failure. */
+function killGroup(pid: number, signal: NodeJS.Signals): Result<void> {
+  try {
+    process.kill(-pid, signal);
+    return ok(undefined);
+  } catch (error: unknown) {
+    return err(getErrorMessage(error));
+  }
+}
+
+/** Log a failed kill; an already-reaped tree is the ordinary reason. */
+function report(outcome: Result<void>, pid: number): void {
+  if (!outcome.ok) info(`Could not signal dotnet process group ${String(pid)}: ${outcome.error}`);
+}
+
+/** Shape a finished child into a {@link DotnetRun}. */
+function toRun(
+  capture: Capture,
+  code: number | null,
+  signalName: NodeJS.Signals | null,
+): DotnetRun {
+  if (capture.reason !== undefined) return terminated(capture, capture.reason);
+  if (signalName !== null) return terminated(capture, `killed by ${signalName}`);
+  if (code === 0) return { ...capture, failed: false, killed: false, errorMessage: undefined };
+  const trimmed = capture.stderr.trim();
+  return {
+    ...capture,
+    failed: true,
+    killed: false,
+    errorMessage: trimmed === '' ? `dotnet exited with code ${String(code ?? -1)}` : trimmed,
+  };
+}
+
+/**
+ * A run the child did NOT complete on its own terms.
+ *
+ * `killed` is reported separately from a non-zero exit because killed output is
+ * TRUNCATED at an arbitrary point and must never be parsed as a complete
+ * listing — see {@link DotnetRun}.
+ */
+function terminated(capture: Capture, reason: string): DotnetRun {
+  return {
+    stdout: capture.stdout,
+    stderr: capture.stderr,
+    failed: true,
+    killed: true,
+    errorMessage: `dotnet was terminated: ${reason}`,
+  };
 }

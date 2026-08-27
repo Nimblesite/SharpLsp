@@ -3,12 +3,12 @@ import { effect } from './signals';
 import { info } from './log';
 import * as state from './state';
 import { listTests, type TestListing } from './test-discovery';
-import { runTests, type TestRunOutcome } from './test-execution';
+import { runTests, type TestRunOptions, type TestRunOutcome } from './test-execution';
 import { filterExpression } from './test-filter';
 import type { TestOutcome } from './test-run-output';
 import { loadDetailedCoverage } from './test-coverage';
 import { addCoverage, cachedFrom, freshCoverageDir, reportResult } from './test-reporting';
-import { configureDotnet } from './dotnet-process';
+import { cancellationSignal, configureDotnet } from './dotnet-process';
 import {
   discoveryTargets,
   dirOf,
@@ -27,6 +27,38 @@ export { isExpectoTest, isFsCheckTest } from './test-targets';
  * into a single `dotnet test --list-tests` sweep.
  */
 const DISCOVERY_DEBOUNCE_MS = 1_000;
+
+/** Everything one batched `dotnet test` invocation needs. */
+interface RunInvocation {
+  readonly tests: readonly vscode.TestItem[];
+  readonly cwd: string;
+  readonly token: vscode.CancellationToken;
+  readonly coverage: boolean;
+  /** Where TRX and coverage land; a private temp directory when absent. */
+  readonly resultsDirectory: string | undefined;
+}
+
+/**
+ * Whether ⏹ has been pressed. A CALL, not a property read: the flag is re-read
+ * after every `await`, and a property read would be narrowed to `false` by an
+ * earlier check that the awaited work is precisely what invalidates.
+ */
+function cancelled(token: vscode.CancellationToken): boolean {
+  return token.isCancellationRequested;
+}
+
+/** The knobs one batched, cancellable run hands to `dotnet test`. */
+function runOptions(request: RunInvocation, signal: AbortSignal): TestRunOptions {
+  const target = runTarget();
+  return {
+    coverage: request.coverage,
+    signal,
+    ...(request.resultsDirectory === undefined
+      ? {}
+      : { resultsDirectory: request.resultsDirectory }),
+    ...(target === undefined ? {} : { target }),
+  };
+}
 
 /** Cached result for a single test, keyed by fully qualified name. */
 export interface CachedTestResult {
@@ -313,24 +345,28 @@ export class SharpLspTestController {
       this.reportAll(run, tests, 'No workspace folder or solution');
       return;
     }
-    if (token.isCancellationRequested) return;
+    if (cancelled(token)) return;
     for (const test of tests) run.started(test);
     const resultsDirectory = coverage ? freshCoverageDir(cwd) : undefined;
-    const target = runTarget();
-    const outcome = await this.enqueue(
-      async () =>
-        await runTests(
-          tests.map((test) => test.id),
-          cwd,
-          {
-            coverage,
-            ...(resultsDirectory === undefined ? {} : { resultsDirectory }),
-            ...(target === undefined ? {} : { target }),
-          },
-        ),
-    );
+    const outcome = await this.invoke({ tests, cwd, token, coverage, resultsDirectory });
+    // ⏹ means STOP. The whole selection runs in ONE `dotnet test`, which the
+    // token has just killed mid-flight, so whatever it managed to write is a
+    // TRUNCATED account of a run the user abandoned: never cache or paint it.
+    if (cancelled(token)) return;
     this.reportOutcome(run, tests, outcome);
     if (coverage && resultsDirectory !== undefined) addCoverage(run, resultsDirectory);
+  }
+
+  /** One queued, CANCELLABLE `dotnet test` over the whole selection. */
+  private async invoke(request: RunInvocation): Promise<TestRunOutcome> {
+    const ids = request.tests.map((test) => test.id);
+    const cancellation = cancellationSignal(request.token);
+    const options = runOptions(request, cancellation.signal);
+    try {
+      return await this.enqueue(async () => await runTests(ids, request.cwd, options));
+    } finally {
+      cancellation.dispose();
+    }
   }
 
   /** Map one invocation's TRX results onto the run and the result cache. */
