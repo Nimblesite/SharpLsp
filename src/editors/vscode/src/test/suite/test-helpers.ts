@@ -1,3 +1,4 @@
+import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -440,3 +441,24 @@ export function requireAt<T>(items: readonly T[], index: number, label: string):
   }
   return item;
 }
+
+// ── Assertion shorthand ──────────────────────────────────────────
+
+/**
+ * The three assert forms every end-to-end suite here uses.
+ *
+ * These suites are assertion-dense by design and CLAUDE.md caps a file at 500
+ * lines, so the forms are bound once — every call still asserts an exact VALUE,
+ * with a message naming the contract it enforces. Binding them per file is how
+ * nineteen byte-identical copies of the same four lines came to exist.
+ */
+export type Compare = (actual: unknown, expected: unknown, message: string) => void;
+
+/** `assert.strictEqual`, typed for `unknown` operands. */
+export const eq: Compare = assert.strictEqual;
+
+/** `assert.notStrictEqual`, typed for `unknown` operands. */
+export const neq: Compare = assert.notStrictEqual;
+
+/** `assert.deepStrictEqual`, typed for `unknown` operands. */
+export const deepEq: Compare = assert.deepStrictEqual;

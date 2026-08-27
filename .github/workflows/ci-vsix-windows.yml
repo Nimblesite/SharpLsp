@@ -124,6 +124,12 @@ jobs:
           # the diagnostics step below knows where the extension-host logs land
           # instead of guessing at the runner's os.tmpdir().
           VSCODE_TEST_USER_DATA_DIR: ${{ runner.temp }}/vsx-${{ matrix.chunk }}
+          # The `build` job above already compiled the host and both sidecars and
+          # published them as artifacts, downloaded a few steps up. VSIX_PREBUILT
+          # tells the make target to stage what is on disk instead of rebuilding
+          # Rust and .NET once per chunk. Staging still fetches netcoredbg, and
+          # the payload check still proves all of it reached the package.
+          VSIX_PREBUILT: '1'
         run: make _test-vsix-win CHUNK=${{ matrix.chunk }}
       - name: Upload failure diagnostics
         # A chunk failing on Windows and nowhere else is exactly the case this

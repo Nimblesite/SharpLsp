@@ -2,6 +2,14 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { detectRuntimePlatform, exeName } from '../../platform.js';
+import { getNetcoredbgCandidates } from '../../debug.js';
+
+/**
+ * Platforms with no upstream netcoredbg prebuilt. On these the VSIX cannot bundle
+ * a debugger and the extension falls back to PATH / sharplsp.debug.netcoredbgPath
+ * ([DIST-DEBUGGER-BUNDLE]); everywhere else a missing debugger is a staging bug.
+ */
+const NO_PREBUILT: readonly string[] = ['win32-arm64', 'darwin-x64'];
 
 suite('VSIX dev binary staging', () => {
   test('keeps bundled sharplsp available for the development extension host', () => {
@@ -30,6 +38,44 @@ suite('VSIX dev binary staging', () => {
       path.join(extensionRoot, 'bin', 'all', exeName('sharplsp-sidecar-fsharp')),
       'sharplsp-sidecar-fsharp',
     );
+  });
+
+  // Implements [DIST-DEBUGGER-BUNDLE], [DEBUG-ADAPTER-NETCOREDBG]. Without the
+  // bundled adapter every launch falls through to a bare `netcoredbg` on PATH,
+  // which on a user's machine does not exist: F5 fails with a spawn ENOENT.
+  test('bundles the netcoredbg debug adapter the launch path resolves first', function () {
+    const platform = detectRuntimePlatform();
+    if (NO_PREBUILT.includes(platform)) this.skip();
+
+    const extensionRoot = path.resolve(__dirname, '../../..');
+    const bundled = path.join(extensionRoot, 'bin', platform, 'netcoredbg', exeName('netcoredbg'));
+    assertStagedComponent(bundled, 'netcoredbg');
+
+    // The adapter factory must prefer THIS copy: it is candidate zero.
+    const candidates = getNetcoredbgCandidates(extensionRoot);
+    assert.strictEqual(candidates[0], bundled, 'the bundled adapter must be searched first');
+    assert.strictEqual(
+      candidates.filter((candidate) => candidate === bundled).length,
+      1,
+      'and appear exactly once in the search order',
+    );
+
+    // A launcher alone is not a debugger: netcoredbg loads its managed half at
+    // startup, so a stage that dropped ManagedPart.dll passes an existence check
+    // and then dies on the first launch request.
+    const adapterDir = path.dirname(bundled);
+    for (const companion of ['ManagedPart.dll', 'Microsoft.CodeAnalysis.dll']) {
+      assertStagedComponent(path.join(adapterDir, companion), `netcoredbg/${companion}`);
+    }
+
+    // AppleDouble forks from the macOS zip must never reach a user's VSIX.
+    const junk = path.join(extensionRoot, 'bin', platform, '__MACOSX');
+    assert.strictEqual(fs.existsSync(junk), false, `${junk} is archive junk and must be stripped`);
+
+    if (process.platform !== 'win32') {
+      const mode = fs.statSync(bundled).mode;
+      assert.strictEqual((mode & 0o111) !== 0, true, 'the staged adapter must be executable');
+    }
   });
 });
 

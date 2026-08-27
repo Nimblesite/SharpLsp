@@ -175,6 +175,8 @@ export function hasRuntimeConfig(assemblyPath: string): boolean {
 
 /** A project's launch entry: where its assembly is, and where to run it. */
 export interface ProjectEntry {
+  /** The project file this entry resolved. Always present. */
+  readonly projectFile: string;
   /** The built assembly, or undefined when nothing has been built yet. */
   readonly dll: string | undefined;
   /** The project directory. */
@@ -249,7 +251,7 @@ function modifiedAt(candidate: string): number {
 /** The launch entry for a project file. */
 export function projectEntryFromFile(projectFile: string): ProjectEntry {
   const cwd = path.dirname(projectFile);
-  return { dll: discoverAssembly(cwd), cwd };
+  return { projectFile, dll: discoverAssembly(cwd), cwd };
 }
 
 /**

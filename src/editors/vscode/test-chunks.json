@@ -49,6 +49,59 @@
         "run-debug-contributions.test.js"
       ]
     },
+    "debug-stepping": {
+      "description": "Step through debugging over a live netcoredbg session on a real built assembly: F10/F11/Shift+F11 walks asserted line by line and frame by frame, Just My Code, run to cursor, continue between breakpoints, breakpoints encountered mid-step, stepping off the end of a method and of the program, and the physical/async call stack. Implements [DEBUG-FEATURES-STEPPING] and [DEBUG-FEATURES-STACK].",
+      "files": [
+        "debug-stepping-e2e.test.js",
+        "debug-stepping-boundaries-e2e.test.js",
+        "debug-callstack-e2e.test.js"
+      ]
+    },
+    "debug-breakpoints": {
+      "description": "Breakpoints as a user sets them: F9 through the editor (the canSetBreakpointsIn gate the addBreakpoints API bypasses), binding and verification, mid-session add/remove/disable, function breakpoints, conditions, hit counts and logpoints. Implements [DEBUG-FEATURES-BREAKPOINTS] and the runtime half of [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION].",
+      "files": [
+        "debug-breakpoints-e2e.test.js",
+        "debug-breakpoint-conditions-e2e.test.js"
+      ]
+    },
+    "debug-exceptions": {
+      "description": "Catching exceptions and ignoring them: the advertised exception filters, break-on-all catching a handled throw, the unhandled-only filter ignoring one, the exception info panel and inner-exception chain, and per-type include/exclude filters changed mid-session. Implements [DEBUG-FEATURES-EXCEPTIONS].",
+      "files": [
+        "debug-exceptions-e2e.test.js",
+        "debug-exception-filters-e2e.test.js"
+      ]
+    },
+    "debug-inspection": {
+      "description": "The Variables and Watch panels against a paused debuggee: locals, arguments, this, statics, collection/array/nullable expansion, hover/watch/REPL evaluation across the T1 and T2 tiers, setVariable changing what the program does next, and [DebuggerDisplay] rendering. Implements [DEBUG-FEATURES-VARIABLES].",
+      "files": [
+        "debug-variables-e2e.test.js",
+        "debug-evaluate-e2e.test.js"
+      ]
+    },
+    "debug-fsharp": {
+      "description": "F# debugging at full density, never a reduced echo of the C# suites: F9 in an F# editor, stepping through F# functions, F# exceptions caught and ignored, discriminated unions/records/tuples/options rendered in F# syntax, and task {} logical stacks. Implements [DEBUG-FSHARP-UNIONS], [DEBUG-FSHARP-STEPPING] and [DEBUG-FSHARP-PDB].",
+      "files": [
+        "debug-fsharp-stepping-e2e.test.js",
+        "debug-fsharp-inspection-e2e.test.js"
+      ]
+    },
+    "debug-session": {
+      "description": "The session and the protocol around it: the DAP 1.71.0 handshake and the whole [DEBUG-PROTOCOL-CAPABILITIES] table in both directions, stopAtEntry, args/env/cwd, run-without-debugging, restart, pause and stop, debuggee output routing, and two simultaneous sessions multiplexed by session id.",
+      "files": [
+        "debug-protocol-capabilities-e2e.test.js",
+        "debug-session-lifecycle-e2e.test.js",
+        "debug-output-routing-e2e.test.js",
+        "debug-multisession-e2e.test.js"
+      ]
+    },
+    "debug-advanced": {
+      "description": "Hot Reload during an active session (method body, added method, rude edit), attaching to an already-running process by pid and by name, and debugging a single unit test through the Test Explorer Debug profile. Each suite builds and then also RUNS a real .NET target outside the debugger. Implements [DEBUG-FEATURES-HOT-RELOAD], [DEBUG-FEATURES-LAUNCH] attach rows and [DEBUG-FEATURES-TESTS].",
+      "files": [
+        "debug-hot-reload-e2e.test.js",
+        "debug-attach-e2e.test.js",
+        "debug-test-debugging-e2e.test.js"
+      ]
+    },
     "rundebug": {
       "description": "Launch-target resolution against real projects: the [SCRIPT-CONE] walk (.sln/.slnx, .git and workspace-root boundaries), active-document sensitivity across two projects, library rejection, and MSBuild output resolution for custom AssemblyName/OutputPath, non-listed and multi-targeted frameworks. Builds real C# and F# console projects.",
       "files": [
@@ -57,7 +110,7 @@
       ]
     },
     "rundebug-commands": {
-      "description": "The run/debug user gestures at the VSIX level: F5 and Ctrl/Cmd+F5 through workbench.action.debug.start / .run, sharplsp.runProgram and sharplsp.debugProgram against built projects, and single-file targets \u2014 C# file-based apps, .fsx scripts and the .csx/.fs refusals. Split from rundebug because every test restores and builds or executes a real .NET target.",
+      "description": "The run/debug user gestures at the VSIX level: F5 and Ctrl/Cmd+F5 through workbench.action.debug.start / .run, sharplsp.runProgram and sharplsp.debugProgram against built projects, and single-file targets — C# file-based apps, .fsx scripts and the .csx/.fs refusals. Split from rundebug because every test restores and builds or executes a real .NET target.",
       "files": [
         "run-debug-commands.test.js",
         "run-debug-scripts.test.js"

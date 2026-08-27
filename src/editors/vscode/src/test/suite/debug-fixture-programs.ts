@@ -18,7 +18,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { AnchoredSource } from './debug-anchors';
 import { buildProjectXml, writeProject } from './dotnet-project-kit';
-import { TFM, builtDll, type ConsoleProject } from './run-debug-fixtures';
+import { TFM, builtDll, isolateFromRepoMsbuild, type ConsoleProject } from './run-debug-fixtures';
 
 /** `argv[0]` values the fixtures understand. A launch config passes one in `args`. */
 export const MODE = {
@@ -32,7 +32,15 @@ export const MODE = {
   async: 'async',
   /** Every branch above, in source order. */
   both: 'both',
+  /** Sleeps long enough for a `pause` gesture to interrupt a RUNNING debuggee. */
+  wait: 'wait',
 } as const;
+
+/** The environment variable the debuggee echoes, for the `env` launch attribute. */
+export const ENV_PROBE = 'SHARPLSP_DEBUG_PROBE';
+
+/** What the debuggee prints when `ENV_PROBE` is not set. */
+export const ENV_UNSET = 'env=unset';
 
 /** The text the programs print once they have completed their work. */
 export const DONE_MARKER = 'done';
@@ -96,7 +104,7 @@ public static class Program
 {
     public static int Total;                                           // @anchor:total-field
 
-    public static int Add(int left, int right)
+    public static int Add(int left, int right)                         // @anchor:add-signature
     {
         var sum = left + right;                                        // @anchor:add-body
         return sum;                                                    // @anchor:add-return
@@ -105,7 +113,7 @@ public static class Program
     public static int Accumulate(int seed)
     {
         var running = seed;                                            // @anchor:accumulate-entry
-        for (var index = 1; index <= 3; index++)
+        for (var index = 1; index <= 3; index++)                        // @anchor:accumulate-loop
         {
             running = Add(running, index);                             // @anchor:accumulate-call
         }
@@ -163,6 +171,7 @@ public static class Program
     public static int Main(string[] args)
     {
         var mode = args.Length > 0 ? args[0] : "plain";                // @anchor:main-mode
+        Console.WriteLine("env=" + (Environment.GetEnvironmentVariable("SHARPLSP_DEBUG_PROBE") ?? "unset")); // @anchor:main-env
         var total = Accumulate(2);                                     // @anchor:main-accumulate
         var box = new Box(total, "boxed");                             // @anchor:main-box
         Console.WriteLine("total=" + total.ToString());                // @anchor:main-print
@@ -180,6 +189,11 @@ public static class Program
         if (mode == "unhandled" || mode == "both")
         {
             ThrowUnhandled();                                          // @anchor:main-unhandled
+        }
+
+        if (mode == "wait")
+        {
+            System.Threading.Thread.Sleep(20000);                      // @anchor:main-wait
         }
 
         Console.WriteLine("done " + mode + " " + count.ToString());    // @anchor:main-done
@@ -214,7 +228,7 @@ let add left right =
 
 let accumulate seed =
     let mutable running = seed                                         // @anchor:accumulate-entry
-    for index in 1 .. 3 do
+    for index in 1 .. 3 do                                             // @anchor:accumulate-loop
         running <- add running index                                   // @anchor:accumulate-call
     running                                                            // @anchor:accumulate-return
 
@@ -242,6 +256,8 @@ let rootTask seed =
 [<EntryPoint>]
 let main argv =
     let mode = if argv.Length > 0 then argv[0] else "plain"            // @anchor:main-mode
+    let probe = Environment.GetEnvironmentVariable("SHARPLSP_DEBUG_PROBE")    // @anchor:main-probe
+    printfn "env=%s" (if isNull probe then "unset" else probe)         // @anchor:main-env
     let total = accumulate 2                                           // @anchor:main-accumulate
     let shape = Rect(3, 4)                                             // @anchor:main-shape
     let point = { X = total; Y = area shape }                          // @anchor:main-point
@@ -252,6 +268,7 @@ let main argv =
     if mode = "caught" || mode = "both" then throwCaught ()            // @anchor:main-caught
     if mode = "async" || mode = "both" then printfn "%d" ((rootTask 1).Result) // @anchor:main-async
     if mode = "unhandled" || mode = "both" then throwUnhandled ()      // @anchor:main-unhandled
+    if mode = "wait" then System.Threading.Thread.Sleep 20000          // @anchor:main-wait
     printfn "done %s %A %A %d" mode maybe pair numbers.Length          // @anchor:main-done
     0                                                                  // @anchor:main-return
 `;
@@ -274,6 +291,15 @@ const DEBUGGABLE: Readonly<Record<string, string>> = {
   DebugType: 'portable',
   DebugSymbols: 'true',
   Optimize: 'false',
+  // The debuggee exists to be STEPPED THROUGH, so it deliberately keeps mutable
+  // statics, a broad exception type and locale-dependent ToString calls. The
+  // repo's analyzer settings would fail the build on every one of them, and a
+  // debugger test must never fail for a style rule.
+  EnableNETAnalyzers: 'false',
+  RunAnalyzersDuringBuild: 'false',
+  AnalysisLevel: 'none',
+  TreatWarningsAsErrors: 'false',
+  EnforceCodeStyleInBuild: 'false',
 };
 
 /** Assemble the fixture record once, so both writers agree on every field. */
@@ -301,6 +327,7 @@ function fixtureFor(
 
 /** Write the C# debuggee: project XML through the XML writer, source verbatim. */
 export function writeCSharpStepTarget(dir: string): DebugFixture {
+  isolateFromRepoMsbuild(dir);
   writeProject(
     dir,
     `${CSHARP_NAME}.csproj`,
@@ -313,6 +340,7 @@ export function writeCSharpStepTarget(dir: string): DebugFixture {
 
 /** Write the F# debuggee. `<Compile Include>` is mandatory — F# never globs. */
 export function writeFSharpStepTarget(dir: string): DebugFixture {
+  isolateFromRepoMsbuild(dir);
   writeProject(
     dir,
     `${FSHARP_NAME}.fsproj`,

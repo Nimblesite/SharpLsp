@@ -276,10 +276,11 @@ because callers cannot distinguish it from a real one.
 
 **Implicit build**
 
-1. Launch and run MUST build first, using SharpLsp's own contributed task type `sharplsp-build`. Referencing `dotnet: build` is non-conforming — that task type is contributed by the proprietary Microsoft C# extension, and on a SharpLsp-only install VS Code fails the pre-launch step with `Could not find the task 'dotnet: build'.`
+1. Launch and run MUST build first, and SharpLsp MUST perform that build itself — either in-process or through its own contributed `sharplsp-build` task. A configuration MUST NOT name a task type SharpLsp does not contribute: `dotnet: build` belongs to the proprietary Microsoft C# extension, and on a SharpLsp-only install VS Code fails the pre-launch step with a modal `Could not find the task 'dotnet: build'.` and does not start the session. When the resolver emits a `preLaunchTask` at all, its type MUST appear in `contributes.taskDefinitions`; emitting none and building in-process is equally conforming, and is preferred because the build then cannot be skipped by a user's `debug.onTaskErrors` setting.
 2. `contributes.taskDefinitions` MUST declare `sharplsp-build` so the task is referenceable from `tasks.json` and from `preLaunchTask`.
 3. After the build step the resolved `program` MUST exist on disk. If it does not, the session MUST NOT start; show `Build produced no output for <project>.`
 4. The build MUST run **once**. Invoking a terminal build and a headless build for the same request is non-conforming: two MSBuild processes race on the same `obj/` lock files.
+5. Every task SharpLsp dispatches — build, rebuild, clean, and the script runs of [DEBUG-FEATURES-LAUNCH-SCRIPT] — MUST use a `ProcessExecution`, never a `ShellExecution`. A project path containing a space or a shell metacharacter is one `argv` entry to a process and is re-parsed by the user's shell in a shell task; `C:\Program Files (x86)\…` is the ordinary case, not the exotic one. `ProcessExecution` also keeps `command` and `args` readable on the task itself, which is what makes a dispatched build observable at all.
 
 ### Run without debugging `[DEBUG-FEATURES-LAUNCH-NODEBUG]`
 
@@ -363,7 +364,7 @@ The profile file belongs to the **resolved project**, not the workspace root. A 
 
 1. `console` MUST be declared in `contributes.debuggers[].configurationAttributes.launch.properties` with those three values and a default of `integratedTerminal`. A console application that reads from stdin is unusable under `internalConsole`.
 2. Every attribute the resolver writes MUST be declared in `configurationAttributes`. Writing `justMyCode` while leaving it undeclared makes `launch.json` IntelliSense flag a valid, extension-authored attribute as an error.
-3. The launch schema declared in the manifest MUST match this specification's schema: `program`, `args`, `cwd`, `env`, `stopAtEntry`, `console`, `hotReload`, `justMyCode`, `requireExactSource`, `symbolOptions`.
+3. The launch schema declared in the manifest MUST match this specification's schema: `program`, `args`, `cwd`, `env`, `stopAtEntry`, `console`, `hotReload`, `justMyCode`, `requireExactSource`, `symbolOptions`. The manifest's own `required` list MUST name only `program`. VS Code core merges `name`, `type` and `request` into the effective `required` set of every debug type, so re-declaring them is dead weight — but note that the merged trio IS visible on `extension.packageJSON` at runtime, and a conformance check must read the manifest from disk or account for the injection.
 4. The debug type MUST be a single value across the manifest, the constants module and this specification.
 
 ### Dynamic and initial configurations `[DEBUG-FEATURES-LAUNCH-DYNAMIC]`
@@ -449,6 +450,26 @@ VS Code gates every breakpoint UI entry point — gutter click, gutter context m
 2. The entries MUST be unconditional. A `when` clause tied to server state makes the breakpoint gutter appear and disappear as the language server cycles.
 3. Without this contribution, F# breakpoints work only by accident — the built-in `ms-vscode.js-debug` extension happens to contribute `fsharp` — while C# breakpoints are impossible. That asymmetry inverts the project's F#-first commitment and is non-conforming.
 4. `vscode.debug.addBreakpoints()` **bypasses** this gate, so a test that adds a breakpoint through the API and asserts `vscode.debug.breakpoints.length` passes while the product is broken. Conformance is asserted against the manifest contribution itself.
+
+### Breakpoint verification timing `[DEBUG-FEATURES-BREAKPOINTS-VERIFY]`
+
+A breakpoint set before its module is loaded CANNOT be verified synchronously.
+DAP allows an adapter to answer `setBreakpoints` with `verified: false` and to
+verify later by sending a `breakpoint` event once the module loads, and
+netcoredbg does exactly that for breakpoints armed before launch — the common
+case, because the user sets them and then presses F5.
+
+| Signal | Meaning |
+|---|---|
+| `setBreakpoints` response, `verified: true` | Bound immediately; the module was already loaded |
+| `setBreakpoints` response, `verified: false` | Not yet bound — **not** a failure |
+| Later `breakpoint` event, `verified: true` | Bound now; this is the authoritative answer |
+| No verification by the time the debuggee passes the line | Genuinely unbound |
+
+Conformance is therefore asserted on the EFFECTIVE state — the response merged
+with every subsequent `breakpoint` event — and ultimately on the debuggee
+stopping where it was told to. Asserting `verified` on the response alone tests
+the adapter's scheduling, not whether breakpoints work.
 
 ### Stepping `[DEBUG-FEATURES-STEPPING]`
 
@@ -696,6 +717,8 @@ For `MailboxProcessor<'Msg>`, SharpLsp exposes:
 
 | Area | Phase Four | Phase Five or later |
 |---|---|---|
+| Function-breakpoint stop reason | netcoredbg reports `reason: "breakpoint"` for a function breakpoint, not the DAP `"function breakpoint"`. Callers MUST accept either and identify the kind from the breakpoint that bound, not from the reason string | Report the DAP-specified reason |
+| Lazy breakpoint verification | Breakpoints armed before launch verify by a later `breakpoint` event; see [DEBUG-FEATURES-BREAKPOINTS-VERIFY] | Verify synchronously where the module is already loaded |
 | Async stacks | Best-effort DapRouter and C# sidecar enrichment per [DEBUG-FEATURES-STACK-ASYNC] | Direct continuation traversal |
 | Expression evaluation | netcoredbg T1/T2 | Roslyn `ScriptingWorkspace` to `ICorDebugEval` |
 | Debugger attributes | DapRouter emulates `[DebuggerDisplay]` | Native `[DebuggerDisplay]`, `[DebuggerTypeProxy]`, and `[DebuggerBrowsable]` |

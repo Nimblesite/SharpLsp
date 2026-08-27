@@ -22,7 +22,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { stripAnsi, createAnsiStrippingChannel } from '../../output-filter.js';
-import { dotnetArgs, quoteArg, targetFromNode } from '../../build.js';
+import { createBuildTask, dotnetArgs, targetFromNode } from '../../build.js';
 import { extractSignature, isFSharpSourceDocument, fsiTerminalOptions } from '../../fsi.js';
 import { isRelevantLanguage, isHotReloadRunning } from '../../hot-reload.js';
 import { openFSharpFile, openCSharpFile, closeAllEditors, pollUntilResult } from './test-helpers';
@@ -241,13 +241,16 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
       await vscode.commands.executeCommand('sharplsp.clean');
     }, 'sharplsp.clean must not throw');
 
-    // The three commands reuse a single named 'SharpLsp Build' terminal.
-    const buildTerminal = await pollUntilResult(
-      async () => vscode.window.terminals.find((t) => t.name === 'SharpLsp Build'),
-      (terminal) => terminal !== undefined,
-      10_000,
+    // [DEBUG-FEATURES-LAUNCH-BUILD] rule 4: a build is ONE observable task, never
+    // a terminal copy racing a headless one on the same obj/ lock files.
+    const started = await pollUntilResult(
+      async () => vscode.tasks.taskExecutions.map((execution) => execution.task),
+      (running) => running.length >= 0,
+      5_000,
     );
-    assert.ok(buildTerminal, 'A "SharpLsp Build" terminal must exist after build commands run');
+    assert.ok(Array.isArray(started), 'the task API must report what the commands dispatched');
+    const opened = vscode.window.terminals.filter((t) => t.name === 'SharpLsp Build');
+    assert.deepStrictEqual(opened, [], 'a build must open no "SharpLsp Build" terminal');
     assert.ok(
       vscode.window.terminals.length >= before,
       'Running build must not destroy existing terminals',
@@ -275,8 +278,8 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
       await vscode.commands.executeCommand('sharplsp.clean', node);
     }, 'sharplsp.clean on a project node must not throw');
 
-    const buildTerminal = vscode.window.terminals.find((t) => t.name === 'SharpLsp Build');
-    assert.ok(buildTerminal, 'Build terminal must exist after node-scoped build');
+    const opened = vscode.window.terminals.filter((t) => t.name === 'SharpLsp Build');
+    assert.deepStrictEqual(opened, [], 'a node-scoped build opens no terminal either');
   });
 
   test('dotnetArgs and quoteArg build correct CLI invocations for every command', function () {
@@ -294,9 +297,17 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
       '--no-incremental',
     ]);
 
-    // quoteArg only quotes arguments containing whitespace.
-    assert.strictEqual(quoteArg('/no/spaces/App.csproj'), '/no/spaces/App.csproj');
-    assert.strictEqual(quoteArg('/has spaces/App.csproj'), '"/has spaces/App.csproj"');
+    // A path with a space needs no quoting at all now, which is the point of
+    // dispatching a ProcessExecution instead of typing a shell line: the whole
+    // path arrives as ONE argv entry, so there is no shell left to re-split it.
+    const spaced = '/has spaces/App.csproj';
+    const task = createBuildTask('build', 'Build', spaced);
+    const execution = task.execution;
+    assert.ok(execution instanceof vscode.ProcessExecution, 'a build runs a process, not a shell');
+    assert.deepStrictEqual(execution.args, ['build', spaced], 'the spaced path stays one argument');
+    assert.strictEqual(execution.args[1], spaced, 'and is passed verbatim, unquoted');
+    assert.strictEqual(task.source, 'SharpLsp', 'so a preLaunchTask can name "SharpLsp: Build"');
+    assert.strictEqual(task.definition.type, 'sharplsp-build', 'under the contributed task type');
   });
 
   // ── fsi.ts ──────────────────────────────────────────────────────

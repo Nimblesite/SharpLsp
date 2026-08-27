@@ -73,8 +73,11 @@ export function emptyF5Config(): vscode.DebugConfiguration {
 
 /** The same shape after JSON transport: keys present, values undefined. */
 export function undefinedF5Config(): vscode.DebugConfiguration {
-  return { type: undefined, request: undefined, name: undefined } as unknown as
-    vscode.DebugConfiguration;
+  return {
+    type: undefined,
+    request: undefined,
+    name: undefined,
+  } as unknown as vscode.DebugConfiguration;
 }
 
 /** The legacy empty-string shape earlier code was written against. */
@@ -373,6 +376,9 @@ export async function assertCommandRegistered(id: string): Promise<void> {
   assert.ok(
     commands.includes(id),
     `'${id}' must be a registered command; registered sharplsp commands: ` +
-      commands.filter((name) => name.startsWith('sharplsp.')).sort().join(', '),
+      commands
+        .filter((name) => name.startsWith('sharplsp.'))
+        .sort()
+        .join(', '),
   );
 }

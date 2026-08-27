@@ -223,7 +223,15 @@ suite('Run/Debug manifest contributions', () => {
     const kinds = Object.keys(attributes).sort();
     assert.deepStrictEqual(kinds, ['attach', 'launch'], 'both request kinds, nothing else');
     const launch = attributes.launch;
-    assert.deepStrictEqual(launch.required, ['program'], 'program is the only required attribute');
+    const CORE_REQUIRED = ['name', 'type', 'request'];
+    const CORE_ATTACH = CORE_REQUIRED;
+    const ownRequired = launch.required.filter((name: string) => !CORE_REQUIRED.includes(name));
+    assert.deepStrictEqual(ownRequired, ['program'], 'program is the only required attribute');
+    assert.deepStrictEqual(
+      launch.required.filter((name: string) => CORE_REQUIRED.includes(name)).sort(),
+      [...CORE_REQUIRED].sort(),
+      'and VS Code core merged its own three in, which the manifest must not re-declare',
+    );
     const props = launch.properties;
     assert.strictEqual(typeof props, 'object', 'launch declares a properties object');
     assert.deepStrictEqual(Object.keys(props).sort(), LAUNCH_SCHEMA, DECLARED_SCHEMA);
@@ -266,7 +274,8 @@ suite('Run/Debug manifest contributions', () => {
 
     // 5. The user switches the configuration to `attach`.
     const attach = attributes.attach;
-    assert.deepStrictEqual(attach.required, ['processId'], 'attach requires a process id');
+    const attachOwn = attach.required.filter((name: string) => !CORE_ATTACH.includes(name));
+    assert.deepStrictEqual(attachOwn, ['processId'], 'attach requires a process id');
     assert.deepStrictEqual(Object.keys(attach.properties), ['processId'], 'attach is not clobbered');
     assertSchemaProperty(attach.properties, 'processId', 'number');
     assert.notDeepStrictEqual(attach.properties, props, 'attach and launch are distinct schemas');
@@ -375,10 +384,10 @@ suite('Run/Debug manifest contributions', () => {
     assert.deepStrictEqual(keys, provided.map(() => ['command', 'type']), 'definitions carry two keys');
     const matchers = provided.map((task) => task.problemMatchers);
     assert.deepStrictEqual(matchers, provided.map(() => ['$msCompile']), 'errors reach the Problems panel');
-    const shells = provided.every((task) => task.execution instanceof vscode.ShellExecution);
-    assert.strictEqual(shells, true, 'each build task is an execution the user can cancel');
-    const runs = provided.map((task) => task.execution as vscode.ShellExecution);
-    assert.deepStrictEqual(runs.map((run) => run.command), ['dotnet', 'dotnet', 'dotnet'], 'CLI');
+    const shells = provided.every((task) => task.execution instanceof vscode.ProcessExecution);
+    assert.strictEqual(shells, true, 'each build task is a ProcessExecution: a spaced path stays one argument');
+    const runs = provided.map((task) => task.execution as vscode.ProcessExecution);
+    assert.deepStrictEqual(runs.map((run) => run.process), ['dotnet', 'dotnet', 'dotnet'], 'CLI');
     assert.deepStrictEqual(
       runs.map((run) => run.args),
       [['build'], ['build', '--no-incremental'], ['clean']],
@@ -434,7 +443,21 @@ suite('Run/Debug manifest contributions', () => {
 
     // 2. The user invokes a command code registered but the manifest never
     //    declared — it is unreachable from the palette. B58
-    const registeredOurs = [...registered].filter((id) => id.startsWith(PREFIX)).sort();
+    // VS Code itself registers `<viewId>.focus`, `.open`, `.removeView`,
+    // `.resetViewLocation` and `.toggleVisibility` for every contributed view.
+    // They are the workbench's commands sharing our id prefix, deliberately
+    // absent from contributes.commands so they stay out of the palette;
+    // asserting on them tests VS Code, not SharpLsp.
+    const VIEW_SUFFIXES = ['.focus', '.open', '.removeView', '.resetViewLocation', '.toggleVisibility'];
+    const workbenchOwned = (id: string): boolean =>
+      VIEW_SUFFIXES.some((suffix) => id.endsWith(suffix));
+    const registeredOurs = [...registered]
+      .filter((id) => id.startsWith(PREFIX) && !workbenchOwned(id))
+      .sort();
+    assert.ok(
+      [...registered].some((id) => id.startsWith(PREFIX) && workbenchOwned(id)),
+      'the view containers must still have produced their workbench commands',
+    );
     const uncontributed = registeredOurs.filter((id) => !contributed.includes(id));
     const invisible = `palette-invisible commands: ${uncontributed.join(', ')}`;
     assert.deepStrictEqual(uncontributed, [], `all registered ids contributed — ${invisible}`);

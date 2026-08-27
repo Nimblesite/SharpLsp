@@ -159,6 +159,42 @@ export class DapRecorder implements vscode.Disposable {
       }));
   }
 
+  /**
+   * Every request the workbench sent, in DISPATCH order, deduplicated by first
+   * appearance. The DAP launch handshake is an ORDER — `initialize`, then
+   * `launch`, then the configuration requests the `initialized` event unlocks,
+   * then `configurationDone` — and a sorted list cannot express it.
+   */
+  public requestOrder(): string[] {
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const message of this.receivedMessages) {
+      if (message['type'] !== 'request') continue;
+      const command = String(message['command']);
+      if (seen.has(command)) continue;
+      seen.add(command);
+      order.push(command);
+    }
+    return order;
+  }
+
+  /**
+   * Every REVERSE request the adapter sent to the client, for `command`.
+   *
+   * DAP reverse requests travel adapter -> client: `runInTerminal` (how a
+   * `console: integratedTerminal` launch is realised) and `startDebugging` (how
+   * a child process is auto-attached) are both specified behaviours that are
+   * invisible on the forward channel.
+   */
+  public reverseRequests(command: string): DapRequest[] {
+    return this.sentMessages
+      .filter((message) => message['type'] === 'request' && message['command'] === command)
+      .map((message) => ({
+        command,
+        args: (message['arguments'] ?? {}) as Record<string, any>,
+      }));
+  }
+
   /** Every command name the workbench asked the adapter for, deduplicated. */
   public requestedCommands(): string[] {
     const names = this.receivedMessages

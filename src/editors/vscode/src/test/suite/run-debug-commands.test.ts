@@ -21,7 +21,6 @@
 //    only once `dotnet build` produced a dll, and `session.workspaceFolder` is
 //    defined only when the document belongs to an open folder — a temp dir would
 //    exercise the "outside every workspace folder" refusal instead.
-import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
@@ -54,6 +53,9 @@ import {
 import {
   closeAllEditors,
   comparablePath,
+  deepEq,
+  eq,
+  neq,
   pollUntilResult,
   removeDirRecursive,
   requireAt,
@@ -64,10 +66,6 @@ import { installUiStubs, type UiStubs } from './ui-stubs';
 // This suite is assertion-dense by design and CLAUDE.md caps a file at 500 LOC,
 // so the three assert forms it uses are bound once instead of being spelled out
 // — every call still asserts an exact VALUE, with a message naming the contract.
-type Compare = (actual: unknown, expected: unknown, message: string) => void;
-const eq: Compare = assert.strictEqual;
-const neq: Compare = assert.notStrictEqual;
-const deepEq: Compare = assert.deepStrictEqual;
 
 /** How long to wait for the resolve chain to reach the spy before failing. */
 const CHAIN_TIMEOUT_MS = 15_000;

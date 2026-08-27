@@ -1,15 +1,23 @@
 import * as vscode from 'vscode';
-import { execFile } from 'child_process';
 import { CMD_BUILD, CMD_REBUILD, CMD_CLEAN } from './constants';
+import { currentDotnetExecutable } from './dotnet-process';
 import { info } from './log';
 
 const diagnosticCollection = vscode.languages.createDiagnosticCollection('sharplsp-build');
 
 /**
  * Provides build tasks for dotnet build/rebuild/clean.
+ *
+ * The task type is declared in `contributes.taskDefinitions`; without that
+ * declaration VS Code rejects every task this provider returns, so none of them
+ * appear in Run Task and none can be named from a `preLaunchTask`.
+ * Implements [DEBUG-FEATURES-LAUNCH-BUILD].
  */
 export class SharpLspBuildTaskProvider implements vscode.TaskProvider {
   public static readonly Type = 'sharplsp-build';
+
+  /** The task source, and so the `<source>: <name>` a preLaunchTask names. */
+  public static readonly Source = 'SharpLsp';
 
   public provideTasks(): vscode.Task[] {
     return [
@@ -28,82 +36,83 @@ export class SharpLspBuildTaskProvider implements vscode.TaskProvider {
   }
 }
 
-/** Build a VS Code shell task that runs `dotnet <command>` with the msCompile matcher. */
-export function createBuildTask(command: string, label: string): vscode.Task {
-  const execution = new vscode.ShellExecution('dotnet', dotnetArgs(command));
+/**
+ * A task that runs `dotnet <command>` with the msCompile matcher.
+ *
+ * `ProcessExecution`, not `ShellExecution`: a target path containing a space or
+ * a shell metacharacter is passed as one argv entry rather than re-parsed by the
+ * user's shell, and the command and arguments stay readable on the task itself.
+ */
+export function createBuildTask(command: string, label: string, target?: string): vscode.Task {
+  const execution = new vscode.ProcessExecution(
+    currentDotnetExecutable(),
+    dotnetArgs(command, target),
+  );
   const task = new vscode.Task(
-    { type: SharpLspBuildTaskProvider.Type, command },
+    { type: SharpLspBuildTaskProvider.Type, command, ...(target === undefined ? {} : { target }) },
     vscode.TaskScope.Workspace,
     label,
-    'SharpLsp',
+    SharpLspBuildTaskProvider.Source,
     execution,
     '$msCompile',
   );
   task.group = vscode.TaskGroup.Build;
+  task.presentationOptions = { reveal: vscode.TaskRevealKind.Silent, clear: true };
   return task;
 }
 
-/**
- * Parse MSBuild diagnostic output and push to VS Code diagnostics.
- */
-export function parseBuildDiagnostics(output: string): void {
-  diagnosticCollection.clear();
-  const diagnosticMap = new Map<string, vscode.Diagnostic[]>();
+/** The `<source>: <name>` a `preLaunchTask` must use to reach the build task. */
+export const BUILD_TASK_NAME = `${SharpLspBuildTaskProvider.Source}: Build`;
 
-  // Match: path(line,col): error/warning CODE: message
-  const pattern = /^(.+?)\((\d+),(\d+)\):\s+(error|warning)\s+(\w+):\s+(.+)$/gm;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(output)) !== null) {
-    const [, filePath, lineStr, colStr, severity, code, message] = match;
-    if (
-      filePath === undefined ||
-      lineStr === undefined ||
-      colStr === undefined ||
-      message === undefined
-    )
-      continue;
-
-    const line = parseInt(lineStr, 10) - 1;
-    const col = parseInt(colStr, 10) - 1;
-    const range = new vscode.Range(line, col, line, col);
-    const diag = new vscode.Diagnostic(
-      range,
-      `${String(code)}: ${message}`,
-      severity === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning,
-    );
-    diag.source = 'dotnet build';
-
-    const existing = diagnosticMap.get(filePath) ?? [];
-    existing.push(diag);
-    diagnosticMap.set(filePath, existing);
-  }
-
-  for (const [filePath, diags] of diagnosticMap) {
-    diagnosticCollection.set(vscode.Uri.file(filePath), diags);
-  }
+/** A diagnostic parsed out of one MSBuild output line. */
+interface BuildDiagnostic {
+  readonly file: string;
+  readonly diagnostic: vscode.Diagnostic;
 }
 
-/** Run dotnet build/clean for an optional target file and capture diagnostics. */
-export async function buildWithDiagnostics(command: string, target?: string): Promise<void> {
-  const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (folder === undefined) return;
+/**
+ * Parse `path(line,col): error CODE: message` into a diagnostic.
+ *
+ * Split on the structural separators MSBuild guarantees rather than matched with
+ * a regex over the whole line: a Windows path carries a `:` after the drive
+ * letter and a message can contain anything at all.
+ */
+function parseDiagnosticLine(line: string): BuildDiagnostic | undefined {
+  const open = line.indexOf('(');
+  const close = line.indexOf(')', open);
+  if (open <= 0 || close < 0 || line[close + 1] !== ':') return undefined;
+  const position = line.slice(open + 1, close).split(',');
+  const lineNumber = Number.parseInt(position[0] ?? '', 10);
+  const column = Number.parseInt(position[1] ?? '', 10);
+  if (!Number.isFinite(lineNumber) || !Number.isFinite(column)) return undefined;
 
-  const args = dotnetArgs(command, target);
+  const rest = line.slice(close + 2).trim();
+  const severity = rest.startsWith('error ')
+    ? vscode.DiagnosticSeverity.Error
+    : rest.startsWith('warning ')
+      ? vscode.DiagnosticSeverity.Warning
+      : undefined;
+  if (severity === undefined) return undefined;
 
-  try {
-    const output = await new Promise<string>((resolve, reject) => {
-      execFile('dotnet', args, { cwd: folder, timeout: 120000 }, (error, stdout, stderr) => {
-        // Build may "fail" with non-zero exit but still produce output.
-        resolve(stdout + '\n' + stderr);
-        if (error !== null && stdout.length === 0 && stderr.length === 0) {
-          reject(new Error(error.message));
-        }
-      });
-    });
-    parseBuildDiagnostics(output);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    info(`Build diagnostics capture failed: ${message}`);
+  const range = new vscode.Range(lineNumber - 1, column - 1, lineNumber - 1, column - 1);
+  const diagnostic = new vscode.Diagnostic(range, rest, severity);
+  diagnostic.source = 'dotnet build';
+  return { file: line.slice(0, open), diagnostic };
+}
+
+/** Parse MSBuild diagnostic output and publish it. */
+export function parseBuildDiagnostics(output: string): void {
+  diagnosticCollection.clear();
+  const byFile = new Map<string, vscode.Diagnostic[]>();
+  for (const line of output.split(/\r?\n/)) {
+    const parsed = parseDiagnosticLine(line);
+    if (parsed === undefined) continue;
+    const existing = byFile.get(parsed.file) ?? [];
+    existing.push(parsed.diagnostic);
+    byFile.set(parsed.file, existing);
+  }
+  for (const [file, diagnostics] of byFile) {
+    diagnosticCollection.set(vscode.Uri.file(file), diagnostics);
   }
 }
 
@@ -112,43 +121,50 @@ interface BuildTarget {
   readonly projectFilePath?: string;
 }
 
-/**
- * Register build commands and task provider.
- */
+/** Register build commands and task provider. */
 export function registerBuildCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(diagnosticCollection);
-
   context.subscriptions.push(
     vscode.tasks.registerTaskProvider(
       SharpLspBuildTaskProvider.Type,
       new SharpLspBuildTaskProvider(),
     ),
   );
-
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_BUILD, async (node?: BuildTarget) => {
-      await runDotnetTask('build', node);
+      await runDotnetTask('build', 'Build', node);
     }),
     vscode.commands.registerCommand(CMD_REBUILD, async (node?: BuildTarget) => {
-      await runDotnetTask('rebuild', node);
+      await runDotnetTask('rebuild', 'Rebuild', node);
     }),
     vscode.commands.registerCommand(CMD_CLEAN, async (node?: BuildTarget) => {
-      await runDotnetTask('clean', node);
+      await runDotnetTask('clean', 'Clean', node);
     }),
   );
 }
 
-/** Run build/rebuild/clean for the workspace, or for a right-clicked solution/project node. */
-async function runDotnetTask(command: string, node?: BuildTarget): Promise<void> {
+/**
+ * Run build/rebuild/clean ONCE, as a task.
+ *
+ * The previous implementation ran the build twice for every request — once typed
+ * into a terminal and once headlessly through `execFile` — so two MSBuild
+ * processes raced on the same `obj/` lock files, and neither the exit code nor
+ * the command line of the terminal copy could be observed.
+ */
+export async function runDotnetTask(
+  command: string,
+  label: string,
+  node?: BuildTarget,
+): Promise<void> {
   const target = targetFromNode(node);
-  const scope = target !== undefined ? ` for ${target}` : '';
-  info(`Running dotnet ${command}${scope}`);
-  runDotnetCommand(command, target);
-  if (command === 'clean') {
-    diagnosticCollection.clear();
-    return;
-  }
-  await buildWithDiagnostics(command, target);
+  info(`Running dotnet ${command}${target === undefined ? '' : ` for ${target}`}`);
+  if (command === 'clean') diagnosticCollection.clear();
+  await vscode.tasks.executeTask(createBuildTask(command, label, target));
+}
+
+/** Publish diagnostics for a finished build's output. */
+export function publishBuildOutput(output: string): void {
+  parseBuildDiagnostics(output);
 }
 
 /** Resolve the .sln/.csproj/.fsproj a node represents, if any. */
@@ -164,23 +180,4 @@ export function dotnetArgs(command: string, target?: string): string[] {
   if (target !== undefined) args.push(target);
   if (command === 'rebuild') args.push('--no-incremental');
   return args;
-}
-
-function runDotnetCommand(command: string, target?: string): void {
-  try {
-    const terminal =
-      vscode.window.terminals.find((t) => t.name === 'SharpLsp Build') ??
-      vscode.window.createTerminal('SharpLsp Build');
-    terminal.show(true);
-    const args = dotnetArgs(command, target).map(quoteArg);
-    terminal.sendText(`dotnet ${args.join(' ')}`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    void vscode.window.showErrorMessage(`Build failed: ${message}`);
-  }
-}
-
-/** Wrap an argument in double quotes when it contains whitespace. */
-export function quoteArg(value: string): string {
-  return value.includes(' ') ? `"${value}"` : value;
 }

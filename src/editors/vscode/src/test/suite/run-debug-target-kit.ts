@@ -164,7 +164,7 @@ function assertWalkersAgree(start: string, stop: string, of: ConsoleProject, dll
   const dir = comparablePath(of.dir);
   assert.strictEqual(comparablePath(walked?.cwd ?? ''), dir, `${at}: the walk's cwd is the dir`);
   const direct = projectEntryFromFile(of.projectFile);
-  assert.strictEqual(comparablePath(direct.dll), want, `${at}: projectEntryFromFile agrees too`);
+  assert.strictEqual(comparablePath(direct.dll ?? ''), want, `${at}: projectEntryFromFile agrees too`);
   assert.strictEqual(comparablePath(direct.cwd), dir, `${at}: and on the cwd`);
   const entry = findEntryProject(of.dir);
   assert.strictEqual(comparablePath(entry?.dll ?? ''), want, `${at}: findEntryProject agrees too`);
@@ -176,7 +176,7 @@ function assertNoEscape(start: string, stop: string, decoy: ConsoleProject, at: 
   const selected = comparablePath(entry?.cwd ?? '');
   const outside = comparablePath(decoy.dir);
   assert.notStrictEqual(selected, outside, `${at}: a project above the cone is never the target`);
-  const strayDll = comparablePath(projectEntryFromFile(decoy.projectFile).dll);
+  const strayDll = comparablePath(projectEntryFromFile(decoy.projectFile).dll ?? '');
   assert.notStrictEqual(comparablePath(entry?.dll ?? ''), strayDll, `${at}: nor is its assembly`);
   assert.strictEqual(entry, undefined, `${at}: the walk must stop; it returned ${selected}`);
 }
@@ -406,7 +406,7 @@ async function assertPickDecides(
   const dll = assertTargets(chosen, winner, `${at} chose ${chosenName}`);
   assert.strictEqual(path.basename(dll), `${winner.assemblyName}.dll`, `${at}: the pick wins`);
   const loser = names.find((name) => name !== chosenName) ?? '';
-  const loserDll = comparablePath(projectEntryFromFile(path.join(dir, loser)).dll);
+  const loserDll = comparablePath(projectEntryFromFile(path.join(dir, loser)).dll ?? '');
   assert.notStrictEqual(comparablePath(dll), loserDll, `${at}: ${loser} must not be launched`);
   await q.sessions.assertNoSession(`${at}: a completed pick still starts no session`, 0);
 }

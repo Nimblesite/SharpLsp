@@ -55,8 +55,8 @@ suite('Debug E2E — F5 with no launch.json', () => {
     const editor = await focusDocument(project.sourceFile);
     assert.strictEqual(editor.document.languageId, 'csharp', 'the fixture is a C# document');
     const absent = 'B01: a bare {} must not throw — `config.type.length` on an absent field ';
-    assertResolves(folder, emptyF5Config(), absent + "raises TypeError: reading 'length'");
-    const bare = resolveConfig(folder, emptyF5Config());
+    await assertResolves(folder, emptyF5Config(), absent + "raises TypeError: reading 'length'");
+    const bare = await resolveConfig(folder, emptyF5Config());
     assertSynthesised(bare, 'bare {}');
     assertBuildTaskContributed(bare, 'bare {}');
     assertSamePath(bare.program, built, 'B01: F5 targets the assembly MSBuild actually produced');
@@ -67,8 +67,8 @@ suite('Debug E2E — F5 with no launch.json', () => {
 
     // 3. The same object after JSON transport: keys present, values undefined. B02
     const undef = 'B02: an explicitly-undefined type is absent, not dereferenceable';
-    assertResolves(folder, undefinedF5Config(), undef);
-    const transported = resolveConfig(folder, undefinedF5Config());
+    await assertResolves(folder, undefinedF5Config(), undef);
+    const transported = await resolveConfig(folder, undefinedF5Config());
     assertSynthesised(transported, '{type:undefined}');
     assertBuildTaskContributed(transported, '{type:undefined}');
     assertSamePath(transported.program, built, 'B02: same target as the bare shape');
@@ -76,17 +76,17 @@ suite('Debug E2E — F5 with no launch.json', () => {
 
     // 4. The legacy empty-string shape stays accepted — the absence guard must
     //    not NARROW the input set the provider already handles. B03
-    const legacy = resolveConfig(folder, legacyF5Config());
+    const legacy = await resolveConfig(folder, legacyF5Config());
     assertSynthesised(legacy, "{type:''}");
     assert.deepStrictEqual(legacy, bare, 'B03: the absence guard must not narrow the input set');
 
     // 5. VS Code changed `type`, so it re-enters the chain with what the
     //    provider just produced. That pass must be a fixed point. B04
-    const second = resolveConfig(folder, structuredClone(bare));
+    const second = await resolveConfig(folder, structuredClone(bare));
     assert.deepStrictEqual(second, bare, 'B04: resolveDebugConfiguration must be idempotent');
     assert.deepStrictEqual(second.args, bare.args, 'B04: args must not be duplicated on re-entry');
     assert.deepStrictEqual(second.env, bare.env, 'B04: env must not be re-merged on re-entry');
-    const third = resolveConfig(folder, structuredClone(second));
+    const third = await resolveConfig(folder, structuredClone(second));
     assert.deepStrictEqual(third, second, 'B04: a third pass is still a fixed point');
     assert.strictEqual(third.name, bare.name, 'B04: the name is not re-suffixed each pass');
 
@@ -106,14 +106,14 @@ suite('Debug E2E — F5 with no launch.json', () => {
     const folder = fakeFolder(project.dir);
 
     // 1. No profile file at all. B10
-    const clean = resolveConfig(folder, emptyF5Config());
+    const clean = await resolveConfig(folder, emptyF5Config());
     assertSynthesised(clean, 'no launchSettings.json');
     assertNoProfileValues(clean, 'no launchSettings.json');
 
     // 2. The user saves a half-typed document. Parsing must be TOTAL. B10
     writeRawLaunchSettings(project.dir, '{ "profiles": ');
-    assertResolves(folder, emptyF5Config(), 'B10: F5 survives a truncated profile file');
-    const truncated = resolveConfig(folder, emptyF5Config());
+    await assertResolves(folder, emptyF5Config(), 'B10: F5 survives a truncated profile file');
+    const truncated = await resolveConfig(folder, emptyF5Config());
     assertSynthesised(truncated, 'truncated launchSettings');
     assertNoProfileValues(truncated, 'B10: a document that did not parse');
     assertSamePath(truncated.program, String(clean.program), 'B10: same target as with no file');
@@ -126,8 +126,12 @@ suite('Debug E2E — F5 with no launch.json', () => {
       '{ "profiles": [1,2] }',
     ]) {
       writeRawLaunchSettings(project.dir, body);
-      assertResolves(folder, emptyF5Config(), `B10: '${body}' must yield no profiles, not a throw`);
-      const unsound = resolveConfig(folder, emptyF5Config());
+      await assertResolves(
+        folder,
+        emptyF5Config(),
+        `B10: '${body}' must yield no profiles, not a throw`,
+      );
+      const unsound = await resolveConfig(folder, emptyF5Config());
       assertSynthesised(unsound, body);
       assertNoProfileValues(unsound, `B10: ${body}`);
     }
@@ -144,7 +148,11 @@ suite('Debug E2E — F5 with no launch.json', () => {
         },
       },
     });
-    const launch = resolveConfig(folder, { type: DEBUG_TYPE_ID, name: 'L', request: 'launch' });
+    const launch = await resolveConfig(folder, {
+      type: DEBUG_TYPE_ID,
+      name: 'L',
+      request: 'launch',
+    });
     // Captured before the deepStrictEqual below: that assertion is a TypeScript
     // assertion function, so it NARROWS `launch.env` to the compared shape and a
     // later lookup of a key outside that shape stops compiling.
@@ -163,12 +171,16 @@ suite('Debug E2E — F5 with no launch.json', () => {
     assertSamePath(launch.program, String(clean.program), 'a profile does not move the target');
 
     // 5. Profiles apply only to launch requests. Rule 2.
-    const attach = resolveConfig(folder, { type: DEBUG_TYPE_ID, name: 'A', request: 'attach' });
+    const attach = await resolveConfig(folder, {
+      type: DEBUG_TYPE_ID,
+      name: 'A',
+      request: 'attach',
+    });
     assertNoProfileValues(attach, 'an attach configuration');
     assert.strictEqual(attach.request, 'attach', 'and stays an attach request');
 
     // 6. A launch.json that already states env/args wins per the mapping table.
-    const preset = resolveConfig(folder, {
+    const preset = await resolveConfig(folder, {
       type: DEBUG_TYPE_ID,
       name: 'L',
       request: 'launch',
@@ -198,14 +210,14 @@ suite('Debug E2E — F5 with no launch.json', () => {
       ({ noDebug: true }) as unknown as vscode.DebugConfiguration;
 
     // 1. Ctrl/Cmd+F5: VS Code stamps noDebug BEFORE the provider chain runs. B17
-    assertResolves(folder, runShape(), 'B17: `{ noDebug: true }` is the Ctrl/Cmd+F5 shape');
-    const run = resolveConfig(folder, runShape());
+    await assertResolves(folder, runShape(), 'B17: `{ noDebug: true }` is the Ctrl/Cmd+F5 shape');
+    const run = await resolveConfig(folder, runShape());
     assertSynthesised(run, 'Ctrl/Cmd+F5');
     assert.strictEqual(run.noDebug, true, 'B17: the flag must survive resolution');
     assertSamePath(run.cwd, project.dir, 'B17: run uses the project directory');
 
     // 2. Plain F5 on the same folder: one field apart, same target. Rule 1.
-    const debugged = resolveConfig(folder, emptyF5Config());
+    const debugged = await resolveConfig(folder, emptyF5Config());
     assert.strictEqual(debugged.noDebug, undefined, 'B17: the provider must never invent noDebug');
     assertSamePath(debugged.program, String(run.program), 'run and debug resolve one target');
     assertSamePath(debugged.cwd, String(run.cwd), 'and the identical working directory');
@@ -218,10 +230,10 @@ suite('Debug E2E — F5 with no launch.json', () => {
 
     // 3. Re-entry keeps the flag; `noDebug: false` is passed through, never read
     //    as "debug after all". Rule 3.
-    const reRun = resolveConfig(folder, structuredClone(run));
+    const reRun = await resolveConfig(folder, structuredClone(run));
     assert.strictEqual(reRun.noDebug, true, 'B17: a second resolve pass must not clear noDebug');
     assert.deepStrictEqual(reRun, run, 'B17: and must change nothing else');
-    const cleared = resolveConfig(folder, { ...structuredClone(run), noDebug: false });
+    const cleared = await resolveConfig(folder, { ...structuredClone(run), noDebug: false });
     assert.notStrictEqual(
       cleared.noDebug,
       undefined,
@@ -240,8 +252,8 @@ suite('Debug E2E — F5 with no launch.json', () => {
         App: { commandName: 'Project', environmentVariables: { M: 'run' }, commandLineArgs: '-f' },
       },
     });
-    const runProfile = resolveConfig(folder, runShape());
-    const debugProfile = resolveConfig(folder, emptyF5Config());
+    const runProfile = await resolveConfig(folder, runShape());
+    const debugProfile = await resolveConfig(folder, emptyF5Config());
     assert.strictEqual(runProfile.noDebug, true, 'B17: still set once profiles are involved');
     assert.deepStrictEqual(runProfile.env, { M: 'run' }, 'the profile env reaches the run');
     assert.deepStrictEqual(runProfile.args, ['-f'], 'and so do the profile args');
@@ -267,7 +279,7 @@ suite('Debug E2E — launch targets and dynamic configurations', () => {
 
     // 1. The live provider is the reference: whatever framework IT targets is
     //    the one every manifest surface has to teach. Rule 5.
-    const generated = provideFor(folder);
+    const generated = await provideFor(folder);
     assert.strictEqual(generated.length, 1, 'a project with no profiles yields one configuration');
     const resolverProgram = String(generated[0]?.program);
     const wanted = `${path.sep}${TFM}${path.sep}`;
@@ -333,13 +345,13 @@ suite('Debug E2E — launch targets and dynamic configurations', () => {
     const { tmpDir, stubs, recorder } = harness();
 
     // 1. A window with no folder open generates nothing at all.
-    const none = provider.provideDebugConfigurations(undefined);
+    const none = await provider.provideDebugConfigurations(undefined);
     assert.deepStrictEqual(none, [], 'a folderless window generates no configurations');
 
     // 2. One project, no profiles: exactly one default configuration.
     const solo = writeCSharpConsole(path.join(tmpDir, 'Solo'), 'Solo');
     const folder = fakeFolder(solo.dir);
-    const defaults = provideFor(folder);
+    const defaults = await provideFor(folder);
     assert.strictEqual(defaults.length, 1, 'exactly one default configuration');
     assert.strictEqual(defaults[0]?.name, 'Launch .NET Project', 'named for the generated file');
     assert.strictEqual(defaults[0]?.type, DEBUG_TYPE_ID, 'typed as this debugger');
@@ -352,7 +364,7 @@ suite('Debug E2E — launch targets and dynamic configurations', () => {
 
     // 3. The user adds ONE Project profile — measure the filesystem work it costs.
     writeLaunchSettings(solo.dir, { profiles: { one: { commandName: 'Project' } } });
-    const single = countScans(solo.dir, () => provideFor(folder));
+    const single = await countScans(solo.dir, async () => provideFor(folder));
     assert.deepStrictEqual(
       single.result.map((config) => config.name),
       ['Launch: one'],
@@ -370,7 +382,7 @@ suite('Debug E2E — launch targets and dynamic configurations', () => {
         IIS: { commandName: 'IISExpress' },
       },
     });
-    const many = countScans(solo.dir, () => provideFor(folder));
+    const many = await countScans(solo.dir, async () => provideFor(folder));
     const configs = many.result;
     assert.strictEqual(configs.length, 3, 'IISExpress is not an eligible launch profile');
     assert.deepStrictEqual(

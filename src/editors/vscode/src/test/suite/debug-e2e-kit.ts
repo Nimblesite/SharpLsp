@@ -77,22 +77,24 @@ export function useHarness(prefix: string): () => Harness {
 }
 
 /** Resolve through the provider, failing loudly when it prevents the session. */
-export function resolveConfig(
+export async function resolveConfig(
   folder: vscode.WorkspaceFolder,
   config: vscode.DebugConfiguration,
-): vscode.DebugConfiguration {
-  const result = provider.resolveDebugConfiguration(folder, config);
+): Promise<vscode.DebugConfiguration> {
+  const result = await provider.resolveDebugConfiguration(folder, config);
   assert.ok(result, 'a folder holding one runnable project must yield a config, not a refusal');
-  return result as vscode.DebugConfiguration;
+  return result;
 }
 
 /** Assert the provider tolerates `config`; F5 must never surface a TypeError. */
-export function assertResolves(
+export async function assertResolves(
   folder: vscode.WorkspaceFolder,
   config: vscode.DebugConfiguration,
   why: string,
-): void {
-  assert.doesNotThrow(() => provider.resolveDebugConfiguration(folder, config), why);
+): Promise<void> {
+  // Resolution is async, so a synchronous doesNotThrow would pass on a rejected
+  // promise — the exact failure this guards.
+  await assert.doesNotReject(async () => provider.resolveDebugConfiguration(folder, config), why);
 }
 
 /** Compare two filesystem paths with case/separator normalisation. */
@@ -127,7 +129,10 @@ export function assertSynthesised(resolved: vscode.DebugConfiguration, label: st
  * [B06] `dotnet: build` is contributed by the proprietary Microsoft C# extension:
  * on a SharpLsp-only install the pre-launch step fails and no session starts.
  */
-export function assertBuildTaskContributed(resolved: vscode.DebugConfiguration, label: string): void {
+export function assertBuildTaskContributed(
+  resolved: vscode.DebugConfiguration,
+  label: string,
+): void {
   assert.notStrictEqual(
     resolved.preLaunchTask,
     'dotnet: build',
@@ -160,7 +165,10 @@ export function staleFrameworks(text: string): string[] {
  * resolved — the only way to tell "once per invocation" from "once per profile"
  * when both produce byte-identical strings.
  */
-export function countScans<T>(dir: string, run: () => T): { result: T; scans: number } {
+export async function countScans<T>(
+  dir: string,
+  run: () => Promise<T>,
+): Promise<{ result: T; scans: number }> {
   const original = realFs.readdirSync;
   let scans = 0;
   realFs.readdirSync = ((target: fs.PathLike, options?: unknown): unknown => {
@@ -168,13 +176,15 @@ export function countScans<T>(dir: string, run: () => T): { result: T; scans: nu
     return (original as (t: fs.PathLike, o?: unknown) => unknown)(target, options);
   }) as unknown as typeof fs.readdirSync;
   try {
-    return { result: run(), scans };
+    return { result: await run(), scans };
   } finally {
     realFs.readdirSync = original;
   }
 }
 
 /** Generate configurations for `folder`, typed as the array they must be. */
-export function provideFor(folder: vscode.WorkspaceFolder): vscode.DebugConfiguration[] {
-  return provider.provideDebugConfigurations(folder) as vscode.DebugConfiguration[];
+export async function provideFor(
+  folder: vscode.WorkspaceFolder,
+): Promise<vscode.DebugConfiguration[]> {
+  return provider.provideDebugConfigurations(folder);
 }

@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { CMD_DEBUG_PROGRAM, CMD_RUN_PROGRAM, DEBUG_TYPE } from './constants';
+import { exeName } from './platform';
 import { info, warn } from './log';
 import {
   NO_TARGET_MESSAGE,
@@ -22,13 +23,23 @@ import {
   CSX_TOOL_MESSAGE,
   FSX_DEBUG_MESSAGE,
   buildFileBasedApp,
+  buildProject,
   hasDotnetScript,
   runTask,
 } from './launch-run';
-import { applyLaunchProfile, isLaunchSettings, readLaunchProfiles, readProfiles } from './launch-profiles';
+import {
+  applyLaunchProfile,
+  isLaunchSettings,
+  profileArgs,
+  profileEnv,
+  projectProfiles,
+  readLaunchProfiles,
+  readProfiles,
+} from './launch-profiles';
 import {
   findEntryProject,
   findProjectFile,
+  isWithin,
   projectEntryFromFile,
   type ProjectEntry,
 } from './launch-target';
@@ -47,25 +58,37 @@ export { findEntryProject, findProjectFile, projectEntryFromFile, type ProjectEn
  * Spec: [DEBUG-FEATURES-LAUNCH-NOCONFIG].
  */
 export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider {
-  public resolveDebugConfiguration(
+  /**
+   * Fill in whatever the user did not supply.
+   *
+   * Asynchronous on purpose: `ProviderResult` accepts a Thenable, and the target
+   * a document implies can only be settled by asking MSBuild where the output is
+   * ([DEBUG-FEATURES-LAUNCH-BUILD]). Guessing a path synchronously is the defect
+   * this replaces.
+   */
+  public async resolveDebugConfiguration(
     folder: vscode.WorkspaceFolder | undefined,
     config: vscode.DebugConfiguration,
-  ): vscode.ProviderResult<vscode.DebugConfiguration> {
+  ): Promise<vscode.DebugConfiguration | undefined> {
     // Detect "no configuration supplied" by ABSENCE. VS Code builds this object
     // with `Object.create(null)`, so `type`/`request`/`name` are undefined and a
     // `.length` dereference throws before a session can ever start.
     if (isEmptyConfiguration(config)) {
       config.type = DEBUG_TYPE;
       config.name = SYNTHESIZED_NAME;
-      config.request = 'launch';
     }
-    config.request ??= 'launch';
+    // `request` is typed non-optional but arrives absent on this path, so the
+    // blank test — not `??=` — is what actually defaults it.
+    if (isBlank(config.request)) config.request = 'launch';
+    if (isBlank(config.type)) config.type = DEBUG_TYPE;
     config.justMyCode ??= true;
     config.console ??= 'integratedTerminal';
 
-    if (config.program === undefined && folder !== undefined) {
-      applyResolvedTarget(folder, config);
-    }
+    // An explicit program is the user's decision and is never overwritten; an
+    // attach request has no program at all.
+    if (config.request !== 'launch' || config.program !== undefined) return config;
+    if (folder === undefined) return config;
+    await applyTarget(folder, config);
     return config;
   }
 
@@ -85,24 +108,85 @@ export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider
       return undefined;
     }
     if (!fs.existsSync(program)) {
-      void vscode.window.showWarningMessage(`Build produced no output for ${path.basename(program)}.`);
+      void vscode.window.showWarningMessage(
+        `Build produced no output for ${path.basename(program)}.`,
+      );
       return undefined;
     }
     return config;
   }
 
-  public provideDebugConfigurations(
+  public async provideDebugConfigurations(
     folder: vscode.WorkspaceFolder | undefined,
-  ): vscode.ProviderResult<vscode.DebugConfiguration[]> {
+  ): Promise<vscode.DebugConfiguration[]> {
     if (folder === undefined) return [];
-    const cached = lastTargetFor(folder);
-    const program = cached?.kind === 'project' ? cached.program : undefined;
-    const cwd = cached?.kind === 'project' ? cached.cwd : folder.uri.fsPath;
-    const profiles = cached === undefined ? [] : readProfiles(targetSource(cached));
-    const named = profiles.filter((profile) => profile.commandName === 'Project');
+    // Resolve the target ONCE per invocation, not once per profile: each
+    // resolution is a filesystem walk plus an MSBuild evaluation.
+    const resolved = await resolveLaunchTarget(anchorWithin(folder), folder, { choose: noPrompt });
+    const target = resolved.ok ? resolved.value : undefined;
+    const program = target?.kind === 'project' ? target.program : undefined;
+    const cwd = target === undefined ? folder.uri.fsPath : target.cwd;
+    const profiles = target === undefined ? [] : readProfiles(targetSource(target));
+    const named = projectProfiles(profiles);
     if (named.length === 0) return [baseConfiguration(SYNTHESIZED_NAME, program, cwd)];
-    return named.map((profile) => baseConfiguration(`Launch: ${profile.name}`, program, cwd));
+    // One configuration per profile, each carrying ITS OWN arguments and
+    // environment — a generated list where every entry shares one profile's
+    // values is worse than no list, because the names imply otherwise.
+    return named.map((profile) => ({
+      ...baseConfiguration(`Launch: ${profile.name}`, program, cwd),
+      ...spreadOptional('args', profileArgs(profile)),
+      ...spreadOptional('env', profileEnv(profile)),
+    }));
   }
+}
+
+/** Spread helper: omit the key entirely when the value is undefined. */
+function spreadOptional<T>(key: string, value: T | undefined): Record<string, T> {
+  return value === undefined ? {} : { [key]: value };
+}
+
+/** The active document's path, if an editor is focused. */
+function activeFile(): string | undefined {
+  return vscode.window.activeTextEditor?.document.uri.fsPath;
+}
+
+/**
+ * The active document, but only when it belongs to `folder`.
+ *
+ * VS Code hands the provider the folder the session is scoped to, which is not
+ * necessarily the one the user is looking at. Anchoring on an editor from a
+ * DIFFERENT folder resolves that folder's project instead — the wrong program,
+ * and a disambiguation prompt for projects the caller never asked about.
+ */
+function anchorWithin(folder: vscode.WorkspaceFolder): string | undefined {
+  const focused = activeFile();
+  if (focused === undefined) return undefined;
+  return isWithin(focused, folder.uri.fsPath) ? focused : undefined;
+}
+
+/**
+ * Generating configurations must never block on a QuickPick: VS Code calls
+ * `provideDebugConfigurations` while building a menu, so a prompt there would
+ * hang the dropdown. With several candidates the generated config simply
+ * carries no program and the user picks when they launch.
+ */
+function noPrompt(): Thenable<vscode.QuickPickItem | undefined> {
+  return Promise.resolve(undefined);
+}
+
+/** Resolve the folder's target and copy it onto a configuration being filled. */
+async function applyTarget(
+  folder: vscode.WorkspaceFolder,
+  config: vscode.DebugConfiguration,
+): Promise<void> {
+  const resolved = await resolveLaunchTarget(anchorWithin(folder), folder, { choose: noPrompt });
+  if (!resolved.ok) return;
+  const target = resolved.value;
+  if (target.kind === 'script') return;
+  config.program = target.kind === 'project' ? target.program : target.file;
+  config.cwd = target.cwd;
+  if (target.args !== undefined && config.args === undefined) config.args = [...target.args];
+  if (target.env !== undefined && config.env === undefined) config.env = { ...target.env };
 }
 
 /** True when VS Code supplied no configuration at all. */
@@ -137,38 +221,6 @@ function targetSource(target: LaunchTarget): string {
   return target.kind === 'project' ? target.projectFile : target.file;
 }
 
-/**
- * The most recent target resolved for a folder.
- *
- * `resolveDebugConfiguration` is synchronous by contract while target resolution
- * shells out to MSBuild, so the commands — which ARE async — resolve first and
- * leave the answer here for the provider to reuse. A cold F5 with no prior
- * command still resolves through `resolveDebugConfigurationWithSubstitutedVariables`.
- */
-const lastTargets = new Map<string, LaunchTarget>();
-
-function lastTargetFor(folder: vscode.WorkspaceFolder): LaunchTarget | undefined {
-  return lastTargets.get(folder.uri.fsPath);
-}
-
-/** Remember the target a command resolved, keyed by workspace folder. */
-export function rememberTarget(folder: vscode.WorkspaceFolder, target: LaunchTarget): void {
-  lastTargets.set(folder.uri.fsPath, target);
-}
-
-/** Copy a remembered target onto a configuration the provider is filling in. */
-function applyResolvedTarget(
-  folder: vscode.WorkspaceFolder,
-  config: vscode.DebugConfiguration,
-): void {
-  const target = lastTargetFor(folder);
-  if (target === undefined || target.kind === 'script') return;
-  config.program = target.kind === 'project' ? target.program : target.file;
-  config.cwd = target.cwd;
-  if (target.args !== undefined && config.args === undefined) config.args = [...target.args];
-  if (target.env !== undefined && config.env === undefined) config.env = { ...target.env };
-}
-
 /** Everything a launch needs, once a target has been turned into a program. */
 export interface LaunchPlan {
   readonly configuration: vscode.DebugConfiguration;
@@ -200,9 +252,9 @@ function argsAndEnv(target: ProjectTarget | Exclude<LaunchTarget, ProjectTarget>
   };
 }
 
-/** The assembly to debug, building a file-based app first when needed. */
+/** The assembly to debug, building the target first so its output exists. */
 async function programFor(target: LaunchTarget): Promise<string | undefined> {
-  if (target.kind === 'project') return target.program;
+  if (target.kind === 'project') return await builtProgram(target);
   if (target.kind === 'script') {
     void vscode.window.showWarningMessage(FSX_DEBUG_MESSAGE);
     return undefined;
@@ -213,6 +265,25 @@ async function programFor(target: LaunchTarget): Promise<string | undefined> {
     return undefined;
   }
   return built.value;
+}
+
+/**
+ * Build a project, then confirm on disk that it produced what will be launched.
+ *
+ * [DEBUG-FEATURES-LAUNCH-BUILD] rule 3: after the build step the resolved
+ * program MUST exist; if it does not, the session MUST NOT start.
+ */
+async function builtProgram(target: ProjectTarget): Promise<string | undefined> {
+  const built = await buildProject(target.projectFile);
+  const named = path.basename(target.projectFile);
+  if (!built.ok) {
+    void vscode.window.showWarningMessage(`Build failed for ${named}: ${built.error}`);
+    return undefined;
+  }
+  const program = target.program;
+  if (program.length > 0 && fs.existsSync(program)) return program;
+  void vscode.window.showWarningMessage(`Build produced no output for ${named}.`);
+  return undefined;
 }
 
 /**
@@ -230,7 +301,9 @@ export class SharpLspDebugAdapterFactory implements vscode.DebugAdapterDescripto
     const netcoredbgPath = findNetcoredbg(this.extensionPath);
     if (netcoredbgPath === undefined) {
       void vscode.window.showErrorMessage(
-        'netcoredbg not found. Install it: https://github.com/Samsung/netcoredbg',
+        'netcoredbg not found. SharpLsp bundles it for this platform — reinstall the ' +
+          'extension, or set sharplsp.debug.netcoredbgPath. ' +
+          'Upstream: https://github.com/Samsung/netcoredbg',
       );
       return undefined;
     }
@@ -239,7 +312,15 @@ export class SharpLspDebugAdapterFactory implements vscode.DebugAdapterDescripto
   }
 }
 
-function findNetcoredbg(extensionPath?: string): string | undefined {
+/**
+ * The netcoredbg the adapter factory will spawn, or undefined when there is none.
+ *
+ * PATH is searched properly rather than returning a bare `netcoredbg` and hoping:
+ * a name that does not resolve fails later as a spawn ENOENT inside the adapter
+ * process, which surfaces to the user as an unexplained failed debug session.
+ * Refusing here lets the factory say what is actually wrong.
+ */
+export function findNetcoredbg(extensionPath?: string): string | undefined {
   const configured = vscode.workspace
     .getConfiguration('sharplsp')
     .get<string>('debug.netcoredbgPath');
@@ -249,9 +330,30 @@ function findNetcoredbg(extensionPath?: string): string | undefined {
   for (const candidate of getNetcoredbgCandidates(extensionPath)) {
     if (fs.existsSync(candidate)) return candidate;
   }
-  // Last resort on the platforms with no upstream prebuilt (win32-arm64,
-  // darwin-x64), where the VSIX cannot bundle netcoredbg.
-  return 'netcoredbg';
+  // The only route on platforms with no upstream prebuilt (win32-arm64,
+  // darwin-x64), where the VSIX cannot bundle a debugger.
+  return findOnPath(exeName('netcoredbg'));
+}
+
+/** Resolve `name` against PATH, honouring PATHEXT on Windows. */
+function findOnPath(name: string): string | undefined {
+  const entries = (process.env.PATH ?? '').split(path.delimiter).filter((dir) => dir.length > 0);
+  const extensions = process.platform === 'win32' ? ['', ...windowsPathExt()] : [''];
+  for (const dir of entries) {
+    for (const extension of extensions) {
+      const candidate = path.join(dir, `${name}${extension}`);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return undefined;
+}
+
+/** The executable suffixes Windows treats as runnable. */
+function windowsPathExt(): string[] {
+  return (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
 /**
@@ -318,14 +420,14 @@ export function registerDebugAdapter(context: vscode.ExtensionContext): void {
 
 /** Resolve the active context and run or debug it. */
 export async function launch(node: ExplorerNode | undefined, noDebug: boolean): Promise<void> {
-  const activeFile = vscode.window.activeTextEditor?.document.uri.fsPath;
-  const anchor = node?.projectFilePath ?? activeFile;
+  const focused = activeFile();
+  const anchor = node?.projectFilePath ?? focused;
   const folder = folderFor(anchor);
   if (folder === undefined) {
     void vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
     return;
   }
-  const resolved = await resolveLaunchTarget(activeFile, folder, {
+  const resolved = await resolveLaunchTarget(focused, folder, {
     ...(node?.projectFilePath === undefined ? {} : { projectFile: node.projectFilePath }),
   });
   if (!resolved.ok) {
@@ -346,7 +448,6 @@ async function dispatch(
     await runWithoutDebugger(target, folder);
     return;
   }
-  rememberTarget(folder, target);
   const plan = await planLaunch(target, folder, noDebug);
   if (plan === undefined) return;
   const started = await vscode.debug.startDebugging(plan.folder, plan.configuration, { noDebug });

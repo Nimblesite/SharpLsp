@@ -48,16 +48,30 @@ function evaluateArgs(projectFile: string, framework?: string): string[] {
   return args;
 }
 
+/** A plain, non-null object — the only shape a properties bag can take. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Every string-valued entry of a bag, ignoring anything else MSBuild emitted. */
+function stringEntries(bag: Record<string, unknown>): Map<string, string> {
+  const strings = new Map<string, string>();
+  for (const [key, value] of Object.entries(bag)) {
+    if (typeof value === 'string') strings.set(key, value);
+  }
+  return strings;
+}
+
 /** The `Properties` bag of a `-getProperty` response, or an error. */
-function parseProperties(stdout: string): Result<Record<string, string>, string> {
+function parseProperties(stdout: string): Result<Map<string, string>> {
   const start = stdout.indexOf('{');
   if (start < 0) return err('MSBuild returned no JSON document');
   try {
     const parsed: unknown = JSON.parse(stdout.slice(start));
-    if (typeof parsed !== 'object' || parsed === null) return err('MSBuild JSON was not an object');
-    const bag: unknown = (parsed as { Properties?: unknown }).Properties;
-    if (typeof bag !== 'object' || bag === null) return err('MSBuild JSON had no Properties');
-    return ok(bag as Record<string, string>);
+    if (!isRecord(parsed)) return err('MSBuild JSON was not an object');
+    const bag: unknown = parsed.Properties;
+    if (!isRecord(bag)) return err('MSBuild JSON had no Properties');
+    return ok(stringEntries(bag));
   } catch (error) {
     return err(error instanceof Error ? error.message : String(error));
   }
@@ -75,7 +89,7 @@ function splitList(value: string | undefined): string[] {
 export async function evaluateProject(
   projectFile: string,
   framework?: string,
-): Promise<Result<ProjectProperties, string>> {
+): Promise<Result<ProjectProperties>> {
   const run = await runDotnet(
     evaluateArgs(projectFile, framework),
     path.dirname(projectFile),
@@ -88,10 +102,10 @@ export async function evaluateProject(
   const bag = parseProperties(run.stdout);
   if (!bag.ok) return bag;
   return ok({
-    targetPath: bag.value['TargetPath'] ?? '',
-    targetFramework: bag.value['TargetFramework'] ?? '',
-    targetFrameworks: splitList(bag.value['TargetFrameworks']),
-    outputType: bag.value['OutputType'] ?? '',
+    targetPath: bag.value.get('TargetPath') ?? '',
+    targetFramework: bag.value.get('TargetFramework') ?? '',
+    targetFrameworks: splitList(bag.value.get('TargetFrameworks')),
+    outputType: bag.value.get('OutputType') ?? '',
   });
 }
 
@@ -106,7 +120,7 @@ export async function evaluateProject(
 export async function resolveTargetPath(
   projectFile: string,
   exists: (candidate: string) => boolean,
-): Promise<Result<ProjectProperties, string>> {
+): Promise<Result<ProjectProperties>> {
   const evaluated = await evaluateProject(projectFile);
   if (!evaluated.ok) return evaluated;
   if (evaluated.value.targetPath.length > 0) return evaluated;
@@ -123,7 +137,7 @@ async function pickFramework(
   projectFile: string,
   frameworks: readonly string[],
   exists: (candidate: string) => boolean,
-): Promise<Result<ProjectProperties, string>> {
+): Promise<Result<ProjectProperties>> {
   let firstDeclared: ProjectProperties | undefined;
   for (const framework of frameworks) {
     const pinned = await evaluateProject(projectFile, framework);

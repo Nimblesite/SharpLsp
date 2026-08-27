@@ -39,7 +39,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * which aborts F5.
  */
 export function isLaunchSettings(value: unknown): value is { profiles: Record<string, unknown> } {
-  return isRecord(value) && isRecord(value['profiles']);
+  return isRecord(value) && isRecord(value.profiles);
 }
 
 /** A string property, or undefined when absent or the wrong type. */
@@ -52,8 +52,11 @@ function stringOf(bag: Record<string, unknown>, key: string): string | undefined
 function envOf(bag: Record<string, unknown>, key: string): Record<string, string> | undefined {
   const value = bag[key];
   if (!isRecord(value)) return undefined;
-  const entries = Object.entries(value).filter(([, item]) => typeof item === 'string');
-  return entries.length > 0 ? Object.fromEntries(entries) as Record<string, string> : undefined;
+  const strings: Record<string, string> = {};
+  for (const [name, item] of Object.entries(value)) {
+    if (typeof item === 'string') strings[name] = item;
+  }
+  return Object.keys(strings).length > 0 ? strings : undefined;
 }
 
 /** Build a profile from one entry, ignoring anything malformed. */
@@ -217,18 +220,33 @@ export function readLaunchProfiles(rootPath: string): Record<string, LaunchProfi
   return found;
 }
 
-/** Files whose profiles belong to `rootPath` or to a project directly beneath it. */
-function profileSources(rootPath: string): string[] {
-  const sources = [path.join(rootPath, path.basename(rootPath))];
+/**
+ * Every project file at or beneath `rootPath`, bounded in depth.
+ *
+ * The canonical .NET layout is `MySln.sln` at the root with the projects under
+ * `src/App/App.csproj`, so a scan that stops at the first level still finds
+ * nothing. The depth bound keeps a large repository from being walked whole.
+ */
+function profileSources(rootPath: string, depth = PROFILE_SCAN_DEPTH): string[] {
+  const sources: string[] = [];
   for (const entry of safeEntries(rootPath)) {
     const child = path.join(rootPath, entry);
     if (isProjectFile(child)) sources.push(child);
-    else if (isDirectory(child)) {
-      sources.push(...safeEntries(child).filter((name) => isProjectFile(path.join(child, name)))
-        .map((name) => path.join(child, name)));
+    else if (depth > 0 && isDirectory(child) && !isIgnoredDir(entry)) {
+      sources.push(...profileSources(child, depth - 1));
     }
   }
   return sources;
+}
+
+/** Deep enough for `root/src/App/App.csproj`, shallow enough to stay cheap. */
+const PROFILE_SCAN_DEPTH = 3;
+
+/** Build output and dependencies never hold a project worth launching. */
+const IGNORED_DIRS = new Set(['bin', 'obj', 'node_modules', '.git', '.vs', 'artifacts']);
+
+function isIgnoredDir(name: string): boolean {
+  return IGNORED_DIRS.has(name.toLowerCase());
 }
 
 function safeEntries(dir: string): string[] {
@@ -259,11 +277,26 @@ function isDirectory(candidate: string): boolean {
  * `args` is the user's explicit choice and a profile must not clobber it.
  */
 export function applyLaunchProfile(rootPath: string, config: Record<string, unknown>): void {
-  const eligible = projectProfiles(Object.values(readLaunchProfiles(rootPath)));
-  const profile = eligible.length === 1 ? eligible[0] : eligible[0];
+  const profile = projectProfiles(Object.values(readLaunchProfiles(rootPath)))[0];
   if (profile === undefined) return;
   const args = profileArgs(profile);
-  const env = profileEnv(profile);
   if (args !== undefined && config.args === undefined) config.args = args;
-  if (env !== undefined && config.env === undefined) config.env = env;
+  const env = profileEnv(profile);
+  if (env !== undefined) config.env = mergeEnv(env, config.env);
+}
+
+/**
+ * Profile variables underneath whatever the configuration already stated.
+ *
+ * Per-KEY, not all-or-nothing: a launch.json that pins one variable is an
+ * explicit choice about THAT variable, and dropping the profile's other
+ * variables because of it silently changes how the program runs.
+ */
+function mergeEnv(fromProfile: Record<string, string>, existing: unknown): Record<string, string> {
+  const merged: Record<string, string> = { ...fromProfile };
+  if (!isRecord(existing)) return merged;
+  for (const [key, value] of Object.entries(existing)) {
+    if (typeof value === 'string') merged[key] = value;
+  }
+  return merged;
 }

@@ -106,6 +106,7 @@ KOVER_PERCENT = dotnet run --file tools/coverage/kover-line-percent.cs --
         test-rust _test-rust _prepare-rust-tests _test-rust-shard \
         test-zed _test-zed test-rider _test-rider \
         _gate-rust-coverage _test-vsix _test-vsix-win _check-vsix-chunks \
+        _verify-vsix-payload \
         _test-dotnet _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
@@ -303,7 +304,7 @@ VSIX_TEST_ENV = env -u SHARPLSP_EXECUTABLE_PATH \
 	-u FORGE_LSP_PATH \
 	-u FORGE_BINARY_DIR
 
-_test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
+_test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary _verify-vsix-payload
 	@echo "==> Running VS Code extension tests..."
 	@$(MAKE) _stage-vsix-binary
 	status=0; \
@@ -336,7 +337,23 @@ VSIX_CHUNKS = node tools/vsix/vsix-test-chunks.mjs
 _check-vsix-chunks:
 	@$(VSIX_CHUNKS) check
 
-_test-vsix-win: _stage-vsix-binary-only
+# Building the payload the chunk will run against. Locally this is a FULL fresh
+# build — Rust host, both .NET sidecars, and the netcoredbg debug adapter — so a
+# VSIX test can never pass against a stale binary. CI's Windows matrix sets
+# VSIX_PREBUILT=1 because its `build` job already produced the host and sidecars
+# once and every chunk downloads them as artifacts; rebuilding Rust eleven times
+# would add hours. The staging step itself is identical either way, and it is
+# what fetches netcoredbg ([DIST-DEBUGGER-BUNDLE]).
+VSIX_STAGE_TARGET = $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
+
+# Pack the real VSIX and verify the payload actually made it in. `vsce ls` is the
+# same file list `vsce package` writes, so this catches a .vscodeignore that
+# swallowed the host, a sidecar or the debugger BEFORE 40 minutes of chunk time
+# is spent proving it at the other end.
+_verify-vsix-payload:
+	@cd $(VSCODE_DIR) && node ../../../tools/vsix/verify-vsix-payload.mjs
+
+_test-vsix-win: $(VSIX_STAGE_TARGET) _verify-vsix-payload
 	@test -n "$(CHUNK)" || { echo "ERROR: CHUNK is required (e.g. make _test-vsix-win CHUNK=debug)" >&2; exit 1; }
 	@echo "==> Running VS Code extension chunk '$(CHUNK)' (real LSP, no coverage)..."
 	status=0; \

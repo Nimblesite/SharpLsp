@@ -1,10 +1,8 @@
 {
   "extension.displayName": "SharpLsp",
-  "extension.description": "The open-source .NET Language Server — C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in.",
+  "extension.description": "The open-source .NET Language Server \u2014 C# and F# intelligence for every editor. Zero licenses. Zero vendor lock-in.",
   "category": "SharpLsp",
-
   "configuration.title": "SharpLsp",
-
   "setting.lspPath": "Absolute path to the `sharplsp` binary. Leave empty to let Shipwright resolve the bundled binary, environment variables, package manager installation, or `$PATH`.",
   "setting.csharpSidecarPath": "Absolute path to the `sharplsp-sidecar-csharp` binary. Leave empty to let Shipwright resolve the bundled sidecar, environment variable, or `$PATH`.",
   "setting.fsharpSidecarPath": "Absolute path to the `sharplsp-sidecar-fsharp` binary. Leave empty to let Shipwright resolve the bundled sidecar, environment variable, or `$PATH`.",
@@ -23,7 +21,6 @@
   "setting.memberSortOrder.hierarchy": "Sort tiebreaker order for **Sort Members**. Members are grouped by the first criterion, then sub-sorted by the second, then the third.",
   "setting.memberSortOrder.accessibilityOrder": "Access modifier priority for **Sort Members** (first = highest priority).",
   "setting.memberSortOrder.categoryOrder": "Member kind priority for **Sort Members** (first = highest priority).",
-
   "debugger.label": "SharpLsp .NET Debugger",
   "debugger.launch.program": "Path to the .NET assembly to debug.",
   "debugger.launch.args": "Command line arguments.",
@@ -35,12 +32,10 @@
   "debugger.snippet.launch.description": "Launch a .NET project with SharpLsp debugger",
   "debugger.snippet.attach.label": "SharpLsp: Attach to .NET Process",
   "debugger.snippet.attach.description": "Attach to a running .NET process",
-
   "viewsContainer.title": "SharpLsp",
   "view.solutionExplorer.name": "Solution Explorer",
   "view.profiler.name": "Profiler",
   "viewWelcome.solutionExplorer.contents": "No solution found in this workspace.\n[New Solution](command:sharplsp.newSolution)\n[New Project](command:sharplsp.newProject)\nOr [open an existing solution](command:sharplsp.selectSolution).",
-
   "cmd.restartServer": "Restart Language Server",
   "cmd.retryDotnetAcquisition": "Retry .NET Runtime Acquisition",
   "cmd.showOutput": "Show Output Channel",
@@ -72,7 +67,7 @@
   "cmd.profiler.detectLeaks": "Detect Memory Leaks",
   "cmd.profiler.showObjectGraph": "Show Object Retention Graph",
   "cmd.profiler.inspectObject": "Inspect Object",
-  "cmd.profiler.openTrace": "Open Trace File…",
+  "cmd.profiler.openTrace": "Open Trace File\u2026",
   "cmd.profiler.convertTrace": "Convert .nettrace to SpeedScope",
   "cmd.profiler.stopSession": "Stop Session",
   "cmd.profiler.revealOutput": "Reveal Output File in Finder",
@@ -104,5 +99,13 @@
   "cmd.hotReload.toggle": "Toggle Hot Reload",
   "cmd.test.runAtCursor": "Run Test at Cursor",
   "cmd.test.debugAtCursor": "Debug Test at Cursor",
-  "cmd.debugProgram": "Debug Program"
+  "cmd.debugProgram": "Debug Program",
+  "cmd.runProgram": "Run Without Debugging",
+  "debugger.launch.console": "Where the program's console output and input go.",
+  "debugger.launch.justMyCode": "Restrict stepping and breakpoints to your own code.",
+  "debugger.launch.hotReload": "Apply source edits to the running process without restarting it.",
+  "debugger.launch.requireExactSource": "Only bind breakpoints when the source matches the loaded symbols.",
+  "debugger.launch.symbolOptions": "Where to look for debug symbols.",
+  "task.build.command": "Which dotnet build verb this task runs.",
+  "task.run.file": "The source file this task runs."
 }

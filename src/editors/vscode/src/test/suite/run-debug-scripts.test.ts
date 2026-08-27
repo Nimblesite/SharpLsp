@@ -183,7 +183,8 @@ function assertOwningProject(dir: string, name: string, why: string): void {
   const entry = findProjectFile(dir, path.dirname(dir));
   assert.ok(entry, `${why}: the fixture must really contain ${name}.csproj`);
   assertSamePath(entry.cwd, dir, `${why}: the neighbouring project's cwd is its own directory`);
-  assert.strictEqual(path.basename(entry.dll), `${name}.dll`, `${why}: it is ${name}, not another`);
+  const named = path.basename(entry.projectFile);
+  assert.strictEqual(named, `${name}.csproj`, `${why}: it is ${name}, not another`);
   assert.deepStrictEqual(projectFilesIn(dir), [`${name}.csproj`], `${why}: exactly one project`);
 }
 function writeFixtureFile(dir: string, name: string, body: string): string {

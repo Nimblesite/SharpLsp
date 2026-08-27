@@ -65,6 +65,21 @@ export function runTask(
   return task;
 }
 
+/**
+ * Build a project so its output exists before a launch.
+ *
+ * SharpLsp performs this build itself ([DEBUG-FEATURES-LAUNCH-BUILD] rule 1):
+ * naming a `preLaunchTask` of a type it does not contribute aborts F5 with a
+ * modal, and a build the user's `debug.onTaskErrors` setting can wave past is
+ * not a guarantee that the assembly exists. Exactly one MSBuild process runs.
+ */
+export async function buildProject(projectFile: string): Promise<Result<void>> {
+  const run = await runDotnet(['build', projectFile], path.dirname(projectFile));
+  if (!run.failed) return ok(undefined);
+  const reason = run.errorMessage ?? '';
+  return err(reason.length > 0 ? reason : run.stderr || run.stdout);
+}
+
 /** True when the `dotnet-script` global tool can be found. */
 export async function hasDotnetScript(): Promise<boolean> {
   const run = await runDotnet(['tool', 'list', '--global'], process.cwd(), 30_000);
@@ -80,7 +95,7 @@ export async function hasDotnetScript(): Promise<boolean> {
  * `$XDG_DATA_HOME/dotnet/runfile` on Linux), so without it the produced assembly
  * has no path a `launch` request could name.
  */
-export async function buildFileBasedApp(file: string): Promise<Result<string, string>> {
+export async function buildFileBasedApp(file: string): Promise<Result<string>> {
   const artifacts = path.join(path.dirname(file), ARTIFACTS_DIRNAME);
   const run = await runDotnet(['build', file, '--artifacts-path', artifacts], path.dirname(file));
   if (run.failed) {

@@ -88,12 +88,11 @@ async function evaluateAll(
       result: await resolveTargetPath(projectFile, (candidate) => fs.existsSync(candidate)),
     })),
   );
-  return evaluated
-    .filter((entry) => entry.result.ok)
-    .map((entry) => ({
-      projectFile: entry.projectFile,
-      properties: entry.result.ok ? entry.result.value : ({} as ProjectProperties),
-    }));
+  const usable: { projectFile: string; properties: ProjectProperties }[] = [];
+  for (const entry of evaluated) {
+    if (entry.result.ok) usable.push({ projectFile: entry.projectFile, properties: entry.result.value });
+  }
+  return usable;
 }
 
 /** Keep only projects MSBuild says produce an executable. */
@@ -151,7 +150,7 @@ function projectTarget(projectFile: string, properties: ProjectProperties): Proj
 async function fromCandidates(
   candidates: readonly string[],
   options: ResolveOptions,
-): Promise<Result<LaunchTarget, string>> {
+): Promise<Result<LaunchTarget>> {
   if (candidates.length === 0) return err(NO_TARGET_MESSAGE);
   const runnable = runnableOnly(await evaluateAll(candidates));
   if (runnable.length === 0) return err(NO_TARGET_MESSAGE);
@@ -167,7 +166,7 @@ async function fromCandidates(
 }
 
 /** A script or file-based target for a project-less document. */
-function projectlessTarget(kind: DocumentKind, file: string): Result<LaunchTarget, string> {
+function projectlessTarget(kind: DocumentKind, file: string): Result<LaunchTarget> {
   const cwd = path.dirname(file);
   if (kind === 'csharpFileBasedApp') {
     return ok(withProfile({ kind: 'fileBasedApp', file, cwd }, file));
@@ -187,7 +186,7 @@ export async function resolveLaunchTarget(
   file: string | undefined,
   folder: vscode.WorkspaceFolder | undefined,
   options: ResolveOptions = {},
-): Promise<Result<LaunchTarget, string>> {
+): Promise<Result<LaunchTarget>> {
   if (options.projectFile !== undefined) {
     return fromCandidates([options.projectFile], options);
   }

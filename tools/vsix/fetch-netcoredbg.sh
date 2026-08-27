@@ -63,6 +63,11 @@ case "$KIND" in
   tar) tar -xzf "$ARCHIVE" -C "$DEST" ;;
 esac
 
+# macOS zips carry AppleDouble resource forks in a parallel `__MACOSX/` tree.
+# vsce packages every file it finds, so without this they ship to every user
+# inside the VSIX.
+rm -rf "$DEST/__MACOSX"
+
 # Upstream archives extract a top-level `netcoredbg/` directory.
 if [ ! -f "$EXE" ]; then
   echo "netcoredbg: expected binary at $EXE after extraction; contents:" >&2
