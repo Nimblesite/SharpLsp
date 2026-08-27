@@ -77,12 +77,15 @@ suite('Extension Workflow Coverage', () => {
 
   test('starts, rejects duplicate start, toggles, and stops hot reload', async function () {
     this.timeout(20_000);
-    // Hot reload requires a workspace folder — skip if none available.
+    // A PREMISE, not a skip. The harness always opens `test-fixtures/workspace`,
+    // so an absent folder means the RUNNER is broken — and skipping there turns
+    // a broken harness into a green run, which is how this coverage would go
+    // silently missing.
     const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (folder === undefined || folder === '') {
-      this.skip();
-      return;
-    }
+    assert.ok(
+      folder !== undefined && folder !== '',
+      'the extension host must have opened the fixture workspace; it did not',
+    );
 
     assert.strictEqual(isHotReloadRunning(), false);
 

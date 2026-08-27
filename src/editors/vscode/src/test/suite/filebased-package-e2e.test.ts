@@ -253,8 +253,10 @@ Console.WriteLine(text.Length);
       (items) =>
         items.some(
           (diagnostic) =>
+            diagnosticCode(diagnostic) === 'SLSPC0001' &&
             diagnostic.severity === vscode.DiagnosticSeverity.Information &&
-            /package|restore|degrad/i.test(diagnostic.message),
+            diagnostic.message.includes('Restore failed') &&
+            diagnostic.message.includes('SharpLsp.Package.That.Does.Not.Exist@0.0.0'),
         ),
       RESTORE_TIMEOUT_MS,
       1_000,
@@ -268,6 +270,9 @@ Console.WriteLine(text.Length);
     assert.strictEqual(degraded[0]?.range.end.line, 0);
     assert.strictEqual(degraded[0]?.range.end.character, 1);
     assert.ok(degraded[0]?.message.includes('BCL-only references'));
+    assert.ok(degraded[0]?.message.includes('Restore failed'));
+    assert.ok(!degraded[0]?.message.includes('pending'));
+    assert.ok(degraded[0]?.message.includes('SharpLsp.Package.That.Does.Not.Exist'));
     assert.ok(degraded[0]?.message.includes('0.0.0'));
     assert.deepStrictEqual(errorsFor(uri), [], 'restore failure must not kill BCL analysis');
   });

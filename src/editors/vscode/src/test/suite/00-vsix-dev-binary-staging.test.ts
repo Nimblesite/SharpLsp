@@ -45,9 +45,34 @@ suite('VSIX dev binary staging', () => {
   // which on a user's machine does not exist: F5 fails with a spawn ENOENT.
   test('bundles the netcoredbg debug adapter the launch path resolves first', function () {
     const platform = detectRuntimePlatform();
-    if (NO_PREBUILT.includes(platform)) this.skip();
-
     const extensionRoot = path.resolve(__dirname, '../../..');
+
+    // Upstream ships no netcoredbg for these platforms, so [DIST-DEBUGGER-BUNDLE]
+    // mandates the PATH fallback rather than a bundle. That is a CONTRACT, not an
+    // excuse to skip: skipping here would also pass if staging silently broke on
+    // a platform that DOES have a prebuilt, so the unsupported case asserts its
+    // own shape instead.
+    if (NO_PREBUILT.includes(platform)) {
+      const absent = path.join(extensionRoot, 'bin', platform, 'netcoredbg', exeName('netcoredbg'));
+      assert.strictEqual(
+        fs.existsSync(absent),
+        false,
+        `${platform} has no upstream prebuilt, so the VSIX must not claim to bundle one at ${absent}`,
+      );
+      const fallbacks = getNetcoredbgCandidates(extensionRoot);
+      assert.ok(fallbacks.length > 0, 'the launch path must still have somewhere to look');
+      assert.strictEqual(
+        fallbacks.includes(absent),
+        false,
+        'and must not offer a bundled path that was never staged',
+      );
+      assert.ok(
+        fallbacks.every((candidate) => candidate.endsWith(exeName('netcoredbg'))),
+        `every fallback names the adapter binary; got ${JSON.stringify(fallbacks)}`,
+      );
+      return;
+    }
+
     const bundled = path.join(extensionRoot, 'bin', platform, 'netcoredbg', exeName('netcoredbg'));
     assertStagedComponent(bundled, 'netcoredbg');
 

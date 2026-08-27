@@ -425,11 +425,15 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     assert.strictEqual(isRelevantLanguage('json'), false);
     assert.strictEqual(isRelevantLanguage('plaintext'), false);
 
+    // A PREMISE, not a skip. The harness always opens `test-fixtures/workspace`,
+    // so an absent folder means the RUNNER is broken — and skipping there turns
+    // a broken harness into a green run, which is how this coverage would go
+    // silently missing.
     const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (folder === undefined || folder === '') {
-      this.skip();
-      return;
-    }
+    assert.ok(
+      folder !== undefined && folder !== '',
+      'the extension host must have opened the fixture workspace; it did not',
+    );
 
     // Start hot reload so the onSave handler has a live watch terminal.
     await vscode.commands.executeCommand('sharplsp.hotReload.start');
