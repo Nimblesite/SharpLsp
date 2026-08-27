@@ -9,6 +9,7 @@
 // `commandLineArgs.split(' ')` shredded every quoted argument.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isIgnoredDir } from './launch-target';
 
 /** One entry of a `launchSettings.json` / `<app>.run.json` profiles map. */
 export interface LaunchProfile {
@@ -259,13 +260,6 @@ function isRunJson(name: string): boolean {
 
 /** Deep enough for `root/src/App/App.csproj`, shallow enough to stay cheap. */
 const PROFILE_SCAN_DEPTH = 3;
-
-/** Build output and dependencies never hold a project worth launching. */
-const IGNORED_DIRS = new Set(['bin', 'obj', 'node_modules', '.git', '.vs', 'artifacts']);
-
-function isIgnoredDir(name: string): boolean {
-  return IGNORED_DIRS.has(name.toLowerCase());
-}
 
 function safeEntries(dir: string): string[] {
   try {

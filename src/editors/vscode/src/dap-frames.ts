@@ -65,20 +65,60 @@ function withoutArguments(segment: string): string {
 }
 
 /**
- * The logical method name a state-machine type segment stands for, or
- * undefined when the segment is not a state machine.
+ * The logical method name a C# state-machine type segment stands for.
  *
  * `<MiddleAsync>d__1` yields `MiddleAsync`. The leading `<` and the `>d__`
  * marker are both required: a plain generic type such as `List<int>` must not
  * be mistaken for a state machine.
  */
-export function stateMachineMethod(segment: string): string | undefined {
+function csharpStateMachine(segment: string): string | undefined {
   if (!segment.startsWith('<')) return undefined;
   const close = segment.indexOf('>');
   if (close <= 1) return undefined;
-  const tail = segment.slice(close + 1);
-  if (!tail.startsWith(STATE_MACHINE_SUFFIX)) return undefined;
+  if (!segment.slice(close + 1).startsWith(STATE_MACHINE_SUFFIX)) return undefined;
   return segment.slice(1, close);
+}
+
+/** True when every character is an ASCII digit, and there is at least one. */
+function isDigits(text: string): boolean {
+  if (text.length === 0) return false;
+  for (const character of text) {
+    if (character < '0' || character > '9') return false;
+  }
+  return true;
+}
+
+/**
+ * The logical method name an F# state-machine type segment stands for.
+ *
+ * F# does NOT use C#'s `<name>d__N`. `task { }` and `async { }` compile to a
+ * type named after the function and the line it starts on — `leafAsync@4`, and
+ * `leafAsync@4-2` where one function yields several. Recognising only the C#
+ * spelling left every F# async stack unenriched, which
+ * [DEBUG-FSHARP-STEPPING] and this project's "F# is a first class citizen"
+ * rule both forbid.
+ *
+ * The digit test is what keeps a legitimate name containing `@` from being
+ * mistaken for a state machine.
+ */
+function fsharpStateMachine(segment: string): string | undefined {
+  const at = segment.lastIndexOf('@');
+  if (at <= 0) return undefined;
+  const suffix = segment.slice(at + 1);
+  const dash = suffix.indexOf('-');
+  const line = dash < 0 ? suffix : suffix.slice(0, dash);
+  const ordinal = dash < 0 ? '' : suffix.slice(dash + 1);
+  if (!isDigits(line)) return undefined;
+  if (dash >= 0 && !isDigits(ordinal)) return undefined;
+  return segment.slice(0, at);
+}
+
+/**
+ * The logical method name a state-machine type segment stands for, or
+ * undefined when the segment is not one. Handles both languages' spellings.
+ */
+export function stateMachineMethod(segment: string): string | undefined {
+  return csharpStateMachine(segment) ?? fsharpStateMachine(segment);
 }
 
 /**
@@ -99,13 +139,24 @@ export function logicalFrameName(name: string): string {
   return [...prefix, `${method}()`].join('.');
 }
 
-/** True when the frame is async-builder plumbing the user never wrote. */
-export function isAsyncPlumbing(name: string): boolean {
-  const segments = splitQualifiedName(name);
-  const last = withoutArguments(segments[segments.length - 1] ?? '');
-  if (!last.startsWith('Start')) return false;
-  const owner = withoutArguments(segments[segments.length - 2] ?? '');
-  return owner.startsWith('AsyncMethodBuilderCore') || owner.startsWith('AsyncTaskMethodBuilder');
+/** Root namespaces that are never the user's own code. */
+const RUNTIME_ROOTS: readonly string[] = ['System', 'Microsoft', 'Internal', 'MS'];
+
+/**
+ * True when the frame is runtime plumbing the user never wrote.
+ *
+ * Matching builder method names does not survive contact with reality: resuming
+ * after an await goes through `AsyncStateMachineBox.MoveNext`,
+ * `ExecutionContextCallback`, `ExecuteFromThreadPool`,
+ * `ThreadPoolWorkQueue.Dispatch` and `WorkerThread.WorkerThreadStart`, and the
+ * set differs again between C# and F#. The durable rule is structural: a frame
+ * rooted in a runtime namespace that carries NO source location cannot be
+ * user code, whatever it happens to be called.
+ */
+export function isAsyncPlumbing(frame: RawFrame): boolean {
+  if (!isSourceless(frame)) return false;
+  const root = splitQualifiedName(frame.name)[0] ?? '';
+  return RUNTIME_ROOTS.includes(root);
 }
 
 /** True when the frame carries no source location the user can navigate to. */
@@ -142,6 +193,6 @@ export function enrichAsyncFrames(frames: readonly RawFrame[], justMyCode: boole
     return name === frame.name ? frame : { ...frame, name };
   });
   return named.filter(
-    (frame) => !isRedundantStub(frame, renamed) && !(justMyCode && isAsyncPlumbing(frame.name)),
+    (frame) => !isRedundantStub(frame, renamed) && !(justMyCode && isAsyncPlumbing(frame)),
   );
 }

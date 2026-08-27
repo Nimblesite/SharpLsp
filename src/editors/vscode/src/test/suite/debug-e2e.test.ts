@@ -127,7 +127,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
     });
     assert.strictEqual(explicit.program, chosen, 'an explicit program survives byte-for-byte');
     assert.notStrictEqual(
-      comparablePath(String(explicit.program)),
+      comparablePath(explicit.program),
       comparablePath(built),
       'the resolver must not swap the user choice for the project output',
     );

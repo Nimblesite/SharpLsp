@@ -22,11 +22,11 @@ import {
 } from './launch-resolver';
 import {
   CSX_TOOL_MESSAGE,
-  FSX_DEBUG_MESSAGE,
   buildFileBasedApp,
   buildProject,
   hasDotnetScript,
   runTask,
+  scriptDebugMessage,
 } from './launch-run';
 import {
   applyLaunchProfile,
@@ -280,7 +280,7 @@ function argsAndEnv(target: ProjectTarget | Exclude<LaunchTarget, ProjectTarget>
 async function programFor(target: LaunchTarget): Promise<string | undefined> {
   if (target.kind === 'project') return await builtProgram(target);
   if (target.kind === 'script') {
-    void vscode.window.showWarningMessage(FSX_DEBUG_MESSAGE);
+    void vscode.window.showWarningMessage(scriptDebugMessage(target.runner));
     return undefined;
   }
   const built = await buildFileBasedApp(target.file);

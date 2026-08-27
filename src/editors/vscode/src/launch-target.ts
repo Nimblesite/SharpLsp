@@ -10,7 +10,12 @@ import * as path from 'node:path';
 
 /** The [SCRIPT-DETECT] document kinds a launch can be built from. */
 export type DocumentKind =
-  'projectOwned' | 'csharpFileBasedApp' | 'csharpScript' | 'fsharpScript' | 'unsupported';
+  | 'projectOwned'
+  | 'csharpFileBasedApp'
+  | 'csharpScript'
+  | 'fsharpScript'
+  | 'fsharpOrphan'
+  | 'unsupported';
 
 /** Why the [SCRIPT-CONE] walk stopped. */
 export type ConeStop = 'project' | 'solution' | 'workspace' | 'git' | 'root';
@@ -125,25 +130,62 @@ export function classifyDocument(file: string, workspaceRoot: string | undefined
 
   const cone = walkCone(path.dirname(file), workspaceRoot);
   if (cone.stoppedAt === 'project' || cone.stoppedAt === 'solution') return 'projectOwned';
-  // A project-less `.fs` has no file-based-app model; only C# has one.
-  return extension === '.cs' ? 'csharpFileBasedApp' : 'unsupported';
+  // A project-less `.fs` has no file-based-app model; only C# has one. It is a
+  // kind of its OWN, not `unsupported`: the two refusals differ, and collapsing
+  // them makes an F# source file report the sentence written for a `.txt`.
+  return extension === '.cs' ? 'csharpFileBasedApp' : 'fsharpOrphan';
 }
 
-/** Every project reachable from a cone stop: its own dir, or a solution's tree. */
+/**
+ * Every project reachable from a cone stop: its own dir, else one level down.
+ *
+ * The descent is NOT limited to a solution stop. `<root>/src/App/App.csproj`
+ * with nothing at the root is the most common .NET layout there is, and it stops
+ * at the workspace boundary rather than at a solution, so gating the descent on
+ * `stoppedAt === 'solution'` made that whole layout unlaunchable whenever no
+ * editor was focused — while `findEntryProject`, the walker the tests hold this
+ * one against, descended and disagreed.
+ */
 export function candidatesAt(cone: ConeResult): string[] {
   if (cone.dir === undefined) return [];
   const direct = projectFilesIn(cone.dir);
-  if (direct.length > 0 || cone.stoppedAt !== 'solution') return direct;
+  if (direct.length > 0) return direct;
   return childProjectsOf(cone.dir);
 }
 
 /** Projects one level below a solution directory, for the common src/App layout. */
-function childProjectsOf(root: string): string[] {
+/** Deep enough for `<root>/src/App/App.csproj`, shallow enough to stay cheap. */
+const CHILD_SCAN_DEPTH = 2;
+
+/** Build output and dependencies never hold a project worth launching. */
+export const IGNORED_DIRS: ReadonlySet<string> = new Set([
+  'bin',
+  'obj',
+  'node_modules',
+  '.git',
+  '.vs',
+  'artifacts',
+]);
+
+/** True when a directory name never holds a project worth launching. */
+export function isIgnoredDir(name: string): boolean {
+  return IGNORED_DIRS.has(name.toLowerCase());
+}
+
+/**
+ * Projects beneath a stop directory, bounded in depth.
+ *
+ * TWO levels, not one: the canonical layout is `<root>/src/App/App.csproj`, so a
+ * single-level scan sees only `src/`, finds no project in it, and reports that
+ * the workspace has nothing to launch.
+ */
+function childProjectsOf(root: string, depth = CHILD_SCAN_DEPTH): string[] {
   const found: string[] = [];
   for (const entry of entriesOf(root)) {
     const child = path.join(root, entry);
-    if (!isDirectory(child)) continue;
+    if (!isDirectory(child) || isIgnoredDir(entry)) continue;
     found.push(...projectFilesIn(child));
+    if (depth > 1) found.push(...childProjectsOf(child, depth - 1));
   }
   return found.sort((left, right) => left.localeCompare(right));
 }

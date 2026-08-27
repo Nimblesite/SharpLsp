@@ -24,6 +24,21 @@ export const ARTIFACTS_DIRNAME = '.sharplsp-run';
 export const FSX_DEBUG_MESSAGE =
   'F# scripts cannot be debugged: dotnet fsi emits no assembly or PDB to attach to. Run the script instead.';
 
+/** Told to the user when `.csx` debugging is asked for. */
+export const CSX_DEBUG_MESSAGE =
+  'C# scripts cannot be debugged: dotnet-script compiles a .csx in memory and emits no assembly or PDB to attach to. Run the script instead.';
+
+/**
+ * Why a script target cannot be debugged, in ITS OWN language.
+ *
+ * A `.csx` told that "F# scripts cannot be debugged" names a language the user
+ * is not writing in, so the message reads as a bug rather than an explanation
+ * ([DEBUG-FEATURES-LAUNCH-SCRIPT]: each unsupported kind gets a NAMED message).
+ */
+export function scriptDebugMessage(runner: ScriptTarget['runner']): string {
+  return runner === 'fsi' ? FSX_DEBUG_MESSAGE : CSX_DEBUG_MESSAGE;
+}
+
 /** Told to the user when a `.csx` run is asked for and no runner resolves. */
 export const CSX_TOOL_MESSAGE =
   'Running C# scripts needs the dotnet-script global tool: dotnet tool install -g dotnet-script';

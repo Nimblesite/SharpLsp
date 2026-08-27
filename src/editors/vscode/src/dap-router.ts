@@ -15,6 +15,7 @@
 // the gap.
 import * as cp from 'node:child_process';
 import * as vscode from 'vscode';
+import { withTranslatedExceptionOptions } from './dap-exceptions';
 import { enrichAsyncFrames, type RawFrame } from './dap-frames';
 import { error, info } from './log';
 
@@ -84,15 +85,32 @@ function parseContentLength(header: string): number | undefined {
  *
  * - `supportsEvaluateForHovers` — `evaluate` is forwarded verbatim and
  *   netcoredbg answers it, so the hover context needs nothing extra from us.
+ * - `supportsExceptionOptions` — `setExceptionBreakpoints` is rewritten by
+ *   `withTranslatedExceptionOptions` into the `filterOptions[].condition` type
+ *   filter netcoredbg does implement, so a per-type include/exclude selection
+ *   is genuinely applied ([DEBUG-FEATURES-EXCEPTIONS], P1).
+ * - `supportsVariableType` — netcoredbg populates `Variable.type` on every
+ *   entry it reports (`int`, `string[]`, `Probe.Box`), and the router forwards
+ *   `variables` responses untouched, so the Variables panel's type column has
+ *   real data behind it.
+ * - `supportsANSIStyling` — the debuggee's stdout reaches `output` events with
+ *   its escape sequences intact (verified: `ESC[31m` survives the adapter), and
+ *   nothing here rewrites `output` or `Variable.value`, so the client may style
+ *   them rather than print the escapes literally.
  *
  * The remaining Phase-Four rows (`supportsHitConditionalBreakpoints`,
- * `supportsLogPoints`, `supportsGotoTargetsRequest`, `supportsRestartRequest`,
- * `supportsExceptionOptions`, `supportsVariableType`, `supportsANSIStyling`)
+ * `supportsLogPoints`, `supportsGotoTargetsRequest`, `supportsRestartRequest`)
  * are deliberately NOT claimed: this router does not implement them yet, and
  * claiming them would make VS Code offer UI that silently does nothing.
+ * netcoredbg answers `goto`, `restart` and `disassemble` with E_NOTIMPL
+ * (0x80004001) and ignores `hitCondition` and `logMessage` outright, so each of
+ * those rows needs an emulation in this file before its flag may be set.
  */
 const ROUTER_CAPABILITIES: Readonly<Record<string, boolean>> = {
   supportsEvaluateForHovers: true,
+  supportsExceptionOptions: true,
+  supportsVariableType: true,
+  supportsANSIStyling: true,
 };
 
 /**
@@ -133,7 +151,7 @@ export class DapRouter implements vscode.DebugAdapter {
   public handleMessage(message: vscode.DebugProtocolMessage): void {
     if (!isRecord(message)) return;
     this.rememberLaunchOptions(message);
-    this.write(message);
+    this.write(retarget(message));
   }
 
   public dispose(): void {
@@ -184,6 +202,14 @@ export class DapRouter implements vscode.DebugAdapter {
 
   /** netcoredbg -> VS Code, with the router's enrichments applied. */
   private enrich(message: DapMessage): DapMessage {
+    // netcoredbg re-states its raw capability set in a `capabilities` EVENT as
+    // well as in the `initialize` response, and VS Code merges that event over
+    // whatever it already holds. Enriching only the response would let the
+    // event's `supportsExceptionOptions: false` clobber the router's `true` a
+    // few milliseconds later, so both carriers are augmented.
+    if (message.type === 'event' && message.event === 'capabilities') {
+      return withEventCapabilities(message);
+    }
     if (message.type !== 'response') return message;
     if (message.command === 'initialize') return withRouterCapabilities(message);
     if (message.command === 'stackTrace') return this.withLogicalFrames(message);
@@ -201,9 +227,40 @@ export class DapRouter implements vscode.DebugAdapter {
   }
 }
 
+/**
+ * Rewrite one workbench request into the dialect netcoredbg understands.
+ *
+ * Only `setExceptionBreakpoints` needs it today: VS Code expresses a per-type
+ * selection as `exceptionOptions`, which netcoredbg ignores, while the
+ * equivalent `filterOptions[].condition` is applied. Every other request is
+ * forwarded byte-for-byte.
+ */
+function retarget(message: DapMessage): DapMessage {
+  if (message.type !== 'request' || message.command !== 'setExceptionBreakpoints') return message;
+  const args: unknown = message.arguments;
+  if (!isRecord(args)) return message;
+  return { ...message, arguments: withTranslatedExceptionOptions(args) };
+}
+
 /** Merge the router's own capabilities into an `initialize` response body. */
 function withRouterCapabilities(message: DapMessage): DapMessage {
   const body: unknown = message.body;
   const existing = isRecord(body) ? body : {};
   return { ...message, body: { ...existing, ...ROUTER_CAPABILITIES } };
+}
+
+/**
+ * Merge the router's capabilities into a `capabilities` EVENT.
+ *
+ * The event nests the flags one level deeper than the `initialize` response
+ * does — `body.capabilities` rather than `body` — so it needs its own merge
+ * rather than reusing the response one.
+ */
+function withEventCapabilities(message: DapMessage): DapMessage {
+  const body: unknown = message.body;
+  const outer = isRecord(body) ? body : {};
+  const advertised: unknown = outer.capabilities;
+  const inner = isRecord(advertised) ? advertised : {};
+  const capabilities = { ...inner, ...ROUTER_CAPABILITIES };
+  return { ...message, body: { ...outer, capabilities } };
 }

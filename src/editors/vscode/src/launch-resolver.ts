@@ -26,6 +26,19 @@ import { err, ok, type Result } from './result';
 export const NO_TARGET_MESSAGE =
   'No runnable .NET project or script found for the active document.';
 
+/**
+ * Shown for a `.fs` that no project owns.
+ *
+ * [DEBUG-FEATURES-LAUNCH-SCRIPT] gives this row its own message because the
+ * reason is specific: F# has no file-based-app model, so — unlike a `.cs` — the
+ * file cannot be run or debugged on its own however the tooling is configured.
+ * The generic sentence would send the user looking for a missing project when
+ * what they need is an `.fsproj` or an `.fsx`.
+ */
+export const FS_ORPHAN_MESSAGE =
+  'F# has no file-based-app model: a .fs file needs an .fsproj to run or debug, ' +
+  'or rename it to a .fsx script.';
+
 /** A runnable project and everything a launch configuration needs from it. */
 export interface ProjectTarget {
   readonly kind: 'project';
@@ -226,6 +239,7 @@ async function projectlessTarget(
   }
   if (kind === 'fsharpScript') return ok({ kind: 'script', runner: 'fsi', file, cwd });
   if (kind === 'csharpScript') return ok({ kind: 'script', runner: 'dotnet-script', file, cwd });
+  if (kind === 'fsharpOrphan') return err(FS_ORPHAN_MESSAGE);
   return err(NO_TARGET_MESSAGE);
 }
 
