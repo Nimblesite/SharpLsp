@@ -6,17 +6,17 @@ The Solution Explorer is a VS Code tree view that displays the full code hierarc
 
 ## Architecture `[SE-ARCHITECTURE]`
 
-```
-VS Code Tree View
-  └── SolutionExplorerProvider (TypeScript)
-        └── sharplsp/workspaceSymbols request
-              └── Rust Host
-                    ├── solution/read sidecar request
-                    │     └── .sln/.slnx → projects, folders, solution items
-                    ├── tree-sitter parsing (C#)
-                    │     └── .csproj → .cs files
-                    └── FCS sidecar documentSymbol (F#)
-                          └── .fsproj → .fs files
+```mermaid
+flowchart TB
+    VIEW["VS Code Tree View"] --> PROVIDER["SolutionExplorerProvider<br/>TypeScript"]
+    PROVIDER --> REQUEST["sharplsp/workspaceSymbols request"]
+    REQUEST --> HOST["Rust Host"]
+    HOST --> SLN["solution/read sidecar request"]
+    HOST --> TS["tree-sitter parsing (C#)"]
+    HOST --> FCS["FCS sidecar documentSymbol (F#)"]
+    SLN --> SLNOUT[".sln / .slnx → projects, folders, solution items"]
+    TS --> CSOUT[".csproj → .cs files"]
+    FCS --> FSOUT[".fsproj → .fs files"]
 ```
 
 ### Language-Specific Symbol Extraction [SE-FSHARP-SYMBOLS]
@@ -127,18 +127,18 @@ When no access modifier is present, `access` is `null`.
 
 ## Tree Hierarchy `[SE-TREE]`
 
-```
-Solution (SharpLsp.Sidecars.sln)
-  └── Project (SharpLsp.Sidecar.Common)
-        ├── Namespace (SharpLsp.Sidecar.Common.Messages)
-        │     ├── Class (Envelope)
-        │     │     ├── Property (Id : uint?)
-        │     │     └── Property (Method : string?)
-        │     └── Class (SidecarHost)
-        └── Namespace (SharpLsp.Sidecar.Common.Ipc)
-              └── Class (MessageRouter)
-                    ├── Method (Register)
-                    └── Method (HandleAsync)
+```mermaid
+flowchart LR
+    SLN["Solution<br/>SharpLsp.Sidecars.sln"] --> PROJ["Project<br/>SharpLsp.Sidecar.Common"]
+    PROJ --> NSMESSAGES["Namespace<br/>SharpLsp.Sidecar.Common.Messages"]
+    PROJ --> NSIPC["Namespace<br/>SharpLsp.Sidecar.Common.Ipc"]
+    NSMESSAGES --> ENVELOPE["Class<br/>Envelope"]
+    NSMESSAGES --> SIDECARHOST["Class<br/>SidecarHost"]
+    ENVELOPE --> PROPID["Property<br/>Id : uint?"]
+    ENVELOPE --> PROPMETHOD["Property<br/>Method : string?"]
+    NSIPC --> ROUTER["Class<br/>MessageRouter"]
+    ROUTER --> REGISTER["Method<br/>Register"]
+    ROUTER --> HANDLE["Method<br/>HandleAsync"]
 ```
 
 ### File-Scoped Namespace Handling `[SE-TREE-FILE-NAMESPACE]`
@@ -373,19 +373,22 @@ Solution and project nodes expose **Build** and **Rebuild**.
 
 ### Run and Debug `[SE-ACTIONS-RUN-DEBUG]`
 
-Project nodes expose **Run** and **Debug**.
+Project nodes expose **Run** and **Debug**. Both reuse the single launch-target
+resolver of [DEBUG-FEATURES-LAUNCH-TARGET] — the tree node supplies the project,
+nothing else differs — and both are the same commands the editor title bar and
+the Command Palette contribute, per [DEBUG-FEATURES-LAUNCH-CONTRIBUTIONS].
 
 | Property | Value |
 |----------|-------|
-| Command | `sharplsp.run` |
-| Title | Run |
+| Command | `sharplsp.runProgram` |
+| Title | Run Without Debugging |
 | When | `view == sharplsp.solutionExplorer && viewItem == project` |
 | Group | `3_run@1` |
 
 | Property | Value |
 |----------|-------|
-| Command | `sharplsp.debug` |
-| Title | Debug |
+| Command | `sharplsp.debugProgram` |
+| Title | Debug Program |
 | When | `view == sharplsp.solutionExplorer && viewItem == project` |
 | Group | `3_run@2` |
 

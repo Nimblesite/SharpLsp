@@ -127,6 +127,8 @@ test-results/
 /src/editors/zed/target/
 
 .deslop-cache/
+# Deslop's local index/state directory ([CI-DESLOP]).
+.deslop/
 # Deslop report artifacts (generated locally by `deslop`, never committed).
 deslop-report.*
 deslop-*.log
@@ -137,8 +139,9 @@ deslop-*.log
 # Never committed - fetched on demand at pinned tags.
 /src/fixtures/real-world/
 
-.deslop/
-
-editors/zed/target/
-
-real-world-fixtures/
+# Pre-consolidation residue from before the repo moved under src/ and tools/.
+# Anchored to the repo root so a nested directory of the same name is never
+# hidden. `/src/editors/zed/target/` and `/src/fixtures/real-world/` above are
+# the live rules; these two only stop a stale local checkout being committed.
+/editors/
+/real-world-fixtures/

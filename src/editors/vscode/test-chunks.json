@@ -41,11 +41,43 @@
       ]
     },
     "debug": {
-      "description": "Debugging end to end (launch/attach config resolution, netcoredbg adapter factory, sharplsp.debugProgram against real projects) plus Test Explorer discovery/run/debug and the test-status CodeLens.",
+      "description": "Debugging and the launch surface, WITHOUT shelling out to dotnet: the F5 / no-launch.json resolve contract, launchSettings.json + <app>.run.json profile parsing, the netcoredbg adapter factory, and manifest conformance for the debugger, breakpoint, task-definition, command and menu contributions.",
       "files": [
         "debug-e2e.test.js",
+        "debug-adapter-e2e.test.js",
+        "run-debug-profiles.test.js",
+        "run-debug-contributions.test.js"
+      ]
+    },
+    "rundebug": {
+      "description": "Launch-target resolution against real projects: the [SCRIPT-CONE] walk (.sln/.slnx, .git and workspace-root boundaries), active-document sensitivity across two projects, library rejection, and MSBuild output resolution for custom AssemblyName/OutputPath, non-listed and multi-targeted frameworks. Builds real C# and F# console projects.",
+      "files": [
+        "run-debug-target.test.js",
+        "run-debug-build.test.js"
+      ]
+    },
+    "rundebug-commands": {
+      "description": "The run/debug user gestures at the VSIX level: F5 and Ctrl/Cmd+F5 through workbench.action.debug.start / .run, sharplsp.runProgram and sharplsp.debugProgram against built projects, and single-file targets \u2014 C# file-based apps, .fsx scripts and the .csx/.fs refusals. Split from rundebug because every test restores and builds or executes a real .NET target.",
+      "files": [
+        "run-debug-commands.test.js",
+        "run-debug-scripts.test.js"
+      ]
+    },
+    "testexplorer": {
+      "description": "Test Explorer discovery over a mixed C#/F# solution, the reactive re-discovery contract, Windows-hostile paths and the VSTest filter grammar, plus the test-status CodeLens. Each suite builds real xUnit/NUnit/MSTest projects with the dotnet CLI.",
+      "files": [
         "test-explorer-e2e.test.js",
+        "test-explorer-reactive.test.js",
+        "test-explorer-windows.test.js",
+        "test-explorer-parsers.test.js",
         "testing-lens-e2e.test.js"
+      ]
+    },
+    "testexplorer-frameworks": {
+      "description": "Test Explorer framework matrix and run semantics: xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles. Split from the testexplorer chunk because it restores and builds six test projects.",
+      "files": [
+        "test-explorer-frameworks.test.js",
+        "test-explorer-outcomes.test.js"
       ]
     },
     "profiler": {

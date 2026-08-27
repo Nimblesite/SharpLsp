@@ -3,6 +3,8 @@
  *
  * Scans C# and F# files for test attributes and displays the last known
  * test result from {@link SharpLspTestController} as an inline code lens.
+ *
+ * Implements [TEST-STATUS-LENS].
  */
 
 import * as vscode from 'vscode';
@@ -161,9 +163,7 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
     const result = this.findResultByMethodName(methodName);
 
     if (result !== undefined) {
-      const statusTitle = result.passed
-        ? `$(pass) Passed${formatDuration(result.duration)}`
-        : `$(error) Failed${result.message !== undefined ? `: ${result.message}` : ''}`;
+      const statusTitle = statusLensTitle(result);
 
       lenses.push(
         new vscode.CodeLens(range, {
@@ -268,6 +268,24 @@ export function extractFSharpFunctionName(line: string): string | undefined {
     return memberMatch[1];
   }
   return undefined;
+}
+
+/**
+ * The status text rendered above a test method. A SKIPPED test is neither a
+ * pass nor a failure — reporting it as "Failed" is exactly the bug the TRX-based
+ * run path fixes, so the lens has to say so too.
+ */
+export function statusLensTitle(result: CachedTestResult): string {
+  if (result.outcome === 'passed') {
+    return `$(pass) Passed${formatDuration(result.duration)}`;
+  }
+  if (result.outcome === 'skipped') {
+    return `$(debug-step-over) Skipped`;
+  }
+  if (result.outcome === 'notRun') {
+    return `$(circle-slash) Not run${result.message !== undefined ? `: ${result.message}` : ''}`;
+  }
+  return `$(error) Failed${result.message !== undefined ? `: ${result.message}` : ''}`;
 }
 
 /** Format a duration in ms for display. */

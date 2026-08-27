@@ -648,11 +648,15 @@ In graph view, nodes from the comparison snapshot are annotated with growth indi
 
 ### [PROFILER-SESSIONS-LIFECYCLE] Session Lifecycle
 
-```
-Created  ──start──▶  Running  ──stop──▶  Stopped  ──cleanup──▶  Disposed
-                        │
-                        └──timeout──▶  Stopped
-                        └──error──▶  Failed
+```mermaid
+stateDiagram-v2
+    [*] --> Created
+    Created --> Running: start
+    Running --> Stopped: stop
+    Running --> Stopped: timeout
+    Running --> Failed: error
+    Stopped --> Disposed: cleanup
+    Disposed --> [*]
 ```
 
 - Each session ID has the form `prof-<unix-epoch-ms>-<process-local-sequence>`
@@ -696,14 +700,15 @@ The PROFILER tree view MUST expose session and process actions directly from the
 
 ##### [PROFILER-EDITOR-VSCODE-TREE-STRUCTURE] Tree Structure
 
-```
-PROFILER  [refresh]  [open-trace]  [⋯ overflow]
-├── Active Sessions (N)
-│   ├── 🔴 Trace: PID 7161  (recording · 42s)      ← contextValue: profiler-session-trace
-│   └── 🟢 Counters: PID 8203  (streaming)         ← contextValue: profiler-session-counters
-└── .NET Processes (N)
-    ├── ProfileTarget (PID 1608)                   ← contextValue: profiler-process
-    └── Claude (PID 98153)
+```mermaid
+flowchart LR
+    ROOT["PROFILER<br/>[refresh] [open-trace] [⋯ overflow]"]
+    ROOT --> SESSIONS["Active Sessions (N)"]
+    ROOT --> PROCESSES[".NET Processes (N)"]
+    SESSIONS --> TRACE["🔴 Trace: PID 7161 — recording · 42s<br/>contextValue: profiler-session-trace"]
+    SESSIONS --> COUNTERS["🟢 Counters: PID 8203 — streaming<br/>contextValue: profiler-session-counters"]
+    PROCESSES --> TARGET["ProfileTarget (PID 1608)<br/>contextValue: profiler-process"]
+    PROCESSES --> CLAUDE["Claude (PID 98153)"]
 ```
 
 ##### [PROFILER-EDITOR-VSCODE-TREE-CONTEXT] Context Values

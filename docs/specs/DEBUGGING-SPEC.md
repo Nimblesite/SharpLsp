@@ -135,7 +135,7 @@ SharpLsp targets **DAP specification version 1.71.0**.
 
 ```json
 {
-  "type": "sharplsp",
+  "type": "sharplsp-coreclr",
   "request": "launch",
   "program": "${workspaceFolder}/bin/Debug/net10.0/MyApp.dll",
   "args": [],
@@ -157,12 +157,240 @@ SharpLsp targets **DAP specification version 1.71.0**.
 
 ```json
 {
-  "type": "sharplsp",
+  "type": "sharplsp-coreclr",
   "request": "attach",
   "processId": "${command:pickProcess}",
   "justMyCode": true
 }
 ```
+
+### F5 with no launch.json `[DEBUG-FEATURES-LAUNCH-NOCONFIG]`
+
+When the user presses F5 (or Ctrl/Cmd+F5) in a workspace with no `.vscode/launch.json`, VS Code calls `resolveDebugConfiguration` with a bare object built by `Object.create(null)`. `type`, `request` and `name` are **absent**, not empty strings. The `DebugConfiguration` TypeScript declaration marks them non-optional `string` and is wrong on this path, so the compiler cannot catch a `.length` dereference.
+
+| Input the provider must accept | Meaning |
+|---|---|
+| `{}` | F5, no launch.json, debug |
+| `{ noDebug: true }` | Ctrl/Cmd+F5, no launch.json — see [DEBUG-FEATURES-LAUNCH-NODEBUG] |
+| `{ type: undefined, request: undefined, name: undefined }` | Same shape after JSON transport |
+| `{ type: '', request: '', name: '' }` | Legacy shape; still accepted |
+
+**Rules**
+
+1. Detect "no configuration supplied" by **absence** (`!config.type && !config.request && !config.name`), never by `.length`. Dereferencing `.length` on an absent field throws `TypeError: Cannot read properties of undefined (reading 'length')`, which rejects the provider promise and surfaces as an error notification instead of a session.
+2. The provider MUST NOT throw for any input, including a malformed `launchSettings.json`. A configuration it cannot service is reported by returning `undefined` (prevent the session, after showing a named message) or `null` (prevent the session and open `launch.json`).
+3. Any returned configuration MUST carry a non-empty `type` and a `request` of exactly `launch` or `attach`. VS Code discards a returned config with a falsy `type` **silently** — no session, no error.
+4. `resolveDebugConfiguration` MUST be **idempotent**. VS Code re-enters the resolve chain whenever the provider changes `config.type`, calling the provider a second time with the config it just produced. The second pass MUST return an equivalent configuration and MUST NOT duplicate `args` or re-apply profile values.
+5. The synthesized configuration MUST target the document-derived program of [DEBUG-FEATURES-LAUNCH-TARGET] and MUST NOT reference a `preLaunchTask` type SharpLsp does not contribute — see [DEBUG-FEATURES-LAUNCH-BUILD].
+
+**Synthesized configuration**
+
+```json
+{
+  "type": "sharplsp-coreclr",
+  "request": "launch",
+  "name": "Launch .NET Project",
+  "program": "<resolved by [DEBUG-FEATURES-LAUNCH-TARGET]>",
+  "cwd": "<project directory>",
+  "console": "integratedTerminal",
+  "justMyCode": true
+}
+```
+
+Activation MUST NOT depend on `onStartupFinished` for this path: `onDebugResolve:sharplsp-coreclr` MUST be declared so the provider is registered before VS Code enters the resolve chain.
+
+### Launch target resolution `[DEBUG-FEATURES-LAUNCH-TARGET]`
+
+One resolver decides what F5, Ctrl/Cmd+F5, the editor context menu and the Solution Explorer all launch. There MUST NOT be a second, divergent walk.
+
+**Resolution order**
+
+| # | Source | Condition |
+|---|---|---|
+| 1 | Explicit `program` in the configuration | Always wins; never overwritten |
+| 2 | Cone search from the active document's directory | An editor is open |
+| 3 | Solution startup project | A `.sln`/`.slnx` is loaded and names one |
+| 4 | The workspace folder's single runnable project | Exactly one candidate |
+| 5 | Fail with a named message | Otherwise |
+
+**Cone search** reuses [SCRIPT-CONE] verbatim. It walks from the document's directory toward the filesystem root and stops at the **first** of:
+
+- a directory containing `*.sln`, `*.slnx`, `*.csproj` or `*.fsproj`;
+- the workspace folder root supplied by the client;
+- a directory containing `.git`;
+- the filesystem root.
+
+The walk MUST NOT escape the workspace folder. Comparing the current directory to the stop directory by string equality alone is insufficient: a start path outside the stop path never matches and the walk runs to `/`, potentially selecting an unrelated project from an ancestor directory. The boundary MUST be a containment test on normalized, real (symlink-resolved) paths, case-insensitive on Windows.
+
+**Ambiguity**
+
+| Situation | Required behaviour |
+|---|---|
+| Two or more runnable projects in the resolved directory | Prompt with a QuickPick listing project file names; cancelling starts nothing |
+| Two or more runnable projects in the workspace, no active document | Prompt; cancelling starts nothing |
+| Zero runnable projects | Exactly one warning: `No runnable .NET project or script found for the active document.` |
+| Active document outside every workspace folder | Exactly one warning; MUST NOT silently fall back to `workspaceFolders[0]` |
+| No active editor and no unambiguous startup project | Exactly one warning; MUST NOT start a session |
+
+A **runnable project** is one whose build output is an executable assembly — an `OutputType` of `Exe` or `WinExe`, evidenced on disk by a `<name>.runtimeconfig.json` beside `<name>.dll`. A library MUST NOT be offered as a launch target.
+
+### Build and output resolution before launch `[DEBUG-FEATURES-LAUNCH-BUILD]`
+
+**Output path resolution**
+
+The assembly path MUST come from MSBuild, never from a guessed directory layout:
+
+```
+dotnet msbuild <project> -getProperty:TargetPath -getProperty:TargetFramework -getProperty:OutputType
+```
+
+| Case | Requirement |
+|---|---|
+| Single-TFM project | `TargetPath` is authoritative |
+| Multi-targeted project | Re-query with `-p:TargetFramework=<tfm>`; a bare `-getProperty:TargetPath` returns **empty** and exit 0 |
+| Custom `AssemblyName` | Honoured — the file name is not the project name |
+| Custom `OutputPath` / `BaseOutputPath` / `ArtifactsPath` | Honoured |
+| `RuntimeIdentifier` set | Honoured — output gains a RID segment |
+| Non-Debug configuration | Honoured |
+
+A hardcoded TFM list (`net10.0`, `net9.0`, `net8.0`) with a fixed `bin/Debug/<tfm>/<basename>.dll` layout is non-conforming: it fails for `net7.0`, `netstandard`, custom output paths, custom assembly names and Release builds, and it returns a **non-existent path** as if it had succeeded.
+
+**Multi-TFM selection**: prefer the TFM whose output already exists; if several exist, prompt; if none, use the first `TargetFrameworks` entry.
+
+**Implicit build**
+
+1. Launch and run MUST build first, using SharpLsp's own contributed task type `sharplsp-build`. Referencing `dotnet: build` is non-conforming — that task type is contributed by the proprietary Microsoft C# extension, and on a SharpLsp-only install VS Code fails the pre-launch step with `Could not find the task 'dotnet: build'.`
+2. `contributes.taskDefinitions` MUST declare `sharplsp-build` so the task is referenceable from `tasks.json` and from `preLaunchTask`.
+3. After the build step the resolved `program` MUST exist on disk. If it does not, the session MUST NOT start; show `Build produced no output for <project>.`
+4. The build MUST run **once**. Invoking a terminal build and a headless build for the same request is non-conforming: two MSBuild processes race on the same `obj/` lock files.
+
+### Run without debugging `[DEBUG-FEATURES-LAUNCH-NODEBUG]`
+
+Ctrl/Cmd+F5 is `workbench.action.debug.start` invoked with `{ noDebug: true }`. VS Code stamps `noDebug` onto the configuration **before** the provider chain runs, so the provider observes `config.noDebug === true` and the value survives into `session.configuration.noDebug`.
+
+| Surface | Required behaviour |
+|---|---|
+| Ctrl/Cmd+F5, no launch.json | Provider receives `{ noDebug: true }`; resolves exactly as F5 but the session runs without breakpoints |
+| `sharplsp.runProgram` | Calls `startDebugging(folder, config, { noDebug: true })` — same resolved target as `sharplsp.debugProgram` |
+| `sharplsp.debugProgram` | Calls `startDebugging(folder, config)`; the session's `noDebug` MUST NOT be `true` |
+
+**Rules**
+
+1. Run and debug MUST resolve the identical target. A user who can debug a project can run it, and vice versa.
+2. Run MUST go through `vscode.debug.startDebugging` with `noDebug: true`, not a bare terminal, so that the session is observable, cancellable from the debug toolbar, and routed through [DEBUG-FEATURES-LAUNCH-OUTPUT]. Script targets are the sole exception — see [DEBUG-FEATURES-LAUNCH-SCRIPT].
+3. `noDebug` is only ever **set** by VS Code, never cleared. Passing `{ noDebug: false }` over a configuration that already carries `noDebug: true` leaves it true; the provider MUST NOT rely on `noDebug: false` to mean "debug".
+4. The return value of `startDebugging` MUST be observed. A `false` result means the session was refused; the user MUST be told, not left with a silent no-op.
+
+### Single-file and script targets `[DEBUG-FEATURES-LAUNCH-SCRIPT]`
+
+When [DEBUG-FEATURES-LAUNCH-TARGET]'s cone search finds no owning project, the document kind decides the run strategy per [SCRIPT-DETECT].
+
+| Document kind | Run | Debug |
+|---|---|---|
+| `CSharpFileBasedApp` (`.cs`, no owning project) | `dotnet run --file <abs path>` | Supported: build with `dotnet build <abs path> --artifacts-path <dir>`, launch `<dir>/bin/<config>/<name>.dll` |
+| `FSharpScript` (`.fsx`, `.fsscript`) | `dotnet fsi --exec <abs path>` | **Not supported** — named message |
+| `CSharpScript` (`.csx`) | `dotnet-script <abs path>` when that tool resolves | **Not supported** — named message |
+| `.csx` with no `dotnet-script` | Named message naming the missing tool | Same |
+| `.fs` with no owning project | Named message — F# has no file-based-app model | Same |
+| Any other language | Named message; no session, no task | Same |
+
+**Rules**
+
+1. Script and file-based runs MUST be dispatched as a `vscode.Task` with a `ShellExecution`/`ProcessExecution`, not by typing into a terminal. The command and arguments are then observable, the exit code is reported, and the run is cancellable.
+2. The file-based-app command MUST be `dotnet run --file <abs path>`. The positional form `dotnet run <path>` is non-conforming: inside a directory that contains a project, `dotnet` runs **the project** and passes the path as an application argument, silently launching the wrong program.
+3. `dotnet build <file>.cs` MUST be given an explicit `--artifacts-path`. The default output lands in a per-platform, SHA-256-keyed runfile cache whose location differs on Windows, macOS and Linux; an explicit path removes the platform split and gives the DAP `launch` request a stable `program`.
+4. File-based output uses `bin/<configuration-lowercased>/<name>.dll` with **no TFM segment** — unlike a project's `bin/Debug/<tfm>/`. The two layouts MUST NOT share a path builder.
+5. `.fsx` debugging is refused, not attempted. `dotnet fsi` writes no assembly and no PDB to disk (the script image is loaded from a byte array, or emitted dynamically under `--multiemit-`), so there is no `program` a `launch` request could name.
+6. Every unsupported combination produces exactly one user-visible message. A silent no-op is non-conforming.
+7. `<app>.run.json` is a first-party launch-profile file for file-based apps and MUST be read alongside `Properties/launchSettings.json` — see [DEBUG-FEATURES-LAUNCH-PROFILES].
+
+### launchSettings.json profiles `[DEBUG-FEATURES-LAUNCH-PROFILES]`
+
+**Discovery**
+
+| Target | Profile file |
+|---|---|
+| Project | `<project directory>/Properties/launchSettings.json` |
+| File-based app | `<entry file directory>/<name>.run.json` |
+
+The profile file belongs to the **resolved project**, not the workspace root. A resolver that only probes `<workspaceRoot>/Properties/launchSettings.json` silently drops every environment variable, argument and URL for the near-universal `src/App/App.csproj` layout.
+
+**Mapping**
+
+| Profile field | Configuration field | Rule |
+|---|---|---|
+| `commandLineArgs` | `args` | Shell-correct tokenization — see below |
+| `environmentVariables` | `env` | Merged; an explicit `env` in the configuration wins per key |
+| `applicationUrl` | `env.ASPNETCORE_URLS` | Verbatim, including the `;`-separated multi-URL form |
+| `commandName: "Project"` | — | Eligible |
+| `commandName: "Executable"`, `"IISExpress"`, other | — | Ignored for a project launch |
+| `launchBrowser`, `launchUrl` | — | Out of scope; MUST NOT crash |
+
+**Rules**
+
+1. Arguments MUST be tokenized with a real shell-argument parser that honours quoting and escapes. `commandLineArgs.split(' ')` is non-conforming: `--name "John Smith"` becomes three broken tokens with embedded quote characters, so any profile containing a path with a space launches with the wrong `argv`.
+2. Profiles apply only to `request: "launch"`. An `attach` configuration receives no `args` and no `env`.
+3. When more than one `Project` profile exists, the user picks. Silently taking the first is non-conforming.
+4. Parsing MUST be total. `{"profiles": null}`, `{"profiles": "text"}`, `{"profiles": [1,2]}`, a truncated document and a missing file all yield **no profiles** and no exception. A type guard that checks only for the presence of a `profiles` key is unsound — it admits `null` and throws downstream in `Object.entries`.
+5. A candidate path that exists but is not a launch-settings document MUST NOT abort the scan; the resolver continues to the next candidate.
+
+### Debuggee output routing `[DEBUG-FEATURES-LAUNCH-OUTPUT]`
+
+| `console` value | Destination |
+|---|---|
+| `internalConsole` | VS Code Debug Console; no terminal input |
+| `integratedTerminal` | VS Code integrated terminal; stdin works — **default** |
+| `externalTerminal` | OS terminal window |
+
+**Rules**
+
+1. `console` MUST be declared in `contributes.debuggers[].configurationAttributes.launch.properties` with those three values and a default of `integratedTerminal`. A console application that reads from stdin is unusable under `internalConsole`.
+2. Every attribute the resolver writes MUST be declared in `configurationAttributes`. Writing `justMyCode` while leaving it undeclared makes `launch.json` IntelliSense flag a valid, extension-authored attribute as an error.
+3. The launch schema declared in the manifest MUST match this specification's schema: `program`, `args`, `cwd`, `env`, `stopAtEntry`, `console`, `hotReload`, `justMyCode`, `requireExactSource`, `symbolOptions`.
+4. The debug type MUST be a single value across the manifest, the constants module and this specification.
+
+### Dynamic and initial configurations `[DEBUG-FEATURES-LAUNCH-DYNAMIC]`
+
+`DebugConfigurationProviderTriggerKind` selects **only** when `provideDebugConfigurations` is called; it never affects `resolveDebugConfiguration`.
+
+| Trigger kind | Calls `provideDebugConfigurations` when | Required registration |
+|---|---|---|
+| `Initial` (1, the default) | VS Code generates a new `launch.json` | Registered |
+| `Dynamic` (2) | The user opens "Show all automatic debug configurations" / "Select and Start Debugging" | Registered |
+
+**Rules**
+
+1. The provider MUST be registered for **both** trigger kinds. Registered for `Initial` alone, SharpLsp never appears in the dynamic launch dropdown, so the only way to run without a `launch.json` is the F5 auto-pick.
+2. `onDebugDynamicConfigurations:sharplsp-coreclr` and `onDebugResolve:sharplsp-coreclr` MUST be declared as activation events, so the provider is discoverable **before** activation rather than relying on `onStartupFinished`.
+3. `contributes.debuggers[].initialConfigurations` MUST be present. It supplies the generated `launch.json` body and makes the debugger a candidate in the "Select debugger" fallback list.
+4. `contributes.debuggers[].languages` drives the F5 auto-pick and MUST list every language the debugger serves.
+5. `configurationSnippets` MUST agree with the resolver's own defaults. A snippet naming a target framework the resolver does not prefer teaches users a path that will not resolve.
+6. `provideDebugConfigurations` MUST resolve the launch target once per invocation, not once per profile.
+
+### Run and debug commands and menus `[DEBUG-FEATURES-LAUNCH-CONTRIBUTIONS]`
+
+| Command id | Title | Behaviour |
+|---|---|---|
+| `sharplsp.runProgram` | Run Without Debugging | [DEBUG-FEATURES-LAUNCH-NODEBUG] |
+| `sharplsp.debugProgram` | Debug Program | [DEBUG-FEATURES-LAUNCH-NODEBUG] |
+
+These ids supersede the `sharplsp.run` / `sharplsp.debug` names in [SE-ACTIONS-RUN-DEBUG]; that section is amended to match, keeping the `CMD_<NAME> = 'sharplsp.<camelCase>'` convention of the shipped `sharplsp.debugProgram`.
+
+**Menu placement**
+
+| Menu | Items | `when` | Group |
+|---|---|---|---|
+| `editor/title/run` | `sharplsp.runProgram`, `sharplsp.debugProgram` | `resourceLangId in sharplsp.runnableLangIds` | `navigation@1`, `navigation@2` |
+| `editor/context` | `sharplsp.runProgram`, `sharplsp.debugProgram` | same | `navigation@1`, `navigation@2` |
+| `view/item/context` | `sharplsp.runProgram`, `sharplsp.debugProgram` | `view == sharplsp.solutionExplorer && viewItem == project` | `3_run@1`, `3_run@2` |
+
+`editor/title/run` is the "Run or Debug..." split button in the editor title bar — the surface C# Dev Kit and Python users reach for. VS Code core contributes nothing to it, so it is empty unless SharpLsp fills it; the highest-sorted item becomes the button's default action.
+
+**Rules**
+
+1. Both commands MUST be contributed in `contributes.commands` so they appear in the Command Palette.
+2. Command ids MUST be referenced from the constants module, never as inline string literals at the registration site. A constant that names a command which is neither registered nor contributed is dead and MUST be removed.
+3. Every command registered in code MUST be contributed in the manifest, and every contributed command MUST be registered.
 
 ### Breakpoints `[DEBUG-FEATURES-BREAKPOINTS]`
 
@@ -186,6 +414,24 @@ For Phase Four logpoints, `DapRouter` rewrites `setBreakpoints` requests contain
 3. Returns `false` so execution is never paused
 
 The debug output becomes a DAP `output` event. Hit conditions accept `>`, `>=`, `<`, `<=`, `==`, and `%`. Phase Five uses `ICorDebugBreakpoint`, immediate `ICorDebugEval`, and `ICorDebugProcess::Continue` without a visible pause.
+
+### Breakpoint language contribution `[DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION]`
+
+VS Code gates every breakpoint UI entry point — gutter click, gutter context menu, F9, conditional breakpoint, logpoint — on `canSetBreakpointsIn`, which consults the `contributes.breakpoints` set. With no entry for a language, and with the default `debug.allowBreakpointsEverywhere` of `false`, **breakpoints cannot be set in that language at all**.
+
+```json
+"breakpoints": [
+  { "language": "csharp" },
+  { "language": "fsharp" }
+]
+```
+
+**Rules**
+
+1. `contributes.breakpoints` MUST list `csharp` and `fsharp`. `contributes.debuggers[].languages` is a different contribution point and does not grant breakpoint permission.
+2. The entries MUST be unconditional. A `when` clause tied to server state makes the breakpoint gutter appear and disappear as the language server cycles.
+3. Without this contribution, F# breakpoints work only by accident — the built-in `ms-vscode.js-debug` extension happens to contribute `fsharp` — while C# breakpoints are impossible. That asymmetry inverts the project's F#-first commitment and is non-conforming.
+4. `vscode.debug.addBreakpoints()` **bypasses** this gate, so a test that adds a breakpoint through the API and asserts `vscode.debug.breakpoints.length` passes while the product is broken. Conformance is asserted against the manifest contribution itself.
 
 ### Stepping `[DEBUG-FEATURES-STEPPING]`
 
@@ -337,7 +583,7 @@ SharpLsp creates the SSH tunnel; DapRouter connects to its local forwarded socke
 
 ```json
 {
-  "type": "sharplsp",
+  "type": "sharplsp-coreclr",
   "request": "attach",
   "processId": 1234,
   "remote": {

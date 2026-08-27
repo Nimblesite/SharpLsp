@@ -120,11 +120,11 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | Test discovery (xUnit, NUnit, MSTest) | Yes | Yes | Done — `[TEST-DISCOVERY-FQN]` |
-| Run tests from editor | Yes | No | **MISSING** |
-| Run tests from Test Explorer | Yes | No | **MISSING** |
-| Debug tests | Yes | No | **MISSING** |
-| Code coverage visualization | Yes | No | **MISSING** |
-| Test result display | Yes | No | **MISSING** |
+| Run tests from editor | Yes | Yes | Done — test-status CodeLens, `[TEST-STATUS-LENS]` |
+| Run tests from Test Explorer | Yes | Yes | Done — one `dotnet test` per selection, `[TEST-RUN-TRX]` |
+| Debug tests | Yes | Partial | **PARTIAL** — the Debug profile opens a `dotnet test --filter` terminal; no debugger attach yet |
+| Code coverage visualization | Yes | Yes | Done — Cobertura via `--collect:XPlat Code Coverage`, `[TEST-COVERAGE]` |
+| Test result display | Yes | Yes | Done — per-test pass/fail/skip + duration + assertion text from TRX, `[TEST-RUN-TRX]` |
 | bUnit support | Yes | No | **MISSING** |
 
 ### Debugging
@@ -259,12 +259,13 @@ Features users expect within the first day of use.
   - [x] xUnit test discovery and execution
   - [x] NUnit test discovery and execution
   - [x] MSTest test discovery and execution
-  - [ ] Run individual test, test class, test namespace
-  - [ ] Debug individual test
-  - [ ] Test result display (pass/fail/skip with duration)
-  - [ ] Editor decorations (green play button, red/green indicators)
-  - [ ] F# test framework support (Expecto, FsCheck)
-  - [ ] Code coverage integration (optional)
+  - [x] Run an individual test or any selection in ONE `dotnet test` invocation, spec `[TEST-RUN-TRX]`
+  - [x] VSTest filter escaping so NUnit `[TestCase]` names run at all, spec `[TEST-FILTER-ESCAPE]`
+  - [ ] Debug individual test (the Debug profile opens a `dotnet test` terminal; no debugger attach yet)
+  - [x] Test result display (pass/fail/skip with duration and the real assertion text), spec `[TEST-RUN-TRX]`
+  - [x] Editor decorations (green play button, red/green/skip indicators), spec `[TEST-STATUS-LENS]`
+  - [ ] F# test framework support (Expecto, FsCheck) — tagged in the tree, not yet run-verified
+  - [x] Code coverage integration, spec `[TEST-COVERAGE]`
 
 - [ ] **P2.3: Build Integration**
   - [ ] Build command (`dotnet build`) from Command Palette

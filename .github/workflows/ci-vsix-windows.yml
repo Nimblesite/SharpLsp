@@ -6,8 +6,9 @@
 # The transport job ([DIST-CI-WIN-TRANSPORT], ci-dotnet.yml) proves win32 named
 # pipes carry frames. This workflow proves the whole EDITOR EXPERIENCE works on
 # top of them: the VS Code end-to-end suite is sliced into feature chunks
-# (debugging, profiling, test explorer, solution tree, scaffolding, NuGet, C#
-# LSP, F# LSP, lifecycle) and every chunk runs as its own Windows job, driving
+# (debugging, running/debugging a program, profiling, test explorer, solution
+# tree, scaffolding, NuGet, C# LSP, F# LSP, lifecycle) and every chunk runs as
+# its own Windows job, driving
 # the REAL LSP — release-built `sharplsp` host plus the Roslyn and FCS sidecars
 # — inside the real VS Code extension host. Ubuntu's `test-vsix` cannot exercise
 # any of that on win32.
@@ -80,8 +81,8 @@ jobs:
     # TIMEOUT EXCEPTION: a chunk installs npm deps, compiles + bundles the
     # extension, downloads the VS Code test host, then runs its slice against
     # real Roslyn/FCS sidecars loading real solutions. The heaviest chunks
-    # (debug, profiler, packages) shell out to `dotnet build` / `dotnet test` /
-    # `dotnet new` per test.
+    # (rundebug, rundebug-commands, testexplorer*, profiler, packages) shell out
+    # to `dotnet build` / `dotnet test` / `dotnet run` / `dotnet new` per test.
     timeout-minutes: 40
     strategy:
       # Every chunk is an independent feature area: one failure must not cancel

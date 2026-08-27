@@ -14,6 +14,73 @@ Goal: Ship a production-quality debugging experience for all editors using netco
 
 ---
 
+### 4.0 VS Code Run and Debug Surface
+
+The editor-side launch surface, ahead of any DapRouter work. Today F5 throws
+`TypeError: Cannot read properties of undefined (reading 'length')` before a session can
+start, there is no run command at all, and single-file C#/F# sources cannot be run.
+
+Spec: [DEBUG-FEATURES-LAUNCH-NOCONFIG], [DEBUG-FEATURES-LAUNCH-TARGET],
+[DEBUG-FEATURES-LAUNCH-BUILD], [DEBUG-FEATURES-LAUNCH-NODEBUG],
+[DEBUG-FEATURES-LAUNCH-SCRIPT], [DEBUG-FEATURES-LAUNCH-PROFILES],
+[DEBUG-FEATURES-LAUNCH-OUTPUT], [DEBUG-FEATURES-LAUNCH-DYNAMIC],
+[DEBUG-FEATURES-LAUNCH-CONTRIBUTIONS], [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION].
+
+**Tests first.** The suites below are written and gated on Windows CI; they fail today and
+are the acceptance criteria for every unchecked item that follows.
+
+- [x] Write the spec sections above from the VS Code launch.json standards
+- [x] `debug-e2e.test.ts` — the F5 / no-launch.json resolve contract, idempotency, `noDebug`
+- [x] `debug-adapter-e2e.test.ts` — netcoredbg path resolution (moved out of the 613-line suite)
+- [x] `run-debug-profiles.test.ts` — `launchSettings.json` and `<app>.run.json` parsing
+- [x] `run-debug-target.test.ts` — the [SCRIPT-CONE] walk and active-document sensitivity
+- [x] `run-debug-build.test.ts` — MSBuild output resolution
+- [x] `run-debug-commands.test.ts` — F5, Ctrl/Cmd+F5, `runProgram`, `debugProgram`
+- [x] `run-debug-scripts.test.ts` — file-based apps, `.fsx`, and the `.csx`/`.fs` refusals
+- [x] `run-debug-contributions.test.ts` — manifest conformance
+- [x] Gate all of the above on Windows CI (`debug`, `rundebug`, `rundebug-commands` chunks)
+
+**Production work.**
+
+- [ ] Detect "no configuration supplied" by absence, never by `.length` — fixes the F5 crash
+- [ ] Make `resolveDebugConfiguration` total: never throw, for any input including malformed
+      `launchSettings.json`; abort by returning `undefined` after a named message
+- [ ] Make `resolveDebugConfiguration` idempotent — VS Code re-enters the chain once the
+      provider sets `config.type`
+- [ ] Add `sharplsp.runProgram`, registered and contributed, honouring `noDebug: true`
+- [ ] Observe the `startDebugging` `Promise<boolean>` and report a refusal instead of
+      discarding it
+- [ ] Extract ONE launch-target resolver shared by F5, both commands and the Solution Explorer
+- [ ] Anchor target resolution on the active document; mirror [SCRIPT-CONE] exactly
+      (`.sln`/`.slnx`, `.git`, workspace-root containment on normalized real paths)
+- [ ] Prompt on ambiguity; reject libraries as launch targets; never fall back to
+      `workspaceFolders[0]` for a document outside every folder
+- [ ] Resolve the assembly path from MSBuild (`-getProperty:TargetPath`), not a hardcoded
+      TFM list and `bin/Debug/<tfm>/` layout
+- [ ] Build before launching, exactly once, through the contributed `sharplsp-build` task
+      type; drop the hardcoded `preLaunchTask: 'dotnet: build'`, which no installed extension
+      contributes
+- [ ] Verify the resolved `program` exists after the build; refuse with a named message if not
+- [ ] Run C# file-based apps with `dotnet run --file <abs path>` (never the positional form)
+      and debug them via `dotnet build <file> --artifacts-path <dir>`
+- [ ] Run `.fsx` with `dotnet fsi --exec`; refuse `.fsx` debugging with a named message
+- [ ] Refuse `.csx` with a message naming the missing `dotnet-script` tool
+- [ ] Dispatch script runs as a `vscode.Task`, not `Terminal.sendText`, so command, args and
+      exit code are observable
+- [ ] Read profiles from the RESOLVED project's `Properties/launchSettings.json` and a
+      file-based app's `<name>.run.json`; tokenize `commandLineArgs` with a real shell-argument
+      parser; map `applicationUrl` to `ASPNETCORE_URLS`; prompt when several `Project` profiles exist
+- [ ] Make `isLaunchSettings` sound — reject `{"profiles": null}`, string and array forms
+- [ ] Contribute `breakpoints` for `csharp` and `fsharp` — without it breakpoints cannot be set
+      in either language on a standalone install
+- [ ] Contribute `taskDefinitions` for `sharplsp-build`
+- [ ] Declare every attribute the resolver writes in `configurationAttributes` (`console`,
+      `justMyCode`, `hotReload`, `requireExactSource`, `symbolOptions`)
+- [ ] Register the provider for `Dynamic` as well as `Initial`, and declare the
+      `onDebugResolve:` / `onDebugDynamicConfigurations:` activation events
+- [ ] Add `initialConfigurations`; align `configurationSnippets` with the resolver's TFM
+- [ ] Contribute both commands to `editor/title/run`, `editor/context` and `view/item/context`
+
 ### 4.1 Infrastructure
 
 - [ ] Add `DapRouter` module to the Rust host (`crates/dap/`)

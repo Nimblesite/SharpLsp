@@ -25,21 +25,22 @@ The included dev container supplies the Rust, .NET, Node, and test tooling used 
 
 ## Repository Layout
 
-```text
-SharpLsp/
-├── Cargo.toml                    # Root Rust workspace manifest
-├── src/
-│   ├── sharplsp/                 # Rust host, build script, and Rust E2E tests
-│   ├── sidecars/                 # C#, F#, and shared .NET sidecars/tests
-│   ├── editors/
-│   │   ├── vscode/               # VS Code extension
-│   │   ├── zed/                  # Zed integration source
-│   │   └── rider/                # Rider integration source
-│   ├── examples/                 # Example solutions and configuration
-│   ├── fixtures/                 # Test and real-world fixtures
-│   └── website/                  # Eleventy documentation site
-├── docs/                         # Technical specifications and plans
-└── tools/                        # Build, packaging, coverage, and shared make helpers
+```mermaid
+flowchart LR
+    ROOT["SharpLsp/"]
+    ROOT --> SRC["src/"]
+    SRC --> EDITORS["editors/"]
+    ROOT --> CARGO["Cargo.toml<br/>Root Rust workspace manifest"]
+    ROOT --> DOCS["docs/<br/>Technical specifications and plans"]
+    ROOT --> TOOLS["tools/<br/>Build, packaging, coverage, and shared make helpers"]
+    SRC --> HOST["sharplsp/<br/>Rust host, build script, and Rust E2E tests"]
+    SRC --> SIDECARS["sidecars/<br/>C#, F#, and shared .NET sidecars/tests"]
+    SRC --> EXAMPLES["examples/<br/>Example solutions and configuration"]
+    SRC --> FIXTURES["fixtures/<br/>Test and real-world fixtures"]
+    SRC --> WEBSITE["website/<br/>Eleventy documentation site"]
+    EDITORS --> VSCODE["vscode/<br/>VS Code extension"]
+    EDITORS --> ZED["zed/<br/>Zed integration source"]
+    EDITORS --> RIDER["rider/<br/>Rider integration source"]
 ```
 
 ## Build and Test

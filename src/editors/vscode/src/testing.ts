@@ -1,11 +1,25 @@
 import * as vscode from 'vscode';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { execFile } from 'child_process';
+import { effect } from './signals';
 import { info } from './log';
 import * as state from './state';
-import { listTests } from './test-discovery';
-import { findCoberturaFile, parseCoberturaXml, loadDetailedCoverage } from './test-coverage';
+import { listTests, type TestListing } from './test-discovery';
+import { runTests, type TestRunOutcome } from './test-execution';
+import { filterExpression } from './test-filter';
+import type { TestOutcome } from './test-run-output';
+import { loadDetailedCoverage } from './test-coverage';
+import { addCoverage, cachedFrom, freshCoverageDir, reportResult } from './test-reporting';
+import { configureDotnet } from './dotnet-process';
+import {
+  discoveryTargets,
+  dirOf,
+  isExpectoTest,
+  isFsCheckTest,
+  runCwd,
+  runTarget,
+} from './test-targets';
+
+export { buildFilterArgs } from './test-execution';
+export { isExpectoTest, isFsCheckTest } from './test-targets';
 
 /**
  * Debounce for reactive re-discovery. Loading a solution can churn the
@@ -16,6 +30,9 @@ const DISCOVERY_DEBOUNCE_MS = 1_000;
 
 /** Cached result for a single test, keyed by fully qualified name. */
 export interface CachedTestResult {
+  /** How the run ended, as VS Code's Testing API models it. */
+  readonly outcome: TestOutcome;
+  /** True only for a genuine pass — a SKIP is not a pass and not a failure. */
   readonly passed: boolean;
   readonly duration?: number | undefined;
   readonly message?: string | undefined;
@@ -23,11 +40,12 @@ export interface CachedTestResult {
 
 /**
  * Test controller integrating with VS Code's Testing API.
- * Discovers tests by fully-qualified name (see `test-discovery.ts`) and runs them
- * via `dotnet test --filter FullyQualifiedName=`.
+ * Discovers tests by fully-qualified name (see `test-discovery.ts`) and runs
+ * them in a single `dotnet test` invocation, reading per-test outcomes back out
+ * of the TRX report (see `test-execution.ts`).
  * Supports xUnit, NUnit, MSTest, Expecto, and FsCheck.
  *
- * Implements [TEST-DISCOVERY-FQN].
+ * Implements [TEST-EXPLORER], [TEST-REACTIVITY] and [TEST-RUN-TRX].
  */
 export class SharpLspTestController {
   private readonly controller: vscode.TestController;
@@ -36,6 +54,8 @@ export class SharpLspTestController {
   private readonly resultsChangedEmitter = new vscode.EventEmitter<void>();
   /** Cancels the reactive solution-change subscription. */
   private readonly solutionSubscription: () => void;
+  /** Cancels the reactive `dotnet` executable subscription. */
+  private readonly dotnetSubscription: () => void;
   /** Pending debounced discovery timer, if any. */
   private debounceHandle: ReturnType<typeof setTimeout> | undefined;
   /** Monotonic id so a superseded discovery sweep never clobbers a newer one. */
@@ -67,6 +87,19 @@ export class SharpLspTestController {
     return next;
   }
 
+  /**
+   * Resolve once no `dotnet` invocation is outstanding. Tests use this to settle
+   * reactive re-discovery before touching the fixture on disk; a `dotnet test`
+   * left pointing at a deleted directory hangs and poisons the next run.
+   */
+  public async whenIdle(): Promise<void> {
+    let tail: Promise<unknown> | undefined;
+    while (tail !== this.dotnetQueue) {
+      tail = this.dotnetQueue;
+      await tail;
+    }
+  }
+
   /** Look up the last known result for a fully qualified test name. */
   public getResult(fullyQualifiedName: string): CachedTestResult | undefined {
     return this.results.get(fullyQualifiedName);
@@ -82,45 +115,33 @@ export class SharpLspTestController {
     return this.controller.items;
   }
 
+  /**
+   * The registered run profiles — Run, Debug and Run with Coverage, in that
+   * order. Exposed so tests can invoke the very handler VS Code invokes when the
+   * user presses the corresponding button in the Test Explorer.
+   */
+  public get profiles(): readonly vscode.TestRunProfile[] {
+    return this.runProfiles;
+  }
+
+  /** Create a TestItem for `fullName` without adding it to the tree. */
+  public createItem(fullName: string, uri: vscode.Uri): vscode.TestItem {
+    return this.makeTestItem(fullName, uri);
+  }
+
   constructor() {
     this.controller = vscode.tests.createTestController(
       'sharplsp.testController',
       'SharpLsp Tests',
     );
-
-    this.runProfiles.push(
-      this.controller.createRunProfile(
-        'Run',
-        vscode.TestRunProfileKind.Run,
-        async (request, token) => {
-          await this.runTests(request, token);
-        },
-        true,
-      ),
-    );
-
-    this.runProfiles.push(
-      this.controller.createRunProfile(
-        'Debug',
-        vscode.TestRunProfileKind.Debug,
-        async (request, token) => {
-          await this.debugTests(request, token);
-        },
-      ),
-    );
-
-    const coverageProfile = this.controller.createRunProfile(
-      'Run with Coverage',
-      vscode.TestRunProfileKind.Coverage,
-      async (request, token) => {
-        await this.runTestsWithCoverage(request, token);
-      },
-    );
-    coverageProfile.loadDetailedCoverage =
-      // eslint-disable-next-line @typescript-eslint/require-await -- VS Code API requires Thenable return but lookup is synchronous
-      async (_run, fileCoverage, _token) => loadDetailedCoverage(fileCoverage);
-    this.runProfiles.push(coverageProfile);
-
+    this.registerProfiles();
+    // `dotnet` is not necessarily on `$PATH`: [DIST-RUNTIME-ACQUIRE] resolves an
+    // SDK that may live anywhere and publishes its path on a signal. Track it
+    // reactively so discovery and runs follow a late or re-acquired SDK instead
+    // of failing with ENOENT on a bare `dotnet`.
+    this.dotnetSubscription = effect(() => {
+      configureDotnet(state.dotnetPath.value);
+    });
     // VS Code's refresh affordance and the initial view reveal drive the first
     // discovery and mark the controller active.
     this.controller.refreshHandler = async (): Promise<void> => {
@@ -142,6 +163,38 @@ export class SharpLspTestController {
     });
   }
 
+  /** Run, Debug and Coverage, in the order the Test Explorer shows them. */
+  private registerProfiles(): void {
+    this.runProfiles.push(
+      this.controller.createRunProfile(
+        'Run',
+        vscode.TestRunProfileKind.Run,
+        async (request, token) => {
+          await this.runProfileHandler(request, token, false);
+        },
+        true,
+      ),
+      this.controller.createRunProfile(
+        'Debug',
+        vscode.TestRunProfileKind.Debug,
+        async (request, token) => {
+          await this.debugTests(request, token);
+        },
+      ),
+    );
+    const coverage = this.controller.createRunProfile(
+      'Run with Coverage',
+      vscode.TestRunProfileKind.Coverage,
+      async (request, token) => {
+        await this.runProfileHandler(request, token, true);
+      },
+    );
+    coverage.loadDetailedCoverage =
+      // eslint-disable-next-line @typescript-eslint/require-await -- VS Code API requires Thenable return but lookup is synchronous
+      async (_run, fileCoverage, _token) => loadDetailedCoverage(fileCoverage);
+    this.runProfiles.push(coverage);
+  }
+
   /** Mark the Test Explorer active and run a discovery sweep. */
   public async activateAndDiscover(): Promise<void> {
     this.active = true;
@@ -150,6 +203,7 @@ export class SharpLspTestController {
 
   public dispose(): void {
     this.solutionSubscription();
+    this.dotnetSubscription();
     if (this.debounceHandle !== undefined) {
       clearTimeout(this.debounceHandle);
     }
@@ -173,36 +227,49 @@ export class SharpLspTestController {
 
   /**
    * Discover every test in the loaded solution (or, absent one, each workspace
-   * folder) and replace the tree. A superseded sweep never clobbers a newer one.
+   * folder) and replace the tree. A superseded sweep never clobbers a newer one,
+   * and a sweep where NO target could be enumerated leaves the previous tree
+   * standing rather than blanking the view on a transient `dotnet` failure.
    */
   public async discover(): Promise<void> {
     const generation = ++this.discoverGeneration;
     const targets = discoveryTargets();
     const items: vscode.TestItem[] = [];
+    let anyOk = targets.length === 0;
     for (const target of targets) {
+      // A newer sweep supersedes this one: stop before paying for another build
+      // rather than enumerating targets whose results will be thrown away.
+      if (generation !== this.discoverGeneration) return;
+      const listing = await this.safeList(target);
+      anyOk = anyOk || listing.ok;
       const uri = vscode.Uri.file(dirOf(target));
-      for (const fqn of await this.safeList(target)) {
+      for (const fqn of listing.names) {
         items.push(this.makeTestItem(fqn, uri));
       }
     }
-    if (generation !== this.discoverGeneration) {
+    if (generation !== this.discoverGeneration) return;
+    this.applyDiscovery(items, anyOk, targets.length);
+  }
+
+  /** Replace the tree, unless nothing could be enumerated and one already exists. */
+  private applyDiscovery(items: vscode.TestItem[], anyOk: boolean, targetCount: number): void {
+    if (!anyOk && this.controller.items.size > 0) {
+      info(`Test discovery: every target failed; keeping ${String(this.controller.items.size)} item(s)`);
       return;
     }
     this.controller.items.replace(items);
     info(
-      `Test discovery: ${String(items.length)} test(s) from ${String(targets.length)} target(s)`,
+      `Test discovery: ${String(items.length)} test(s) from ${String(targetCount)} target(s)`,
     );
   }
 
-  /** List one target, swallowing failures into an empty result. */
-  private async safeList(target: string): Promise<string[]> {
-    try {
-      return await this.enqueue(async () => listTests(target, info));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      info(`Test discovery failed for ${target}: ${message}`);
-      return [];
+  /** List one target, logging whatever diagnostics the enumeration produced. */
+  private async safeList(target: string): Promise<TestListing> {
+    const listing = await this.enqueue(async () => listTests(target));
+    for (const warning of listing.warnings) {
+      info(`Test discovery (${target}): ${warning}`);
     }
+    return listing;
   }
 
   /** Build a flat TestItem for a fully-qualified name, tagging F# tests. */
@@ -217,164 +284,139 @@ export class SharpLspTestController {
     return item;
   }
 
-  private async runTests(
+  /** The Run and Run-with-Coverage profiles share every step but collection. */
+  private async runProfileHandler(
     request: vscode.TestRunRequest,
     token: vscode.CancellationToken,
+    coverage: boolean,
   ): Promise<void> {
     const run = this.controller.createTestRun(request);
     const tests = this.collectTests(request);
-
-    for (const test of tests) {
-      if (token.isCancellationRequested) {
-        break;
-      }
-      run.started(test);
-      const result = await this.executeTest(test.id, false);
-      this.results.set(test.id, result);
-      if (result.passed) {
-        run.passed(test, result.duration);
-      } else {
-        run.failed(test, new vscode.TestMessage(result.message ?? 'Test failed'), result.duration);
-      }
+    for (const test of tests) run.enqueued(test);
+    try {
+      await this.executeInto(run, tests, token, coverage);
+    } finally {
+      run.end();
+      this.resultsChangedEmitter.fire();
     }
-    run.end();
-    this.resultsChangedEmitter.fire();
+  }
+
+  /** Invoke `dotnet test` for `tests` and report every outcome onto `run`. */
+  private async executeInto(
+    run: vscode.TestRun,
+    tests: readonly vscode.TestItem[],
+    token: vscode.CancellationToken,
+    coverage: boolean,
+  ): Promise<void> {
+    const cwd = runCwd();
+    if (cwd === undefined) {
+      this.reportAll(run, tests, 'No workspace folder or solution');
+      return;
+    }
+    if (token.isCancellationRequested) return;
+    for (const test of tests) run.started(test);
+    const resultsDirectory = coverage ? freshCoverageDir(cwd) : undefined;
+    const target = runTarget();
+    const outcome = await this.enqueue(async () =>
+      runTests(tests.map((test) => test.id), cwd, {
+        coverage,
+        ...(resultsDirectory === undefined ? {} : { resultsDirectory }),
+        ...(target === undefined ? {} : { target }),
+      }),
+    );
+    this.reportOutcome(run, tests, outcome);
+    if (coverage && resultsDirectory !== undefined) addCoverage(run, resultsDirectory);
+  }
+
+  /** Map one invocation's TRX results onto the run and the result cache. */
+  private reportOutcome(
+    run: vscode.TestRun,
+    tests: readonly vscode.TestItem[],
+    outcome: TestRunOutcome,
+  ): void {
+    if (outcome.failure !== undefined) {
+      info(`Test run failed: ${outcome.failure}`);
+    }
+    for (const test of tests) {
+      const result = outcome.results.get(test.id);
+      if (result === undefined) {
+        this.reportMissing(run, test, outcome);
+        continue;
+      }
+      this.cache(test.id, cachedFrom(result));
+      reportResult(run, test, result);
+    }
+  }
+
+  /** A selected test the run never reported on: build failure or no match. */
+  private reportMissing(
+    run: vscode.TestRun,
+    test: vscode.TestItem,
+    outcome: TestRunOutcome,
+  ): void {
+    const message =
+      outcome.failure ?? `No result reported for ${test.id} (filter matched no test)`;
+    this.cache(test.id, { outcome: 'notRun', passed: false, message });
+    run.errored(test, new vscode.TestMessage(message));
+  }
+
+  /** Report the same hard failure against every selected test. */
+  private reportAll(
+    run: vscode.TestRun,
+    tests: readonly vscode.TestItem[],
+    message: string,
+  ): void {
+    for (const test of tests) {
+      this.cache(test.id, { outcome: 'notRun', passed: false, message });
+      run.errored(test, new vscode.TestMessage(message));
+    }
+  }
+
+  private cache(testId: string, result: CachedTestResult): void {
+    this.results.set(testId, result);
   }
 
   private async debugTests(
     request: vscode.TestRunRequest,
-    _token: vscode.CancellationToken,
+    token: vscode.CancellationToken,
   ): Promise<void> {
     const tests = this.collectTests(request);
-    if (tests.length === 0) {
-      return;
-    }
-
-    // Debug the first selected test.
-    const first = tests[0];
-    if (first !== undefined) {
-      await this.executeTest(first.id, true);
-    }
+    await Promise.resolve();
+    if (tests.length === 0 || token.isCancellationRequested) return;
+    this.openDebugTerminal(tests.map((test) => test.id));
   }
 
+  /**
+   * Hand the SELECTION to a terminal the user can attach a debugger to — every
+   * selected test, not just the first, or a multi-test debug request would
+   * silently drop all but one. The filter value is escaped: an NUnit
+   * `[TestCase]` name contains parentheses, which VSTest's filter grammar would
+   * otherwise read as an expression.
+   */
+  private openDebugTerminal(testIds: readonly string[]): void {
+    const terminal = vscode.window.createTerminal('SharpLsp Test Debug');
+    terminal.show();
+    terminal.sendText(`dotnet test --filter "${filterExpression(testIds)}"`);
+  }
+
+  /**
+   * The tests a request selects: its `include` set (or the whole tree when it
+   * has none), minus everything the user explicitly EXCLUDED. Ignoring
+   * `exclude` runs tests the user just deselected in the Testing view.
+   */
   private collectTests(request: vscode.TestRunRequest): vscode.TestItem[] {
+    const excluded = new Set((request.exclude ?? []).map((item) => item.id));
     const tests: vscode.TestItem[] = [];
     if (request.include !== undefined) {
       for (const item of request.include) {
-        tests.push(item);
+        if (!excluded.has(item.id)) tests.push(item);
       }
-    } else {
-      this.controller.items.forEach((item) => tests.push(item));
+      return tests;
     }
+    this.controller.items.forEach((item) => {
+      if (!excluded.has(item.id)) tests.push(item);
+    });
     return tests;
-  }
-
-  private async runTestsWithCoverage(
-    request: vscode.TestRunRequest,
-    token: vscode.CancellationToken,
-  ): Promise<void> {
-    const run = this.controller.createTestRun(request);
-    const folder = vscode.workspace.workspaceFolders?.[0];
-    if (folder === undefined) {
-      run.end();
-      return;
-    }
-
-    const tests = this.collectTests(request);
-    for (const test of tests) {
-      run.started(test);
-    }
-
-    try {
-      if (token.isCancellationRequested) {
-        run.end();
-        return;
-      }
-
-      const resultsDir = path.join(folder.uri.fsPath, '.sharplsp-coverage');
-      const filterArgs = buildFilterArgs(tests);
-      const args = [
-        'test',
-        ...filterArgs,
-        '--collect:XPlat Code Coverage',
-        `--results-directory=${resultsDir}`,
-        '--verbosity',
-        'quiet',
-      ];
-
-      const output = await this.enqueue(async () => runProcess('dotnet', args, folder.uri.fsPath));
-      const passed = output.includes('Passed!');
-
-      for (const test of tests) {
-        const result: TestResult = { passed, duration: undefined };
-        this.results.set(test.id, result);
-        if (passed) {
-          run.passed(test);
-        } else {
-          run.failed(test, new vscode.TestMessage('Test failed'));
-        }
-      }
-
-      const coverageFile = findCoberturaFile(resultsDir);
-      if (coverageFile !== undefined) {
-        const fileCoverages = parseCoberturaXml(coverageFile);
-        for (const fc of fileCoverages) {
-          run.addCoverage(fc);
-        }
-        info(`Coverage loaded: ${String(fileCoverages.length)} files`);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      info(`Coverage run failed: ${message}`);
-      for (const test of tests) {
-        run.failed(test, new vscode.TestMessage(message));
-      }
-    }
-
-    run.end();
-    this.resultsChangedEmitter.fire();
-  }
-
-  private async executeTest(
-    testId: string,
-    debug: boolean,
-    cwdOverride?: string,
-  ): Promise<TestResult> {
-    try {
-      const cwd = cwdOverride ?? runCwd();
-      if (cwd === undefined) {
-        return { passed: false, message: 'No workspace folder or solution' };
-      }
-
-      if (debug) {
-        const terminal = vscode.window.createTerminal('SharpLsp Test Debug');
-        terminal.show();
-        terminal.sendText(`dotnet test --filter "FullyQualifiedName=${testId}"`);
-        return { passed: true };
-      }
-
-      const start = Date.now();
-      const output = await this.enqueue(async () =>
-        runProcess(
-          'dotnet',
-          ['test', '--filter', `FullyQualifiedName=${testId}`, '--verbosity', 'quiet'],
-          cwd,
-        ),
-      );
-      const duration = Date.now() - start;
-
-      const passed = output.includes('Passed!');
-      const failureMatch = /Failed\s+(.+)/g.exec(output);
-      return {
-        passed,
-        duration,
-        message: passed ? undefined : (failureMatch?.[1] ?? 'Test failed'),
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      info(`Test execution error for ${testId}: ${message}`);
-      return { passed: false, message: 'Test execution error' };
-    }
   }
 
   /**
@@ -383,78 +425,31 @@ export class SharpLspTestController {
    * used by callers targeting a project outside the workspace.
    */
   public async runSingle(testId: string, cwd?: string): Promise<CachedTestResult> {
-    const result = await this.executeTest(testId, false, cwd);
-    this.results.set(testId, result);
+    const folder = cwd ?? runCwd();
+    const result =
+      folder === undefined
+        ? { outcome: 'notRun' as const, passed: false, message: 'No workspace folder or solution' }
+        : await this.runOne(testId, folder, cwd === undefined);
+    this.cache(testId, result);
     this.resultsChangedEmitter.fire();
     return result;
   }
-}
 
-/** The paths to enumerate: the loaded solution, else each workspace folder. */
-function discoveryTargets(): string[] {
-  const solution = state.solutionPath.value;
-  if (solution !== undefined) {
-    return [solution];
+  /** One `dotnet test` invocation restricted to a single fully-qualified name. */
+  private async runOne(testId: string, cwd: string, useTarget: boolean): Promise<CachedTestResult> {
+    // Only the DEFAULT working directory implies the loaded solution. A caller
+    // that overrode `cwd` is pointing at a specific project, and naming the
+    // solution as well would run the wrong thing.
+    const target = useTarget ? runTarget() : undefined;
+    const outcome = await this.enqueue(async () =>
+      runTests([testId], cwd, target === undefined ? {} : { target }),
+    );
+    const result = outcome.results.get(testId);
+    if (result !== undefined) return cachedFrom(result);
+    const message = outcome.failure ?? `No result reported for ${testId}`;
+    info(`Test execution produced no result for ${testId}: ${message}`);
+    return { outcome: 'notRun', passed: false, duration: outcome.durationMs, message };
   }
-  return (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
-}
-
-/** Directory containing a target path (the path itself when it is a directory). */
-function dirOf(target: string): string {
-  try {
-    return fs.statSync(target).isDirectory() ? target : path.dirname(target);
-  } catch {
-    return path.dirname(target);
-  }
-}
-
-/** Working directory for `dotnet test` runs: the loaded solution's folder. */
-function runCwd(): string | undefined {
-  const solution = state.solutionPath.value;
-  if (solution !== undefined) {
-    return path.dirname(solution);
-  }
-  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-}
-
-interface TestResult {
-  passed: boolean;
-  duration?: number | undefined;
-  message?: string | undefined;
-}
-
-/** True when a line looks like a fully qualified test name (word chars/dots, contains a dot). */
-export function isTestName(line: string): boolean {
-  return /^[\w.]+$/.test(line) && line.includes('.');
-}
-
-/** True when a test name matches Expecto naming conventions. */
-export function isExpectoTest(name: string): boolean {
-  return name.includes('Expecto') || name.includes('testCase') || name.includes('testList');
-}
-
-/** True when a test name matches FsCheck property-test conventions. */
-export function isFsCheckTest(name: string): boolean {
-  return name.includes('FsCheck') || name.includes('Property');
-}
-
-async function runProcess(command: string, args: string[], cwd: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(command, args, { cwd, timeout: 60000 }, (error, stdout, stderr) => {
-      if (error !== null) {
-        reject(new Error(stderr !== '' ? stderr : error.message));
-      } else {
-        resolve(stdout);
-      }
-    });
-  });
-}
-
-/** Build `dotnet test --filter` args from selected test items (empty when none). */
-export function buildFilterArgs(tests: vscode.TestItem[]): string[] {
-  if (tests.length === 0) return [];
-  const names = tests.map((t) => `FullyQualifiedName=${t.id}`);
-  return ['--filter', names.join('|')];
 }
 
 /**

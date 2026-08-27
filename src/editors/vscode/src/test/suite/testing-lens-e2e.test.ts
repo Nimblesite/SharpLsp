@@ -20,7 +20,8 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { buildFilterArgs, isExpectoTest, isFsCheckTest, isTestName } from '../../testing.js';
+import { buildFilterArgs, isExpectoTest, isFsCheckTest } from '../../testing.js';
+import { isDiscoveredTestLine } from '../../test-discovery.js';
 import { findCoberturaFile, parseCoberturaXml } from '../../test-coverage.js';
 import {
   extractCSharpMethodName,
@@ -270,15 +271,39 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       'Passed!  - Failed: 0, Passed: 2',
     ];
 
-    const accepted = listing.filter((line) => isTestName(line));
+    // `isDiscoveredTestLine` is the predicate discovery actually applies to the
+    // `--list-tests` fallback listing. The suite used to assert a second,
+    // near-identical `isTestName` that nothing in production called any more —
+    // a green assertion over dead code.
+    const accepted = listing.filter((line) => isDiscoveredTestLine(line));
     assert.deepStrictEqual(accepted, [
       'Sample.Tests.CalculatorTests.Adds_TwoNumbers',
       'Sample.Tests.CalculatorTests.Adds_Theory',
     ]);
-    assert.strictEqual(isTestName('The following Tests are available:'), false);
-    assert.strictEqual(isTestName('Build succeeded.'), false);
-    assert.strictEqual(isTestName('JustAnIdentifierNoDot'), false);
-    assert.strictEqual(isTestName('Ns.Class.Param(x: 1)'), false);
+    assert.strictEqual(isDiscoveredTestLine('The following Tests are available:'), false);
+    assert.strictEqual(isDiscoveredTestLine('Build succeeded.'), false);
+    assert.strictEqual(isDiscoveredTestLine('Determining projects to restore...'), false);
+    assert.strictEqual(isDiscoveredTestLine('Passed!  - Failed: 0, Passed: 2'), false);
+    assert.strictEqual(isDiscoveredTestLine('JustAnIdentifierNoDot'), false);
+    assert.strictEqual(isDiscoveredTestLine('Ns.Class.Param(x: 1)'), false);
+    // A managed stack frame is dotted-identifier shaped, so it has to be
+    // rejected explicitly: accepting one makes a CRASHED `dotnet test` look
+    // like a successful enumeration to the salvage path.
+    assert.strictEqual(
+      isDiscoveredTestLine('at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs'),
+      false,
+      'a stack frame is never a test name',
+    );
+    assert.strictEqual(
+      isDiscoveredTestLine('Ns.Module.adds two numbers with spaces'),
+      true,
+      'an idiomatic F# backtick name carries spaces and must survive',
+    );
+    assert.strictEqual(
+      isDiscoveredTestLine('Proj -> C:\\out\\Proj.dll'),
+      false,
+      'the MSBuild output mapping is never a test name',
+    );
 
     // The same addTestItem tagging logic (Expecto || FsCheck => F#).
     const isFsharp = (name: string): boolean => isExpectoTest(name) || isFsCheckTest(name);

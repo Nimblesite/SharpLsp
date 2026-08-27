@@ -18,10 +18,13 @@ The **Rust LSP host** owns requests, target discovery, NuGet API calls, `dotnet`
 
 Implementations: [handlers.rs](../../src/sharplsp/src/nuget/handlers.rs), [nuget-browser.ts](../../src/editors/vscode/src/nuget-browser.ts), and the [host end-to-end tests](../../src/sharplsp/tests/nuget_e2e.rs).
 
-```
-Editor Webview ──postMessage──> Extension ──LSP request──> Rust Host
-                                                               ├── HTTP / dotnet list / dotnet restore
-                                                               └── IPC edit ──> C# Sidecar ──> MSBuild DOM
+```mermaid
+flowchart LR
+    WEBVIEW["Editor Webview"] -- postMessage --> EXT["Extension"]
+    EXT -- "LSP request" --> HOST["Rust Host"]
+    HOST --> NET["HTTP · dotnet list · dotnet restore"]
+    HOST -- "IPC edit" --> SIDECAR["C# Sidecar"]
+    SIDECAR --> DOM["MSBuild DOM"]
 ```
 
 ## [NUGET-XML-DOM] MSBuild XML Mutation
@@ -324,30 +327,25 @@ The NuGet browser uses a webview panel rendered by the editor extension and MUST
 
 ### [NUGET-WEBVIEW-LAYOUT] Layout Structure
 
-```
-+-----------------------------------------------------------------+
-| Header: [logo] [Browse|Installed] [Target ▾] [search] [refresh] |
-+---------------------------+-------------------------------------+
-| Package List              | Details Panel                       |
-|                           |                                     |
-| [Package Item]            | [Header]                            |
-| [Package Item] (selected) | [Install ⟳ / Version ⟳]             |
-| [Package Item]            | [Description]                       |
-| [Package Item]            | [Info Grid]                         |
-|                           | [Tags]                              |
-+---------------------------+-------------------------------------+
+```mermaid
+flowchart TB
+    HEADER["Header<br/>logo · Browse / Installed tabs · Target ▾ · search · refresh"]
+    HEADER --> LIST["Package List<br/>[Package Item]<br/>[Package Item] — selected<br/>[Package Item]<br/>[Package Item]"]
+    HEADER --> DETAILS["Details Panel<br/>[Header]<br/>[Install ⟳ / Version ⟳]<br/>[Description]<br/>[Info Grid]<br/>[Tags]"]
+    LIST -- "selected package" --> DETAILS
 ```
 
 Target dropdown contents (example):
 
-```
-Projects
-  ● Foo.csproj
-    Bar.fsproj
-    Baz.Tests.csproj
-Build Props
-    Directory.Build.props        (solution root)
-    src/Directory.Packages.props (CPM)
+```mermaid
+flowchart LR
+    TARGET["Target ▾"] --> PROJECTS["Projects"]
+    TARGET --> BUILDPROPS["Build Props"]
+    PROJECTS --> FOO["● Foo.csproj — selected"]
+    PROJECTS --> BAR["Bar.fsproj"]
+    PROJECTS --> BAZ["Baz.Tests.csproj"]
+    BUILDPROPS --> DBP["Directory.Build.props<br/>solution root"]
+    BUILDPROPS --> DPP["src/Directory.Packages.props<br/>CPM"]
 ```
 
 ### [NUGET-WEBVIEW-EXTENSION] Extension Responsibilities

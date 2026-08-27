@@ -2,6 +2,8 @@
  * Cobertura coverage report parsing for the Test Explorer's "Run with Coverage"
  * profile. Kept separate from test discovery/run so `testing.ts` stays focused
  * on the VS Code TestController wiring.
+ *
+ * Implements [TEST-COVERAGE].
  */
 
 import * as fs from 'node:fs';
@@ -36,16 +38,27 @@ const coberturaParser = new XMLParser({
   isArray: (tagName) => tagName === 'package' || tagName === 'class' || tagName === 'line',
 });
 
-/** Find a `coverage.cobertura.xml` one directory below `resultsDir`, or undefined. */
-export function findCoberturaFile(resultsDir: string): string | undefined {
-  if (!fs.existsSync(resultsDir)) return undefined;
-  const entries = fs.readdirSync(resultsDir);
-  for (const entry of entries) {
-    const sub = path.join(resultsDir, entry);
-    const candidate = path.join(sub, 'coverage.cobertura.xml');
-    if (fs.existsSync(candidate)) return candidate;
+/**
+ * EVERY `coverage.cobertura.xml` one directory below `resultsDir`.
+ *
+ * The collector writes one report per test project, each into its own
+ * run-id folder. Taking only the first — as this did — silently dropped every
+ * other project's coverage from a solution-wide run, and which one "first" meant
+ * depended on directory order.
+ */
+export function findCoberturaFiles(resultsDir: string): string[] {
+  if (!fs.existsSync(resultsDir)) return [];
+  const reports: string[] = [];
+  for (const entry of fs.readdirSync(resultsDir)) {
+    const candidate = path.join(resultsDir, entry, 'coverage.cobertura.xml');
+    if (fs.existsSync(candidate)) reports.push(candidate);
   }
-  return undefined;
+  return reports.sort();
+}
+
+/** The first `coverage.cobertura.xml` one directory below `resultsDir`. */
+export function findCoberturaFile(resultsDir: string): string | undefined {
+  return findCoberturaFiles(resultsDir)[0];
 }
 
 /** Parse a cobertura XML report into VS Code FileCoverage entries. */
