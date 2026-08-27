@@ -83,13 +83,17 @@ export class SessionReplayer {
     const args = isRecord(launch.arguments) ? launch.arguments : {};
     const program = typeof args.program === 'string' ? args.program : '';
     const argv = Array.isArray(args.args) ? args.args.map(String) : [];
+    const debuggee = ['dotnet', program, ...argv];
+    // On POSIX, `exec` replaces the terminal shell with the debuggee, so the
+    // shell pid the client reports IS the dotnet process to attach to.
+    // Windows' terminal shells have no `exec`; the client's processId is used
+    // when present and the launch falls back to adapter-hosted otherwise.
+    const command = process.platform === 'win32' ? debuggee : ['exec', ...debuggee];
     const terminalArgs: Record<string, unknown> = {
       kind: 'integrated',
       title: 'SharpLsp Debug',
       cwd: typeof args.cwd === 'string' ? args.cwd : undefined,
-      // `exec` replaces the terminal shell with the debuggee, so the shell pid
-      // the client reports IS the dotnet process the adapter attaches to.
-      args: ['exec', 'dotnet', program, ...argv],
+      args: command,
     };
     if (isRecord(args.env)) terminalArgs.env = args.env;
     const seq = this.nextSeq;
@@ -100,11 +104,18 @@ export class SessionReplayer {
 
   /** VS Code hosted the debuggee; respawn the adapter attached to it. */
   public onTerminalResponse(message: DapMessage): void {
-    const pid = isRecord(message.body)
-      ? Number(message.body.processId ?? message.body.shellProcessId ?? 0)
-      : 0;
+    const body = isRecord(message.body) ? message.body : {};
+    // Windows' terminal shells cannot `exec` the debuggee, so the shell pid is
+    // NOT the dotnet process; only an explicit processId may be attached to.
+    const attachable = process.platform === 'win32' ? body.processId : (body.processId ?? body.shellProcessId);
+    const pid = Number(attachable ?? 0);
     if (message.success !== true || !Number.isInteger(pid) || pid <= 0) {
-      this.host.fire({ type: 'event', event: 'terminated', body: {} });
+      // Degrade honestly rather than kill the session: respawn the adapter
+      // plainly and run the launch through it, adapter-hosted. The debuggee
+      // will not live in the terminal, but debugging still works.
+      this.host.respawn([], () => {
+        this.replayHandshake({ withLaunch: true });
+      });
       return;
     }
     this.host.respawn(['--attach', String(pid)], () => {
@@ -120,14 +131,14 @@ export class SessionReplayer {
   }
 
   /** initialize + launch again; breakpoint replay waits for `initialized`. */
-  private replayHandshake(): void {
+  private replayHandshake(options: { withLaunch?: boolean } = {}): void {
     const initialize = this.initializeMessage;
     const launch = this.launchMessage;
     if (initialize !== undefined) {
       this.swallow.add(this.host.seqOf(initialize));
       this.host.write(initialize);
     }
-    if (launch !== undefined && !this.wantsTerminal()) {
+    if (launch !== undefined && (options.withLaunch === true || !this.wantsTerminal())) {
       this.swallow.add(this.host.seqOf(launch));
       this.host.write(launch);
     }
