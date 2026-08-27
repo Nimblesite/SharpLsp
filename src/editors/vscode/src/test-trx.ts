@@ -53,7 +53,9 @@ interface TrxUnitTestResult {
   readonly '@_testName'?: string;
   readonly '@_outcome'?: string;
   readonly '@_duration'?: string;
-  readonly Output?: { readonly ErrorInfo?: { readonly Message?: string; readonly StackTrace?: string } };
+  readonly Output?: {
+    readonly ErrorInfo?: { readonly Message?: string; readonly StackTrace?: string };
+  };
 }
 
 interface TrxTestMethod {

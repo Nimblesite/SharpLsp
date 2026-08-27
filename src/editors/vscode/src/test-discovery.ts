@@ -379,7 +379,9 @@ function makeTempDir(): string | undefined {
 function fqnWarnings(run: DotnetRun, nameCount: number, assemblyCount: number): string[] {
   if (nameCount > 0 || assemblyCount === 0) return [];
   const cause = run.errorMessage ?? 'the listing file was empty';
-  return [`Fully-qualified test listing produced nothing (falling back to display names): ${cause}`];
+  return [
+    `Fully-qualified test listing produced nothing (falling back to display names): ${cause}`,
+  ];
 }
 
 /** Read the FQN listing, then delete its temp directory either way. */

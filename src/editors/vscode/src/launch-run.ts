@@ -52,7 +52,9 @@ export function runTask(
 ): vscode.Task {
   const execution = new vscode.ProcessExecution(runExecutable(target), runArgs(target), {
     cwd: target.cwd,
-    ...(target.kind === 'fileBasedApp' && target.env !== undefined ? { env: { ...target.env } } : {}),
+    ...(target.kind === 'fileBasedApp' && target.env !== undefined
+      ? { env: { ...target.env } }
+      : {}),
   });
   const task = new vscode.Task(
     { type: RUN_TASK_TYPE, file: target.file },
@@ -61,7 +63,10 @@ export function runTask(
     RUN_TASK_SOURCE,
     execution,
   );
-  task.presentationOptions = { reveal: vscode.TaskRevealKind.Always, panel: vscode.TaskPanelKind.Dedicated };
+  task.presentationOptions = {
+    reveal: vscode.TaskRevealKind.Always,
+    panel: vscode.TaskPanelKind.Dedicated,
+  };
   return task;
 }
 

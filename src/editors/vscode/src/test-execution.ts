@@ -215,7 +215,10 @@ function collectReport(
     runInfos.push(...report.runInfos);
     for (const result of report.results) {
       const existing = results.get(result.fullyQualifiedName);
-      results.set(result.fullyQualifiedName, existing === undefined ? result : worse(existing, result));
+      results.set(
+        result.fullyQualifiedName,
+        existing === undefined ? result : worse(existing, result),
+      );
     }
   }
   return { results, runInfos };
@@ -239,8 +242,7 @@ const OUTCOME_SEVERITY: Record<TestOutcome, number> = {
  */
 function worse(left: TrxTestResult, right: TrxTestResult): TrxTestResult {
   const durationMs = sumDurations(left.durationMs, right.durationMs);
-  const dominant =
-    OUTCOME_SEVERITY[right.outcome] > OUTCOME_SEVERITY[left.outcome] ? right : left;
+  const dominant = OUTCOME_SEVERITY[right.outcome] > OUTCOME_SEVERITY[left.outcome] ? right : left;
   return { ...dominant, durationMs };
 }
 
@@ -264,7 +266,10 @@ function trxFiles(dir: string): string[] {
 }
 
 /** Parse one TRX file, tolerating a truncated or unreadable report. */
-function readTrx(file: string): { results: readonly TrxTestResult[]; runInfos: readonly TrxRunInfo[] } {
+function readTrx(file: string): {
+  results: readonly TrxTestResult[];
+  runInfos: readonly TrxRunInfo[];
+} {
   try {
     return parseTrxReport(fs.readFileSync(file, 'utf8'));
   } catch {

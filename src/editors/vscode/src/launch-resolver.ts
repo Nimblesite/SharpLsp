@@ -13,11 +13,18 @@ import {
   type DocumentKind,
 } from './launch-target';
 import { isRunnableOutputType, resolveTargetPath, type ProjectProperties } from './msbuild';
-import { profileArgs, profileEnv, projectProfiles, readProfiles } from './launch-profiles';
+import {
+  profileArgs,
+  profileEnv,
+  projectProfiles,
+  readProfiles,
+  type LaunchProfile,
+} from './launch-profiles';
 import { err, ok, type Result } from './result';
 
 /** Shown when nothing about the active document names something to launch. */
-export const NO_TARGET_MESSAGE = 'No runnable .NET project or script found for the active document.';
+export const NO_TARGET_MESSAGE =
+  'No runnable .NET project or script found for the active document.';
 
 /** A runnable project and everything a launch configuration needs from it. */
 export interface ProjectTarget {
@@ -51,7 +58,10 @@ export type LaunchTarget = ProjectTarget | FileBasedTarget | ScriptTarget;
 /** How the caller wants ambiguity handled. */
 export interface ResolveOptions {
   /** Pick one of several candidates. Returning undefined cancels. */
-  readonly choose?: (items: readonly vscode.QuickPickItem[]) => Thenable<vscode.QuickPickItem | undefined>;
+  readonly choose?: (
+    items: readonly vscode.QuickPickItem[],
+    options: vscode.QuickPickOptions,
+  ) => Thenable<vscode.QuickPickItem | undefined>;
   /** A project the caller already decided on — the Solution Explorer path. */
   readonly projectFile?: string;
 }
@@ -59,12 +69,22 @@ export interface ResolveOptions {
 /** Default chooser: the real QuickPick. */
 function defaultChoose(
   items: readonly vscode.QuickPickItem[],
+  options: vscode.QuickPickOptions,
 ): Thenable<vscode.QuickPickItem | undefined> {
-  return vscode.window.showQuickPick(items, {
-    title: 'Select a project to launch',
-    placeHolder: 'More than one runnable project matched the active document',
-  });
+  return vscode.window.showQuickPick(items, options);
 }
+
+/** Asked when the active document's cone holds several runnable projects. */
+const PROJECT_PICK: vscode.QuickPickOptions = {
+  title: 'Select a project to launch',
+  placeHolder: 'More than one runnable project matched the active document',
+};
+
+/** Asked when the resolved target declares several `Project` launch profiles. */
+const PROFILE_PICK: vscode.QuickPickOptions = {
+  title: 'Select a launch profile',
+  placeHolder: 'This project declares more than one launch profile',
+};
 
 /** The workspace folder owning `file`, else the single open folder. */
 export function folderFor(file: string | undefined): vscode.WorkspaceFolder | undefined {
@@ -90,7 +110,8 @@ async function evaluateAll(
   );
   const usable: { projectFile: string; properties: ProjectProperties }[] = [];
   for (const entry of evaluated) {
-    if (entry.result.ok) usable.push({ projectFile: entry.projectFile, properties: entry.result.value });
+    if (entry.result.ok)
+      usable.push({ projectFile: entry.projectFile, properties: entry.result.value });
   }
   return usable;
 }
@@ -116,15 +137,25 @@ async function chooseProject(
     description: path.dirname(entry.projectFile),
   }));
   const choose = options.choose ?? defaultChoose;
-  const picked = await choose(items);
+  const picked = await choose(items, PROJECT_PICK);
   if (picked === undefined) return undefined;
   return runnable.find((entry) => path.basename(entry.projectFile) === picked.label)?.projectFile;
 }
 
-/** Apply the target's launch profile, if exactly one is eligible. */
-function withProfile<T extends ProjectTarget | FileBasedTarget>(target: T, source: string): T {
-  const eligible = projectProfiles(readProfiles(source));
-  const profile = eligible.length === 1 ? eligible[0] : undefined;
+/**
+ * Apply the target's eligible `Project` launch profile.
+ *
+ * One eligible profile applies silently. SEVERAL is a real ambiguity — each
+ * carries its own arguments, environment and URLs — so the user is asked which
+ * to launch. Taking the first silently runs a configuration the developer never
+ * chose, and the difference is invisible until the program misbehaves.
+ */
+async function withProfile<T extends ProjectTarget | FileBasedTarget>(
+  target: T,
+  source: string,
+  options: ResolveOptions,
+): Promise<T> {
+  const profile = await chooseProfile(projectProfiles(readProfiles(source)), options);
   if (profile === undefined) return target;
   const args = profileArgs(profile);
   const env = profileEnv(profile);
@@ -135,15 +166,31 @@ function withProfile<T extends ProjectTarget | FileBasedTarget>(target: T, sourc
   };
 }
 
+/** The sole eligible profile, or the one the user picks from several. */
+async function chooseProfile(
+  eligible: readonly LaunchProfile[],
+  options: ResolveOptions,
+): Promise<LaunchProfile | undefined> {
+  if (eligible.length <= 1) return eligible[0];
+  const choose = options.choose ?? defaultChoose;
+  const items = eligible.map((profile) => ({ label: profile.name }));
+  const picked = await choose(items, PROFILE_PICK);
+  return eligible.find((profile) => profile.name === picked?.label);
+}
+
 /** Build a project target from an evaluated project. */
-function projectTarget(projectFile: string, properties: ProjectProperties): ProjectTarget {
+async function projectTarget(
+  projectFile: string,
+  properties: ProjectProperties,
+  options: ResolveOptions,
+): Promise<ProjectTarget> {
   const base: ProjectTarget = {
     kind: 'project',
     projectFile,
     program: properties.targetPath,
     cwd: path.dirname(projectFile),
   };
-  return withProfile(base, projectFile);
+  return withProfile(base, projectFile, options);
 }
 
 /** Resolve a project target from a set of candidate project files. */
@@ -156,20 +203,26 @@ async function fromCandidates(
   if (runnable.length === 0) return err(NO_TARGET_MESSAGE);
 
   const only = runnable.length === 1 ? runnable[0] : undefined;
-  if (only !== undefined) return ok(projectTarget(only.projectFile, only.properties));
+  if (only !== undefined) {
+    return ok(await projectTarget(only.projectFile, only.properties, options));
+  }
 
   const chosen = await chooseProject(runnable, options);
   if (chosen === undefined) return err('');
   const entry = runnable.find((candidate) => candidate.projectFile === chosen);
   if (entry === undefined) return err(NO_TARGET_MESSAGE);
-  return ok(projectTarget(entry.projectFile, entry.properties));
+  return ok(await projectTarget(entry.projectFile, entry.properties, options));
 }
 
 /** A script or file-based target for a project-less document. */
-function projectlessTarget(kind: DocumentKind, file: string): Result<LaunchTarget> {
+async function projectlessTarget(
+  kind: DocumentKind,
+  file: string,
+  options: ResolveOptions,
+): Promise<Result<LaunchTarget>> {
   const cwd = path.dirname(file);
   if (kind === 'csharpFileBasedApp') {
-    return ok(withProfile({ kind: 'fileBasedApp', file, cwd }, file));
+    return ok(await withProfile({ kind: 'fileBasedApp', file, cwd }, file, options));
   }
   if (kind === 'fsharpScript') return ok({ kind: 'script', runner: 'fsi', file, cwd });
   if (kind === 'csharpScript') return ok({ kind: 'script', runner: 'dotnet-script', file, cwd });
@@ -198,6 +251,6 @@ export async function resolveLaunchTarget(
   if (root === undefined) return err(NO_TARGET_MESSAGE);
 
   const kind = classifyDocument(file, root);
-  if (kind !== 'projectOwned') return projectlessTarget(kind, file);
+  if (kind !== 'projectOwned') return projectlessTarget(kind, file, options);
   return fromCandidates(candidatesAt(walkCone(path.dirname(file), root)), options);
 }

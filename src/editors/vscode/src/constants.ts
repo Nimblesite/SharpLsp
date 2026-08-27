@@ -78,7 +78,6 @@ export const CMD_NEW_FILE = 'sharplsp.newFile';
 export const CMD_ADD_PROJECT_TO_SOLUTION = 'sharplsp.addProjectToSolution';
 
 // F# Interactive
-export const CMD_FSI_SEND_SELECTION = 'sharplsp.fsi.sendSelection';
 export const CMD_FSI_SEND_FILE = 'sharplsp.fsi.sendFile';
 export const CMD_FSI_START = 'sharplsp.fsi.start';
 export const CMD_FSI_GENERATE_SIGNATURE = 'sharplsp.fsi.generateSignature';
@@ -89,8 +88,6 @@ export const CMD_DEBUG_PROGRAM = 'sharplsp.debugProgram';
 export const CMD_RUN_PROGRAM = 'sharplsp.runProgram';
 
 // Test Explorer
-export const CMD_TEST_RUN = 'sharplsp.test.run';
-export const CMD_TEST_DEBUG = 'sharplsp.test.debug';
 export const CMD_TEST_RUN_AT_CURSOR = 'sharplsp.test.runAtCursor';
 export const CMD_TEST_DEBUG_AT_CURSOR = 'sharplsp.test.debugAtCursor';
 

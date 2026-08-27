@@ -18,6 +18,7 @@ import {
   CMD_RUN_PROGRAM,
   DEBUG_TYPE_ID,
   assertCommandRegistered,
+  authoredConfigurationAttributes,
   contributes,
   debuggerContribution,
   menuItems,
@@ -139,7 +140,10 @@ suite('Run/Debug manifest contributions', () => {
       assert.strictEqual(entry.command, id, `the entry for '${id}' carries its own id`);
       assertNonEmptyString(entry.title, `the palette title of '${id}'`);
       assertNonEmptyString(entry.category, `the palette category of '${id}'`);
-      assertNonEmptyString(entry.icon, `the icon of '${id}' (an editor/title/run item is a button)`);
+      assertNonEmptyString(
+        entry.icon,
+        `the icon of '${id}' (an editor/title/run item is a button)`,
+      );
     }
     const runTitle = String(commandEntry(CMD_RUN_PROGRAM).title);
     const debugTitle = String(commandEntry(CMD_DEBUG_PROGRAM).title);
@@ -181,7 +185,10 @@ suite('Run/Debug manifest contributions', () => {
       .filter((item) => RUN_DEBUG.includes(String(item.command)))
       .map((item) => String(item.when));
     assert.strictEqual(new Set(gates).size, 1, 'run and debug share ONE editor gate');
-    assert.ok(gates[0]?.includes('LangId'), `the editor gate names a language: ${String(gates[0])}`);
+    assert.ok(
+      gates[0]?.includes('LangId'),
+      `the editor gate names a language: ${String(gates[0])}`,
+    );
 
     // 4. The user right-clicks a project node in the Solution Explorer. B14
     const viewContext = menuItems('view/item/context');
@@ -234,8 +241,19 @@ suite('Run/Debug manifest contributions', () => {
     );
     const props = launch.properties;
     assert.strictEqual(typeof props, 'object', 'launch declares a properties object');
-    assert.deepStrictEqual(Object.keys(props).sort(), LAUNCH_SCHEMA, DECLARED_SCHEMA);
-    assert.strictEqual(Object.keys(props).length, 10, 'ten attributes, no more and no fewer');
+    // `launch` above is the manifest VS Code LOADED, and core folds its own
+    // attributes into every debugger contribution — exactly as it does to
+    // `required`, asserted a few lines up. So ask the manifest ON DISK what this
+    // repository actually declares, then assert the merge on top of it.
+    const authoredAttributes = authoredConfigurationAttributes();
+    const authored = authoredAttributes.launch.properties;
+    assert.strictEqual(typeof authored, 'object', 'the authored launch block declares properties');
+    assert.deepStrictEqual(Object.keys(authored).sort(), LAUNCH_SCHEMA, DECLARED_SCHEMA);
+    assert.strictEqual(Object.keys(authored).length, 10, 'ten attributes, no more and no fewer');
+    const ownProps = Object.keys(props)
+      .filter((key) => !CORE_INJECTED.includes(key))
+      .sort();
+    assert.deepStrictEqual(ownProps, LAUNCH_SCHEMA, 'all ten survive into the loaded schema');
 
     // 2. The user types `"console":` and expects the three destinations. B50
     assertSchemaProperty(props, 'console', 'string');
@@ -257,7 +275,8 @@ suite('Run/Debug manifest contributions', () => {
       assert.strictEqual(typeof props[key].default, 'boolean', `'${key}' declares a default`);
     }
     assert.strictEqual(props.stopAtEntry.default, false, 'stopAtEntry defaults to false');
-    const implicit = 'debug.ts sets justMyCode = true whenever the user left it unset, so the ' +
+    const implicit =
+      'debug.ts sets justMyCode = true whenever the user left it unset, so the ' +
       'declared default must say so rather than contradicting the resolver';
     assert.strictEqual(props.justMyCode.default, true, implicit);
     assertSchemaProperty(props, 'symbolOptions', 'object');
@@ -269,14 +288,42 @@ suite('Run/Debug manifest contributions', () => {
     assert.deepStrictEqual(props.args.default, [], 'args defaults to no arguments');
 
     // 4. The user types `"preLaunchTask":` — core owns that attribute's schema.
-    assert.deepStrictEqual(CORE_INJECTED.filter((key) => key in props), [], CORE_OWNED);
+    assert.deepStrictEqual(
+      CORE_INJECTED.filter((key) => key in authored),
+      [],
+      CORE_OWNED,
+    );
+    assert.deepStrictEqual(
+      CORE_INJECTED.filter((key) => key in props).sort(),
+      [...CORE_INJECTED].sort(),
+      'and core injects every one of them into the manifest VS Code loads, so a ' +
+        'manifest that re-declared one would be silently overwritten',
+    );
     assert.strictEqual(CORE_INJECTED.length, 10, 'the core-injected list itself is intact');
 
     // 5. The user switches the configuration to `attach`.
     const attach = attributes.attach;
     const attachOwn = attach.required.filter((name: string) => !CORE_ATTACH.includes(name));
     assert.deepStrictEqual(attachOwn, ['processId'], 'attach requires a process id');
-    assert.deepStrictEqual(Object.keys(attach.properties), ['processId'], 'attach is not clobbered');
+    // Same merge as `launch`: assert what we AUTHOR, then what core adds on top.
+    const authoredAttach = authoredAttributes.attach.properties;
+    assert.deepStrictEqual(
+      Object.keys(authoredAttach).sort(),
+      ['justMyCode', 'processId'],
+      'attach is not clobbered: it declares a process id and its own justMyCode',
+    );
+    assert.deepStrictEqual(
+      CORE_INJECTED.filter((key) => key in authoredAttach),
+      [],
+      CORE_OWNED,
+    );
+    assert.deepStrictEqual(
+      Object.keys(attach.properties)
+        .filter((key) => !CORE_INJECTED.includes(key))
+        .sort(),
+      ['justMyCode', 'processId'],
+      'and both survive core merging its own attributes into the loaded schema',
+    );
     assertSchemaProperty(attach.properties, 'processId', 'number');
     assert.notDeepStrictEqual(attach.properties, props, 'attach and launch are distinct schemas');
   });
@@ -310,7 +357,11 @@ suite('Run/Debug manifest contributions', () => {
     assert.ok(initial.length >= 1, 'a generated launch.json needs a configuration');
     const initialTypes = initial.map((config) => String(config.type));
     const oneType = `every initial configuration must declare type '${DEBUG_TYPE}'`;
-    assert.deepStrictEqual(initialTypes, initial.map(() => DEBUG_TYPE), oneType);
+    assert.deepStrictEqual(
+      initialTypes,
+      initial.map(() => DEBUG_TYPE),
+      oneType,
+    );
     const names = initial.map((config) => String(config.name));
     assert.strictEqual(new Set(names).size, names.length, 'two configs cannot share one name');
     const generated = initial.find((config) => config.request === 'launch');
@@ -379,15 +430,35 @@ suite('Run/Debug manifest contributions', () => {
     assert.deepStrictEqual(shape, expected, discarded);
     const verbs = provided.map((task) => String(task.definition.command));
     assert.deepStrictEqual(verbs, VERBS, 'the three build verbs, in picker order');
-    assert.deepStrictEqual(provided.map((task) => task.name), ['Build', 'Rebuild', 'Clean'], 'labels');
+    assert.deepStrictEqual(
+      provided.map((task) => task.name),
+      ['Build', 'Rebuild', 'Clean'],
+      'labels',
+    );
     const keys = provided.map((task) => Object.keys(task.definition).sort());
-    assert.deepStrictEqual(keys, provided.map(() => ['command', 'type']), 'definitions carry two keys');
+    assert.deepStrictEqual(
+      keys,
+      provided.map(() => ['command', 'type']),
+      'definitions carry two keys',
+    );
     const matchers = provided.map((task) => task.problemMatchers);
-    assert.deepStrictEqual(matchers, provided.map(() => ['$msCompile']), 'errors reach the Problems panel');
+    assert.deepStrictEqual(
+      matchers,
+      provided.map(() => ['$msCompile']),
+      'errors reach the Problems panel',
+    );
     const shells = provided.every((task) => task.execution instanceof vscode.ProcessExecution);
-    assert.strictEqual(shells, true, 'each build task is a ProcessExecution: a spaced path stays one argument');
+    assert.strictEqual(
+      shells,
+      true,
+      'each build task is a ProcessExecution: a spaced path stays one argument',
+    );
     const runs = provided.map((task) => task.execution as vscode.ProcessExecution);
-    assert.deepStrictEqual(runs.map((run) => run.process), ['dotnet', 'dotnet', 'dotnet'], 'CLI');
+    assert.deepStrictEqual(
+      runs.map((run) => run.process),
+      ['dotnet', 'dotnet', 'dotnet'],
+      'CLI',
+    );
     assert.deepStrictEqual(
       runs.map((run) => run.args),
       [['build'], ['build', '--no-incremental'], ['clean']],
@@ -396,10 +467,18 @@ suite('Run/Debug manifest contributions', () => {
 
     // 3. The user writes `"command": "rebuild"` in that task entry. B07
     const definition = definitions.find((entry) => entry.type === BUILD_TYPE)!;
-    assert.strictEqual(typeof definition.properties, 'object', 'the definition declares properties');
+    assert.strictEqual(
+      typeof definition.properties,
+      'object',
+      'the definition declares properties',
+    );
     const required = 'resolveTask returns undefined without `command`, so the manifest requires it';
     assert.deepStrictEqual(definition.required, ['command'], required);
-    assert.deepStrictEqual(Object.keys(definition.properties).sort(), ['command'], 'only `command`');
+    assert.deepStrictEqual(
+      Object.keys(definition.properties).sort(),
+      ['command'],
+      'only `command`',
+    );
     assert.strictEqual(definition.properties.command.type, 'string', '`command` is a string');
     const values: unknown[] = definition.properties.command.enum ?? [];
     assert.deepStrictEqual(
@@ -423,7 +502,11 @@ suite('Run/Debug manifest contributions', () => {
     assert.deepStrictEqual(proprietary, [], `no preLaunchTask names 'dotnet: build' — ${missing}`);
     const tasks = bodies.map((b) => b.preLaunchTask).filter((t) => t !== undefined);
     const undeclared = tasks.map(String).filter((t) => !t.startsWith(BUILD_TYPE));
-    assert.deepStrictEqual(undeclared, [], `every preLaunchTask names a declared type: ${declared}`);
+    assert.deepStrictEqual(
+      undeclared,
+      [],
+      `every preLaunchTask names a declared type: ${declared}`,
+    );
     assert.ok(bodies.length >= 3, 'both snippets and the generated configurations were checked');
   });
 
@@ -448,7 +531,13 @@ suite('Run/Debug manifest contributions', () => {
     // They are the workbench's commands sharing our id prefix, deliberately
     // absent from contributes.commands so they stay out of the palette;
     // asserting on them tests VS Code, not SharpLsp.
-    const VIEW_SUFFIXES = ['.focus', '.open', '.removeView', '.resetViewLocation', '.toggleVisibility'];
+    const VIEW_SUFFIXES = [
+      '.focus',
+      '.open',
+      '.removeView',
+      '.resetViewLocation',
+      '.toggleVisibility',
+    ];
     const workbenchOwned = (id: string): boolean =>
       VIEW_SUFFIXES.some((suffix) => id.endsWith(suffix));
     const registeredOurs = [...registered]

@@ -85,11 +85,42 @@ export function legacyF5Config(): vscode.DebugConfiguration {
   return { type: '', request: '', name: '' };
 }
 
-/** The extension's manifest, as VS Code itself parsed it. */
+/**
+ * The extension's manifest, as VS Code itself parsed it.
+ *
+ * MERGED, not authored: VS Code folds its own core debug attributes into every
+ * `contributes.debuggers` entry it loads, so this object holds `name`, `type`,
+ * `request`, `preLaunchTask` and the rest whether or not we declared them. Use
+ * {@link authoredPackageJson} to ask what THIS repository actually ships.
+ */
 export function packageJson(): Record<string, any> {
   const extension = vscode.extensions.getExtension(EXTENSION_ID);
   assert.ok(extension, `${EXTENSION_ID} must be installed in the VSIX host`);
   return extension.packageJSON;
+}
+
+/**
+ * The manifest as it is authored ON DISK, before VS Code merges anything in.
+ *
+ * The only way to tell an attribute this repository declares from one core
+ * injected at load time — and so the only way to prove we do not re-declare,
+ * and thereby misdescribe, an attribute core owns.
+ */
+export function authoredPackageJson(): Record<string, any> {
+  const manifest = path.resolve(__dirname, '../../..', 'package.json');
+  assert.ok(fs.existsSync(manifest), `the authored manifest must exist at ${manifest}`);
+  return JSON.parse(fs.readFileSync(manifest, 'utf-8'));
+}
+
+/** The `configurationAttributes` block exactly as authored on disk. */
+export function authoredConfigurationAttributes(): Record<string, any> {
+  const debuggers: unknown = authoredPackageJson().contributes?.debuggers;
+  assert.ok(Array.isArray(debuggers), 'the authored manifest must declare contributes.debuggers');
+  const entry = debuggers.find((item) => item?.type === DEBUG_TYPE_ID);
+  assert.ok(entry, `the authored manifest must declare the '${DEBUG_TYPE_ID}' debugger`);
+  const attributes: unknown = entry.configurationAttributes;
+  assert.ok(attributes, 'the authored debugger must declare configurationAttributes');
+  return attributes as Record<string, any>;
 }
 
 /** The `contributes` block of the manifest. */

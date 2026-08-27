@@ -10,11 +10,7 @@ import * as path from 'node:path';
 
 /** The [SCRIPT-DETECT] document kinds a launch can be built from. */
 export type DocumentKind =
-  | 'projectOwned'
-  | 'csharpFileBasedApp'
-  | 'csharpScript'
-  | 'fsharpScript'
-  | 'unsupported';
+  'projectOwned' | 'csharpFileBasedApp' | 'csharpScript' | 'fsharpScript' | 'unsupported';
 
 /** Why the [SCRIPT-CONE] walk stopped. */
 export type ConeStop = 'project' | 'solution' | 'workspace' | 'git' | 'root';

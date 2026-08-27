@@ -42,7 +42,12 @@ export const VERBS = ['build', 'rebuild', 'clean'];
 /** The menus [DEBUG-FEATURES-LAUNCH-CONTRIBUTIONS] places both commands in. */
 export const MENUS = ['editor/title/run', 'editor/context', 'view/item/context'];
 /** Menus that already carry SharpLsp items and must survive the run/debug work. */
-export const EXISTING_MENUS = ['editor/context', 'view/title', 'debug/toolbar', 'view/item/context'];
+export const EXISTING_MENUS = [
+  'editor/context',
+  'view/title',
+  'debug/toolbar',
+  'view/item/context',
+];
 /** Attributes core injects and overwrites; a hand-rolled copy misdescribes them. */
 export const CORE_INJECTED = (
   'name type request preLaunchTask postDebugTask presentation ' +

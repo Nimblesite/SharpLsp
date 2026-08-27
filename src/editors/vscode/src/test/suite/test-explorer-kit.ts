@@ -161,7 +161,11 @@ export async function runViaProfile(
   cancelAfterMs?: number,
 ): Promise<void> {
   const profile = profileOfKind(controller, kind);
-  const request = new vscode.TestRunRequest(items.length > 0 ? [...items] : undefined, undefined, profile);
+  const request = new vscode.TestRunRequest(
+    items.length > 0 ? [...items] : undefined,
+    undefined,
+    profile,
+  );
   const source = new vscode.CancellationTokenSource();
   if (cancelAfterMs !== undefined) {
     setTimeout(() => {

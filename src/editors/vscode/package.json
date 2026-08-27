@@ -1165,7 +1165,7 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "lint": "node ../../../tools/npm/run-sequential.mjs lint:eslint typecheck",
+    "lint": "node ../../../tools/npm/run-sequential.mjs format:check lint:eslint typecheck",
     "lint:eslint": "eslint src/",
     "compile-tests": "node ../../../tools/npm/run-sequential.mjs clean compile-tests:typescript",
     "compile-tests:typescript": "tsc -p ./",
@@ -1177,7 +1177,9 @@
     "build:production": "node esbuild.mjs --production",
     "vscode:prepublish": "node ../../../tools/npm/run-sequential.mjs prepare:test-assets build:production",
     "clean": "node clean-out.mjs",
-    "prepare:test-fixtures": "node ../../../tools/vsix/build-test-fixtures.mjs"
+    "prepare:test-fixtures": "node ../../../tools/vsix/build-test-fixtures.mjs",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\""
   },
   "dependencies": {
     "@nimblesite/shipwright-vscode": "^0.10.0",
@@ -1199,6 +1201,7 @@
     "glob": "^13.0.6",
     "mocha": "^11.7.6",
     "playwright": "^1.61.1",
+    "prettier": "3.9.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.64.0"
   },

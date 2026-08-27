@@ -37,7 +37,13 @@ const SUMMARY_PATTERN =
 const ERROR_MESSAGE_HEADER = 'Error Message:';
 
 /** Lines that terminate an `Error Message:` block. */
-const ERROR_MESSAGE_TERMINATORS = ['Stack Trace:', 'Error Message:', 'Failed ', 'Passed ', 'Test run for '];
+const ERROR_MESSAGE_TERMINATORS = [
+  'Stack Trace:',
+  'Error Message:',
+  'Failed ',
+  'Passed ',
+  'Test run for ',
+];
 
 /** Sum the per-assembly summary lines; `undefined` when a run printed none. */
 export function parseRunSummary(output: string): TestRunSummary | undefined {

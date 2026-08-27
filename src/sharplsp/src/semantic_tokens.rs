@@ -226,16 +226,10 @@ fn compute_delta(old: &[i32], new: &[i32]) -> Vec<SemanticTokensEdit> {
     let insert_data: Vec<SemanticToken> = new
         .get(prefix_len..new_changed_end)
         .unwrap_or_default()
-        .chunks_exact(5)
-        .filter_map(|c| {
-            Some(SemanticToken {
-                delta_line: u32::try_from(*c.first()?).unwrap_or(0),
-                delta_start: u32::try_from(*c.get(1)?).unwrap_or(0),
-                length: u32::try_from(*c.get(2)?).unwrap_or(0),
-                token_type: u32::try_from(*c.get(3)?).unwrap_or(0),
-                token_modifiers_bitset: u32::try_from(*c.get(4)?).unwrap_or(0),
-            })
-        })
+        .as_chunks::<5>()
+        .0
+        .iter()
+        .map(token_from_record)
         .collect();
 
     vec![SemanticTokensEdit {
@@ -291,19 +285,36 @@ pub fn token_modifiers() -> Vec<lsp_types::SemanticTokenModifier> {
     ]
 }
 
+/// Widen one LSP semantic-token field. A well-formed payload never carries a
+/// negative value here, so a stray one is clamped to 0 rather than dropping the
+/// whole token and desynchronising every delta that follows it.
+fn token_field(value: i32) -> u32 {
+    u32::try_from(value).unwrap_or(0)
+}
+
+/// Decode one flat five-field record into an LSP `SemanticToken`.
+///
+/// The wire format is `[deltaLine, deltaStart, length, tokenType,
+/// tokenModifiers]` per token; taking the record as a fixed-size array is what
+/// makes every field access infallible without indexing.
+fn token_from_record(record: &[i32; 5]) -> SemanticToken {
+    let [delta_line, delta_start, length, token_type, modifiers] = *record;
+    SemanticToken {
+        delta_line: token_field(delta_line),
+        delta_start: token_field(delta_start),
+        length: token_field(length),
+        token_type: token_field(token_type),
+        token_modifiers_bitset: token_field(modifiers),
+    }
+}
+
 /// Decode a flat i32 array into LSP `SemanticTokens`.
 fn decode_tokens(data: &[i32]) -> SemanticTokens {
     let tokens: Vec<SemanticToken> = data
-        .chunks_exact(5)
-        .filter_map(|chunk| {
-            Some(SemanticToken {
-                delta_line: u32::try_from(*chunk.first()?).unwrap_or(0),
-                delta_start: u32::try_from(*chunk.get(1)?).unwrap_or(0),
-                length: u32::try_from(*chunk.get(2)?).unwrap_or(0),
-                token_type: u32::try_from(*chunk.get(3)?).unwrap_or(0),
-                token_modifiers_bitset: u32::try_from(*chunk.get(4)?).unwrap_or(0),
-            })
-        })
+        .as_chunks::<5>()
+        .0
+        .iter()
+        .map(token_from_record)
         .collect();
     SemanticTokens {
         result_id: None,

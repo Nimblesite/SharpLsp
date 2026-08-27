@@ -254,13 +254,13 @@ export class SharpLspTestController {
   /** Replace the tree, unless nothing could be enumerated and one already exists. */
   private applyDiscovery(items: vscode.TestItem[], anyOk: boolean, targetCount: number): void {
     if (!anyOk && this.controller.items.size > 0) {
-      info(`Test discovery: every target failed; keeping ${String(this.controller.items.size)} item(s)`);
+      info(
+        `Test discovery: every target failed; keeping ${String(this.controller.items.size)} item(s)`,
+      );
       return;
     }
     this.controller.items.replace(items);
-    info(
-      `Test discovery: ${String(items.length)} test(s) from ${String(targetCount)} target(s)`,
-    );
+    info(`Test discovery: ${String(items.length)} test(s) from ${String(targetCount)} target(s)`);
   }
 
   /** List one target, logging whatever diagnostics the enumeration produced. */
@@ -318,11 +318,15 @@ export class SharpLspTestController {
     const resultsDirectory = coverage ? freshCoverageDir(cwd) : undefined;
     const target = runTarget();
     const outcome = await this.enqueue(async () =>
-      runTests(tests.map((test) => test.id), cwd, {
-        coverage,
-        ...(resultsDirectory === undefined ? {} : { resultsDirectory }),
-        ...(target === undefined ? {} : { target }),
-      }),
+      runTests(
+        tests.map((test) => test.id),
+        cwd,
+        {
+          coverage,
+          ...(resultsDirectory === undefined ? {} : { resultsDirectory }),
+          ...(target === undefined ? {} : { target }),
+        },
+      ),
     );
     this.reportOutcome(run, tests, outcome);
     if (coverage && resultsDirectory !== undefined) addCoverage(run, resultsDirectory);
@@ -349,23 +353,14 @@ export class SharpLspTestController {
   }
 
   /** A selected test the run never reported on: build failure or no match. */
-  private reportMissing(
-    run: vscode.TestRun,
-    test: vscode.TestItem,
-    outcome: TestRunOutcome,
-  ): void {
-    const message =
-      outcome.failure ?? `No result reported for ${test.id} (filter matched no test)`;
+  private reportMissing(run: vscode.TestRun, test: vscode.TestItem, outcome: TestRunOutcome): void {
+    const message = outcome.failure ?? `No result reported for ${test.id} (filter matched no test)`;
     this.cache(test.id, { outcome: 'notRun', passed: false, message });
     run.errored(test, new vscode.TestMessage(message));
   }
 
   /** Report the same hard failure against every selected test. */
-  private reportAll(
-    run: vscode.TestRun,
-    tests: readonly vscode.TestItem[],
-    message: string,
-  ): void {
+  private reportAll(run: vscode.TestRun, tests: readonly vscode.TestItem[], message: string): void {
     for (const test of tests) {
       this.cache(test.id, { outcome: 'notRun', passed: false, message });
       run.errored(test, new vscode.TestMessage(message));

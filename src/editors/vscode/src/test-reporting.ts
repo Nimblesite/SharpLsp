@@ -28,7 +28,11 @@ export function cachedFrom(result: TrxTestResult): CachedTestResult {
 }
 
 /** Report one TRX result onto the VS Code test run. */
-export function reportResult(run: vscode.TestRun, test: vscode.TestItem, result: TrxTestResult): void {
+export function reportResult(
+  run: vscode.TestRun,
+  test: vscode.TestItem,
+  result: TrxTestResult,
+): void {
   if (result.outcome === 'passed') {
     run.passed(test, result.durationMs);
     return;
@@ -37,8 +41,14 @@ export function reportResult(run: vscode.TestRun, test: vscode.TestItem, result:
     run.skipped(test);
     return;
   }
-  const detail = [result.message, result.stackTrace].filter((part) => part !== undefined).join('\n');
-  run.failed(test, new vscode.TestMessage(detail === '' ? 'Test failed' : detail), result.durationMs);
+  const detail = [result.message, result.stackTrace]
+    .filter((part) => part !== undefined)
+    .join('\n');
+  run.failed(
+    test,
+    new vscode.TestMessage(detail === '' ? 'Test failed' : detail),
+    result.durationMs,
+  );
 }
 
 /**

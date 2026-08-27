@@ -109,20 +109,27 @@ export function profileCandidates(target: string): string[] {
 }
 
 /**
+ * Profiles held by ONE candidate document.
+ *
+ * Total by construction: a missing file, a directory sitting where the file
+ * should be, and an unreadable or unsound document all yield no profiles rather
+ * than throwing. `readFileSync` already distinguishes those cases for us, so an
+ * `existsSync` pre-check would only add a race without removing the `catch`.
+ */
+function readProfileDocument(file: string): LaunchProfile[] {
+  try {
+    return parseProfiles(fs.readFileSync(file, 'utf-8'));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Profiles for a target. A candidate that exists but is not a profiles document
  * must not abort the scan — the next candidate is still tried.
  */
 export function readProfiles(target: string): LaunchProfile[] {
-  const found: LaunchProfile[] = [];
-  for (const candidate of profileCandidates(target)) {
-    if (!fs.existsSync(candidate)) continue;
-    try {
-      found.push(...parseProfiles(fs.readFileSync(candidate, 'utf-8')));
-    } catch {
-      // Unreadable candidate — keep scanning.
-    }
-  }
-  return found;
+  return profileCandidates(target).flatMap(readProfileDocument);
 }
 
 /** Profiles eligible for launching the project itself. */
@@ -212,8 +219,8 @@ export function profileEnv(profile: LaunchProfile): Record<string, string> | und
  */
 export function readLaunchProfiles(rootPath: string): Record<string, LaunchProfile> {
   const found: Record<string, LaunchProfile> = {};
-  for (const source of profileSources(rootPath)) {
-    for (const profile of readProfiles(source)) {
+  for (const document of profileDocuments(rootPath)) {
+    for (const profile of readProfileDocument(document)) {
       found[profile.name] ??= profile;
     }
   }
@@ -221,22 +228,33 @@ export function readLaunchProfiles(rootPath: string): Record<string, LaunchProfi
 }
 
 /**
- * Every project file at or beneath `rootPath`, bounded in depth.
+ * Every candidate profile DOCUMENT at or beneath `rootPath`, bounded in depth.
+ *
+ * Keyed on the documents themselves rather than on the project files that own
+ * them. Deriving candidates from discovered `.csproj`/`.fsproj` files made two
+ * whole layouts invisible: a directory holding `Properties/launchSettings.json`
+ * with no project beside it, and a file-based app, which by definition has no
+ * project at all and keeps its profiles in a sibling `<entry>.run.json`.
  *
  * The canonical .NET layout is `MySln.sln` at the root with the projects under
  * `src/App/App.csproj`, so a scan that stops at the first level still finds
  * nothing. The depth bound keeps a large repository from being walked whole.
  */
-function profileSources(rootPath: string, depth = PROFILE_SCAN_DEPTH): string[] {
-  const sources: string[] = [];
+function profileDocuments(rootPath: string, depth = PROFILE_SCAN_DEPTH): string[] {
+  const documents = [path.join(rootPath, 'Properties', 'launchSettings.json')];
   for (const entry of safeEntries(rootPath)) {
     const child = path.join(rootPath, entry);
-    if (isProjectFile(child)) sources.push(child);
+    if (isRunJson(entry)) documents.push(child);
     else if (depth > 0 && isDirectory(child) && !isIgnoredDir(entry)) {
-      sources.push(...profileSources(child, depth - 1));
+      documents.push(...profileDocuments(child, depth - 1));
     }
   }
-  return sources;
+  return documents;
+}
+
+/** A file-based app's profiles live in `<entry>.run.json` beside the entry. */
+function isRunJson(name: string): boolean {
+  return name.toLowerCase().endsWith('.run.json');
 }
 
 /** Deep enough for `root/src/App/App.csproj`, shallow enough to stay cheap. */
@@ -255,11 +273,6 @@ function safeEntries(dir: string): string[] {
   } catch {
     return [];
   }
-}
-
-function isProjectFile(candidate: string): boolean {
-  const extension = path.extname(candidate).toLowerCase();
-  return extension === '.csproj' || extension === '.fsproj';
 }
 
 function isDirectory(candidate: string): boolean {

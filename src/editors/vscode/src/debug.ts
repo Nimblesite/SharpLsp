@@ -174,12 +174,19 @@ function noPrompt(): Thenable<vscode.QuickPickItem | undefined> {
   return Promise.resolve(undefined);
 }
 
-/** Resolve the folder's target and copy it onto a configuration being filled. */
+/**
+ * Resolve the folder's target and copy it onto a configuration being filled.
+ *
+ * The real chooser, NOT `noPrompt`: this is the user pressing F5, so an
+ * ambiguous cone or several launch profiles is a question worth asking. Only
+ * `provideDebugConfigurations`, which VS Code may call unprompted to populate a
+ * list, must stay silent.
+ */
 async function applyTarget(
   folder: vscode.WorkspaceFolder,
   config: vscode.DebugConfiguration,
 ): Promise<void> {
-  const resolved = await resolveLaunchTarget(anchorWithin(folder), folder, { choose: noPrompt });
+  const resolved = await resolveLaunchTarget(anchorWithin(folder), folder);
   if (!resolved.ok) return;
   const target = resolved.value;
   if (target.kind === 'script') return;
@@ -235,7 +242,8 @@ export async function planLaunch(
 ): Promise<LaunchPlan | undefined> {
   const program = await programFor(target);
   if (program === undefined) return undefined;
-  const named = target.kind === 'project' ? path.basename(target.projectFile) : path.basename(target.file);
+  const named =
+    target.kind === 'project' ? path.basename(target.projectFile) : path.basename(target.file);
   const configuration: vscode.DebugConfiguration = {
     ...baseConfiguration(`${noDebug ? 'Run' : 'Debug'} ${named}`, program, target.cwd),
     ...(target.kind === 'script' ? {} : argsAndEnv(target)),

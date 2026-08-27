@@ -37,11 +37,7 @@ import {
   legacyF5Config,
   undefinedF5Config,
 } from './run-debug-kit';
-import {
-  closeAllEditors,
-  comparablePath,
-  pollUntilResult,
-} from './test-helpers';
+import { closeAllEditors, comparablePath, pollUntilResult } from './test-helpers';
 import type { UiStubs } from './ui-stubs';
 
 /** What one `resolveDebugConfiguration` call produced — a throw included. */
@@ -164,7 +160,11 @@ function assertWalkersAgree(start: string, stop: string, of: ConsoleProject, dll
   const dir = comparablePath(of.dir);
   assert.strictEqual(comparablePath(walked?.cwd ?? ''), dir, `${at}: the walk's cwd is the dir`);
   const direct = projectEntryFromFile(of.projectFile);
-  assert.strictEqual(comparablePath(direct.dll ?? ''), want, `${at}: projectEntryFromFile agrees too`);
+  assert.strictEqual(
+    comparablePath(direct.dll ?? ''),
+    want,
+    `${at}: projectEntryFromFile agrees too`,
+  );
   assert.strictEqual(comparablePath(direct.cwd), dir, `${at}: and on the cwd`);
   const entry = findEntryProject(of.dir);
   assert.strictEqual(comparablePath(entry?.dll ?? ''), want, `${at}: findEntryProject agrees too`);
@@ -290,7 +290,11 @@ export function buildConeLayout(root: string, lang: LangKit): ConeLayout {
 // ── Interaction helpers ──────────────────────────────────────────
 
 /** B18 — with no editor open, the single nested project is the target. */
-export async function assertNestedTarget(root: string, app: ConsoleProject, q: Quiet): Promise<string> {
+export async function assertNestedTarget(
+  root: string,
+  app: ConsoleProject,
+  q: Quiet,
+): Promise<string> {
   const at = 'B18 nested single project';
   const outcome = await resolveTarget(root, legacyF5Config());
   const dll = assertTargets(outcome, app, at);
@@ -304,7 +308,11 @@ export async function assertNestedTarget(root: string, app: ConsoleProject, q: Q
 }
 
 /** B18 — every "no launch.json" shape VS Code sends must resolve one target. */
-export async function assertBareF5Agrees(root: string, expected: string, at: string): Promise<void> {
+export async function assertBareF5Agrees(
+  root: string,
+  expected: string,
+  at: string,
+): Promise<void> {
   const want = comparablePath(expected);
   const bare = await resolveTarget(root, emptyF5Config());
   assert.strictEqual(bare.threw, '', `${at}: the \`{}\` F5 configuration must not throw`);

@@ -344,17 +344,26 @@ export function writeCoverageFixture(root: string): string[] {
   const packages = [...XUNIT_PACKAGES, COVERLET];
   const reference = path.join('..', LIBRARY_PROJECT, `${LIBRARY_PROJECT}.csproj`);
   const libDir = writeProject(
-    path.join(root, LIBRARY_PROJECT), `${LIBRARY_PROJECT}.csproj`,
-    libraryProjectXml(), 'Calculator.cs', LIBRARY_SOURCE,
+    path.join(root, LIBRARY_PROJECT),
+    `${LIBRARY_PROJECT}.csproj`,
+    libraryProjectXml(),
+    'Calculator.cs',
+    LIBRARY_SOURCE,
   );
   const csDir = writeProject(
-    path.join(root, CS.projectName), CS.projectFileName,
-    buildProjectXml({ packages, projectReferences: [reference] }), CS.sourceFileName, CS.source,
+    path.join(root, CS.projectName),
+    CS.projectFileName,
+    buildProjectXml({ packages, projectReferences: [reference] }),
+    CS.sourceFileName,
+    CS.source,
   );
   fs.writeFileSync(path.join(csDir, LIBRARY_TESTS_FILE), LIBRARY_TESTS_SOURCE, 'utf8');
   const fsDir = writeProject(
-    path.join(root, FSX.projectName), FSX.projectFileName,
-    projectXml(packages, FSX.sourceFileName), FSX.sourceFileName, FSX.source,
+    path.join(root, FSX.projectName),
+    FSX.projectFileName,
+    projectXml(packages, FSX.sourceFileName),
+    FSX.sourceFileName,
+    FSX.source,
   );
   return [libDir, csDir, fsDir];
 }

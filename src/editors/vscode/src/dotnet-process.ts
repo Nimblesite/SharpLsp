@@ -62,7 +62,8 @@ let dotnetExecutable = 'dotnet';
 
 /** Point every subsequent invocation at a specific `dotnet` executable. */
 export function configureDotnet(executablePath: string | undefined): void {
-  dotnetExecutable = executablePath === undefined || executablePath === '' ? 'dotnet' : executablePath;
+  dotnetExecutable =
+    executablePath === undefined || executablePath === '' ? 'dotnet' : executablePath;
 }
 
 /** The executable currently in use, for logging and assertions. */
