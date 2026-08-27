@@ -12,6 +12,7 @@
 // and zero tasks.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { findEntryProject, findProjectFile } from '../../debug.js';
@@ -20,9 +21,7 @@ import {
   CMD_DEBUG_PROGRAM,
   CMD_RUN_PROGRAM,
   DEBUG_TYPE_ID,
-  DebugSessionRecorder,
   OBSERVE_TIMEOUT_MS,
-  TaskRecorder,
   adapterAvailable,
   assertCommandRegistered,
   focusDocument,
@@ -39,30 +38,18 @@ import {
   requireWorkspaceRoot,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
-
-// The sentence `debugCurrentProject` emits today for EVERY unresolved target.
-const LEGACY_REFUSAL = 'No .csproj or .fsproj found';
-
-// A task recorder plus a session recorder, armed together before one action.
-interface Probe {
-  readonly tasks: TaskRecorder;
-  readonly sessions: DebugSessionRecorder;
-}
-const armed: Probe[] = [];
-
-/** Arm BOTH recorders and register them for teardown. Never after the action. */
-function armProbe(): Probe {
-  const probe = { tasks: new TaskRecorder(), sessions: new DebugSessionRecorder() };
-  armed.push(probe);
-  return probe;
-}
-function disposeArmed(): void {
-  for (const probe of armed) {
-    probe.tasks.dispose();
-    probe.sessions.dispose();
-  }
-  armed.length = 0;
-}
+import {
+  armProbe,
+  assertNoPrompts,
+  assertNoRecordedTasks,
+  assertOmits,
+  disposeArmed,
+  expectRefusal,
+  messagesOf,
+  restoreGlobalTools,
+  withoutGlobalTools,
+  type Probe,
+} from './run-debug-refusals';
 
 /** Paths compare case/separator-normalised, never raw. */
 function assertSamePath(actual: string, expected: string, why: string): void {
@@ -74,76 +61,6 @@ function assertOtherPath(actual: string, expected: string, why: string): void {
 function activePath(): string {
   return vscode.window.activeTextEditor?.document.uri.fsPath ?? '';
 }
-interface MessageCounts {
-  readonly warnings: number;
-  readonly errors: number;
-  readonly infos: number;
-}
-const NO_MESSAGES: MessageCounts = { warnings: 0, errors: 0, infos: 0 };
-function messageCounts(stubs: UiStubs): MessageCounts {
-  const { warningMessages: w, errorMessages: e, infoMessages: i } = stubs.log;
-  return { warnings: w.length, errors: e.length, infos: i.length };
-}
-
-// Sliced PER CHANNEL: slicing a flattened warning+error+info list by an earlier
-// flattened length mis-reports which message is new once two channels are used.
-function messagesSince(stubs: UiStubs, since: MessageCounts): string[] {
-  const { warningMessages: w, errorMessages: e, infoMessages: i } = stubs.log;
-  return [...w.slice(since.warnings), ...e.slice(since.errors), ...i.slice(since.infos)];
-}
-function messagesOf(stubs: UiStubs): string[] {
-  return messagesSince(stubs, NO_MESSAGES);
-}
-
-/** A refusal must name its own reason, not borrow an unrelated one. */
-function assertOmits(message: string, forbidden: string, why: string): void {
-  const mentions = message.includes(forbidden);
-  assert.strictEqual(mentions, false, `${why}: must not mention '${forbidden}': '${message}'`);
-}
-
-function assertNamedRefusal(message: string, needles: readonly string[], why: string): void {
-  assert.strictEqual(typeof message, 'string', `${why}: a refusal is a string message`);
-  assert.notStrictEqual(message.trim().length, 0, `${why}: an empty message is a silent no-op`);
-  assertOmits(message, LEGACY_REFUSAL, `${why}: the generic project-not-found sentence`);
-  const lowered = message.toLowerCase();
-  for (const needle of needles) {
-    const named = lowered.includes(needle);
-    assert.strictEqual(named, true, `${why}: must name '${needle}': '${message}'`);
-  }
-}
-
-function assertNoPrompts(stubs: UiStubs, why: string): void {
-  assert.deepStrictEqual(stubs.log.quickPickItems, [], `${why}: must not open a quick pick`);
-  assert.deepStrictEqual(stubs.log.inputBoxOptions, [], `${why}: must not open an input box`);
-  assert.deepStrictEqual(stubs.log.openDialogOptions, [], `${why}: must not open a file dialog`);
-}
-function assertNoRecordedTasks(probe: Probe, why: string): void {
-  const ran = probe.tasks.dotnetTasks.map((task) => task.args.join(' '));
-  assert.deepStrictEqual(ran, [], why);
-}
-
-/** Drive one refusal and assert every obligation of rule 6. */
-async function expectRefusal(
-  commandId: string,
-  probe: Probe,
-  stubs: UiStubs,
-  needles: readonly string[],
-  why: string,
-): Promise<string> {
-  const before = messageCounts(stubs);
-  const outcome = await invokeCommand(commandId);
-  const clean = { rejected: false, message: '' };
-  assert.deepStrictEqual({ ...outcome }, clean, `${why}: must refuse with a message, not reject`);
-  const shown = messagesSince(stubs, before);
-  assert.strictEqual(shown.length, 1, `${why}: exactly one message, saw ${JSON.stringify(shown)}`);
-  const message = shown[0] ?? '';
-  assertNamedRefusal(message, needles, why);
-  assertNoPrompts(stubs, `${why}: a refusal`);
-  await probe.sessions.assertNoSession(`${why}: a refusal starts no debug session`);
-  await probe.tasks.assertNoTask(`${why}: a refusal runs no task`);
-  return message;
-}
-
 /** The run MUST be a `vscode.Task` on SharpLsp's own task type (rule 1). */
 function assertTaskIdentity(task: ObservedTask, why: string): void {
   assert.strictEqual(typeof task.name, 'string', `${why}: a task carries a name`);
@@ -245,12 +162,14 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
   let scriptDir = '';
   let appDir = '';
   let neighbourDir = '';
+  let besideDir = '';
   let fsxFile = '';
   let csxFile = '';
   let orphanFs = '';
   let fileBasedApp = '';
   let neighbourScript = '';
   let plainTextFile = '';
+  let emptyToolHome = '';
   const roots: string[] = [];
   let stubs: UiStubs;
   let probe: Probe;
@@ -283,18 +202,28 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
     appDir = path.join(newRoot('sharplsp-filebased-'), 'app');
     fileBasedApp = fixtures.writeFileBasedApp(appDir, 'FileApp', 'hello from FileApp.cs');
 
-    // A .cs AND a .txt sharing a directory with an unrelated project: the
-    // positional `dotnet run <path>` form would run the project and pass the
-    // path as an application argument (rule 2), and a refusal that walks the
-    // cone instead of reading the document kind would launch `Neighbour`.
-    neighbourDir = path.join(newRoot('sharplsp-mixed-'), 'Neighbour');
+    // One fenced root holding an unrelated project AND, in a SIBLING directory,
+    // a project-less `.cs`. [SCRIPT-CONE] is what makes the two different: the
+    // cone walk goes UP only, so `Neighbour/` never claims a file beside it —
+    // while a `.cs` INSIDE `Neighbour/` is `ProjectOwned` and is not a
+    // file-based app at all ("the project wins inside a project cone").
+    // The `.txt` stays in the project's own directory: an `Unsupported`
+    // document must be refused by KIND, so a resolver that walked the cone
+    // instead of reading the extension would silently launch `Neighbour`.
+    const mixedRoot = newRoot('sharplsp-mixed-');
+    neighbourDir = path.join(mixedRoot, 'Neighbour');
+    besideDir = path.join(mixedRoot, 'scripts');
     fixtures.writeCSharpConsole(neighbourDir, 'Neighbour', { marker: 'the WRONG program' });
-    neighbourScript = fixtures.writeFileBasedApp(neighbourDir, 'Script', 'hello from Script.cs');
+    neighbourScript = fixtures.writeFileBasedApp(besideDir, 'Script', 'hello from Script.cs');
     plainTextFile = writeFixtureFile(neighbourDir, 'notes.txt', 'not a .NET source file\n');
+
+    // A `DOTNET_CLI_HOME` with nothing installed under it — see `withoutGlobalTools`.
+    emptyToolHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-no-tools-'));
   });
 
   suiteTeardown(() => {
     for (const root of roots) removeDirRecursive(root);
+    removeDirRecursive(emptyToolHome);
   });
 
   setup(() => {
@@ -303,6 +232,7 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
   });
 
   teardown(async () => {
+    restoreGlobalTools();
     stubs.restore();
     await stopAnyDebugSession();
     disposeArmed();
@@ -371,11 +301,18 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
     const exits = await probe.tasks.waitForExits(1);
     assert.deepStrictEqual([...exits], [0], 'the file-based app must run and exit 0'); // B42
 
-    // 3 — a .cs sharing its directory with an unrelated project, chosen
-    // explicitly from the context menu. B43: still the `--file` form.
+    // 3 — a project-less .cs one directory away from an unrelated project,
+    // chosen EXPLICITLY from the context menu (VS Code passes the resource
+    // `Uri`, not the active editor). B43: still the `--file` form, and the
+    // neighbouring project must not be dragged in. [SCRIPT-CONE] walks UP only,
+    // so a project beside the file never owns it — while `Program.cs` INSIDE
+    // `Neighbour/` is `ProjectOwned` and could never be a file-based app.
     await focusDocument(neighbourScript);
     assertSamePath(activePath(), neighbourScript, 'the neighbouring script is now active');
     assertOwningProject(neighbourDir, 'Neighbour', 'the mixed fixture'); // B43
+    const beside = projectFilesIn(besideDir);
+    assert.deepStrictEqual(beside, [], "B43: the script's OWN directory holds no project");
+    assertOtherPath(besideDir, neighbourDir, 'B43: the project is a sibling, not the same dir');
     const explicit = await invokeCommand(CMD_RUN_PROGRAM, vscode.Uri.file(neighbourScript));
     assert.strictEqual(explicit.rejected, false, `an explicit target runs: ${explicit.message}`);
     const mixedTasks = await probe.tasks.waitForDotnetTasks(2);
@@ -384,7 +321,7 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
     const flag = mixed.args.indexOf('--file');
     assert.notStrictEqual(flag, -1, "the run must pass '--file'; positional runs the project"); // B43
     assertSamePath(mixed.args[flag + 1] ?? '', neighbourScript, "'--file' takes the abs path"); // B43
-    assertSamePath(mixed.args[flag + 1] ?? '', path.join(neighbourDir, 'Script.cs'), 'the .cs'); // B43
+    assertSamePath(mixed.args[flag + 1] ?? '', path.join(besideDir, 'Script.cs'), 'the .cs'); // B43
     assert.deepStrictEqual(mixed.args.slice(0, flag), ['run'], "only 'run' precedes '--file'"); // B43
     const projectArgs = mixed.args.filter((arg) => arg.endsWith('.csproj'));
     assert.deepStrictEqual(projectArgs, [], 'the neighbouring project never enters the args'); // B43
@@ -465,9 +402,10 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
     await focusScript(csxFile, '.csx', scriptDir, 'the .csx fixture');
     assert.strictEqual(probe.tasks.started.length, 0, 'no task ran before the first interaction');
 
-    // 2 — run it. B47: the missing third-party tool is named, and it MUST NOT
-    // fall back to `dotnet run --file`, which compiles a .csx as ordinary C#
-    // and fails on `#load`/`#r`.
+    // 2 — run it with the tool genuinely absent. B47: the missing third-party
+    // tool is named, and it MUST NOT fall back to `dotnet run --file`, which
+    // compiles a .csx as ordinary C# and fails on `#load`/`#r`.
+    withoutGlobalTools(emptyToolHome);
     await assertCommandRegistered(CMD_RUN_PROGRAM);
     const runProbe = armProbe();
     const runWhy = 'running a .csx with no dotnet-script tool';

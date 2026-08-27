@@ -184,9 +184,16 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     isolateFromRepoMsbuild(scratchDir);
     appA = writeCSharpConsole(path.join(scratchDir, 'AppA'), 'AppA', { marker: 'run-debug A' });
     appB = writeCSharpConsole(path.join(scratchDir, 'AppB'), 'AppB', { marker: 'run-debug B' });
+    // A real project that CANNOT produce an assembly. Merely "not built yet" is
+    // not a refusal any more: [DEBUG-FEATURES-LAUNCH-BUILD] rule 1 makes the
+    // launch path build what it was asked to launch, so an unbuilt-but-valid
+    // project would be built and would start. A project whose BUILD FAILS is
+    // what leaves `program` missing when the session would start — rule 3's
+    // case, and the one this test's assertions describe.
     unbuilt = writeCSharpConsole(path.join(scratchDir, 'Unbuilt'), 'Unbuilt', {
       marker: 'unbuilt',
     });
+    fs.writeFileSync(unbuilt.sourceFile, 'this text is not a C# compilation unit;\n', 'utf-8');
     await buildProject(appA);
     await buildProject(appB);
   });
@@ -246,9 +253,15 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     const debugCapture = requireAt(afterF5, 0, 'the config F5 handed the chain');
     eq(typeof debugCapture.config, 'object', 'the resolve chain must be passed an object'); // B08
     neq(debugCapture.config, null, 'the resolve chain must not be passed null'); // B08
-    assertAbsent(debugCapture.config, 'type', 'is absent on the no-launch.json path'); // B08
-    assertAbsent(debugCapture.config, 'request', 'is absent; reading .length off it throws'); // B08
-    assertAbsent(debugCapture.config, 'name', 'is absent; reading .length off it throws'); // B08
+    // The SPY is registered AFTER the shipped provider and VS Code pipes each
+    // provider's RESULT into the next, so what reaches it is what SharpLsp
+    // returned — and [DEBUG-FEATURES-LAUNCH-NOCONFIG] rule 3 requires that to
+    // carry a non-empty `type` and a `request` of exactly `launch`, or VS Code
+    // discards it silently. The BARE `Object.create(null)` shape is observable
+    // only by calling the provider directly; interaction 2b does that.
+    eq(debugCapture.config['type'], DEBUG_TYPE_ID, 'the chain must be handed a usable type'); // B08
+    eq(debugCapture.config['request'], 'launch', 'and a request of exactly "launch"'); // B08
+    neq(debugCapture.config['name'], '', 'and a name for the debug toolbar'); // B08
     neq(debugCapture.config['noDebug'], true, 'plain F5 is a DEBUG request, not a run'); // B09
     samePath(debugCapture.folderPath, workspaceRoot, 'the chain gets the document’s folder');
     deepEq(
@@ -256,6 +269,18 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
       [],
       'a cancelled resolve starts no session',
     );
+
+    // Interaction 2b — the shape VS Code actually builds, straight into the
+    // shipped provider. `type`, `request` and `name` are absent KEYS, and the
+    // reported crash was a `.length` dereference on one of them: it rejects the
+    // whole chain, so the spy above is never reached at all.
+    const bare = emptyF5Config();
+    assertAbsent(bare, 'type', 'is absent on the no-launch.json path'); // B08
+    assertAbsent(bare, 'request', 'is absent; reading .length off it throws'); // B08
+    assertAbsent(bare, 'name', 'is absent; reading .length off it throws'); // B08
+    const direct = await resolveThroughProvider(fakeFolder(workspaceRoot), bare);
+    eq(direct.error, '', 'the provider MUST NOT throw for the bare F5 configuration'); // B08
+    eq(direct.config?.type, DEBUG_TYPE_ID, 'and it must fill in a non-empty type'); // B08
 
     // Interaction 3 — press Ctrl/Cmd+F5, Run Without Debugging.
     const ctrlF5 = await invokeCommand(CMD_VSCODE_DEBUG_RUN);
@@ -268,7 +293,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
       true,
       'Ctrl+F5 is debug.start with noDebug stamped BEFORE the provider chain runs',
     ); // B09
-    assertAbsent(runCapture.config, 'type', 'is absent for Ctrl+F5 exactly as it is for F5'); // B09
+    eq(runCapture.config['type'], DEBUG_TYPE_ID, 'Ctrl+F5 is typed exactly as F5 is'); // B09
     neq(runCapture.config, debugCapture.config, 'each gesture builds its own config object');
     samePath(runCapture.folderPath, workspaceRoot, 'run resolves against the same folder as debug');
 
@@ -412,7 +437,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
   test('a refused launch is reported to the user instead of being swallowed', async function () {
     this.timeout(OBSERVE_TIMEOUT_MS);
 
-    // Interaction 1 — a project that exists but was never built.
+    // Interaction 1 — a project that exists and cannot be built.
     const missingDll = builtDll(unbuilt);
     eq(fs.existsSync(unbuilt.projectFile), true, 'the refusal fixture is a real project file');
     eq(fs.existsSync(missingDll), false, 'the refusal fixture must NOT have been built'); // B62

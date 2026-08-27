@@ -373,13 +373,36 @@ export async function focusDocument(file: string): Promise<vscode.TextEditor> {
   return editor;
 }
 
-/** Stop any session a test started. Safe when there is none. */
+/** How long a teardown waits for a stopped session to report its termination. */
+const SETTLE_TIMEOUT_MS = 20_000;
+
+/**
+ * Stop any session a test started AND wait for the workbench to report it gone.
+ *
+ * `stopDebugging()` only asks; `onDidTerminateDebugSession` lands afterwards. A
+ * teardown that returns before it does leaks the previous test's termination
+ * into the NEXT test's recorder, where it reads as "a session this test never
+ * started has ended" — a failure with no relationship to the test that reports
+ * it. Settling here is what keeps each test's recorders describing only its own
+ * sessions. Safe when there is nothing to stop: the wait is skipped entirely.
+ */
 export async function stopAnyDebugSession(): Promise<void> {
+  const active = vscode.debug.activeDebugSession;
+  if (active === undefined) return;
+  const ended = new Set<string>();
+  const listener = vscode.debug.onDidTerminateDebugSession((session) => ended.add(session.id));
   try {
     await vscode.debug.stopDebugging();
   } catch {
-    // No active session — nothing to stop.
+    // Already gone between the check and the request — still settle below.
   }
+  await pollUntilResult(
+    async () => ended,
+    (ids) => ids.has(active.id),
+    SETTLE_TIMEOUT_MS,
+    50,
+  );
+  listener.dispose();
 }
 
 /**

@@ -154,3 +154,4 @@ deslop-*.log
 # next run's copy: CS0101/CS0111 duplicate types, and every .NET and VS Code
 # job fails at fixture build before a single test runs.
 /src/editors/vscode/test-fixtures/workspace/debug-*/
+/src/editors/vscode/test-fixtures/workspace/sharplsp-*/

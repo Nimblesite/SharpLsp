@@ -113,6 +113,23 @@ const ROUTER_CAPABILITIES: Readonly<Record<string, boolean>> = {
   supportsANSIStyling: true,
 };
 
+/** How much of a request's arguments one trace line carries. */
+const TRACE_ARGUMENT_LIMIT = 160;
+
+/**
+ * Record one editor-to-adapter request when `SHARPLSP_DAP_TRACE=1`.
+ *
+ * Through `log.ts` rather than the console: this project treats logging as
+ * structured output on the extension's own channel, and a raw `console` write
+ * from inside a debug adapter lands in whatever stream the host happened to
+ * give the extension host — which is not where anyone looks for it.
+ */
+function trace(message: DapMessage): void {
+  if (process.env.SHARPLSP_DAP_TRACE !== '1') return;
+  const args = JSON.stringify(message.arguments ?? {}).slice(0, TRACE_ARGUMENT_LIMIT);
+  info(`DAP -> ${String(message.command)} ${args}`);
+}
+
 /**
  * Proxies DAP between VS Code and a netcoredbg child process, enriching the
  * messages the spec requires the router to enrich.
@@ -150,6 +167,7 @@ export class DapRouter implements vscode.DebugAdapter {
   /** VS Code -> netcoredbg. */
   public handleMessage(message: vscode.DebugProtocolMessage): void {
     if (!isRecord(message)) return;
+    trace(message);
     this.rememberLaunchOptions(message);
     this.write(retarget(message));
   }

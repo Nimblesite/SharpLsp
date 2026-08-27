@@ -10,9 +10,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { CMD_DEBUG_PROGRAM, CMD_RUN_PROGRAM, DEBUG_TYPE } from './constants';
-import { exeName } from './platform';
+import { findNetcoredbg, getNetcoredbgCandidates } from './netcoredbg';
 import { info, warn } from './log';
 import { DapRouter } from './dap-router';
+import { resolveAttachTarget } from './attach-target';
 import {
   NO_TARGET_MESSAGE,
   folderFor,
@@ -53,6 +54,7 @@ export const SYNTHESIZED_NAME = 'Launch .NET Project';
 // second, divergent walk.
 export { readProfiles, readLaunchProfiles, applyLaunchProfile, isLaunchSettings };
 export { findEntryProject, findProjectFile, projectEntryFromFile, type ProjectEntry };
+export { findNetcoredbg, getNetcoredbgCandidates };
 
 /**
  * Fills in a debug configuration for F5 and Ctrl/Cmd+F5.
@@ -101,10 +103,14 @@ export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider
    * launch with a message the user can act on, rather than handing netcoredbg a
    * path that does not exist.
    */
-  public resolveDebugConfigurationWithSubstitutedVariables(
+  public async resolveDebugConfigurationWithSubstitutedVariables(
     _folder: vscode.WorkspaceFolder | undefined,
     config: vscode.DebugConfiguration,
-  ): vscode.ProviderResult<vscode.DebugConfiguration> {
+  ): Promise<vscode.DebugConfiguration | undefined> {
+    // An attach names a process, not a program. netcoredbg reads only
+    // `processId`, so a `processName` must be resolved here and a pid that no
+    // longer exists refused here — [DEBUG-FEATURES-LAUNCH]'s two attach rows.
+    if (config.request === 'attach') return await settleAttach(config);
     if (config.request !== 'launch') return config;
     const program = typeof config.program === 'string' ? config.program : '';
     if (program.length === 0) {
@@ -142,6 +148,28 @@ export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider
       ...spreadOptional('env', profileEnv(profile)),
     }));
   }
+}
+
+/**
+ * Resolve an attach configuration onto a live pid, or refuse it out loud.
+ *
+ * Exactly one message per refusal: [DEBUG-FEATURES-LAUNCH-SCRIPT] rule 6 makes
+ * a silent no-op non-conforming, and returning `undefined` is what makes
+ * `startDebugging` answer `false` instead of opening a session onto nothing.
+ */
+async function settleAttach(
+  config: vscode.DebugConfiguration,
+): Promise<vscode.DebugConfiguration | undefined> {
+  const outcome = await resolveAttachTarget(config);
+  if (outcome === undefined) return config;
+  if (outcome.kind === 'refused') {
+    void vscode.window.showWarningMessage(outcome.reason);
+    return undefined;
+  }
+  // A fresh object rather than a mutation: `config` was captured before the
+  // process listing was awaited, and writing back onto it after the await is
+  // exactly the stale-state hazard `require-atomic-updates` names.
+  return { ...config, processId: outcome.processId };
 }
 
 /** Spread helper: omit the key entirely when the value is undefined. */
@@ -339,80 +367,32 @@ export class SharpLspDebugAdapterFactory implements vscode.DebugAdapterDescripto
   }
 }
 
-/**
- * The netcoredbg the adapter factory will spawn, or undefined when there is none.
- *
- * PATH is searched properly rather than returning a bare `netcoredbg` and hoping:
- * a name that does not resolve fails later as a spawn ENOENT inside the adapter
- * process, which surfaces to the user as an unexplained failed debug session.
- * Refusing here lets the factory say what is actually wrong.
- */
-export function findNetcoredbg(extensionPath?: string): string | undefined {
-  const configured = vscode.workspace
-    .getConfiguration('sharplsp')
-    .get<string>('debug.netcoredbgPath');
-  if (configured !== undefined && configured.length > 0 && fs.existsSync(configured)) {
-    return configured;
-  }
-  for (const candidate of getNetcoredbgCandidates(extensionPath)) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  // The only route on platforms with no upstream prebuilt (win32-arm64,
-  // darwin-x64), where the VSIX cannot bundle a debugger.
-  return findOnPath(exeName('netcoredbg'));
-}
-
-/** Resolve `name` against PATH, honouring PATHEXT on Windows. */
-function findOnPath(name: string): string | undefined {
-  const entries = (process.env.PATH ?? '').split(path.delimiter).filter((dir) => dir.length > 0);
-  const extensions = process.platform === 'win32' ? ['', ...windowsPathExt()] : [''];
-  for (const dir of entries) {
-    for (const extension of extensions) {
-      const candidate = path.join(dir, `${name}${extension}`);
-      if (fs.existsSync(candidate)) return candidate;
-    }
-  }
-  return undefined;
-}
-
-/** The executable suffixes Windows treats as runnable. */
-function windowsPathExt(): string[] {
-  return (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
-    .split(';')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-}
-
-/**
- * Platform-aware netcoredbg search paths, most-preferred first. When
- * `extensionPath` is supplied, the VSIX-bundled binary
- * (`bin/<platform>/netcoredbg/netcoredbg[.exe]`, staged by
- * `tools/vsix/fetch-netcoredbg.sh`) is preferred over any user-installed copy.
- */
-export function getNetcoredbgCandidates(extensionPath?: string): string[] {
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
-  const isWin = process.platform === 'win32';
-  const exe = isWin ? 'netcoredbg.exe' : 'netcoredbg';
-
-  const candidates: string[] = [];
-  if (extensionPath !== undefined && extensionPath.length > 0) {
-    candidates.push(
-      path.join(extensionPath, 'bin', `${process.platform}-${process.arch}`, 'netcoredbg', exe),
-    );
-  }
-  candidates.push(
-    path.join(home, '.dotnet', 'tools', exe),
-    path.join(home, '.local', 'share', 'netcoredbg', exe),
-    `/usr/local/bin/${exe}`,
-    `/usr/bin/${exe}`,
-    path.join(home, 'AppData', 'Local', 'netcoredbg', exe),
-  );
-  return candidates;
-}
-
 /** A project the Solution Explorer passed to a run/debug command. */
 interface ExplorerNode {
   readonly projectFilePath?: string;
+}
+
+/**
+ * What a run/debug command invocation can name.
+ *
+ * The Solution Explorer passes its tree node; `editor/context` and
+ * `editor/title/run` pass the editor's resource `Uri`. Both are the user
+ * pointing at something specific, and [DEBUG-FEATURES-LAUNCH-TARGET] routes
+ * every surface through one resolver — so a `Uri` argument must be READ, not
+ * dropped in favour of `activeTextEditor`. Dropping it launches whatever editor
+ * happens to be focused, which is a different file whenever the editor group
+ * that was clicked is not the active one.
+ */
+type LaunchArgument = ExplorerNode | vscode.Uri | undefined;
+
+/** The project a Solution Explorer node named, if it named one. */
+function namedProject(argument: LaunchArgument): string | undefined {
+  return argument instanceof vscode.Uri ? undefined : argument?.projectFilePath;
+}
+
+/** The document a menu invocation named, if it named one. */
+function namedResource(argument: LaunchArgument): string | undefined {
+  return argument instanceof vscode.Uri ? argument.fsPath : undefined;
 }
 
 /** Register the adapter, the configuration providers and both commands. */
@@ -435,27 +415,29 @@ export function registerDebugAdapter(context: vscode.ExtensionContext): void {
       DEBUG_TYPE,
       new SharpLspDebugAdapterFactory(context.extensionPath),
     ),
-    vscode.commands.registerCommand(CMD_DEBUG_PROGRAM, async (node?: ExplorerNode) => {
-      await launch(node, false);
+    vscode.commands.registerCommand(CMD_DEBUG_PROGRAM, async (argument?: LaunchArgument) => {
+      await launch(argument, false);
     }),
-    vscode.commands.registerCommand(CMD_RUN_PROGRAM, async (node?: ExplorerNode) => {
-      await launch(node, true);
+    vscode.commands.registerCommand(CMD_RUN_PROGRAM, async (argument?: LaunchArgument) => {
+      await launch(argument, true);
     }),
   );
   info('Debug adapter registered for sharplsp-coreclr');
 }
 
-/** Resolve the active context and run or debug it. */
-export async function launch(node: ExplorerNode | undefined, noDebug: boolean): Promise<void> {
-  const focused = activeFile();
-  const anchor = node?.projectFilePath ?? focused;
-  const folder = folderFor(anchor);
+/** Resolve the named or active context and run or debug it. */
+export async function launch(argument: LaunchArgument, noDebug: boolean): Promise<void> {
+  const projectFile = namedProject(argument);
+  // An explicitly named resource wins over the focused editor; they differ
+  // whenever the click landed on an editor group that is not the active one.
+  const document = namedResource(argument) ?? activeFile();
+  const folder = folderFor(projectFile ?? document);
   if (folder === undefined) {
     void vscode.window.showWarningMessage(NO_TARGET_MESSAGE);
     return;
   }
-  const resolved = await resolveLaunchTarget(focused, folder, {
-    ...(node?.projectFilePath === undefined ? {} : { projectFile: node.projectFilePath }),
+  const resolved = await resolveLaunchTarget(document, folder, {
+    ...(projectFile === undefined ? {} : { projectFile }),
   });
   if (!resolved.ok) {
     // An empty error is a user cancellation — already silent by choice.
