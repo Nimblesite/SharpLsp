@@ -1,28 +1,17 @@
 // The DAP proxy that sits between VS Code and netcoredbg.
-//
 // Implements [DEBUG-ARCHITECTURE-ROUTER]'s Phase Four responsibilities that are
 // reachable from the editor process: adapter lifecycle, DAP proxying, capability
 // augmentation, async stack enrichment, and the emulations [DEBUG-ADAPTER-GAPS]
 // records netcoredbg cannot serve natively — restart, hit-count breakpoints,
 // logpoints, run-to-cursor and terminal-hosted debuggees.
-//
-// SCOPE. The spec sites the router in the Rust host and gives it more jobs than
-// this class does — `[DebuggerDisplay]` emulation against the C# sidecar and
-// continuation-following via ICorDebug are NOT implemented here. What is
-// implemented is honest: a capability is advertised only when it is served,
-// natively or by the emulations in this file and its helpers.
-//
-// SHAPE. This class is the SWITCHBOARD; the work lives in narrow collaborators
-// it hands a small host interface to. `dap-wire.ts` owns the netcoredbg child
-// process and the `Content-Length` framing, `dap-stops.ts` decides whether a
-// stop reaches the user, `dap-stack.ts` delivers enriched call stacks, and
-// `dap-replay.ts` / `dap-goto.ts` / `dap-stepping.ts` / `dap-breakpoints.ts`
-// serve one emulation each.
+// This class is the switchboard; narrow collaborators own child framing, stop
+// decisions, stack delivery, and individual emulations.
 import type * as cp from 'node:child_process';
 import * as vscode from 'vscode';
 import { retarget } from './dap-exceptions';
 import { isRecord, sourcePathOf, type DapMessage } from './dap-emulate';
 import { BreakpointEmulator } from './dap-breakpoints';
+import { AttachRetrier, EvaluateRetrier, type RetryHost } from './dap-attach';
 import { SessionReplayer, type ReplayHost } from './dap-replay';
 import { GotoEmulator } from './dap-goto';
 import { StepCoalescer, STEP_COMMANDS } from './dap-stepping';
@@ -32,6 +21,8 @@ import { RequestCorrelator } from './dap-correlator';
 import { enrichResponse, withEventCapabilities } from './dap-caps';
 import { HandleNamespace } from './dap-namespace';
 import { AdapterWire } from './dap-wire';
+import { carriesUserCode } from './dap-statement';
+import { VariableExpander } from './dap-variables';
 import { error, traceInfo } from './log';
 import { getErrorMessage } from './utils';
 import { err, ok, type Result } from './result';
@@ -76,8 +67,13 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private readonly pendingStackArgs = new Map<number, Record<string, unknown>>();
   /** The router's own requests, and the sequence space they are issued in. */
   private readonly correlator: RequestCorrelator;
+  /** DAP requests that need retrying or logical response expansion. */
+  private readonly attaches: AttachRetrier;
+  private readonly evaluations: EvaluateRetrier;
+  private readonly variables: VariableExpander;
   /** True once the child itself sent the DAP `terminated` event. */
   private childAnnouncedTerminated = false;
+  private justMyCode = true;
   /** Run-to-cursor emulation ([DEBUG-FEATURES-STEPPING], P2). */
   private readonly goto: GotoEmulator;
   /** Same-line step coalescing ([DEBUG-FEATURES-STEPPING], P1). */
@@ -122,6 +118,16 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     this.correlator = new RequestCorrelator((message) => {
       this.write(message);
     });
+    const retryHost: RetryHost = {
+      request: async (command, args) => await this.request(command, args),
+      deliver: (message) => {
+        this.emit(this.handles.translateResponseBody(message));
+      },
+      isClosed: () => this.closed || this.disposed,
+    };
+    this.attaches = new AttachRetrier(retryHost);
+    this.evaluations = new EvaluateRetrier(retryHost);
+    this.variables = new VariableExpander(retryHost);
     this.wire = this.startWire(adapterPath);
     this.replayer = new SessionReplayer(this);
     this.goto = new GotoEmulator(this, (path) => this.replayer.breakpointArgumentsFor(path));
@@ -135,6 +141,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       deliverStop: (stop) => {
         this.stops.deliverStop(stop);
       },
+      carriesCode: async (location) => await carriesUserCode(location, this.justMyCode),
     });
   }
 
@@ -268,11 +275,34 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         this.goto.onGoto(message);
         return true;
       case 'launch':
-      case 'attach':
         // A fresh debuggee is starting; any previous exit is history.
         this.debuggeeExited = false;
         this.rememberLaunchOptions(args);
         return false;
+      case 'attach':
+        this.debuggeeExited = false;
+        this.rememberLaunchOptions(args);
+        this.attaches.start(message, args ?? {});
+        return true;
+      case 'evaluate': {
+        const translated = this.handles.translateRequestArguments(message);
+        const retryArgs = isRecord(translated.arguments) ? translated.arguments : {};
+        this.evaluations.start(message, retryArgs);
+        return true;
+      }
+      case 'scopes': {
+        const translated = this.handles.translateRequestArguments(message);
+        this.variables.startScopes(
+          message,
+          isRecord(translated.arguments) ? translated.arguments : {},
+        );
+        return true;
+      }
+      case 'variables': {
+        const translated = this.handles.translateRequestArguments(message);
+        this.variables.start(message, isRecord(translated.arguments) ? translated.arguments : {});
+        return true;
+      }
       case 'continue':
       case 'pause':
         // Resuming the debuggee ends any step in flight: the stop that follows
@@ -306,6 +336,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   /** Track `justMyCode` off the launch/attach request that carries it. */
   private rememberLaunchOptions(args: Record<string, unknown> | undefined): void {
     if (args === undefined || typeof args.justMyCode !== 'boolean') return;
+    this.justMyCode = args.justMyCode;
     this.stacks.setJustMyCode(args.justMyCode);
   }
 
@@ -459,6 +490,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
 
   /** Offer a stop to the step coalescer; true when it took ownership of it. */
   public coalesceStep(message: DapMessage, threadId: number, reason: string): boolean {
-    return this.stepper.onStopped(message, threadId, reason);
+    if (this.stepper.onStopped(message, threadId, reason)) return true;
+    return reason === 'function breakpoint'
+      ? this.stepper.elideFunctionEntry(message, threadId)
+      : false;
   }
 }

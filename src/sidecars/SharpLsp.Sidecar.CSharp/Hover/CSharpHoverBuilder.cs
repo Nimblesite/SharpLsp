@@ -184,6 +184,20 @@ internal static class CSharpHoverBuilder
         _ = sb.AppendLine("```");
     }
 
+    /// <summary>
+    /// Namespace-qualified containing type. The bare type name cannot say where a
+    /// member came from: a reduced extension method renders its signature against
+    /// the receiver (<c>string.Pluralize</c>), so <c>InflectorExtensions</c> alone
+    /// leaves the reader with no way to tell that the symbol arrived with the
+    /// Humanizer package. Implements [HOVER-CSHARP-RENDERING].
+    /// </summary>
+    private static readonly SymbolDisplayFormat ContainerFormat = new(
+        globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted,
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+        genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
+        miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes
+    );
+
     private static void AppendContainingType(System.Text.StringBuilder sb, ISymbol symbol)
     {
         if (symbol.ContainingType is null)
@@ -193,9 +207,7 @@ internal static class CSharpHoverBuilder
 
         if (symbol is IMethodSymbol or IPropertySymbol or IFieldSymbol or IEventSymbol)
         {
-            var container = symbol.ContainingType.ToDisplayString(
-                SymbolDisplayFormat.MinimallyQualifiedFormat
-            );
+            var container = symbol.ContainingType.ToDisplayString(ContainerFormat);
             _ = sb.Append("*in* `").Append(container).Append('`').AppendLine();
         }
     }

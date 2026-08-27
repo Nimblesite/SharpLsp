@@ -159,7 +159,12 @@ remaining gaps are explicit rather than implied.
       [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
 - [ ] Apply SDK defaults (`ImplicitUsings`, `Nullable`, `TargetFramework`, `PublishAot`, `PackAsTool`)
       — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [ ] Automatic tier 2 → tier 1 upgrade when restore completes — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+- [x] Automatic tier 2 → tier 1 upgrade when restore completes — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+- [x] The upgrade reaches the editor: the tier-2 notice carries `SLSPC0002` while the restore runs
+      and `SLSPC0001` once it terminally fails, and the host republishes a document's diagnostics
+      until `SLSPC0002` clears. Without it hover and completion bind the restored package while the
+      editor still shows the placeholder's phantom `CS0246`s —
+      [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
 
 ### Testing
 

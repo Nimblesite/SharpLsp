@@ -23,6 +23,13 @@ internal sealed partial class WorkspaceManager
 {
     private AdhocWorkspace? _adhocWorkspace;
 
+    // Tier-2 notice codes. The two states are separate codes, never one code plus
+    // prose, because the editor host polls diagnostics until the restore settles and
+    // must not parse message text to decide. Implements
+    // [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+    private const string RestoreDegradedCode = "SLSPC0001";
+    private const string RestorePendingCode = "SLSPC0002";
+
     // Script default imports, matching Roslyn's scripting host. Implements [SCRIPT-CSX-OPTIONS].
     private static readonly string[] ScriptImports =
     [
@@ -221,15 +228,18 @@ internal sealed partial class WorkspaceManager
     )
     {
         var rootPath = ProjectRootPath(document.Project, filePath);
-        if (!_projectlessDegradations.TryGetValue(rootPath, out var reason))
+        if (!_projectlessDegradations.TryGetValue(rootPath, out var degradation))
         {
             return;
         }
 
-        diagnostics.Add(DegradationDiagnostic(filePath, reason));
+        diagnostics.Add(DegradationDiagnostic(filePath, degradation));
     }
 
-    private static DiagnosticResult DegradationDiagnostic(string filePath, string reason)
+    private static DiagnosticResult DegradationDiagnostic(
+        string filePath,
+        ProjectlessDegradation degradation
+    )
     {
         return new DiagnosticResult
         {
@@ -238,9 +248,10 @@ internal sealed partial class WorkspaceManager
             StartCharacter = 0,
             EndLine = 0,
             EndCharacter = 1,
-            Message = $"File-based package restore degraded to BCL-only references: {reason}",
+            Message =
+                $"File-based package restore degraded to BCL-only references: {degradation.Reason}",
             Severity = "Info",
-            Code = "SLSPC0001",
+            Code = degradation.IsPending ? RestorePendingCode : RestoreDegradedCode,
         };
     }
 

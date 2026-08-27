@@ -13,9 +13,10 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
 {
     private string WriteConcurrentApp()
     {
+        WriteAppCone();
         return _fixture.Write(
-            "Concurrent.cs",
-            "#:package Newtonsoft.Json@13.0.3\nusing Newtonsoft.Json;\nConsole.WriteLine(JsonConvert.SerializeObject(3));\n"
+            Path.Combine("cone", "Concurrent.cs"),
+            "#:package Newtonsoft.Json\n#:property DefineConstants=FROM_DIRECTIVE;$(DefineConstants)\n#:property AssemblyTitle=Sharp & Precise\nusing Newtonsoft.Json;\nConsole.WriteLine(JsonConvert.SerializeObject(3));\n"
         );
     }
 
@@ -78,11 +79,11 @@ public sealed partial class FileBasedPackageSpecEndToEndTests
         string app
     )
     {
-        var probe = new HoverProbe(app, 2, 20, "Newtonsoft.Json.JsonConvert");
+        var probe = new HoverProbe(app, 4, 20, "Newtonsoft.Json.JsonConvert");
         var firstHover = await WaitHoverAsync(first, probe).ConfigureAwait(false);
         var secondHover = await WaitHoverAsync(second, probe).ConfigureAwait(false);
-        AssertHoverRange(firstHover, 2, 18, 29);
-        AssertHoverRange(secondHover, 2, 18, 29);
+        AssertHoverRange(firstHover, 4, 18, 29);
+        AssertHoverRange(secondHover, 4, 18, 29);
     }
 
     private static async Task<ProjectSnapshot> WaitForRestoreProjectAsync(string restoreRoot)

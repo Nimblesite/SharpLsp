@@ -73,6 +73,7 @@ pub mod semantic_tokens_tests;
 pub mod sort_members;
 pub mod sort_members_extra;
 pub mod standalone_csproj;
+pub mod statement_stop;
 pub mod symbols;
 pub mod type_hierarchy_tests;
 pub mod user_session_csharp;
@@ -266,11 +267,19 @@ impl LspClient {
 
     /// Perform the LSP initialize handshake with a workspace root URI.
     pub fn initialize_with_root(&mut self, root_uri: Value) -> Value {
+        self.initialize_with_capabilities(root_uri, json!({}))
+    }
+
+    /// Perform the LSP initialize handshake declaring specific client
+    /// capabilities. Server capabilities depend on them — a client that
+    /// declares `textDocument.publishDiagnostics` is not offered the pull
+    /// diagnostic provider. [DIAG-LSP-CAPABILITIES-EXCLUSIVE]
+    pub fn initialize_with_capabilities(&mut self, root_uri: Value, capabilities: Value) -> Value {
         let resp = self.request(
             "initialize",
             json!({
                 "processId": null,
-                "capabilities": {},
+                "capabilities": capabilities,
                 "rootUri": root_uri,
             }),
         );

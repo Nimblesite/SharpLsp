@@ -27,6 +27,14 @@ const PUSH_RETRY_DELAY: Duration = Duration::from_secs(1);
 /// loop early. [DIAG-PUSH-GATE]
 const MAX_PUSH_ATTEMPTS: u32 = 120;
 
+/// Sidecar code for "the tier-1 file-based restore has not finished yet".
+/// While it is present the published set is a provisional tier-2 answer that a
+/// background `MSBuild` restore is about to replace, so the push loop keeps
+/// re-fetching until it clears. The state is a distinct code — never a phrase
+/// inside the message — so this check never parses prose.
+/// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+const RESTORE_PENDING_CODE: &str = "SLSPC0002";
+
 /// Latest push generation per document URI. Implements [DIAG-PUSH-GATE]
 /// (GitHub #160): a completed fetch older than the newest known text must not
 /// publish, and the newest generation must retry on failure until published
@@ -117,11 +125,48 @@ fn publish_if_current(
     Ok(true)
 }
 
+/// Publish a fetched set and report whether the loop must keep going.
+///
+/// A set still carrying [`RESTORE_PENDING_CODE`] is a tier-2 placeholder: the
+/// background `MSBuild` restore will replace the project's references, and
+/// nothing else would ever re-publish the corrected set, so the editor would
+/// keep the placeholder's phantom `CS0246`s forever. Implements
+/// [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+fn publish_provisional(
+    sender: &crossbeam_channel::Sender<Message>,
+    uri: &Uri,
+    generation: u64,
+    diagnostics: Vec<Diagnostic>,
+) -> bool {
+    let pending = has_restore_pending(&diagnostics);
+    match publish_if_current(sender, uri, generation, diagnostics) {
+        Ok(published) => published && pending,
+        Err(err) => {
+            warn!("Failed to publish diagnostics: {err:#}");
+            false
+        }
+    }
+}
+
+/// Whether a fetched set still reports an unfinished file-based restore.
+fn has_restore_pending(diagnostics: &[Diagnostic]) -> bool {
+    diagnostics.iter().any(|diagnostic| {
+        matches!(
+            diagnostic.code,
+            Some(NumberOrString::String(ref code)) if code == RESTORE_PENDING_CODE
+        )
+    })
+}
+
 /// Fetch diagnostics and publish them under the generation gate, retrying
 /// while this generation is still the newest text. Dropping a failed fetch
 /// for the *last* edit would leave the previous publication — possibly an
 /// error set for text that no longer exists — on screen forever; that is the
 /// phantom-diagnostics bug of GitHub #160. [DIAG-PUSH-GATE]
+///
+/// The loop also continues while the published set is a provisional tier-2
+/// answer, so a file-based app's diagnostics are republished once its
+/// background restore lands. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
 async fn fetch_and_publish_gated(
     sidecar: &SidecarManager,
     sender: &crossbeam_channel::Sender<Message>,
@@ -136,10 +181,9 @@ async fn fetch_and_publish_gated(
         }
         match fetch(sidecar, file_path, source_tag).await {
             Ok(diagnostics) => {
-                if let Err(err) = publish_if_current(sender, uri, generation, diagnostics) {
-                    warn!("Failed to publish diagnostics: {err:#}");
+                if !publish_provisional(sender, uri, generation, diagnostics) {
+                    return;
                 }
-                return;
             }
             Err(err) => {
                 warn!("Sidecar diagnostics unavailable (attempt {attempt}): {err:#}");
@@ -601,6 +645,89 @@ mod tests {
              even when a fetch fails transiently — stale errors published for \
              older text must never remain the final state (GitHub #160); got: {:?}",
             converged
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// A file-based app opens on tier-2 BCL references while `dotnet restore`
+    /// runs, so its first diagnostic set is a placeholder carrying phantom
+    /// `CS0246`s next to the `SLSPC0002` restore-pending notice. The tier-1
+    /// upgrade then swaps the project's references inside the sidecar — an
+    /// event the editor cannot observe, and one no further `didChange` follows
+    /// when the user is simply reading the file. The push pipeline itself must
+    /// therefore keep fetching until the provisional set settles; otherwise the
+    /// placeholder's errors stay on screen for the life of the document even
+    /// though hover and completion already bind the restored package.
+    /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+    #[test]
+    fn provisional_filebased_set_must_be_republished_once_restore_settles() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (host_side, sidecar_side) = tokio::io::duplex(64 * 1024);
+        let manager = runtime.block_on(async {
+            Arc::new(
+                crate::sidecar::manager::SidecarManager::connected_to_stream_for_tests(host_side)
+                    .await,
+            )
+        });
+
+        let pending_payload = rmp_serde::to_vec(&vec![
+            (
+                "App.cs".to_string(),
+                1u32,
+                6u32,
+                1u32,
+                16u32,
+                "The type or namespace name 'JObject' could not be found".to_string(),
+                "Error".to_string(),
+                "CS0246".to_string(),
+            ),
+            (
+                "App.cs".to_string(),
+                0u32,
+                0u32,
+                0u32,
+                1u32,
+                "File-based package restore degraded to BCL-only references: \
+                 Restore pending for Newtonsoft.Json@13.0.3."
+                    .to_string(),
+                "Info".to_string(),
+                RESTORE_PENDING_CODE.to_string(),
+            ),
+        ])
+        .unwrap();
+        let clean_payload = rmp_serde::to_vec::<Vec<i32>>(&vec![]).unwrap();
+        let _sidecar_task = runtime.spawn(fake_scripted_sidecar(
+            sidecar_side,
+            pending_payload,
+            clean_payload,
+        ));
+
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        let uri: Uri = "file:///app.cs".parse().unwrap();
+
+        // One didOpen — the only client event this document ever gets.
+        request_in_background(&runtime, manager, sender, uri, "App.cs".to_string());
+
+        let provisional = recv_publication(&receiver, std::time::Duration::from_secs(10));
+        assert!(
+            has_restore_pending(&provisional.diagnostics),
+            "tier 2 must publish its restore-pending notice immediately"
+        );
+        assert_eq!(
+            provisional.diagnostics.len(),
+            2,
+            "the placeholder set carries the unresolved package error too"
+        );
+
+        let settled = recv_publication(&receiver, std::time::Duration::from_secs(10));
+        assert!(
+            settled.diagnostics.is_empty(),
+            "the tier-1 upgrade must be republished without any further client \
+             event — a provisional set is never the final published state; got: {:?}",
+            settled
                 .diagnostics
                 .iter()
                 .map(|d| &d.message)

@@ -116,12 +116,24 @@ function windowsRow(entry: unknown): ProcessRow | undefined {
  * columns: the command line is the field a managed process must be matched on,
  * and it contains spaces and quotes that no column split survives.
  */
-async function windowsProcesses(): Promise<ProcessRow[]> {
+function windowsFilterCommand(processName: string): string {
+  const stem = path.win32.basename(processName).replace(/\.(?:dll|exe)$/iu, '');
+  const executable = `${stem}.exe`.replaceAll("'", "''");
+  const filter = `Name='dotnet.exe' OR Name='${executable}'`;
+  const encodedFilter = Buffer.from(filter, 'utf16le').toString('base64');
+  return (
+    `$filter=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedFilter}'));` +
+    'Get-CimInstance Win32_Process -Filter $filter | ' +
+    'Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress'
+  );
+}
+
+async function windowsProcesses(processName: string): Promise<ProcessRow[]> {
   const listing = await capture('powershell.exe', [
     '-NoProfile',
     '-NonInteractive',
     '-Command',
-    'Get-CimInstance Win32_Process | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress',
+    windowsFilterCommand(processName),
   ]);
   if (listing.trim().length === 0) return [];
   const parsed: unknown = JSON.parse(listing);
@@ -132,8 +144,10 @@ async function windowsProcesses(): Promise<ProcessRow[]> {
 }
 
 /** Every process visible to this user, on whichever host is running. */
-async function listProcesses(): Promise<ProcessRow[]> {
-  return process.platform === 'win32' ? await windowsProcesses() : await posixProcesses();
+async function listProcesses(processName: string): Promise<ProcessRow[]> {
+  return process.platform === 'win32'
+    ? await windowsProcesses(processName)
+    : await posixProcesses();
 }
 
 /**
@@ -196,7 +210,7 @@ function ambiguousName(name: string, pids: readonly number[]): AttachOutcome {
 
 /** Resolve a `processName` to the single live process it names. */
 async function resolveByName(name: string): Promise<AttachOutcome> {
-  const matched = (await listProcesses()).filter(
+  const matched = (await listProcesses(name)).filter(
     (row) => row.pid !== process.pid && matchesProcessName(row, name),
   );
   const pids = matched.map((row) => row.pid);

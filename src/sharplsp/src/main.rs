@@ -24,6 +24,7 @@ mod semantic_tokens;
 mod sidecar;
 mod signature_help;
 mod sort_members;
+mod statement_stop;
 mod syntax;
 mod tree_sitter_parse;
 mod type_hierarchy;
@@ -148,13 +149,16 @@ fn main() -> ExitCode {
 fn run_server() -> Result<()> {
     let (connection, io_threads) = Connection::stdio();
 
-    let server_capabilities = build_capabilities();
-    let capabilities_json =
-        serde_json::to_value(server_capabilities).context("serialize capabilities")?;
-
-    let init_params = connection.initialize(capabilities_json)?;
+    // Capabilities depend on what the client itself supports, so the initialize
+    // request is answered by hand instead of through `Connection::initialize`.
+    let (initialize_id, init_params) = connection.initialize_start()?;
     let init_params: InitializeParams =
         serde_json::from_value(init_params).context("deserialize InitializeParams")?;
+    let server_capabilities = build_capabilities(&init_params.capabilities);
+    let capabilities_json = serde_json::json!({
+        "capabilities": serde_json::to_value(server_capabilities).context("serialize capabilities")?,
+    });
+    connection.initialize_finish(initialize_id, capabilities_json)?;
 
     // Convert the workspace URI through the same RFC 8089 parser as every other
     // file path so Windows drive letters and percent-encoding resolve correctly;
@@ -292,7 +296,7 @@ fn run_server() -> Result<()> {
 }
 
 /// Build the server capabilities advertised during LSP initialization.
-fn build_capabilities() -> ServerCapabilities {
+fn build_capabilities(client: &lsp_types::ClientCapabilities) -> ServerCapabilities {
     ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         document_symbol_provider: Some(OneOf::Left(true)),
@@ -363,15 +367,38 @@ fn build_capabilities() -> ServerCapabilities {
         code_lens_provider: Some(lsp_types::CodeLensOptions {
             resolve_provider: Some(false),
         }),
-        diagnostic_provider: Some(lsp_types::DiagnosticServerCapabilities::Options(
-            lsp_types::DiagnosticOptions {
-                inter_file_dependencies: true,
-                workspace_diagnostics: true,
-                ..lsp_types::DiagnosticOptions::default()
-            },
-        )),
+        diagnostic_provider: pull_diagnostics_capability(client),
         ..ServerCapabilities::default()
     }
+}
+
+/// Advertise pull diagnostics only to clients that cannot receive push ones.
+///
+/// A client offered both models runs both: `vscode-languageclient` creates one
+/// `DiagnosticCollection` for `publishDiagnostics` and a second one for
+/// `textDocument/diagnostic`, and `languages.getDiagnostics` concatenates them,
+/// so every diagnostic is shown — and counted — twice. This host's diagnostics
+/// pipeline is push-first (background fetch, generation gate, restore-settle
+/// republication), so push wins wherever the client supports it and the pull
+/// handlers stay for clients that declare no `publishDiagnostics` support.
+/// Implements [DIAG-LSP-CAPABILITIES-EXCLUSIVE].
+fn pull_diagnostics_capability(
+    client: &lsp_types::ClientCapabilities,
+) -> Option<lsp_types::DiagnosticServerCapabilities> {
+    let supports_push = client
+        .text_document
+        .as_ref()
+        .is_some_and(|text_document| text_document.publish_diagnostics.is_some());
+    if supports_push {
+        return None;
+    }
+    Some(lsp_types::DiagnosticServerCapabilities::Options(
+        lsp_types::DiagnosticOptions {
+            inter_file_dependencies: true,
+            workspace_diagnostics: true,
+            ..lsp_types::DiagnosticOptions::default()
+        },
+    ))
 }
 
 /// Open the workspace in a sidecar.
@@ -862,6 +889,7 @@ fn handle_custom_request(
             fsharp_sidecar,
         ),
         "sharplsp/sortMembers" => handle_sort_members(req, parsers, vfs),
+        "sharplsp/statementStop" => handle_statement_stop(req, parsers, vfs),
         // NuGet package management
         "sharplsp/nuget/targets" => nuget::handlers::handle_targets(req),
         "sharplsp/nuget/search" => nuget::handlers::handle_search(req, runtime),
@@ -1232,6 +1260,21 @@ fn fuzzy_match_subsequence(name: &str, query: &str) -> bool {
 fn handle_sort_members(req: Request, parsers: &TsParsers, vfs: &Vfs) -> Result<serde_json::Value> {
     let params: sort_members::SortMembersParams = serde_json::from_value(req.params)?;
     let response = sort_members::handle(&params, parsers, vfs)?;
+    Ok(serde_json::to_value(response)?)
+}
+
+/// Handle the custom `sharplsp/statementStop` request.
+///
+/// Classifies one debugger stop position as code or as pure block punctuation,
+/// so the DAP router can elide the brace-only stops [DEBUG-FEATURES-STEPPING]
+/// requires a step gesture to walk past.
+fn handle_statement_stop(
+    req: Request,
+    parsers: &TsParsers,
+    vfs: &Vfs,
+) -> Result<serde_json::Value> {
+    let params: statement_stop::StatementStopParams = serde_json::from_value(req.params)?;
+    let response = statement_stop::handle(&params, parsers, vfs)?;
     Ok(serde_json::to_value(response)?)
 }
 

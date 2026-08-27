@@ -15,7 +15,6 @@ import * as vscode from 'vscode';
 import { DAP_QUIET_MS } from './debug-dap-kit';
 import { MODE } from './debug-fixture-programs';
 import {
-  CMD_PAUSE,
   CMD_STOP,
   assertStopReason,
   methodOf,
@@ -81,6 +80,33 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/** Wait for attach configuration to finish, then issue the headless Pause gesture. */
+async function pauseAttached(session: vscode.DebugSession): Promise<number> {
+  const threadId = await pollUntilResult(
+    async () => {
+      try {
+        const threads: unknown = await session.customRequest('threads');
+        if (typeof threads !== 'object' || threads === null) return 0;
+        const listed: unknown = (threads as Record<string, unknown>)['threads'];
+        if (!Array.isArray(listed)) return 0;
+        const first = listed[0];
+        return typeof first === 'object' && first !== null
+          ? Number((first as Record<string, unknown>)['id'] ?? 0)
+          : 0;
+      } catch {
+        // The session object exists before netcoredbg has finished attaching.
+        return 0;
+      }
+    },
+    (candidate) => candidate > 0,
+    60_000,
+    100,
+  );
+  assert.ok(threadId > 0, 'an attached process must expose a live thread before it can be paused');
+  await session.customRequest('pause', { threadId });
+  return threadId;
+}
+
 suite('Debug attach — taking control of a process that is already running', () => {
   const debuggee = useDebuggee('debug-attach-cs-', 'csharp');
 
@@ -125,10 +151,15 @@ suite('Debug attach — taking control of a process that is already running', ()
     eq(session.configuration['justMyCode'], true, 'the attach schema carries justMyCode');
 
     // Interaction 3 — pause it and read its state.
-    await vscode.commands.executeCommand(CMD_PAUSE);
+    const pausedThread = await pauseAttached(session);
     const [stop] = await recorder.waitForStops(1);
     assert.ok(stop, 'an attached process must be pausable — otherwise nothing can be inspected');
     assertStopReason(stop, 'pause', 'a pause on an attached process');
+    deepEq(
+      recorder.requests('pause').map((request) => Number(request.args['threadId'])),
+      [pausedThread],
+      'one Pause gesture must target the live attached thread exactly once',
+    );
     const frames = await stackFrames(session, stop.threadId);
     const names = frames.map((frame) => methodOf(frame));
     eq(
@@ -187,9 +218,14 @@ suite('Debug attach — taking control of a process that is already running', ()
       50,
     );
     assert.ok(session, 'a name attach must leave an active session');
-    await vscode.commands.executeCommand(CMD_PAUSE);
+    const pausedThread = await pauseAttached(session);
     const [stop] = await recorder.waitForStops(1);
     assert.ok(stop, 'the named process must be pausable');
+    deepEq(
+      recorder.requests('pause').map((request) => Number(request.args['threadId'])),
+      [pausedThread],
+      'the name attach must issue one Pause request to its resolved process thread',
+    );
     const frame = await topFrame(session, stop.threadId);
     assert.ok(frame.id > 0, 'and must produce an inspectable frame');
     eq(

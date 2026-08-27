@@ -6,6 +6,8 @@ use anyhow::{Context, Result};
 use lsp_types::Uri;
 use tree_sitter::{Language, Parser, Tree};
 
+use crate::vfs::Vfs;
+
 /// Language identifier for routing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LangId {
@@ -78,6 +80,20 @@ impl TsParsers {
             .parse(source, old_tree)
             .context("tree-sitter parse returned None")
     }
+}
+
+/// Parse one file addressed by PATH, preferring its live buffer over disk.
+///
+/// Implements [SE-LIVE-BUFFER]. Every tree-sitter feature that addresses a file
+/// by path — Solution Explorer symbols, member sorting, debugger stop
+/// classification — needs the same three steps, and getting the live-buffer
+/// half wrong analyses the last save instead of what the user is looking at.
+/// Sharing it means that can only ever be wrong in one place.
+pub fn parse_file(file_path: &str, parsers: &TsParsers, vfs: &Vfs) -> Result<(String, Tree)> {
+    let source = vfs.read_live_or_disk(file_path)?;
+    let lang = LangId::from_path(Path::new(file_path)).context("unsupported file type")?;
+    let tree = parsers.parse(lang, &source, None)?;
+    Ok((source, tree))
 }
 
 #[cfg(test)]

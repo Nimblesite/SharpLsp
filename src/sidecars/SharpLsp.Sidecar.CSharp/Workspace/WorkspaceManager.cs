@@ -93,7 +93,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     );
     private readonly System.Collections.Concurrent.ConcurrentDictionary<
         string,
-        string
+        ProjectlessDegradation
     > _projectlessDegradations = new(StringComparer.OrdinalIgnoreCase);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<
         string,

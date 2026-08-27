@@ -51,6 +51,15 @@ const NOISE_PREFIXES = [
 /** VSTest prints one of these per test assembly it was handed. */
 const ASSEMBLY_BANNER = 'Test run for ';
 
+/**
+ * Keep VSTest on its parseable console-listing path.
+ *
+ * The SDK terminal logger can consume `--list-tests` output and leave only a
+ * build summary. This supported VSTest switch routes the listing through the
+ * MSBuild console path on every host, independent of whether stdout is a TTY.
+ */
+const VSTEST_LISTING_OUTPUT = '-p:VsTestUseMSBuildOutput=false';
+
 /** Byte-order mark VSTest may prepend to the fully-qualified test listing. */
 const BOM = '﻿';
 
@@ -245,7 +254,15 @@ export async function listTests(
     return { names: [], ok: false, warnings: [`Discovery target does not exist: ${target}`] };
   }
   const positional = cwd === target ? [] : [target];
-  const args = ['test', ...positional, '--list-tests', '--nologo', '--verbosity', 'quiet'];
+  const args = [
+    'test',
+    ...positional,
+    '--list-tests',
+    '--nologo',
+    '--verbosity',
+    'quiet',
+    VSTEST_LISTING_OUTPUT,
+  ];
   const run = await runDotnet(args, cwd, timeoutMs);
   const output = usableStdout(run);
   if (output === undefined) {
@@ -286,9 +303,11 @@ function salvageable(stdout: string): boolean {
 /** Diagnostic for a `--list-tests` pass whose output cannot be trusted. */
 function listFailure(run: DotnetRun): string {
   const cause = run.errorMessage ?? 'unknown failure';
+  const output = `${run.stdout}\n${run.stderr}`.trim();
+  const detail = output.length === 0 ? '' : `; output: ${output.slice(-2_000)}`;
   return run.killed
-    ? `dotnet test --list-tests was killed (timeout or signal); output truncated: ${cause}`
-    : `dotnet test --list-tests failed: ${cause}`;
+    ? `dotnet test --list-tests was killed (timeout or signal); output truncated: ${cause}${detail}`
+    : `dotnet test --list-tests failed: ${cause}${detail}`;
 }
 
 /** Prefer VSTest's fully-qualified names; fall back to the display listing. */

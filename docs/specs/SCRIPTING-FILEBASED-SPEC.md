@@ -119,6 +119,15 @@ When the .NET SDK is unavailable, restore fails, or restore has not yet complete
 
 Tier 2 is explicitly **incomplete**: `#:package` references are unresolved, so symbols from NuGet packages will not bind. The sidecar must publish an informational diagnostic naming the reason, and must upgrade to tier 1 automatically when restore succeeds.
 
+The notice carries a distinct code per state, because the two states have opposite lifetimes and the host must tell them apart without reading prose:
+
+| Code | State | Lifetime |
+|---|---|---|
+| `SLSPC0002` | Restore or MSBuild evaluation has not finished | Transient — cleared by the tier-1 upgrade |
+| `SLSPC0001` | Restore terminally failed | Persistent until the directives change |
+
+Upgrading to tier 1 replaces the project's references, compilation options, and parse options in place. That is invisible to an editor holding a published diagnostic set, so the host MUST republish a document's diagnostics until the `SLSPC0002` notice clears ([DIAG-PUSH-GATE](DIAGNOSTICS-SPEC.md)). Without it the editor keeps the tier-2 placeholder's phantom `CS0246`s forever even though hover and completion already bind the restored package.
+
 Tier 2 must never be silently presented as a successful full load. `workspace/status` reports `filebased-degraded` in this state.
 
 ### Parse options `[SCRIPT-FILEBASED-PARSEOPTIONS]`

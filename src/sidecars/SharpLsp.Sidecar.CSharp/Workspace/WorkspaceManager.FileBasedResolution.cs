@@ -6,6 +6,15 @@ using Serilog;
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
 /// <summary>
+/// Why a file-based root is still on tier-2 BCL references, and whether the
+/// tier-1 restore that would replace it is still running.
+/// <paramref name="IsPending"/> is the machine-readable form of that state —
+/// the editor client polls on it, so it must never be inferred from message
+/// text. Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+/// </summary>
+internal sealed record ProjectlessDegradation(string Reason, bool IsPending);
+
+/// <summary>
 /// Manages immediate file-based fallback and generation-safe background MSBuild upgrades.
 /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
 /// </summary>
@@ -77,7 +86,10 @@ internal sealed partial class WorkspaceManager
             return;
         }
 
-        _projectlessDegradations[rootPath] = PendingEvaluationReason(closure.Packages);
+        _projectlessDegradations[rootPath] = new ProjectlessDegradation(
+            PendingEvaluationReason(closure.Packages),
+            IsPending: true
+        );
         _ = ResolveAndUpgradeAsync(rootPath, projectId, closure, generation);
     }
 
@@ -166,7 +178,7 @@ internal sealed partial class WorkspaceManager
             return;
         }
 
-        _projectlessDegradations[rootPath] = reason;
+        _projectlessDegradations[rootPath] = new ProjectlessDegradation(reason, IsPending: false);
         Log.Warning("File-based package restore degraded to BCL references: {Reason}", reason);
     }
 

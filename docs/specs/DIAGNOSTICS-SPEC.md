@@ -38,7 +38,8 @@ Editors without pull support receive `textDocument/publishDiagnostics` pushes tr
 1. Each `didOpen`/`didChange`/`didClose` registers a monotonically increasing push generation for the document URI.
 2. A completed sidecar fetch publishes only if its generation is still newest; older results are dropped.
 3. A failed fetch for the newest generation is retried at 1s intervals for up to 120 attempts, until it publishes or a newer generation supersedes it. Dropping the fetch could leave the previous publication on screen indefinitely.
-4. Generations are never reused after `didClose`, preventing an old in-flight fetch from matching a new document generation.
+4. A *provisional* set is republished on the same 1s cadence until it settles. A set carrying the file-based restore-pending code ([SCRIPT-FILEBASED-REFERENCES-FALLBACK](SCRIPTING-FILEBASED-SPEC.md)) describes a tier-2 placeholder compilation that a background MSBuild restore is about to replace; nothing else would ever re-publish the corrected set, so the placeholder's phantom `CS0246`s would stay on screen for the life of the document. The provisional state is identified by its own diagnostic code, never by parsing message text.
+5. Generations are never reused after `didClose`, preventing an old in-flight fetch from matching a new document generation.
 
 The last publication for a document MUST reflect its newest known text.
 
@@ -156,9 +157,15 @@ Live diagnostics flow through [DIAG-ARCHITECTURE-PULL-REFRESH]:
 
 `workspaceDiagnostics: true` is mandatory — it is how the editor knows it can ask SharpLsp for solution-wide errors. `identifier: "sharplsp"` lets the editor distinguish SharpLsp's diagnostics from other servers.
 
+#### [DIAG-LSP-CAPABILITIES-EXCLUSIVE] One model per client
+
+The push and pull models are **mutually exclusive per client**. A client offered both runs both: `vscode-languageclient` creates one `DiagnosticCollection` for `publishDiagnostics` and a second one for `textDocument/diagnostic`, and `vscode.languages.getDiagnostics` concatenates every collection, so each diagnostic is reported — and counted — twice.
+
+`diagnosticProvider` is therefore advertised **only** to clients that do not declare the `textDocument.publishDiagnostics` client capability. Clients that declare it are served by the push pipeline ([DIAG-PUSH-GATE]), which is the model this host implements end to end: background fetch, generation gate, solution-wide publication, and republication until a file-based restore settles. The pull handlers stay registered and answer any client that asks, so a pull-only editor is never left without diagnostics.
+
 ### [DIAG-LSP-PULL] Pull Model (`textDocument/diagnostic`, `workspace/diagnostic`)
 
-LSP 3.17 pull diagnostics is the **primary** model. The server returns whatever Roslyn currently knows for the requested document(s); it never preemptively asserts.
+LSP 3.17 pull diagnostics is the **target** model, served to every client that is not already receiving pushes ([DIAG-LSP-CAPABILITIES-EXCLUSIVE]). The server returns whatever Roslyn currently knows for the requested document(s); it never preemptively asserts.
 
 Per-document request:
 

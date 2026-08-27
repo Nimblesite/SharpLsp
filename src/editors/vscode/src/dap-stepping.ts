@@ -54,6 +54,8 @@ export interface StepLocation {
   readonly path: string | undefined;
   /** The 1-based DAP line the frame is parked on. */
   readonly line: number;
+  /** The 1-based DAP column where the sequence point starts. */
+  readonly column: number;
   /** The full stack depth, which separates recursion from a no-op step. */
   readonly depth: number;
 }
@@ -63,6 +65,8 @@ interface PendingStep {
   readonly threadId: number;
   readonly command: string;
   readonly origin: StepLocation;
+  /** Original function-breakpoint event whose reason survives brace elision. */
+  readonly deliverAs?: DapMessage;
   absorbed: number;
 }
 
@@ -74,6 +78,8 @@ export interface StepHost {
   forward(message: DapMessage): void;
   /** Hand a `stopped` event back to the router's normal delivery path. */
   deliverStop(message: DapMessage): void;
+  /** Whether this source position carries code rather than block punctuation. */
+  carriesCode(location: StepLocation): Promise<boolean>;
 }
 
 /**
@@ -90,6 +96,7 @@ export function topFrameLocation(body: unknown): StepLocation {
   return {
     path: typeof source?.path === 'string' ? source.path : undefined,
     line: Number(frame?.line ?? 0),
+    column: Number(frame?.column ?? 0),
     depth: Number(record.totalFrames ?? 0),
   };
 }
@@ -142,6 +149,34 @@ export class StepCoalescer {
   }
 
   /**
+   * Move a function-breakpoint stop from a structural entry brace to the first
+   * statement, retaining the original event's `function breakpoint` reason.
+   */
+  public elideFunctionEntry(message: DapMessage, threadId: number): boolean {
+    this.run(async () => {
+      const origin = await this.locate(threadId);
+      if (await this.host.carriesCode(origin)) {
+        this.host.deliverStop(message);
+        return;
+      }
+      const pending: PendingStep = {
+        threadId,
+        command: 'next',
+        origin,
+        deliverAs: message,
+        absorbed: 1,
+      };
+      this.pending = pending;
+      const response = await this.host.request('next', { threadId });
+      if (response.success === false && this.pending === pending) {
+        this.pending = undefined;
+        this.host.deliverStop(message);
+      }
+    });
+    return true;
+  }
+
+  /**
    * Judge one `stopped` event. Returns true when the router must not deliver
    * it — either because it is being coalesced away or because delivery has
    * been deferred until the location probe answers.
@@ -166,9 +201,10 @@ export class StepCoalescer {
   /** Re-step when nothing moved; otherwise hand the stop back to the router. */
   private async judge(message: DapMessage, pending: PendingStep): Promise<void> {
     const now = await this.locate(pending.threadId);
-    if (this.pending !== pending || !sameStatement(pending.origin, now)) {
+    const movedToCode = !sameStatement(pending.origin, now) && (await this.host.carriesCode(now));
+    if (this.pending !== pending || movedToCode) {
       this.pending = undefined;
-      this.host.deliverStop(message);
+      this.host.deliverStop(pending.deliverAs ?? message);
       return;
     }
     pending.absorbed += 1;
@@ -177,7 +213,7 @@ export class StepCoalescer {
     // was swallowed on its behalf is the only one the user will ever get.
     if (again.success === false) {
       this.pending = undefined;
-      this.host.deliverStop(message);
+      this.host.deliverStop(pending.deliverAs ?? message);
     }
   }
 
@@ -193,7 +229,7 @@ export class StepCoalescer {
       const stack = await this.host.request('stackTrace', { threadId, startFrame: 0, levels: 1 });
       return topFrameLocation(stack.body);
     } catch {
-      return { path: undefined, line: 0, depth: 0 };
+      return { path: undefined, line: 0, column: 0, depth: 0 };
     }
   }
 

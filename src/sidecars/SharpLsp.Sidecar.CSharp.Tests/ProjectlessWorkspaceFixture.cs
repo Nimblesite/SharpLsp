@@ -17,6 +17,9 @@ internal sealed class ProjectlessWorkspaceFixture : IDisposable
     /// <summary>The tier-2 "degraded to BCL-only references" notice code.</summary>
     public const string DegradationCode = "SLSPC0001";
 
+    /// <summary>The tier-2 "restore has not finished yet" notice code.</summary>
+    public const string RestorePendingCode = "SLSPC0002";
+
     public ProjectlessWorkspaceFixture(string prefix)
     {
         Root = Path.Combine(Path.GetTempPath(), $"sharplsp-{prefix}-{Guid.NewGuid():N}");
@@ -80,7 +83,8 @@ internal sealed class ProjectlessWorkspaceFixture : IDisposable
     /// the diagnostics at that point. A file-based app loads on tier 2 (BCL references) with a
     /// "restore pending" notice and is upgraded to tier 1 out of band, so any assertion about
     /// packages taken before the upgrade lands measures the placeholder, not the outcome.
-    /// Settled means the notice is gone (upgraded) or names a real failure (degraded).
+    /// Settled means the pending notice (<c>SLSPC0002</c>) is gone: the root either upgraded to
+    /// tier 1 or published the terminal <c>SLSPC0001</c> failure notice.
     /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
     /// </summary>
     public static async Task<List<DiagnosticResult>> SettledDiagnosticsAsync(
@@ -92,15 +96,17 @@ internal sealed class ProjectlessWorkspaceFixture : IDisposable
         while (true)
         {
             var diagnostics = await DiagnosticsAsync(manager, path).ConfigureAwait(false);
-            var notice = Degradation(diagnostics);
-            if (notice is null || !notice.Message.Contains("pending", StringComparison.Ordinal))
+            var pending = diagnostics.FirstOrDefault(diagnostic =>
+                string.Equals(diagnostic.Code, RestorePendingCode, StringComparison.Ordinal)
+            );
+            if (pending is null)
             {
                 return diagnostics;
             }
 
             Assert.True(
                 DateTime.UtcNow < deadline,
-                $"file-based package resolution never settled: {notice.Message}"
+                $"file-based package resolution never settled: {pending.Message}"
             );
             await Task.Delay(100).ConfigureAwait(false);
         }
