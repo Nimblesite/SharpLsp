@@ -58,6 +58,14 @@ export const LAUNCH_SCHEMA = (
   'args console cwd env hotReload justMyCode program ' +
   'requireExactSource stopAtEntry symbolOptions'
 ).split(' ');
+/**
+ * The attach schema of [DEBUG-FEATURES-LAUNCH-OUTPUT] rule 3, sorted.
+ *
+ * `justMyCode` belongs here as well as on launch: debug.ts writes
+ * `config.justMyCode ??= true` BEFORE it checks the request kind, so an attach
+ * configuration receives it too, and rule 3 requires the schema to say so.
+ */
+export const ATTACH_SCHEMA = 'justMyCode processId'.split(' ');
 export const ACCIDENT =
   'both must be listed: C# breakpoints are impossible today, and F# works only by accident ' +
   'because the built-in ms-vscode.js-debug happens to contribute fsharp (rule 3)';
@@ -78,11 +86,24 @@ export function assertNonEmptyString(value: unknown, label: string): void {
   assert.notStrictEqual(String(value).trim(), '', `${label} must not be empty`);
 }
 
-/** Assert one JSON-schema property: it exists, has `type`, and documents itself. */
-export function assertSchemaProperty(props: Record<string, any>, key: string, type: string): void {
+/**
+ * Assert one JSON-schema property: it exists, has `type`, and documents itself.
+ *
+ * `type` may be a union (`['number', 'string']`), which JSON Schema expresses as
+ * an array and which real debug attributes need — `processId` accepts a literal
+ * pid OR a `${command:pickProcess}` string. The union is compared EXACTLY, so
+ * widening one still fails here.
+ */
+export function assertSchemaProperty(
+  props: Record<string, any>,
+  key: string,
+  type: string | readonly string[],
+): void {
   const property: unknown = props[key];
   assert.strictEqual(typeof property, 'object', `'${key}' must be declared as a schema object`);
-  assert.strictEqual(props[key].type, type, `'${key}' must be declared with type '${type}'`);
+  const expected = typeof type === 'string' ? type : [...type];
+  const shown = typeof type === 'string' ? type : type.join(' | ');
+  assert.deepStrictEqual(props[key].type, expected, `'${key}' must be declared as '${shown}'`);
   assertNonEmptyString(props[key].description, `the '${key}' description`);
 }
 

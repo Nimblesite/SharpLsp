@@ -333,6 +333,13 @@ When [DEBUG-FEATURES-LAUNCH-TARGET]'s cone search finds no owning project, the d
 
 The profile file belongs to the **resolved project**, not the workspace root. A resolver that only probes `<workspaceRoot>/Properties/launchSettings.json` silently drops every environment variable, argument and URL for the near-universal `src/App/App.csproj` layout.
 
+**Discovery rules**
+
+1. A workspace scan MUST enumerate profile **documents**, not the project files that own them. Deriving candidates from discovered `.csproj`/`.fsproj` files is non-conforming: it cannot see a directory holding `Properties/launchSettings.json` with no project beside it, and it cannot see a file-based app at all, which by definition has no project and keeps its profiles in a sibling `<name>.run.json`.
+2. Both document shapes MUST be discovered by the same scan: `Properties/launchSettings.json` under any scanned directory, and any `*.run.json` file within one.
+3. The scan is depth-bounded and MUST skip `bin`, `obj`, `node_modules`, `.git`, `.vs` and `artifacts`. The bound reaches the canonical `<root>/src/App/` layout without walking a large repository whole.
+4. Where two documents declare the same profile name, the first found wins; a scan MUST NOT merge two same-named profiles into one.
+
 **Mapping**
 
 | Profile field | Configuration field | Rule |
@@ -348,9 +355,10 @@ The profile file belongs to the **resolved project**, not the workspace root. A 
 
 1. Arguments MUST be tokenized with a real shell-argument parser that honours quoting and escapes. `commandLineArgs.split(' ')` is non-conforming: `--name "John Smith"` becomes three broken tokens with embedded quote characters, so any profile containing a path with a space launches with the wrong `argv`.
 2. Profiles apply only to `request: "launch"`. An `attach` configuration receives no `args` and no `env`.
-3. When more than one `Project` profile exists, the user picks. Silently taking the first is non-conforming.
+3. When more than one `Project` profile exists, the user picks. Silently taking the first is non-conforming. The prompt MUST name profiles, offer every eligible profile exactly once, offer no ineligible profile, and be single-select.
 4. Parsing MUST be total. `{"profiles": null}`, `{"profiles": "text"}`, `{"profiles": [1,2]}`, a truncated document and a missing file all yield **no profiles** and no exception. A type guard that checks only for the presence of a `profiles` key is unsound — it admits `null` and throws downstream in `Object.entries`.
 5. A candidate path that exists but is not a launch-settings document MUST NOT abort the scan; the resolver continues to the next candidate.
+6. Only an interactive launch may prompt. `resolveDebugConfiguration` — the user pressing F5 — MUST be free to ask; `provideDebugConfigurations`, which VS Code may call unprompted to populate a list, MUST NOT prompt and instead emits one configuration per eligible profile, each carrying its own `args` and `env`.
 
 ### Debuggee output routing `[DEBUG-FEATURES-LAUNCH-OUTPUT]`
 
@@ -364,8 +372,10 @@ The profile file belongs to the **resolved project**, not the workspace root. A 
 
 1. `console` MUST be declared in `contributes.debuggers[].configurationAttributes.launch.properties` with those three values and a default of `integratedTerminal`. A console application that reads from stdin is unusable under `internalConsole`.
 2. Every attribute the resolver writes MUST be declared in `configurationAttributes`. Writing `justMyCode` while leaving it undeclared makes `launch.json` IntelliSense flag a valid, extension-authored attribute as an error.
-3. The launch schema declared in the manifest MUST match this specification's schema: `program`, `args`, `cwd`, `env`, `stopAtEntry`, `console`, `hotReload`, `justMyCode`, `requireExactSource`, `symbolOptions`. The manifest's own `required` list MUST name only `program`. VS Code core merges `name`, `type` and `request` into the effective `required` set of every debug type, so re-declaring them is dead weight — but note that the merged trio IS visible on `extension.packageJSON` at runtime, and a conformance check must read the manifest from disk or account for the injection.
-4. The debug type MUST be a single value across the manifest, the constants module and this specification.
+3. The launch schema declared in the manifest MUST match this specification's schema: `program`, `args`, `cwd`, `env`, `stopAtEntry`, `console`, `hotReload`, `justMyCode`, `requireExactSource`, `symbolOptions`. The manifest's own `required` list MUST name only `program`.
+4. The attach schema MUST declare `processId` and `justMyCode`, and its own `required` list MUST name only `processId`. `processId` is a `["number", "string"]` union, not a number: attaching via `${command:pickProcess}` is the normal path and a number-only schema flags the picker's own substituted value as a schema error. `justMyCode` belongs on attach because the resolver writes `config.justMyCode ??= true` **before** it branches on the request kind, so an attach configuration receives it too — and rule 2 then requires the schema to declare it.
+5. **VS Code core injects its own attributes into every debugger contribution it loads, and does so into `properties` as well as `required`.** Core owns `name`, `type`, `request`, `preLaunchTask`, `postDebugTask`, `presentation`, `internalConsoleOptions`, `debugServer`, `suppressMultipleSessionWarning` and `serverReadyAction`; `serverReadyAction` is merged into `launch` only, the rest into both request kinds. The manifest MUST NOT re-declare any of them — core overwrites the declaration, so a hand-rolled copy only misdescribes the attribute in `launch.json` IntelliSense. Because the injection is invisible in the source tree but present on `extension.packageJSON`, a conformance check MUST read the manifest **from disk** to assert what this repository authors, and assert the merge separately. Comparing the loaded `properties` against the authored list alone is a false failure.
+6. The debug type MUST be a single value across the manifest, the constants module and this specification.
 
 ### Dynamic and initial configurations `[DEBUG-FEATURES-LAUNCH-DYNAMIC]`
 

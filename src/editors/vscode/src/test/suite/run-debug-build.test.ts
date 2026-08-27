@@ -18,6 +18,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { currentDotnetExecutable } from '../../dotnet-process';
 import { SharpLspLaunchProvider, projectEntryFromFile } from '../../debug.js';
 import {
   BUILD_TIMEOUT_MS,
@@ -455,7 +456,11 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     const types = tasks.started.map((task) => task.definitionType);
     assert.deepStrictEqual(types, [BUILD_TASK_TYPE], `B33: never the foreign '${FOREIGN_TASK}'`);
     const commands = dotnetTasks.map((task) => task.command);
-    assert.deepStrictEqual(commands, ['dotnet'], 'the one task runs the dotnet CLI');
+    // The CLI the extension actually resolves — `sharplsp.dotnetPath` when set,
+    // else the SDK found on PATH. A hardcoded 'dotnet' asserts the wrong thing on
+    // any machine whose SDK is not reachable by that bare name.
+    const cli = currentDotnetExecutable();
+    assert.deepStrictEqual(commands, [cli], `the one task runs the dotnet CLI (${cli})`);
     const args = dotnetTasks[0]?.args;
     assert.deepStrictEqual(args, ['build', project.projectFile], 'B33: builds only what was asked');
     assert.strictEqual(dotnetTasks[0]?.source, 'SharpLsp', 'the task is attributed to SharpLsp');

@@ -12,6 +12,7 @@ import * as vscode from 'vscode';
 import { CMD_DEBUG_PROGRAM, CMD_RUN_PROGRAM, DEBUG_TYPE } from './constants';
 import { exeName } from './platform';
 import { info, warn } from './log';
+import { DapRouter } from './dap-router';
 import {
   NO_TARGET_MESSAGE,
   folderFor,
@@ -88,7 +89,10 @@ export class SharpLspLaunchProvider implements vscode.DebugConfigurationProvider
     // attach request has no program at all.
     if (config.request !== 'launch' || config.program !== undefined) return config;
     if (folder === undefined) return config;
-    await applyTarget(folder, config);
+    // A cancelled pick is a decision, not a failure: returning `undefined` aborts
+    // the launch silently, which is exactly what VS Code's contract asks for.
+    // Returning the configuration instead starts a session with no program.
+    if ((await applyTarget(folder, config)) === 'cancelled') return undefined;
     return config;
   }
 
@@ -174,26 +178,38 @@ function noPrompt(): Thenable<vscode.QuickPickItem | undefined> {
   return Promise.resolve(undefined);
 }
 
+/** What resolving the folder's target did to the configuration being filled. */
+type TargetOutcome = 'applied' | 'cancelled' | 'unresolved';
+
 /**
- * Resolve the folder's target and copy it onto a configuration being filled.
+ * Resolve the folder's target, BUILD it, and copy it onto a configuration.
  *
  * The real chooser, NOT `noPrompt`: this is the user pressing F5, so an
  * ambiguous cone or several launch profiles is a question worth asking. Only
  * `provideDebugConfigurations`, which VS Code may call unprompted to populate a
  * list, must stay silent.
+ *
+ * The build is what makes the answer honest. MSBuild reports a `TargetPath` for
+ * a project that was never compiled, so writing it straight onto the
+ * configuration hands netcoredbg a path that does not exist
+ * ([DEBUG-FEATURES-LAUNCH-BUILD] rule 3: an existing assembly, or nothing).
  */
 async function applyTarget(
   folder: vscode.WorkspaceFolder,
   config: vscode.DebugConfiguration,
-): Promise<void> {
+): Promise<TargetOutcome> {
   const resolved = await resolveLaunchTarget(anchorWithin(folder), folder);
-  if (!resolved.ok) return;
+  // An empty error is a user cancellation — already silent by choice.
+  if (!resolved.ok) return resolved.error.length === 0 ? 'cancelled' : 'unresolved';
   const target = resolved.value;
-  if (target.kind === 'script') return;
-  config.program = target.kind === 'project' ? target.program : target.file;
+  if (target.kind === 'script') return 'unresolved';
+  const program = await programFor(target);
+  if (program === undefined) return 'unresolved';
+  config.program = program;
   config.cwd = target.cwd;
   if (target.args !== undefined && config.args === undefined) config.args = [...target.args];
   if (target.env !== undefined && config.env === undefined) config.env = { ...target.env };
+  return 'applied';
 }
 
 /** True when VS Code supplied no configuration at all. */
@@ -315,8 +331,11 @@ export class SharpLspDebugAdapterFactory implements vscode.DebugAdapterDescripto
       );
       return undefined;
     }
-    info(`Starting netcoredbg: ${netcoredbgPath}`);
-    return new vscode.DebugAdapterExecutable(netcoredbgPath, ['--interpreter=vscode']);
+    // Routed, not spawned directly: [DEBUG-ARCHITECTURE-ROUTER] makes the proxy
+    // layer responsible for capability augmentation and async stack enrichment,
+    // and a bare `DebugAdapterExecutable` gives VS Code netcoredbg's raw wire
+    // with none of it.
+    return new vscode.DebugAdapterInlineImplementation(new DapRouter(netcoredbgPath));
   }
 }
 

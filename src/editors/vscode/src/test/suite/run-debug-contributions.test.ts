@@ -28,6 +28,7 @@ import { EXTENSION_ID } from './test-helpers';
 import {
   ACCIDENT,
   BUILD_TYPE,
+  ATTACH_SCHEMA,
   CORE_INJECTED,
   CORE_OWNED,
   DECLARED_SCHEMA,
@@ -309,7 +310,7 @@ suite('Run/Debug manifest contributions', () => {
     const authoredAttach = authoredAttributes.attach.properties;
     assert.deepStrictEqual(
       Object.keys(authoredAttach).sort(),
-      ['justMyCode', 'processId'],
+      ATTACH_SCHEMA,
       'attach is not clobbered: it declares a process id and its own justMyCode',
     );
     assert.deepStrictEqual(
@@ -321,10 +322,12 @@ suite('Run/Debug manifest contributions', () => {
       Object.keys(attach.properties)
         .filter((key) => !CORE_INJECTED.includes(key))
         .sort(),
-      ['justMyCode', 'processId'],
+      ATTACH_SCHEMA,
       'and both survive core merging its own attributes into the loaded schema',
     );
-    assertSchemaProperty(attach.properties, 'processId', 'number');
+    // A union, not a number: attaching by `${command:pickProcess}` is the normal
+    // path and a number-only schema flags the picker's own value as an error.
+    assertSchemaProperty(attach.properties, 'processId', ['number', 'string']);
     assert.notDeepStrictEqual(attach.properties, props, 'attach and launch are distinct schemas');
   });
 
