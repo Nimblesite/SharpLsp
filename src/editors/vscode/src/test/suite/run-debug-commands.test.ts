@@ -44,12 +44,20 @@ import {
   stopAnyDebugSession,
   type ObservedSession,
 } from './run-debug-kit';
-import { TFM, buildProject, writeCSharpConsole, type ConsoleProject } from './run-debug-fixtures';
+import {
+  buildProject,
+  builtDll,
+  isolateFromRepoMsbuild,
+  writeCSharpConsole,
+  type ConsoleProject,
+} from './run-debug-fixtures';
 import {
   closeAllEditors,
   comparablePath,
   pollUntilResult,
   removeDirRecursive,
+  requireAt,
+  requireWorkspaceRoot,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
@@ -67,18 +75,6 @@ const CHAIN_TIMEOUT_MS = 15_000;
 /** How long to wait for a stopped session to leave the workbench. */
 const TEARDOWN_TIMEOUT_MS = 20_000;
 
-/**
- * An MSBuild "stopper": a complete, constant, zero-element project document.
- *
- * The committed fixture workspace lives inside the SharpLsp repository, so a
- * project written there inherits the repo `Directory.Build.props` — analyzers,
- * `TreatWarningsAsErrors`, two package references — and a fixture console app
- * would fail to build for reasons unrelated to debugging. MSBuild stops walking
- * up at the first `Directory.Build.props`, so this isolates the scratch tree. It
- * is an authored constant document, never a spliced or edited one.
- */
-const MSBUILD_ISOLATION_PROPS = '<Project />\n';
-
 /** One configuration the resolve chain handed to the spy provider. */
 interface ResolveCapture {
   readonly folderPath: string | undefined;
@@ -89,27 +85,6 @@ interface ResolveCapture {
 interface ProviderResolution {
   readonly config: vscode.DebugConfiguration | undefined;
   readonly error: string;
-}
-
-/** The dll `dotnet build -c Debug` produces for a fixture console project. */
-function builtDll(project: ConsoleProject): string {
-  return path.join(project.dir, 'bin', 'Debug', TFM, `${project.assemblyName}.dll`);
-}
-
-/** The workspace folder the extension-host tests are launched against. */
-function requireWorkspaceRoot(): string {
-  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (root === undefined || root === '') {
-    assert.fail('the VSIX host must be launched with the committed fixture workspace open');
-  }
-  return root;
-}
-
-/** Index into an observed list, failing with the observed count when short. */
-function requireAt<T>(items: readonly T[], index: number, label: string): T {
-  const item = items[index];
-  if (item === undefined) assert.fail(`${label} must exist; only ${items.length} were observed`);
-  return item;
 }
 
 /** Every user-visible refusal the extension issued, errors first. */
@@ -208,8 +183,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
     this.timeout(BUILD_TIMEOUT_MS);
     workspaceRoot = requireWorkspaceRoot();
     scratchDir = fs.mkdtempSync(path.join(workspaceRoot, 'run-debug-cmds-'));
-    const props = path.join(scratchDir, 'Directory.Build.props');
-    fs.writeFileSync(props, MSBUILD_ISOLATION_PROPS, 'utf-8');
+    isolateFromRepoMsbuild(scratchDir);
     appA = writeCSharpConsole(path.join(scratchDir, 'AppA'), 'AppA', { marker: 'run-debug A' });
     appB = writeCSharpConsole(path.join(scratchDir, 'AppB'), 'AppB', { marker: 'run-debug B' });
     unbuilt = writeCSharpConsole(path.join(scratchDir, 'Unbuilt'), 'Unbuilt', {

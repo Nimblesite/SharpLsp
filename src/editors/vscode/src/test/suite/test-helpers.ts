@@ -408,3 +408,35 @@ export async function takeScreenshot(filename: string): Promise<void> {
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// ── Extension-host workspace ─────────────────────────────────────
+
+/**
+ * The workspace folder the extension-host tests are launched against.
+ *
+ * `runTest.ts` opens `test-fixtures/workspace`; a fixture written into a temp
+ * directory instead lives OUTSIDE every workspace folder, which is a different
+ * (and specified) refusal path — so a suite that needs a bound
+ * `session.workspaceFolder` must scratch inside this root.
+ */
+export function requireWorkspaceRoot(): string {
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (root === undefined || root === '') {
+    throw new Error('the VSIX host must be launched with the committed fixture workspace open');
+  }
+  return root;
+}
+
+/**
+ * Index into an observed list, failing with the observed count when short.
+ *
+ * `items[i]!` hides the interesting half of the failure: how many were actually
+ * observed. Every wait-then-index site wants the same diagnosis.
+ */
+export function requireAt<T>(items: readonly T[], index: number, label: string): T {
+  const item = items[index];
+  if (item === undefined) {
+    throw new Error(`${label} must exist; only ${String(items.length)} were observed`);
+  }
+  return item;
+}

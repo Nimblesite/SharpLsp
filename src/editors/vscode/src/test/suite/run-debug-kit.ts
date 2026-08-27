@@ -48,7 +48,13 @@ export const OBSERVE_TIMEOUT_MS = 60_000;
 /** Settle window for proving that NOTHING happened. */
 export const QUIET_MS = 2_500;
 
-/** A `WorkspaceFolder` rooted at `root`, for direct provider calls. */
+/**
+ * A `WorkspaceFolder` rooted at `root`, for direct provider calls.
+ *
+ * Real folders come from `vscode.workspace.workspaceFolders`; a provider,
+ * factory or `startDebugging` call that must be pointed at a scratch tree needs
+ * one built by hand, and this is the single builder for it.
+ */
 export function fakeFolder(root: string, index = 0): vscode.WorkspaceFolder {
   return { uri: vscode.Uri.file(root), name: path.basename(root), index };
 }

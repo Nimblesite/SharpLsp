@@ -209,3 +209,34 @@ export function markGitRoot(dir: string): string {
   fs.writeFileSync(path.join(gitDir, 'HEAD'), 'ref: refs/heads/main\n', 'utf-8');
   return gitDir;
 }
+
+/**
+ * The assembly `dotnet build -c Debug` produces for a fixture console project.
+ *
+ * One builder, one layout. Four call sites had grown their own copy of the
+ * `bin/Debug/<tfm>/<assembly>.dll` join, which is exactly how a fixture path
+ * and the resolver's idea of it drift apart.
+ */
+export function builtDll(project: ConsoleProject, tfm: string = TFM): string {
+  return path.join(project.dir, 'bin', 'Debug', tfm, `${project.assemblyName}.dll`);
+}
+
+/**
+ * An MSBuild "stopper": a complete, constant, zero-element project document.
+ *
+ * The committed fixture workspace lives inside the SharpLsp repository, so a
+ * project written there inherits the repo `Directory.Build.props` — analyzers,
+ * `TreatWarningsAsErrors`, two package references — and a fixture console app
+ * would fail to build for reasons unrelated to debugging. MSBuild stops walking
+ * up at the first `Directory.Build.props`, so this isolates the scratch tree. It
+ * is an authored constant document, never a spliced or edited one.
+ */
+export const MSBUILD_ISOLATION_PROPS = '<Project />\n';
+
+/** Drop the MSBuild stopper into `dir`, so a fixture build is self-contained. */
+export function isolateFromRepoMsbuild(dir: string): string {
+  fs.mkdirSync(dir, { recursive: true });
+  const props = path.join(dir, 'Directory.Build.props');
+  fs.writeFileSync(props, MSBUILD_ISOLATION_PROPS, 'utf-8');
+  return props;
+}
