@@ -37,7 +37,11 @@ export function belongsToUserCode(location: StatementLocation, launchRoot?: stri
 function isWithin(root: string | undefined, candidate: string): boolean {
   if (root === undefined) return false;
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..');
+  // On Windows `path.relative` answers across drives with an ABSOLUTE path:
+  // across different drives it returns the candidate path itself, which does
+  // not begin with `..`. Treat an absolute answer as "different volume, never
+  // within".
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 interface StatementStopResponse {

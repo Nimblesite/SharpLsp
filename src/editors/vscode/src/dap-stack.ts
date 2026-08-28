@@ -29,10 +29,31 @@ import { resolveMethodSource } from './dap-frame-sources';
 import { belongsToUserCode } from './dap-statement';
 import { isRecord, recordList, type DapMessage } from './dap-emulate';
 import type { HandleNamespace } from './dap-namespace';
-import { error } from './log';
+import { error, info } from './log';
+const TRACE_CHAIN = !!process.env['SHARPLSP_TRACE_CHAIN'];
+function chainLog(m: string): void { if (TRACE_CHAIN) info(`[stack] ${m}`); }
 
 /** Synthetic frame ids live far above netcoredbg's per-stop counters. */
 const SYNTHETIC_BASE = 0x0f00_0000;
+
+/** How long an empty-stack refetch waits out the attach-pause suspend race. */
+const EMPTY_STACK_REFETCH_MS = 15_000;
+
+/** How many resume-and-repause recovery cycles one empty stack may spend. */
+const MAX_EMPTY_STACK_REPAUSES = 3;
+
+/** Refetch-loop polls spent before each resume-and-repause recovery cycle. */
+const EMPTY_STACK_REPAUSE_POLLS = 8;
+
+/** The poll interval inside that window. */
+const EMPTY_STACK_POLL_MS = 250;
+
+/** One delayed step, for the empty-stack refetch. */
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 /** How deep the full-stack refetch reads. */
 const FULL_STACK_LEVELS = 1_000;
@@ -202,19 +223,82 @@ export class StackDelivery {
     const frames = isFrameList(body.stackFrames) ? body.stackFrames : [];
     const hasAsyncFrames = frames.some((frame) => logicalFrameName(frame.name) !== frame.name);
     const logical = enrichAsyncFrames(frames, this.justMyCode, this.isUserPath);
-    if (!hasAsyncFrames && (logical.length > 0 || frames.length === 0)) {
+    if (!hasAsyncFrames && logical.length > 0) {
       this.emitStack(message, body, args, logical);
       return;
     }
     const threadId = Number(args?.threadId ?? 0);
     this.queue = this.queue.then(async () => {
       try {
-        this.emitStack(message, body, args, await this.logicalStack(threadId));
+        // An attach's first pause races the runtime's suspend: netcoredbg can
+        // report an empty stack for a stopped thread before its frames are
+        // walkable. One delayed refetch settles the race; a genuinely frameless
+        // thread stays empty.
+        let assembled = await this.logicalStack(threadId);
+        let attempt = 0;
+        let repauses = 0;
+        const deadline = Date.now() + EMPTY_STACK_REFETCH_MS;
+        while (assembled.length === 0 && Date.now() < deadline) {
+          await sleep(EMPTY_STACK_POLL_MS);
+          // netcoredbg refreshes its per-thread walk state on a `threads`
+          // probe; without one it can keep answering an empty stackTrace for
+          // a freshly paused attached thread.
+          await this.fetchThreads();
+          this.cache.delete(threadId);
+          assembled = await this.logicalStack(threadId);
+          attempt += 1;
+          // A pause that lands while the thread is inside native runtime code
+          // (e.g. Thread.Sleep) can leave the stack unwalkable indefinitely.
+          // Bounded resume-and-repause cycles give the runtime further chances
+          // to park the thread somewhere walkable.
+          if (
+            assembled.length === 0 &&
+            repauses < MAX_EMPTY_STACK_REPAUSES &&
+            attempt >= EMPTY_STACK_REPAUSE_POLLS * (repauses + 1)
+          ) {
+            repauses += 1;
+            chainLog(`repause thread=${threadId}`);
+            await this.safeResumePause(threadId);
+            continue;
+          }
+          chainLog(`poll#${attempt} thread=${threadId} frames=${assembled.length}`);
+        }
+        chainLog(`deliver thread=${threadId} frames=${assembled.length} after ${attempt} polls`);
+        this.emitStack(message, body, args, assembled);
       } catch (cause) {
         error(`async stack reconstruction failed: ${String(cause)}`);
         this.host.emit(this.handles.translateResponseBody(message));
       }
     });
+  }
+
+  /**
+   * One `continue` immediately followed by one `pause`, for the empty-stack
+   * recovery loop. Best-effort in both directions: a thread that exits or
+   * refuses either request simply keeps its current stop.
+   */
+  private async safeResumePause(threadId: number): Promise<void> {
+    try {
+      this.cache.delete(threadId);
+      const resumed = await this.host.request('continue', { threadId });
+      if (resumed.success === false) return;
+      await sleep(EMPTY_STACK_POLL_MS);
+      await this.host.request('pause', { threadId });
+      // Give the adapter a moment to deliver and settle the fresh stop before
+      // the next stack probe.
+      await sleep(EMPTY_STACK_POLL_MS);
+    } catch {
+      // The next poll retries anyway.
+    }
+  }
+
+  /** One `threads` probe, for the empty-stack refetch loop. */
+  private async fetchThreads(): Promise<void> {
+    try {
+      await this.host.request('threads', {});
+    } catch {
+      // The probe is best-effort; the next poll retries anyway.
+    }
   }
 
   /** The full logical stack for a stopped thread, cached per stop. */
@@ -235,7 +319,14 @@ export class StackDelivery {
       levels: FULL_STACK_LEVELS,
     });
     const body = isRecord(full.body) ? full.body : {};
-    return isFrameList(body.stackFrames) ? body.stackFrames : [];
+    const raw = isFrameList(body.stackFrames) ? body.stackFrames : [];
+    if (TRACE_CHAIN) {
+      const err = full.success === false ? String(full.message ?? '') : '';
+      chainLog(
+        `raw thread=${threadId} n=${raw.length} ${err} names=${raw.slice(0, 4).map((f) => f.name).join('|')}`,
+      );
+    }
+    return raw;
   }
 
   /** Rename, reconstruct, splice and stitch one thread's logical stack. */
