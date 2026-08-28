@@ -29,9 +29,7 @@ import { resolveMethodSource } from './dap-frame-sources';
 import { belongsToUserCode } from './dap-statement';
 import { isRecord, recordList, type DapMessage } from './dap-emulate';
 import type { HandleNamespace } from './dap-namespace';
-import { error, info } from './log';
-const TRACE_CHAIN = !!process.env['SHARPLSP_TRACE_CHAIN'];
-function chainLog(m: string): void { if (TRACE_CHAIN) info(`[stack] ${m}`); }
+import { error } from './log';
 
 /** Synthetic frame ids live far above netcoredbg's per-stop counters. */
 const SYNTHETIC_BASE = 0x0f00_0000;
@@ -257,13 +255,10 @@ export class StackDelivery {
             attempt >= EMPTY_STACK_REPAUSE_POLLS * (repauses + 1)
           ) {
             repauses += 1;
-            chainLog(`repause thread=${threadId}`);
             await this.safeResumePause(threadId);
             continue;
           }
-          chainLog(`poll#${attempt} thread=${threadId} frames=${assembled.length}`);
         }
-        chainLog(`deliver thread=${threadId} frames=${assembled.length} after ${attempt} polls`);
         this.emitStack(message, body, args, assembled);
       } catch (cause) {
         error(`async stack reconstruction failed: ${String(cause)}`);
@@ -319,14 +314,7 @@ export class StackDelivery {
       levels: FULL_STACK_LEVELS,
     });
     const body = isRecord(full.body) ? full.body : {};
-    const raw = isFrameList(body.stackFrames) ? body.stackFrames : [];
-    if (TRACE_CHAIN) {
-      const err = full.success === false ? String(full.message ?? '') : '';
-      chainLog(
-        `raw thread=${threadId} n=${raw.length} ${err} names=${raw.slice(0, 4).map((f) => f.name).join('|')}`,
-      );
-    }
-    return raw;
+    return isFrameList(body.stackFrames) ? body.stackFrames : [];
   }
 
   /** Rename, reconstruct, splice and stitch one thread's logical stack. */
