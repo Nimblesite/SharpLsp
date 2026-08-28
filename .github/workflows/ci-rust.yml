@@ -65,6 +65,13 @@ jobs:
         with:
           name: linux-lsp-binaries
           path: target
+      - name: Restore executable bit
+        # download-artifact does not restore the +x the publish produced. The
+        # e2e suite spawns the sidecars straight from these paths via the
+        # RUST_E2E_SIDECARS env overrides, so without this every spawn fails
+        # with "Permission denied (os error 13)" and the shard times out.
+        shell: bash
+        run: chmod +x target/sidecar-csharp/SharpLsp.Sidecar.CSharp target/sidecar-fsharp/SharpLsp.Sidecar.FSharp
       - name: Test Rust shard with coverage
         run: env VSIX_PREBUILT=1 make _test-rust-shard SHARD=${{ matrix.shard }} SHARD_COUNT=2
       - name: Upload shard coverage
