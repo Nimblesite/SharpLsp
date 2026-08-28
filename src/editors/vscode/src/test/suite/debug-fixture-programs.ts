@@ -365,7 +365,15 @@ export function writeFSharpStepTarget(dir: string): DebugFixture {
   writeProject(
     dir,
     `${FSHARP_NAME}.fsproj`,
-    buildProjectXml({ properties: DEBUGGABLE, compileIncludes: ['Program.fs'] }),
+    buildProjectXml({
+      properties: DEBUGGABLE,
+      compileIncludes: ['Program.fs'],
+      // The F# SDK floats FSharp.Core to the newest 10.1.x, and `task {}`
+      // lowering (sequence points, continuation-wrapper shapes) differs
+      // between minor versions. Pin it so stepping and async-chain fixtures
+      // compile identically on every machine and CI runner.
+      packages: [{ id: 'FSharp.Core', version: '10.1.302' }],
+    }),
     'Program.fs',
     FSHARP_SOURCE.text,
   );
