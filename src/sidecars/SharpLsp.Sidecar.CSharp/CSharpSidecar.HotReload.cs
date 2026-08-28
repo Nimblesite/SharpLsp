@@ -47,6 +47,20 @@ internal sealed class HotReloadRequest
 
     [Key(5)]
     public List<string>? Capabilities { get; set; }
+
+    [Key(6)]
+    public List<HotReloadDocument>? Documents { get; set; }
+}
+
+/// <summary>One saved document in a multi-file update batch.</summary>
+[MessagePackObject(AllowPrivate = true)]
+internal sealed class HotReloadDocument
+{
+    [Key(0)]
+    public string FilePath { get; set; } = "";
+
+    [Key(1)]
+    public string NewText { get; set; } = "";
 }
 
 [MessagePackObject(AllowPrivate = true)]

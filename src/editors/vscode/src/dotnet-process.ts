@@ -76,8 +76,24 @@ export function currentDotnetExecutable(): string {
 }
 
 /** The environment a `dotnet` child inherits, with the UI language pinned. */
-function dotnetEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, DOTNET_CLI_UI_LANGUAGE: DOTNET_CLI_LANGUAGE };
+function dotnetEnv(extra?: Readonly<Record<string, string>>): NodeJS.ProcessEnv {
+  return { ...process.env, ...(extra ?? {}), DOTNET_CLI_UI_LANGUAGE: DOTNET_CLI_LANGUAGE };
+}
+
+/**
+ * Optional per-invocation extensions to one {@link runDotnet} call.
+ *
+ * A test DEBUG run needs both: `VSTEST_HOST_DEBUG=1` in the child environment,
+ * and sight of the output AS IT ARRIVES — the waiting test host announces its
+ * pid and then blocks until a debugger attaches, so a caller that only sees
+ * output at exit would wait on a process that is waiting on the caller.
+ * Spec: [DEBUG-FEATURES-TESTS].
+ */
+export interface DotnetHooks {
+  /** Extra environment merged over the inherited one (UI language stays pinned). */
+  readonly env?: Readonly<Record<string, string>>;
+  /** Observes every stdout/stderr chunk as it arrives. */
+  readonly onOutput?: (chunk: string) => void;
 }
 
 /**
@@ -97,12 +113,13 @@ export async function runDotnet(
   cwd: string,
   timeoutMs: number = DOTNET_TIMEOUT_MS,
   signal?: AbortSignal,
+  hooks?: DotnetHooks,
 ): Promise<DotnetRun> {
   if (signal?.aborted === true) return terminated(EMPTY, CANCELLED);
   return await new Promise<DotnetRun>((resolve) => {
     const capture: Capture = { stdout: '', stderr: '', reason: undefined };
-    const child = spawn(dotnetExecutable, [...args], spawnOptions(cwd));
-    absorbOutput(capture, child);
+    const child = spawn(dotnetExecutable, [...args], spawnOptions(cwd, hooks?.env));
+    absorbOutput(capture, child, hooks?.onOutput);
     const timer = setTimeout(() => {
       kill(capture, child, `timed out after ${String(timeoutMs)}ms`);
     }, timeoutMs);
@@ -169,25 +186,31 @@ interface Capture {
  * what makes {@link terminateTree} able to reap the testhost grandchild too.
  * Windows has no such groups, so `taskkill /T` walks the tree there instead.
  */
-function spawnOptions(cwd: string): SpawnOptions {
+function spawnOptions(cwd: string, extraEnv?: Readonly<Record<string, string>>): SpawnOptions {
   return {
     cwd,
-    env: dotnetEnv(),
+    env: dotnetEnv(extraEnv),
     detached: process.platform !== 'win32',
     windowsHide: true,
   };
 }
 
 /** Stream both pipes into `capture`, enforcing the output ceiling as they grow. */
-function absorbOutput(capture: Capture, child: ChildProcess): void {
+function absorbOutput(
+  capture: Capture,
+  child: ChildProcess,
+  onOutput?: (chunk: string) => void,
+): void {
   child.stdout?.setEncoding('utf8');
   child.stderr?.setEncoding('utf8');
   child.stdout?.on('data', (chunk: string) => {
     capture.stdout += chunk;
+    onOutput?.(chunk);
     enforceCeiling(capture, child);
   });
   child.stderr?.on('data', (chunk: string) => {
     capture.stderr += chunk;
+    onOutput?.(chunk);
     enforceCeiling(capture, child);
   });
 }

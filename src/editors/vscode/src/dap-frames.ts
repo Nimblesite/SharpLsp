@@ -5,23 +5,27 @@
 // reports physical `MoveNext` frames. `DapRouter` and the C# sidecar
 // reconstruct the logical chain." Step 1 of that algorithm is "find types
 // matching `<MethodName>d__N`" — and the compiler-generated type name already
-// carries the logical method name, so the chain can be recovered from the frame
-// names alone, without reading `<>1__state` through ICorDebug.
+// carries the logical method name, so the physical half of the chain can be
+// recovered from the frame names alone. The frames that are NOT physical —
+// awaiting callers parked in heap continuations — are recovered separately by
+// `dap-async-chain.ts` and spliced in by `dap-stack.ts`.
 //
-// What this module CANNOT do is follow `_continuation` across a suspension
-// point; frames that are parked in a continuation are not on the physical
-// stack at all. Per the spec's own fallback rule — "If compiler-generated
-// fields cannot be resolved, the response retains the physical stack
-// unchanged" — anything not recognised here is passed through untouched.
+// Per the spec's own fallback rule — "If compiler-generated fields cannot be
+// resolved, the response retains the physical stack unchanged" — anything not
+// recognised here is passed through untouched.
 //
 // Deliberately free of `vscode` imports so the transform is exercisable
-// directly against captured netcoredbg output.
+// directly against captured netcoredbg output; the editor-aware "is this path
+// the user's code" judgement is injected as a predicate.
 
-/** The compiler's marker for an async state machine type: `<Method>d__N`. */
+/** The compiler's marker for a C# async state machine type: `<Method>d__N`. */
 const STATE_MACHINE_SUFFIX = 'd__';
 
 /** The single method every async state machine implements. */
 const MOVE_NEXT = 'MoveNext';
+
+/** The method F# dynamic-mode resumption closures implement. */
+const INVOKE = 'Invoke';
 
 /** One DAP stack frame, narrowed to the fields this transform reads. */
 export interface RawFrame {
@@ -59,7 +63,7 @@ export function splitQualifiedName(name: string): string[] {
 }
 
 /** Strip a trailing `(...)` argument list from one name segment. */
-function withoutArguments(segment: string): string {
+export function withoutArguments(segment: string): string {
   const open = segment.indexOf('(');
   return open < 0 ? segment : segment.slice(0, open);
 }
@@ -91,12 +95,12 @@ function isDigits(text: string): boolean {
 /**
  * The logical method name an F# state-machine type segment stands for.
  *
- * F# does NOT use C#'s `<name>d__N`. `task { }` and `async { }` compile to a
- * type named after the function and the line it starts on — `leafAsync@4`, and
- * `leafAsync@4-2` where one function yields several. Recognising only the C#
- * spelling left every F# async stack unenriched, which
- * [DEBUG-FSHARP-STEPPING] and this project's "F# is a first class citizen"
- * rule both forbid.
+ * F# does NOT use C#'s `<name>d__N`. A `task { }` state machine — and, in the
+ * compiler's dynamic fallback, each resumption closure — is a type named after
+ * the function and the line it starts on: `leafTask@40`, with `leafTask@42-3`
+ * where one function yields several types. Recognising only the C# spelling
+ * left every F# async stack unenriched, which [DEBUG-FSHARP-STEPPING] and this
+ * project's "F# is a first class citizen" rule both forbid.
  *
  * The digit test is what keeps a legitimate name containing `@` from being
  * mistaken for a state machine.
@@ -121,6 +125,38 @@ export function stateMachineMethod(segment: string): string | undefined {
   return csharpStateMachine(segment) ?? fsharpStateMachine(segment);
 }
 
+/** How one frame name was recognised, if it was. */
+interface RecognisedFrame {
+  /** The rewritten logical name. */
+  readonly name: string;
+  /** True for an F# dynamic-mode resumption closure (`...@L-N.Invoke()`). */
+  readonly viaInvoke: boolean;
+}
+
+/**
+ * Recognise `Ns.Type.<Method>d__N.MoveNext()`, `Ns.method@L.MoveNext()` and
+ * the F# dynamic-mode `Ns.method@L-N.Invoke()`, yielding `Ns.Type.Method()`.
+ *
+ * `Invoke` is only accepted on an F#-shaped owner: a C# lambda display class
+ * (`<>c.<Main>b__0_0`) also implements `Invoke` but is not an async frame.
+ */
+function recogniseFrame(name: string): RecognisedFrame | undefined {
+  const segments = splitQualifiedName(name);
+  const last = segments[segments.length - 1];
+  const owner = segments[segments.length - 2];
+  if (last === undefined || owner === undefined) return undefined;
+  const tail = withoutArguments(last);
+  const method =
+    tail === MOVE_NEXT
+      ? stateMachineMethod(owner)
+      : tail === INVOKE
+        ? fsharpStateMachine(owner)
+        : undefined;
+  if (method === undefined) return undefined;
+  const prefix = segments.slice(0, -2);
+  return { name: [...prefix, `${method}()`].join('.'), viaInvoke: tail === INVOKE };
+}
+
 /**
  * Rewrite `Ns.Type.<Method>d__N.MoveNext()` to `Ns.Type.Method()`.
  *
@@ -128,15 +164,25 @@ export function stateMachineMethod(segment: string): string | undefined {
  * the caller can use the identity of the result to detect a no-op.
  */
 export function logicalFrameName(name: string): string {
+  return recogniseFrame(name)?.name ?? name;
+}
+
+/**
+ * The state-machine TYPE a physical frame executes, when the frame is one.
+ *
+ * `StepTarget.Program.<LeafAsync>d__0.MoveNext()` yields
+ * `StepTarget.Program.<LeafAsync>d__0` — the exact string netcoredbg renders
+ * for that type in `evaluate` results, which is what lets `dap-stack.ts` match
+ * the paused frame against the heap's active-task boxes.
+ */
+export function frameStateMachineType(name: string): string | undefined {
   const segments = splitQualifiedName(name);
   const last = segments[segments.length - 1];
-  if (last === undefined || withoutArguments(last) !== MOVE_NEXT) return name;
   const owner = segments[segments.length - 2];
-  if (owner === undefined) return name;
-  const method = stateMachineMethod(owner);
-  if (method === undefined) return name;
-  const prefix = segments.slice(0, -2);
-  return [...prefix, `${method}()`].join('.');
+  if (last === undefined || owner === undefined) return undefined;
+  if (withoutArguments(last) !== MOVE_NEXT) return undefined;
+  if (stateMachineMethod(owner) === undefined) return undefined;
+  return segments.slice(0, -1).join('.');
 }
 
 /** Root namespaces that are never the user's own code. */
@@ -159,6 +205,25 @@ export function isAsyncPlumbing(frame: RawFrame): boolean {
   return RUNTIME_ROOTS.includes(root);
 }
 
+/**
+ * True when the frame is F# compiler/library machinery by NAME grammar alone.
+ *
+ * `Microsoft.FSharp.*` is the F# compiler's own namespace and
+ * `<StartupCode$FSharp-Core>.$Tasks.*` hosts the dynamic-mode resumption
+ * interpreter. Unlike CoreLib these carry embedded PDBs, so they arrive WITH
+ * source locations (a build-server path such as `D:\a\_work\...`) and the
+ * sourceless-plumbing rule above never fires; [DEBUG-FSHARP-PDB] still forbids
+ * showing them. The name test alone is not enough to drop a frame — the caller
+ * must also prove the source is not the user's — so this is a predicate, not a
+ * filter.
+ */
+export function isFSharpMachineryName(name: string): boolean {
+  const segments = splitQualifiedName(name);
+  const root = segments[0] ?? '';
+  if (root === 'Microsoft' && segments[1] === 'FSharp') return true;
+  return root.startsWith('<StartupCode$FSharp');
+}
+
 /** True when the frame carries no source location the user can navigate to. */
 function isSourceless(frame: RawFrame): boolean {
   return frame.source?.path === undefined && frame.source?.name === undefined;
@@ -178,21 +243,87 @@ function isRedundantStub(frame: RawFrame, renamed: ReadonlySet<string>): boolean
   return isSourceless(frame) && renamed.has(withoutArguments(frame.name));
 }
 
+/** One frame paired with how the rename pass classified it. */
+interface NamedFrame {
+  readonly frame: RawFrame;
+  readonly renamed: boolean;
+  readonly viaInvoke: boolean;
+}
+
+/** Rename every recognised state-machine frame, remembering what changed. */
+function renameFrames(frames: readonly RawFrame[]): NamedFrame[] {
+  return frames.map((frame) => {
+    const recognised = recogniseFrame(frame.name);
+    if (recognised === undefined) return { frame, renamed: false, viaInvoke: false };
+    return {
+      frame: { ...frame, name: recognised.name },
+      renamed: true,
+      viaInvoke: recognised.viaInvoke,
+    };
+  });
+}
+
+/** True when a frame is F# machinery whose source is provably not the user's. */
+function isForeignMachinery(frame: RawFrame, isUserPath?: (path: string) => boolean): boolean {
+  if (!isFSharpMachineryName(frame.name)) return false;
+  if (isSourceless(frame)) return true;
+  const path = frame.source?.path;
+  return path !== undefined && isUserPath !== undefined && !isUserPath(path);
+}
+
+/**
+ * Collapse the duplicate rows renaming exposes.
+ *
+ * Two shapes arise. The F# stub `rootTask()` sits directly under the renamed
+ * `rootTask@46.MoveNext()` frame once the plumbing between them is filtered —
+ * a second row for the same activation, parked on the declaration line. And in
+ * the compiler's dynamic mode ONE resumption is split across several closures
+ * (`leafTask@42-3.Invoke()` over `leafTask@1-2.Invoke()`), each renaming to
+ * the same logical method. Both duplicates are adjacent to the frame they
+ * duplicate, so a single adjacency pass removes them; the innermost copy wins
+ * because it carries the statement actually executing.
+ */
+function collapseDuplicates(frames: readonly NamedFrame[]): NamedFrame[] {
+  const kept: NamedFrame[] = [];
+  for (const current of frames) {
+    const previous = kept[kept.length - 1];
+    if (previous !== undefined && sameLogicalMethod(previous, current)) {
+      const stubAfterMachine = previous.renamed && !current.renamed;
+      const splitClosure = previous.viaInvoke && current.viaInvoke;
+      if (stubAfterMachine || splitClosure) continue;
+    }
+    kept.push(current);
+  }
+  return kept;
+}
+
+/** True when two adjacent rows would render the same method name. */
+function sameLogicalMethod(previous: NamedFrame, current: NamedFrame): boolean {
+  return withoutArguments(previous.frame.name) === withoutArguments(current.frame.name);
+}
+
 /**
  * Reconstruct the logical async chain for one `stackTrace` response.
  *
- * `justMyCode` controls only the plumbing frames: with it off the builder
- * frames are kept, because a user who deliberately turned Just My Code off is
- * asking to see the runtime's own frames.
+ * `justMyCode` controls only the machinery frames: with it off the builder and
+ * FSharp.Core frames are kept, because a user who deliberately turned Just My
+ * Code off is asking to see the runtime's own frames. `isUserPath` is the
+ * editor-aware ownership test for a source path; without it, frames WITH
+ * source are never dropped, per the spec's retain-the-physical-stack fallback.
  */
-export function enrichAsyncFrames(frames: readonly RawFrame[], justMyCode: boolean): RawFrame[] {
-  const renamed = new Set<string>();
-  const named = frames.map((frame) => {
-    const name = logicalFrameName(frame.name);
-    if (name !== frame.name) renamed.add(withoutArguments(name));
-    return name === frame.name ? frame : { ...frame, name };
-  });
-  return named.filter(
-    (frame) => !isRedundantStub(frame, renamed) && !(justMyCode && isAsyncPlumbing(frame)),
+export function enrichAsyncFrames(
+  frames: readonly RawFrame[],
+  justMyCode: boolean,
+  isUserPath?: (path: string) => boolean,
+): RawFrame[] {
+  const named = renameFrames(frames);
+  const renamed = new Set<string>(
+    named.filter((entry) => entry.renamed).map((entry) => withoutArguments(entry.frame.name)),
   );
+  const visible = named.filter(({ frame }) => {
+    if (isRedundantStub(frame, renamed)) return false;
+    if (!justMyCode) return true;
+    return !isAsyncPlumbing(frame) && !isForeignMachinery(frame, isUserPath);
+  });
+  return collapseDuplicates(visible).map((entry) => entry.frame);
 }

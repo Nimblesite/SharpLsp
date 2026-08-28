@@ -11,12 +11,14 @@
 // where the debuggee actually parked and matching that location against the
 // armed set — the same probe run-to-cursor ([DEBUG-FEATURES-STEPPING], P2)
 // needs to retire its temporary breakpoint.
-import { interpolateLog, isRecord, recordList } from './dap-emulate';
+import { interpolateLog, isRecord } from './dap-emulate';
 import type { DapMessage, LogToken } from './dap-emulate';
 import type { BreakpointEmulator, StopVerdict } from './dap-breakpoints';
 import type { GotoEmulator } from './dap-goto';
 import type { HandleNamespace } from './dap-namespace';
-import { topFrameLocation } from './dap-stepping';
+import { topFrameId } from './dap-async-chain';
+import type { StackDelivery } from './dap-stack';
+import { topFrameLocation, type StopOrigin } from './dap-stepping';
 import { error } from './log';
 
 /** What a location match knows about the breakpoint the stop landed on. */
@@ -47,11 +49,15 @@ export class StopJudge {
     private readonly breakpoints: BreakpointEmulator,
     private readonly goto: GotoEmulator,
     private readonly handles: HandleNamespace,
+    private readonly stacks: StackDelivery,
   ) {}
 
   /** Auto-continue stops the adapter cannot judge. Returns true when swallowed. */
   public onStopped(message: DapMessage): boolean {
     if (this.host.isTransitioning()) return true;
+    // The stack delivery watches every stop (its per-stop caches die here) and
+    // consumes the router's own injected async-arming entry stop.
+    if (this.stacks.interceptStop(message)) return true;
     const body = isRecord(message.body) ? message.body : {};
     const threadId = Number(body.threadId ?? 0);
     const reason = typeof body.reason === 'string' ? body.reason : '';
@@ -61,9 +67,21 @@ export class StopJudge {
     return this.judgeStop(message, body, threadId);
   }
 
-  /** Deliver a stop the step coalescer declined, emulations and all. */
-  public deliverStop(message: DapMessage): void {
+  /**
+   * Deliver a stop the step coalescer declined, emulations and all.
+   *
+   * A stop the coalescer moved off a function-entry brace is NOT a line
+   * breakpoint's hit: the location judge would apply whatever hit condition or
+   * logpoint happens to be armed on the first-statement line and could swallow
+   * the stop outright, so a `function-entry` origin bypasses location judging.
+   */
+  public deliverStop(message: DapMessage, origin?: StopOrigin): void {
     const body = isRecord(message.body) ? message.body : {};
+    const rawHits = Array.isArray(body.hitBreakpointIds) ? body.hitBreakpointIds : [];
+    if (origin === 'function-entry' && rawHits.length === 0) {
+      this.host.fire(message);
+      return;
+    }
     if (this.judgeStop(message, body, Number(body.threadId ?? 0))) return;
     this.host.fire(message);
   }
@@ -163,9 +181,7 @@ export class StopJudge {
       await this.host.request('continue', { threadId });
       return;
     }
-    const stack = await this.host.request('stackTrace', { threadId, startFrame: 0, levels: 1 });
-    const body = isRecord(stack.body) ? stack.body : {};
-    const frameId = Number(recordList(body.stackFrames)[0]?.id ?? 0);
+    const frameId = await topFrameId(this.host, threadId);
     const values = await this.evaluateAll(tokens, frameId);
     const output = `${interpolateLog(tokens, values)}\n`;
     this.host.fire({ type: 'event', event: 'output', body: { category: 'console', output } });

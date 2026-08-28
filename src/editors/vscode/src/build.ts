@@ -57,7 +57,17 @@ export function createBuildTask(command: string, label: string, target?: string)
     '$msCompile',
   );
   task.group = vscode.TaskGroup.Build;
-  task.presentationOptions = { reveal: vscode.TaskRevealKind.Silent, clear: true };
+  // A build is headless and self-contained ([DEBUG-FEATURES-LAUNCH-BUILD]):
+  // `Silent` keeps the panel closed, and `New` gives the run a terminal of its
+  // OWN — the default `Shared` panel hands the task ANY idle task terminal, so
+  // terminating the build disposes a terminal some other task created. `close`
+  // folds the fresh terminal away on exit, so repeated builds cannot stack up
+  // panels; build errors still reach Problems through `$msCompile`.
+  task.presentationOptions = {
+    reveal: vscode.TaskRevealKind.Silent,
+    panel: vscode.TaskPanelKind.New,
+    close: true,
+  };
   return task;
 }
 

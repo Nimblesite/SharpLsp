@@ -8,7 +8,7 @@ SharpLsp debugging MUST use redistributable open-source components, work through
 
 ### Phase Four Adapter `[DEBUG-ADAPTER-NETCOREDBG]`
 
-Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.0` on stdin/stdout. Phase Five replaces it with the native SharpLsp Debug Sidecar in [DEBUG-ARCHITECTURE-SIDECAR].
+Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.0` on stdin/stdout. SharpLsp builds the pinned upstream commit with a minimal patch that exposes netcoredbg's existing `ICorDebugModule2::ApplyChanges` hot-reload path as the custom DAP `applyDeltas` request. Phase Five replaces it with the native SharpLsp Debug Sidecar in [DEBUG-ARCHITECTURE-SIDECAR].
 
 ### netcoredbg Gaps `[DEBUG-ADAPTER-GAPS]`
 
@@ -21,7 +21,6 @@ Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.
 | Expression evaluator incomplete (LINQ, complex lambdas fail) | Watch window workflows break on real enterprise code | Long-standing limitation |
 | No logpoints (tracepoints) | Cannot inject trace messages without pausing execution | No upstream issue tracked |
 | No data breakpoints | Cannot break on field/property value changes | Not in roadmap |
-| Edit and Continue: Linux/macOS not supported | .NET 8+ runtime supports EnC on Linux/macOS; no open-source client generates deltas | Issue #214 (open) |
 | No return value display | Cannot inspect method return values on step-over | Not documented upstream |
 | Attach to process: unreliable | `0x80070057` error; intermittent attach failures | Issue #205 |
 | macOS ARM64: no official binaries | Requires building from source; no Samsung CI | No upstream commitment |
@@ -30,7 +29,7 @@ Phase Four uses the MIT-licensed netcoredbg `3.2.0-1092` adapter over DAP `1.71.
 | C# 12 primary constructor params not inspectable | Compiler-generated fields not mapped back to source syntax | Issue #203 |
 | `Nullable<T>` expansion broken | `Nullable<Guid>` and similar value types cannot be expanded in debugger | Issue #213 |
 
-SharpDbg `0.1.0-preview5` MAY replace a from-scratch Phase Five sidecar only after it gains lambda stepping and Source Link support and passes SharpLsp DAP acceptance tests. ICorDebug wrapper fixes SHOULD go upstream; SharpLsp MUST NOT maintain a product fork.
+SharpDbg `0.1.0-preview5` MAY replace a from-scratch Phase Five sidecar only after it gains lambda stepping and Source Link support and passes SharpLsp DAP acceptance tests. ICorDebug wrapper fixes SHOULD go upstream. Until upstream issue #220 gains DAP support, SharpLsp MAY carry the isolated protocol patch in `tools/netcoredbg/dap-hot-reload.patch`; it MUST remain pinned, source-built, and covered by the live hot-reload acceptance suite.
 
 ## Architecture `[DEBUG-ARCHITECTURE]`
 
@@ -51,8 +50,8 @@ Target `DapRouter` responsibilities:
 
 ### netcoredbg Integration (Phase Four) `[DEBUG-ARCHITECTURE-NETCOREDBG]`
 
-- **Distribution**: [`debug.ts`](../../src/editors/vscode/src/debug.ts) resolves a configured path, bundled platform artifact, standard user install, or `PATH`; downloaded artifacts require SHA-256 verification
-- **Version pinning**: [`tools/vsix/fetch-netcoredbg.sh`](../../tools/vsix/fetch-netcoredbg.sh) pins `3.2.0-1092`; upgrades require the debug end-to-end suite
+- **Distribution**: [`debug.ts`](../../src/editors/vscode/src/debug.ts) resolves a configured path, the bundled source-built platform artifact, a standard user install, or `PATH`
+- **Version pinning**: [`tools/vsix/build-netcoredbg.sh`](../../tools/vsix/build-netcoredbg.sh) pins netcoredbg `3.2.0-1092`, its CoreCLR headers, and the DAP patch; upgrades require the debug end-to-end suite
 - **Transport**: DAP over stdin/stdout; DapRouter opens the child process and pipes JSON-RPC
 - **Launch modes**:
   - `launch`: spawn a new .NET process
@@ -61,16 +60,12 @@ Target `DapRouter` responsibilities:
 
 | Platform | Source | Notes |
 |---|---|---|
-| Linux x64 | Official Samsung release binary | Full feature set including interop debugging |
-| Linux ARM64 | Official Samsung release binary | Full feature set |
-| Linux ARM / RISCV64 | Official Samsung release binary | Managed debugging; validate architecture-specific release availability |
-| macOS x64 | Official Samsung release binary | No interop/native debugging |
-| macOS ARM64 | SharpLsp CI build from source | Samsung does not ship official ARM64 macOS binaries |
-| Windows x64 | Official Samsung release binary | Full feature set |
-| Windows x86 | Official Samsung release binary | Full feature set |
-| Windows ARM64 | Official Samsung release binary | Full feature set |
-| Alpine/musl x64 | SharpLsp CI musl-linked build | Workaround for SIGSEGV on musl; see [DEBUG-GAPS] |
-| Alpine/musl ARM64 | SharpLsp CI musl-linked build | Same musl workaround |
+| Linux x64 | SharpLsp pinned source build | DAP hot reload enabled |
+| Linux ARM64 | SharpLsp pinned source build on an ARM64 runner | DAP hot reload enabled |
+| macOS ARM64 | SharpLsp pinned source build | DAP hot reload enabled |
+| Windows x64 | SharpLsp pinned source build | DAP hot reload enabled |
+| macOS x64 | User-configured/PATH fallback | No bundled build |
+| Windows ARM64 | User-configured/PATH fallback | No bundled build |
 
 ### SharpLsp Debug Sidecar (Phase Five) `[DEBUG-ARCHITECTURE-SIDECAR]`
 
@@ -163,6 +158,15 @@ SharpLsp targets **DAP specification version 1.71.0**.
   "justMyCode": true
 }
 ```
+
+**Stopping an attach session DETACHES.** The user did not start the process, so
+ending the session must never end the process — killing it is data loss on any
+long-running service the user merely attached to. VS Code's stop gesture sends
+`disconnect` with `terminateDebuggee: true` whenever the adapter advertises
+`supportTerminateDebuggee`, and netcoredbg honours it by killing the debuggee;
+the router therefore rewrites every `disconnect` of an attach-mode session to
+`terminateDebuggee: false` before forwarding it. A LAUNCH session's `disconnect`
+passes through untouched — stopping a launched debuggee still terminates it.
 
 ### F5 with no launch.json `[DEBUG-FEATURES-LAUNCH-NOCONFIG]`
 

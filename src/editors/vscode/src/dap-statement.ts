@@ -3,6 +3,7 @@
 // netcoredbg exposes CLR sequence points, including C# block braces. The Rust
 // host already owns the concrete syntax trees for both C# and F#, so the router
 // asks it whether a stop carries code instead of guessing from source text.
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as state from './state';
 
@@ -17,15 +18,26 @@ export interface StatementLocation {
 export async function carriesUserCode(
   location: StatementLocation,
   justMyCode: boolean,
+  launchRoot?: string,
 ): Promise<boolean> {
-  if (
-    justMyCode &&
-    location.path !== undefined &&
-    vscode.workspace.getWorkspaceFolder(vscode.Uri.file(location.path)) === undefined
-  ) {
+  if (justMyCode && !belongsToUserCode(location, launchRoot)) {
     return false;
   }
   return await carriesCode(location);
+}
+
+export function belongsToUserCode(location: StatementLocation, launchRoot?: string): boolean {
+  if (location.path === undefined) return false;
+  return (
+    vscode.workspace.getWorkspaceFolder(vscode.Uri.file(location.path)) !== undefined ||
+    isWithin(launchRoot, location.path)
+  );
+}
+
+function isWithin(root: string | undefined, candidate: string): boolean {
+  if (root === undefined) return false;
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..');
 }
 
 interface StatementStopResponse {

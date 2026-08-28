@@ -233,11 +233,32 @@ export function builtDll(project: ConsoleProject, tfm: string = TFM): string {
  */
 export const MSBUILD_ISOLATION_PROPS = '<Project />\n';
 
-/** Drop the MSBuild stopper into `dir`, so a fixture build is self-contained. */
+/**
+ * The Roslyn analyzer-config stopper for the same scratch trees.
+ *
+ * `Directory.Build.props` stops only MSBuild's OWN upward walk. Roslyn reads
+ * `.editorconfig` up a SEPARATE walk that nothing in MSBuild stops, and the
+ * repo root's `dotnet_analyzer_diagnostic.severity = error` then escalates SDK
+ * analyzers inside the fixture — `CA1707` fails the build of any test method
+ * named `Does_Something`, which is every idiomatic test name, so discovery and
+ * runs over a workspace-rooted fixture die for reasons unrelated to what the
+ * suite asserts. `root = true` ends that walk at the scratch root. A constant
+ * authored document, like the MSBuild stopper above.
+ */
+export const EDITORCONFIG_ISOLATION = 'root = true\n';
+
+/**
+ * Drop the config stoppers into `dir`, so a fixture build is self-contained.
+ *
+ * All three upward walks end at the scratch root: `Directory.Build.props` and
+ * `Directory.Build.targets` for MSBuild, `.editorconfig` for Roslyn.
+ */
 export function isolateFromRepoMsbuild(dir: string): string {
   fs.mkdirSync(dir, { recursive: true });
   const props = path.join(dir, 'Directory.Build.props');
   fs.writeFileSync(props, MSBUILD_ISOLATION_PROPS, 'utf-8');
+  fs.writeFileSync(path.join(dir, 'Directory.Build.targets'), MSBUILD_ISOLATION_PROPS, 'utf-8');
+  fs.writeFileSync(path.join(dir, '.editorconfig'), EDITORCONFIG_ISOLATION, 'utf-8');
   return props;
 }
 

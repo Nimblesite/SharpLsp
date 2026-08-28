@@ -3,11 +3,24 @@ import { effect } from './signals';
 import { info } from './log';
 import * as state from './state';
 import { listTests, type TestListing } from './test-discovery';
-import { runTests, type TestRunOptions, type TestRunOutcome } from './test-execution';
-import { filterExpression } from './test-filter';
-import type { TestOutcome } from './test-run-output';
+import {
+  cancelled,
+  runOptions,
+  runTests,
+  type RunInvocation,
+  type TestRunOutcome,
+} from './test-execution';
+import { debugSelectedTests, type TestDebugHost } from './test-debug';
 import { loadDetailedCoverage } from './test-coverage';
-import { addCoverage, cachedFrom, freshCoverageDir, reportResult } from './test-reporting';
+import {
+  addCoverage,
+  cachedFrom,
+  freshCoverageDir,
+  reportAll,
+  reportOutcome,
+  type CacheWriter,
+  type CachedTestResult,
+} from './test-reporting';
 import { cancellationSignal, configureDotnet } from './dotnet-process';
 import {
   discoveryTargets,
@@ -20,6 +33,7 @@ import {
 
 export { buildFilterArgs } from './test-execution';
 export { isExpectoTest, isFsCheckTest } from './test-targets';
+export type { CachedTestResult } from './test-reporting';
 
 /**
  * Debounce for reactive re-discovery. Loading a solution can churn the
@@ -27,48 +41,6 @@ export { isExpectoTest, isFsCheckTest } from './test-targets';
  * into a single `dotnet test --list-tests` sweep.
  */
 const DISCOVERY_DEBOUNCE_MS = 1_000;
-
-/** Everything one batched `dotnet test` invocation needs. */
-interface RunInvocation {
-  readonly tests: readonly vscode.TestItem[];
-  readonly cwd: string;
-  readonly token: vscode.CancellationToken;
-  readonly coverage: boolean;
-  /** Where TRX and coverage land; a private temp directory when absent. */
-  readonly resultsDirectory: string | undefined;
-}
-
-/**
- * Whether ⏹ has been pressed. A CALL, not a property read: the flag is re-read
- * after every `await`, and a property read would be narrowed to `false` by an
- * earlier check that the awaited work is precisely what invalidates.
- */
-function cancelled(token: vscode.CancellationToken): boolean {
-  return token.isCancellationRequested;
-}
-
-/** The knobs one batched, cancellable run hands to `dotnet test`. */
-function runOptions(request: RunInvocation, signal: AbortSignal): TestRunOptions {
-  const target = runTarget();
-  return {
-    coverage: request.coverage,
-    signal,
-    ...(request.resultsDirectory === undefined
-      ? {}
-      : { resultsDirectory: request.resultsDirectory }),
-    ...(target === undefined ? {} : { target }),
-  };
-}
-
-/** Cached result for a single test, keyed by fully qualified name. */
-export interface CachedTestResult {
-  /** How the run ended, as VS Code's Testing API models it. */
-  readonly outcome: TestOutcome;
-  /** True only for a genuine pass — a SKIP is not a pass and not a failure. */
-  readonly passed: boolean;
-  readonly duration?: number | undefined;
-  readonly message?: string | undefined;
-}
 
 /**
  * Test controller integrating with VS Code's Testing API.
@@ -292,7 +264,25 @@ export class SharpLspTestController {
       return;
     }
     this.controller.items.replace(items);
+    this.pruneResults(new Set(items.map((item) => item.id)));
     info(`Test discovery: ${String(items.length)} test(s) from ${String(targetCount)} target(s)`);
+  }
+
+  /**
+   * Drop cached outcomes for tests no longer in the tree. The cache is keyed
+   * by fully-qualified name and outlives sweeps, so after the loaded solution
+   * changes it would paint an outcome for a test that was never run here —
+   * [TEST-REACTIVITY]: a result must not outlive the test it belongs to.
+   * Listeners hear about it only when something was actually dropped.
+   */
+  private pruneResults(alive: ReadonlySet<string>): void {
+    let dropped = 0;
+    for (const id of [...this.results.keys()]) {
+      if (alive.has(id)) continue;
+      this.results.delete(id);
+      dropped += 1;
+    }
+    if (dropped > 0) this.resultsChangedEmitter.fire();
   }
 
   /** List one target, logging whatever diagnostics the enumeration produced. */
@@ -342,7 +332,7 @@ export class SharpLspTestController {
   ): Promise<void> {
     const cwd = runCwd();
     if (cwd === undefined) {
-      this.reportAll(run, tests, 'No workspace folder or solution');
+      reportAll(run, tests, 'No workspace folder or solution', this.cacheWriter());
       return;
     }
     if (cancelled(token)) return;
@@ -353,7 +343,7 @@ export class SharpLspTestController {
     // token has just killed mid-flight, so whatever it managed to write is a
     // TRUNCATED account of a run the user abandoned: never cache or paint it.
     if (cancelled(token)) return;
-    this.reportOutcome(run, tests, outcome);
+    reportOutcome(run, tests, outcome, this.cacheWriter());
     if (coverage && resultsDirectory !== undefined) addCoverage(run, resultsDirectory);
   }
 
@@ -369,66 +359,51 @@ export class SharpLspTestController {
     }
   }
 
-  /** Map one invocation's TRX results onto the run and the result cache. */
-  private reportOutcome(
-    run: vscode.TestRun,
-    tests: readonly vscode.TestItem[],
-    outcome: TestRunOutcome,
-  ): void {
-    if (outcome.failure !== undefined) {
-      info(`Test run failed: ${outcome.failure}`);
-    }
-    for (const test of tests) {
-      const result = outcome.results.get(test.id);
-      if (result === undefined) {
-        this.reportMissing(run, test, outcome);
-        continue;
-      }
-      this.cache(test.id, cachedFrom(result));
-      reportResult(run, test, result);
-    }
-  }
-
-  /** A selected test the run never reported on: build failure or no match. */
-  private reportMissing(run: vscode.TestRun, test: vscode.TestItem, outcome: TestRunOutcome): void {
-    const message = outcome.failure ?? `No result reported for ${test.id} (filter matched no test)`;
-    this.cache(test.id, { outcome: 'notRun', passed: false, message });
-    run.errored(test, new vscode.TestMessage(message));
-  }
-
-  /** Report the same hard failure against every selected test. */
-  private reportAll(run: vscode.TestRun, tests: readonly vscode.TestItem[], message: string): void {
-    for (const test of tests) {
-      this.cache(test.id, { outcome: 'notRun', passed: false, message });
-      run.errored(test, new vscode.TestMessage(message));
-    }
-  }
-
   private cache(testId: string, result: CachedTestResult): void {
     this.results.set(testId, result);
   }
 
+  /** The cache writer a real RUN reports through; a debug run passes none. */
+  private cacheWriter(): CacheWriter {
+    return (id, result) => {
+      this.cache(id, result);
+    };
+  }
+
+  /**
+   * The Debug profile: run the selection under `VSTEST_HOST_DEBUG=1` and
+   * attach the debugger to the waiting TEST HOST child, never to the parent
+   * `dotnet test`. Resolves once the first attach settles or the run dies
+   * before any host waits ([DEBUG-FEATURES-TESTS]).
+   */
   private async debugTests(
     request: vscode.TestRunRequest,
     token: vscode.CancellationToken,
   ): Promise<void> {
     const tests = this.collectTests(request);
-    await Promise.resolve();
-    if (tests.length === 0 || token.isCancellationRequested) return;
-    this.openDebugTerminal(tests.map((test) => test.id));
+    if (tests.length === 0 || cancelled(token)) return;
+    const run = this.controller.createTestRun(request);
+    const cwd = runCwd();
+    if (cwd === undefined) {
+      // No cache writes: a debug gesture must never fabricate a run result.
+      reportAll(run, tests, 'No workspace folder or solution', () => undefined);
+      run.end();
+      return;
+    }
+    for (const test of tests) run.started(test);
+    await debugSelectedTests(this.debugHost(), run, tests, token, cwd);
   }
 
-  /**
-   * Hand the SELECTION to a terminal the user can attach a debugger to — every
-   * selected test, not just the first, or a multi-test debug request would
-   * silently drop all but one. The filter value is escaped: an NUnit
-   * `[TestCase]` name contains parentheses, which VSTest's filter grammar would
-   * otherwise read as an expression.
-   */
-  private openDebugTerminal(testIds: readonly string[]): void {
-    const terminal = vscode.window.createTerminal('SharpLsp Test Debug');
-    terminal.show();
-    terminal.sendText(`dotnet test --filter "${filterExpression(testIds)}"`);
+  /** The slice of this controller the test-debug flow needs. */
+  private debugHost(): TestDebugHost {
+    return {
+      enqueue: async (work) => await this.enqueue(work),
+      // Run-only reporting: a debug run neither caches results nor announces a
+      // results change — the last real run's outcome stands.
+      finish: (run, tests, outcome) => {
+        reportOutcome(run, tests, outcome, undefined);
+      },
+    };
   }
 
   /**

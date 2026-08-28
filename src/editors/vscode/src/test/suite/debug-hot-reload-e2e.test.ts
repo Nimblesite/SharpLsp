@@ -237,6 +237,7 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
     );
     eq(sessions.ours.length, 1, 'and no second session was started behind their back');
     await vscode.commands.executeCommand(CMD_CONTINUE);
+    await assertRanToCompletion(recorder, 0, 'a session after a refused rude edit');
     eq(
       recorder.outputText().includes('total=8'),
       true,

@@ -60,6 +60,48 @@ internal sealed partial class WorkspaceManager
         }
     }
 
+    /// <summary>
+    /// A document snapshot paired with the tier-2 degradation notice from the SAME
+    /// instant. Captured under <c>_solutionMutationLock</c> — the lock
+    /// <see cref="ApplyPackageReferencesAsync"/> holds while it swaps the restored
+    /// references and clears the notice — so a diagnostics answer can never pair a
+    /// pre-upgrade compilation (package errors present) with a post-upgrade notice
+    /// state (notice absent). The editor host stops republishing the moment an
+    /// answer arrives without the pending notice, so one torn pair strands the
+    /// tier-2 placeholder's phantom CS0246s on screen for the life of the document.
+    /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+    /// </summary>
+    private sealed record DiagnosticsState(Document? Document, ProjectlessDegradation? Degradation);
+
+    private async Task<DiagnosticsState> CaptureDiagnosticsStateAsync(
+        string filePath,
+        CancellationToken ct
+    )
+    {
+        await _solutionMutationLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
+            return new DiagnosticsState(document, DegradationFor(document, filePath));
+        }
+        finally
+        {
+            _ = _solutionMutationLock.Release();
+        }
+    }
+
+    private ProjectlessDegradation? DegradationFor(Document? document, string filePath)
+    {
+        return
+            document is not null
+            && _projectlessDegradations.TryGetValue(
+                ProjectRootPath(document.Project, filePath),
+                out var degradation
+            )
+            ? degradation
+            : null;
+    }
+
     private bool ProjectModelChanged(string rootPath, Closure closure)
     {
         return !_documentPackages.TryGetValue(rootPath, out var packages)
@@ -90,6 +132,13 @@ internal sealed partial class WorkspaceManager
             PendingEvaluationReason(closure.Packages),
             IsPending: true
         );
+        Log.Debug(
+            "File-based package resolution started for {Root} "
+                + "(generation {Generation}, {PackageCount} package(s))",
+            rootPath,
+            generation,
+            closure.Packages.Count
+        );
         _ = ResolveAndUpgradeAsync(rootPath, projectId, closure, generation);
     }
 
@@ -108,7 +157,13 @@ internal sealed partial class WorkspaceManager
                 .ConfigureAwait(false);
             if (resolution.IsError)
             {
-                TrackPackageFailure(rootPath, generation, !resolution ?? "Package restore failed.");
+                await TrackPackageFailureAsync(
+                        rootPath,
+                        generation,
+                        !resolution ?? "Package restore failed.",
+                        ct
+                    )
+                    .ConfigureAwait(false);
                 return;
             }
 
@@ -122,7 +177,8 @@ internal sealed partial class WorkspaceManager
         }
         catch (Exception exception)
         {
-            TrackPackageFailure(rootPath, generation, exception.Message);
+            await TrackPackageFailureAsync(rootPath, generation, exception.Message, ct)
+                .ConfigureAwait(false);
         }
     }
 
@@ -153,6 +209,13 @@ internal sealed partial class WorkspaceManager
                 .WithCompilationOptions(resolved.CompilationOptions)
                 .WithParseOptions(TierOneParseOptions(resolved.ParseOptions));
             var nextSolution = nextProject.Solution;
+            Log.Information(
+                "File-based restore settled for {Root} (generation {Generation}): "
+                    + "{ReferenceCount} reference(s) applied",
+                rootPath,
+                generation,
+                resolved.References.Count
+            );
             ApplyAdhocChanges(nextSolution);
             _solution = nextSolution;
             _ = _projectlessDegradations.TryRemove(rootPath, out _);
@@ -171,7 +234,42 @@ internal sealed partial class WorkspaceManager
         }
     }
 
-    private void TrackPackageFailure(string rootPath, long generation, string reason)
+    /// <summary>
+    /// Record a terminal restore failure, but only while this generation is still
+    /// current — checked UNDER the mutation lock. An unlocked check-then-write lets a
+    /// stale generation's failure overwrite the pending notice a newer directive edit
+    /// just installed, and a non-pending notice stops the host's republish loop while
+    /// that newer restore is still in flight. Implements
+    /// [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+    /// </summary>
+    private async Task TrackPackageFailureAsync(
+        string rootPath,
+        long generation,
+        string reason,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            await _solutionMutationLock.WaitAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception blocked)
+            when (blocked is OperationCanceledException or ObjectDisposedException)
+        {
+            return; // A workspace reset or disposal is clearing the projectless state anyway.
+        }
+
+        try
+        {
+            RecordPackageFailure(rootPath, generation, reason);
+        }
+        finally
+        {
+            _ = _solutionMutationLock.Release();
+        }
+    }
+
+    private void RecordPackageFailure(string rootPath, long generation, string reason)
     {
         if (!IsCurrentPackageResolution(rootPath, generation))
         {

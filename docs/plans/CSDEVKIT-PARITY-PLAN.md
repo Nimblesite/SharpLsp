@@ -161,7 +161,7 @@ exists and a test names the behaviour but that test is red.
 | F# debugging (breakpoints, stepping, exceptions) | Partial | Yes | **DONE** — `[DEBUG-FSHARP-STEPPING]`, chunk `debug-fsharp` |
 | F# DU / list / record rendering in F# syntax | No | No | **MISSING** — specified by `debug-fsharp-inspection-e2e`, no implementation |
 | Debug a unit test | Yes | No | **MISSING** — the Debug profile opens a `dotnet test` terminal; no attach |
-| Hot Reload | Yes | No | **MISSING** — `hot-reload.ts` is a `dotnet watch` terminal; the session-level implementation is in flight and its three E2E cases are red |
+| Hot Reload | Yes | Yes | **DONE** — `dap-hot-reload.ts` + C# sidecar Roslyn EnC deltas applied to the live debuggee via netcoredbg `applyDeltas`; all three `debug-hot-reload-e2e` cases pass |
 
 ### NuGet Package Management
 
@@ -279,7 +279,7 @@ Features users expect within the first day of use.
   - [ ] Collection expansion, static-field scopes, `[DebuggerDisplay]` — not built
   - [ ] Async logical call stack (awaiting frames) — not built
   - [ ] F# discriminated union / list / record rendering in F# syntax — not built
-  - [ ] Hot Reload during a session, and debugging a unit test — not built
+  - [x] Hot Reload during a session — `debug-hot-reload-e2e` passes (debugging a unit test is tracked separately below)
 
 - [ ] **P2.2: Test Explorer**
   - [x] Test discovery by VSTest `TestCase.FullyQualifiedName` (`--ListFullyQualifiedTests`), spec `[TEST-DISCOVERY-FQN]`
@@ -406,7 +406,7 @@ Features where we go beyond what C# Dev Kit offers.
 
 **Remaining gaps: ~40 items across P1-P4.**
 
-The biggest remaining gaps are **rename** (P0 parity blocker), **debugging inspection and attach** (P2.1 — the launch, breakpoint, exception and session surfaces are done and gated; variable expansion, `[DebuggerDisplay]`, async stacks, attach and hot reload are not), and **test debugging** (P2.2). P2 remains the next broad feature area, but rename is the critical refactoring gap inside P1.
+The biggest remaining gaps are **rename** (P0 parity blocker), **debugging inspection and attach** (P2.1 — the launch, breakpoint, exception and session surfaces are done and gated; variable expansion, `[DebuggerDisplay]`, async stacks and attach are not; hot reload is done), and **test debugging** (P2.2). P2 remains the next broad feature area, but rename is the critical refactoring gap inside P1.
 
 ### What SharpLsp Already Does Better
 

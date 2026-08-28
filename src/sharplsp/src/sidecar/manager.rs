@@ -1,7 +1,7 @@
 //! Sidecar lifecycle manager — spawn, health monitoring, crash recovery.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -54,6 +54,17 @@ pub struct SidecarManager {
     /// same throttle as crashes so a persistent failure cannot trigger an
     /// unthrottled respawn storm — one doomed process per LSP request. (#152)
     spawn_retry_after: Mutex<Option<Instant>>,
+    /// Set before shutdown begins so background callers stop retrying or respawning.
+    shutting_down: AtomicBool,
+    /// Out-of-band event lines the sidecar writes to its stdout after the
+    /// READY handshake (`SHARPLSP-EVENT <name> <payload>`). Forwarded by a
+    /// per-child reader task so the pipe never fills; survives respawns
+    /// because every new child is wired to the same sender.
+    /// [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+    events_tx: tokio::sync::mpsc::UnboundedSender<String>,
+    /// The receiving half of `events_tx`, handed out once via
+    /// [`SidecarManager::take_event_receiver`].
+    events_rx: std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<String>>>,
 }
 
 impl SidecarManager {
@@ -64,6 +75,7 @@ impl SidecarManager {
         spawn_args: Vec<String>,
         socket_path: &str,
     ) -> Self {
+        let (events_tx, events_rx) = tokio::sync::mpsc::unbounded_channel();
         Self {
             name: name.to_string(),
             spawn_command: spawn_command.to_string(),
@@ -74,12 +86,26 @@ impl SidecarManager {
             next_id: AtomicU32::new(1),
             backoff: Mutex::new(INITIAL_BACKOFF),
             spawn_retry_after: Mutex::new(None),
+            shutting_down: AtomicBool::new(false),
+            events_tx,
+            events_rx: std::sync::Mutex::new(Some(events_rx)),
         }
     }
 
     /// Returns the display name of this sidecar.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Hand out the single receiver for this sidecar's out-of-band stdout
+    /// events (`SHARPLSP-EVENT` lines). Returns `None` after the first call.
+    pub fn take_event_receiver(&self) -> Option<tokio::sync::mpsc::UnboundedReceiver<String>> {
+        self.events_rx.lock().ok().and_then(|mut slot| slot.take())
+    }
+
+    /// Whether graceful shutdown has begun for this manager.
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::Acquire)
     }
 
     /// Create a manager for the C# sidecar.
@@ -113,6 +139,9 @@ impl SidecarManager {
     /// Holds the transport lock during the entire spawn to prevent
     /// concurrent callers from spawning duplicate sidecar processes.
     pub async fn ensure_running(&self) -> Result<()> {
+        if self.is_shutting_down() {
+            bail!("{} sidecar is shutting down", self.name);
+        }
         let mut transport_guard = self.transport.lock().await;
         if transport_guard.is_some() {
             return Ok(());
@@ -323,6 +352,14 @@ impl SidecarManager {
                         socket = %path,
                         "Sidecar ready"
                     );
+                    // Keep consuming stdout for the life of this child: it now
+                    // carries out-of-band `SHARPLSP-EVENT` lines, and an unread
+                    // pipe would eventually fill and block the sidecar.
+                    drop(tokio::spawn(forward_stdout_events(
+                        reader,
+                        self.events_tx.clone(),
+                        self.name.clone(),
+                    )));
                     return Ok(path.to_string());
                 }
             }
@@ -388,6 +425,7 @@ impl SidecarManager {
 
     /// TODO `[SIDECAR-SHUTDOWN-PROTOCOL]`: validate the acknowledgement and await clean exit before hard kill.
     pub async fn shutdown(&self) {
+        self.shutting_down.store(true, Ordering::Release);
         info!(sidecar = %self.name, "Shutting down sidecar");
         if let Ok(mut transport_guard) = self.transport.try_lock() {
             if let Some(transport) = transport_guard.as_mut() {
@@ -418,6 +456,33 @@ impl SidecarManager {
         let manager = Self::new("test", "unused-command", vec![], "unused-endpoint");
         *manager.transport.lock().await = Some(FramedTransport::from_stream(stream));
         manager
+    }
+}
+
+/// Forward post-READY `SHARPLSP-EVENT` stdout lines from a sidecar child into
+/// the manager's event channel, so out-of-band notifications (e.g. a settled
+/// file-based restore) reach the host without a socket round-trip — and so
+/// the pipe can never fill and block the sidecar. Ends at child exit (EOF);
+/// each respawned child gets its own forwarder wired to the same channel.
+/// [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+async fn forward_stdout_events(
+    mut reader: tokio::io::BufReader<tokio::process::ChildStdout>,
+    events: tokio::sync::mpsc::UnboundedSender<String>,
+    sidecar: String,
+) {
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+        if let Some(event) = line.trim().strip_prefix("SHARPLSP-EVENT ") {
+            debug!(sidecar = %sidecar, event = %event, "Sidecar event");
+            if events.send(event.to_string()).is_err() {
+                return;
+            }
+        }
     }
 }
 
@@ -775,6 +840,17 @@ mod tests {
     fn new_stores_socket_path() {
         let mgr = SidecarManager::new("test", "echo", vec![], "/tmp/my.sock");
         assert_eq!(mgr.socket_path, "/tmp/my.sock");
+    }
+
+    #[tokio::test]
+    async fn shutdown_prevents_background_respawn() {
+        let manager = SidecarManager::new("test", "unused", vec![], "unused");
+
+        manager.shutdown().await;
+
+        assert!(manager.is_shutting_down());
+        let error = manager.ensure_running().await.unwrap_err();
+        assert!(error.to_string().contains("shutting down"));
     }
 
     #[test]

@@ -27,6 +27,8 @@ export class RequestCorrelator {
   /** The router's own in-flight requests, settled if the child dies mid-await. */
   private readonly pending = new Map<number, Pending>();
   private nextSeq = FIRST_SEQ;
+  /** Set by `failAll`: the child is gone, so no request may ever settle. */
+  private closed = false;
 
   constructor(private readonly write: (message: DapMessage) => void) {}
 
@@ -38,6 +40,18 @@ export class RequestCorrelator {
   /** Send a request in the router's own name and await its response. */
   public async request(command: string, args: Record<string, unknown>): Promise<DapMessage> {
     const seq = this.nextSequence();
+    // A request issued AFTER the child died would be dropped by the destroyed
+    // wire and hang its awaiter forever; settle it immediately instead.
+    if (this.closed) {
+      return {
+        seq,
+        type: 'response',
+        request_seq: seq,
+        command,
+        success: false,
+        message: 'netcoredbg exited',
+      };
+    }
     const reply = new Promise<DapMessage>((resolve) => {
       this.pending.set(seq, { command, resolve });
     });
@@ -62,6 +76,7 @@ export class RequestCorrelator {
    * judging — a paused debuggee nobody can resume.
    */
   public failAll(reason: string): void {
+    this.closed = true;
     const inFlight = [...this.pending];
     this.pending.clear();
     for (const [seq, entry] of inFlight) {

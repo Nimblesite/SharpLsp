@@ -165,6 +165,23 @@ remaining gaps are explicit rather than implied.
       until `SLSPC0002` clears. Without it hover and completion bind the restored package while the
       editor still shows the placeholder's phantom `CS0246`s —
       [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
+- [x] The diagnostics answer is never torn: the document snapshot and the tier-2 notice are
+      captured atomically under the solution mutation lock (`CaptureDiagnosticsStateAsync`).
+      Reading the notice after the (seconds-long) semantic-model computation let a restore that
+      settled mid-computation pair a pre-upgrade compilation's `CS0246`s with a post-upgrade
+      "no notice" state; the host treats such an answer as final and stops republishing, stranding
+      the phantom errors (Windows CI, `filebased-package-e2e` add/remove/re-add). C# test:
+      `Package_errors_are_never_reported_without_a_tier2_notice_across_directive_cycles` —
+      [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
+- [x] A semantic response never outruns the published diagnostics it makes stale: while a
+      document's latest publication is provisional (`SLSPC0002`), the host re-fetches and
+      republishes before sending any tier-1-revealing feature answer
+      (`diagnostics::converge_provisional`, wired into `handle_request`). Without it, the push
+      loop's 1s cadence leaves up to a second in which completion/hover already bind the restored
+      package while the placeholder's `CS0246`s are still published — the other half of the same
+      e2e failure. Rust test:
+      `provisional_publication_is_converged_before_a_semantic_response` —
+      [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
 
 ### Testing
 

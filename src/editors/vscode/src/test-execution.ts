@@ -20,7 +20,9 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { DOTNET_TIMEOUT_MS, runDotnet } from './dotnet-process.js';
+import type * as vscode from 'vscode';
+import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetHooks } from './dotnet-process.js';
+import { runTarget } from './test-targets.js';
 import { filterExpression } from './test-filter.js';
 import {
   parseFailureMessage,
@@ -67,6 +69,13 @@ export interface TestRunOptions {
    * single selected test from running once the batch had started.
    */
   readonly signal?: AbortSignal;
+  /**
+   * Environment and live-output extensions for the `dotnet test` child. A test
+   * DEBUG run sets `VSTEST_HOST_DEBUG=1` and watches the output for the waiting
+   * test host's pid announcement while the process is still running.
+   * Spec: [DEBUG-FEATURES-TESTS].
+   */
+  readonly hooks?: DotnetHooks;
 }
 
 /**
@@ -76,6 +85,38 @@ export interface TestRunOptions {
 export function buildFilterArgs(tests: readonly { readonly id: string }[]): string[] {
   if (tests.length === 0) return [];
   return ['--filter', filterExpression(tests.map((test) => test.id))];
+}
+
+/** Everything one batched `dotnet test` invocation needs. */
+export interface RunInvocation {
+  readonly tests: readonly vscode.TestItem[];
+  readonly cwd: string;
+  readonly token: vscode.CancellationToken;
+  readonly coverage: boolean;
+  /** Where TRX and coverage land; a private temp directory when absent. */
+  readonly resultsDirectory: string | undefined;
+}
+
+/**
+ * Whether ⏹ has been pressed. A CALL, not a property read: the flag is re-read
+ * after every `await`, and a property read would be narrowed to `false` by an
+ * earlier check that the awaited work is precisely what invalidates.
+ */
+export function cancelled(token: vscode.CancellationToken): boolean {
+  return token.isCancellationRequested;
+}
+
+/** The knobs one batched, cancellable run hands to `dotnet test`. */
+export function runOptions(request: RunInvocation, signal: AbortSignal): TestRunOptions {
+  const target = runTarget();
+  return {
+    coverage: request.coverage,
+    signal,
+    ...(request.resultsDirectory === undefined
+      ? {}
+      : { resultsDirectory: request.resultsDirectory }),
+    ...(target === undefined ? {} : { target }),
+  };
 }
 
 /** Run `testIds` (all tests when empty) in `cwd` and report per-test outcomes. */
@@ -137,7 +178,13 @@ async function invoke(
   const before = new Set(trxFiles(resultsDirectory));
   const args = runArgs(testIds, resultsDirectory, options);
   const started = Date.now();
-  const run = await runDotnet(args, cwd, options.timeoutMs ?? DOTNET_TIMEOUT_MS, options.signal);
+  const run = await runDotnet(
+    args,
+    cwd,
+    options.timeoutMs ?? DOTNET_TIMEOUT_MS,
+    options.signal,
+    options.hooks,
+  );
   const durationMs = Date.now() - started;
   const output = `${run.stdout}\n${run.stderr}`;
   const report = collectReport(resultsDirectory, before);

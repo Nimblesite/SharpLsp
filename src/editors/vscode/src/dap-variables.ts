@@ -1,9 +1,17 @@
-// Collection-shaped variables netcoredbg exposes only through runtime internals.
+// F# and C# values netcoredbg exposes only as runtime internals.
 //
-// C# List<T> arrives as `_items` plus `_size`; FSharpList<T> arrives as a
-// recursive Head/Tail union. Both already carry real adapter handles, so the
-// router can present their elements without evaluating code or guessing values.
+// Implements [DEBUG-FSHARP-UNIONS] and the collection, static-field and
+// [DebuggerDisplay] rows of [DEBUG-FEATURES-VARIABLES]. C# List<T> arrives as
+// `_items` plus `_size`; FSharpList<T> arrives as a recursive Head/Tail union;
+// a discriminated union case arrives as a bare `{Ns.Shape.Rect}` with its
+// fields underneath; a `[DebuggerDisplay]` type arrives as its raw class name
+// (dap-display.ts); statics arrive not at all (dap-statics.ts). All of them
+// already carry real adapter handles, so the router can present the logical
+// value without guessing at it.
 import { isRecord, recordList, type DapMessage } from './dap-emulate';
+import { childrenOf, evaluateIn, referenceOf, stringField, variablesOf } from './dap-values';
+import { DebuggerDisplayEmulator } from './dap-display';
+import { StaticsScopes } from './dap-statics';
 import type { RetryHost } from './dap-attach';
 
 const MAX_FSHARP_ITEMS = 1_024;
@@ -11,11 +19,8 @@ const MAX_FSHARP_ITEMS = 1_024;
 interface VariableContext {
   readonly frameId: number;
   readonly evaluateName?: string;
-}
-
-function stringField(record: Record<string, unknown>, field: string): string {
-  const value = record[field];
-  return typeof value === 'string' ? value : '';
+  /** True when the reference is a scope: children are addressable by name. */
+  readonly scope?: boolean;
 }
 
 function named(
@@ -25,18 +30,24 @@ function named(
   return variables.find((variable) => stringField(variable, 'name').toLowerCase() === name);
 }
 
-function referenceOf(variable: Record<string, unknown> | undefined): number {
-  return Number(variable?.variablesReference ?? 0);
-}
-
-function variablesOf(response: DapMessage): Record<string, unknown>[] {
-  const body = isRecord(response.body) ? response.body : {};
-  return recordList(body.variables);
-}
-
 function withVariables(response: DapMessage, variables: Record<string, unknown>[]): DapMessage {
   const body = isRecord(response.body) ? response.body : {};
   return { ...response, body: { ...body, variables } };
+}
+
+/** Surface bindings hoisted into an F# resumable state machine's `this`. */
+async function fsharpStateMachineLocals(
+  host: RetryHost,
+  variables: Record<string, unknown>[],
+  context: VariableContext | undefined,
+): Promise<Record<string, unknown>[] | undefined> {
+  const self = context?.scope === true ? named(variables, 'this') : undefined;
+  if (self === undefined || referenceOf(self) <= 0) return undefined;
+  const fields = await childrenOf(host, referenceOf(self));
+  if (named(fields, 'data') === undefined || named(fields, 'resumptionpoint') === undefined) {
+    return undefined;
+  }
+  return [...variables, ...fields];
 }
 
 /** Turn List<T>'s backing array into its logical, size-bounded elements. */
@@ -92,79 +103,167 @@ async function appendEvaluatedFsharpItems(
   context: VariableContext | undefined,
   elements: Record<string, unknown>[],
 ): Promise<void> {
-  if (context?.evaluateName === undefined || elements.length >= MAX_FSHARP_ITEMS) return;
+  const frameId = context?.frameId;
+  const root = context?.evaluateName;
+  if (root === undefined || frameId === undefined || elements.length >= MAX_FSHARP_ITEMS) return;
   for (let index = elements.length; index < MAX_FSHARP_ITEMS && !host.isClosed(); index += 1) {
-    const tail = `${context.evaluateName}${'.Tail'.repeat(index)}`;
-    const empty = await host.request('evaluate', {
-      expression: `${tail}.IsEmpty`,
-      frameId: context.frameId,
-      context: 'watch',
-    });
-    if (empty.success === false || resultOf(empty).toLowerCase() === 'true') return;
-    const head = await host.request('evaluate', {
-      expression: `${tail}.Head`,
-      frameId: context.frameId,
-      context: 'watch',
-    });
-    if (head.success === false) return;
-    const body = isRecord(head.body) ? head.body : {};
-    elements.push({
-      name: `[${String(index)}]`,
-      value: resultOf(head),
-      type: stringField(body, 'type'),
-      variablesReference: Number(body.variablesReference ?? 0),
-      evaluateName: `${tail}.Head`,
-    });
+    const tail = `${root}${'.Tail'.repeat(index)}`;
+    const empty = await evaluateIn(host, frameId, `${tail}.IsEmpty`);
+    if (empty === undefined || stringField(empty, 'result').toLowerCase() === 'true') return;
+    const head = await evaluateIn(host, frameId, `${tail}.Head`);
+    if (head === undefined) return;
+    elements.push(evaluatedItem(head, index, `${tail}.Head`));
   }
 }
 
-function resultOf(response: DapMessage): string {
-  return stringField(isRecord(response.body) ? response.body : {}, 'result');
+/** One evaluated element, in the shape the variables panel expects. */
+function evaluatedItem(
+  body: Record<string, unknown>,
+  index: number,
+  evaluateName: string,
+): Record<string, unknown> {
+  return {
+    name: `[${String(index)}]`,
+    value: stringField(body, 'result'),
+    type: stringField(body, 'type'),
+    variablesReference: Number(body.variablesReference ?? 0),
+    evaluateName,
+  };
 }
 
-function fsharpCaseName(variable: Record<string, unknown>): string | undefined {
-  const shape = `${stringField(variable, 'type')} ${stringField(variable, 'value')}`;
-  if (/FSharpOption|option</iu.test(shape)) return 'Some';
-  const raw = stringField(variable, 'value').replace(/[{}]/gu, '');
-  const segment = raw.split(/[.+]/u).at(-1);
-  return segment !== undefined && /^[A-Z][A-Za-z0-9_]*$/u.test(segment) ? segment : undefined;
+/** `Ns.Union.Case` split into the union and the case it could name. */
+function caseCandidate(typeName: string): { declaring: string; name: string } | undefined {
+  const cut = typeName.lastIndexOf('.');
+  const segment = typeName.slice(cut + 1);
+  // The compiler names the singleton class of a nullary case `_Case`.
+  if (cut <= 0 || !/^_?[A-Z][A-Za-z0-9_]*$/u.test(segment)) return undefined;
+  return { declaring: typeName.slice(0, cut), name: segment.replace(/^_/u, '') };
 }
 
-function fsharpDisplay(
-  variable: Record<string, unknown>,
-  children: readonly Record<string, unknown>[],
-): string | undefined {
-  const shape = `${stringField(variable, 'type')} ${stringField(variable, 'value')}`;
-  if (/FSharpList/iu.test(shape)) return undefined;
-  const option = /FSharpOption|option</iu.test(shape);
-  const tag = named(children, 'tag');
-  if (!option && tag === undefined) return undefined;
-  const name = fsharpCaseName(variable);
-  if (name === undefined) return undefined;
-  const payload = children.filter((child) => stringField(child, 'name').toLowerCase() !== 'tag');
-  if (option && payload.length === 0) return 'None';
-  return `${name}(${payload.map((child) => stringField(child, 'value')).join(', ')})`;
+/** The values of a case's fields, one per field however it is exposed. */
+function caseFields(children: readonly Record<string, unknown>[]): string[] {
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const child of children) {
+    // netcoredbg lists a case field twice — as its backing field `_width` and
+    // as its property `width` — and appends a typeless `Static members` node.
+    const field = stringField(child, 'name').replace(/^_/u, '').toLowerCase();
+    if (stringField(child, 'type') === '' || seen.has(field)) continue;
+    seen.add(field);
+    values.push(stringField(child, 'value'));
+  }
+  return values;
 }
 
-/** Replace raw CLR summaries only when their real child metadata proves a DU. */
-async function enrichFsharpDisplays(
+/** `Rect(3, 4)`, and a bare case name when the case carries nothing. */
+function renderCase(name: string, fields: readonly string[]): string {
+  return fields.length === 0 ? name : `${name}(${fields.join(', ')})`;
+}
+
+/**
+ * Proof that a CLR type is an F# union case, taken from the union's metadata.
+ *
+ * `type Shape = Circle of int | Rect of int * int` compiles to one nested class
+ * per case PLUS a nested `Tags` class holding one `int` constant per case. So
+ * `Shape.Tags.Rect` resolves for a union and for nothing else: not for a C#
+ * nested class, not for an F# record, and not for a class that merely happens
+ * to expose a `Tag` member. netcoredbg answers it out of the assembly's own
+ * metadata, so no FCS round trip is involved, and the answer is a property of
+ * the type rather than of the value — one evaluation per type per session.
+ */
+class UnionCaseProof {
+  private readonly verdicts = new Map<string, string | undefined>();
+
+  constructor(private readonly host: RetryHost) {}
+
+  /** The case `typeName` names, or nothing when it names no case. */
+  public async caseNameOf(typeName: string, frameId: number): Promise<string | undefined> {
+    if (!this.verdicts.has(typeName)) {
+      this.verdicts.set(typeName, await this.prove(typeName, frameId));
+    }
+    return this.verdicts.get(typeName);
+  }
+
+  private async prove(typeName: string, frameId: number): Promise<string | undefined> {
+    const candidate = caseCandidate(typeName);
+    if (candidate === undefined) return undefined;
+    const proof = await evaluateIn(
+      this.host,
+      frameId,
+      `${candidate.declaring}.Tags.${candidate.name}`,
+    );
+    const tag = proof === undefined ? '' : stringField(proof, 'result');
+    return /^-?\d+$/u.test(tag) ? candidate.name : undefined;
+  }
+}
+
+/** `option<'T>` is one union, but the CLR type names the union, not the case. */
+const OPTION_TYPE = /(?:^|\.)FSharpOption</u;
+
+/** `Some(42)` and `None` — [DEBUG-FSHARP-UNIONS]'s own worked example. */
+async function optionDisplay(
   host: RetryHost,
+  variable: Record<string, unknown>,
+): Promise<string | undefined> {
+  if (!OPTION_TYPE.test(stringField(variable, 'type'))) return undefined;
+  // `None` is the null reference; there is no instance to ask about.
+  if (stringField(variable, 'value') === 'null') return 'None';
+  const fields = caseFields(await childrenOf(host, referenceOf(variable)));
+  return fields.length === 0 ? undefined : renderCase('Some', fields);
+}
+
+/** `Rect(3, 4)` for a value the union's own `Tags` metadata proves is a case. */
+async function unionDisplay(
+  host: RetryHost,
+  proof: UnionCaseProof,
+  variable: Record<string, unknown>,
+  frameId: number,
+): Promise<string | undefined> {
+  const name = await proof.caseNameOf(stringField(variable, 'type'), frameId);
+  if (name === undefined) return undefined;
+  return renderCase(name, caseFields(await childrenOf(host, referenceOf(variable))));
+}
+
+/** The expression that re-evaluates `variable`, for attribute emulation. */
+function objectExpressionOf(
+  variable: Record<string, unknown>,
+  context: VariableContext | undefined,
+): string | undefined {
+  const evaluateName = stringField(variable, 'evaluateName');
+  if (evaluateName !== '') return evaluateName;
+  const name = stringField(variable, 'name');
+  return context?.scope === true && name !== '' ? name : undefined;
+}
+
+/** The F# or [DebuggerDisplay] summary for one variable, when one applies. */
+async function displayOf(
+  host: RetryHost,
+  proof: UnionCaseProof,
+  displays: DebuggerDisplayEmulator,
+  variable: Record<string, unknown>,
+  context: VariableContext | undefined,
+): Promise<string | undefined> {
+  const frameId = context?.frameId;
+  const fsharp =
+    (await optionDisplay(host, variable)) ??
+    (frameId === undefined ? undefined : await unionDisplay(host, proof, variable, frameId));
+  if (fsharp !== undefined) return fsharp;
+  return await displays.display(variable, objectExpressionOf(variable, context), frameId);
+}
+
+/** Replace the raw CLR summary of every value the router can render better. */
+async function enrichDisplays(
+  host: RetryHost,
+  proof: UnionCaseProof,
+  displays: DebuggerDisplayEmulator,
   variables: readonly Record<string, unknown>[],
+  context: VariableContext | undefined,
 ): Promise<Record<string, unknown>[]> {
   const enriched: Record<string, unknown>[] = [];
   for (const variable of variables) {
-    const reference = referenceOf(variable);
-    const shape = `${stringField(variable, 'type')} ${stringField(variable, 'value')}`;
-    if (
-      reference <= 0 ||
-      (!shape.includes('FSharp') && !/^\{.+\}$/u.test(stringField(variable, 'value')))
-    ) {
-      enriched.push(variable);
-      continue;
-    }
-    const response = await host.request('variables', { variablesReference: reference });
-    const display =
-      response.success === false ? undefined : fsharpDisplay(variable, variablesOf(response));
+    const display = host.isClosed()
+      ? undefined
+      : await displayOf(host, proof, displays, variable, context);
     enriched.push(display === undefined ? variable : { ...variable, value: display });
   }
   return enriched;
@@ -174,7 +273,22 @@ async function enrichFsharpDisplays(
 export class VariableExpander {
   private readonly contexts = new Map<number, VariableContext>();
 
-  constructor(private readonly host: RetryHost) {}
+  private readonly unions: UnionCaseProof;
+
+  private readonly displays: DebuggerDisplayEmulator;
+
+  private readonly statics: StaticsScopes;
+
+  constructor(private readonly host: RetryHost) {
+    this.unions = new UnionCaseProof(host);
+    this.displays = new DebuggerDisplayEmulator(host);
+    this.statics = new StaticsScopes(host);
+  }
+
+  /** Frame display names feed the Statics scope ([DEBUG-FEATURES-VARIABLES]). */
+  public observeStackTrace(response: DapMessage): void {
+    this.statics.observeFrames(response);
+  }
 
   public startScopes(clientRequest: DapMessage, args: Record<string, unknown>): void {
     void this.runScopes(clientRequest, args);
@@ -185,16 +299,24 @@ export class VariableExpander {
   }
 
   private async run(clientRequest: DapMessage, args: Record<string, unknown>): Promise<void> {
+    const reference = Number(args.variablesReference ?? 0);
+    if (this.statics.owns(reference)) {
+      await this.deliverStatics(clientRequest, reference);
+      return;
+    }
     const response = await this.host.request('variables', args);
     if (this.host.isClosed()) return;
     const raw = variablesOf(response);
-    const context = this.contexts.get(Number(args.variablesReference ?? 0));
+    const context = this.contexts.get(reference);
     if (context !== undefined) this.rememberChildren(raw, context.frameId);
     const logical =
       response.success === false
         ? undefined
-        : ((await csharpList(this.host, raw)) ?? (await fsharpList(this.host, raw, context)));
-    const displayed = logical ?? (await enrichFsharpDisplays(this.host, raw));
+        : ((await fsharpStateMachineLocals(this.host, raw, context)) ??
+          (await csharpList(this.host, raw)) ??
+          (await fsharpList(this.host, raw, context)));
+    const displayed =
+      logical ?? (await enrichDisplays(this.host, this.unions, this.displays, raw, context));
     if (this.host.isClosed()) return;
     this.host.deliver({
       ...(response.success === false ? response : withVariables(response, displayed)),
@@ -202,16 +324,45 @@ export class VariableExpander {
     });
   }
 
+  /** Serve a synthesized Statics reference without touching the adapter. */
+  private async deliverStatics(clientRequest: DapMessage, reference: number): Promise<void> {
+    const rows = await this.statics.variablesFor(reference);
+    if (this.host.isClosed()) return;
+    this.host.deliver({
+      seq: 0,
+      type: 'response',
+      command: 'variables',
+      success: true,
+      body: { variables: rows ?? [] },
+      request_seq: Number(clientRequest.seq ?? -1),
+    });
+  }
+
   private async runScopes(clientRequest: DapMessage, args: Record<string, unknown>): Promise<void> {
     const response = await this.host.request('scopes', args);
     if (this.host.isClosed()) return;
-    const body = isRecord(response.body) ? response.body : {};
     const frameId = Number(args.frameId ?? 0);
+    this.rememberScopes(response, frameId);
+    const delivered = this.withStatics(response, frameId);
+    if (this.host.isClosed()) return;
+    this.host.deliver({ ...delivered, request_seq: Number(clientRequest.seq ?? -1) });
+  }
+
+  private rememberScopes(response: DapMessage, frameId: number): void {
+    const body = isRecord(response.body) ? response.body : {};
     for (const scope of recordList(body.scopes)) {
       const reference = referenceOf(scope);
-      if (reference > 0) this.contexts.set(reference, { frameId });
+      if (reference > 0) this.contexts.set(reference, { frameId, scope: true });
     }
-    this.host.deliver({ ...response, request_seq: Number(clientRequest.seq ?? -1) });
+  }
+
+  /** Append the synthesized Statics scope when the frame's type has statics. */
+  private withStatics(response: DapMessage, frameId: number): DapMessage {
+    if (response.success === false) return response;
+    const scope = this.statics.scopeFor(frameId);
+    if (scope === undefined) return response;
+    const body = isRecord(response.body) ? response.body : {};
+    return { ...response, body: { ...body, scopes: [...recordList(body.scopes), scope] } };
   }
 
   private rememberChildren(variables: readonly Record<string, unknown>[], frameId: number): void {

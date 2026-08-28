@@ -64,6 +64,9 @@ jobs:
       - name: Build sharplsp host and both sidecars
         shell: bash
         run: make _build-rust _build-dotnet
+      - name: Build patched netcoredbg
+        shell: bash
+        run: bash tools/vsix/build-netcoredbg.sh win32-x64
       - name: Upload Windows LSP artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -73,6 +76,13 @@ jobs:
             target/release/sharplsp.exe
             target/sidecar-csharp
             target/sidecar-fsharp
+      - name: Upload patched Windows debugger
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win-netcoredbg
+          retention-days: 1
+          include-hidden-files: true
+          path: target/netcoredbg/win32-x64/netcoredbg
   test:
     name: ${{ matrix.chunk }}
     needs:
@@ -109,6 +119,11 @@ jobs:
         with:
           name: win-lsp-binaries
           path: target
+      - name: Download patched Windows debugger
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: win-netcoredbg
+          path: target/netcoredbg/win32-x64/netcoredbg
       - name: Remove PATH-installed SharpLsp binaries
         # Force the test host onto the freshly-staged bundled binaries, never a
         # dev copy that leaked onto the runner PATH. Mirrors the Ubuntu job.

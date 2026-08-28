@@ -43,6 +43,18 @@ const RESTORE_PENDING_CODE: &str = "SLSPC0002";
 /// generation and publish stale results.
 static PUSH_GENERATIONS: LazyLock<DashMap<String, u64>> = LazyLock::new(DashMap::new);
 
+/// URIs whose LATEST publication still carries [`RESTORE_PENDING_CODE`] — a
+/// tier-2 placeholder that a background restore is about to replace. While a
+/// document is in this set, a semantic response must not be sent to the editor
+/// before its diagnostics are re-fetched and republished
+/// ([`converge_provisional`]); otherwise completion or hover can reveal the
+/// restored tier-1 references while the placeholder's phantom `CS0246`s are
+/// still the published truth, and nothing between the reveal and the push
+/// loop's next 1s tick corrects them. Updated at the single client-publish
+/// choke point ([`publish`]). Implements
+/// [SCRIPT-FILEBASED-REFERENCES-FALLBACK] and [DIAG-PUSH-GATE].
+static PROVISIONAL_PUBLISHED: LazyLock<DashMap<String, bool>> = LazyLock::new(DashMap::new);
+
 /// Wire type matching C# `DiagnosticResult` `[Key(N)]` ordering.
 ///
 /// Field order is significant — `MessagePack` uses positional keys.
@@ -176,7 +188,7 @@ async fn fetch_and_publish_gated(
     generation: u64,
 ) {
     for attempt in 1..=MAX_PUSH_ATTEMPTS {
-        if !is_current(uri, generation) {
+        if sidecar.is_shutting_down() || !is_current(uri, generation) {
             return;
         }
         match fetch(sidecar, file_path, source_tag).await {
@@ -440,12 +452,64 @@ async fn fetch_all(
     Ok(mapped)
 }
 
+/// Whether the latest publication for `uri` is a tier-2 placeholder that a
+/// background restore is about to replace. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+pub fn published_set_is_provisional(uri: &Uri) -> bool {
+    PROVISIONAL_PUBLISHED
+        .get(uri.as_str())
+        .is_some_and(|provisional| *provisional)
+}
+
+/// Re-fetch and republish `uri`'s diagnostics because a semantic response is
+/// about to be sent while the latest publication is still provisional.
+///
+/// Runs on the response path, BEFORE the response is handed to the editor: on
+/// the serialized sidecar transport this fetch is processed strictly after the
+/// request that produced the semantic answer, so an answer that reveals the
+/// restored tier-1 references is always preceded on the client stream by the
+/// corrected diagnostic set. Without this ordering the editor shows the
+/// placeholder's phantom `CS0246`s next to a completion list that already
+/// binds the package until the push loop's next tick.
+/// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK] and [DIAG-PUSH-GATE].
+pub async fn converge_provisional(
+    sidecar: &SidecarManager,
+    sender: &crossbeam_channel::Sender<Message>,
+    uri: &Uri,
+    file_path: &str,
+) {
+    if !published_set_is_provisional(uri) {
+        return;
+    }
+    let Some(generation) = current_generation(uri) else {
+        return;
+    };
+    match fetch(sidecar, file_path, &source_tag_for_uri(uri)).await {
+        Ok(diagnostics) => {
+            if let Err(err) = publish_if_current(sender, uri, generation, diagnostics) {
+                warn!("Failed to republish provisional diagnostics: {err:#}");
+            }
+        }
+        Err(err) => {
+            // The gated push loop is still retrying; the response proceeds.
+            warn!("Provisional diagnostics re-fetch failed: {err:#}");
+        }
+    }
+}
+
+/// The newest push generation registered for `uri`, if any.
+fn current_generation(uri: &Uri) -> Option<u64> {
+    PUSH_GENERATIONS
+        .get(uri.as_str())
+        .map(|generation| *generation)
+}
+
 /// Send `textDocument/publishDiagnostics` notification to the editor.
 fn publish(
     sender: &crossbeam_channel::Sender<Message>,
     uri: Uri,
     diagnostics: Vec<Diagnostic>,
 ) -> Result<()> {
+    let _ = PROVISIONAL_PUBLISHED.insert(uri.to_string(), has_restore_pending(&diagnostics));
     let params = PublishDiagnosticsParams {
         uri,
         diagnostics,
@@ -732,6 +796,67 @@ mod tests {
                 .iter()
                 .map(|d| &d.message)
                 .collect::<Vec<_>>()
+        );
+    }
+
+    /// A semantic response for a document whose latest publication is a
+    /// provisional tier-2 placeholder must be preceded by a corrected
+    /// publication: the response path calls [`converge_provisional`] before
+    /// the answer is sent, and that call must re-fetch and republish. Without
+    /// it, completion can reveal the restored package while the placeholder's
+    /// phantom `CS0246`s stay published until the push loop's next 1s tick —
+    /// the window the file-based add/remove/re-add e2e failed in.
+    /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK] and [DIAG-PUSH-GATE].
+    #[test]
+    fn provisional_publication_is_converged_before_a_semantic_response() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (host_side, sidecar_side) = tokio::io::duplex(64 * 1024);
+        let manager = runtime.block_on(async {
+            Arc::new(
+                crate::sidecar::manager::SidecarManager::connected_to_stream_for_tests(host_side)
+                    .await,
+            )
+        });
+        let clean_payload = rmp_serde::to_vec::<Vec<i32>>(&vec![]).unwrap();
+        let _sidecar_task = runtime.spawn(fake_scripted_sidecar(
+            sidecar_side,
+            clean_payload.clone(),
+            clean_payload,
+        ));
+
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        let uri: Uri = "file:///converge.cs".parse().unwrap();
+        let generation = next_generation(&uri);
+        let provisional = vec![Diagnostic {
+            code: Some(NumberOrString::String(RESTORE_PENDING_CODE.to_string())),
+            message: "Restore pending for Newtonsoft.Json@13.0.3.".to_string(),
+            ..Diagnostic::default()
+        }];
+        assert!(publish_if_current(&sender, &uri, generation, provisional).unwrap());
+        let placeholder = recv_publication(&receiver, std::time::Duration::from_secs(5));
+        assert!(has_restore_pending(&placeholder.diagnostics));
+        assert!(published_set_is_provisional(&uri));
+
+        runtime.block_on(converge_provisional(&manager, &sender, &uri, "Converge.cs"));
+
+        let corrected = recv_publication(&receiver, std::time::Duration::from_secs(5));
+        assert!(
+            corrected.diagnostics.is_empty(),
+            "the convergence fetch must republish the settled set before the \
+             semantic response is sent"
+        );
+        assert!(
+            !published_set_is_provisional(&uri),
+            "a settled publication must clear the provisional flag"
+        );
+
+        // Steady state: a non-provisional publication needs no convergence.
+        runtime.block_on(converge_provisional(&manager, &sender, &uri, "Converge.cs"));
+        assert!(
+            receiver
+                .recv_timeout(std::time::Duration::from_millis(200))
+                .is_err(),
+            "convergence after a settled publication must be a no-op"
         );
     }
 

@@ -133,13 +133,17 @@ internal sealed partial class WorkspaceManager
         {
             _solution = _adhocWorkspace.CurrentSolution;
             ReplayPendingTextEdits();
+            // Under the same lock as the solution publication: a diagnostics state
+            // capture must never see the tier-2 solution without its pending notice.
+            // The didChange path already starts resolution under this lock; the open
+            // path must match it. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+            StartPackageResolution(kind, rootPath, project.Id, closure);
         }
         finally
         {
             _ = _solutionMutationLock.Release();
         }
 
-        StartPackageResolution(kind, rootPath, project.Id, closure);
         LogClosure(kind, rootPath, closure);
         return new VoidResult.Ok<Unit, string>(Unit.Value);
     }
@@ -255,19 +259,22 @@ internal sealed partial class WorkspaceManager
         return new VoidResult.Ok<Unit, string>(Unit.Value);
     }
 
-    private void AppendProjectlessDegradation(
-        Document document,
+    /// <summary>
+    /// Append the tier-2 notice captured by <c>CaptureDiagnosticsStateAsync</c>. The
+    /// notice is a snapshot taken WITH the document — re-reading the live map here
+    /// would reintroduce the torn answer this pairing exists to prevent.
+    /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+    /// </summary>
+    private static void AppendDegradation(
         string filePath,
+        ProjectlessDegradation? degradation,
         List<DiagnosticResult> diagnostics
     )
     {
-        var rootPath = ProjectRootPath(document.Project, filePath);
-        if (!_projectlessDegradations.TryGetValue(rootPath, out var degradation))
+        if (degradation is not null)
         {
-            return;
+            diagnostics.Add(DegradationDiagnostic(filePath, degradation));
         }
-
-        diagnostics.Add(DegradationDiagnostic(filePath, degradation));
     }
 
     private static DiagnosticResult DegradationDiagnostic(

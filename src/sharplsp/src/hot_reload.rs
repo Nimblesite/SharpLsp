@@ -24,6 +24,18 @@ struct HotReloadParams {
     new_text: Option<String>,
     /// Capabilities reported by the debug runtime.
     capabilities: Option<Vec<String>>,
+    /// Saved documents included in one atomic update batch.
+    documents: Option<Vec<HotReloadDocument>>,
+}
+
+/// One saved source document in a batched update.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HotReloadDocument {
+    /// Absolute path of the changed source file.
+    file_path: String,
+    /// Complete saved source text.
+    new_text: String,
 }
 
 /// One runtime-applicable Roslyn delta.
@@ -90,6 +102,7 @@ mod tests {
         Option<String>,
         Option<String>,
         Option<Vec<String>>,
+        Option<Vec<(String, String)>>,
     );
 
     #[test]
@@ -101,6 +114,10 @@ mod tests {
             file_path: Some("Program.cs".into()),
             new_text: Some("class C {}".into()),
             capabilities: Some(vec!["Baseline".into()]),
+            documents: Some(vec![HotReloadDocument {
+                file_path: "Other.cs".into(),
+                new_text: "class Other {}".into(),
+            }]),
         };
 
         let Ok(bytes) = rmp_serde::to_vec(&request) else {
@@ -116,6 +133,10 @@ mod tests {
         assert_eq!(decoded.3.as_deref(), Some("Program.cs"));
         assert_eq!(decoded.4.as_deref(), Some("class C {}"));
         assert_eq!(decoded.5, Some(vec!["Baseline".into()]));
+        assert_eq!(
+            decoded.6,
+            Some(vec![("Other.cs".into(), "class Other {}".into())])
+        );
     }
 
     #[test]

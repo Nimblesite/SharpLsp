@@ -231,28 +231,37 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
+            // The document snapshot and the tier-2 degradation notice MUST come from
+            // the same instant, or a slow semantic-model computation can pair a
+            // pre-restore compilation with a post-restore notice state and present
+            // phantom package errors as final. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+            var state = await CaptureDiagnosticsStateAsync(filePath, ct).ConfigureAwait(false);
+            if (state.Document is null)
             {
                 return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([]);
             }
 
-            var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
+            var model = await state.Document.GetSemanticModelAsync(ct).ConfigureAwait(false);
             if (model is null)
             {
                 return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([]);
             }
 
             var diagnostics = MapDiagnostics(filePath, model, ct);
-            AppendProjectlessDegradation(document, filePath, diagnostics);
+            AppendDegradation(filePath, state.Degradation, diagnostics);
             if (_deadCodeEnabled && _solution is not null)
             {
                 var dead = await DeadCodeAnalyzer
-                    .AnalyzeAsync(document, _solution, _monorepo, ct)
+                    .AnalyzeAsync(state.Document, _solution, _monorepo, ct)
                     .ConfigureAwait(false);
                 diagnostics.AddRange(dead);
             }
 
+            Log.Debug(
+                "Diagnostics answer for {File}: [{Codes}]",
+                filePath,
+                string.Join(",", diagnostics.Select(diagnostic => diagnostic.Code))
+            );
             return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>(diagnostics);
         }
         catch (Exception ex)

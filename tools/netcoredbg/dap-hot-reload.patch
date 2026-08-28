@@ -1,0 +1,36 @@
+diff --git a/src/protocols/vscodeprotocol.cpp b/src/protocols/vscodeprotocol.cpp
+index 7712318..f337457 100644
+--- a/src/protocols/vscodeprotocol.cpp
++++ b/src/protocols/vscodeprotocol.cpp
+@@ -413,6 +413,7 @@ void VSCodeProtocol::EmitExecEvent(PID pid, const std::string& argv0)
+ 
+ static void AddCapabilitiesTo(json &capabilities)
+ {
++    capabilities["supportsHotReload"] = true;
+     capabilities["supportsConfigurationDoneRequest"] = true;
+     capabilities["supportsFunctionBreakpoints"] = true;
+     capabilities["supportsConditionalBreakpoints"] = true;
+@@ -556,6 +557,14 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, std::st
+     { "configurationDone", [&](const json &arguments, json &body){
+         return sharedDebugger->ConfigurationDone();
+     } },
++    { "applyDeltas", [&](const json &arguments, json &body){
++        return sharedDebugger->HotReloadApplyDeltas(
++            arguments.at("dllFileName").get<std::string>(),
++            arguments.at("metadataDeltaFile").get<std::string>(),
++            arguments.at("ilDeltaFile").get<std::string>(),
++            arguments.at("pdbDeltaFile").get<std::string>(),
++            arguments.at("lineUpdatesFile").get<std::string>());
++    } },
+     { "exceptionInfo", [&](const json &arguments, json &body) {
+         HRESULT Status;
+         ThreadId threadId{int(arguments.at("threadId"))};
+@@ -583,6 +592,8 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, std::st
+         return S_OK;
+     } },
+     { "launch", [&](const json &arguments, json &body){
++        HRESULT Status;
++        IfFailRet(sharedDebugger->SetHotReload(arguments.value("hotReload", false)));
+         auto cwdIt = arguments.find("cwd");
+         const std::string cwd(cwdIt != arguments.end() ? cwdIt.value().get<std::string>() : std::string{});
+         std::map<std::string, std::string> env;

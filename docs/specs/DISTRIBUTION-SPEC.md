@@ -20,15 +20,15 @@ Debugging uses **netcoredbg**, the managed-code DAP adapter launched for the `sh
 
 | Aspect | Requirement |
 |---|---|
-| Source | `Samsung/netcoredbg`, pinned to `3.2.0-1092`, MIT-licensed |
-| Staging | `tools/vsix/fetch-netcoredbg.sh <platform>` downloads and extracts the upstream archive into `bin/<platform>/netcoredbg/` without retaining a download memo; wired into `_stage-vsix-binary-only` and `_package-vsix` in the Makefile |
+| Source | `Samsung/netcoredbg`, pinned to `3.2.0-1092` / commit `9744e1f051866215611b8440c638042aa2aa2f72`, MIT-licensed; `tools/netcoredbg/dap-hot-reload.patch` exposes the existing debugger-side delta applier over DAP |
+| Staging | `tools/vsix/build-netcoredbg.sh <platform>` builds the pinned source and CoreCLR headers, then `tools/vsix/fetch-netcoredbg.sh <platform>` stages the result into `bin/<platform>/netcoredbg/`; both Makefile staging paths use it |
 | Layout | `bin/<platform>/netcoredbg/netcoredbg[.exe]` **plus** its sibling managed assemblies (`ManagedPart.dll`, `dbgshim.dll`, `Microsoft.CodeAnalysis*.dll`) — the whole directory ships, since the executable loads them |
 | Resolution | `getNetcoredbgCandidates(extensionPath)` prefers the bundled binary; scan order is user-setting (`sharplsp.debug.netcoredbgPath`) → **bundled** → common install paths → `PATH` |
-| Platform coverage | Upstream ships prebuilt binaries for `win32-x64`, `linux-x64`, `linux-arm64`, `darwin-arm64` only. On `win32-arm64` and `darwin-x64` the VSIX cannot bundle netcoredbg; debugging falls back to a `PATH` copy / the setting. The fetch script skips those platforms cleanly (exit 0). |
+| Platform coverage | SharpLsp source-builds `win32-x64`, `linux-x64`, `linux-arm64`, and `darwin-arm64` on matching native runners. On `win32-arm64` and `darwin-x64`, debugging falls back to a `PATH` copy / the setting. The staging script skips those platforms cleanly (exit 0). |
 
 Unlike the three [DIST-COMPONENTS], a missing netcoredbg degrades **only** the debugging feature (surfaced via an error toast pointing at the install), not whole-extension activation.
 
-**Licensing.** netcoredbg (MIT, © 2017 Samsung Electronics Co., LTD) and every other bundled third-party component are acknowledged in [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md); all bundled licenses are permissive and compatible with SharpLsp's MIT license. Bumping the pinned netcoredbg version MUST update `tools/vsix/fetch-netcoredbg.sh` and the notices file in lockstep.
+**Licensing.** netcoredbg (MIT, © 2017 Samsung Electronics Co., LTD) and every other bundled third-party component are acknowledged in [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md); all bundled licenses are permissive and compatible with SharpLsp's MIT license. Bumping the pinned netcoredbg or CoreCLR commit MUST update `tools/vsix/build-netcoredbg.sh`, its patch, and the notices file in lockstep.
 
 ## [DIST-RUNTIME-ACQUIRE] .NET SDK Acquisition
 

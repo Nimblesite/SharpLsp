@@ -313,19 +313,22 @@ open and are called out as such, because nothing implements them.
       configuration and re-arms the breakpoints*
 - [x] Pause and terminate. Test `debug-session-lifecycle-e2e.test.ts` *Pause interrupts a
       running debuggee and Stop terminates the session*
-- [ ] Implement `attach` request handler: PID-based attach with retry on `0x80070057`
-      (issue #205 workaround — 3 retries, 500ms backoff).
-      **Implemented at `dap-attach.ts:10` `RETRY_DELAYS_MS = [500, 1000, 2000]` and
-      `dap-attach.ts:32` `AttachRetrier`, but `debug-attach-e2e.test.ts` *attaching by pid
-      pauses the live process and exposes its state* fails on Windows CI — the debuggee never
-      stops ("it stopped 0. Stops seen: []").**
-- [ ] Implement attach-by-process-name: resolve name → PID.
-      **Implemented at `attach-target.ts:212` `resolveByName` / `:229` `resolveAttachTarget`
-      (POSIX `ps` at `:94`, Windows CIM at `:131`), refusals wired through `debug.ts:174`
-      `settleAttach`; but `debug-attach-e2e.test.ts` *attaching by process name resolves the
-      name to a pid* fails for the same reason. The refusal half alone is green —
-      `debug-attach-e2e.test.ts` *attaching to a pid that does not exist is refused with one
-      message* passes.**
+- [x] Implement `attach` request handler: PID-based attach with retry on `0x80070057`
+      (issue #205 workaround — 3 retries, 500ms backoff), and DETACH semantics for stop:
+      VS Code's stop gesture sends `disconnect {terminateDebuggee: true}` because the router
+      advertises `supportTerminateDebuggee`, and netcoredbg then KILLED the attached process.
+      `dap-attach.ts` `AttachRetrier.rewriteDisconnect` forces `terminateDebuggee: false` for
+      an attach-mode session (launch disconnects pass through untouched); the router's
+      `disconnect` intercept routes through it. Test `debug-attach-e2e.test.ts` *attaching by
+      pid pauses the live process and exposes its state* — green locally end to end,
+      including "stopping an ATTACH session detaches".
+- [x] Implement attach-by-process-name: resolve name → PID.
+      **Implemented at `attach-target.ts` `resolveByName` / `resolveAttachTarget`
+      (POSIX `ps`, Windows CIM), refusals wired through `debug.ts` `settleAttach`.
+      `debug-attach-e2e.test.ts` *attaching by process name resolves the name to a pid* is
+      green on Windows CI; on a shared dev machine it can refuse honestly when several
+      leaked `StepTarget` fixtures make the name ambiguous. The refusal half is green —
+      *attaching to a pid that does not exist is refused with one message*.**
 - [ ] Implement `sourceFileMap` path remapping in `stackTrace` responses — **not built.** No
       `sourceFileMap` handling exists anywhere in the extension or the host.
 - [ ] Implement `justMyCode` launch flag forwarding to netcoredbg.
@@ -493,22 +496,40 @@ open and are called out as such, because nothing implements them.
 
 ### 4.9 Hot Reload
 
-**Not working.** `src/editors/vscode/src/hot-reload.ts` is a `dotnet watch`
-terminal, unrelated to any DAP session. A router-side `dap-hot-reload.ts` and a
-C# sidecar `HotReloadSessionRegistry` are IN FLIGHT on this branch, but no delta
-has yet reached a debuggee: all three `debug-hot-reload-e2e.test.ts` cases are
-red. Re-check this section once `debug-advanced` goes green.
+**Working.** `dap-hot-reload.ts` owns the save-to-Roslyn-to-runtime pipeline for
+one DAP session: a `hotReload: true` launch sets `DOTNET_MODIFIABLE_ASSEMBLIES`,
+the first stop reads the debuggee's `MetadataUpdater.GetCapabilities()`, the C#
+sidecar (`HotReloadSessionRegistry` + `HotReloadSession`, reached through the
+host's `sharplsp/hotReload` -> `debug/hotReload` pass-through) holds a Roslyn
+`UnitTestingHotReloadService` baseline per session, and emitted deltas reach the
+LIVE debuggee through netcoredbg's `applyDeltas` request. Verdicts are honest:
+`applied` (deltas), `restartRequired` (rude edit, named ENC diagnostics),
+`notCompilable` (compiler errors, named, baseline untouched). All three
+`debug-hot-reload-e2e.test.ts` cases pass locally; `hot-reload.ts` (the
+`dotnet watch` terminal) remains the separate non-debug flow.
 
-- [ ] Implement `sharplsp/hotReload` custom notification handler in the router
-- [ ] Integrate with VFS: watch for document saves during active debug session
-- [ ] C# sidecar: implement delta computation via Roslyn `WatchHotReloadService.GetUpdatesAsync`
-- [ ] Deliver delta to the target process (`MetadataUpdater.ApplyUpdate` via expression evaluation)
-- [ ] Surface `sharplsp/hotReloadResult` to the editor: success + changed methods, or rejection + reason
-      — `debug-hot-reload-e2e.test.ts` *a rude edit is refused with a named reason and a restart
-      prompt* is red on "Messages seen: []"
-- [ ] E2E test: edit method body while paused → continue → new behavior observed without restart
-      — red: "the reloaded body adds 100 per iteration"
-- [ ] E2E test: add a new method to a class while debugging — red: "the new method adds 1000 per iteration"
+- [x] `sharplsp/hotReload` LSP request routed host-side to the C# sidecar
+      (`src/sharplsp/src/hot_reload.rs`, wire-contract tests included)
+- [x] Saves watched during an active debug session, debounced per document
+      (`dap-hot-reload.ts`; the DAP router gates the first `stopped` event on
+      the baseline start so capabilities are read from a paused frame)
+- [x] C# sidecar delta computation via Roslyn's Edit-and-Continue service
+      (`UnitTestingHotReloadService` — the `WatchHotReloadService` shape is not
+      exposed by the shipped Features assembly), with real rude-edit
+      diagnostics and the spec-pinned signature-change refusal; tested by
+      `HotReloadSessionRegistryTests` against a real built project, including a
+      runtime `MetadataUpdater.ApplyUpdate` verification of the emitted delta
+- [x] Deltas delivered to the target process via netcoredbg `applyDeltas`
+      (metadata/IL/PDB files; expression-evaluation injection was abandoned)
+- [x] Result surfaced to the editor: applied silently, rude edits warn once
+      with the named reason and a restart prompt, non-compiling saves wait —
+      `debug-hot-reload-e2e.test.ts` *a rude edit is refused with a named
+      reason and a restart prompt* passes
+- [x] E2E: edit method body while paused → continue → new behavior observed
+      without restart — *a method-body edit is applied to the LIVE session,
+      without restarting it* passes
+- [x] E2E: add a new method to a class while debugging — *a new method added to
+      an existing type is reachable from reloaded code* passes
 
 ### 4.10 F# Debugging (Phase 4)
 
@@ -537,7 +558,7 @@ red. Re-check this section once `debug-advanced` goes green.
       machinery from user code. `debug-fsharp-inspection-e2e.test.ts` *stepping into a task {}
       takes ONE F11, not two* is red: "landed in …/FSharp.Core/fslib-extra-pervasives.fs".
 - [ ] F# `async {}` stack enrichment: best-effort CPS chain reconstruction — not built
-- [ ] Test debugging (`VSTEST_HOST_DEBUG=1`, attach to the test host child) — see §4.12
+- [x] Test debugging (`VSTEST_HOST_DEBUG=1`, attach to the test host child) — see §4.12
 
 ### 4.11 Multi-Process Debugging
 
@@ -549,21 +570,32 @@ red. Re-check this section once `debug-advanced` goes green.
 
 ### 4.12 Test Debugging Integration
 
-**Not built.** The Test Explorer's Debug profile calls
-`testing.ts:411` `debugTests` → `openDebugTerminal`, which opens a
-`dotnet test --filter` terminal. No debugger is attached, `VSTEST_HOST_DEBUG` is
-never set, and both `debug-test-debugging-e2e.test.ts` cases are red.
+The Test Explorer's Debug profile (`testing.ts` `debugTests` → `test-debug.ts`
+`debugSelectedTests`) runs the selection in ONE `dotnet test` with
+`VSTEST_HOST_DEBUG=1`, parses the waiting test host's `Process Id: <pid>, Name:
+<name>` announcement from the live output, and attaches the `sharplsp-coreclr`
+debugger to that TEST HOST child — never to the parent `dotnet test`
+([DEBUG-FEATURES-TESTS]). The host's own `Debugger.Break()` on attach is resumed
+by `dap-attach.ts` `absorbTestHostBreak`, so the first visible stop is the
+user's breakpoint. The run's output is mirrored into a live `SharpLsp Test
+Debug` pseudoterminal; a failed attach ABORTS the run so no host is left
+waiting; a debug run never writes the result cache.
 
-- [ ] Implement `sharplsp/testDebug` custom request handler
-- [ ] Build DAP launch config for test host: `dotnet test --no-build` with `VSTEST_HOST_DEBUG=1`
-- [ ] Resolve test host child process PID (watch for child process creation event)
+- [ ] Implement `sharplsp/testDebug` custom request handler — the Testing-API
+      Debug profile is the entry point today; no custom DAP request exists yet
+- [x] Run the selection under `VSTEST_HOST_DEBUG=1` and attach to the waiting host —
+      `test-debug.ts` `TEST_HOST_DEBUG_ENV`, `testHostAttachConfig` (attach +
+      `justMyCode: true`), `dotnet-process.ts` `DotnetHooks`
+- [x] Resolve test host child process PID — `test-debug.ts` `TestHostWatcher` /
+      `announcedTestHostPid` over the live `dotnet test` output; `VSTEST_RUNNER_DEBUG=0`
+      pins the PARENT runner so only hosts ever announce
 - [x] Wire test filter (class/method) into `dotnet test --filter`, escaped for the VSTest
-      grammar. `test-filter.ts`, `testing.ts:428` `openDebugTerminal`; test
+      grammar. `test-filter.ts`, `test-execution.ts` `buildFilterArgs`; test
       `test-explorer-e2e.test.ts` (VSTest filter grammar cases, `testexplorer` chunk, green)
-- [ ] E2E test: breakpoint inside an xUnit test method, `sharplsp/testDebug` → breakpoint hit
+- [x] E2E test: breakpoint inside an xUnit test method → breakpoint hit
       — `debug-test-debugging-e2e.test.ts` *the Debug profile starts a session and stops inside
       the test body* and *the session attaches to the test host, not to the parent dotnet test*
-      are both red
+      — both green locally
 - [ ] E2E test: breakpoint inside an Expecto test function (F#)
 
 ### 4.13 Phase 4 Quality Gates

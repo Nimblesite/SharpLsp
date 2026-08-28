@@ -20,7 +20,8 @@
 //! does not share.
 //!
 //! The rule resolves the position to its smallest concrete-syntax token and
-//! rejects only the grammar's block delimiters, `{` and `}`. Tree-sitter also
+//! rejects grammar block delimiters plus F# computation-expression headers.
+//! Tree-sitter also
 //! models keywords such as `public`, `var`, `for`, and F# `let` as anonymous
 //! tokens, so using `Node::is_named` would incorrectly hide real statements
 //! that begin with a keyword.
@@ -76,7 +77,23 @@ fn carries_code(tree: &tree_sitter::Tree, line: u32, character: u32) -> bool {
     };
     tree.root_node()
         .descendant_for_point_range(start, end)
-        .is_none_or(|node| !matches!(node.kind(), "{" | "}"))
+        .is_none_or(|node| !is_structure(node, start.row))
+}
+
+/// True for a delimiter or the header line of an F# computation expression.
+fn is_structure(mut node: tree_sitter::Node<'_>, row: usize) -> bool {
+    loop {
+        if matches!(node.kind(), "{" | "}") {
+            return true;
+        }
+        if node.kind() == "ce_expression" && node.start_position().row == row {
+            return true;
+        }
+        let Some(parent) = node.parent() else {
+            return false;
+        };
+        node = parent;
+    }
 }
 
 /// The one-character CST span a debugger stop position addresses.
@@ -84,4 +101,24 @@ fn span_of(line: u32, character: u32) -> Option<(Point, Point)> {
     let row = usize::try_from(line).ok()?;
     let column = usize::try_from(character).ok()?;
     Some((Point::new(row, column), Point::new(row, column + 1)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tree_sitter_parse::{LangId, TsParsers};
+
+    #[test]
+    fn fsharp_task_opener_is_structure_but_body_is_code() {
+        let parsed = TsParsers::new().parse(
+            LangId::FSharp,
+            "let root seed =\n    task {\n        return seed\n    }\n",
+            None,
+        );
+        assert!(parsed.is_ok(), "F# task fixture must parse");
+        if let Ok(tree) = parsed {
+            assert!(!carries_code(&tree, 1, 4));
+            assert!(carries_code(&tree, 2, 8));
+        }
+    }
 }
