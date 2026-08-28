@@ -491,7 +491,9 @@ async function removeDeltaFile(file: string): Promise<void> {
         // Genuinely unexpected: surface it rather than hiding a disk error.
         throw cause;
       }
-      await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50 * (attempt + 1));
+      });
     }
   }
   // Still locked after the retries; leave it for dispose-time directory removal.
@@ -499,7 +501,8 @@ async function removeDeltaFile(file: string): Promise<void> {
 }
 
 function isFileLockError(cause: unknown): boolean {
-  const code = (cause as NodeJS.ErrnoException | undefined)?.code;
+  if (typeof cause !== 'object' || cause === null || !('code' in cause)) return false;
+  const code = cause.code;
   return code === 'EBUSY' || code === 'EPERM';
 }
 
