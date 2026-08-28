@@ -193,7 +193,20 @@ public static class Program
 
         if (mode == "wait")
         {
-            System.Threading.Thread.Sleep(20000);                      // @anchor:main-wait
+            // Mostly-managed spin: a pause that lands inside the native
+            // Thread.Sleep frame is not walkable by netcoredbg after attach,
+            // and the stack comes back empty forever. Spinning keeps the
+            // thread's top frame in managed code ~90% of the time so a pause
+            // lands somewhere walkable; the 1ms sleep keeps the CPU sane.
+            var waitUntil = System.DateTime.UtcNow.AddSeconds(30);
+            while (System.DateTime.UtcNow < waitUntil)                       // @anchor:main-wait
+            {
+                for (var spin = 0; spin < 400_000; spin++)
+                {
+                    count += spin & 1;
+                }
+                System.Threading.Thread.Sleep(1);
+            }
         }
 
         Console.WriteLine("done " + mode + " " + count.ToString());    // @anchor:main-done
@@ -268,7 +281,15 @@ let main argv =
     if mode = "caught" || mode = "both" then throwCaught ()            // @anchor:main-caught
     if mode = "async" || mode = "both" then printfn "%d" ((rootTask 1).Result) // @anchor:main-async
     if mode = "unhandled" || mode = "both" then throwUnhandled ()      // @anchor:main-unhandled
-    if mode = "wait" then System.Threading.Thread.Sleep 20000          // @anchor:main-wait
+    if mode = "wait" then
+        // Mostly-managed spin — see the C# fixture for why not a bare Sleep.
+        let waitUntil = System.DateTime.UtcNow.AddSeconds 30.0
+        let mutable spin = 0
+        while System.DateTime.UtcNow < waitUntil do                       // @anchor:main-wait
+            for i in 1 .. 400_000 do
+                spin <- spin + (i &&& 1)
+            System.Threading.Thread.Sleep 1
+        ignore spin
     printfn "done %s %A %A %d" mode maybe pair numbers.Length          // @anchor:main-done
     0                                                                  // @anchor:main-return
 `;

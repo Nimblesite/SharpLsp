@@ -59,6 +59,8 @@ interface TaskNode {
   readonly smType: string;
   /** `variablesReference` of the state machine object — its hoisted locals. */
   readonly smRef: number;
+  /** `variablesReference` of the whole registry box (`AsyncStateMachineBox`). */
+  readonly boxRef: number;
   /** The logical method name, when the type name yields one. */
   readonly method: string | undefined;
   /** The qualified prefix in front of the method (`Ns.Type`). */
@@ -184,16 +186,17 @@ async function readSlot(
   const machine = await evaluate(host, frameId, `${entry}.value.StateMachine`);
   if (machine === undefined) return undefined;
   const cont = await evaluate(host, frameId, `${entry}.value.m_continuationObject`);
-  return nodeFrom(machine, cont);
+  return nodeFrom(machine, cont, value.ref);
 }
 
 /** Assemble one node from its evaluated state machine and continuation. */
-function nodeFrom(machine: Evaluated, cont: Evaluated | undefined): TaskNode {
+function nodeFrom(machine: Evaluated, cont: Evaluated | undefined, boxRef = 0): TaskNode {
   const smType = machine.type !== '' ? machine.type : unbrace(machine.result);
   const { method, prefix } = parseMachineType(smType);
   return {
     smType,
     smRef: machine.ref,
+    boxRef,
     method,
     prefix,
     contType: cont === undefined || cont.result === 'null' ? undefined : unbrace(cont.result),
@@ -205,7 +208,9 @@ function nodeFrom(machine: Evaluated, cont: Evaluated | undefined): TaskNode {
 /** All registered suspended activations, in dictionary slot order. */
 async function readNodes(host: ChainHost, frameId: number): Promise<TaskNode[]> {
   const registry = await evaluate(host, frameId, ACTIVE_TASKS);
-  if (registry === undefined || registry.result === 'null') return [];
+  if (registry === undefined || registry.result === 'null') {
+    return [];
+  }
   const nodes: TaskNode[] = [];
   for (let slot = 0; slot < MAX_SLOTS; slot += 1) {
     const node = await readSlot(host, frameId, slot);
@@ -287,8 +292,13 @@ async function nextHop(
   current: TaskNode,
 ): Promise<TaskNode | AwaitingFrame | 'sink' | undefined> {
   if (current.contType === undefined) return undefined;
+  const byBoxRef = new Map(
+    nodes.filter((node) => node !== current && node.boxRef > 0).map((node) => [node.boxRef, node.smType]),
+  );
   const inner =
-    boxStateMachineType(current.contType) ?? (await digBoxedContinuation(host, current.contRef));
+    (current.contRef > 0 ? byBoxRef.get(current.contRef) : undefined) ??
+    boxStateMachineType(current.contType) ??
+    (await digBoxedContinuation(host, current.contRef, current.smType, byBoxRef));
   if (inner === undefined) return 'sink';
   const node = soleMatch(nodes, inner);
   if (node !== undefined) return node;
@@ -297,22 +307,51 @@ async function nextHop(
 }
 
 /** Search a wrapped continuation (context callbacks etc.) for its box. */
-async function digBoxedContinuation(host: ChainHost, ref: number): Promise<string | undefined> {
-  const queue: number[] = [ref];
+async function digBoxedContinuation(
+  host: ChainHost,
+  ref: number,
+  currentMachineType?: string,
+  byBoxRef: ReadonlyMap<number, string> = new Map(),
+): Promise<string | undefined> {
+  const visited = new Set<number>();
+  const direct = byBoxRef.get(ref);
+  if (direct !== undefined) return direct;
   let spent = 0;
-  while (queue.length > 0 && spent < MAX_DIG) {
-    const children = await expand(host, queue.shift() ?? 0);
-    for (const child of children) {
+
+  /** Descend through delegate/wrapper fields; junk (reflection objects,
+   * IntPtrs) is never expanded, so the budget goes to the wrapper chain. */
+  const descend = async (candidate: number, depth: number): Promise<string | undefined> => {
+    if (depth > 8 || candidate <= 0 || visited.has(candidate)) return undefined;
+    visited.add(candidate);
+    for (const child of await expand(host, candidate)) {
       spent += 1;
-      for (const rendered of [textOf(child.type), textOf(child.value)]) {
-        const inner = boxStateMachineType(rendered);
-        if (inner !== undefined) return inner;
-      }
+      if (spent > MAX_DIG) return undefined;
+      // `ContinuationWrapper._innerTask` names the task being AWAITED — the
+      // caller's own box — not the awaiter. Matching it yields the machine we
+      // are walking FROM (a self-loop that cuts the chain); the awaiter lives
+      // in `_continuation`.
+      const name = textOf(child.name);
       const childRef = Number(child.variablesReference ?? 0);
-      if (childRef > 0) queue.push(childRef);
+      if (/innerTask/i.test(name)) continue;
+      const referred = childRef > 0 ? byBoxRef.get(childRef) : undefined;
+      if (referred !== undefined) return referred;
+      const rendered = [textOf(child.type), unbrace(textOf(child.value))];
+      for (const text of rendered) {
+        const inner = boxStateMachineType(text);
+        if (inner !== undefined && inner !== currentMachineType) return inner;
+      }
+      // Wrapper and delegate fields carry the chain onward; anything else is
+      // a dead end.
+      const wrapperish = rendered.some((text) => /action|func|delegate|continuation/i.test(text));
+      if (wrapperish && childRef > 0) {
+        const found = await descend(childRef, depth + 1);
+        if (found !== undefined) return found;
+      }
     }
-  }
-  return undefined;
+    return undefined;
+  };
+
+  return await descend(ref, 0);
 }
 
 /** The registered activation the paused frame is executing, if any. */
