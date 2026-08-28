@@ -465,9 +465,42 @@ async function writeDeltaFiles(prefix: string, update: HotReloadDelta): Promise<
 async function removeFiles(files: DeltaFiles): Promise<void> {
   await Promise.all(
     Object.values(files).map(async (file) => {
-      await fs.promises.rm(file, { force: true });
+      await removeDeltaFile(file);
     }),
   );
+}
+
+/**
+ * Delete one delta file, tolerating the Windows file-lock race.
+ *
+ * netcoredbg reads the PDB through a handle that can outlive the
+ * `applyDeltas` response, so an immediate unlink fails with EBUSY/EPERM. A
+ * locked delta file is inert — each update writes a fresh unique prefix and
+ * the whole temp directory is removed on dispose — so the cleanup retries
+ * briefly and then gives up silently instead of failing the apply. The
+ * previous behaviour let this race escape `applyDelta`, which made `applyAll`
+ * treat an already-applied update as a failure and latch the session broken.
+ */
+async function removeDeltaFile(file: string): Promise<void> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await fs.promises.rm(file, { force: true });
+      return;
+    } catch (cause) {
+      if (!isFileLockError(cause)) {
+        // Genuinely unexpected: surface it rather than hiding a disk error.
+        throw cause;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+    }
+  }
+  // Still locked after the retries; leave it for dispose-time directory removal.
+  traceInfo(`[hot-reload] delta file still locked, deferred cleanup: ${file}`);
+}
+
+function isFileLockError(cause: unknown): boolean {
+  const code = (cause as NodeJS.ErrnoException | undefined)?.code;
+  return code === 'EBUSY' || code === 'EPERM';
 }
 
 function removeDirectory(directory: string | undefined): void {
