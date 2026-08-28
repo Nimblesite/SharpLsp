@@ -293,7 +293,9 @@ async function nextHop(
 ): Promise<TaskNode | AwaitingFrame | 'sink' | undefined> {
   if (current.contType === undefined) return undefined;
   const byBoxRef = new Map(
-    nodes.filter((node) => node !== current && node.boxRef > 0).map((node) => [node.boxRef, node.smType]),
+    nodes
+      .filter((node) => node !== current && node.boxRef > 0)
+      .map((node) => [node.boxRef, node.smType]),
   );
   const inner =
     (current.contRef > 0 ? byBoxRef.get(current.contRef) : undefined) ??
