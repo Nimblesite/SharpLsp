@@ -141,7 +141,7 @@ _build-dotnet:
 	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
 	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
 
-_build-vsix: $(VSIX_STAGE_TARGET)
+_build-vsix: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
 	@echo "==> Packaging VS Code extension (host: $(HOST_PLATFORM))..."
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p $(DIST_DIR)
@@ -229,6 +229,10 @@ _stage-sidecars:
 	@cp -r $(SIDECAR_FS_OUT)/. target/debug/sidecar-fsharp/
 	@cp -r $(SIDECAR_CS_OUT)/. target/llvm-cov-target/debug/sidecar-csharp/
 	@cp -r $(SIDECAR_FS_OUT)/. target/llvm-cov-target/debug/sidecar-fsharp/
+	@chmod +x target/debug/sidecar-csharp/SharpLsp.Sidecar.CSharp$(EXE_EXT) \
+		target/debug/sidecar-fsharp/SharpLsp.Sidecar.FSharp$(EXE_EXT) \
+		target/llvm-cov-target/debug/sidecar-csharp/SharpLsp.Sidecar.CSharp$(EXE_EXT) \
+		target/llvm-cov-target/debug/sidecar-fsharp/SharpLsp.Sidecar.FSharp$(EXE_EXT) 2>/dev/null || true
 
 # ── CI ────────────────────────────────────────────────────────────
 

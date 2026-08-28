@@ -125,6 +125,11 @@ jobs:
         with:
           name: linux-lsp-binaries
           path: target
+      - name: Restore executable bit
+        # download-artifact does not restore the +x the release build produced,
+        # so the version probe would fail with "Permission denied".
+        shell: bash
+        run: chmod +x target/release/sharplsp
       - name: Verify sharplsp version contract
         shell: bash
         run: |-
