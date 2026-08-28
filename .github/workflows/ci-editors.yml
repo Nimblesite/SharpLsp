@@ -65,7 +65,7 @@ jobs:
       # merge-cobertura.cs reads the sidecar reports.
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: 10.0.300
+          dotnet-version: 10.0.303
       # The IntelliJ Platform SDK is a multi-GB download resolved through
       # Gradle. Uncached, it dominates this job's wall time.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

@@ -13,7 +13,7 @@
 // first stop the user sees is their own breakpoint).
 import { isRecord, type DapMessage } from './dap-emulate';
 
-const RETRY_DELAYS_MS: readonly number[] = [500, 1_000, 2_000];
+const RETRY_DELAYS_MS: readonly number[] = [500, 1_000, 2_000, 4_000, 8_000, 15_000];
 
 /**
  * Attach-configuration marker a Test Explorer debug run sets so the router
