@@ -141,7 +141,7 @@ _build-dotnet:
 	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
 	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
 
-_build-vsix: _stage-vsix-binary
+_build-vsix: $(VSIX_STAGE_TARGET)
 	@echo "==> Packaging VS Code extension (host: $(HOST_PLATFORM))..."
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p $(DIST_DIR)
@@ -251,7 +251,7 @@ RUST_E2E_SIDECARS = \
 	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp$(EXE_EXT)" \
 	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp$(EXE_EXT)"
 
-_prepare-rust-tests: _build-dotnet _stage-sidecars
+_prepare-rust-tests: $(if $(VSIX_PREBUILT),,_build-dotnet) _stage-sidecars
 	@echo "==> Pre-building ProfileTarget fixture..."
 	dotnet build src/sharplsp/tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
 
@@ -313,9 +313,9 @@ VSIX_TEST_ENV = env -u SHARPLSP_EXECUTABLE_PATH \
 	-u FORGE_LSP_PATH \
 	-u FORGE_BINARY_DIR
 
-_test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary _verify-vsix-payload
+_test-vsix: $(if $(VSIX_PREBUILT),,_build-rust _build-dotnet) _build-vsix _verify-vsix-payload
 	@echo "==> Running VS Code extension tests..."
-	@$(MAKE) _stage-vsix-binary
+	@$(MAKE) $(VSIX_STAGE_TARGET)
 	status=0; \
 	cd $(VSCODE_DIR); \
 	$(VSIX_TEST_ENV) npm test -- --coverage || status=$$?; \
@@ -402,7 +402,7 @@ _test-rider:
 	   echo "ERROR: no Kover report at $$report" >&2; exit 1; \
 	 fi
 
-_test-dotnet: _build-dotnet
+_test-dotnet: $(if $(VSIX_PREBUILT),,_build-dotnet)
 	@echo "==> Running .NET sidecar tests..."
 	@rm -rf target/coverage-dotnet
 	dotnet test $(SIDECAR_SLN) --configuration $(DOTNET_CFG) \

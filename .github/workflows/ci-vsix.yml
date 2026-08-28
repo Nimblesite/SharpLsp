@@ -3,6 +3,10 @@
 # Reusable VS Code leg of the PR pipeline on Ubuntu (called by ci.yml).
 # Owns the FULL extension suite and the coverage gate; the Windows feature
 # chunks in ci-vsix-windows.yml own platform coverage ([DIST-CI-WIN-VSIX]).
+#
+# The host binary + both sidecars + netcoredbg are produced ONCE by the
+# `build` leg (ci-build.yml) and downloaded here: this job never rebuilds Rust
+# or .NET — `VSIX_PREBUILT=1` stages the downloaded artifacts as-is.
 name: CI / VS Code
 'on':
   workflow_call: {}
@@ -17,21 +21,15 @@ jobs:
   test-vsix:
     name: Full Suite + Coverage
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    # TIMEOUT EXCEPTION: this job builds the Rust binary + .NET sidecars,
-    # installs .NET 9 + 10, downloads the VS Code test host, then runs the full
+    # TIMEOUT EXCEPTION: this job downloads the prebuilt binaries, installs
+    # .NET 9 + 10, downloads the VS Code test host, then runs the full
     # ~530-test e2e suite (many tests spin up the Roslyn/FCS sidecars and load
-    # real solutions). 10 minutes is too tight for the end-to-end run. The
-    # real-repo stress suites additionally clone + restore three pinned real
-    # repositories (serilog, FluentValidation, FsToolkit.ErrorHandling) and
-    # cold-load their solutions in the sidecars, adding ~10-15 minutes on a cold
-    # runner.
+    # real solutions). The real-repo stress suites additionally clone + restore
+    # three pinned real repositories (serilog, FluentValidation,
+    # FsToolkit.ErrorHandling) and cold-load their solutions in the sidecars.
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: |
@@ -44,11 +42,23 @@ jobs:
           cache-dependency-path: src/editors/vscode/package-lock.json
       - name: Install VS Code extension deps
         run: npm ci --prefix src/editors/vscode
+      - name: Download prebuilt Linux LSP artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: linux-lsp-binaries
+          path: target
+      - name: Download prebuilt Linux debugger
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: linux-netcoredbg
+          path: target/netcoredbg/linux-x64/netcoredbg
       - name: Remove PATH-installed SharpLsp binaries
         shell: bash
         run: bash tools/vsix/purge-path-binaries.sh
-      - name: Test VS Code extension with coverage
-        run: xvfb-run -a make _test-vsix
+      - name: Test VS Code extension with coverage (prebuilt binaries)
+        # VSIX_PREBUILT=1 stages the downloaded host + sidecars + netcoredbg
+        # instead of rebuilding Rust and .NET inside the test job.
+        run: xvfb-run -a env VSIX_PREBUILT=1 make _test-vsix
       - name: Verify VSIX contains platform binary
         shell: bash
         run: |-
