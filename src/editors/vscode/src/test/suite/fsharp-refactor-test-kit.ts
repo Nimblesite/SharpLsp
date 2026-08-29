@@ -30,10 +30,22 @@ export async function openOverlay(relativePath: string, source: string): Promise
 export async function diagnosticWithCode(
   uri: vscode.Uri,
   code: string,
+  range?: vscode.Range,
 ): Promise<vscode.Diagnostic[]> {
+  // `range` exists so the WAIT can be as strong as the caller's assertion.
+  // Waiting only for the code and then asserting on the location is a race FCS
+  // wins regularly: it publishes a diagnostic carrying that code somewhere else
+  // in the file first, the wait succeeds on a set that has not yet reached the
+  // range under test, and the assertion fails on timing rather than on
+  // behaviour ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
   return waitForMatchingDiagnostics(
     uri,
-    (diagnostics) => diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === code),
+    (diagnostics) =>
+      diagnostics.some(
+        (diagnostic) =>
+          diagnosticCode(diagnostic) === code &&
+          (range === undefined || diagnostic.range.intersection(range) !== undefined),
+      ),
     LSP_RESPONSE_MS,
   );
 }

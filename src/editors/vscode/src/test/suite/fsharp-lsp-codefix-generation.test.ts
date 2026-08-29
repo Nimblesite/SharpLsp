@@ -343,7 +343,7 @@ async function inspectGeneration(
   range: vscode.Range,
   spec: GenerationSpec,
 ): Promise<vscode.CodeAction> {
-  const diagnostics = await diagnosticWithCode(fixture.uri, spec.diagnostic);
+  const diagnostics = await diagnosticWithCode(fixture.uri, spec.diagnostic, range);
   assertGenerationDiagnostic(diagnostics, range, spec.diagnostic);
   const raw = uniqueAction(await quickFixes(fixture.uri, range), spec.title);
   assertRawGeneration(raw, spec.title);
