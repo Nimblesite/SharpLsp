@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
 import { EXTENSION_ID, comparableText, pollUntilResult } from './test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS, POLL_INTERVAL_MS } from './test-timeouts';
+import { ACTIVATION_MS, LSP_RESPONSE_MS, POLL_INTERVAL_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 const FIXTURE_ROOT = path.resolve(__dirname, '../../../test-fixtures/workspace');
 const RESOLVE_COUNT = 1_000;
@@ -322,7 +322,35 @@ export async function openFixtureDocument(relativePath: string): Promise<OpenFix
   const uri = vscode.Uri.file(workspaceFixturePath(relativePath));
   const document = await vscode.workspace.openTextDocument(uri);
   const editor = await vscode.window.showTextDocument(document, { preview: false });
+  await warmSemanticEngine(uri, document);
   return { document, editor, uri };
+}
+
+/**
+ * Block until Roslyn can actually answer about this document.
+ *
+ * Every caller is a suiteSetup, and this is the one place the cold project load
+ * belongs: paying it here once per suite is what makes `LSP_RESPONSE_MS` — "one
+ * semantic request answered by a WARM sidecar" — an honest ceiling for the tests
+ * that follow ([DIST-CI-VSIX-SHARDS-TIMEOUTS]). Unsharded, one test in the whole
+ * run paid this; sharded, the first semantic test of every chunk would.
+ *
+ * The probe has to be a SEMANTIC request. `documentSymbol` is answered by
+ * tree-sitter in the Rust host for C# and never reaches the sidecar, so it would
+ * return instantly against a completely cold Roslyn.
+ */
+async function warmSemanticEngine(uri: vscode.Uri, document: vscode.TextDocument): Promise<void> {
+  const whole = new vscode.Range(new vscode.Position(0, 0), document.lineAt(0).range.end);
+  await pollUntilResult(
+    async () =>
+      (await vscode.commands.executeCommand<vscode.CodeAction[]>(
+        'vscode.executeCodeActionProvider',
+        uri,
+        whole,
+      )) ?? [],
+    (actions) => actions.length > 0,
+    SIDECAR_COLD_MS,
+  );
 }
 
 export function workspaceFixturePath(relativePath: string): string {

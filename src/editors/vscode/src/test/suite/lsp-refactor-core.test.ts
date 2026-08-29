@@ -36,7 +36,7 @@ import {
   PROPERTY_OPTIONS,
   PROPERTY_SOURCE,
 } from './lsp-refactor-core-fixtures';
-import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 const FILE = 'RefactorCore.cs';
 
@@ -423,7 +423,9 @@ suite('C# real LSP - Roslyn refactor families', () => {
   let committedText = '';
 
   suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
+    // Above openFixtureDocument's SIDECAR_COLD_MS warm-up, so the warm-up
+    // reports rather than this hook ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(FIXTURE_BUILD_MS);
     await activateRealSharpLsp();
     fixture = await openFixtureDocument(FILE);
     committedText = fixture.document.getText();

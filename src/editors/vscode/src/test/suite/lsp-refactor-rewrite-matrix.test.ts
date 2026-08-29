@@ -6,7 +6,7 @@ import {
   revertDocument,
   type OpenFixture,
 } from './refactor-test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 const CONSTANT_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
 public class ConstantTarget
@@ -451,7 +451,9 @@ suite('C# real LSP - extended Roslyn rewrite families', () => {
   let committedText = '';
 
   suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
+    // Above openFixtureDocument's SIDECAR_COLD_MS warm-up, so the warm-up
+    // reports rather than this hook ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(FIXTURE_BUILD_MS);
     await activateRealSharpLsp();
     fixture = await openFixtureDocument('RefactorCore.cs');
     committedText = fixture.document.getText();

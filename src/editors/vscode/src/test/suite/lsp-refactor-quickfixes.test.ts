@@ -22,7 +22,7 @@ import {
   type OpenFixture,
   type WorkspaceEditSnapshot,
 } from './refactor-test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 const FILE = 'RefactorQuickFixes.cs';
 
@@ -258,7 +258,9 @@ suite('C# real LSP - compiler quick fixes', () => {
   let committedText = '';
 
   suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
+    // Above openFixtureDocument's SIDECAR_COLD_MS warm-up, so the warm-up
+    // reports rather than this hook ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(FIXTURE_BUILD_MS);
     await activateRealSharpLsp();
     fixture = await openFixtureDocument(FILE);
     committedText = fixture.document.getText();

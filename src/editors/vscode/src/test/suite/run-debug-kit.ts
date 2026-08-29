@@ -425,9 +425,19 @@ export async function stopAnyDebugSession(): Promise<void> {
     // runners and — before pollUntilResult threw — returned silently, leaving
     // the NEXT test to start against a session that was still alive
     // ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    //
+    // TWO observations prove the session is gone, and waiting for only the
+    // event is a race this helper cannot win: the listener is attached after
+    // `activeDebugSession` is read, so a session that terminates in that window
+    // — which is exactly what a debuggee already paused on an exception does —
+    // fires its event before anyone is listening and the wait can never
+    // succeed. The workbench no longer holding that session is equally
+    // conclusive.
+    const gone = (): boolean =>
+      ended.has(active.id) || vscode.debug.activeDebugSession?.id !== active.id;
     await pollUntilResult(
-      async () => ended,
-      (ids) => ids.has(active.id),
+      async () => gone(),
+      (done) => done,
       DEBUG_SESSION_MS,
       50,
     );
