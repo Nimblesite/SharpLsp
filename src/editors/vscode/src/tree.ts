@@ -46,6 +46,7 @@ const enum NodeType {
   NuGetPackage = 'nugetPackage',
   ProjectRef = 'projectRef',
   SolutionChoice = 'solutionChoice',
+  Feedback = 'feedback',
 }
 
 /** A node in the solution explorer tree. */
@@ -110,6 +111,9 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
       this.rebuildTree();
     });
     state.sortOrder.subscribe(() => {
+      this.rebuildTree();
+    });
+    state.loadPhase.subscribe(() => {
       this.rebuildTree();
     });
     projectDeps.projectDependencies.subscribe(() => {
@@ -197,6 +201,21 @@ export class SolutionExplorerProvider implements TreeDataProvider<ExplorerNode> 
   }
 
   private rebuildTree(): void {
+    const phase = state.loadPhase.value;
+    if (phase.kind !== 'idle') {
+      // [SE-LOAD-FEEDBACK]: while solutions are being discovered or a
+      // solution is loading, a spinner node replaces whatever the tree held —
+      // an empty tree reads as "broken", a stale tree reads as "done".
+      const message =
+        phase.kind === 'discovering'
+          ? 'Searching for solutions…'
+          : `Loading ${path.basename(phase.solutionPath)}…`;
+      log.traceInfo(`Tree feedback: ${message}`);
+      this.roots = [makeFeedbackNode(message)];
+      this.onDidChangeEmitter.fire(undefined);
+      return;
+    }
+
     const symbols = state.symbolsState.value;
     const solution = state.solutionPath.value;
     const order = state.sortOrder.value;
@@ -561,5 +580,17 @@ function makeErrorNode(message: string): ExplorerNode {
     TreeItemCollapsibleState.None,
   );
   node.iconPath = new ThemeIcon('error');
+  return node;
+}
+
+/**
+ * Transient node shown while the solution pipeline works — the tree must
+ * never just sit blank ([SE-LOAD-FEEDBACK]). `loading~spin` is the same
+ * codicon the status bar uses while the LSP is connecting.
+ */
+function makeFeedbackNode(message: string): ExplorerNode {
+  const node = new ExplorerNode(message, NodeType.Feedback, TreeItemCollapsibleState.None);
+  node.iconPath = new ThemeIcon('loading~spin');
+  node.contextValue = 'feedback';
   return node;
 }
