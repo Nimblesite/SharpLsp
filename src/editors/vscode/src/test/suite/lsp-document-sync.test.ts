@@ -86,9 +86,19 @@ class Added { void NewMethod() { } }`;
   test('editing a document updates folding ranges', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { doc, uri } = await openCSharpFile(tmpDir, 'change-fold.cs', 'class C { void M() { } }');
+    // The baseline file must itself be FOLDABLE. A single-line
+    // `class C { void M() { } }` has no multi-line region, so the folding
+    // provider correctly returns nothing and a poll for a non-empty result can
+    // never succeed — it just burned its whole budget and then compared against
+    // a baseline of 0 ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    const baseline = `class C {
+  void M() {
+    var a = 1;
+  }
+}`;
+    const { doc, uri } = await openCSharpFile(tmpDir, 'change-fold.cs', baseline);
 
-    // Initial folding — small file, few ranges.
+    // Initial folding — the class body and the one method body.
     const initial = await waitForFoldingRanges(uri);
     const initialCount = initial.length;
 

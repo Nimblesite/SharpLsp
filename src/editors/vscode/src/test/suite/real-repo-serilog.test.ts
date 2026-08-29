@@ -36,7 +36,7 @@ import {
   waitForHoverResult,
   waitForSelectionRanges,
 } from './test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS, REAL_REPO_MS } from './test-timeouts';
+import { ACTIVATION_MS, LSP_RESPONSE_MS, REAL_REPO_MS, REAL_REPO_WARMUP_MS } from './test-timeouts';
 
 const LOG_CS = 'src/Serilog/Log.cs';
 const LOGGER_CONFIGURATION_CS = 'src/Serilog/LoggerConfiguration.cs';
@@ -52,11 +52,11 @@ suite('Real repo stress — serilog (C#)', () => {
     // the fixture workspace), then wait for actual semantics, not just syntax.
     await loadSolutionInServer(path.join(repoDir, SERILOG.sln));
     const { doc, uri } = await openRepoFile(repoDir, LOG_CS);
-    await waitForDocumentSymbols(uri, 120_000);
+    await waitForDocumentSymbols(uri, REAL_REPO_WARMUP_MS);
     await waitForSemanticReady(
       uri,
       positionOf(doc, 'public static ILogger Logger', 'Logger'),
-      600_000,
+      REAL_REPO_WARMUP_MS,
     );
   });
 
@@ -70,7 +70,7 @@ suite('Real repo stress — serilog (C#)', () => {
   test('document symbols: Log.cs exposes the real static API surface', async function () {
     this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, LOG_CS);
-    const symbols = await waitForDocumentSymbols(uri, 120_000);
+    const symbols = await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
     const names = flattenSymbolNames(symbols);
 
     assert.ok(names.includes('Log'), 'static Log class must be present');
@@ -103,7 +103,7 @@ suite('Real repo stress — serilog (C#)', () => {
       ['public static void Information(string messageTemplate)', 'messageTemplate'],
     ];
     for (const [snippet, focus] of anchors) {
-      const hover = await waitForHoverResult(uri, positionOf(doc, snippet, focus), 60_000);
+      const hover = await waitForHoverResult(uri, positionOf(doc, snippet, focus), LSP_RESPONSE_MS);
       const text = hoverText(hover);
       assert.ok(text.length > 0, `hover on '${focus}' must not be empty`);
       assert.ok(
@@ -126,7 +126,7 @@ suite('Real repo stress — serilog (C#)', () => {
           iloggerUsage,
         )) ?? [],
       (locations) => locations.length > 0,
-      120_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
     const definition = firstLocation(definitions, 'ILogger definition');
@@ -147,7 +147,7 @@ suite('Real repo stress — serilog (C#)', () => {
           iloggerUsage,
         )) ?? [],
       (locations) => locations.length >= 3,
-      120_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
     assert.ok(
@@ -184,7 +184,7 @@ suite('Real repo stress — serilog (C#)', () => {
             '.',
           )) ?? new vscode.CompletionList(),
         (list) => list.items.some((item) => completionLabel(item) === 'CloseAndFlush'),
-        120_000,
+        LSP_RESPONSE_MS,
         2_000,
       );
       const labels = new Set(completions.items.map(completionLabel));
@@ -207,7 +207,7 @@ suite('Real repo stress — serilog (C#)', () => {
   test('diagnostics round-trip: a type error surfaces and clears with the edit', async function () {
     this.timeout(LSP_RESPONSE_MS);
     const { doc, uri, editor } = await openRepoFile(repoDir, LOGGER_CONFIGURATION_CS);
-    await waitForDocumentSymbols(uri, 120_000);
+    await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
     const anchor = 'public class LoggerConfiguration';
     const insertAt = positionOf(doc, anchor);
     const applied = await editor.edit((edit) => {
@@ -216,7 +216,7 @@ suite('Real repo stress — serilog (C#)', () => {
     assert.ok(applied, 'error-inducing edit must apply');
 
     try {
-      const diagnostics = await waitForDiagnostics(uri, 120_000);
+      const diagnostics = await waitForDiagnostics(uri, LSP_RESPONSE_MS);
       assert.ok(diagnostics.length >= 1, 'the bad assignment must produce diagnostics');
       const error = firstError(diagnostics, 'bad assignment');
       assertSaneRange(doc, error.range, 'error diagnostic');
@@ -224,13 +224,13 @@ suite('Real repo stress — serilog (C#)', () => {
     } finally {
       await vscode.commands.executeCommand('undo');
     }
-    await waitForErrorsCleared(uri, 120_000);
+    await waitForErrorsCleared(uri, LSP_RESPONSE_MS);
   });
 
   test('structure storm: folding, selection ranges, workspace symbols on real files', async function () {
     this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, LOG_CS);
-    const folding = await waitForFoldingRanges(uri, 60_000);
+    const folding = await waitForFoldingRanges(uri, LSP_RESPONSE_MS);
     assert.ok(folding.length >= 10, `Log.cs must fold richly, got ${folding.length.toString()}`);
     for (const range of folding.slice(0, 10)) {
       assert.ok(range.start <= range.end, 'folding range must be ordered');
@@ -240,7 +240,7 @@ suite('Real repo stress — serilog (C#)', () => {
     const selections = await waitForSelectionRanges(
       uri,
       [positionOf(doc, 'public static void CloseAndFlush()', 'CloseAndFlush')],
-      60_000,
+      LSP_RESPONSE_MS,
     );
     const depth = selectionDepth(selections[0], 'CloseAndFlush selection');
     assert.ok(depth >= 2, `selection range must expand through nesting, depth ${depth.toString()}`);
@@ -252,7 +252,7 @@ suite('Real repo stress — serilog (C#)', () => {
           'LoggerConfiguration',
         )) ?? [],
       (symbols) => symbols.length > 0,
-      120_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
     assert.ok(

@@ -71,6 +71,27 @@ export const DEBUG_SESSION_MS = 45_000;
  */
 export const DOTNET_CLI_MS = 120_000;
 
+/**
+ * One semantic request per symbol, swept across a whole loaded solution.
+ *
+ * `LSP_RESPONSE_MS` covers ONE request. A test that resolves every symbol node
+ * in the tree and compares each against the editor hover issues two sidecar
+ * round trips per symbol, so its cost scales with the fixture, not with the
+ * protocol. Measured at 31.9s over TestFixtures.sln on a warm Windows host.
+ */
+export const LSP_SWEEP_MS = 60_000;
+
+/**
+ * A test that deliberately KILLS or restarts the language server and waits for
+ * it to serve again.
+ *
+ * The cold start is the assertion here, not setup, so it belongs in the test
+ * body -- this is the one sanctioned exception to "initialization tiers are for
+ * hooks". Sits above `SIDECAR_COLD_MS` so the post-restart poll reports before
+ * the ceiling does.
+ */
+export const SERVER_RESTART_MS = 120_000;
+
 // ── Initialization ceilings — `suiteSetup`/`suiteTeardown` ONLY ──
 
 /**
@@ -98,6 +119,17 @@ export const FIXTURE_BUILD_MS = 240_000;
  * suites; the Windows chunks never pay this.
  */
 export const REAL_REPO_MS = 600_000;
+
+/**
+ * A warmup POLL inside a `REAL_REPO_MS` hook, not a ceiling of its own.
+ *
+ * It must sit strictly below the hook that contains it. A poll budget equal to
+ * (or above) its hook can never elapse -- mocha kills the hook at the same
+ * instant, so the helper's own "what did it actually see" message is never
+ * printed and the failure reads as an opaque hook timeout
+ * ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+ */
+export const REAL_REPO_WARMUP_MS = 480_000;
 
 // ── Runner-level ceilings ────────────────────────────────────────
 

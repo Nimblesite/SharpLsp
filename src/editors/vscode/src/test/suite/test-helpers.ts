@@ -79,9 +79,22 @@ export function findSharpLspBinary(): string | undefined {
 
 // ── Polling ──────────────────────────────────────────────────────
 
+/** Render a polled value for a failure message without flooding the report. */
+function describePolled(value: unknown): string {
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  if (text === undefined) return String(value);
+  return text.length > 300 ? `${text.slice(0, 300)}...` : text;
+}
+
 /**
- * Poll a function until a predicate is satisfied or timeout expires.
- * Returns the last result from `fn`.
+ * Poll a function until a predicate is satisfied, or FAIL.
+ *
+ * Exhausting the budget throws. It must: every caller is polling for something
+ * the feature under test is supposed to make true, so a budget that runs out is
+ * the feature not working. Returning the last value instead — which this used to
+ * do — turned that into a silent pass wherever the caller discarded the result,
+ * and into a confusing downstream assertion wherever it didn't
+ * ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
  */
 export async function pollUntilResult<T>(
   fn: () => PromiseLike<T>,
@@ -97,6 +110,12 @@ export async function pollUntilResult<T>(
     last = await fn();
   }
 
+  if (!predicate(last)) {
+    assert.fail(
+      `Timed out after ${String(timeoutMs)}ms polling for a condition that never held. ` +
+        `Last observed value: ${describePolled(last)}`,
+    );
+  }
   return last;
 }
 

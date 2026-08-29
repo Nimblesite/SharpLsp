@@ -336,6 +336,10 @@ VSIX_CHUNK_FILES = $(if $(CHUNK),$$($(VSIX_CHUNKS) files $(CHUNK)),)
 define RUN_VSIX_SUITE
 	status=0; \
 	files="$(VSIX_CHUNK_FILES)"; \
+	if [ -n "$(CHUNK)" ] && [ -z "$$files" ]; then \
+		echo "ERROR: chunk '$(CHUNK)' resolved to no suites - refusing to silently run ALL of them" >&2; \
+		exit 1; \
+	fi; \
 	cd $(VSCODE_DIR); \
 	npm run pretest && \
 		$(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test $(if $(VSIX_COVERAGE),--coverage,) \

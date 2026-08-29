@@ -100,13 +100,32 @@ export async function pollForIds(
   return ids;
 }
 
-/** Poll until every name in `expected` is in the tree. */
+/**
+ * Poll until every name in `expected` is in the tree, or FAIL.
+ *
+ * Unlike `pollForIds` this knows exactly what it was waiting for, so it reports
+ * the missing names itself. Callers that discard the return value would
+ * otherwise carry a never-discovered tree into their assertions and pass
+ * vacuously ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+ */
 export async function pollUntilDiscovered(
   controller: SharpLspTestController,
   expected: readonly string[],
   timeoutMs: number = FIXTURE_BUILD_MS,
 ): Promise<string[]> {
-  return pollForIds(controller, (ids) => expected.every((name) => ids.includes(name)), timeoutMs);
+  const ids = await pollForIds(
+    controller,
+    (found) => expected.every((name) => found.includes(name)),
+    timeoutMs,
+  );
+  const missing = expected.filter((name) => !ids.includes(name));
+  assert.deepStrictEqual(
+    missing,
+    [],
+    `discovery never surfaced ${String(missing.length)} expected test(s) within ` +
+      `${String(timeoutMs)}ms; discovered: ${ids.join(', ') || '(nothing)'}`,
+  );
+  return ids;
 }
 
 /**

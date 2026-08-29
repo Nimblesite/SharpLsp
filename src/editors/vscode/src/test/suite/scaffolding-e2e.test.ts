@@ -102,6 +102,9 @@ async function waitForWorkspaceProject(basename: string): Promise<void> {
     }
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
+  assert.fail(
+    `the workspace never indexed ${basename}; the command under test would see no project`,
+  );
 }
 
 suite('Scaffolding E2E (drive real commands)', () => {

@@ -54,7 +54,7 @@ import {
   itemsFor,
   sorted,
 } from './test-explorer-outcome-assertions';
-import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { DEBUG_SESSION_MS, DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 const CS = fixtureFor('xunit-csharp');
 const FSX = fixtureFor('xunit-fsharp');
@@ -800,7 +800,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     const terminals = await pollUntilResult(
       async () => vscode.window.terminals,
       isDebugTerminal,
-      30_000,
+      DEBUG_SESSION_MS,
       250,
     );
     const names = terminals.map((terminal) => terminal.name).join(' | ');

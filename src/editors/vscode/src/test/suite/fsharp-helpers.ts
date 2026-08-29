@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { pollUntilResult } from './test-helpers';
-import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
+import { SIDECAR_COLD_MS } from './test-timeouts';
 
 /**
  * Shared helpers for the F# LSP end-to-end suites.
@@ -72,8 +72,6 @@ export function nthPositionOf(
   }
   return doc.positionAt(index + offsetIntoMatch);
 }
-
-
 
 /** Poll a hover provider at a position until it returns content. */
 export async function pollHover(

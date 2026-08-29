@@ -19,7 +19,6 @@ import { LSP_RESPONSE_MS } from './test-timeouts';
 
 export type { PrepareRenameResult } from './refactor-test-helpers';
 
-
 export async function openOverlay(relativePath: string, source: string): Promise<OpenFixture> {
   const fixture = await openFixtureDocument(relativePath);
   await replaceDocumentText(fixture.document, source);

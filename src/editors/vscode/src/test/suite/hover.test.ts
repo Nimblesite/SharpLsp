@@ -13,7 +13,7 @@ import {
   waitForDocumentSymbols,
   waitForHoverResult,
 } from './test-helpers';
-import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS, LSP_SWEEP_MS } from './test-timeouts';
 
 suite('Hover / Quick Info', () => {
   let tmpDir: string;
@@ -409,7 +409,7 @@ suite('Hover / Quick Info', () => {
   // ── Tree Tooltip (resolveTreeItem) ──────────────────────────────
 
   test('resolveTreeItem uses LSP hover — same content as code hover', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
+    this.timeout(LSP_SWEEP_MS);
 
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, 'Extension must be active');

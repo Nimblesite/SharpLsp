@@ -449,10 +449,13 @@ derived from measured behaviour on the CI agents.
 | `LSP_RESPONSE_MS` | 15s | One semantic request answered by a warm sidecar |
 | `DEBUG_SESSION_MS` | 45s | A live `netcoredbg` session — launch, bind, step, evaluate, detach |
 | `DOTNET_CLI_MS` | 120s | Shelling out to the real `dotnet` CLI against an already-restored fixture |
+| `LSP_SWEEP_MS` | 60s | One semantic request PER SYMBOL swept across a loaded solution (measured 31.9s) |
+| `SERVER_RESTART_MS` | 120s | A test that deliberately kills or restarts the server and waits for it to serve again |
 | `ACTIVATION_MS` | 60s | *Initialization.* Extension activation, host and sidecar spawn |
 | `SIDECAR_COLD_MS` | 90s | *Initialization.* First semantic call while the sidecar cracks a project |
 | `FIXTURE_BUILD_MS` | 240s | *Initialization.* Cold `dotnet restore` + `build` of a fixture solution |
 | `REAL_REPO_MS` | 600s | *Initialization.* Clone + restore of a pinned third-party repository |
+| `REAL_REPO_WARMUP_MS` | 480s | A warmup *poll* inside a `REAL_REPO_MS` hook — never a ceiling of its own |
 
 Invariants:
 
@@ -464,12 +467,31 @@ Invariants:
   `FIXTURE_BUILD_MS` and `REAL_REPO_MS` are legal in `suiteSetup` /
   `suiteTeardown` only. A `test()` body claiming one means the suite is paying
   restore or activation more than once, which per-suite setup exists to prevent.
+  The sole exception is a test whose subject IS a restart: it takes
+  `SERVER_RESTART_MS` as its ceiling and `SIDECAR_COLD_MS` for the poll that
+  follows the restart, because the cold start is the assertion rather than
+  setup. Such a test MUST leave the server warm — a restart test that gives up
+  early strands the next test in the file on a cold server.
 - **Initialization happens once per suite.** A suite MUST build its fixture
   solution, activate the extension and warm discovery in `suiteSetup`, never per
   test. Two suites in one chunk that build equivalent fixtures MUST share one.
 - **Raising a tier requires evidence.** The tiers encode observed p-max plus
   headroom. A test that needs more time is a performance regression to
   investigate, not a ceiling to raise.
+- **A poll that runs out of budget FAILS.** `pollUntilResult` and every helper
+  built on it throw when the predicate never holds. Returning the last observed
+  value instead is a silent pass wherever the caller discards the result, and an
+  unreadable downstream assertion wherever it does not. The same rule binds the
+  hand-rolled deadline loops: a loop that reaches its deadline MUST `assert.fail`
+  with what it actually saw, never fall out of the bottom.
+- **A poll budget sits strictly below the ceiling that contains it.** A budget
+  equal to or above its `this.timeout(...)` can never elapse — mocha kills the
+  test first and the helper's "what did it actually see" message is never
+  printed. In-test polls take `LSP_RESPONSE_MS`; a warmup poll inside a
+  `REAL_REPO_MS` hook takes `REAL_REPO_WARMUP_MS`.
+- **A shard that resolves to no suites fails.** `RUN_VSIX_SUITE` refuses to run
+  when `CHUNK` is set and the manifest yields nothing, rather than falling back
+  to the empty `MOCHA_FILES` that means "run everything".
 
 ## [DIST-SECRETS] Publishing Credentials
 

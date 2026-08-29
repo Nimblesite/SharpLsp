@@ -265,11 +265,7 @@ async function assertNoCompilerErrors(fixture: RenameFixture): Promise<void> {
     noErrors,
     LSP_RESPONSE_MS,
   );
-  const usages = await waitForMatchingDiagnostics(
-    fixture.usages.uri,
-    noErrors,
-    LSP_RESPONSE_MS,
-  );
+  const usages = await waitForMatchingDiagnostics(fixture.usages.uri, noErrors, LSP_RESPONSE_MS);
   assert.ok(noErrors(declarations));
   assert.ok(noErrors(usages));
 }

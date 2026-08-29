@@ -20,7 +20,7 @@ import * as vscode from 'vscode';
 import { findNetcoredbg, getNetcoredbgCandidates } from '../../debug.js';
 import { binaryNameOf } from '../../platform.js';
 import { EXTENSION_ID, pollUntilResult, sleep } from './test-helpers';
-import { COMMAND_MS, DEBUG_SESSION_MS, FIXTURE_BUILD_MS, QUIET_MS } from './test-timeouts';
+import { COMMAND_MS, DEBUG_SESSION_MS, QUIET_MS } from './test-timeouts';
 
 /** Registered by the extension today. */
 export const CMD_DEBUG_PROGRAM = 'sharplsp.debugProgram';
