@@ -1,0 +1,54 @@
+# agent-pmo:0b21609
+---
+# Implements [DIST-CI-VSIX-COVERAGE]. THE coverage gate for the VS Code
+# extension - one gate, at the end, over every shard of both platforms.
+#
+# The extension's end-to-end suite runs as ~26 Ubuntu shards
+# ([DIST-CI-VSIX-SHARDS], ci-vsix.yml) and ~23 Windows shards
+# ([DIST-CI-WIN-VSIX], ci-vsix-windows.yml). Every one of them is instrumented
+# and exports an lcov tracefile; none of them gates, because no single chunk can
+# meet the line threshold on its own. This job downloads all of them and applies
+# the one ratcheted threshold - the same shape as the Rust shards
+# ([DIST-CI-RUST-SHARDS]).
+#
+# Why the union is sound: every shard instruments the SAME bundle, so a file
+# loaded by any shard carries its whole line set there (unexecuted lines as
+# `DA:<line>,0`), and summing hit counts per (file, line) reproduces the line
+# percentage of one unsharded run. Shards write repo-relative `SF:` paths
+# (tools/coverage/relativize-lcov.mjs) so a file measured on Windows and on
+# Ubuntu keys as ONE file rather than two - without that the denominator would
+# double and the gate would fail for a reason unrelated to coverage.
+name: CI / VS Code Coverage
+'on':
+  workflow_call: {}
+permissions:
+  contents: read
+jobs:
+  coverage:
+    name: Coverage Gate
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # check-coverage.mjs ratchets against the threshold committed at the
+          # merge base, which a shallow checkout does not contain.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      - name: Download every shard tracefile (both platforms)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-vsix-shard-*
+          merge-multiple: true
+          path: target
+      - name: Merge shard coverage and enforce threshold
+        run: make _gate-vsix-coverage
+      - name: Upload coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-vsix
+          path: |
+            target/coverage-vsix.lcov
+            coverage-thresholds.json

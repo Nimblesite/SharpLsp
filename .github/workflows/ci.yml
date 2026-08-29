@@ -151,6 +151,19 @@ jobs:
       - build
     uses: ./.github/workflows/ci-vsix-windows.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+  vsix-coverage:
+    # [DIST-CI-VSIX-COVERAGE] ONE coverage gate for the extension, at the END,
+    # over the shards of BOTH platforms. Neither VS Code leg gates on its own:
+    # no single chunk can meet the line threshold, and gating per leg would have
+    # let the Windows shards run uninstrumented while Ubuntu carried the whole
+    # number.
+    name: VS Code Coverage
+    needs:
+      - detect-changes
+      - vsix
+      - vsix-windows
+    uses: ./.github/workflows/ci-vsix-coverage.yml
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   editors:
     name: Editors
     needs:

@@ -3,7 +3,7 @@
 //
 // Single reader for src/editors/vscode/test-chunks.json — the one place the VS
 // Code feature chunks are declared. BOTH platform legs fan out over that one
-// list, so the Makefile (`_test-vsix-shard`, `_test-vsix-win`), both CI job
+// list, so the Makefile (`_test-vsix-shard`), both CI job
 // matrices, and the completeness guard all go through this script: adding a
 // chunk or a suite is a one-file edit that reaches every consumer.
 //

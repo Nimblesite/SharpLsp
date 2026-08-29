@@ -106,7 +106,7 @@ KOVER_PERCENT = dotnet run --file tools/coverage/kover-line-percent.cs --
         test-rust _test-rust _prepare-rust-tests _test-rust-shard \
         test-zed _test-zed test-rider _test-rider \
         _gate-rust-coverage _test-vsix _run-vsix-suite _test-vsix-shard \
-        _gate-vsix-coverage _test-vsix-win _check-vsix-chunks \
+        _gate-vsix-coverage _build-vsix-suite _check-vsix-chunks \
         _verify-vsix-payload \
         _test-dotnet _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
@@ -319,19 +319,27 @@ VSIX_TEST_ENV = env -u SHARPLSP_EXECUTABLE_PATH \
 	-u FORGE_BINARY_DIR
 
 # [DIST-CI-VSIX-SHARDS] ONE runner drives every slice of the VS Code end-to-end
-# suite, on every platform. It is parameterised by two variables, and nothing
-# else differs between the local full run, the Ubuntu coverage shards and the
-# Windows feature chunks:
+# suite, on every platform, ALWAYS instrumented. It is parameterised by two
+# variables, and nothing else differs between the local full run, the Ubuntu
+# shards and the Windows shards:
 #
-#   CHUNK          a chunk name from src/editors/vscode/test-chunks.json. Empty
-#                  runs EVERY suite - the inner runner reads an empty
-#                  MOCHA_FILES as "all" - which is what a local `make test` wants.
-#   VSIX_COVERAGE  non-empty instruments the run and writes an lcov tracefile.
+#   CHUNK                a chunk name from src/editors/vscode/test-chunks.json.
+#                        Empty runs EVERY suite - the inner runner reads an empty
+#                        MOCHA_FILES as "all" - which is what a local `make test`
+#                        wants.
+#   VSIX_SUITE_PREBUILT  non-empty means `out/`, `dist/` and the built fixtures
+#                        are already on disk, so the shard skips `pretest`.
 #
-# Two near-identical recipes used to live here and they had already drifted: the
-# Ubuntu one ran `npm test` (which fires `pretest` implicitly), the Windows one
-# ran `npm run pretest && npx vscode-test`. One recipe, two knobs.
+# Coverage is NOT a knob. Every shard on every platform instruments, and one gate
+# at the end of the pipeline ratchets the union ([DIST-CI-VSIX-COVERAGE]); a
+# shard that ran uninstrumented would silently shrink that union.
+#
+# Compiling is not a per-shard cost either. `pretest` cleans, type-checks the
+# whole suite, bundles the extension and builds the .NET test fixtures - minutes
+# of identical work that CI does ONCE in `_build-vsix-suite` and every shard
+# downloads.
 VSIX_CHUNK_FILES = $(if $(CHUNK),$$($(VSIX_CHUNKS) files $(CHUNK)),)
+VSIX_PRETEST = $(if $(VSIX_SUITE_PREBUILT),echo "==> Reusing the prebuilt VS Code suite",npm run pretest)
 
 define RUN_VSIX_SUITE
 	status=0; \
@@ -341,8 +349,8 @@ define RUN_VSIX_SUITE
 		exit 1; \
 	fi; \
 	cd $(VSCODE_DIR); \
-	npm run pretest && \
-		$(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test $(if $(VSIX_COVERAGE),--coverage,) \
+	$(VSIX_PRETEST) && \
+		$(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test --coverage \
 		|| status=$$?; \
 	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
 	exit $$status
@@ -351,6 +359,15 @@ endef
 _run-vsix-suite:
 	$(RUN_VSIX_SUITE)
 
+# [DIST-CI-VSIX-SHARDS] Compile the suite ONCE. `pretest` is the expensive,
+# entirely shard-independent half of a run: clean, tsc the whole suite, esbuild
+# the dev bundle, build the .NET test fixtures. CI runs this in a single job per
+# platform and publishes the result; every shard downloads it and sets
+# VSIX_SUITE_PREBUILT=1. Running it per shard multiplied it by the matrix width.
+_build-vsix-suite:
+	@echo "==> Compiling the VS Code suite once for every shard..."
+	@cd $(VSCODE_DIR) && npm run pretest
+
 # The whole suite in one process, with coverage and the ratcheted gate. This is
 # what `make test` runs locally. CI never runs it: unsharded it was the longest
 # job in the pipeline by a wide margin, so the Ubuntu leg fans out over
@@ -358,23 +375,47 @@ _run-vsix-suite:
 _test-vsix: $(if $(VSIX_PREBUILT),,_build-rust _build-dotnet) _build-vsix _verify-vsix-payload
 	@echo "==> Running VS Code extension tests..."
 	@$(MAKE) $(VSIX_STAGE_TARGET)
-	@$(MAKE) _run-vsix-suite VSIX_COVERAGE=1
+	@$(MAKE) _run-vsix-suite
 	@$(CHECK_COV) vscode-extension --json $(VSCODE_DIR)/coverage/coverage-summary.json total.lines.pct
 
-# [DIST-CI-VSIX-SHARDS] ONE Ubuntu coverage shard: a single chunk, instrumented,
-# exporting lcov. No gate here - no chunk can meet the line threshold alone, so
-# the ratchet runs once over the union in `_gate-vsix-coverage`, exactly as the
-# Rust shards do ([DIST-CI-RUST-SHARDS]).
+# [DIST-CI-VSIX-SHARDS] ONE coverage shard on ANY platform: a single chunk,
+# instrumented, exporting lcov. The Ubuntu and Windows legs both run exactly
+# this - there is no second, Windows-only recipe, because the two of them had
+# already drifted apart once (one ran with coverage, one without).
 #
-# The tracefile is renamed per chunk because CI downloads every shard into one
-# directory before merging, and `coverage/lcov.info` is the same path for all of
-# them.
-_test-vsix-shard: $(VSIX_STAGE_TARGET) _verify-vsix-payload
+# No gate here: no chunk can meet the line threshold alone, so the ratchet runs
+# once over the union of BOTH platforms in the pipeline's final coverage job,
+# exactly as the Rust shards do ([DIST-CI-RUST-SHARDS]).
+#
+# The tracefile is renamed per platform AND chunk because CI downloads every
+# shard into one directory before merging, and `coverage/lcov.info` is the same
+# path for all of them. Its `SF:` records are rewritten to repo-relative POSIX
+# paths on the way out: c8 records absolute paths, and the same source file must
+# key identically whether the shard that measured it ran on `C:\Code\SharpLsp`
+# or `/home/runner/work/SharpLsp/SharpLsp` or the union counts it twice.
+#
+# Deliberately does NOT verify the VSIX payload. That is one production esbuild
+# plus a `vsce ls` per shard for an answer that does not vary by shard, and
+# worse: it leaves the PRODUCTION bundle in `dist/`, whose missing sourcemap
+# would strip the end-to-end coverage this job exists to collect. The payload
+# has its own job in both legs.
+VSIX_PLATFORM = $(shell node -e "process.stdout.write(process.platform)")
+VSIX_SHARD_LCOV = target/coverage-vsix-shard-$(VSIX_PLATFORM)-$(CHUNK).lcov
+
+#
+# Staging is a `$(MAKE)` sub-invocation, NOT a prerequisite. `VSIX_STAGE_TARGET`
+# is defined further down this file, so in a prerequisite list it expands to
+# nothing and the shard runs against an unstaged `bin/` - which is precisely how
+# this broke once the payload check (whose own sub-make happened to stage as a
+# side effect) moved out to its own job. Recipe lines expand at run time, so
+# this one always sees the variable.
+_test-vsix-shard:
 	@test -n "$(CHUNK)" || { echo "ERROR: CHUNK is required (e.g. make _test-vsix-shard CHUNK=lsp)" >&2; exit 1; }
-	@echo "==> Running VS Code coverage shard '$(CHUNK)'..."
-	@$(MAKE) _run-vsix-suite VSIX_COVERAGE=1 CHUNK=$(CHUNK)
+	@echo "==> Running VS Code coverage shard '$(VSIX_PLATFORM)/$(CHUNK)'..."
+	@$(MAKE) $(VSIX_STAGE_TARGET)
+	@$(MAKE) _run-vsix-suite CHUNK=$(CHUNK)
 	@mkdir -p target
-	@cp $(VSCODE_DIR)/coverage/lcov.info target/coverage-vsix-shard-$(CHUNK).lcov
+	@node tools/coverage/relativize-lcov.mjs $(VSCODE_DIR)/coverage/lcov.info $(VSIX_SHARD_LCOV) .
 
 # [DIST-CI-VSIX-SHARDS] Union-merge the shard tracefiles and enforce the same
 # ratcheted threshold an unsharded run enforces. Every shard instruments the
@@ -442,12 +483,6 @@ _verify-vsix-payload:
 	@$(MAKE) _stage-vsix-binary-only
 	@cd $(VSCODE_DIR) && npm run build:production --silent
 	@cd $(VSCODE_DIR) && node ../../../tools/vsix/verify-vsix-payload.mjs
-
-_test-vsix-win: $(VSIX_STAGE_TARGET) _verify-vsix-payload
-	@test -n "$(CHUNK)" || { echo "ERROR: CHUNK is required (e.g. make _test-vsix-win CHUNK=debug)" >&2; exit 1; }
-	@echo "==> Running VS Code extension chunk '$(CHUNK)' (real LSP, no coverage)..."
-	@$(MAKE) _run-vsix-suite CHUNK=$(CHUNK)
-
 
 # [DIST-CI-RIDER] The Rider plugin's only automated verification. Skipped
 # locally when no JDK 21+ is installed; CI sets RIDER_REQUIRED=1 so it can never

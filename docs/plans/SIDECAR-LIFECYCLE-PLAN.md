@@ -304,7 +304,7 @@ During implementation, use the narrowest relevant real-process target first, fol
 ```text
 make _test-dotnet
 make _test-rust
-make _test-vsix-win        # Windows lifecycle/editor surface
+make _test-vsix-shard CHUNK=lifecycle   # Windows lifecycle/editor surface
 make lint
 ```
 
@@ -592,7 +592,7 @@ item and its required evidence are complete.
 - [ ] Run the Rust e2e lifecycle module with published C# and F# sidecars.
 - [ ] Run `make _test-dotnet` and resolve every failure without weakening assertions.
 - [ ] Run `make _test-rust` and resolve every failure without filtering lifecycle cases.
-- [ ] Run the complete Windows VSIX lifecycle chunk via `make _test-vsix-win`.
+- [ ] Run the complete Windows VSIX lifecycle chunk via `make _test-vsix-shard CHUNK=lifecycle`.
 - [ ] Run `make lint`; keep Rust `unsafe_code = "deny"`, missing-doc, and structured-error rules green.
 - [ ] Inspect one healthy and one forced-failure editor output: no ANSI, raw stack flood, payload text,
       or repeated per-request toast.

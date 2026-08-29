@@ -291,7 +291,8 @@ The PR pipeline uses reusable workflows (`on: workflow_call`):
 | `ci-lint.yml` | Rust / Zed / .NET / VS Code lint + format gates |
 | `ci-rust.yml` | Sharded Rust e2e suite ([DIST-CI-RUST-SHARDS]), the union coverage gate, the version contract |
 | `ci-dotnet.yml` | Sidecar tests (Ubuntu) + win32 named-pipe transport ([DIST-CI-WIN-TRANSPORT]) |
-| `ci-vsix.yml` | Sharded VS Code suite, the union coverage gate, and the VSIX payload check (Ubuntu, [DIST-CI-VSIX-SHARDS]) |
+| `ci-vsix.yml` | Sharded, instrumented VS Code suite + VSIX payload check (Ubuntu, [DIST-CI-VSIX-SHARDS]) |
+| `ci-vsix-coverage.yml` | THE VS Code coverage gate — one ratchet over every shard of both platforms ([DIST-CI-VSIX-COVERAGE]) |
 | `ci-vsix-windows.yml` | VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX]) |
 
 Invariants:
@@ -348,7 +349,7 @@ Both listener flavors MUST restrict the endpoint to the current user: `0600` on 
 
 ## [DIST-CI-WIN-VSIX] Windows VS Code End-to-End Tests
 
-CI MUST run the VS Code end-to-end suite's whole feature surface on Windows runners through `ci-vsix-windows.yml` and `_test-vsix-win`: the release-built `sharplsp` host, Roslyn and FCS sidecars, actual VS Code extension host, and win32 named-pipe IPC. [DIST-CI-WIN-TRANSPORT] covers frames only, while Windows-specific executables (`netcoredbg.exe`, `dotnet-trace`, `dotnet test`, `dotnet new`) and paths require full feature coverage; a grep-selected smoke subset is insufficient.
+CI MUST run the VS Code end-to-end suite's whole feature surface on Windows runners through `ci-vsix-windows.yml` and `_test-vsix-shard` (the same target the Ubuntu leg runs): the release-built `sharplsp` host, Roslyn and FCS sidecars, actual VS Code extension host, and win32 named-pipe IPC. [DIST-CI-WIN-TRANSPORT] covers frames only, while Windows-specific executables (`netcoredbg.exe`, `dotnet-trace`, `dotnet test`, `dotnet new`) and paths require full feature coverage; a grep-selected smoke subset is insufficient.
 
 The suite is sliced into **feature chunks**, one CI job each on BOTH platform legs, run with `fail-fast: false` so one failing feature area never hides the state of the others. The manifest below is the single declaration; `linuxOnly` chunks are absent from the Windows matrix ([DIST-CI-VSIX-SHARDS]):
 
@@ -387,7 +388,7 @@ Invariants:
 - **Nothing escapes.** `make _lint-vsix` runs `vsix-test-chunks.mjs check`, which fails if any `*.test.ts` suite is claimed by no chunk or by more than one. A new suite is therefore gated on Windows by default; opting out requires an explicit entry under `excluded` with a written reason.
 - **Selection is by file, not by title.** The inner mocha runner selects suites via the `MOCHA_FILES` glob list. Title-regex selection (`MOCHA_GREP`) is a local debugging aid only — it silently drops tests when a suite is renamed. A glob matching zero compiled suites is a hard error, so a mistyped chunk fails instead of reporting a green run of nothing.
 - **Build once, fan out.** A single `build` job compiles the Rust host and both sidecars and publishes them as an artifact; each chunk job downloads and stages them (`_stage-vsix-binary-only`). Rebuilding per chunk would cost one cold Windows Rust build per feature area.
-- **Ubuntu owns coverage.** Windows chunks run **without** `--coverage` and enforce no coverage gate. Coverage belongs to the Ubuntu leg, which shards over the same manifest and gates once over the union ([DIST-CI-VSIX-SHARDS]). Chunks marked `linuxOnly` — the `real-repo-*` stress suites, each cloning and restoring a pinned third-party repository — are absent from the Windows matrix: that is repo ingestion, not platform behaviour.
+- **Every shard is instrumented, on both platforms.** Windows chunks used to run **without** `--coverage`, which left the entire coverage number resting on Ubuntu and made win32-only code paths invisible to the ratchet. Both legs now run the same instrumented `_test-vsix-shard`, and one gate at the end of the pipeline ratchets the union ([DIST-CI-VSIX-COVERAGE]). Chunks marked `linuxOnly` — the `real-repo-*` stress suites, each cloning and restoring a pinned third-party repository — are absent from the Windows matrix: that is repo ingestion, not platform behaviour.
 - **No PATH leakage.** Every VS Code job runs `tools/vsix/purge-path-binaries.sh` first, so the test host can only resolve the freshly-staged bundled binaries. A dev copy on `PATH` would substitute itself for the artifact under test and turn a broken bundle green.
 
 - **Compare paths case-insensitively on Windows.** VS Code lowercases the drive letter whenever a path travels through `Uri.fsPath`, while `extensionPath` and `os.tmpdir()` preserve the original casing, so the same file legitimately has two spellings. Any assertion comparing a `Uri`-derived path against a directly-constructed one MUST go through `comparablePath()` (`test-helpers.ts`), which lowercases on win32 only — POSIX paths stay case-sensitive, because there `/tmp/A` and `/tmp/a` really are different files.
@@ -413,16 +414,39 @@ Invariants:
   `... matrix win` derive the two CI matrices from it. The only platform
   distinction the manifest carries is `"linuxOnly": true`, which drops a chunk
   from the Windows matrix. A chunk MUST NOT be declared in CI YAML.
-- **One runner.** `make _run-vsix-suite` is the single recipe; `CHUNK` selects
-  the slice (empty runs every suite) and `VSIX_COVERAGE` instruments it.
-  `_test-vsix` (local, whole suite, gated), `_test-vsix-shard` (Ubuntu CI, one
-  instrumented chunk) and `_test-vsix-win` (Windows CI, one chunk, no coverage)
-  are thin wrappers over it and MUST NOT re-implement the invocation.
-- **One gate, over the union.** Each Ubuntu shard exports
-  `target/coverage-vsix-shard-<chunk>.lcov`. No shard can meet the line
-  threshold alone, so no shard runs the gate; `_gate-vsix-coverage` union-merges
-  the tracefiles with the same `tools/coverage/merge-lcov.mjs` the Rust shards
-  use ([DIST-CI-RUST-SHARDS]) and enforces the identical ratchet.
+- **One runner, one shard target.** `make _run-vsix-suite` is the single recipe;
+  `CHUNK` selects the slice (empty runs every suite) and `VSIX_SUITE_PREBUILT`
+  says the suite is already compiled. Coverage is NOT a knob — the runner always
+  instruments. `_test-vsix` (local, whole suite, gated inline) and
+  `_test-vsix-shard` (ONE chunk on ANY platform) are thin wrappers and MUST NOT
+  re-implement the invocation. There is no Windows-only variant: the two had
+  already drifted to the point where one ran with coverage and one without.
+- **Neither leg re-implements the other.** The three things both platform legs
+  do live in `.github/actions/`: `vsix-suite` (install, resolve the matrix,
+  compile once, publish), `vsix-shard` (stage, run one instrumented chunk,
+  publish its tracefile) and `vsix-payload` (pack the VSIX, assert the platform
+  binary is in it). `ci-vsix.yml` and `ci-vsix-windows.yml` supply only what
+  genuinely differs — artifact names, where the debugger unpacks, the platform
+  tag, and whether the runner needs `xvfb`. Copying steps between the two YAMLs
+  is how they drifted apart the first time.
+- **Nothing is compiled or built twice.** The Rust host, both sidecars and
+  netcoredbg are built once per platform and staged from artifacts
+  (`VSIX_PREBUILT=1`). The suite itself — clean, tsc, esbuild bundle, .NET test
+  fixtures — is compiled once per platform by `_build-vsix-suite`, published as
+  an artifact, and consumed by every shard (`VSIX_SUITE_PREBUILT=1`). The VS
+  Code test host download is cached per runner OS. A shard that recompiles
+  multiplies minutes of identical work by the width of the matrix.
+- **A shard MUST NOT verify the VSIX payload.** That is one production esbuild
+  and a `vsce ls` per shard for an answer that cannot vary by shard — and it
+  leaves the PRODUCTION bundle in `dist/`, whose missing sourcemap strips the
+  end-to-end coverage the shard exists to collect. Both legs verify the payload
+  in a dedicated job.
+- **Shard tracefiles are repo-relative.** `_test-vsix-shard` writes
+  `target/coverage-vsix-shard-<platform>-<chunk>.lcov` through
+  `tools/coverage/relativize-lcov.mjs`. c8 records absolute paths, so without
+  this the same source file keys twice in the union — once under
+  `C:\Code\SharpLsp\...` and once under `/home/runner/...` — doubling the
+  denominator and failing the gate for a reason unrelated to coverage.
 - **The denominator MUST NOT move.** Coverage runs with `includeAll` off. Every
   shard instruments the same bundle, so a file loaded by any shard contributes
   its whole line set to the union (unexecuted lines as `DA:<line>,0`) — which
@@ -433,6 +457,29 @@ Invariants:
 - **The payload check is its own job.** Verifying the packaged VSIX carries the
   platform binary MUST NOT sit behind the test matrix: a `.vscodeignore` mistake
   is knowable in minutes and must be reported in minutes.
+
+### [DIST-CI-VSIX-COVERAGE] The VS Code Coverage Gate
+
+There is exactly ONE coverage gate for the extension, it runs at the END of the
+pipeline, and it ratchets the union of every instrumented shard on every
+platform (`ci-vsix-coverage.yml`, `needs: [vsix, vsix-windows]`).
+
+Invariants:
+
+- **No leg gates on its own.** A single chunk cannot meet the line threshold, so
+  a per-leg gate can only be wrong. `_gate-vsix-coverage` union-merges every
+  `target/coverage-vsix-shard-*.lcov` with the same
+  `tools/coverage/merge-lcov.mjs` the Rust shards use ([DIST-CI-RUST-SHARDS])
+  and enforces the identical ratchet.
+- **The union is sound.** Every shard instruments the same bundle, so a file
+  loaded by any shard contributes its whole line set (unexecuted lines as
+  `DA:<line>,0`); summing hit counts per (file, line) reproduces the line
+  percentage of one unsharded run.
+- **The denominator MUST NOT move.** Coverage runs with `includeAll` off.
+  Enabling it would change the file set and silently move the ratchet.
+- **A missing shard fails the gate.** A shard that fails uploads no tracefile,
+  so the union shrinks and the ratchet catches it. Coverage is never computed
+  from "whatever shards happened to finish".
 
 ### [DIST-CI-VSIX-SHARDS-TIMEOUTS] Test Timeout Budget
 
@@ -446,6 +493,7 @@ derived from measured behaviour on the CI agents.
 |---|---|---|
 | `FAST_MS` | 1s | Pure in-process work — parsers, tree builders, HTML rendering, manifest conformance |
 | `COMMAND_MS` | 5s | One command round trip through the extension host; no sidecar |
+| `SETTINGS_WRITE_MS` | 30s | Several user-scoped `settings.json` writes, each awaiting its change event (measured 4.56s for four) |
 | `LSP_RESPONSE_MS` | 15s | One semantic request answered by a warm sidecar |
 | `DEBUG_SESSION_MS` | 45s | A live `netcoredbg` session — launch, bind, step, evaluate, detach |
 | `DOTNET_CLI_MS` | 120s | Shelling out to the real `dotnet` CLI against an already-restored fixture |

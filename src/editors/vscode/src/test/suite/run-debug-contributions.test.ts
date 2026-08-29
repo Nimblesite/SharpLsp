@@ -24,7 +24,7 @@ import {
   menuItems,
   packageJson,
 } from './run-debug-kit';
-import { EXTENSION_ID } from './test-helpers';
+import { EXTENSION_ID, pollUntilResult } from './test-helpers';
 import { ACTIVATION_MS, COMMAND_MS } from './test-timeouts';
 import {
   ACCIDENT,
@@ -226,13 +226,28 @@ suite('Run/Debug manifest contributions', () => {
   });
 
   // Implements [DEBUG-FEATURES-LAUNCH-OUTPUT] rules 1-3.
-  test('the launch schema declares what the resolver writes and nothing VS Code core injects', () => {
+  test('the launch schema declares what the resolver writes and nothing VS Code core injects', async function () {
+    // Ceiling above the poll budget below, so the poll's own message wins.
+    this.timeout(COMMAND_MS + 5_000);
+    const CORE_REQUIRED = ['name', 'type', 'request'];
+
     // 1. The user opens launch.json and triggers IntelliSense.
-    const attributes = configurationAttributes();
+    //
+    // Core folds its own attributes into every debugger contribution, but it
+    // does so while it processes contributions -- NOT synchronously at
+    // activation. Reading `extension.packageJSON` once and asserting the merge
+    // had already landed made this test a coin flip: it and the netcoredbgPath
+    // test in this same chunk failed on alternating runs. Wait for the state
+    // the assertions below describe, and say so if it never arrives
+    // ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    const attributes = await pollUntilResult(
+      async () => configurationAttributes(),
+      (current) => CORE_REQUIRED.every((name) => (current.launch?.required ?? []).includes(name)),
+      COMMAND_MS,
+    );
     const kinds = Object.keys(attributes).sort();
     assert.deepStrictEqual(kinds, ['attach', 'launch'], 'both request kinds, nothing else');
     const launch = attributes.launch;
-    const CORE_REQUIRED = ['name', 'type', 'request'];
     const CORE_ATTACH = CORE_REQUIRED;
     const ownRequired = launch.required.filter((name: string) => !CORE_REQUIRED.includes(name));
     assert.deepStrictEqual(ownRequired, ['program'], 'program is the only required attribute');

@@ -217,7 +217,7 @@ suite('LSP Lifecycle', () => {
       'double-restart.cs',
       'class DoubleRestart { void M() { } }',
     );
-    await waitForDocumentSymbols(uri);
+    await waitForDocumentSymbols(uri, SIDECAR_COLD_MS);
 
     // First restart.
     await vscode.commands.executeCommand('sharplsp.restartServer');
@@ -240,7 +240,7 @@ suite('LSP Lifecycle', () => {
       'before-restart.cs',
       'class BeforeRestart { }',
     );
-    await waitForDocumentSymbols(uri1);
+    await waitForDocumentSymbols(uri1, SIDECAR_COLD_MS);
 
     await vscode.commands.executeCommand('sharplsp.restartServer');
 
@@ -260,7 +260,9 @@ suite('LSP Lifecycle', () => {
   // ── Large File Handling ────────────────────────────────────
 
   test('server handles a file with many declarations', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
+    // Runs directly after the restart tests above, so its first request pays
+    // their cold start ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(SERVER_RESTART_MS);
 
     // Generate a file with 20 methods.
     const methods = Array.from(
@@ -270,7 +272,7 @@ suite('LSP Lifecycle', () => {
     const content = `namespace BigFile {\n  public class BigClass {\n${methods}\n  }\n}`;
 
     const { uri } = await openCSharpFile(tmpDir, 'big.cs', content);
-    const symbols = await waitForDocumentSymbols(uri);
+    const symbols = await waitForDocumentSymbols(uri, SIDECAR_COLD_MS);
     const names = flattenNames(symbols);
 
     assert.ok(names.includes('BigClass'), 'Should find BigClass');

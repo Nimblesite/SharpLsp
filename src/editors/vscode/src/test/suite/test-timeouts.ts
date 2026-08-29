@@ -47,6 +47,18 @@ export const FAST_MS = 1_000;
 export const COMMAND_MS = 5_000;
 
 /**
+ * A test that rewrites USER-SCOPED settings several times over.
+ *
+ * `COMMAND_MS` covers ONE command round trip. A `workspace.getConfiguration()
+ * .update(..., ConfigurationTarget.Global)` is heavier than that -- it writes
+ * the user `settings.json` and waits for the change event to propagate back
+ * through the extension host -- and a test that does it four times costs four
+ * of them. Measured at 4.56s against a 5s ceiling: 91% of budget, which is a
+ * coin flip rather than a ceiling.
+ */
+export const SETTINGS_WRITE_MS = 30_000;
+
+/**
  * One semantic request answered by a WARM sidecar: completion, hover,
  * definition, references, rename, code action, diagnostics refresh.
  *

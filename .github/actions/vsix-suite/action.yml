@@ -1,0 +1,67 @@
+# agent-pmo:0b21609
+---
+# Implements [DIST-CI-VSIX-SHARDS]. ONE composite action that compiles the VS
+# Code suite a single time and resolves the shard matrix, used by both platform
+# legs.
+#
+# `npm run pretest` is the expensive, entirely shard-independent half of a run:
+# clean, type-check the whole suite, bundle the extension, build the .NET test
+# fixtures. Running it inside every shard multiplied minutes of identical work
+# by the width of the matrix. It happens here once per platform and the result
+# is published for every shard to download.
+#
+# The chunk matrix is resolved in the same place because it reads the same
+# working tree and needs nothing else. Chunk membership lives in
+# src/editors/vscode/test-chunks.json and is NEVER duplicated into CI YAML.
+name: Compile the VS Code suite once
+description: >-
+  Installs deps, resolves the feature-chunk matrix for this platform, compiles
+  the suite, and publishes it as an artifact for every shard.
+inputs:
+  platform:
+    description: '"linux" or "win" — selects which chunks this leg runs.'
+    required: true
+  suite-artifact:
+    description: Artifact name to publish the compiled suite under.
+    required: true
+outputs:
+  chunks:
+    description: JSON array of chunk names for this platform's matrix.
+    value: ${{ steps.chunks.outputs.chunks }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+      with:
+        dotnet-version: |
+          9.0.x
+          10.0.303
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: '20'
+        cache: npm
+        cache-dependency-path: src/editors/vscode/package-lock.json
+    - name: Install VS Code extension deps
+      shell: bash
+      run: npm ci --prefix src/editors/vscode
+    - name: Resolve the feature chunk matrix
+      id: chunks
+      shell: bash
+      run: |-
+        set -euo pipefail
+        chunks="$(node tools/vsix/vsix-test-chunks.mjs matrix ${{ inputs.platform }})"
+        echo "chunks=${chunks}" >> "$GITHUB_OUTPUT"
+        echo "${{ inputs.platform }} VS Code coverage shards: ${chunks}"
+    - name: Compile the suite once
+      shell: bash
+      run: make _build-vsix-suite
+    - name: Upload the compiled suite
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.suite-artifact }}
+        retention-days: 1
+        include-hidden-files: true
+        path: |
+          src/editors/vscode/out
+          src/editors/vscode/dist
+          src/editors/vscode/test-fixtures

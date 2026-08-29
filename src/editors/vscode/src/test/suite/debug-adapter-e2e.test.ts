@@ -9,7 +9,7 @@ import { DEBUG_TYPE_ID, fakeFolder, stopAnyDebugSession } from './run-debug-kit'
 import { writeSpawnableAdapter } from './run-debug-fixtures';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { closeAllEditors, comparablePath, removeDirRecursive } from './test-helpers';
-import { COMMAND_MS } from './test-timeouts';
+import { SETTINGS_WRITE_MS } from './test-timeouts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Spec: [DEBUG-ADAPTER-NETCOREDBG], [DEBUG-ARCHITECTURE-NETCOREDBG].
@@ -160,7 +160,7 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
 
   // B59 — the configured override outranks every discovered candidate.
   test('a configured netcoredbgPath outranks bundled, user-installed and PATH copies', async function () {
-    this.timeout(COMMAND_MS);
+    this.timeout(SETTINGS_WRITE_MS);
     const session = sessionFor('Configured', tmpDir);
 
     const primary = writeFakeAdapter(path.join(tmpDir, 'configured', EXE));
@@ -241,7 +241,7 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
 
   // B61 — the candidate list is a stable, ordered contract.
   test('the candidate list is ordered, pure, and only its head depends on extensionPath', async function () {
-    this.timeout(COMMAND_MS);
+    this.timeout(SETTINGS_WRITE_MS);
     const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
     const candidates = getNetcoredbgCandidates();
     assert.strictEqual(candidates.length, 5, 'B61: five default locations are scanned');
@@ -304,7 +304,7 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
 
   // B60 — absence must be reported, never papered over with a bare PATH name.
   test('an unresolvable netcoredbg is reported once per attempt, never spawned blind', async function () {
-    this.timeout(COMMAND_MS);
+    this.timeout(SETTINGS_WRITE_MS);
     isolateHome();
     await setNetcoredbgPath(undefined);
     const present = getNetcoredbgCandidates().filter((candidate) => fs.existsSync(candidate));
