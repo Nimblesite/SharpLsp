@@ -9,7 +9,7 @@ import { DEBUG_TYPE_ID, fakeFolder, stopAnyDebugSession } from './run-debug-kit'
 import { writeSpawnableAdapter } from './run-debug-fixtures';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { closeAllEditors, comparablePath, removeDirRecursive } from './test-helpers';
-import { SETTINGS_WRITE_MS } from './test-timeouts';
+import { DEBUG_SESSION_MS, SETTINGS_WRITE_MS } from './test-timeouts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Spec: [DEBUG-ADAPTER-NETCOREDBG], [DEBUG-ARCHITECTURE-NETCOREDBG].
@@ -81,7 +81,10 @@ suite('Debug Adapter E2E — netcoredbg resolution via the adapter factory', () 
     savedUserProfile = process.env.USERPROFILE;
   });
 
-  teardown(async () => {
+  teardown(async function () {
+    // Awaits stopAnyDebugSession's DEBUG_SESSION_MS poll; the ceiling must sit
+    // above it so the poll's own message wins ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(DEBUG_SESSION_MS + 5_000);
     await setNetcoredbgPath(savedNetcoredbgPath);
     if (savedHome === undefined) delete process.env.HOME;
     else process.env.HOME = savedHome;

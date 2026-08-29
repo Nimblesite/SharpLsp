@@ -16,8 +16,8 @@
 name: Run one VS Code coverage shard
 description: >-
   Installs deps, stages the prebuilt host + sidecars + debugger and the
-  precompiled suite, runs one instrumented feature chunk, and uploads its lcov
-  tracefile.
+  precompiled suite, builds the .NET test fixtures locally, runs one
+  instrumented feature chunk, and uploads its lcov tracefile.
 inputs:
   chunk:
     description: Chunk name from src/editors/vscode/test-chunks.json.
@@ -28,7 +28,7 @@ inputs:
       shard tracefile so both legs' artifacts can land in one directory.
     required: true
   suite-artifact:
-    description: Artifact holding the once-compiled suite (out/, dist/, fixtures).
+    description: Artifact holding the once-compiled portable suite (out/, dist/).
     required: true
   binaries-artifact:
     description: Artifact holding the release host and both sidecars.
@@ -77,6 +77,16 @@ runs:
       with:
         name: ${{ inputs.debugger-artifact }}
         path: ${{ inputs.debugger-path }}
+    - name: Cache the NuGet store
+      # The shard builds the fixture solution itself (see VSIX_PRETEST in
+      # tools/make/main.mk); this keeps the restore that build needs off the
+      # network on all but the first run.
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.nuget/packages
+        key: >-
+          nuget-${{ runner.os }}-${{ hashFiles('src/editors/vscode/test-fixtures/**/*.*proj') }}
+        restore-keys: nuget-${{ runner.os }}-
     - name: Cache the VS Code test host
       # ~100MB downloaded per job otherwise, once per shard per platform.
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

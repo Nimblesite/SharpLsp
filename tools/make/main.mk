@@ -339,7 +339,19 @@ VSIX_TEST_ENV = env -u SHARPLSP_EXECUTABLE_PATH \
 # of identical work that CI does ONCE in `_build-vsix-suite` and every shard
 # downloads.
 VSIX_CHUNK_FILES = $(if $(CHUNK),$$($(VSIX_CHUNKS) files $(CHUNK)),)
-VSIX_PRETEST = $(if $(VSIX_SUITE_PREBUILT),echo "==> Reusing the prebuilt VS Code suite",npm run pretest)
+# `pretest` has a PORTABLE half and a MACHINE-BOUND half.
+#
+# Portable: clean, tsc the suite, esbuild the bundle. Identical on every runner,
+# minutes of work, and the whole reason `_build-vsix-suite` exists.
+#
+# Machine-bound: `prepare:test-fixtures` runs `dotnet build` over the fixture
+# solution, and the `obj/project.assets.json` it writes points at THAT machine's
+# `~/.nuget/packages`. Shipping the built fixtures between jobs hands a shard a
+# workspace whose references cannot resolve, so Roslyn loads it degraded: no
+# definitions, a reduced refactor set, and an empty unused-package report - all
+# of which look like test failures rather than a missing restore. Every shard
+# therefore builds the fixtures itself, restoring against its own NuGet cache.
+VSIX_PRETEST = $(if $(VSIX_SUITE_PREBUILT),npm run prepare:test-fixtures,npm run pretest)
 
 define RUN_VSIX_SUITE
 	status=0; \

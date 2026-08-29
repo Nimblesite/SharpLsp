@@ -21,6 +21,7 @@ import {
 } from './run-debug-kit';
 import { closeAllEditors, comparablePath, removeDirRecursive } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 // Spec: [DEBUG-FEATURES-LAUNCH-NOCONFIG], [DEBUG-FEATURES-LAUNCH-BUILD],
 // [DEBUG-FEATURES-LAUNCH-NODEBUG], [DEBUG-FEATURES-LAUNCH-DYNAMIC]. The F5
@@ -60,7 +61,10 @@ export function useHarness(prefix: string): () => Harness {
       recorder: new DebugSessionRecorder(),
     };
   });
-  teardown(async () => {
+  teardown(async function () {
+    // Awaits stopAnyDebugSession's DEBUG_SESSION_MS poll; the ceiling must sit
+    // above it so the poll's own message wins ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(DEBUG_SESSION_MS + 5_000);
     const active = current;
     current = undefined;
     if (active === undefined) return;

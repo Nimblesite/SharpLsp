@@ -16,7 +16,8 @@
 name: Compile the VS Code suite once
 description: >-
   Installs deps, resolves the feature-chunk matrix for this platform, compiles
-  the suite, and publishes it as an artifact for every shard.
+  the portable half of the suite (tsc + esbuild), and publishes it for every
+  shard.
 inputs:
   platform:
     description: '"linux" or "win" — selects which chunks this leg runs.'
@@ -61,7 +62,13 @@ runs:
         name: ${{ inputs.suite-artifact }}
         retention-days: 1
         include-hidden-files: true
+        # `test-fixtures` is deliberately NOT published. `prepare:test-fixtures`
+        # runs `dotnet build` over the fixture solution, and the
+        # `obj/project.assets.json` it writes points at THIS machine's
+        # `~/.nuget/packages`. Handing that to a shard gives Roslyn a workspace
+        # whose references cannot resolve, which surfaces as missing
+        # definitions, a reduced refactor set and an empty unused-package
+        # report. Each shard builds the fixtures against its own NuGet cache.
         path: |
           src/editors/vscode/out
           src/editors/vscode/dist
-          src/editors/vscode/test-fixtures

@@ -44,7 +44,7 @@ import {
   comparableText,
   removeDirRecursive,
 } from './test-helpers';
-import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { DEBUG_SESSION_MS, DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
 /** The build command the extension registers today (`src/build.ts`). */
@@ -262,7 +262,10 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     tasks = new TaskRecorder();
   });
 
-  teardown(async () => {
+  teardown(async function () {
+    // Awaits stopAnyDebugSession's DEBUG_SESSION_MS poll; the ceiling must sit
+    // above it so the poll's own message wins ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(DEBUG_SESSION_MS + 5_000);
     stubs.restore();
     await stopAnyDebugSession();
     sessions.dispose();

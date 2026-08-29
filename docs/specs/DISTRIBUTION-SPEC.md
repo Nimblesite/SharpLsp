@@ -429,6 +429,15 @@ Invariants:
   genuinely differs — artifact names, where the debugger unpacks, the platform
   tag, and whether the runner needs `xvfb`. Copying steps between the two YAMLs
   is how they drifted apart the first time.
+- **Only the PORTABLE build is shared.** The suite artifact carries `out/` and
+  `dist/` — tsc and esbuild output, identical on every runner. It MUST NOT carry
+  `test-fixtures/`: `prepare:test-fixtures` runs `dotnet build`, and the
+  `obj/project.assets.json` it writes points at the building machine's
+  `~/.nuget/packages`. A shard handed those files loads a Roslyn workspace whose
+  references do not resolve, which surfaces as missing definitions, a reduced
+  refactor set and an empty unused-package report — failures that look like
+  product bugs and are really a missing restore. Each shard builds the fixtures
+  itself against a cached NuGet store.
 - **Nothing is compiled or built twice.** The Rust host, both sidecars and
   netcoredbg are built once per platform and staged from artifacts
   (`VSIX_PREBUILT=1`). The suite itself — clean, tsc, esbuild bundle, .NET test

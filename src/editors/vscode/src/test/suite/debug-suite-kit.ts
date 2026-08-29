@@ -17,7 +17,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { DapRecorder } from './debug-dap-kit';
-import { DEBUG_SESSION_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { COMMAND_MS, DEBUG_SESSION_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import {
   MODE,
   writeCSharpStepTarget,
@@ -189,10 +189,13 @@ async function waitForSession(): Promise<vscode.DebugSession> {
 /** Stop the session and wait for the workbench to forget it. */
 export async function stopDebuggee(): Promise<void> {
   await stopAnyDebugSession();
+  // Only reached once the terminate event has already fired, so the workbench
+  // clears the active session in milliseconds. A command-scale budget keeps
+  // this pair of waits inside the teardown ceiling above.
   await pollUntilResult(
     async () => vscode.debug.activeDebugSession,
     (session) => session === undefined,
-    DEBUG_SESSION_MS,
+    COMMAND_MS,
     50,
   );
 }
@@ -241,7 +244,10 @@ export function useDebuggee(prefix: string, language: Language): () => Debuggee 
     };
   });
 
-  teardown(async () => {
+  teardown(async function () {
+    // Awaits stopAnyDebugSession's DEBUG_SESSION_MS poll; the ceiling must sit
+    // above it so the poll's own message wins ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(DEBUG_SESSION_MS + 5_000);
     const active = current;
     current = undefined;
     if (active === undefined) return;

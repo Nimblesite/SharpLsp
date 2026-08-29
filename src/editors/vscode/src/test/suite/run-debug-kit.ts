@@ -20,7 +20,7 @@ import * as vscode from 'vscode';
 import { findNetcoredbg, getNetcoredbgCandidates } from '../../debug.js';
 import { binaryNameOf } from '../../platform.js';
 import { EXTENSION_ID, pollUntilResult, sleep } from './test-helpers';
-import { COMMAND_MS, DEBUG_SESSION_MS, QUIET_MS } from './test-timeouts';
+import { DEBUG_SESSION_MS, QUIET_MS } from './test-timeouts';
 
 /** Registered by the extension today. */
 export const CMD_DEBUG_PROGRAM = 'sharplsp.debugProgram';
@@ -414,17 +414,28 @@ export async function stopAnyDebugSession(): Promise<void> {
   const ended = new Set<string>();
   const listener = vscode.debug.onDidTerminateDebugSession((session) => ended.add(session.id));
   try {
-    await vscode.debug.stopDebugging();
-  } catch {
-    // Already gone between the check and the request — still settle below.
+    try {
+      await vscode.debug.stopDebugging();
+    } catch {
+      // Already gone between the check and the request — still settle below.
+    }
+    // Tearing a live netcoredbg session down is a DEBUG_SESSION_MS operation,
+    // not a command round trip: the adapter has to detach, reap the debuggee
+    // and report termination. At COMMAND_MS this gave up early on the CI
+    // runners and — before pollUntilResult threw — returned silently, leaving
+    // the NEXT test to start against a session that was still alive
+    // ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    await pollUntilResult(
+      async () => ended,
+      (ids) => ids.has(active.id),
+      DEBUG_SESSION_MS,
+      50,
+    );
+  } finally {
+    // Must run even when the poll throws, or every failed teardown leaks a
+    // listener into the rest of the chunk.
+    listener.dispose();
   }
-  await pollUntilResult(
-    async () => ended,
-    (ids) => ids.has(active.id),
-    COMMAND_MS,
-    50,
-  );
-  listener.dispose();
 }
 
 /**
