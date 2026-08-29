@@ -1033,6 +1033,15 @@ suite('NuGet Browser — pure html', () => {
     assert.ok(html.includes('search-spinner'), 'search spinner must render while loading');
   });
 
+  test('buildHtml loads the Material Symbols font for icon ligatures', () => {
+    const html = buildHtml(baseState({ searchResults: [], loading: new Set(['search']) }));
+    assert.match(
+      html,
+      /\.material-symbols-outlined\s*\{[^}]*font-family:\s*['"]Material Symbols Outlined['"]/s,
+      'icon ligatures must use the Material Symbols font instead of rendering as text',
+    );
+  });
+
   test('buildHtml installed empty state shows "No packages installed"', () => {
     const html = buildHtml(baseState({ currentTab: 'installed', installedPackages: new Map() }));
     assert.ok(html.includes('No packages installed'), 'empty installed copy must render');

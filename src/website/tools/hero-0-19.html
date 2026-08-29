@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 1672px; height: 941px; overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0b1220; color: #e6edf3; position: relative; }
+  .grid { position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+    background-size: 64px 64px; }
+  .glow { position: absolute; width: 900px; height: 900px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(15,127,73,.28), transparent 60%);
+    top: -250px; right: -150px; }
+  h1 { position: absolute; left: 72px; top: 64px; width: 760px;
+    font-size: 58px; line-height: 1.12; font-weight: 700; letter-spacing: -.5px; }
+  h1 .accent { color: #2ecc8f; }
+  .sub { position: absolute; left: 72px; top: 320px; width: 700px;
+    font-size: 26px; line-height: 1.5; color: #9fb0c0; }
+  .sub b { color: #e6edf3; font-weight: 600; }
+  .chart { position: absolute; left: 72px; top: 470px; width: 780px; }
+  .legend { display: flex; gap: 28px; margin-bottom: 10px; font-size: 20px; }
+  .legend span { display: flex; align-items: center; gap: 10px; color: #9fb0c0; }
+  .dot { width: 14px; height: 14px; border-radius: 4px; }
+  .panel { position: absolute; right: 72px; top: 120px; width: 640px; height: 700px;
+    background: #0d1526; border: 1px solid #223047; border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.5); overflow: hidden; }
+  .panel-bar { height: 52px; background: #111b30; display: flex; align-items: center;
+    padding: 0 22px; gap: 10px; border-bottom: 1px solid #223047; }
+  .panel-bar .c { width: 14px; height: 14px; border-radius: 50%; }
+  .panel-bar .t { margin-left: 12px; font-size: 20px; color: #9fb0c0; }
+  .panel-body { padding: 26px 30px; font-size: 21px; line-height: 1.75; }
+  .kw { color: #7ee2b8; }
+  .str { color: #e2c08d; }
+  .cm { color: #5d7290; }
+  .ok { color: #2ecc8f; }
+  .frame { color: #9fb0c0; }
+  .arrow { color: #2ecc8f; font-weight: 700; }
+  .badge { position: absolute; left: 72px; bottom: 56px; display: flex; gap: 16px; }
+  .badge div { border: 1px solid #2a3c58; border-radius: 999px; padding: 10px 24px;
+    font-size: 20px; color: #9fb0c0; background: rgba(17,27,48,.7); }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="glow"></div>
+  <h1>What .NET devs search for — <span class="accent">and the 0.19.0 fixes that answer it</span></h1>
+  <div class="sub">Google Trends, trailing 12 months: <b>“c# language server”</b> climbing to its peak, <b>OmniSharp</b> fading, F# queries flatlining. The intent behind every search: <b>run, debug, and test .NET in any editor.</b></div>
+
+  <div class="chart">
+    <div class="legend">
+      <span><i class="dot" style="background:#2ecc8f"></i>c# language server</span>
+      <span><i class="dot" style="background:#e2c08d"></i>OmniSharp</span>
+      <span><i class="dot" style="background:#4a6285"></i>F# vscode</span>
+    </div>
+    <svg width="780" height="240" viewBox="0 0 780 240">
+      <polyline fill="none" stroke="#223047" stroke-width="2" points="0,238 780,238"/>
+      <!-- c# language server: rising -->
+      <polyline fill="none" stroke="#2ecc8f" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"
+        points="0,225 90,220 150,214 230,216 300,200 370,178 440,150 510,120 580,86 650,60 720,34 780,26"/>
+      <circle cx="780" cy="26" r="9" fill="#2ecc8f"/>
+      <!-- OmniSharp: fading -->
+      <polyline fill="none" stroke="#e2c08d" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".9"
+        points="0,150 90,140 170,150 250,132 330,142 410,138 490,158 570,178 650,196 780,206"/>
+      <!-- F# vscode: flat -->
+      <polyline fill="none" stroke="#4a6285" stroke-width="5" stroke-linecap="round" opacity=".9"
+        points="0,230 200,229 420,231 620,229 780,230"/>
+    </svg>
+  </div>
+
+  <div class="panel">
+    <div class="panel-bar">
+      <i class="c" style="background:#e0564f"></i><i class="c" style="background:#e2a24a"></i><i class="c" style="background:#2ecc8f"></i>
+      <span class="t">SHARPLSP 0.19.0 — inner loop</span>
+    </div>
+    <div class="panel-body">
+      <div><span class="cm">$ dotnet run --launch-profile https</span></div>
+      <div><span class="ok">✓</span> launch profiles discovered <span class="cm">(MSBuild TargetPath fixed)</span></div>
+      <div><span class="ok">✓</span> 2 profiles found <span class="kw">→</span> pick-one prompt</div>
+      <div><span class="ok">✓</span> build honors cancel</div>
+      <br>
+      <div><span class="cm">// async stack — logical, not MoveNext soup</span></div>
+      <div><span class="frame">ProcessOrders()</span></div>
+      <div>&nbsp;&nbsp;<span class="arrow">await</span> <span class="frame">ChargeCardAsync()</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="arrow">await</span> <span class="frame">Gateway.PostAsync()</span> <span class="ok">← paused</span></div>
+      <br>
+      <div><span class="ok">✓</span> 42 passed&nbsp;&nbsp;<span class="cm">■</span> 0 failed&nbsp;&nbsp;<span class="cm">(Test Explorer e2e)</span></div>
+      <div><span class="cm">21/21 run-debug · 31/31 Zed · Rider in CI</span></div>
+    </div>
+  </div>
+
+  <div class="badge">
+    <div>Run &amp; Debug</div><div>Async Stacks</div><div>Test Explorer</div><div>C# + F#</div>
+  </div>
+</body>
+</html>
