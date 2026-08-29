@@ -221,7 +221,8 @@ jobs:
       - version
       - release
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 10
+    # 20m: allows retry-with-backoff on transient Marketplace 5xx failures.
+    timeout-minutes: 20
     # Passwordless publish via Microsoft Entra ID OIDC — NO long-lived PAT.
     # Binding the job to the `release` environment makes the GitHub OIDC subject
     # deterministic (repo:OWNER/REPO:environment:release), so ONE federated
@@ -278,23 +279,47 @@ jobs:
           export VSCE_PAT
           published=0
           skipped=0
+          # Retry transient registry failures (5xx, resets, DNS/network blips)
+          # with exponential backoff — a gallery outage must not kill the
+          # release. Return codes: 0 published, 2 already present, 1 fatal.
+          publish_with_retry() {
+            local vsix="$1" out attempts=0 delay=15
+            while :; do
+              attempts=$((attempts + 1))
+              if out="$(npx --yes @vscode/vsce@3.9.2 publish ${flag} --packagePath "${vsix}" 2>&1)"; then
+                printf '%s\n' "${out}"
+                return 0
+              fi
+              if printf '%s' "${out}" | grep -qi 'already exists'; then
+                printf '%s\n' "${out}"
+                return 2
+              fi
+              if [ "${attempts}" -ge 5 ] ||
+                 ! printf '%s' "${out}" | grep -qiE 'status 5[0-9][0-9]|service unavailable|temporarily unavailable|bad gateway|gateway time|ECONNRESET|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up|fetch failed|network error'; then
+                printf '%s\n' "${out}" >&2
+                return 1
+              fi
+              echo "Transient publish error (attempt ${attempts}/5) for ${vsix}; retrying in ${delay}s"
+              sleep "${delay}"
+              delay=$((delay * 2))
+            done
+          }
           for vsix in artifacts/**/*.vsix; do
             echo "Publishing ${vsix}"
             # Idempotent: a transient gallery timeout can leave some platforms
             # already published. Treat "already exists" as success so a re-run
             # completes the remaining platforms instead of dying on the first one.
-            if out="$(npx --yes @vscode/vsce@3.9.2 publish ${flag} --packagePath "${vsix}" 2>&1)"; then
-              printf '%s\n' "${out}"
-              published=$((published + 1))
-            elif printf '%s' "${out}" | grep -qi 'already exists'; then
-              printf '%s\n' "${out}"
-              echo "Skipping ${vsix}: this version+platform is already published."
-              skipped=$((skipped + 1))
-            else
-              printf '%s\n' "${out}" >&2
-              echo "::error::vsce publish failed for ${vsix}"
-              exit 1
-            fi
+            rc=0
+            publish_with_retry "${vsix}" || rc=$?
+            case "${rc}" in
+              0) published=$((published + 1)) ;;
+              2)
+                echo "Skipping ${vsix}: this version+platform is already published."
+                skipped=$((skipped + 1)) ;;
+              *)
+                echo "::error::vsce publish failed for ${vsix}"
+                exit 1 ;;
+            esac
           done
           if [ "$((published + skipped))" -eq 0 ]; then
             echo "::error::no VSIX artifacts found to publish"
@@ -308,7 +333,9 @@ jobs:
       - version
       - release
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 10
+    # 20m: allows retry-with-backoff on transient Open VSX 5xx failures
+    # (observed: 503 Service Unavailable mid-batch on 2026-08-29).
+    timeout-minutes: 20
     # Independent of publish-marketplace: the Open VSX push (Cursor, Windsurf,
     # Antigravity) must not be gated on the MS Marketplace publish, or vice versa.
     permissions:
@@ -342,22 +369,46 @@ jobs:
           fi
           published=0
           skipped=0
+          # Retry transient registry failures (5xx, resets, DNS/network blips)
+          # with exponential backoff — an Open VSX outage must not kill the
+          # release. Return codes: 0 published, 2 already present, 1 fatal.
+          publish_with_retry() {
+            local vsix="$1" out attempts=0 delay=15
+            while :; do
+              attempts=$((attempts + 1))
+              if out="$(npx --yes ovsx@1.0.0 publish ${flag} --packagePath "${vsix}" 2>&1)"; then
+                printf '%s\n' "${out}"
+                return 0
+              fi
+              if printf '%s' "${out}" | grep -qiE 'already exists|already published'; then
+                printf '%s\n' "${out}"
+                return 2
+              fi
+              if [ "${attempts}" -ge 5 ] ||
+                 ! printf '%s' "${out}" | grep -qiE 'status 5[0-9][0-9]|service unavailable|temporarily unavailable|bad gateway|gateway time|ECONNRESET|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up|fetch failed|network error'; then
+                printf '%s\n' "${out}" >&2
+                return 1
+              fi
+              echo "Transient publish error (attempt ${attempts}/5) for ${vsix}; retrying in ${delay}s"
+              sleep "${delay}"
+              delay=$((delay * 2))
+            done
+          }
           for vsix in artifacts/**/*.vsix; do
             echo "Publishing ${vsix}"
             # Idempotent re-runs: tolerate an already-published platform version
             # so a partial publish can be completed by re-running the job.
-            if out="$(npx --yes ovsx@1.0.0 publish ${flag} --packagePath "${vsix}" 2>&1)"; then
-              printf '%s\n' "${out}"
-              published=$((published + 1))
-            elif printf '%s' "${out}" | grep -qiE 'already exists|already published'; then
-              printf '%s\n' "${out}"
-              echo "Skipping ${vsix}: this version+platform is already published."
-              skipped=$((skipped + 1))
-            else
-              printf '%s\n' "${out}" >&2
-              echo "::error::ovsx publish failed for ${vsix}"
-              exit 1
-            fi
+            rc=0
+            publish_with_retry "${vsix}" || rc=$?
+            case "${rc}" in
+              0) published=$((published + 1)) ;;
+              2)
+                echo "Skipping ${vsix}: this version+platform is already published."
+                skipped=$((skipped + 1)) ;;
+              *)
+                echo "::error::ovsx publish failed for ${vsix}"
+                exit 1 ;;
+            esac
           done
           if [ "$((published + skipped))" -eq 0 ]; then
             echo "::error::no VSIX artifacts found to publish"
