@@ -48,7 +48,7 @@ import {
   requireAt,
   requireWorkspaceRoot,
 } from './test-helpers';
-import { DEBUG_SESSION_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { DEBUG_TEST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
 /** The project the debug run drives. */
@@ -152,7 +152,7 @@ suite('Debug a unit test — the Test Explorer Debug profile and test breakpoint
   // Implements [DEBUG-FEATURES-TESTS] "Debug individual test" and
   // "Breakpoints inside test methods", both P1.
   test('the Debug profile starts a session and stops inside the test body', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
 
     // Interaction 1 — discover the test the way the Test Explorer does.
     const api = await activateTestExplorer();
@@ -217,7 +217,7 @@ suite('Debug a unit test — the Test Explorer Debug profile and test breakpoint
 
   // Implements [DEBUG-FEATURES-TESTS]'s closing rule: attach to the test HOST.
   test('the session attaches to the test host, not to the parent dotnet test', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
 
     // Interaction 1 — discover and arm a breakpoint one frame deeper, in the
     // helper the test calls, so the whole stack can be inspected.

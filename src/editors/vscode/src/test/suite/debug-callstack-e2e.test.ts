@@ -27,7 +27,7 @@ import {
 } from './debug-drive-kit';
 import { armBreakpoints, assertCleanSession, startDebuggee, useDebuggee } from './debug-suite-kit';
 import { comparablePath, deepEq, eq, pollUntilResult, requireAt } from './test-helpers';
-import { DEBUG_SESSION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { DEBUG_TEST_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 /** The logical await chain the sidecar must reconstruct, innermost first. */
 const ASYNC_CHAIN = ['LeafAsync', 'MiddleAsync', 'RootAsync'] as const;
@@ -41,7 +41,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
   // Implements [DEBUG-FEATURES-STACK] "Call stack display" and "Navigate to
   // source from frame", both P1.
   test('every physical frame is listed, named, located and navigable', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop three user frames deep.
@@ -116,7 +116,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
 
   // Implements [DEBUG-FEATURES-STACK] — selecting a frame is per-frame state.
   test('selecting a caller frame reads that frame’s own locals', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop in the innermost frame.
@@ -168,7 +168,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
   // Implements [DEBUG-FEATURES-STACK-ASYNC] "Logical async call stack |
   // stackTrace (enriched) | P1".
   test('an awaited chain reports the LOGICAL async stack, not raw MoveNext frames', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop at the bottom of a three-deep await chain.
@@ -242,7 +242,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
 
   // Implements [DEBUG-FEATURES-STACK] — the thread list the panel groups by.
   test('threads are enumerated and the stopped thread is identified', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop anywhere.

@@ -33,7 +33,7 @@ import {
   useDebuggee,
 } from './debug-suite-kit';
 import { deepEq, eq, pollUntilResult, requireAt } from './test-helpers';
-import { DEBUG_SESSION_MS } from './test-timeouts';
+import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** The 0-based lines the workbench currently holds source breakpoints on. */
 function armedLines(): number[] {
@@ -78,7 +78,7 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
 
   // Implements [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION] rules 1–4 at runtime.
   test('F9 in a C# editor sets a breakpoint the adapter binds and stops on', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — the gate must be the manifest, not a user override. If
@@ -134,7 +134,7 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
   // Implements [DEBUG-FEATURES-BREAKPOINTS] "Line breakpoints", plus the
   // reactivity [VSCODE-REACTIVITY] demands: a change must reach the RUNNING adapter.
   test('breakpoints added and removed mid-session reach the running adapter', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — launch with a single breakpoint and stop on it.
@@ -193,7 +193,7 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
 
   // Implements [DEBUG-FEATURES-BREAKPOINTS] "Line breakpoints" — the enabled flag.
   test('a disabled breakpoint is never armed, and re-enabling it re-arms it', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — one enabled breakpoint, one disabled breakpoint.
@@ -254,7 +254,7 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
   // Implements [DEBUG-FEATURES-BREAKPOINTS] "Function/method breakpoints |
   // setFunctionBreakpoints | P1 | Native".
   test('a function breakpoint stops on entry to the named method', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — arm a function breakpoint and nothing else.

@@ -23,7 +23,7 @@ import {
 } from './debug-drive-kit';
 import { armBreakpoints, assertCleanSession, startDebuggee, useDebuggee } from './debug-suite-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
-import { DEBUG_SESSION_MS } from './test-timeouts';
+import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** Assert a variable's rendered value CONTAINS `needle`, naming what it was. */
 function assertValueHas(variable: Variable, needle: string, why: string): void {
@@ -66,7 +66,7 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // Implements [DEBUG-FEATURES-VARIABLES] "Local variables" and
   // "Function arguments", both P1.
   test('a paused frame exposes its arguments and its locals, correctly typed', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop inside a two-argument method, after its local is set.
@@ -109,7 +109,7 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
 
   // Implements [DEBUG-FEATURES-VARIABLES] "`this` / instance members | P1".
   test('an instance method exposes `this` and its members', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop inside an INSTANCE method.
@@ -159,7 +159,7 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // Implements [DEBUG-FEATURES-VARIABLES] "Collection/array expansion | P1" and
   // the `Nullable<T>` row of [DEBUG-ADAPTER-GAPS].
   test('collections, dictionaries, arrays and nullables all expand', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop where every container is populated.
@@ -228,7 +228,7 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
 
   // Implements [DEBUG-FEATURES-VARIABLES] "Static fields | variables | P1".
   test('a static field is reachable from the variables panel', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop after the static has been assigned.

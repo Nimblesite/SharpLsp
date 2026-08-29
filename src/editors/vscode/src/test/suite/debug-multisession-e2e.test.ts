@@ -34,7 +34,7 @@ import {
 } from './debug-suite-kit';
 import { DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
 import { deepEq, eq, neq, pollUntilResult, requireAt } from './test-helpers';
-import { DEBUG_SESSION_MS } from './test-timeouts';
+import { DEBUG_SESSION_MS, DEBUG_TEST_MS } from './test-timeouts';
 
 /** Wait for a second live session and hand back the one that is not `first`. */
 async function waitForSecondSession(
@@ -66,7 +66,7 @@ suite('Debug multi-session — two debuggees paused at once', () => {
 
   // Implements [DEBUG-FEATURES-MULTIPROCESS] "Multiple simultaneous debug sessions".
   test('two sessions run side by side with their own stacks and their own state', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, folder, recorder, sessions } = debuggee();
 
     // Interaction 1 — session one stops deep inside the loop.

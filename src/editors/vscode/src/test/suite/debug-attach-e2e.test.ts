@@ -23,8 +23,9 @@ import {
 } from './debug-drive-kit';
 import { assertCleanSession, stopDebuggee, useDebuggee } from './debug-suite-kit';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
+import { resolveAttachTarget } from '../../attach-target.js';
 import { deepEq, eq, pollUntilResult, requireAt, sleep } from './test-helpers';
-import { COMMAND_MS, DEBUG_SESSION_MS, PROCESS_START_MS, QUIET_MS } from './test-timeouts';
+import { COMMAND_MS, DEBUG_TEST_MS, PROCESS_START_MS, QUIET_MS } from './test-timeouts';
 
 /** A running debuggee the test owns, plus the output it has produced. */
 interface RunningDebuggee {
@@ -152,7 +153,7 @@ suite('Debug attach — taking control of a process that is already running', ()
     // while the previous one was still dying, so a name that must resolve to
     // exactly one pid briefly matched two and the attach refused to start.
     // Wait for each child to actually be gone ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const killed: number[] = [];
     while (spawned.length > 0) {
       const child = spawned.pop();
@@ -173,7 +174,7 @@ suite('Debug attach — taking control of a process that is already running', ()
 
   // Implements [DEBUG-FEATURES-LAUNCH] "Attach to running process by PID | P1".
   test('attaching by pid pauses the live process and exposes its state', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, folder, recorder } = debuggee();
 
     // Interaction 1 — start the debuggee OUTSIDE the debugger.
@@ -251,7 +252,7 @@ suite('Debug attach — taking control of a process that is already running', ()
 
   // Implements [DEBUG-FEATURES-LAUNCH] "Attach to running process by name | P2".
   test('attaching by process name resolves the name to a pid', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, folder, recorder } = debuggee();
 
     // Interaction 1 — one process of that name is running.
@@ -261,6 +262,17 @@ suite('Debug attach — taking control of a process that is already running', ()
     // Interaction 2 — attach by NAME, never mentioning the pid.
     const config = attachConfig({ processName: fixture.assemblyName });
     eq(config['processId'], undefined, 'the configuration deliberately names no pid');
+    // Ask the resolver directly first. `startDebugging` answers with a bare
+    // boolean, so a name that resolved to nothing and a name that matched two
+    // processes look identical in the failure — and both are things this test
+    // is meant to distinguish.
+    const outcome = await resolveAttachTarget(config);
+    eq(
+      outcome?.kind,
+      'attach',
+      `the name '${fixture.assemblyName}' must resolve to exactly one live process; the ` +
+        `resolver said: ${outcome?.kind === 'refused' ? outcome.reason : String(outcome?.kind)}`,
+    );
     const started = await vscode.debug.startDebugging(folder, config);
     eq(
       started,
@@ -306,7 +318,7 @@ suite('Debug attach — taking control of a process that is already running', ()
   // unsupported combination produces exactly one user-visible message. A silent
   // no-op is non-conforming."
   test('attaching to a pid that does not exist is refused with one message', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { folder, stubs, sessions } = debuggee();
 
     // Interaction 1 — find a pid that is definitely not a process.

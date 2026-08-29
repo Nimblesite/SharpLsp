@@ -30,7 +30,7 @@ import {
 } from './debug-drive-kit';
 import { armBreakpoints, assertCleanSession, startDebuggee, useDebuggee } from './debug-suite-kit';
 import { deepEq, eq } from './test-helpers';
-import { DEBUG_SESSION_MS } from './test-timeouts';
+import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** CLR spellings [DEBUG-FSHARP-UNIONS] names as the wrong answer. */
 const RAW_CLR_FORMS: readonly string[] = ['Tag =', 'Tag=', 'FSharpOption`1', 'FSharpList`1'];
@@ -60,7 +60,7 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
   // Implements [DEBUG-FSHARP-UNIONS] and the "F# discriminated union inspection"
   // P1 row of [DEBUG-FEATURES-VARIABLES].
   test('a discriminated union and an option render as F#, not as Tag/field pairs', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop once every F# value in `main` is bound.
@@ -110,7 +110,7 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
 
   // Implements the "F# record/tuple inspection | variables | P1" row.
   test('records, tuples and F# lists are inspectable in F# form', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop with the record, tuple and list all bound.
@@ -180,7 +180,7 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
 
   // Implements [DEBUG-FSHARP-STEPPING] and [DEBUG-FEATURES-STACK-ASYNC] for F#.
   test('an F# task {} chain reports the logical await stack', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop at the bottom of the `task {}` chain.
@@ -228,7 +228,7 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
 
   // Implements [DEBUG-FSHARP-PDB]: the `StateMachineMethod` gap and its cost.
   test('stepping into a task {} takes ONE F11, not two', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop on the statement that invokes the task chain.

@@ -30,14 +30,14 @@ import {
 } from './debug-suite-kit';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
 import { comparablePath, deepEq, eq, neq, pollUntilResult, requireAt, sleep } from './test-helpers';
-import { DEBUG_SESSION_MS, QUIET_MS } from './test-timeouts';
+import { DEBUG_TEST_MS, QUIET_MS } from './test-timeouts';
 
 suite('Debug session lifecycle — entry, pause, restart, stop and no-debug runs', () => {
   const debuggee = useDebuggee('debug-life-cs-', 'csharp');
 
   // Implements [DEBUG-FEATURES-LAUNCH] and its declared `stopAtEntry` attribute.
   test('stopAtEntry pauses before the program has done anything', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { recorder } = debuggee();
 
     // Interaction 1 — launch with stopAtEntry and NO breakpoints at all.
@@ -81,7 +81,7 @@ suite('Debug session lifecycle — entry, pause, restart, stop and no-debug runs
   // Implements [DEBUG-FEATURES-LAUNCH] "Launch with environment variables | P1"
   // and "Launch with custom working directory | P1".
   test('args, env and cwd from the configuration reach the debuggee', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — the configuration under test.
@@ -130,7 +130,7 @@ suite('Debug session lifecycle — entry, pause, restart, stop and no-debug runs
 
   // Implements [DEBUG-FEATURES-LAUNCH-NODEBUG] rules 1–3.
   test('Run without debugging ignores every armed breakpoint', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — arm three breakpoints a debug run would certainly hit.
@@ -168,7 +168,7 @@ suite('Debug session lifecycle — entry, pause, restart, stop and no-debug runs
   // Implements [DEBUG-PROTOCOL-CAPABILITIES] `supportsRestartRequest` and
   // [DEBUG-FEATURES-LAUNCH]: a restart is a fresh launch of the same config.
   test('Restart relaunches the same configuration and re-arms the breakpoints', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder, sessions } = debuggee();
 
     // Interaction 1 — reach a breakpoint in the first run.
@@ -228,7 +228,7 @@ suite('Debug session lifecycle — entry, pause, restart, stop and no-debug runs
   // Implements [DEBUG-PROTOCOL-CAPABILITIES] `supportsTerminateRequest` and the
   // "pause" half of [DEBUG-FEATURES-STEPPING]'s gesture set.
   test('Pause interrupts a running debuggee and Stop terminates the session', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { recorder } = debuggee();
 
     // Interaction 1 — launch a debuggee that is genuinely busy, with no breakpoints.

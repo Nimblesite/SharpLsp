@@ -505,6 +505,7 @@ derived from measured behaviour on the CI agents.
 | `SETTINGS_WRITE_MS` | 30s | Several user-scoped `settings.json` writes, each awaiting its change event (measured 4.56s for four) |
 | `LSP_RESPONSE_MS` | 15s | One semantic request answered by a warm sidecar |
 | `DEBUG_SESSION_MS` | 45s | A live `netcoredbg` session — launch, bind, step, evaluate, detach |
+| `DEBUG_TEST_MS` | 50s | Ceiling for a TEST that awaits those waits; strictly above `DEBUG_SESSION_MS` |
 | `PROCESS_START_MS` | 30s | A spawned `dotnet` console process becoming ready; sits below `DEBUG_SESSION_MS` |
 | `DOTNET_CLI_MS` | 120s | Shelling out to the real `dotnet` CLI against an already-restored fixture |
 | `LSP_SWEEP_MS` | 60s | One semantic request PER SYMBOL swept across a loaded solution (measured 31.9s) |

@@ -33,7 +33,7 @@ import {
   useDebuggee,
 } from './debug-suite-kit';
 import { deepEq, eq } from './test-helpers';
-import { DEBUG_SESSION_MS } from './test-timeouts';
+import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** T1 expressions: field access, arithmetic, casts, null checks. All "Works". */
 const TIER_ONE: readonly { expression: string; expected: string; kind: string }[] = [
@@ -50,7 +50,7 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
   // Implements [DEBUG-FEATURES-VARIABLES] "Hover expression evaluation" (P1),
   // "Watch window evaluation" (P1) and "Immediate window / REPL" (P2).
   test('the same expression answers identically in hover, watch and the REPL', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop where every operand is in scope.
@@ -112,7 +112,7 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
   // Implements [DEBUG-FEATURES-VARIABLES] "Modify variable value at runtime |
   // setVariable | P1".
   test('setVariable changes the value the running program then uses', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop before the loop consumes the seed.
@@ -176,7 +176,7 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
   // Implements [DEBUG-FEATURES-VARIABLES] "[DebuggerDisplay] attribute rendering
   // | variables | P1" and its Phase-4 emulation paragraph.
   test('[DebuggerDisplay] decides how an object renders in the panel', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop with the decorated object in scope.

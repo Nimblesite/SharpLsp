@@ -75,6 +75,18 @@ export const LSP_RESPONSE_MS = 15_000;
 export const DEBUG_SESSION_MS = 45_000;
 
 /**
+ * Ceiling for a TEST that drives a live debug session.
+ *
+ * Strictly above `DEBUG_SESSION_MS`, and it must stay that way. The debug kits
+ * poll for stops, steps and termination at `DEBUG_SESSION_MS`; a test ending at
+ * the same value means mocha always fires first, so the kit's diagnostic --
+ * which stop reasons it actually saw -- is never printed and every failure in
+ * the debug suites reads as an opaque timeout
+ * ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+ */
+export const DEBUG_TEST_MS = 50_000;
+
+/**
  * A spawned `dotnet` console process becoming ready -- started, JIT'd, and
  * printing its first output.
  *

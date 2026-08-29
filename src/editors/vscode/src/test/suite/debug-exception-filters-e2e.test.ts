@@ -37,7 +37,7 @@ import {
   useDebuggee,
 } from './debug-suite-kit';
 import { deepEq, eq } from './test-helpers';
-import { DEBUG_SESSION_MS } from './test-timeouts';
+import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** A type the fixture never throws — the exclude half of every filter case. */
 const NEVER_THROWN_TYPE = 'System.DivideByZeroException';
@@ -56,7 +56,7 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
   // Implements [DEBUG-FEATURES-EXCEPTIONS] "Break on specific exception types
   // (include/exclude filter) | P1" — the INCLUDE half.
   test('a type filter breaks on the named type it selects', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — gate before any throw.
@@ -110,7 +110,7 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
 
   // Implements the EXCLUDE half of the same row.
   test('a type filter ignores every exception type it does not name', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — gate, then select a type the program NEVER throws.
@@ -142,7 +142,7 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
   // Implements [DEBUG-FEATURES-EXCEPTIONS] with the reactivity the Breakpoints
   // view promises: unticking and re-ticking a filter must affect the NEXT throw.
   test('exception filters changed mid-session take effect on the next throw', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — gate, arm a breakpoint after the FIRST throw, and turn

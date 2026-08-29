@@ -59,7 +59,7 @@ import {
   requireAt,
   requireWorkspaceRoot,
 } from './test-helpers';
-import { DEBUG_SESSION_MS, DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { DEBUG_TEST_MS, DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
 // This suite is assertion-dense by design and CLAUDE.md caps a file at 500 LOC,
@@ -229,7 +229,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-NOCONFIG], [DEBUG-FEATURES-LAUNCH-NODEBUG].
   test('F5 then Ctrl+F5 with no launch.json both reach the provider chain', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
     registerSpy();
 
     // Interaction 1 — focus a C# document so VS Code's debugger guess is
@@ -438,7 +438,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-NODEBUG].
   test('a refused launch is reported to the user instead of being swallowed', async function () {
-    this.timeout(DEBUG_SESSION_MS);
+    this.timeout(DEBUG_TEST_MS);
 
     // Interaction 1 — a project that exists and cannot be built.
     const missingDll = builtDll(unbuilt);
