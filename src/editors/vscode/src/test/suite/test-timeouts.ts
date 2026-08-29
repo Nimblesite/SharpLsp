@@ -75,6 +75,17 @@ export const LSP_RESPONSE_MS = 15_000;
 export const DEBUG_SESSION_MS = 45_000;
 
 /**
+ * A spawned `dotnet` console process becoming ready -- started, JIT'd, and
+ * printing its first output.
+ *
+ * Sits below `DEBUG_SESSION_MS` so a test that starts a debuggee and then
+ * attaches to it reports the poll's own message rather than an opaque hook
+ * timeout. A budget of `DOTNET_CLI_MS` here could never elapse: the enclosing
+ * test is killed first.
+ */
+export const PROCESS_START_MS = 30_000;
+
+/**
  * A test that shells out to the real `dotnet` CLI — `build`, `test`, `run`,
  * `new` — against an ALREADY-RESTORED fixture. The restore itself is
  * initialization ({@link FIXTURE_BUILD_MS}); this is the incremental cost.

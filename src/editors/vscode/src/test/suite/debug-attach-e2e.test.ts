@@ -24,7 +24,7 @@ import {
 import { assertCleanSession, stopDebuggee, useDebuggee } from './debug-suite-kit';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
 import { deepEq, eq, pollUntilResult, requireAt, sleep } from './test-helpers';
-import { DEBUG_SESSION_MS, QUIET_MS } from './test-timeouts';
+import { COMMAND_MS, DEBUG_SESSION_MS, PROCESS_START_MS, QUIET_MS } from './test-timeouts';
 
 /** A running debuggee the test owns, plus the output it has produced. */
 interface RunningDebuggee {
@@ -48,7 +48,7 @@ async function startOutsideDebugger(dll: string, cwd: string): Promise<RunningDe
   await pollUntilResult(
     async () => text,
     (seen) => seen.includes('boxed=8'),
-    120_000,
+    PROCESS_START_MS,
     100,
   );
   assert.ok(
@@ -124,10 +124,29 @@ async function pauseAttached(session: vscode.DebugSession): Promise<number> {
 suite('Debug attach — taking control of a process that is already running', () => {
   const debuggee = useDebuggee('debug-attach-cs-', 'csharp');
 
-  teardown(() => {
+  teardown(async function () {
+    // Killing is asynchronous, and this suite resolves debuggees BY NAME.
+    //
+    // Signalling and moving on let the next test spawn a second `StepTarget`
+    // while the previous one was still dying, so a name that must resolve to
+    // exactly one pid briefly matched two and the attach refused to start.
+    // Wait for each child to actually be gone ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(DEBUG_SESSION_MS);
+    const killed: number[] = [];
     while (spawned.length > 0) {
       const child = spawned.pop();
-      if (child?.exitCode === null) child.kill('SIGKILL');
+      if (child?.exitCode === null) {
+        child.kill('SIGKILL');
+        if (child.pid !== undefined) killed.push(child.pid);
+      }
+    }
+    for (const pid of killed) {
+      await pollUntilResult(
+        async () => isAlive(pid),
+        (alive) => !alive,
+        COMMAND_MS,
+        50,
+      );
     }
   });
 
