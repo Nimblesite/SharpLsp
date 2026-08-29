@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  warmSemanticEngine,
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
@@ -13,19 +14,33 @@ import {
   waitForDocumentSymbols,
   waitForHoverResult,
 } from './test-helpers';
-import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS, LSP_SWEEP_MS } from './test-timeouts';
+import { COMMAND_MS, FIXTURE_BUILD_MS, LSP_RESPONSE_MS, LSP_SWEEP_MS } from './test-timeouts';
 
 suite('Hover / Quick Info', () => {
   let tmpDir: string;
   let workspaceRoot: string;
 
   suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
+    // Above setupLspTestSuite's SIDECAR_COLD_MS warm-up, so the warm-up reports
+    // rather than this hook ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(FIXTURE_BUILD_MS);
     const result = await setupLspTestSuite('hover-');
     tmpDir = result.tmpDir;
     const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     assert.ok(ws, 'Workspace folder must be available');
     workspaceRoot = ws;
+
+    // Pay Roslyn's cold project load ONCE, here, on a file that is actually in
+    // the workspace project. `setupLspTestSuite` only proves the syntax path
+    // answers -- for C# `documentSymbol` is served by tree-sitter in the Rust
+    // host and never reaches the sidecar -- so without this the first semantic
+    // test pays the load inside its own ceiling. That is what pushed the
+    // symbol-sweep test past LSP_SWEEP_MS on a fresh shard, where unsharded it
+    // had always run against a sidecar some earlier suite had warmed
+    // ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    const { uri } = await openFixture('Calculator.cs');
+    await warmSemanticEngine(uri);
+    await closeAllEditors();
   });
 
   suiteTeardown(async () => {

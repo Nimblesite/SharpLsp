@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as vscode from 'vscode';
 import { detectRuntimePlatform, exeName } from '../../platform.js';
-import { ACTIVATION_MS, LSP_RESPONSE_MS, POLL_INTERVAL_MS } from './test-timeouts';
+import { ACTIVATION_MS, LSP_RESPONSE_MS, POLL_INTERVAL_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 // ── Constants ────────────────────────────────────────────────────
 
@@ -117,6 +117,36 @@ export async function pollUntilResult<T>(
     );
   }
   return last;
+}
+
+/**
+ * Block until the SEMANTIC engine can answer about `uri` — not just the syntax
+ * one.
+ *
+ * `documentSymbol` is NOT a readiness probe: for C# the Rust host answers it
+ * from tree-sitter in single-digit milliseconds and the sidecar never sees it.
+ * A code action has to reach Roslyn, so it is the cheapest request that proves
+ * the project is actually loaded.
+ *
+ * Call this from `suiteSetup`. Paying the cold load once per suite is what makes
+ * `LSP_RESPONSE_MS` — "one semantic request answered by a WARM sidecar" — an
+ * honest ceiling for every test that follows ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+ */
+export async function warmSemanticEngine(
+  uri: vscode.Uri,
+  timeoutMs: number = SIDECAR_COLD_MS,
+): Promise<void> {
+  const start = new vscode.Position(0, 0);
+  await pollUntilResult(
+    async () =>
+      (await vscode.commands.executeCommand<vscode.CodeAction[]>(
+        'vscode.executeCodeActionProvider',
+        uri,
+        new vscode.Range(start, start),
+      )) ?? [],
+    (actions) => actions.length > 0,
+    timeoutMs,
+  );
 }
 
 /** Wait for document symbols to be returned by the LSP server. */

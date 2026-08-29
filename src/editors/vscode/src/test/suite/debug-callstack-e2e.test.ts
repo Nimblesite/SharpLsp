@@ -26,8 +26,11 @@ import {
   waitForActiveFrame,
 } from './debug-drive-kit';
 import { armBreakpoints, assertCleanSession, startDebuggee, useDebuggee } from './debug-suite-kit';
-import { comparablePath, deepEq, eq, requireAt } from './test-helpers';
-import { DEBUG_SESSION_MS } from './test-timeouts';
+import { comparablePath, deepEq, eq, pollUntilResult, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS, LSP_RESPONSE_MS } from './test-timeouts';
+
+/** The logical await chain the sidecar must reconstruct, innermost first. */
+const ASYNC_CHAIN = ['LeafAsync', 'MiddleAsync', 'RootAsync'] as const;
 
 /** Compiler-generated shapes the user must never be shown as a frame name. */
 const GENERATED_HINTS: readonly string[] = ['MoveNext', 'd__'];
@@ -177,11 +180,26 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     assertStoppedAt(frame, fixture, 'leaf-return', 'LeafAsync', 'the innermost async frame');
 
     // Interaction 2 — the awaiters must appear, in await order.
+    //
+    // Read the stack until the chain is THERE, rather than once and hope. The
+    // DapRouter and the C# sidecar reconstruct the logical frames, so a
+    // `stackTrace` answered before the sidecar has the debuggee's project
+    // loaded forwards netcoredbg's physical frames untouched. Reading once made
+    // this a race whose failure ("Frames reported: LeafAsync") is a dangerous
+    // ambiguity: it looks identical to the reconstruction being broken. The
+    // poll's own message names the frames it actually saw, and its budget sits
+    // below this test's ceiling ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    const names = await pollUntilResult(
+      async () => (await stackFrames(session, stop.threadId)).map((c) => methodOf(c)),
+      (seen) => ASYNC_CHAIN.every((wanted) => seen.includes(wanted)),
+      LSP_RESPONSE_MS,
+    );
+    // Re-read once the chain is present, for the assertions below that need the
+    // frames themselves rather than their names.
     const frames = await stackFrames(session, stop.threadId);
-    const names = frames.map((current) => methodOf(current));
     deepEq(
-      ['LeafAsync', 'MiddleAsync', 'RootAsync'].filter((wanted) => names.includes(wanted)),
-      ['LeafAsync', 'MiddleAsync', 'RootAsync'],
+      ASYNC_CHAIN.filter((wanted) => names.includes(wanted)),
+      [...ASYNC_CHAIN],
       '[DEBUG-FEATURES-STACK-ASYNC]: netcoredbg reports physical MoveNext frames; the ' +
         'DapRouter and the C# sidecar MUST reconstruct the logical chain and inject the ' +
         `awaiting frames before forwarding \`stackTrace\`. Frames reported: ${names.join(' <- ')}`,
