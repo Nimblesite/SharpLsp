@@ -21,6 +21,7 @@ import {
   waitForResolvedCodeActions,
   type OpenFixture,
   type WorkspaceEditSnapshot,
+  warmSemanticEngine,
 } from './refactor-test-helpers';
 import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
@@ -263,6 +264,11 @@ suite('C# real LSP - compiler quick fixes', () => {
     this.timeout(FIXTURE_BUILD_MS);
     await activateRealSharpLsp();
     fixture = await openFixtureDocument(FILE);
+    // This fixture is known to produce code actions, so an empty result
+    // means Roslyn has not loaded the project yet. Pay that load HERE,
+    // once, instead of inside the first test's ceiling
+    // ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    await warmSemanticEngine(fixture.uri);
     committedText = fixture.document.getText();
   });
 

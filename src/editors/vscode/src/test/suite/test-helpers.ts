@@ -131,6 +131,14 @@ export async function pollUntilResult<T>(
  * Call this from `suiteSetup`. Paying the cold load once per suite is what makes
  * `LSP_RESPONSE_MS` — "one semantic request answered by a WARM sidecar" — an
  * honest ceiling for every test that follows ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+ *
+ * CALL THIS ONLY ON A FILE WHOSE FIXTURE IS KNOWN TO PRODUCE A CODE ACTION.
+ * "Roslyn has loaded the project" and "Roslyn offers an action at line 0 of this
+ * file" are not the same claim: the cross-language rename fixtures are loaded
+ * and offer nothing there, and F#'s FCS makes no such promise at all. Wired into
+ * a shared opener this waited out the whole budget and then failed suites that
+ * were never broken — a warm-up that can fail on a healthy file is worse than no
+ * warm-up. Hence an explicit call, per suite, on a fixture that has been checked.
  */
 export async function warmSemanticEngine(
   uri: vscode.Uri,

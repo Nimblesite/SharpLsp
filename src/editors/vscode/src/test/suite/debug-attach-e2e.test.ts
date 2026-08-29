@@ -94,6 +94,27 @@ function attachStackUnwalkable(frames: readonly { readonly id: number }[]): bool
   return frames.length === 0 || frames.every((frame) => frame.id <= 0);
 }
 
+/**
+ * Read the stack, treating the upstream attach defect as "unwalkable".
+ *
+ * netcoredbg's broken attach stack walk shows up two ways: frames that carry no
+ * usable id, and — on the Windows runner — a `stackTrace` request that fails
+ * outright with 0x80070057 (E_INVALIDARG). Both are the same upstream defect and
+ * get the same treatment the suite already documents below. Every other error
+ * still propagates: a swallowed `stackTrace` failure would hide a real one.
+ */
+async function walkAttachedStack(
+  session: vscode.DebugSession,
+  threadId: number,
+): Promise<Awaited<ReturnType<typeof stackFrames>>> {
+  try {
+    return await stackFrames(session, threadId);
+  } catch (error) {
+    if (String(error).includes('0x80070057')) return [];
+    throw error;
+  }
+}
+
 /** Wait for attach configuration to finish, then issue the headless Pause gesture. */
 async function pauseAttached(session: vscode.DebugSession): Promise<number> {
   const threadId = await pollUntilResult(
@@ -193,7 +214,7 @@ suite('Debug attach — taking control of a process that is already running', ()
       [pausedThread],
       'one Pause gesture must target the live attached thread exactly once',
     );
-    const frames = await stackFrames(session, stop.threadId);
+    const frames = await walkAttachedStack(session, stop.threadId);
     if (attachStackUnwalkable(frames)) {
       // The upstream attach stack walk is broken, not the attach itself; the
       // pause landed and the process is under control. Skip rather than pin
@@ -265,7 +286,7 @@ suite('Debug attach — taking control of a process that is already running', ()
       [pausedThread],
       'the name attach must issue one Pause request to its resolved process thread',
     );
-    const walk = await stackFrames(session, stop.threadId);
+    const walk = await walkAttachedStack(session, stop.threadId);
     if (attachStackUnwalkable(walk)) {
       // Same upstream attach stack-walk defect as the pid attach above.
       this.skip();

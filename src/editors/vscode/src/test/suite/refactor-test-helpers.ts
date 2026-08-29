@@ -3,7 +3,10 @@ import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
-import { EXTENSION_ID, comparableText, pollUntilResult, warmSemanticEngine } from './test-helpers';
+import { EXTENSION_ID, comparableText, pollUntilResult } from './test-helpers';
+
+/** Re-exported so the refactor suites warm via their existing import. */
+export { warmSemanticEngine } from './test-helpers';
 import { ACTIVATION_MS, LSP_RESPONSE_MS, POLL_INTERVAL_MS } from './test-timeouts';
 
 const FIXTURE_ROOT = path.resolve(__dirname, '../../../test-fixtures/workspace');
@@ -322,7 +325,6 @@ export async function openFixtureDocument(relativePath: string): Promise<OpenFix
   const uri = vscode.Uri.file(workspaceFixturePath(relativePath));
   const document = await vscode.workspace.openTextDocument(uri);
   const editor = await vscode.window.showTextDocument(document, { preview: false });
-  await warmSemanticEngine(uri);
   return { document, editor, uri };
 }
 
