@@ -73,6 +73,7 @@ interface ExplorerApi {
     clear(): void;
     getChildren(element?: unknown): TreeNode[] | undefined;
     getTreeItem(element: TreeNode): vscode.TreeItem;
+    onDidChangeTreeData: vscode.Event<unknown>;
   };
 }
 
@@ -836,6 +837,99 @@ suite('Solution / Result / Platform / Channel E2E', () => {
     );
 
     provider.clear();
+  });
+
+  // ── Loading feedback [SE-LOADING-FEEDBACK] ─────────────────────
+
+  /**
+   * BUG: opening a folder left the Solution Explorer blank while the
+   * solution list was discovered, and again (after picking a solution) while
+   * the solution loaded — the user had no idea anything was happening.
+   *
+   * The tree MUST show a spinner + message during BOTH phases: while the
+   * solution list loads ("Searching for solutions…") and while the selected
+   * solution loads ("Loading <name>…"). Transient states are captured by
+   * snapshotting the live roots on every tree-change event fired while the
+   * real command runs, so the assertions hold however fast the phases pass.
+   */
+  test('tree shows spinner feedback while discovering and loading a solution', async function () {
+    this.timeout(LSP_RESPONSE_MS + 10_000);
+
+    // Self-contained activation: in an isolated run no earlier suite has
+    // activated the extension yet (Suite 5 has no suiteSetup by design).
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, 'Extension must be found');
+    await ext.activate();
+
+    const provider = getProvider();
+    provider.clear();
+
+    // The fixture workspace has BOTH TestFixtures.sln and .slnx → the command
+    // prompts a quickPick; answer with the exact .sln label. Two picks are
+    // queued: if activation just fired the auto-run, its quickPick consumes
+    // the first, and this command's quickPick still gets a real answer.
+    stubs = installUiStubs();
+    const pickSln = (items: readonly unknown[]): unknown =>
+      (items as { label?: string }[]).find((item) => item.label === 'TestFixtures.sln');
+    stubs.queuePick(pickSln).queuePick(pickSln);
+
+    const snapshots: TreeNode[][] = [];
+    const disposable = provider.onDidChangeTreeData(() => {
+      snapshots.push(provider.getChildren() ?? []);
+    });
+
+    try {
+      await vscode.commands.executeCommand('sharplsp.selectSolution');
+
+      // Final state: the real solution root (not a stuck spinner).
+      await pollUntilResult(
+        async () => findByContext(provider.getChildren(), 'solution') !== undefined,
+        (found) => found,
+        LSP_RESPONSE_MS,
+        500,
+      );
+      const finalRoot = findByContext(provider.getChildren(), 'solution');
+      assert.ok(finalRoot, 'solution root must exist after the command completes');
+      assert.strictEqual(
+        nodeLabel(finalRoot),
+        'TestFixtures.sln',
+        'command must finish with the selected solution loaded',
+      );
+    } finally {
+      disposable.dispose();
+      provider.clear();
+    }
+
+    const seen = snapshots.map((nodes) => nodes.map(nodeLabel).join(' | '));
+    const seenText = seen.join('] / [');
+
+    // a) feedback while the solution LIST loads
+    assert.ok(
+      seen.some((labels) => labels.includes('Searching for solutions')),
+      `tree must show a discovery message while solutions load; saw: [${seenText}]`,
+    );
+    // b) feedback while the selected SOLUTION loads
+    assert.ok(
+      seen.some((labels) => labels.includes('Loading TestFixtures.sln')),
+      `tree must show a loading message while the solution loads; saw: [${seenText}]`,
+    );
+
+    // Both feedback nodes must carry the spinning icon.
+    const spinners = snapshots
+      .flat()
+      .filter(
+        (node) =>
+          nodeLabel(node).includes('Searching for solutions') ||
+          nodeLabel(node).includes('Loading TestFixtures.sln'),
+      );
+    assert.ok(spinners.length > 0, 'feedback nodes must exist');
+    for (const spinner of spinners) {
+      assert.strictEqual(
+        (spinner.iconPath as { id?: string } | undefined)?.id,
+        'loading~spin',
+        `feedback node '${nodeLabel(spinner)}' must use the spinning icon`,
+      );
+    }
   });
 
   test('a findSolutions-backed flow produces and consumes a Result<T,E> via ok()/err()', async function () {
