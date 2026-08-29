@@ -42,9 +42,7 @@ import {
 } from './test-explorer-kit';
 import { itemsFor, sorted } from './test-explorer-outcome-assertions';
 import { pollUntilResult, removeDirRecursive, sleep } from './test-helpers.js';
-
-/** A cold restore + build plus a control run that deliberately takes its time. */
-const SUITE_TIMEOUT_MS = 900_000;
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 /**
  * How long the long-running fixture test sleeps.
@@ -66,9 +64,6 @@ const STOP_BUDGET_MS = 12_000;
 
 /** Extra time past the sleep before concluding the process is really gone. */
 const TERMINATION_GRACE_MS = 15_000;
-
-/** How long to wait for the long test to announce that it has started. */
-const START_TIMEOUT_MS = 300_000;
 
 /** Marker file names the fixture writes. */
 const STARTED_MARKER = 'started';
@@ -121,16 +116,22 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
   /** True once the fixture has written `name` into the marker directory. */
   const marked = (name: string): boolean => fs.existsSync(path.join(markerDir, name));
 
-  /** Resolve once the long test announces it is running, else after the timeout. */
+  /**
+   * Resolve once the long test announces it is running, else after the timeout.
+   *
+   * The marker lands a second or two into the `dotnet test` invocation, so the
+   * ceiling here is one CLI round trip, not the whole fixture sleep.
+   */
   const untilStarted = async (): Promise<boolean> =>
     pollUntilResult(
       () => Promise.resolve(marked(STARTED_MARKER)),
       (seen) => seen,
-      START_TIMEOUT_MS,
+      DOTNET_CLI_MS,
     );
 
   suiteSetup(async function () {
-    this.timeout(SUITE_TIMEOUT_MS);
+    // Cold restore + build + VSTest adapter JIT over the fixture solution.
+    this.timeout(FIXTURE_BUILD_MS);
     api = await activateTestExplorer();
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-testcancel-'));
     markerDir = path.join(root, 'markers');
@@ -154,7 +155,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
   });
 
   suiteTeardown(async function () {
-    this.timeout(SUITE_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     await drainDiscovery(() => {
       api.explorerProvider.clear();
       api.testController.items.replace([]);
@@ -163,7 +164,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
   });
 
   test('a run left alone writes BOTH markers and caches both outcomes', async function () {
-    this.timeout(SUITE_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     // The control. Without it, "the finished marker is absent" below could hold
     // simply because the fixture never writes one.
     assert.deepStrictEqual(
@@ -203,7 +204,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
   });
 
   test('pressing Stop TERMINATES the running test process and suppresses its results', async function () {
-    this.timeout(SUITE_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     fs.rmSync(startedMarker, { force: true });
     fs.rmSync(finishedMarker, { force: true });
     assert.strictEqual(fs.existsSync(startedMarker), false, 'markers cleared before the run');

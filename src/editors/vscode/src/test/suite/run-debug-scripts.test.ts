@@ -21,11 +21,9 @@ import { runExecutable, runTask } from '../../launch-run.js';
 import type { FileBasedTarget, ScriptTarget } from '../../launch-resolver.js';
 import { binaryNameOf, exeName, exeSuffixFor } from '../../platform.js';
 import {
-  BUILD_TIMEOUT_MS,
   CMD_DEBUG_PROGRAM,
   CMD_RUN_PROGRAM,
   DEBUG_TYPE_ID,
-  OBSERVE_TIMEOUT_MS,
   assertAdapterAvailable,
   assertCommandRegistered,
   focusDocument,
@@ -41,6 +39,7 @@ import {
   removeDirRecursive,
   requireWorkspaceRoot,
 } from './test-helpers';
+import { DEBUG_SESSION_MS, DOTNET_CLI_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import {
   armProbe,
@@ -262,7 +261,7 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
   // Implements [DEBUG-FEATURES-LAUNCH-SCRIPT] — B45, B46, and the spec table's
   // "`.fs` with no owning project" row. F# leads.
   test('an .fsx runs under dotnet fsi, refuses to debug, and a bare .fs refuses both', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
 
     // 1 — focus the script and prove it really is project-less.
     await focusScript(fsxFile, '.fsx', scriptDir, 'the .fsx fixture');
@@ -307,7 +306,7 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-SCRIPT] — B42, B43.
   test('a file-based .cs runs via dotnet run --file, never the positional form', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
 
     // 1 — focus the project-less .cs file-based app.
     await focusScript(fileBasedApp, '.cs', appDir, 'the file-based app fixture');
@@ -362,7 +361,7 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-SCRIPT] — B44.
   test('debugging a file-based .cs launches the artifacts-path assembly', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     // A PREMISE, not a skip: B44 launches a real session, so a missing adapter
     // must fail loudly here rather than turn a staging regression green.
     assertAdapterAvailable('B44: debugging a file-based .cs');
@@ -408,7 +407,7 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
     const terminated = await pollUntilResult(
       async () => probe.sessions.terminated,
       (ids) => ids.includes(session.id),
-      OBSERVE_TIMEOUT_MS,
+      DEBUG_SESSION_MS,
       100,
     );
     assert.strictEqual(terminated.includes(session.id), true, 'stopping terminates our session');
@@ -456,7 +455,7 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-SCRIPT] — B47, B48.
   test('a .csx without dotnet-script and a non-.NET document are refused by name', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
 
     // 1 — focus the .csx and prove it is project-less.
     await focusScript(csxFile, '.csx', scriptDir, 'the .csx fixture');

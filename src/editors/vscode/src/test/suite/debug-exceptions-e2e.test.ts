@@ -41,8 +41,8 @@ import {
   startDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS } from './run-debug-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 /** The filter id every DAP adapter uses for "break on every throw". */
 const FILTER_ALL = 'all';
@@ -69,7 +69,7 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
   // Implements [DEBUG-FEATURES-EXCEPTIONS] and the exception rows of
   // [DEBUG-PROTOCOL-CAPABILITIES].
   test('the adapter advertises every exception facility the specification requires', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — reach a stop so the whole initialize handshake is on the wire.
@@ -135,7 +135,7 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
 
   // Implements [DEBUG-FEATURES-EXCEPTIONS] "Break on all CLR exceptions | P1".
   test('breaking on ALL exceptions catches a throw the program handles itself', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop early so the filters can be configured before the throw.
@@ -209,7 +209,7 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
   // Implements [DEBUG-FEATURES-EXCEPTIONS] "Break on unhandled exceptions only"
   // and "Break on exceptions from user code only" — the IGNORING half.
   test('with only the unhandled filter, a handled throw is ignored completely', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — gate, then select ONLY the unhandled-style filter.
@@ -253,7 +253,7 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
   // Implements [DEBUG-FEATURES-EXCEPTIONS] "Exception info panel (type, message,
   // stack)" P1 and "Inner exception chain traversal" P2.
   test('an unhandled exception breaks with its type, message, stack and inner cause', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — gate, then select the unhandled filter and run into the throw.

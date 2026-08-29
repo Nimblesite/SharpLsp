@@ -11,7 +11,8 @@
 #                       host + sidecars + netcoredbg ONCE and caches them
 #   ci-rust.yml         sharded Rust e2e suite, coverage gate, version contract
 #   ci-dotnet.yml       sidecar tests (Ubuntu) + win32 named-pipe transport
-#   ci-vsix.yml         full VS Code suite + coverage gate (Ubuntu)
+#   ci-vsix.yml         sharded VS Code suite, coverage gate, VSIX payload
+#                       (Ubuntu, [DIST-CI-VSIX-SHARDS])
 #   ci-vsix-windows.yml VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX])
 #   ci-editors.yml      Zed + Rider tests and coverage gates ([DIST-CI-EDITORS])
 #

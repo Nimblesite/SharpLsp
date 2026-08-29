@@ -21,8 +21,8 @@ import {
   startDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS } from './run-debug-kit';
 import { deepEq, eq, requireAt, sleep } from './test-helpers';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 /** Long enough for a save to reach Roslyn, produce deltas, and be applied. */
 const RELOAD_SETTLE_MS = 8_000;
@@ -65,7 +65,7 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
   // Implements [DEBUG-FEATURES-HOT-RELOAD] "Method body change | Yes" and
   // architecture steps 1–4.
   test('a method-body edit is applied to the LIVE session, without restarting it', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder, sessions } = debuggee();
 
     // Interaction 1 — pause before the method under edit is ever called.
@@ -133,7 +133,7 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
   // Implements [DEBUG-FEATURES-HOT-RELOAD] "Add new method to existing type |
   // Yes (.NET 8+)" and "Add new static field | Yes (.NET 8+)".
   test('a new method added to an existing type is reachable from reloaded code', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — pause before the type is used.
@@ -185,7 +185,7 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
   // Implements [DEBUG-FEATURES-HOT-RELOAD] architecture step 5 and the
   // "Change method signature | No — requires restart" row.
   test('a rude edit is refused with a named reason and a restart prompt', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder, stubs, sessions } = debuggee();
 
     // Interaction 1 — pause.

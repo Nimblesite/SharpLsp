@@ -36,6 +36,7 @@ import {
   waitForHoverResult,
   waitForSelectionRanges,
 } from './test-helpers';
+import { ACTIVATION_MS, LSP_RESPONSE_MS, REAL_REPO_MS } from './test-timeouts';
 
 const LOG_CS = 'src/Serilog/Log.cs';
 const LOGGER_CONFIGURATION_CS = 'src/Serilog/LoggerConfiguration.cs';
@@ -45,7 +46,7 @@ suite('Real repo stress — serilog (C#)', () => {
   let repoDir: string;
 
   suiteSetup(async function () {
-    this.timeout(900_000);
+    this.timeout(REAL_REPO_MS);
     repoDir = ensureRepoReady(SERILOG);
     // Point the sidecars at the real solution (the server's workspace root is
     // the fixture workspace), then wait for actual semantics, not just syntax.
@@ -60,14 +61,14 @@ suite('Real repo stress — serilog (C#)', () => {
   });
 
   suiteTeardown(async function () {
-    this.timeout(120_000);
+    this.timeout(ACTIVATION_MS);
     await closeAllEditors();
     // Downstream suites rely on the fixture solution's semantics.
     await loadSolutionInServer(fixtureSolutionPath());
   });
 
   test('document symbols: Log.cs exposes the real static API surface', async function () {
-    this.timeout(120_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, LOG_CS);
     const symbols = await waitForDocumentSymbols(uri, 120_000);
     const names = flattenSymbolNames(symbols);
@@ -92,7 +93,7 @@ suite('Real repo stress — serilog (C#)', () => {
   });
 
   test('hover storm: five real API sites all produce meaningful markdown', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, LOG_CS);
     const anchors: [string, string][] = [
       ['public static ILogger Logger', 'Logger'],
@@ -113,7 +114,7 @@ suite('Real repo stress — serilog (C#)', () => {
   });
 
   test('navigation: definition and references thread Log.cs -> ILogger.cs', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, LOG_CS);
     const iloggerUsage = positionOf(doc, 'public static ILogger Logger', 'ILogger');
 
@@ -158,7 +159,7 @@ suite('Real repo stress — serilog (C#)', () => {
   });
 
   test('live edit + completion: members of the static Log class appear after typing', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri, editor } = await openRepoFile(repoDir, LOG_CS);
     const initialVersion = doc.version;
     // Insert the probe directly before an existing member declaration —
@@ -204,7 +205,7 @@ suite('Real repo stress — serilog (C#)', () => {
   });
 
   test('diagnostics round-trip: a type error surfaces and clears with the edit', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri, editor } = await openRepoFile(repoDir, LOGGER_CONFIGURATION_CS);
     await waitForDocumentSymbols(uri, 120_000);
     const anchor = 'public class LoggerConfiguration';
@@ -227,7 +228,7 @@ suite('Real repo stress — serilog (C#)', () => {
   });
 
   test('structure storm: folding, selection ranges, workspace symbols on real files', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, LOG_CS);
     const folding = await waitForFoldingRanges(uri, 60_000);
     assert.ok(folding.length >= 10, `Log.cs must fold richly, got ${folding.length.toString()}`);
@@ -261,7 +262,7 @@ suite('Real repo stress — serilog (C#)', () => {
   });
 
   test('stress: rapid-fire mixed requests stay within memory/CPU bounds', async function () {
-    this.timeout(300_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, LOG_CS);
     const hoverAt = positionOf(doc, 'public static ILogger Logger', 'Logger');
 

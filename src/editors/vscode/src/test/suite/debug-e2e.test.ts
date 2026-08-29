@@ -3,7 +3,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
-  BUILD_TIMEOUT_MS,
   DEBUG_TYPE_ID,
   debuggerContribution,
   emptyF5Config,
@@ -20,6 +19,7 @@ import {
   writeRawLaunchSettings,
 } from './run-debug-fixtures';
 import { comparablePath } from './test-helpers';
+import { DOTNET_CLI_MS } from './test-timeouts';
 import {
   assertBuildTaskContributed,
   assertNoProfileValues,
@@ -39,7 +39,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-NOCONFIG] rules 1-5, [DEBUG-FEATURES-LAUNCH-BUILD] rules 1-3.
   test('every no-config shape resolves to the same launchable, idempotent config', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
     const project = writeCSharpConsole(path.join(tmpDir, 'Console1'), 'Console1');
     const folder = fakeFolder(project.dir);
@@ -103,7 +103,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
   // out of target resolution when `config.program !== undefined`, and nothing
   // asserted it. Implements [DEBUG-FEATURES-LAUNCH-NOCONFIG] rule 4.
   test('an explicit program is preserved verbatim while a missing one is resolved', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
     const project = writeCSharpConsole(path.join(tmpDir, 'Explicit'), 'Explicit');
     const folder = fakeFolder(project.dir);
@@ -162,7 +162,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
   // out entirely on `config.program !== undefined`, which silently dropped the
   // profile's environment and arguments from every hand-written configuration.
   test('a launch profile still applies when the configuration states its own program', async function () {
-    this.timeout(60_000);
+    this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
     const project = writeCSharpConsole(path.join(tmpDir, 'ExplicitProfile'), 'ExplicitProfile');
     const folder = fakeFolder(project.dir);
@@ -234,7 +234,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
   });
 
   test('an unsound launchSettings.json never blocks F5; a sound one supplies env and args', async function () {
-    this.timeout(60_000);
+    this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
     const project = writeCSharpConsole(path.join(tmpDir, 'Profiles'), 'Profiles');
     const folder = fakeFolder(project.dir);
@@ -340,7 +340,7 @@ suite('Debug E2E — F5 with no launch.json', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-NODEBUG] rules 1 and 3.
   test('Ctrl/Cmd+F5 keeps noDebug through resolution and resolves the same target as F5', async function () {
-    this.timeout(60_000);
+    this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
     const project = writeCSharpConsole(path.join(tmpDir, 'NoDebug'), 'NoDebug');
     const folder = fakeFolder(project.dir);
@@ -410,7 +410,7 @@ suite('Debug E2E — launch targets and dynamic configurations', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-DYNAMIC] rules 3, 4 and 5.
   test('the manifest offers initial configurations and snippets the live provider agrees with', async function () {
-    this.timeout(60_000);
+    this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
     const project = writeCSharpConsole(path.join(tmpDir, 'Agree'), 'Agree');
     const folder = fakeFolder(project.dir);
@@ -479,7 +479,7 @@ suite('Debug E2E — launch targets and dynamic configurations', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-DYNAMIC] rule 6.
   test('provideDebugConfigurations emits one config per profile and resolves the target once', async function () {
-    this.timeout(60_000);
+    this.timeout(DOTNET_CLI_MS);
     const { tmpDir, stubs, recorder } = harness();
 
     // 1. A window with no folder open generates nothing at all.

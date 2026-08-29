@@ -25,6 +25,7 @@ import {
   packageJson,
 } from './run-debug-kit';
 import { EXTENSION_ID } from './test-helpers';
+import { ACTIVATION_MS, COMMAND_MS } from './test-timeouts';
 import {
   ACCIDENT,
   BUILD_TYPE,
@@ -58,7 +59,7 @@ import {
 
 suite('Run/Debug manifest contributions', () => {
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const extension = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(extension, `${EXTENSION_ID} must be installed in the test host`);
     await extension.activate();
@@ -515,7 +516,7 @@ suite('Run/Debug manifest contributions', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-CONTRIBUTIONS] rules 1, 2 and 3.
   test('every contributed command is registered, constant-named and reachable from a menu', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
     // 1. The user opens the Command Palette: it lists the intersection of what is
     //    contributed and what is registered.
     const registered = new Set(await vscode.commands.getCommands(true));

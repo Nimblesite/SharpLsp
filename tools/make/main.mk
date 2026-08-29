@@ -105,7 +105,8 @@ KOVER_PERCENT = dotnet run --file tools/coverage/kover-line-percent.cs --
         _stage-vsix-binary _stage-vsix-binary-only _stage-sidecars \
         test-rust _test-rust _prepare-rust-tests _test-rust-shard \
         test-zed _test-zed test-rider _test-rider \
-        _gate-rust-coverage _test-vsix _test-vsix-win _check-vsix-chunks \
+        _gate-rust-coverage _test-vsix _run-vsix-suite _test-vsix-shard \
+        _gate-vsix-coverage _test-vsix-win _check-vsix-chunks \
         _verify-vsix-payload \
         _test-dotnet _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
@@ -317,15 +318,69 @@ VSIX_TEST_ENV = env -u SHARPLSP_EXECUTABLE_PATH \
 	-u FORGE_LSP_PATH \
 	-u FORGE_BINARY_DIR
 
+# [DIST-CI-VSIX-SHARDS] ONE runner drives every slice of the VS Code end-to-end
+# suite, on every platform. It is parameterised by two variables, and nothing
+# else differs between the local full run, the Ubuntu coverage shards and the
+# Windows feature chunks:
+#
+#   CHUNK          a chunk name from src/editors/vscode/test-chunks.json. Empty
+#                  runs EVERY suite - the inner runner reads an empty
+#                  MOCHA_FILES as "all" - which is what a local `make test` wants.
+#   VSIX_COVERAGE  non-empty instruments the run and writes an lcov tracefile.
+#
+# Two near-identical recipes used to live here and they had already drifted: the
+# Ubuntu one ran `npm test` (which fires `pretest` implicitly), the Windows one
+# ran `npm run pretest && npx vscode-test`. One recipe, two knobs.
+VSIX_CHUNK_FILES = $(if $(CHUNK),$$($(VSIX_CHUNKS) files $(CHUNK)),)
+
+define RUN_VSIX_SUITE
+	status=0; \
+	files="$(VSIX_CHUNK_FILES)"; \
+	cd $(VSCODE_DIR); \
+	npm run pretest && \
+		$(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test $(if $(VSIX_COVERAGE),--coverage,) \
+		|| status=$$?; \
+	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
+	exit $$status
+endef
+
+_run-vsix-suite:
+	$(RUN_VSIX_SUITE)
+
+# The whole suite in one process, with coverage and the ratcheted gate. This is
+# what `make test` runs locally. CI never runs it: unsharded it was the longest
+# job in the pipeline by a wide margin, so the Ubuntu leg fans out over
+# `_test-vsix-shard` instead and gates once over the union.
 _test-vsix: $(if $(VSIX_PREBUILT),,_build-rust _build-dotnet) _build-vsix _verify-vsix-payload
 	@echo "==> Running VS Code extension tests..."
 	@$(MAKE) $(VSIX_STAGE_TARGET)
-	status=0; \
-	cd $(VSCODE_DIR); \
-	$(VSIX_TEST_ENV) npm test -- --coverage || status=$$?; \
-	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
-	exit $$status
+	@$(MAKE) _run-vsix-suite VSIX_COVERAGE=1
 	@$(CHECK_COV) vscode-extension --json $(VSCODE_DIR)/coverage/coverage-summary.json total.lines.pct
+
+# [DIST-CI-VSIX-SHARDS] ONE Ubuntu coverage shard: a single chunk, instrumented,
+# exporting lcov. No gate here - no chunk can meet the line threshold alone, so
+# the ratchet runs once over the union in `_gate-vsix-coverage`, exactly as the
+# Rust shards do ([DIST-CI-RUST-SHARDS]).
+#
+# The tracefile is renamed per chunk because CI downloads every shard into one
+# directory before merging, and `coverage/lcov.info` is the same path for all of
+# them.
+_test-vsix-shard: $(VSIX_STAGE_TARGET) _verify-vsix-payload
+	@test -n "$(CHUNK)" || { echo "ERROR: CHUNK is required (e.g. make _test-vsix-shard CHUNK=lsp)" >&2; exit 1; }
+	@echo "==> Running VS Code coverage shard '$(CHUNK)'..."
+	@$(MAKE) _run-vsix-suite VSIX_COVERAGE=1 CHUNK=$(CHUNK)
+	@mkdir -p target
+	@cp $(VSCODE_DIR)/coverage/lcov.info target/coverage-vsix-shard-$(CHUNK).lcov
+
+# [DIST-CI-VSIX-SHARDS] Union-merge the shard tracefiles and enforce the same
+# ratcheted threshold an unsharded run enforces. Every shard instruments the
+# same bundle, so a file loaded by any shard carries its whole line set there
+# (unexecuted lines as `DA:<line>,0`) and the union reproduces the line
+# percentage of a single whole-suite run. Same merger the Rust gate uses.
+_gate-vsix-coverage:
+	@PERCENT="$$(node tools/coverage/merge-lcov.mjs target/coverage-vsix.lcov target/coverage-vsix-shard-*.lcov)" && \
+		$(CHECK_COV) vscode-extension "$$PERCENT"
+
 
 # ── VSIX Windows feature chunks ───────────────────────────────────
 # [DIST-CI-WIN-VSIX] Runs ONE declared feature chunk of the VS Code end-to-end
@@ -387,12 +442,8 @@ _verify-vsix-payload:
 _test-vsix-win: $(VSIX_STAGE_TARGET) _verify-vsix-payload
 	@test -n "$(CHUNK)" || { echo "ERROR: CHUNK is required (e.g. make _test-vsix-win CHUNK=debug)" >&2; exit 1; }
 	@echo "==> Running VS Code extension chunk '$(CHUNK)' (real LSP, no coverage)..."
-	status=0; \
-	files="$$($(VSIX_CHUNKS) files $(CHUNK))"; \
-	cd $(VSCODE_DIR); \
-	npm run pretest && $(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test || status=$$?; \
-	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
-	exit $$status
+	@$(MAKE) _run-vsix-suite CHUNK=$(CHUNK)
+
 
 # [DIST-CI-RIDER] The Rider plugin's only automated verification. Skipped
 # locally when no JDK 21+ is installed; CI sets RIDER_REQUIRED=1 so it can never

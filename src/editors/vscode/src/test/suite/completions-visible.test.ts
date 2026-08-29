@@ -8,13 +8,14 @@ import {
   teardownLspTestSuite,
   waitForDocumentSymbols,
 } from './test-helpers';
+import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 suite('Visible Completions', () => {
   let tmpDir: string;
   let workspaceRoot: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('visible-completions-');
     tmpDir = result.tmpDir;
     const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -32,14 +33,14 @@ suite('Visible Completions', () => {
   });
 
   test('screenshot completion site offers real instance members', async function () {
-    this.timeout(90_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const filePath = path.join(workspaceRoot, 'CompletionShot.cs');
     assert.ok(fs.existsSync(filePath), 'CompletionShot.cs fixture must exist');
     const uri = vscode.Uri.file(filePath);
     const document = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(document);
-    await waitForDocumentSymbols(uri, 30_000);
+    await waitForDocumentSymbols(uri);
 
     const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
       'vscode.executeCompletionItemProvider',

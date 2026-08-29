@@ -42,8 +42,8 @@ import {
   startDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS } from './run-debug-kit';
 import { deepEq, eq, neq, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 /** The framework directory a Just-My-Code step must never surface. */
 const FRAMEWORK_HINTS: readonly string[] = ['Microsoft.NETCore.App', 'System.Private.CoreLib'];
@@ -53,7 +53,7 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
 
   // Implements [DEBUG-FEATURES-STEPPING] "Step over | next | P1".
   test('F10 walks statement by statement and never enters the callee', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder, sessions } = debuggee();
 
     // Interaction 1 — arm one breakpoint on the call statement and open the file.
@@ -120,7 +120,7 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
   // Implements [DEBUG-FEATURES-STEPPING] "Step into | stepIn | P1" and
   // "Step out | stepOut | P1", plus [DEBUG-FEATURES-STACK] frame ordering.
   test('F11 descends into the callee and Shift+F11 climbs back out', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop on the call statement in Main.
@@ -206,7 +206,7 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
 
   // Implements [DEBUG-FEATURES-STEPPING] "Just My Code (skip non-user code) | P1".
   test('Just My Code refuses to step into framework code', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop on a statement whose only call is Console.WriteLine.
@@ -264,7 +264,7 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
 
   // Implements [DEBUG-FEATURES-STEPPING] "Run to cursor (temporary breakpoint) | goto | P2".
   test('Run to cursor stops at the caret and leaves no breakpoint behind', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — reach the first breakpoint, well before the target.
@@ -331,7 +331,7 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
   // Implements [DEBUG-FEATURES-STEPPING] with [DEBUG-FEATURES-BREAKPOINTS]:
   // continue is the gesture that ties a sequence of breakpoints together.
   test('Continue walks breakpoint to breakpoint and the last one runs the program out', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — three breakpoints in source order.

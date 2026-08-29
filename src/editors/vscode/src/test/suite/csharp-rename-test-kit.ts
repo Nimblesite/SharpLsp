@@ -14,7 +14,8 @@ import {
   type PrepareRenameResult,
   type WorkspaceEditSnapshot,
 } from './refactor-test-helpers';
-import { LSP_RESPONSE_TIMEOUT_MS, pollUntilResult } from './test-helpers';
+import { pollUntilResult } from './test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 export type RenameFixtureKey = 'symbols' | 'usage' | 'edge';
 
@@ -92,7 +93,7 @@ export async function waitForPrepare(
   const result = await pollUntilResult(
     async () => prepareAt(uri, position),
     (item) => item?.placeholder === placeholder,
-    LSP_RESPONSE_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
     250,
   );
   assert.ok(result, `prepareRename must return ${placeholder}`);

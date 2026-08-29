@@ -12,7 +12,6 @@
 import * as assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as vscode from 'vscode';
-import { DAP_QUIET_MS } from './debug-dap-kit';
 import { MODE } from './debug-fixture-programs';
 import {
   CMD_STOP,
@@ -23,8 +22,9 @@ import {
   variableNamed,
 } from './debug-drive-kit';
 import { assertCleanSession, stopDebuggee, useDebuggee } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS, DEBUG_TYPE_ID } from './run-debug-kit';
+import { DEBUG_TYPE_ID } from './run-debug-kit';
 import { deepEq, eq, pollUntilResult, requireAt, sleep } from './test-helpers';
+import { DEBUG_SESSION_MS, QUIET_MS } from './test-timeouts';
 
 /** A running debuggee the test owns, plus the output it has produced. */
 interface RunningDebuggee {
@@ -133,7 +133,7 @@ suite('Debug attach — taking control of a process that is already running', ()
 
   // Implements [DEBUG-FEATURES-LAUNCH] "Attach to running process by PID | P1".
   test('attaching by pid pauses the live process and exposes its state', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, folder, recorder } = debuggee();
 
     // Interaction 1 — start the debuggee OUTSIDE the debugger.
@@ -199,7 +199,7 @@ suite('Debug attach — taking control of a process that is already running', ()
     // Interaction 4 — detaching must leave the process running.
     await vscode.commands.executeCommand(CMD_STOP);
     await stopDebuggee();
-    await sleep(DAP_QUIET_MS);
+    await sleep(QUIET_MS);
     eq(
       isAlive(running.pid),
       true,
@@ -211,7 +211,7 @@ suite('Debug attach — taking control of a process that is already running', ()
 
   // Implements [DEBUG-FEATURES-LAUNCH] "Attach to running process by name | P2".
   test('attaching by process name resolves the name to a pid', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, folder, recorder } = debuggee();
 
     // Interaction 1 — one process of that name is running.
@@ -266,7 +266,7 @@ suite('Debug attach — taking control of a process that is already running', ()
   // unsupported combination produces exactly one user-visible message. A silent
   // no-op is non-conforming."
   test('attaching to a pid that does not exist is refused with one message', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { folder, stubs, sessions } = debuggee();
 
     // Interaction 1 — find a pid that is definitely not a process.
@@ -279,7 +279,7 @@ suite('Debug attach — taking control of a process that is already running', ()
     eq(started, false, 'an attach to a dead pid must be refused, not reported as started');
 
     // Interaction 3 — exactly one message must tell the user why.
-    await sleep(DAP_QUIET_MS);
+    await sleep(QUIET_MS);
     const reported = [...stubs.log.errorMessages, ...stubs.log.warningMessages];
     eq(
       reported.length,

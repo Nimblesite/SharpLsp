@@ -27,6 +27,7 @@ import { Signal, effect } from '../../signals.js';
 import { findSolutions, toSolutionSelections } from '../../solution.js';
 import { isHotReloadRunning } from '../../hot-reload.js';
 import { removeDirRecursive } from './test-helpers.js';
+import { COMMAND_MS } from './test-timeouts';
 
 suite('Extension Workflow Coverage', () => {
   let tmpDir: string;
@@ -44,7 +45,7 @@ suite('Extension Workflow Coverage', () => {
   });
 
   test('generates an F# signature file through the registered command', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const fsPath = path.join(tmpDir, 'Workflow.fs');
     fs.writeFileSync(
       fsPath,
@@ -76,7 +77,7 @@ suite('Extension Workflow Coverage', () => {
   });
 
   test('starts, rejects duplicate start, toggles, and stops hot reload', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     // A PREMISE, not a skip. The harness always opens `test-fixtures/workspace`,
     // so an absent folder means the RUNNER is broken — and skipping there turns
     // a broken harness into a green run, which is how this coverage would go
@@ -109,7 +110,7 @@ suite('Extension Workflow Coverage', () => {
   });
 
   test('discovers and sorts real solution selections', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const selections = toSolutionSelections([
       path.join(tmpDir, 'Zeta.slnx'),
       path.join(tmpDir, 'Alpha.sln'),

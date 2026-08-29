@@ -51,6 +51,7 @@ import { findSolutions, toSolutionSelections } from '../../solution.js';
 import { ok, err, type Result } from '../../result.js';
 import { detectRuntimePlatform } from '../../platform.js';
 import { CONFIG_SECTION } from '../../constants.js';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 // ── Shared tree-node shape (the real ExplorerNode, viewed structurally) ──────
 
@@ -146,7 +147,7 @@ suite('Tree E2E — real fixture solution walk', () => {
   let provider: ExplorerApi['explorerProvider'];
 
   suiteSetup(async function () {
-    this.timeout(120_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('tree-walk-');
     tmpDir = result.tmpDir;
     provider = getProvider();
@@ -329,7 +330,7 @@ suite('Tree Tooltip E2E — non-symbol tooltips and context-value mapping', () =
   let provider: ExplorerApi['explorerProvider'];
 
   suiteSetup(async function () {
-    this.timeout(120_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('tree-tooltip-');
     tmpDir = result.tmpDir;
     provider = getProvider();
@@ -472,7 +473,7 @@ suite('State E2E — reactive sort signals drive tree order', () => {
   let originalSort: SortOrder;
 
   suiteSetup(async function () {
-    this.timeout(120_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('tree-sort-');
     tmpDir = result.tmpDir;
     provider = getProvider();
@@ -652,7 +653,7 @@ suite('Config E2E — every getter, with workspace round-trips', () => {
   }
 
   test('string + array + level getters return correct types and reflect overrides', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
 
     // Default-shape assertions (types/contracts) for every getter.
     assert.strictEqual(typeof config.serverPath(), 'string', 'serverPath is a string');
@@ -680,7 +681,7 @@ suite('Config E2E — every getter, with workspace round-trips', () => {
   });
 
   test('inlay-hint flags default to true and reflect explicit false overrides', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     assert.strictEqual(config.inlayHintsParameterNames(), true, 'parameter hints default on');
     assert.strictEqual(config.inlayHintsTypeInference(), true, 'type-inference hints default on');
     assert.strictEqual(config.inlayHintsPipelineTypes(), true, 'pipeline hints default on');
@@ -697,7 +698,7 @@ suite('Config E2E — every getter, with workspace round-trips', () => {
   });
 
   test('nuget + hot-reload booleans default false and reflect a true override', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     assert.strictEqual(config.nugetIncludePrerelease(), false, 'prerelease off by default');
     assert.strictEqual(config.hotReloadOnSave(), false, 'hot reload on save off by default');
 
@@ -735,7 +736,7 @@ suite('Solution / Result / Platform / Channel E2E', () => {
   });
 
   test('toSolutionSelections sorts by (name, path) and findSolutions matches that order', async function () {
-    this.timeout(15_000);
+    this.timeout(COMMAND_MS);
 
     // PURE transform: name derived from basename, sorted by name then path.
     const sorted = toSolutionSelections([
@@ -790,7 +791,7 @@ suite('Solution / Result / Platform / Channel E2E', () => {
   });
 
   test('selectSolution command drives the quickPick and loads the chosen solution', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const provider = getProvider();
     provider.clear();
@@ -821,7 +822,7 @@ suite('Solution / Result / Platform / Channel E2E', () => {
         nodes.some(
           (node) => node.contextValue === 'solution' && nodeLabel(node) === 'TestFixtures.sln',
         ),
-      15_000,
+      LSP_RESPONSE_MS,
       500,
     );
     const slnRoot = roots.find(
@@ -838,7 +839,7 @@ suite('Solution / Result / Platform / Channel E2E', () => {
   });
 
   test('a findSolutions-backed flow produces and consumes a Result<T,E> via ok()/err()', async function () {
-    this.timeout(15_000);
+    this.timeout(COMMAND_MS);
 
     // ok()/err() exercised inside a real flow that wraps live solution discovery.
     async function discover(): Promise<Result<number>> {
@@ -883,7 +884,7 @@ suite('Solution / Result / Platform / Channel E2E', () => {
   });
 
   test('showOutput / showTraceOutput touch the guarded output channels without throwing', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     // These commands call channel.show() through the channel-guard Proxy. Even
     // when the channel races teardown the guard must swallow the error — here we
     // simply assert the registered commands never reject.
@@ -905,7 +906,7 @@ suite('Tree Reveal E2E — active-editor parent chain', () => {
   let provider: ExplorerApi['explorerProvider'];
 
   suiteSetup(async function () {
-    this.timeout(120_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('tree-reveal-');
     tmpDir = result.tmpDir;
     provider = getProvider();

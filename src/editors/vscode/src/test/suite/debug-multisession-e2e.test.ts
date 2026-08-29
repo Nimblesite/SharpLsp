@@ -12,7 +12,6 @@
 // exists to catch is exactly "the second session answered for the first".
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { DAP_TIMEOUT_MS } from './debug-dap-kit';
 import { MODE } from './debug-fixture-programs';
 import {
   CMD_CONTINUE,
@@ -33,8 +32,9 @@ import {
   stopDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS, DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
+import { DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
 import { deepEq, eq, neq, pollUntilResult, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 /** Wait for a second live session and hand back the one that is not `first`. */
 async function waitForSecondSession(
@@ -66,7 +66,7 @@ suite('Debug multi-session — two debuggees paused at once', () => {
 
   // Implements [DEBUG-FEATURES-MULTIPROCESS] "Multiple simultaneous debug sessions".
   test('two sessions run side by side with their own stacks and their own state', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, folder, recorder, sessions } = debuggee();
 
     // Interaction 1 — session one stops deep inside the loop.
@@ -177,7 +177,7 @@ suite('Debug multi-session — two debuggees paused at once', () => {
     await pollUntilResult(
       async () => recorder.responses('setBreakpoints').length,
       (seen) => seen > acknowledged,
-      DAP_TIMEOUT_MS,
+      DEBUG_SESSION_MS,
       50,
     );
     await vscode.commands.executeCommand(CMD_CONTINUE);

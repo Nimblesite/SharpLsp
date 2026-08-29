@@ -3,7 +3,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
-  LSP_RESPONSE_TIMEOUT_MS,
   closeAllEditors,
   pollUntilResult,
   replaceDocumentContent,
@@ -15,7 +14,6 @@ import {
 import { fixtureSolutionPath, loadSolutionInServer } from './real-repo-helpers';
 import {
   PACKAGE,
-  RESTORE_TIMEOUT_MS,
   assertNoPackageBindingErrors,
   completionList,
   diagnosticCode,
@@ -28,6 +26,7 @@ import {
   waitForErrorCode,
   waitForHoverText,
 } from './filebased-package-kit';
+import { ACTIVATION_MS, DOTNET_CLI_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 function insertionRange(item: vscode.CompletionItem): vscode.Range {
   const range = item.range;
@@ -52,7 +51,7 @@ suite('VSIX E2E — C# file-based #:package directives', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     ({ tmpDir } = await setupLspTestSuite('filebased-package-'));
   });
 
@@ -68,7 +67,7 @@ suite('VSIX E2E — C# file-based #:package directives', () => {
 
   // Implements [SCRIPT-FILEBASED-REFERENCES-MSBUILD] and [SCRIPT-TESTS].
   test('a package directive binds real package symbols through the extension host', async function () {
-    this.timeout(RESTORE_TIMEOUT_MS + 30_000);
+    this.timeout(DOTNET_CLI_MS);
     const source = `${PACKAGE}
 using Newtonsoft.Json.Linq;
 
@@ -108,7 +107,7 @@ Console.WriteLine(clone.ToString());
 
   // Implements [SCRIPT-RELOAD] and [SCRIPT-FILEBASED-REFERENCES-MSBUILD].
   test('unsaved add, remove and re-add transitions rebuild the package reference set', async function () {
-    this.timeout(RESTORE_TIMEOUT_MS * 3);
+    this.timeout(DOTNET_CLI_MS);
     const withoutDirective = `using Newtonsoft.Json.Linq;
 
 var payload = new JObject();
@@ -155,7 +154,7 @@ Console.WriteLine(payload.Count);
 
   // Implements [SCRIPT-FILEBASED], [SCRIPT-FILEBASED-DIRECTIVES], and [SCRIPT-TESTS].
   test('a package directive in the include closure binds symbols in the root', async function () {
-    this.timeout(RESTORE_TIMEOUT_MS + 30_000);
+    this.timeout(DOTNET_CLI_MS);
     const includePath = path.join(tmpDir, 'PackageTypes.cs');
     const included = `${PACKAGE}
 using Newtonsoft.Json.Linq;
@@ -192,7 +191,7 @@ Console.WriteLine(payload.Count);
 
   // Implements [SCRIPT-MULTIROOT] and guards package-reference leakage.
   test('a package reference never leaks into a neighboring file-based root', async function () {
-    this.timeout(RESTORE_TIMEOUT_MS * 2);
+    this.timeout(DOTNET_CLI_MS);
     const packageRoot = `${PACKAGE}
 using Newtonsoft.Json.Linq;
 var owned = new JObject();
@@ -228,7 +227,7 @@ Console.WriteLine(isolated.Count);
 
   // Implements the required tier-2 behavior in [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
   test('restore failure degrades visibly while BCL IntelliSense stays alive', async function () {
-    this.timeout(RESTORE_TIMEOUT_MS + 30_000);
+    this.timeout(DOTNET_CLI_MS);
     const missingPackage = '#:package SharpLsp.Package.That.Does.Not.Exist@0.0.0';
     const source = `${missingPackage}
 var text = string.Empty;
@@ -238,7 +237,7 @@ Console.WriteLine(text.Length);
 
     assert.strictEqual(doc.lineAt(0).text, missingPackage, 'the failing directive is preserved');
     const consoleHover = hoverText(
-      await waitForHoverResult(uri, positionInside(source, 'Console'), RESTORE_TIMEOUT_MS),
+      await waitForHoverResult(uri, positionInside(source, 'Console'), DOTNET_CLI_MS),
     );
     assert.ok(consoleHover.includes('Console'), 'tier 2 must retain BCL hover');
     assert.ok(consoleHover.includes('System'), 'tier-2 hover must retain the BCL namespace');
@@ -259,7 +258,7 @@ Console.WriteLine(text.Length);
             diagnostic.message.includes('Restore failed') &&
             diagnostic.message.includes('SharpLsp.Package.That.Does.Not.Exist@0.0.0'),
         ),
-      RESTORE_TIMEOUT_MS,
+      DOTNET_CLI_MS,
       1_000,
     );
     const degraded = diagnostics.filter((diagnostic) => diagnosticCode(diagnostic) === 'SLSPC0001');
@@ -280,14 +279,14 @@ Console.WriteLine(text.Length);
 
   // Implements directive placement in [SCRIPT-FILEBASED-DIRECTIVES].
   test('a misplaced package directive is rejected at its own source range', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 5);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const source = `Console.WriteLine("before");
 ${PACKAGE}
 using Newtonsoft.Json.Linq;
 var payload = new JObject();
 `;
     const { doc, uri } = await openFileBasedApp(tmpDir, 'MisplacedPackage.cs', source);
-    const diagnostics = await waitForDiagnostics(uri, LSP_RESPONSE_TIMEOUT_MS * 4);
+    const diagnostics = await waitForDiagnostics(uri, LSP_RESPONSE_MS);
     const directiveDiagnostics = diagnostics.filter(
       (diagnostic) => diagnostic.range.start.line === 1,
     );
@@ -315,7 +314,7 @@ var payload = new JObject();
 
   // Implements reference replacement on didChange in [SCRIPT-RELOAD].
   test('changing package identity removes stale references before adding the new package', async function () {
-    this.timeout(RESTORE_TIMEOUT_MS * 3);
+    this.timeout(DOTNET_CLI_MS);
     const humanizer = '#:package Humanizer.Core@2.14.1';
     const body = `using Newtonsoft.Json.Linq;
 using Humanizer;
@@ -353,7 +352,7 @@ Console.WriteLine(json.Count + plural.Length);
 
   // Implements [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT].
   test('resolved empty-span completion applies its primary edit exactly once', async function () {
-    this.timeout(RESTORE_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const source = 'var result = 42;\nresult.';
     const { doc, uri } = await openFileBasedApp(tmpDir, 'EmptyCompletionSpan.cs', source);
     const caret = positionAfter(source, 'result.');

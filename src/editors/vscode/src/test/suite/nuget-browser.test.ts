@@ -13,6 +13,7 @@ import {
   takeScreenshot,
   teardownLspTestSuite,
 } from './test-helpers';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 interface SharpLspApiForNuGetTests {
   readonly getLspClient: () => LanguageClient | undefined;
@@ -29,7 +30,7 @@ suite('NuGet Browser', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('nuget-');
     tmpDir = result.tmpDir;
   });
@@ -78,7 +79,7 @@ suite('NuGet Browser', () => {
   // ── NuGet Browser Panel ─────────────────────────────────────
 
   test('panel opens from NuGetBrowserPanel.open()', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
 
     // Import the module to access the static open method.
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
@@ -93,7 +94,7 @@ suite('NuGet Browser', () => {
   });
 
   test('removeNuGetPackage command does not throw when cancelled', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.removeNuGetPackage');
     }, 'removeNuGetPackage must not throw when no node is provided');
@@ -232,7 +233,7 @@ suite('NuGet Browser', () => {
    * populates searchResults with popular packages.
    */
   test('browse tab is populated on initial load (bug fix)', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS);
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
@@ -274,7 +275,7 @@ suite('NuGet Browser', () => {
    * installed package sets selectedPackage correctly.
    */
   test('clicking installed package selects it (bug fix)', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS);
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
@@ -337,7 +338,7 @@ suite('NuGet Browser', () => {
    * Verify the installed list is correctly populated from the LSP.
    */
   test('installed packages loaded from LSP on open', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS);
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
@@ -365,7 +366,7 @@ suite('NuGet Browser', () => {
    * elements may appear in the rendered HTML. See [NUGET-WEBVIEW-DESIGN].
    */
   test('rendered HTML does not include VS Code chrome (regression)', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS);
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
@@ -438,7 +439,7 @@ suite('NuGet Browser', () => {
    * Verify that searching from the webview updates state.
    */
   test('search message populates searchResults', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS);
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
@@ -490,7 +491,7 @@ suite('NuGet Browser', () => {
    * "All screens MUST BE 100% reactive."
    */
   test('panel reacts to external csproj edit (package removed)', async function () {
-    this.timeout(45_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const scratch = path.join(tmpDir, 'reactivity-panel');
     const csprojPath = createScratchProject(
@@ -541,7 +542,7 @@ suite('NuGet Browser', () => {
           !panel.getInstalledPackageIds().includes('Newtonsoft.Json') &&
           html.includes('installPackage') &&
           !html.includes('uninstallPackage'),
-        15_000,
+        LSP_RESPONSE_MS,
       );
 
       const htmlAfter = panel.getRenderedHtml();
@@ -563,7 +564,7 @@ suite('NuGet Browser', () => {
    * button from Install to Remove.
    */
   test('panel reacts to external csproj edit (package added)', async function () {
-    this.timeout(45_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const scratch = path.join(tmpDir, 'reactivity-panel-add');
     const csprojPath = createScratchProject(
@@ -600,7 +601,7 @@ suite('NuGet Browser', () => {
       await pollUntilResult(
         () => Promise.resolve(panel.getInstalledPackageIds()),
         (ids) => ids.includes('Newtonsoft.Json'),
-        15_000,
+        LSP_RESPONSE_MS,
       );
 
       assert.ok(
@@ -618,7 +619,7 @@ suite('NuGet Browser', () => {
    * "installed packages don't have an icon".
    */
   test('details panel renders package icon image when iconUrl present', async function () {
-    this.timeout(45_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
@@ -639,7 +640,7 @@ suite('NuGet Browser', () => {
       await pollUntilResult(
         () => Promise.resolve(panel.getRenderedHtml()),
         (html) => html.includes('class="package-icon-img"'),
-        15_000,
+        LSP_RESPONSE_MS,
       );
 
       const html = panel.getRenderedHtml();
@@ -659,7 +660,7 @@ suite('NuGet Browser', () => {
    * material-symbol glyph and no <img> overlay.
    */
   test('installed tab renders icons (no DRY violation)', async function () {
-    this.timeout(45_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const projectPath = nugetTestProjectPath();
     const context = getExtensionContext();
@@ -685,7 +686,7 @@ suite('NuGet Browser', () => {
           const section = html.slice(installedIdx);
           return section.includes('class="package-icon-img"');
         },
-        15_000,
+        LSP_RESPONSE_MS,
       );
 
       const html = panel.getRenderedHtml();
@@ -714,7 +715,7 @@ suite('NuGet Browser', () => {
    * by asserting on the details-panel section specifically.
    */
   test('details panel button flips Remove→Install on external csproj edit (snapshot bug)', async function () {
-    this.timeout(45_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const scratch = path.join(tmpDir, 'reactivity-details');
     const csprojPath = createScratchProject(
@@ -780,7 +781,7 @@ suite('NuGet Browser', () => {
       await pollUntilResult(
         () => Promise.resolve(detailsSection(panel.getRenderedHtml())),
         (details) => details.includes('installPackage(') && !details.includes('uninstallPackage'),
-        15_000,
+        LSP_RESPONSE_MS,
       );
 
       const detailsAfter = detailsSection(panel.getRenderedHtml());

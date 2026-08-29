@@ -2,7 +2,8 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import { closeAllEditors, pollUntilResult } from './test-helpers';
-import { FSHARP_COLD_TIMEOUT_MS, fsharpFixturePath, openFSharpFixture } from './fsharp-helpers';
+import { fsharpFixturePath, openFSharpFixture } from './fsharp-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 /**
  * Blanket end-to-end coverage for F# diagnostics via the REAL release LSP and
@@ -13,7 +14,6 @@ import { FSHARP_COLD_TIMEOUT_MS, fsharpFixturePath, openFSharpFixture } from './
  * Covers [DIAG-CATEGORIES-COMPILER] and [DIAG-CATEGORIES-LIVE].
  */
 
-const DIAG_TIMEOUT_MS = 60_000;
 const VALID_CONTENT = fs.readFileSync(fsharpFixturePath('DiagnosticsTarget.fs'), 'utf8');
 
 function restoreDiagnosticsTarget(): void {
@@ -32,7 +32,7 @@ suite('F# LSP — Diagnostics', () => {
   });
 
   test('reports an FCS type error for a saved file', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + DIAG_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     try {
       // Write a type error to disk BEFORE opening, so the sidecar (which reads
       // from disk) sees it on first analysis.
@@ -53,7 +53,7 @@ suite('F# LSP — Diagnostics', () => {
       const diagnostics = await pollUntilResult(
         async () => vscode.languages.getDiagnostics(uri),
         (items) => items.some((d) => d.severity === vscode.DiagnosticSeverity.Error),
-        FSHARP_COLD_TIMEOUT_MS,
+        LSP_RESPONSE_MS,
         2_000,
       );
       const errors = diagnostics.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
@@ -68,7 +68,7 @@ suite('F# LSP — Diagnostics', () => {
   });
 
   test('clears diagnostics when the file is corrected', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + DIAG_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     try {
       // Start with an error on disk.
       fs.writeFileSync(
@@ -85,7 +85,7 @@ suite('F# LSP — Diagnostics', () => {
       await pollUntilResult(
         async () => vscode.languages.getDiagnostics(uri),
         (items) => items.some((d) => d.severity === vscode.DiagnosticSeverity.Error),
-        FSHARP_COLD_TIMEOUT_MS,
+        LSP_RESPONSE_MS,
         2_000,
       );
 
@@ -96,7 +96,7 @@ suite('F# LSP — Diagnostics', () => {
       const cleared = await pollUntilResult(
         async () => vscode.languages.getDiagnostics(uri),
         (items) => items.filter((d) => d.severity === vscode.DiagnosticSeverity.Error).length === 0,
-        DIAG_TIMEOUT_MS,
+        LSP_RESPONSE_MS,
         2_000,
       );
       assert.strictEqual(
@@ -110,7 +110,7 @@ suite('F# LSP — Diagnostics', () => {
   });
 
   test('a valid F# fixture file has no error diagnostics', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + DIAG_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const { uri } = await openFSharpFixture('Library.fs');
     // Give the pull pipeline time to run, then assert no errors surfaced.
     await pollUntilResult(

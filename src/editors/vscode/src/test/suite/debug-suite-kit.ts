@@ -16,7 +16,8 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { DAP_TIMEOUT_MS, DapRecorder } from './debug-dap-kit';
+import { DapRecorder } from './debug-dap-kit';
+import { DEBUG_SESSION_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import {
   MODE,
   writeCSharpStepTarget,
@@ -24,7 +25,6 @@ import {
   type DebugFixture,
 } from './debug-fixture-programs';
 import {
-  BUILD_TIMEOUT_MS,
   DEBUG_TYPE_ID,
   DebugSessionRecorder,
   fakeFolder,
@@ -178,7 +178,7 @@ async function waitForSession(): Promise<vscode.DebugSession> {
   const session = await pollUntilResult(
     async () => vscode.debug.activeDebugSession,
     (current) => current?.type === DEBUG_TYPE_ID,
-    DAP_TIMEOUT_MS,
+    DEBUG_SESSION_MS,
     50,
   );
   assert.ok(session, 'a started launch must leave an active debug session');
@@ -192,7 +192,7 @@ export async function stopDebuggee(): Promise<void> {
   await pollUntilResult(
     async () => vscode.debug.activeDebugSession,
     (session) => session === undefined,
-    DAP_TIMEOUT_MS,
+    DEBUG_SESSION_MS,
     50,
   );
 }
@@ -221,7 +221,7 @@ export function useDebuggee(prefix: string, language: Language): () => Debuggee 
   let current: Debuggee | undefined;
 
   suiteSetup(async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(FIXTURE_BUILD_MS);
     scratchDir = fs.mkdtempSync(path.join(requireWorkspaceRoot(), prefix));
     fixture = await materialise(scratchDir, language);
   });

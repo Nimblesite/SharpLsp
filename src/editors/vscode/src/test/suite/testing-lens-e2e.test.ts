@@ -36,6 +36,7 @@ import {
   setupLspTestSuite,
   teardownLspTestSuite,
 } from './test-helpers';
+import { ACTIVATION_MS, COMMAND_MS, FAST_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
 const TEST_LENS_SECTION = 'sharplsp.testLens';
@@ -160,7 +161,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
   let stubs: UiStubs;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     ({ tmpDir } = await setupLspTestSuite('testing-e2e-'));
   });
 
@@ -178,7 +179,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
   });
 
   test('runAtCursor on a [Fact] method resolves and warns when no test is discovered', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
     const projectDir = path.join(tmpDir, 'RunProj');
     fs.mkdirSync(projectDir, { recursive: true });
     fs.writeFileSync(path.join(projectDir, 'RunProj.csproj'), CSPROJ_XML, 'utf8');
@@ -210,7 +211,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
   });
 
   test('debugAtCursor on a method resolves and warns for an undiscovered test', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
     const projectDir = path.join(tmpDir, 'DebugProj');
     fs.mkdirSync(projectDir, { recursive: true });
     fs.writeFileSync(path.join(projectDir, 'DebugProj.csproj'), CSPROJ_XML, 'utf8');
@@ -235,7 +236,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
   });
 
   test('both at-cursor commands are registered and stay registered', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const registered = await vscode.commands.getCommands(true);
     assert.ok(
       registered.includes(CMD_TEST_RUN_AT_CURSOR),
@@ -259,7 +260,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
   });
 
   test('discovery predicates classify a real test project listing', async function () {
-    this.timeout(20_000);
+    this.timeout(FAST_MS);
     // Mirror the line-by-line output that discoverTestsInFolder filters: a
     // banner, prose, and fully-qualified test names from the C# fixture.
     const listing = [
@@ -318,7 +319,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
   });
 
   test('buildFilterArgs assembles the dotnet --filter clause for selected tests', async function () {
-    this.timeout(20_000);
+    this.timeout(FAST_MS);
     assert.deepStrictEqual(buildFilterArgs([]), []);
 
     const single = buildFilterArgs([testItem('Sample.Tests.CalculatorTests.Adds_TwoNumbers')]);
@@ -346,7 +347,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
   });
 
   test('coverage helpers find and parse a real cobertura report on disk', async function () {
-    this.timeout(20_000);
+    this.timeout(FAST_MS);
     const resultsDir = path.join(tmpDir, '.sharplsp-coverage');
     // findCoberturaFile only looks ONE level below the results dir.
     assert.strictEqual(findCoberturaFile(resultsDir), undefined, 'missing dir → undefined');
@@ -392,7 +393,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
   let stubs: UiStubs;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     ({ tmpDir } = await setupLspTestSuite('test-lens-e2e-'));
   });
 
@@ -410,7 +411,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
   });
 
   test('a C# test file exposes Run + Debug test lenses wired to the at-cursor commands', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
     const { uri } = await openCSharpFile(tmpDir, 'LensTargets.cs', CSHARP_TESTS);
 
     const all = await lensesFor(uri);
@@ -441,7 +442,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
   });
 
   test('an F# test file exposes Run + Debug lenses for [<Fact>]/[<Theory>] bindings', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
     const { uri } = await openFSharpFile(tmpDir, 'LensTargets.fs', FSHARP_TESTS);
 
     const lenses = testLensCommands(await lensesFor(uri));
@@ -465,7 +466,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
   });
 
   test('disabling sharplsp.testLens.enabled removes the test lenses; re-enabling restores them', async function () {
-    this.timeout(40_000);
+    this.timeout(COMMAND_MS);
     const { uri } = await openCSharpFile(tmpDir, 'Toggle.cs', CSHARP_TESTS);
 
     const cfg = vscode.workspace.getConfiguration(TEST_LENS_SECTION);
@@ -500,7 +501,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
   });
 
   test('a non-test C# file produces no test lenses, and the signature parsers agree with discovery', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
     const plain = [
       'namespace Sample',
       '{',
@@ -542,7 +543,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
   });
 
   test('formatDuration renders the lens status suffix across the ms/seconds boundary', async function () {
-    this.timeout(20_000);
+    this.timeout(FAST_MS);
     // Drives the exact string the status lens appends after "$(pass) Passed".
     assert.strictEqual(formatDuration(undefined), '');
     assert.strictEqual(formatDuration(0), ' (0ms)');

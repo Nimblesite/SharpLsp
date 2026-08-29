@@ -26,14 +26,12 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { SharpLspLaunchProvider } from '../../debug.js';
 import {
-  BUILD_TIMEOUT_MS,
   CMD_DEBUG_PROGRAM,
   CMD_RUN_PROGRAM,
   CMD_VSCODE_DEBUG_RUN,
   CMD_VSCODE_DEBUG_START,
   DEBUG_TYPE_ID,
   DebugSessionRecorder,
-  OBSERVE_TIMEOUT_MS,
   assertAdapterAvailable,
   assertCommandRegistered,
   emptyF5Config,
@@ -61,6 +59,7 @@ import {
   requireAt,
   requireWorkspaceRoot,
 } from './test-helpers';
+import { DEBUG_SESSION_MS, DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
 // This suite is assertion-dense by design and CLAUDE.md caps a file at 500 LOC,
@@ -178,7 +177,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
   let captures: ResolveCapture[];
 
   suiteSetup(async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(FIXTURE_BUILD_MS);
     workspaceRoot = requireWorkspaceRoot();
     scratchDir = fs.mkdtempSync(path.join(workspaceRoot, 'run-debug-cmds-'));
     isolateFromRepoMsbuild(scratchDir);
@@ -230,7 +229,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-NOCONFIG], [DEBUG-FEATURES-LAUNCH-NODEBUG].
   test('F5 then Ctrl+F5 with no launch.json both reach the provider chain', async function () {
-    this.timeout(OBSERVE_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     registerSpy();
 
     // Interaction 1 — focus a C# document so VS Code's debugger guess is
@@ -316,7 +315,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-NODEBUG], [DEBUG-FEATURES-LAUNCH-TARGET].
   test('Run and Debug start one session each on the identical target', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     // A PREMISE, not a skip: B11 starts real sessions, so a missing adapter must
     // fail loudly here rather than turn a staging regression green.
     assertAdapterAvailable('B11: Run and Debug on one target');
@@ -383,7 +382,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-TARGET].
   test('Debug Program follows the focused document and agrees with the provider', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     // A PREMISE, not a skip: B20 starts a real session, so a missing adapter must
     // fail loudly here rather than turn a staging regression green.
     assertAdapterAvailable('B20: Debug Program follows the focused document');
@@ -439,7 +438,7 @@ suite('Run and Debug commands — the F5 / Ctrl+F5 gestures', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-NODEBUG].
   test('a refused launch is reported to the user instead of being swallowed', async function () {
-    this.timeout(OBSERVE_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
 
     // Interaction 1 — a project that exists and cannot be built.
     const missingDll = builtDll(unbuilt);

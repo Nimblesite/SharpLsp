@@ -25,6 +25,7 @@ import {
   waitForDocumentSymbols,
 } from './test-helpers';
 import { installUiStubs } from './ui-stubs';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 // ── Shared interfaces ─────────────────────────────────────────────
 
@@ -361,7 +362,7 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
   let provider: ExplorerApi['explorerProvider'];
 
   suiteSetup(async function () {
-    this.timeout(120_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('ctx-val-');
     tmpDir = result.tmpDir;
     provider = getProvider();
@@ -410,7 +411,7 @@ suite('Context Menu — Context Values on Tree Nodes', () => {
   });
 
   test("solution node has contextValue 'solution'", async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const roots = provider.getChildren();
     assert.ok(roots !== undefined && roots.length > 0, 'Tree must have roots');
     const sln = roots[0];
@@ -584,7 +585,7 @@ suite('Context Menu — Copy Qualified Name', () => {
   let provider: ExplorerApi['explorerProvider'];
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('ctx-qual-');
     tmpDir = result.tmpDir;
     provider = getProvider();
@@ -641,7 +642,7 @@ suite('Context Menu — Copy Qualified Name', () => {
   });
 
   test('copyQualifiedName for a class produces Namespace.ClassName', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const classNode = findByLabel(provider.getChildren(), 'OuterClass');
     assert.ok(classNode, 'OuterClass must be in the tree');
 
@@ -659,7 +660,7 @@ suite('Context Menu — Copy Qualified Name', () => {
   });
 
   test('copyQualifiedName for a method produces Namespace.Class.Method', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const methodNode = findNode(
       provider.getChildren(),
       (n) => nodeLabel(n).includes('OuterMethod') && n.contextValue === 'symbol.method',
@@ -678,7 +679,7 @@ suite('Context Menu — Copy Qualified Name', () => {
   });
 
   test('copyQualifiedName for a property produces Namespace.Class.Property', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const propNode = findNode(
       provider.getChildren(),
       (n) => nodeLabel(n).includes('OuterProp') && n.contextValue === 'symbol.property',
@@ -697,7 +698,7 @@ suite('Context Menu — Copy Qualified Name', () => {
   });
 
   test('copyQualifiedName for interface produces Namespace.InterfaceName', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const ifaceNode = findByLabel(provider.getChildren(), 'IService');
     assert.ok(ifaceNode, 'IService must be in the tree');
 
@@ -713,7 +714,7 @@ suite('Context Menu — Copy Qualified Name', () => {
   });
 
   test('copyQualifiedName for inner class includes full path', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const innerNode = findNode(
       provider.getChildren(),
       (n) => nodeLabel(n).includes('InnerClass') && n.contextValue === 'symbol.class',
@@ -732,7 +733,7 @@ suite('Context Menu — Copy Qualified Name', () => {
   });
 
   test('copyQualifiedName for inner method includes full hierarchy', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const innerMethodNode = findNode(
       provider.getChildren(),
       (n) => nodeLabel(n).includes('InnerMethod') && n.contextValue === 'symbol.method',
@@ -752,7 +753,7 @@ suite('Context Menu — Copy Qualified Name', () => {
   });
 
   test('copyQualifiedName result is dot-separated and non-empty', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const classNode = findByLabel(provider.getChildren(), 'OuterClass');
     assert.ok(classNode, 'OuterClass must be in the tree');
 
@@ -774,7 +775,7 @@ suite('Context Menu — Copy Name', () => {
   let provider: ExplorerApi['explorerProvider'];
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('ctx-name-');
     tmpDir = result.tmpDir;
     provider = getProvider();
@@ -811,7 +812,7 @@ suite('Context Menu — Copy Name', () => {
   });
 
   test('copyName for a class node copies unqualified class name', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const node = findByLabel(provider.getChildren(), 'AllTypesClass');
     assert.ok(node, 'AllTypesClass node must exist');
 
@@ -824,7 +825,7 @@ suite('Context Menu — Copy Name', () => {
   });
 
   test('copyName for a method node copies just the method name', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const node = findNode(
       provider.getChildren(),
       (n) => nodeLabel(n).includes('Execute') && n.contextValue === 'symbol.method',
@@ -840,7 +841,7 @@ suite('Context Menu — Copy Name', () => {
   });
 
   test('copyName for an interface node copies just the interface name', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const node = findByLabel(provider.getChildren(), 'IRunner');
     assert.ok(node, 'IRunner node must exist');
 
@@ -853,7 +854,7 @@ suite('Context Menu — Copy Name', () => {
   });
 
   test('copyName for a property node copies just the property name', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const node = findNode(
       provider.getChildren(),
       (n) => nodeLabel(n).includes('Label') && n.contextValue === 'symbol.property',
@@ -869,7 +870,7 @@ suite('Context Menu — Copy Name', () => {
   });
 
   test('copyName for an enum node copies just the enum name', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const node = findByLabel(provider.getChildren(), 'MyEnum');
     assert.ok(node, 'MyEnum node must exist');
 
@@ -882,7 +883,7 @@ suite('Context Menu — Copy Name', () => {
   });
 
   test('copyName for a struct node copies just the struct name', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const node = findByLabel(provider.getChildren(), 'MyPoint');
     assert.ok(node, 'MyPoint struct node must exist');
 
@@ -895,7 +896,7 @@ suite('Context Menu — Copy Name', () => {
   });
 
   test('copyName does not include namespace prefix', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const node = findByLabel(provider.getChildren(), 'AllTypesClass');
     assert.ok(node, 'AllTypesClass node must exist');
 
@@ -908,7 +909,7 @@ suite('Context Menu — Copy Name', () => {
   });
 
   test('copyName for solution node copies solution filename', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const roots = provider.getChildren();
     assert.ok(roots !== undefined && roots.length > 0, 'Tree must have roots');
     const slnNode = roots[0];
@@ -933,7 +934,7 @@ suite('Context Menu — Reveal in File Explorer', () => {
   let provider: ExplorerApi['explorerProvider'];
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('ctx-reveal-');
     tmpDir = result.tmpDir;
     provider = getProvider();
@@ -1026,7 +1027,7 @@ suite('Context Menu — Reveal in File Explorer', () => {
   });
 
   test('revealInExplorer executes without error for a class node', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const node = findByLabel(provider.getChildren(), 'RevealClass');
     assert.ok(node, 'RevealClass node must be in the tree');
 
@@ -1036,7 +1037,7 @@ suite('Context Menu — Reveal in File Explorer', () => {
   });
 
   test('revealInExplorer executes without error for a method node', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const node = findNode(
       provider.getChildren(),
       (n) => nodeLabel(n).includes('RevealMethod') && n.contextValue === 'symbol.method',
@@ -1049,7 +1050,7 @@ suite('Context Menu — Reveal in File Explorer', () => {
   });
 
   test('revealInExplorer handles node without symbolUri gracefully', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     // Node without symbolUri — revealInExplorer must silently return.
     const mockNode = {
       symbolUri: undefined,
@@ -1284,7 +1285,7 @@ suite('Context Menu — Project Node Commands Execute', () => {
   let provider: ExplorerApi['explorerProvider'];
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('ctx-proj-');
     tmpDir = result.tmpDir;
     provider = getProvider();
@@ -1324,7 +1325,7 @@ suite('Context Menu — Project Node Commands Execute', () => {
   });
 
   test('sharplsp.openProjectFile executes without error on a project node', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const projectNode = findByContext(provider.getChildren(), 'project');
     assert.ok(projectNode, 'Project node must exist');
 
@@ -1334,7 +1335,7 @@ suite('Context Menu — Project Node Commands Execute', () => {
   });
 
   test('sharplsp.openProjectFile opens the .csproj file in the editor', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const projectNode = findByContext(provider.getChildren(), 'project');
     assert.ok(projectNode, 'Project node must exist');
     assert.strictEqual(
@@ -1374,21 +1375,21 @@ suite('Context Menu — Project Node Commands Execute', () => {
   });
 
   test('sharplsp.build executes without error', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.build');
     }, 'sharplsp.build must not throw');
   });
 
   test('sharplsp.rebuild executes without error', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.rebuild');
     }, 'sharplsp.rebuild must not throw');
   });
 
   test('sharplsp.clean executes without error', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.clean');
     }, 'sharplsp.clean must not throw');
@@ -1407,7 +1408,7 @@ suite('Context Menu — Project Node Commands Execute', () => {
 
   for (const cmd of ['sharplsp.build', 'sharplsp.rebuild', 'sharplsp.clean']) {
     test(`${cmd} executes without error on the solution node`, async function () {
-      this.timeout(30_000);
+      this.timeout(COMMAND_MS);
       const roots = provider.getChildren();
       const slnNode = roots?.[0];
       assert.ok(slnNode, 'Solution node must exist');
@@ -1419,7 +1420,7 @@ suite('Context Menu — Project Node Commands Execute', () => {
   }
 
   test('sharplsp.openProjectFile handles node without projectFilePath gracefully', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     const mockNode = {
       projectFilePath: undefined,
       sortName: 'NoPath',
@@ -1431,7 +1432,7 @@ suite('Context Menu — Project Node Commands Execute', () => {
   });
 
   test('sharplsp.addProjectReference handles node without projectFilePath gracefully', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     const mockNode = {
       projectFilePath: undefined,
       sortName: 'NoPath',
@@ -1443,7 +1444,7 @@ suite('Context Menu — Project Node Commands Execute', () => {
   });
 
   test('sharplsp.nuget.addFromExplorer handles node without projectFilePath gracefully', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     const mockNode = {
       projectFilePath: undefined,
       sortName: 'NoPath',
@@ -1635,7 +1636,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('pkg-consol-');
     tmpDir = result.tmpDir;
   });
@@ -1645,7 +1646,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
   });
 
   test('dry-run reports the shared package with full detail and touches no files', async function () {
-    this.timeout(20_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     const { sln, dir } = makeSolution(tmpDir, 'DryDetail', [
       { name: 'A', refs: [['Serilog', '3.1.0']] },
@@ -1681,7 +1682,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
   });
 
   test('dry-run ignores packages referenced by only one project', async function () {
-    this.timeout(20_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     const { sln } = makeSolution(tmpDir, 'MixedShare', [
       {
@@ -1712,7 +1713,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
   });
 
   test('dry-run selects the highest version across three projects', async function () {
-    this.timeout(20_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     const { sln } = makeSolution(tmpDir, 'ThreeWay', [
       { name: 'A', refs: [['Newtonsoft.Json', '12.0.1']] },
@@ -1730,7 +1731,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
   });
 
   test('dry-run enumerates F# (.fsproj) projects too', async function () {
-    this.timeout(20_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     const { sln } = makeSolution(tmpDir, 'FSharpShare', [
       { name: 'A', refs: [['FSharp.Data', '6.3.0']], ext: 'fsproj' },
@@ -1748,7 +1749,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
   });
 
   test('apply hoists shared package into Directory.Build.props and strips projects', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     const { sln, dir } = makeSolution(tmpDir, 'Apply', [
       { name: 'A', refs: [['Serilog', '3.1.0']] },
@@ -1796,7 +1797,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
   });
 
   test('apply preserves existing Directory.Build.props content', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     const { sln, dir } = makeSolution(tmpDir, 'PreserveProps', [
       { name: 'A', refs: [['Serilog', '3.1.0']] },
@@ -1814,7 +1815,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
   });
 
   test('apply is idempotent — a second scan finds nothing shared', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     const { sln } = makeSolution(tmpDir, 'Idempotent', [
       { name: 'A', refs: [['Serilog', '3.1.0']] },
@@ -1832,7 +1833,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
   });
 
   test('reports nothing when no package is shared', async function () {
-    this.timeout(20_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     const { sln, dir } = makeSolution(tmpDir, 'NoShare', [
       { name: 'A', refs: [['OnlyA', '1.0.0']] },
@@ -1849,7 +1850,7 @@ suite('Package Maintenance — Consolidate (LSP e2e)', () => {
   });
 
   test('a single-project solution shares nothing', async function () {
-    this.timeout(20_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     const { sln } = makeSolution(tmpDir, 'Single', [{ name: 'A', refs: [['Serilog', '3.1.0']] }]);
     const resp = await consolidate(lsp, sln, true);
@@ -1865,7 +1866,7 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('pkg-unused-');
     tmpDir = result.tmpDir;
   });
@@ -1875,7 +1876,7 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
   });
 
   test('unused request resolves against the loaded fixture project via Roslyn', async function () {
-    this.timeout(40_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const lsp = getPkgLspClient();
     const projectPath = fixtureProjectPath();
 
@@ -1890,7 +1891,7 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
         }
       },
       (r) => r !== undefined,
-      30_000,
+      LSP_RESPONSE_MS,
       1_000,
     );
 
@@ -1917,7 +1918,7 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
   });
 
   test('unused request rejects for a project file that cannot be read', async function () {
-    this.timeout(15_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     const bogus = path.join(tmpDir, 'Nope', 'Nope.csproj');
     await assert.rejects(async () => {
@@ -1926,7 +1927,7 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
   });
 
   test('removeUnusedPackages command runs end-to-end through the real LSP', async function () {
-    this.timeout(40_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     const projectPath = fixtureProjectPath();
     const projectNode = { contextValue: 'project', projectFilePath: projectPath, children: [] };
@@ -1970,7 +1971,7 @@ suite('Package Maintenance — Unused (LSP e2e)', () => {
   });
 
   test('consolidatePackages command runs end-to-end through the real LSP', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS);
     const lsp = getPkgLspClient();
     // No shared packages → the command takes the non-modal "nothing to do" path,
     // exercising the real LSP scan without a confirmation dialog.

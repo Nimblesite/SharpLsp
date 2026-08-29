@@ -2,11 +2,11 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { LSP_RESPONSE_TIMEOUT_MS, pollUntilResult } from './test-helpers';
+import { pollUntilResult } from './test-helpers';
+import { DOTNET_CLI_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { loadSolutionInServer } from './real-repo-helpers';
 
 export const PACKAGE = '#:package Newtonsoft.Json@13.0.3';
-export const RESTORE_TIMEOUT_MS = 120_000;
 
 export function positionAfter(text: string, marker: string): vscode.Position {
   const offset = text.indexOf(marker);
@@ -55,7 +55,7 @@ export async function waitForErrorCode(
   const diagnostics = await pollUntilResult(
     async () => errorsFor(uri),
     (items) => items.some((diagnostic) => diagnosticCode(diagnostic) === code),
-    LSP_RESPONSE_TIMEOUT_MS * 4,
+    LSP_RESPONSE_MS * 4,
   );
   assert.ok(
     diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === code),
@@ -80,7 +80,7 @@ export async function completionList(
         resolveCount,
       )) ?? new vscode.CompletionList(),
     (list) => list.items.some((item) => item.label.toString() === requiredLabel),
-    RESTORE_TIMEOUT_MS,
+    DOTNET_CLI_MS,
     1_000,
   );
 }
@@ -110,7 +110,7 @@ export async function waitForHoverText(
   const hovers = await pollUntilResult(
     async () => hoverAt(uri, position),
     (items) => hoverText(items).includes(requiredText),
-    RESTORE_TIMEOUT_MS,
+    DOTNET_CLI_MS,
     1_000,
   );
   assert.ok(

@@ -31,6 +31,7 @@ import {
   snapshotItems,
 } from './test-explorer-kit';
 import { comparablePath, removeDirRecursive } from './test-helpers.js';
+import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 const CS = fixtureFor('xunit-csharp');
 const FS_FIXTURE = fixtureFor('xunit-fsharp');
@@ -75,7 +76,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
   let listing: string;
 
   suiteSetup(async function () {
-    this.timeout(900_000);
+    this.timeout(FIXTURE_BUILD_MS);
     api = await activateTestExplorer();
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-testexplorer-win-'));
     // The most common real Windows path with a space followed by `(`.
@@ -99,7 +100,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
   });
 
   suiteTeardown(async function () {
-    this.timeout(300_000);
+    this.timeout(DOTNET_CLI_MS);
     // A `dotnet test` pointed at a deleted directory hangs forever and poisons
     // every later suite, so the debounced sweep lands BEFORE the fixture goes.
     await drainDiscovery(() => {
@@ -110,7 +111,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
   });
 
   test('discovery survives a solution directory carrying a space AND parentheses', async function () {
-    this.timeout(600_000);
+    this.timeout(DOTNET_CLI_MS);
     // The premise of this whole suite: the fixture really is in a hostile path.
     assert.strictEqual(
       path.basename(path.dirname(hostileDir)),
@@ -291,7 +292,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
   });
 
   test('the assembly banner parser strips the framework suffix from the RIGHT of a hostile path', function () {
-    this.timeout(60_000);
+    this.timeout(FAST_MS);
     // The genuine listing for a path containing ` (` — why `lastIndexOf` exists.
     assert.strictEqual(
       listing.includes('Test run for '),
@@ -466,7 +467,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
   });
 
   test('running a C# and an F# test from a hostile directory reports real per-test outcomes', async function () {
-    this.timeout(900_000);
+    this.timeout(DOTNET_CLI_MS);
     const ids = await discoverSolution(api, slnPath, EXPECTED);
     assert.strictEqual(
       ids.includes(FS_FIXTURE.passing),
@@ -638,7 +639,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
   });
 
   test('the filter grammar escapes every VSTest metacharacter and nothing else', function () {
-    this.timeout(60_000);
+    this.timeout(FAST_MS);
     // Each of these is grammar to VSTest, so each must be backslash-escaped.
     assert.strictEqual(
       escapeFilterValue('\\'),

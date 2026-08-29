@@ -40,6 +40,7 @@ import {
 import { parseFailureMessage, parseRunSummary } from '../../test-run-output.js';
 import { isRunError, parseTrx, parseTrxDuration, parseTrxReport } from '../../test-trx.js';
 import { fixtureFor } from './test-explorer-fixtures';
+import { FAST_MS } from './test-timeouts';
 
 const CS = fixtureFor('xunit-csharp');
 
@@ -155,7 +156,7 @@ const NO_MATCH_TRX = [
 
 suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
   test('the TRX reader survives a BOM, CRLF, and every FQN shape Windows produces', function () {
-    this.timeout(60_000);
+    this.timeout(FAST_MS);
     const results = parseTrx(WINDOWS_TRX);
     assert.strictEqual(
       results.length,
@@ -318,7 +319,7 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
   });
 
   test('a REFUSED filter and an unmatched filter are told apart by the run info', function () {
-    this.timeout(60_000);
+    this.timeout(FAST_MS);
     // This distinction is the whole basis of the unfiltered retry. Getting it
     // wrong either re-runs the world on every empty filter, or leaves every F#
     // NUnit test permanently unrunnable.
@@ -377,7 +378,7 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
   });
 
   test('the console reader sums every assembly and never calls a skip a failure', function () {
-    this.timeout(60_000);
+    this.timeout(FAST_MS);
     const passed = parseRunSummary(summaryLine('Passed', 0, 1, 0, 'XunitCs.dll'));
     assert.ok(passed, 'a passing run prints a summary');
     assert.strictEqual(passed.outcome, 'passed', 'a passing run is a pass');
@@ -506,7 +507,7 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
   });
 
   test('the dotnet child process is pinned to English and sized for a cold Windows restore', function () {
-    this.timeout(60_000);
+    this.timeout(FAST_MS);
     // EVERY string this file parses — `Passed!`, `Error Message:`, `Test run for`
     // — is English. `dotnet` localizes all of them, so on a German or Japanese
     // Windows install nothing would match and every test would read as failed.
@@ -557,7 +558,7 @@ suite('Test Explorer e2e — TRX and console readers on Windows shapes', () => {
   });
 
   test('MSBuild percent-escaping in the assembly banner is decoded, not dropped', function () {
-    this.timeout(60_000);
+    this.timeout(FAST_MS);
     // The `Test run for <path>` banner comes through MSBuild, which reserves
     // `%`, `*`, `?`, `@`, `$`, `(`, `)`, `;`, `'` and `,` inside property and
     // item values and encodes them as `%XX`. `C:\\Program Files (x86)\\…` — the

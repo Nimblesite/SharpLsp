@@ -1,7 +1,8 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { closeAllEditors, pollUntilResult, waitForDocumentSymbols } from './test-helpers';
-import { FSHARP_COLD_TIMEOUT_MS, openFSharpFixture } from './fsharp-helpers';
+import { openFSharpFixture } from './fsharp-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 /**
  * End-to-end coverage for F# `workspace/symbol` (the editor's "Go to Symbol in
@@ -21,7 +22,7 @@ const ENUM = vscode.SymbolKind.Enum;
 async function pollWorkspaceSymbols(
   query: string,
   predicate: (symbols: vscode.SymbolInformation[]) => boolean,
-  timeoutMs: number = FSHARP_COLD_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.SymbolInformation[]> {
   return pollUntilResult(
     async () =>
@@ -47,11 +48,11 @@ suite('F# LSP — Workspace Symbol (Ctrl-T)', () => {
   teardown(closeAllEditors);
 
   test('finds module + member symbols from an open F# file', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 45_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     // Interaction 1 — open Library.fs and warm the FCS project crack.
     const library = await openFSharpFixture('Library.fs');
-    await waitForDocumentSymbols(library.uri, FSHARP_COLD_TIMEOUT_MS);
+    await waitForDocumentSymbols(library.uri, LSP_RESPONSE_MS);
 
     // Interaction 2 — query for the `Geometry` module.
     const geometry = await pollWorkspaceSymbols('Geometry', (syms) =>
@@ -81,13 +82,13 @@ suite('F# LSP — Workspace Symbol (Ctrl-T)', () => {
   });
 
   test('finds type symbols across multiple open F# files with correct kinds', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 60_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     // Interaction 1 — open both the domain types and the logic file.
     const domain = await openFSharpFixture('Domain.fs');
     const library = await openFSharpFixture('Library.fs');
-    await waitForDocumentSymbols(domain.uri, FSHARP_COLD_TIMEOUT_MS);
-    await waitForDocumentSymbols(library.uri, FSHARP_COLD_TIMEOUT_MS);
+    await waitForDocumentSymbols(domain.uri, LSP_RESPONSE_MS);
+    await waitForDocumentSymbols(library.uri, LSP_RESPONSE_MS);
 
     // Interaction 2 — the `Shape` discriminated union (Enum-kind) from Domain.fs.
     const shape = await pollWorkspaceSymbols('Shape', (syms) =>
@@ -131,10 +132,10 @@ suite('F# LSP — Workspace Symbol (Ctrl-T)', () => {
   });
 
   test('matches fuzzily and returns nothing for a non-matching query', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 45_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const library = await openFSharpFixture('Library.fs');
-    await waitForDocumentSymbols(library.uri, FSHARP_COLD_TIMEOUT_MS);
+    await waitForDocumentSymbols(library.uri, LSP_RESPONSE_MS);
 
     // Interaction 1 — fuzzy subsequence: `geom` must match `Geometry`.
     const fuzzy = await pollWorkspaceSymbols('geom', (syms) =>

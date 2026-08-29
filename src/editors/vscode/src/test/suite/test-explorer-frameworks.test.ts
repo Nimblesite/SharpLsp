@@ -47,13 +47,8 @@ import {
   type TestItemSnapshot,
 } from './test-explorer-kit';
 import { comparablePath, removeDirRecursive } from './test-helpers';
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
-/** Cold restore + build of SIX test projects, then a full VSTest enumeration. */
-const SUITE_SETUP_TIMEOUT_MS = 1_800_000;
-/** Any test that shells out to `dotnet` through the controller. */
-const DOTNET_TEST_TIMEOUT_MS = 900_000;
-/** Ceiling for the controller's `onResultsChanged` after a single run. */
-const RESULT_EVENT_TIMEOUT_MS = 600_000;
 /** The idiomatic F# backtick fact whose xUnit FQN literally contains spaces. */
 const FS_SPACED_FACT = 'Fs.Xunit.Fixtures.adds two numbers with spaces';
 /** The NUnit `[TestCase]` FQNs — parentheses and commas, verbatim. */
@@ -507,7 +502,7 @@ async function runGreen(
   fqn: string,
   cwd: string,
 ): Promise<CachedTestResult> {
-  const notified = nextResultsChange(controller, RESULT_EVENT_TIMEOUT_MS);
+  const notified = nextResultsChange(controller, DOTNET_CLI_MS);
   const before = controller.cachedResults.size;
   const result = await controller.runSingle(fqn, cwd);
   assertGreen(result, fqn, fixture.key);
@@ -624,7 +619,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   }
 
   suiteSetup(async function () {
-    this.timeout(SUITE_SETUP_TIMEOUT_MS);
+    this.timeout(FIXTURE_BUILD_MS);
     api = await activateTestExplorer();
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-frameworks-'));
     projectDirs = writeAllProjects(root);
@@ -642,7 +637,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   });
 
   suiteTeardown(async function () {
-    this.timeout(600_000);
+    this.timeout(DOTNET_CLI_MS);
     // Drain reactive re-discovery BEFORE deleting the fixture.
     await drainDiscovery(() => {
       api.explorerProvider.clear();
@@ -652,7 +647,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   });
 
   test('discovery finds every test in all six framework × language fixtures', async function () {
-    this.timeout(DOTNET_TEST_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     api.testController.items.replace([]);
     assert.deepStrictEqual(
       collectItemIds(api.testController.items),
@@ -726,7 +721,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   });
 
   test('the DisplayName listing loses NUnit and MSTest entirely — the FQN pass does not', async function () {
-    this.timeout(DOTNET_TEST_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const ids = await ensureTree();
     const [announced, displayNames] = [parseAnnouncedAssemblies(listing), parseTestList(listing)];
     assert.strictEqual(announced.length, 6, `one banner per project: ${announced.join(', ')}`);
@@ -785,7 +780,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   });
 
   test('every discovered item carries the label, description, uri and tags the tree renders', async function () {
-    this.timeout(DOTNET_TEST_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     await ensureTree();
     const snapshots = snapshotItems(api.testController.items);
     const labels = snapshots.map((snapshot) => snapshot.label);
@@ -838,7 +833,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   });
 
   test('the three awkward FQN shapes survive discovery verbatim', async function () {
-    this.timeout(DOTNET_TEST_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const ids = await ensureTree();
     assert.strictEqual(
       FS_SPACED_FACT,
@@ -919,7 +914,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   });
 
   test('F# first: one passing test from each F# fixture runs green through the controller', async function () {
-    this.timeout(DOTNET_TEST_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     await ensureTree();
     const fsharp = FRAMEWORK_FIXTURES.filter((fixture) => fixture.language === 'fsharp');
     assert.strictEqual(fsharp.length, 3, 'F# must cover xUnit, NUnit and MSTest');
@@ -986,7 +981,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   });
 
   test('and then C#: one passing test from each C# fixture runs green through the controller', async function () {
-    this.timeout(DOTNET_TEST_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     await ensureTree();
     const csharp = FRAMEWORK_FIXTURES.filter((fixture) => fixture.language === 'csharp');
     assert.strictEqual(csharp.length, 3, 'C# must cover xUnit, NUnit and MSTest');
@@ -1053,7 +1048,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   });
 
   test('an NUnit [TestCase] name with parentheses runs green — the filter-escaping regression', async function () {
-    this.timeout(DOTNET_TEST_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     await ensureTree();
     const [fsNunit, csNunit] = [fixtureByKey('nunit-fsharp'), fixtureByKey('nunit-csharp')];
     assert.strictEqual(fsNunit.parameterized, FS_NUNIT_CASE, 'the F# [<TestCase>] FQN, verbatim');
@@ -1106,7 +1101,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
   });
 
   test('a run of a name that does not exist reports notRun, names the test, and never reports a pass', async function () {
-    this.timeout(DOTNET_TEST_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     // Deliberately OUTSIDE every fixture's namespace: the extension host runs one
     // controller for the whole suite, and its result cache outlives a suite, so a
     // ghost id sharing a fixture's prefix pollutes a neighbouring suite's counts.
@@ -1114,7 +1109,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     const fixture = fixtureByKey('xunit-csharp');
     const ids = await ensureTree();
     assertGhostAbsent(api.testController.items, ids, ghost);
-    const notified = nextResultsChange(api.testController, RESULT_EVENT_TIMEOUT_MS);
+    const notified = nextResultsChange(api.testController, DOTNET_CLI_MS);
     const result = await api.testController.runSingle(ghost, dirFor(fixture));
     assertNotRun(result, ghost);
     assert.strictEqual(await notified, true, 'a notRun result still notifies the lens listeners');

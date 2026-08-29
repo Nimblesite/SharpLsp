@@ -54,6 +54,7 @@ import {
   itemsFor,
   sorted,
 } from './test-explorer-outcome-assertions';
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 const CS = fixtureFor('xunit-csharp');
 const FSX = fixtureFor('xunit-fsharp');
@@ -88,8 +89,6 @@ const OUTCOME_GROUPS = { passing: PASSING, failing: FAILING, skipped: SKIPPED };
 const COVERAGE_DIR_NAME = '.sharplsp-coverage';
 /** The terminal the Debug profile opens for the user to attach to. */
 const DEBUG_TERMINAL = 'SharpLsp Test Debug';
-/** A cold restore + build plus several real `dotnet test` invocations. */
-const RUN_TIMEOUT_MS = 900_000;
 
 suite('Test Explorer e2e — run profiles, outcome attribution and coverage', () => {
   let api: SharpLspExtensionApi;
@@ -97,7 +96,8 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   let slnPath: string;
   let coverageDir: string;
   suiteSetup(async function () {
-    this.timeout(RUN_TIMEOUT_MS);
+    // Cold restore + build of both fixture projects plus the adapter JIT.
+    this.timeout(FIXTURE_BUILD_MS);
     api = await activateTestExplorer();
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-testoutcomes-'));
     coverageDir = path.join(root, COVERAGE_DIR_NAME);
@@ -113,13 +113,13 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     await pollUntilDiscovered(api.testController, ALL_TESTS);
   });
   teardown(async function () {
-    this.timeout(RUN_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     // Never touch the fixture while a `dotnet` invocation is still in flight.
     await api.testController.whenIdle();
     removeDirRecursive(coverageDir);
   });
   suiteTeardown(async function () {
-    this.timeout(300_000);
+    this.timeout(DOTNET_CLI_MS);
     // Drain re-discovery first: `dotnet test` pointed at a removed directory
     // hangs and poisons the whole host.
     await drainDiscovery(() => {
@@ -130,7 +130,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   });
 
   test('pressing ▶ on the whole tree attributes a pass, a failure and a SKIP to each own test', async function () {
-    this.timeout(RUN_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     assert.strictEqual(
       FSX.passing,
       'Fs.Xunit.Fixtures.addsTwoNumbers',
@@ -250,7 +250,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   });
 
   test('the whole tree runs in ONE dotnet invocation, not one per selected test', async function () {
-    this.timeout(RUN_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const items = itemsFor(api, ALL_TESTS);
     assert.strictEqual(
       items.length,
@@ -285,9 +285,9 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'a real dotnet invocation takes measurable wall-clock time',
     );
     assert.strictEqual(
-      singleMs < RUN_TIMEOUT_MS,
+      singleMs < DOTNET_CLI_MS,
       true,
-      `a warm single-test invocation must finish well inside the suite timeout, took ${singleMs}ms`,
+      `a warm single-test invocation must finish well inside the CLI ceiling, took ${singleMs}ms`,
     );
     assert.strictEqual(
       api.testController.getResult(CS.passing),
@@ -352,7 +352,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   });
 
   test('onResultsChanged fires exactly once for a profile run and once for a single re-run', async function () {
-    this.timeout(RUN_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const items = itemsFor(api, [CS.passing, FSX.failing]);
     assert.strictEqual(items.length, 2, 'two items are selected for the profile run');
     assert.deepStrictEqual(
@@ -367,7 +367,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       firings += 1;
     });
     assert.strictEqual(firings, 0, 'subscribing must not itself fire a notification');
-    const profileChange = nextResultsChange(api.testController, RUN_TIMEOUT_MS);
+    const profileChange = nextResultsChange(api.testController, DOTNET_CLI_MS);
     await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, items);
     assert.strictEqual(
       await profileChange,
@@ -388,7 +388,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       true,
       `listeners see the REAL assertion text: ${failed.message ?? 'none'}`,
     );
-    const singleChange = nextResultsChange(api.testController, RUN_TIMEOUT_MS);
+    const singleChange = nextResultsChange(api.testController, DOTNET_CLI_MS);
     const single = await api.testController.runSingle(FSX.skipped);
     assert.strictEqual(await singleChange, true, 'runSingle must fire onResultsChanged as well');
     assertSkipped(single, FSX.skipped);
@@ -444,7 +444,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   });
 
   test('running a SUBSET refreshes only the selected tests results', async function () {
-    this.timeout(RUN_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     await runViaProfile(
       api.testController,
       vscode.TestRunProfileKind.Run,
@@ -539,7 +539,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   });
 
   test('the Coverage profile writes a Cobertura report beside the solution and still attributes outcomes', async function () {
-    this.timeout(RUN_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     assert.strictEqual(
       fs.existsSync(coverageDir),
       false,
@@ -712,7 +712,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   });
 
   test('the profiles are Run/Debug/Coverage and Debug opens a terminal instead of caching a result', async function () {
-    this.timeout(RUN_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const profiles = api.testController.profiles;
     assert.strictEqual(profiles.length, 3, 'exactly three run profiles are registered');
     assert.deepStrictEqual(
@@ -849,7 +849,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   });
 
   test('a cancelled run resolves cleanly and never reports a pass', async function () {
-    this.timeout(RUN_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     // Whether cancellation lands before or after the invocation starts, neither
     // a red nor a skipped test may ever end up marked as passed.
     const selection = [CS.failing, FSX.skipped] as const;
@@ -950,7 +950,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   });
 
   test('running an id no project contains reports notRun, names the id, and leaves the tree alone', async function () {
-    this.timeout(RUN_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const ghost = 'Ghost.Namespace.NoSuchClass.NoSuchTest';
     const treeBefore = collectItemIds(api.testController.items);
     assert.strictEqual(
@@ -1044,7 +1044,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   });
 
   test('the status lens renders exactly what the cache holds for a pass, a skip and a failure', async function () {
-    this.timeout(RUN_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const selection = [CS.passing, CS.skipped, CS.failing, FSX.skipped, FSX.failing] as const;
     const items = itemsFor(api, selection);
     assert.strictEqual(

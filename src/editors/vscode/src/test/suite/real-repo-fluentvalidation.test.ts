@@ -37,6 +37,7 @@ import {
   waitForHoverResult,
   waitForSelectionRanges,
 } from './test-helpers';
+import { ACTIVATION_MS, LSP_RESPONSE_MS, REAL_REPO_MS } from './test-timeouts';
 
 const ABSTRACT_VALIDATOR_CS = 'src/FluentValidation/AbstractValidator.cs';
 const IVALIDATOR_CS = 'src/FluentValidation/IValidator.cs';
@@ -45,7 +46,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   let repoDir: string;
 
   suiteSetup(async function () {
-    this.timeout(900_000);
+    this.timeout(REAL_REPO_MS);
     repoDir = ensureRepoReady(FLUENT_VALIDATION);
     await loadSolutionInServer(path.join(repoDir, FLUENT_VALIDATION.sln));
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
@@ -58,13 +59,13 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   suiteTeardown(async function () {
-    this.timeout(120_000);
+    this.timeout(ACTIVATION_MS);
     await closeAllEditors();
     await loadSolutionInServer(fixtureSolutionPath());
   });
 
   test('document symbols: the generic validator surface is fully mapped', async function () {
-    this.timeout(120_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
     const symbols = await waitForDocumentSymbols(uri, 120_000);
     const names = flattenSymbolNames(symbols);
@@ -90,7 +91,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   test('hover storm: generic members produce signature-bearing markdown', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
     const anchors: [string, string][] = [
       ['public abstract partial class AbstractValidator<T>', 'AbstractValidator'],
@@ -110,7 +111,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   test('navigation: definition into IValidator.cs and references across the codebase', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
     const usage = positionOf(doc, 'class AbstractValidator<T> : IValidator<T>', 'IValidator');
 
@@ -159,7 +160,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   test('live edit + completion: protected members surface inside the class body', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri, editor } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
     const marker = 'public IRuleBuilderInitial<T, TProperty> RuleFor<TProperty>';
     const insertAt = positionOf(doc, marker);
@@ -195,10 +196,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   test('diagnostics round-trip: a broken generic constraint surfaces and clears', async function () {
-    // Four sequential waits of 120s each: the budget has to exceed their sum,
-    // or mocha kills the test first and reports an opaque timeout instead of
-    // whichever stage actually stalled.
-    this.timeout(600_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri, editor } = await openRepoFile(repoDir, IVALIDATOR_CS);
     await waitForDocumentSymbols(uri, 120_000);
     // Whatever the server settles on for this file IS the baseline — the test is
@@ -241,7 +239,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   test('structure + rename dry-run: folding, selections, and a safe local rename plan', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
     const folding = await waitForFoldingRanges(uri, 60_000);
     assert.ok(
@@ -287,7 +285,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   test('stress: rapid-fire mixed requests stay within memory/CPU bounds', async function () {
-    this.timeout(300_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
     const hoverAt = positionOf(
       doc,

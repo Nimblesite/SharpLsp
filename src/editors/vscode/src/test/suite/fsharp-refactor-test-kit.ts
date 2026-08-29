@@ -13,12 +13,12 @@ import {
   type WorkspaceEditSnapshot,
 } from './refactor-test-helpers';
 import { pollUntilResult } from './test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Assertion helpers shared by the real-LSP F# suites. [ANALYZERS-FSAC-PARITY]
 
 export type { PrepareRenameResult } from './refactor-test-helpers';
 
-export const FSHARP_REFACTOR_TIMEOUT_MS = 120_000;
 
 export async function openOverlay(relativePath: string, source: string): Promise<OpenFixture> {
   const fixture = await openFixtureDocument(relativePath);
@@ -35,7 +35,7 @@ export async function diagnosticWithCode(
   return waitForMatchingDiagnostics(
     uri,
     (diagnostics) => diagnostics.some((diagnostic) => diagnosticCode(diagnostic) === code),
-    FSHARP_REFACTOR_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
   );
 }
 
@@ -43,7 +43,7 @@ export async function diagnosticGone(uri: vscode.Uri, code: string): Promise<vsc
   return waitForMatchingDiagnostics(
     uri,
     (diagnostics) => diagnostics.every((diagnostic) => diagnosticCode(diagnostic) !== code),
-    FSHARP_REFACTOR_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
   );
 }
 
@@ -56,7 +56,7 @@ export async function quickFixes(
     range,
     kind: vscode.CodeActionKind.QuickFix,
     predicate: () => true,
-    timeoutMs: FSHARP_REFACTOR_TIMEOUT_MS,
+    timeoutMs: LSP_RESPONSE_MS,
   });
 }
 
@@ -70,7 +70,7 @@ export async function resolvedQuickFixes(
     range,
     kind: vscode.CodeActionKind.QuickFix,
     predicate: (actions) => actions.some((action) => action.title === title),
-    timeoutMs: FSHARP_REFACTOR_TIMEOUT_MS,
+    timeoutMs: LSP_RESPONSE_MS,
   });
 }
 

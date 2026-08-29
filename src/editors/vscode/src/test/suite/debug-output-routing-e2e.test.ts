@@ -18,8 +18,8 @@ import {
   stopDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS } from './run-debug-kit';
 import { deepEq, eq, pollUntilResult, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 /** DAP output categories a debuggee's own writes may legitimately carry. */
 const PROGRAM_CATEGORIES: readonly string[] = ['stdout', 'stderr', 'console', ''];
@@ -29,7 +29,7 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
 
   // Implements [DEBUG-FEATURES-LAUNCH-OUTPUT] row `internalConsole`.
   test('internalConsole delivers the debuggee’s stdout as DAP output events', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { recorder } = debuggee();
 
     // Interaction 1 — launch with the Debug Console selected.
@@ -89,7 +89,7 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
 
   // Implements [DEBUG-FEATURES-LAUNCH-OUTPUT] row `integratedTerminal` and rule 1.
   test('integratedTerminal gives the debuggee a real terminal, so stdin works', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { recorder } = debuggee();
 
     // Interaction 1 — launch with the default the specification names.

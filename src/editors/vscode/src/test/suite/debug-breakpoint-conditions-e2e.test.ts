@@ -29,8 +29,8 @@ import {
   startDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS } from './run-debug-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 /** The `breakpoints` entries of the most recent `setBreakpoints` request. */
 function sentBreakpoints(
@@ -50,7 +50,7 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
 
   // Implements [DEBUG-FEATURES-BREAKPOINTS] "Conditional breakpoints (C# expression)".
   test('a condition decides the stop: true stops once, false never stops', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — arm a condition that becomes true on the LAST iteration only.
@@ -118,7 +118,7 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
   // Implements [DEBUG-FEATURES-BREAKPOINTS] "Hit-count breakpoints", including
   // the `>`, `>=`, `<`, `<=`, `==` and `%` operator set that section names.
   test('a hit count selects which visit stops, plainly and relationally', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — a plain count: stop on the third visit only.
@@ -196,7 +196,7 @@ suite('Debug breakpoints — conditions, hit counts and logpoints', () => {
   // Implements [DEBUG-FEATURES-BREAKPOINTS] "Logpoints (tracepoints)" and its
   // Phase-4 emulation rules: evaluate, emit as an `output` event, never pause.
   test('a logpoint logs the interpolated message and never pauses the debuggee', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — arm a logpoint referencing two frame locals.

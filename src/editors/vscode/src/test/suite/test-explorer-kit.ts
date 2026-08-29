@@ -11,12 +11,10 @@ import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import type { SharpLspTestController } from '../../testing.js';
 import { EXTENSION_ID, sleep } from './test-helpers';
+import { FIXTURE_BUILD_MS } from './test-timeouts';
 
 /** Longer than the controller's 1 s reactive-discovery debounce. */
 export const DISCOVERY_SETTLE_MS = 1_800;
-
-/** A cold `dotnet test` sweep over a freshly written fixture solution. */
-export const DISCOVERY_TIMEOUT_MS = 240_000;
 
 /** Everything about a TestItem an assertion could care about. */
 export interface TestItemSnapshot {
@@ -90,7 +88,7 @@ export function findItem(
 export async function pollForIds(
   controller: SharpLspTestController,
   predicate: (ids: string[]) => boolean,
-  timeoutMs: number = DISCOVERY_TIMEOUT_MS,
+  timeoutMs: number = FIXTURE_BUILD_MS,
   intervalMs = 500,
 ): Promise<string[]> {
   const deadline = Date.now() + timeoutMs;
@@ -106,7 +104,7 @@ export async function pollForIds(
 export async function pollUntilDiscovered(
   controller: SharpLspTestController,
   expected: readonly string[],
-  timeoutMs: number = DISCOVERY_TIMEOUT_MS,
+  timeoutMs: number = FIXTURE_BUILD_MS,
 ): Promise<string[]> {
   return pollForIds(controller, (ids) => expected.every((name) => ids.includes(name)), timeoutMs);
 }
@@ -133,7 +131,7 @@ export async function discoverSolution(
   api: SharpLspExtensionApi,
   solutionPath: string,
   expected: readonly string[],
-  timeoutMs: number = DISCOVERY_TIMEOUT_MS,
+  timeoutMs: number = FIXTURE_BUILD_MS,
 ): Promise<string[]> {
   await api.explorerProvider.loadSolution(solutionPath);
   await api.testController.activateAndDiscover();

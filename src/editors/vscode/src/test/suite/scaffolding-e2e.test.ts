@@ -37,6 +37,7 @@ import {
   findProjectFile,
   generateFileContent,
 } from '../../scaffolding.js';
+import { ACTIVATION_MS, COMMAND_MS, DOTNET_CLI_MS } from './test-timeouts';
 
 const CMD_NEW_FILE = 'sharplsp.newFile';
 const CMD_NEW_PROJECT = 'sharplsp.newProject';
@@ -110,7 +111,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   let created: string[];
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     ({ tmpDir } = await setupLspTestSuite('scaffold-e2e'));
   });
 
@@ -170,7 +171,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
 
   for (const { template, snippet } of FILE_CASES) {
     test(`newFile creates a ${template} matching generateFileContent and opens it`, async function () {
-      this.timeout(30_000);
+      this.timeout(COMMAND_MS);
       const folder = workspaceFolder();
       const name = `ScaffTmp_${template}_${uniqueToken()}`;
       const filePath = track(path.join(folder, `${name}.cs`));
@@ -220,7 +221,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   }
 
   test('newFile cancelled at the template picker writes no file and opens nothing', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const folder = workspaceFolder();
     const name = `ScaffTmp_Cancelled_${uniqueToken()}`;
     const filePath = track(path.join(folder, `${name}.cs`));
@@ -242,7 +243,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   });
 
   test('newFile cancelled at the name prompt (empty name) writes no file', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const folder = workspaceFolder();
     const name = `ScaffTmp_Empty_${uniqueToken()}`;
     // An empty string name is the documented cancel condition (`name === ''`).
@@ -300,7 +301,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   // exactly the behaviour we assert (no throw, project stands alone).
 
   test('newProject scaffolds a real C# console project the workspace folder', async function () {
-    this.timeout(60_000);
+    this.timeout(DOTNET_CLI_MS);
     const folder = workspaceFolder();
     const name = `ScaffTmp_Cs_${uniqueToken()}`;
     const projDir = track(path.join(folder, name));
@@ -327,7 +328,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   });
 
   test('newProject scaffolds a real F# class library (--language branch)', async function () {
-    this.timeout(60_000);
+    this.timeout(DOTNET_CLI_MS);
     const folder = workspaceFolder();
     const name = `ScaffTmp_Fs_${uniqueToken()}`;
     const projDir = track(path.join(folder, name));
@@ -342,7 +343,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   });
 
   test('newProject cancels cleanly when no template is picked', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const folder = workspaceFolder();
     const name = `ScaffTmp_NoTpl_${uniqueToken()}`;
     const projDir = track(path.join(folder, name));
@@ -357,7 +358,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   });
 
   test('newProject cancels when the project name is empty', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const folder = workspaceFolder();
     const name = `ScaffTmp_EmptyName_${uniqueToken()}`;
     const projDir = track(path.join(folder, name));
@@ -372,7 +373,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   // ── sharplsp.newSolution ──────────────────────────────────────────
 
   test('newSolution creates a real solution and declines the first-project offer', async function () {
-    this.timeout(60_000);
+    this.timeout(DOTNET_CLI_MS);
     const folder = workspaceFolder();
     const name = `ScaffTmp_Sln_${uniqueToken()}`;
     // The SDK chooses .sln or .slnx — track both candidates so cleanup is total.
@@ -405,7 +406,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   });
 
   test('newSolution accepts the first-project offer and wires the project into the solution', async function () {
-    this.timeout(90_000);
+    this.timeout(DOTNET_CLI_MS);
     const folder = workspaceFolder();
     const slnName = `ScaffTmp_SlnAdd_${uniqueToken()}`;
     const projName = `ScaffTmp_FirstProj_${uniqueToken()}`;
@@ -441,7 +442,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   });
 
   test('newSolution is cancelled by an empty solution name (no solution created)', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const folder = workspaceFolder();
     const name = `ScaffTmp_SlnCancel_${uniqueToken()}`;
     track(path.join(folder, `${name}.sln`));
@@ -468,7 +469,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   // workspace has multiple solutions, so a solution QuickPick is shown too.
 
   test('addProjectToSolution wires the picked project into the picked solution', async function () {
-    this.timeout(90_000);
+    this.timeout(DOTNET_CLI_MS);
     const folder = workspaceFolder();
     const projName = `ScaffTmp_AddProj_${uniqueToken()}`;
     const slnName = `ScaffTmp_AddSln_${uniqueToken()}`;
@@ -516,7 +517,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   });
 
   test('addProjectToSolution uses the active solution selection without a second pick', async function () {
-    this.timeout(90_000);
+    this.timeout(DOTNET_CLI_MS);
     const folder = workspaceFolder();
     const projName = `ScaffTmp_AddProj2_${uniqueToken()}`;
     const slnName = `ScaffTmp_AddSln2_${uniqueToken()}`;
@@ -558,7 +559,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   // ── findProjectFile present/absent (asserted directly) ────────────
 
   test('findProjectFile locates a real project and returns undefined when absent', async function () {
-    this.timeout(60_000);
+    this.timeout(DOTNET_CLI_MS);
     // Use an isolated temp dir so this assertion never touches the workspace fixture.
     const isolated = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-scaffold-find-'));
     try {

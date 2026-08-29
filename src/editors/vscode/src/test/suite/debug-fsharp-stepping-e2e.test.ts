@@ -43,15 +43,15 @@ import {
   startDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS } from './run-debug-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 suite('Debug F# — breakpoints, stepping and exceptions', () => {
   const debuggee = useDebuggee('debug-step-fs-', 'fsharp');
 
   // Implements [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION] rules 1–3 for F#.
   test('F9 in an F# editor sets a breakpoint the adapter binds and stops on', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — the gate must be SharpLsp's manifest, not a user override.
@@ -102,7 +102,7 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
 
   // Implements [DEBUG-FEATURES-STEPPING] for F#: the same P1 rows, same gestures.
   test('F10, F11 and Shift+F11 walk F# functions exactly as they walk C#', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop on the call statement in `main`.
@@ -162,7 +162,7 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
 
   // Implements [DEBUG-FEATURES-EXCEPTIONS] for F#: catching and ignoring.
   test('F# exceptions break on the throw and are ignored when unfiltered', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — gate before the throw, then tick "All Exceptions".
@@ -204,7 +204,7 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
   // Implements [DEBUG-FEATURES-EXCEPTIONS] "Break on unhandled exceptions only"
   // — the IGNORING half, in F#.
   test('an F# exception the program handles is ignored when only unhandled is armed', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — gate, then arm the unhandled-only filter.

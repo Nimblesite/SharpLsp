@@ -13,8 +13,9 @@
 import * as assert from 'node:assert/strict';
 import { MODE } from './debug-fixture-programs';
 import { armBreakpoints, assertCleanSession, startDebuggee, useDebuggee } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS, DEBUG_TYPE_ID } from './run-debug-kit';
+import { DEBUG_TYPE_ID } from './run-debug-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 /** The Phase Four column of [DEBUG-PROTOCOL-CAPABILITIES], "Yes" rows. */
 const PHASE_FOUR_YES: readonly { flag: string; note: string }[] = [
@@ -52,7 +53,7 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
 
   // Implements [DEBUG-PROTOCOL-CAPABILITIES], the Phase Four "Yes" column.
   test('every Phase Four capability the table marks Yes is advertised', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — a real session, so the handshake is real.
@@ -93,7 +94,7 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
 
   // Implements [DEBUG-PROTOCOL-CAPABILITIES], the Phase Four "No" column.
   test('no Phase Five capability is over-claimed in Phase Four', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — a real session.
@@ -128,7 +129,7 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
 
   // Implements [DEBUG-PROTOCOL]: the dialect the workbench and adapter agree on.
   test('the initialize request pins the dialect the whole suite depends on', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — a real session.

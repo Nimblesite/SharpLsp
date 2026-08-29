@@ -21,7 +21,6 @@ import * as vscode from 'vscode';
 import { SharpLspLaunchProvider, projectEntryFromFile } from '../../debug.js';
 import { binaryNameOf } from '../../platform.js';
 import {
-  BUILD_TIMEOUT_MS,
   DEBUG_TYPE_ID,
   DebugSessionRecorder,
   TaskRecorder,
@@ -45,6 +44,7 @@ import {
   comparableText,
   removeDirRecursive,
 } from './test-helpers';
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
 /** The build command the extension registers today (`src/build.ts`). */
@@ -233,7 +233,7 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
   ];
 
   suiteSetup(async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(FIXTURE_BUILD_MS);
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-run-debug-build-'));
     const at = (name: string): string => path.join(tmpRoot, 'shared', name);
     const multi = { TargetFrameworks: 'net8.0;net10.0' };
@@ -277,7 +277,7 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
   // B28 — an unbuilt project must never resolve to a path that does not exist.
   // Implements [DEBUG-FEATURES-LAUNCH-BUILD]
   test('an unbuilt project resolves to nothing or to a real file, and to MSBuild once built', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const project = writeCSharpConsole(path.join(caseDir, 'Unbuilt'), 'Unbuilt');
     const rel = 'bin/Debug/net10.0/Unbuilt.dll';
 
@@ -339,7 +339,7 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
   // B29 / B30 / B32 — MSBuild is the authority for TFM, assembly name and output
   // directory alike. Implements [DEBUG-FEATURES-LAUNCH-BUILD]
   test('MSBuild decides the output: net7.0, custom AssemblyName (F# then C#), custom OutputPath', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
 
     // 1 — a project whose ONLY target framework is outside the hardcoded list.
     // B29: a resolver restricted to net10.0/net9.0/net8.0 can never see it.
@@ -393,7 +393,7 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
 
   // B31 — multi-targeted projects. Implements [DEBUG-FEATURES-LAUNCH-BUILD]
   test('a multi-targeted project resolves the TFM that exists, and fabricates none when nothing does', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const terminalsBefore = buildTerminalCount();
 
     // 1 — the premise the whole case rests on, taken from MSBuild itself: this
@@ -433,7 +433,7 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
   // B33 — one request, one build, dispatched as a task.
   // Implements [DEBUG-FEATURES-LAUNCH-BUILD]
   test('a build request runs exactly one build, as a sharplsp-build task and not in a terminal', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const project = writeCSharpConsole(path.join(caseDir, 'BuildOnce'), 'BuildOnce');
 
     // 1 — an unbuilt project, focused, with the command registered.

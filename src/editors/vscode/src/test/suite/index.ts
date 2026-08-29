@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import Mocha from 'mocha';
 import { globSync } from 'glob';
+import { DEFAULT_TEST_MS } from './test-timeouts';
 
 /** Every compiled suite — the default when no chunk filter is supplied. */
 const ALL_SUITES = '**/*.test.js';
@@ -71,7 +72,10 @@ export function run(): Promise<void> {
   const mocha = new Mocha({
     ui: 'tdd',
     color: true,
-    timeout: parseInt(process.env['MOCHA_TIMEOUT'] ?? '60000', 10),
+    // The ceiling a suite inherits when it declares none. Every deliberate
+    // ceiling names a tier from ./test-timeouts; this is the floor under the
+    // ones that never said ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    timeout: parseInt(process.env['MOCHA_TIMEOUT'] ?? String(DEFAULT_TEST_MS), 10),
     // Opt-in test filter for local debugging; CI leaves it unset (runs all).
     ...(process.env['MOCHA_GREP'] ? { grep: process.env['MOCHA_GREP'] } : {}),
   });

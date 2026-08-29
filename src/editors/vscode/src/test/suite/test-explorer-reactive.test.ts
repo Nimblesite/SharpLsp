@@ -32,6 +32,7 @@ import {
   snapshotItems,
 } from './test-explorer-kit';
 import { comparablePath, removeDirRecursive } from './test-helpers.js';
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 const CS = fixtureFor('xunit-csharp');
 /** The xUnit C# mixed theory, literal so `suiteSetup` can prove the fixture agrees. */
@@ -214,7 +215,8 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   let csProjDir: string, extraProjDir: string, csSourcePath: string;
 
   suiteSetup(async function () {
-    this.timeout(900_000);
+    // Cold restore + build + adapter JIT for both fixture projects.
+    this.timeout(FIXTURE_BUILD_MS);
     api = await activateTestExplorer();
     assert.strictEqual(
       CS.mixedParameterized,
@@ -254,7 +256,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   });
 
   teardown(async function () {
-    this.timeout(300_000);
+    this.timeout(DOTNET_CLI_MS);
     // Reset the signal so the next load is a REAL transition, and let it settle.
     await drainDiscovery(() => {
       api.explorerProvider.clear();
@@ -262,7 +264,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   });
 
   suiteTeardown(async function () {
-    this.timeout(300_000);
+    this.timeout(DOTNET_CLI_MS);
     // Drain first: `dotnet test` pointed at a removed directory hangs forever.
     await drainDiscovery(() => {
       api.explorerProvider.clear();
@@ -272,7 +274,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   });
 
   test('loading a solution repopulates the tree with no discover() call from this test', async function () {
-    this.timeout(600_000);
+    this.timeout(DOTNET_CLI_MS);
     const baseline = await discoverSolution(api, slnPath, EXPECTED);
     assert.strictEqual(baseline.length, EXPECTED.length, 'baseline is exactly the fixture');
     assert.deepStrictEqual(sorted(baseline), sorted(EXPECTED), 'baseline is the fixture project');
@@ -354,7 +356,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   });
 
   test('a burst of solution changes coalesces into exactly one discovery sweep', async function () {
-    this.timeout(600_000);
+    this.timeout(DOTNET_CLI_MS);
     await discoverSolution(api, slnPath, EXPECTED);
     // Settle the baseline load's own debounce: the burst must be the only sweep.
     await drainDiscovery(() => undefined, api.testController);
@@ -445,7 +447,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   });
 
   test('adding a [Fact] on disk adds exactly one item, and removing it undoes that', async function () {
-    this.timeout(900_000);
+    this.timeout(DOTNET_CLI_MS);
     const before = await discoverSolution(api, slnPath, EXPECTED);
     assert.strictEqual(before.length, EXPECTED.length, 'the round trip starts from the fixture');
     assert.strictEqual(before.includes(ADDED_FQN), false, `${ADDED_FQN} must not exist yet`);
@@ -521,7 +523,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   });
 
   test('a project joining and leaving the solution adds and removes its tests', async function () {
-    this.timeout(900_000);
+    this.timeout(DOTNET_CLI_MS);
     const before = await discoverSolution(api, slnPath, EXPECTED);
     assert.strictEqual(before.length, EXPECTED.length, 'the solution starts with one project');
     for (const extra of EXTRA_TESTS) {
@@ -634,7 +636,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   });
 
   test('a discovery sweep where every target fails keeps the last good tree', async function () {
-    this.timeout(600_000);
+    this.timeout(DOTNET_CLI_MS);
     const good = await discoverSolution(api, slnPath, EXPECTED);
     assert.strictEqual(good.length, EXPECTED.length, 'a populated tree is the precondition');
     const cached = api.testController.cachedResults.size;
@@ -692,7 +694,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   });
 
   test('whenIdle() really drains the dotnet queue before it resolves', async function () {
-    this.timeout(600_000);
+    this.timeout(DOTNET_CLI_MS);
     await discoverSolution(api, slnPath, EXPECTED);
     const cached = api.testController.cachedResults.size;
     // Schedule reactive discovery, then drain it the way teardown does.
@@ -769,7 +771,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   });
 
   test('revealing the Testing view leaves a populated tree behind the refresh affordance', async function () {
-    this.timeout(600_000);
+    this.timeout(DOTNET_CLI_MS);
     const commands = await vscode.commands.getCommands(true);
     assert.strictEqual(
       commands.includes('testing.refreshTests'),
@@ -858,7 +860,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
   });
 
   test('two concurrent activateAndDiscover() sweeps settle on one duplicate-free tree', async function () {
-    this.timeout(900_000);
+    this.timeout(DOTNET_CLI_MS);
     await api.explorerProvider.loadSolution(slnPath);
     api.testController.items.replace([]);
     assert.deepStrictEqual(

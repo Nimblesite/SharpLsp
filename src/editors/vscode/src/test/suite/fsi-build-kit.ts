@@ -18,10 +18,10 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { SharpLspBuildTaskProvider } from '../../build.js';
 import { pollUntilResult } from './test-helpers.js';
+import { DOTNET_CLI_MS } from './test-timeouts';
 import type { ObservedTask, TaskRecorder } from './run-debug-kit.js';
 
 /** How long a dispatched build task may take to report that it started. */
-const TASK_TIMEOUT_MS = 30_000;
 
 /** Poll interval while waiting on the task queue. */
 const TASK_POLL_MS = 100;
@@ -91,7 +91,7 @@ export async function terminateBuildTasks(): Promise<void> {
   await pollUntilResult(
     async () => runningBuildTasks(),
     (left) => left.length === 0,
-    TASK_TIMEOUT_MS,
+    DOTNET_CLI_MS,
     TASK_POLL_MS,
   );
 }
@@ -113,7 +113,7 @@ export async function dispatchedBuildTask(
   const observed = await pollUntilResult(
     async () => buildTasksOf(recorder),
     (tasks) => tasks.length > previous,
-    TASK_TIMEOUT_MS,
+    DOTNET_CLI_MS,
     TASK_POLL_MS,
   );
   await terminateBuildTasks();

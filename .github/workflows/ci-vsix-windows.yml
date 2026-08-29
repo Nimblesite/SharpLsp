@@ -19,7 +19,10 @@
 #
 # Chunk membership is declared in src/editors/vscode/test-chunks.json and read here
 # via tools/vsix/vsix-test-chunks.mjs — never duplicated into this YAML. `make
-# _lint-vsix` fails if a suite belongs to no chunk.
+# _lint-vsix` fails if a suite belongs to no chunk. The Ubuntu leg
+# (ci-vsix.yml) fans out over the SAME manifest ([DIST-CI-VSIX-SHARDS]); `matrix
+# win` here drops only the chunks marked `linuxOnly`, which clone and restore
+# third-party repositories.
 name: CI / VS Code (Windows)
 'on':
   workflow_call: {}
@@ -58,7 +61,7 @@ jobs:
         shell: bash
         run: |-
           set -euo pipefail
-          chunks="$(node tools/vsix/vsix-test-chunks.mjs matrix)"
+          chunks="$(node tools/vsix/vsix-test-chunks.mjs matrix win)"
           echo "chunks=${chunks}" >> "$GITHUB_OUTPUT"
           echo "Windows VS Code feature chunks: ${chunks}"
       - name: Build sharplsp host and both sidecars
@@ -88,12 +91,17 @@ jobs:
     needs:
       - build
     runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
-    # TIMEOUT EXCEPTION: a chunk installs npm deps, compiles + bundles the
-    # extension, downloads the VS Code test host, then runs its slice against
-    # real Roslyn/FCS sidecars loading real solutions. The heaviest chunks
-    # (rundebug, rundebug-commands, testexplorer*, profiler, packages) shell out
-    # to `dotnet build` / `dotnet test` / `dotnet run` / `dotnet new` per test.
-    timeout-minutes: 40
+    # A chunk installs npm deps, compiles + bundles the extension, downloads the
+    # VS Code test host, then runs its slice against real Roslyn/FCS sidecars
+    # loading real solutions. That fixed prelude is ~2.5 minutes; the heaviest
+    # chunks (rundebug, rundebug-commands, testexplorer*, profiler, packages)
+    # shell out to `dotnet build` / `dotnet test` / `dotnet run` / `dotnet new`
+    # per test and observed ~5 minutes on top.
+    #
+    # A chunk approaching this ceiling is a bug to investigate, not a budget to
+    # grow: the per-test ceilings live in src/test/suite/test-timeouts.ts and
+    # none of them exceeds 4 minutes, so nothing here can legitimately spend 40.
+    timeout-minutes: 25
     strategy:
       # Every chunk is an independent feature area: one failure must not cancel
       # the rest, or a single flake hides the state of the whole surface.

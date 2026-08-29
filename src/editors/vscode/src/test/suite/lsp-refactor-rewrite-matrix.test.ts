@@ -6,8 +6,7 @@ import {
   revertDocument,
   type OpenFixture,
 } from './refactor-test-helpers';
-
-const TEST_TIMEOUT_MS = 180_000;
+import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 const CONSTANT_SOURCE = `namespace SharpLsp.TestFixtures.Refactors;
 public class ConstantTarget
@@ -452,7 +451,7 @@ suite('C# real LSP - extended Roslyn rewrite families', () => {
   let committedText = '';
 
   suiteSetup(async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    this.timeout(ACTIVATION_MS);
     await activateRealSharpLsp();
     fixture = await openFixtureDocument('RefactorCore.cs');
     committedText = fixture.document.getText();
@@ -462,7 +461,7 @@ suite('C# real LSP - extended Roslyn rewrite families', () => {
 
   for (const actionCase of CASES) {
     test(`${actionCase.label}: list, resolve, apply, requery, and revert`, async function () {
-      this.timeout(TEST_TIMEOUT_MS);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await exerciseCodeAction(fixture, committedText, actionCase);
     });
   }

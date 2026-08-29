@@ -49,6 +49,7 @@ import {
   type TestItemSnapshot,
 } from './test-explorer-kit';
 import { comparablePath, removeDirRecursive } from './test-helpers.js';
+import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 const CS = fixtureFor('xunit-csharp');
 const FS_FIXTURE = fixtureFor('xunit-fsharp');
@@ -308,7 +309,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   let listing: string;
 
   suiteSetup(async function () {
-    this.timeout(900_000);
+    this.timeout(FIXTURE_BUILD_MS);
     api = await activateTestExplorer();
 
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-testexplorer-'));
@@ -344,7 +345,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   });
 
   suiteTeardown(async function () {
-    this.timeout(300_000);
+    this.timeout(DOTNET_CLI_MS);
     // Drain reactive re-discovery BEFORE deleting the fixture: a `dotnet test`
     // pointed at a removed directory hangs forever and poisons later runs.
     await drainDiscovery(() => {
@@ -355,7 +356,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   });
 
   test('activating the Test Explorer discovers every C# AND F# test in the loaded solution', async function () {
-    this.timeout(600_000);
+    this.timeout(DOTNET_CLI_MS);
     assert.strictEqual(
       EXPECTED.length,
       11,
@@ -423,7 +424,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   });
 
   test('every discovered item carries the label, description, uri and tags the tree renders', async function () {
-    this.timeout(600_000);
+    this.timeout(DOTNET_CLI_MS);
     await api.explorerProvider.loadSolution(slnPath);
     await api.testController.activateAndDiscover();
     assertExactTree(
@@ -514,7 +515,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   });
 
   test('once active, loading a solution reactively re-populates the tree with no manual refresh', async function () {
-    this.timeout(600_000);
+    this.timeout(DOTNET_CLI_MS);
     // Activate the Test Explorer as opening the Testing view would.
     await api.explorerProvider.loadSolution(slnPath);
     await api.testController.activateAndDiscover();
@@ -622,7 +623,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   });
 
   test('VS Code’s own refresh affordance re-runs discovery through the controller', async function () {
-    this.timeout(600_000);
+    this.timeout(DOTNET_CLI_MS);
     await api.explorerProvider.loadSolution(slnPath);
     await api.testController.activateAndDiscover();
     assertExactTree(
@@ -715,7 +716,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   });
 
   test('the discovery parsers read a REAL multi-project listing, banners included', function () {
-    this.timeout(60_000);
+    this.timeout(FAST_MS);
     // `listing` is the real `dotnet test --list-tests` output captured in
     // suiteSetup: two projects, two banners, and the chatter between them.
     assert.strictEqual(
@@ -822,7 +823,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   });
 
   test('the line classifier and the FQN-file parser handle the Windows shapes as well', function () {
-    this.timeout(60_000);
+    this.timeout(FAST_MS);
     // A faithful Windows listing: drive letters, CRLF, ' (' in a directory NAME.
     const windowsListing = [
       'Test run for C:\\Program Files (x86)\\repo\\FsTests\\bin\\Debug\\net10.0\\FsTests.dll (.NETCoreApp,Version=v10.0)',
@@ -966,7 +967,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   });
 
   test('assembly batching keeps a many-project solution inside the Windows command-line limit', function () {
-    this.timeout(60_000);
+    this.timeout(FAST_MS);
     // Windows caps a command line at 32 767 characters, so `batchAssemblies`
     // keeps each `dotnet vstest` invocation under a 24 000-character budget —
     // over it, the spawn FAILS rather than enumerating.
@@ -1070,7 +1071,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   });
 
   test('a discovery target that is not on disk yields no items and never throws', async function () {
-    this.timeout(300_000);
+    this.timeout(DOTNET_CLI_MS);
     const ghost = path.join(root, 'NoSuchSolution.slnx');
     assert.strictEqual(fs.existsSync(ghost), false, 'the fixture must not accidentally exist');
     // The enumerator itself: never an exception, and an EMPTY result it marks
@@ -1128,7 +1129,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
   });
 
   test('the solution the fixture builds is the shape the CLI produces, not a hand-written one', async function () {
-    this.timeout(120_000);
+    this.timeout(FAST_MS);
     // Structured files are never authored by hand ([CLAUDE.md]): the solution is
     // `dotnet new sln` + `dotnet sln add` and the projects come out of an XML
     // serializer, so both are asserted against a real parse.

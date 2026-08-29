@@ -19,8 +19,8 @@ import {
   replaceDocumentText,
   type OpenFixture,
 } from './refactor-test-helpers';
+import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
-const TEST_TIMEOUT_MS = 180_000;
 const EDGE_ONLY = ['edge'] as const;
 
 interface Outcome<T> {
@@ -247,7 +247,7 @@ async function assertOutOfRangeRejected(fixtures: RenameFixtureSet): Promise<voi
 function registerPositiveTests(getFixtures: () => RenameFixtureSet): void {
   for (const renameCase of POSITIVE_CASES) {
     test(`${renameCase.label}: exact edits, apply, reverse, and revert`, async function () {
-      this.timeout(TEST_TIMEOUT_MS);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await exerciseRename(getFixtures(), renameCase);
     });
   }
@@ -270,7 +270,7 @@ function registerBoundaryTests(getFixtures: () => RenameFixtureSet): void {
   ];
   for (const [label, operation] of cases)
     test(label, async function () {
-      this.timeout(TEST_TIMEOUT_MS);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await operation(getFixtures());
     });
 }
@@ -278,27 +278,27 @@ function registerBoundaryTests(getFixtures: () => RenameFixtureSet): void {
 function registerInvalidNameTests(getFixtures: () => RenameFixtureSet): void {
   for (const invalidName of INVALID_NAMES) {
     test(`invalid new name ${JSON.stringify(invalidName)} is rejected without edits`, async function () {
-      this.timeout(TEST_TIMEOUT_MS);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await assertInvalidName(getFixtures(), invalidName);
     });
   }
   test('renaming to the current name is an exact no-op', async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await assertSameNameIsNoOp(getFixtures());
   });
   test('conflicting member names are rejected without corrupting the project', async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await assertConflictRejected(getFixtures());
   });
 }
 
 function registerOverlayTests(getFixtures: () => RenameFixtureSet): void {
   test('out-of-range positions reject instead of crashing or editing', async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await assertOutOfRangeRejected(getFixtures());
   });
   test('unsaved overlay symbols prepare, rename, reverse, and revert through the real LSP', async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await assertUnsavedOverlay(getFixtures());
   });
 }
@@ -307,7 +307,7 @@ suite('C# real LSP - rename boundaries, rejection, and overlays [RENAME-TESTS]',
   let fixtures: RenameFixtureSet;
 
   suiteSetup(async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    this.timeout(ACTIVATION_MS);
     await activateRealSharpLsp();
     fixtures = await openRenameFixtures();
   });

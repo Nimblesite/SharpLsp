@@ -42,10 +42,8 @@ import {
 } from './run-debug-target-kit';
 import { createSolution } from './dotnet-project-kit';
 import {
-  BUILD_TIMEOUT_MS,
   CMD_DEBUG_PROGRAM,
   DebugSessionRecorder,
-  QUIET_MS,
   TaskRecorder,
   assertCommandRegistered,
   invokeCommand,
@@ -58,6 +56,7 @@ import {
   openFSharpFile,
   removeDirRecursive,
 } from './test-helpers';
+import { DOTNET_CLI_MS, QUIET_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
 suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE]', () => {
@@ -86,7 +85,7 @@ suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE
 
   // B18, B19 — descend to the only runnable project, then follow the focus.
   test('the target descends into a nested project and follows the focused document', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     for (const lang of LANGS) {
       await clearFocus();
       const root = path.join(tmpDir, lang.tag);
@@ -110,7 +109,7 @@ suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE
 
   // B21, B22, B23 — the walk stops, and never escapes to a project above the cone.
   test('the cone walk stops at the workspace root, a solution and a .git', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     for (const lang of LANGS) {
       const layout = await buildConeLayout(tmpDir, lang);
       const solution = await createSolution(layout.solutionRoot, `${lang.tag}Cone`, []);
@@ -141,7 +140,7 @@ suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE
 
   // B24 — an ambiguity, never a silent pick of whatever `readdirSync` saw first.
   test('two projects in one directory prompt, and the choice decides the target', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     for (const lang of LANGS) {
       const dir = path.join(tmpDir, `${lang.tag}amb`);
       const alpha = lang.console(dir, `${lang.tag}Alpha`);
@@ -160,7 +159,7 @@ suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE
 
   // B27 — runnable means `<name>.runtimeconfig.json` beside `<name>.dll`.
   test('a class library is refused while a console project resolves, in C# and F#', async function () {
-    this.timeout(BUILD_TIMEOUT_MS * 2);
+    this.timeout(DOTNET_CLI_MS);
     for (const lang of LANGS) {
       await assertLibraryRefused(path.join(tmpDir, lang.tag), lang, q);
     }
@@ -168,7 +167,7 @@ suite('Run/Debug launch target — [DEBUG-FEATURES-LAUNCH-TARGET] + [SCRIPT-CONE
 
   // B25, B26 — refuse, never fall back to `workspaceFolders[0]`.
   test('the debug command refuses an out-of-workspace document and a blind invocation', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     await assertCommandRegistered(CMD_DEBUG_PROGRAM);
     const cs = await openCSharpFile(tmpDir, 'Orphan.cs', 'System.Console.WriteLine("o");\n');
     await assertOrphanRefused(cs.uri.fsPath, q, 1);

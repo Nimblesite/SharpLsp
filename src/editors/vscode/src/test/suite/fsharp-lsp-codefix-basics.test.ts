@@ -9,7 +9,6 @@ import {
   type CodeFixScenario,
 } from './fsharp-refactor-fixtures';
 import {
-  FSHARP_REFACTOR_TIMEOUT_MS,
   applyAction,
   assertInsertion,
   assertNoAction,
@@ -28,6 +27,7 @@ import {
 } from './fsharp-refactor-test-kit';
 import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
 import { closeAllEditors } from './test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Full real-LSP lifecycle coverage for [ANALYZERS-FSAC-PARITY]. No mocked providers.
 const TARGET_FILE = 'fsharp/DiagnosticsTarget.fs';
@@ -68,7 +68,7 @@ function defineBasicFixSuite(): void {
 function registerOpenTests(): void {
   for (const scenario of OPEN_SCENARIOS) {
     test(`adds the ${scenario.name} namespace in valid F# module position`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await runBasicFix(openSpec(scenario));
     });
   }
@@ -77,7 +77,7 @@ function registerOpenTests(): void {
 function registerFalseOpenTests(): void {
   for (const [name, title] of FALSE_OPEN_CASES) {
     test(`rejects non-fixing namespace heuristic for ${name}`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await assertFalseOpen(name, title);
     });
   }
@@ -86,7 +86,7 @@ function registerFalseOpenTests(): void {
 function registerBasicDiagnosticTests(): void {
   for (const spec of basicSpecs()) {
     test(`${spec.title} survives list, resolve, apply, recheck, and undo`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await runBasicFix(spec);
     });
   }

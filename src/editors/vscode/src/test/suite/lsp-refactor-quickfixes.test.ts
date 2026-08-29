@@ -22,9 +22,9 @@ import {
   type OpenFixture,
   type WorkspaceEditSnapshot,
 } from './refactor-test-helpers';
+import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 const FILE = 'RefactorQuickFixes.cs';
-const TEST_TIMEOUT_MS = 180_000;
 
 interface QuickFixScenario {
   readonly label: string;
@@ -258,7 +258,7 @@ suite('C# real LSP - compiler quick fixes', () => {
   let committedText = '';
 
   suiteSetup(async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    this.timeout(ACTIVATION_MS);
     await activateRealSharpLsp();
     fixture = await openFixtureDocument(FILE);
     committedText = fixture.document.getText();
@@ -268,7 +268,7 @@ suite('C# real LSP - compiler quick fixes', () => {
 
   for (const scenario of SCENARIOS) {
     test(`${scenario.label}: list, resolve, apply, requery, and revert`, async function () {
-      this.timeout(TEST_TIMEOUT_MS);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await runScenario(fixture, committedText, scenario);
     });
   }

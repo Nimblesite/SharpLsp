@@ -36,9 +36,9 @@ import {
   PROPERTY_OPTIONS,
   PROPERTY_SOURCE,
 } from './lsp-refactor-core-fixtures';
+import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 const FILE = 'RefactorCore.cs';
-const TEST_TIMEOUT_MS = 180_000;
 
 interface RefactorScenario {
   readonly label: string;
@@ -412,7 +412,7 @@ async function runScenario(
 function registerCoreTests(getFixture: () => OpenFixture, getCommittedText: () => string): void {
   for (const scenario of SCENARIOS) {
     test(`${scenario.label}: list, resolve, apply, requery, and revert`, async function () {
-      this.timeout(TEST_TIMEOUT_MS);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await runScenario(getFixture(), getCommittedText(), scenario);
     });
   }
@@ -423,7 +423,7 @@ suite('C# real LSP - Roslyn refactor families', () => {
   let committedText = '';
 
   suiteSetup(async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    this.timeout(ACTIVATION_MS);
     await activateRealSharpLsp();
     fixture = await openFixtureDocument(FILE);
     committedText = fixture.document.getText();

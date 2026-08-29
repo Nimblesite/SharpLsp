@@ -291,7 +291,7 @@ The PR pipeline uses reusable workflows (`on: workflow_call`):
 | `ci-lint.yml` | Rust / Zed / .NET / VS Code lint + format gates |
 | `ci-rust.yml` | Sharded Rust e2e suite ([DIST-CI-RUST-SHARDS]), the union coverage gate, the version contract |
 | `ci-dotnet.yml` | Sidecar tests (Ubuntu) + win32 named-pipe transport ([DIST-CI-WIN-TRANSPORT]) |
-| `ci-vsix.yml` | Full VS Code suite + coverage gate (Ubuntu) |
+| `ci-vsix.yml` | Sharded VS Code suite, the union coverage gate, and the VSIX payload check (Ubuntu, [DIST-CI-VSIX-SHARDS]) |
 | `ci-vsix-windows.yml` | VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX]) |
 
 Invariants:
@@ -350,17 +350,36 @@ Both listener flavors MUST restrict the endpoint to the current user: `0600` on 
 
 CI MUST run the VS Code end-to-end suite's whole feature surface on Windows runners through `ci-vsix-windows.yml` and `_test-vsix-win`: the release-built `sharplsp` host, Roslyn and FCS sidecars, actual VS Code extension host, and win32 named-pipe IPC. [DIST-CI-WIN-TRANSPORT] covers frames only, while Windows-specific executables (`netcoredbg.exe`, `dotnet-trace`, `dotnet test`, `dotnet new`) and paths require full feature coverage; a grep-selected smoke subset is insufficient.
 
-The suite is sliced into **feature chunks**, one Windows CI job each, run with `fail-fast: false` so one failing feature area never hides the state of the others:
+The suite is sliced into **feature chunks**, one CI job each on BOTH platform legs, run with `fail-fast: false` so one failing feature area never hides the state of the others. The manifest below is the single declaration; `linuxOnly` chunks are absent from the Windows matrix ([DIST-CI-VSIX-SHARDS]):
 
-| Chunk | Feature surface |
-|---|---|
-| `lifecycle` | Activation, configuration, bundled binary/sidecar resolution, client lifecycle + restart, cross-cutting command workflows |
-| `lsp` | C# intelligence over the real LSP: completion, hover, diagnostics, document symbols, folding, selection ranges, code actions, document sync, client lifecycle |
-| `fsharp` | The whole F# LSP surface — navigation, intelligence, syntax, diagnostics, code fixes, hierarchy, workspace symbol (F# is a first-class citizen, so it is gated on Windows in full, not sampled) |
-| `debug` | Debugging: launch/attach configuration resolution, the `netcoredbg` adapter factory, `sharplsp.debugProgram` against real projects, plus Test Explorer discovery/run/debug and the test-status CodeLens |
-| `profiler` | Profiling: `dotnet-trace` sessions, live counters, memory dumps, `.nettrace` conversion, profiler webviews — plus FSI, build, output filtering and hot reload |
-| `explorer` | Solution Explorer tree, reactive sort/state signals, tooltips and reveal, the full context-menu surface, project-dependency watcher |
-| `packages` | Scaffolding (create solution/project) and the NuGet surface: browser panel, search/add/update/restore, real `.csproj` dependency edits |
+| Chunk | Platforms | Feature surface |
+|---|---|---|
+| `lifecycle` | Both | Activation, configuration, bundled binary/sidecar resolution, client lifecycle and restart, cross-cutting command workflows. |
+| `lsp` | Both | C# language intelligence over the real LSP: completion, hover, diagnostics, document symbols, folding, selection ranges, document sync and client lifecycle. |
+| `lsp-refactor` | Both | The C# refactoring surface: quick fixes, organize imports, the rewrite matrix, and rename across symbols and edge cases. Split from `lsp` so neither slice carries the other's wall clock ([DIST-CI-VSIX-SHARDS]). |
+| `lsp-filebased` | Both | File-based programs (`#:package`, `#:property`): restore, reload, isolation and configuration-cone parity. Its own chunk because every test shells out to a real `dotnet restore`. |
+| `fsharp` | Both | F# is a first-class citizen, so its whole LSP surface is gated: navigation, intelligence, syntax, diagnostics, hierarchy and workspace symbol. Suites are enumerated rather than globbed so a NEW F# suite fails the chunk guard and forces a deliberate placement instead of silently inflating one job. |
+| `fsharp-codefix` | Both | The F# code-fix catalogue: basics, type conversions and generation. The slowest third of the F# surface, split out so it runs beside the rest instead of after it. |
+| `fsharp-rename` | Both | F# rename, including the cross-language case where an F# origin renames C# references and back — the single slowest suite in the whole VS Code matrix, because each test rebuilds both languages. |
+| `debug` | Both | Debugging and the launch surface, WITHOUT shelling out to dotnet: the F5 / no-launch.json resolve contract, launchSettings.json + <app>.run.json profile parsing, the netcoredbg adapter factory, and manifest conformance for the debugger, breakpoint, task-definition, command and menu contributions. |
+| `debug-stepping` | Both | Step through debugging over a live netcoredbg session on a real built assembly: F10/F11/Shift+F11 walks asserted line by line and frame by frame, Just My Code, run to cursor, continue between breakpoints, breakpoints encountered mid-step, stepping off the end of a method and of the program, and the physical/async call stack. Implements [DEBUG-FEATURES-STEPPING] and [DEBUG-FEATURES-STACK]. |
+| `debug-breakpoints` | Both | Breakpoints as a user sets them: F9 through the editor (the canSetBreakpointsIn gate the addBreakpoints API bypasses), binding and verification, mid-session add/remove/disable, function breakpoints, conditions, hit counts and logpoints. Implements [DEBUG-FEATURES-BREAKPOINTS] and the runtime half of [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION]. |
+| `debug-exceptions` | Both | Catching exceptions and ignoring them: the advertised exception filters, break-on-all catching a handled throw, the unhandled-only filter ignoring one, the exception info panel and inner-exception chain, and per-type include/exclude filters changed mid-session. Implements [DEBUG-FEATURES-EXCEPTIONS]. |
+| `debug-inspection` | Both | The Variables and Watch panels against a paused debuggee: locals, arguments, this, statics, collection/array/nullable expansion, hover/watch/REPL evaluation across the T1 and T2 tiers, setVariable changing what the program does next, and [DebuggerDisplay] rendering. Implements [DEBUG-FEATURES-VARIABLES]. |
+| `debug-fsharp` | Both | F# debugging at full density, never a reduced echo of the C# suites: F9 in an F# editor, stepping through F# functions, F# exceptions caught and ignored, discriminated unions/records/tuples/options rendered in F# syntax, and task {} logical stacks. Implements [DEBUG-FSHARP-UNIONS], [DEBUG-FSHARP-STEPPING] and [DEBUG-FSHARP-PDB]. |
+| `debug-session` | Both | The session and the protocol around it: the DAP 1.71.0 handshake and the whole [DEBUG-PROTOCOL-CAPABILITIES] table in both directions, stopAtEntry, args/env/cwd, run-without-debugging, restart, pause and stop, debuggee output routing, and two simultaneous sessions multiplexed by session id. |
+| `debug-advanced` | Both | Hot Reload during an active session (method body, added method, rude edit), attaching to an already-running process by pid and by name, and debugging a single unit test through the Test Explorer Debug profile. Each suite builds and then also RUNS a real .NET target outside the debugger. Implements [DEBUG-FEATURES-HOT-RELOAD], [DEBUG-FEATURES-LAUNCH] attach rows and [DEBUG-FEATURES-TESTS]. |
+| `rundebug` | Both | Launch-target resolution against real projects: the [SCRIPT-CONE] walk (.sln/.slnx, .git and workspace-root boundaries), active-document sensitivity across two projects, library rejection, and MSBuild output resolution for custom AssemblyName/OutputPath, non-listed and multi-targeted frameworks. Builds real C# and F# console projects. |
+| `rundebug-commands` | Both | The run/debug user gestures at the VSIX level: F5 and Ctrl/Cmd+F5 through workbench.action.debug.start / .run, sharplsp.runProgram and sharplsp.debugProgram against built projects, and single-file targets — C# file-based apps, .fsx scripts and the .csx/.fs refusals. Split from rundebug because every test restores and builds or executes a real .NET target. |
+| `testexplorer` | Both | Discovery, the reactive tree, Windows path handling, TRX/console result parsing and the testing lens. |
+| `testexplorer-cancellation` | Both | Pressing Stop must terminate the whole `dotnet test` process TREE. Its own chunk: the suite builds a dedicated F# xUnit fixture whose long-running test deliberately sleeps, so it is both slow and the most likely place in the matrix to hang — isolating it keeps a hang from taking the rest of the Test Explorer surface with it. |
+| `testexplorer-frameworks` | Both | Test Explorer framework matrix and run semantics: xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles. Split from the testexplorer chunk because it restores and builds six test projects. |
+| `profiler` | Both | Profiling end to end (dotnet-trace sessions, live counters, memory dumps, .nettrace conversion, profiler webviews) plus FSI, build, output filtering and hot reload. |
+| `explorer` | Both | Solution Explorer tree, reactive sort/state signals, tooltips and reveal, the full context-menu surface, and the project-dependency watcher. |
+| `packages` | Both | Scaffolding (create solution/project) and the NuGet surface: browser panel, search/add/update/restore commands, and real .csproj dependency edits. |
+| `realrepo-serilog` | Ubuntu only | Cold-loading the pinned real-world repository serilog/serilog: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal. |
+| `realrepo-fluentvalidation` | Ubuntu only | Cold-loading the pinned real-world repository FluentValidation: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal. |
+| `realrepo-fstoolkit` | Ubuntu only | Cold-loading the pinned real-world repository FsToolkit.ErrorHandling: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal. |
 
 Invariants:
 
@@ -368,13 +387,89 @@ Invariants:
 - **Nothing escapes.** `make _lint-vsix` runs `vsix-test-chunks.mjs check`, which fails if any `*.test.ts` suite is claimed by no chunk or by more than one. A new suite is therefore gated on Windows by default; opting out requires an explicit entry under `excluded` with a written reason.
 - **Selection is by file, not by title.** The inner mocha runner selects suites via the `MOCHA_FILES` glob list. Title-regex selection (`MOCHA_GREP`) is a local debugging aid only — it silently drops tests when a suite is renamed. A glob matching zero compiled suites is a hard error, so a mistyped chunk fails instead of reporting a green run of nothing.
 - **Build once, fan out.** A single `build` job compiles the Rust host and both sidecars and publishes them as an artifact; each chunk job downloads and stages them (`_stage-vsix-binary-only`). Rebuilding per chunk would cost one cold Windows Rust build per feature area.
-- **Ubuntu owns coverage.** Windows chunks run **without** `--coverage` and enforce no coverage gate — one chunk can never meet the line threshold. The Ubuntu `test-vsix` job owns the full single-process run plus the ratcheted gate, and is the only job that runs the `real-repo-*` stress suites (each clones and restores a pinned third-party repository; that is repo ingestion, not platform behaviour).
+- **Ubuntu owns coverage.** Windows chunks run **without** `--coverage` and enforce no coverage gate. Coverage belongs to the Ubuntu leg, which shards over the same manifest and gates once over the union ([DIST-CI-VSIX-SHARDS]). Chunks marked `linuxOnly` — the `real-repo-*` stress suites, each cloning and restoring a pinned third-party repository — are absent from the Windows matrix: that is repo ingestion, not platform behaviour.
 - **No PATH leakage.** Every VS Code job runs `tools/vsix/purge-path-binaries.sh` first, so the test host can only resolve the freshly-staged bundled binaries. A dev copy on `PATH` would substitute itself for the artifact under test and turn a broken bundle green.
 
 - **Compare paths case-insensitively on Windows.** VS Code lowercases the drive letter whenever a path travels through `Uri.fsPath`, while `extensionPath` and `os.tmpdir()` preserve the original casing, so the same file legitimately has two spellings. Any assertion comparing a `Uri`-derived path against a directly-constructed one MUST go through `comparablePath()` (`test-helpers.ts`), which lowercases on win32 only — POSIX paths stay case-sensitive, because there `/tmp/A` and `/tmp/a` really are different files.
 - **Suites MUST be order-independent.** Chunking changes which suites share an extension host, so no suite may depend on state another suite left in a shared singleton. Fixture identifiers that feed a shared registry — notably test method names discovered into the `SharpLspTestController` — MUST be unique per suite, or a test asserting "nothing matches" passes or fails on whichever suite's discovery won the race.
 
 The LSP e2e temp-dir helper MUST fall back to `os.tmpdir()` (never a hardcoded `/tmp`) so these suites run on Windows.
+
+## [DIST-CI-VSIX-SHARDS] VS Code Test Shards
+
+The Ubuntu VS Code leg MUST fan out over the same feature chunks the Windows leg
+uses ([DIST-CI-WIN-VSIX]), one chunk per job, and MUST NOT run the suite as a
+single job.
+
+Rationale: unsharded, that job was the pipeline's critical path at 50 minutes —
+18 spent executing tests and 30 spent burning two 15-minute mocha hook ceilings
+on one hung suite. Sharding makes the leg's wall time the slowest single chunk
+rather than the sum of all of them, and confines a hang to the chunk that hangs.
+
+Invariants:
+
+- **One declaration, both platforms.** `src/editors/vscode/test-chunks.json` is
+  the single chunk manifest; `tools/vsix/vsix-test-chunks.mjs matrix linux` and
+  `... matrix win` derive the two CI matrices from it. The only platform
+  distinction the manifest carries is `"linuxOnly": true`, which drops a chunk
+  from the Windows matrix. A chunk MUST NOT be declared in CI YAML.
+- **One runner.** `make _run-vsix-suite` is the single recipe; `CHUNK` selects
+  the slice (empty runs every suite) and `VSIX_COVERAGE` instruments it.
+  `_test-vsix` (local, whole suite, gated), `_test-vsix-shard` (Ubuntu CI, one
+  instrumented chunk) and `_test-vsix-win` (Windows CI, one chunk, no coverage)
+  are thin wrappers over it and MUST NOT re-implement the invocation.
+- **One gate, over the union.** Each Ubuntu shard exports
+  `target/coverage-vsix-shard-<chunk>.lcov`. No shard can meet the line
+  threshold alone, so no shard runs the gate; `_gate-vsix-coverage` union-merges
+  the tracefiles with the same `tools/coverage/merge-lcov.mjs` the Rust shards
+  use ([DIST-CI-RUST-SHARDS]) and enforces the identical ratchet.
+- **The denominator MUST NOT move.** Coverage runs with `includeAll` off. Every
+  shard instruments the same bundle, so a file loaded by any shard contributes
+  its whole line set to the union (unexecuted lines as `DA:<line>,0`) — which
+  reproduces exactly the file set, line set and percentage of one unsharded run.
+  Enabling `includeAll` would silently move the ratchet.
+- **Local runs stay unsharded.** `make test` / `make _test-vsix` remain the
+  single-invocation, inline-gate path; sharding is a CI wall-clock concern only.
+- **The payload check is its own job.** Verifying the packaged VSIX carries the
+  platform binary MUST NOT sit behind the test matrix: a `.vscodeignore` mistake
+  is knowable in minutes and must be reported in minutes.
+
+### [DIST-CI-VSIX-SHARDS-TIMEOUTS] Test Timeout Budget
+
+A mocha timeout is a wall-clock ceiling, not a budget: nothing runs faster for
+having a larger one, and a hung test burns the whole ceiling before the suite
+can report. Every ceiling in the VS Code suite MUST therefore come from the
+named tiers in `src/editors/vscode/src/test/suite/test-timeouts.ts`, which are
+derived from measured behaviour on the CI agents.
+
+| Tier | Ceiling | For |
+|---|---|---|
+| `FAST_MS` | 1s | Pure in-process work — parsers, tree builders, HTML rendering, manifest conformance |
+| `COMMAND_MS` | 5s | One command round trip through the extension host; no sidecar |
+| `LSP_RESPONSE_MS` | 15s | One semantic request answered by a warm sidecar |
+| `DEBUG_SESSION_MS` | 45s | A live `netcoredbg` session — launch, bind, step, evaluate, detach |
+| `DOTNET_CLI_MS` | 120s | Shelling out to the real `dotnet` CLI against an already-restored fixture |
+| `ACTIVATION_MS` | 60s | *Initialization.* Extension activation, host and sidecar spawn |
+| `SIDECAR_COLD_MS` | 90s | *Initialization.* First semantic call while the sidecar cracks a project |
+| `FIXTURE_BUILD_MS` | 240s | *Initialization.* Cold `dotnet restore` + `build` of a fixture solution |
+| `REAL_REPO_MS` | 600s | *Initialization.* Clone + restore of a pinned third-party repository |
+
+Invariants:
+
+- **No numeric literal ceilings.** `this.timeout(<number>)` is forbidden in the
+  VS Code suite; a ceiling MUST name a tier. Arithmetic on a tier is forbidden
+  except the `+ 5_000` idiom that keeps a mocha ceiling just above a poll
+  timeout the test hands a helper, so the helper's message wins.
+- **Initialization tiers are for hooks.** `ACTIVATION_MS`, `SIDECAR_COLD_MS`,
+  `FIXTURE_BUILD_MS` and `REAL_REPO_MS` are legal in `suiteSetup` /
+  `suiteTeardown` only. A `test()` body claiming one means the suite is paying
+  restore or activation more than once, which per-suite setup exists to prevent.
+- **Initialization happens once per suite.** A suite MUST build its fixture
+  solution, activate the extension and warm discovery in `suiteSetup`, never per
+  test. Two suites in one chunk that build equivalent fixtures MUST share one.
+- **Raising a tier requires evidence.** The tiers encode observed p-max plus
+  headroom. A test that needs more time is a performance regression to
+  investigate, not a ceiling to raise.
 
 ## [DIST-SECRETS] Publishing Credentials
 

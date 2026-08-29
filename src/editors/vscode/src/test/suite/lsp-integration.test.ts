@@ -12,14 +12,14 @@ import {
   waitForDocumentSymbols,
   waitForFoldingRanges,
   waitForSelectionRanges,
-  LSP_RESPONSE_TIMEOUT_MS,
 } from './test-helpers';
+import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 suite('LSP Integration — Document Symbols', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('symbols-');
     tmpDir = result.tmpDir;
   });
@@ -34,7 +34,7 @@ suite('LSP Integration — Document Symbols', () => {
   });
 
   test('returns class and method symbols for a C# file', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace Test {
   public class Foo {
     public void Bar() { }
@@ -54,7 +54,7 @@ suite('LSP Integration — Document Symbols', () => {
   });
 
   test('returns namespace symbol', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = 'namespace MyApp.Models { public class Item { } }';
     const { uri } = await openCSharpFile(tmpDir, 'ns.cs', content);
     const symbols = await waitForDocumentSymbols(uri);
@@ -67,7 +67,7 @@ suite('LSP Integration — Document Symbols', () => {
   });
 
   test('returns nested class symbols with hierarchy', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace N {
   public class Outer {
     public class Inner {
@@ -90,7 +90,7 @@ suite('LSP Integration — Document Symbols', () => {
   });
 
   test('returns interface and enum symbols', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace T {
   public interface IService { void Execute(); }
   public enum Color { Red, Green, Blue }
@@ -104,7 +104,7 @@ suite('LSP Integration — Document Symbols', () => {
   });
 
   test('returns empty array for file with no declarations', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const { uri } = await openCSharpFile(tmpDir, 'empty-decl.cs', '// Just a comment\n');
 
     // Give the server time to respond, then check
@@ -118,7 +118,7 @@ suite('LSP Integration — Document Symbols', () => {
   });
 
   test('returns struct symbol', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace T {
   public struct Point {
     public int X;
@@ -133,7 +133,7 @@ suite('LSP Integration — Document Symbols', () => {
   });
 
   test('returns record symbol', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = 'namespace T { public record Person(string Name, int Age); }';
     const { uri } = await openCSharpFile(tmpDir, 'record.cs', content);
     const symbols = await waitForDocumentSymbols(uri);
@@ -147,7 +147,7 @@ suite('LSP Integration — Folding Ranges', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('folding-');
     tmpDir = result.tmpDir;
   });
@@ -162,7 +162,7 @@ suite('LSP Integration — Folding Ranges', () => {
   });
 
   test('returns folding ranges for class and method bodies', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace Test {
   public class Foo {
     public void Bar() {
@@ -182,7 +182,7 @@ suite('LSP Integration — Folding Ranges', () => {
   });
 
   test('returns folding ranges for region directives', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `public class C {
   #region Methods
   public void A() { }
@@ -199,7 +199,7 @@ suite('LSP Integration — Folding Ranges', () => {
   });
 
   test('returns folding ranges for using directives', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -215,7 +215,7 @@ namespace Test {
   });
 
   test('nested classes produce nested folding ranges', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace N {
   class Outer {
     class Inner {
@@ -239,7 +239,7 @@ suite('LSP Integration — Selection Ranges', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('selection-');
     tmpDir = result.tmpDir;
   });
@@ -254,7 +254,7 @@ suite('LSP Integration — Selection Ranges', () => {
   });
 
   test('returns selection ranges expanding from cursor position', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace Test {
   public class Foo {
     public void Bar() {
@@ -281,7 +281,7 @@ suite('LSP Integration — Selection Ranges', () => {
   });
 
   test('returns selection ranges for multiple positions', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `class C {
   int a = 1;
   int b = 2;
@@ -298,7 +298,7 @@ suite('LSP Integration — Selection Ranges', () => {
   });
 
   test('selection ranges at class level expand to file', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace N {
   class MyClass {
     void M() { }
@@ -327,7 +327,7 @@ suite('LSP Integration — Fixture Files', () => {
   let fixtureDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     // The fixture workspace is opened by the test runner.
     fixtureDir = path.resolve(__dirname, '../../../test-fixtures/workspace');
   });
@@ -341,7 +341,7 @@ suite('LSP Integration — Fixture Files', () => {
   });
 
   test('Calculator.cs returns symbols for class, methods, properties', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const uri = vscode.Uri.file(path.join(fixtureDir, 'Calculator.cs'));
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
@@ -383,7 +383,7 @@ suite('LSP Integration — Fixture Files', () => {
   });
 
   test('Calculator.cs has folding ranges for regions', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const uri = vscode.Uri.file(path.join(fixtureDir, 'Calculator.cs'));
     const doc = await vscode.workspace.openTextDocument(uri);
     const editor = await vscode.window.showTextDocument(doc);
@@ -437,7 +437,7 @@ suite('LSP Integration — Fixture Files', () => {
   });
 
   test('Nested.cs returns nested class hierarchy', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const uri = vscode.Uri.file(path.join(fixtureDir, 'Nested.cs'));
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
@@ -458,7 +458,7 @@ suite('LSP Integration — Fixture Files', () => {
   });
 
   test('Empty.cs returns no symbols', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const uri = vscode.Uri.file(path.join(fixtureDir, 'Empty.cs'));
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
@@ -479,7 +479,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
   let fixtureDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('semantic-');
     tmpDir = result.tmpDir;
     fixtureDir = path.resolve(__dirname, '../../../test-fixtures/workspace');
@@ -495,7 +495,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
   });
 
   test('returns Roslyn-backed completion items with concrete symbol kinds', async function () {
-    this.timeout(90_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const { uri } = await openWorkspaceFixture(fixtureDir, 'CompletionShot.cs');
     await waitForDocumentSymbols(uri);
 
@@ -509,7 +509,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
         return result ?? new vscode.CompletionList();
       },
       (list) => list.items.some((item) => item.label.toString() === 'Add'),
-      90_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
 
@@ -520,7 +520,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
   });
 
   test('auto-triggers member completion when `.` is typed', async function () {
-    this.timeout(90_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const { uri } = await openWorkspaceFixture(fixtureDir, 'CompletionShot.cs');
     await waitForDocumentSymbols(uri);
 
@@ -539,7 +539,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
         return result ?? new vscode.CompletionList();
       },
       (list) => list.items.some((item) => item.label.toString() === 'Add'),
-      90_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
 
@@ -553,7 +553,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
   });
 
   test('resolves definition and references for a method call site', async function () {
-    this.timeout(90_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const { uri } = await openWorkspaceFixture(fixtureDir, 'CompletionShot.cs');
     await waitForDocumentSymbols(uri);
     const addCall = new vscode.Position(10, 26);
@@ -568,7 +568,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
         return result ?? [];
       },
       (locations) => locations.length > 0,
-      90_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
 
@@ -589,7 +589,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
         return result ?? [];
       },
       (locations) => locations.length > 0,
-      90_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
 
@@ -603,7 +603,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
   });
 
   test('returns document highlights for a semantic symbol occurrence', async function () {
-    this.timeout(90_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const { uri } = await openWorkspaceFixture(fixtureDir, 'CompletionShot.cs');
     await waitForDocumentSymbols(uri);
 
@@ -617,7 +617,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
         return result ?? [];
       },
       (items) => items.length > 0,
-      90_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
 
@@ -628,7 +628,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
   });
 
   test('returns parameter-name inlay hints for a real method call', async function () {
-    this.timeout(90_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const { doc, uri } = await openWorkspaceFixture(fixtureDir, 'CompletionShot.cs');
     await waitForDocumentSymbols(uri);
 
@@ -642,7 +642,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
         return result ?? [];
       },
       (items) => items.length >= 2,
-      90_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
 
@@ -658,7 +658,7 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('refactor-');
     tmpDir = result.tmpDir;
   });
@@ -673,7 +673,7 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
   });
 
   test('code actions returned for unused variable', async function () {
-    this.timeout(120_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     // Use a file inside the real workspace fixture project so Roslyn can analyze it.
     const fixtureDir2 = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
     const content = `namespace RefactorDemo
@@ -708,7 +708,7 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
         return result ?? [];
       },
       (acts) => acts.length > 0,
-      90_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
 

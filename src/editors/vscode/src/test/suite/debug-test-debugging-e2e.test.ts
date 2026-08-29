@@ -48,10 +48,8 @@ import {
   requireAt,
   requireWorkspaceRoot,
 } from './test-helpers';
+import { DEBUG_SESSION_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
-
-/** A cold restore + build + VSTest discovery sweep, then a debug attach. */
-const TEST_DEBUG_TIMEOUT_MS = 900_000;
 
 /** The project the debug run drives. */
 const PROJECT = 'DebugTestTarget';
@@ -115,7 +113,7 @@ suite('Debug a unit test — the Test Explorer Debug profile and test breakpoint
   let stubs: UiStubs;
 
   suiteSetup(async function () {
-    this.timeout(TEST_DEBUG_TIMEOUT_MS);
+    this.timeout(FIXTURE_BUILD_MS);
     scratchDir = fs.mkdtempSync(path.join(requireWorkspaceRoot(), 'debug-testrun-'));
     isolateFromRepoMsbuild(scratchDir);
     projectDir = path.join(scratchDir, PROJECT);
@@ -154,7 +152,7 @@ suite('Debug a unit test — the Test Explorer Debug profile and test breakpoint
   // Implements [DEBUG-FEATURES-TESTS] "Debug individual test" and
   // "Breakpoints inside test methods", both P1.
   test('the Debug profile starts a session and stops inside the test body', async function () {
-    this.timeout(TEST_DEBUG_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
 
     // Interaction 1 — discover the test the way the Test Explorer does.
     const api = await activateTestExplorer();
@@ -219,7 +217,7 @@ suite('Debug a unit test — the Test Explorer Debug profile and test breakpoint
 
   // Implements [DEBUG-FEATURES-TESTS]'s closing rule: attach to the test HOST.
   test('the session attaches to the test host, not to the parent dotnet test', async function () {
-    this.timeout(TEST_DEBUG_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
 
     // Interaction 1 — discover and arm a breakpoint one frame deeper, in the
     // helper the test calls, so the whole stack can be inspected.

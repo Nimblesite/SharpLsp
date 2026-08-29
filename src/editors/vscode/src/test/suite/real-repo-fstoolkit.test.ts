@@ -35,6 +35,7 @@ import {
   waitForHoverResult,
   waitForSelectionRanges,
 } from './test-helpers';
+import { ACTIVATION_MS, LSP_RESPONSE_MS, REAL_REPO_MS } from './test-timeouts';
 
 const RESULT_FS = 'src/FsToolkit.ErrorHandling/Result.fs';
 const ASYNC_RESULT_FS = 'src/FsToolkit.ErrorHandling/AsyncResult.fs';
@@ -43,7 +44,7 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   let repoDir: string;
 
   suiteSetup(async function () {
-    this.timeout(900_000);
+    this.timeout(REAL_REPO_MS);
     repoDir = ensureRepoReady(FSTOOLKIT);
     await loadSolutionInServer(path.join(repoDir, FSTOOLKIT.sln));
     const { doc, uri } = await openRepoFile(repoDir, RESULT_FS);
@@ -52,13 +53,13 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   });
 
   suiteTeardown(async function () {
-    this.timeout(120_000);
+    this.timeout(ACTIVATION_MS);
     await closeAllEditors();
     await loadSolutionInServer(fixtureSolutionPath());
   });
 
   test('document symbols: the Result module maps its combinators', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, RESULT_FS);
     const symbols = await waitForDocumentSymbols(uri, 180_000);
     const names = flattenSymbolNames(symbols);
@@ -84,7 +85,7 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   });
 
   test('hover storm: F# combinators produce signature-bearing markdown', async function () {
-    this.timeout(240_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, RESULT_FS);
     const anchors: [string, string][] = [
       ['let inline map', 'map'],
@@ -103,7 +104,7 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   });
 
   test('navigation: AsyncResult.fs threads back into Result.fs across files', async function () {
-    this.timeout(240_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, ASYNC_RESULT_FS);
     await waitForDocumentSymbols(uri, 180_000);
     const usage = positionOf(doc, 'Async.map (Result.map mapper) input', 'Result.map');
@@ -146,7 +147,7 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   });
 
   test('live edit + completion: Result module members appear after typing', async function () {
-    this.timeout(240_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri, editor } = await openRepoFile(repoDir, RESULT_FS);
     const probe = '\n    let __sharpLspProbe input = Result.';
     const insertAt = doc.positionAt(doc.getText().length);
@@ -190,7 +191,7 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   // ([DIAG-PUSH-GATE]) and funneled every F# per-file analysis through one
   // canonical overlay-aware check ([HOVER-FSHARP-OVERLAY]).
   test('diagnostics round-trip: an F# type error surfaces and clears', async function () {
-    this.timeout(420_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri, editor } = await openRepoFile(repoDir, RESULT_FS);
     const pristineLength = doc.getText().length;
     const probe = '\n    let __sharpLspBad: int = "not an int"\n';
@@ -223,7 +224,7 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   });
 
   test('structure storm: folding, selection ranges, workspace symbols for F#', async function () {
-    this.timeout(240_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, RESULT_FS);
     const folding = await waitForFoldingRanges(uri, 120_000);
     assert.ok(folding.length >= 5, `Result.fs must fold, got ${folding.length.toString()}`);
@@ -257,7 +258,7 @@ suite('Real repo stress — FsToolkit.ErrorHandling (F#)', () => {
   });
 
   test('stress: rapid-fire mixed requests stay within memory/CPU bounds', async function () {
-    this.timeout(300_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, RESULT_FS);
     const hoverAt = positionOf(doc, 'let inline map', 'map');
 

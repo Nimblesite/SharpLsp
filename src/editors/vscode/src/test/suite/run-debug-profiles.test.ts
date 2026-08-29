@@ -39,6 +39,7 @@ import {
 } from './run-debug-fixtures';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { closeAllEditors, comparablePath, removeDirRecursive } from './test-helpers';
+import { DOTNET_CLI_MS } from './test-timeouts';
 
 /** Shorthand so every assertion helper fits one signature line. */
 type Config = vscode.DebugConfiguration;
@@ -224,7 +225,7 @@ suite('Run and Debug: launch profiles', () => {
   // Implements [DEBUG-FEATURES-LAUNCH-PROFILES] discovery + rule 2,
   // [DEBUG-FEATURES-LAUNCH-OUTPUT] rule 1.
   test('profiles follow the resolved project across every F5 shape, an edit, and attach', async function () {
-    this.timeout(120_000);
+    this.timeout(DOTNET_CLI_MS);
     const { root, appDir, sourceFile } = canonicalLayout('discovery');
     const env = { MY_VAR: 'from-profile', DOTNET_ENVIRONMENT: 'Development' };
     const args = { commandLineArgs: '--mode fast' };
@@ -361,7 +362,7 @@ suite('Run and Debug: launch profiles', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-PROFILES] mapping rules 1 and 3.
   test('profile mapping tokenizes quotes, maps applicationUrl, merges env, and asks which profile', async function () {
-    this.timeout(120_000);
+    this.timeout(DOTNET_CLI_MS);
     const { root, appDir, sourceFile } = canonicalLayout('mapping');
     const dev = { commandLineArgs: QUOTED_ARGS, applicationUrl: APP_URLS };
     writeLaunchSettings(
@@ -441,7 +442,7 @@ suite('Run and Debug: launch profiles', () => {
 
   // Implements [DEBUG-FEATURES-LAUNCH-SCRIPT] rule 7, [DEBUG-FEATURES-LAUNCH-PROFILES].
   test('a file-based app reads <name>.run.json exactly as a project reads launchSettings', async function () {
-    this.timeout(120_000);
+    this.timeout(DOTNET_CLI_MS);
     const appRoot = caseDir('file-based');
     const entry = writeFileBasedApp(appRoot, 'app', 'hello from the file-based app');
     const fields = { commandLineArgs: QUOTED_ARGS, applicationUrl: APP_URLS };

@@ -18,6 +18,7 @@ import {
   projectDependencies,
   resetForTests,
 } from '../../project-deps-store.js';
+import { COMMAND_MS } from './test-timeouts';
 
 const CSPROJ = `<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
@@ -47,7 +48,7 @@ suite('Project-deps node watcher survives project dir deletion', () => {
   });
 
   test('deleting a watched project directory neither crashes the host nor leaves it tracked', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS + 5_000);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-watch-'));
     const projectPath = path.join(dir, 'Deleted.csproj');
     fs.writeFileSync(projectPath, CSPROJ);
@@ -65,7 +66,7 @@ suite('Project-deps node watcher survives project dir deletion', () => {
     // raises it as an uncaught exception, which mocha attributes to this test.
     removeDirRecursive(dir);
 
-    const removed = await pollUntil(() => !projectDependencies.value.has(projectPath), 10_000);
+    const removed = await pollUntil(() => !projectDependencies.value.has(projectPath), COMMAND_MS);
     assert.ok(removed, 'deleted project must be dropped from projectDependencies');
     assert.ok(!fs.existsSync(projectPath), 'fixture tree really was deleted');
   });

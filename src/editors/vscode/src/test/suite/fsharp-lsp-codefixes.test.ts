@@ -1,12 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
-import {
-  FSHARP_COLD_TIMEOUT_MS,
-  fsharpFixturePath,
-  openFSharpFixture,
-  positionOf,
-} from './fsharp-helpers';
+import { fsharpFixturePath, openFSharpFixture, positionOf } from './fsharp-helpers';
 import {
   activateRealSharpLsp,
   replaceDocumentText,
@@ -14,6 +9,7 @@ import {
   waitForResolvedCodeActions,
 } from './refactor-test-helpers';
 import { closeAllEditors, pollUntilResult } from './test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Real-LSP analyzer fixes for [ANALYZERS-FSAC-PARITY] and [ANALYZERS-FSAC-CODEFIX-INTERFACE-STUB].
 const CODEFIX_FILE = 'CodeFixes.fs';
@@ -55,7 +51,7 @@ function defineInterfaceFixSuite(): void {
 }
 
 async function runRemoveTest(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_COLD_TIMEOUT_MS + 45_000);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   const fixture = await openFSharpFixture(CODEFIX_FILE);
   const openLine = positionOf(fixture.doc, 'open System.Text').line;
   const range = fixture.doc.lineAt(openLine).range;
@@ -65,7 +61,7 @@ async function runRemoveTest(this: Mocha.Context): Promise<void> {
 }
 
 async function runSimplifyTest(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_COLD_TIMEOUT_MS + 45_000);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   const fixture = await openFSharpFixture(CODEFIX_FILE);
   const start = positionOf(fixture.doc, 'System.DateTime.MinValue');
   const range = new vscode.Range(start, start.translate(0, 'System.DateTime'.length));
@@ -75,19 +71,19 @@ async function runSimplifyTest(this: Mocha.Context): Promise<void> {
 }
 
 async function runHintTest(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_COLD_TIMEOUT_MS + 45_000);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   const fixture = await openFSharpFixture(CODEFIX_FILE);
   const diagnostics = await pollUntilResult(
     async () => vscode.languages.getDiagnostics(fixture.uri),
     hasBothAnalyzerHints,
-    FSHARP_COLD_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
     2_000,
   );
   assertAnalyzerHints(fixture.doc, diagnostics);
 }
 
 async function runInterfaceTest(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_COLD_TIMEOUT_MS + 45_000);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   const fixture = await openFSharpFixture(IMPL_FILE);
   await replaceDocumentText(fixture.doc, IMPL_INCOMPLETE);
   assert.ok(fixture.doc.isDirty, 'incomplete interface must be an unsaved overlay');
@@ -109,7 +105,7 @@ async function inspectAction(
     range,
     kind: vscode.CodeActionKind.QuickFix,
     predicate: (items: vscode.CodeAction[]) => items.some((item) => item.title === title),
-    timeoutMs: FSHARP_COLD_TIMEOUT_MS,
+    timeoutMs: LSP_RESPONSE_MS,
   };
   const raw = unique(await waitForCodeActions(query), title);
   assertActionMetadata(raw, title, preferred, false);

@@ -12,15 +12,15 @@ import {
   teardownLspTestSuite,
   waitForDocumentSymbols,
   waitForHoverResult,
-  LSP_RESPONSE_TIMEOUT_MS,
 } from './test-helpers';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 suite('Hover / Quick Info', () => {
   let tmpDir: string;
   let workspaceRoot: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('hover-');
     tmpDir = result.tmpDir;
     const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -50,14 +50,13 @@ suite('Hover / Quick Info', () => {
   // ── Multi-Symbol Hover ──────────────────────────────────────────
 
   test('hover on class, method, property, field in one file', async function () {
-    this.timeout(120_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openFixture('HoverMulti.cs');
     await waitForDocumentSymbols(uri);
 
     // Hover on class "Calculator" (line 2, char 18).
-    // First hover needs a very long timeout — sidecar loads Roslyn + MSBuild.
-    const classHover = await waitForHoverResult(uri, new vscode.Position(2, 18), 90_000);
+    const classHover = await waitForHoverResult(uri, new vscode.Position(2, 18));
     assert.ok(classHover.length > 0, 'Must return hover for class');
     const classMd = hoverToString(classHover);
     assert.ok(classMd.includes('Calculator'), "Class hover must contain 'Calculator'");
@@ -158,7 +157,7 @@ suite('Hover / Quick Info', () => {
   // ── Hover Range ─────────────────────────────────────────────────
 
   test('hover returns range that spans the hovered token', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openFixture('HoverRange.cs');
     await waitForDocumentSymbols(uri);
@@ -184,7 +183,7 @@ suite('Hover / Quick Info', () => {
   // ── Whitespace & Comment Rejection (multiple positions) ─────────
 
   test('hover on comments and whitespace returns empty across many positions', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openFixture('HoverReject.cs');
     await waitForDocumentSymbols(uri);
@@ -220,7 +219,7 @@ suite('Hover / Quick Info', () => {
   // ── Edit → Re-hover (content changes reflected) ─────────────────
 
   test('hover reflects content after edit cycle', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 4);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     // Open fixture with class Alpha.
     const { doc, uri } = await openFixture('HoverEdit.cs');
@@ -258,7 +257,7 @@ suite('Hover / Quick Info', () => {
   // ── Struct, Enum, Interface hover ───────────────────────────────
 
   test('hover on struct, enum, interface returns correct kinds', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openFixture('HoverKinds.cs');
     await waitForDocumentSymbols(uri);
@@ -288,7 +287,7 @@ suite('Hover / Quick Info', () => {
   // ── var keyword hover ──────────────────────────────────────────
 
   test('hover on var keyword shows inferred type', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openFixture('HoverVar.cs');
     await waitForDocumentSymbols(uri);
@@ -307,7 +306,7 @@ suite('Hover / Quick Info', () => {
   // ── XML documentation rendering ──────────────────────────────
 
   test('hover renders XML doc summary, param, and returns tags', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openFixture('HoverXmlDoc.cs');
     await waitForDocumentSymbols(uri);
@@ -345,7 +344,7 @@ suite('Hover / Quick Info', () => {
   // ── [Obsolete] deprecation ────────────────────────────────────
 
   test('hover on [Obsolete] method shows deprecation warning', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openFixture('HoverObsolete.cs');
     await waitForDocumentSymbols(uri);
@@ -363,7 +362,7 @@ suite('Hover / Quick Info', () => {
   // ── Solution Explorer Integration ───────────────────────────────
 
   test('ExplorerNode carries symbolUri and symbolPosition on symbol nodes', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
 
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext !== undefined, 'Extension must exist');
@@ -410,7 +409,7 @@ suite('Hover / Quick Info', () => {
   // ── Tree Tooltip (resolveTreeItem) ──────────────────────────────
 
   test('resolveTreeItem uses LSP hover — same content as code hover', async function () {
-    this.timeout(60_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, 'Extension must be active');
@@ -522,7 +521,7 @@ suite('Hover / Quick Info', () => {
   });
 
   test('resolveTreeItem returns undefined tooltip for non-symbol nodes', async function () {
-    this.timeout(15_000);
+    this.timeout(COMMAND_MS);
 
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, 'Extension must be active');

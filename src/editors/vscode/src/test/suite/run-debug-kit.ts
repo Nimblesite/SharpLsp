@@ -20,6 +20,7 @@ import * as vscode from 'vscode';
 import { findNetcoredbg, getNetcoredbgCandidates } from '../../debug.js';
 import { binaryNameOf } from '../../platform.js';
 import { EXTENSION_ID, pollUntilResult, sleep } from './test-helpers';
+import { COMMAND_MS, DEBUG_SESSION_MS, FIXTURE_BUILD_MS, QUIET_MS } from './test-timeouts';
 
 /** Registered by the extension today. */
 export const CMD_DEBUG_PROGRAM = 'sharplsp.debugProgram';
@@ -39,15 +40,6 @@ export const CMD_VSCODE_DEBUG_RUN = 'workbench.action.debug.run';
 
 /** The shipped debugger type, from package.json and constants.ts alike. */
 export const DEBUG_TYPE_ID = 'sharplsp-coreclr';
-
-/** Long enough for a cold restore + build of a fixture project on CI. */
-export const BUILD_TIMEOUT_MS = 300_000;
-
-/** How long to wait for the workbench to report a session or a task. */
-export const OBSERVE_TIMEOUT_MS = 60_000;
-
-/** Settle window for proving that NOTHING happened. */
-export const QUIET_MS = 2_500;
 
 /**
  * A `WorkspaceFolder` rooted at `root`, for direct provider calls.
@@ -233,7 +225,7 @@ export class DebugSessionRecorder {
   /** Wait for at least `count` SharpLsp sessions; returns what was observed. */
   public async waitForSessions(
     count = 1,
-    timeoutMs = OBSERVE_TIMEOUT_MS,
+    timeoutMs = DEBUG_SESSION_MS,
   ): Promise<readonly ObservedSession[]> {
     return pollUntilResult(
       async () => this.ours,
@@ -343,7 +335,7 @@ export class TaskRecorder {
   /** Wait for at least `count` `dotnet` tasks to start. */
   public async waitForDotnetTasks(
     count = 1,
-    timeoutMs = OBSERVE_TIMEOUT_MS,
+    timeoutMs = DEBUG_SESSION_MS,
   ): Promise<readonly ObservedTask[]> {
     return pollUntilResult(
       async () => this.dotnetTasks,
@@ -354,7 +346,7 @@ export class TaskRecorder {
   }
 
   /** Wait for at least `count` task processes to report an exit code. */
-  public async waitForExits(count = 1, timeoutMs = OBSERVE_TIMEOUT_MS): Promise<readonly number[]> {
+  public async waitForExits(count = 1, timeoutMs = DEBUG_SESSION_MS): Promise<readonly number[]> {
     return pollUntilResult(
       async () => this.exits,
       (codes) => codes.length >= count,
@@ -381,7 +373,7 @@ export class TaskRecorder {
 /** Wait for a terminal with `name` to appear. */
 export async function waitForTerminal(
   name: string,
-  timeoutMs = OBSERVE_TIMEOUT_MS,
+  timeoutMs = DEBUG_SESSION_MS,
 ): Promise<vscode.Terminal | undefined> {
   const terminals = await pollUntilResult(
     async () => vscode.window.terminals,
@@ -405,7 +397,6 @@ export async function focusDocument(file: string): Promise<vscode.TextEditor> {
 }
 
 /** How long a teardown waits for a stopped session to report its termination. */
-const SETTLE_TIMEOUT_MS = 20_000;
 
 /**
  * Stop any session a test started AND wait for the workbench to report it gone.
@@ -430,7 +421,7 @@ export async function stopAnyDebugSession(): Promise<void> {
   await pollUntilResult(
     async () => ended,
     (ids) => ids.has(active.id),
-    SETTLE_TIMEOUT_MS,
+    COMMAND_MS,
     50,
   );
   listener.dispose();

@@ -12,7 +12,6 @@ import {
 import { fixtureSolutionPath, loadSolutionInServer } from './real-repo-helpers';
 import {
   PACKAGE,
-  RESTORE_TIMEOUT_MS,
   assertNoPackageBindingErrors,
   completionList,
   diagnosticCode,
@@ -25,6 +24,7 @@ import {
   waitForErrorCode,
   waitForHoverText,
 } from './filebased-package-kit';
+import { ACTIVATION_MS, DOTNET_CLI_MS } from './test-timeouts';
 
 function writeFixture(tmpDir: string, filename: string, content: string): string {
   const target = path.join(tmpDir, filename);
@@ -42,7 +42,7 @@ async function waitForMarkerWithoutError(
     (items) =>
       items.some((diagnostic) => diagnostic.message.includes(marker)) &&
       !items.some((diagnostic) => diagnosticCode(diagnostic) === 'CS1029'),
-    RESTORE_TIMEOUT_MS,
+    DOTNET_CLI_MS,
   );
   const warning = assertSingleMarker(diagnostics, marker);
   assert.strictEqual(warning.severity, vscode.DiagnosticSeverity.Warning);
@@ -67,7 +67,7 @@ suite('VSIX E2E — file-based app MSBuild configuration', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     ({ tmpDir } = await setupLspTestSuite('filebased-package-config-'));
   });
 
@@ -84,7 +84,7 @@ suite('VSIX E2E — file-based app MSBuild configuration', () => {
   // Implements [SCRIPT-FILEBASED-DIRECTIVES] and
   // [SCRIPT-FILEBASED-REFERENCES-MSBUILD].
   test('a bare package version is supplied by Directory.Packages.props', async function () {
-    this.timeout(RESTORE_TIMEOUT_MS + 30_000);
+    this.timeout(DOTNET_CLI_MS);
     const centralPackages = `<Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
@@ -119,7 +119,7 @@ Console.WriteLine(payload.Count);
   // Implements the app-directory configuration cone in
   // [SCRIPT-FILEBASED-REFERENCES-MSBUILD].
   test('Directory.Build.props compiler properties affect live semantics', async function () {
-    this.timeout(RESTORE_TIMEOUT_MS + 30_000);
+    this.timeout(DOTNET_CLI_MS);
     const buildProps = `<Project>
   <PropertyGroup>
     <DefineConstants>$(DefineConstants);FROM_APP_CONE</DefineConstants>
@@ -153,7 +153,7 @@ Console.WriteLine(payload.Count);
   // Implements #:property evaluation in [SCRIPT-FILEBASED-DIRECTIVES] and
   // [SCRIPT-FILEBASED-REFERENCES-MSBUILD].
   test('#:property compiler options flow into the Roslyn project', async function () {
-    this.timeout(RESTORE_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const marker = 'sharplsp-file-directive-options-applied';
     const source = `#:property DefineConstants=FROM_FILE_DIRECTIVE
 #warning ${marker}
@@ -178,7 +178,7 @@ Console.WriteLine(text.Length);
 
   // Implements live directive re-evaluation in [SCRIPT-RELOAD].
   test('unsaved #:property add, remove and re-add updates compiler options', async function () {
-    this.timeout(RESTORE_TIMEOUT_MS);
+    this.timeout(DOTNET_CLI_MS);
     const body = `#if !LIVE_DIRECTIVE
 #error live property is absent
 #endif
@@ -202,7 +202,7 @@ Console.WriteLine(text.Length);
     const afterAdd = await pollUntilResult(
       async () => errorsFor(uri),
       (errors) => !errors.some((diagnostic) => diagnosticCode(diagnostic) === 'CS1029'),
-      RESTORE_TIMEOUT_MS,
+      DOTNET_CLI_MS,
     );
     assert.deepStrictEqual(afterAdd, [], 'adding the property disables the #error branch');
 
@@ -223,7 +223,7 @@ Console.WriteLine(text.Length);
     const afterReAdd = await pollUntilResult(
       async () => errorsFor(uri),
       (errors) => !errors.some((diagnostic) => diagnosticCode(diagnostic) === 'CS1029'),
-      RESTORE_TIMEOUT_MS,
+      DOTNET_CLI_MS,
     );
     assert.deepStrictEqual(afterReAdd, [], 're-adding the property restores clean semantics');
   });

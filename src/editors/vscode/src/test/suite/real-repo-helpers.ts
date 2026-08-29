@@ -11,6 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { EXTENSION_ID, removeDirRecursive, waitForHoverResult } from './test-helpers';
+import { REAL_REPO_MS } from './test-timeouts';
 export {
   assertCpuSettles,
   assertServerResourceBounds,
@@ -72,7 +73,7 @@ export function ensureRepoReady(spec: RealRepoSpec): string {
     execFileSync('git', ['clone', '--depth', '1', '--branch', spec.tag, spec.url, spec.name], {
       cwd: root,
       stdio: 'pipe',
-      timeout: 600_000,
+      timeout: REAL_REPO_MS,
     });
   }
   const globalJson = path.join(repoDir, 'global.json');
@@ -89,7 +90,7 @@ export function ensureRepoReady(spec: RealRepoSpec): string {
       execFileSync('dotnet', ['restore', spec.sln, '-p:NuGetAudit=false'], {
         cwd: repoDir,
         stdio: 'pipe',
-        timeout: 900_000,
+        timeout: REAL_REPO_MS,
       });
     } catch (err: unknown) {
       // stdio:'pipe' captures NuGet's diagnostics and the default rethrow discards

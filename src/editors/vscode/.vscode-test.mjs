@@ -52,6 +52,17 @@ export default defineConfig({
     // real e2e coverage that is otherwise invisible. Dependencies are required at
     // runtime as separate files and dropped by the `node_modules` glob.
     exclude: ['**/node_modules/**', '**/.vscode-test/**'],
-    reporter: ['text-summary', 'html', 'json-summary'],
+    // `lcov` is what makes SHARDING possible ([DIST-CI-VSIX-SHARDS]): CI runs one
+    // chunk of the suite per job, and tools/coverage/merge-lcov.mjs union-merges
+    // the per-shard tracefiles before the single ratcheted gate reads the total.
+    // `json-summary` still feeds the unsharded local `make test` gate.
+    //
+    // `includeAll` is deliberately left off. Every shard instruments the same
+    // bundle, so a file loaded by ANY shard contributes its whole line set to the
+    // union (unexecuted lines included, as `DA:<line>,0`) — which reproduces
+    // exactly the file set and line set of one unsharded run, and so the same
+    // percentage. Turning `includeAll` on would change the denominator and
+    // silently move the ratchet.
+    reporter: ['text-summary', 'html', 'json-summary', 'lcov'],
   },
 });

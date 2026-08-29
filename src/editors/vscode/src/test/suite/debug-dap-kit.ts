@@ -19,12 +19,11 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { DEBUG_TYPE_ID } from './run-debug-kit';
 import { pollUntilResult, requireAt, sleep } from './test-helpers';
+import { DEBUG_SESSION_MS, QUIET_MS } from './test-timeouts';
 
 /** How long a launch, a step or a stop may take before a suite gives up. */
-export const DAP_TIMEOUT_MS = 60_000;
 
 /** Settle window for proving a stop did NOT happen — an ignored exception. */
-export const DAP_QUIET_MS = 4_000;
 
 /** One `event` message the adapter sent. */
 export interface DapEvent {
@@ -234,7 +233,7 @@ export class DapRecorder implements vscode.Disposable {
   }
 
   /** Wait until at least `count` `stopped` events have arrived. */
-  public async waitForStops(count = 1, timeoutMs = DAP_TIMEOUT_MS): Promise<StopRecord[]> {
+  public async waitForStops(count = 1, timeoutMs = DEBUG_SESSION_MS): Promise<StopRecord[]> {
     const stops = await pollUntilResult(
       async () => this.stops(),
       (seen) => seen.length >= count,
@@ -275,7 +274,7 @@ export class DapRecorder implements vscode.Disposable {
   public async requestAfter(
     command: string,
     baseline: number,
-    timeoutMs = DAP_TIMEOUT_MS,
+    timeoutMs = DEBUG_SESSION_MS,
   ): Promise<DapRequest> {
     const seen = await pollUntilResult(
       async () => this.requests(command),
@@ -290,7 +289,7 @@ export class DapRecorder implements vscode.Disposable {
   public async waitForEvents(
     name: string,
     count = 1,
-    timeoutMs = DAP_TIMEOUT_MS,
+    timeoutMs = DEBUG_SESSION_MS,
   ): Promise<DapEvent[]> {
     const events = await pollUntilResult(
       async () => this.events(name),
@@ -306,7 +305,7 @@ export class DapRecorder implements vscode.Disposable {
   }
 
   /** Wait until the debuggee's output contains `needle`; returns all output. */
-  public async waitForOutput(needle: string, timeoutMs = DAP_TIMEOUT_MS): Promise<string> {
+  public async waitForOutput(needle: string, timeoutMs = DEBUG_SESSION_MS): Promise<string> {
     const text = await pollUntilResult(
       async () => this.outputText(),
       (seen) => seen.includes(needle),
@@ -330,7 +329,7 @@ export class DapRecorder implements vscode.Disposable {
   public async assertNoFurtherStop(
     baseline: number,
     reason: string,
-    quietMs = DAP_QUIET_MS,
+    quietMs = QUIET_MS,
   ): Promise<void> {
     await sleep(quietMs);
     const stops = this.stops();

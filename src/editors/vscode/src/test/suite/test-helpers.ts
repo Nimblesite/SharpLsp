@@ -4,13 +4,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as vscode from 'vscode';
 import { detectRuntimePlatform, exeName } from '../../platform.js';
+import { ACTIVATION_MS, LSP_RESPONSE_MS, POLL_INTERVAL_MS } from './test-timeouts';
 
 // ── Constants ────────────────────────────────────────────────────
 
 export const EXTENSION_ID = 'nimblesite.sharplsp';
-export const SERVER_START_TIMEOUT_MS = 30_000;
-export const LSP_RESPONSE_TIMEOUT_MS = 15_000;
-export const POLL_INTERVAL_MS = 100;
 
 // ── Path Comparison ──────────────────────────────────────────────
 
@@ -88,7 +86,7 @@ export function findSharpLspBinary(): string | undefined {
 export async function pollUntilResult<T>(
   fn: () => PromiseLike<T>,
   predicate: (result: T) => boolean,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
   intervalMs: number = POLL_INTERVAL_MS,
 ): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -105,7 +103,7 @@ export async function pollUntilResult<T>(
 /** Wait for document symbols to be returned by the LSP server. */
 export async function waitForDocumentSymbols(
   uri: vscode.Uri,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.DocumentSymbol[]> {
   return pollUntilResult(
     async () => {
@@ -141,7 +139,7 @@ export function flattenSymbolNames(symbols: vscode.DocumentSymbol[]): string[] {
 /** Wait for folding ranges to be returned by the LSP server. */
 export async function waitForFoldingRanges(
   uri: vscode.Uri,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.FoldingRange[]> {
   return pollUntilResult(
     async () => {
@@ -160,7 +158,7 @@ export async function waitForFoldingRanges(
 export async function waitForSelectionRanges(
   uri: vscode.Uri,
   positions: vscode.Position[],
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.SelectionRange[]> {
   return pollUntilResult(
     async () => {
@@ -180,7 +178,7 @@ export async function waitForSelectionRanges(
 export async function waitForHoverResult(
   uri: vscode.Uri,
   position: vscode.Position,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Hover[]> {
   return pollUntilResult(
     async () => {
@@ -199,7 +197,7 @@ export async function waitForHoverResult(
 /** Wait for diagnostics to appear on a document. */
 export async function waitForDiagnostics(
   uri: vscode.Uri,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Diagnostic[]> {
   return pollUntilResult(
     async () => vscode.languages.getDiagnostics(uri),
@@ -211,7 +209,7 @@ export async function waitForDiagnostics(
 /** Wait for diagnostics to be cleared (empty) on a document. */
 export async function waitForDiagnosticsCleared(
   uri: vscode.Uri,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Diagnostic[]> {
   return pollUntilResult(
     async () => vscode.languages.getDiagnostics(uri),
@@ -316,7 +314,7 @@ export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
       return result ?? [];
     },
     (symbols) => symbols.length > 0,
-    SERVER_START_TIMEOUT_MS,
+    ACTIVATION_MS,
     500,
   );
 

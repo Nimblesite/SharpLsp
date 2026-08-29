@@ -29,8 +29,8 @@ import {
   startDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS } from './run-debug-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 suite('Debug stepping — breakpoints inside steps, and stepping off the end', () => {
   const debuggee = useDebuggee('debug-stepedge-cs-', 'csharp');
@@ -38,7 +38,7 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
   // Implements [DEBUG-FEATURES-STEPPING] + [DEBUG-FEATURES-BREAKPOINTS]: a
   // breakpoint outranks a step in progress.
   test('a breakpoint inside a stepped-over call still stops the debuggee', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — one breakpoint on the call, one INSIDE the callee.
@@ -96,7 +96,7 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
   // Implements [DEBUG-FEATURES-STEPPING] "Step over | next | P1" at a method's
   // last statement, where `next` must pop a frame.
   test('stepping over the last statement of a method returns to the caller', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop on the `return` of the innermost method.
@@ -148,7 +148,7 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
   // Implements [DEBUG-FEATURES-STEPPING] at the outermost boundary: stepping off
   // the end of the entry point ends the debuggee.
   test('stepping over the last statement of the program terminates the session', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop on the entry point's `return`.

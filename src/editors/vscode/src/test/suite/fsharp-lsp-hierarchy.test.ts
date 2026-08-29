@@ -1,7 +1,8 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { closeAllEditors, pollUntilResult } from './test-helpers';
-import { FSHARP_COLD_TIMEOUT_MS, openFSharpFixture, positionOf } from './fsharp-helpers';
+import { openFSharpFixture, positionOf } from './fsharp-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 /**
  * Blanket end-to-end coverage for F# code lens and call hierarchy.
@@ -16,7 +17,7 @@ suite('F# LSP — Code Lens', () => {
   teardown(closeAllEditors);
 
   test('provides reference-count lenses on F# declarations', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const library = await openFSharpFixture('Library.fs');
     const lenses = await pollUntilResult(
       async () =>
@@ -25,7 +26,7 @@ suite('F# LSP — Code Lens', () => {
           library.uri,
         )) ?? [],
       (items) => items.length >= 1,
-      FSHARP_COLD_TIMEOUT_MS,
+      LSP_RESPONSE_MS,
       2_000,
     );
     assert.ok(lenses.length >= 1, `Library.fs must expose ≥1 code lens, got ${lenses.length}`);
@@ -37,7 +38,7 @@ suite('F# LSP — Call Hierarchy', () => {
   teardown(closeAllEditors);
 
   test('prepares a call hierarchy item and resolves incoming calls', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const usage = await openFSharpFixture('Usage.fs');
     const position = positionOf(usage.doc, 'let double (value', 'let '.length);
     const items = await pollUntilResult(
@@ -48,7 +49,7 @@ suite('F# LSP — Call Hierarchy', () => {
           position,
         )) ?? [],
       (list) => list.length > 0,
-      FSHARP_COLD_TIMEOUT_MS,
+      LSP_RESPONSE_MS,
       2_000,
     );
     assert.ok(items.length > 0, 'call hierarchy must prepare an item for the double function');

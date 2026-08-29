@@ -8,7 +8,6 @@ import {
   RENAME_USAGES_SOURCE,
 } from './fsharp-rename-fixtures';
 import {
-  FSHARP_REFACTOR_TIMEOUT_MS,
   changedFileNames,
   editCount,
   openOverlay,
@@ -25,6 +24,7 @@ import {
   waitForMatchingDiagnostics,
 } from './refactor-test-helpers';
 import { closeAllEditors } from './test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Real-LSP rejection/live-overlay boundaries. [RENAME-FSHARP-PREPARE] [RENAME-FSHARP-APPLY]
 const TARGET_FILE = 'fsharp/RenameEdge.fs';
@@ -51,7 +51,7 @@ function defineRenameEdgeSuite(): void {
 function registerValidNameTests(): void {
   for (const newName of VALID_NAMES) {
     test(`unsaved overlay renames to ${JSON.stringify(newName)} and undoes cleanly`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await runUnsavedRename(newName);
     });
   }
@@ -60,7 +60,7 @@ function registerValidNameTests(): void {
 function registerInvalidNameTests(): void {
   for (const invalidName of INVALID_NAMES) {
     test(`rejects invalid F# identifier ${JSON.stringify(invalidName)}`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await assertInvalidName(invalidName);
     });
   }
@@ -69,7 +69,7 @@ function registerInvalidNameTests(): void {
 function registerMetadataTests(): void {
   for (const metadataName of ['System', 'String', 'Empty'] as const) {
     test(`rejects external metadata symbol ${metadataName}`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await assertMetadataRejected(metadataName);
     });
   }
@@ -77,16 +77,16 @@ function registerMetadataTests(): void {
 
 function registerRenameBoundaryTests(): void {
   test('rejects prepare and rename on whitespace, literals, comments, and strings', async function () {
-    this.timeout(FSHARP_REFACTOR_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await assertTriviaRejected();
   });
   test('renames an indexer and keeps .[i] call sites compiling via DefaultMember', async function () {
-    this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await assertIndexerRename();
   });
 
   test('renames a namespace across files and reverses the rename', async function () {
-    this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await assertNamespaceRename();
   });
 }
@@ -100,7 +100,7 @@ async function runUnsavedRename(newName: string): Promise<void> {
       fixture.uri,
       range.start.translate(0, 1),
       newName,
-      FSHARP_REFACTOR_TIMEOUT_MS,
+      LSP_RESPONSE_MS,
     );
     await assertUnsavedEdit(edit, fixture.uri, 'unsavedName', newName);
     await applyUnsavedEdit(fixture, edit, newName);
@@ -174,7 +174,7 @@ async function assertReverseRenameAtBoundaries(
     range.end.translate(0, -1),
   ];
   for (const position of positions) {
-    const reverse = await requestRename(uri, position, 'unsavedName', FSHARP_REFACTOR_TIMEOUT_MS);
+    const reverse = await requestRename(uri, position, 'unsavedName', LSP_RESPONSE_MS);
     await assertUnsavedEdit(reverse, uri, currentName, 'unsavedName');
   }
 }
@@ -189,7 +189,7 @@ async function undoUnsavedEdit(
     fixture.uri,
     range.start.translate(0, 1),
     newName,
-    FSHARP_REFACTOR_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
   );
   await assertUnsavedEdit(replay, fixture.uri, 'unsavedName', newName);
   assert.strictEqual(fixture.document.getText(), RENAME_EDGE_SOURCE);
@@ -278,7 +278,7 @@ async function runIndexerLifecycle(declarations: OpenOverlay, usages: OpenOverla
     declarations.uri,
     range.start.translate(0, 1),
     'Lookup',
-    FSHARP_REFACTOR_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
   );
   assert.deepStrictEqual(changedFileNames(edit).sort(), ['RenameDeclarations.fs']);
   assert.strictEqual(editCount(edit), 2, 'the member rename and its DefaultMember metadata');
@@ -316,7 +316,7 @@ async function runNamespaceLifecycle(definition: OpenOverlay, usage: OpenOverlay
     definition.uri,
     range.start.translate(0, 1),
     'RenamedNamespace',
-    FSHARP_REFACTOR_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
   );
   await assertNamespaceEdit(edit, 'RenameNamespace', 'RenamedNamespace');
   await applyWorkspaceEdit(edit);
@@ -370,7 +370,7 @@ async function reverseNamespaceRename(
     definition.uri,
     range.start.translate(0, 1),
     'RenameNamespace',
-    FSHARP_REFACTOR_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
   );
   await assertNamespaceEdit(reverse, 'RenamedNamespace', 'RenameNamespace');
   await applyWorkspaceEdit(reverse);
@@ -420,7 +420,7 @@ async function assertNoErrors(uri: vscode.Uri): Promise<void> {
   const diagnostics = await waitForMatchingDiagnostics(
     uri,
     (items) => items.every((item) => item.severity !== vscode.DiagnosticSeverity.Error),
-    FSHARP_REFACTOR_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
   );
   assert.ok(diagnostics.every((item) => item.severity !== vscode.DiagnosticSeverity.Error));
 }

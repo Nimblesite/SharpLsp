@@ -26,8 +26,8 @@ import {
   waitForActiveFrame,
 } from './debug-drive-kit';
 import { armBreakpoints, assertCleanSession, startDebuggee, useDebuggee } from './debug-suite-kit';
-import { BUILD_TIMEOUT_MS } from './run-debug-kit';
 import { comparablePath, deepEq, eq, requireAt } from './test-helpers';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 
 /** Compiler-generated shapes the user must never be shown as a frame name. */
 const GENERATED_HINTS: readonly string[] = ['MoveNext', 'd__'];
@@ -38,7 +38,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
   // Implements [DEBUG-FEATURES-STACK] "Call stack display" and "Navigate to
   // source from frame", both P1.
   test('every physical frame is listed, named, located and navigable', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop three user frames deep.
@@ -113,7 +113,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
 
   // Implements [DEBUG-FEATURES-STACK] — selecting a frame is per-frame state.
   test('selecting a caller frame reads that frame’s own locals', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop in the innermost frame.
@@ -165,7 +165,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
   // Implements [DEBUG-FEATURES-STACK-ASYNC] "Logical async call stack |
   // stackTrace (enriched) | P1".
   test('an awaited chain reports the LOGICAL async stack, not raw MoveNext frames', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop at the bottom of a three-deep await chain.
@@ -224,7 +224,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
 
   // Implements [DEBUG-FEATURES-STACK] — the thread list the panel groups by.
   test('threads are enumerated and the stopped thread is identified', async function () {
-    this.timeout(BUILD_TIMEOUT_MS);
+    this.timeout(DEBUG_SESSION_MS);
     const { fixture, recorder } = debuggee();
 
     // Interaction 1 — stop anywhere.

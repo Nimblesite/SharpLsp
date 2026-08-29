@@ -9,14 +9,14 @@ import {
   setupLspTestSuite,
   teardownLspTestSuite,
   waitForDocumentSymbols,
-  LSP_RESPONSE_TIMEOUT_MS,
 } from './test-helpers';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 suite('LSP Lifecycle', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('lifecycle-');
     tmpDir = result.tmpDir;
   });
@@ -33,7 +33,7 @@ suite('LSP Lifecycle', () => {
   // ── Restart ──────────────────────────────────────────────────
 
   test('sharplsp.restartServer restarts the LSP server', async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
 
     // Open a file to ensure server is running.
     const { uri } = await openCSharpFile(
@@ -47,25 +47,25 @@ suite('LSP Lifecycle', () => {
     await vscode.commands.executeCommand('sharplsp.restartServer');
 
     // After restart, the server should come back and respond again.
-    const symbols = await waitForDocumentSymbols(uri, 30_000);
+    const symbols = await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
     assert.ok(symbols.length > 0, 'Server should respond to symbols after restart');
   });
 
   test('sharplsp.showOutput command executes without error', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     // Should not throw.
     await vscode.commands.executeCommand('sharplsp.showOutput');
   });
 
   test('sharplsp.showTraceOutput command executes without error', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     await vscode.commands.executeCommand('sharplsp.showTraceOutput');
   });
 
   // ── Status Bar ───────────────────────────────────────────────
 
   test('status bar item is visible after activation', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
 
     // Open a file to guarantee activation.
     await openCSharpFile(tmpDir, 'status.cs', 'class Status { }');
@@ -82,7 +82,7 @@ suite('LSP Lifecycle', () => {
   // ── File Cycling ─────────────────────────────────────────────
 
   test('opening and closing multiple C# files works', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3 + 10_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     // Open first file.
     const { uri: uri1 } = await openCSharpFile(
@@ -118,7 +118,7 @@ suite('LSP Lifecycle', () => {
   });
 
   test('multiple files open simultaneously get independent symbols', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2 + 10_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri: uriA } = await openCSharpFile(tmpDir, 'simA.cs', 'class Alpha { void X() { } }');
 
@@ -139,7 +139,7 @@ suite('LSP Lifecycle', () => {
   // ── Error Recovery ───────────────────────────────────────────
 
   test('server handles rapid file open/close gracefully', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     // Rapidly open and close several files.
     for (let i = 0; i < 5; i++) {
@@ -168,7 +168,7 @@ suite('LSP Lifecycle', () => {
   // closes. This test SIGKILLs the real server process and asserts the client
   // recovers on its own — WITHOUT any `restartServer` command.
   test('unexpected SIGKILL of the server auto-recovers without manual restart', async function () {
-    this.timeout(90_000);
+    this.timeout(ACTIVATION_MS);
 
     // Resolve the exact staged server binary the extension launched. Matching
     // this precise path (not a bare `sharplsp` basename) guarantees we only ever
@@ -192,9 +192,9 @@ suite('LSP Lifecycle', () => {
     assert.ok(killed > 0, 'Expected at least one running sharplsp server process to kill');
 
     // Do NOT invoke sharplsp.restartServer — recovery must come purely from the
-    // client's error handler. Poll generously: kill → connection close → the
-    // handler's CloseAction.Restart → respawn → re-sync the open document.
-    const symbols = await waitForDocumentSymbols(uri, 60_000);
+    // client's error handler. The recovery path is: kill → connection close →
+    // the handler's CloseAction.Restart → respawn → re-sync the open document.
+    const symbols = await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
     assert.ok(
       symbols.length > 0,
       'Client must auto-restart the server and serve symbols again after an unexpected SIGKILL',
@@ -204,7 +204,7 @@ suite('LSP Lifecycle', () => {
   // ── Double Restart ─────────────────────────────────────────
 
   test('restarting twice in succession does not crash', async function () {
-    this.timeout(90_000);
+    this.timeout(ACTIVATION_MS);
 
     const { uri } = await openCSharpFile(
       tmpDir,
@@ -215,18 +215,18 @@ suite('LSP Lifecycle', () => {
 
     // First restart.
     await vscode.commands.executeCommand('sharplsp.restartServer');
-    await waitForDocumentSymbols(uri, 30_000);
+    await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
 
     // Second restart.
     await vscode.commands.executeCommand('sharplsp.restartServer');
-    const symbols = await waitForDocumentSymbols(uri, 30_000);
+    const symbols = await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
     assert.ok(symbols.length > 0, 'Server should respond after double restart');
   });
 
   // ── Restart With Different Content ─────────────────────────
 
   test('restart preserves ability to handle new files', async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
 
     // Start with one file.
     const { uri: uri1 } = await openCSharpFile(
@@ -245,7 +245,7 @@ suite('LSP Lifecycle', () => {
       'after-restart.cs',
       'class AfterRestart { void NewMethod() { } }',
     );
-    const symbols = await waitForDocumentSymbols(uri2, 30_000);
+    const symbols = await waitForDocumentSymbols(uri2, LSP_RESPONSE_MS);
     const names = flattenNames(symbols);
     assert.ok(names.includes('AfterRestart'), 'New file after restart should be served');
     assert.ok(names.includes('NewMethod'), 'New file methods should be resolved');
@@ -254,7 +254,7 @@ suite('LSP Lifecycle', () => {
   // ── Large File Handling ────────────────────────────────────
 
   test('server handles a file with many declarations', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 10_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     // Generate a file with 20 methods.
     const methods = Array.from(
@@ -277,7 +277,7 @@ suite('LSP Lifecycle', () => {
   // ── Empty File ─────────────────────────────────────────────
 
   test('server handles empty file without crashing', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openCSharpFile(tmpDir, 'empty.cs', '');
 
@@ -293,7 +293,7 @@ suite('LSP Lifecycle', () => {
   // ── Malformed File ─────────────────────────────────────────
 
   test('server handles malformed C# without crashing', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openCSharpFile(
       tmpDir,

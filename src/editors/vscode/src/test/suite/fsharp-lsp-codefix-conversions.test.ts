@@ -7,7 +7,6 @@ import {
   type CodeFixScenario,
 } from './fsharp-refactor-fixtures';
 import {
-  FSHARP_REFACTOR_TIMEOUT_MS,
   applyAction,
   assertNoAction,
   assertQuickFix,
@@ -26,6 +25,7 @@ import {
 } from './fsharp-refactor-test-kit';
 import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
 import { closeAllEditors } from './test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Every supported FS0001 conversion direction through the real LSP. [ANALYZERS-FSAC-PARITY]
 const TARGET_FILE = 'fsharp/DiagnosticsTarget.fs';
@@ -44,7 +44,7 @@ function defineConversionSuite(): void {
 function registerConversionTests(): void {
   for (const scenario of CONVERSION_SCENARIOS) {
     test(`${scenario.name}: exact conversion survives full edit lifecycle`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await runConversion(scenario);
     });
   }
@@ -53,7 +53,7 @@ function registerConversionTests(): void {
 function registerImplicitConversionTests(): void {
   for (const scenario of IMPLICIT_CONVERSION_SCENARIOS) {
     test(`${scenario.name}: implicit widening stays action-free across every token position`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await runImplicitConversion(scenario);
     });
   }
@@ -115,7 +115,7 @@ async function assertNoImplicitConversionActions(
 
 function registerUnsupportedConversionTest(): void {
   test('unsupported bool-from-int mismatch offers no conversion action', async function () {
-    this.timeout(FSHARP_REFACTOR_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const fixture = await openOverlay(TARGET_FILE, UNSUPPORTED_CONVERSION_SOURCE);
     try {
       const diagnostics = await diagnosticWithCode(fixture.uri, 'FS0001');

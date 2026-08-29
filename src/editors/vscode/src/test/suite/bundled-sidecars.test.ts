@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { exeName } from '../../platform.js';
+import { COMMAND_MS } from './test-timeouts';
 
 const extensionId = 'nimblesite.sharplsp';
 
@@ -55,14 +56,14 @@ suite('Bundled sidecar resolution', () => {
   // shipwright resolves these with `versionCheckStrategy: "version-flag"`, so running
   // `--version` is exactly the check activation performs. Implements [DIST-FAILURE-UX].
   test('bundled sidecars actually execute — apphost plus its managed assembly', function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS + 5_000);
     const ext = vscode.extensions.getExtension(extensionId);
     assert.ok(ext !== undefined, `${extensionId} must be loaded in the VS Code test host`);
     const binAll = path.join(ext.extensionPath, 'bin', 'all');
 
     for (const sidecar of ['sharplsp-sidecar-csharp', 'sharplsp-sidecar-fsharp']) {
       const binary = path.join(binAll, exeName(sidecar));
-      const result = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 20_000 });
+      const result = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: COMMAND_MS });
       const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
 
       assert.equal(

@@ -13,7 +13,8 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { AnchoredSource } from './debug-anchors';
-import { DAP_TIMEOUT_MS, DapRecorder, dap, type StopRecord } from './debug-dap-kit';
+import { DapRecorder, dap, type StopRecord } from './debug-dap-kit';
+import { DEBUG_SESSION_MS } from './test-timeouts';
 import type { DebugFixture } from './debug-fixture-programs';
 import { comparablePath, pollUntilResult } from './test-helpers';
 
@@ -218,7 +219,7 @@ export async function gesture(command: string, ...args: unknown[]): Promise<void
 export async function stepAndStop(
   recorder: DapRecorder,
   command: string,
-  timeoutMs = DAP_TIMEOUT_MS,
+  timeoutMs = DEBUG_SESSION_MS,
 ): Promise<StopRecord> {
   const baseline = recorder.stops().length;
   await gesture(command);
@@ -303,7 +304,7 @@ export function assertStoppedAt(
 
 /** Wait until VS Code's own stack-item focus catches up with the adapter. */
 export async function waitForActiveFrame(
-  timeoutMs = DAP_TIMEOUT_MS,
+  timeoutMs = DEBUG_SESSION_MS,
 ): Promise<vscode.DebugStackFrame> {
   const item = await pollUntilResult(
     async () => vscode.debug.activeStackItem,

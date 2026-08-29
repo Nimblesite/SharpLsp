@@ -14,6 +14,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { XMLBuilder } from 'fast-xml-parser';
+import { FIXTURE_BUILD_MS } from './test-timeouts';
 
 /** A `<PackageReference Include=".." Version=".." />`. */
 export interface PackageRef {
@@ -179,14 +180,11 @@ export function writeProject(
   return dir;
 }
 
-/** Generous ceiling: a cold restore + build of several projects on a CI agent. */
-const DOTNET_FIXTURE_TIMEOUT_MS = 900_000;
-
 /** Run a `dotnet` command, resolving stdout or rejecting with stderr. */
 export async function dotnet(
   args: readonly string[],
   cwd: string,
-  timeoutMs: number = DOTNET_FIXTURE_TIMEOUT_MS,
+  timeoutMs: number = FIXTURE_BUILD_MS,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(

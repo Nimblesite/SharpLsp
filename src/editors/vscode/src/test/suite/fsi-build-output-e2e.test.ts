@@ -29,7 +29,7 @@ import { isRelevantLanguage, isHotReloadRunning } from '../../hot-reload.js';
 import { openFSharpFile, openCSharpFile, closeAllEditors, pollUntilResult } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { removeDirRecursive, sleep } from './test-helpers.js';
-import { QUIET_MS, TaskRecorder } from './run-debug-kit.js';
+import { TaskRecorder } from './run-debug-kit.js';
 import { libraryProjectXml, writeProject } from './dotnet-project-kit.js';
 import {
   buildTasksOf,
@@ -38,6 +38,7 @@ import {
   recordingChannel,
   terminateBuildTasks,
 } from './fsi-build-kit.js';
+import { COMMAND_MS, DOTNET_CLI_MS, FAST_MS, QUIET_MS } from './test-timeouts';
 
 // ── Suite ─────────────────────────────────────────────────────────
 
@@ -80,7 +81,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   // ── output-filter.ts ────────────────────────────────────────────
 
   test('stripAnsi removes colors, bold, cursor moves, and OSC while preserving plain text', function () {
-    this.timeout(20_000);
+    this.timeout(FAST_MS);
 
     // SGR color + reset.
     assert.strictEqual(stripAnsi('[31mred[0m'), 'red');
@@ -103,7 +104,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   });
 
   test('createAnsiStrippingChannel forwards stripped text and delegates lifecycle calls', function () {
-    this.timeout(20_000);
+    this.timeout(FAST_MS);
     const inner = recordingChannel('SharpLsp');
     const wrapped = createAnsiStrippingChannel(inner);
 
@@ -133,7 +134,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   });
 
   test('createAnsiStrippingChannel strips ANSI from the level-tagged log methods', function () {
-    this.timeout(20_000);
+    this.timeout(FAST_MS);
     const inner = recordingChannel('SharpLsp');
     const wrapped = createAnsiStrippingChannel(inner);
 
@@ -167,7 +168,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   // ── build.ts ────────────────────────────────────────────────────
 
   test('build, rebuild and clean each dispatch exactly one dotnet task with the right argv', async function () {
-    this.timeout(180_000);
+    this.timeout(DOTNET_CLI_MS + 5_000);
 
     const before = vscode.window.terminals.length;
     const recorder = new TaskRecorder();
@@ -213,7 +214,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   });
 
   test('a right-clicked project node dispatches one task per command targeting that project', async function () {
-    this.timeout(180_000);
+    this.timeout(DOTNET_CLI_MS + 5_000);
 
     // A REAL .fsproj through the shared XML writer — F# first, and a scratch
     // project so a dispatched `clean` cannot wipe the fixture workspace.
@@ -259,7 +260,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   });
 
   test('dotnetArgs and quoteArg build correct CLI invocations for every command', function () {
-    this.timeout(20_000);
+    this.timeout(FAST_MS);
 
     assert.deepStrictEqual(dotnetArgs('build'), ['build']);
     assert.deepStrictEqual(dotnetArgs('clean'), ['clean']);
@@ -289,7 +290,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   // ── fsi.ts ──────────────────────────────────────────────────────
 
   test('fsi.start creates an F# Interactive terminal and fsi.send/sendFile route through it', async function () {
-    this.timeout(60_000);
+    this.timeout(COMMAND_MS + 5_000);
 
     const fsContent = ['module Sample', '', 'let add x y = x + y', 'let answer = add 40 2'].join(
       '\n',
@@ -311,7 +312,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     const fsiTerminal = await pollUntilResult(
       async () => vscode.window.terminals.find((t) => t.name === 'F# Interactive'),
       (terminal) => terminal !== undefined,
-      10_000,
+      COMMAND_MS,
     );
     assert.ok(fsiTerminal, 'fsi.start must create an "F# Interactive" terminal');
 
@@ -329,7 +330,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   });
 
   test('fsi.send and fsi.sendFile warn and no-op when the active file is not F#', async function () {
-    this.timeout(60_000);
+    this.timeout(COMMAND_MS);
 
     const before = vscode.window.terminals.filter((t) => t.name === 'F# Interactive').length;
     await openCSharpFile(tmpDir, 'NotFsharp.cs', 'namespace N { class C { } }\n');
@@ -351,7 +352,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   });
 
   test('fsi.generateSignature warns with no active editor and on a non-F# file', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
 
     // No active editor at all.
     await closeAllEditors();
@@ -375,7 +376,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   });
 
   test('extractSignature, isFSharpSourceDocument, and fsiTerminalOptions behave correctly', function () {
-    this.timeout(20_000);
+    this.timeout(FAST_MS);
 
     const signature = extractSignature(
       [
@@ -418,7 +419,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   // ── hot-reload.ts ───────────────────────────────────────────────
 
   test('isRelevantLanguage classifies C#/F# vs other languages within a save flow', async function () {
-    this.timeout(60_000);
+    this.timeout(COMMAND_MS);
 
     assert.strictEqual(isRelevantLanguage('csharp'), true);
     assert.strictEqual(isRelevantLanguage('fsharp'), true);
@@ -475,7 +476,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   });
 
   test('handleDocumentSave is inert when hot reload is not running', async function () {
-    this.timeout(60_000);
+    this.timeout(COMMAND_MS);
 
     assert.strictEqual(isHotReloadRunning(), false);
 

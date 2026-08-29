@@ -1,10 +1,9 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { closeAllEditors, pollUntilResult } from './test-helpers';
-import { FSHARP_COLD_TIMEOUT_MS, openFSharpFixture, positionOf } from './fsharp-helpers';
+import { openFSharpFixture, positionOf } from './fsharp-helpers';
 import { IGNORE_SOURCE } from './fsharp-refactor-fixtures';
 import {
-  FSHARP_REFACTOR_TIMEOUT_MS,
   applyAction,
   assertInsertion,
   assertNoAction,
@@ -20,6 +19,7 @@ import {
   uniqueAction,
 } from './fsharp-refactor-test-kit';
 import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 /**
  * Blanket end-to-end coverage for F# code-intelligence features:
@@ -79,7 +79,7 @@ function defineCodeActionSuite(): void {
 // ── Local helpers ─────────────────────────────────────────────────
 
 async function verifyClassCompletion(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   const usage = await openFSharpFixture('Usage.fs');
   const position = positionOf(usage.doc, 'greeter.Greet', 'greeter.'.length);
   const labels = await pollCompletionLabels(usage.uri, position, (set) => set.has('Greet'));
@@ -87,7 +87,7 @@ async function verifyClassCompletion(this: Mocha.Context): Promise<void> {
 }
 
 async function verifyRecordCompletion(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   const usage = await openFSharpFixture('Usage.fs');
   const position = positionOf(usage.doc, 'alice.Name', 'alice.'.length);
   const labels = await pollCompletionLabels(
@@ -100,7 +100,7 @@ async function verifyRecordCompletion(this: Mocha.Context): Promise<void> {
 }
 
 async function verifyModuleCompletion(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   const usage = await openFSharpFixture('Usage.fs');
   const position = positionOf(usage.doc, 'Geometry.totalArea shapes', 'Geometry.'.length);
   const labels = await pollCompletionLabels(
@@ -114,7 +114,7 @@ async function verifyModuleCompletion(this: Mocha.Context): Promise<void> {
 }
 
 async function verifyCompletionKind(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   const usage = await openFSharpFixture('Usage.fs');
   const position = positionOf(usage.doc, 'alice.Name', 'alice.'.length);
   const list = await pollCompletion(usage.uri, position, completionHasName);
@@ -132,7 +132,7 @@ function completionHasName(list: vscode.CompletionList): boolean {
 }
 
 async function verifySignatureHelp(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_COLD_TIMEOUT_MS + 15_000);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   const usage = await openFSharpFixture('Usage.fs');
   const position = positionOf(usage.doc, 'Greeter("Hello")', 'Greeter('.length);
   const help = await requestSignatureHelp(usage.uri, position);
@@ -155,13 +155,13 @@ async function requestSignatureHelp(
         '(',
       )) ?? new vscode.SignatureHelp(),
     (help) => help.signatures.length > 0,
-    FSHARP_COLD_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
     2_000,
   );
 }
 
 async function verifySimpleRename(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   const library = await openFSharpFixture('Library.fs');
   const position = positionOf(library.doc, 'let area', 'let '.length);
   const edit = await requestRenameEdit(library.uri, position);
@@ -191,13 +191,13 @@ async function requestRenameEdit(
         'computeArea',
       )) ?? new vscode.WorkspaceEdit(),
     (edit) => edit.size > 0,
-    FSHARP_COLD_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
     2_000,
   );
 }
 
 async function verifyInlayHints(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_COLD_TIMEOUT_MS + 15_000);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   const usage = await openFSharpFixture('Usage.fs');
   const range = new vscode.Range(0, 0, usage.doc.lineCount, 0);
   const hints = await requestInlayHints(usage.uri, range);
@@ -218,13 +218,13 @@ async function requestInlayHints(
         range,
       )) ?? [],
     (items) => items.length >= 1,
-    FSHARP_COLD_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
     2_000,
   );
 }
 
 async function verifyIgnoreCodeActionTest(this: Mocha.Context): Promise<void> {
-  this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+  this.timeout(LSP_RESPONSE_MS + 5_000);
   await verifyIgnoreCodeAction();
 }
 
@@ -232,7 +232,7 @@ async function pollCompletion(
   uri: vscode.Uri,
   position: vscode.Position,
   predicate: (list: vscode.CompletionList) => boolean,
-  timeoutMs: number = FSHARP_COLD_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.CompletionList> {
   return pollUntilResult(
     async () =>
@@ -252,7 +252,7 @@ async function pollCompletionLabels(
   uri: vscode.Uri,
   position: vscode.Position,
   predicate: (labels: Set<string>) => boolean,
-  timeoutMs: number = FSHARP_COLD_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<Set<string>> {
   const list = await pollCompletion(
     uri,

@@ -20,9 +20,9 @@ import {
   waitForResolvedCodeActions,
   type OpenFixture,
 } from './refactor-test-helpers';
+import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 const FILE = 'RefactorCore.cs';
-const TEST_TIMEOUT_MS = 180_000;
 const TITLE = 'Sort Usings';
 const SOURCE = 'using System.Text;\nusing System;\nnamespace SharpLsp.TestFixtures.Refactors;\n';
 
@@ -31,7 +31,7 @@ suite('C# real LSP - organize imports', () => {
   let committedText = '';
 
   suiteSetup(async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    this.timeout(ACTIVATION_MS);
     await activateRealSharpLsp();
     fixture = await openFixtureDocument(FILE);
     committedText = fixture.document.getText();
@@ -40,7 +40,7 @@ suite('C# real LSP - organize imports', () => {
   teardown(async () => revertDocument(fixture.document));
 
   test('advertised action is listed, resolved, applied, requeried, and reverted', async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await runOrganizeImports(fixture, committedText);
   });
 });
