@@ -5,7 +5,7 @@ description: "SharpLsp 0.19.0 root-causes the VS Code run/debug experience — l
 date: 2026-08-30
 author: SharpLsp Team
 image: /assets/images/blog/sharplsp-0-19-run-debug-test-explorer.png
-imageAlt: A terminal showing a launch profile prompt, a reconstructed async stack trace, and passing test results
+imageAlt: An abstract SharpLsp language-service graph connecting C# braces, F# syntax, project files, packages, and diagnostics
 tags:
   - posts
   - announcement
