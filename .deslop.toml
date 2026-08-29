@@ -23,14 +23,22 @@ max_duplication_percent = 20.0
 # gitignore-style globs, matched relative to this file.
 exclude = [
     # Example / sample projects (test input, not codebase).
-    "examples/**",
+    "src/examples/**",
     # Test-input fixtures (sample sources consumed by the suites).
-    "tests/fixtures/**",
-    "editors/vscode/test-fixtures/**",
+    "src/sharplsp/tests/fixtures/**",
+    "src/editors/vscode/test-fixtures/**",
     # Rust end-to-end test suite (coarse e2e request/response scaffolding).
-    "tests/**",
+    "src/sharplsp/tests/**",
     # .NET sidecar test projects.
-    "sidecars/SharpLsp.Sidecar.CSharp.Tests/**",
-    "sidecars/SharpLsp.Sidecar.FSharp.Tests/**",
-    "sidecars/SharpLsp.Sidecar.Common.Tests/**",
+    "src/sidecars/SharpLsp.Sidecar.CSharp.Tests/**",
+    "src/sidecars/SharpLsp.Sidecar.FSharp.Tests/**",
+    "src/sidecars/SharpLsp.Sidecar.Common.Tests/**",
+    # Sequestered formatting implementation — not shipped. The Rust module is
+    # behind `cfg(feature = "formatting")` (off by default) and the Roslyn
+    # resolver is unreachable because the host never sends the request. Its
+    # three handlers are deliberately parallel in shape, which would otherwise
+    # inflate the production duplication score for code we do not ship.
+    # See docs/formatting/README.md.
+    "src/sharplsp/src/formatting.rs",
+    "src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/FormattingResolver.cs",
 ]

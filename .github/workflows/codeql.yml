@@ -15,7 +15,7 @@ on:
   # scan covers the diff and the weekly scan covers query drift; the gated call
   # covers the released commit itself, so a release never ships code that was last
   # analyzed weeks ago — and now actually FAILS the release instead of just
-  # filing alerts after the VSIX already shipped. [GITHUB-CODE-SCANNING]
+  # filing alerts after the VSIX already shipped. [DIST-CI-SECURITY]
   workflow_call:
     inputs:
       gate:
@@ -43,7 +43,7 @@ jobs:
     # flipped back to private without GitHub Advanced Security, the SARIF upload
     # would fail with "Code Security must be enabled for this repository" - the
     # gate skips the job cleanly instead, and self-re-enables once the repo is
-    # public again. No follow-up edit needed. [GITHUB-CODE-SCANNING]
+    # public again. No follow-up edit needed. [DIST-CI-SECURITY]
     if: github.event.repository.visibility == 'public'
     permissions:
       security-events: write
@@ -69,7 +69,7 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           # Query suite and test-code exclusions live in the shared config so the
-          # PR, weekly, and gated release scans stay identical. [GITHUB-CODE-SCANNING]
+          # PR, weekly, and gated release scans stay identical. [DIST-CI-SECURITY]
           config-file: ./.github/codeql/codeql-config.yml
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
@@ -86,7 +86,7 @@ jobs:
       # never green a release it could not actually evaluate.
       # Caveat: this reads the freshly produced SARIF, which does NOT reflect alert
       # dismissals — a dismissed false positive re-blocks until the query is tuned
-      # or excluded via the CodeQL config. [GITHUB-CODE-SCANNING]
+      # or excluded via the CodeQL config. [DIST-CI-SECURITY]
       - name: Enforce no high/critical findings (release gate)
         if: inputs.gate
         shell: bash

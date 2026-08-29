@@ -180,7 +180,8 @@ Pre-flight (all must be true):
       use `v0.7.0` (or higher). Reusing a burned tag will not move published code.
 
 ```bash
-git checkout main && git pull
+git checkout main
+git pull --ff-only
 git tag v0.7.0           # plain tag = stable; v0.7.0-rc.1 = pre-release everywhere
 git push origin v0.7.0
 ```

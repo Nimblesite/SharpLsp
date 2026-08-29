@@ -1,0 +1,99 @@
+# agent-pmo:0b21609
+---
+# Single sequential gate that runs every check, analysis and format guard, and
+# then builds the release artifacts ONCE so the parallel test legs can consume
+# them without rebuilding. Called by ci.yml as the only `needs:` prerequisite of
+# every test leg: modified-files -> checks+build -> parallel tests.
+#
+# Lint and build are one job here on purpose ([DIST-CI-LAYOUT]): the test legs
+# are gated on this job, so a format/analysis failure fails the pipeline before
+# any test machine spins up, and the release binaries produced here are the
+# ONLY build of the host and sidecars on Ubuntu — no test leg may rebuild them.
+name: CI / Build
+'on':
+  workflow_call: {}
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Checks + Build
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.303
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: "~/.nuget/packages"
+          key: "${{ runner.os }}-nuget-${{ hashFiles('src/sidecars/**/*.csproj', 'src/sidecars/Directory.Build.props') }}"
+          restore-keys: "${{ runner.os }}-nuget-"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: src/editors/vscode/package-lock.json
+      - name: Install dependencies
+        run: |
+          dotnet tool restore
+          npm ci --prefix src/editors/vscode
+
+      # ── Checks, format and analysis ────────────────────────────────
+      - name: Format + lint (Rust)
+        run: make _lint-rust PROFILE=debug
+      - name: Format + lint (Zed)
+        run: make _lint-zed
+      - name: Format check (.NET)
+        run: dotnet csharpier check src/sidecars/
+      - name: Lint (.NET)
+        run: make _lint-dotnet
+      - name: Sidecar pack smoke test
+        run: |
+          dotnet pack src/sidecars/SharpLsp.Sidecar.CSharp/SharpLsp.Sidecar.CSharp.csproj \
+            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+          dotnet pack src/sidecars/SharpLsp.Sidecar.FSharp/SharpLsp.Sidecar.FSharp.fsproj \
+            -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
+          ls -la /tmp/nupkg-smoke/*.nupkg
+      - name: Format check (VS Code)
+        run: cd src/editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
+      - name: Lint (VS Code)
+        run: make _lint-vsix
+
+      # ── Build release artifacts once ───────────────────────────────
+      - name: Build sharplsp host (release)
+        run: make _build-rust
+      - name: Build .NET sidecars (release)
+        run: make _build-dotnet
+      - name: Build patched netcoredbg
+        run: bash tools/vsix/build-netcoredbg.sh linux-x64
+
+      # ── Cache the build for the parallel test legs ─────────────────
+      - name: Upload Linux LSP artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-lsp-binaries
+          retention-days: 1
+          path: |
+            target/release/sharplsp
+            target/sidecar-csharp
+            target/sidecar-fsharp
+      - name: Upload patched Linux debugger
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-netcoredbg
+          retention-days: 1
+          include-hidden-files: true
+          path: target/netcoredbg/linux-x64/netcoredbg

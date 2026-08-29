@@ -1,0 +1,25 @@
+{
+  "name": "sharp-lsp-website",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "npx @11ty/eleventy --serve",
+    "build": "npx @11ty/eleventy",
+    "test": "npx playwright test",
+    "test:mobile": "npx playwright test tests/mobile-nav.spec.js"
+  },
+  "dependencies": {
+    "@11ty/eleventy": "^3.1.6",
+    "@playwright/test": "^1.61.1",
+    "eleventy-plugin-techdoc": "0.2.0",
+    "markdown-it": "^14.3.0"
+  },
+  "devDependencies": {
+    "luxon": "^3.7.2"
+  },
+  "overrides": {
+    "js-yaml@^3.0.0": "3.15.0",
+    "js-yaml@^4.0.0": "4.3.0"
+  }
+}

@@ -1,0 +1,9 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestFixtures", "TestFixtures.csproj", "{00000000-0000-0000-0000-000000000001}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FSharpFixtures", "fsharp\FSharpFixtures.fsproj", "{00000000-0000-0000-0000-000000000002}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CSharpConsumer", "crosslanguage\CSharpConsumer.csproj", "{00000000-0000-0000-0000-000000000003}"
+EndProject
+Global
+EndGlobal

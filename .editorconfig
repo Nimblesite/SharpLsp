@@ -356,6 +356,16 @@ dotnet_diagnostic.CA2329.severity = error
 dotnet_diagnostic.CA2330.severity = error
 
 #------------------------------------------------------------------------------
+# BannedApiAnalyzers (RSxxxx) — activates the list in src/sidecars/config/BannedSymbols.txt
+#------------------------------------------------------------------------------
+
+# RS0030: A symbol banned in src/sidecars/config/BannedSymbols.txt is used (nondeterministic time,
+# thread-blocking). Error so `-warnaserror` fails the build on any banned use.
+dotnet_diagnostic.RS0030.severity = error
+# RS0031: A type banned in src/sidecars/config/BannedSymbols.txt is used.
+dotnet_diagnostic.RS0031.severity = error
+
+#------------------------------------------------------------------------------
 # StyleCop Analyzers (SAxxxx)
 #------------------------------------------------------------------------------
 

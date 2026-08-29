@@ -1,0 +1,133 @@
+# agent-pmo:0b21609
+---
+# Implements [DIST-CI-WIN-VSIX]. Reusable Windows VS Code leg of the PR
+# pipeline (called by ci.yml).
+#
+# The transport job ([DIST-CI-WIN-TRANSPORT], ci-dotnet.yml) proves win32 named
+# pipes carry frames. This workflow proves the whole EDITOR EXPERIENCE works on
+# top of them: the VS Code end-to-end suite is sliced into feature chunks and
+# every chunk runs as its own Windows job, driving the REAL LSP - release-built
+# `sharplsp` host plus the Roslyn and FCS sidecars - inside the real VS Code
+# extension host. Ubuntu's leg cannot exercise any of that on win32.
+#
+# This file is the Windows MIRROR of ci-vsix.yml and deliberately runs the SAME
+# make target, `_test-vsix-shard`. There is no Windows-only recipe any more: the
+# two had already drifted apart once, to the point where Windows ran the whole
+# suite uninstrumented while Ubuntu carried the entire coverage number.
+#
+# NOTHING IS BUILT TWICE. `build` compiles the Rust host, both sidecars,
+# netcoredbg AND the extension suite a single time and publishes them; each
+# chunk downloads them and sets VSIX_PREBUILT=1 + VSIX_SUITE_PREBUILT=1. The VS
+# Code test host download is cached.
+#
+# EVERY SHARD IS INSTRUMENTED. This leg does not gate: the single ratcheted gate
+# runs at the end of the pipeline over the union of both platforms
+# ([DIST-CI-VSIX-COVERAGE], ci-vsix-coverage.yml).
+#
+# Chunk membership is declared in src/editors/vscode/test-chunks.json and read
+# here via tools/vsix/vsix-test-chunks.mjs - never duplicated into this YAML.
+# `make _lint-vsix` fails if a suite belongs to no chunk. `matrix win` drops only
+# the chunks marked `linuxOnly`, which clone and restore third-party repositories.
+name: CI / VS Code (Windows)
+'on':
+  workflow_call: {}
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Build host + sidecars + suite
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    timeout-minutes: 40
+    outputs:
+      chunks: ${{ steps.suite.outputs.chunks }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: win32-vsix
+      - name: Compile the suite and resolve the matrix
+        id: suite
+        uses: ./.github/actions/vsix-suite
+        with:
+          platform: win
+          suite-artifact: vsix-suite-win
+      - name: Build sharplsp host and both sidecars
+        shell: bash
+        run: make _build-rust _build-dotnet
+      - name: Build patched netcoredbg
+        shell: bash
+        run: bash tools/vsix/build-netcoredbg.sh win32-x64
+      - name: Upload Windows LSP artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win-lsp-binaries
+          retention-days: 1
+          path: |
+            target/release/sharplsp.exe
+            target/sidecar-csharp
+            target/sidecar-fsharp
+      - name: Upload patched Windows debugger
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win-netcoredbg
+          retention-days: 1
+          include-hidden-files: true
+          path: target/netcoredbg/win32-x64/netcoredbg
+  test:
+    name: ${{ matrix.chunk }}
+    needs:
+      - build
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    # A chunk installs deps, downloads a compiled suite and prebuilt binaries,
+    # then runs its slice against real Roslyn/FCS sidecars loading real
+    # solutions. A chunk approaching this ceiling is a bug to investigate, not a
+    # budget to grow: the per-test ceilings live in
+    # src/test/suite/test-timeouts.ts and none of them exceeds 2 minutes.
+    timeout-minutes: 25
+    strategy:
+      # Every chunk is an independent feature area: one failure must not cancel
+      # the rest, or a single flake hides the state of the whole surface.
+      fail-fast: false
+      matrix:
+        chunk: ${{ fromJSON(needs.build.outputs.chunks) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Run the shard
+        # No xvfb: the GitHub Windows runner has an interactive desktop session,
+        # so the VS Code test host launches directly.
+        uses: ./.github/actions/vsix-shard
+        with:
+          chunk: ${{ matrix.chunk }}
+          platform: win32
+          suite-artifact: vsix-suite-win
+          binaries-artifact: win-lsp-binaries
+          debugger-artifact: win-netcoredbg
+          debugger-path: target/netcoredbg/win32-x64/netcoredbg
+          user-data-dir: ${{ runner.temp }}/vsx-${{ matrix.chunk }}
+  payload:
+    name: VSIX Payload (Windows)
+    # Mirrors the Ubuntu payload job. It used to be a prerequisite of every
+    # Windows chunk, which meant one production esbuild plus a `vsce ls` per
+    # chunk for an answer that does not vary by chunk - and which left the
+    # PRODUCTION bundle in dist/, stripping the sourcemap the shards need to
+    # attribute end-to-end coverage back to src/.
+    needs:
+      - build
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Pack and verify the VSIX
+        uses: ./.github/actions/vsix-payload
+        with:
+          binaries-artifact: win-lsp-binaries
+          debugger-artifact: win-netcoredbg
+          debugger-path: target/netcoredbg/win32-x64/netcoredbg

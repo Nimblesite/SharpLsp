@@ -26,7 +26,7 @@ The Rider plugin is "done" when:
 
 ## Phase summaries
 
-**Phase 1 — Gradle scaffold.** Stand up `editors/rider/` with a Gradle
+**Phase 1 — Gradle scaffold.** Stand up `src/editors/rider/` with a Gradle
 wrapper, `build.gradle.kts` using the 2.x `org.jetbrains.intellij.platform`
 plugin targeting Rider 2024.3, a `plugin.xml` that depends on
 `com.intellij.modules.lsp`, and just enough Kotlin stubs for
@@ -72,8 +72,8 @@ server launch.
 **Phase 7 — Build infrastructure.** New Makefile targets: `build-rider`,
 `package-rider` (alias), `test-rider`, `lint-rider`, `clean-rider`. Wire
 `build-rider` into the top-level `build` and `test-rider` into `test`.
-Copy the produced plugin zip to the repo root as `sharplsp-rider.zip` for
-parity with `sharplsp.vsix` and `sharplsp-zed-extension.tar.gz`. Gracefully skip
+Copy the produced plugin zip to `dist/sharplsp-rider.zip` for parity with
+`dist/sharplsp.vsix` and `dist/sharplsp-zed-extension.tar.gz`. Gracefully skip
 with a warning if no JVM is available so the rest of the repo still
 builds.
 
@@ -94,7 +94,7 @@ only — Community editions are not supported.
 
 ### Phase 1: Gradle scaffold
 
-- [x] Create `editors/rider/` directory
+- [x] Create `src/editors/rider/` directory
 - [x] Write `settings.gradle.kts` — `rootProject.name = "sharplsp-rider"`
 - [x] Write `build.gradle.kts` using `org.jetbrains.intellij.platform` 2.14
 - [x] Write `gradle.properties` pinning platform version (Rider 2024.3)
@@ -173,7 +173,7 @@ only — Community editions are not supported.
 ### Phase 7: Build infrastructure
 
 - [ ] Add `build-rider` Makefile target — calls `./gradlew buildPlugin`
-      and copies the zip to repo root as `sharplsp-rider.zip` — **but only if**
+      and copies the zip to `dist/sharplsp-rider.zip` — **but only if**
       the environment has a JVM; otherwise skip with a warning
 - [ ] Add `package-rider` Makefile target — alias for `build-rider` for
       naming symmetry with `package-zed`

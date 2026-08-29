@@ -1,0 +1,27 @@
+[package]
+name = "sharplsp-zed"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "SharpLsp Zed extension — .NET LSP integration for C# and F#"
+publish = false
+
+# Standalone workspace — not part of the root sharplsp workspace.
+# Zed extensions compile to wasm32-wasip1 which is a different target.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[lints.rust]
+dead_code = "deny"
+unused_variables = "deny"
+
+[dependencies]
+quick-xml = "0.41"
+zed_extension_api = "0.7"
+
+[dev-dependencies]
+# Parses extension.toml in the version-parity test. A dev-dependency, so the
+# wasm32-wasip1 extension build never pulls it in.
+toml = "0.9"

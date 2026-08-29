@@ -1,0 +1,22 @@
+{
+  "title": "SharpLsp",
+  "name": "SharpLsp",
+  "description": "A complete open-source C# and F# development experience for VS Code, Zed, and every LSP editor — an alternative to Visual Studio, Rider, and C# Dev Kit.",
+  "url": "https://sharplsp.dev",
+  "author": "SharpLsp Team",
+  "stylesheet": "/assets/css/styles.css",
+  "favicon": "/assets/images/sharplsp-logo.svg",
+  "themeColor": "#0f7f49",
+  "keywords": "C# VS Code, C# IDE, .NET IDE, Visual Studio alternative, Rider alternative, C# Dev Kit alternative, C# language server, F# language server, .NET LSP, open source C# extension, Roslyn language server, FSharp.Compiler.Service",
+  "ogImage": "/assets/images/og-image.png",
+  "ogImageWidth": "1200",
+  "ogImageHeight": "630",
+  "searchUrl": "https://sharplsp.dev/blog",
+  "organization": {
+    "name": "SharpLsp",
+    "logo": "/assets/images/sharplsp-logo.svg",
+    "sameAs": [
+      "https://github.com/Nimblesite/SharpLsp"
+    ]
+  }
+}

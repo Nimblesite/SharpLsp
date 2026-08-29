@@ -18,7 +18,7 @@ Implements [ANALYZERS-MONOREPO-GATE] and [ANALYZERS-SOLUTION-SCOPE].
       implicit-use attribute names.
 - [ ] Reject unknown workspace/static-analyzer config fields with the existing
       TOML strictness.
-- [ ] Update `sharplsp.example.toml` through a TOML parser/serializer, not line
+- [ ] Update `src/examples/config/sharplsp.example.toml` through a TOML parser/serializer, not line
       splicing.
 - [ ] Hot-reload workspace/static-analyzer config through
       `workspace/didChangeConfiguration`.

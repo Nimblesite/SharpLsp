@@ -1,0 +1,20 @@
+# Banned APIs for the .NET (C#) sidecars — enforced by
+# Microsoft.CodeAnalysis.BannedApiAnalyzers (RS0030) at build time, promoted to
+# an error via .editorconfig + `-warnaserror`. Encodes CLAUDE.md hard-rules the
+# other analyzers do not cover: deterministic time and never blocking a thread.
+#
+# Format: <DocumentationCommentId>;<message shown at the use site>
+# (BannedApiAnalyzers analyzes C#/VB only; the F# sidecar is unaffected.)
+
+# ── Non-deterministic wall-clock time ────────────────────────────────────────
+# Local time is timezone-dependent and non-reproducible in tests. Use UTC, or
+# inject a clock abstraction for anything test-observable.
+P:System.DateTime.Now;Use DateTime.UtcNow or an injected clock — local time is timezone-dependent and non-reproducible.
+P:System.DateTime.Today;Use DateTime.UtcNow.Date or an injected clock — local time is timezone-dependent and non-reproducible.
+P:System.DateTimeOffset.Now;Use DateTimeOffset.UtcNow or an injected clock — local time is timezone-dependent and non-reproducible.
+
+# ── Thread blocking ──────────────────────────────────────────────────────────
+# The sidecars are async end-to-end; blocking a pool thread risks starvation and
+# deadlock. Await Task.Delay instead.
+M:System.Threading.Thread.Sleep(System.Int32);Blocking the thread is forbidden — await Task.Delay(...) instead.
+M:System.Threading.Thread.Sleep(System.TimeSpan);Blocking the thread is forbidden — await Task.Delay(...) instead.
