@@ -167,6 +167,11 @@ fn log_discovery(name: &str, path: Option<&PathBuf>) {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "test code — a failed assert IS the failure mode; returning Err \
+              instead would hide which condition broke"
+)]
 mod tests {
     use super::*;
 

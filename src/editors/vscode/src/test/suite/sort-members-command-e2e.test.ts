@@ -24,6 +24,7 @@ import {
   undoCleanSort,
   undoLiveSort,
 } from './sort-members-test-kit';
+import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 const DEFAULT_ACCESS = [
   'public',
@@ -155,8 +156,14 @@ const RECORD_SURFACE: SurfaceCase = {
 const TYPE_SURFACES = [STRUCT_SURFACE, INTERFACE_SURFACE, ENUM_SURFACE, RECORD_SURFACE];
 
 suite('Sort Members command E2E — real explorer node and real LSP', function () {
-  this.timeout(180_000);
-  suiteSetup(async () => initializeSortHarness(INITIAL_ORDER));
+  // Every case is one Sort Members round trip against a warm sidecar; the kit
+  // polls up to LSP_RESPONSE_MS, so the ceiling must sit just above it for a
+  // failed poll to report its assertion instead of a bare mocha timeout.
+  this.timeout(LSP_RESPONSE_MS + 5_000);
+  suiteSetup(async function () {
+    this.timeout(SIDECAR_COLD_MS);
+    await initializeSortHarness(INITIAL_ORDER);
+  });
   setup(prepareSortCase);
   teardown(cleanupSortHarness);
   suiteTeardown(cleanupSortHarness);

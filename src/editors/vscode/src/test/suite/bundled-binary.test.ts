@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { detectRuntimePlatform, exeName } from '../../platform.js';
 import { comparablePath } from './test-helpers.js';
+import { COMMAND_MS } from './test-timeouts';
 
 const extensionId = 'nimblesite.sharplsp';
 const lspComponentId = 'sharplsp';
@@ -19,7 +20,7 @@ const envVarsThatBypassBundledResolutionSet = new Set<string>(envVarsThatBypassB
 
 suite('Bundled binary resolution', () => {
   test('sharplsp resolves from bundled source', async function () {
-    this.timeout(15_000);
+    this.timeout(COMMAND_MS + 5_000);
 
     const { activateShipwright } = await import('@nimblesite/shipwright-vscode');
     const platform = detectRuntimePlatform();
@@ -38,7 +39,7 @@ suite('Bundled binary resolution', () => {
       manifestPath: path.join(ext.extensionPath, 'shipwright.json'),
       pathEntries: sidecarPathEntries(ext.extensionPath),
       showMessages: false,
-      timeoutMs: 5_000,
+      timeoutMs: COMMAND_MS,
     });
 
     const lspDiag = result.diagnostics.find(

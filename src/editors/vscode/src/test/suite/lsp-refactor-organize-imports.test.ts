@@ -19,10 +19,11 @@ import {
   revertDocument,
   waitForResolvedCodeActions,
   type OpenFixture,
+  warmSemanticEngine,
 } from './refactor-test-helpers';
+import { FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 const FILE = 'RefactorCore.cs';
-const TEST_TIMEOUT_MS = 180_000;
 const TITLE = 'Sort Usings';
 const SOURCE = 'using System.Text;\nusing System;\nnamespace SharpLsp.TestFixtures.Refactors;\n';
 
@@ -31,16 +32,23 @@ suite('C# real LSP - organize imports', () => {
   let committedText = '';
 
   suiteSetup(async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    // Above openFixtureDocument's SIDECAR_COLD_MS warm-up, so the warm-up
+    // reports rather than this hook ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    this.timeout(FIXTURE_BUILD_MS);
     await activateRealSharpLsp();
     fixture = await openFixtureDocument(FILE);
+    // This fixture is known to produce code actions, so an empty result
+    // means Roslyn has not loaded the project yet. Pay that load HERE,
+    // once, instead of inside the first test's ceiling
+    // ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    await warmSemanticEngine(fixture.uri);
     committedText = fixture.document.getText();
   });
 
   teardown(async () => revertDocument(fixture.document));
 
   test('advertised action is listed, resolved, applied, requeried, and reverted', async function () {
-    this.timeout(TEST_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await runOrganizeImports(fixture, committedText);
   });
 });

@@ -1,7 +1,8 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { closeAllEditors, flattenSymbolNames, pollUntilResult } from './test-helpers';
-import { FSHARP_SYNTAX_TIMEOUT_MS, openFSharpFixture } from './fsharp-helpers';
+import { openFSharpFixture } from './fsharp-helpers';
+import { COMMAND_MS } from './test-timeouts';
 
 /**
  * Blanket end-to-end coverage for F# syntax-only features served by the Rust
@@ -13,14 +14,12 @@ import { FSHARP_SYNTAX_TIMEOUT_MS, openFSharpFixture } from './fsharp-helpers';
  * /fix-bug. C# already has full syntax coverage; F# must match it.
  */
 
-const SYNTAX_TIMEOUT_MS = 30_000;
-
 suite('F# LSP — Document Symbols', () => {
   suiteTeardown(closeAllEditors);
   teardown(closeAllEditors);
 
   test('returns type, module, and member symbols for an F# file', async function () {
-    this.timeout(SYNTAX_TIMEOUT_MS);
+    this.timeout(COMMAND_MS + 5_000);
     const domain = await openFSharpFixture('Domain.fs');
     const symbols = await pollUntilResult(
       async () =>
@@ -29,7 +28,7 @@ suite('F# LSP — Document Symbols', () => {
           domain.uri,
         )) ?? [],
       (items) => items.length > 0,
-      FSHARP_SYNTAX_TIMEOUT_MS,
+      COMMAND_MS,
       2_000,
     );
     const names = flattenSymbolNames(symbols);
@@ -39,7 +38,7 @@ suite('F# LSP — Document Symbols', () => {
   });
 
   test('returns module and nested function symbols', async function () {
-    this.timeout(SYNTAX_TIMEOUT_MS);
+    this.timeout(COMMAND_MS + 5_000);
     const library = await openFSharpFixture('Library.fs');
     const symbols = await pollUntilResult(
       async () =>
@@ -48,7 +47,7 @@ suite('F# LSP — Document Symbols', () => {
           library.uri,
         )) ?? [],
       (items) => items.length > 0,
-      FSHARP_SYNTAX_TIMEOUT_MS,
+      COMMAND_MS,
       2_000,
     );
     const names = flattenSymbolNames(symbols);
@@ -66,7 +65,7 @@ suite('F# LSP — Folding Ranges', () => {
   teardown(closeAllEditors);
 
   test('returns folding ranges for type and module bodies', async function () {
-    this.timeout(SYNTAX_TIMEOUT_MS);
+    this.timeout(COMMAND_MS + 5_000);
     const library = await openFSharpFixture('Library.fs');
     const ranges = await pollUntilResult(
       async () =>
@@ -75,7 +74,7 @@ suite('F# LSP — Folding Ranges', () => {
           library.uri,
         )) ?? [],
       (items) => items.length >= 2,
-      FSHARP_SYNTAX_TIMEOUT_MS,
+      COMMAND_MS,
       2_000,
     );
     assert.ok(ranges.length >= 2, `Library.fs must expose ≥2 folding ranges, got ${ranges.length}`);
@@ -91,7 +90,7 @@ suite('F# LSP — Selection Ranges', () => {
   teardown(closeAllEditors);
 
   test('returns expanding selection ranges from a cursor position', async function () {
-    this.timeout(SYNTAX_TIMEOUT_MS);
+    this.timeout(COMMAND_MS + 5_000);
     const library = await openFSharpFixture('Library.fs');
     const text = library.doc.getText();
     const position = library.doc.positionAt(text.indexOf('Math.PI'));
@@ -103,7 +102,7 @@ suite('F# LSP — Selection Ranges', () => {
           [position],
         )) ?? [],
       (items) => items.length > 0,
-      FSHARP_SYNTAX_TIMEOUT_MS,
+      COMMAND_MS,
       2_000,
     );
     assert.ok(ranges.length > 0, 'must return at least one selection range');

@@ -1,18 +1,25 @@
 # agent-pmo:0b21609
 ---
-# PR pipeline orchestrator. Each leg lives in its own reusable workflow so a
-# single file never grows past comprehension:
+# PR pipeline orchestrator. Three stages, strictly ordered:
 #
-#   ci-lint.yml         Rust / Zed / .NET / VS Code lint + format gates
+#   detect-changes  ->  checks + build  ->  every test in parallel
+#
+# Each leg lives in its own reusable workflow so a single file never grows
+# past comprehension:
+#
+#   ci-build.yml        ALL checks/format/analysis, then builds the release
+#                       host + sidecars + netcoredbg ONCE and caches them
 #   ci-rust.yml         sharded Rust e2e suite, coverage gate, version contract
 #   ci-dotnet.yml       sidecar tests (Ubuntu) + win32 named-pipe transport
-#   ci-vsix.yml         full VS Code suite + coverage gate (Ubuntu)
+#   ci-vsix.yml         sharded VS Code suite, coverage gate, VSIX payload
+#                       (Ubuntu, [DIST-CI-VSIX-SHARDS])
 #   ci-vsix-windows.yml VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX])
 #   ci-editors.yml      Zed + Rider tests and coverage gates ([DIST-CI-EDITORS])
 #
-# Every leg is gated on `detect-changes`, and none of them `needs:` another:
-# lint and tests are independent required gates, and serializing tests behind
-# lint added ~3 minutes to every PR's critical path.
+# Every test leg `needs:` `build`, so no test job spins up before checks and
+# the release build have passed, and the legs all run in parallel off the
+# cached artifacts — rebuilding the host/sidecars inside a test leg is
+# forbidden ([DIST-CI-LAYOUT]).
 name: PR
 'on':
   pull_request:
@@ -110,40 +117,58 @@ jobs:
     needs:
       - detect-changes
     if: ${{ needs.detect-changes.outputs.manifest_changed == 'true' }}
-  lint:
-    name: Lint
+  build:
+    name: Checks + Build
     needs:
       - detect-changes
-    uses: ./.github/workflows/ci-lint.yml
+    uses: ./.github/workflows/ci-build.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   rust:
     name: Rust
     needs:
       - detect-changes
+      - build
     uses: ./.github/workflows/ci-rust.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   dotnet:
     name: .NET
     needs:
       - detect-changes
+      - build
     uses: ./.github/workflows/ci-dotnet.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   vsix:
     name: VS Code
     needs:
       - detect-changes
+      - build
     uses: ./.github/workflows/ci-vsix.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   vsix-windows:
     name: VS Code (Windows)
     needs:
       - detect-changes
+      - build
     uses: ./.github/workflows/ci-vsix-windows.yml
+    if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
+  vsix-coverage:
+    # [DIST-CI-VSIX-COVERAGE] ONE coverage gate for the extension, at the END,
+    # over the shards of BOTH platforms. Neither VS Code leg gates on its own:
+    # no single chunk can meet the line threshold, and gating per leg would have
+    # let the Windows shards run uninstrumented while Ubuntu carried the whole
+    # number.
+    name: VS Code Coverage
+    needs:
+      - detect-changes
+      - vsix
+      - vsix-windows
+    uses: ./.github/workflows/ci-vsix-coverage.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   editors:
     name: Editors
     needs:
       - detect-changes
+      - build
     uses: ./.github/workflows/ci-editors.yml
     if: ${{ needs.detect-changes.outputs.code_changed == 'true' }}
   # NOTE: the former `coverage` job that git-committed+pushed ratcheted
@@ -151,6 +176,6 @@ jobs:
   # HEAD, so `git push` failed the moment coverage changed — a latent red build,
   # and a direct push to a protected branch ([DIST-CI-LAYOUT]). Coverage is
   # already enforced inside `make test` (tools/coverage/check-coverage.sh reads
-  # .config/coverage/thresholds.json and fails below threshold in each test-* job).
+  # coverage-thresholds.json and fails below threshold in each test-* job).
   # Thresholds ratchet via the reviewed PR diff, not a bot commit.
   # [DIST-CI-RUST-SHARDS]

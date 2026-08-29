@@ -1,8 +1,33 @@
 # agent-pmo:0b21609
 ---
-# Reusable VS Code leg of the PR pipeline on Ubuntu (called by ci.yml).
-# Owns the FULL extension suite and the coverage gate; the Windows feature
-# chunks in ci-vsix-windows.yml own platform coverage ([DIST-CI-WIN-VSIX]).
+# Implements [DIST-CI-VSIX-SHARDS]. Reusable VS Code leg of the PR pipeline on
+# Ubuntu (called by ci.yml).
+#
+# This leg used to be ONE job running all 86 suites end to end. That job took 50
+# minutes - 18 of them executing tests and 30 of them burning two 15-minute
+# mocha hook ceilings on a single hung Test Explorer suite - and it was the
+# critical path of the whole pipeline. It now fans out over the feature chunks
+# declared in src/editors/vscode/test-chunks.json, so wall time is the slowest
+# single chunk instead of the sum of all of them, and a hang costs one chunk
+# instead of the suite.
+#
+# NOTHING IS BUILT TWICE.
+#   * The host binary, both sidecars and netcoredbg come from the `build` leg
+#     (ci-build.yml) as artifacts; `VSIX_PREBUILT=1` stages them as-is.
+#   * The extension suite - clean, tsc, esbuild bundle, .NET test fixtures - is
+#     compiled ONCE by the `suite` job below and published as an artifact; every
+#     shard downloads it and sets `VSIX_SUITE_PREBUILT=1`. Compiling per shard
+#     multiplied minutes of identical work by the width of the matrix.
+#   * The VS Code test host download is cached per runner OS.
+#
+# EVERY SHARD IS INSTRUMENTED, on this leg and on Windows. Neither leg gates:
+# no chunk can meet the line threshold alone, so the single ratcheted gate runs
+# at the end of the pipeline over the union of both platforms
+# ([DIST-CI-VSIX-COVERAGE], ci-vsix-coverage.yml).
+#
+# The Windows leg (ci-vsix-windows.yml) owns win32 platform coverage; the chunks
+# marked `linuxOnly` in the manifest - the real-world-repository stress suites -
+# run only here.
 name: CI / VS Code
 'on':
   workflow_call: {}
@@ -14,49 +39,71 @@ env:
 permissions:
   contents: read
 jobs:
-  test-vsix:
-    name: Full Suite + Coverage
+  suite:
+    # Compile the suite once and resolve the shard matrix in the same job: both
+    # read the same working tree, and neither needs the LSP binaries.
+    name: Compile suite
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    # TIMEOUT EXCEPTION: this job builds the Rust binary + .NET sidecars,
-    # installs .NET 9 + 10, downloads the VS Code test host, then runs the full
-    # ~530-test e2e suite (many tests spin up the Roslyn/FCS sidecars and load
-    # real solutions). 10 minutes is too tight for the end-to-end run. The
-    # real-repo stress suites additionally clone + restore three pinned real
-    # repositories (serilog, FluentValidation, FsToolkit.ErrorHandling) and
-    # cold-load their solutions in the sidecars, adding ~10-15 minutes on a cold
-    # runner.
-    timeout-minutes: 50
+    timeout-minutes: 20
+    outputs:
+      chunks: ${{ steps.suite.outputs.chunks }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Compile the suite and resolve the matrix
+        id: suite
+        uses: ./.github/actions/vsix-suite
         with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+          platform: linux
+          suite-artifact: vsix-suite-linux
+  test-vsix:
+    name: ${{ matrix.chunk }}
+    needs:
+      - suite
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    # A shard now only installs deps, downloads a compiled suite and prebuilt
+    # binaries, and runs its slice against real Roslyn/FCS sidecars. The fixed
+    # prelude is well under a minute; the heaviest slice (a real-world repository
+    # clone + restore) adds ~10 on a cold cache.
+    #
+    # A shard approaching this ceiling is a bug to investigate, not a budget to
+    # grow: the per-test ceilings live in src/test/suite/test-timeouts.ts and
+    # none of them exceeds 2 minutes.
+    timeout-minutes: 25
+    strategy:
+      # Every chunk is an independent feature area: one failure must not cancel
+      # the rest, or a single flake hides the state of the whole surface. The
+      # coverage gate still needs them all, so a failed chunk fails the leg.
+      fail-fast: false
+      matrix:
+        chunk: ${{ fromJSON(needs.suite.outputs.chunks) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Run the shard
+        uses: ./.github/actions/vsix-shard
         with:
-          dotnet-version: |
-            9.0.x
-            10.0.300
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+          chunk: ${{ matrix.chunk }}
+          platform: linux
+          suite-artifact: vsix-suite-linux
+          binaries-artifact: linux-lsp-binaries
+          debugger-artifact: linux-netcoredbg
+          debugger-path: target/netcoredbg/linux-x64/netcoredbg
+          xvfb: 'true'
+          user-data-dir: ${{ runner.temp }}/vsx-${{ matrix.chunk }}
+  payload:
+    name: VSIX Payload
+    # The packaged VSIX must carry the platform binary. This was a step inside
+    # the old single test job, so a .vscodeignore mistake was only reported
+    # after 18 minutes of tests. As its own job it reports in about three - and
+    # keeping it out of the shards matters for more than speed: it leaves a
+    # PRODUCTION bundle in dist/, whose missing sourcemap would strip the
+    # end-to-end coverage the shards exist to collect.
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Pack and verify the VSIX
+        uses: ./.github/actions/vsix-payload
         with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: src/editors/vscode/package-lock.json
-      - name: Install VS Code extension deps
-        run: npm ci --prefix src/editors/vscode
-      - name: Remove PATH-installed SharpLsp binaries
-        shell: bash
-        run: bash tools/vsix/purge-path-binaries.sh
-      - name: Test VS Code extension with coverage
-        run: xvfb-run -a make _test-vsix
-      - name: Verify VSIX contains platform binary
-        shell: bash
-        run: |-
-          set -euo pipefail
-          platform="$(node -e 'process.stdout.write(`${process.platform}-${process.arch}`)')"
-          unzip -l dist/sharplsp.vsix | grep -F "bin/${platform}/sharplsp"
-      - name: Upload coverage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-vsix
-          path: .config/coverage/thresholds.json
+          binaries-artifact: linux-lsp-binaries
+          debugger-artifact: linux-netcoredbg
+          debugger-path: target/netcoredbg/linux-x64/netcoredbg

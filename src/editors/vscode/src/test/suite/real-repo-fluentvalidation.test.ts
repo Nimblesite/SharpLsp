@@ -37,6 +37,7 @@ import {
   waitForHoverResult,
   waitForSelectionRanges,
 } from './test-helpers';
+import { ACTIVATION_MS, LSP_RESPONSE_MS, REAL_REPO_MS, REAL_REPO_WARMUP_MS } from './test-timeouts';
 
 const ABSTRACT_VALIDATOR_CS = 'src/FluentValidation/AbstractValidator.cs';
 const IVALIDATOR_CS = 'src/FluentValidation/IValidator.cs';
@@ -45,28 +46,28 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   let repoDir: string;
 
   suiteSetup(async function () {
-    this.timeout(900_000);
+    this.timeout(REAL_REPO_MS);
     repoDir = ensureRepoReady(FLUENT_VALIDATION);
     await loadSolutionInServer(path.join(repoDir, FLUENT_VALIDATION.sln));
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
-    await waitForDocumentSymbols(uri, 120_000);
+    await waitForDocumentSymbols(uri, REAL_REPO_WARMUP_MS);
     await waitForSemanticReady(
       uri,
       positionOf(doc, 'public abstract partial class AbstractValidator<T>', 'AbstractValidator'),
-      600_000,
+      REAL_REPO_WARMUP_MS,
     );
   });
 
   suiteTeardown(async function () {
-    this.timeout(120_000);
+    this.timeout(ACTIVATION_MS);
     await closeAllEditors();
     await loadSolutionInServer(fixtureSolutionPath());
   });
 
   test('document symbols: the generic validator surface is fully mapped', async function () {
-    this.timeout(120_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
-    const symbols = await waitForDocumentSymbols(uri, 120_000);
+    const symbols = await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
     const names = flattenSymbolNames(symbols);
 
     assert.ok(
@@ -90,7 +91,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   test('hover storm: generic members produce signature-bearing markdown', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
     const anchors: [string, string][] = [
       ['public abstract partial class AbstractValidator<T>', 'AbstractValidator'],
@@ -99,7 +100,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
       ['public IRuleBuilderInitialCollection<T, TElement> RuleForEach<TElement>', 'RuleForEach'],
     ];
     for (const [snippet, focus] of anchors) {
-      const hover = await waitForHoverResult(uri, positionOf(doc, snippet, focus), 60_000);
+      const hover = await waitForHoverResult(uri, positionOf(doc, snippet, focus), LSP_RESPONSE_MS);
       const text = hoverText(hover);
       assert.ok(text.length > 0, `hover on '${focus}' must not be empty`);
       assert.ok(
@@ -110,7 +111,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   test('navigation: definition into IValidator.cs and references across the codebase', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
     const usage = positionOf(doc, 'class AbstractValidator<T> : IValidator<T>', 'IValidator');
 
@@ -122,7 +123,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
           usage,
         )) ?? [],
       (locations) => locations.length > 0,
-      120_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
     const definition = firstLocation(definitions, 'IValidator definition');
@@ -145,7 +146,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
           positionOf(doc, 'public IRuleBuilderInitial<T, TProperty> RuleFor<TProperty>', 'RuleFor'),
         )) ?? [],
       (locations) => locations.length >= 2,
-      120_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
     assert.ok(
@@ -159,7 +160,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   test('live edit + completion: protected members surface inside the class body', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri, editor } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
     const marker = 'public IRuleBuilderInitial<T, TProperty> RuleFor<TProperty>';
     const insertAt = positionOf(doc, marker);
@@ -180,7 +181,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
             '.',
           )) ?? new vscode.CompletionList(),
         (list) => list.items.some((item) => completionLabel(item) === 'RuleFor'),
-        120_000,
+        LSP_RESPONSE_MS,
         2_000,
       );
       const labels = new Set(completions.items.map(completionLabel));
@@ -195,19 +196,16 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   test('diagnostics round-trip: a broken generic constraint surfaces and clears', async function () {
-    // Four sequential waits of 120s each: the budget has to exceed their sum,
-    // or mocha kills the test first and reports an opaque timeout instead of
-    // whichever stage actually stalled.
-    this.timeout(600_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri, editor } = await openRepoFile(repoDir, IVALIDATOR_CS);
-    await waitForDocumentSymbols(uri, 120_000);
+    await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
     // Whatever the server settles on for this file IS the baseline — the test is
     // the round trip, not the count. Pinning a number here encodes how much of
     // the solution the server currently resolves rather than a property of the
     // pinned source, and an unreachable pin makes the wait unsatisfiable rather
     // than merely wrong. FluentValidation 12.1.1 is a released library, so a
     // correctly resolved IValidator.cs legitimately reports no errors at all.
-    const baseline = await waitForStableErrorBaseline(uri, 120_000);
+    const baseline = await waitForStableErrorBaseline(uri, LSP_RESPONSE_MS);
     const pristineText = doc.getText();
     const pristineVersion = doc.version;
     const insertAt = positionOf(doc, 'public interface IValidator {');
@@ -223,7 +221,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
     try {
       const error = await waitForError(
         uri,
-        120_000,
+        LSP_RESPONSE_MS,
         (item) => codeOf(item) === 'CS0029' && item.range.start.line === insertAt.line,
       );
       assert.strictEqual(codeOf(error), 'CS0029');
@@ -237,13 +235,13 @@ suite('Real repo stress — FluentValidation (C#)', () => {
     assert.ok(doc.version > insertedVersion, 'undo must advance the document version');
     assert.strictEqual(doc.getText(), pristineText, 'undo must restore the exact source');
     assert.ok(!doc.getText().includes('__SharpLspBad'));
-    await waitForErrorBaseline(uri, baseline, 120_000);
+    await waitForErrorBaseline(uri, baseline, LSP_RESPONSE_MS);
   });
 
   test('structure + rename dry-run: folding, selections, and a safe local rename plan', async function () {
-    this.timeout(180_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
-    const folding = await waitForFoldingRanges(uri, 60_000);
+    const folding = await waitForFoldingRanges(uri, LSP_RESPONSE_MS);
     assert.ok(
       folding.length >= 10,
       `AbstractValidator.cs must fold richly, got ${folding.length.toString()}`,
@@ -252,7 +250,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
     const selections = await waitForSelectionRanges(
       uri,
       [positionOf(doc, 'public IRuleBuilderInitial<T, TProperty> RuleFor<TProperty>', 'RuleFor')],
-      60_000,
+      LSP_RESPONSE_MS,
     );
     const depth = selectionDepth(selections[0], 'RuleFor selection');
     assert.ok(depth >= 2, `selection range must expand through nesting, depth ${depth.toString()}`);
@@ -266,7 +264,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
           'sharpLspRenamed',
         )) ?? undefined,
       (edit) => edit !== undefined && edit.size > 0,
-      120_000,
+      LSP_RESPONSE_MS,
       2_000,
     );
     assert.ok(renameEdit, 'rename must produce a WorkspaceEdit');
@@ -287,7 +285,7 @@ suite('Real repo stress — FluentValidation (C#)', () => {
   });
 
   test('stress: rapid-fire mixed requests stay within memory/CPU bounds', async function () {
-    this.timeout(300_000);
+    this.timeout(LSP_RESPONSE_MS);
     const { doc, uri } = await openRepoFile(repoDir, ABSTRACT_VALIDATOR_CS);
     const hoverAt = positionOf(
       doc,

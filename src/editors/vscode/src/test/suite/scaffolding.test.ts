@@ -12,6 +12,7 @@ import {
   addProjectToSolutionFile,
   findProjectFile,
 } from '../../scaffolding';
+import { DOTNET_CLI_MS } from './test-timeouts';
 
 interface PackageJson {
   contributes: {
@@ -124,7 +125,8 @@ suite('Scaffolding (Create Solution / Project)', () => {
   // ── Real .NET CLI end-to-end ─────────────────────────────────
 
   test('creates a real solution, C# + F# projects, and wires them into the .sln', async function () {
-    this.timeout(180_000); // first `dotnet new` may restore templates.
+    // Shells out to the real `dotnet` CLI: `new sln`, two `new` projects, two `sln add`.
+    this.timeout(DOTNET_CLI_MS);
 
     const work = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-scaffold-'));
     try {

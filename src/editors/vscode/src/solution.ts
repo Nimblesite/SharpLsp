@@ -28,7 +28,7 @@ export async function selectSolution(): Promise<SolutionSelection | undefined> {
     }
   }
 
-  return promptUserSelection(solutions);
+  return await promptUserSelection(solutions);
 }
 
 /** Prompt the user to pick from multiple solutions. */

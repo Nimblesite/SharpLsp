@@ -10,12 +10,13 @@ import {
   teardownLspTestSuite,
   waitForDocumentSymbols,
 } from './test-helpers';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 suite('Extension Activation & Configuration', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('ext-');
     tmpDir = result.tmpDir;
   });
@@ -37,7 +38,7 @@ suite('Extension Activation & Configuration', () => {
   });
 
   test('extension activates when a C# file is opened', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
     const { doc } = await openCSharpFile(tmpDir, 'activation.cs', 'class Activation { }');
     assert.strictEqual(doc.languageId, 'csharp');
 
@@ -47,7 +48,7 @@ suite('Extension Activation & Configuration', () => {
   });
 
   test('extension activates when an F# file is opened', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
     const { doc } = await openCSharpFile(tmpDir, 'activation.fs', 'module Activation\nlet x = 1\n');
     // The file was opened — extension should be active now.
     assert.ok(
@@ -88,7 +89,7 @@ suite('Extension Activation & Configuration', () => {
   // ── Configuration ────────────────────────────────────────────
 
   test('sharplsp.lspPath setting is contributed', async function () {
-    this.timeout(15_000);
+    this.timeout(COMMAND_MS);
     const config = vscode.workspace.getConfiguration('sharplsp');
     const inspect = config.inspect<string>('lspPath');
     assert.ok(inspect, 'lspPath setting should be inspectable');
@@ -134,7 +135,7 @@ suite('Extension Activation & Configuration', () => {
   });
 
   test('extension contributes csharp language', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS);
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, 'Extension should exist');
     const languages: { id: string }[] = ext.packageJSON.contributes?.languages ?? [];
@@ -189,21 +190,21 @@ suite('Extension Activation & Configuration', () => {
   // ── Command Handler Invocation ─────────────────────────────
 
   test('sharplsp.showOutput executes without error', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.showOutput');
     }, 'showOutput command should not throw');
   });
 
   test('sharplsp.showTraceOutput executes without error', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.showTraceOutput');
     }, 'showTraceOutput command should not throw');
   });
 
   test('sharplsp.restartServer executes without error', async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     // Ensure server is running first.
     const { uri } = await openCSharpFile(tmpDir, 'pre-restart.cs', 'class PreRestart { }');
     await waitForDocumentSymbols(uri);
@@ -213,7 +214,7 @@ suite('Extension Activation & Configuration', () => {
     }, 'restartServer command should not throw');
 
     // Verify server is back.
-    const symbols = await waitForDocumentSymbols(uri, 30_000);
+    const symbols = await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
     assert.ok(symbols.length > 0, 'Server should respond after restart');
 
     // Open Calculator.cs from the fixture workspace so a real file is visible.

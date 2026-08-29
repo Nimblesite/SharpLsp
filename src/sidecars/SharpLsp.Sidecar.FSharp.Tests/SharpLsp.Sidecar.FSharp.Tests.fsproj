@@ -24,6 +24,10 @@
     <Compile Include="FSharpRenameSemanticTests.fs" />
     <Compile Include="FSharpCodeActionSemanticTests.fs" />
     <Compile Include="FSharpAccessorStubTests.fs" />
+    <Compile Include="FSharpProjectCrackingTests.fs" />
+    <Compile Include="FSharpDeclarationKindTests.fs" />
+    <Compile Include="FSharpNavigationEdgeTests.fs" />
+    <Compile Include="FSharpUnloadedWorkspaceTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

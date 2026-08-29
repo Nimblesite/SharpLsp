@@ -23,6 +23,13 @@ internal sealed partial class WorkspaceManager
 {
     private AdhocWorkspace? _adhocWorkspace;
 
+    // Tier-2 notice codes. The two states are separate codes, never one code plus
+    // prose, because the editor host polls diagnostics until the restore settles and
+    // must not parse message text to decide. Implements
+    // [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+    private const string RestoreDegradedCode = "SLSPC0001";
+    private const string RestorePendingCode = "SLSPC0002";
+
     // Script default imports, matching Roslyn's scripting host. Implements [SCRIPT-CSX-OPTIONS].
     private static readonly string[] ScriptImports =
     [
@@ -81,7 +88,7 @@ internal sealed partial class WorkspaceManager
             return VoidResult.Failure($"'{path}' is not a supported C# document.");
         }
 
-        var closure = await ExpandAsync(kind, path, ct).ConfigureAwait(false);
+        var closure = await ExpandAsync(kind, path, live: null, ct).ConfigureAwait(false);
         return closure.Files.Count == 0
             ? VoidResult.Failure($"Could not read '{path}'.")
             : await LoadClosureAsync(kind, path, closure, ct).ConfigureAwait(false);
@@ -89,13 +96,14 @@ internal sealed partial class WorkspaceManager
 
     private static Task<Closure> ExpandAsync(
         ProjectlessKind kind,
-        string path,
+        string rootPath,
+        LiveText? live,
         CancellationToken ct
     )
     {
         return kind == ProjectlessKind.Script
-            ? DocumentClosure.ExpandScriptAsync(path, ct)
-            : DocumentClosure.ExpandFileBasedAsync(path, ct);
+            ? DocumentClosure.ExpandScriptAsync(rootPath, live, ct)
+            : DocumentClosure.ExpandFileBasedAsync(rootPath, live, ct);
     }
 
     private async Task<VoidResult> LoadClosureAsync(
@@ -106,11 +114,13 @@ internal sealed partial class WorkspaceManager
     )
     {
         _adhocWorkspace ??= new AdhocWorkspace();
+        await PrepareProjectlessRootAsync(rootPath, ct).ConfigureAwait(false);
 
         var project = _adhocWorkspace.AddProject(BuildProjectInfo(kind, rootPath));
         foreach (var file in closure.Files)
         {
-            _ = _adhocWorkspace.AddDocument(BuildDocumentInfo(project.Id, file, kind));
+            var docInfo = BuildDocumentInfo(project.Id, file, kind);
+            _ = _adhocWorkspace.AddDocument(docInfo);
         }
 
         if (kind == ProjectlessKind.FileBasedApp)
@@ -123,6 +133,11 @@ internal sealed partial class WorkspaceManager
         {
             _solution = _adhocWorkspace.CurrentSolution;
             ReplayPendingTextEdits();
+            // Under the same lock as the solution publication: a diagnostics state
+            // capture must never see the tier-2 solution without its pending notice.
+            // The didChange path already starts resolution under this lock; the open
+            // path must match it. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+            StartPackageResolution(kind, rootPath, project.Id, closure);
         }
         finally
         {
@@ -131,6 +146,154 @@ internal sealed partial class WorkspaceManager
 
         LogClosure(kind, rootPath, closure);
         return new VoidResult.Ok<Unit, string>(Unit.Value);
+    }
+
+    /// <summary>
+    /// Re-expand the closure a live edit belongs to and reconcile the project with it.
+    /// </summary>
+    /// <remarks>
+    /// The closure is owned by the project's ROOT file, never by whichever member was edited.
+    /// Expanding from an <c>#:include</c>d file instead would produce a closure that does not
+    /// contain the real root, and the reconciliation below would then prune the root out of its
+    /// own project, leaving the document the user is editing unserved. Implements
+    /// [SCRIPT-CLOSURE], [SCRIPT-RELOAD].
+    /// </remarks>
+    internal async Task<VoidResult> UpdateProjectlessClosureAsync(
+        Document document,
+        string newText,
+        CancellationToken ct
+    )
+    {
+        if (_solution is null)
+        {
+            return VoidResult.Failure("No active solution.");
+        }
+
+        var currentProject = _solution.GetProject(document.Project.Id);
+        if (currentProject is null)
+        {
+            return VoidResult.Failure("Project not found.");
+        }
+
+        var rootPath = ProjectRootPath(currentProject, document.FilePath!);
+        var kind = Classify(rootPath);
+        var live = new LiveText(document.FilePath!, newText);
+        var closure = await ExpandAsync(kind, rootPath, live, ct).ConfigureAwait(false);
+
+        _solution = ReconcileClosureDocuments(currentProject, document.FilePath!, closure, kind);
+        return RebuildProjectModel(kind, rootPath, currentProject.Id, closure);
+    }
+
+    /// <summary>
+    /// Add closure members the project is missing and drop the ones it no longer owns. The file
+    /// being edited is never dropped: it stays served until the host closes it.
+    /// </summary>
+    private Solution ReconcileClosureDocuments(
+        Project currentProject,
+        string editedPath,
+        Closure closure,
+        ProjectlessKind kind
+    )
+    {
+        var currentDocIds = currentProject.Documents.ToDictionary(
+            document => document.FilePath!,
+            document => document.Id,
+            StringComparer.OrdinalIgnoreCase
+        );
+        var closurePaths = closure
+            .Files.Select(file => file.Path)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var next = _solution!;
+
+        foreach (var file in closure.Files.Where(file => !currentDocIds.ContainsKey(file.Path)))
+        {
+            next = next.AddDocument(BuildDocumentInfo(currentProject.Id, file, kind));
+        }
+
+        foreach (var (path, documentId) in currentDocIds)
+        {
+            next = IsOrphanedClosureDocument(path, editedPath, closurePaths)
+                ? next.RemoveDocument(documentId)
+                : next;
+        }
+
+        return next;
+    }
+
+    private static bool IsOrphanedClosureDocument(
+        string path,
+        string editedPath,
+        HashSet<string> closurePaths
+    )
+    {
+        return !path.EndsWith(GlobalUsingsFileName, StringComparison.OrdinalIgnoreCase)
+            && !closurePaths.Contains(path)
+            && !string.Equals(path, editedPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Reset the project to tier-2 BCL references and restart package resolution, but only when
+    /// the directives or packages actually changed. Implements
+    /// [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+    /// </summary>
+    private VoidResult RebuildProjectModel(
+        ProjectlessKind kind,
+        string rootPath,
+        ProjectId projectId,
+        Closure closure
+    )
+    {
+        var project = _solution!.GetProject(projectId);
+        if (project is null || !ProjectModelChanged(rootPath, closure))
+        {
+            return new VoidResult.Ok<Unit, string>(Unit.Value);
+        }
+
+        var isScript = kind == ProjectlessKind.Script;
+        _solution = project
+            .WithMetadataReferences(BasicReferences())
+            .WithCompilationOptions(BuildCompilationOptions(isScript, rootPath))
+            .WithParseOptions(BuildParseOptions(isScript))
+            .Solution;
+        StartPackageResolution(kind, rootPath, projectId, closure);
+        return new VoidResult.Ok<Unit, string>(Unit.Value);
+    }
+
+    /// <summary>
+    /// Append the tier-2 notice captured by <c>CaptureDiagnosticsStateAsync</c>. The
+    /// notice is a snapshot taken WITH the document — re-reading the live map here
+    /// would reintroduce the torn answer this pairing exists to prevent.
+    /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
+    /// </summary>
+    private static void AppendDegradation(
+        string filePath,
+        ProjectlessDegradation? degradation,
+        List<DiagnosticResult> diagnostics
+    )
+    {
+        if (degradation is not null)
+        {
+            diagnostics.Add(DegradationDiagnostic(filePath, degradation));
+        }
+    }
+
+    private static DiagnosticResult DegradationDiagnostic(
+        string filePath,
+        ProjectlessDegradation degradation
+    )
+    {
+        return new DiagnosticResult
+        {
+            FilePath = filePath,
+            StartLine = 0,
+            StartCharacter = 0,
+            EndLine = 0,
+            EndCharacter = 1,
+            Message =
+                $"File-based package restore degraded to BCL-only references: {degradation.Reason}",
+            Severity = "Info",
+            Code = degradation.IsPending ? RestorePendingCode : RestoreDegradedCode,
+        };
     }
 
     private static ProjectInfo BuildProjectInfo(ProjectlessKind kind, string rootPath)
@@ -146,9 +309,9 @@ internal sealed partial class WorkspaceManager
             filePath: rootPath,
             compilationOptions: BuildCompilationOptions(isScript, rootPath),
             parseOptions: BuildParseOptions(isScript),
-            // Tier 2 reference resolution: in-memory BCL only. `#:package` symbols do not bind
-            // until the synthesized-project path lands. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
-            metadataReferences: Basic.Reference.Assemblies.Net100.References.All
+            // Tier 2 is immediate and BCL-only. A background synthesized MSBuild project
+            // atomically replaces this complete set after restore. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+            metadataReferences: BasicReferences()
         );
     }
 

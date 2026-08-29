@@ -29,6 +29,8 @@ namespace SharpLsp.Sidecar.CSharp.Tests;
 public sealed class AnalyzerDiagnosticResolverTests : IDisposable
 {
     private const string Source = """
+        using System;
+
         namespace Styled
         {
             public class Sample
@@ -155,6 +157,28 @@ public sealed class AnalyzerDiagnosticResolverTests : IDisposable
         );
 
         Assert.Contains(
+            actions,
+            action => action.Title.Contains("file-scoped", StringComparison.OrdinalIgnoreCase)
+        );
+    }
+
+    /// <summary>
+    /// A caret ABOVE the namespace must not be offered the file-scoped rewrite. IDE0161 reports
+    /// over the whole namespace declaration, so the resolver cannot simply widen every
+    /// namespace-style diagnostic to the file: it maps them onto the `namespace` keyword and
+    /// nothing else. Widening would put a "convert to file-scoped namespace" action on every
+    /// using directive, comment and blank line in the file.
+    /// </summary>
+    [Fact]
+    public async Task The_file_scoped_rewrite_is_not_offered_above_the_namespace()
+    {
+        using var manager = await OpenAsync();
+        var (line, character) = Locate("using System;", "using");
+        var actions = Unwrap(
+            await manager.GetCodeActionsAsync(_sourcePath, line, character, line, character)
+        );
+
+        Assert.DoesNotContain(
             actions,
             action => action.Title.Contains("file-scoped", StringComparison.OrdinalIgnoreCase)
         );

@@ -169,7 +169,10 @@ fn test_folding_range_on_fsharp_file() {
                 "uri": fs_uri,
                 "languageId": "fsharp",
                 "version": 1,
-                "text": "module M\nlet x = 1\n",
+                "text": "module M\n\
+        (* a multi-line\n   block comment *)\n\
+        type Shape =\n    | Circle of radius: float\n    | Square of side: float\n\
+        let area shape =\n    match shape with\n    | Circle r -> 3.14159 * r * r\n",
             }
         }),
     );
@@ -178,7 +181,34 @@ fn test_folding_range_on_fsharp_file() {
         "textDocument/foldingRange",
         json!({ "textDocument": { "uri": fs_uri } }),
     );
-    assert!(resp.get("error").is_some(), "F# foldingRange should error");
+    // The F# tree-sitter grammar is integrated, so folding serves F# exactly
+    // as it serves C# ([SHARPLSP-SPEC] syntax-only table) — it must NOT error.
+    assert!(resp.get("error").is_none(), "unexpected error: {resp}");
+    let ranges = resp["result"].as_array().unwrap();
+    assert!(!ranges.is_empty(), "F# constructs must fold");
+
+    let kinds: Vec<&str> = ranges
+        .iter()
+        .map(|r| r["kind"].as_str().unwrap_or(""))
+        .collect();
+
+    // The module declaration folds as a region.
+    assert!(
+        kinds.contains(&"region"),
+        "module/type/let declarations must produce region folds, got {kinds:?}"
+    );
+    // The (* ... *) comment folds as a comment.
+    assert!(
+        kinds.contains(&"comment"),
+        "a multi-line (* *) comment must fold, got {kinds:?}"
+    );
+
+    // Every fold spans real lines, like the C# contract.
+    for r in ranges {
+        let start = r["startLine"].as_u64().unwrap();
+        let end = r["endLine"].as_u64().unwrap();
+        assert!(end > start, "folding range end must be after start: {r}");
+    }
 
     client.shutdown_and_exit();
     client.wait_with_timeout();

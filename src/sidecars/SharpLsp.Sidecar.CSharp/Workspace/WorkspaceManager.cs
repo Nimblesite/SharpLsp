@@ -48,6 +48,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     private MSBuildWorkspace? _workspace;
     private Solution? _solution;
     private bool _isProjectlessDirectory;
+    private int _disposeState;
     private readonly CodeActionResolver _codeActionResolver = new();
 
     // Roslyn's Solution is immutable; mutating _solution = _solution.WithX(...)
@@ -63,6 +64,14 @@ internal sealed partial class WorkspaceManager : IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
+
+        _packageResolutionGenerations.Clear();
+        _packageResolutionCancellation.Cancel();
+        _packageResolutionCancellation.Dispose();
         _workspace?.Dispose();
         _adhocWorkspace?.Dispose();
         _solutionMutationLock.Dispose();
@@ -76,7 +85,30 @@ internal sealed partial class WorkspaceManager : IDisposable
         StringComparer.OrdinalIgnoreCase
     );
 
+    private readonly Dictionary<string, IReadOnlyList<PackageRef>> _documentPackages = new(
+        StringComparer.OrdinalIgnoreCase
+    );
+    private readonly Dictionary<string, IReadOnlyList<FileDirective>> _documentDirectives = new(
+        StringComparer.OrdinalIgnoreCase
+    );
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<
+        string,
+        ProjectlessDegradation
+    > _projectlessDegradations = new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<
+        string,
+        long
+    > _packageResolutionGenerations = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource _packageResolutionCancellation = new();
+    private long _nextPackageResolutionGeneration;
+
     public bool IsLoaded => _solution is not null;
+
+    /// <summary>Current workspace state, including visible file-based fallback mode.</summary>
+    public string Status =>
+        !_projectlessDegradations.IsEmpty ? "filebased-degraded"
+        : IsLoaded ? "loaded"
+        : "not_loaded";
 
     /// <summary>Open a solution or project file via MSBuildWorkspace.</summary>
     [Obsolete("Placeholder until workspace loading is redesigned")]
@@ -147,6 +179,18 @@ internal sealed partial class WorkspaceManager : IDisposable
                 }
 
                 _solution = _solution.WithDocumentText(document.Id, SourceText.From(newText));
+
+                // Auto-update the closure and packages if they changed during a live edit
+                if (document.Project.Solution.Workspace is AdhocWorkspace)
+                {
+                    var updateResult = await UpdateProjectlessClosureAsync(document, newText, ct)
+                        .ConfigureAwait(false);
+                    if (updateResult.IsError)
+                    {
+                        return updateResult;
+                    }
+                }
+
                 return new VoidResult.Ok<Unit, string>(Unit.Value);
             }
             finally
@@ -187,27 +231,37 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         try
         {
-            var document = await FindDocumentAsync(filePath, ct).ConfigureAwait(false);
-            if (document is null)
+            // The document snapshot and the tier-2 degradation notice MUST come from
+            // the same instant, or a slow semantic-model computation can pair a
+            // pre-restore compilation with a post-restore notice state and present
+            // phantom package errors as final. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+            var state = await CaptureDiagnosticsStateAsync(filePath, ct).ConfigureAwait(false);
+            if (state.Document is null)
             {
                 return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([]);
             }
 
-            var model = await document.GetSemanticModelAsync(ct).ConfigureAwait(false);
+            var model = await state.Document.GetSemanticModelAsync(ct).ConfigureAwait(false);
             if (model is null)
             {
                 return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>([]);
             }
 
             var diagnostics = MapDiagnostics(filePath, model, ct);
+            AppendDegradation(filePath, state.Degradation, diagnostics);
             if (_deadCodeEnabled && _solution is not null)
             {
                 var dead = await DeadCodeAnalyzer
-                    .AnalyzeAsync(document, _solution, _monorepo, ct)
+                    .AnalyzeAsync(state.Document, _solution, _monorepo, ct)
                     .ConfigureAwait(false);
                 diagnostics.AddRange(dead);
             }
 
+            Log.Debug(
+                "Diagnostics answer for {File}: [{Codes}]",
+                filePath,
+                string.Join(",", diagnostics.Select(diagnostic => diagnostic.Code))
+            );
             return new DiagnosticsResult.Ok<List<DiagnosticResult>, string>(diagnostics);
         }
         catch (Exception ex)
@@ -625,6 +679,8 @@ internal sealed partial class WorkspaceManager : IDisposable
             // Implements [SCRIPT-DETECT].
             return await OpenProjectlessAsync(path, ct).ConfigureAwait(false);
         }
+
+        await ResetProjectlessStateAsync(ct).ConfigureAwait(false);
 
         var properties = new Dictionary<string, string>
         {

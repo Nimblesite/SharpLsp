@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { pollUntilResult } from './test-helpers';
+import { SIDECAR_COLD_MS } from './test-timeouts';
 
 /**
  * Shared helpers for the F# LSP end-to-end suites.
@@ -72,21 +73,11 @@ export function nthPositionOf(
   return doc.positionAt(index + offsetIntoMatch);
 }
 
-/** Long timeout for the first semantic call while the F# sidecar cracks the project. */
-export const FSHARP_COLD_TIMEOUT_MS = 75_000;
-
-/**
- * Short timeout for features that respond (or fail) immediately and need no
- * project crack: tree-sitter syntax features (Rust host, <5ms) and capabilities
- * not advertised at all. Keeps the suite fast when these are still unimplemented.
- */
-export const FSHARP_SYNTAX_TIMEOUT_MS = 15_000;
-
 /** Poll a hover provider at a position until it returns content. */
 export async function pollHover(
   uri: vscode.Uri,
   position: vscode.Position,
-  timeoutMs: number = FSHARP_COLD_TIMEOUT_MS,
+  timeoutMs: number = SIDECAR_COLD_MS,
 ): Promise<vscode.Hover[]> {
   return pollUntilResult(
     async () => {
@@ -107,7 +98,7 @@ export async function pollHover(
 export async function pollDefinition(
   uri: vscode.Uri,
   position: vscode.Position,
-  timeoutMs: number = FSHARP_COLD_TIMEOUT_MS,
+  timeoutMs: number = SIDECAR_COLD_MS,
 ): Promise<vscode.Location[]> {
   return pollUntilResult(
     async () => {
@@ -127,7 +118,7 @@ export async function pollReferences(
   uri: vscode.Uri,
   position: vscode.Position,
   min: number,
-  timeoutMs: number = FSHARP_COLD_TIMEOUT_MS,
+  timeoutMs: number = SIDECAR_COLD_MS,
 ): Promise<vscode.Location[]> {
   return pollUntilResult(
     async () => {

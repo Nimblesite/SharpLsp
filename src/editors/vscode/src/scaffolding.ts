@@ -118,7 +118,7 @@ function reportFailure(err: unknown): void {
 async function pickProjectTemplate(): Promise<
   { template: string; lang: string | undefined } | undefined
 > {
-  return vscode.window.showQuickPick(
+  return await vscode.window.showQuickPick(
     PROJECT_TEMPLATES.map((t) => ({
       label: t.label,
       description: t.lang ?? 'C#',
@@ -385,7 +385,7 @@ export function generateFileContent(type: string, name: string): string {
 }
 
 async function runDotnet(args: string[], cwd: string): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return await new Promise((resolve, reject) => {
     execFile('dotnet', args, { cwd, timeout: 30000 }, (error, stdout, stderr) => {
       if (error !== null) {
         reject(new Error(stderr !== '' ? stderr : error.message));
@@ -399,9 +399,13 @@ async function runDotnet(args: string[], cwd: string): Promise<string> {
 /** Register scaffolding commands. */
 export function registerScaffoldingCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD_NEW_SOLUTION, async () => newSolution()),
+    vscode.commands.registerCommand(CMD_NEW_SOLUTION, async () => {
+      await newSolution();
+    }),
     // Wrap so menu/keybinding invocation args are never mistaken for a target solution.
-    vscode.commands.registerCommand(CMD_NEW_PROJECT, async () => newProject()),
+    vscode.commands.registerCommand(CMD_NEW_PROJECT, async () => {
+      await newProject();
+    }),
     vscode.commands.registerCommand(CMD_NEW_FILE, newFile),
     vscode.commands.registerCommand(CMD_ADD_PROJECT_TO_SOLUTION, addProjectToSolution),
   );

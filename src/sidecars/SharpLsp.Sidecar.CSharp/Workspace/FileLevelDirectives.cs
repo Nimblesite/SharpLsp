@@ -24,7 +24,8 @@ internal sealed record FileDirective(
     string Argument,
     string Name,
     string? Value,
-    TextSpanLocation Location
+    TextSpanLocation Location,
+    bool IsValidPlacement
 );
 
 /// <summary>Span of a directive within its file, for diagnostic reporting.</summary>
@@ -47,16 +48,20 @@ internal static class FileLevelDirectives
     /// <summary>Extract every file-level directive from a parsed syntax tree.</summary>
     public static IReadOnlyList<FileDirective> Parse(SyntaxNode root)
     {
+        var firstTokenStart = root.GetFirstToken(includeZeroWidth: true).SpanStart;
         return
         [
             .. root.DescendantNodes(descendIntoTrivia: true)
                 .OfType<IgnoredDirectiveTriviaSyntax>()
-                .Select(ToDirective)
+                .Select(node => ToDirective(node, firstTokenStart))
                 .OfType<FileDirective>(),
         ];
     }
 
-    private static FileDirective? ToDirective(IgnoredDirectiveTriviaSyntax node)
+    private static FileDirective? ToDirective(
+        IgnoredDirectiveTriviaSyntax node,
+        int firstTokenStart
+    )
     {
         var content = node.Content.ValueText?.Trim();
         if (string.IsNullOrEmpty(content))
@@ -73,7 +78,8 @@ internal static class FileLevelDirectives
             argument,
             name,
             value,
-            new TextSpanLocation(span.Start, span.Length)
+            new TextSpanLocation(span.Start, span.Length),
+            span.Start < firstTokenStart
         );
     }
 

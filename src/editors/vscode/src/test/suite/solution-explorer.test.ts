@@ -15,12 +15,13 @@ import {
   waitForDocumentSymbols,
 } from './test-helpers';
 import { toSolutionSelections } from '../../solution';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 suite('Solution Explorer & Workspace Symbols', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('sol-explorer-');
     tmpDir = result.tmpDir;
   });
@@ -87,7 +88,7 @@ suite('Solution Explorer & Workspace Symbols', () => {
   // ── sharplsp/workspaceSymbols via Real LSP ──────────────────────
 
   test('sharplsp/workspaceSymbols returns project hierarchy from real .sln', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS);
 
     // Create a mini solution structure in tmpDir.
     const slnDir = path.join(tmpDir, 'test-workspace');
@@ -250,7 +251,7 @@ EndGlobal`,
   });
 
   test('LSP parses multiple classes in the same file', async function () {
-    this.timeout(15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace Models
 {
     public class User
@@ -298,7 +299,7 @@ EndGlobal`,
   });
 
   test('LSP handles deeply nested namespaces and classes', async function () {
-    this.timeout(15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace Outer
 {
     public class OuterClass
@@ -333,7 +334,7 @@ EndGlobal`,
   });
 
   test('LSP handles interface with method declarations', async function () {
-    this.timeout(15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace Services
 {
     public interface IRepository
@@ -367,7 +368,7 @@ EndGlobal`,
   });
 
   test('LSP returns correct hierarchy for file-scoped namespace', async function () {
-    this.timeout(15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace Api;
 
 public class ApiController
@@ -402,7 +403,7 @@ public class ApiController
   });
 
   test('file-scoped namespace: multiple types all nested inside namespace', async function () {
-    this.timeout(15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace Common.Messages;
 
 public sealed class Envelope
@@ -460,7 +461,7 @@ public interface ITransport
   });
 
   test('file-scoped namespace: class with base type nested inside namespace', async function () {
-    this.timeout(15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace MyApp.Controllers;
 
 public class HomeController : ControllerBase
@@ -494,7 +495,7 @@ public record UserDto(string Name, int Age);`;
   // ── sharplsp.refreshExplorer command ────────────────────────────
 
   test('sharplsp.refreshExplorer executes without error', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.refreshExplorer');
     }, 'refreshExplorer command should not throw');
@@ -503,7 +504,7 @@ public record UserDto(string Name, int Age);`;
   // ── Solution File Discovery ──────────────────────────────────
 
   test('detects .sln and .slnx files in workspace via glob', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
 
     // Create solution files in the temp directory.
     const slnPath = path.join(tmpDir, 'TestSolution.sln');
@@ -550,7 +551,7 @@ public record UserDto(string Name, int Age);`;
   // ── Real LSP roundtrip with record types ─────────────────────
 
   test('LSP handles C# record types', async function () {
-    this.timeout(15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace Domain;
 
 public record Person(string Name, int Age);
@@ -581,7 +582,7 @@ public record Address
   // ── Events and fields ────────────────────────────────────────
 
   test('LSP handles events and fields', async function () {
-    this.timeout(15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = `namespace Events;
 
 public class EventSource
@@ -612,7 +613,7 @@ public class EventSource
   // ── Reactive Tree Auto-Refresh ──────────────────────────────
 
   test('tree auto-refreshes when C# document content changes', async function () {
-    this.timeout(15_000);
+    this.timeout(LSP_RESPONSE_MS);
 
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, 'Extension must be active');
@@ -672,7 +673,7 @@ public class EventSource
   // ── Live-buffer fidelity [SE-LIVE-BUFFER] ───────────────────────────────
 
   test('documentSymbol reflects unsaved edits (VFS-based, should pass)', async function () {
-    this.timeout(15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     // Write initial content to disk and open it.
     const content = 'namespace Vfs;\n\npublic class Original\n{\n    public void Foo() { }\n}';
@@ -715,7 +716,7 @@ public class EventSource
   });
 
   test('workspace symbols show unsaved edits, not stale disk content', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, 'Extension must be active');
@@ -823,7 +824,7 @@ public class EventSource
   });
 
   test('tree tracks rapid successive renames without lagging behind', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, 'Extension must be active');
@@ -918,7 +919,7 @@ public class EventSource
   });
 
   test('tree shows updated class name after rename, not stale data', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, 'Extension must be active');
@@ -1024,7 +1025,7 @@ public class EventSource
    * Contract from CLAUDE.md: "All screens MUST BE 100% reactive."
    */
   test('Dependencies → Packages tree reacts to external csproj edit', async function () {
-    this.timeout(30_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext?.isActive, 'Extension must be active');

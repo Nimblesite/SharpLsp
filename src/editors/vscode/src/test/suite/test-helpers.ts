@@ -1,15 +1,14 @@
+import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as vscode from 'vscode';
 import { detectRuntimePlatform, exeName } from '../../platform.js';
+import { ACTIVATION_MS, LSP_RESPONSE_MS, POLL_INTERVAL_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 // ── Constants ────────────────────────────────────────────────────
 
 export const EXTENSION_ID = 'nimblesite.sharplsp';
-export const SERVER_START_TIMEOUT_MS = 30_000;
-export const LSP_RESPONSE_TIMEOUT_MS = 15_000;
-export const POLL_INTERVAL_MS = 100;
 
 // ── Path Comparison ──────────────────────────────────────────────
 
@@ -80,14 +79,27 @@ export function findSharpLspBinary(): string | undefined {
 
 // ── Polling ──────────────────────────────────────────────────────
 
+/** Render a polled value for a failure message without flooding the report. */
+function describePolled(value: unknown): string {
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  if (text === undefined) return String(value);
+  return text.length > 300 ? `${text.slice(0, 300)}...` : text;
+}
+
 /**
- * Poll a function until a predicate is satisfied or timeout expires.
- * Returns the last result from `fn`.
+ * Poll a function until a predicate is satisfied, or FAIL.
+ *
+ * Exhausting the budget throws. It must: every caller is polling for something
+ * the feature under test is supposed to make true, so a budget that runs out is
+ * the feature not working. Returning the last value instead — which this used to
+ * do — turned that into a silent pass wherever the caller discarded the result,
+ * and into a confusing downstream assertion wherever it didn't
+ * ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
  */
 export async function pollUntilResult<T>(
   fn: () => PromiseLike<T>,
   predicate: (result: T) => boolean,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
   intervalMs: number = POLL_INTERVAL_MS,
 ): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -98,13 +110,57 @@ export async function pollUntilResult<T>(
     last = await fn();
   }
 
+  if (!predicate(last)) {
+    assert.fail(
+      `Timed out after ${String(timeoutMs)}ms polling for a condition that never held. ` +
+        `Last observed value: ${describePolled(last)}`,
+    );
+  }
   return last;
+}
+
+/**
+ * Block until the SEMANTIC engine can answer about `uri` — not just the syntax
+ * one.
+ *
+ * `documentSymbol` is NOT a readiness probe: for C# the Rust host answers it
+ * from tree-sitter in single-digit milliseconds and the sidecar never sees it.
+ * A code action has to reach Roslyn, so it is the cheapest request that proves
+ * the project is actually loaded.
+ *
+ * Call this from `suiteSetup`. Paying the cold load once per suite is what makes
+ * `LSP_RESPONSE_MS` — "one semantic request answered by a WARM sidecar" — an
+ * honest ceiling for every test that follows ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+ *
+ * CALL THIS ONLY ON A FILE WHOSE FIXTURE IS KNOWN TO PRODUCE A CODE ACTION.
+ * "Roslyn has loaded the project" and "Roslyn offers an action at line 0 of this
+ * file" are not the same claim: the cross-language rename fixtures are loaded
+ * and offer nothing there, and F#'s FCS makes no such promise at all. Wired into
+ * a shared opener this waited out the whole budget and then failed suites that
+ * were never broken — a warm-up that can fail on a healthy file is worse than no
+ * warm-up. Hence an explicit call, per suite, on a fixture that has been checked.
+ */
+export async function warmSemanticEngine(
+  uri: vscode.Uri,
+  timeoutMs: number = SIDECAR_COLD_MS,
+): Promise<void> {
+  const start = new vscode.Position(0, 0);
+  await pollUntilResult(
+    async () =>
+      (await vscode.commands.executeCommand<vscode.CodeAction[]>(
+        'vscode.executeCodeActionProvider',
+        uri,
+        new vscode.Range(start, start),
+      )) ?? [],
+    (actions) => actions.length > 0,
+    timeoutMs,
+  );
 }
 
 /** Wait for document symbols to be returned by the LSP server. */
 export async function waitForDocumentSymbols(
   uri: vscode.Uri,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.DocumentSymbol[]> {
   return pollUntilResult(
     async () => {
@@ -140,7 +196,7 @@ export function flattenSymbolNames(symbols: vscode.DocumentSymbol[]): string[] {
 /** Wait for folding ranges to be returned by the LSP server. */
 export async function waitForFoldingRanges(
   uri: vscode.Uri,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.FoldingRange[]> {
   return pollUntilResult(
     async () => {
@@ -159,7 +215,7 @@ export async function waitForFoldingRanges(
 export async function waitForSelectionRanges(
   uri: vscode.Uri,
   positions: vscode.Position[],
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.SelectionRange[]> {
   return pollUntilResult(
     async () => {
@@ -179,7 +235,7 @@ export async function waitForSelectionRanges(
 export async function waitForHoverResult(
   uri: vscode.Uri,
   position: vscode.Position,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Hover[]> {
   return pollUntilResult(
     async () => {
@@ -198,7 +254,7 @@ export async function waitForHoverResult(
 /** Wait for diagnostics to appear on a document. */
 export async function waitForDiagnostics(
   uri: vscode.Uri,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Diagnostic[]> {
   return pollUntilResult(
     async () => vscode.languages.getDiagnostics(uri),
@@ -210,7 +266,7 @@ export async function waitForDiagnostics(
 /** Wait for diagnostics to be cleared (empty) on a document. */
 export async function waitForDiagnosticsCleared(
   uri: vscode.Uri,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Diagnostic[]> {
   return pollUntilResult(
     async () => vscode.languages.getDiagnostics(uri),
@@ -315,7 +371,7 @@ export async function setupLspTestSuite(tmpDirPrefix: string): Promise<{
       return result ?? [];
     },
     (symbols) => symbols.length > 0,
-    SERVER_START_TIMEOUT_MS,
+    ACTIVATION_MS,
     500,
   );
 
@@ -405,6 +461,59 @@ export async function takeScreenshot(filename: string): Promise<void> {
 
 // ── Utilities ────────────────────────────────────────────────────
 
-function sleep(ms: number): Promise<void> {
+export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// ── Extension-host workspace ─────────────────────────────────────
+
+/**
+ * The workspace folder the extension-host tests are launched against.
+ *
+ * `runTest.ts` opens `test-fixtures/workspace`; a fixture written into a temp
+ * directory instead lives OUTSIDE every workspace folder, which is a different
+ * (and specified) refusal path — so a suite that needs a bound
+ * `session.workspaceFolder` must scratch inside this root.
+ */
+export function requireWorkspaceRoot(): string {
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (root === undefined || root === '') {
+    throw new Error('the VSIX host must be launched with the committed fixture workspace open');
+  }
+  return root;
+}
+
+/**
+ * Index into an observed list, failing with the observed count when short.
+ *
+ * `items[i]!` hides the interesting half of the failure: how many were actually
+ * observed. Every wait-then-index site wants the same diagnosis.
+ */
+export function requireAt<T>(items: readonly T[], index: number, label: string): T {
+  const item = items[index];
+  if (item === undefined) {
+    throw new Error(`${label} must exist; only ${String(items.length)} were observed`);
+  }
+  return item;
+}
+
+// ── Assertion shorthand ──────────────────────────────────────────
+
+/**
+ * The three assert forms every end-to-end suite here uses.
+ *
+ * These suites are assertion-dense by design and CLAUDE.md caps a file at 500
+ * lines, so the forms are bound once — every call still asserts an exact VALUE,
+ * with a message naming the contract it enforces. Binding them per file is how
+ * nineteen byte-identical copies of the same four lines came to exist.
+ */
+export type Compare = (actual: unknown, expected: unknown, message: string) => void;
+
+/** `assert.strictEqual`, typed for `unknown` operands. */
+export const eq: Compare = assert.strictEqual;
+
+/** `assert.notStrictEqual`, typed for `unknown` operands. */
+export const neq: Compare = assert.notStrictEqual;
+
+/** `assert.deepStrictEqual`, typed for `unknown` operands. */
+export const deepEq: Compare = assert.deepStrictEqual;

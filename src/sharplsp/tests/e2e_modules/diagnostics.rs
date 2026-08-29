@@ -62,7 +62,8 @@ fn test_request_works_after_diagnostic_notification() {
     client.wait_with_timeout();
 }
 
-// Verify diagnosticProvider advertises workspace diagnostics.
+// Verify diagnosticProvider advertises workspace diagnostics to a client that
+// declares no push support of its own.
 
 #[test]
 fn test_capabilities_advertise_workspace_diagnostics() {
@@ -84,6 +85,32 @@ fn test_capabilities_advertise_workspace_diagnostics() {
         diag_provider["workspaceDiagnostics"],
         json!(true),
         "workspaceDiagnostics must be true",
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}
+
+/// A client that declares `textDocument.publishDiagnostics` is served by the
+/// push pipeline, so it must NOT also be offered the pull provider. A client
+/// given both runs both — `vscode-languageclient` keeps one
+/// `DiagnosticCollection` per model and `languages.getDiagnostics` concatenates
+/// them, so every diagnostic is shown, and counted, twice.
+/// Implements [DIAG-LSP-CAPABILITIES-EXCLUSIVE].
+#[test]
+fn test_push_capable_client_is_not_offered_pull_diagnostics() {
+    let mut client = LspClient::start();
+
+    let resp = client.initialize_with_capabilities(
+        Value::Null,
+        json!({ "textDocument": { "publishDiagnostics": { "relatedInformation": true } } }),
+    );
+
+    assert!(
+        resp["result"]["capabilities"]["diagnosticProvider"].is_null(),
+        "a push-capable client must not also be offered pull diagnostics, or every \
+         diagnostic lands in two client collections and is reported twice; got: {}",
+        resp["result"]["capabilities"]["diagnosticProvider"],
     );
 
     client.shutdown_and_exit();

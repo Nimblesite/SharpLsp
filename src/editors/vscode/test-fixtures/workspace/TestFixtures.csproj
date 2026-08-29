@@ -1,3 +1,4 @@
+
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
@@ -11,23 +12,29 @@
         <EnableNETAnalyzers>false</EnableNETAnalyzers>
         <EnforceExtendedAnalyzerRules>false</EnforceExtendedAnalyzerRules>
         <AnalysisMode>None</AnalysisMode>
-        <WarningsAsErrors />
+        <WarningsAsErrors/>
         <NoWarn>$(NoWarn);CS8618;CS0169;CS0649;CS1591;CS0168;CA1822;CA1051;CA1815</NoWarn>
     </PropertyGroup>
     <!-- Remove analyzer packages inherited from Directory.Build.props -->
     <ItemGroup>
-        <PackageReference Remove="Microsoft.CodeAnalysis.NetAnalyzers" />
-        <PackageReference Remove="Microsoft.CodeAnalysis.CSharp" />
-        <PackageReference Remove="Microsoft.CodeAnalysis.Analyzers" />
-        <PackageReference Remove="Microsoft.CodeAnalysis.BannedApiAnalyzers" />
-        <PackageReference Remove="Outcome" />
-        <PackageReference Remove="Exhaustion" />
+        <PackageReference Remove="Microsoft.CodeAnalysis.NetAnalyzers"/>
+        <PackageReference Remove="Microsoft.CodeAnalysis.CSharp"/>
+        <PackageReference Remove="Microsoft.CodeAnalysis.Analyzers"/>
+        <PackageReference Remove="Microsoft.CodeAnalysis.BannedApiAnalyzers"/>
+        <PackageReference Remove="Outcome"/>
+        <PackageReference Remove="Exhaustion"/>
     </ItemGroup>
     <ItemGroup>
-      <!-- Owned by the downstream project in the mixed-language rename DAG. -->
-      <Compile Remove="crosslanguage/**/*.cs" />
+        <!-- A directory carrying its own project file, or its own Directory.Build.props, is a self-contained MSBuild scope and never TestFixtures source - MSBuild itself stops walking up at that props file. Suites materialise scratch projects and file-based apps under this folder, and without these fences their sources and their generated obj/*.AssemblyInfo.cs join THIS compilation (CS0101/CS0111/CS0579/CS8805) and break every VS Code chunk at pretest. Both fences read what is on disk, so a new fixture directory needs no edit here. -->
+        <NestedProject Include="**/*.csproj;**/*.fsproj" Exclude="$(MSBuildProjectFile)"/>
+        <IsolatedScope Include="**/Directory.Build.props"/>
+        <Compile Remove="@(NestedProject-&gt;&apos;%(RelativeDir)**/*.cs&apos;)"/>
+        <Compile Remove="@(IsolatedScope-&gt;&apos;%(RelativeDir)**/*.cs&apos;)"/>
+        <Compile Remove="**/bin/**/*.cs;**/obj/**/*.cs"/>
+        <!-- Scratch projects the debug suites materialise here at run time. Each carries its own .csproj, so its sources belong to THAT project, never to this one; two leaked copies collide as CS0101/CS0111 and fail the build before any test runs. -->
+        <Compile Remove="debug-*/**/*.cs"/>
     </ItemGroup>
     <ItemGroup>
-      <PackageReference Include="Serilog" Version="4.4.0" />
+        <PackageReference Include="Serilog" Version="4.4.0"/>
     </ItemGroup>
 </Project>

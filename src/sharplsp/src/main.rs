@@ -13,6 +13,7 @@ mod document_symbols;
 #[cfg(feature = "formatting")]
 mod formatting;
 mod handlers;
+mod hot_reload;
 mod inlay_hints;
 mod nav_cache;
 mod nuget;
@@ -24,6 +25,7 @@ mod semantic_tokens;
 mod sidecar;
 mod signature_help;
 mod sort_members;
+mod statement_stop;
 mod syntax;
 mod tree_sitter_parse;
 mod type_hierarchy;
@@ -148,13 +150,16 @@ fn main() -> ExitCode {
 fn run_server() -> Result<()> {
     let (connection, io_threads) = Connection::stdio();
 
-    let server_capabilities = build_capabilities();
-    let capabilities_json =
-        serde_json::to_value(server_capabilities).context("serialize capabilities")?;
-
-    let init_params = connection.initialize(capabilities_json)?;
+    // Capabilities depend on what the client itself supports, so the initialize
+    // request is answered by hand instead of through `Connection::initialize`.
+    let (initialize_id, init_params) = connection.initialize_start()?;
     let init_params: InitializeParams =
         serde_json::from_value(init_params).context("deserialize InitializeParams")?;
+    let server_capabilities = build_capabilities(&init_params.capabilities);
+    let capabilities_json = serde_json::json!({
+        "capabilities": serde_json::to_value(server_capabilities).context("serialize capabilities")?,
+    });
+    connection.initialize_finish(initialize_id, capabilities_json)?;
 
     // Convert the workspace URI through the same RFC 8089 parser as every other
     // file path so Windows drive letters and percent-encoding resolve correctly;
@@ -223,6 +228,9 @@ fn run_server() -> Result<()> {
         None
     };
 
+    let csharp_event_pump =
+        start_csharp_event_pump(csharp_sidecar.as_ref(), &runtime, connection.sender.clone());
+
     // Eagerly open workspaces in sidecars when a workspace root is available.
     // Health monitoring must wait until workspace/open completes — otherwise the
     // health check can time out on the transport lock (held by workspace/open),
@@ -265,23 +273,18 @@ fn run_server() -> Result<()> {
         workspace_root.is_some(),
     )?;
 
+    if let Some(event_pump) = csharp_event_pump {
+        event_pump.abort();
+    }
+
     // Shut down profiler sessions.
     profiler::session::store().shutdown();
 
     // Shut down sidecars gracefully (in parallel to avoid doubling timeout).
-    runtime.block_on(async {
-        let cs = async {
-            if let Some(ref sidecar) = csharp_sidecar {
-                sidecar.shutdown().await;
-            }
-        };
-        let fs = async {
-            if let Some(ref sidecar) = fsharp_sidecar {
-                sidecar.shutdown().await;
-            }
-        };
-        tokio::join!(cs, fs);
-    });
+    runtime.block_on(shutdown_sidecars(
+        csharp_sidecar.as_ref(),
+        fsharp_sidecar.as_ref(),
+    ));
 
     // Drop the connection so the writer thread's channel closes,
     // allowing io_threads.join() to complete.
@@ -291,8 +294,26 @@ fn run_server() -> Result<()> {
     Ok(())
 }
 
+/// Shut down both language sidecars concurrently.
+async fn shutdown_sidecars(
+    csharp: Option<&Arc<SidecarManager>>,
+    fsharp: Option<&Arc<SidecarManager>>,
+) {
+    let cs = async {
+        if let Some(sidecar) = csharp {
+            sidecar.shutdown().await;
+        }
+    };
+    let fs = async {
+        if let Some(sidecar) = fsharp {
+            sidecar.shutdown().await;
+        }
+    };
+    tokio::join!(cs, fs);
+}
+
 /// Build the server capabilities advertised during LSP initialization.
-fn build_capabilities() -> ServerCapabilities {
+fn build_capabilities(client: &lsp_types::ClientCapabilities) -> ServerCapabilities {
     ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         document_symbol_provider: Some(OneOf::Left(true)),
@@ -363,15 +384,38 @@ fn build_capabilities() -> ServerCapabilities {
         code_lens_provider: Some(lsp_types::CodeLensOptions {
             resolve_provider: Some(false),
         }),
-        diagnostic_provider: Some(lsp_types::DiagnosticServerCapabilities::Options(
-            lsp_types::DiagnosticOptions {
-                inter_file_dependencies: true,
-                workspace_diagnostics: true,
-                ..lsp_types::DiagnosticOptions::default()
-            },
-        )),
+        diagnostic_provider: pull_diagnostics_capability(client),
         ..ServerCapabilities::default()
     }
+}
+
+/// Advertise pull diagnostics only to clients that cannot receive push ones.
+///
+/// A client offered both models runs both: `vscode-languageclient` creates one
+/// `DiagnosticCollection` for `publishDiagnostics` and a second one for
+/// `textDocument/diagnostic`, and `languages.getDiagnostics` concatenates them,
+/// so every diagnostic is shown — and counted — twice. This host's diagnostics
+/// pipeline is push-first (background fetch, generation gate, restore-settle
+/// republication), so push wins wherever the client supports it and the pull
+/// handlers stay for clients that declare no `publishDiagnostics` support.
+/// Implements [DIAG-LSP-CAPABILITIES-EXCLUSIVE].
+fn pull_diagnostics_capability(
+    client: &lsp_types::ClientCapabilities,
+) -> Option<lsp_types::DiagnosticServerCapabilities> {
+    let supports_push = client
+        .text_document
+        .as_ref()
+        .is_some_and(|text_document| text_document.publish_diagnostics.is_some());
+    if supports_push {
+        return None;
+    }
+    Some(lsp_types::DiagnosticServerCapabilities::Options(
+        lsp_types::DiagnosticOptions {
+            inter_file_dependencies: true,
+            workspace_diagnostics: true,
+            ..lsp_types::DiagnosticOptions::default()
+        },
+    ))
 }
 
 /// Open the workspace in a sidecar.
@@ -515,6 +559,38 @@ fn start_sidecar(
     }
 }
 
+/// Republish provisional diagnostics as soon as the C# restore settles.
+fn start_csharp_event_pump(
+    sidecar: Option<&Arc<SidecarManager>>,
+    runtime: &tokio::runtime::Runtime,
+    sender: crossbeam_channel::Sender<Message>,
+) -> Option<tokio::task::JoinHandle<()>> {
+    let sidecar = sidecar?;
+    let mut events = sidecar.take_event_receiver()?;
+    let sidecar = Arc::clone(sidecar);
+    Some(runtime.spawn(async move {
+        while let Some(event) = events.recv().await {
+            handle_csharp_event(&event, &sidecar, &sender).await;
+        }
+    }))
+}
+
+/// Converge provisional diagnostics for one C# restore-settled event.
+async fn handle_csharp_event(
+    event: &str,
+    sidecar: &SidecarManager,
+    sender: &crossbeam_channel::Sender<Message>,
+) {
+    let Some(path) = event.strip_prefix("diagnostics-settled ") else {
+        return;
+    };
+    let Ok(uri) = utils::path_to_lsp_uri(path.trim()) else {
+        warn!(path, "Sidecar settle event carried an invalid path");
+        return;
+    };
+    diagnostics::converge_provisional(sidecar, sender, &uri, path.trim()).await;
+}
+
 // ── Main Loop ─────────────────────────────────────────────────────
 
 #[expect(
@@ -624,10 +700,15 @@ fn handle_request(
 ) -> Result<()> {
     let id = req.id.clone();
     let method = req.method.clone();
+    let document_uri = request_document_uri(&req.params);
 
     let result = match req.method.as_str() {
-        // Syntax-only (tree-sitter, Rust) for C#; F# has no host grammar, so its
-        // symbols come from the sidecar's FCS items. [SHARPLSP-FEATURES-NAVIGATION]
+        // Syntax-only (tree-sitter, Rust) for C#; documentSymbol for F# is
+        // deliberately served by the sidecar's FCS items (richer symbol data
+        // than a syntax tree can give). The other syntax features —
+        // foldingRange, selectionRange, linkedEditingRange — run on the F#
+        // tree-sitter grammar for both languages.
+        // [SHARPLSP-FEATURES-NAVIGATION]
         DocumentSymbolRequest::METHOD => {
             if is_fsharp_request(&req) {
                 let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
@@ -781,6 +862,20 @@ fn handle_request(
         ),
     };
 
+    // BEFORE the response is sent: a semantic answer computed from an
+    // upgraded tier-1 compilation must never reach the editor while the
+    // published diagnostics still show the tier-2 placeholder.
+    // [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
+    if result.is_ok() && reveals_semantic_state(&method) {
+        converge_provisional_publication(
+            document_uri.as_ref(),
+            runtime,
+            csharp_sidecar,
+            fsharp_sidecar,
+            connection,
+        );
+    }
+
     let resp = match result {
         Ok(value) => Response::new_ok(id, value),
         Err(e) => {
@@ -794,6 +889,64 @@ fn handle_request(
     };
     connection.sender.send(Message::Response(resp))?;
     Ok(())
+}
+
+/// The `textDocument.uri` of a request's params, when the request carries one.
+fn request_document_uri(params: &serde_json::Value) -> Option<Uri> {
+    params
+        .get("textDocument")
+        .and_then(|document| document.get("uri"))
+        .and_then(|uri| uri.as_str())
+        .and_then(|raw| raw.parse().ok())
+}
+
+/// Whether a request's answer can reveal semantic (sidecar) state — the
+/// tier-1 reference upgrade in particular — to the editor. Syntax-only,
+/// pull-diagnostic, workspace-scoped, and custom requests cannot, so they
+/// skip the provisional-publication convergence.
+/// [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+fn reveals_semantic_state(method: &str) -> bool {
+    !matches!(
+        method,
+        DocumentSymbolRequest::METHOD
+            | FoldingRangeRequest::METHOD
+            | SelectionRangeRequest::METHOD
+            | LinkedEditingRange::METHOD
+            | DocumentDiagnosticRequest::METHOD
+            | WorkspaceDiagnosticRequest::METHOD
+            | WorkspaceSymbolRequest::METHOD
+    ) && !method.starts_with("sharplsp/")
+}
+
+/// Re-fetch and republish a document's diagnostics before a semantic response
+/// is sent, while the latest publication is still a provisional tier-2
+/// placeholder. On the serialized sidecar transport this fetch runs strictly
+/// after the request that produced the semantic answer, so the corrected
+/// diagnostic set always precedes a tier-1-revealing answer on the client
+/// stream. [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
+fn converge_provisional_publication(
+    uri: Option<&Uri>,
+    runtime: &tokio::runtime::Runtime,
+    csharp_sidecar: Option<&Arc<SidecarManager>>,
+    fsharp_sidecar: Option<&Arc<SidecarManager>>,
+    connection: &Connection,
+) {
+    let Some(uri) = uri else { return };
+    if !diagnostics::published_set_is_provisional(uri) {
+        return;
+    }
+    let Some(sidecar) = sidecar_for_uri(uri, csharp_sidecar, fsharp_sidecar) else {
+        return;
+    };
+    let Ok(file_path) = semantic::uri_to_path(uri) else {
+        return;
+    };
+    runtime.block_on(diagnostics::converge_provisional(
+        sidecar,
+        &connection.sender,
+        uri,
+        &file_path,
+    ));
 }
 
 // ── Navigation Request Dispatch ───────────────────────────────────
@@ -858,6 +1011,8 @@ fn handle_custom_request(
             fsharp_sidecar,
         ),
         "sharplsp/sortMembers" => handle_sort_members(req, parsers, vfs),
+        "sharplsp/statementStop" => handle_statement_stop(req, parsers, vfs),
+        "sharplsp/hotReload" => hot_reload::handle(req, runtime, csharp_sidecar),
         // NuGet package management
         "sharplsp/nuget/targets" => nuget::handlers::handle_targets(req),
         "sharplsp/nuget/search" => nuget::handlers::handle_search(req, runtime),
@@ -1228,6 +1383,21 @@ fn fuzzy_match_subsequence(name: &str, query: &str) -> bool {
 fn handle_sort_members(req: Request, parsers: &TsParsers, vfs: &Vfs) -> Result<serde_json::Value> {
     let params: sort_members::SortMembersParams = serde_json::from_value(req.params)?;
     let response = sort_members::handle(&params, parsers, vfs)?;
+    Ok(serde_json::to_value(response)?)
+}
+
+/// Handle the custom `sharplsp/statementStop` request.
+///
+/// Classifies one debugger stop position as code or as pure block punctuation,
+/// so the DAP router can elide the brace-only stops [DEBUG-FEATURES-STEPPING]
+/// requires a step gesture to walk past.
+fn handle_statement_stop(
+    req: Request,
+    parsers: &TsParsers,
+    vfs: &Vfs,
+) -> Result<serde_json::Value> {
+    let params: statement_stop::StatementStopParams = serde_json::from_value(req.params)?;
+    let response = statement_stop::handle(&params, parsers, vfs)?;
     Ok(serde_json::to_value(response)?)
 }
 

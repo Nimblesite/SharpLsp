@@ -26,21 +26,22 @@ eleventyNavigation:
 
 ## 代码库布局
 
-```text
-SharpLsp/
-├── Cargo.toml                    # 根 Rust 工作区清单
-├── src/
-│   ├── sharplsp/                 # Rust 宿主、构建脚本和 Rust 端到端测试
-│   ├── sidecars/                 # C#、F# 和共享的 .NET sidecar/测试
-│   ├── editors/
-│   │   ├── vscode/               # VS Code 扩展
-│   │   ├── zed/                  # Zed 集成源码
-│   │   └── rider/                # Rider 集成源码
-│   ├── examples/                 # 示例解决方案和配置
-│   ├── fixtures/                 # 测试和真实场景固定样例
-│   └── website/                  # Eleventy 文档网站
-├── docs/                         # 技术规范和计划
-└── tools/                        # 构建、打包、覆盖率和共享 make 辅助工具
+```mermaid
+flowchart LR
+    ROOT["SharpLsp/"]
+    ROOT --> SRC["src/"]
+    SRC --> EDITORS["editors/"]
+    ROOT --> CARGO["Cargo.toml<br/>根 Rust 工作区清单"]
+    ROOT --> DOCS["docs/<br/>技术规范和计划"]
+    ROOT --> TOOLS["tools/<br/>构建、打包、覆盖率和共享 make 辅助工具"]
+    SRC --> HOST["sharplsp/<br/>Rust 宿主、构建脚本和 Rust 端到端测试"]
+    SRC --> SIDECARS["sidecars/<br/>C#、F# 和共享的 .NET sidecar/测试"]
+    SRC --> EXAMPLES["examples/<br/>示例解决方案和配置"]
+    SRC --> FIXTURES["fixtures/<br/>测试和真实场景固定样例"]
+    SRC --> WEBSITE["website/<br/>Eleventy 文档网站"]
+    EDITORS --> VSCODE["vscode/<br/>VS Code 扩展"]
+    EDITORS --> ZED["zed/<br/>Zed 集成源码"]
+    EDITORS --> RIDER["rider/<br/>Rider 集成源码"]
 ```
 
 ## 构建与测试

@@ -105,7 +105,9 @@ KOVER_PERCENT = dotnet run --file tools/coverage/kover-line-percent.cs --
         _stage-vsix-binary _stage-vsix-binary-only _stage-sidecars \
         test-rust _test-rust _prepare-rust-tests _test-rust-shard \
         test-zed _test-zed test-rider _test-rider \
-        _gate-rust-coverage _test-vsix _test-vsix-win _check-vsix-chunks \
+        _gate-rust-coverage _test-vsix _run-vsix-suite _test-vsix-shard \
+        _gate-vsix-coverage _build-vsix-suite _check-vsix-chunks \
+        _verify-vsix-payload \
         _test-dotnet _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
@@ -140,7 +142,7 @@ _build-dotnet:
 	dotnet publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
 	dotnet publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
 
-_build-vsix: _stage-vsix-binary
+_build-vsix: $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
 	@echo "==> Packaging VS Code extension (host: $(HOST_PLATFORM))..."
 	npm run build --prefix $(VSCODE_DIR)
 	mkdir -p $(DIST_DIR)
@@ -215,10 +217,23 @@ VERIFY_STAGED_SIDECARS = \
 _stage-sidecars:
 	@mkdir -p target/debug/sidecar-csharp target/debug/sidecar-fsharp
 	@mkdir -p target/llvm-cov-target/debug/sidecar-csharp target/llvm-cov-target/debug/sidecar-fsharp
+# Creating target/llvm-cov-target before cargo does leaves it WITHOUT the
+# CACHEDIR.TAG cargo writes for its own build directories, and
+# `cargo llvm-cov clean` then refuses the directory ("missing or invalid
+# CACHEDIR.TAG") and exits non-zero. Every later coverage run therefore piled
+# fresh objects on top of stale ones, and the merged lcov mixed several crate
+# disambiguators — which is how a clean tree measured 92.04% against a real
+# 95.73%. Write the tag ourselves so the clean cargo would have done still works.
+	@[ -f target/llvm-cov-target/CACHEDIR.TAG ] || printf '%s\n' \
+		'Signature: 8a477f597d28d172789f06886806bc55' > target/llvm-cov-target/CACHEDIR.TAG
 	@cp -r $(SIDECAR_CS_OUT)/. target/debug/sidecar-csharp/
 	@cp -r $(SIDECAR_FS_OUT)/. target/debug/sidecar-fsharp/
 	@cp -r $(SIDECAR_CS_OUT)/. target/llvm-cov-target/debug/sidecar-csharp/
 	@cp -r $(SIDECAR_FS_OUT)/. target/llvm-cov-target/debug/sidecar-fsharp/
+	@chmod +x target/debug/sidecar-csharp/SharpLsp.Sidecar.CSharp$(EXE_EXT) \
+		target/debug/sidecar-fsharp/SharpLsp.Sidecar.FSharp$(EXE_EXT) \
+		target/llvm-cov-target/debug/sidecar-csharp/SharpLsp.Sidecar.CSharp$(EXE_EXT) \
+		target/llvm-cov-target/debug/sidecar-fsharp/SharpLsp.Sidecar.FSharp$(EXE_EXT) 2>/dev/null || true
 
 # ── CI ────────────────────────────────────────────────────────────
 
@@ -241,7 +256,7 @@ RUST_E2E_SIDECARS = \
 	SHARPLSP_CSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_CS_OUT))/SharpLsp.Sidecar.CSharp$(EXE_EXT)" \
 	SHARPLSP_FSHARP_SIDECAR_PATH="$(abspath $(SIDECAR_FS_OUT))/SharpLsp.Sidecar.FSharp$(EXE_EXT)"
 
-_prepare-rust-tests: _build-dotnet _stage-sidecars
+_prepare-rust-tests: $(if $(VSIX_PREBUILT),,_build-dotnet) _stage-sidecars
 	@echo "==> Pre-building ProfileTarget fixture..."
 	dotnet build src/sharplsp/tests/fixtures/ProfileTarget/ProfileTarget.csproj -c Release --nologo -v q
 
@@ -303,15 +318,126 @@ VSIX_TEST_ENV = env -u SHARPLSP_EXECUTABLE_PATH \
 	-u FORGE_LSP_PATH \
 	-u FORGE_BINARY_DIR
 
-_test-vsix: _build-rust _build-dotnet _build-vsix _stage-vsix-binary
-	@echo "==> Running VS Code extension tests..."
-	@$(MAKE) _stage-vsix-binary
+# [DIST-CI-VSIX-SHARDS] ONE runner drives every slice of the VS Code end-to-end
+# suite, on every platform, ALWAYS instrumented. It is parameterised by two
+# variables, and nothing else differs between the local full run, the Ubuntu
+# shards and the Windows shards:
+#
+#   CHUNK                a chunk name from src/editors/vscode/test-chunks.json.
+#                        Empty runs EVERY suite - the inner runner reads an empty
+#                        MOCHA_FILES as "all" - which is what a local `make test`
+#                        wants.
+#   VSIX_SUITE_PREBUILT  non-empty means `out/`, `dist/` and the built fixtures
+#                        are already on disk, so the shard skips `pretest`.
+#
+# Coverage is NOT a knob. Every shard on every platform instruments, and one gate
+# at the end of the pipeline ratchets the union ([DIST-CI-VSIX-COVERAGE]); a
+# shard that ran uninstrumented would silently shrink that union.
+#
+# Compiling is not a per-shard cost either. `pretest` cleans, type-checks the
+# whole suite, bundles the extension and builds the .NET test fixtures - minutes
+# of identical work that CI does ONCE in `_build-vsix-suite` and every shard
+# downloads.
+VSIX_CHUNK_FILES = $(if $(CHUNK),$$($(VSIX_CHUNKS) files $(CHUNK)),)
+# `pretest` has a PORTABLE half and a MACHINE-BOUND half.
+#
+# Portable: clean, tsc the suite, esbuild the bundle. Identical on every runner,
+# minutes of work, and the whole reason `_build-vsix-suite` exists.
+#
+# Machine-bound: `prepare:test-fixtures` runs `dotnet build` over the fixture
+# solution, and the `obj/project.assets.json` it writes points at THAT machine's
+# `~/.nuget/packages`. Shipping the built fixtures between jobs hands a shard a
+# workspace whose references cannot resolve, so Roslyn loads it degraded: no
+# definitions, a reduced refactor set, and an empty unused-package report - all
+# of which look like test failures rather than a missing restore. Every shard
+# therefore builds the fixtures itself, restoring against its own NuGet cache.
+VSIX_PRETEST = $(if $(VSIX_SUITE_PREBUILT),npm run prepare:test-fixtures,npm run pretest)
+
+define RUN_VSIX_SUITE
 	status=0; \
+	files="$(VSIX_CHUNK_FILES)"; \
+	if [ -n "$(CHUNK)" ] && [ -z "$$files" ]; then \
+		echo "ERROR: chunk '$(CHUNK)' resolved to no suites - refusing to silently run ALL of them" >&2; \
+		exit 1; \
+	fi; \
 	cd $(VSCODE_DIR); \
-	$(VSIX_TEST_ENV) npm test -- --coverage || status=$$?; \
+	$(VSIX_PRETEST) && \
+		$(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test --coverage \
+		|| status=$$?; \
 	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
 	exit $$status
+endef
+
+_run-vsix-suite:
+	$(RUN_VSIX_SUITE)
+
+# [DIST-CI-VSIX-SHARDS] Compile the suite ONCE. `pretest` is the expensive,
+# entirely shard-independent half of a run: clean, tsc the whole suite, esbuild
+# the dev bundle, build the .NET test fixtures. CI runs this in a single job per
+# platform and publishes the result; every shard downloads it and sets
+# VSIX_SUITE_PREBUILT=1. Running it per shard multiplied it by the matrix width.
+_build-vsix-suite:
+	@echo "==> Compiling the VS Code suite once for every shard..."
+	@cd $(VSCODE_DIR) && npm run pretest
+
+# The whole suite in one process, with coverage and the ratcheted gate. This is
+# what `make test` runs locally. CI never runs it: unsharded it was the longest
+# job in the pipeline by a wide margin, so the Ubuntu leg fans out over
+# `_test-vsix-shard` instead and gates once over the union.
+_test-vsix: $(if $(VSIX_PREBUILT),,_build-rust _build-dotnet) _build-vsix _verify-vsix-payload
+	@echo "==> Running VS Code extension tests..."
+	@$(MAKE) $(VSIX_STAGE_TARGET)
+	@$(MAKE) _run-vsix-suite
 	@$(CHECK_COV) vscode-extension --json $(VSCODE_DIR)/coverage/coverage-summary.json total.lines.pct
+
+# [DIST-CI-VSIX-SHARDS] ONE coverage shard on ANY platform: a single chunk,
+# instrumented, exporting lcov. The Ubuntu and Windows legs both run exactly
+# this - there is no second, Windows-only recipe, because the two of them had
+# already drifted apart once (one ran with coverage, one without).
+#
+# No gate here: no chunk can meet the line threshold alone, so the ratchet runs
+# once over the union of BOTH platforms in the pipeline's final coverage job,
+# exactly as the Rust shards do ([DIST-CI-RUST-SHARDS]).
+#
+# The tracefile is renamed per platform AND chunk because CI downloads every
+# shard into one directory before merging, and `coverage/lcov.info` is the same
+# path for all of them. Its `SF:` records are rewritten to repo-relative POSIX
+# paths on the way out: c8 records absolute paths, and the same source file must
+# key identically whether the shard that measured it ran on `C:\Code\SharpLsp`
+# or `/home/runner/work/SharpLsp/SharpLsp` or the union counts it twice.
+#
+# Deliberately does NOT verify the VSIX payload. That is one production esbuild
+# plus a `vsce ls` per shard for an answer that does not vary by shard, and
+# worse: it leaves the PRODUCTION bundle in `dist/`, whose missing sourcemap
+# would strip the end-to-end coverage this job exists to collect. The payload
+# has its own job in both legs.
+VSIX_PLATFORM = $(shell node -e "process.stdout.write(process.platform)")
+VSIX_SHARD_LCOV = target/coverage-vsix-shard-$(VSIX_PLATFORM)-$(CHUNK).lcov
+
+#
+# Staging is a `$(MAKE)` sub-invocation, NOT a prerequisite. `VSIX_STAGE_TARGET`
+# is defined further down this file, so in a prerequisite list it expands to
+# nothing and the shard runs against an unstaged `bin/` - which is precisely how
+# this broke once the payload check (whose own sub-make happened to stage as a
+# side effect) moved out to its own job. Recipe lines expand at run time, so
+# this one always sees the variable.
+_test-vsix-shard:
+	@test -n "$(CHUNK)" || { echo "ERROR: CHUNK is required (e.g. make _test-vsix-shard CHUNK=lsp)" >&2; exit 1; }
+	@echo "==> Running VS Code coverage shard '$(VSIX_PLATFORM)/$(CHUNK)'..."
+	@$(MAKE) $(VSIX_STAGE_TARGET)
+	@$(MAKE) _run-vsix-suite CHUNK=$(CHUNK)
+	@mkdir -p target
+	@node tools/coverage/relativize-lcov.mjs $(VSCODE_DIR)/coverage/lcov.info $(VSIX_SHARD_LCOV) .
+
+# [DIST-CI-VSIX-SHARDS] Union-merge the shard tracefiles and enforce the same
+# ratcheted threshold an unsharded run enforces. Every shard instruments the
+# same bundle, so a file loaded by any shard carries its whole line set there
+# (unexecuted lines as `DA:<line>,0`) and the union reproduces the line
+# percentage of a single whole-suite run. Same merger the Rust gate uses.
+_gate-vsix-coverage:
+	@PERCENT="$$(node tools/coverage/merge-lcov.mjs target/coverage-vsix.lcov target/coverage-vsix-shard-*.lcov)" && \
+		$(CHECK_COV) vscode-extension "$$PERCENT"
+
 
 # ── VSIX Windows feature chunks ───────────────────────────────────
 # [DIST-CI-WIN-VSIX] Runs ONE declared feature chunk of the VS Code end-to-end
@@ -336,15 +462,39 @@ VSIX_CHUNKS = node tools/vsix/vsix-test-chunks.mjs
 _check-vsix-chunks:
 	@$(VSIX_CHUNKS) check
 
-_test-vsix-win: _stage-vsix-binary-only
-	@test -n "$(CHUNK)" || { echo "ERROR: CHUNK is required (e.g. make _test-vsix-win CHUNK=debug)" >&2; exit 1; }
-	@echo "==> Running VS Code extension chunk '$(CHUNK)' (real LSP, no coverage)..."
-	status=0; \
-	files="$$($(VSIX_CHUNKS) files $(CHUNK))"; \
-	cd $(VSCODE_DIR); \
-	npm run pretest && $(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test || status=$$?; \
-	rm -rf "$(abspath $(VSCODE_DIR))/bin" || true; \
-	exit $$status
+# Building the payload the chunk will run against. Locally this is a FULL fresh
+# build — Rust host, both .NET sidecars, and the netcoredbg debug adapter — so a
+# VSIX test can never pass against a stale binary. CI's Windows matrix sets
+# VSIX_PREBUILT=1 because its `build` job already produced the host and sidecars
+# once and every chunk downloads them as artifacts; rebuilding Rust eleven times
+# would add hours. The staging step itself is identical either way, and it is
+# what fetches netcoredbg ([DIST-DEBUGGER-BUNDLE]).
+VSIX_STAGE_TARGET = $(if $(VSIX_PREBUILT),_stage-vsix-binary-only,_stage-vsix-binary)
+
+# Pack the real VSIX and verify the payload actually made it in. `vsce ls` is the
+# same file list `vsce package` writes, so this catches a .vscodeignore that
+# swallowed the host, a sidecar or the debugger BEFORE 40 minutes of chunk time
+# is spent proving it at the other end.
+# Self-staging, because two different things delete `bin/` out from under it.
+#
+# `_build-vsix` ends with `rm -rf bin`, and a phony prerequisite is built at
+# most ONCE per make invocation — so in `_test-vsix: ... _build-vsix
+# _stage-vsix-binary _verify-vsix-payload` the staging prerequisite is already
+# satisfied by the time make reaches it and never re-runs. Verification then
+# reads the `bin/` that `_build-vsix` just removed and reports the host, both
+# sidecars and the debug adapter missing. The `$(MAKE)` sub-invocation is what
+# makes staging happen again; a plain prerequisite cannot.
+#
+# The production bundle is rebuilt for the same reason of accuracy: `vsce
+# package` runs `vscode:prepublish` and so the production build, but `vsce ls`
+# — which the verifier calls — does NOT. Without it the verifier judges
+# whatever `dist/` happens to hold, and `npm run pretest` leaves the DEV
+# bundle's sourcemap there, so the first chunk on a clean tree passes and every
+# chunk after it fails on a file that would never have shipped.
+_verify-vsix-payload:
+	@$(MAKE) _stage-vsix-binary-only
+	@cd $(VSCODE_DIR) && npm run build:production --silent
+	@cd $(VSCODE_DIR) && node ../../../tools/vsix/verify-vsix-payload.mjs
 
 # [DIST-CI-RIDER] The Rider plugin's only automated verification. Skipped
 # locally when no JDK 21+ is installed; CI sets RIDER_REQUIRED=1 so it can never
@@ -358,7 +508,7 @@ _test-rider:
 	   echo "ERROR: no Kover report at $$report" >&2; exit 1; \
 	 fi
 
-_test-dotnet: _build-dotnet
+_test-dotnet: $(if $(VSIX_PREBUILT),,_build-dotnet)
 	@echo "==> Running .NET sidecar tests..."
 	@rm -rf target/coverage-dotnet
 	dotnet test $(SIDECAR_SLN) --configuration $(DOTNET_CFG) \

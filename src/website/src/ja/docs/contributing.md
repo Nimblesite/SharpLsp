@@ -26,21 +26,22 @@ eleventyNavigation:
 
 ## リポジトリ構成
 
-```text
-SharpLsp/
-├── Cargo.toml                    # ルートの Rust ワークスペースマニフェスト
-├── src/
-│   ├── sharplsp/                 # Rust ホスト、ビルドスクリプト、Rust E2E テスト
-│   ├── sidecars/                 # C#、F#、共有 .NET サイドカー／テスト
-│   ├── editors/
-│   │   ├── vscode/               # VS Code 拡張機能
-│   │   ├── zed/                  # Zed 連携のソース
-│   │   └── rider/                # Rider 連携のソース
-│   ├── examples/                 # サンプルソリューションと設定
-│   ├── fixtures/                 # テスト用および実環境用フィクスチャ
-│   └── website/                  # Eleventy ドキュメントサイト
-├── docs/                         # 技術仕様と計画
-└── tools/                        # ビルド、パッケージング、カバレッジ、共有 make 用ヘルパー
+```mermaid
+flowchart LR
+    ROOT["SharpLsp/"]
+    ROOT --> SRC["src/"]
+    SRC --> EDITORS["editors/"]
+    ROOT --> CARGO["Cargo.toml<br/>ルートの Rust ワークスペースマニフェスト"]
+    ROOT --> DOCS["docs/<br/>技術仕様と計画"]
+    ROOT --> TOOLS["tools/<br/>ビルド、パッケージング、カバレッジ、共有 make 用ヘルパー"]
+    SRC --> HOST["sharplsp/<br/>Rust ホスト、ビルドスクリプト、Rust E2E テスト"]
+    SRC --> SIDECARS["sidecars/<br/>C#、F#、共有 .NET サイドカー／テスト"]
+    SRC --> EXAMPLES["examples/<br/>サンプルソリューションと設定"]
+    SRC --> FIXTURES["fixtures/<br/>テスト用および実環境用フィクスチャ"]
+    SRC --> WEBSITE["website/<br/>Eleventy ドキュメントサイト"]
+    EDITORS --> VSCODE["vscode/<br/>VS Code 拡張機能"]
+    EDITORS --> ZED["zed/<br/>Zed 連携のソース"]
+    EDITORS --> RIDER["rider/<br/>Rider 連携のソース"]
 ```
 
 ## ビルドとテスト

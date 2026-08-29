@@ -487,6 +487,12 @@ export class NuGetBrowserPanel {
     this.loading.add('versions');
     this.updateContent();
     const result = await fetchVersions(lsp, pkg.id);
+    // The user can select a different package while these versions load. This
+    // response then belongs to a package nobody is looking at: writing it would
+    // put one package's versions on another's panel, and clearing the shared
+    // `versions` loading flag would cancel the NEWER request's spinner. The
+    // newer selection owns the panel, so drop this result untouched.
+    if (this.selectedPackage !== pkg) return;
     this.loading.delete('versions');
     if (!result.ok) {
       log.error(`NuGetBrowserPanel: failed to load versions for ${pkg.id}: ${result.error}`);

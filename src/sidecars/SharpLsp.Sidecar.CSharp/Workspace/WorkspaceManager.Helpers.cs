@@ -186,7 +186,7 @@ internal sealed partial class WorkspaceManager
 
         foreach (var textChange in change.TextChanges)
         {
-            if (textChange.Span.OverlapsWith(completionSpan))
+            if (textChange.Span.IntersectsWith(completionSpan))
             {
                 continue;
             }

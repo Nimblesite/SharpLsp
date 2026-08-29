@@ -16,17 +16,15 @@ JetBrains gates `com.intellij.modules.lsp` to paid products. The plugin declares
 
 ## Architecture `[RIDER-ARCHITECTURE]`
 
-```
-Rider JVM ──lsp4j──> sharplsp (stdio; sidecars remain host-owned)
-    │
-    ├── ForgeLspServerSupportProvider   (extension point)
-    │     └── ForgeLspServerDescriptor  (launches sharplsp, sets env)
-    │           └── ForgeLsp4jServer    (custom request interface)
-    │
-    └── ForgeSolutionToolWindow         (toolWindow extension point)
-          └── ForgeTreeNode hierarchy
-                └── calls ForgeLsp4jServer.workspaceSymbols() /
-                          nugetInstalled()
+```mermaid
+flowchart TB
+    RIDER["Rider JVM"] -- lsp4j --> SHARPLSP["sharplsp<br/>stdio; sidecars remain host-owned"]
+    RIDER --> PROVIDER["ForgeLspServerSupportProvider<br/>extension point"]
+    RIDER --> TOOLWINDOW["ForgeSolutionToolWindow<br/>toolWindow extension point"]
+    PROVIDER --> DESCRIPTOR["ForgeLspServerDescriptor<br/>launches sharplsp, sets env"]
+    DESCRIPTOR --> LSP4J["ForgeLsp4jServer<br/>custom request interface"]
+    TOOLWINDOW --> NODES["ForgeTreeNode hierarchy"]
+    NODES -- "workspaceSymbols() · nugetInstalled()" --> LSP4J
 ```
 
 The plugin owns no sidecar, webview, or MessagePack transport; it launches the Rust host and renders LSP responses. Implementations: [`lsp/`](../../src/editors/rider/src/main/kotlin/com/forgelsp/rider/lsp) and [`toolwindow/`](../../src/editors/rider/src/main/kotlin/com/forgelsp/rider/toolwindow).
@@ -38,24 +36,20 @@ The plugin owns no sidecar, webview, or MessagePack transport; it launches the R
 - **JVM target:** 21 for Rider 2026.1.
 - **Kotlin target:** JVM toolchain 21, stdlib from the platform — do NOT bundle `kotlin-stdlib` to avoid classpath conflicts.
 - **Source layout:** `src/editors/rider/` with the conventional Gradle structure:
-  ```
-  src/editors/rider/
-  ├── build.gradle.kts
-  ├── settings.gradle.kts
-  ├── gradle.properties
-  ├── gradle/wrapper/               (generated)
-  ├── gradlew, gradlew.bat          (generated)
-  └── src/main/
-      ├── kotlin/com/forgelsp/rider/
-      │   ├── lsp/ForgeLspServerSupportProvider.kt
-      │   ├── lsp/ForgeLspServerDescriptor.kt
-      │   ├── lsp/ForgeLsp4jServer.kt
-      │   ├── toolwindow/ForgeSolutionToolWindowFactory.kt
-      │   ├── toolwindow/ForgeSolutionToolWindow.kt
-      │   └── toolwindow/nodes/*.kt
-      └── resources/
-          ├── META-INF/plugin.xml
-          └── icons/forge.svg
+  ```mermaid
+  flowchart LR
+      ROOT["src/editors/rider/"] --> MAIN["src/main/"]
+      MAIN --> KOTLIN["kotlin/com/forgelsp/rider/"]
+      MAIN --> RESOURCES["resources/"]
+      ROOT --> BUILD["build.gradle.kts"]
+      ROOT --> SETTINGS["settings.gradle.kts"]
+      ROOT --> PROPS["gradle.properties"]
+      ROOT --> WRAPPER["gradle/wrapper/ — generated"]
+      ROOT --> GRADLEW["gradlew, gradlew.bat — generated"]
+      KOTLIN --> LSPDIR["lsp/<br/>ForgeLspServerSupportProvider.kt<br/>ForgeLspServerDescriptor.kt<br/>ForgeLsp4jServer.kt"]
+      KOTLIN --> TWDIR["toolwindow/<br/>ForgeSolutionToolWindowFactory.kt<br/>ForgeSolutionToolWindow.kt<br/>nodes/*.kt"]
+      RESOURCES --> METAINF["META-INF/plugin.xml"]
+      RESOURCES --> ICONS["icons/forge.svg"]
   ```
 - **Distribution artifact:** `sharplsp-rider-plugin.zip`, produced by the `buildPlugin` Gradle task at `src/editors/rider/build/distributions/`. Copied to `dist/sharplsp-rider.zip` alongside the other packaged editor artifacts.
 - **Gradle wrapper:** committed so contributors and CI don't need a system Gradle.

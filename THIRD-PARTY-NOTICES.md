@@ -30,16 +30,18 @@ which this file satisfies.
   platform at `bin/<platform>/netcoredbg/` and launched by the
   `sharplsp-coreclr` debug adapter factory (`src/editors/vscode/src/debug.ts`).
 - **Upstream:** https://github.com/Samsung/netcoredbg
-- **Pinned version:** `3.2.0-1092`
+- **Pinned version:** `3.2.0-1092` (`9744e1f051866215611b8440c638042aa2aa2f72`),
+  built from source with the auditable DAP-only extension in
+  `tools/netcoredbg/dap-hot-reload.patch`.
 - **License:** MIT — **© 2017 Samsung Electronics Co., LTD** (verified against
   https://raw.githubusercontent.com/Samsung/netcoredbg/master/LICENSE).
-- **Platform coverage:** upstream ships prebuilt binaries for `win32-x64`,
-  `linux-x64`, `linux-arm64`, and `darwin-arm64` only. On `win32-arm64` and
-  `darwin-x64` (no upstream prebuilt) SharpLsp does not bundle netcoredbg and
+- **Platform coverage:** SharpLsp builds the pinned source on `win32-x64`,
+  `linux-x64`, `linux-arm64`, and `darwin-arm64`. On `win32-arm64` and
+  `darwin-x64` (no configured native build) SharpLsp does not bundle netcoredbg and
   falls back to a user-installed copy on `PATH` / the `sharplsp.debug.netcoredbgPath`
   setting.
 
-netcoredbg's archive includes managed helper assemblies (its `ManagedPart.dll`
+netcoredbg's installed output includes managed helper assemblies (its `ManagedPart.dll`
 and Microsoft.CodeAnalysis / .NET runtime support assemblies). Those are
 redistributed under their own MIT / .NET Foundation licenses (§2, §4).
 

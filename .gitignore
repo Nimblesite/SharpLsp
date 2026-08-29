@@ -127,6 +127,8 @@ test-results/
 /src/editors/zed/target/
 
 .deslop-cache/
+# Deslop's local index/state directory ([CI-DESLOP]).
+.deslop/
 # Deslop report artifacts (generated locally by `deslop`, never committed).
 deslop-report.*
 deslop-*.log
@@ -136,3 +138,33 @@ deslop-*.log
 # Real-world repos cloned by the e2e stress suites (src/editors/vscode real-repo tests).
 # Never committed - fetched on demand at pinned tags.
 /src/fixtures/real-world/
+
+# Pre-consolidation residue from before the repo moved under src/ and tools/.
+# Anchored to the repo root so a nested directory of the same name is never
+# hidden. `/src/editors/zed/target/` and `/src/fixtures/real-world/` above are
+# the live rules; these two only stop a stale local checkout being committed.
+/editors/
+/real-world-fixtures/
+
+# Scratch projects the VS Code debug suites materialise inside the fixture
+# workspace. They MUST live there — VS Code only resolves breakpoints and launch
+# targets for files inside an open workspace folder — but they are per-run
+# detritus, not fixtures. A crashed or killed run leaks one, and once committed
+# its StepTarget/Program.cs is globbed into TestFixtures.csproj alongside the
+# next run's copy: CS0101/CS0111 duplicate types, and every .NET and VS Code
+# job fails at fixture build before a single test runs.
+# Every directory the VS Code suites materialise inside the fixture workspace.
+# They MUST live there — VS Code only resolves breakpoints and launch targets
+# for files inside an open workspace folder — but they are per-run detritus, not
+# fixtures. A crashed or killed run leaks one, and once committed its generated
+# sources are globbed into TestFixtures.csproj alongside the next run's copy:
+# CS0101/CS0111 duplicate types, and every .NET and VS Code job fails at fixture
+# build before a single test runs.
+#
+# A whitelist, not a prefix list: the suites use two dozen different
+# `mkdtempSync` prefixes and add more freely, so naming them individually is a
+# race nobody wins. Only the committed fixtures below are tracked.
+/src/editors/vscode/test-fixtures/workspace/*/
+!/src/editors/vscode/test-fixtures/workspace/crosslanguage/
+!/src/editors/vscode/test-fixtures/workspace/fsharp/
+/src/editors/vscode/test-fixtures/workspace/sharplsp-*/

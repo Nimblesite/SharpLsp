@@ -5,7 +5,6 @@ import * as path from 'node:path';
 import { promisify } from 'node:util';
 import * as vscode from 'vscode';
 import {
-  FSHARP_REFACTOR_TIMEOUT_MS,
   changedFileNames,
   editCount,
   requestPrepareRename,
@@ -22,6 +21,7 @@ import {
   type OpenFixture,
 } from './refactor-test-helpers';
 import { closeAllEditors } from './test-helpers';
+import { DOTNET_CLI_MS, FIXTURE_BUILD_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 const execFileAsync = promisify(execFile);
 const FIXTURE_SOLUTION = workspaceFixturePath('TestFixtures.slnx');
@@ -53,7 +53,7 @@ interface BuildArtifact {
 
 suite('Real LSP - cross-language rename', () => {
   suiteSetup(async function () {
-    this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+    this.timeout(FIXTURE_BUILD_MS);
     await rebuildAndRestartRealLsp();
   });
   teardown(closeAllEditors);
@@ -61,7 +61,7 @@ suite('Real LSP - cross-language rename', () => {
 
   for (const spec of crossLanguageSpecs()) {
     test(`${spec.name} edits both languages, applies, and reverses`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 5);
+      this.timeout(DOTNET_CLI_MS);
       await runCrossLanguageRename(spec);
     });
   }
@@ -156,7 +156,7 @@ async function runCrossLanguageLifecycle(
     fixture.origin.uri,
     range.start.translate(0, 1),
     spec.newName,
-    FSHARP_REFACTOR_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
   );
   await assertCrossLanguageEdit(edit, spec.target, spec.newName, spec);
   await applyCrossLanguageEdit(fixture, edit, spec);
@@ -288,7 +288,7 @@ async function requestReverseEdit(
     fixture.origin.uri,
     range.start.translate(0, 1),
     spec.target,
-    FSHARP_REFACTOR_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
   );
 }
 
@@ -317,7 +317,7 @@ async function assertNoErrors(uri: vscode.Uri): Promise<void> {
     const diagnostics = await waitForMatchingDiagnostics(
       uri,
       (items) => items.every((item) => item.severity !== vscode.DiagnosticSeverity.Error),
-      FSHARP_REFACTOR_TIMEOUT_MS,
+      LSP_RESPONSE_MS,
     );
     assert.ok(diagnostics.every((item) => item.severity !== vscode.DiagnosticSeverity.Error));
   } catch (error: unknown) {
@@ -390,7 +390,7 @@ async function buildCrossLanguageFixtures(): Promise<void> {
   const result = await execFileAsync(
     'dotnet',
     ['build', FIXTURE_SOLUTION, '--configuration', 'Debug', '--nologo', '--verbosity', 'minimal'],
-    { cwd: path.dirname(FIXTURE_SOLUTION), encoding: 'utf8', timeout: FSHARP_REFACTOR_TIMEOUT_MS },
+    { cwd: path.dirname(FIXTURE_SOLUTION), encoding: 'utf8', timeout: DOTNET_CLI_MS },
   );
   assert.strictEqual(typeof result.stdout, 'string');
   assert.strictEqual(typeof result.stderr, 'string');

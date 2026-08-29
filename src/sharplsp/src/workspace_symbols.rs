@@ -14,7 +14,7 @@ use tracing::info;
 use tree_sitter::Node;
 
 use crate::sidecar::manager::SidecarManager;
-use crate::tree_sitter_parse::{LangId, TsParsers};
+use crate::tree_sitter_parse::{parse_file, LangId, TsParsers};
 use crate::utils::usize_to_u32;
 use crate::vfs::Vfs;
 
@@ -532,11 +532,7 @@ fn is_source_file(path: &Path) -> bool {
 /// Prefers VFS content (unsaved buffer) over disk for open documents.
 /// Implements [SE-LIVE-BUFFER].
 fn parse_file_symbols(file_path: &str, parsers: &TsParsers, vfs: &Vfs) -> Result<FileSymbol> {
-    let source = vfs.read_live_or_disk(file_path)?;
-
-    let path = Path::new(file_path);
-    let lang = LangId::from_path(path).context("unsupported file type")?;
-    let tree = parsers.parse(lang, &source, None)?;
+    let (source, tree) = parse_file(file_path, parsers, vfs)?;
 
     let symbols = collect_symbols(tree.root_node(), source.as_bytes());
     let symbols = reparent_file_scoped_members(symbols);

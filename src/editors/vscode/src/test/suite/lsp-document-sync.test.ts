@@ -9,14 +9,14 @@ import {
   waitForDocumentSymbols,
   waitForFoldingRanges,
   pollUntilResult,
-  LSP_RESPONSE_TIMEOUT_MS,
 } from './test-helpers';
+import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 suite('LSP Document Synchronization', () => {
   let tmpDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('docsync-');
     tmpDir = result.tmpDir;
   });
@@ -33,7 +33,7 @@ suite('LSP Document Synchronization', () => {
   // ── didOpen ──────────────────────────────────────────────────
 
   test('opening a C# file makes it available to the LSP server', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openCSharpFile(tmpDir, 'open-test.cs', 'class OpenTest { void M() { } }');
 
@@ -45,7 +45,7 @@ suite('LSP Document Synchronization', () => {
   // ── didChange ────────────────────────────────────────────────
 
   test('editing a document updates symbols from the LSP', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2 + 10_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { doc, uri } = await openCSharpFile(
       tmpDir,
@@ -74,7 +74,7 @@ class Added { void NewMethod() { } }`;
         return result ?? [];
       },
       (syms) => flattenNames(syms).includes('Added'),
-      LSP_RESPONSE_TIMEOUT_MS * 2,
+      LSP_RESPONSE_MS,
     );
 
     names = flattenNames(symbols);
@@ -84,11 +84,21 @@ class Added { void NewMethod() { } }`;
   });
 
   test('editing a document updates folding ranges', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2 + 10_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { doc, uri } = await openCSharpFile(tmpDir, 'change-fold.cs', 'class C { void M() { } }');
+    // The baseline file must itself be FOLDABLE. A single-line
+    // `class C { void M() { } }` has no multi-line region, so the folding
+    // provider correctly returns nothing and a poll for a non-empty result can
+    // never succeed — it just burned its whole budget and then compared against
+    // a baseline of 0 ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
+    const baseline = `class C {
+  void M() {
+    var a = 1;
+  }
+}`;
+    const { doc, uri } = await openCSharpFile(tmpDir, 'change-fold.cs', baseline);
 
-    // Initial folding — small file, few ranges.
+    // Initial folding — the class body and the one method body.
     const initial = await waitForFoldingRanges(uri);
     const initialCount = initial.length;
 
@@ -116,7 +126,7 @@ class Added { void NewMethod() { } }`;
         return result ?? [];
       },
       (ranges) => ranges.length > initialCount,
-      LSP_RESPONSE_TIMEOUT_MS * 2,
+      LSP_RESPONSE_MS,
     );
 
     assert.ok(
@@ -126,7 +136,7 @@ class Added { void NewMethod() { } }`;
   });
 
   test('removing content updates symbols accordingly', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2 + 10_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const initial = `class A { void X() { } }
 class B { void Y() { } }`;
@@ -149,7 +159,7 @@ class B { void Y() { } }`;
         return result ?? [];
       },
       (syms) => !flattenNames(syms).includes('B'),
-      LSP_RESPONSE_TIMEOUT_MS * 2,
+      LSP_RESPONSE_MS,
     );
 
     names = flattenNames(symbols);
@@ -160,7 +170,7 @@ class B { void Y() { } }`;
   // ── didClose ─────────────────────────────────────────────────
 
   test('closing a document frees it from the server', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS + 5_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openCSharpFile(tmpDir, 'close-test.cs', 'class CloseTest { }');
     await waitForDocumentSymbols(uri);
@@ -181,7 +191,7 @@ class B { void Y() { } }`;
   // ── Full Cycle ───────────────────────────────────────────────
 
   test('full open-edit-close cycle maintains server stability', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3 + 15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     // Open.
     const { doc, uri } = await openCSharpFile(tmpDir, 'full-cycle.cs', 'class Step1 { }');
@@ -199,7 +209,7 @@ class B { void Y() { } }`;
         return result ?? [];
       },
       (syms) => flattenNames(syms).includes('Step2'),
-      LSP_RESPONSE_TIMEOUT_MS * 2,
+      LSP_RESPONSE_MS,
     );
     assert.ok(flattenNames(symbols).includes('Step2'), 'Step 2: Should find Step2 after edit');
 
@@ -218,7 +228,7 @@ class B { void Y() { } }`;
   // ── Rapid Edits ──────────────────────────────────────────────
 
   test('rapid successive edits resolve correctly', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 2 + 10_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { doc, uri } = await openCSharpFile(tmpDir, 'rapid-edit.cs', 'class V0 { }');
 
@@ -237,7 +247,7 @@ class B { void Y() { } }`;
         return result ?? [];
       },
       (syms) => flattenNames(syms).includes('V5'),
-      LSP_RESPONSE_TIMEOUT_MS * 2,
+      LSP_RESPONSE_MS,
     );
 
     const names = flattenNames(symbols);

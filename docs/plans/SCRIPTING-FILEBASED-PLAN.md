@@ -82,21 +82,21 @@ remaining gaps are explicit rather than implied.
 - [x] Emit the SDK's implicit global usings as a synthetic document —
       `CSharpCompilationOptions.Usings` is honoured only for `SourceCodeKind.Script`, so a file-based
       app needs the generated-file route the SDK itself uses — [SCRIPT-FILEBASED-PARSEOPTIONS]
-- [x] Dispose the previous `AdhocWorkspace` when reopening (was leaked on repeat `OpenAsync`)
+- [x] Replace a root's previous project when reopening without discarding other projectless roots
 - [ ] Map `#:include` item types by extension (`.cs`→Compile, `.resx`→EmbeddedResource, `.json`→None,
       `.razor`→Content); only `Compile` joins the semantic closure. Currently every resolved include
       is treated as Compile — [SCRIPT-FILEBASED-DIRECTIVES]
-- [ ] Diagnose a `#:` directive appearing after the first non-trivia token. Detection and the
-      diagnostics-pipeline wiring land together — a detector with no consumer is dead code, so
-      neither half ships alone — [SCRIPT-FILEBASED-DIRECTIVES]
+- [x] Diagnose a `#:` directive appearing after the first non-trivia token through Roslyn's
+      compiler diagnostic pipeline, and exclude it from semantic activation —
+      [SCRIPT-FILEBASED-DIRECTIVES]
 - [ ] Resolve `LanguageVersion` from the target framework band instead of `Latest` —
       [SCRIPT-FILEBASED-PARSEOPTIONS]
 - [ ] Diagnostic when an `#:include`d file declares top-level statements — [SCRIPT-FILEBASED-ENTRYPOINT]
-- [ ] Keep a root-path → workspace map so two apps in one directory stay independent *concurrently*;
-      today each `OpenAsync` replaces the workspace, which is correct per-open but not concurrent —
+- [x] Keep root-path keyed model/degradation generations in one `AdhocWorkspace` so two apps in one
+      directory stay independent concurrently; reopening replaces only the matching root —
       [SCRIPT-MULTIROOT]
-- [ ] Report `filebased-degraded` from `workspace/status` while on tier 2 — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
-- [ ] Publish an informational diagnostic naming why `#:package` symbols are unresolved on tier 2 —
+- [x] Report `filebased-degraded` from `workspace/status` while on tier 2 — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+- [x] Publish an informational diagnostic naming why `#:package` symbols are unresolved on tier 2 —
       [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
 
 ### C# Sidecar — scripts
@@ -159,7 +159,29 @@ remaining gaps are explicit rather than implied.
       [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
 - [ ] Apply SDK defaults (`ImplicitUsings`, `Nullable`, `TargetFramework`, `PublishAot`, `PackAsTool`)
       — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [ ] Automatic tier 2 → tier 1 upgrade when restore completes — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+- [x] Automatic tier 2 → tier 1 upgrade when restore completes — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
+- [x] The upgrade reaches the editor: the tier-2 notice carries `SLSPC0002` while the restore runs
+      and `SLSPC0001` once it terminally fails, and the host republishes a document's diagnostics
+      until `SLSPC0002` clears. Without it hover and completion bind the restored package while the
+      editor still shows the placeholder's phantom `CS0246`s —
+      [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
+- [x] The diagnostics answer is never torn: the document snapshot and the tier-2 notice are
+      captured atomically under the solution mutation lock (`CaptureDiagnosticsStateAsync`).
+      Reading the notice after the (seconds-long) semantic-model computation let a restore that
+      settled mid-computation pair a pre-upgrade compilation's `CS0246`s with a post-upgrade
+      "no notice" state; the host treats such an answer as final and stops republishing, stranding
+      the phantom errors (Windows CI, `filebased-package-e2e` add/remove/re-add). C# test:
+      `Package_errors_are_never_reported_without_a_tier2_notice_across_directive_cycles` —
+      [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
+- [x] A semantic response never outruns the published diagnostics it makes stale: while a
+      document's latest publication is provisional (`SLSPC0002`), the host re-fetches and
+      republishes before sending any tier-1-revealing feature answer
+      (`diagnostics::converge_provisional`, wired into `handle_request`). Without it, the push
+      loop's 1s cadence leaves up to a second in which completion/hover already bind the restored
+      package while the placeholder's `CS0246`s are still published — the other half of the same
+      e2e failure. Rust test:
+      `provisional_publication_is_converged_before_a_semantic_response` —
+      [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
 
 ### Testing
 

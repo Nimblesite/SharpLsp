@@ -78,6 +78,21 @@ export default function (eleventyConfig) {
 
   eleventyConfig.addPlugin(HtmlBasePlugin);
 
+  // Mermaid fences must reach the browser as `<pre class="mermaid">`: the runtime in
+  // base.njk only renders that shape, and markdown-it's default fence emits
+  // `<pre><code class="language-mermaid">`. The source is HTML-escaped, so a diagram can
+  // never inject markup — `textContent` decodes the entities back for mermaid verbatim.
+  eleventyConfig.amendLibrary("md", (mdLib) => {
+    const renderFence = mdLib.renderer.rules.fence;
+    mdLib.renderer.rules.fence = (tokens, index, options, env, self) => {
+      const token = tokens[index];
+      if (token.info.trim().split(/\s+/)[0] !== "mermaid") {
+        return renderFence(tokens, index, options, env, self);
+      }
+      return `<pre class="mermaid">${mdLib.utils.escapeHtml(token.content)}</pre>\n`;
+    };
+  });
+
   // Renders GitHub release notes (Markdown) on the /releases/ page. Raw HTML is
   // disabled so untrusted content carried in auto-generated notes (PR titles,
   // contributor handles) can never inject markup; linkify turns bare URLs into

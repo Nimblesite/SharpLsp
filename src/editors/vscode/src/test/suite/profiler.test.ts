@@ -11,6 +11,7 @@ import {
   openSharpLspPanelProfiler,
   takeScreenshot,
 } from './test-helpers';
+import { ACTIVATION_MS, COMMAND_MS, FAST_MS } from './test-timeouts';
 
 interface ProfilerTreeNode {
   readonly label?: string | { label: string };
@@ -47,7 +48,7 @@ suite('Profiler', () => {
   let fixtureDir: string;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('profiler-');
     tmpDir = result.tmpDir;
     fixtureDir = path.resolve(__dirname, '../../../test-fixtures/workspace');
@@ -116,7 +117,7 @@ suite('Profiler', () => {
   // ── E2E: startTrace → session appears in tree view ───────────
 
   test('startTrace: session appears in tree view after addSession', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS + 5_000);
     const provider = getProvider();
 
     // Tree starts empty or with "No .NET processes found".
@@ -182,7 +183,7 @@ suite('Profiler', () => {
             await pollUntilResult(
               async () => api2.explorerProvider!.getChildren() ?? [],
               (nodes) => nodes.length > 0,
-              8_000,
+              COMMAND_MS,
             );
           }
         }
@@ -205,7 +206,7 @@ suite('Profiler', () => {
   // ── E2E: startCounters → webview opens and receives updates ──
 
   test('startCounters: session tracked and tree fires change events', async function () {
-    this.timeout(10_000);
+    this.timeout(FAST_MS);
     const provider = getProvider();
 
     // Track tree change events.
@@ -269,7 +270,7 @@ suite('Profiler', () => {
   // ── E2E: collectDump → analyzeHeap → heap stats table ────────
 
   test('collectDump and analyzeHeap: tree state management and heap display', async function () {
-    this.timeout(15_000);
+    this.timeout(COMMAND_MS);
     const provider = getProvider();
 
     // Verify the analyzeHeap command exists and can be invoked
@@ -350,7 +351,7 @@ suite('Profiler', () => {
   // ── Refresh command ──────────────────────────────────────────
 
   test('sharplsp.profiler.refresh executes without error', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.refresh');
     }, 'profiler.refresh command should not throw');
@@ -359,7 +360,7 @@ suite('Profiler', () => {
   // ── New Phase G/I/J/K commands: registration + no-crash ──────
 
   test('diffSnapshots command does not throw when cancelled', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       // The command opens a file dialog; without a client it returns early.
       await vscode.commands.executeCommand('sharplsp.profiler.diffSnapshots');
@@ -367,21 +368,21 @@ suite('Profiler', () => {
   });
 
   test('detectLeaks command does not throw when user cancels', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.detectLeaks');
     }, 'detectLeaks must not throw when user cancels the workflow');
   });
 
   test('showObjectGraph command does not throw when cancelled', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.showObjectGraph');
     }, 'showObjectGraph must not throw when no file is selected');
   });
 
   test('inspectObject command does not throw when cancelled', async function () {
-    this.timeout(5_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.inspectObject');
     }, 'inspectObject must not throw when no file is selected');
@@ -432,7 +433,7 @@ suite('Profiler', () => {
   // ── Tree: mixed sessions with heap diff flow ──────────────────
 
   test('heap diff workflow: mixed sessions show correctly in tree', async function () {
-    this.timeout(10_000);
+    this.timeout(FAST_MS);
     const provider = getProvider();
 
     // Simulate a heap analysis session alongside a trace session.

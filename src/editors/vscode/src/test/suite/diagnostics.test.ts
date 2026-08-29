@@ -13,8 +13,8 @@ import {
   waitForDiagnosticsCleared,
   waitForDocumentSymbols,
   waitForHoverResult,
-  LSP_RESPONSE_TIMEOUT_MS,
 } from './test-helpers';
+import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 /** Clean starting content for the diagnostic target file. */
 const CLEAN_CONTENT = `namespace DiagTest
@@ -32,7 +32,7 @@ suite('Diagnostics / Problems Panel', () => {
   let diagUri: vscode.Uri;
 
   suiteSetup(async function () {
-    this.timeout(120_000);
+    this.timeout(SIDECAR_COLD_MS + 5_000);
     const result = await setupLspTestSuite('diagnostics-');
     tmpDir = result.tmpDir;
     const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -49,7 +49,7 @@ suite('Diagnostics / Problems Panel', () => {
 
     // Wait for the sidecar to fully load before running diagnostic tests.
     // Hover returning results proves the sidecar has the workspace loaded.
-    await waitForHoverResult(diagUri, new vscode.Position(4, 20), 60_000);
+    await waitForHoverResult(diagUri, new vscode.Position(4, 20), SIDECAR_COLD_MS);
   });
 
   suiteTeardown(async () => {
@@ -61,16 +61,16 @@ suite('Diagnostics / Problems Panel', () => {
   });
 
   teardown(async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 4);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     // Restore clean content between tests. Give sidecar time to reanalyze.
     await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
-    await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS * 3);
+    await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_MS);
   });
 
   // ── Error Detection ───────────────────────────────────────────
 
   test('file with type error shows diagnostics', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 4);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await replaceDocumentContent(
       diagDoc,
       `namespace DiagTest
@@ -82,7 +82,7 @@ suite('Diagnostics / Problems Panel', () => {
 }`,
     );
 
-    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_TIMEOUT_MS * 2);
+    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
     assert.ok(diagnostics.length > 0, 'Must have at least one diagnostic');
 
     const error = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
@@ -131,7 +131,7 @@ suite('Diagnostics / Problems Panel', () => {
   });
 
   test('file with missing type shows diagnostics', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 4);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await replaceDocumentContent(
       diagDoc,
       `namespace DiagTest
@@ -143,7 +143,7 @@ suite('Diagnostics / Problems Panel', () => {
 }`,
     );
 
-    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_TIMEOUT_MS * 2);
+    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
     assert.ok(diagnostics.length > 0, 'Must have diagnostics for missing type');
 
     const csError = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
@@ -153,12 +153,12 @@ suite('Diagnostics / Problems Panel', () => {
   // ── Clean Files ───────────────────────────────────────────────
 
   test('valid file has no error diagnostics', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 5);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     // Content is already clean from teardown. Verify no errors.
     await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
 
     // Wait for diagnostics to clear (sidecar needs time to reanalyze on CI).
-    const cleared = await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS * 4);
+    const cleared = await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_MS);
     const errors = cleared.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
     assert.strictEqual(errors.length, 0, 'Valid file should have no error diagnostics');
   });
@@ -166,7 +166,7 @@ suite('Diagnostics / Problems Panel', () => {
   // ── Edit Cycle ────────────────────────────────────────────────
 
   test('fixing an error clears the diagnostic', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 6);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await replaceDocumentContent(
       diagDoc,
       `namespace DiagTest
@@ -178,16 +178,15 @@ suite('Diagnostics / Problems Panel', () => {
 }`,
     );
 
-    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_TIMEOUT_MS * 2);
+    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
     assert.ok(diagnostics.length > 0, 'Must have diagnostics for broken code');
 
     // Fix the error.
     await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
 
-    // CI's coverage-instrumented sidecar can take noticeably longer to
-    // re-publish cleared diagnostics than a local debug build, so allow
-    // the same generous window we use for `valid file has no error`.
-    const cleared = await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS * 4);
+    // Clearing is one more sidecar round trip, so it gets the same warm
+    // semantic budget as every other diagnostics wait in this suite.
+    const cleared = await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_MS);
     const errors = cleared.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
     assert.strictEqual(errors.length, 0, 'Diagnostics should clear after fixing the error');
   });
@@ -195,7 +194,7 @@ suite('Diagnostics / Problems Panel', () => {
   // ── Diagnostic Properties ─────────────────────────────────────
 
   test('diagnostics have correct severity and range', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await replaceDocumentContent(
       diagDoc,
       `namespace DiagTest
@@ -210,7 +209,7 @@ suite('Diagnostics / Problems Panel', () => {
 }`,
     );
 
-    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_TIMEOUT_MS * 2);
+    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
     assert.ok(diagnostics.length > 0, 'Must have diagnostics');
 
     const error = diagnostics.find((d) => d.severity === vscode.DiagnosticSeverity.Error);
@@ -237,7 +236,7 @@ suite('Diagnostics / Problems Panel', () => {
   // ── Close Clears ──────────────────────────────────────────────
 
   test('closing a document clears its diagnostics', async function () {
-    this.timeout(LSP_RESPONSE_TIMEOUT_MS * 3);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     await replaceDocumentContent(
       diagDoc,
       `namespace DiagTest
@@ -249,18 +248,18 @@ suite('Diagnostics / Problems Panel', () => {
 }`,
     );
 
-    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_TIMEOUT_MS * 2);
+    const diagnostics = await waitForDiagnostics(diagUri, LSP_RESPONSE_MS);
     assert.ok(diagnostics.length > 0, 'Must have diagnostics before close');
 
     // Restore clean content so the sidecar clears errors first.
     await replaceDocumentContent(diagDoc, CLEAN_CONTENT);
-    await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS);
+    await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_MS);
 
     // Now close the document.
     await closeAllEditors();
 
     // Wait for the server to process the close notification and clear diagnostics.
-    const after = await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_TIMEOUT_MS * 2);
+    const after = await waitForDiagnosticsCleared(diagUri, LSP_RESPONSE_MS);
     assert.strictEqual(after.length, 0, 'Diagnostics must be empty after closing the document');
 
     // Re-open for suite teardown to restore content.

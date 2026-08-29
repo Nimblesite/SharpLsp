@@ -1,13 +1,15 @@
 # agent-pmo:0b21609
 ---
-# Reusable lint leg of the PR pipeline (called by ci.yml).
+# Single sequential gate that runs every check, analysis and format guard, and
+# then builds the release artifacts ONCE so the parallel test legs can consume
+# them without rebuilding. Called by ci.yml as the only `needs:` prerequisite of
+# every test leg: modified-files -> checks+build -> parallel tests.
 #
-# Test workflows intentionally do NOT `needs:` this one: lint and tests are
-# independent required gates, and serializing tests behind lint added ~3 minutes
-# to every PR's critical path. A lint failure still blocks the merge;
-# `concurrency.cancel-in-progress` in ci.yml bounds wasted compute on
-# rapid-fire pushes.
-name: CI / Lint
+# Lint and build are one job here on purpose ([DIST-CI-LAYOUT]): the test legs
+# are gated on this job, so a format/analysis failure fails the pipeline before
+# any test machine spins up, and the release binaries produced here are the
+# ONLY build of the host and sidecars on Ubuntu — no test leg may rebuild them.
+name: CI / Build
 'on':
   workflow_call: {}
 env:
@@ -18,10 +20,10 @@ env:
 permissions:
   contents: read
 jobs:
-  lint:
-    name: All Languages
+  build:
+    name: Checks + Build
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -33,7 +35,7 @@ jobs:
         with:
           dotnet-version: |
             9.0.x
-            10.0.300
+            10.0.303
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: "~/.nuget/packages"
@@ -48,9 +50,11 @@ jobs:
         run: |
           dotnet tool restore
           npm ci --prefix src/editors/vscode
-      - name: Lint (Rust)
+
+      # ── Checks, format and analysis ────────────────────────────────
+      - name: Format + lint (Rust)
         run: make _lint-rust PROFILE=debug
-      - name: Lint (Zed)
+      - name: Format + lint (Zed)
         run: make _lint-zed
       - name: Format check (.NET)
         run: dotnet csharpier check src/sidecars/
@@ -64,13 +68,32 @@ jobs:
             -p:PackageVersion=0.0.0-ci -c Release -o /tmp/nupkg-smoke
           ls -la /tmp/nupkg-smoke/*.nupkg
       - name: Format check (VS Code)
-        # Pinned to an exact version: `npx prettier@3` floats to the latest 3.x,
-        # so a new patch release can reformat previously-clean files and fail
-        # this gate non-deterministically (local prettier drifts from CI's).
-        # Bump this deliberately, in lockstep with a repo-wide `--write`.
         run: cd src/editors/vscode && npx prettier@3.9.4 --check 'src/**/*.ts'
       - name: Lint (VS Code)
-        # Includes `_check-vsix-chunks`: fails if any VS Code suite belongs to no
-        # Windows feature chunk, so a new suite cannot silently skip
-        # [DIST-CI-WIN-VSIX].
         run: make _lint-vsix
+
+      # ── Build release artifacts once ───────────────────────────────
+      - name: Build sharplsp host (release)
+        run: make _build-rust
+      - name: Build .NET sidecars (release)
+        run: make _build-dotnet
+      - name: Build patched netcoredbg
+        run: bash tools/vsix/build-netcoredbg.sh linux-x64
+
+      # ── Cache the build for the parallel test legs ─────────────────
+      - name: Upload Linux LSP artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-lsp-binaries
+          retention-days: 1
+          path: |
+            target/release/sharplsp
+            target/sidecar-csharp
+            target/sidecar-fsharp
+      - name: Upload patched Linux debugger
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-netcoredbg
+          retention-days: 1
+          include-hidden-files: true
+          path: target/netcoredbg/linux-x64/netcoredbg

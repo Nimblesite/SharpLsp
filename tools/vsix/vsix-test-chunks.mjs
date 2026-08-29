@@ -1,15 +1,21 @@
 #!/usr/bin/env node
-// Implements [DIST-CI-WIN-VSIX].
+// Implements [DIST-CI-WIN-VSIX] and [DIST-CI-VSIX-SHARDS].
 //
-// Single reader for src/editors/vscode/test-chunks.json — the one place the
-// Windows VS Code feature chunks are declared. The Makefile (`_test-vsix-win`),
-// the CI job matrix, and the completeness guard all go through this script, so
-// adding a chunk or a suite is a one-file edit.
+// Single reader for src/editors/vscode/test-chunks.json — the one place the VS
+// Code feature chunks are declared. BOTH platform legs fan out over that one
+// list, so the Makefile (`_test-vsix-shard`), both CI job
+// matrices, and the completeness guard all go through this script: adding a
+// chunk or a suite is a one-file edit that reaches every consumer.
+//
+// A chunk marked `"linuxOnly": true` is absent from the win32 matrix. That is
+// the only platform distinction the manifest carries — everything else runs on
+// both, because a chunk that runs on one platform only is a gap nobody sees.
 //
 // Usage:
-//   node tools/vsix/vsix-test-chunks.mjs files <chunk>  -> comma-separated globs for MOCHA_FILES
-//   node tools/vsix/vsix-test-chunks.mjs matrix         -> JSON array of chunk names (GitHub matrix)
-//   node tools/vsix/vsix-test-chunks.mjs check          -> fail if any suite is in no chunk / two chunks
+//   node tools/vsix/vsix-test-chunks.mjs files <chunk>   -> comma-separated globs for MOCHA_FILES
+//   node tools/vsix/vsix-test-chunks.mjs matrix win      -> JSON array of chunk names (win32 CI matrix)
+//   node tools/vsix/vsix-test-chunks.mjs matrix linux    -> JSON array of chunk names (Ubuntu CI matrix)
+//   node tools/vsix/vsix-test-chunks.mjs check           -> fail if any suite is in no chunk / two chunks
 //
 // stdout carries the answer only (safe for command substitution); diagnostics
 // and failures go to stderr with a non-zero exit.
@@ -48,6 +54,23 @@ function declaredSuites(dir = SUITE_DIR, prefix = "") {
         }
     }
     return suites.sort();
+}
+
+/**
+ * Chunk names for one platform. `win` drops the `linuxOnly` chunks — currently
+ * the real-world-repository stress suites, which clone and restore third-party
+ * solutions; the win32 gate proves the editor experience, not repo ingestion,
+ * and cloning there would double the matrix's slowest job for no new signal.
+ */
+function matrix(manifest, platform) {
+    if (platform !== "win" && platform !== "linux") {
+        throw new Error(
+            `matrix needs a platform: 'win' or 'linux', got '${platform ?? ""}'`,
+        );
+    }
+    return Object.entries(manifest.chunks)
+        .filter(([, entry]) => platform === "linux" || entry.linuxOnly !== true)
+        .map(([chunk]) => chunk);
 }
 
 function chunkGlobs(manifest, chunk) {
@@ -173,7 +196,8 @@ function check(manifest) {
         process.exit(1);
     }
     process.stderr.write(
-        `${suites.length} VS Code suites: ${Object.keys(manifest.chunks).length} Windows chunks, ` +
+        `${suites.length} VS Code suites: ${matrix(manifest, "linux").length} Ubuntu chunks, ` +
+            `${matrix(manifest, "win").length} Windows chunks, ` +
             `${matchSuites(manifest.excluded.files, suites).length} excluded.\n`,
     );
 }
@@ -185,12 +209,13 @@ function main() {
     if (command === "files") {
         process.stdout.write(chunkGlobs(manifest, argument).join(","));
     } else if (command === "matrix") {
-        process.stdout.write(JSON.stringify(Object.keys(manifest.chunks)));
+        process.stdout.write(JSON.stringify(matrix(manifest, argument)));
     } else if (command === "check") {
         check(manifest);
     } else {
         throw new Error(
-            `usage: vsix-test-chunks.mjs <files <chunk>|matrix|check>, got '${command}'`,
+            "usage: vsix-test-chunks.mjs <files <chunk>|matrix <win|linux>|check>, " +
+                `got '${command ?? ""}'`,
         );
     }
 }

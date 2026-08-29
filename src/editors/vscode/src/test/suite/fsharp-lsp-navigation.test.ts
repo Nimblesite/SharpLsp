@@ -2,7 +2,6 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { closeAllEditors, pollUntilResult } from './test-helpers';
 import {
-  FSHARP_COLD_TIMEOUT_MS,
   hoverText,
   normalizeLocation,
   nthPositionOf,
@@ -12,6 +11,7 @@ import {
   pollReferences,
   positionOf,
 } from './fsharp-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 /**
  * Blanket end-to-end coverage for F# navigation features driven through the
@@ -27,7 +27,7 @@ suite('F# LSP — Hover', () => {
   teardown(closeAllEditors);
 
   test('hovers over types, DU cases, records, functions, and fields', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const domain = await openFSharpFixture('Domain.fs');
     // First hover is the cold path — waits for the sidecar to crack the project.
@@ -65,7 +65,7 @@ suite('F# LSP — Hover', () => {
   });
 
   test('hover includes XML doc summaries authored on declarations', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const library = await openFSharpFixture('Library.fs');
     const hover = await pollHover(library.uri, positionOf(library.doc, 'let totalArea', 4));
     assert.match(
@@ -81,7 +81,7 @@ suite('F# LSP — Go to Definition', () => {
   teardown(closeAllEditors);
 
   test('navigates from cross-file call sites to declarations', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const usage = await openFSharpFixture('Usage.fs');
 
     // Geometry.totalArea (used in Usage.fs) → declaration in Library.fs
@@ -110,7 +110,7 @@ suite('F# LSP — Go to Definition', () => {
   });
 
   test('navigates to a record field declaration', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const usage = await openFSharpFixture('Usage.fs');
     const nameDef = await pollDefinition(
       usage.uri,
@@ -123,7 +123,7 @@ suite('F# LSP — Go to Definition', () => {
   });
 
   test('navigates within a file to a local function binding', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const usage = await openFSharpFixture('Usage.fs');
     // The `double` inside quadruple should resolve to `let double` above it.
     const doubleDef = await pollDefinition(
@@ -147,7 +147,7 @@ suite('F# LSP — Type Definition & Declaration', () => {
   teardown(closeAllEditors);
 
   test('type-definition on a value resolves to its type declaration', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 15_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const usage = await openFSharpFixture('Usage.fs');
     const typeDefs = await pollUntilLocations(usage.uri, positionOf(usage.doc, 'alice :'), [
       'vscode.executeTypeDefinitionProvider',
@@ -164,7 +164,7 @@ suite('F# LSP — Find References & Document Highlights', () => {
   teardown(closeAllEditors);
 
   test('find-references on a function returns the declaration and call sites', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS + 30_000);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const library = await openFSharpFixture('Library.fs');
     // area: declared in Library, used in `List.map area`.
     const areaRefs = await pollReferences(library.uri, positionOf(library.doc, 'let area', 4), 2);
@@ -176,7 +176,7 @@ suite('F# LSP — Find References & Document Highlights', () => {
   });
 
   test('find-references on a local function counts every call site', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const usage = await openFSharpFixture('Usage.fs');
     // double: declared once, called twice inside quadruple.
     const doubleRefs = await pollReferences(
@@ -191,7 +191,7 @@ suite('F# LSP — Find References & Document Highlights', () => {
   });
 
   test('document highlights mark occurrences of a symbol', async function () {
-    this.timeout(FSHARP_COLD_TIMEOUT_MS);
+    this.timeout(LSP_RESPONSE_MS + 5_000);
     const usage = await openFSharpFixture('Usage.fs');
     const highlights = await pollUntilArray<vscode.DocumentHighlight>(
       'vscode.executeDocumentHighlights',
@@ -216,7 +216,7 @@ async function pollUntilLocations(
   uri: vscode.Uri,
   position: vscode.Position,
   [command]: [string],
-  timeoutMs: number = FSHARP_COLD_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Location[]> {
   return pollUntilResult(
     async () => {
@@ -236,7 +236,7 @@ async function pollUntilArray<T>(
   uri: vscode.Uri,
   position: vscode.Position,
   predicate: (items: T[]) => boolean,
-  timeoutMs: number = FSHARP_COLD_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<T[]> {
   return pollUntilResult(
     async () => {

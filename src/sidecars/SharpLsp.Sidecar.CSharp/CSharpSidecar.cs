@@ -54,6 +54,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("project/addPackage", HandleAddPackageAsync);
         Register("project/removePackage", HandleRemovePackageAsync);
         Register("analyzers/configure", HandleConfigureAnalyzersAsync);
+        Register("debug/hotReload", HandleHotReloadAsync);
     }
 
     private Task<ByteResult> HandleConfigureAnalyzersAsync(byte[] payload, CancellationToken ct)
@@ -435,8 +436,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
     {
         try
         {
-            var status = _workspace.IsLoaded ? "loaded" : "not_loaded";
-            var bytes = MessagePackSerializer.Serialize(status, cancellationToken: ct);
+            var bytes = MessagePackSerializer.Serialize(_workspace.Status, cancellationToken: ct);
             return Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(bytes));
         }
         catch (Exception ex)

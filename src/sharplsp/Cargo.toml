@@ -27,6 +27,7 @@ lsp-types = "0.97"
 # Tree-sitter
 tree-sitter = "0.26"
 tree-sitter-c-sharp = "0.23"
+tree-sitter-fsharp = "0.3"
 
 # Async runtime
 crossbeam-channel = "0.5"

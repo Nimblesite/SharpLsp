@@ -119,6 +119,15 @@ When the .NET SDK is unavailable, restore fails, or restore has not yet complete
 
 Tier 2 is explicitly **incomplete**: `#:package` references are unresolved, so symbols from NuGet packages will not bind. The sidecar must publish an informational diagnostic naming the reason, and must upgrade to tier 1 automatically when restore succeeds.
 
+The notice carries a distinct code per state, because the two states have opposite lifetimes and the host must tell them apart without reading prose:
+
+| Code | State | Lifetime |
+|---|---|---|
+| `SLSPC0002` | Restore or MSBuild evaluation has not finished | Transient — cleared by the tier-1 upgrade |
+| `SLSPC0001` | Restore terminally failed | Persistent until the directives change |
+
+Upgrading to tier 1 replaces the project's references, compilation options, and parse options in place. That is invisible to an editor holding a published diagnostic set, so the host MUST republish a document's diagnostics until the `SLSPC0002` notice clears ([DIAG-PUSH-GATE](DIAGNOSTICS-SPEC.md)). Without it the editor keeps the tier-2 placeholder's phantom `CS0246`s forever even though hover and completion already bind the restored package.
+
 Tier 2 must never be silently presented as a successful full load. `workspace/status` reports `filebased-degraded` in this state.
 
 ### Parse options `[SCRIPT-FILEBASED-PARSEOPTIONS]`
@@ -202,6 +211,8 @@ Editing a `#:package`, `#:project`, `#:sdk`, or `#:include` directive changes th
 ### Closure membership changes `[SCRIPT-RELOAD-CLOSURE]`
 
 A file entering or leaving the `#:include` / `#:load` closure adds or removes a Roslyn document. Removal must also clear published diagnostics for that file, otherwise stale squiggles persist in files no longer part of the app.
+
+A `didChange` can arrive for **any** member of a closure, not just its root: the host re-syncs on-disk text for every file it has published diagnostics against, and an `#:include`d file the editor never opened is one of them. The refresh is therefore always re-expanded from the **root** recorded on the project, with the changed file's in-memory text substituted wherever it appears in the closure. Re-expanding from the changed file instead treats a member as if it were a root, yields a closure that does not contain the real root, and prunes the root out of its own project — leaving the document the user is editing with no Roslyn document at all.
 
 ### Multiple roots `[SCRIPT-MULTIROOT]`
 

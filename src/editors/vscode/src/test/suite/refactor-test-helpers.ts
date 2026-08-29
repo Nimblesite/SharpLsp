@@ -3,17 +3,14 @@ import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { State, type LanguageClient } from 'vscode-languageclient/node';
-import {
-  EXTENSION_ID,
-  LSP_RESPONSE_TIMEOUT_MS,
-  SERVER_START_TIMEOUT_MS,
-  comparableText,
-  pollUntilResult,
-} from './test-helpers';
+import { EXTENSION_ID, comparableText, pollUntilResult } from './test-helpers';
+
+/** Re-exported so the refactor suites warm via their existing import. */
+export { warmSemanticEngine } from './test-helpers';
+import { ACTIVATION_MS, LSP_RESPONSE_MS, POLL_INTERVAL_MS } from './test-timeouts';
 
 const FIXTURE_ROOT = path.resolve(__dirname, '../../../test-fixtures/workspace');
 const RESOLVE_COUNT = 1_000;
-const POLL_INTERVAL_MS = 1_000;
 
 interface SharpLspApi {
   readonly getLspClient: () => LanguageClient | undefined;
@@ -79,7 +76,7 @@ async function waitForRunningState(client: LanguageClient): Promise<State> {
   return pollUntilResult(
     async () => client.state,
     (state) => state === State.Running,
-    SERVER_START_TIMEOUT_MS,
+    ACTIVATION_MS,
     250,
   );
 }
@@ -173,7 +170,7 @@ async function waitForActions(
   const actions = await pollUntilResult(
     async () => requestCodeActions(query, resolveCount),
     query.predicate,
-    query.timeoutMs ?? LSP_RESPONSE_TIMEOUT_MS,
+    query.timeoutMs ?? LSP_RESPONSE_MS,
     POLL_INTERVAL_MS,
   );
   assert.ok(
@@ -208,7 +205,7 @@ async function requestCodeActions(
 export async function waitForMatchingDiagnostics(
   uri: vscode.Uri,
   predicate: (diagnostics: vscode.Diagnostic[]) => boolean,
-  timeoutMs: number = LSP_RESPONSE_TIMEOUT_MS,
+  timeoutMs: number = LSP_RESPONSE_MS,
 ): Promise<vscode.Diagnostic[]> {
   const diagnostics = await pollUntilResult(
     async () => vscode.languages.getDiagnostics(uri),
@@ -372,7 +369,7 @@ async function waitForDocumentText(
   const text = await pollUntilResult(
     async () => document.getText(),
     (candidate) => comparableText(candidate) === comparableText(expectedText),
-    LSP_RESPONSE_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
     100,
   );
   assert.strictEqual(comparableText(text), comparableText(expectedText));

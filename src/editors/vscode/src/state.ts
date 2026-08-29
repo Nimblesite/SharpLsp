@@ -191,5 +191,7 @@ function logSymbolCounts(response: WorkspaceSymbolsResponse): void {
 }
 
 async function delay(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

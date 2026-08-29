@@ -69,7 +69,9 @@ The hover response MUST include:
 | Section | Content | Required |
 |---|---|---|
 | Signature | Fully qualified symbol signature with syntax highlighting | Yes |
-| Containing type | `ContainingType.Name` for members | Yes (if applicable) |
+| Containing type | Namespace-qualified containing type for members | Yes (if applicable) |
+
+The containing type is namespace-qualified because the bare type name cannot say where a member came from. A reduced extension method renders its signature against the receiver (`string.Pluralize`), so `InflectorExtensions` alone leaves the reader unable to tell that the symbol arrived with the Humanizer package.
 | XML documentation | `<summary>`, `<param>`, `<returns>`, `<remarks>`, `<example>` | Yes (if present) |
 | Exceptions | `<exception>` tags | Yes (if present) |
 | Nullability | Nullable annotation state | Yes (if nullable enabled) |

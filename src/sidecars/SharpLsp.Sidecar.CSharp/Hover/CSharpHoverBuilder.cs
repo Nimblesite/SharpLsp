@@ -118,8 +118,11 @@ internal static class CSharpHoverBuilder
             return symbol;
         }
 
+        // An unresolved type binds to an IErrorTypeSymbol whose display string is
+        // empty, which would render an empty code fence. Report no symbol instead,
+        // matching the guard in BuildTypeHover.
         var typeInfo = model.GetTypeInfo(parent, ct);
-        return typeInfo.Type;
+        return typeInfo.Type is null or IErrorTypeSymbol ? null : typeInfo.Type;
     }
 
     private static HoverResult? BuildVarHover(
@@ -147,10 +150,15 @@ internal static class CSharpHoverBuilder
         return MakeResult(markdown, token);
     }
 
-    private static HoverResult BuildFromSymbol(ISymbol symbol, SyntaxToken token)
+    private static HoverResult? BuildFromSymbol(ISymbol symbol, SyntaxToken token)
     {
+        // NO hover beats an EMPTY hover. A symbol we cannot describe renders as a
+        // code fence with nothing between its rules — a blank popup over, say, an
+        // unresolvable `JsonConvert` before its package restores. `SymbolAt` and
+        // `BuildVarHover` already refuse an `IErrorTypeSymbol`; this is the same
+        // guard for every other route into `BuildMarkdown`.
         var markdown = BuildMarkdown(symbol);
-        return MakeResult(markdown, token);
+        return markdown.Length == 0 ? null : MakeResult(markdown, token);
     }
 
     private static string BuildMarkdown(ISymbol symbol)
@@ -166,10 +174,29 @@ internal static class CSharpHoverBuilder
     private static void AppendSignature(System.Text.StringBuilder sb, ISymbol symbol)
     {
         var signature = symbol.ToDisplayString(SignatureFormat);
+        if (string.IsNullOrWhiteSpace(signature))
+        {
+            return;
+        }
+
         _ = sb.AppendLine("```csharp");
         _ = sb.AppendLine(signature);
         _ = sb.AppendLine("```");
     }
+
+    /// <summary>
+    /// Namespace-qualified containing type. The bare type name cannot say where a
+    /// member came from: a reduced extension method renders its signature against
+    /// the receiver (<c>string.Pluralize</c>), so <c>InflectorExtensions</c> alone
+    /// leaves the reader with no way to tell that the symbol arrived with the
+    /// Humanizer package. Implements [HOVER-CSHARP-RENDERING].
+    /// </summary>
+    private static readonly SymbolDisplayFormat ContainerFormat = new(
+        globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted,
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+        genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
+        miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes
+    );
 
     private static void AppendContainingType(System.Text.StringBuilder sb, ISymbol symbol)
     {
@@ -180,9 +207,7 @@ internal static class CSharpHoverBuilder
 
         if (symbol is IMethodSymbol or IPropertySymbol or IFieldSymbol or IEventSymbol)
         {
-            var container = symbol.ContainingType.ToDisplayString(
-                SymbolDisplayFormat.MinimallyQualifiedFormat
-            );
+            var container = symbol.ContainingType.ToDisplayString(ContainerFormat);
             _ = sb.Append("*in* `").Append(container).Append('`').AppendLine();
         }
     }

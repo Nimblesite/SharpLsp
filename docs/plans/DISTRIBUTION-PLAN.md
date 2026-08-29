@@ -144,11 +144,25 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 
 - [x] Replace the `MOCHA_GREP` smoke subset with file-glob chunk selection (`MOCHA_FILES` in `src/test/suite/index.ts`); a glob matching nothing is a hard error
 - [x] Declare chunk membership once in `src/editors/vscode/test-chunks.json`, read by `tools/vsix/vsix-test-chunks.mjs` (`files` / `matrix` / `check`)
-- [x] Cover the whole feature surface on Windows: `lifecycle`, `lsp`, `fsharp`, `debug` (netcoredbg + Test Explorer + CodeLens), `profiler` (trace/counters/dumps + FSI/build/hot-reload), `explorer` (tree + context menus), `packages` (scaffolding + NuGet)
+- [x] Cover the whole feature surface on Windows. Now **18** chunks, not the original eight —
+      `lifecycle`, `lsp`, `fsharp`, `debug`, `debug-stepping`, `debug-breakpoints`,
+      `debug-exceptions`, `debug-inspection`, `debug-fsharp`, `debug-session`,
+      `debug-advanced`, `rundebug`, `rundebug-commands`, `testexplorer`,
+      `testexplorer-frameworks`, `profiler`, `explorer`, `packages`. The debugging surface
+      split out of the single `debug` chunk as the netcoredbg work landed; Test Explorer
+      and CodeLens left `debug` for `testexplorer`. Membership stays declared once, in
+      `src/editors/vscode/test-chunks.json`.
 - [x] Guard completeness in lint (`_check-vsix-chunks`) so a new suite cannot silently skip Windows CI
 - [x] Build once / fan out: one Windows `build` job publishes host + sidecars; chunks stage via `_stage-vsix-binary-only`
 - [x] `fail-fast: false` on the chunk matrix so one feature area's failure never hides the others
 - [ ] Confirm per-chunk wall times on a real PR run; split `explorer` / `packages` if either drifts past ~30 min
+
+#### VSIX payload verification ([DIST-VSIX-ASSET-INTEGRITY], [DIST-DEBUGGER-BUNDLE])
+
+- [x] Verify what actually SHIPS, not what happens to sit in the working tree: `tools/vsix/verify-vsix-payload.mjs` reads `vsce ls` and asserts the host, both sidecars and — on platforms with an upstream prebuilt — `bin/<platform>/netcoredbg/netcoredbg` **and** its `ManagedPart.dll`. A launcher without its managed half is not a debugger.
+- [x] Resolve `npx` by its real name so the payload check runs on Windows at all (`npx.cmd` is not spawnable under the bare name)
+- [x] Stage netcoredbg from `tools/vsix/fetch-netcoredbg.sh`, version-pinned to `3.2.0-1092`, cached by version+asset so CI's Windows chunks download it once; `win32-arm64` and `darwin-x64` have no upstream prebuilt and skip cleanly to the PATH / `sharplsp.debug.netcoredbgPath` fallback
+- [x] Assert staging from inside the extension host too: `00-vsix-dev-binary-staging.test.ts` runs as the shared head of **every** Windows chunk, so a staging regression fails as itself instead of as a wall of LSP timeouts
 
 #### Windows-only defects the widened gate surfaced immediately
 

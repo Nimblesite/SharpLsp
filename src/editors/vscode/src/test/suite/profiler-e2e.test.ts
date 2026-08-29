@@ -58,6 +58,7 @@ import {
 } from '../../profiler-diff.js';
 import { ObjectGraphPanel, promptAndOpenGraph } from '../../profiler-graph.js';
 import { removeDirRecursive } from './test-helpers.js';
+import { ACTIVATION_MS, COMMAND_MS } from './test-timeouts';
 
 // ── Extension API access ─────────────────────────────────────────
 
@@ -251,7 +252,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   const trackedSessions = new Set<string>();
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('profiler-e2e-');
     tmpDir = result.tmpDir;
     dumpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-prof-dumps-'));
@@ -301,7 +302,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('copyPid copies a process PID to the clipboard and toasts it', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     stubs = installUiStubs();
 
     const node = buildProcessNode(
@@ -334,7 +335,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('copyOutputPath copies a trace output path and warns when absent', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     stubs = installUiStubs();
 
     const tracePath = path.join(dumpDir, 'session.nettrace');
@@ -370,7 +371,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('killProcess gates on a modal confirmation before terminating', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const provider = getProvider();
     const node = buildProcessNode(proc({ pid: 424242, name: 'Victim', command_line: 'v.dll' }));
 
@@ -409,7 +410,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('stopSession on a Counters session opens its live counters webview', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const provider = getProvider();
     panelSpy = spyWebviewPanels();
 
@@ -450,7 +451,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('showCountersPanel reveals a panel for a known session and re-uses it', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const provider = getProvider();
     panelSpy = spyWebviewPanels();
 
@@ -482,7 +483,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('stopTrace and stopCounters report when there are no active sessions', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const provider = getProvider();
     // Ensure no sessions of these kinds exist.
     for (const s of [
@@ -517,7 +518,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('per-process commands are safe no-ops without a PID and do not throw with one', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     stubs = installUiStubs();
     const provider = getProvider();
 
@@ -562,7 +563,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('refresh and listProcesses repopulate the tree without throwing', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const provider = getProvider();
 
     await assert.doesNotReject(async () => {
@@ -597,7 +598,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('openTrace cancels cleanly and routes a selected speedscope file to open-external', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
 
     // (a) Cancelled dialog → early return.
     stubs = installUiStubs();
@@ -695,7 +696,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('convertTrace is a no-op when the file dialog is cancelled', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     stubs = installUiStubs();
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.convertTrace');
@@ -711,7 +712,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('revealOutput warns when a session has no output file yet', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     stubs = installUiStubs();
     const noPath = buildSessionNode(session({ outputPath: undefined, id: 'rv-1' }));
     await assert.doesNotReject(async () => {
@@ -736,7 +737,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('diffSnapshots: gated command no-op + promptAndOpenDiff renders a real diff panel', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
 
     // (a) The registered command early-returns in test mode → safe no-op.
     await assert.doesNotReject(async () => {
@@ -800,7 +801,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('detectLeaks: gated command no-op + guided detectLeaksWorkflow gating and happy path', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
 
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.detectLeaks');
@@ -854,7 +855,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('HeapDiffPanel.open renders the error page when the diff request rejects', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     panelSpy = spyWebviewPanels();
 
     await HeapDiffPanel.open(
@@ -915,7 +916,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('showObjectGraph: gated no-op + promptAndOpenGraph renders the retention summary', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
 
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.profiler.showObjectGraph');
@@ -989,7 +990,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('ObjectGraphPanel.open surfaces request errors in the panel', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     panelSpy = spyWebviewPanels();
 
     await ObjectGraphPanel.open(
@@ -1019,7 +1020,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('inspectObject/analyzeHeap/collectDump are safe no-ops; counter HTML builds correctly', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
 
     for (const cmd of [
       'sharplsp.profiler.inspectObject',
@@ -1091,7 +1092,7 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('ProfilerStatusBar toggles visibility across session-count updates', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     const ctx = { subscriptions: [] as vscode.Disposable[] } as unknown as vscode.ExtensionContext;
     const bar = new ProfilerStatusBar(ctx);
     try {

@@ -8,12 +8,8 @@ import {
   revertDocument,
   workspaceFixturePath,
 } from './refactor-test-helpers';
-import {
-  EXTENSION_ID,
-  LSP_RESPONSE_TIMEOUT_MS,
-  closeAllEditors,
-  pollUntilResult,
-} from './test-helpers';
+import { EXTENSION_ID, closeAllEditors, pollUntilResult } from './test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 import {
   CLASS_ANCHORS,
   assertAnchoredOrder,
@@ -45,7 +41,6 @@ const COMMAND = 'sharplsp.sortMembers';
 const FIXTURE_FILE = 'SortMembersCommand.cs';
 const FIXTURE_SOLUTION = workspaceFixturePath('TestFixtures.sln');
 const CLASS_NAME = 'SortMembersCommand';
-const MEMBER_TIMEOUT_MS = LSP_RESPONSE_TIMEOUT_MS + 30_000;
 
 let document: vscode.TextDocument;
 let provider: ExplorerProvider;
@@ -154,7 +149,7 @@ async function refreshNode(name: string): Promise<TreeNode> {
   const node = await pollUntilResult(
     async () => findNode(provider.getChildren(), name),
     (candidate) => candidate !== undefined,
-    MEMBER_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
     1_000,
   );
   assert.ok(node, `the live explorer must expose ${name}`);
@@ -233,7 +228,7 @@ async function waitForTypeOrder(
   const symbol = await pollUntilResult(
     async () => requestTypeSymbol(typeName),
     (candidate) => hasMemberOrder(candidate, expected),
-    MEMBER_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
     500,
   );
   assert.ok(symbol, `the real document-symbol provider must return ${typeName}`);
@@ -364,7 +359,7 @@ async function waitForText(expected: string): Promise<void> {
   const text = await pollUntilResult(
     async () => document.getText(),
     (candidate) => candidate === expected,
-    LSP_RESPONSE_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
     250,
   );
   assert.strictEqual(text, expected, 'the editor must reach the requested undo/redo text');

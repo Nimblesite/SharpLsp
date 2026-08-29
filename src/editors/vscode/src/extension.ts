@@ -322,9 +322,14 @@ export async function notifyActivationFailure(headline: string, detail: string):
 }
 
 export async function deactivate(): Promise<void> {
-  if (lspClient !== undefined) {
-    await lspClient.stop();
-    lspClient = undefined;
+  // Take the handle and clear it in one synchronous step. Assigning after the
+  // await instead lets an activate() that runs during the stop install a NEW
+  // client, which this function would then discard — leaving a live client
+  // nobody can reach and a `lspClient` of undefined.
+  const running = lspClient;
+  lspClient = undefined;
+  if (running !== undefined) {
+    await running.stop();
   }
   log.dispose();
 }
@@ -640,6 +645,7 @@ const REFRESH_DEBOUNCE_MS = 1_000;
 const RELEVANT_LANGUAGES = new Set(['csharp', 'fsharp']);
 const SOLUTION_FILE_GLOB = '**/*.{sln,slnx}';
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+let solutionSelectionGeneration = 0;
 
 /** Re-fetch workspace symbols when source or solution files change. */
 function wireDocumentChangeRefresh(context: ExtensionContext): void {
@@ -682,15 +688,13 @@ function scheduleSolutionRefresh(solutionFilePath: string): void {
 
 /** Select a solution (auto or user-picked) and load it into the explorer. */
 async function selectAndLoadSolution(): Promise<void> {
+  const generation = ++solutionSelectionGeneration;
+  const initialSolution = sharedState.solutionPath.value;
   const solutions = await solution.findSolutions();
-  if (solutions.length === 0) {
-    return;
-  }
-  if (solutions.length === 1 && solutions[0] !== undefined) {
-    await loadSolution(solutions[0]);
-    return;
-  }
-  const picked = await solution.promptUserSelection(solutions);
+  if (!solutionSelectionIsCurrent(generation, initialSolution) || solutions.length === 0) return;
+  const picked =
+    solutions.length === 1 ? solutions[0] : await solution.promptUserSelection(solutions);
+  if (!solutionSelectionIsCurrent(generation, initialSolution)) return;
   if (picked !== undefined) {
     await loadSolution(picked);
     return;
@@ -699,8 +703,18 @@ async function selectAndLoadSolution(): Promise<void> {
   explorerProvider?.showSolutionPicker(solutions);
 }
 
+function solutionSelectionIsCurrent(
+  generation: number,
+  initialSolution: string | undefined,
+): boolean {
+  return (
+    generation === solutionSelectionGeneration && sharedState.solutionPath.value === initialSolution
+  );
+}
+
 /** Load a solution into the explorer tree AND the LSP sidecar. */
 async function loadSolution(selected: solution.SolutionSelection): Promise<void> {
+  solutionSelectionGeneration += 1;
   log.info(`Loading solution: ${selected.path}`);
 
   // Tell the LSP server to reload sidecars with this specific solution.

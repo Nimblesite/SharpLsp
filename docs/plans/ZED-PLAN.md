@@ -9,13 +9,13 @@ Zed extension for SharpLsp — the open-source .NET LSP. Provides sharplsp integ
 
 ## Architecture
 
-```
-Zed Editor
-  └── SharpLsp Extension (Rust → WASM)
-        ├── Language Server Adapter
-        │     └── sharplsp binary (stdio JSON-RPC)
-        └── Slash Commands
-              └── /sharplsp-tree → .sln/.csproj/.fsproj parsing
+```mermaid
+flowchart LR
+    ZED["Zed Editor"] --> EXT["SharpLsp Extension<br/>Rust → WASM"]
+    EXT --> ADAPTER["Language Server Adapter"]
+    EXT --> SLASH["Slash Commands"]
+    ADAPTER --> BIN["sharplsp binary<br/>stdio JSON-RPC"]
+    SLASH --> TREECMD["/sharplsp-tree<br/>.sln / .csproj / .fsproj parsing"]
 ```
 
 The extension compiles to `wasm32-wasip1` and runs in Zed's WASM sandbox. It cannot access the filesystem directly — all file reads go through the `Worktree` API.
@@ -61,15 +61,15 @@ When Zed adds custom panel support, the solution tree should be migrated from sl
 
 ## File Structure
 
-```
-src/editors/zed/
-├── extension.toml      Extension manifest (language server + slash commands)
-├── Cargo.toml          Rust project (compiles to cdylib → WASM)
-└── src/
-    ├── lib.rs           Extension entry point, LSP adapter, command routing
-    ├── solution.rs      .sln file parsing (project extraction)
-    ├── project.rs       .csproj/.fsproj parsing (dependencies)
-    └── tree.rs          Text tree formatting for slash command output
+```mermaid
+flowchart LR
+    ROOT["src/editors/zed/"] --> SRC["src/"]
+    ROOT --> MANIFEST["extension.toml<br/>Extension manifest — language server + slash commands"]
+    ROOT --> CARGO["Cargo.toml<br/>Rust project, compiles to cdylib → WASM"]
+    SRC --> LIB["lib.rs<br/>Extension entry point, LSP adapter, command routing"]
+    SRC --> SOLUTION["solution.rs<br/>.sln file parsing — project extraction"]
+    SRC --> PROJECT["project.rs<br/>.csproj / .fsproj parsing — dependencies"]
+    SRC --> TREE["tree.rs<br/>Text tree formatting for slash command output"]
 ```
 
 ## Building

@@ -33,6 +33,7 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
     // carried across.
     private const string Source = """
         using System;
+        using System.Collections.Generic;
 
         namespace Overrides;
 
@@ -46,6 +47,16 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
                 where TRef : class;
 
             public abstract T[]? PickArray<T>(T?[] values);
+
+            public abstract List<T?> PickList<T>(T value);
+
+            public abstract void TakeList<T>(List<T> items);
+
+            public abstract unsafe void TakePointer<T>(T*[] values)
+                where T : unmanaged;
+
+            public abstract unsafe void TakeCallback<T>(delegate*<T, void> callback)
+                where T : unmanaged;
 
             public abstract int Total { get; set; }
 
@@ -78,6 +89,12 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
 
             public override T[]? PickArray<T>(T?[] values)
                 where T : default => null;
+
+            public override void TakeList<T>(List<T> items) { }
+
+            public override unsafe void TakePointer<T>(T*[] values) { }
+
+            public override event EventHandler? Changed;
         }
         """;
 
@@ -98,6 +115,7 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
                 <TargetFramework>net10.0</TargetFramework>
                 <OutputType>Library</OutputType>
                 <Nullable>enable</Nullable>
+                <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
               </PropertyGroup>
             </Project>
             """;
@@ -149,6 +167,20 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         Assert.Equal(1, CountOccurrences(circle, "Pick<T>"));
         Assert.Equal(1, CountOccurrences(circle, "PickReference<TRef>"));
         Assert.Equal(1, CountOccurrences(circle, "PickArray<T>"));
+
+        // A constructed generic parameter type (`List<T>`) is the shape that forces the
+        // signature comparison down its named-type path: the base's `T` and the override's `T`
+        // are distinct symbols, so reference equality alone reports "not overridden" and the
+        // generator emits a duplicate member that breaks the build.
+        Assert.Equal(1, CountOccurrences(circle, "TakeList<T>"));
+
+        // A pointer parameter takes the signature comparison down its pointer path. The base's
+        // `T*` and the override's `T*` are distinct symbols for the same reason `List<T>` is.
+        Assert.Equal(1, CountOccurrences(circle, "TakePointer<T>"));
+
+        // Events have no parameter list to compare, so an occupied event slot is matched on
+        // kind and name alone. Regenerating one is a duplicate-member build break too.
+        Assert.Equal(1, CountOccurrences(circle, "Changed"));
 
         // The members it has not overridden are still generated.
         Assert.Contains("override string Name", circle);
@@ -219,6 +251,33 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
         Assert.Contains("PickArray<T>", generated);
     }
 
+    /// <summary>
+    /// A nullable type parameter nested inside a <em>constructed generic</em> argument
+    /// (<c>List&lt;T?&gt;</c>) is nullable usage just as much as a bare <c>T?</c> is. Missing it
+    /// drops the <c>where T : default</c> clause and the generated override does not compile
+    /// against its base declaration.
+    /// </summary>
+    [Fact]
+    public async Task Nullability_inside_a_constructed_generic_argument_forces_the_constraint()
+    {
+        using var manager = await OpenAsync();
+        var generated = await ApplyOverrideActionAsync(manager);
+
+        // Bound to `Square`: the abstract declaration up in `Shape` carries the same signature.
+        var square = generated[
+            generated.IndexOf("public class Square", StringComparison.Ordinal)..
+        ];
+        var start = square.IndexOf("override List<T?> PickList<T>", StringComparison.Ordinal);
+        Assert.True(start >= 0, "the constructed-generic member must be overridden");
+
+        // Bound the assertion to this declaration: `where T : default` on some other member
+        // would otherwise mask its absence here.
+        var rest = square[start..];
+        var next = rest.IndexOf("public override", 1, StringComparison.Ordinal);
+        var declaration = next < 0 ? rest : rest[..next];
+        Assert.Contains("where T : default", declaration);
+    }
+
     [Fact]
     public async Task Init_only_property_overrides_keep_their_init_accessor()
     {
@@ -239,6 +298,42 @@ public sealed class HeadlessOverrideGenerationTests : IDisposable
 
         Assert.Contains("init", declaration);
         Assert.DoesNotContain("set", declaration);
+    }
+
+    /// <summary>
+    /// Unsafe members are part of the override surface: a pointer array and a function pointer
+    /// both have to be walked when deciding whether a type parameter is used nullably. An
+    /// unhandled type shape there throws out of the whole action, so the user loses "Generate
+    /// overrides..." on the entire type because of one unsafe member.
+    /// </summary>
+    [Fact]
+    public async Task Unsafe_pointer_members_are_generated_rather_than_aborting_the_action()
+    {
+        using var manager = await OpenAsync();
+        var generated = await ApplyOverrideActionAsync(manager);
+
+        var square = generated[
+            generated.IndexOf("public class Square", StringComparison.Ordinal)..
+        ];
+        Assert.Contains("TakePointer<T>", square);
+        Assert.Contains("TakeCallback<T>", square);
+
+        // Neither is nullable usage, so neither may acquire a `where T : default` clause it
+        // cannot legally carry — `T` is already `unmanaged`-constrained.
+        Assert.DoesNotContain("where T : default", DeclarationOf(square, "TakePointer<T>"));
+        Assert.DoesNotContain("where T : default", DeclarationOf(square, "TakeCallback<T>"));
+
+        AssertParses(generated);
+    }
+
+    /// <summary>The single generated declaration starting at <paramref name="anchor"/>.</summary>
+    private static string DeclarationOf(string generated, string anchor)
+    {
+        var start = generated.IndexOf(anchor, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"member not generated: {anchor}");
+        var rest = generated[start..];
+        var next = rest.IndexOf("public override", 1, StringComparison.Ordinal);
+        return next < 0 ? rest : rest[..next];
     }
 
     /// <summary>Apply "Generate overrides..." on a type and return the new file text.</summary>

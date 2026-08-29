@@ -17,7 +17,6 @@ import {
   WILDCARD_UNION_SOURCE,
 } from './fsharp-refactor-fixtures';
 import {
-  FSHARP_REFACTOR_TIMEOUT_MS,
   applyAction,
   assertInsertion,
   assertNoAction,
@@ -35,6 +34,7 @@ import {
 } from './fsharp-refactor-test-kit';
 import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
 import { closeAllEditors, comparableText } from './test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Union, record, and interface generators through shipped FCS. [ANALYZERS-FSAC-PARITY]
 const TARGET_FILE = 'fsharp/DiagnosticsTarget.fs';
@@ -62,14 +62,14 @@ suite('F# real LSP — generated refactors', () => {
 
   for (const spec of generationSpecs()) {
     test(`${spec.name} survives list, resolve, apply, recheck, and undo`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 2);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await runGeneration(spec);
     });
   }
 
   for (const spec of completeSpecs()) {
     test(`${spec.name} offers no generation refactor when already complete`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await assertComplete(spec);
     });
   }
@@ -343,7 +343,7 @@ async function inspectGeneration(
   range: vscode.Range,
   spec: GenerationSpec,
 ): Promise<vscode.CodeAction> {
-  const diagnostics = await diagnosticWithCode(fixture.uri, spec.diagnostic);
+  const diagnostics = await diagnosticWithCode(fixture.uri, spec.diagnostic, range);
   assertGenerationDiagnostic(diagnostics, range, spec.diagnostic);
   const raw = uniqueAction(await quickFixes(fixture.uri, range), spec.title);
   assertRawGeneration(raw, spec.title);

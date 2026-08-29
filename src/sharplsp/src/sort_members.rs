@@ -4,14 +4,12 @@
 //! record) in-place using tree-sitter. Sort hierarchy is configurable:
 //! Accessibility → Category → Alphabetical by default.
 
-use std::path::Path;
-
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use tree_sitter::Node;
 
-use crate::tree_sitter_parse::{LangId, TsParsers};
+use crate::tree_sitter_parse::{parse_file, TsParsers};
 use crate::utils::{uri_to_path, usize_to_u32};
 
 /// Request params for `sharplsp/sortMembers`.
@@ -103,11 +101,7 @@ pub fn handle(
     vfs: &crate::vfs::Vfs,
 ) -> Result<SortMembersResponse> {
     let file_path = uri_to_path(&params.uri)?;
-    let source = vfs.read_live_or_disk(&file_path)?;
-
-    let path = Path::new(&file_path);
-    let lang = LangId::from_path(path).context("unsupported file type")?;
-    let tree = parsers.parse(lang, &source, None)?;
+    let (source, tree) = parse_file(&file_path, parsers, vfs)?;
 
     let type_node = find_type_at_range(tree.root_node(), &params.range)
         .context("no type declaration at the given range")?;

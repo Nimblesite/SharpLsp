@@ -175,7 +175,7 @@ pub fn folding_ranges(tree: &Tree, _source: &str) -> Vec<FoldingRange> {
 /// Recursively collect folding ranges from tree-sitter nodes.
 fn collect_folding(node: Node<'_>, ranges: &mut Vec<FoldingRange>) {
     let kind = match node.kind() {
-        // Blocks / braces
+        // C# blocks / braces
         "class_declaration"
         | "struct_declaration"
         | "interface_declaration"
@@ -185,13 +185,37 @@ fn collect_folding(node: Node<'_>, ranges: &mut Vec<FoldingRange>) {
         | "constructor_declaration"
         | "block"
         | "switch_body"
-        | "record_declaration" => Some(FoldingRangeKind::Region),
-        // Comments
-        "comment" if node.start_position().row != node.end_position().row => {
+        | "record_declaration"
+        // F# declarations (tree-sitter-fsharp). F# is a first-class citizen:
+        // the same tree-sitter foldingRange contract covers both languages
+        // ([SHARPLSP-SPEC] syntax-only table; CLAUDE.md aim #2). Only the
+        // outer `type_definition` folds, not its inner record/union/etc.
+        // defn, and a let-binding folds as its `function_or_value_defn` —
+        // module-level lets are not wrapped in a `value_declaration`, so
+        // that node only exists in some contexts and folding it here would
+        // double-fold the same span there.
+        | "named_module"
+        | "module_defn"
+        | "namespace"
+        | "type_definition"
+        | "type_extension"
+        | "function_or_value_defn" => Some(FoldingRangeKind::Region),
+        // Comments: C# `comment`, F# `block_comment` ((* *)) and `xml_doc`
+        // (///) — multi-line only.
+        "comment" | "block_comment" | "xml_doc"
+            if node.start_position().row != node.end_position().row =>
+        {
             Some(FoldingRangeKind::Comment)
         }
-        // Using directives group
-        "using_directive" => Some(FoldingRangeKind::Imports),
+        // Using directives group (C# `using_directive`, F# `import_decl`).
+        //
+        // `import_decl`, NOT `open`: in tree-sitter-fsharp `open` is an
+        // ANONYMOUS keyword token inside `import_decl`, so matching on it named
+        // a node this walk never visits as a fold candidate — dead code that
+        // read like F# import folding was implemented. Either way a one-line
+        // `open X` does not fold, because the `start.row < end.row` guard below
+        // drops every single-line node.
+        "using_directive" | "import_decl" => Some(FoldingRangeKind::Imports),
         _ => None,
     };
 

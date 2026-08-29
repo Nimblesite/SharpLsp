@@ -44,6 +44,7 @@ import { effect } from '../../signals.js';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { closeAllEditors } from './test-helpers';
 import { removeDirRecursive } from './test-helpers.js';
+import { COMMAND_MS, DOTNET_CLI_MS } from './test-timeouts';
 
 // ── Fake nuget.org search responses ───────────────────────────────
 
@@ -153,7 +154,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
   });
 
   test('sharplsp.nuget.add cancels cleanly when the search box is dismissed', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     // No queued input → showInputBox returns undefined → early return, no fetch.
     fetchStub = stubFetch(fakeResponse(nugetSearchBody({ id: 'X', version: '1.0.0' })));
 
@@ -169,7 +170,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
   });
 
   test('sharplsp.nuget.add shows the "no packages" notice when the search is empty', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     fetchStub = stubFetch(fakeResponse(nugetSearchBody())); // empty data array
     stubs.queueInput('Definitely.Nonexistent.Package');
 
@@ -195,7 +196,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
   });
 
   test('sharplsp.nuget.add searches, lists hits, then offers the workspace project picker', async function () {
-    this.timeout(60_000);
+    this.timeout(COMMAND_MS);
     // Real flow (src/nuget.ts addNuGetPackage): query input → fetch → package
     // quickPick → pickProjectFile(). The fixture workspace has multiple
     // .csproj/.fsproj, so pickProjectFile() shows a SECOND quickPick. We dismiss
@@ -262,7 +263,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
   });
 
   test('sharplsp.nuget.add surfaces an error toast when nuget.org returns a non-OK status', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     fetchStub = stubFetch(fakeResponse({}, false, 503));
     stubs.queueInput('Anything');
 
@@ -278,7 +279,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
   });
 
   test('sharplsp.nuget.update prompts for a package name after a project is resolved', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
     // Single project in this temp tree → pickProjectFile returns it without a pick,
     // BUT findFiles searches the real workspace; queue a project pick by substring
     // in case multiple projects are present, then the package-name input box.
@@ -309,7 +310,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
   });
 
   test('sharplsp.nuget.update returns early when the package name is left blank', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const projectPath = writeProjectFile(tmpDir, 'UpdateBlank');
     stubs
       .queuePick((items) => {
@@ -329,7 +330,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
   });
 
   test('sharplsp.nuget.restore runs dotnet restore and reports the outcome', async function () {
-    this.timeout(60_000);
+    this.timeout(DOTNET_CLI_MS);
     // Restore runs `dotnet restore` in the workspace; it may succeed or fail, but
     // the command must always resolve and emit exactly one terminal toast.
     await assert.doesNotReject(async () => {
@@ -347,7 +348,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
   });
 
   test('sharplsp.nuget.addFromExplorer adds to the node project without a project pick', async function () {
-    this.timeout(30_000);
+    this.timeout(DOTNET_CLI_MS);
     const projectPath = writeProjectFile(tmpDir, 'ExplorerTarget');
     fetchStub = stubFetch(
       fakeResponse(nugetSearchBody({ id: 'Polly', version: '8.4.1', description: 'Resilience' })),
@@ -373,7 +374,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
   });
 
   test('sharplsp.nuget.addFromExplorer warns when the node has no project path', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.nuget.addFromExplorer', {
         projectFilePath: undefined,
@@ -521,7 +522,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
   });
 
   test('removeNuGetPackage strips the PackageReference from the project XML', async function () {
-    this.timeout(30_000);
+    this.timeout(DOTNET_CLI_MS);
     const projectPath = writeProjectFile(tmpDir, 'RemovePkg', {
       packages: [
         { id: 'Serilog', version: '3.1.0' },
@@ -550,7 +551,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
   });
 
   test('addProjectReference then removeProjectReference round-trips the <ProjectReference>', async function () {
-    this.timeout(40_000);
+    this.timeout(DOTNET_CLI_MS);
     const consumer = writeProjectFile(tmpDir, 'Consumer');
     const libDir = path.join(tmpDir, 'Lib');
     fs.mkdirSync(libDir, { recursive: true });
@@ -587,7 +588,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
   });
 
   test('sharplsp.removeNuGetPackage command confirms then removes via the node args', async function () {
-    this.timeout(30_000);
+    this.timeout(DOTNET_CLI_MS);
     const projectPath = writeProjectFile(tmpDir, 'CmdRemovePkg', {
       packages: [{ id: 'Serilog', version: '3.1.0' }],
     });
@@ -618,7 +619,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
   });
 
   test('sharplsp.removeNuGetPackage is a no-op when the confirmation is dismissed', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     const projectPath = writeProjectFile(tmpDir, 'CmdKeepPkg', {
       packages: [{ id: 'Serilog', version: '3.1.0' }],
     });
@@ -648,7 +649,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
   });
 
   test('sharplsp.removeProjectReference command confirms then removes the reference', async function () {
-    this.timeout(40_000);
+    this.timeout(DOTNET_CLI_MS);
     const libDir = path.join(tmpDir, 'Lib');
     fs.mkdirSync(libDir, { recursive: true });
     const library = writeProjectFile(libDir, 'Library');
@@ -676,7 +677,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
   });
 
   test('sharplsp.removeNuGetPackage ignores a node missing projectFilePath / referenceName', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.removeNuGetPackage', {
         projectFilePath: undefined,
@@ -691,7 +692,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
   });
 
   test('sharplsp.addProjectReference offers other projects and adds the picked one', async function () {
-    this.timeout(40_000);
+    this.timeout(DOTNET_CLI_MS);
     // Drive the command with a node pointing at a real project on disk. The
     // candidate list comes from the workspace; pick our temp Library if present,
     // else any candidate — both paths exercise the add flow end-to-end.

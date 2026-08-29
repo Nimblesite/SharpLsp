@@ -19,6 +19,8 @@ The sidecar's per-document diagnostics path is correct and survives the pivot. T
 - [x] Send `textDocument/publishDiagnostics` notification with mapped results — push fallback only; pull is primary (Phase 5)
 - [x] Clear diagnostics on `textDocument/didClose`
 - [x] Version-gate the push pipeline ([DIAG-PUSH-GATE](../specs/DIAGNOSTICS-SPEC.md)): per-URI push generations, stale results never published, failed fetch for the newest generation retried until published or superseded. Hardening found while investigating GitHub #160 — that issue's actual root cause was path-qualified `_._` placeholder references poisoning FCS ([PKG-ASSETS-FS](../specs/PACKAGE-MAINTENANCE-SPEC.md)), fixed in `FSharpAssets.packageAssemblies` with regression test `path-qualified placeholder compile entries are never handed to FCS as references`. Rust test: `failed_fetch_after_revert_must_not_strand_stale_published_diagnostics`; F# sidecar guard: `diagnostics clear after an error edit is reverted`
+- [x] Republish a *provisional* set until it settles ([DIAG-PUSH-GATE](../specs/DIAGNOSTICS-SPEC.md)): a file-based app's first set is a tier-2 placeholder carrying `SLSPC0002` plus phantom `CS0246`s, and the background restore that replaces it fires no client event, so the push loop keeps fetching until the code clears. Rust test: `provisional_filebased_set_must_be_republished_once_restore_settles`
+- [x] Advertise pull diagnostics only to clients without push support ([DIAG-LSP-CAPABILITIES-EXCLUSIVE](../specs/DIAGNOSTICS-SPEC.md)) — a client offered both keeps one `DiagnosticCollection` per model and reports every diagnostic twice. Rust e2e test: `test_push_capable_client_is_not_offered_pull_diagnostics`
 - [ ] Add debounce (150ms window) before sidecar push request — superseded by Phase 5's 2000ms refresh debounce; only relevant if push fallback is in use
 - [x] Rust e2e tests: `test_diagnostics_cleared_on_close`, `test_request_works_after_diagnostic_notification`
 - [x] VSCode extension tests: `diagnostics.test.ts` (6 tests — error detection, missing type, clean file, edit cycle, range check, close clears)
@@ -83,7 +85,7 @@ for both C# and F#.
 
 ## Phase 5: Pull Diagnostics + Refresh Cycle (P0 — primary path)
 
-This is now the **primary** diagnostic pipeline. Pull is mandatory for editors that advertise `textDocument.diagnostic` client capability; push (Phase 1 wiring) is fallback only. Implements [DIAG-ARCHITECTURE-PULL-REFRESH](../specs/DIAGNOSTICS-SPEC.md), [DIAG-LSP-PULL](../specs/DIAGNOSTICS-SPEC.md), and [DIAG-LSP-REFRESH](../specs/DIAGNOSTICS-SPEC.md).
+This is the target diagnostic pipeline. Until the `resultId` / refresh work below lands, push (Phase 1 wiring) is what actually converges, so the two models are advertised **exclusively**: `diagnosticProvider` is offered only to clients that declare no `textDocument.publishDiagnostics` support. A client given both builds a `DiagnosticCollection` per model and reports every diagnostic twice ([DIAG-LSP-CAPABILITIES-EXCLUSIVE](../specs/DIAGNOSTICS-SPEC.md)). Implements [DIAG-ARCHITECTURE-PULL-REFRESH](../specs/DIAGNOSTICS-SPEC.md), [DIAG-LSP-PULL](../specs/DIAGNOSTICS-SPEC.md), and [DIAG-LSP-REFRESH](../specs/DIAGNOSTICS-SPEC.md).
 
 ### Rust LSP Host
 

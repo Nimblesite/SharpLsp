@@ -200,7 +200,7 @@ async function addPackageToProject(
 }
 
 async function runDotnet(args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return await new Promise((resolve, reject) => {
     execFile('dotnet', args, { timeout: 30000 }, (error, stdout, stderr) => {
       if (error !== null) {
         reject(new Error(stderr !== '' ? stderr : error.message));

@@ -8,7 +8,6 @@ import {
   type RenameScenario,
 } from './fsharp-rename-fixtures';
 import {
-  FSHARP_REFACTOR_TIMEOUT_MS,
   changedFileNames,
   countOccurrences,
   editCount,
@@ -27,6 +26,7 @@ import {
   waitForMatchingDiagnostics,
 } from './refactor-test-helpers';
 import { closeAllEditors } from './test-helpers';
+import { LSP_RESPONSE_MS } from './test-timeouts';
 
 // Project-wide matrix through the shipped client. [RENAME-FSHARP-PREPARE] [RENAME-FSHARP-APPLY]
 const DECLARATIONS_FILE = 'fsharp/RenameDeclarations.fs';
@@ -44,7 +44,7 @@ suite('F# real LSP — rename every symbol category', () => {
 
   for (const scenario of RENAME_SCENARIOS) {
     test(`${scenario.name}: prepare, multi-edit apply, recheck, and undo`, async function () {
-      this.timeout(FSHARP_REFACTOR_TIMEOUT_MS * 3);
+      this.timeout(LSP_RESPONSE_MS + 5_000);
       await runRename(scenario);
     });
   }
@@ -60,7 +60,7 @@ async function runRename(scenario: RenameScenario): Promise<void> {
       fixture.declarations.uri,
       position,
       scenario.newName,
-      FSHARP_REFACTOR_TIMEOUT_MS,
+      LSP_RESPONSE_MS,
     );
     const snapshots = await inspectRenameEdit(edit, scenario);
     await applyAndVerify(fixture, edit, snapshots, scenario);
@@ -263,13 +263,9 @@ async function assertNoCompilerErrors(fixture: RenameFixture): Promise<void> {
   const declarations = await waitForMatchingDiagnostics(
     fixture.declarations.uri,
     noErrors,
-    FSHARP_REFACTOR_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
   );
-  const usages = await waitForMatchingDiagnostics(
-    fixture.usages.uri,
-    noErrors,
-    FSHARP_REFACTOR_TIMEOUT_MS,
-  );
+  const usages = await waitForMatchingDiagnostics(fixture.usages.uri, noErrors, LSP_RESPONSE_MS);
   assert.ok(noErrors(declarations));
   assert.ok(noErrors(usages));
 }
@@ -285,7 +281,7 @@ async function undoAndRequery(fixture: RenameFixture, scenario: RenameScenario):
     fixture.declarations.uri,
     position,
     scenario.newName,
-    FSHARP_REFACTOR_TIMEOUT_MS,
+    LSP_RESPONSE_MS,
   );
   assert.strictEqual(editCount(replay), scenario.minimumEdits);
   assert.deepStrictEqual(changedFileNames(replay).sort(), expectedFiles(scenario));

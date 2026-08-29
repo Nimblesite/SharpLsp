@@ -29,11 +29,16 @@ pub fn path_to_file_uri(path: &Path) -> String {
 /// picked, so VFS-sensitive tests feed didOpen through this form. [GitHub #110]
 pub fn path_to_vscode_uri(path: &Path) -> String {
     let canonical = path_to_file_uri(path);
-    let rest = &canonical["file:///".len()..];
+    // strip_prefix rather than a byte range: it cannot split a character, and it
+    // returns None instead of panicking if the prefix ever stops being there.
+    let Some(rest) = canonical.strip_prefix("file:///") else {
+        return canonical;
+    };
     match (rest.as_bytes().first(), rest.as_bytes().get(1)) {
         (Some(&drive), Some(&b':')) if drive.is_ascii_alphabetic() => {
             let lowered = char::from(drive.to_ascii_lowercase());
-            format!("file:///{lowered}%3A{}", &rest[2..])
+            let tail = rest.get(2..).unwrap_or_default();
+            format!("file:///{lowered}%3A{tail}")
         }
         _ => canonical,
     }

@@ -114,6 +114,8 @@ All documentation lives in `docs/`.
 
 `docs/specs/SHARPLSP-SPEC.md` is the **full technical specification** for the project. Always read the relevant spec before working on a feature, and update the corresponding plan's TODOs as work progresses.
 
+All diagrams must be MERMAID diagrams, except for model design. Model design MUST use [typeDiagram](https://typediagram.dev/docs/language-reference.html), and you MUST generate the type code FROM the typeDiagram.
+
 ## Spec IDs
 
 Every spec section MUST have a hierarchical ID: `[GROUP-TOPIC]` or `[GROUP-TOPIC-DETAIL]`. IDs are uppercase, hyphen-separated, NEVER numbered. The first word is the group — sections sharing a group must be adjacent. All code and tests implementing a spec section MUST reference its ID in a comment (e.g., `// Implements [AUTH-TOKEN-VERIFY]`).

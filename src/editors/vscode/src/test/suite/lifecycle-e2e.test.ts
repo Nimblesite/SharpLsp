@@ -37,6 +37,7 @@ import {
 } from '../../state.js';
 import { notifyActivationFailure } from '../../extension.js';
 import { removeDirRecursive } from './test-helpers.js';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 
 /**
  * Coarse end-to-end coverage for the extension lifecycle plumbing:
@@ -53,7 +54,7 @@ suite('Lifecycle E2E', () => {
   let savedSolutionPath: string | undefined;
 
   suiteSetup(async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const result = await setupLspTestSuite('lifecycle-e2e-');
     tmpDir = result.tmpDir;
   });
@@ -87,7 +88,7 @@ suite('Lifecycle E2E', () => {
   test('restartServer recovers the live client and keeps it serving symbols', async function () {
     // A restart tears down and respawns the server + sidecars and re-indexes,
     // which can take well over the default budget on a cold host.
-    this.timeout(120_000);
+    this.timeout(ACTIVATION_MS);
     const filename = 'lifecycle-restart.cs';
     const content = 'namespace L { class Restartable { void Run() { } } }';
     const { uri } = await openCSharpFile(tmpDir, filename, content);
@@ -111,7 +112,7 @@ suite('Lifecycle E2E', () => {
 
     // CRITICAL: restart MUST recover — poll generously until symbols return so
     // later suites inherit a WORKING server (never left mid-restart).
-    const after = await waitForDocumentSymbols(reopened, 90_000);
+    const after = await waitForDocumentSymbols(reopened, LSP_RESPONSE_MS);
     assert.ok(after.length > 0, 'Server must serve symbols again after restart');
     // DocumentSymbols are hierarchical — `Restartable` is nested under namespace
     // `L`, so flatten the tree before the name lookup (executeDocumentSymbolProvider).
@@ -219,7 +220,7 @@ suite('Lifecycle E2E', () => {
   });
 
   test('retryDotnetAcquisition command runs end-to-end without throwing', async function () {
-    this.timeout(30_000);
+    this.timeout(COMMAND_MS);
     // The acquisition succeeds (SDK already present in this host) or fails and
     // surfaces a notification; either way the command must resolve. Pre-queue
     // dismissals so any prompt it shows cannot block the headless host.
@@ -230,7 +231,7 @@ suite('Lifecycle E2E', () => {
   });
 
   test('showAcquireFailureNotification offers Open/Show Log/Retry and routes Show Log', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     // Click "Show Log" -> opens the output channel, does NOT invoke the retry command.
     stubs.queueError('Show Log');
     await assert.doesNotReject(
@@ -244,7 +245,7 @@ suite('Lifecycle E2E', () => {
   });
 
   test('showAcquireFailureNotification Retry dispatches the retry command', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     // Click "Retry" -> executes the supplied command id. Use a benign, idempotent
     // command (showOutput) and assert the whole flow resolves.
     stubs.queueError('Retry').queueInfo(undefined);
@@ -286,7 +287,7 @@ suite('Lifecycle E2E', () => {
   });
 
   test('restartServer drives the live status bar through Starting and back to Running', async function () {
-    this.timeout(60_000);
+    this.timeout(ACTIVATION_MS);
     const { uri } = await openCSharpFile(
       tmpDir,
       'lifecycle-status.cs',
@@ -299,7 +300,7 @@ suite('Lifecycle E2E', () => {
     await assert.doesNotReject(async () => {
       await vscode.commands.executeCommand('sharplsp.restartServer');
     }, 'restartServer must not throw while the status bar tracks state');
-    const symbols = await waitForDocumentSymbols(uri, 30_000);
+    const symbols = await waitForDocumentSymbols(uri, LSP_RESPONSE_MS);
     assert.ok(symbols.length > 0, 'Server (and status bar) recovered to Running');
   });
 
@@ -338,7 +339,7 @@ suite('Lifecycle E2E', () => {
   });
 
   test('sort commands execute against the live explorer without throwing', async function () {
-    this.timeout(15_000);
+    this.timeout(COMMAND_MS);
     for (const command of [
       'sharplsp.sortNatural',
       'sharplsp.sortAlphabetical',
@@ -351,7 +352,7 @@ suite('Lifecycle E2E', () => {
   });
 
   test('loadSolution, refresh, and clear drive the shared state signals reactively', async function () {
-    this.timeout(15_000);
+    this.timeout(COMMAND_MS);
     // No live client is bound to state.client here, so refresh resolves to the
     // empty branch deterministically — exactly the no-client code path.
     assert.strictEqual(clientSignal.value, undefined, 'state.client starts unbound');
@@ -382,7 +383,7 @@ suite('Lifecycle E2E', () => {
   });
 
   test('selectSolution command resolves through the headless host', async function () {
-    this.timeout(20_000);
+    this.timeout(COMMAND_MS);
     // Multiple solutions exist in the fixture workspace, so a QuickPick is shown;
     // dismiss it (undefined) and assert the command still resolves cleanly.
     stubs.queuePick(undefined);
@@ -394,7 +395,7 @@ suite('Lifecycle E2E', () => {
   // ── extension.ts: activation-failure notification + degraded API ─
 
   test('notifyActivationFailure offers Show Log and Restart Window and is non-fatal', async function () {
-    this.timeout(10_000);
+    this.timeout(COMMAND_MS);
     // Dismiss the notification: no action taken, must resolve.
     stubs.queueError(undefined);
     await assert.doesNotReject(

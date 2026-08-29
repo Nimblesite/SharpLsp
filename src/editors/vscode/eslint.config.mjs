@@ -124,6 +124,25 @@ export default tseslint.config(
       // test files keep console access via the relaxed test override below.
       'no-console': 'error',
 
+      // ── 18. Await before returning — a bare `return promise` inside a
+      //        try block escapes its own catch/finally, so the error surfaces
+      //        as an unhandled rejection instead of being handled, and the
+      //        stack trace loses every frame above the async boundary. ───────
+      '@typescript-eslint/return-await': ['error', 'always'],
+      'no-return-await': 'off',
+
+      // ── 19. No async races — reading a shared variable, awaiting, then
+      //        assigning back lets a second call interleave and clobber the
+      //        result. The extension caches targets, sessions and profiles
+      //        across awaits, which is exactly where this bites. ─────────────
+      'require-atomic-updates': 'error',
+
+      // ── 20. A value returned from a Promise executor is discarded, always.
+      //        It reads like it resolves the promise and never does, so the
+      //        promise hangs forever — the process-wrapper code builds
+      //        promises around child-process callbacks. ────────────────────
+      'no-promise-executor-return': 'error',
+
       // ── Bonus rules ────────────────────────────────────────────────
       eqeqeq: ['error', 'always'],
       'no-param-reassign': 'error',
