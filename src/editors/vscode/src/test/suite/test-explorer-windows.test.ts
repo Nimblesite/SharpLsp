@@ -18,7 +18,7 @@ import {
   parseTestAssemblies,
   resolveAnnouncedAssembly,
 } from '../../test-discovery.js';
-import { buildFilterArgs } from '../../test-execution.js';
+import { buildFilterArgs, runTests } from '../../test-execution.js';
 import { escapeFilterValue, filterClause, filterExpression } from '../../test-filter.js';
 import { createSolution, projectXml, warmDiscovery, writeProject } from './dotnet-project-kit';
 import { fixtureFor } from './test-explorer-fixtures';
@@ -811,6 +811,45 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       ['--filter', `FullyQualifiedName=${CS.passing}|FullyQualifiedName=${CS.failing}`],
       'a multi-test selection is ONE invocation with one OR-ed filter, never one build per test',
     );
+  });
+
+  test('running a selection too big for one Windows command line resolves — it must not crash with spawn ENAMETOOLONG', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    // The reported bug, reproduced at the run seam: a real solution discovers
+    // 816 tests, and ▶ on the root ORs every FQN into ONE --filter value. That
+    // single argv entry alone dwarfs CreateProcess's 32 767-character ceiling,
+    // and Node's spawn throws SYNCHRONOUSLY — out of runDotnet, rejecting the
+    // run handler, which VS Code surfaces as "An error occurred attempting to
+    // run tests: Error: spawn ENAMETOOLONG".
+    const many: string[] = [];
+    for (let index = 0; index < 816; index += 1) {
+      many.push(
+        `Serilog.Tests.Formatting.Display.MessageTemplateTextFormatterqc.CanRenderLevel_${String(index)}`,
+      );
+    }
+    assert.strictEqual(
+      filterExpression(many).length > 32_767,
+      true,
+      'premise: the un-batched filter expression for 816 real-shaped FQNs exceeds the Windows command-line ceiling',
+    );
+    // A directory with NO project: `dotnet test` fails fast in the run itself,
+    // so the API is exercised without paying for a build.
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-ceiling-'));
+    try {
+      const outcome = await runTests(many, cwd);
+      assert.notStrictEqual(
+        outcome.failure,
+        undefined,
+        'a project-less directory must fail the RUN (a dotnet diagnostic), never the API contract',
+      );
+      assert.strictEqual(
+        outcome.results.size,
+        0,
+        'no test can have run in a directory without a project',
+      );
+    } finally {
+      removeDirRecursive(cwd);
+    }
   });
 
   // The pure readers those Windows shapes feed — TRX with a BOM and CRLF, the

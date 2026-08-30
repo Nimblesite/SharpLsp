@@ -45,6 +45,7 @@ import {
   findItem,
   pollForIds,
   pollUntilDiscovered,
+  runViaProfile,
   snapshotItems,
   type TestItemSnapshot,
 } from './test-explorer-kit';
@@ -124,6 +125,28 @@ const XML_PACKAGES = [
 /** Ordinal sort with an explicit comparator, for set-equality assertions. */
 function sorted(names: readonly string[]): string[] {
   return [...names].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
+
+/** The direct child labelled `label`, or `undefined` — one tree level down. */
+function childByLabel(
+  items: vscode.TestItemCollection,
+  label: string,
+): vscode.TestItem | undefined {
+  let found: vscode.TestItem | undefined;
+  items.forEach((item) => {
+    if (found === undefined && item.label === label) found = item;
+  });
+  return found;
+}
+
+/** Every leaf id anywhere under `items` — tests only, no group nodes. */
+function leafIds(items: vscode.TestItemCollection): string[] {
+  const ids: string[] = [];
+  items.forEach((item) => {
+    if (item.children.size === 0) ids.push(item.id);
+    else ids.push(...leafIds(item.children));
+  });
+  return ids;
 }
 
 /** Every line the kit must have serialized into a project file, in order. */
@@ -1253,6 +1276,186 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       fs.readFileSync(path.join(fsProjDir, FS_FIXTURE.sourceFileName), 'utf8'),
       FS_FIXTURE.source,
       'the built F# source is the fixture’s source, verbatim',
+    );
+  });
+
+  test('every test sits exactly at Assembly → Namespace → Class → Test in the tree', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    // The reported bug: after discovery the Testing view dumps every test as a
+    // FLAT list — a real solution's 816 tests land as one unscrollable wall at
+    // the bottom of the view. The tree must group them per the documented
+    // hierarchy: Assembly Name → Namespace → Test Class → Test Name.
+    await api.explorerProvider.loadSolution(slnPath);
+    await api.testController.activateAndDiscover();
+    await pollUntilDiscovered(api.testController, EXPECTED);
+
+    // Exactly two ROOT items — one per test ASSEMBLY the solution built — and
+    // neither is a test: a group id handed to a --filter would match nothing.
+    const roots: vscode.TestItem[] = [];
+    api.testController.items.forEach((item) => roots.push(item));
+    assert.strictEqual(
+      roots.length,
+      2,
+      `one root per test project, got: ${roots.map((item) => item.label).join(' | ')}`,
+    );
+    assert.deepStrictEqual(
+      sorted(roots.map((root) => root.label)),
+      [CS.projectName, FS_FIXTURE.projectName],
+      'the roots are the ASSEMBLY names (XunitCs, XunitFs), not a flat dump of every FQN',
+    );
+    const fqnSet = new Set<string>(EXPECTED);
+    for (const root of roots) {
+      assert.strictEqual(
+        fqnSet.has(root.id),
+        false,
+        `a root group must not carry a test's FQN as its id: ${root.id}`,
+      );
+      assert.strictEqual(
+        root.canResolveChildren,
+        true,
+        `an assembly root declares its children so the view offers the expander: ${root.label}`,
+      );
+    }
+
+    // EVERY FQN must resolve to a node at EXACTLY depth 4, along the path its
+    // own dotted segments prescribe: Assembly → Namespace → Class → Test.
+    // parts[-1] is the test, parts[-2] the class, the rest the namespace — the
+    // same split for a dotted F# module (`Fs.Xunit.Fixtures` → `Fs.Xunit` +
+    // `Fixtures`) as for a C# namespace, and the backtick test stays ONE leaf.
+    for (const fqn of EXPECTED) {
+      const parts = fqn.split('.');
+      const assemblyLabel = fqn.startsWith('Cs.') ? CS.projectName : FS_FIXTURE.projectName;
+      const namespaceLabel = parts.slice(0, -2).join('.');
+      const classLabel = parts.at(-2) ?? '';
+      const testLabel = parts.at(-1) ?? '';
+
+      const root = roots.find((candidate) => candidate.label === assemblyLabel);
+      assert.ok(root, `depth 1 — the assembly root ${assemblyLabel} for ${fqn}`);
+      const nsNode = childByLabel(root.children, namespaceLabel);
+      assert.ok(
+        nsNode,
+        `depth 2 — the namespace node ${namespaceLabel} under ${assemblyLabel}; saw: ${
+          [...root.children].map(([, item]) => item.label).join(' | ') || '(nothing)'
+        }`,
+      );
+      const classNode = childByLabel(nsNode.children, classLabel);
+      assert.ok(
+        classNode,
+        `depth 3 — the class node ${classLabel} under ${namespaceLabel}; saw: ${
+          [...nsNode.children].map(([, item]) => item.label).join(' | ') || '(nothing)'
+        }`,
+      );
+      const leaf = childByLabel(classNode.children, testLabel);
+      assert.ok(
+        leaf,
+        `depth 4 — the test node ${testLabel} under ${namespaceLabel}.${classLabel}; saw: ${
+          [...classNode.children].map(([, item]) => item.label).join(' | ') || '(nothing)'
+        }`,
+      );
+      assert.strictEqual(
+        leaf.id,
+        fqn,
+        `the leaf's id is the fully-qualified name, verbatim: expected ${fqn}`,
+      );
+      assert.strictEqual(
+        leaf.children.size,
+        0,
+        `a test is a LEAF — nothing nests under it: ${fqn}`,
+      );
+      for (const group of [root, nsNode, classNode]) {
+        assert.strictEqual(
+          group.children.size > 0,
+          true,
+          `a group node is never empty: ${group.label}`,
+        );
+        assert.strictEqual(
+          group.canResolveChildren,
+          true,
+          `a group declares its children so the view offers the expander: ${group.label}`,
+        );
+      }
+    }
+
+    // Level purity, across the WHOLE tree — not just the walked paths: roots
+    // hold only namespaces, namespaces only classes, classes only tests.
+    const namespaceLabels: string[] = [];
+    const classLabels: string[] = [];
+    const leafLabels: string[] = [];
+    for (const root of roots) {
+      root.children.forEach((nsNode) => {
+        assert.strictEqual(
+          nsNode.children.size > 0,
+          true,
+          `a test must never sit DIRECTLY under its assembly root: ${nsNode.label}`,
+        );
+        namespaceLabels.push(nsNode.label);
+        nsNode.children.forEach((classNode) => {
+          assert.strictEqual(
+            classNode.children.size > 0,
+            true,
+            `a test must never sit DIRECTLY under a namespace node: ${classNode.label}`,
+          );
+          classLabels.push(classNode.label);
+          classNode.children.forEach((leaf) => {
+            assert.strictEqual(
+              leaf.children.size,
+              0,
+              `nothing may nest DEEPER than a test: ${leaf.id}`,
+            );
+            leafLabels.push(leaf.id);
+          });
+        });
+      });
+    }
+    // The leaves are EXACTLY the eleven FQNs — grouping added structure
+    // without losing, duplicating or renaming a single test.
+    assert.deepStrictEqual(
+      sorted(leafLabels),
+      sorted(EXPECTED),
+      'every test is a leaf exactly once, at depth 4 and nowhere else',
+    );
+    assert.deepStrictEqual(
+      sorted(namespaceLabels),
+      ['Cs.Xunit.Fixtures', 'Fs.Xunit'],
+      'one namespace group per assembly, split from the FQNs themselves',
+    );
+    assert.deepStrictEqual(
+      sorted(classLabels),
+      ['CalculatorTests', 'Fixtures'],
+      'one class group per namespace, split from the FQNs themselves',
+    );
+    assertLeafItem(api.testController.items, CS.passing);
+    assertLeafItem(api.testController.items, FS_FIXTURE.passing);
+
+    // The ▶ gesture on a CLASS group: the run must expand to the class's leaf
+    // tests, not filter on the group's own id (which matches no test).
+    const csRoot = roots.find((root) => root.label === CS.projectName);
+    const csClass = childByLabel(childByLabel(csRoot?.children ?? api.testController.items, 'Cs.Xunit.Fixtures')?.children ?? api.testController.items, 'CalculatorTests');
+    assert.ok(csClass, 'the C# class group resolves for the ▶ gesture');
+    const csLeaves: string[] = [];
+    csClass.children.forEach((leaf) => csLeaves.push(leaf.id));
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [csClass]);
+    for (const id of csLeaves) {
+      const result = api.testController.getResult(id);
+      assert.ok(
+        result !== undefined && result.outcome !== 'notRun',
+        `▶ on the class node must produce a real outcome for ${id}: ${JSON.stringify(result)}`,
+      );
+    }
+    assert.strictEqual(
+      api.testController.getResult(CS.passing)?.outcome,
+      'passed',
+      'the class run reports the passing fact as passed',
+    );
+    assert.strictEqual(
+      api.testController.getResult(CS.failing)?.outcome,
+      'failed',
+      'the class run reports the failing fact as failed',
+    );
+    assert.strictEqual(
+      api.testController.getResult(CS.skipped)?.outcome,
+      'skipped',
+      'the class run reports the skipped fact as skipped',
     );
   });
 });
