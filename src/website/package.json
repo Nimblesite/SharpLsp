@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@11ty/eleventy": "^3.1.6",
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "^1.62.1",
     "eleventy-plugin-techdoc": "0.2.0",
-    "markdown-it": "^14.3.0"
+    "markdown-it": "^15.0.1"
   },
   "devDependencies": {
     "luxon": "^3.7.2"
