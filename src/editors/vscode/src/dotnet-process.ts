@@ -118,7 +118,27 @@ export async function runDotnet(
   if (signal?.aborted === true) return terminated(EMPTY, CANCELLED);
   return await new Promise<DotnetRun>((resolve) => {
     const capture: Capture = { stdout: '', stderr: '', reason: undefined };
-    const child = spawn(dotnetExecutable, [...args], spawnOptions(cwd, hooks?.env));
+    // `spawn` can THROW SYNCHRONOUSLY — most violently when the argument
+    // vector exceeds the Windows command-line ceiling, where it throws
+    // `spawn ENAMETOOLONG` before any 'error' event could fire. This function's
+    // contract is "never rejects", so the throw is settled as a failed run the
+    // caller can report, instead of blowing the run handler out of VS Code's
+    // Testing view with "An error occurred attempting to run tests".
+    let child: ChildProcess;
+    try {
+      child = spawn(dotnetExecutable, [...args], spawnOptions(cwd, hooks?.env));
+    } catch (spawnError: unknown) {
+      resolve({
+        ...EMPTY,
+        failed: true,
+        killed: false,
+        errorMessage:
+          spawnError instanceof Error
+            ? spawnError.message
+            : `dotnet failed to start: ${String(spawnError)}`,
+      });
+      return;
+    }
     absorbOutput(capture, child, hooks?.onOutput);
     const timer = setTimeout(() => {
       kill(capture, child, `timed out after ${String(timeoutMs)}ms`);

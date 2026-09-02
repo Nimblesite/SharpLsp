@@ -38,7 +38,7 @@ import { createSolution, projectXml, warmDiscovery, writeProject } from './dotne
 import { FRAMEWORK_FIXTURES, type FrameworkFixture } from './test-explorer-fixtures';
 import {
   activateTestExplorer,
-  collectItemIds,
+  collectLeafIds,
   discoverSolution,
   drainDiscovery,
   findItem,
@@ -305,7 +305,11 @@ function assertItemShape(snapshot: TestItemSnapshot, anchor: string): void {
     true,
     `${snapshot.id} must end with the label the tree renders`,
   );
-  assert.strictEqual(snapshot.childCount, 0, `discovery produces a flat tree: ${snapshot.id}`);
+  assert.strictEqual(
+    snapshot.childCount,
+    0,
+    `a discovered TEST is a leaf; groups sit above it: ${snapshot.id}`,
+  );
   assert.deepStrictEqual(
     snapshot.tags,
     [],
@@ -553,12 +557,12 @@ function assertGhostAbsent(
     'a name that does not exist must never become a tree item',
   );
   assert.strictEqual(
-    collectItemIds(items).length,
+    collectLeafIds(items).length,
     27,
     'a lookup that matched nothing must not disturb the discovered tree',
   );
   assert.deepStrictEqual(
-    sorted(collectItemIds(items)),
+    sorted(collectLeafIds(items)),
     sorted(ALL_EXPECTED),
     'and the tree still holds exactly the fixtures’ names',
   );
@@ -611,7 +615,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
 
   /** Discover the fixture solution unless the tree already holds every name. */
   async function ensureTree(): Promise<string[]> {
-    const current = collectItemIds(api.testController.items);
+    const current = collectLeafIds(api.testController.items);
     if (ALL_EXPECTED.every((name) => current.includes(name))) return current;
     const ids = await discoverSolution(api, slnPath, ALL_EXPECTED);
     await api.testController.whenIdle();
@@ -650,7 +654,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     this.timeout(DOTNET_CLI_MS);
     api.testController.items.replace([]);
     assert.deepStrictEqual(
-      collectItemIds(api.testController.items),
+      collectLeafIds(api.testController.items),
       [],
       'the tree starts empty, so everything below was discovered HERE',
     );
@@ -783,34 +787,69 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     this.timeout(DOTNET_CLI_MS);
     await ensureTree();
     const snapshots = snapshotItems(api.testController.items);
-    const labels = snapshots.map((snapshot) => snapshot.label);
-    assert.strictEqual(snapshots.length, ALL_EXPECTED.length, 'one snapshot per discovered test');
-    assert.strictEqual(snapshots.length, 27, 'the Testing view renders exactly 27 rows');
-    assert.deepStrictEqual(
-      sorted(snapshots.map((snapshot) => snapshot.id)),
-      sorted(ALL_EXPECTED),
-      'the rendered ids are exactly the fixtures’ names',
+    // Groups and tests render different row shapes — the hierarchy has both.
+    const groupSnapshots = snapshots.filter((snapshot) => snapshot.childCount > 0);
+    const testSnapshots = snapshots.filter((snapshot) => snapshot.childCount === 0);
+    const labels = testSnapshots.map((snapshot) => snapshot.label);
+    assert.strictEqual(
+      testSnapshots.length,
+      ALL_EXPECTED.length,
+      'one snapshot per discovered test',
     );
-    for (const snapshot of snapshots) assertItemShape(snapshot, root);
+    assert.strictEqual(testSnapshots.length, 27, 'the Testing view renders exactly 27 TEST rows');
+    assert.strictEqual(
+      groupSnapshots.length,
+      18,
+      'six assemblies plus their namespace and class groups render 18 GROUP rows',
+    );
+    assert.strictEqual(
+      api.testController.items.size,
+      6,
+      'one root per fixture assembly — the 27 tests nest under them',
+    );
+    assert.deepStrictEqual(
+      sorted(testSnapshots.map((snapshot) => snapshot.id)),
+      sorted(ALL_EXPECTED),
+      'the rendered TEST ids are exactly the fixtures’ names',
+    );
+    for (const snapshot of groupSnapshots) {
+      assert.strictEqual(
+        snapshot.childCount > 0,
+        true,
+        `a group row carries its children: ${snapshot.id}`,
+      );
+      assert.strictEqual(
+        ALL_EXPECTED.includes(snapshot.id),
+        false,
+        `a group id is never an FQN: ${snapshot.id}`,
+      );
+      assert.strictEqual(
+        snapshot.description,
+        undefined,
+        `a group row carries no FQN description: ${snapshot.id}`,
+      );
+      assert.deepStrictEqual(snapshot.tags, [], `a group row carries no tag: ${snapshot.id}`);
+    }
+    for (const snapshot of testSnapshots) assertItemShape(snapshot, root);
     assert.deepStrictEqual(
       snapshots.flatMap((snapshot) => snapshot.tags),
       [],
-      'plain xUnit/NUnit/MSTest tests carry no framework tag anywhere in the tree',
+      'plain xUnit/NUnit/MSTest tests AND their groups carry no framework tag anywhere in the tree',
     );
     assert.strictEqual(
       new Set(snapshots.map((snapshot) => snapshot.uriPath)).size,
       1,
-      'every item shares the one discovery-target uri',
+      'every item — test and group alike — shares the one discovery-target uri',
     );
     assert.strictEqual(
-      new Set(snapshots.map((snapshot) => snapshot.description)).size,
+      new Set(testSnapshots.map((snapshot) => snapshot.description)).size,
       27,
       'descriptions stay unique even where labels collide',
     );
     assert.strictEqual(
-      snapshots.reduce((sum, snapshot) => sum + snapshot.childCount, 0),
+      testSnapshots.reduce((sum, snapshot) => sum + snapshot.childCount, 0),
       0,
-      'a flat tree has no children at all',
+      'only GROUP rows carry children — every TEST row is a leaf',
     );
     assert.strictEqual(
       labels.filter((label) => label === 'Adds_TwoNumbers').length,
@@ -1123,7 +1162,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       result,
       'cachedResults exposes the very object runSingle resolved',
     );
-    assertGhostAbsent(api.testController.items, collectItemIds(api.testController.items), ghost);
+    assertGhostAbsent(api.testController.items, collectLeafIds(api.testController.items), ghost);
     // The controller is not poisoned: a real test still runs green afterwards.
     await runGreen(api.testController, fixture, fixture.passing, dirFor(fixture));
     assert.strictEqual(

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { effect } from './signals';
 import { info } from './log';
 import * as state from './state';
-import { listTests, type TestListing } from './test-discovery';
+import { listTests, type TestAssemblyListing, type TestListing } from './test-discovery';
 import {
   cancelled,
   runOptions,
@@ -11,6 +11,7 @@ import {
   type TestRunOutcome,
 } from './test-execution';
 import { debugSelectedTests, type TestDebugHost } from './test-debug';
+import { forEachLeafIn } from './test-tree';
 import { loadDetailedCoverage } from './test-coverage';
 import {
   addCoverage,
@@ -43,9 +44,17 @@ export type { CachedTestResult } from './test-reporting';
 const DISCOVERY_DEBOUNCE_MS = 1_000;
 
 /**
+ * Id prefix marking the row that explains WHY discovery failed. Error rows
+ * are leaves that never run; a successful sweep removes them.
+ */
+const ERROR_ITEM_PREFIX = 'discovery-error:';
+
+/**
  * Test controller integrating with VS Code's Testing API.
- * Discovers tests by fully-qualified name (see `test-discovery.ts`) and runs
- * them in a single `dotnet test` invocation, reading per-test outcomes back out
+ * Discovers tests by fully-qualified name (see `test-discovery.ts`), renders
+ * them grouped per the documented hierarchy — **Assembly → Namespace → Class →
+ * Test** — and runs them in `dotnet test` invocations whose `--filter` stays
+ * under the Windows command-line ceiling, reading per-test outcomes back out
  * of the TRX report (see `test-execution.ts`).
  * Supports xUnit, NUnit, MSTest, Expecto, and FsCheck.
  *
@@ -233,12 +242,14 @@ export class SharpLspTestController {
    * Discover every test in the loaded solution (or, absent one, each workspace
    * folder) and replace the tree. A superseded sweep never clobbers a newer one,
    * and a sweep where NO target could be enumerated leaves the previous tree
-   * standing rather than blanking the view on a transient `dotnet` failure.
+   * standing — with an error row appended saying why — rather than blanking the
+   * view on a transient `dotnet` failure.
    */
   public async discover(): Promise<void> {
     const generation = ++this.discoverGeneration;
     const targets = discoveryTargets();
     const items: vscode.TestItem[] = [];
+    const errors: vscode.TestItem[] = [];
     let anyOk = targets.length === 0;
     for (const target of targets) {
       // A newer sweep supersedes this one: stop before paying for another build
@@ -247,25 +258,56 @@ export class SharpLspTestController {
       const listing = await this.safeList(target);
       anyOk = anyOk || listing.ok;
       const uri = vscode.Uri.file(dirOf(target));
+      if (!listing.ok && listing.names.length === 0) {
+        // The enumeration itself failed: surface the real diagnostic as a row,
+        // never a silent blank view (MSB1011 ambiguity, build errors, missing
+        // target — the cases the extension log showed going unnoticed).
+        errors.push(this.makeErrorItem(target, uri, listing.warnings));
+        continue;
+      }
+      if (listing.byAssembly.length > 0) {
+        for (const assembly of listing.byAssembly) {
+          items.push(this.makeAssemblyItem(assembly, uri));
+        }
+        continue;
+      }
+      // Display-name fallback: no attribution, so flat rows — weaker, but never
+      // worse than dropping the tests outright.
       for (const fqn of listing.names) {
         items.push(this.makeTestItem(fqn, uri));
       }
     }
     if (generation !== this.discoverGeneration) return;
-    this.applyDiscovery(items, anyOk, targets.length);
+    this.applyDiscovery(items, errors, anyOk, targets.length);
   }
 
-  /** Replace the tree, unless nothing could be enumerated and one already exists. */
-  private applyDiscovery(items: vscode.TestItem[], anyOk: boolean, targetCount: number): void {
-    if (!anyOk && this.controller.items.size > 0) {
+  /**
+   * Replace the tree, unless nothing could be enumerated and one already exists
+   * — a transient failure (a `dotnet` file lock mid-sweep) then keeps the
+   * standing tree, logged but not perturbed, so a good view never flaps. Error
+   * rows appear only when a tree is actually (re)built: a total failure over an
+   * EMPTY view surfaces the real diagnostic instead of silent blankness.
+   */
+  private applyDiscovery(
+    items: vscode.TestItem[],
+    errors: vscode.TestItem[],
+    anyOk: boolean,
+    targetCount: number,
+  ): void {
+    if (!anyOk && items.length === 0 && this.controller.items.size > 0) {
       info(
-        `Test discovery: every target failed; keeping ${String(this.controller.items.size)} item(s)`,
+        `Test discovery: every target failed; keeping ${String(
+          this.controller.items.size,
+        )} item(s) standing`,
       );
       return;
     }
-    this.controller.items.replace(items);
-    this.pruneResults(new Set(items.map((item) => item.id)));
-    info(`Test discovery: ${String(items.length)} test(s) from ${String(targetCount)} target(s)`);
+    this.controller.items.replace([...items, ...errors]);
+    this.pruneResults(this.leafIdSet([...items, ...errors]));
+    info(
+      `Test discovery: ${String(items.length)} item(s) from ${String(targetCount)} target(s)` +
+        (errors.length > 0 ? `; ${String(errors.length)} error row(s)` : ''),
+    );
   }
 
   /**
@@ -283,6 +325,13 @@ export class SharpLspTestController {
       dropped += 1;
     }
     if (dropped > 0) this.resultsChangedEmitter.fire();
+  }
+
+  /** Every LEAF id under `items`, recursively — group nodes never hold results. */
+  private leafIdSet(items: readonly vscode.TestItem[]): Set<string> {
+    const ids = new Set<string>();
+    forEachLeafIn(items, (item) => ids.add(item.id));
+    return ids;
   }
 
   /** List one target, logging whatever diagnostics the enumeration produced. */
@@ -306,6 +355,80 @@ export class SharpLspTestController {
     return item;
   }
 
+  /** A non-test group node: an assembly, a namespace or a class. */
+  private makeGroupItem(id: string, label: string, uri: vscode.Uri): vscode.TestItem {
+    const item = this.controller.createTestItem(id, label, uri);
+    item.canResolveChildren = true;
+    return item;
+  }
+
+  /**
+   * Build one assembly's Assembly → Namespace → Class → Test subtree from its
+   * fully-qualified names. The last dotted segment is the test, the one before
+   * it the class, the rest joined the namespace — deterministic for C#
+   * namespaces and dotted F# modules alike (`Fs.Xunit.Fixtures.adds two
+   * numbers` → `Fs.Xunit` / `Fixtures` / `adds two numbers`). Shorter names
+   * nest under whatever levels exist; nothing is ever dropped.
+   */
+  private makeAssemblyItem(assembly: TestAssemblyListing, uri: vscode.Uri): vscode.TestItem {
+    const root = this.makeGroupItem(`assembly:${assembly.path}`, assembly.name, uri);
+    const namespaces = new Map<string, vscode.TestItem>();
+    const classes = new Map<string, vscode.TestItem>();
+    for (const fqn of assembly.names) {
+      const parts = fqn.split('.');
+      const namespaceLabel = parts.length >= 3 ? parts.slice(0, -2).join('.') : '';
+      const classLabel = parts.length >= 2 ? (parts.at(-2) ?? '') : '';
+      let parent = root;
+      if (namespaceLabel !== '') {
+        const nsId = `namespace:${assembly.path}|${namespaceLabel}`;
+        let nsItem = namespaces.get(nsId);
+        if (nsItem === undefined) {
+          nsItem = this.makeGroupItem(nsId, namespaceLabel, uri);
+          namespaces.set(nsId, nsItem);
+          root.children.add(nsItem);
+        }
+        parent = nsItem;
+      }
+      if (classLabel !== '') {
+        const classId = `class:${assembly.path}|${namespaceLabel}|${classLabel}`;
+        let classItem = classes.get(classId);
+        if (classItem === undefined) {
+          classItem = this.makeGroupItem(classId, classLabel, uri);
+          classes.set(classId, classItem);
+          parent.children.add(classItem);
+        }
+        parent = classItem;
+      }
+      parent.children.add(this.makeTestItem(fqn, uri));
+    }
+    return root;
+  }
+
+  /**
+   * The row that explains WHY discovery failed: the real `dotnet` diagnostic
+   * plus a remedy, so the user acts instead of staring at an empty view.
+   */
+  private makeErrorItem(
+    target: string,
+    uri: vscode.Uri,
+    warnings: readonly string[],
+  ): vscode.TestItem {
+    const item = this.controller.createTestItem(
+      `${ERROR_ITEM_PREFIX}${target}`,
+      'Test discovery failed',
+      uri,
+    );
+    item.description = target;
+    const diagnostics =
+      warnings.length > 0 ? warnings.join('\n\n') : 'dotnet test produced no test listing.';
+    item.error = new vscode.MarkdownString(
+      `SharpLsp could not enumerate tests for \`${target}\`.\n\n` +
+        `${diagnostics}\n\n` +
+        'Load one solution with the **SharpLsp: Select Solution** command, fix the build errors above, then refresh the Testing view.',
+    );
+    return item;
+  }
+
   /** The Run and Run-with-Coverage profiles share every step but collection. */
   private async runProfileHandler(
     request: vscode.TestRunRequest,
@@ -316,7 +439,9 @@ export class SharpLspTestController {
     const tests = this.collectTests(request);
     for (const test of tests) run.enqueued(test);
     try {
-      await this.executeInto(run, tests, token, coverage);
+      const filterIds = filterIdsFor(request, tests);
+      if (request.include !== undefined && tests.length === 0) return;
+      await this.executeInto(run, tests, token, coverage, filterIds);
     } finally {
       run.end();
       this.resultsChangedEmitter.fire();
@@ -329,6 +454,7 @@ export class SharpLspTestController {
     tests: readonly vscode.TestItem[],
     token: vscode.CancellationToken,
     coverage: boolean,
+    filterIds: readonly string[],
   ): Promise<void> {
     const cwd = runCwd();
     if (cwd === undefined) {
@@ -338,10 +464,10 @@ export class SharpLspTestController {
     if (cancelled(token)) return;
     for (const test of tests) run.started(test);
     const resultsDirectory = coverage ? freshCoverageDir(cwd) : undefined;
-    const outcome = await this.invoke({ tests, cwd, token, coverage, resultsDirectory });
-    // ⏹ means STOP. The whole selection runs in ONE `dotnet test`, which the
-    // token has just killed mid-flight, so whatever it managed to write is a
-    // TRUNCATED account of a run the user abandoned: never cache or paint it.
+    const outcome = await this.invoke({ filterIds, cwd, token, coverage, resultsDirectory });
+    // ⏹ means STOP. The whole selection runs in `dotnet test` invocations which
+    // the token has just killed mid-flight, so whatever they managed to write
+    // is a TRUNCATED account of a run the user abandoned: never cache or paint it.
     if (cancelled(token)) return;
     reportOutcome(run, tests, outcome, this.cacheWriter());
     if (coverage && resultsDirectory !== undefined) addCoverage(run, resultsDirectory);
@@ -349,11 +475,12 @@ export class SharpLspTestController {
 
   /** One queued, CANCELLABLE `dotnet test` over the whole selection. */
   private async invoke(request: RunInvocation): Promise<TestRunOutcome> {
-    const ids = request.tests.map((test) => test.id);
     const cancellation = cancellationSignal(request.token);
     const options = runOptions(request, cancellation.signal);
     try {
-      return await this.enqueue(async () => await runTests(ids, request.cwd, options));
+      return await this.enqueue(
+        async () => await runTests(request.filterIds, request.cwd, options),
+      );
     } finally {
       cancellation.dispose();
     }
@@ -391,7 +518,14 @@ export class SharpLspTestController {
       return;
     }
     for (const test of tests) run.started(test);
-    await debugSelectedTests(this.debugHost(), run, tests, token, cwd);
+    await debugSelectedTests(
+      this.debugHost(),
+      run,
+      tests,
+      token,
+      cwd,
+      filterIdsFor(request, tests),
+    );
   }
 
   /** The slice of this controller the test-debug flow needs. */
@@ -409,20 +543,27 @@ export class SharpLspTestController {
   /**
    * The tests a request selects: its `include` set (or the whole tree when it
    * has none), minus everything the user explicitly EXCLUDED. Ignoring
-   * `exclude` runs tests the user just deselected in the Testing view.
+   * `exclude` runs tests the user just deselected in the Testing view. Group
+   * nodes expand to their leaf tests — a class or namespace ▶ runs its members
+   * — and discovery-error rows are never selectable as tests.
    */
   private collectTests(request: vscode.TestRunRequest): vscode.TestItem[] {
     const excluded = new Set((request.exclude ?? []).map((item) => item.id));
     const tests: vscode.TestItem[] = [];
-    if (request.include !== undefined) {
-      for (const item of request.include) {
-        if (!excluded.has(item.id)) tests.push(item);
+    const walk = (item: vscode.TestItem): void => {
+      if (excluded.has(item.id)) return;
+      if (item.error !== undefined) return;
+      if (item.children.size === 0) {
+        tests.push(item);
+        return;
       }
+      item.children.forEach(walk);
+    };
+    if (request.include !== undefined) {
+      for (const item of request.include) walk(item);
       return tests;
     }
-    this.controller.items.forEach((item) => {
-      if (!excluded.has(item.id)) tests.push(item);
-    });
+    this.controller.items.forEach(walk);
     return tests;
   }
 
@@ -457,6 +598,19 @@ export class SharpLspTestController {
     info(`Test execution produced no result for ${testId}: ${message}`);
     return { outcome: 'notRun', passed: false, duration: outcome.durationMs, message };
   }
+}
+
+/**
+ * The filter ids a run uses. "Run everything, nothing excluded" is how VS Code
+ * expresses ▶ on the root of the Testing view; passing NO filter then runs every
+ * test in ONE `dotnet test` — instead of N command-line-sized filter batches.
+ */
+function filterIdsFor(
+  request: vscode.TestRunRequest,
+  tests: readonly vscode.TestItem[],
+): readonly string[] {
+  const unfiltered = request.include === undefined && (request.exclude ?? []).length === 0;
+  return unfiltered ? [] : tests.map((test) => test.id);
 }
 
 /**

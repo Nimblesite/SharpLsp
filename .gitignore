@@ -168,3 +168,10 @@ deslop-*.log
 !/src/editors/vscode/test-fixtures/workspace/crosslanguage/
 !/src/editors/vscode/test-fixtures/workspace/fsharp/
 /src/editors/vscode/test-fixtures/workspace/sharplsp-*/
+
+# Google Trends research output. `src/website/tools/trends-research.mjs` writes
+# this file by driving the live trends.google.com explore UI; it is a ~7 MB
+# capture of one run's raw API responses, reproducible on demand and read by
+# nothing in the build. Committed once by accident, it dwarfed every other file
+# in the repository.
+/src/website/tools/trends-results.json

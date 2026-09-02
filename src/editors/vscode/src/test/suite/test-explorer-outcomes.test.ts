@@ -35,7 +35,7 @@ import { createSolution, warmDiscovery } from './dotnet-project-kit';
 import { fixtureFor, LIBRARY_TEST, writeCoverageFixture } from './test-explorer-fixtures';
 import {
   activateTestExplorer,
-  collectItemIds,
+  collectLeafIds,
   drainDiscovery,
   findItem,
   nextResultsChange,
@@ -171,7 +171,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       true,
       'the library test is a real pass, not a fixture prop',
     );
-    const treeIds = collectItemIds(api.testController.items);
+    const treeIds = collectLeafIds(api.testController.items);
     assert.deepStrictEqual(
       sorted(treeIds),
       sorted(ALL_TESTS),
@@ -243,7 +243,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'and the cache is keyed by FQN, so no key repeats',
     );
     assert.deepStrictEqual(
-      sorted(collectItemIds(api.testController.items)),
+      sorted(collectLeafIds(api.testController.items)),
       sorted(ALL_TESTS),
       'running tests must not mutate the tree',
     );
@@ -345,7 +345,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'and a skip stays a skip when twelve tests share one invocation',
     );
     assert.deepStrictEqual(
-      sorted(collectItemIds(api.testController.items)),
+      sorted(collectLeafIds(api.testController.items)),
       sorted(ALL_TESTS),
       'neither invocation mutated the tree',
     );
@@ -532,7 +532,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'and still holds no duplicate key',
     );
     assert.deepStrictEqual(
-      sorted(collectItemIds(api.testController.items)),
+      sorted(collectLeafIds(api.testController.items)),
       sorted(ALL_TESTS),
       'a subset run leaves the whole tree standing',
     );
@@ -705,7 +705,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'the coverage run updated results without dropping any',
     );
     assert.deepStrictEqual(
-      sorted(collectItemIds(api.testController.items)),
+      sorted(collectLeafIds(api.testController.items)),
       sorted(ALL_TESTS),
       'and it left the tree exactly as it was',
     );
@@ -841,7 +841,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'the Debug profile must not add cache entries',
     );
     assert.deepStrictEqual(
-      sorted(collectItemIds(api.testController.items)),
+      sorted(collectLeafIds(api.testController.items)),
       sorted(ALL_TESTS),
       'nor touch the tree',
     );
@@ -866,7 +866,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     assertFailed(cachedFor(api, CS.failing), CS.failing);
     assertSkipped(cachedFor(api, FSX.skipped), FSX.skipped);
     const baseline = new Map(api.testController.cachedResults);
-    const treeBefore = collectItemIds(api.testController.items);
+    const treeBefore = collectLeafIds(api.testController.items);
     assert.strictEqual(
       baseline.size > 0,
       true,
@@ -933,7 +933,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'a cancelled run invents no cache entries',
     );
     assert.deepStrictEqual(
-      sorted(collectItemIds(api.testController.items)),
+      sorted(collectLeafIds(api.testController.items)),
       sorted(treeBefore),
       'a cancelled run leaves the tree exactly as it was',
     );
@@ -952,7 +952,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
   test('running an id no project contains reports notRun, names the id, and leaves the tree alone', async function () {
     this.timeout(DOTNET_CLI_MS);
     const ghost = 'Ghost.Namespace.NoSuchClass.NoSuchTest';
-    const treeBefore = collectItemIds(api.testController.items);
+    const treeBefore = collectLeafIds(api.testController.items);
     assert.strictEqual(
       treeBefore.includes(ghost),
       false,
@@ -1027,7 +1027,7 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       'and never the error icon',
     );
     assert.deepStrictEqual(
-      sorted(collectItemIds(api.testController.items)),
+      sorted(collectLeafIds(api.testController.items)),
       sorted(treeBefore),
       'an unknown id must not add, remove or reorder tree items',
     );

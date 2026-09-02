@@ -690,17 +690,37 @@ function scheduleSolutionRefresh(solutionFilePath: string): void {
 async function selectAndLoadSolution(): Promise<void> {
   const generation = ++solutionSelectionGeneration;
   const initialSolution = sharedState.solutionPath.value;
-  const solutions = await solution.findSolutions();
-  if (!solutionSelectionIsCurrent(generation, initialSolution) || solutions.length === 0) return;
-  const picked =
-    solutions.length === 1 ? solutions[0] : await solution.promptUserSelection(solutions);
-  if (!solutionSelectionIsCurrent(generation, initialSolution)) return;
-  if (picked !== undefined) {
-    await loadSolution(picked);
-    return;
-  }
-  // User dismissed the QuickPick — show solutions as buttons in the tree.
-  explorerProvider?.showSolutionPicker(solutions);
+
+  // [SE-LOAD-FEEDBACK]: without this the explorer sits blank while the
+  // workspace scan (up to 5s) and then the solution load run, and the user
+  // has no signal that anything is happening. `window.withProgress` puts a
+  // native progress bar in the Solution Explorer view title with a status
+  // message; the `loadPhase` signal drives the in-tree spinner node.
+  await window.withProgress({ location: { viewId: VIEW_SOLUTION_EXPLORER } }, async (progress) => {
+    progress.report({ message: 'Searching for solutions…' });
+    const phase = sharedState.beginDiscovery();
+    // Same contract as `loadSolution` below: a failed scan must clear the
+    // phase, or the tree spins forever on a search that already gave up.
+    let solutions: readonly solution.SolutionSelection[];
+    try {
+      solutions = await solution.findSolutions();
+    } finally {
+      sharedState.endLoadPhase(phase);
+    }
+    if (!solutionSelectionIsCurrent(generation, initialSolution) || solutions.length === 0) {
+      return;
+    }
+    const picked =
+      solutions.length === 1 ? solutions[0] : await solution.promptUserSelection(solutions);
+    if (!solutionSelectionIsCurrent(generation, initialSolution)) return;
+    if (picked !== undefined) {
+      progress.report({ message: `Loading ${picked.name}…` });
+      await loadSolution(picked);
+      return;
+    }
+    // User dismissed the QuickPick — show solutions as buttons in the tree.
+    explorerProvider?.showSolutionPicker(solutions);
+  });
 }
 
 function solutionSelectionIsCurrent(
@@ -717,19 +737,32 @@ async function loadSolution(selected: solution.SolutionSelection): Promise<void>
   solutionSelectionGeneration += 1;
   log.info(`Loading solution: ${selected.path}`);
 
-  // Tell the LSP server to reload sidecars with this specific solution.
-  // Without this, the sidecar uses the workspace root and may pick the
-  // wrong solution when multiple exist — breaking hover, definition, etc.
-  if (lspClient !== undefined) {
-    try {
-      await lspClient.sendRequest('sharplsp/loadSolution', {
-        solutionPath: selected.path,
-      });
-    } catch (err: unknown) {
-      const msg = getErrorMessage(err);
-      log.error(`sharplsp/loadSolution failed: ${msg}`);
-    }
-  }
+  // Cover the whole load — the LSP reload below runs BEFORE
+  // state.loadSolution begins its own phase, and the tree must not sit on a
+  // stale/blank view meanwhile ([SE-LOAD-FEEDBACK]).
+  const phase = sharedState.beginLoading(selected.path);
 
-  await explorerProvider?.loadSolution(selected.path);
+  // `finally`, never a trailing statement: a throw out of the explorer load
+  // would otherwise leave the phase set forever, and the tree renders a
+  // spinner for as long as a phase is active — a permanently "loading"
+  // Solution Explorer with no way back ([SE-LOAD-FEEDBACK]).
+  try {
+    // Tell the LSP server to reload sidecars with this specific solution.
+    // Without this, the sidecar uses the workspace root and may pick the
+    // wrong solution when multiple exist — breaking hover, definition, etc.
+    if (lspClient !== undefined) {
+      try {
+        await lspClient.sendRequest('sharplsp/loadSolution', {
+          solutionPath: selected.path,
+        });
+      } catch (err: unknown) {
+        const msg = getErrorMessage(err);
+        log.error(`sharplsp/loadSolution failed: ${msg}`);
+      }
+    }
+
+    await explorerProvider?.loadSolution(selected.path);
+  } finally {
+    sharedState.endLoadPhase(phase);
+  }
 }

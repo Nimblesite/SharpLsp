@@ -45,10 +45,12 @@ import {
   findItem,
   pollForIds,
   pollUntilDiscovered,
+  runViaProfile,
   snapshotItems,
   type TestItemSnapshot,
 } from './test-explorer-kit';
-import { comparablePath, removeDirRecursive } from './test-helpers.js';
+import { findTestByMethodName } from '../../test-lens.js';
+import { comparablePath, removeDirRecursive, sleep } from './test-helpers.js';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
 const CS = fixtureFor('xunit-csharp');
@@ -124,6 +126,165 @@ const XML_PACKAGES = [
 /** Ordinal sort with an explicit comparator, for set-equality assertions. */
 function sorted(names: readonly string[]): string[] {
   return [...names].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
+
+/** The direct child labelled `label`, or `undefined` — one tree level down. */
+function childByLabel(
+  items: vscode.TestItemCollection,
+  label: string,
+): vscode.TestItem | undefined {
+  let found: vscode.TestItem | undefined;
+  items.forEach((item) => {
+    if (found === undefined && item.label === label) found = item;
+  });
+  return found;
+}
+
+/** Every leaf id anywhere under `items` — tests only, no group nodes. */
+function leafIds(items: vscode.TestItemCollection): string[] {
+  const ids: string[] = [];
+  items.forEach((item) => {
+    if (item.children.size === 0) ids.push(item.id);
+    else ids.push(...leafIds(item.children));
+  });
+  return ids;
+}
+
+/** The fixture's eleven FQNs as a set, for membership assertions. */
+const EXPECTED_SET = new Set<string>(EXPECTED);
+
+/**
+ * Assert the settled tree is EXACTLY the fixture's documented hierarchy —
+ * Assembly → Namespace → Class → Test — and return the leaf ids. Called by
+ * EVERY tree-touching test in this suite, so no regression can localize the
+ * hierarchy to a single test's assertions.
+ */
+function assertHierarchyTree(items: vscode.TestItemCollection): string[] {
+  const roots: vscode.TestItem[] = [];
+  items.forEach((item) => roots.push(item));
+  assert.strictEqual(
+    roots.length,
+    2,
+    `two ASSEMBLY roots — one per test project — got: ${
+      roots.map((rootNode) => rootNode.label).join(' | ') || '(nothing)'
+    }`,
+  );
+  assert.deepStrictEqual(
+    sorted(roots.map((rootNode) => rootNode.label)),
+    sorted([CS.projectName, FS_FIXTURE.projectName]),
+    'the roots are the assembly names (XunitCs, XunitFs)',
+  );
+  const namespaces: string[] = [];
+  const classes: string[] = [];
+  const leaves: string[] = [];
+  for (const rootNode of roots) {
+    assert.strictEqual(
+      EXPECTED_SET.has(rootNode.id),
+      false,
+      `a root is a group, never an FQN: ${rootNode.id}`,
+    );
+    assert.strictEqual(
+      rootNode.canResolveChildren,
+      true,
+      `an assembly root declares children so the view offers the expander: ${rootNode.label}`,
+    );
+    rootNode.children.forEach((nsNode) => {
+      namespaces.push(nsNode.label);
+      assert.strictEqual(
+        nsNode.children.size > 0,
+        true,
+        `a namespace group is never empty: ${nsNode.label}`,
+      );
+      assert.strictEqual(
+        nsNode.canResolveChildren,
+        true,
+        `a namespace node declares children: ${nsNode.label}`,
+      );
+      assert.strictEqual(
+        EXPECTED_SET.has(nsNode.id),
+        false,
+        `a namespace id is a group id, never an FQN: ${nsNode.id}`,
+      );
+      nsNode.children.forEach((classNode) => {
+        classes.push(classNode.label);
+        assert.strictEqual(
+          classNode.children.size > 0,
+          true,
+          `a class group is never empty: ${classNode.label}`,
+        );
+        assert.strictEqual(
+          classNode.canResolveChildren,
+          true,
+          `a class node declares children: ${classNode.label}`,
+        );
+        assert.strictEqual(
+          EXPECTED_SET.has(classNode.id),
+          false,
+          `a class id is a group id, never an FQN: ${classNode.id}`,
+        );
+        classNode.children.forEach((leaf) => {
+          leaves.push(leaf.id);
+          assert.strictEqual(
+            leaf.children.size,
+            0,
+            `nothing may nest DEEPER than a test: ${leaf.id}`,
+          );
+          assert.strictEqual(
+            EXPECTED_SET.has(leaf.id),
+            true,
+            `a depth-4 node must be a discovered test: ${leaf.id}`,
+          );
+        });
+      });
+    });
+  }
+  assert.deepStrictEqual(
+    sorted(namespaces),
+    ['Cs.Xunit.Fixtures', 'Fs.Xunit'],
+    'exactly the two split-derived namespaces, each once',
+  );
+  assert.deepStrictEqual(
+    sorted(classes),
+    ['CalculatorTests', 'Fixtures'],
+    'exactly the two split-derived classes, each once',
+  );
+  assert.deepStrictEqual(
+    sorted(leaves),
+    sorted(EXPECTED),
+    'the leaves are EXACTLY the fixtures’ eleven FQNs',
+  );
+  assert.strictEqual(
+    roots.length + namespaces.length + classes.length + leaves.length,
+    17,
+    'the tree is 2 assemblies + 2 namespaces + 2 classes + 11 tests',
+  );
+  assert.strictEqual(items.size, 2, 'the controller collection holds the two assembly roots');
+  return leaves;
+}
+
+/** Every property a GROUP node's snapshot hands the Testing view. */
+function assertGroupSnapshot(snapshot: TestItemSnapshot, anchor: string): void {
+  assert.strictEqual(
+    snapshot.childCount > 0,
+    true,
+    `a group carries its children — it is never an empty row: ${snapshot.id}`,
+  );
+  assert.strictEqual(
+    EXPECTED_SET.has(snapshot.id),
+    false,
+    `a group id is never an FQN: ${snapshot.id}`,
+  );
+  assert.strictEqual(
+    snapshot.description,
+    undefined,
+    `a group row stays clean — the description is the test leaves’ FQN slot: ${snapshot.id}`,
+  );
+  assert.deepStrictEqual(snapshot.tags, [], `a group carries no framework tag: ${snapshot.id}`);
+  assert.strictEqual(
+    comparablePath(snapshot.uriPath ?? ''),
+    comparablePath(anchor),
+    `a group is anchored at the discovery target's directory: ${snapshot.id}`,
+  );
 }
 
 /** Every line the kit must have serialized into a project file, in order. */
@@ -385,7 +546,8 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     // Loading also schedules a DEBOUNCED sweep that supersedes the explicit one
     // (`discoverGeneration`), so assert on the SETTLED tree, not the first read.
     const ids = await pollUntilDiscovered(api.testController, EXPECTED);
-    assertExactTree(ids, 'activateAndDiscover');
+    const leaves = assertHierarchyTree(api.testController.items);
+    assertExactTree(leaves, 'activateAndDiscover');
     assert.strictEqual(
       ids.includes(FS_FACT_SPACED),
       true,
@@ -413,13 +575,13 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     );
     assert.strictEqual(
       api.testController.items.size,
-      11,
-      'the flat tree has eleven ROOT items, so nothing was nested under a phantom parent',
+      2,
+      'the tree has two ASSEMBLY roots — the eleven tests nest under them, not at root level',
     );
-    assert.strictEqual(
-      collectItemIds(api.testController.items).length,
-      api.testController.items.size,
-      'a flat tree collects exactly as many ids as it has roots',
+    assert.deepStrictEqual(
+      sorted(leafIds(api.testController.items)),
+      sorted(EXPECTED),
+      'every discovered FQN is a LEAF under its Assembly → Namespace → Class path',
     );
   });
 
@@ -427,47 +589,59 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     this.timeout(DOTNET_CLI_MS);
     await api.explorerProvider.loadSolution(slnPath);
     await api.testController.activateAndDiscover();
-    assertExactTree(
-      await pollUntilDiscovered(api.testController, EXPECTED),
-      'item-shape discovery',
-    );
+    await pollUntilDiscovered(api.testController, EXPECTED);
+    assertExactTree(assertHierarchyTree(api.testController.items), 'item-shape discovery');
     const snapshots = snapshotItems(api.testController.items);
-    const labels = snapshots.map((snapshot) => snapshot.label);
+    const leafSnapshots = snapshots.filter((snapshot) => snapshot.childCount === 0);
+    const groupSnapshots = snapshots.filter((snapshot) => snapshot.childCount > 0);
+    const labels = leafSnapshots.map((snapshot) => snapshot.label);
     assert.strictEqual(
       snapshots.length,
+      17,
+      `eleven test rows plus six group rows (2 assemblies, 2 namespaces, 2 classes), got ${snapshots.length}`,
+    );
+    assert.strictEqual(
+      leafSnapshots.length,
       11,
-      `one snapshot per discovered test, got ${snapshots.length}`,
+      `one row per discovered test, got ${leafSnapshots.length}`,
     );
+    assert.strictEqual(groupSnapshots.length, 6, 'six group rows carry the hierarchy');
     assert.deepStrictEqual(
-      sorted(snapshots.map((snapshot) => snapshot.id)),
+      sorted(leafSnapshots.map((snapshot) => snapshot.id)),
       sorted(EXPECTED),
-      'the rendered rows are exactly the fixtures’ eleven names',
+      'the rendered TEST rows are exactly the fixtures’ eleven names',
     );
-    for (const snapshot of snapshots) assertSnapshot(snapshot, root);
+    for (const snapshot of leafSnapshots) assertSnapshot(snapshot, root);
+    for (const snapshot of groupSnapshots) assertGroupSnapshot(snapshot, root);
     assert.deepStrictEqual(
       snapshots.flatMap((snapshot) => snapshot.tags),
       [],
-      'plain xUnit tests carry no framework tag anywhere in the tree — that tag is reserved for Expecto/FsCheck naming',
+      'plain xUnit tests AND their groups carry no framework tag anywhere — that tag is reserved for Expecto/FsCheck naming',
     );
     assert.strictEqual(
       new Set(snapshots.map((snapshot) => snapshot.uriPath)).size,
       1,
-      'every item shares the one discovery-target uri',
+      'every item — test and group alike — shares the one discovery-target uri',
     );
     assert.strictEqual(
-      new Set(snapshots.map((snapshot) => snapshot.description)).size,
+      new Set(leafSnapshots.map((snapshot) => snapshot.description)).size,
       11,
-      'descriptions stay unique — that is WHY the description carries the whole FQN',
+      'leaf descriptions stay unique — that is WHY the description carries the whole FQN',
     );
     assert.strictEqual(
-      snapshots.reduce((sum, snapshot) => sum + snapshot.childCount, 0),
+      leafSnapshots.reduce((sum, snapshot) => sum + snapshot.childCount, 0),
       0,
-      'a flat tree has no children at all',
+      'a test row is a leaf; only GROUP rows carry children',
+    );
+    assert.deepStrictEqual(
+      groupSnapshots.map((snapshot) => snapshot.childCount).sort((a, b) => a - b),
+      [1, 1, 1, 1, 5, 6],
+      'the groups’ child counts are the hierarchy’s census: assemblies 1+1 namespace, namespaces 1+1 class, classes 5+6 tests',
     );
     assert.deepStrictEqual(
       sorted(labels),
       sorted(EXPECTED.map((name) => name.split('.').at(-1) ?? '')),
-      'the rendered labels are exactly the last dotted segment of each name',
+      'the rendered TEST labels are exactly the last dotted segment of each name',
     );
     assert.strictEqual(
       labels.filter((label) => label === 'mixed theory').length,
@@ -509,8 +683,8 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     );
     assert.strictEqual(
       collectItemIds(api.testController.items).length,
-      11,
-      'a lookup that matched nothing must not disturb the discovered tree',
+      17,
+      'a lookup that matched nothing must not disturb the discovered tree’s 17 nodes',
     );
   });
 
@@ -519,14 +693,12 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     // Activate the Test Explorer as opening the Testing view would.
     await api.explorerProvider.loadSolution(slnPath);
     await api.testController.activateAndDiscover();
-    assertExactTree(
-      await pollUntilDiscovered(api.testController, EXPECTED),
-      'the activating sweep',
-    );
+    await pollUntilDiscovered(api.testController, EXPECTED);
+    assertExactTree(assertHierarchyTree(api.testController.items), 'the activating sweep');
     assert.strictEqual(
       collectItemIds(api.testController.items).length,
-      11,
-      'the activating sweep left eleven items standing to be cleared',
+      17,
+      'the activating sweep left seventeen nodes standing to be cleared',
     );
     // The reactive contract: clear + reload with NO manual discovery call.
     api.testController.items.replace([]);
@@ -550,7 +722,8 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     const discovered = await pollForIds(api.testController, (ids) =>
       EXPECTED.every((name) => ids.includes(name)),
     );
-    assertExactTree(discovered, 'the reactive reload');
+    const reactiveLeaves = assertHierarchyTree(api.testController.items);
+    assertExactTree(reactiveLeaves, 'the reactive reload');
     assert.strictEqual(
       discovered.includes(FS_FIXTURE.passing),
       true,
@@ -568,21 +741,21 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     );
     assert.strictEqual(
       api.testController.items.size,
-      11,
-      'the reactively rebuilt tree has the same eleven roots',
+      2,
+      'the reactively rebuilt tree has the same two ASSEMBLY roots',
     );
     assert.deepStrictEqual(
-      sorted(discovered),
+      sorted(reactiveLeaves),
       sorted(EXPECTED),
-      'the reactively rebuilt tree is EXACTLY the fixtures’ eleven names — with no refresh press anywhere',
+      'the reactively rebuilt tree holds EXACTLY the fixtures’ eleven tests as leaves — with no refresh press anywhere',
     );
     assert.strictEqual(
-      discovered.length,
+      reactiveLeaves.length,
       11,
-      `the reactive sweep must not lose a name: ${discovered.join(', ')}`,
+      `the reactive sweep must not lose a name: ${reactiveLeaves.join(', ')}`,
     );
     assert.strictEqual(
-      new Set(discovered).size,
+      new Set(reactiveLeaves).size,
       11,
       'a reload must REPLACE the tree, never append a second copy of every id',
     );
@@ -597,43 +770,45 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       `and the C# mixed theory: ${CS_MIXED_THEORY}`,
     );
     assert.strictEqual(
-      discovered.filter((id) => id.startsWith('Fs.')).length,
+      reactiveLeaves.filter((id) => id.startsWith('Fs.')).length,
       6,
       'F# leads the reactive tree with six of the eleven names',
     );
     assert.strictEqual(
-      discovered.filter((id) => id.startsWith('Cs.')).length,
+      reactiveLeaves.filter((id) => id.startsWith('Cs.')).length,
       5,
       'C# contributes the remaining five',
     );
     const reloaded = snapshotItems(api.testController.items);
+    const reloadedLeaves = reloaded.filter((snapshot) => snapshot.childCount === 0);
+    const reloadedGroups = reloaded.filter((snapshot) => snapshot.childCount > 0);
     assert.deepStrictEqual(
-      sorted(reloaded.map((snapshot) => snapshot.id)),
+      sorted(reloadedLeaves.map((snapshot) => snapshot.id)),
       sorted(EXPECTED),
-      'the rendered rows match the reactively rebuilt tree, one for one',
+      'the rendered TEST rows match the reactively rebuilt tree, one for one',
     );
+    assert.strictEqual(reloadedGroups.length, 6, 'the six hierarchy groups render reactively too');
     assert.strictEqual(
       new Set(reloaded.map((snapshot) => snapshot.uriPath)).size,
       1,
-      'every reactively rebuilt item is re-anchored at the one discovery target',
+      'every reactively rebuilt item — test and group alike — is re-anchored at the one discovery target',
     );
     assertLeafItem(api.testController.items, FS_MIXED_THEORY);
     assertLeafItem(api.testController.items, CS_MIXED_THEORY);
-    for (const snapshot of reloaded) assertSnapshot(snapshot, root);
+    for (const snapshot of reloadedLeaves) assertSnapshot(snapshot, root);
+    for (const snapshot of reloadedGroups) assertGroupSnapshot(snapshot, root);
   });
 
   test('VS Code’s own refresh affordance re-runs discovery through the controller', async function () {
     this.timeout(DOTNET_CLI_MS);
     await api.explorerProvider.loadSolution(slnPath);
     await api.testController.activateAndDiscover();
-    assertExactTree(
-      await pollUntilDiscovered(api.testController, EXPECTED),
-      'the pre-refresh sweep',
-    );
+    await pollUntilDiscovered(api.testController, EXPECTED);
+    assertExactTree(assertHierarchyTree(api.testController.items), 'the pre-refresh sweep');
     assert.strictEqual(
       collectItemIds(api.testController.items).length,
-      11,
-      'the pre-refresh sweep left eleven items standing to be cleared',
+      17,
+      'the pre-refresh sweep left seventeen nodes standing to be cleared',
     );
     api.testController.items.replace([]);
     assert.deepStrictEqual(
@@ -657,20 +832,25 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     );
     await vscode.commands.executeCommand('testing.refreshTests');
     const refreshed = await pollUntilDiscovered(api.testController, EXPECTED);
-    assertExactTree(refreshed, 'testing.refreshTests');
-    assert.strictEqual(api.testController.items.size, 11, 'the refresh rebuilt all eleven roots');
+    const refreshLeaves = assertHierarchyTree(api.testController.items);
+    assertExactTree(refreshLeaves, 'testing.refreshTests');
+    assert.strictEqual(
+      api.testController.items.size,
+      2,
+      'the refresh rebuilds the two ASSEMBLY roots and their whole hierarchy',
+    );
     assert.deepStrictEqual(
-      sorted(refreshed),
+      sorted(refreshLeaves),
       sorted(EXPECTED),
-      'the ⟳ button restores EXACTLY the fixtures’ eleven names',
+      'the ⟳ button restores EXACTLY the fixtures’ eleven names as leaves',
     );
     assert.strictEqual(
-      refreshed.length,
+      refreshLeaves.length,
       11,
-      `the refresh must restore every name: ${refreshed.join(', ')}`,
+      `the refresh must restore every name: ${refreshLeaves.join(', ')}`,
     );
     assert.strictEqual(
-      new Set(refreshed).size,
+      new Set(refreshLeaves).size,
       11,
       'a refresh REPLACES the tree — it must never append a second copy of every id',
     );
@@ -690,27 +870,32 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       `and the C# mixed theory: ${CS_MIXED_THEORY}`,
     );
     assert.strictEqual(
-      refreshed.filter((id) => id.startsWith('Fs.')).length,
+      refreshLeaves.filter((id) => id.startsWith('Fs.')).length,
       6,
       'F# keeps its six names across a refresh',
     );
     assert.strictEqual(
-      refreshed.filter((id) => id.startsWith('Cs.')).length,
+      refreshLeaves.filter((id) => id.startsWith('Cs.')).length,
       5,
       'C# keeps its five',
     );
     const restored = snapshotItems(api.testController.items);
+    const restoredLeaves = restored.filter((snapshot) => snapshot.childCount === 0);
+    const restoredGroups = restored.filter((snapshot) => snapshot.childCount > 0);
+    assert.strictEqual(restoredLeaves.length, 11, 'eleven restored TEST rows');
+    assert.strictEqual(restoredGroups.length, 6, 'six restored GROUP rows');
     assert.deepStrictEqual(
-      sorted(restored.map((snapshot) => snapshot.label)),
+      sorted(restoredLeaves.map((snapshot) => snapshot.label)),
       sorted(EXPECTED.map((name) => name.split('.').at(-1) ?? '')),
-      'every restored row renders its own label again',
+      'every restored TEST row renders its own label again',
     );
     assert.strictEqual(
-      new Set(restored.map((snapshot) => snapshot.description)).size,
+      new Set(restoredLeaves.map((snapshot) => snapshot.description)).size,
       11,
       'and its own description — the refresh did not collapse two rows into one',
     );
-    for (const snapshot of restored) assertSnapshot(snapshot, root);
+    for (const snapshot of restoredLeaves) assertSnapshot(snapshot, root);
+    for (const snapshot of restoredGroups) assertGroupSnapshot(snapshot, root);
     assertLeafItem(api.testController.items, FS_FACT_SPACED);
     assertLeafItem(api.testController.items, CS.parameterized);
   });
@@ -1070,7 +1255,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     );
   });
 
-  test('a discovery target that is not on disk yields no items and never throws', async function () {
+  test('a discovery target that is not on disk surfaces a USEFUL error instead of silent emptiness', async function () {
     this.timeout(DOTNET_CLI_MS);
     const ghost = path.join(root, 'NoSuchSolution.slnx');
     assert.strictEqual(fs.existsSync(ghost), false, 'the fixture must not accidentally exist');
@@ -1093,15 +1278,47 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     await assert.doesNotReject(async () => {
       await api.testController.activateAndDiscover();
     }, 'discovery against a missing target must not reject');
-    assert.deepStrictEqual(
-      collectItemIds(api.testController.items),
-      [],
-      'a missing target contributes no test items',
+    // The bug this guards: a failed sweep used to leave the view BLANK — no
+    // tests, no reason, nothing to act on. It must instead surface an error
+    // item carrying the real diagnostic AND a remedy.
+    const failure = await awaitSingleErrorRow();
+    const failureRoots: vscode.TestItem[] = [];
+    api.testController.items.forEach((item) => failureRoots.push(item));
+    assert.strictEqual(
+      failureRoots.length,
+      1,
+      `exactly one row stands after the failed sweep, got: ${failureRoots
+        .map((item) => item.label)
+        .join(' | ')}`,
+    );
+    assert.notStrictEqual(
+      failure.error,
+      undefined,
+      'the failure row carries an error — that is what the Testing view renders',
+    );
+    const message =
+      failure.error instanceof vscode.MarkdownString ? failure.error.value : String(failure.error);
+    assert.strictEqual(
+      message.includes(ghost),
+      true,
+      `the error must NAME the missing target so the user knows what to fix: ${message}`,
     );
     assert.strictEqual(
-      api.testController.items.size,
-      0,
-      'and leaves the controller collection empty',
+      /does not exist/i.test(message),
+      true,
+      `the error must carry the real diagnostic, not a generic shrug: ${message}`,
+    );
+    assert.strictEqual(
+      /select solution/i.test(message),
+      true,
+      `the error must offer a remedy the user can act on: ${message}`,
+    );
+    assert.strictEqual(EXPECTED_SET.has(failure.id), false, 'the failure row is not a test');
+    assert.strictEqual(failure.children.size, 0, 'the failure row is a leaf');
+    assert.deepStrictEqual(
+      leafIds(api.testController.items).filter((id) => EXPECTED_SET.has(id)),
+      [],
+      'a missing target contributes NO test items — none are invented',
     );
     assert.strictEqual(
       findItem(api.testController.items, CS.passing),
@@ -1111,20 +1328,39 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     // And the extension recovers: pointing back at the real solution refills it.
     await api.explorerProvider.loadSolution(slnPath);
     await api.testController.activateAndDiscover();
-    const recovered = await pollUntilDiscovered(api.testController, EXPECTED);
-    assertExactTree(recovered, 'recovery after a missing target');
-    assert.strictEqual(api.testController.items.size, 11, 'recovery rebuilds all eleven roots');
+    await pollUntilDiscovered(api.testController, EXPECTED);
+    const recoveredLeaves = assertHierarchyTree(api.testController.items);
+    assertExactTree(recoveredLeaves, 'recovery after a missing target');
     assert.strictEqual(
-      recovered.includes(FS_FIXTURE.passing),
+      api.testController.items.size,
+      2,
+      'recovery rebuilds the two assembly roots and their whole hierarchy',
+    );
+    const errorsAfter: string[] = [];
+    api.testController.items.forEach(function collect(item) {
+      if (item.error !== undefined) errorsAfter.push(item.id);
+      item.children.forEach(collect);
+    });
+    assert.deepStrictEqual(
+      errorsAfter,
+      [],
+      'the stale error row is gone once discovery succeeds again',
+    );
+    assert.strictEqual(
+      recoveredLeaves.includes(FS_FIXTURE.passing),
       true,
       'F# is rediscovered after the failed sweep',
     );
     assert.strictEqual(
-      recovered.includes(CS.passing),
+      recoveredLeaves.includes(CS.passing),
       true,
       'C# is rediscovered after the failed sweep',
     );
-    for (const snapshot of snapshotItems(api.testController.items)) assertSnapshot(snapshot, root);
+    for (const snapshot of snapshotItems(api.testController.items).filter(
+      (s) => s.childCount === 0,
+    )) {
+      assertSnapshot(snapshot, root);
+    }
     assertLeafItem(api.testController.items, FS_FACT_SPACED);
   });
 
@@ -1253,6 +1489,695 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       fs.readFileSync(path.join(fsProjDir, FS_FIXTURE.sourceFileName), 'utf8'),
       FS_FIXTURE.source,
       'the built F# source is the fixture’s source, verbatim',
+    );
+  });
+
+  /** Load the fixture solution, discover, and return the settled ROOT items. */
+  async function discoveredTree(): Promise<vscode.TestItem[]> {
+    await api.explorerProvider.loadSolution(slnPath);
+    await api.testController.activateAndDiscover();
+    await pollUntilDiscovered(api.testController, EXPECTED);
+    const roots: vscode.TestItem[] = [];
+    api.testController.items.forEach((item) => roots.push(item));
+    return roots;
+  }
+
+  /**
+   * Poll until the tree settles on EXACTLY one discovery-error row and return
+   * it. The debounced reactive sweep supersedes the explicit one, so the error
+   * row lands asynchronously — asserting immediately races it.
+   */
+  async function awaitSingleErrorRow(): Promise<vscode.TestItem> {
+    const deadline = Date.now() + FIXTURE_BUILD_MS;
+    for (;;) {
+      const roots: vscode.TestItem[] = [];
+      api.testController.items.forEach((item) => roots.push(item));
+      const failure = roots.find((item) => item.error !== undefined);
+      if (roots.length === 1 && failure !== undefined) return failure;
+      if (Date.now() > deadline) {
+        assert.fail(
+          `timed out waiting for the discovery-error row; roots: ${
+            roots.map((rootNode) => rootNode.label).join(' | ') || '(none)'
+          }`,
+        );
+      }
+      await sleep(500);
+    }
+  }
+
+  /** The FQNs whose dotted split places them in `namespaceLabel`. */
+  function fqnsOfNamespace(namespaceLabel: string): string[] {
+    return EXPECTED.filter((fqn) => fqn.split('.').slice(0, -2).join('.') === namespaceLabel);
+  }
+
+  /** The FQNs whose dotted split places them in `classLabel` under `namespaceLabel`. */
+  function fqnsOfClass(namespaceLabel: string, classLabel: string): string[] {
+    return EXPECTED.filter((fqn) => {
+      const parts = fqn.split('.');
+      return parts.slice(0, -2).join('.') === namespaceLabel && (parts.at(-2) ?? '') === classLabel;
+    });
+  }
+
+  test('tree roots are the test ASSEMBLIES — never a flat dump of test names', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    // The reported bug: a real solution's 816 tests landed as ONE flat list at
+    // the bottom of the Testing view. The roots must instead be the assemblies.
+    const roots = await discoveredTree();
+    assert.strictEqual(
+      roots.length,
+      2,
+      `one root per test project, got: ${roots.map((item) => item.label).join(' | ')}`,
+    );
+    assert.deepStrictEqual(
+      sorted(roots.map((root) => root.label)),
+      [CS.projectName, FS_FIXTURE.projectName],
+      'the roots are the ASSEMBLY names (XunitCs, XunitFs)',
+    );
+    // The label is grounded in the assembly the discovery pass really built.
+    for (const project of [CS, FS_FIXTURE]) {
+      const dll = path.join(
+        root,
+        project.projectName,
+        'bin',
+        'Debug',
+        'net10.0',
+        `${project.projectName}.dll`,
+      );
+      assert.strictEqual(
+        fs.existsSync(dll),
+        true,
+        `premise: the assembly the root is named after was really built: ${dll}`,
+      );
+      assert.strictEqual(
+        roots.some((candidate) => candidate.label === path.basename(dll, '.dll')),
+        true,
+        `a root must carry the built assembly's name: ${path.basename(dll, '.dll')}`,
+      );
+    }
+    const fqnSet = new Set<string>(EXPECTED);
+    for (const rootNode of roots) {
+      assert.strictEqual(
+        fqnSet.has(rootNode.id),
+        false,
+        `a root group must not carry a test's FQN as its id: ${rootNode.id}`,
+      );
+      assert.strictEqual(
+        rootNode.canResolveChildren,
+        true,
+        `an assembly root declares children so the view offers the expander: ${rootNode.label}`,
+      );
+      assert.strictEqual(
+        rootNode.error,
+        undefined,
+        `an assembly root carries no discovery error: ${rootNode.label}`,
+      );
+      assert.deepStrictEqual(
+        [...rootNode.tags].map((tag) => tag.id),
+        [],
+        `an assembly root carries no framework tag: ${rootNode.label}`,
+      );
+      assert.strictEqual(
+        comparablePath(rootNode.uri?.fsPath ?? ''),
+        comparablePath(root),
+        `an assembly root is anchored at the discovery target's directory: ${rootNode.label}`,
+      );
+      // Subtree ownership: each assembly root contains EXACTLY its own tests,
+      // and NO test sits at root level — every root child is a group.
+      const subtree = collectItemIds(rootNode.children).concat(rootNode.id);
+      const own = EXPECTED.filter((fqn) =>
+        fqn.startsWith(rootNode.label === CS.projectName ? 'Cs.' : 'Fs.'),
+      );
+      assert.deepStrictEqual(
+        sorted(subtree.filter((id) => fqnSet.has(id))),
+        sorted(own),
+        `the ${rootNode.label} subtree owns exactly its ${String(own.length)} tests`,
+      );
+      rootNode.children.forEach((child) => {
+        assert.strictEqual(
+          child.children.size > 0,
+          true,
+          `no test may sit DIRECTLY under its assembly root: ${child.label}`,
+        );
+        assert.strictEqual(
+          fqnSet.has(child.id),
+          false,
+          `a direct root child is a namespace group, not a test: ${child.id}`,
+        );
+      });
+    }
+  });
+
+  test('a Run/Debug lens resolves a test NESTED under its assembly, namespace and class', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    // Regression: `findTestByMethodName` backs the "Run Test" / "Debug Test"
+    // code lenses, and it walked only the TOP level of the tree. Once discovery
+    // grouped tests as Assembly → Namespace → Class → Test that level held
+    // ASSEMBLIES, so every lens matched nothing and reported a perfectly
+    // discovered test as "No discovered test matching …", running nothing.
+    const roots = await discoveredTree();
+    const fqnSet = new Set<string>(EXPECTED);
+    assert.deepStrictEqual(
+      roots.filter((node) => fqnSet.has(node.id)),
+      [],
+      'premise: no test sits at the top level — the lens MUST descend to find one',
+    );
+    for (const fqn of EXPECTED) {
+      const methodName = fqn.split('.').at(-1) ?? '';
+      const matched = findTestByMethodName(api.testController.items, methodName);
+      assert.notStrictEqual(
+        matched,
+        undefined,
+        `the lens for "${methodName}" must resolve the nested test ${fqn}`,
+      );
+      assert.strictEqual(
+        matched?.id,
+        fqn,
+        `the lens must resolve the LEAF carrying the FQN, not a group: ${String(matched?.id)}`,
+      );
+      assert.strictEqual(
+        matched?.children.size,
+        0,
+        `a lens must never resolve a group node: ${matched.label}`,
+      );
+    }
+    // A group node's own label must never satisfy a lens: groups are not
+    // runnable, and matching one would run a whole class from a method lens.
+    for (const groupLabel of [CS.projectName, FS_FIXTURE.projectName, 'CalculatorTests']) {
+      const matched = findTestByMethodName(api.testController.items, groupLabel);
+      assert.strictEqual(
+        matched,
+        undefined,
+        `a group label must resolve to no test: ${groupLabel}`,
+      );
+    }
+  });
+
+  test('under each assembly, tests group into NAMESPACE nodes split from their FQNs', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    const roots = await discoveredTree();
+    const fqnSet = new Set<string>(EXPECTED);
+    // The expected namespace labels, derived from the FQNs themselves.
+    const expectedNamespaces = sorted([
+      ...new Set(EXPECTED.map((fqn) => fqn.split('.').slice(0, -2).join('.'))),
+    ]);
+    assert.deepStrictEqual(
+      expectedNamespaces,
+      ['Cs.Xunit.Fixtures', 'Fs.Xunit'],
+      'premise: the fixtures declare exactly these two namespaces in their FQNs',
+    );
+    const seenNamespaces: string[] = [];
+    for (const rootNode of roots) {
+      rootNode.children.forEach((nsNode) => {
+        seenNamespaces.push(nsNode.label);
+        assert.strictEqual(
+          nsNode.children.size > 0,
+          true,
+          `a namespace node is never empty: ${nsNode.label}`,
+        );
+        assert.strictEqual(
+          nsNode.canResolveChildren,
+          true,
+          `a namespace node declares children: ${nsNode.label}`,
+        );
+        assert.strictEqual(
+          fqnSet.has(nsNode.id),
+          false,
+          `a namespace id is a group id, never an FQN: ${nsNode.id}`,
+        );
+        assert.strictEqual(
+          nsNode.error,
+          undefined,
+          `a namespace node carries no discovery error: ${nsNode.label}`,
+        );
+        // Membership: the namespace subtree holds EXACTLY the FQNs whose split
+        // names this namespace — computed from EXPECTED, not hand-listed.
+        assert.deepStrictEqual(
+          sorted(collectItemIds(nsNode.children).filter((id) => fqnSet.has(id))),
+          sorted(fqnsOfNamespace(nsNode.label)),
+          `the ${nsNode.label} subtree owns exactly its split-matched tests`,
+        );
+        // And no test hangs DIRECTLY off the namespace: its children are classes.
+        nsNode.children.forEach((child) => {
+          assert.strictEqual(
+            child.children.size > 0,
+            true,
+            `no test may sit DIRECTLY under a namespace node: ${child.label}`,
+          );
+          assert.strictEqual(
+            fqnSet.has(child.id),
+            false,
+            `a namespace child is a class group, not a test: ${child.id}`,
+          );
+        });
+      });
+    }
+    assert.deepStrictEqual(
+      sorted(seenNamespaces),
+      expectedNamespaces,
+      'exactly the split-derived namespaces exist under the assemblies, each once',
+    );
+  });
+
+  test('under each namespace, tests group into CLASS nodes holding exactly their tests', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    const roots = await discoveredTree();
+    const fqnSet = new Set<string>(EXPECTED);
+    const seenClasses: string[] = [];
+    for (const rootNode of roots) {
+      rootNode.children.forEach((nsNode) => {
+        nsNode.children.forEach((classNode) => {
+          seenClasses.push(classNode.label);
+          assert.strictEqual(
+            classNode.children.size > 0,
+            true,
+            `a class node is never empty: ${classNode.label}`,
+          );
+          assert.strictEqual(
+            classNode.canResolveChildren,
+            true,
+            `a class node declares children: ${classNode.label}`,
+          );
+          assert.strictEqual(
+            fqnSet.has(classNode.id),
+            false,
+            `a class id is a group id, never an FQN: ${classNode.id}`,
+          );
+          const members: string[] = [];
+          classNode.children.forEach((leaf) => members.push(leaf.id));
+          // Membership derived from the FQN split: parts[-2] is the class.
+          assert.deepStrictEqual(
+            sorted(members),
+            sorted(fqnsOfClass(nsNode.label, classNode.label)),
+            `the ${nsNode.label}.${classNode.label} group holds exactly its split-matched tests`,
+          );
+          assert.strictEqual(
+            members.length,
+            fqnsOfClass(nsNode.label, classNode.label).length,
+            `the ${classNode.label} membership count matches the split (${String(
+              fqnsOfClass(nsNode.label, classNode.label).length,
+            )})`,
+          );
+          for (const member of members) {
+            assert.strictEqual(
+              member.split('.').at(-2) ?? '',
+              classNode.label,
+              `every member's second-to-last segment names the class: ${member}`,
+            );
+          }
+        });
+      });
+    }
+    assert.deepStrictEqual(
+      sorted(seenClasses),
+      ['CalculatorTests', 'Fixtures'],
+      'exactly the split-derived classes exist, each once',
+    );
+    assert.strictEqual(seenClasses.length, 2, 'two class groups across the whole tree');
+  });
+
+  test('every TEST is a leaf at depth 4 carrying its FQN as id and its method as label', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    const roots = await discoveredTree();
+    for (const fqn of EXPECTED) {
+      const parts = fqn.split('.');
+      const assemblyLabel = fqn.startsWith('Cs.') ? CS.projectName : FS_FIXTURE.projectName;
+      const namespaceLabel = parts.slice(0, -2).join('.');
+      const classLabel = parts.at(-2) ?? '';
+      const testLabel = parts.at(-1) ?? '';
+      const rootNode = roots.find((candidate) => candidate.label === assemblyLabel);
+      assert.ok(rootNode, `depth 1 — the assembly root ${assemblyLabel} for ${fqn}`);
+      const nsNode = childByLabel(rootNode.children, namespaceLabel);
+      assert.ok(
+        nsNode,
+        `depth 2 — the namespace node ${namespaceLabel} under ${assemblyLabel}; saw: ${
+          [...rootNode.children].map(([, item]) => item.label).join(' | ') || '(nothing)'
+        }`,
+      );
+      const classNode = childByLabel(nsNode.children, classLabel);
+      assert.ok(
+        classNode,
+        `depth 3 — the class node ${classLabel} under ${namespaceLabel}; saw: ${
+          [...nsNode.children].map(([, item]) => item.label).join(' | ') || '(nothing)'
+        }`,
+      );
+      const leaf = childByLabel(classNode.children, testLabel);
+      assert.ok(
+        leaf,
+        `depth 4 — the test node ${testLabel} under ${namespaceLabel}.${classLabel}; saw: ${
+          [...classNode.children].map(([, item]) => item.label).join(' | ') || '(nothing)'
+        }`,
+      );
+      assert.strictEqual(leaf.id, fqn, `the leaf id is the FQN verbatim: ${fqn}`);
+      assert.strictEqual(leaf.label, testLabel, `the leaf label is the method name: ${fqn}`);
+      assert.strictEqual(
+        leaf.description,
+        fqn,
+        `the leaf description carries the whole FQN: ${fqn}`,
+      );
+      assert.strictEqual(
+        leaf.children.size,
+        0,
+        `a test is a LEAF — nothing nests under it: ${fqn}`,
+      );
+      assert.strictEqual(
+        leaf.canResolveChildren,
+        false,
+        `a leaf resolves no children: ${fqn}`,
+        [...leaf.tags].map((tag) => tag.id),
+        [],
+        `a plain xUnit test carries no framework tag: ${fqn}`,
+      );
+      assert.strictEqual(
+        comparablePath(leaf.uri?.fsPath ?? ''),
+        comparablePath(root),
+        `a leaf is anchored at the discovery target's directory: ${fqn}`,
+      );
+    }
+    // The spaced F# backtick binding is ONE leaf whose label keeps its spaces.
+    const spaced = findItem(api.testController.items, FS_FACT_SPACED);
+    assert.ok(spaced, 'the spaced F# backtick test is in the tree');
+    assert.strictEqual(
+      spaced.label,
+      'adds two numbers with spaces',
+      'a leaf label is the binding name, spaces and all',
+    );
+    assert.strictEqual(
+      spaced.label.includes('.'),
+      false,
+      "a leaf label never keeps the FQN's dots",
+    );
+    assertLeafItem(api.testController.items, CS.passing);
+    assertLeafItem(api.testController.items, FS_FIXTURE.passing);
+  });
+
+  test('the tree is structurally pure: 4 levels, nothing deeper, nothing misplaced', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    const roots = await discoveredTree();
+    const fqnSet = new Set<string>(EXPECTED);
+    let namespaceCount = 0;
+    let classCount = 0;
+    const leafIdsFound: string[] = [];
+    for (const rootNode of roots) {
+      rootNode.children.forEach((nsNode) => {
+        namespaceCount += 1;
+        assert.strictEqual(
+          nsNode.children.size > 0,
+          true,
+          `every namespace group is non-empty: ${nsNode.label}`,
+        );
+        nsNode.children.forEach((classNode) => {
+          classCount += 1;
+          assert.strictEqual(
+            classNode.children.size > 0,
+            true,
+            `every class group is non-empty: ${classNode.label}`,
+          );
+          classNode.children.forEach((leaf) => {
+            leafIdsFound.push(leaf.id);
+            assert.strictEqual(
+              leaf.children.size,
+              0,
+              `nothing may nest DEEPER than a test — depth 5 found at: ${leaf.id}`,
+            );
+            assert.strictEqual(
+              fqnSet.has(leaf.id),
+              true,
+              `a depth-4 node must be a discovered test, not a stray group: ${leaf.id}`,
+            );
+          });
+        });
+      });
+    }
+    assert.strictEqual(roots.length, 2, 'depth 1: exactly two assemblies');
+    assert.strictEqual(namespaceCount, 2, 'depth 2: exactly two namespaces');
+    assert.strictEqual(classCount, 2, 'depth 3: exactly two classes');
+    assert.strictEqual(leafIdsFound.length, 11, 'depth 4: exactly eleven tests');
+    assert.strictEqual(
+      roots.length + namespaceCount + classCount + leafIdsFound.length,
+      17,
+      'the whole tree is 2 assemblies + 2 namespaces + 2 classes + 11 tests = 17 nodes',
+    );
+    assert.deepStrictEqual(
+      sorted(leafIdsFound),
+      sorted(EXPECTED),
+      'every test appears as a leaf EXACTLY once — no losses, no duplicates',
+    );
+    for (const fqn of EXPECTED) {
+      assert.strictEqual(
+        leafIdsFound.filter((id) => id === fqn).length,
+        1,
+        `${fqn} is a leaf exactly once`,
+      );
+    }
+  });
+
+  test('▶ on a CLASS group runs exactly the tests it contains', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    const roots = await discoveredTree();
+    const csRoot = roots.find((rootNode) => rootNode.label === CS.projectName);
+    assert.ok(csRoot, 'the C# assembly root exists');
+    const csNamespace = childByLabel(csRoot.children, 'Cs.Xunit.Fixtures');
+    assert.ok(csNamespace, 'the C# namespace node exists');
+    const csClass = childByLabel(csNamespace.children, 'CalculatorTests');
+    assert.ok(csClass, 'the C# class node exists');
+    const csLeaves: string[] = [];
+    csClass.children.forEach((leaf) => csLeaves.push(leaf.id));
+    assert.strictEqual(
+      csLeaves.length,
+      5,
+      `the class group holds the five C# tests, got: ${csLeaves.join(' | ')}`,
+    );
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [csClass]);
+    for (const id of csLeaves) {
+      const result = api.testController.getResult(id);
+      assert.ok(
+        result !== undefined && result.outcome !== 'notRun',
+        `▶ on the class node must produce a real outcome for ${id}: ${JSON.stringify(result)}`,
+      );
+    }
+    assert.strictEqual(
+      api.testController.getResult(CS.passing)?.outcome,
+      'passed',
+      'the class run reports the passing fact as passed',
+    );
+    assert.strictEqual(
+      api.testController.getResult(CS.failing)?.outcome,
+      'failed',
+      'the class run reports the failing fact as failed',
+    );
+    assert.strictEqual(
+      api.testController.getResult(CS.skipped)?.outcome,
+      'skipped',
+      'the class run reports the skipped fact as skipped',
+    );
+    // Running must not mutate the tree's shape.
+    const rootsAfter: vscode.TestItem[] = [];
+    api.testController.items.forEach((item) => rootsAfter.push(item));
+    assert.strictEqual(
+      rootsAfter.length,
+      2,
+      'running a class group leaves the two assembly roots standing',
+    );
+    assert.deepStrictEqual(
+      sorted(leafIds(api.testController.items)),
+      sorted(EXPECTED),
+      'running a class group does not add, drop or duplicate any test',
+    );
+  });
+
+  test('▶ on a NAMESPACE group runs every test beneath it', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    const roots = await discoveredTree();
+    const fsRoot = roots.find((rootNode) => rootNode.label === FS_FIXTURE.projectName);
+    assert.ok(fsRoot, 'the F# assembly root exists');
+    const fsNamespace = childByLabel(fsRoot.children, 'Fs.Xunit');
+    assert.ok(fsNamespace, 'the F# namespace node exists');
+    const fsLeaves = collectItemIds(fsNamespace.children).filter((id) =>
+      new Set<string>(EXPECTED).has(id),
+    );
+    assert.strictEqual(
+      fsLeaves.length,
+      6,
+      `the namespace subtree holds the six F# tests, got: ${fsLeaves.join(' | ')}`,
+    );
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [fsNamespace]);
+    for (const id of fsLeaves) {
+      const result = api.testController.getResult(id);
+      assert.ok(
+        result !== undefined && result.outcome !== 'notRun',
+        `▶ on the namespace node must produce a real outcome for ${id}: ${JSON.stringify(result)}`,
+      );
+    }
+    assert.strictEqual(
+      api.testController.getResult(FS_FIXTURE.passing)?.outcome,
+      'passed',
+      'the namespace run reports the passing F# fact as passed',
+    );
+    assert.strictEqual(
+      api.testController.getResult(FS_FACT_SPACED)?.outcome,
+      'passed',
+      'the spaced backtick F# test survives the run under its spaced name',
+    );
+    assert.strictEqual(
+      api.testController.getResult(FS_FIXTURE.failing)?.outcome,
+      'failed',
+      'the namespace run reports the failing F# fact as failed',
+    );
+    assert.strictEqual(
+      api.testController.getResult(FS_FIXTURE.skipped)?.outcome,
+      'skipped',
+      'the namespace run reports the skipped F# fact as skipped',
+    );
+  });
+
+  test('a folder with several projects and NO loaded solution explains itself instead of going blank', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    // The exact case from the extension log: with no solution loaded, discovery
+    // targets the workspace folder, `dotnet test` answers MSB1011 (“this folder
+    // contains more than one project or solution file”), and the user got a
+    // silent empty view. The tree must carry a USEFUL error instead.
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    assert.ok(folder, 'the test host must open a workspace folder for this case');
+    await drainDiscovery(() => {
+      api.explorerProvider.clear();
+    }, api.testController);
+    api.testController.items.replace([]);
+    await assert.doesNotReject(async () => {
+      await api.testController.activateAndDiscover();
+    }, 'ambiguous-folder discovery must not reject');
+    const failure = await awaitSingleErrorRow();
+    const failureRoots: vscode.TestItem[] = [];
+    api.testController.items.forEach((item) => failureRoots.push(item));
+    assert.strictEqual(
+      failureRoots.length,
+      1,
+      `one error row for the ambiguous folder, got: ${failureRoots
+        .map((item) => item.label)
+        .join(' | ')}`,
+    );
+    assert.notStrictEqual(
+      failure.error,
+      undefined,
+      'the row carries an error for the view to render',
+    );
+    const message =
+      failure.error instanceof vscode.MarkdownString ? failure.error.value : String(failure.error);
+    assert.strictEqual(
+      message.includes('MSB1011'),
+      true,
+      `the error must carry the REAL dotnet diagnostic, not a shrug: ${message.slice(0, 400)}`,
+    );
+    assert.strictEqual(
+      /more than one project/i.test(message),
+      true,
+      `and say what is actually wrong with the folder: ${message.slice(0, 400)}`,
+    );
+    assert.strictEqual(
+      /select solution/i.test(message),
+      true,
+      `and offer the remedy — load one solution: ${message.slice(0, 400)}`,
+    );
+    assert.strictEqual(failure.children.size, 0, 'the error row is a leaf');
+    assert.deepStrictEqual(
+      leafIds(api.testController.items).filter((id) => EXPECTED_SET.has(id)),
+      [],
+      'no tests are invented for a folder that could not be enumerated',
+    );
+    // Recovery: loading a solution makes the error row vanish and the full
+    // hierarchy appear — the user's exact escape route from the message.
+    await api.explorerProvider.loadSolution(slnPath);
+    await api.testController.activateAndDiscover();
+    await pollUntilDiscovered(api.testController, EXPECTED);
+    const leaves = assertHierarchyTree(api.testController.items);
+    assertExactTree(leaves, 'recovery from the ambiguous folder');
+    const errorsAfter: string[] = [];
+    api.testController.items.forEach(function collect(item) {
+      if (item.error !== undefined) errorsAfter.push(item.id);
+      item.children.forEach(collect);
+    });
+    assert.deepStrictEqual(errorsAfter, [], 'the MSB1011 error row is gone after recovery');
+  });
+
+  test('a project that fails to BUILD surfaces the compiler error in the tree, and ▶ fabricates nothing', async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    // The other real failure shape: `dotnet test --list-tests` dies on a compile
+    // error. The tree must show the compiler diagnostic itself, so the user
+    // fixes the build instead of wondering where the tests went.
+    const brokenRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-broken-'));
+    let brokenSln: string;
+    try {
+      const brokenDir = writeProject(
+        path.join(brokenRoot, 'Broken'),
+        'Broken.csproj',
+        projectXml(CS.packages),
+        'Broken.cs',
+        'namespace Cs.Broken { class CalculatorTests { void } }',
+      );
+      brokenSln = await createSolution(brokenRoot, 'Broken', [brokenDir]);
+      api.testController.items.replace([]);
+      await api.explorerProvider.loadSolution(brokenSln);
+      await api.testController.activateAndDiscover();
+      const failure = await awaitSingleErrorRow();
+      const failureRoots: vscode.TestItem[] = [];
+      api.testController.items.forEach((item) => failureRoots.push(item));
+      assert.strictEqual(
+        failureRoots.length,
+        1,
+        `one error row for the broken build, got: ${failureRoots
+          .map((item) => item.label)
+          .join(' | ')}`,
+      );
+      assert.notStrictEqual(failure.error, undefined, 'the row carries an error');
+      const message =
+        failure.error instanceof vscode.MarkdownString
+          ? failure.error.value
+          : String(failure.error);
+      assert.strictEqual(
+        /error CS\d+/.test(message),
+        true,
+        `the error must carry the COMPILER diagnostic (error CS…), not a generic failure: ${message.slice(
+          0,
+          400,
+        )}`,
+      );
+      assert.strictEqual(failure.children.size, 0, 'the error row is a leaf');
+      assert.deepStrictEqual(
+        leafIds(api.testController.items).filter((id) => EXPECTED_SET.has(id)),
+        [],
+        'no tests are invented for a project that cannot build',
+      );
+      // ▶ gestures on an error-only tree must neither crash nor fabricate
+      // results: there is nothing runnable to report.
+      await assert.doesNotReject(async () => {
+        await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, []);
+      }, 'run-all on an error-only tree must not reject');
+      await assert.doesNotReject(async () => {
+        await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [failure]);
+      }, '▶ on the error row itself must not reject');
+      assert.strictEqual(
+        api.testController.getResult(failure.id),
+        undefined,
+        'no cached result is fabricated for an error row',
+      );
+      assert.strictEqual(
+        api.testController.items.size,
+        1,
+        'the tree still holds the error row — runs neither consumed nor mutated it',
+      );
+    } finally {
+      await drainDiscovery(() => {
+        api.explorerProvider.clear();
+        api.testController.items.replace([]);
+      }, api.testController);
+      removeDirRecursive(brokenRoot);
+    }
+    // Recovery: the real solution refills the full hierarchy afterwards.
+    await api.explorerProvider.loadSolution(slnPath);
+    await api.testController.activateAndDiscover();
+    await pollUntilDiscovered(api.testController, EXPECTED);
+    assertExactTree(
+      assertHierarchyTree(api.testController.items),
+      'recovery from the broken build',
     );
   });
 });

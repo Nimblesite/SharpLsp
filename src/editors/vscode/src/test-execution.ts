@@ -23,7 +23,7 @@ import * as path from 'node:path';
 import type * as vscode from 'vscode';
 import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetHooks } from './dotnet-process.js';
 import { runTarget } from './test-targets.js';
-import { filterExpression } from './test-filter.js';
+import { filterBatches, filterExpression } from './test-filter.js';
 import {
   parseFailureMessage,
   parseRunSummary,
@@ -89,7 +89,8 @@ export function buildFilterArgs(tests: readonly { readonly id: string }[]): stri
 
 /** Everything one batched `dotnet test` invocation needs. */
 export interface RunInvocation {
-  readonly tests: readonly vscode.TestItem[];
+  /** The ids the run filters on — empty means "run everything". */
+  readonly filterIds: readonly string[];
   readonly cwd: string;
   readonly token: vscode.CancellationToken;
   readonly coverage: boolean;
@@ -140,7 +141,13 @@ function freshTempDir(): string {
 }
 
 /**
- * The invocation, plus a single recovery attempt.
+ * The invocation, plus a single recovery attempt per batch.
+ *
+ * A selection whose filter would exceed the Windows command-line ceiling is
+ * split into batches (see `filterBatches`) — 816 selected tests used to reach
+ * `spawn` as ONE ~73 000-character argument and die with `spawn ENAMETOOLONG`
+ * before `dotnet` ever ran. Batches run sequentially and merge, so ⏹ and the
+ * TRX collection both keep their per-invocation meaning.
  *
  * A test adapter can REJECT the `--filter` expression rather than merely
  * matching nothing: the NUnit adapter's own filter parser refuses any
@@ -148,11 +155,42 @@ function freshTempDir(): string {
  * test (`Unexpected Word 'on' at position 43 in selection expression`). The run
  * then reports no result for a test that is perfectly runnable, and the Testing
  * view shows a phantom failure. TRX records that refusal as a run-level
- * `RunInfo` with `outcome="Error"`, so when it happens the selection is re-run
+ * `RunInfo` with `outcome="Error"`, so when it happens the batch is re-run
  * WITHOUT a filter and the per-test outcomes are picked out of the report by
  * name — slower, but correct, and only ever on the adapter's say-so.
  */
 async function runInto(
+  testIds: readonly string[],
+  cwd: string,
+  resultsDirectory: string,
+  options: TestRunOptions,
+): Promise<TestRunOutcome> {
+  // [] means "run everything" — a single unfiltered invocation, as before.
+  const batches = testIds.length === 0 ? [[]] : filterBatches(testIds);
+  let merged: TestRunOutcome | undefined;
+  for (const batch of batches) {
+    // ⏹ between batches: stop starting new invocations; what already ran is a
+    // truncated account the caller drops (see `cancelled` re-checks upstream).
+    if (options.signal?.aborted === true) break;
+    const one = await runBatch(batch, cwd, resultsDirectory, options);
+    merged = merged === undefined ? one : mergeRuns(merged, one);
+  }
+  return (
+    merged ?? {
+      results: new Map(),
+      summary: undefined,
+      failure:
+        options.signal?.aborted === true ? 'Run cancelled before any batch started' : undefined,
+      runInfos: [],
+      retriedUnfiltered: false,
+      durationMs: 0,
+      output: '',
+    }
+  );
+}
+
+/** One filter batch: the invocation, plus its unfiltered recovery attempt. */
+async function runBatch(
   testIds: readonly string[],
   cwd: string,
   resultsDirectory: string,

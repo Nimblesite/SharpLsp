@@ -23,7 +23,7 @@ import {
 import { fixtureFor } from './test-explorer-fixtures';
 import {
   activateTestExplorer,
-  collectItemIds,
+  collectLeafIds,
   discoverSolution,
   drainDiscovery,
   findItem,
@@ -113,20 +113,31 @@ function assertTree(
   expected: readonly string[],
   why: string,
 ): string[] {
-  const ids = collectItemIds(ctl.items);
+  const ids = collectLeafIds(ctl.items);
   for (const name of expected) {
     assert.strictEqual(ids.includes(name), true, `${why}: missing ${name}\ngot: ${ids.join(', ')}`);
   }
   assert.strictEqual(new Set(ids).size, ids.length, `${why}: duplicate ids: ${ids.join(', ')}`);
   assert.strictEqual(ids.length, expected.length, `${why}: wrong size: ${ids.join(', ')}`);
   assert.deepStrictEqual(sorted(ids), sorted(expected), `${why}: the set must match exactly`);
-  assert.strictEqual(
-    ctl.items.size,
-    expected.length,
-    `${why}: the root holds each test exactly once`,
-  );
+  // Every root is an assembly GROUP — a test never sits at the tree's root.
+  const roots: vscode.TestItem[] = [];
+  ctl.items.forEach((item) => roots.push(item));
+  assert.strictEqual(roots.length > 0, true, `${why}: the tree must have roots`);
+  for (const root of roots) {
+    assert.strictEqual(
+      root.children.size > 0,
+      true,
+      `${why}: a root is an assembly group, never a bare test: ${root.label}`,
+    );
+    assert.strictEqual(
+      expected.includes(root.id),
+      false,
+      `${why}: a root id is a group id, never an FQN: ${root.id}`,
+    );
+  }
   assert.deepStrictEqual(
-    collectItemIds(ctl.items),
+    collectLeafIds(ctl.items),
     ids,
     `${why}: two reads of a settled tree must agree`,
   );
@@ -136,7 +147,28 @@ function assertTree(
 function assertRows(controller: SharpLspTestController, solutionDir: string, why: string): void {
   const snapshots = snapshotItems(controller.items);
   assert.notStrictEqual(snapshots.length, 0, `${why}: there must be rows to assert on`);
-  for (const row of snapshots) {
+  // Groups and tests have different row shapes — the hierarchy renders BOTH.
+  const groups = snapshots.filter((row) => row.childCount > 0);
+  const tests = snapshots.filter((row) => row.childCount === 0);
+  assert.strictEqual(
+    groups.length > 0,
+    true,
+    `${why}: the Assembly → Namespace → Class groups must render as rows`,
+  );
+  for (const row of groups) {
+    assert.strictEqual(
+      row.description,
+      undefined,
+      `${why}: a group row carries no FQN description: ${row.id}`,
+    );
+    assert.deepStrictEqual(row.tags, [], `${why}: a group row carries no tag: ${row.id}`);
+    assert.strictEqual(
+      comparablePath(row.uriPath ?? ''),
+      comparablePath(solutionDir),
+      `${why}: group row anchored: ${row.id}`,
+    );
+  }
+  for (const row of tests) {
     assert.strictEqual(row.description, row.id, `${why}: ${row.id} must show its full FQN`);
     assert.strictEqual(row.label, labelOf(row.id), `${why}: ${row.id} label is the leaf segment`);
     assert.notStrictEqual(row.label, '', `${why}: ${row.id} must render a non-empty label`);
@@ -147,7 +179,7 @@ function assertRows(controller: SharpLspTestController, solutionDir: string, why
       comparablePath(solutionDir),
       `${why}: ${row.id} anchored`,
     );
-    assert.strictEqual(row.childCount, 0, `${why}: discovery renders a flat list`);
+    assert.strictEqual(row.childCount, 0, `${why}: a TEST row is a leaf; groups carry children`);
     assert.deepStrictEqual(
       row.tags,
       [],
@@ -295,7 +327,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       api.testController.items.replace([]);
       api.explorerProvider.clear();
       assert.deepStrictEqual(
-        collectItemIds(api.testController.items),
+        collectLeafIds(api.testController.items),
         [],
         'empty before the reactive load',
       );
@@ -314,9 +346,14 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       assertLeaf(api.testController, CS.passing, 'reactive reload');
       assertLeaf(api.testController, CS_MIXED_THEORY, 'reactive reload');
       assert.strictEqual(
-        api.testController.items.get(CS.failing)?.id,
+        findItem(api.testController.items, CS.failing)?.id,
         CS.failing,
-        'the root resolves by FQN id',
+        'every FQN resolves to its leaf anywhere in the tree',
+      );
+      assert.strictEqual(
+        api.testController.items.get(CS.failing),
+        undefined,
+        'a test never sits at the ROOT level — only assembly groups do',
       );
       assert.strictEqual(
         spy.stacks.length >= 1,
@@ -413,11 +450,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
         true,
         'a failing test is discovered like any other',
       );
-      assert.strictEqual(
-        api.testController.items.size,
-        EXPECTED.length,
-        'the root holds each once',
-      );
+      assertTree(api.testController, EXPECTED, 'the root holds each test exactly once');
       // A non-coalesced burst gets the NAMES right; it leaves duplicates and a
       // wrong size, which `assertTree` catches.
       assertTree(api.testController, EXPECTED, 'settled tree after a coalesced burst');
@@ -648,7 +681,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       'a missing target must not reject',
     );
     await drainDiscovery(() => undefined, api.testController);
-    const kept = collectItemIds(api.testController.items);
+    const kept = collectLeafIds(api.testController.items);
     assert.strictEqual(kept.length, good.length, 'a failed sweep must not blank the view');
     assert.deepStrictEqual(sorted(kept), sorted(good), 'the kept tree is the previous tree');
     assert.strictEqual(new Set(kept).size, kept.length, 'and it is kept once, not re-appended');
@@ -657,11 +690,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       true,
       'the kept tree keeps even the mixed theory',
     );
-    assert.strictEqual(
-      api.testController.items.size,
-      good.length,
-      'and the root collection kept its rows',
-    );
+    assertTree(api.testController, EXPECTED, 'and the root collection kept its rows');
     assert.strictEqual(fs.existsSync(ghost), false, 'and the failed sweep created nothing on disk');
     assertTree(api.testController, EXPECTED, 'tree kept across a total discovery failure');
     assertFqnShape(kept, 'tree kept across a total discovery failure');
@@ -751,13 +780,13 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     );
     assertTree(api.testController, EXPECTED, 'the tree is unchanged by an idempotent re-sweep');
     assert.deepStrictEqual(
-      sorted(collectItemIds(api.testController.items)),
+      sorted(collectLeafIds(api.testController.items)),
       sorted(settled),
       'same as the drained read',
     );
-    assert.strictEqual(api.testController.items.size, EXPECTED.length, 'the root count agrees');
+    assertTree(api.testController, EXPECTED, 'the root count agrees');
     assert.strictEqual(
-      new Set(collectItemIds(api.testController.items)).size,
+      new Set(collectLeafIds(api.testController.items)).size,
       EXPECTED.length,
       'replaced, not appended',
     );
@@ -802,10 +831,16 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     assertTree(api.testController, EXPECTED, 'tree behind a revealed Testing view');
     assertRows(api.testController, solutionDir, 'tree behind a revealed Testing view');
     assertFqnShape(ids, 'tree behind a revealed Testing view');
+    const revealedSnapshots = snapshotItems(api.testController.items);
     assert.strictEqual(
-      snapshotItems(api.testController.items).length,
+      revealedSnapshots.filter((row) => row.childCount === 0).length,
       EXPECTED.length,
-      'one rendered row per test',
+      'one rendered TEST row per test',
+    );
+    assert.strictEqual(
+      revealedSnapshots.filter((row) => row.childCount > 0).length,
+      3,
+      'the fixture assembly, its namespace and its class render as GROUP rows',
     );
     // The buttons the revealed view draws come from the registered profiles.
     const profiles = api.testController.profiles;
@@ -854,7 +889,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       EXPECTED.length,
       'and refresh replaced the tree rather than growing it',
     );
-    assert.strictEqual(api.testController.items.size, EXPECTED.length, 'the root holds each once');
+    assertTree(api.testController, EXPECTED, 'the root holds each test exactly once');
     assertLeaf(api.testController, CS.skipped, 'tree after refreshing a revealed view');
     assertTree(api.testController, EXPECTED, 'tree after refreshing a revealed view');
   });
@@ -864,7 +899,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     await api.explorerProvider.loadSolution(slnPath);
     api.testController.items.replace([]);
     assert.deepStrictEqual(
-      collectItemIds(api.testController.items),
+      collectLeafIds(api.testController.items),
       [],
       'the race starts from an empty tree',
     );
@@ -891,12 +926,12 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       'the mixed theory survives the race exactly once',
     );
     assertTree(api.testController, EXPECTED, 'tree after two concurrent sweeps');
-    assert.strictEqual(api.testController.items.size, EXPECTED.length, 'the root holds each once');
+    assertTree(api.testController, EXPECTED, 'the root holds each test exactly once');
     assertRows(api.testController, solutionDir, 'tree after two concurrent sweeps');
     assertFqnShape(ids, 'tree after two concurrent sweeps');
     assertCacheUntouched(api.testController, cached, 'two concurrent sweeps');
     // Stability: two consecutive reads of a settled tree must agree, in order.
-    const read = (): string[] => collectItemIds(api.testController.items);
+    const read = (): string[] => collectLeafIds(api.testController.items);
     assert.deepStrictEqual(read(), read(), 'a settled tree must not change between two reads');
     assert.deepStrictEqual(sorted(read()), sorted(ids), 'and must still be what the poll observed');
     assert.strictEqual(
@@ -907,9 +942,9 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     for (const expected of EXPECTED) {
       assertLeaf(api.testController, expected, 'tree after two concurrent sweeps');
       assert.strictEqual(
-        api.testController.items.get(expected)?.id,
+        findItem(api.testController.items, expected)?.id,
         expected,
-        'and is reachable from the root',
+        'and is reachable from the root, through its group path',
       );
     }
     await assert.doesNotReject(
