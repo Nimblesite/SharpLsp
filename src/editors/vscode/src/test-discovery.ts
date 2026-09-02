@@ -112,7 +112,7 @@ const STACK_FRAME_PREFIX = 'at ';
  * `at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, …)` —
  * are all excluded. A stack frame slipping through would make a crashed
  * `dotnet test` look like a successful enumeration to `salvageable`. Used only
- * by the legacy fallback listing.
+ * by the stdout fallback listing.
  */
 export function isDiscoveredTestLine(line: string): boolean {
   if (!line.includes('.')) return false;

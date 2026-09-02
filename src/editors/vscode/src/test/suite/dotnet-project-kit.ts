@@ -39,7 +39,7 @@ export const XUNIT_PACKAGES: readonly PackageRef[] = [
  * fixture built on {@link XUNIT_PACKAGES} is blind to the whole class of defect
  * that suffix causes. Pinned deliberately; do NOT "upgrade" it.
  */
-export const XUNIT_LEGACY_PACKAGES: readonly PackageRef[] = [
+export const XUNIT_DECORATING_PACKAGES: readonly PackageRef[] = [
   { id: 'xunit', version: '2.2.0' },
   { id: 'xunit.runner.visualstudio', version: '2.2.0' },
   { id: 'Microsoft.NET.Test.Sdk', version: '17.11.1' },

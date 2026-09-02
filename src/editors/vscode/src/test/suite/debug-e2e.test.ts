@@ -8,7 +8,7 @@ import {
   emptyF5Config,
   fakeFolder,
   focusDocument,
-  legacyF5Config,
+  bareF5Config,
   undefinedF5Config,
 } from './run-debug-kit';
 import {
@@ -74,11 +74,11 @@ suite('Debug E2E — F5 with no launch.json', () => {
     assertSamePath(transported.program, built, 'B02: same target as the bare shape');
     assert.deepStrictEqual(transported, bare, 'B02: transport must not change what F5 gives');
 
-    // 4. The legacy empty-string shape stays accepted — the absence guard must
+    // 4. The empty-string shape stays accepted — the absence guard must
     //    not NARROW the input set the provider already handles. B03
-    const legacy = await resolveConfig(folder, legacyF5Config());
-    assertSynthesised(legacy, "{type:''}");
-    assert.deepStrictEqual(legacy, bare, 'B03: the absence guard must not narrow the input set');
+    const emptyType = await resolveConfig(folder, bareF5Config());
+    assertSynthesised(emptyType, "{type:''}");
+    assert.deepStrictEqual(emptyType, bare, 'B03: the absence guard must not narrow the input set');
 
     // 5. VS Code changed `type`, so it re-enters the chain with what the
     //    provider just produced. That pass must be a fixed point. B04

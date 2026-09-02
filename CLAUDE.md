@@ -25,6 +25,7 @@ Write review-ready, maintainable code with no duplication.
 
 ## Hard Rules
 
+- There is no SharpLsp "legacy" code. If you find code that does not match the specs, delete it
 - All screens MUST BE 100% reactive. If underlying data changes, the screen must be listening and update accordingly
 - Zero duplication. Apply DRY rigorously. Check for existing code before writing new code — highest priority
 - Any function that can throw/panic must return Result<T,E> (outcome package in .NET)
