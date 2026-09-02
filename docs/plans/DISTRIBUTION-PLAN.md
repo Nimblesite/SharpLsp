@@ -135,9 +135,18 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
       BUILT. The `dotnet pack` smoke test in `ci-build.yml` proves the projects
       pack; nothing publishes them to NuGet.
 - [ ] NuGet publish of the two sidecar tool packages. NOT BUILT.
-- [ ] Homebrew tap update (`Nimblesite/homebrew-tap`). NOT BUILT — the archives
-      and checksums it needs now exist; the push job and its token do not.
-- [ ] Scoop bucket update (`Nimblesite/scoop-bucket`). NOT BUILT — same.
+- [x] Job: `publish-homebrew` — renders `Formula/sharplsp.rb` from the published
+      archives and pushes to `Nimblesite/homebrew-tap` ([DIST-PATH-PUBLISH])
+- [x] Job: `publish-scoop` — renders `bucket/sharplsp.json` and pushes to
+      `Nimblesite/scoop-bucket`
+- [x] Both skipped on prerelease tags; both fail fast on a missing
+      `BREW_SCOOP_PAT`
+- [x] Renderer verified on every PR (`tools/dist/verify-package-manifests.mjs`
+      in `ci-build.yml`), not only at tag time
+- [ ] Confirm `BREW_SCOOP_PAT` is granted to `Nimblesite/SharpLsp` — the secret
+      exists for Deslop; this repo's access has not been verified
+- [ ] First real tag: check `brew install nimblesite/tap/sharplsp` and
+      `scoop install nimblesite/sharplsp` end to end
 - [ ] Test with a `v*-rc*` tag on a fork
 
 ### CI smoke test

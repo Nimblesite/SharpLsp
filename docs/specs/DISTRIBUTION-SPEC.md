@@ -332,18 +332,50 @@ Users who want `sharplsp` on their system PATH outside VS Code may install via:
 - **macOS/Linux**: `brew install nimblesite/tap/sharplsp`
 - **Windows**: `scoop install nimblesite/sharplsp`
 
-Both draw from the [DIST-ARCHIVE] assets and their `SHA256SUMS` entry on the
-GitHub release.
+Both draw from the [DIST-ARCHIVE] assets. This is entirely optional for VS Code
+users — the bundled VSIX binary is sufficient. It is NOT optional for anyone
+else: a Rider, Zed, Neovim or Helix user installs one of these or unpacks the
+archive by hand.
 
-This is entirely optional for VS Code users — the bundled VSIX binary is
-sufficient. It is NOT optional for anyone else: a Rider, Zed, Neovim or Helix
-user installs one of these or unpacks the archive by hand.
+### [DIST-PATH-PUBLISH] Tap and Bucket Publication
 
-**Not yet automated.** The release workflow publishes the archives and their
-checksums; it does not push to `Nimblesite/homebrew-tap` or
-`Nimblesite/scoop-bucket`. Until those jobs exist the formula and manifest are
-updated by hand, and the commands above only work once that has happened for the
-version in question.
+`release.yml`'s `publish-homebrew` and `publish-scoop` jobs push
+`Formula/sharplsp.rb` to `Nimblesite/homebrew-tap` and `bucket/sharplsp.json` to
+`Nimblesite/scoop-bucket` after the GitHub release succeeds. Two jobs, not one:
+a tap outage must not block the bucket, the same independence
+`publish-marketplace` and `publish-openvsx` keep from each other.
+
+1. **Both files are generated whole, never edited in place.**
+   `tools/dist/render-package-manifests.mjs` builds them from the release
+   archives it just downloaded — the Scoop manifest as an object serialized to
+   JSON, per the repo's structured-file rule. A rewrite-in-place is how a
+   sha256 survives a version bump.
+2. **Checksums come from the published bytes**, hashed from the `server-*`
+   artifacts. The renderer fails if any expected archive is absent, so a short
+   release cannot produce a formula pointing at a missing asset.
+3. **The install layout is dictated by [DIST-ARCHIVE-LAYOUT].** Homebrew puts
+   the host at `bin/sharplsp` and the sidecars at `lib/sharplsp/sidecar-*`
+   (resolution layout 2); Scoop's `extract_dir` strips the archive root so the
+   sidecars land beside `sharplsp.exe` (resolution layout 1). Shipping only the
+   binary would install a language server that starts and then answers nothing.
+   `tools/dist/verify-package-manifests.mjs` asserts both, and runs on every PR
+   from `ci-build.yml` — the manifests themselves are only rendered on a tag, so
+   otherwise the first sign of a break is a user's failed `brew install`.
+4. **Prerelease tags are skipped.** Neither `brew install` nor `scoop install`
+   has a prerelease channel, so pushing an rc would hand every stable user a
+   prerelease on their next upgrade.
+5. **Neither formula declares a .NET dependency.** The sidecars target net10.0
+   and Homebrew's `dotnet` formula is not pinned to it, so both manifests carry
+   a note instead ([DIST-RUNTIME-ACQUIRE]).
+6. Push credentials are `BREW_SCOOP_PAT` ([DIST-SECRETS]). Both jobs fail on a
+   missing secret before checking anything out — the target repos are public, so
+   an absent token clones happily and only fails at `git push`, after the release
+   is already out.
+
+**macOS x86_64 is not covered.** No `darwin-x64` archive is published (that build
+hangs on GitHub's hosted `macos-13` runners), so the formula declares
+`depends_on arch: :arm64` under `on_macos` to give Intel Macs a clear
+architecture error instead of a 404 mid-download.
 
 ## [DIST-RELEASE] Release Workflow
 
@@ -369,8 +401,9 @@ Tag-triggered (`v*`). Jobs:
    Independent of each other; neither gates the other.
 7. **`deploy-pages`** — deploys the tagged website revision.
 
-Updating the Homebrew tap and the Scoop bucket is NOT part of this workflow — see
-[DIST-PATH-INSTALL].
+8. **`publish-homebrew`** / **`publish-scoop`** — push the rendered formula and
+   manifest to the tap and bucket ([DIST-PATH-PUBLISH]). Skipped for prerelease
+   tags.
 
 ## [DIST-RIDER-RELEASE] Rider Plugin Release
 

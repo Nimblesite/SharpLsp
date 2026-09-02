@@ -175,3 +175,6 @@ deslop-*.log
 # nothing in the build. Committed once by accident, it dwarfed every other file
 # in the repository.
 /src/website/tools/trends-results.json
+
+
+.sharplsp/profiles/

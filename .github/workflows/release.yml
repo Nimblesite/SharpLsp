@@ -441,6 +441,129 @@ jobs:
           fi
           echo "Marketplace: published ${published}, skipped ${skipped} already-present of $((published + skipped)) VSIX(es)"
 
+  # Homebrew and Scoop install the standalone server archive ([DIST-ARCHIVE]),
+  # not the VSIX — they are how Rider, Zed, Neovim and Helix users get the binary
+  # onto PATH ([DIST-PATH-INSTALL]). Two jobs, not one: a tap outage must not
+  # block the bucket, the same independence publish-marketplace and
+  # publish-openvsx keep from each other.
+  #
+  # Prerelease tags are skipped. `brew install` and `scoop install` have no
+  # prerelease channel, so pushing an rc would hand every stable user a
+  # prerelease on their next upgrade.
+  publish-homebrew:
+    name: Publish Homebrew formula
+    needs:
+      - version
+      - release
+    if: "${{ !contains(github.ref_name, '-') }}"
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Fail here rather than at `git push`. Both tap repos are public, so an
+      # absent secret clones happily and then dies with an opaque auth error
+      # after the release is already out.
+      - name: Require BREW_SCOOP_PAT
+        env:
+          BREW_SCOOP_PAT: "${{ secrets.BREW_SCOOP_PAT }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${BREW_SCOOP_PAT:-}" ]; then
+            echo "::error::BREW_SCOOP_PAT is not available to this repository."
+            echo "::error::Grant SharpLsp access to the org secret, or add it as a repo secret with contents:write on Nimblesite/homebrew-tap and Nimblesite/scoop-bucket."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      # Checksums come from the archives actually published, never from a
+      # hand-edited formula — a carried-over sha256 is the classic tap bug.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          pattern: server-*
+          merge-multiple: true
+      - name: Render formula
+        run: |
+          node tools/dist/render-package-manifests.mjs \
+            --version "${{ needs.version.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --archives artifacts \
+            --out dist/packaging
+      - name: Check out homebrew-tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Nimblesite/homebrew-tap
+          token: "${{ secrets.BREW_SCOOP_PAT }}"
+          path: homebrew-tap
+      - name: Commit and push formula
+        run: |
+          set -euo pipefail
+          bash tools/dist/publish-package-repo.sh \
+            homebrew-tap \
+            dist/packaging/sharplsp.rb \
+            Formula/sharplsp.rb \
+            "sharplsp ${{ needs.version.outputs.version }}"
+
+  publish-scoop:
+    name: Publish Scoop manifest
+    needs:
+      - version
+      - release
+    if: "${{ !contains(github.ref_name, '-') }}"
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Fail here rather than at `git push`. Both tap repos are public, so an
+      # absent secret clones happily and then dies with an opaque auth error
+      # after the release is already out.
+      - name: Require BREW_SCOOP_PAT
+        env:
+          BREW_SCOOP_PAT: "${{ secrets.BREW_SCOOP_PAT }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${BREW_SCOOP_PAT:-}" ]; then
+            echo "::error::BREW_SCOOP_PAT is not available to this repository."
+            echo "::error::Grant SharpLsp access to the org secret, or add it as a repo secret with contents:write on Nimblesite/homebrew-tap and Nimblesite/scoop-bucket."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          pattern: server-*
+          merge-multiple: true
+      - name: Render manifest
+        run: |
+          node tools/dist/render-package-manifests.mjs \
+            --version "${{ needs.version.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --archives artifacts \
+            --out dist/packaging
+      - name: Check out scoop-bucket
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Nimblesite/scoop-bucket
+          token: "${{ secrets.BREW_SCOOP_PAT }}"
+          path: scoop-bucket
+      - name: Commit and push manifest
+        run: |
+          set -euo pipefail
+          bash tools/dist/publish-package-repo.sh \
+            scoop-bucket \
+            dist/packaging/sharplsp.json \
+            bucket/sharplsp.json \
+            "sharplsp ${{ needs.version.outputs.version }}"
+
   publish-openvsx:
     name: Publish VSIX (Open VSX)
     needs:
