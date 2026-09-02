@@ -147,7 +147,11 @@ function requireActive(why: string): vscode.DebugSession {
  */
 function assertHandshakeOrder(recorder: DapRecorder): void {
   const order = recorder.requestOrder();
-  eq(order[0], 'initialize', `the DAP conversation opens with initialize; saw ${order.join(' -> ')}`);
+  eq(
+    order[0],
+    'initialize',
+    `the DAP conversation opens with initialize; saw ${order.join(' -> ')}`,
+  );
   eq(
     order.includes('configurationDone'),
     true,
