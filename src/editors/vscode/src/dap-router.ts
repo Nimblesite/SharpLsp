@@ -352,6 +352,11 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
 
   /** Emit one message towards VS Code exactly as the adapter framed it. */
   public emit(message: DapMessage): void {
+    if (process.env.SHARPLSP_DAP_TRACE === '1') {
+      traceInfo(
+        `[dap=>] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)}`,
+      );
+    }
     this.emitter.fire(message);
   }
 
