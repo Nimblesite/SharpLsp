@@ -80,6 +80,18 @@ jobs:
       - name: Build patched netcoredbg
         run: bash tools/vsix/build-netcoredbg.sh linux-x64
 
+      # ── Standalone server archive ──────────────────────────────────
+      # [DIST-ARCHIVE] The archive is how Rider, Zed, Neovim, Helix and the
+      # Homebrew/Scoop formulas install SharpLsp — no VSIX, no shipwright, so the
+      # host must find its sidecars by the archive layout alone. Only release.yml
+      # built it before, which meant a layout regression surfaced at tag time with
+      # the release already half-published. It costs seconds here because the host
+      # and both sidecars are already built above.
+      - name: Package + verify standalone server archive
+        run: |
+          make _package-archive VSIX_PLAT=linux-x64 ARCHIVE_LSP=target/release/sharplsp
+          bash tools/dist/verify-archive.sh linux-x64
+
       # ── Cache the build for the parallel test legs ─────────────────
       - name: Upload Linux LSP artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -19,15 +19,15 @@ JetBrains gates `com.intellij.modules.lsp` to paid products. The plugin declares
 ```mermaid
 flowchart TB
     RIDER["Rider JVM"] -- lsp4j --> SHARPLSP["sharplsp<br/>stdio; sidecars remain host-owned"]
-    RIDER --> PROVIDER["ForgeLspServerSupportProvider<br/>extension point"]
-    RIDER --> TOOLWINDOW["ForgeSolutionToolWindow<br/>toolWindow extension point"]
-    PROVIDER --> DESCRIPTOR["ForgeLspServerDescriptor<br/>launches sharplsp, sets env"]
-    DESCRIPTOR --> LSP4J["ForgeLsp4jServer<br/>custom request interface"]
-    TOOLWINDOW --> NODES["ForgeTreeNode hierarchy"]
+    RIDER --> PROVIDER["SharpLspServerSupportProvider<br/>extension point"]
+    RIDER --> TOOLWINDOW["SharpLspSolutionToolWindow<br/>toolWindow extension point"]
+    PROVIDER --> DESCRIPTOR["SharpLspServerDescriptor<br/>launches sharplsp, sets env"]
+    DESCRIPTOR --> LSP4J["SharpLsp4jServer<br/>custom request interface"]
+    TOOLWINDOW --> NODES["SharpLspTreeNode hierarchy"]
     NODES -- "workspaceSymbols() · nugetInstalled()" --> LSP4J
 ```
 
-The plugin owns no sidecar, webview, or MessagePack transport; it launches the Rust host and renders LSP responses. Implementations: [`lsp/`](../../src/editors/rider/src/main/kotlin/com/forgelsp/rider/lsp) and [`toolwindow/`](../../src/editors/rider/src/main/kotlin/com/forgelsp/rider/toolwindow).
+The plugin owns no sidecar, webview, or MessagePack transport; it launches the Rust host and renders LSP responses. Implementations: [`lsp/`](../../src/editors/rider/src/main/kotlin/com/sharplsp/rider/lsp) and [`toolwindow/`](../../src/editors/rider/src/main/kotlin/com/sharplsp/rider/toolwindow).
 
 ## Build and Packaging `[RIDER-BUILD]`
 
@@ -39,17 +39,17 @@ The plugin owns no sidecar, webview, or MessagePack transport; it launches the R
   ```mermaid
   flowchart LR
       ROOT["src/editors/rider/"] --> MAIN["src/main/"]
-      MAIN --> KOTLIN["kotlin/com/forgelsp/rider/"]
+      MAIN --> KOTLIN["kotlin/com/sharplsp/rider/"]
       MAIN --> RESOURCES["resources/"]
       ROOT --> BUILD["build.gradle.kts"]
       ROOT --> SETTINGS["settings.gradle.kts"]
       ROOT --> PROPS["gradle.properties"]
       ROOT --> WRAPPER["gradle/wrapper/ — generated"]
       ROOT --> GRADLEW["gradlew, gradlew.bat — generated"]
-      KOTLIN --> LSPDIR["lsp/<br/>ForgeLspServerSupportProvider.kt<br/>ForgeLspServerDescriptor.kt<br/>ForgeLsp4jServer.kt"]
-      KOTLIN --> TWDIR["toolwindow/<br/>ForgeSolutionToolWindowFactory.kt<br/>ForgeSolutionToolWindow.kt<br/>nodes/*.kt"]
+      KOTLIN --> LSPDIR["lsp/<br/>SharpLspServerSupportProvider.kt<br/>SharpLspServerDescriptor.kt<br/>SharpLsp4jServer.kt"]
+      KOTLIN --> TWDIR["toolwindow/<br/>SharpLspSolutionToolWindowFactory.kt<br/>SharpLspSolutionToolWindow.kt<br/>nodes/*.kt"]
       RESOURCES --> METAINF["META-INF/plugin.xml"]
-      RESOURCES --> ICONS["icons/forge.svg"]
+      RESOURCES --> ICONS["icons/sharplsp.svg"]
   ```
 - **Distribution artifact:** `sharplsp-rider-plugin.zip`, produced by the `buildPlugin` Gradle task at `src/editors/rider/build/distributions/`. Copied to `dist/sharplsp-rider.zip` alongside the other packaged editor artifacts.
 - **Gradle wrapper:** committed so contributors and CI don't need a system Gradle.
@@ -61,20 +61,20 @@ The plugin owns no sidecar, webview, or MessagePack transport; it launches the R
 
 ## LSP Integration `[RIDER-LSP]`
 
-### `ForgeLspServerSupportProvider` `[RIDER-LSP-PROVIDER]`
+### `SharpLspServerSupportProvider` `[RIDER-LSP-PROVIDER]`
 
-[`ForgeLspServerSupportProvider.kt`](../../src/editors/rider/src/main/kotlin/com/forgelsp/rider/lsp/ForgeLspServerSupportProvider.kt) is registered via `com.intellij.platform.lsp.serverSupportProvider`. On `fileOpened()` it checks the file extension (`.cs`, `.csx`, `.fs`, `.fsx`, `.fsi`) and returns a shared `ForgeLspServerDescriptor` keyed by project. One server per Rider project, not per file.
+[`SharpLspServerSupportProvider.kt`](../../src/editors/rider/src/main/kotlin/com/sharplsp/rider/lsp/SharpLspServerSupportProvider.kt) is registered via `com.intellij.platform.lsp.serverSupportProvider`. On `fileOpened()` it checks the file extension (`.cs`, `.csx`, `.fs`, `.fsx`, `.fsi`) and returns a shared `SharpLspServerDescriptor` keyed by project. One server per Rider project, not per file.
 
-### `ForgeLspServerDescriptor` `[RIDER-LSP-DESCRIPTOR]`
+### `SharpLspServerDescriptor` `[RIDER-LSP-DESCRIPTOR]`
 
 - `isSupportedFile(VirtualFile)` — whitelist of C# / F# extensions.
 - `createCommandLine()` — builds a UTF-8 `GeneralCommandLine` for the resolved `sharplsp`, sets `RUST_LOG` from project settings, and uses the project base path as working directory.
-- `lsp4jServerClass = ForgeLsp4jServer::class.java` — this is the hook JetBrains documents for custom requests. The returned class extends `org.eclipse.lsp4j.services.LanguageServer` with `@JsonRequest` and `@JsonNotification` methods matching `sharplsp/*`.
+- `lsp4jServerClass = SharpLsp4jServer::class.java` — this is the hook JetBrains documents for custom requests. The returned class extends `org.eclipse.lsp4j.services.LanguageServer` with `@JsonRequest` and `@JsonNotification` methods matching `sharplsp/*`.
 
-### `ForgeLsp4jServer` custom interface `[RIDER-LSP-INTERFACE]`
+### `SharpLsp4jServer` custom interface `[RIDER-LSP-INTERFACE]`
 
 ```kotlin
-interface ForgeLsp4jServer : LanguageServer {
+interface SharpLsp4jServer : LanguageServer {
     @JsonRequest("sharplsp/workspaceSymbols")
     fun workspaceSymbols(params: WorkspaceSymbolsParams): CompletableFuture<WorkspaceSymbolsResponse>
 
@@ -89,7 +89,7 @@ interface ForgeLsp4jServer : LanguageServer {
 }
 ```
 
-DTO camel-case fields MUST match the Rust JSON wire format. Implementation: [`ForgeLsp4jServer.kt`](../../src/editors/rider/src/main/kotlin/com/forgelsp/rider/lsp/ForgeLsp4jServer.kt).
+DTO camel-case fields MUST match the Rust JSON wire format. Implementation: [`SharpLsp4jServer.kt`](../../src/editors/rider/src/main/kotlin/com/sharplsp/rider/lsp/SharpLsp4jServer.kt).
 
 ## Solution Explorer Tool Window `[RIDER-SOLUTION]`
 
@@ -97,14 +97,14 @@ DTO camel-case fields MUST match the Rust JSON wire format. Implementation: [`Fo
 
 ```xml
 <extensions defaultExtensionNs="com.intellij">
-  <toolWindow id="Forge Solution"
+  <toolWindow id="SharpLsp Solution"
               anchor="left"
-              icon="/icons/forge.svg"
-              factoryClass="com.forgelsp.rider.toolwindow.ForgeSolutionToolWindowFactory"/>
+              icon="/icons/sharplsp.svg"
+              factoryClass="com.sharplsp.rider.toolwindow.SharpLspSolutionToolWindowFactory"/>
 </extensions>
 ```
 
-The `Forge Solution` tool window is anchored left beside Rider's explorer.
+The `SharpLsp Solution` tool window is anchored left beside Rider's explorer.
 
 ### Structure `[RIDER-SOLUTION-STRUCTURE]`
 

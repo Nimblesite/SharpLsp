@@ -1,0 +1,18 @@
+
+##########################################
+# Language Rules
+# https://docs.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/language-rules
+##########################################
+
+# .NET Style Rules
+# https://docs.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/language-rules#net-style-rules
+
+[*.{cs,vb}]
+dotnet_diagnostic.CS0219.severity = error
+
+dotnet_analyzer_diagnostic.severity = error
+
+
+
+
+

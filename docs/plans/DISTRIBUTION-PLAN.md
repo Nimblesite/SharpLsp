@@ -123,9 +123,21 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 
 ### Release workflow (`.github/workflows/release.yml`)
 
-- [x] Job: `build-sharplsp` — matrix build, single binary archives (no sidecars)
-- [x] Job: `pack-sidecars` — framework-dependent `dotnet pack`, 2 nupkgs
-- [x] Job: `release` — GitHub release, NuGet publish, Homebrew tap, Scoop bucket
+- [x] Job: `build-vsix` — matrix build; emits the per-platform VSIX AND the
+      standalone server archive ([DIST-ARCHIVE]) from one build
+- [x] Job: `build-rider` — `buildPlugin` on JDK 21, version-stamped zip
+      ([DIST-RIDER-RELEASE])
+- [x] Job: `release` — GitHub release with VSIXs + server archives + Rider zip,
+      `SHA256SUMS` over all of them, asset-count guard
+- [x] Verify the archive on every PR, not just on a tag (`ci-build.yml` runs
+      `tools/dist/verify-archive.sh linux-x64`)
+- [ ] Job: `pack-sidecars` — framework-dependent `dotnet pack`, 2 nupkgs. NOT
+      BUILT. The `dotnet pack` smoke test in `ci-build.yml` proves the projects
+      pack; nothing publishes them to NuGet.
+- [ ] NuGet publish of the two sidecar tool packages. NOT BUILT.
+- [ ] Homebrew tap update (`Nimblesite/homebrew-tap`). NOT BUILT — the archives
+      and checksums it needs now exist; the push job and its token do not.
+- [ ] Scoop bucket update (`Nimblesite/scoop-bucket`). NOT BUILT — same.
 - [ ] Test with a `v*-rc*` tag on a fork
 
 ### CI smoke test

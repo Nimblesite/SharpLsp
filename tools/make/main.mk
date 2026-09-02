@@ -15,12 +15,17 @@
 #   make website-dev                  serve the website locally
 #   make install-dotnet-10             install a user-local .NET 10 SDK + runtime
 #   make uninstall-dotnet-10           remove the user-local .NET 10 SDK + runtime
-#   make package-vsix-linux-x64 [VERSION=x.y.z]     build + package VSIX for linux-x64
-#   make package-vsix-linux-arm64 [VERSION=x.y.z]   build + package VSIX for linux-arm64
-#   make package-vsix-darwin-arm64 [VERSION=x.y.z]  build + package VSIX for darwin-arm64
-#   make package-vsix-darwin-x64 [VERSION=x.y.z]    build + package VSIX for darwin-x64
-#   make package-vsix-win32-x64 [VERSION=x.y.z]     build + package VSIX for win32-x64
-#   make package-vsix-win32-arm64 [VERSION=x.y.z]   build + package VSIX for win32-arm64
+#   make package-vsix-linux-x64 [VERSION=x.y.z]     build + package linux-x64
+#   make package-vsix-linux-arm64 [VERSION=x.y.z]   build + package linux-arm64
+#   make package-vsix-darwin-arm64 [VERSION=x.y.z]  build + package darwin-arm64
+#   make package-vsix-darwin-x64 [VERSION=x.y.z]    build + package darwin-x64
+#   make package-vsix-win32-x64 [VERSION=x.y.z]     build + package win32-x64
+#   make package-vsix-win32-arm64 [VERSION=x.y.z]   build + package win32-arm64
+#
+#   Each package-vsix-* target builds the Rust host and both sidecars ONCE and
+#   emits both release artifacts for that platform: the VS Code VSIX and the
+#   editor-agnostic standalone server archive ([DIST-ARCHIVE]) that Rider, Zed,
+#   Neovim, Helix and the package managers consume.
 #
 #   VERSION is optional for all package-vsix-* targets; it defaults to the
 #   0.0.0 placeholder when omitted.
@@ -81,6 +86,9 @@ DIST_DIR       = dist
 DEV_VSIX       = $(DIST_DIR)/sharplsp.vsix
 ZED_PKG_TAR    = $(DIST_DIR)/sharplsp-zed-extension.tar.gz
 RIDER_ZIP      = $(DIST_DIR)/sharplsp-rider.zip
+# [DIST-ARCHIVE] Staging root for the standalone server archives. Kept under
+# target/ so `cargo clean` and `make clean` reclaim it with everything else.
+ARCHIVE_STAGE  = target/archive
 
 # Host platform for local VSIX dev builds
 HOST_PLATFORM = $(shell node -e "process.stdout.write(process.platform + '-' + process.arch)")
@@ -111,7 +119,7 @@ KOVER_PERCENT = dotnet run --file tools/coverage/kover-line-percent.cs --
         _test-dotnet _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
-        _package-vsix \
+        _package-vsix _package-archive \
         _deploy-rust _deploy-sidecars \
         _kill _clean-rider
 
@@ -615,12 +623,17 @@ screenshots: _build-rust _build-dotnet _build-vsix
 # Rewrites the version field in all manifest files before a package build.
 # Invoked only by the package-vsix-* targets, which supply VERSION (defaulting
 # to the 0.0.0 placeholder when the caller omits it — see PACKAGE_VSIX_TARGETS).
+#
+# The Rider plugin's pluginVersion belongs here too: buildPlugin names the zip
+# from it and JetBrains keys plugin updates on it, so an unstamped one shipped
+# 0.1.0 from every tag. [DIST-VERSION-INVARIANT]
 
 _stamp-version:
 	@echo "==> Stamping version $(VERSION) into all manifests..."
 	sed -i.bak 's/^version = "[^"]*"/version = "$(VERSION)"/' Cargo.toml
 	sed -i.bak 's/^version = "[^"]*"/version = "$(VERSION)"/' $(ZED_DIR)/Cargo.toml
 	sed -i.bak 's/^version = "[^"]*"/version = "$(VERSION)"/' $(ZED_DIR)/extension.toml
+	sed -i.bak 's/^pluginVersion = .*/pluginVersion = $(VERSION)/' $(RIDER_DIR)/gradle.properties
 	node -e " \
 		const fs = require('fs'); \
 		const p = '$(VSCODE_DIR)/package.json'; \
@@ -650,7 +663,8 @@ _stamp-version:
 		j.product.version = '$(VERSION)'; \
 		fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n'); \
 	"
-	@rm -f Cargo.toml.bak $(ZED_DIR)/Cargo.toml.bak $(ZED_DIR)/extension.toml.bak
+	@rm -f Cargo.toml.bak $(ZED_DIR)/Cargo.toml.bak \
+		$(ZED_DIR)/extension.toml.bak $(RIDER_DIR)/gradle.properties.bak
 	@echo "==> Version $(VERSION) stamped."
 
 # ── Package VSIX (per platform) ───────────────────────────────────
@@ -695,6 +709,7 @@ $(PACKAGE_VSIX_TARGETS): _stamp-version
 	cargo build --release --target $(RUST_TARGET)
 	$(MAKE) _build-dotnet DOTNET_CFG=Release VERSION=$(VERSION)
 	$(MAKE) _package-vsix VSIX_PLAT=$(VSIX_PLAT) RUST_TARGET=$(RUST_TARGET) EXE=$(EXE) VERSION=$(VERSION)
+	$(MAKE) _package-archive VSIX_PLAT=$(VSIX_PLAT) RUST_TARGET=$(RUST_TARGET) EXE=$(EXE)
 
 _package-vsix:
 	@echo "==> Packaging VSIX for $(VSIX_PLAT)..."
@@ -722,6 +737,48 @@ _package-vsix:
 		-o ../../../dist/sharplsp-$(VSIX_PLAT).vsix
 	rm -rf $(VSCODE_DIR)/bin
 	@echo "==> dist/sharplsp-$(VSIX_PLAT).vsix ready."
+
+# ── Package standalone server archive (per platform) ─────────────
+# [DIST-ARCHIVE] The editor-agnostic distribution: the Rust host plus both
+# sidecars, with no VS Code extension wrapped around them. Rider, Zed, Neovim,
+# Helix, Emacs and the Homebrew/Scoop formulas ([DIST-PATH-INSTALL]) all consume
+# this, not the VSIX.
+#
+# Layout is dictated by the host's OWN sidecar resolution — `installed_sidecar_exe`
+# in src/sharplsp/src/sidecar/manager.rs, layout 1 (`<exe_dir>/<subdir>/<name>`).
+# Unpack anywhere and run `sharplsp`; the sidecars resolve with no env vars, no
+# PATH entries and no configuration:
+#
+#   sharplsp-<platform>/
+#     sharplsp[.exe]
+#     sidecar-csharp/SharpLsp.Sidecar.CSharp[.exe]   + managed assemblies
+#     sidecar-fsharp/SharpLsp.Sidecar.FSharp[.exe]   + managed assemblies
+#
+# Sidecar executables keep their published assembly names here. The VSIX renames
+# them to sharplsp-sidecar-* because the extension hands the host explicit paths
+# via SHARPLSP_*_SIDECAR_PATH; this archive has no such helper, so the names must
+# be the ones the host looks for on its own.
+#
+# Packages what is already on disk — the package-vsix-<platform> recipe builds
+# Rust and the sidecars once and drives both packagers. ARCHIVE_LSP defaults to
+# the cross-compiled binary a release build produces; CI's Ubuntu build leg has
+# only the host-triple build at target/release/ and overrides it.
+ARCHIVE_LSP ?= target/$(RUST_TARGET)/release/sharplsp$(EXE)
+
+_package-archive:
+	@echo "==> Packaging standalone archive for $(VSIX_PLAT)..."
+	rm -rf $(ARCHIVE_STAGE)
+	mkdir -p $(ARCHIVE_STAGE)/sharplsp-$(VSIX_PLAT)/sidecar-csharp \
+		$(ARCHIVE_STAGE)/sharplsp-$(VSIX_PLAT)/sidecar-fsharp
+	cp $(ARCHIVE_LSP) $(ARCHIVE_STAGE)/sharplsp-$(VSIX_PLAT)/sharplsp$(EXE)
+	cp -r $(SIDECAR_CS_OUT)/. $(ARCHIVE_STAGE)/sharplsp-$(VSIX_PLAT)/sidecar-csharp/
+	cp -r $(SIDECAR_FS_OUT)/. $(ARCHIVE_STAGE)/sharplsp-$(VSIX_PLAT)/sidecar-fsharp/
+	chmod +x $(ARCHIVE_STAGE)/sharplsp-$(VSIX_PLAT)/sharplsp$(EXE) \
+		$(ARCHIVE_STAGE)/sharplsp-$(VSIX_PLAT)/sidecar-csharp/SharpLsp.Sidecar.CSharp$(EXE) \
+		$(ARCHIVE_STAGE)/sharplsp-$(VSIX_PLAT)/sidecar-fsharp/SharpLsp.Sidecar.FSharp$(EXE) 2>/dev/null || true
+	@sh tools/dist/archive.sh $(ARCHIVE_STAGE) sharplsp-$(VSIX_PLAT) \
+		$(DIST_DIR)/sharplsp-$(VSIX_PLAT)$(if $(filter win32-%,$(VSIX_PLAT)),.zip,.tar.gz)
+	rm -rf $(ARCHIVE_STAGE)
 
 # ── Marketplace publish helpers ──────────────────────────────────
 # Downloads all VSIX assets from the latest GitHub release and prints the

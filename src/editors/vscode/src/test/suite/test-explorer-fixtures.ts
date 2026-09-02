@@ -22,6 +22,7 @@ import {
   NUNIT_PACKAGES,
   projectXml,
   writeProject,
+  XUNIT_LEGACY_PACKAGES,
   XUNIT_PACKAGES,
   type PackageRef,
 } from './dotnet-project-kit';
@@ -272,6 +273,34 @@ export const FRAMEWORK_FIXTURES: readonly FrameworkFixture[] = [
     parameterized: 'Cs.Mstest.Fixtures.CalculatorTests.Adds_Row',
   },
 ];
+
+/**
+ * The same C# xUnit project, built against the LEGACY 2.2.0 VSTest adapter.
+ *
+ * Deliberately NOT a member of {@link FRAMEWORK_FIXTURES}: the framework matrix
+ * asserts one project per framework/language pair, and this is a second build of
+ * a pair it already covers. What it adds is the adapter shape that matrix cannot
+ * see — 2.2.0 appends each test case's 40-hex unique ID to the
+ * `FullyQualifiedName` it reports, which is how a real-world project (issue
+ * \#232) ends up with `Method (4159b661…)` in the tree and a `--filter` that can
+ * never match. Its own namespace keeps its FQNs out of the shared result cache
+ * every other Test Explorer suite writes into.
+ */
+export const LEGACY_ADAPTER_FIXTURE: FrameworkFixture = {
+  key: 'xunit-legacy-csharp',
+  framework: 'xunit',
+  language: 'csharp',
+  packages: XUNIT_LEGACY_PACKAGES,
+  projectName: 'XunitLegacyCs',
+  projectFileName: 'XunitLegacyCs.csproj',
+  sourceFileName: 'Tests.cs',
+  source: CS_XUNIT_SOURCE.replace('Cs.Xunit.Fixtures', 'Cs.XunitLegacy.Fixtures'),
+  passing: 'Cs.XunitLegacy.Fixtures.CalculatorTests.Adds_TwoNumbers',
+  failing: 'Cs.XunitLegacy.Fixtures.CalculatorTests.Fails_OnPurpose',
+  skipped: 'Cs.XunitLegacy.Fixtures.CalculatorTests.Skipped_OnPurpose',
+  parameterized: 'Cs.XunitLegacy.Fixtures.CalculatorTests.Adds_Theory',
+  mixedParameterized: 'Cs.XunitLegacy.Fixtures.CalculatorTests.Mixed_Theory',
+};
 
 /** Look a fixture up by key, failing loudly on a typo. */
 export function fixtureFor(key: string): FrameworkFixture {

@@ -169,10 +169,11 @@
       ]
     },
     "testexplorer-frameworks": {
-      "description": "Test Explorer framework matrix and run semantics: xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles. Split from the testexplorer chunk because it restores and builds six test projects.",
+      "description": "Test Explorer framework matrix and run semantics: xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles, and the legacy VSTest adapter that decorates the names it reports. Split from the testexplorer chunk because it restores and builds seven test projects.",
       "files": [
         "test-explorer-frameworks.test.js",
-        "test-explorer-outcomes.test.js"
+        "test-explorer-outcomes.test.js",
+        "test-explorer-adapter-ids.test.js"
       ]
     },
     "profiler": {

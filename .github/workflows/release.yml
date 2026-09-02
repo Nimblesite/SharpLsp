@@ -130,7 +130,11 @@ jobs:
           exe=""
           if [ "${{ runner.os }}" = "Windows" ]; then exe=".exe"; fi
           echo "EXE=${exe}" >> "$GITHUB_ENV"
-      - name: Package VSIX
+      # Builds the Rust host and both sidecars once, then emits BOTH release
+      # artifacts for this platform: the VSIX and the standalone server archive
+      # ([DIST-ARCHIVE]) that every non-VS-Code editor and the package managers
+      # install.
+      - name: Package VSIX + standalone server archive
         shell: bash
         run: make package-vsix-${{ matrix.platform }} RUST_TARGET=${{ matrix.rust_target
           }} VERSION="${{ needs.version.outputs.version }}"
@@ -153,10 +157,90 @@ jobs:
             echo "::error::foreign-platform binary found in dist/sharplsp-${{ matrix.platform }}.vsix"
             exit 1
           fi
+      # The archive is the ONLY artifact a Rider / Zed / Neovim / Helix user can
+      # install, and what Homebrew and Scoop pull from ([DIST-PATH-INSTALL]). A
+      # layout mistake in it is invisible to every VSIX check above. The verifier
+      # is shared with ci-build.yml so a PR catches the same regressions a tag
+      # would. [DIST-ARCHIVE] [DIST-CI-SMOKE]
+      - name: Verify standalone server archive
+        shell: bash
+        run: |
+          # A cross-compiled target the runner cannot execute gets the layout
+          # check only. Set in shell, not a `${{ }}` env expression: GitHub's
+          # `a && '' || '1'` treats the empty string as falsy and yields '1' for
+          # BOTH branches, which would skip the smoke test everywhere.
+          if [ "${{ matrix.can_execute }}" != "true" ]; then
+            export SKIP_RUN=1
+          fi
+          bash tools/dist/verify-archive.sh ${{ matrix.platform }} "${{ needs.version.outputs.version }}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vsix-${{ matrix.platform }}
           path: dist/*.vsix
+          if-no-files-found: error
+      # Uploaded separately from the VSIX so publish-marketplace / publish-openvsx
+      # keep globbing a directory that holds nothing but .vsix files.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: server-${{ matrix.platform }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+
+  # The Rider plugin is a release artifact in its own right: JetBrains users have
+  # no VSIX to install and no marketplace listing to pull from, so the zip on the
+  # GitHub release IS the distribution channel. [DIST-RIDER-RELEASE]
+  build-rider:
+    name: Build Rider plugin
+    needs: version
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    # RIDER_REQUIRED=1 makes a missing JDK a hard failure. Without it the Gradle
+    # wrapper skips silently and the release would ship no Rider plugin while
+    # reporting success — exactly the gap this job closes.
+    env:
+      RIDER_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Stamp release version
+        shell: bash
+        run: make _stamp-version VERSION="${{ needs.version.outputs.version }}"
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      # Mirrors ci-editors.yml: the IntelliJ Platform SDK is a multi-GB Gradle
+      # download that otherwise dominates this job.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            src/editors/rider/.intellijPlatform
+          key: "${{ runner.os }}-gradle-${{ hashFiles('src/editors/rider/build.gradle.kts', 'src/editors/rider/gradle.properties', 'src/editors/rider/gradle/**') }}"
+          restore-keys: "${{ runner.os }}-gradle-"
+      - name: Build Rider plugin
+        run: make _build-rider
+      - name: Verify plugin zip is versioned and non-empty
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/sharplsp-rider.zip || {
+            echo "::error::dist/sharplsp-rider.zip missing or empty"
+            exit 1
+          }
+          # buildPlugin names the zip from pluginVersion; _stamp-version writes the
+          # tag into it. A stale 0.1.0 here means stamping silently stopped working.
+          ls src/editors/rider/build/distributions/sharplsp-rider-${{ needs.version.outputs.version }}.zip
+          unzip -l dist/sharplsp-rider.zip | grep -F 'sharplsp-rider/lib/'
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rider-plugin
+          path: dist/sharplsp-rider.zip
           if-no-files-found: error
 
   release:
@@ -164,28 +248,56 @@ jobs:
     needs:
       - version
       - build-vsix
+      - build-rider
       - codeql
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      # Three downloads, one directory. publish-marketplace and publish-openvsx
+      # pull `vsix-*` on their own and must keep seeing a directory of nothing but
+      # VSIXes, so the artifacts stay split at upload and are merged only here.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
           pattern: vsix-*
           merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          pattern: server-*
+          merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          name: rider-plugin
+      # Every published asset is checksummed, not just the VSIXes — the Homebrew
+      # formula and Scoop manifest verify the server archives against this file.
+      # [DIST-ARCHIVE]
       - name: Generate SHA256SUMS
         shell: bash
         run: |
           set -euo pipefail
           cd artifacts
           : > SHA256SUMS
-          for f in *.vsix; do
+          for f in *.vsix *.tar.gz *.zip; do
             [ -e "$f" ] || continue
             sha256sum "$f" >> SHA256SUMS
           done
           cat SHA256SUMS
+          # A release that silently drops a platform is the failure this catches:
+          # one VSIX and one server archive per built platform, plus the Rider zip.
+          expected=$(( 2 * ${PLATFORM_COUNT} + 1 ))
+          actual="$(wc -l < SHA256SUMS)"
+          if [ "${actual}" -ne "${expected}" ]; then
+            echo "::error::expected ${expected} checksummed assets, found ${actual}"
+            exit 1
+          fi
+        env:
+          # Kept beside the build-vsix matrix: adding a platform there without
+          # updating this count fails the release loudly instead of shipping short.
+          PLATFORM_COUNT: '5'
       # Hyphenated SemVer tags (v0.2.0-rc.1, v0.2.0-beta) are marked prerelease so
       # they never become the "Latest release". [DIST-RELEASE] [DIST-RELEASE]
       - name: Create GitHub release
@@ -202,6 +314,8 @@ jobs:
             --generate-notes \
             ${prerelease} \
             artifacts/*.vsix \
+            artifacts/*.tar.gz \
+            artifacts/*.zip \
             artifacts/SHA256SUMS
 
   # Release tags deploy their exact website revision. Website-only changes also

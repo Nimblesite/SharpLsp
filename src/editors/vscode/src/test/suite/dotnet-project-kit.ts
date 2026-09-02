@@ -29,6 +29,22 @@ export const XUNIT_PACKAGES: readonly PackageRef[] = [
   { id: 'Microsoft.NET.Test.Sdk', version: '17.11.1' },
 ];
 
+/**
+ * xUnit on its 2.2.0 VSTest adapter — the version real-world projects still pin
+ * (FluentValidation among them).
+ *
+ * This adapter does NOT write a bare `TestCase.FullyQualifiedName`: it appends
+ * the test case's 40-hex unique ID, so `--ListFullyQualifiedTests` emits
+ * `Ns.Class.Method (d87517d9…)`. Modern adapters do not, which is why every
+ * fixture built on {@link XUNIT_PACKAGES} is blind to the whole class of defect
+ * that suffix causes. Pinned deliberately; do NOT "upgrade" it.
+ */
+export const XUNIT_LEGACY_PACKAGES: readonly PackageRef[] = [
+  { id: 'xunit', version: '2.2.0' },
+  { id: 'xunit.runner.visualstudio', version: '2.2.0' },
+  { id: 'Microsoft.NET.Test.Sdk', version: '17.11.1' },
+];
+
 /** NUnit. Its `[TestCase]` names carry parentheses — the filter-escaping case. */
 export const NUNIT_PACKAGES: readonly PackageRef[] = [
   { id: 'NUnit', version: '4.2.2' },

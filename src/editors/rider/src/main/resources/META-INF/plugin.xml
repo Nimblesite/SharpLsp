@@ -1,7 +1,7 @@
 <idea-plugin>
-    <id>com.forgelsp.rider</id>
-    <name>Forge LSP</name>
-    <vendor url="https://github.com/Nimblesite/forge">Forge LSP</vendor>
+    <id>com.sharplsp.rider</id>
+    <name>SharpLsp LSP</name>
+    <vendor url="https://github.com/Nimblesite/sharplsp">SharpLsp LSP</vendor>
 
     <!-- Required for every plugin that uses the IntelliJ Platform APIs. -->
     <depends>com.intellij.modules.platform</depends>
@@ -16,39 +16,39 @@
     <extensions defaultExtensionNs="com.intellij">
         <!-- LSP server registration — extension point lives in the
              com.intellij.modules.lsp module. -->
-        <platform.lsp.serverSupportProvider implementation="com.forgelsp.rider.lsp.ForgeLspServerSupportProvider" />
+        <platform.lsp.serverSupportProvider implementation="com.sharplsp.rider.lsp.SharpLspServerSupportProvider" />
 
         <!-- Solution Explorer tool window. Anchored to the left so it
              sits next to Rider's built-in Solution Explorer. -->
         <toolWindow
-            id="Forge Solution"
+            id="SharpLsp Solution"
             anchor="left"
-            icon="/icons/forge.svg"
-            factoryClass="com.forgelsp.rider.toolwindow.ForgeSolutionToolWindowFactory"
+            icon="/icons/sharplsp.svg"
+            factoryClass="com.sharplsp.rider.toolwindow.SharpLspSolutionToolWindowFactory"
         />
 
         <!-- NuGet Package Browser tool window. Anchored to the bottom
              so it doesn't fight with the solution tree. -->
         <toolWindow
-            id="Forge NuGet"
+            id="SharpLsp NuGet"
             anchor="bottom"
-            icon="/icons/forge.svg"
-            factoryClass="com.forgelsp.rider.toolwindow.nuget.ForgeNuGetToolWindowFactory"
+            icon="/icons/sharplsp.svg"
+            factoryClass="com.sharplsp.rider.toolwindow.nuget.SharpLspNuGetToolWindowFactory"
         />
 
-        <!-- Notification group used by every Forge action. Must be
+        <!-- Notification group used by every SharpLsp action. Must be
              registered so user toasts for install/uninstall/restore
              actually surface. -->
-        <notificationGroup id="Forge" displayType="BALLOON" />
+        <notificationGroup id="SharpLsp" displayType="BALLOON" />
 
-        <!-- Project-level settings UI at Settings → Tools → Forge. -->
+        <!-- Project-level settings UI at Settings → Tools → SharpLsp. -->
         <projectConfigurable
             parentId="tools"
-            id="com.forgelsp.rider.settings"
-            displayName="Forge"
-            instance="com.forgelsp.rider.settings.ForgeSettingsConfigurable"
+            id="com.sharplsp.rider.settings"
+            displayName="SharpLsp"
+            instance="com.sharplsp.rider.settings.SharpLspSettingsConfigurable"
         />
 
-        <projectService serviceImplementation="com.forgelsp.rider.settings.ForgeSettings" />
+        <projectService serviceImplementation="com.sharplsp.rider.settings.SharpLspSettings" />
     </extensions>
 </idea-plugin>

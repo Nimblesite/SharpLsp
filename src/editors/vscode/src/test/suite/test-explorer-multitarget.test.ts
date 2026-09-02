@@ -22,7 +22,6 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
 import { parseTestAssemblies } from '../../test-discovery.js';
 import {
@@ -38,6 +37,7 @@ import {
   collectLeafIds,
   discoverSolution,
   drainDiscovery,
+  rootsOf,
 } from './test-explorer-kit';
 import { removeDirRecursive } from './test-helpers.js';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
@@ -53,13 +53,6 @@ const EXPECTED: readonly string[] = [
   CS.parameterized,
   ...(CS.mixedParameterized === undefined ? [] : [CS.mixedParameterized]),
 ];
-
-/** The roots of the Testing view, in tree order. */
-function rootsOf(items: vscode.TestItemCollection): vscode.TestItem[] {
-  const roots: vscode.TestItem[] = [];
-  items.forEach((item) => roots.push(item));
-  return roots;
-}
 
 /** The values appearing more than once in `values`, each named once. */
 function duplicatesIn(values: readonly string[]): string[] {
