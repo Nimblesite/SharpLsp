@@ -32,6 +32,7 @@ import { escapeFilterValue, filterExpression } from '../../test-filter.js';
 import { formatDuration, statusLensTitle } from '../../test-lens.js';
 import { buildFilterArgs } from '../../testing.js';
 import { createSolution, warmDiscovery } from './dotnet-project-kit';
+import { DEBUG_TYPE_ID, DebugSessionRecorder } from './run-debug-kit';
 import { fixtureFor, LIBRARY_TEST, writeCoverageFixture } from './test-explorer-fixtures';
 import {
   activateTestExplorer,
@@ -790,6 +791,10 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
     const terminalsBefore = vscode.window.terminals.length;
     // Debugging executes nothing, so it must not be reported as a run either.
     const noChange = nextResultsChange(api.testController, 3_000);
+    // Armed BEFORE the interaction: `onDidStartDebugSession` fires once, when
+    // the adapter's launch round-trip succeeds, so a recorder installed
+    // afterwards observes nothing and every assertion built on it is vacuous.
+    const sessions = new DebugSessionRecorder();
     await runViaProfile(
       api.testController,
       vscode.TestRunProfileKind.Debug,
@@ -844,6 +849,37 @@ suite('Test Explorer e2e — run profiles, outcome attribution and coverage', ()
       sorted(collectLeafIds(api.testController.items)),
       sorted(ALL_TESTS),
       'nor touch the tree',
+    );
+
+    // Interaction 3 — a terminal is not a debugger. [DEBUG-FEATURES-TESTS] makes
+    // "Debug individual test" a P1 row carried over DAP, and closes with the
+    // rule that SharpLsp "sets `VSTEST_HOST_DEBUG=1` and attaches to the waiting
+    // `testhost.exe`/`dotnet-testhost` child": the waiting host is only half the
+    // gesture. A run that stops at the terminal leaves the user pressing Debug
+    // and watching nothing happen — issue #233.
+    const started = await sessions.waitForSessions(1, DEBUG_SESSION_MS).catch(() => sessions.ours);
+    sessions.dispose();
+    assert.notStrictEqual(
+      started.length,
+      0,
+      'pressing Debug in the Testing view must START a debug session, not merely open a ' +
+        'terminal for the user to attach to by hand',
+    );
+    assert.deepStrictEqual(
+      [...new Set(started.map((session) => session.type))],
+      [DEBUG_TYPE_ID],
+      'and it is the SharpLsp adapter that attaches, not some other extension',
+    );
+    assert.strictEqual(
+      started[0]?.configuration['justMyCode'],
+      true,
+      '"Just My Code in test context | launch config | P1": stepping out of a test must not ' +
+        'land the user inside the xUnit runner',
+    );
+    assert.strictEqual(
+      api.testController.getResult(target),
+      before,
+      'and attaching still caches nothing: a debug session is not a run',
     );
     debugTerminal.dispose();
   });

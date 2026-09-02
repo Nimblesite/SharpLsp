@@ -208,7 +208,10 @@ the `dotnet` CLI built — never mocks and never a hand-authored `.sln`. The sui
 | `test-explorer-outcomes.test.ts` | run profiles, pass/fail/skip attribution, assertion messages, multi-row theories, coverage, debug, cancellation |
 | `test-explorer-windows.test.ts` | paths carrying spaces and parentheses, filter escaping, TRX and console parsing, CRLF, BOM, locale pinning |
 | `test-explorer-reactive.test.ts` | debounce, generation guard, edit-then-refresh round trips, adding and removing a project, tree preserved on failure |
-| `testing-lens-e2e.test.ts` | the at-cursor commands and the status CodeLens |
+| `testing-lens-e2e.test.ts` | the at-cursor commands and the status CodeLens, and that the Run and Debug actions resolve the same method by name |
+| `test-explorer-adapter-ids.test.ts` | an adapter that DECORATES the names it reports (`xunit.runner.visualstudio` 2.2.0): bare ids, readable labels, an unescaped filter, real TRX outcomes and a resolvable lens |
+| `test-explorer-multitarget.test.ts` | a `<TargetFrameworks>` project collapsing to ONE assembly root whose names are the UNION of the frameworks', and running from it |
+| `debug-test-debugging-e2e.test.ts` | the Debug run profile: a real DAP session, breakpoints inside a test body and in the helpers it calls, and debugging a whole class ([DEBUG-FEATURES-TESTS]) |
 
 Every suite is declared in `src/editors/vscode/test-chunks.json` so it runs in the Windows
 matrix ([DIST-CI-WIN-VSIX]).

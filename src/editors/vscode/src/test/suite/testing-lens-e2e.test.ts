@@ -457,6 +457,56 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     assert.ok(firstRun !== undefined);
     assert.strictEqual(firstRun.command?.title, '$(play) Run Test');
     assert.strictEqual(firstRun.command?.arguments?.[0]?.toString(), uri.toString());
+
+    // Interaction 2 — the DEBUG half of [TEST-STATUS-LENS]'s "plus Run and Debug
+    // actions". A Debug lens that reached the wrong method, or carried no
+    // method at all, is how "Debug Test does nothing" presents to the user.
+    const debugTargets = debugLenses
+      .map((lens) => lens.command?.arguments?.[1])
+      .filter((name): name is string => typeof name === 'string');
+    assert.deepStrictEqual(
+      [...debugTargets].sort(),
+      [...runTargets].sort(),
+      'every method offering Run must offer Debug, and for the SAME method name',
+    );
+    assert.deepStrictEqual(
+      [...new Set(debugLenses.map((lens) => lens.command?.title))],
+      ['$(bug) Debug Test'],
+      'and every one of them renders as the Debug action',
+    );
+    assert.deepStrictEqual(
+      debugLenses.filter((lens) => lens.command?.arguments?.length !== 2),
+      [],
+      'the at-cursor command takes (uri, methodName) — a missing argument makes it a no-op',
+    );
+    assert.deepStrictEqual(
+      [...new Set(debugLenses.map((lens) => lens.command?.arguments?.[0]?.toString() ?? ''))],
+      [uri.toString()],
+      'and every Debug lens points at the file the user is looking at',
+    );
+
+    // Interaction 3 — the pair sits on ONE method: Run and Debug for a given
+    // method share the range, so the user sees them side by side above it.
+    for (const target of runTargets) {
+      const run = runLenses.find((lens) => lens.command?.arguments?.[1] === target);
+      const debug = debugLenses.find((lens) => lens.command?.arguments?.[1] === target);
+      assert.ok(run && debug, `${target} must have both a Run and a Debug lens`);
+      assert.strictEqual(
+        run.range.isEqual(debug.range),
+        true,
+        `${target}: the Run and Debug actions must render on the same line`,
+      );
+      assert.strictEqual(
+        runLenses.filter((lens) => lens.command?.arguments?.[1] === target).length,
+        1,
+        `${target}: one Run lens, not one per attribute`,
+      );
+      assert.strictEqual(
+        debugLenses.filter((lens) => lens.command?.arguments?.[1] === target).length,
+        1,
+        `${target}: one Debug lens either`,
+      );
+    }
   });
 
   test('an F# test file exposes Run + Debug lenses for [<Fact>]/[<Theory>] bindings', async function () {
@@ -483,6 +533,44 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       lenses.some((l) => l.command?.command === CMD_TEST_DEBUG_AT_CURSOR),
       'F# tests also get a Debug lens',
     );
+
+    // Interaction 2 — F# is not a second-class case here ([TEST-OVERVIEW]): the
+    // Debug action must reach every binding the Run action does, addressed by
+    // the same name, and carrying the same (uri, methodName) pair.
+    const fsDebug = lenses.filter((l) => l.command?.command === CMD_TEST_DEBUG_AT_CURSOR);
+    const fsDebugTargets = fsDebug
+      .map((lens) => lens.command?.arguments?.[1])
+      .filter((name): name is string => typeof name === 'string');
+    assert.deepStrictEqual(
+      [...fsDebugTargets].sort(),
+      [...runTargets].sort(),
+      'every F# binding offering Run offers Debug, for the same binding',
+    );
+    assert.strictEqual(
+      fsDebugTargets.includes('addsTwoNumbers'),
+      true,
+      'the [<Fact>] binding is a DEBUG target too, not only a run target',
+    );
+    assert.deepStrictEqual(
+      [...new Set(fsDebug.map((lens) => lens.command?.title))],
+      ['$(bug) Debug Test'],
+      'and it renders as the Debug action above the binding',
+    );
+    assert.deepStrictEqual(
+      [...new Set(fsDebug.map((lens) => lens.command?.arguments?.[0]?.toString() ?? ''))],
+      [uri.toString()],
+      'pointing at the .fs file the user has open',
+    );
+
+    // Interaction 3 — no lens targets a name the F# file does not declare: a
+    // lens over the wrong binding runs the wrong test.
+    for (const target of [...runTargets, ...fsDebugTargets]) {
+      assert.strictEqual(
+        FSHARP_TESTS.includes(target),
+        true,
+        `${target} must be a binding this fixture actually declares`,
+      );
+    }
   });
 
   test('disabling sharplsp.testLens.enabled removes the test lenses; re-enabling restores them', async function () {

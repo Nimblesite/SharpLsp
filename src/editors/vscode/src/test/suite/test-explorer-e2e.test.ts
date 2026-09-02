@@ -21,6 +21,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { XMLParser } from 'fast-xml-parser';
 import type { SharpLspExtensionApi } from '../../extension.js';
+import type { SharpLspTestController } from '../../testing.js';
 import {
   batchAssemblies,
   isDiscoveredTestLine,
@@ -29,6 +30,7 @@ import {
   parseFullyQualifiedTestList,
   parseTestAssemblies,
   parseTestList,
+  withoutAdapterUniqueId,
 } from '../../test-discovery.js';
 import {
   createSolution,
@@ -148,6 +150,53 @@ function leafIds(items: vscode.TestItemCollection): string[] {
     else ids.push(...leafIds(item.children));
   });
   return ids;
+}
+
+/**
+ * The cached outcomes for `ids`, as one comparable string.
+ *
+ * [TEST-RUN-TRX] makes a run ONE `dotnet test` invocation for THE SELECTION, so
+ * running one group must leave every other group's results exactly as they were
+ * — a run that quietly widened to the whole solution reports the same green
+ * outcomes and is invisible to any per-test assertion.
+ */
+function resultSnapshot(controller: SharpLspTestController, ids: readonly string[]): string {
+  return JSON.stringify(ids.map((id) => [id, controller.getResult(id) ?? null]));
+}
+
+/**
+ * Assert every leaf under `group` is a TEST row: a bare fully-qualified id, the
+ * method name as its label, the id again as its description, and no children.
+ */
+function assertLeavesAreTests(group: vscode.TestItem, prefix: string): void {
+  const leaves: vscode.TestItem[] = [];
+  const walk = (items: vscode.TestItemCollection): void => {
+    items.forEach((item) => {
+      if (item.children.size === 0) leaves.push(item);
+      else walk(item.children);
+    });
+  };
+  walk(group.children);
+  assert.notStrictEqual(leaves.length, 0, `${group.label} must hold tests to run`);
+  for (const leaf of leaves) {
+    assert.strictEqual(
+      leaf.id.startsWith(prefix),
+      true,
+      `${leaf.id} sits under ${group.label}, so its FQN must begin with ${prefix}`,
+    );
+    assert.strictEqual(
+      withoutAdapterUniqueId(leaf.id),
+      leaf.id,
+      `${leaf.id} must be the BARE FullyQualifiedName — an adapter's unique-ID decoration ` +
+        'makes the filter match nothing and the TRX report unreconcilable',
+    );
+    assert.strictEqual(
+      leaf.label,
+      leaf.id.slice(leaf.id.lastIndexOf('.') + 1),
+      `${leaf.id} must be labelled with its method name alone`,
+    );
+    assert.strictEqual(leaf.description, leaf.id, `${leaf.id} describes itself with its own FQN`);
+  }
 }
 
 /** The fixture's eleven FQNs as a set, for membership assertions. */
@@ -1947,7 +1996,43 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       5,
       `the class group holds the five C# tests, got: ${csLeaves.join(' | ')}`,
     );
+
+    // Interaction 2 — the row being pressed is a GROUP, and everything under it
+    // is a test row shaped the way [TEST-DISCOVERY-FQN] requires.
+    assert.strictEqual(
+      csClass.canResolveChildren,
+      true,
+      'a class node must declare children, or the Testing view offers no expander to open',
+    );
+    assert.notStrictEqual(
+      csClass.id,
+      csClass.label,
+      'a GROUP id is qualified by the assembly it belongs to — a bare label collides across ' +
+        'projects that share a class name',
+    );
+    assertLeavesAreTests(csClass, 'Cs.Xunit.Fixtures.CalculatorTests.');
+    assert.deepStrictEqual(
+      sorted(csLeaves),
+      sorted(EXPECTED.filter((fqn) => fqn.startsWith('Cs.Xunit.Fixtures.CalculatorTests.'))),
+      'the class group holds EXACTLY its own tests — no neighbour, no theory row',
+    );
+    assert.deepStrictEqual(
+      csLeaves.filter((id) => id.includes('(')),
+      [],
+      'a C# xUnit id carries no row data, so no parenthesis reaches the filter grammar',
+    );
+
+    // Interaction 3 — press the class group's run button, having recorded what
+    // the OTHER assembly's results were, so a run that silently widened to the
+    // whole solution is visible.
+    const fsWatched = [FS_FIXTURE.passing, FS_FACT_SPACED, FS_FIXTURE.failing, FS_FIXTURE.skipped];
+    const fsBefore = resultSnapshot(api.testController, fsWatched);
     await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [csClass]);
+    assert.strictEqual(
+      resultSnapshot(api.testController, fsWatched),
+      fsBefore,
+      'running a C# class must run THAT selection: the F# results may not move',
+    );
     for (const id of csLeaves) {
       const result = api.testController.getResult(id);
       assert.ok(
@@ -1969,6 +2054,34 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       api.testController.getResult(CS.skipped)?.outcome,
       'skipped',
       'the class run reports the skipped fact as skipped',
+    );
+
+    // Interaction 4 — the outcomes carry what [TEST-RUN-TRX] says they carry:
+    // the adapter's OWN assertion text, a measured duration, and nothing that
+    // reads like a test the filter never matched.
+    const failureMessage = api.testController.getResult(CS.failing)?.message ?? '';
+    assert.strictEqual(
+      failureMessage.includes('Assert.Equal'),
+      true,
+      `a failure shows the TRX ErrorInfo, not a generic sentence; got '${failureMessage}'`,
+    );
+    assert.notStrictEqual(failureMessage, 'Test failed', 'never the generic fallback');
+    assert.deepStrictEqual(
+      csLeaves
+        .map((id) => api.testController.getResult(id)?.message ?? '')
+        .filter((message) => message.includes('No result reported')),
+      [],
+      'every test in the class was matched by the filter and attributed from the TRX report',
+    );
+    assert.strictEqual(
+      api.testController.getResult(CS.skipped)?.passed,
+      false,
+      'a skip is not a pass — and its outcome above proves it is not a failure either',
+    );
+    assert.strictEqual(
+      (api.testController.getResult(CS.passing)?.duration ?? -1) >= 0,
+      true,
+      'a pass carries the duration TRX recorded for it',
     );
     // Running must not mutate the tree's shape.
     const rootsAfter: vscode.TestItem[] = [];
@@ -2000,7 +2113,45 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       6,
       `the namespace subtree holds the six F# tests, got: ${fsLeaves.join(' | ')}`,
     );
+
+    // Interaction 2 — F# FIRST: the namespace subtree must carry the awkward
+    // names [TEST-DISCOVERY-FQN] tabulates, verbatim.
+    assert.strictEqual(
+      fsNamespace.canResolveChildren,
+      true,
+      'a namespace node must declare children so the view can expand it',
+    );
+    assert.strictEqual(
+      fsLeaves.includes(FS_FACT_SPACED),
+      true,
+      'an idiomatic F# backtick binding keeps the SPACES in its FQN all the way into the tree',
+    );
+    assert.strictEqual(
+      FS_FACT_SPACED.includes(' '),
+      true,
+      'and that name really does contain spaces — otherwise this asserts nothing',
+    );
+    assert.deepStrictEqual(
+      fsLeaves.filter((id) => withoutAdapterUniqueId(id) !== id),
+      [],
+      'no F# id carries an adapter unique-ID decoration either',
+    );
+    assert.deepStrictEqual(
+      sorted(fsLeaves),
+      sorted(EXPECTED.filter((fqn) => fqn.startsWith('Fs.Xunit.'))),
+      'the namespace subtree is EXACTLY the F# fixture tests',
+    );
+
+    // Interaction 3 — run the namespace, having recorded the C# assembly's
+    // results so a run that widened to the solution is visible.
+    const csWatched = [CS.passing, CS.failing, CS.skipped];
+    const csBefore = resultSnapshot(api.testController, csWatched);
     await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [fsNamespace]);
+    assert.strictEqual(
+      resultSnapshot(api.testController, csWatched),
+      csBefore,
+      'running the F# namespace runs THAT selection — the C# results may not move',
+    );
     for (const id of fsLeaves) {
       const result = api.testController.getResult(id);
       assert.ok(
@@ -2027,6 +2178,33 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       api.testController.getResult(FS_FIXTURE.skipped)?.outcome,
       'skipped',
       'the namespace run reports the skipped F# fact as skipped',
+    );
+
+    // Interaction 4 — the F# theory whose rows DISAGREE reports ONCE, as its
+    // worst row: [TEST-RUN-TRX] merges the per-row TRX entries sharing an FQN.
+    const mixed = api.testController.getResult(FS_MIXED_THEORY);
+    assert.ok(mixed, `the F# mixed-row theory must report an outcome under ${FS_MIXED_THEORY}`);
+    assert.strictEqual(
+      mixed.outcome,
+      'failed',
+      'a theory with one failing row is a FAILING test, however many rows passed',
+    );
+    assert.strictEqual(
+      fsLeaves.filter((id) => id === FS_MIXED_THEORY).length,
+      1,
+      'and it occupies ONE row in the tree, not one per row of data',
+    );
+    assert.deepStrictEqual(
+      fsLeaves
+        .map((id) => api.testController.getResult(id)?.message ?? '')
+        .filter((message) => message.includes('No result reported')),
+      [],
+      'a SPACE in a fully-qualified name must not cost the test its result',
+    );
+    assert.strictEqual(
+      (api.testController.getResult(FS_FACT_SPACED)?.duration ?? -1) >= 0,
+      true,
+      'the spaced F# test carries its own measured duration',
     );
   });
 
