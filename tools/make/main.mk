@@ -776,7 +776,7 @@ _package-archive:
 	chmod +x $(ARCHIVE_STAGE)/sharplsp-$(VSIX_PLAT)/sharplsp$(EXE) \
 		$(ARCHIVE_STAGE)/sharplsp-$(VSIX_PLAT)/sidecar-csharp/SharpLsp.Sidecar.CSharp$(EXE) \
 		$(ARCHIVE_STAGE)/sharplsp-$(VSIX_PLAT)/sidecar-fsharp/SharpLsp.Sidecar.FSharp$(EXE) 2>/dev/null || true
-	@sh tools/dist/archive.sh $(ARCHIVE_STAGE) sharplsp-$(VSIX_PLAT) \
+	@sh tools/packaging/archive.sh $(ARCHIVE_STAGE) sharplsp-$(VSIX_PLAT) \
 		$(DIST_DIR)/sharplsp-$(VSIX_PLAT)$(if $(filter win32-%,$(VSIX_PLAT)),.zip,.tar.gz)
 	rm -rf $(ARCHIVE_STAGE)
 

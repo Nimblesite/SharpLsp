@@ -90,7 +90,7 @@ jobs:
       - name: Package + verify standalone server archive
         run: |
           make _package-archive VSIX_PLAT=linux-x64 ARCHIVE_LSP=target/release/sharplsp
-          bash tools/dist/verify-archive.sh linux-x64
+          bash tools/packaging/verify-archive.sh linux-x64
 
       # The Homebrew formula and Scoop manifest are only rendered on a tag, so
       # without this the first sign of a broken one is a user's failed
@@ -98,7 +98,7 @@ jobs:
       # the install layout each package manager has to produce.
       # [DIST-PATH-INSTALL]
       - name: Verify Homebrew formula + Scoop manifest renderer
-        run: node tools/dist/verify-package-manifests.mjs
+        run: node tools/packaging/verify-package-manifests.mjs
 
       # ── Cache the build for the parallel test legs ─────────────────
       - name: Upload Linux LSP artifacts

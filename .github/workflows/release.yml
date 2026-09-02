@@ -172,7 +172,7 @@ jobs:
           if [ "${{ matrix.can_execute }}" != "true" ]; then
             export SKIP_RUN=1
           fi
-          bash tools/dist/verify-archive.sh ${{ matrix.platform }} "${{ needs.version.outputs.version }}"
+          bash tools/packaging/verify-archive.sh ${{ matrix.platform }} "${{ needs.version.outputs.version }}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vsix-${{ matrix.platform }}
@@ -488,7 +488,7 @@ jobs:
           merge-multiple: true
       - name: Render formula
         run: |
-          node tools/dist/render-package-manifests.mjs \
+          node tools/packaging/render-package-manifests.mjs \
             --version "${{ needs.version.outputs.version }}" \
             --repo "${{ github.repository }}" \
             --archives artifacts \
@@ -502,7 +502,7 @@ jobs:
       - name: Commit and push formula
         run: |
           set -euo pipefail
-          bash tools/dist/publish-package-repo.sh \
+          bash tools/packaging/publish-package-repo.sh \
             homebrew-tap \
             dist/packaging/sharplsp.rb \
             Formula/sharplsp.rb \
@@ -544,7 +544,7 @@ jobs:
           merge-multiple: true
       - name: Render manifest
         run: |
-          node tools/dist/render-package-manifests.mjs \
+          node tools/packaging/render-package-manifests.mjs \
             --version "${{ needs.version.outputs.version }}" \
             --repo "${{ github.repository }}" \
             --archives artifacts \
@@ -558,7 +558,7 @@ jobs:
       - name: Commit and push manifest
         run: |
           set -euo pipefail
-          bash tools/dist/publish-package-repo.sh \
+          bash tools/packaging/publish-package-repo.sh \
             scoop-bucket \
             dist/packaging/sharplsp.json \
             bucket/sharplsp.json \

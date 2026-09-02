@@ -190,7 +190,7 @@ One archive per built platform, named for it:
 | `win32-x64` | `sharplsp-win32-x64.zip` |
 | `win32-arm64` | `sharplsp-win32-arm64.zip` |
 
-`.tar.gz` on Unix, `.zip` on Windows, produced by `tools/dist/archive.sh`.
+`.tar.gz` on Unix, `.zip` on Windows, produced by `tools/packaging/archive.sh`.
 
 ### [DIST-ARCHIVE-LAYOUT] Archive Layout
 
@@ -221,7 +221,7 @@ sharplsp-<platform>/
 
 ### [DIST-ARCHIVE-VERIFY] Archive Verification
 
-`tools/dist/verify-archive.sh <platform> [expected-version]` is the single
+`tools/packaging/verify-archive.sh <platform> [expected-version]` is the single
 verifier, run by both `ci-build.yml` (on every PR, `linux-x64`) and `release.yml`
 (on a tag, every platform). It makes two assertions, neither sufficient alone:
 
@@ -346,7 +346,7 @@ a tap outage must not block the bucket, the same independence
 `publish-marketplace` and `publish-openvsx` keep from each other.
 
 1. **Both files are generated whole, never edited in place.**
-   `tools/dist/render-package-manifests.mjs` builds them from the release
+   `tools/packaging/render-package-manifests.mjs` builds them from the release
    archives it just downloaded — the Scoop manifest as an object serialized to
    JSON, per the repo's structured-file rule. A rewrite-in-place is how a
    sha256 survives a version bump.
@@ -358,7 +358,7 @@ a tap outage must not block the bucket, the same independence
    (resolution layout 2); Scoop's `extract_dir` strips the archive root so the
    sidecars land beside `sharplsp.exe` (resolution layout 1). Shipping only the
    binary would install a language server that starts and then answers nothing.
-   `tools/dist/verify-package-manifests.mjs` asserts both, and runs on every PR
+   `tools/packaging/verify-package-manifests.mjs` asserts both, and runs on every PR
    from `ci-build.yml` — the manifests themselves are only rendered on a tag, so
    otherwise the first sign of a break is a user's failed `brew install`.
 4. **Prerelease tags are skipped.** Neither `brew install` nor `scoop install`

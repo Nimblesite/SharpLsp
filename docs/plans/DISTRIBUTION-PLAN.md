@@ -130,7 +130,7 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 - [x] Job: `release` — GitHub release with VSIXs + server archives + Rider zip,
       `SHA256SUMS` over all of them, asset-count guard
 - [x] Verify the archive on every PR, not just on a tag (`ci-build.yml` runs
-      `tools/dist/verify-archive.sh linux-x64`)
+      `tools/packaging/verify-archive.sh linux-x64`)
 - [ ] Job: `pack-sidecars` — framework-dependent `dotnet pack`, 2 nupkgs. NOT
       BUILT. The `dotnet pack` smoke test in `ci-build.yml` proves the projects
       pack; nothing publishes them to NuGet.
@@ -141,7 +141,7 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
       `Nimblesite/scoop-bucket`
 - [x] Both skipped on prerelease tags; both fail fast on a missing
       `BREW_SCOOP_PAT`
-- [x] Renderer verified on every PR (`tools/dist/verify-package-manifests.mjs`
+- [x] Renderer verified on every PR (`tools/packaging/verify-package-manifests.mjs`
       in `ci-build.yml`), not only at tag time
 - [ ] Confirm `BREW_SCOOP_PAT` is granted to `Nimblesite/SharpLsp` — the secret
       exists for Deslop; this repo's access has not been verified
