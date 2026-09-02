@@ -11,6 +11,7 @@ import {
   type TestRunOutcome,
 } from './test-execution';
 import { debugSelectedTests, type TestDebugHost } from './test-debug';
+import { forEachLeafIn } from './test-tree';
 import { loadDetailedCoverage } from './test-coverage';
 import {
   addCoverage,
@@ -329,11 +330,7 @@ export class SharpLspTestController {
   /** Every LEAF id under `items`, recursively — group nodes never hold results. */
   private leafIdSet(items: readonly vscode.TestItem[]): Set<string> {
     const ids = new Set<string>();
-    const walk = (item: vscode.TestItem): void => {
-      if (item.children.size === 0) ids.add(item.id);
-      else item.children.forEach(walk);
-    };
-    for (const item of items) walk(item);
+    forEachLeafIn(items, (item) => ids.add(item.id));
     return ids;
   }
 

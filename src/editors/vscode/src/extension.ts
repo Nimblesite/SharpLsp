@@ -699,8 +699,14 @@ async function selectAndLoadSolution(): Promise<void> {
   await window.withProgress({ location: { viewId: VIEW_SOLUTION_EXPLORER } }, async (progress) => {
     progress.report({ message: 'Searching for solutions…' });
     const phase = sharedState.beginDiscovery();
-    const solutions = await solution.findSolutions();
-    sharedState.endLoadPhase(phase);
+    // Same contract as `loadSolution` below: a failed scan must clear the
+    // phase, or the tree spins forever on a search that already gave up.
+    let solutions: readonly solution.SolutionSelection[];
+    try {
+      solutions = await solution.findSolutions();
+    } finally {
+      sharedState.endLoadPhase(phase);
+    }
     if (!solutionSelectionIsCurrent(generation, initialSolution) || solutions.length === 0) {
       return;
     }
@@ -736,20 +742,27 @@ async function loadSolution(selected: solution.SolutionSelection): Promise<void>
   // stale/blank view meanwhile ([SE-LOAD-FEEDBACK]).
   const phase = sharedState.beginLoading(selected.path);
 
-  // Tell the LSP server to reload sidecars with this specific solution.
-  // Without this, the sidecar uses the workspace root and may pick the
-  // wrong solution when multiple exist — breaking hover, definition, etc.
-  if (lspClient !== undefined) {
-    try {
-      await lspClient.sendRequest('sharplsp/loadSolution', {
-        solutionPath: selected.path,
-      });
-    } catch (err: unknown) {
-      const msg = getErrorMessage(err);
-      log.error(`sharplsp/loadSolution failed: ${msg}`);
+  // `finally`, never a trailing statement: a throw out of the explorer load
+  // would otherwise leave the phase set forever, and the tree renders a
+  // spinner for as long as a phase is active — a permanently "loading"
+  // Solution Explorer with no way back ([SE-LOAD-FEEDBACK]).
+  try {
+    // Tell the LSP server to reload sidecars with this specific solution.
+    // Without this, the sidecar uses the workspace root and may pick the
+    // wrong solution when multiple exist — breaking hover, definition, etc.
+    if (lspClient !== undefined) {
+      try {
+        await lspClient.sendRequest('sharplsp/loadSolution', {
+          solutionPath: selected.path,
+        });
+      } catch (err: unknown) {
+        const msg = getErrorMessage(err);
+        log.error(`sharplsp/loadSolution failed: ${msg}`);
+      }
     }
-  }
 
-  await explorerProvider?.loadSolution(selected.path);
-  sharedState.endLoadPhase(phase);
+    await explorerProvider?.loadSolution(selected.path);
+  } finally {
+    sharedState.endLoadPhase(phase);
+  }
 }

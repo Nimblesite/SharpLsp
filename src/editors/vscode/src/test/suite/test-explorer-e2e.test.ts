@@ -49,6 +49,7 @@ import {
   snapshotItems,
   type TestItemSnapshot,
 } from './test-explorer-kit';
+import { findTestByMethodName } from '../../test-lens.js';
 import { comparablePath, removeDirRecursive, sleep } from './test-helpers.js';
 import { DOTNET_CLI_MS, FAST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
@@ -1623,6 +1624,51 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
           `a direct root child is a namespace group, not a test: ${child.id}`,
         );
       });
+    }
+  });
+
+  test('a Run/Debug lens resolves a test NESTED under its assembly, namespace and class', async function () {
+    this.timeout(DOTNET_CLI_MS);
+    // Regression: `findTestByMethodName` backs the "Run Test" / "Debug Test"
+    // code lenses, and it walked only the TOP level of the tree. Once discovery
+    // grouped tests as Assembly → Namespace → Class → Test that level held
+    // ASSEMBLIES, so every lens matched nothing and reported a perfectly
+    // discovered test as "No discovered test matching …", running nothing.
+    const roots = await discoveredTree();
+    const fqnSet = new Set<string>(EXPECTED);
+    assert.deepStrictEqual(
+      roots.filter((node) => fqnSet.has(node.id)),
+      [],
+      'premise: no test sits at the top level — the lens MUST descend to find one',
+    );
+    for (const fqn of EXPECTED) {
+      const methodName = fqn.split('.').at(-1) ?? '';
+      const matched = findTestByMethodName(api.testController.items, methodName);
+      assert.notStrictEqual(
+        matched,
+        undefined,
+        `the lens for "${methodName}" must resolve the nested test ${fqn}`,
+      );
+      assert.strictEqual(
+        matched?.id,
+        fqn,
+        `the lens must resolve the LEAF carrying the FQN, not a group: ${String(matched?.id)}`,
+      );
+      assert.strictEqual(
+        matched?.children.size,
+        0,
+        `a lens must never resolve a group node: ${matched.label}`,
+      );
+    }
+    // A group node's own label must never satisfy a lens: groups are not
+    // runnable, and matching one would run a whole class from a method lens.
+    for (const groupLabel of [CS.projectName, FS_FIXTURE.projectName, 'CalculatorTests']) {
+      const matched = findTestByMethodName(api.testController.items, groupLabel);
+      assert.strictEqual(
+        matched,
+        undefined,
+        `a group label must resolve to no test: ${groupLabel}`,
+      );
     }
   });
 

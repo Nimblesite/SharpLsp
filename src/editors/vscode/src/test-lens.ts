@@ -11,6 +11,7 @@ import * as vscode from 'vscode';
 import { type CachedTestResult, type SharpLspTestController } from './testing.js';
 import { CMD_TEST_RUN_AT_CURSOR, CMD_TEST_DEBUG_AT_CURSOR } from './constants.js';
 import { info } from './log.js';
+import { forEachLeaf } from './test-tree.js';
 
 /** Attribute markers that identify a method as a test. */
 const CS_TEST_ATTRIBUTES = ['Fact', 'Theory', 'Test', 'TestMethod', 'TestCase'] as const;
@@ -300,6 +301,38 @@ export function formatDuration(duration: number | undefined): string {
 }
 
 /**
+ * The discovered test a "Run Test" / "Debug Test" lens points at, found by the
+ * method name the lens carries.
+ *
+ * Descends to the LEAVES. The Testing view groups discovered tests as
+ * **Assembly → Namespace → Class → Test**, so the top level holds assemblies:
+ * matching against it alone finds nothing, and every lens reports a perfectly
+ * discovered test as undiscovered. Discovery-error rows are leaves too, and are
+ * never runnable.
+ *
+ * The FIRST match wins — a leaf's id is its fully-qualified name, so the short
+ * name only repeats when two classes share a method name, and either is an
+ * equally good answer to a lens that carries no more than that name.
+ */
+export function findTestByMethodName(
+  items: vscode.TestItemCollection,
+  methodName: string,
+): vscode.TestItem | undefined {
+  let matched: vscode.TestItem | undefined;
+  forEachLeaf(items, (item) => {
+    if (matched !== undefined || item.error !== undefined) {
+      return;
+    }
+    const lastDot = item.id.lastIndexOf('.');
+    const shortName = lastDot >= 0 ? item.id.substring(lastDot + 1) : item.id;
+    if (shortName === methodName) {
+      matched = item;
+    }
+  });
+  return matched;
+}
+
+/**
  * Register the test status code lens provider and its commands.
  */
 export function registerTestStatusLens(
@@ -343,14 +376,7 @@ async function runTestByMethodName(
   methodName: string,
   debug: boolean,
 ): Promise<void> {
-  let matchedItem: vscode.TestItem | undefined;
-  testController.items.forEach((item) => {
-    const lastDot = item.id.lastIndexOf('.');
-    const shortName = lastDot >= 0 ? item.id.substring(lastDot + 1) : item.id;
-    if (shortName === methodName) {
-      matchedItem = item;
-    }
-  });
+  const matchedItem = findTestByMethodName(testController.items, methodName);
 
   if (matchedItem === undefined) {
     void vscode.window.showWarningMessage(
