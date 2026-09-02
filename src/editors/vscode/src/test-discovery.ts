@@ -79,6 +79,22 @@ export interface TestListing {
   readonly ok: boolean;
   /** Diagnostics worth writing to the extension log. */
   readonly warnings: readonly string[];
+  /**
+   * The names grouped by the assembly that contributed them — the grouping the
+   * Test Explorer renders as Assembly → Namespace → Class → Test. Empty for
+   * the weaker display-name fallback, which cannot attribute names.
+   */
+  readonly byAssembly: readonly TestAssemblyListing[];
+}
+
+/** One built test assembly and the fully-qualified names it contributed. */
+export interface TestAssemblyListing {
+  /** Assembly file name without extension — the tree's root label. */
+  readonly name: string;
+  /** Absolute path of the built assembly — the stable, unique group id. */
+  readonly path: string;
+  /** Fully-qualified test names this assembly contributed, in listing order. */
+  readonly names: readonly string[];
 }
 
 /** Punctuation a display name never contains but a diagnostic or stack frame does. */
@@ -251,7 +267,12 @@ export async function listTests(
 ): Promise<TestListing> {
   const cwd = targetCwd(target);
   if (cwd === undefined) {
-    return { names: [], ok: false, warnings: [`Discovery target does not exist: ${target}`] };
+    return {
+      names: [],
+      ok: false,
+      warnings: [`Discovery target does not exist: ${target}`],
+      byAssembly: [],
+    };
   }
   const positional = cwd === target ? [] : [target];
   const args = [
@@ -266,7 +287,7 @@ export async function listTests(
   const run = await runDotnet(args, cwd, timeoutMs);
   const output = usableStdout(run);
   if (output === undefined) {
-    return { names: [], ok: false, warnings: [listFailure(run)] };
+    return { names: [], ok: false, warnings: [listFailure(run)], byAssembly: [] };
   }
   return await namesFrom(output, cwd, timeoutMs);
 }
@@ -317,13 +338,31 @@ async function namesFrom(output: string, cwd: string, timeoutMs: number): Promis
   const missing = announced.filter((one) => resolveAnnouncedAssembly(one) === undefined);
   const warnings = missing.map((assembly) => `Announced test assembly is missing: ${assembly}`);
 
-  const fqn = assemblies.length === 0 ? emptyFqns() : await listFqns(assemblies, cwd, timeoutMs);
-  warnings.push(...fqn.warnings);
-  if (fqn.names.length > 0) return { names: fqn.names, ok: true, warnings };
+  if (assemblies.length > 0) {
+    // One listing invocation PER assembly: the names a multi-assembly
+    // `--ListFullyQualifiedTests` writes are combined with no attribution, and
+    // attribution is exactly what the tree's Assembly level needs. A single
+    // assembly path is far below the command-line ceiling on its own.
+    const byAssembly: TestAssemblyListing[] = [];
+    const all: string[] = [];
+    for (const assembly of assemblies) {
+      const one = await listFqnBatch([assembly], cwd, timeoutMs);
+      warnings.push(...one.warnings);
+      all.push(...one.names);
+      byAssembly.push({
+        name: path.basename(assembly, path.extname(assembly)),
+        path: assembly,
+        names: one.names,
+      });
+    }
+    const names = [...new Set(all)];
+    if (names.length > 0) return { names, ok: true, warnings, byAssembly };
+  }
 
   // Fallback: no assembly reported a test case (a Microsoft.Testing.Platform
   // project VSTest cannot load, or a genuinely empty solution). The DisplayName
-  // listing is strictly weaker but never worse than returning nothing.
+  // listing is strictly weaker — it cannot attribute names to assemblies, so
+  // the tree falls back to flat rows — but never worse than returning nothing.
   //
   // `ok` says whether an EMPTY result can be trusted, because that is what
   // decides whether the caller blanks the Testing view. An enumeration that
@@ -331,34 +370,19 @@ async function namesFrom(output: string, cwd: string, timeoutMs: number): Promis
   // completion, whatever the exit code claimed.
   const fallback = parseTestList(output);
   const ok = fallback.length > 0 || (assemblies.length === 0 && warnings.length === 0);
-  return { names: fallback, ok, warnings };
+  return { names: fallback, ok, warnings, byAssembly: [] };
 }
 
-/** An FQN pass that was never attempted. */
-function emptyFqns(): { names: string[]; warnings: string[] } {
-  return { names: [], warnings: [] };
-}
+// Batched multi-assembly listing is intentionally no longer used by discovery:
+// per-assembly invocations are what attribute names to assemblies
+// (`namesFrom`). `batchAssemblies` stays exported — it documents and tests the
+// command-line ceiling that every argument vector built here must respect.
 
 /**
  * Ask VSTest for `TestCase.FullyQualifiedName` on the built assemblies. VSTest
  * writes them to `--ListTestsTargetPath` rather than stdout, so the file is the
  * source of truth: a non-zero exit with a populated file still counts.
  */
-async function listFqns(
-  assemblies: readonly string[],
-  cwd: string,
-  timeoutMs: number,
-): Promise<{ names: string[]; warnings: string[] }> {
-  const names: string[] = [];
-  const warnings: string[] = [];
-  for (const batch of batchAssemblies(assemblies)) {
-    const batchResult = await listFqnBatch(batch, cwd, timeoutMs);
-    names.push(...batchResult.names);
-    warnings.push(...batchResult.warnings);
-  }
-  return { names: [...new Set(names)], warnings };
-}
-
 /** One `dotnet vstest --ListFullyQualifiedTests` invocation. */
 async function listFqnBatch(
   assemblies: readonly string[],

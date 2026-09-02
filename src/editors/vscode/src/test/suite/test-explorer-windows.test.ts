@@ -25,6 +25,7 @@ import { fixtureFor } from './test-explorer-fixtures';
 import {
   activateTestExplorer,
   collectItemIds,
+  collectLeafIds,
   discoverSolution,
   drainDiscovery,
   findItem,
@@ -160,72 +161,97 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       'clearing the tree empties the controller collection itself',
     );
     // Load the hostile solution and open the Testing view, exactly as a user does.
-    const ids = await discoverSolution(api, slnPath, EXPECTED);
+    await discoverSolution(api, slnPath, EXPECTED);
+    const settled = collectLeafIds(api.testController.items);
     for (const expected of EXPECTED) {
       assert.strictEqual(
-        ids.includes(expected),
+        settled.includes(expected),
         true,
-        `must be discovered from a hostile path: ${expected}\ngot: ${ids.join(', ')}`,
+        `must be discovered from a hostile path: ${expected}\ngot: ${settled.join(', ')}`,
       );
       assert.strictEqual(
-        ids.filter((id) => id === expected).length,
+        settled.filter((id) => id === expected).length,
         1,
         `${expected} must appear EXACTLY once in the tree`,
       );
     }
     assert.deepStrictEqual(
-      sorted(ids),
+      sorted(settled),
       sorted(EXPECTED),
-      `the tree must be exactly the fixture's tests: ${ids.join(', ')}`,
+      `the tree's TESTS are exactly the fixture's names: ${settled.join(', ')}`,
     );
     assert.strictEqual(
-      ids.length,
+      api.testController.items.size,
+      2,
+      'the two fixture assemblies stand as GROUP roots over the tests',
+    );
+    assert.strictEqual(
+      settled.length,
       EXPECTED.length,
-      `exactly ${String(EXPECTED.length)} tests must be discovered: ${ids.join(', ')}`,
+      `exactly ${String(EXPECTED.length)} tests must be discovered: ${settled.join(', ')}`,
     );
     assert.strictEqual(
-      new Set(ids).size,
-      ids.length,
-      `the tree must carry no duplicate ids: ${ids.join(', ')}`,
+      new Set(settled).size,
+      settled.length,
+      `the tree must carry no duplicate ids: ${settled.join(', ')}`,
     );
     assert.strictEqual(
-      ids.includes(FS_FACT_SPACED),
+      settled.includes(FS_FACT_SPACED),
       true,
       `the spaced F# name must survive a spaced PATH too: ${FS_FACT_SPACED}`,
     );
     assert.strictEqual(
-      ids.filter((id) => id.startsWith('Fs.Xunit.Fixtures.')).length,
+      settled.filter((id) => id.startsWith('Fs.Xunit.Fixtures.')).length,
       6,
       'all six F# tests are discovered — F# is never the afterthought',
     );
     assert.strictEqual(
-      ids.filter((id) => id.startsWith('Cs.Xunit.Fixtures.CalculatorTests.')).length,
+      settled.filter((id) => id.startsWith('Cs.Xunit.Fixtures.CalculatorTests.')).length,
       5,
       'all five C# tests are discovered',
     );
     assert.strictEqual(
-      ids.some((id) => id.includes('Test run for') || id.includes('Passed!')),
+      settled.some((id) => id.includes('Test run for') || id.includes('Passed!')),
       false,
       'VSTest banner/summary chatter must never become a test item',
     );
     assert.strictEqual(
-      ids.some((id) => id.includes('(a: 2')),
+      settled.some((id) => id.includes('(a: 2')),
       false,
       "a theory's ROWS collapse into the one parameterless FQN VSTest filters on",
     );
     // Every item is anchored at the hostile dir — the uri the view reveals with.
     const snapshots = snapshotItems(api.testController.items);
+    const testSnapshots = snapshots.filter((snapshot) => snapshot.childCount === 0);
+    const groupSnapshots = snapshots.filter((snapshot) => snapshot.childCount > 0);
     assert.strictEqual(
-      snapshots.length,
+      testSnapshots.length,
       EXPECTED.length,
-      `one snapshot per discovered test, got ${String(snapshots.length)}`,
+      `one snapshot per discovered test, got ${String(testSnapshots.length)}`,
+    );
+    assert.strictEqual(
+      groupSnapshots.length,
+      6,
+      'two assemblies, two namespaces and two classes render as GROUP rows even under a hostile path',
     );
     assert.deepStrictEqual(
-      sorted(snapshots.map((snapshot) => snapshot.id)),
+      sorted(testSnapshots.map((snapshot) => snapshot.id)),
       sorted(EXPECTED),
-      'the snapshots are the discovered items, one for one',
+      'the TEST snapshots are the discovered items, one for one',
     );
-    for (const snapshot of snapshots) {
+    for (const snapshot of groupSnapshots) {
+      assert.strictEqual(
+        EXPECTED.includes(snapshot.id),
+        false,
+        `a group id is never an FQN, even under a hostile path: ${snapshot.id}`,
+      );
+      assert.strictEqual(
+        comparablePath(snapshot.uriPath ?? ''),
+        comparablePath(hostileDir),
+        `${snapshot.id} (group) must be anchored at the hostile solution directory too`,
+      );
+    }
+    for (const snapshot of testSnapshots) {
       assert.strictEqual(
         comparablePath(snapshot.uriPath ?? ''),
         comparablePath(hostileDir),
@@ -241,7 +267,11 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         snapshot.id.split('.').at(-1),
         `the label must be the last dotted segment of ${snapshot.id}`,
       );
-      assert.strictEqual(snapshot.childCount, 0, 'discovery produces a flat tree');
+      assert.strictEqual(
+        snapshot.childCount,
+        0,
+        'a discovered TEST is a leaf; groups sit above it',
+      );
       assert.deepStrictEqual(
         snapshot.tags,
         [],

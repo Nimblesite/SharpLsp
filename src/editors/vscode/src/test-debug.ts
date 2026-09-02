@@ -24,6 +24,7 @@ import { DEBUG_TYPE } from './constants';
 import { TEST_HOST_ATTACH_FLAG } from './dap-attach';
 import { error, info, warn } from './log';
 import { runTests, type TestRunOptions, type TestRunOutcome } from './test-execution';
+import { filterBatches } from './test-filter';
 import { runTarget } from './test-targets';
 
 /**
@@ -192,8 +193,9 @@ export async function debugSelectedTests(
   tests: readonly vscode.TestItem[],
   token: vscode.CancellationToken,
   cwd: string,
+  filterIds: readonly string[] = tests.map((test) => test.id),
 ): Promise<void> {
-  await new DebugRunFlow(host, run, tests, cwd).start(token);
+  await new DebugRunFlow(host, run, tests, cwd, filterIds).start(token);
 }
 
 /** One Debug-profile gesture: the run, its terminal, and its attaches. */
@@ -216,6 +218,7 @@ class DebugRunFlow {
     private readonly run: vscode.TestRun,
     private readonly tests: readonly vscode.TestItem[],
     private readonly cwd: string,
+    private readonly filterIds: readonly string[],
   ) {}
 
   /** Race "a session exists" against "the run died before any host waited". */
@@ -247,7 +250,21 @@ class DebugRunFlow {
 
   /** One queued, cancellable `dotnet test` with the host-debug environment. */
   private async invoke(): Promise<TestRunOutcome> {
-    const ids = this.tests.map((test) => test.id);
+    // A debug run is ALWAYS one invocation: every VSTest host under
+    // `VSTEST_HOST_DEBUG=1` WAITS for a debugger attach, so chunking a huge
+    // selection into batches would strand the second host's tests. A selection
+    // too big for one command line runs UNFILTERED instead — every test in the
+    // project runs, breakpoints in the selection still hit, and the run never
+    // dies with `spawn ENAMETOOLONG` before a host can wait.
+    const oversized = filterBatches(this.filterIds).length > 1;
+    if (oversized) {
+      warn(
+        `Test debug: selection exceeds one command line; running unfiltered instead of ${String(
+          this.filterIds.length,
+        )} filtered tests`,
+      );
+    }
+    const ids = oversized ? [] : this.filterIds;
     const target = runTarget();
     const options: TestRunOptions = {
       signal: this.stop.signal,

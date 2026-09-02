@@ -46,6 +46,20 @@ export function collectItemIds(items: vscode.TestItemCollection): string[] {
   return ids;
 }
 
+/**
+ * Recursively collect only the LEAF ids — the tests — skipping the Assembly →
+ * Namespace → Class group nodes above them. Set-equality assertions about
+ * "which tests are in the tree" want this; `collectItemIds` counts groups too.
+ */
+export function collectLeafIds(items: vscode.TestItemCollection): string[] {
+  const ids: string[] = [];
+  items.forEach((item) => {
+    if (item.children.size === 0) ids.push(item.id);
+    else ids.push(...collectLeafIds(item.children));
+  });
+  return ids;
+}
+
 /** Recursively snapshot every TestItem, for shape assertions. */
 export function snapshotItems(items: vscode.TestItemCollection): TestItemSnapshot[] {
   const snapshots: TestItemSnapshot[] = [];
@@ -81,9 +95,11 @@ export function findItem(
 }
 
 /**
- * Poll the tree until `predicate` holds, then return the ids. Returns the last
- * read on timeout so the caller's assertions — not an opaque timeout — report
- * what was actually discovered.
+ * Poll the tree until `predicate` holds over the LEAF ids — the tests — then
+ * return them. Group nodes never appear, so set-equality against a fixture's
+ * expected names is what every caller gets. Returns the last read on timeout
+ * so the caller's assertions — not an opaque timeout — report what was
+ * actually discovered.
  */
 export async function pollForIds(
   controller: SharpLspTestController,
@@ -92,10 +108,10 @@ export async function pollForIds(
   intervalMs = 500,
 ): Promise<string[]> {
   const deadline = Date.now() + timeoutMs;
-  let ids = collectItemIds(controller.items);
+  let ids = collectLeafIds(controller.items);
   while (!predicate(ids) && Date.now() < deadline) {
     await sleep(intervalMs);
-    ids = collectItemIds(controller.items);
+    ids = collectLeafIds(controller.items);
   }
   return ids;
 }

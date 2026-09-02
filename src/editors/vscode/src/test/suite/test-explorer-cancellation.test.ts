@@ -34,7 +34,7 @@ import {
 } from './dotnet-project-kit';
 import {
   activateTestExplorer,
-  collectItemIds,
+  collectLeafIds,
   drainDiscovery,
   pollUntilDiscovered,
   runAndCancelWhen,
@@ -168,7 +168,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // The control. Without it, "the finished marker is absent" below could hold
     // simply because the fixture never writes one.
     assert.deepStrictEqual(
-      sorted(collectItemIds(api.testController.items)),
+      sorted(collectLeafIds(api.testController.items)),
       sorted(ALL_TESTS),
       'exactly the long test and the fast test must be discovered',
     );
@@ -265,7 +265,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'a cancelled run invents no cache entries',
     );
     assert.deepStrictEqual(
-      sorted(collectItemIds(api.testController.items)),
+      sorted(collectLeafIds(api.testController.items)),
       sorted(ALL_TESTS),
       'and leaves the tree exactly as it was',
     );
