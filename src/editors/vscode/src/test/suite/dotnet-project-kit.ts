@@ -235,3 +235,49 @@ export async function createSolution(
 export async function warmDiscovery(solutionPath: string, cwd: string): Promise<string> {
   return dotnet(['test', solutionPath, '--list-tests', '--nologo', '--verbosity', 'quiet'], cwd);
 }
+
+/** The shared framework whose installed runtimes decide what a test host can run. */
+const NETCORE_APP = 'Microsoft.NETCore.App';
+
+/**
+ * The MAJOR version of a `Microsoft.NETCore.App <version> [<path>]` line, or
+ * `undefined` for any other line `dotnet --list-runtimes` prints (ASP.NET Core
+ * and the Windows Desktop pack announce themselves the same way).
+ */
+function netCoreAppMajor(line: string): number | undefined {
+  if (!line.startsWith(`${NETCORE_APP} `)) return undefined;
+  const version = line.slice(NETCORE_APP.length + 1).split(' ')[0] ?? '';
+  const major = Number.parseInt(version.split('.')[0] ?? '', 10);
+  return Number.isNaN(major) ? undefined : major;
+}
+
+/**
+ * The two NEWEST target-framework monikers this agent can actually RUN, oldest
+ * first — the `<TargetFrameworks>` a multi-targeted fixture must declare.
+ *
+ * Pinning the pair does not work: a fixture whose second framework has no
+ * installed runtime never gets a test host, so VSTest never announces its
+ * assembly and the project silently degrades to a single target — which would
+ * make a multi-targeting regression suite pass vacuously. Agents disagree about
+ * which runtimes they carry (a developer box and a CI runner rarely match), so
+ * the pair is READ off the machine. The two NEWEST are taken rather than the
+ * oldest and the newest because an out-of-support moniker makes the SDK
+ * complain about the fixture instead of building it.
+ */
+export async function installedFrameworkPair(cwd: string): Promise<string[]> {
+  const output = await dotnet(['--list-runtimes'], cwd);
+  const majors = new Set<number>();
+  for (const raw of output.split('\n')) {
+    const major = netCoreAppMajor(raw.trim());
+    if (major !== undefined) majors.add(major);
+  }
+  const newest = [...majors].sort((left, right) => right - left).slice(0, 2);
+  if (newest.length < 2) {
+    throw new Error(
+      `multi-targeting needs two runnable ${NETCORE_APP} runtimes; this agent has: ${
+        [...majors].join(', ') || '(none)'
+      }`,
+    );
+  }
+  return newest.sort((left, right) => left - right).map((major) => `net${String(major)}.0`);
+}

@@ -152,10 +152,11 @@
       ]
     },
     "testexplorer": {
-      "description": "Discovery, the reactive tree, Windows path handling, TRX/console result parsing and the testing lens.",
+      "description": "Discovery, the reactive tree, multi-targeted projects collapsing to one assembly root, Windows path handling, TRX/console result parsing and the testing lens.",
       "files": [
         "test-explorer-e2e.test.js",
         "test-explorer-reactive.test.js",
+        "test-explorer-multitarget.test.js",
         "test-explorer-windows.test.js",
         "test-explorer-parsers.test.js",
         "testing-lens-e2e.test.js"
