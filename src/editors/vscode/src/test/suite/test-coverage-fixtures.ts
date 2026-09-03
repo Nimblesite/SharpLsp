@@ -42,6 +42,17 @@ export const COVERLET_PACKAGE: PackageRef = { id: 'coverlet.collector', version:
 
 /** The single source file both test projects cover, and its four functions. */
 export const LIBRARY_FILE = 'Calculator.cs';
+
+/**
+ * The TEST sources, which the collector must never report.
+ *
+ * `coverlet.collector` leaves the test assembly out by default
+ * (`IncludeTestAssembly` is false), so these names appearing in a report means
+ * the fixture is measuring the tests rather than the library they exercise
+ * ([TEST-COVERAGE]).
+ */
+export const CS_TESTS_FILE = 'CoverageTests.cs';
+export const FS_TESTS_FILE = 'CoverageTests.fs';
 /** Executed only by the C# project. */
 export const COVERED_BY_CSHARP = 'Add';
 /** Executed only by the F# project. */
@@ -140,7 +151,7 @@ export function writeSplitCoverageFixture(root: string): string[] {
     path.join(root, CS_PROJECT),
     `${CS_PROJECT}.csproj`,
     buildProjectXml({ packages, projectReferences: [reference] }),
-    'CoverageTests.cs',
+    CS_TESTS_FILE,
     CS_SOURCE,
   );
   const fsDir = writeProject(
@@ -149,19 +160,38 @@ export function writeSplitCoverageFixture(root: string): string[] {
     buildProjectXml({
       packages,
       projectReferences: [reference],
-      compileIncludes: ['CoverageTests.fs'],
+      compileIncludes: [FS_TESTS_FILE],
     }),
-    'CoverageTests.fs',
+    FS_TESTS_FILE,
     FS_SOURCE,
   );
   return [libDir, csDir, fsDir];
 }
 
-/** Absolute paths of every `coverage.cobertura.xml` directly under `dir`. */
+/**
+ * The RUN-ID FOLDERS under `dir` — the ones actually carrying a Cobertura
+ * report, which is what [TEST-COVERAGE] means by "one Cobertura report per test
+ * project, each in its own run-id folder one level down".
+ *
+ * A run-id folder is not the only directory the collector's results directory
+ * ends up holding. `--results-directory` is shared with the TRX logger, and the
+ * logger creates its OWN attachments folder there — named for the user, machine
+ * and timestamp — as soon as the run produces an attachment, which a coverage
+ * run always does. Counting every directory therefore counts the TRX folder as
+ * a third project's report and fails a green run.
+ *
+ * Filtering on the report is also the STRONGER assertion: it is exactly the set
+ * `findCoberturaFiles` walks (one level down, `coverage.cobertura.xml`), so a
+ * count taken here is a count of reports the product can actually load, not of
+ * folders that merely exist.
+ */
 export function reportDirsOf(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
   return fs
     .readdirSync(dir)
-    .filter((entry) => fs.statSync(path.join(dir, entry)).isDirectory())
+    .filter((entry) => fs.existsSync(path.join(dir, entry, REPORT_FILE_NAME)))
     .sort();
 }
+
+/** The file name `coverlet.collector` writes into each run-id folder. */
+const REPORT_FILE_NAME = 'coverage.cobertura.xml';

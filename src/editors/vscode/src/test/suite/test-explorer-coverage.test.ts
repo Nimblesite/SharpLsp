@@ -48,9 +48,11 @@ import {
   CS_COVERS,
   CS_FAILING,
   CS_SKIPPED,
+  CS_TESTS_FILE,
   CS_THEORY,
   FS_COVERS,
   FS_ISOLATED,
+  FS_TESTS_FILE,
   LIBRARY_FILE,
   NEVER_COVERED,
   reportDirsOf,
@@ -207,12 +209,40 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       TEST_PROJECTS,
       `the collector writes one run-id folder per test project: ${entries.join(' | ')}`,
     );
-    assert.deepStrictEqual(
-      sorted([...trx, ...dirs]),
-      sorted(entries),
-      'nothing but TRX reports and collector folders is left beside the solution',
-    );
     assert.strictEqual(new Set(dirs).size, dirs.length, 'each run-id folder is distinct');
+
+    // The results directory holds THREE kinds of entry, because `dotnet test`
+    // points the TRX logger and the coverage collector at the same
+    // `--results-directory`: the TRX files, the collector's run-id folders, and
+    // the logger's own attachments folder — which it creates as soon as a run
+    // produces an attachment, and a coverage run always does. That folder is
+    // named for the TRX it belongs to, so it is identifiable rather than
+    // merely tolerated, and `findCoberturaFiles` never sees inside it: the copy
+    // it holds is nested under `In/<machine>/`, not one level down.
+    const files = entries.filter(
+      (entry) => !fs.statSync(path.join(coverageDir, entry)).isDirectory(),
+    );
+    assert.deepStrictEqual(sorted(files), sorted(trx), 'every FILE beside the solution is a TRX');
+    const attachmentDirs = entries.filter(
+      (entry) => !dirs.includes(entry) && fs.statSync(path.join(coverageDir, entry)).isDirectory(),
+    );
+    for (const dir of attachmentDirs) {
+      assert.strictEqual(
+        trx.some((name) => name.startsWith(dir)),
+        true,
+        `${dir} is not a run-id folder, so it must be a TRX attachments folder named for its TRX`,
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(coverageDir, dir, REPORT_NAME)),
+        false,
+        `${dir} must not hold a report one level down, or it would double-count`,
+      );
+    }
+    assert.deepStrictEqual(
+      sorted([...trx, ...dirs, ...attachmentDirs]),
+      sorted(entries),
+      'a TRX, a run-id folder or that TRX‘s attachments — nothing else is written here',
+    );
 
     // Interaction 4 — the discovery helper finds exactly those reports. `>= 1`
     // is the assertion [TEST-COVERAGE] warns about: it cannot tell one report
@@ -325,6 +355,64 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
         file.uri.fsPath.includes('CoverCs.dll') || file.uri.fsPath.includes('CoverFs.dll'),
         false,
         'IncludeTestAssembly is false, so no TEST assembly appears in the report',
+      );
+    }
+  });
+
+  test('the reports cover the LIBRARY only — never the test assemblies themselves', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // [TEST-COVERAGE]: "`coverlet.collector` leaves the TEST assembly out of its
+    // report by default (`IncludeTestAssembly` is false) and only reports
+    // assemblies the run actually loaded, so a coverage fixture has to be a
+    // library plus a test project that exercises it."
+    //
+    // That sentence is why this fixture is a library plus two test projects
+    // rather than two test projects alone, and nothing observed it. If the
+    // collector DID measure test assemblies, a solution of nothing but tests
+    // would still produce covered lines, and every other assertion in this
+    // suite could pass while measuring the wrong assembly entirely.
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Coverage,
+      itemsFor(api, ALL_COVERAGE_TESTS),
+    );
+    const reports = findCoberturaFiles(coverageDir);
+    assert.strictEqual(reports.length, TEST_PROJECTS, 'both projects reported');
+
+    // Interaction 2 — every file named across BOTH reports is the library's,
+    // and the two test sources that drove the run appear in neither.
+    const named = reports.flatMap((report) =>
+      parseCoberturaXml(report).map((file) => path.basename(file.uri.fsPath)),
+    );
+    assert.ok(named.length > 0, 'the run measured something, so exclusion is observable');
+    assert.deepStrictEqual(
+      sorted([...new Set(named)]),
+      [LIBRARY_FILE],
+      `only the library is measured; got ${sorted([...new Set(named)]).join(' | ') || '(nothing)'}`,
+    );
+    for (const testSource of [CS_TESTS_FILE, FS_TESTS_FILE]) {
+      assert.strictEqual(
+        named.includes(testSource),
+        false,
+        `${testSource} is a TEST source: IncludeTestAssembly is false, so it must not be measured`,
+      );
+    }
+
+    // Interaction 3 — the exclusion is not an empty report. The library's own
+    // lines really were measured, by both projects, so "no test assembly" is a
+    // statement about WHAT was covered rather than about nothing being covered.
+    for (const [index, report] of reports.entries()) {
+      const file = libraryCoverageIn(report);
+      assert.ok(file, `report ${index + 1} must carry ${LIBRARY_FILE}`);
+      assert.strictEqual(
+        path.basename(file.uri.fsPath),
+        LIBRARY_FILE,
+        'and it is the library file the fixture wrote',
+      );
+      assert.ok(
+        executedLines(loadDetailedCoverage(file)).length > 0,
+        `report ${index + 1} must report executed library lines, not an empty report`,
       );
     }
   });
@@ -889,17 +977,49 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       'each report has a timestamp',
     );
 
-    // Interaction 2 — the controller registers three profiles, and Debug is one
-    // of them; it is a distinct kind from Coverage.
+    // Interaction 2 — the controller registers three profiles, one per kind,
+    // and ▶ resolves to the RUN one.
+    //
+    // `isDefault` cannot carry that claim: it is scoped to a KIND, not to the
+    // whole controller, and VS Code writes it back to `true` on the only
+    // profile of a kind so that kind's button has something to press. Asserting
+    // `debugProfile.isDefault === false` therefore asserts that the Testing
+    // view's Debug button does nothing — the opposite of the contract. What ▶
+    // actually obeys is the default of the RUN kind, so that is what is pinned
+    // here, along with the kinds being distinct.
+    const runProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Run);
     const debugProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Debug);
     const coverageProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Coverage);
+    assert.strictEqual(runProfile.isDefault, true, '▶ presses the Run profile');
+    assert.strictEqual(runProfile.kind, vscode.TestRunProfileKind.Run, 'which runs, never debugs');
+    assert.notStrictEqual(debugProfile.kind, runProfile.kind, 'Debug is not Run');
     assert.notStrictEqual(debugProfile.kind, coverageProfile.kind, 'Debug is not Coverage');
-    assert.strictEqual(debugProfile.isDefault, false, 'and Debug is not the default ▶');
     assert.strictEqual(
       coverageProfile.kind,
       vscode.TestRunProfileKind.Coverage,
       'the coverage profile is the coverage kind',
     );
+    assert.strictEqual(
+      new Set([runProfile, debugProfile, coverageProfile]).size,
+      3,
+      'three kinds means three distinct profile objects, not one answering to all of them',
+    );
+
+    // [TEST-COVERAGE]: "Per-file detail is resolved lazily through
+    // `loadDetailedCoverage`." Only the profile that collects can resolve it —
+    // a Run or Debug profile carrying the hook would promise detail for a run
+    // that gathered none.
+    assert.strictEqual(
+      typeof coverageProfile.loadDetailedCoverage,
+      'function',
+      'the coverage profile resolves per-file detail lazily',
+    );
+    assert.strictEqual(
+      runProfile.loadDetailedCoverage,
+      undefined,
+      'the Run profile collects nothing, so it has no detail to resolve',
+    );
+    assert.strictEqual(debugProfile.loadDetailedCoverage, undefined, 'and neither does Debug');
 
     // Interaction 3 — the directory is exactly as the coverage run left it. This
     // reads the directory rather than starting a debug session, because the
