@@ -29,6 +29,8 @@ import { assertBoundAtLines, clearAllBreakpoints, stopDebuggee } from './debug-s
 import {
   FS_ALL,
   FS_MODULE,
+  FS_MODULE_NAMESPACE,
+  FS_MODULE_TYPE,
   FS_ROWS,
   FS_SOURCE,
   FS_SPACED,
@@ -306,16 +308,28 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
   test('debugging the F# MODULE row debugs every binding under it, in one session', async function () {
     this.timeout(DEBUG_TEST_MS);
 
-    // An F# module renders as Assembly → Namespace → Test: there is no class, so
-    // the module row IS the group the user right-clicks. [TEST-RUN-TRX] makes it
-    // ONE invocation for the whole selection.
+    // An F# module renders as Assembly → Namespace → Class → Test like anything
+    // else, because that is what it COMPILES to: `Fs.Debug.Fixtures` is a CLR
+    // type named `Fixtures` in namespace `Fs.Debug`, so the module row is the
+    // CLASS level and carries the type's own name, not the dotted path
+    // (`testing.ts`: "deterministic for C# namespaces and dotted F# modules
+    // alike"). The module row is still the group the user right-clicks.
+    // [TEST-RUN-TRX] makes it ONE invocation for the whole selection.
     //
     // Interaction 1 — reach the module row through a leaf, and check it holds
     // every binding the fixture declares.
     const leaf = await rowFor(FS_SPACED);
     const moduleRow = leaf.parent;
     assert.ok(moduleRow, 'an F# binding hangs off the module it is declared in');
-    eq(moduleRow.label, FS_MODULE, 'and that group is the module');
+    eq(moduleRow.label, FS_MODULE_TYPE, 'and that group is the module, by its TYPE name');
+    const namespaceRow = moduleRow.parent;
+    assert.ok(namespaceRow, 'and the module hangs off the namespace enclosing it');
+    eq(namespaceRow.label, FS_MODULE_NAMESPACE, 'which is the module path without the type');
+    eq(
+      `${namespaceRow.label}.${moduleRow.label}`,
+      FS_MODULE,
+      'so namespace and class rejoin to exactly the F# module the fixture declares',
+    );
     eq(moduleRow.children.size, FS_ALL.length, 'holding every binding the fixture declares');
     eq(moduleRow.canResolveChildren, true, 'and declaring them, so the row expands');
     neq(moduleRow.id, FS_SPACED, 'a group id is never a fully-qualified test name');

@@ -87,6 +87,14 @@ const TERMINATION_GRACE_MS = 15_000;
 /** The F# module every fixture test lives in — the tree's namespace row. */
 const NAMESPACE = 'Fs.Cancel.Fixtures';
 
+/**
+ * How that module renders: a CLASS row named for the TYPE under a NAMESPACE
+ * row carrying the rest. An F# module compiles to a CLR type, so the tree
+ * splits `Fs.Cancel.Fixtures` exactly as it splits a C# class.
+ */
+const MODULE_TYPE = NAMESPACE.slice(NAMESPACE.lastIndexOf('.') + 1);
+const MODULE_NAMESPACE = NAMESPACE.slice(0, NAMESPACE.lastIndexOf('.'));
+
 /** The project, which is also the assembly root's label. */
 const PROJECT = 'CancelFs';
 
@@ -521,14 +529,30 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     this.timeout(DOTNET_CLI_MS);
 
     // Interaction 1 — the user presses ▶ on the group row, not on a leaf. An F#
-    // module renders as Assembly → Namespace → Test, so the namespace row is the
-    // parent of every binding.
+    // module compiles to a CLR TYPE, so `Fs.Cancel.Fixtures` renders the same
+    // way a C# class does: a class row named `Fixtures` under a namespace row
+    // named `Fs.Cancel` (Assembly → Namespace → Class → Test). The row holding
+    // every binding is therefore the module's class row.
     clearMarkers();
     const leaf = findItem(api.testController.items, FAST_TEST);
     assert.ok(leaf, `${FAST_TEST} must be a row in the tree`);
     const namespaceNode = leaf.parent;
-    assert.ok(namespaceNode, 'a leaf hangs off the namespace group it belongs to');
-    assert.strictEqual(namespaceNode.label, NAMESPACE, 'and that parent is the F# module');
+    assert.ok(namespaceNode, 'a leaf hangs off the group it belongs to');
+    assert.strictEqual(
+      namespaceNode.label,
+      MODULE_TYPE,
+      'and that parent is the F# module, by its TYPE name',
+    );
+    assert.strictEqual(
+      namespaceNode.parent?.label,
+      MODULE_NAMESPACE,
+      'which itself hangs off the namespace enclosing the module',
+    );
+    assert.strictEqual(
+      `${MODULE_NAMESPACE}.${MODULE_TYPE}`,
+      NAMESPACE,
+      'and the two rejoin to exactly the module the fixture declares',
+    );
     assert.strictEqual(
       namespaceNode.children.size,
       ALL_TESTS.length,

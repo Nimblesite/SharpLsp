@@ -135,6 +135,17 @@ export const FS_PROJECT = 'DebugTestTargetFs';
 /** The F# module every binding below is declared in. */
 export const FS_MODULE = 'Fs.Debug.Fixtures';
 
+/**
+ * How that module renders in the tree: a CLASS row named for the TYPE, under a
+ * NAMESPACE row carrying the rest of the path.
+ *
+ * An F# module compiles to a CLR type, so `Fs.Debug.Fixtures` is the type
+ * `Fixtures` in namespace `Fs.Debug`, and the Assembly → Namespace → Class →
+ * Test tree splits it exactly as it splits a C# class.
+ */
+export const FS_MODULE_TYPE = FS_MODULE.slice(FS_MODULE.lastIndexOf('.') + 1);
+export const FS_MODULE_NAMESPACE = FS_MODULE.slice(0, FS_MODULE.lastIndexOf('.'));
+
 /** An idiomatic backtick binding: its fully-qualified name contains SPACES. */
 export const FS_SPACED = `${FS_MODULE}.adds two numbers with spaces`;
 
