@@ -467,31 +467,42 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       );
     }
 
-    // Interaction 4 — the merge is strictly better than either report alone,
-    // and the summary beside it agrees with the detail behind it.
-    for (const report of reports) {
-      const alone = libraryLinesIn(report);
-      assert.ok(
-        alone.every((line) => executed.includes(line)),
-        `the merge must keep every line ${report} reported: ${alone.join(',')}`,
-      );
-    }
-    assert.ok(
-      executed.length > Math.max(...reports.map((report) => libraryLinesIn(report).length)),
-      'and cover more than any single report, or the fixture proves nothing',
-    );
+    // Interaction 4 — the summary beside the merged entry agrees with the
+    // detail behind it.
+    //
+    // Read BEFORE anything re-parses. Detail is stashed per file URI, so
+    // `libraryLinesIn` below — which parses one report to ask what it alone
+    // reported — replaces the merged detail with that report's. Asserting the
+    // merged totals afterwards would compare one report's detail against the
+    // merged count and pass only while both reports happen to instrument an
+    // identical line set.
+    const mergedDetail = loadDetailedCoverage(file).length;
     assert.strictEqual(
       file.statementCoverage.covered,
       executed.length,
       'the merged summary the gutter shows counts exactly the merged executed lines',
     );
     assert.strictEqual(
-      loadDetailedCoverage(file).length,
+      mergedDetail,
       file.statementCoverage.total,
       'and its total counts every line the merged detail carries',
     );
 
-    // Interaction 5 — nothing the collector never measured is invented.
+    // Interaction 5 — the merge is strictly better than either report alone.
+    const perReport = reports.map((report) => libraryLinesIn(report));
+    for (const [index, alone] of perReport.entries()) {
+      assert.ok(
+        alone.every((line) => executed.includes(line)),
+        `the merge must keep every line report ${index + 1} of ${perReport.length} ` +
+          `covered: ${alone.join(',')} vs merged ${executed.join(',')}`,
+      );
+    }
+    assert.ok(
+      executed.length > Math.max(...perReport.map((alone) => alone.length)),
+      'and cover more than any single report, or the fixture proves nothing',
+    );
+
+    // Interaction 6 — nothing the collector never measured is invented.
     for (const name of NEVER_COVERED) {
       assert.strictEqual(
         executed.includes(declarationLine(name)),
