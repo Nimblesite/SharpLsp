@@ -47,14 +47,7 @@ import {
   findItem,
   runViaProfile,
 } from './test-explorer-kit';
-import {
-  closeAllEditors,
-  comparablePath,
-  deepEq,
-  eq,
-  neq,
-  requireAt,
-} from './test-helpers';
+import { closeAllEditors, comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
 import { DEBUG_SESSION_MS, DEBUG_TEST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
