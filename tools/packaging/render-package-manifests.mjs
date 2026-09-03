@@ -24,7 +24,7 @@
 // Roslyn or FCS, so both are asserted by tools/packaging/verify-package-manifests.mjs.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 // `brew audit --strict` rejects a leading article and a desc over 80 characters.
@@ -83,10 +83,15 @@ function hashArchives(archivesDir, names) {
     if (matches.length === 0) {
       throw new Error(`missing release archive ${name} under ${archivesDir}`);
     }
-    if (statSync(matches[0]).size === 0) {
+    // Read ONCE and judge the bytes in hand. Sizing the path with `statSync`
+    // and then reading it again is a check the read cannot rely on — the file
+    // may change in between (CodeQL js/file-system-race) — and it walks a
+    // release archive twice for no gain.
+    const bytes = readFileSync(matches[0]);
+    if (bytes.length === 0) {
       throw new Error(`release archive ${name} is empty`);
     }
-    hashes[name] = createHash("sha256").update(readFileSync(matches[0])).digest("hex");
+    hashes[name] = createHash("sha256").update(bytes).digest("hex");
   }
   return hashes;
 }
