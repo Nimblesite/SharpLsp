@@ -48,6 +48,11 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private transitioning = false;
   /** True once VS Code finished its breakpoint/configuration sequence. */
   private clientConfigured = false;
+  /** Resolver for {@link whenConfigured}; cleared once it has fired. */
+  private resolveConfigured: (() => void) | undefined;
+  private readonly configured = new Promise<void>((resolve) => {
+    this.resolveConfigured = resolve;
+  });
   /**
    * Set once the debuggee is gone, so `threads` can be answered honestly.
    *
@@ -235,6 +240,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         return false;
       case 'configurationDone':
         this.clientConfigured = true;
+        this.announceConfigured();
         return false;
       case 'threads':
         // DAP defines no failure case for `threads`: the honest answer to
@@ -354,7 +360,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   public emit(message: DapMessage): void {
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
-        `[dap=>] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)}`,
+        `[dap=>] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')}`,
       );
     }
     this.emitter.fire(message);
@@ -376,7 +382,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     if (this.disposed) return;
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
-        `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ${JSON.stringify(message.body ?? {}).slice(0, 80)}`,
+        `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')} ${JSON.stringify(message.body ?? {}).slice(0, 80)}`,
       );
     }
     if (message.type === 'response') {
@@ -482,6 +488,29 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   /** The seq of a recorded client message. */
   public seqOf(message: DapMessage): number {
     return Number(message.seq ?? -1);
+  }
+
+  /**
+   * Settles when the workbench has finished configuring THIS session, i.e. it
+   * has sent `configurationDone`.
+   *
+   * `vscode.debug.startDebugging` resolves as soon as the session exists, which
+   * is several DAP round trips before it can run anything: the breakpoints are
+   * still being sent and `configurationDone` has not been issued. A caller that
+   * treats "started" as "ready" hands the user a session that is not listening
+   * yet — the Debug press that ends in silence (issue #233). This is the signal
+   * that says otherwise, and it is the router's to give because the router is
+   * the adapter the workbench is configuring.
+   */
+  public async whenConfigured(): Promise<void> {
+    await this.configured;
+  }
+
+  /** Release everything awaiting {@link whenConfigured}. Idempotent. */
+  private announceConfigured(): void {
+    const resolve = this.resolveConfigured;
+    this.resolveConfigured = undefined;
+    resolve?.();
   }
 
   /** True while a respawn replays the handshake; stale stops are swallowed. */

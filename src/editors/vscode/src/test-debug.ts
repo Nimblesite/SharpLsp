@@ -21,6 +21,7 @@
 // debugger that never comes would wedge the controller's queue forever.
 import * as vscode from 'vscode';
 import { DEBUG_TYPE } from './constants';
+import { whenDebugSessionConfigured } from './debug';
 import { TEST_HOST_ATTACH_FLAG } from './dap-attach';
 import { error, info, warn } from './log';
 import { runTests, type TestRunOptions, type TestRunOutcome } from './test-execution';
@@ -159,7 +160,13 @@ class DebugRunTerminal implements vscode.Pseudoterminal {
 
   /** VS Code's notice that the USER disposed the terminal. */
   public close(): void {
-    if (!this.ended) this.onUserClose();
+    if (this.ended) return;
+    // Closing the terminal is a STOP gesture: it aborts the `dotnet test` tree
+    // and with it the host being debugged. Said out loud, because the symptom
+    // otherwise is a debug session that dies seconds after it attached with
+    // nothing anywhere explaining why.
+    info('Test debug: the run terminal was closed; aborting the run');
+    this.onUserClose();
   }
 
   /** Mirror one output chunk, normalised to the CRLF terminals require. */
@@ -239,6 +246,8 @@ class DebugRunFlow {
   private async settle(): Promise<void> {
     try {
       const outcome = await this.invoke();
+      const failure = outcome.failure === undefined ? '' : `; failure: ${outcome.failure}`;
+      info(`Test debug: the run ended with ${String(outcome.results.size)} result(s)${failure}`);
       this.host.finish(this.run, this.tests, outcome);
     } catch (cause) {
       error(`Test debug run failed to settle: ${String(cause)}`);
@@ -291,10 +300,16 @@ class DebugRunFlow {
     info(`Test debug: attaching to waiting test host pid ${String(pid)}`);
     try {
       const config = testHostAttachConfig(pid, this.label());
+      // Latched BEFORE the session can start: `onDidStartDebugSession` fires
+      // while `startDebugging` is still resolving, so a listener registered
+      // afterwards would miss its own session.
+      const session = this.captureSession(pid);
       const started = await vscode.debug.startDebugging(this.folder(), config);
       if (!started) {
         warn(`Test debug: the workbench refused the attach to pid ${String(pid)}`);
         this.stop.abort();
+      } else {
+        await this.settleSession(await session, pid);
       }
     } catch (cause) {
       warn(`Test debug: attach to pid ${String(pid)} threw: ${String(cause)}`);
@@ -302,6 +317,54 @@ class DebugRunFlow {
     } finally {
       this.onFirstAttach();
     }
+  }
+
+  /**
+   * The session the next `startDebugging` produces, matched by the pid this
+   * flow aimed it at.
+   *
+   * Never rejects and never leaks the listener: the caller always awaits it,
+   * and {@link settleSession} tolerates `undefined` for the case where the
+   * workbench started something this flow cannot identify.
+   */
+  private async captureSession(pid: number): Promise<vscode.DebugSession | undefined> {
+    return await new Promise((resolve) => {
+      const listener = vscode.debug.onDidStartDebugSession((candidate) => {
+        // Matched on the pid, not the session NAME: two hosts of one solution
+        // are attached under labels that differ only by the tests selected, and
+        // the workbench is free to decorate a name it displays. The pid is the
+        // identity this flow actually chose.
+        if (Number(candidate.configuration['processId']) !== pid) return;
+        listener.dispose();
+        resolve(candidate);
+      });
+      // The workbench refusing the attach resolves `startDebugging` without
+      // ever starting a session; the caller's `await` must not hang on that.
+      this.stop.signal.addEventListener('abort', () => {
+        listener.dispose();
+        resolve(undefined);
+      });
+    });
+  }
+
+  /**
+   * Wait for the workbench to finish CONFIGURING the session, not merely to
+   * have created it.
+   *
+   * `startDebugging` resolves once the session exists — before the breakpoints
+   * it is about to send have been acknowledged and before `configurationDone`.
+   * Reporting the attach as settled there is what makes the Debug press look
+   * like it did nothing: the run hands control back while the debugger is still
+   * coming up, so the user's breakpoint is not armed when the waiting host
+   * resumes (issue #233). Spec: [DEBUG-FEATURES-TESTS].
+   */
+  private async settleSession(
+    session: vscode.DebugSession | undefined,
+    pid: number,
+  ): Promise<void> {
+    if (session === undefined) return;
+    await whenDebugSessionConfigured(session);
+    info(`Test debug: session for pid ${String(pid)} is configured and running`);
   }
 
   /** The workspace folder the debug session is scoped to. */

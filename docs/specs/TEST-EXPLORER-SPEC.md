@@ -211,7 +211,9 @@ the `dotnet` CLI built — never mocks and never a hand-authored `.sln`. The sui
 | `testing-lens-e2e.test.ts` | the at-cursor commands and the status CodeLens, and that the Run and Debug actions resolve the same method by name |
 | `test-explorer-adapter-ids.test.ts` | an adapter that DECORATES the names it reports (`xunit.runner.visualstudio` 2.2.0): bare ids, readable labels, an unescaped filter, real TRX outcomes and a resolvable lens |
 | `test-explorer-multitarget.test.ts` | a `<TargetFrameworks>` project collapsing to ONE assembly root whose names are the UNION of the frameworks', and running from it |
-| `debug-test-debugging-e2e.test.ts` | the Debug run profile: a real DAP session, breakpoints inside a test body and in the helpers it calls, and debugging a whole class ([DEBUG-FEATURES-TESTS]) |
+| `debug-test-debugging-e2e.test.ts` | the Debug run profile on ONE test: a real DAP session attached to the waiting test host, a breakpoint in the body and in a helper, a failing test, a skipped one, `[Theory]` rows, nothing armed, and disabled/conditional breakpoints |
+| `debug-test-groups-e2e.test.ts` | debugging a SELECTION: the class row, the namespace row, the assembly root, a multi-select across classes, and the unselected test that must not run |
+| `debug-test-fsharp-e2e.test.ts` | F# first: a backtick name carrying SPACES debugged, its module helper on the stack, `[<Theory>]` rows, and Debug Test at the cursor |
 
 Every suite is declared in `src/editors/vscode/test-chunks.json` so it runs in the Windows
 matrix ([DIST-CI-WIN-VSIX]).
