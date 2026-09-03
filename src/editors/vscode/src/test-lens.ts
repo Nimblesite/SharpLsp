@@ -23,6 +23,9 @@ const FS_TEST_ATTRIBUTES = ['Fact', 'Theory', 'Test', 'TestMethod', 'TestCase'] 
  * Provides code lenses above test methods showing their last known result.
  * Each lens also offers "Run Test" and "Debug Test" actions.
  */
+/** What a test's status reads before anything in this session has run it. */
+const NEVER_RUN: CachedTestResult = { outcome: 'notRun', passed: false };
+
 export class TestStatusLensProvider implements vscode.CodeLensProvider {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   public readonly onDidChangeCodeLenses = this.changeEmitter.event;
@@ -161,19 +164,21 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
     methodName: string,
     uri: vscode.Uri,
   ): void {
-    const result = this.findResultByMethodName(methodName);
+    // No cached result IS the not-run result. [TEST-STATUS-LENS] pins
+    // "$(circle-slash) Not run" as one of the four titles the lens renders, but
+    // nothing writes to the cache until a run FINISHES, so that state was
+    // unreachable: a freshly discovered test showed Run and Debug and no status
+    // at all, and the row only began reporting itself after the user had
+    // already run it — exactly when they no longer needed telling.
+    const result = this.findResultByMethodName(methodName) ?? NEVER_RUN;
 
-    if (result !== undefined) {
-      const statusTitle = statusLensTitle(result);
-
-      lenses.push(
-        new vscode.CodeLens(range, {
-          title: statusTitle,
-          command: '',
-          arguments: [],
-        }),
-      );
-    }
+    lenses.push(
+      new vscode.CodeLens(range, {
+        title: statusLensTitle(result),
+        command: '',
+        arguments: [],
+      }),
+    );
 
     lenses.push(
       new vscode.CodeLens(range, {
