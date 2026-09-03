@@ -847,4 +847,303 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'and re-discovery never EXECUTES a test — `--list-tests` builds, it does not run',
     );
   });
+
+  test('Stop on a selection of ONE long test kills it and touches nothing else', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // The narrowest selection there is. A cancellation implemented by killing
+    // "the current run" rather than "this invocation" is indistinguishable from
+    // a correct one on a whole-tree selection, and shows up here.
+    //
+    // Interaction 1 — select exactly one long test. Its name carries SPACES, so
+    // the clause is the bare name ([TEST-FILTER-ESCAPE]).
+    clearMarkers();
+    const first = LONG_TESTS[0];
+    assert.ok(first, 'the fixture declares a long test');
+    assert.ok(first.fqn.includes(' '), 'whose name is an idiomatic F# backtick binding');
+    assert.strictEqual(
+      filterClause(first.fqn),
+      `FullyQualifiedName=${first.fqn}`,
+      'a space is not filter grammar and must not be escaped',
+    );
+    const items = itemsFor(api, [first.fqn]);
+    assert.strictEqual(items.length, 1, 'exactly one row is selected');
+    assert.strictEqual(items[0]?.id, first.fqn, 'and it is the long test');
+    const baseline = new Map(api.testController.cachedResults);
+
+    // Interaction 2 — Stop the moment it announces itself.
+    const afterStop = await runAndStop(vscode.TestRunProfileKind.Run, items);
+    assert.strictEqual(marked(first.started), true, 'the one selected test really started');
+    assert.ok(
+      afterStop < STOP_BUDGET_MS,
+      `Stop must end a single-test run just as promptly: ${String(afterStop)}ms`,
+    );
+
+    // Interaction 3 — the process tree is dead, and the tests that were NOT
+    // selected were never touched in the first place.
+    await sleep(FIXTURE_SLEEP_MS + TERMINATION_GRACE_MS - afterStop);
+    assert.strictEqual(
+      marked(first.finished),
+      false,
+      `${first.fqn} must be TERMINATED, not waited out; markers: ${markersOnDisk().join(', ') || '(none)'}`,
+    );
+    const second = LONG_TESTS[1];
+    assert.ok(second, 'the fixture declares a second long test');
+    assert.strictEqual(
+      marked(second.started),
+      false,
+      'a test outside the selection must never run, cancelled or not',
+    );
+
+    // Interaction 4 — nothing is reported, nothing is forgotten, nothing moved.
+    for (const id of ALL_TESTS) {
+      assert.deepStrictEqual(
+        api.testController.getResult(id),
+        baseline.get(id),
+        `${id} keeps whatever it had — a cancelled run reports nothing and retracts nothing`,
+      );
+    }
+    assert.strictEqual(
+      api.testController.cachedResults.size,
+      baseline.size,
+      'cache size unchanged',
+    );
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted(ALL_TESTS),
+      'and the tree is untouched',
+    );
+    await assertIdlePromptly('after Stop on a single test');
+  });
+
+  test('after a cancelled run, the WHOLE tree still runs to completion', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // The recovery case at full width. [TEST-REACTIVITY] serializes every
+    // `dotnet` invocation through one queue over shared `bin/`/`obj/` output, so
+    // a cancellation that left a half-killed build behind poisons the next full
+    // run — the symptom is VSTest dying with "The application to execute does
+    // not exist: …testhost.dll".
+    //
+    // Interaction 1 — cancel a run of everything.
+    clearMarkers();
+    const afterStop = await runAndStop(vscode.TestRunProfileKind.Run, itemsFor(api, ALL_TESTS));
+    assert.ok(afterStop < STOP_BUDGET_MS, `the run was cancelled: ${String(afterStop)}ms`);
+    assert.strictEqual(marked(LONG_TESTS[0]?.started ?? ''), true, 'having really started');
+    await assertIdlePromptly('before the recovery run');
+
+    // Interaction 2 — run the whole tree again and let it finish. Every long
+    // test writes BOTH markers this time.
+    clearMarkers();
+    const started = Date.now();
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Run,
+      itemsFor(api, ALL_TESTS),
+    );
+    const elapsed = Date.now() - started;
+    assert.deepStrictEqual(
+      markersOnDisk(),
+      sorted(EVERY_MARKER),
+      'the recovery run executes every long test to completion — a poisoned queue would have ' +
+        'produced a build error instead',
+    );
+    assert.ok(
+      elapsed >= FIXTURE_SLEEP_MS * LONG_TESTS.length,
+      `and really waited every sleep out; took ${String(elapsed)}ms`,
+    );
+
+    // Interaction 3 — every outcome is real, green and rendered as such
+    // ([TEST-RUN-TRX], [TEST-STATUS-LENS]).
+    for (const id of ALL_TESTS) {
+      const result = api.testController.getResult(id);
+      assert.ok(result, `${id} must report after the recovery run`);
+      assert.strictEqual(result.outcome, 'passed', `${id} passes when left alone`);
+      assert.strictEqual(result.passed, true, `${id} carries the pass flag`);
+      assert.strictEqual(
+        (result.message ?? '').includes('No result reported'),
+        false,
+        `${id} really ran, so it reports no missing result`,
+      );
+      assert.ok(Number(result.duration) >= 0, `${id} carries a measured duration`);
+      assert.strictEqual(
+        statusLensTitle(result).startsWith('$(pass) Passed'),
+        true,
+        `${id} renders above its binding as a pass`,
+      );
+    }
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted(ALL_TESTS),
+      'and the tree is whole',
+    );
+  });
+
+  test('a cancelled COVERAGE run leaves the NEXT coverage run a clean directory', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // [TEST-COVERAGE] points `--results-directory` at a FRESHLY EMPTIED
+    // `.sharplsp-coverage`, and a run killed mid-flight is exactly the case that
+    // leaves debris there: a half-written run-id folder whose report describes
+    // nothing. The next run must not show it.
+    //
+    // Interaction 1 — cancel a coverage run, and see what it left behind.
+    clearMarkers();
+    removeDirRecursive(coverageDir);
+    const afterStop = await runAndStop(
+      vscode.TestRunProfileKind.Coverage,
+      itemsFor(api, ALL_TESTS),
+    );
+    assert.ok(afterStop < STOP_BUDGET_MS, `the coverage run was cancelled: ${String(afterStop)}ms`);
+    assert.deepStrictEqual(
+      findCoberturaFiles(coverageDir),
+      [],
+      'a run killed mid-flight collected nothing, so it attaches no report',
+    );
+    await assertIdlePromptly('after the cancelled coverage run');
+
+    // Interaction 2 — now let a coverage run FINISH, over the fast test alone so
+    // it costs one round trip.
+    clearMarkers();
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Coverage,
+      itemsFor(api, [FAST_TEST]),
+    );
+    assert.strictEqual(fs.existsSync(coverageDir), true, 'the completed run created the directory');
+    const entries = fs.readdirSync(coverageDir).sort();
+    const dirs = entries.filter((entry) =>
+      fs.statSync(path.join(coverageDir, entry)).isDirectory(),
+    );
+    const trx = entries.filter((entry) => entry.toLowerCase().endsWith('.trx'));
+    assert.strictEqual(trx.length, 1, `one TRX for the one project: ${entries.join(' | ')}`);
+    assert.strictEqual(
+      dirs.length,
+      1,
+      `and exactly ONE run-id folder — the killed run's debris must have been swept: ${entries.join(' | ')}`,
+    );
+    assert.deepStrictEqual(
+      sorted([...trx, ...dirs]),
+      sorted(entries),
+      'with nothing else beside the solution',
+    );
+
+    // Interaction 3 — the report that IS there describes the run that just ran.
+    const reports = findCoberturaFiles(coverageDir);
+    assert.strictEqual(reports.length, 1, 'one Cobertura report, from the completed run');
+    for (const report of reports) {
+      assert.strictEqual(
+        path.basename(report),
+        'coverage.cobertura.xml',
+        "the collector's own file name",
+      );
+      assert.strictEqual(
+        path.dirname(path.dirname(report)),
+        coverageDir,
+        `${report} sits exactly one directory down`,
+      );
+      assert.strictEqual(
+        fs.readFileSync(report, 'utf8').includes('<coverage'),
+        true,
+        `${report} is valid Cobertura XML`,
+      );
+    }
+
+    // Interaction 4 — and the completed coverage run attributed its outcome, so
+    // the cancellation before it changed nothing about how a real run reports.
+    const result = api.testController.getResult(FAST_TEST);
+    assert.ok(result, `${FAST_TEST} must report under the Coverage profile`);
+    assert.strictEqual(result.outcome, 'passed', 'as a pass');
+    assert.strictEqual(result.passed, true, 'with the flag set');
+    assert.strictEqual(
+      (result.message ?? '').includes('No result reported'),
+      false,
+      'and no missing-result note',
+    );
+    for (const each of LONG_TESTS) {
+      assert.strictEqual(
+        marked(each.started),
+        false,
+        `${each.fqn} was not in the coverage selection and must not have run`,
+      );
+    }
+  });
+
+  test('Stop that lands after the run finished neither invents nor retracts a result', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // The race the other cancellation tests deliberately avoid: ⏹ pressed on a
+    // selection fast enough to have already completed. Both landings are
+    // legitimate, and the contract holds either way — what is never legitimate
+    // is a fabricated outcome or a notRun for a test the run did report.
+    //
+    // Interaction 1 — a baseline the assertions below can be compared against.
+    clearMarkers();
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Run,
+      itemsFor(api, [FAST_TEST]),
+    );
+    const settled = api.testController.getResult(FAST_TEST);
+    assert.ok(settled, 'the control run cached a result');
+    assert.strictEqual(settled.outcome, 'passed', 'a real pass');
+    const baseline = new Map(api.testController.cachedResults);
+
+    // Interaction 2 — run the fast test again and press ⏹ almost immediately.
+    // Whether the process beats the signal is a race, so nothing here asserts
+    // WHICH landing happened.
+    await assert.doesNotReject(async () => {
+      await runViaProfile(
+        api.testController,
+        vscode.TestRunProfileKind.Run,
+        itemsFor(api, [FAST_TEST]),
+        1,
+      );
+    }, 'a cancelled run must resolve, never reject, however the race lands');
+
+    // Interaction 3 — the result is EITHER the one already cached (the run was
+    // suppressed) OR a fresh real pass. It is never a failure, never notRun, and
+    // never a "no result" note.
+    const after = api.testController.getResult(FAST_TEST);
+    assert.ok(after, 'the last known result must survive a cancellation either way');
+    assert.strictEqual(
+      ['passed'].includes(after.outcome),
+      true,
+      `${FAST_TEST} passes; a cancelled run may suppress that but never contradict it — ` +
+        `got ${after.outcome}`,
+    );
+    assert.strictEqual(after.passed, true, 'so the pass flag stands');
+    assert.strictEqual(
+      (after.message ?? '').includes('No result reported'),
+      false,
+      'a cancelled run must not turn a passing test into a missing result',
+    );
+    assert.notStrictEqual(after.outcome, 'notRun', 'nor into a notRun');
+    assert.strictEqual(
+      statusLensTitle(after).startsWith('$(pass) Passed'),
+      true,
+      'and the lens still shows the pass',
+    );
+
+    // Interaction 4 — no other test was invented, dropped or disturbed.
+    assert.strictEqual(
+      api.testController.cachedResults.size,
+      baseline.size,
+      'a cancelled run invents no cache entries, whichever way the race landed',
+    );
+    for (const each of LONG_TESTS) {
+      assert.deepStrictEqual(
+        api.testController.getResult(each.fqn),
+        baseline.get(each.fqn),
+        `${each.fqn} was not selected and must be untouched`,
+      );
+      assert.strictEqual(marked(each.started), false, 'and must not have run');
+    }
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted(ALL_TESTS),
+      'and the tree is whole',
+    );
+    await assertIdlePromptly('after a Stop that raced the run');
+  });
 });

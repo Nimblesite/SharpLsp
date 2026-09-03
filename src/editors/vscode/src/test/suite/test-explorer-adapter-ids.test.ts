@@ -766,4 +766,275 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       'no test is listed twice after a re-discovery',
     );
   });
+
+  test('▶ on the NAMESPACE row reports every class beneath it, ids still bare', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // Interaction 1 — reach the namespace row through the tree the user
+    // expands, and check it is a real group rather than another name for the
+    // assembly.
+    const leaf = findItem(api.testController.items, FIXTURE.passing);
+    assert.ok(leaf, `${FIXTURE.passing} must be a row in the tree`);
+    const classNode = leaf.parent;
+    assert.ok(classNode, 'a leaf hangs off its class');
+    const namespaceNode = classNode.parent;
+    assert.ok(namespaceNode, 'and a class off its namespace');
+    assert.strictEqual(namespaceNode.label, NAMESPACE, 'labelled by the namespace');
+    assert.strictEqual(namespaceNode.canResolveChildren, true, 'and it expands');
+    assert.notStrictEqual(namespaceNode.id, classNode.id, 'a namespace is not its class');
+    assert.strictEqual(
+      namespaceNode.id.includes(' ('),
+      false,
+      'no GROUP id carries an adapter decoration either — the tree is keyed on these',
+    );
+
+    // Interaction 2 — [TEST-RUN-TRX] makes a group ONE invocation for the whole
+    // selection. Every test beneath the namespace reports from it.
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [namespaceNode]);
+    for (const fqn of EXPECTED) {
+      const result = api.testController.getResult(fqn);
+      assert.ok(result, `▶ on the namespace must report ${fqn}`);
+      assert.notStrictEqual(result.outcome, 'notRun', `${fqn} must not report notRun`);
+      assert.strictEqual(
+        (result.message ?? '').includes(NO_RESULT),
+        false,
+        `${fqn} ran, so it must not report "${NO_RESULT}"`,
+      );
+      assert.strictEqual(
+        ['passed', 'failed', 'skipped'].includes(result.outcome),
+        true,
+        `${fqn} lands in one of the three Testing-API states; got ${result.outcome}`,
+      );
+      assert.ok(Number(result.duration) >= 0, `${fqn} carries a measured duration`);
+    }
+
+    // Interaction 3 — the three kinds are still told apart, and the cache is
+    // keyed by the BARE id so the lens can find each of them
+    // ([TEST-STATUS-LENS]).
+    assertPassed(cachedFor(api, FIXTURE.passing), FIXTURE.passing);
+    assertFailed(cachedFor(api, FIXTURE.failing), FIXTURE.failing);
+    assertSkipped(cachedFor(api, FIXTURE.skipped), FIXTURE.skipped);
+    for (const fqn of EXPECTED) {
+      assert.ok(
+        api.testController.getResult(fqn),
+        `the cache must be keyed by the bare id; ${fqn} was not found`,
+      );
+      assert.strictEqual(
+        api.testController.getResult(`${fqn} (${'0'.repeat(40)})`),
+        undefined,
+        'and never by a decorated one',
+      );
+    }
+  });
+
+  test('▶ on ONE decorated test runs that test and no other', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // Interaction 1 — the single row, and the single unescaped clause its id
+    // produces ([TEST-FILTER-ESCAPE]).
+    const item = findItem(api.testController.items, FIXTURE.failing);
+    assert.ok(item, `${FIXTURE.failing} must be a row in the tree`);
+    assert.strictEqual(item.id, FIXTURE.failing, 'under its bare fully-qualified name');
+    assert.strictEqual(item.children.size, 0, 'and it is a leaf');
+    assert.strictEqual(item.label, methodOf(FIXTURE.failing), 'labelled with its method name');
+    const args = buildFilterArgs([item]);
+    assert.strictEqual(args.length, 2, '--filter and exactly one expression');
+    assert.strictEqual(
+      args[1],
+      `FullyQualifiedName=${FIXTURE.failing}`,
+      'one clause for the one selected test, with no escaped metacharacter',
+    );
+
+    // Interaction 2 — running it reports a real failure, with the assertion text
+    // out of the TRX ErrorInfo rather than a generic note.
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [item]);
+    const failed = cachedFor(api, FIXTURE.failing);
+    assertFailed(failed, FIXTURE.failing);
+    assert.strictEqual(
+      (failed.message ?? '').includes('Assert.Equal'),
+      true,
+      `the failure carries xUnit's own output; got ${failed.message ?? '(none)'}`,
+    );
+    assert.strictEqual(
+      (failed.message ?? '').includes(NO_RESULT),
+      false,
+      'it was actually executed, so it reports no missing result',
+    );
+    assert.strictEqual(
+      statusLensTitle(failed).startsWith('$(error) Failed'),
+      true,
+      'and renders above the method as a failure',
+    );
+
+    // Interaction 3 — a single-test run leaves the tree, the ids and every other
+    // cached result exactly as they were.
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted(EXPECTED),
+      'a filtered run must not add or drop a row',
+    );
+    assert.deepStrictEqual(
+      collectLeafIds(api.testController.items).filter((id) => carriesUniqueId(id)),
+      [],
+      'and every id is still bare',
+    );
+    assertSkipped(cachedFor(api, FIXTURE.skipped), FIXTURE.skipped);
+    assert.strictEqual(
+      statusLensTitle(cachedFor(api, FIXTURE.skipped)),
+      '$(debug-step-over) Skipped',
+      'the unselected skip keeps the LAST KNOWN result it already had',
+    );
+  });
+
+  test('every leaf hangs off Assembly → Namespace → Class, each link bare', function () {
+    this.timeout(FAST_MS);
+
+    // [TEST-DISCOVERY-FQN] reconstructs the TRX key as `className.name`, so the
+    // tree's own grouping has to agree with the id: a leaf whose class node
+    // disagrees with its own name can never be matched to a result.
+    //
+    // Interaction 1 — walk each leaf's parent chain to the root.
+    for (const fqn of EXPECTED) {
+      const leaf = findItem(api.testController.items, fqn);
+      assert.ok(leaf, `${fqn} must be a row in the tree`);
+      const classNode = leaf.parent;
+      assert.ok(classNode, `${fqn} must hang off a class node`);
+      const namespaceNode = classNode.parent;
+      assert.ok(namespaceNode, `${fqn}'s class must hang off a namespace node`);
+      const assemblyNode = namespaceNode.parent;
+      assert.ok(assemblyNode, `${fqn}'s namespace must hang off an assembly node`);
+      assert.strictEqual(assemblyNode.parent, undefined, 'and the assembly is the root');
+
+      // Interaction 2 — each link is named by the part of the id it groups.
+      assert.strictEqual(classNode.label, CLASS, `${fqn} is grouped under its class`);
+      assert.strictEqual(namespaceNode.label, NAMESPACE, 'and that under its namespace');
+      assert.strictEqual(assemblyNode.label, FIXTURE.projectName, 'and that under the project');
+      assert.strictEqual(
+        `${namespaceNode.label}.${classNode.label}.${leaf.label}`,
+        fqn,
+        'so the chain spells the fully-qualified name exactly, with nothing added or lost',
+      );
+
+      // Interaction 3 — no link carries the adapter's decoration.
+      for (const node of [leaf, classNode, namespaceNode, assemblyNode]) {
+        assert.strictEqual(
+          carriesUniqueId(node.id),
+          false,
+          `${node.label} must carry no unique-ID decoration in its id`,
+        );
+        assert.strictEqual(
+          node.label.includes(' ('),
+          false,
+          `${node.label} must not render a hex blob to the user`,
+        );
+      }
+    }
+  });
+
+  test('running the same selection twice re-reports it under the SAME bare ids', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // A decoration that is re-derived per run — rather than stripped once at
+    // discovery — makes the SECOND run's TRX keys stop matching the tree, which
+    // presents as every test going grey after working once.
+    //
+    // Interaction 1 — run the three outcome kinds once.
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, RUNNABLE));
+    const first = RUNNABLE.map((id) => cachedFor(api, id).outcome);
+    const idsAfterFirst = sorted(collectLeafIds(api.testController.items));
+    assert.deepStrictEqual(
+      first,
+      ['passed', 'failed', 'skipped'],
+      'the first run tells them apart',
+    );
+
+    // Interaction 2 — run exactly the same selection again.
+    const sizeBefore = api.testController.cachedResults.size;
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, itemsFor(api, RUNNABLE));
+    const second = RUNNABLE.map((id) => cachedFor(api, id).outcome);
+    assert.deepStrictEqual(
+      second,
+      first,
+      'the same tests run the same way twice — a second run that lost its keys would go notRun',
+    );
+    assert.strictEqual(
+      api.testController.cachedResults.size,
+      sizeBefore,
+      're-running a selection updates its entries rather than adding new ones',
+    );
+
+    // Interaction 3 — nothing about the tree or the ids moved between the runs.
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      idsAfterFirst,
+      'the tree is identical after the second run',
+    );
+    for (const id of RUNNABLE) {
+      assert.strictEqual(
+        (cachedFor(api, id).message ?? '').includes(NO_RESULT),
+        false,
+        `${id} reported on the second run too`,
+      );
+      assert.ok(
+        api.testController.getResult(id),
+        `${id} is still cached under the bare id after two runs`,
+      );
+    }
+    assert.deepStrictEqual(
+      collectItemIds(api.testController.items).filter((id) => id.includes(' (')),
+      [],
+      'and no node anywhere gained a decoration',
+    );
+  });
+
+  test('every line the adapter wrote maps onto exactly one discovered test', function () {
+    this.timeout(FAST_MS);
+
+    // The reverse direction of the vacuity guard: the first test proves the
+    // adapter decorates EVERY line, this one proves nothing was lost or invented
+    // in turning those lines into ids ([TEST-DISCOVERY-FQN]).
+    //
+    // Interaction 1 — every raw line reduces to a name that IS a discovered id.
+    const leaves = collectLeafIds(api.testController.items);
+    for (const raw of rawListing) {
+      const bare = withoutAdapterUniqueId(raw);
+      assert.strictEqual(
+        leaves.includes(bare),
+        true,
+        `the adapter reported ${raw}, which reduces to ${bare} — that must be a row in the tree`,
+      );
+      assert.strictEqual(bare.includes(' ('), false, `${bare} must carry no residual decoration`);
+      assert.strictEqual(bare.trim(), bare, `${bare} must carry no padding`);
+    }
+
+    // Interaction 2 — and every discovered id came from at least one line, so
+    // discovery invented nothing.
+    for (const id of leaves) {
+      const lines = rawListing.filter((raw) => withoutAdapterUniqueId(raw) === id);
+      assert.ok(
+        lines.length >= 1,
+        `${id} is a row in the tree, so the adapter must have reported it; it reported: ` +
+          rawListing.join(' | '),
+      );
+    }
+
+    // Interaction 3 — the many-to-one collapse is real: strictly more lines than
+    // tests, because a theory reports one line per row, and the set of reduced
+    // names is exactly the set of leaves.
+    assert.ok(
+      rawListing.length > leaves.length,
+      `a [Theory] reports one decorated line per row, so ${String(rawListing.length)} lines ` +
+        `must exceed ${String(leaves.length)} tests`,
+    );
+    assert.deepStrictEqual(
+      sorted([...new Set(rawListing.map((raw) => withoutAdapterUniqueId(raw)))]),
+      sorted(leaves),
+      'the reduced listing and the tree are the same set of names, exactly',
+    );
+    assert.deepStrictEqual(
+      sorted(parseFullyQualifiedTestList(rawListing.join('\n'))),
+      sorted(leaves),
+      'and the production reader agrees, over the REAL file the adapter wrote',
+    );
+  });
 });

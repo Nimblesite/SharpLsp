@@ -302,4 +302,151 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     );
     deepEq(stubs.log.errorMessages, [], 'nor report an error');
   });
+
+  test('debugging the F# MODULE row debugs every binding under it, in one session', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // An F# module renders as Assembly → Namespace → Test: there is no class, so
+    // the module row IS the group the user right-clicks. [TEST-RUN-TRX] makes it
+    // ONE invocation for the whole selection.
+    //
+    // Interaction 1 — reach the module row through a leaf, and check it holds
+    // every binding the fixture declares.
+    const leaf = await rowFor(FS_SPACED);
+    const moduleRow = leaf.parent;
+    assert.ok(moduleRow, 'an F# binding hangs off the module it is declared in');
+    eq(moduleRow.label, FS_MODULE, 'and that group is the module');
+    eq(moduleRow.children.size, FS_ALL.length, 'holding every binding the fixture declares');
+    eq(moduleRow.canResolveChildren, true, 'and declaring them, so the row expands');
+    neq(moduleRow.id, FS_SPACED, 'a group id is never a fully-qualified test name');
+
+    // Interaction 2 — arm the spaced binding and the module HELPER both
+    // bindings call, then debug the module once.
+    vscode.debug.addBreakpoints([
+      breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-seed'),
+      breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-add-body'),
+    ]);
+    eq(vscode.debug.breakpoints.length, 2, 'one breakpoint in a test body, one in the helper');
+    await debugRun([moduleRow]);
+    assertOneTestSession(sessions, 'debugging an F# module');
+    assertHandshakeOrder(recorder, 'debugging an F# module');
+    assertBoundAtLines(
+      recorder,
+      [FS_SOURCE.dapLine('fs-add-body'), FS_SOURCE.dapLine('fs-seed')],
+      'both armed lines of an F# module debug',
+    );
+
+    // Interaction 3 — the first stop is real, in F# code, in this fixture's own
+    // file. A module debug that resolved to the wrong assembly stops nowhere.
+    const stop = requireAt(await recorder.waitForStops(1), 0, 'the first stop of a module debug');
+    assertStopReason(stop, 'breakpoint', 'debugging an F# module');
+    const frame = await topFrame(requireActive('the module stop'), stop.threadId);
+    eq(
+      comparablePath(frame.sourcePath ?? ''),
+      comparablePath(fixture.sourceFile),
+      'the stop is in the fixture source the user armed, not in a framework file',
+    );
+    eq(sessions.ours.length, 1, 'a module is ONE session, not one per binding');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+  });
+
+  test('debugging an F# selection of BOTH bindings runs both under one session', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // [TEST-FILTER-ESCAPE]: an F# backtick name carries SPACES, which are not
+    // grammar and must not be escaped, and multiple selected tests are OR-ed
+    // with an UNESCAPED pipe. A multi-select is where both rules meet.
+    //
+    // Interaction 1 — select every binding the fixture exposes.
+    const rows = [] as vscode.TestItem[];
+    for (const fqn of FS_ALL) rows.push(await rowFor(fqn));
+    eq(rows.length, FS_ALL.length, 'every F# binding resolved to a row');
+    deepEq(
+      rows.map((row) => row.id),
+      [...FS_ALL],
+      'each under its own fully-qualified name, spaces and all',
+    );
+    eq(
+      FS_SPACED.includes(' '),
+      true,
+      'the fixture really does declare an idiomatic backtick binding',
+    );
+
+    // Interaction 2 — arm the shared helper, which BOTH bindings call, then
+    // debug the selection.
+    vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-add-body')]);
+    eq(vscode.debug.breakpoints.length, 1, 'one breakpoint, in the helper both bindings call');
+    await debugRun(rows);
+    assertOneTestSession(sessions, 'debugging an F# multi-select');
+    assertBoundAtLines(
+      recorder,
+      [FS_SOURCE.dapLine('fs-add-body')],
+      'the shared helper of an F# multi-select',
+    );
+
+    // Interaction 3 — the helper is reached more than once, because more than
+    // one selected binding called it, and all of it happens in ONE session.
+    const first = requireAt(await recorder.waitForStops(1), 0, 'the first helper stop');
+    assertStopReason(first, 'breakpoint', 'an F# multi-select debug');
+    eq(
+      methodOf(await topFrame(requireActive('the first helper stop'), first.threadId)),
+      'add',
+      'the top frame is the module helper the breakpoint sits in',
+    );
+    await gesture(CMD_CONTINUE);
+    const stops = await recorder.waitForStops(2);
+    eq(
+      stops.length >= 2,
+      true,
+      'both selected bindings call the helper, so it is reached more than once in the one run',
+    );
+    eq(sessions.ours.length, 1, 'and a selection is ONE session, never one per test');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+  });
+
+  test('an F# debug run leaves the tree and the spaced ids exactly as they were', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // A debug run is still a run: the Testing view must survive it unchanged,
+    // and an F# id carrying SPACES must survive it VERBATIM — a round trip that
+    // trimmed or escaped one would leave a row that can never be run again.
+    //
+    // Interaction 1 — the tree before.
+    const api = await activateTestExplorer();
+    const before = await discoverSolution(api, fixture.solutionPath, FS_ALL);
+    deepEq([...before].sort(), [...FS_ALL].sort(), 'the F# fixture is fully discovered');
+    eq(
+      before.filter((id) => id.trim() !== id).length,
+      0,
+      'no discovered id carries leading or trailing padding',
+    );
+    eq(
+      before.filter((id) => id.includes('\\')).length,
+      0,
+      'and none carries a filter escape — escaping is applied at run time, never to the id',
+    );
+
+    // Interaction 2 — debug one binding with nothing armed, so the run goes
+    // straight through to termination.
+    const row = await rowFor(FS_SPACED);
+    eq(vscode.debug.breakpoints.length, 0, 'the user has armed nothing');
+    await debugRun([row]);
+    assertOneTestSession(sessions, 'debugging an F# binding with nothing armed');
+    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    deepEq(recorder.stops(), [], 'with no breakpoint armed, a debug run must never stop');
+    deepEq(recorder.errors, [], 'and no adapter transport error');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+
+    // Interaction 3 — the tree, and every id in it, is byte-for-byte what it was.
+    const after = await discoverSolution(api, fixture.solutionPath, FS_ALL);
+    deepEq([...after].sort(), [...before].sort(), 'a debug run adds, drops and reorders nothing');
+    for (const fqn of FS_ALL) {
+      const item = findItem(api.testController.items, fqn);
+      assert.ok(item, `${fqn} must still be a row after a debug run`);
+      eq(item.id, fqn, 'under its own name, spaces preserved exactly');
+      eq(item.children.size, 0, 'and still a leaf');
+    }
+    eq(sessions.ours.length, 1, 'exactly one debug session was started');
+  });
 });

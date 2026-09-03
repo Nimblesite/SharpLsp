@@ -25,6 +25,7 @@ import {
   assertHandshakeOrder,
   assertOneTestSession,
   breakpointAt,
+  disabledBreakpointAt,
   requireActive,
   disposeDebugTestFixture,
   writeDebugTestFixture,
@@ -33,6 +34,7 @@ import {
 import { DebugSessionRecorder } from './run-debug-kit';
 import {
   activateTestExplorer,
+  collectLeafIds,
   discoverSolution,
   findItem,
   rootsOf,
@@ -360,5 +362,144 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       1,
       'and that namespace still holds its one class',
     );
+  });
+
+  test('a group with ONE armed test stops exactly once, in that test', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // [TEST-RUN-TRX] makes a group ONE invocation, so every test in it EXECUTES.
+    // Only the armed one may STOP. A session that stopped in an unarmed test
+    // would be reporting a breakpoint the user never set.
+    //
+    // Interaction 1 — the class row, and a single breakpoint inside one of its
+    // five tests.
+    const root = await assemblyRoot();
+    const classRow = groupUnder(groupUnder(root, CS_MATH_NAMESPACE), 'CalculatorTests');
+    eq(classRow.children.size, MATH_CLASS_TESTS, 'the class holds every test it declares');
+    vscode.debug.addBreakpoints([breakpointAt(CS_SOURCE, fixture.sourceUri, 'multiplies-seed')]);
+    eq(vscode.debug.breakpoints.length, 1, 'exactly ONE breakpoint is armed');
+
+    // Interaction 2 — debug the whole class. The one armed body binds and stops.
+    await debugRun([classRow]);
+    assertOneTestSession(sessions, 'debugging a class with one armed test');
+    assertHandshakeOrder(recorder, 'debugging a class with one armed test');
+    assertBoundAtLines(
+      recorder,
+      [CS_SOURCE.dapLine('multiplies-seed')],
+      'the single armed body of a class-level debug',
+    );
+    const stop = requireAt(await recorder.waitForStops(1), 0, 'the stop in the armed test');
+    assertStopReason(stop, 'breakpoint', 'a class debug with one armed test');
+    const frame = await topFrame(requireActive('the armed stop'), stop.threadId);
+    eq(methodOf(frame), 'Multiplies_Two_Numbers', 'in the test the user armed, and no other');
+
+    // Interaction 3 — running on, the session ends with no further stop, even
+    // though four other tests of the class ran to completion inside it.
+    await gesture(CMD_CONTINUE);
+    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    eq(
+      recorder.stops().length,
+      1,
+      'the other four tests of the class execute but carry no breakpoint, so they must not stop',
+    );
+    eq(sessions.ours.length, 1, 'and a class is ONE session throughout');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+  });
+
+  test('a DISABLED breakpoint in a group is bound by nothing and stops nothing', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // A disabled breakpoint is a user gesture with a precise meaning: keep it,
+    // do not honour it. A group debug that honoured it anyway would halt on a
+    // line the user deliberately switched off.
+    //
+    // Interaction 1 — arm one enabled and one disabled breakpoint in two
+    // different tests of the same class.
+    const root = await assemblyRoot();
+    const classRow = groupUnder(groupUnder(root, CS_MATH_NAMESPACE), 'CalculatorTests');
+    vscode.debug.addBreakpoints([
+      breakpointAt(CS_SOURCE, fixture.sourceUri, 'adds-seed'),
+      disabledBreakpointAt(CS_SOURCE, fixture.sourceUri, 'multiplies-seed'),
+    ]);
+    eq(vscode.debug.breakpoints.length, 2, 'two breakpoints are registered');
+    eq(
+      vscode.debug.breakpoints.filter((each) => each.enabled).length,
+      1,
+      'but only ONE of them is enabled',
+    );
+
+    // Interaction 2 — debug the class. Only the enabled line is sent to the
+    // adapter, so only it can bind.
+    await debugRun([classRow]);
+    assertOneTestSession(sessions, 'debugging a class with a disabled breakpoint');
+    assertBoundAtLines(
+      recorder,
+      [CS_SOURCE.dapLine('adds-seed')],
+      'only the ENABLED breakpoint of a group debug',
+    );
+
+    // Interaction 3 — exactly one stop, in the enabled test, and the session
+    // ends without ever visiting the disabled line.
+    const stop = requireAt(await recorder.waitForStops(1), 0, 'the stop at the enabled line');
+    assertStopReason(stop, 'breakpoint', 'a group debug with one line disabled');
+    eq(
+      methodOf(await topFrame(requireActive('the enabled stop'), stop.threadId)),
+      'Adds_Two_Numbers',
+      'in the test carrying the ENABLED breakpoint',
+    );
+    await gesture(CMD_CONTINUE);
+    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    eq(recorder.stops().length, 1, 'the disabled line must never produce a stop');
+    deepEq(recorder.errors, [], 'and no adapter transport error');
+  });
+
+  test('debugging a group leaves the TREE and the other namespace intact', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // A debug run is still a run: it must not reshape the Testing view, and it
+    // must not quietly widen past the row the user pressed.
+    //
+    // Interaction 1 — the tree before, and the two namespaces it holds.
+    const root = await assemblyRoot();
+    const api = await activateTestExplorer();
+    const before = [...collectLeafIds(api.testController.items)].sort();
+    deepEq(before, [...CS_ALL].sort(), 'the fixture is fully discovered before debugging');
+    eq(rootsOf(root.children).length, 2, 'the assembly holds two namespaces');
+    const textRow = groupUnder(root, CS_TEXT_NAMESPACE);
+    const textChildren = textRow.children.size;
+    neq(textChildren, 0, 'and the other namespace holds tests of its own');
+
+    // Interaction 2 — debug the TEXT namespace, with its own body armed.
+    vscode.debug.addBreakpoints([breakpointAt(CS_SOURCE, fixture.sourceUri, 'text-seed')]);
+    eq(vscode.debug.breakpoints.length, 1, 'one breakpoint, in the namespace being debugged');
+    await debugRun([textRow]);
+    assertOneTestSession(sessions, 'debugging the text namespace');
+    assertBoundAtLines(
+      recorder,
+      [CS_SOURCE.dapLine('text-seed')],
+      'the armed body of the text namespace',
+    );
+    const stop = requireAt(await recorder.waitForStops(1), 0, 'the stop in the text namespace');
+    assertStopReason(stop, 'breakpoint', 'debugging the text namespace');
+    eq(
+      methodOf(await topFrame(requireActive('the text stop'), stop.threadId)),
+      'Joins_Two_Words',
+      'in the one test that namespace declares',
+    );
+
+    // Interaction 3 — the session ends, and the view is exactly as it was.
+    await gesture(CMD_CONTINUE);
+    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    deepEq(
+      [...collectLeafIds(api.testController.items)].sort(),
+      before,
+      'debugging a namespace must not add, drop or reorder a row',
+    );
+    eq(rootsOf(api.testController.items).length, 1, 'still ONE assembly root');
+    eq(textRow.children.size, textChildren, 'and the debugged group keeps its children');
+    eq(sessions.ours.length, 1, 'one group, one session');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
   });
 });

@@ -63,6 +63,8 @@ import {
   drainDiscovery,
   findItem,
   pollUntilDiscovered,
+  profileOfKind,
+  rootsOf,
   runViaProfile,
 } from './test-explorer-kit';
 import {
@@ -732,5 +734,194 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       sorted(ALL_COVERAGE_TESTS),
       'and a single-test coverage run leaves the whole tree standing',
     );
+  });
+
+  test('Run with Coverage on the ASSEMBLY ROOT of one project reports that project alone', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // Interaction 1 — the Testing view shows one root per test project, and the
+    // user presses the coverage action on the F# one.
+    const roots = rootsOf(api.testController.items);
+    assert.strictEqual(roots.length, TEST_PROJECTS, 'one assembly root per test project');
+    const fsRoot = roots.find((item) => item.label === 'CoverFs');
+    assert.ok(fsRoot, `the CoverFs root must exist; saw ${roots.map((r) => r.label).join(' | ')}`);
+    assert.strictEqual(
+      fsRoot.id.startsWith('assembly:'),
+      true,
+      `an assembly root is a GROUP id, never an FQN; got ${fsRoot.id}`,
+    );
+    assert.strictEqual(fsRoot.canResolveChildren, true, 'and it expands');
+
+    // Interaction 2 — both F# tests report, and neither C# test does: a root run
+    // is ONE invocation for THAT selection ([TEST-RUN-TRX]).
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Coverage, [fsRoot]);
+    assertPassed(cachedFor(api, FS_COVERS), FS_COVERS);
+    assertPassed(cachedFor(api, FS_ISOLATED), FS_ISOLATED);
+    for (const id of [FS_COVERS, FS_ISOLATED]) {
+      assert.strictEqual(
+        (cachedFor(api, id).message ?? '').includes(NO_RESULT),
+        false,
+        `${id} ran under the root selection, so it reports no missing result`,
+      );
+    }
+
+    // Interaction 3 — the coverage collected is that project's alone: `Multiply`
+    // ran, `Add` did not, because no C# test was in the selection.
+    const covered = [
+      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
+    ];
+    assert.ok(
+      covered.includes(declarationLine(COVERED_BY_FSHARP)),
+      `the F# project's test calls Calculator.${COVERED_BY_FSHARP}, so its line must be covered`,
+    );
+    assert.strictEqual(
+      covered.includes(declarationLine(COVERED_BY_CSHARP)),
+      false,
+      `no C# test ran, so Calculator.${COVERED_BY_CSHARP} must not be reported as executed — ` +
+        'a stale report attached from an earlier run would claim it was',
+    );
+    for (const name of NEVER_COVERED) {
+      assert.strictEqual(
+        covered.includes(declarationLine(name)),
+        false,
+        `Calculator.${name} is never executed by anything`,
+      );
+    }
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted(ALL_COVERAGE_TESTS),
+      'and the tree stands',
+    );
+  });
+
+  test('two coverage runs of DIFFERENT selections never bleed into one another', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // The sharpest form of "freshly emptied": the second run's report must not
+    // merely be new, it must not CONTAIN the first run's coverage. A reused
+    // directory shows the union of both, which reads as a test having covered
+    // code it never touched.
+    //
+    // Interaction 1 — cover the C# side only.
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Coverage,
+      itemsFor(api, [CS_COVERS]),
+    );
+    const firstCovered = [
+      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
+    ];
+    assert.ok(
+      firstCovered.includes(declarationLine(COVERED_BY_CSHARP)),
+      `the C# run covers Calculator.${COVERED_BY_CSHARP}`,
+    );
+    assert.strictEqual(
+      firstCovered.includes(declarationLine(COVERED_BY_FSHARP)),
+      false,
+      `and not Calculator.${COVERED_BY_FSHARP}`,
+    );
+    const firstDirs = reportDirsOf(coverageDir);
+    assert.ok(firstDirs.length >= 1, 'the first run wrote at least one run-id folder');
+
+    // Interaction 2 — now cover the F# side only.
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Coverage,
+      itemsFor(api, [FS_COVERS]),
+    );
+    const secondCovered = [
+      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
+    ];
+
+    // Interaction 3 — the second run's coverage is the F# side's ALONE. The C#
+    // line the previous run covered must be gone.
+    assert.ok(
+      secondCovered.includes(declarationLine(COVERED_BY_FSHARP)),
+      `the F# run covers Calculator.${COVERED_BY_FSHARP}`,
+    );
+    assert.strictEqual(
+      secondCovered.includes(declarationLine(COVERED_BY_CSHARP)),
+      false,
+      `Calculator.${COVERED_BY_CSHARP} was covered by the PREVIOUS run only. Reporting it now ` +
+        "means the results directory was reused and the user is reading yesterday's coverage",
+    );
+    assert.deepStrictEqual(
+      reportDirsOf(coverageDir).filter((dir) => firstDirs.includes(dir)),
+      [],
+      'and no run-id folder from the first run survived into the second',
+    );
+    assert.notDeepStrictEqual(
+      [...secondCovered].sort((a, b) => a - b),
+      [...firstCovered].sort((a, b) => a - b),
+      'two different selections must not produce the same coverage',
+    );
+
+    // Interaction 4 — and the outcomes are the selections', not the union.
+    assertPassed(cachedFor(api, FS_COVERS), FS_COVERS);
+    assertPassed(cachedFor(api, CS_COVERS), CS_COVERS);
+    assert.strictEqual(
+      (cachedFor(api, FS_COVERS).message ?? '').includes(NO_RESULT),
+      false,
+      'the second run reported its own selection',
+    );
+  });
+
+  test('the Debug profile collects no coverage either', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // [TEST-COVERAGE] attaches `--collect` and a `--results-directory` to the
+    // Run-with-Coverage profile. Only that one: a Debug session that swept the
+    // directory would delete the report the user is looking at.
+    //
+    // Interaction 1 — collect coverage, and record exactly what landed.
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Coverage,
+      itemsFor(api, [CS_COVERS, FS_COVERS]),
+    );
+    const entries = fs.readdirSync(coverageDir).sort();
+    const reports = findCoberturaFiles(coverageDir);
+    assert.strictEqual(reports.length, TEST_PROJECTS, 'both projects reported');
+    const stamps = reports.map((report) => fs.statSync(report).mtimeMs);
+    assert.strictEqual(
+      stamps.every((stamp) => stamp > 0),
+      true,
+      'each report has a timestamp',
+    );
+
+    // Interaction 2 — the controller registers three profiles, and Debug is one
+    // of them; it is a distinct kind from Coverage.
+    const debugProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Debug);
+    const coverageProfile = profileOfKind(api.testController, vscode.TestRunProfileKind.Coverage);
+    assert.notStrictEqual(debugProfile.kind, coverageProfile.kind, 'Debug is not Coverage');
+    assert.strictEqual(debugProfile.isDefault, false, 'and Debug is not the default ▶');
+    assert.strictEqual(
+      coverageProfile.kind,
+      vscode.TestRunProfileKind.Coverage,
+      'the coverage profile is the coverage kind',
+    );
+
+    // Interaction 3 — the directory is exactly as the coverage run left it. This
+    // reads the directory rather than starting a debug session, because the
+    // claim is about what the OTHER profiles must not touch.
+    await api.testController.whenIdle();
+    assert.deepStrictEqual(
+      fs.readdirSync(coverageDir).sort(),
+      entries,
+      'nothing but a coverage run may add to or remove from the results directory',
+    );
+    assert.deepStrictEqual(
+      findCoberturaFiles(coverageDir),
+      reports,
+      'the same reports are still there',
+    );
+    assert.deepStrictEqual(
+      findCoberturaFiles(coverageDir).map((report) => fs.statSync(report).mtimeMs),
+      stamps,
+      'unrewritten',
+    );
+    for (const report of reports) {
+      assert.ok(libraryLinesIn(report).length > 0, `${report} still describes a real run`);
+    }
   });
 });

@@ -43,6 +43,7 @@ import {
   activateTestExplorer,
   drainDiscovery,
   pollUntilDiscovered,
+  rootsOf,
   runViaProfile,
 } from './test-explorer-kit';
 import { cachedFor, itemsFor, sorted } from './test-explorer-outcome-assertions';
@@ -475,6 +476,289 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
       (statusFor(restored, methodOf(CS.failing)) ?? '').includes('Assert.Equal'),
       true,
       'assertion text included',
+    );
+  });
+
+  test('the Run action ON the lens runs that test and updates that row', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // [TEST-STATUS-LENS] gives every test method "Run and Debug actions". The
+    // Run action carries `(uri, methodName)` and nothing else, so it can only
+    // work if the method name it read out of the editor resolves back to a
+    // discovered test — the exact lookup a decorated id breaks.
+    //
+    // Interaction 1 — the user opens the file and reads the row.
+    const document = await vscode.workspace.openTextDocument(csFile);
+    await vscode.window.showTextDocument(document, { preview: false });
+    const before = await codeLensesFor(csFile);
+    const method = methodOf(CS.passing);
+    const runAction = actionLenses(before).find(
+      (lens) =>
+        lens.command?.command === CMD_TEST_RUN_AT_CURSOR && lens.command.arguments?.[1] === method,
+    );
+    assert.ok(runAction, `${method} must offer a Run action`);
+    assert.strictEqual(runAction.command?.title, '$(play) Run Test', 'rendered as the play action');
+    assert.strictEqual(
+      runAction.command?.arguments?.length,
+      2,
+      'the at-cursor command takes (uri, methodName) — a missing argument makes it a no-op',
+    );
+    assert.strictEqual(
+      runAction.command?.arguments?.[0]?.toString(),
+      csFile.toString(),
+      'pointing at the file the user is looking at',
+    );
+
+    // Interaction 2 — press it. The command resolves the method to a discovered
+    // test and runs it, with no test-tree selection involved at all.
+    await vscode.commands.executeCommand(
+      CMD_TEST_RUN_AT_CURSOR,
+      ...(runAction.command?.arguments ?? []),
+    );
+    await api.testController.whenIdle();
+    const result = cachedFor(api, CS.passing);
+    assert.strictEqual(result.outcome, 'passed', `${CS.passing} passes when run from the lens`);
+    assert.strictEqual(result.passed, true, 'with the pass flag set');
+    assert.strictEqual(
+      (result.message ?? '').includes('No result reported'),
+      false,
+      'the lens resolved to a REAL test, so a real result came back',
+    );
+
+    // Interaction 3 — the row the user pressed now shows that result, and the
+    // rows around it are untouched.
+    const after = await codeLensesFor(csFile);
+    assert.strictEqual(
+      statusFor(after, method),
+      `${PASSED_PREFIX}${formatDuration(result.duration)}`,
+      'the row the user acted on shows the outcome of the run they started',
+    );
+    assert.strictEqual(
+      statusFor(after, methodOf(CS.skipped)),
+      SKIPPED_TITLE,
+      'and an untouched row keeps its LAST KNOWN result',
+    );
+    assert.deepStrictEqual(
+      lensedMethods(after),
+      lensedMethods(before),
+      'running from the lens adds and removes no lenses',
+    );
+    assert.strictEqual(
+      (statusFor(after, method) ?? '').startsWith(NOT_RUN),
+      false,
+      'and the row certainly no longer reads "Not run"',
+    );
+    await closeAllEditors();
+  });
+
+  test('a COVERAGE run paints exactly the same statuses as a plain run', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // [TEST-COVERAGE] adds `--collect` to the same invocation [TEST-RUN-TRX]
+    // describes. Collecting coverage must not change a single thing the user
+    // reads above a method.
+    //
+    // Interaction 1 — run everything under the plain profile, and record the
+    // rows.
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Run,
+      itemsFor(api, ALL_TESTS),
+    );
+    const plain = await codeLensesFor(csFile);
+    const plainStatuses = lensedMethods(plain).map((method) => statusFor(plain, method) ?? '');
+    assert.strictEqual(
+      plainStatuses.every((title) => title.length > 0),
+      true,
+      'every method shows a status after a plain run',
+    );
+    assert.strictEqual(
+      plainStatuses.some((title) => title.startsWith(PASSED_PREFIX)),
+      true,
+      'including at least one pass',
+    );
+    assert.strictEqual(
+      plainStatuses.some((title) => title.startsWith(FAILED_PREFIX)),
+      true,
+      'at least one failure',
+    );
+    assert.strictEqual(plainStatuses.includes(SKIPPED_TITLE), true, 'and the skip');
+
+    // Interaction 2 — run the same selection with coverage.
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Coverage,
+      itemsFor(api, ALL_TESTS),
+    );
+    const covered = await codeLensesFor(csFile);
+    assert.deepStrictEqual(
+      lensedMethods(covered),
+      lensedMethods(plain),
+      'a coverage run changes which methods carry a lens not at all',
+    );
+
+    // Interaction 3 — every row shows the same KIND of status it did before. The
+    // durations may differ between two real runs, so the icons are what is
+    // compared, not the whole title.
+    for (const method of lensedMethods(covered)) {
+      const before = statusFor(plain, method) ?? '';
+      const after = statusFor(covered, method) ?? '';
+      assert.strictEqual(
+        after.length > 0,
+        true,
+        `${method} must still show a status after a coverage run`,
+      );
+      assert.strictEqual(
+        after.split(' ')[0],
+        before.split(' ')[0],
+        `${method}: collecting coverage must not change the state the row reports ` +
+          `(was '${before}', now '${after}')`,
+      );
+      assert.strictEqual(
+        after.startsWith(NOT_RUN),
+        false,
+        `${method} ran under coverage, so it must not read "Not run"`,
+      );
+    }
+    assert.strictEqual(
+      statusFor(covered, methodOf(CS.skipped)),
+      SKIPPED_TITLE,
+      'a skip is still a skip under --collect',
+    );
+    assert.strictEqual(
+      (statusFor(covered, methodOf(CS.failing)) ?? '').includes('Assert.Equal'),
+      true,
+      'and a failure still carries its assertion text',
+    );
+  });
+
+  test('closing and reopening the file re-renders the LAST KNOWN result', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // "Showing its LAST KNOWN result" is a claim about memory, not about the
+    // current editor session: a user who closes a file and comes back must not
+    // find every row reset to "Not run".
+    //
+    // Interaction 1 — run the tree, then read the rows with the file open.
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Run,
+      itemsFor(api, ALL_TESTS),
+    );
+    const opened = await vscode.workspace.openTextDocument(csFile);
+    await vscode.window.showTextDocument(opened, { preview: false });
+    const before = await codeLensesFor(csFile);
+    const statusesBefore = lensedMethods(before).map((method) => statusFor(before, method) ?? '');
+    assert.strictEqual(statusesBefore.length > 0, true, 'the file carries lensed methods');
+    assert.deepStrictEqual(
+      statusesBefore.filter((title) => title.startsWith(NOT_RUN)),
+      [],
+      'and none of them reads "Not run" straight after a run',
+    );
+
+    // Interaction 2 — close every editor, then open the file again.
+    await closeAllEditors();
+    assert.strictEqual(
+      vscode.window.visibleTextEditors.length,
+      0,
+      'the user has closed every editor',
+    );
+    const reopened = await vscode.workspace.openTextDocument(csFile);
+    await vscode.window.showTextDocument(reopened, { preview: false });
+    assert.strictEqual(
+      vscode.window.activeTextEditor?.document.uri.fsPath,
+      csFile.fsPath,
+      'and opened it again',
+    );
+
+    // Interaction 3 — the same rows, carrying the same results.
+    const after = await codeLensesFor(csFile);
+    assert.deepStrictEqual(
+      lensedMethods(after),
+      lensedMethods(before),
+      'reopening the file offers the same methods',
+    );
+    for (const method of lensedMethods(after)) {
+      assert.strictEqual(
+        statusFor(after, method),
+        statusFor(before, method),
+        `${method} must still show the result it showed before the file was closed — the ` +
+          'cache is a property of the session, not of the open editor',
+      );
+      assert.strictEqual(
+        (statusFor(after, method) ?? '').startsWith(NOT_RUN),
+        false,
+        `${method} has run, so reopening the file must not reset it to "Not run"`,
+      );
+    }
+    await closeAllEditors();
+  });
+
+  test('a run started from the TREE repaints the rows of BOTH language files', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // The lens and the Testing view read the same cache, so a run started
+    // anywhere must be visible everywhere — including in a file the user never
+    // touched, and in the other language.
+    //
+    // Interaction 1 — the F# rows before, from a run of the C# side alone.
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Run,
+      itemsFor(api, [CS.passing]),
+    );
+    const csRows = await codeLensesFor(csFile);
+    assert.strictEqual(
+      (statusFor(csRows, methodOf(CS.passing)) ?? '').startsWith(PASSED_PREFIX),
+      true,
+      'the C# row the run covered is green',
+    );
+
+    // Interaction 2 — now run the whole tree from the assembly root, the way a
+    // user presses ▶ on the top row of the Testing view.
+    const roots = rootsOf(api.testController.items);
+    assert.ok(roots.length >= 1, 'the Testing view has at least one assembly root');
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, roots);
+
+    // Interaction 3 — every row of BOTH files now carries a real status, F#
+    // included, spaced binding included.
+    const csAfter = await codeLensesFor(csFile);
+    const fsAfter = await codeLensesFor(fsFile);
+    for (const [file, lenses] of [
+      [csFile, csAfter],
+      [fsFile, fsAfter],
+    ] as const) {
+      const methods = lensedMethods(lenses);
+      assert.ok(methods.length > 0, `${path.basename(file.fsPath)} carries lensed methods`);
+      for (const method of methods) {
+        const title = statusFor(lenses, method) ?? '';
+        assert.strictEqual(
+          title.length > 0,
+          true,
+          `${path.basename(file.fsPath)}: ${method} must show a status after a root run`,
+        );
+        assert.strictEqual(
+          title.startsWith(NOT_RUN),
+          false,
+          `${path.basename(file.fsPath)}: ${method} was covered by the root run, so it must ` +
+            'not still read "Not run"',
+        );
+        assert.strictEqual(
+          STATUS_ICONS.some((icon) => title.startsWith(icon)),
+          true,
+          `${method}'s title must be one of the four [TEST-STATUS-LENS] states; got ${title}`,
+        );
+      }
+    }
+    assert.strictEqual(
+      (statusFor(fsAfter, methodOf(FS_SPACED)) ?? '').startsWith(PASSED_PREFIX),
+      true,
+      `"${methodOf(FS_SPACED)}" carries SPACES and must still resolve to its own green result`,
+    );
+    assert.strictEqual(
+      statusFor(fsAfter, methodOf(FSX.skipped)),
+      SKIPPED_TITLE,
+      'and the F# skip is still a skip',
     );
   });
 });
