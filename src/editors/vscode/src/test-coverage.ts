@@ -116,3 +116,48 @@ export function loadDetailedCoverage(
 ): vscode.FileCoverageDetail[] {
   return coverageDetails.get(fileCoverage.uri.toString()) ?? [];
 }
+
+/**
+ * Every report merged: ONE {@link vscode.FileCoverage} per source file, whose
+ * detail is the UNION of every report that measured it.
+ *
+ * [TEST-COVERAGE] warns that "taking only the first drops every other project's
+ * coverage". Attaching each report's entry separately loses it just as surely
+ * at the other end: two test projects covering one library produce two entries
+ * for the SAME file, and the detail behind them is stashed by file URI, so the
+ * last report parsed overwrites the first. VS Code then resolves that one
+ * report's lines for both entries, and a function the other project executed is
+ * painted as dead code — a wrong red gutter on a line that just ran.
+ *
+ * Hits are taken per line as the MAXIMUM across reports, because a line one
+ * project never executed is not evidence that another did not.
+ */
+export function mergeCoberturaReports(reports: readonly string[]): vscode.FileCoverage[] {
+  const hitsByFile = new Map<string, Map<number, number>>();
+  for (const report of reports) {
+    for (const file of parseCoberturaXml(report)) {
+      const key = file.uri.toString();
+      const lines = hitsByFile.get(key) ?? new Map<number, number>();
+      for (const detail of coverageDetails.get(key) ?? []) {
+        const at = detail.location;
+        const line = at instanceof vscode.Range ? at.start.line : at.line;
+        lines.set(line, Math.max(lines.get(line) ?? 0, Number(detail.executed)));
+      }
+      hitsByFile.set(key, lines);
+    }
+  }
+  return [...hitsByFile].map(([uri, lines]) => mergedFileCoverage(vscode.Uri.parse(uri), lines));
+}
+
+/** Rebuild one file's coverage from the union of its per-line hit counts. */
+function mergedFileCoverage(
+  uri: vscode.Uri,
+  lines: ReadonlyMap<number, number>,
+): vscode.FileCoverage {
+  const details = [...lines]
+    .sort(([a], [b]) => a - b)
+    .map(([line, hits]) => new vscode.StatementCoverage(hits, new vscode.Position(line, 0)));
+  const covered = details.filter((detail) => Number(detail.executed) > 0).length;
+  coverageDetails.set(uri.toString(), details);
+  return new vscode.FileCoverage(uri, new vscode.TestCoverageCount(covered, details.length));
+}

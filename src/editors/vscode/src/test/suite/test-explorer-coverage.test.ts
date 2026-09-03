@@ -35,6 +35,7 @@ import {
   findCoberturaFile,
   findCoberturaFiles,
   loadDetailedCoverage,
+  mergeCoberturaReports,
   parseCoberturaXml,
 } from '../../test-coverage.js';
 import { filterClause } from '../../test-filter.js';
@@ -413,6 +414,89 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       assert.ok(
         executedLines(loadDetailedCoverage(file)).length > 0,
         `report ${index + 1} must report executed library lines, not an empty report`,
+      );
+    }
+  });
+
+  test('every report’s detail SURVIVES the merge, not just the last one parsed', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // [TEST-COVERAGE]: "**every** one of them is parsed into `vscode.FileCoverage`
+    // entries and attached to the run … taking only the first drops every other
+    // project's coverage."
+    //
+    // Every other test here parses ONE report and resolves its detail straight
+    // away. That is not the order `addCoverage` uses: it takes ALL the reports
+    // first, and VS Code asks for per-line detail later, when the user expands
+    // the file. Both fixture projects cover the SAME `Calculator.cs`, and detail
+    // is stashed by file URI — so reading a report back only right after parsing
+    // it is exactly what hid the last report answering for every entry.
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Coverage,
+      itemsFor(api, ALL_COVERAGE_TESTS),
+    );
+    const reports = findCoberturaFiles(coverageDir);
+    assert.strictEqual(reports.length, TEST_PROJECTS, 'both reports are available to merge');
+
+    // Interaction 2 — merged as the run attaches them: ONE entry per source
+    // file, not one per report. Two entries for a file cannot both be right
+    // about it, and only one of them can own the stashed detail.
+    const merged = mergeCoberturaReports(reports);
+    const library = merged.filter((file) => path.basename(file.uri.fsPath) === LIBRARY_FILE);
+    assert.strictEqual(
+      library.length,
+      1,
+      `${LIBRARY_FILE} is covered by both projects and must merge to ONE entry; got ` +
+        merged.map((file) => path.basename(file.uri.fsPath)).join(' | '),
+    );
+    const [file] = library;
+    assert.ok(file, 'the merged library entry');
+
+    // Interaction 3 — the merged detail carries BOTH projects' work. `Add` is
+    // reachable only from the C# project and `Multiply` only from the F# one,
+    // so a merge that let one report win paints a just-executed function as
+    // dead code — a wrong RED gutter, not merely a missing one.
+    const executed = executedLines(loadDetailedCoverage(file));
+    for (const name of [COVERED_BY_CSHARP, COVERED_BY_FSHARP]) {
+      assert.strictEqual(
+        executed.includes(declarationLine(name)),
+        true,
+        `Calculator.${name} was executed, so the merged detail must cover line ` +
+          `${String(declarationLine(name))}; covered: ${executed.join(',')}`,
+      );
+    }
+
+    // Interaction 4 — the merge is strictly better than either report alone,
+    // and the summary beside it agrees with the detail behind it.
+    for (const report of reports) {
+      const alone = libraryLinesIn(report);
+      assert.ok(
+        alone.every((line) => executed.includes(line)),
+        `the merge must keep every line ${report} reported: ${alone.join(',')}`,
+      );
+    }
+    assert.ok(
+      executed.length > Math.max(...reports.map((report) => libraryLinesIn(report).length)),
+      'and cover more than any single report, or the fixture proves nothing',
+    );
+    assert.strictEqual(
+      file.statementCoverage.covered,
+      executed.length,
+      'the merged summary the gutter shows counts exactly the merged executed lines',
+    );
+    assert.strictEqual(
+      loadDetailedCoverage(file).length,
+      file.statementCoverage.total,
+      'and its total counts every line the merged detail carries',
+    );
+
+    // Interaction 5 — nothing the collector never measured is invented.
+    for (const name of NEVER_COVERED) {
+      assert.strictEqual(
+        executed.includes(declarationLine(name)),
+        false,
+        `nothing executes Calculator.${name}, so merging must not cover it either`,
       );
     }
   });

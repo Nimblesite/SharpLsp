@@ -10,7 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { info } from './log';
-import { findCoberturaFiles, parseCoberturaXml } from './test-coverage';
+import { findCoberturaFiles, mergeCoberturaReports } from './test-coverage';
 import type { TestOutcome } from './test-run-output';
 import type { TrxTestResult } from './test-trx';
 
@@ -133,15 +133,20 @@ export function freshCoverageDir(cwd: string): string {
   return dir;
 }
 
-/** Attach any Cobertura report the coverage run produced to the test run. */
+/**
+ * Attach any Cobertura report the coverage run produced to the test run.
+ *
+ * The reports are MERGED per file rather than attached one by one. Two test
+ * projects covering one library each report that library, and the per-line
+ * detail behind an entry is stashed by file URI — so attaching both entries
+ * left the last report parsed answering for both, and a function the other
+ * project executed came back uncovered ([TEST-COVERAGE]).
+ */
 export function addCoverage(run: vscode.TestRun, resultsDirectory: string): void {
   const reports = findCoberturaFiles(resultsDirectory);
-  let attached = 0;
-  for (const report of reports) {
-    for (const fileCoverage of parseCoberturaXml(report)) {
-      run.addCoverage(fileCoverage);
-      attached += 1;
-    }
+  const files = mergeCoberturaReports(reports);
+  for (const fileCoverage of files) {
+    run.addCoverage(fileCoverage);
   }
-  info(`Coverage loaded: ${String(attached)} files from ${String(reports.length)} report(s)`);
+  info(`Coverage loaded: ${String(files.length)} files from ${String(reports.length)} report(s)`);
 }
