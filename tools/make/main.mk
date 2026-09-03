@@ -75,6 +75,7 @@ ZED_DIR     = src/editors/zed
 SIDECAR_CS  = src/sidecars/SharpLsp.Sidecar.CSharp
 SIDECAR_FS  = src/sidecars/SharpLsp.Sidecar.FSharp
 SIDECAR_SLN = src/sidecars/SharpLsp.Sidecars.sln
+SIDECAR_COMMON_TESTS = src/sidecars/SharpLsp.Sidecar.Common.Tests/SharpLsp.Sidecar.Common.Tests.csproj
 RIDER_DIR   = src/editors/rider
 
 BINARY         = target/$(PROFILE)/sharplsp$(EXE_EXT)
@@ -116,7 +117,7 @@ KOVER_PERCENT = dotnet run --file tools/coverage/kover-line-percent.cs --
         _gate-rust-coverage _test-vsix _run-vsix-suite _test-vsix-shard \
         _gate-vsix-coverage _build-vsix-suite _check-vsix-chunks \
         _verify-vsix-payload \
-        _test-dotnet _test-website \
+        _test-dotnet _test-dotnet-win-transport _test-tooling _test-website \
         _lint-rust _lint-zed _lint-vsix _lint-dotnet \
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
         _package-vsix _package-archive \
@@ -250,7 +251,7 @@ ci: lint test build
 
 # ── Test ─────────────────────────────────────────────────────────
 
-test: _test-rust _test-zed _test-vsix _test-dotnet _test-rider _test-website
+test: _test-rust _test-zed _test-vsix _test-dotnet _test-rider _test-tooling _test-website
 	@echo "==> All tests passed."
 
 # Public alias — CI and developers call this.
@@ -532,6 +533,31 @@ _test-dotnet: $(if $(VSIX_PREBUILT),,_build-dotnet)
 	 _check_cov SharpLsp.Sidecar.CSharp sharplsp-sidecar-csharp ; \
 	 _check_cov SharpLsp.Sidecar.FSharp sharplsp-sidecar-fsharp ; \
 	 _check_cov SharpLsp.Sidecar.Common sharplsp-sidecar-common
+
+# [DIST-CI-WIN-TRANSPORT] The win32 arm of the sidecar IPC transport. ONLY
+# the classes whose behaviour is platform-dependent run here - named-pipe
+# connection setup, and the real sidecar handshake over those pipes. Every
+# other class in SharpLsp.Sidecar.Common.Tests is platform-agnostic and
+# already ran ONCE in _test-dotnet on Ubuntu; running the whole project
+# again on Windows executed ~12 files' worth of identical assertions a
+# second time, which the pipeline's run-every-test-exactly-once rule
+# forbids ([DIST-CI-LAYOUT]).
+DOTNET_WIN_TRANSPORT_FILTER = FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.IpcConnectionTests|FullyQualifiedName~SharpLsp.Sidecar.Common.Tests.SidecarHostEndToEndTests
+
+_test-dotnet-win-transport:
+	@echo "==> Running win32 named-pipe transport tests..."
+	dotnet test $(SIDECAR_COMMON_TESTS) --configuration $(DOTNET_CFG) \
+		--filter "$(DOTNET_WIN_TRANSPORT_FILTER)" \
+		--blame-hang-timeout 2min --blame-hang-dump-type none
+
+# [DIST-DEBUGGER-BUNDLE] Tests for the repo's own build tooling, as opposed to
+# the product. Today that is how the netcoredbg debug adapter is obtained -
+# the supply-chain path that every VSIX and every release depends on, and that
+# nothing else in the suite exercises. Node's built-in runner, so this needs no
+# dependency of its own.
+_test-tooling:
+	@echo "==> Running repo tooling tests..."
+	node --test tools/netcoredbg/custody.test.mjs
 
 website-build:
 	@echo "==> Building website..."

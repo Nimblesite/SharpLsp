@@ -269,6 +269,48 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
       );
       assert.strictEqual(assembly.trim(), assembly, `${assembly} must carry no banner padding`);
     }
+    // Interaction 3 - the two announced assemblies really are the SAME project
+    // built twice. Same file name, different `bin/Debug/<tfm>/` segment: that
+    // is precisely the shape discovery used to group apart.
+    const announced = parseTestAssemblies(listing);
+    assert.strictEqual(announced.length, frameworks.length, 'one assembly per target framework');
+    assert.strictEqual(
+      new Set(announced.map((assembly) => path.basename(assembly))).size,
+      1,
+      'both assemblies carry the SAME file name - which is why a path-keyed tree showed the ' +
+        'project twice under two indistinguishable labels',
+    );
+    assert.strictEqual(
+      new Set(announced.map((assembly) => path.dirname(assembly))).size,
+      frameworks.length,
+      'and sit in different directories, one per framework',
+    );
+    for (const framework of frameworks) {
+      assert.ok(
+        announced.some((assembly) => path.basename(path.dirname(assembly)) === framework),
+        `${framework} must have contributed an announced assembly of its own`,
+      );
+      assert.ok(
+        listing.includes(framework),
+        `the raw listing must name ${framework}; without a runtime for it the fixture ` +
+          'degrades to a single target and this whole suite passes vacuously',
+      );
+    }
+    assert.strictEqual(
+      new Set(frameworks).size,
+      frameworks.length,
+      'the two target frameworks are genuinely different',
+    );
+    assert.strictEqual(
+      listing.includes('Test run for '),
+      true,
+      'the raw listing carries the banners this all rests on',
+    );
+    assert.strictEqual(
+      perFramework.size,
+      frameworks.length,
+      'one per-framework listing per announced assembly',
+    );
   });
 
   test('a test compiled behind #if exists in ONE framework’s assembly and not the other’s', function () {
@@ -332,6 +374,48 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
       sorted([...new Set([...first, ...second])]),
       sorted(expected),
       'their union is exactly what the merged tree must carry',
+    );
+    // Interaction 3 - the two listings differ, and neither contains the other.
+    // That is what makes "the UNION of the frameworks' listings" a claim a
+    // first-wins implementation can fail.
+    const listings = [...perFramework.values()];
+    assert.strictEqual(listings.length, frameworks.length, 'one listing per framework');
+    const [tfmOne, tfmTwo] = listings;
+    assert.ok(tfmOne && tfmTwo, 'both frameworks produced a listing');
+    assert.notDeepStrictEqual(
+      sorted(tfmOne),
+      sorted(tfmTwo),
+      'the two assemblies must NOT contain the same tests, or union and first-wins are the ' +
+        'same list and the rule is untestable',
+    );
+    assert.strictEqual(
+      tfmOne.every((name) => tfmTwo.includes(name)),
+      false,
+      'neither listing is a subset of the other',
+    );
+    assert.strictEqual(
+      tfmTwo.every((name) => tfmOne.includes(name)),
+      false,
+      'in either direction',
+    );
+    for (const shared of SHARED) {
+      assert.ok(tfmOne.includes(shared), `${shared} is compiled into the first assembly`);
+      assert.ok(tfmTwo.includes(shared), 'and into the second');
+    }
+    assert.strictEqual(
+      new Set([...tfmOne, ...tfmTwo]).size,
+      expected.length,
+      'and the union of the two listings is exactly what the merged root must carry',
+    );
+    assert.strictEqual(
+      conditional.length,
+      frameworks.length,
+      'one framework-exclusive test per framework',
+    );
+    assert.strictEqual(
+      expected.length,
+      SHARED.length + conditional.length,
+      'and the union is the shared set plus them',
     );
   });
 
@@ -401,6 +485,42 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
       collectItemIds(api.testController.items).length,
       4 + expected.length,
       'the whole tree is assembly + namespace + two classes + one row per test, nothing doubled',
+    );
+    // Interaction 3 - the single root is a GROUP, and what hangs off it is the
+    // project's own tree, not two copies of it.
+    const settled = rootsOf(api.testController.items);
+    assert.strictEqual(settled.length, 1, 'exactly one root for the whole solution');
+    const only = settled[0];
+    assert.ok(only, 'and it exists');
+    assert.strictEqual(only.canResolveChildren, true, 'a root declares children, so it expands');
+    assert.strictEqual(only.children.size >= 1, true, 'and really holds some');
+    assert.strictEqual(
+      collectLeafIds(only.children).length,
+      expected.length,
+      'every test of BOTH frameworks hangs off the one root',
+    );
+    assert.strictEqual(
+      rootsOf(only.children).some((child) => child.label === only.label),
+      false,
+      'and the root does not contain a second copy of itself',
+    );
+    for (const framework of frameworks) {
+      assert.strictEqual(
+        only.id.includes(framework),
+        false,
+        `the merged root id must not be keyed on ${framework}; a per-framework id is exactly ` +
+          'what produced two indistinguishable roots',
+      );
+    }
+    assert.strictEqual(
+      collectItemIds(api.testController.items).length >= expected.length,
+      true,
+      'the tree holds at least one node per test',
+    );
+    assert.deepStrictEqual(
+      duplicatesIn(rootsOf(api.testController.items).map((item) => item.label)),
+      [],
+      'and no two roots share a label',
     );
   });
 
@@ -473,6 +593,38 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
       );
       assert.strictEqual(item.description, id, `${id} describes itself with its own FQN`);
     }
+    // Interaction 3 - and every id is BARE. A tree that de-duplicated by
+    // appending a framework segment, or that kept an adapter decoration, has
+    // ids no `--filter FullyQualifiedName=` will ever match.
+    const mergedLeaves = collectLeafIds(api.testController.items);
+    assert.deepStrictEqual(duplicatesIn(mergedLeaves), [], 'no fully-qualified name appears twice');
+    assert.deepStrictEqual(sorted(mergedLeaves), sorted(expected), 'the union, exactly');
+    for (const id of mergedLeaves) {
+      assert.strictEqual(withoutAdapterUniqueId(id), id, `${id} carries no adapter decoration`);
+      assert.strictEqual(id.trim(), id, `${id} carries no padding`);
+      for (const framework of frameworks) {
+        assert.strictEqual(
+          id.endsWith(framework),
+          false,
+          `${id} must not be suffixed with ${framework} - the id is the FQN and nothing else`,
+        );
+      }
+    }
+    assert.strictEqual(
+      collectItemIds(api.testController.items).length > mergedLeaves.length,
+      true,
+      'and the group rows above them are ids of their own, so the tree really is a hierarchy',
+    );
+    assert.strictEqual(
+      itemsFor(api, expected).length,
+      expected.length,
+      'every name resolves to a row of its own',
+    );
+    assert.deepStrictEqual(
+      duplicatesIn(collectLeafIds(api.testController.items)),
+      [],
+      'with nothing listed twice',
+    );
   });
 
   test('the merged root RUNS: one outcome per test, however many frameworks built it', async function () {
@@ -559,6 +711,38 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
       sorted(expected),
       'running the merged root must not re-split the tree or drop a test',
     );
+    // Interaction 4 - one cached result per test, and not one of them left
+    // unreported. [TEST-RUN-TRX]: "A selected test with no TRX entry is
+    // reported as errored... It is never silently reported as a pass."
+    for (const id of expected) {
+      const cached = cachedFor(api, id);
+      assert.notStrictEqual(
+        cached.outcome,
+        'notRun',
+        `${id} was in the selection, so the merged run must report an outcome for it`,
+      );
+      assert.strictEqual(
+        ['passed', 'failed', 'skipped'].includes(cached.outcome),
+        true,
+        `${id} must carry one of the three Testing-API outcomes`,
+      );
+      assert.strictEqual(
+        cached.passed === (cached.outcome === 'passed'),
+        true,
+        `${id}: the passed flag must agree with the outcome - a SKIP is not a pass`,
+      );
+    }
+    assert.strictEqual(
+      itemsFor(api, expected).length,
+      expected.length,
+      'and every one of them is still a row in the tree afterwards',
+    );
+    assert.strictEqual(rootsOf(api.testController.items).length, 1, 'the merged run left ONE root');
+    assert.strictEqual(
+      collectLeafIds(api.testController.items).length,
+      expected.length,
+      'holding the whole union',
+    );
   });
 
   test('running ONE framework-exclusive test filters to it alone and reports it', async function () {
@@ -618,6 +802,46 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
       rootsOf(api.testController.items).length,
       1,
       'and the project is still ONE assembly root',
+    );
+    // Interaction 4 - the filter that reached the CLI. [TEST-FILTER-ESCAPE]
+    // makes a single selection a single clause, and the framework-exclusive
+    // name is an ordinary identifier that needs no escaping at all.
+    const exclusive = conditional[0] ?? '';
+    assert.notStrictEqual(exclusive, '', 'the fixture declares a framework-exclusive test');
+    assert.strictEqual(
+      filterClause(exclusive),
+      `FullyQualifiedName=${exclusive}`,
+      'one selected test is one clause, with nothing to escape in it',
+    );
+    assert.deepStrictEqual(
+      buildFilterArgs([{ id: exclusive }]),
+      ['--filter', `FullyQualifiedName=${exclusive}`],
+      'and one --filter argument, never one per framework',
+    );
+    assert.strictEqual(
+      exclusive.startsWith(`${NAMESPACE}.${CONDITIONAL_CLASS}.`),
+      true,
+      'the exclusive test lives in the conditional class',
+    );
+    assert.strictEqual(
+      exclusive.includes(symbolFor(frameworks[0] ?? '')),
+      true,
+      'and its method name names the framework whose assembly compiled it',
+    );
+    assert.notStrictEqual(
+      cachedFor(api, exclusive).outcome,
+      'notRun',
+      'a test that exists in only ONE of the two assemblies must still report a result',
+    );
+    assert.strictEqual(
+      rootsOf(api.testController.items).length,
+      1,
+      'a single-test run leaves ONE root',
+    );
+    assert.strictEqual(
+      itemsFor(api, expected).length,
+      expected.length,
+      'and every other test still a row',
     );
   });
 
@@ -683,6 +907,40 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
       false,
       'the second session did report it, so nothing is missing',
     );
+    // Interaction 4 - a shared test is compiled into BOTH assemblies, so the
+    // run produces TWO TRX entries under one name. [TEST-RUN-TRX] merges them
+    // to the WORST outcome with the durations SUMMED; keeping the last row seen
+    // would report a green tree for a test that failed under one framework.
+    for (const shared of SHARED) {
+      const both = [...perFramework.values()].filter((names) => names.includes(shared));
+      assert.strictEqual(
+        both.length,
+        frameworks.length,
+        `${shared} must be compiled into every framework's assembly`,
+      );
+      const cached = cachedFor(api, shared);
+      assert.notStrictEqual(cached.outcome, 'notRun', `${shared} must carry a merged result`);
+      assert.strictEqual(
+        itemsFor(api, [shared]).length,
+        1,
+        `${shared} must be ONE row, however many assemblies ran it`,
+      );
+    }
+    assert.strictEqual(
+      collectLeafIds(api.testController.items).filter((id) => id === CS.passing).length,
+      1,
+      'the shared passing test appears exactly once in the whole tree',
+    );
+    assert.strictEqual(
+      rootsOf(api.testController.items).length,
+      1,
+      'still ONE root after the shared-test run',
+    );
+    assert.strictEqual(
+      collectLeafIds(api.testController.items).length,
+      expected.length,
+      'holding the whole union',
+    );
   });
 
   test('the CLASS row of the conditional class runs BOTH framework-exclusive tests at once', async function () {
@@ -745,6 +1003,46 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
       rootsOf(api.testController.items).length,
       1,
       'still ONE assembly root after a class-level run',
+    );
+    // Interaction 4 - the conditional CLASS is one row holding one test per
+    // framework, and running it reaches both. A class row that only ever ran
+    // the first framework's test is the union bug wearing a group label.
+    for (const fqn of conditional) {
+      assert.notStrictEqual(
+        cachedFor(api, fqn).outcome,
+        'notRun',
+        `${fqn} must report a result when its CLASS row is run`,
+      );
+      assert.strictEqual(
+        fqn.startsWith(`${NAMESPACE}.${CONDITIONAL_CLASS}.`),
+        true,
+        `${fqn} belongs to the conditional class`,
+      );
+      assert.strictEqual(
+        itemsFor(api, [fqn]).length,
+        1,
+        `${fqn} is one row, addressed by its own name`,
+      );
+    }
+    assert.strictEqual(
+      conditional.length,
+      frameworks.length,
+      'one framework-exclusive test per framework, and no more',
+    );
+    assert.strictEqual(
+      new Set(conditional).size,
+      conditional.length,
+      'each of them under a DIFFERENT name, or the exclusivity is not observable',
+    );
+    assert.strictEqual(
+      rootsOf(api.testController.items).length,
+      1,
+      'a class-row run leaves ONE root',
+    );
+    assert.strictEqual(
+      itemsFor(api, conditional).length,
+      conditional.length,
+      'and both exclusive tests still rows',
     );
   });
 
@@ -811,6 +1109,40 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
       sorted(expected),
       'and the tree stands',
     );
+    // Interaction 4 - the expression a cross-framework multi-select produces.
+    // [TEST-FILTER-ESCAPE]: escaped clauses, OR-ed with an UNESCAPED pipe, in
+    // ONE --filter argument for the whole selection.
+    const both = conditional.map((id) => ({ id }));
+    const orArgs = buildFilterArgs(both);
+    assert.strictEqual(orArgs.length, 2, 'one --filter flag and one expression');
+    assert.strictEqual(orArgs[0], '--filter', 'the flag comes first');
+    assert.strictEqual(
+      orArgs[1],
+      conditional.map((id) => `FullyQualifiedName=${id}`).join('|'),
+      'two selected tests are OR-ed with an unescaped pipe, in selection order',
+    );
+    assert.strictEqual(
+      (orArgs[1] ?? '').split('FullyQualifiedName=').length - 1,
+      conditional.length,
+      'one clause per selected test',
+    );
+    for (const fqn of conditional) {
+      assert.notStrictEqual(
+        cachedFor(api, fqn).outcome,
+        'notRun',
+        `${fqn} was selected, so it must report a result`,
+      );
+    }
+    assert.strictEqual(
+      rootsOf(api.testController.items).length,
+      1,
+      'a cross-framework selection leaves ONE root',
+    );
+    assert.strictEqual(
+      collectLeafIds(api.testController.items).length,
+      expected.length,
+      'holding the whole union',
+    );
   });
 
   test('the NAMESPACE row runs every class under it, across both frameworks', async function () {
@@ -865,6 +1197,37 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
       false,
       'and carries no assertion text, because nothing was asserted',
     );
+    // Interaction 4 - the namespace row spans BOTH classes and BOTH frameworks,
+    // and is still ONE invocation ([TEST-RUN-TRX]).
+    const namespaceLeaves = expected.filter((id) => id.startsWith(`${NAMESPACE}.`));
+    assert.strictEqual(
+      namespaceLeaves.length,
+      expected.length,
+      'every test the fixture declares lives under the one namespace',
+    );
+    for (const id of namespaceLeaves) {
+      assert.notStrictEqual(
+        cachedFor(api, id).outcome,
+        'notRun',
+        `${id} is under the namespace that was run and must report a result`,
+      );
+    }
+    assert.strictEqual(
+      new Set(namespaceLeaves.map((id) => id.slice(0, id.lastIndexOf('.')))).size >= 2,
+      true,
+      'and the namespace really holds more than one class, or the row proves nothing',
+    );
+    assert.strictEqual(rootsOf(api.testController.items).length, 1, 'still ONE assembly root');
+    assert.strictEqual(
+      itemsFor(api, expected).length,
+      expected.length,
+      'every test is still a row after the namespace run',
+    );
+    assert.deepStrictEqual(
+      duplicatesIn(collectLeafIds(api.testController.items)),
+      [],
+      'with nothing duplicated',
+    );
   });
 
   test('the [Theory] merges its rows across BOTH frameworks, and the skip stays a skip', async function () {
@@ -918,6 +1281,41 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
       sorted(collectLeafIds(api.testController.items)),
       sorted(expected),
       'and the merged tree still holds one leaf per test',
+    );
+    // Interaction 4 - a data-driven test writes one TRX entry PER ROW under the
+    // SAME name, in EVERY framework's session. [TEST-RUN-TRX] merges them all
+    // to the worst row with the durations summed.
+    const theory = CS.parameterized;
+    assert.strictEqual(
+      collectLeafIds(api.testController.items).filter((id) => id === theory).length,
+      1,
+      'the theory is ONE leaf, however many rows and frameworks ran it',
+    );
+    const theoryResult = cachedFor(api, theory);
+    assert.notStrictEqual(theoryResult.outcome, 'notRun', 'and it reports a merged result');
+    assert.strictEqual(
+      theoryResult.outcome,
+      'passed',
+      'every row of this theory passes, so the merged outcome is a pass',
+    );
+    assert.strictEqual(theoryResult.passed, true, 'and the passed flag agrees');
+    const mergedSkip = cachedFor(api, CS.skipped);
+    assert.strictEqual(
+      mergedSkip.outcome,
+      'skipped',
+      'a skipped test stays SKIPPED across the merge - [TEST-RUN-TRX] is explicit that it ' +
+        'must not be reported as a failure',
+    );
+    assert.strictEqual(mergedSkip.passed, false, 'and a skip is not a pass either');
+    assert.strictEqual(
+      rootsOf(api.testController.items).length,
+      1,
+      'the theory run leaves ONE root',
+    );
+    assert.strictEqual(
+      itemsFor(api, [CS.parameterized]).length,
+      1,
+      'and the theory is exactly one row',
     );
   });
 
@@ -976,5 +1374,38 @@ suite('Test Explorer — a multi-targeted project is ONE assembly root', () => {
           "the first framework's listing alone would drop it",
       );
     }
+    // Interaction 4 - and a refresh leaves the ids themselves untouched. A
+    // second sweep that re-derived the group key would produce a second root
+    // the first sweep never showed.
+    const afterRefresh = rootsOf(api.testController.items);
+    assert.strictEqual(afterRefresh.length, 1, 'still exactly ONE root after a refresh');
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted(expected),
+      'carrying exactly the union it carried before',
+    );
+    assert.deepStrictEqual(
+      duplicatesIn(collectLeafIds(api.testController.items)),
+      [],
+      'with nothing listed twice',
+    );
+    const refreshed = afterRefresh[0];
+    assert.ok(refreshed, 'the root survived the refresh');
+    assert.strictEqual(refreshed.canResolveChildren, true, 'and still declares its children');
+    assert.strictEqual(
+      collectLeafIds(refreshed.children).length,
+      expected.length,
+      'all of which are still beneath it',
+    );
+    assert.strictEqual(
+      itemsFor(api, expected).length,
+      expected.length,
+      'every test resolves after the refresh',
+    );
+    assert.strictEqual(
+      collectItemIds(api.testController.items).length > expected.length,
+      true,
+      'and the group rows above them survived too',
+    );
   });
 });

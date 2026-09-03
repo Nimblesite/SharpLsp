@@ -1,14 +1,23 @@
 # agent-pmo:0b21609
 ---
-# Reusable editor-integration leg of the PR pipeline (called by ci.yml).
+# PHASE 4 — TEST. The editor-integration leg. [DIST-CI-EDITORS]
 #
 # Both of these shipped for their whole history with no CI job at all. The Zed
 # extension's 23 unit tests existed in the tree and were compiled by
 # `make _lint-zed` but never executed; the Rider plugin had a fully configured
 # JUnit harness and not one test file, and was not even compiled on a PR.
-# Each now runs its tests behind the same ratcheted coverage gate every other
-# package answers to. [DIST-CI-EDITORS]
-name: CI / Editors
+#
+# Neither consumes a PHASE 2 artifact, because neither links against one: the Zed
+# extension is a standalone Cargo workspace that ships as wasm32-wasip1, and the
+# Rider plugin is a Kotlin/IntelliJ build. What each compiles here is its own
+# instrumented test binaries, the same category of work the Rust shards do, and
+# for the same reason - an instrumented build is not the artifact PHASE 2
+# produced.
+#
+# PHASE 5 for both is the ratchet inside the make target. Neither suite is
+# sharded, so each gate sees a complete tracefile in-job and needs no separate
+# merge, unlike the Rust and VS Code legs (ci-coverage.yml).
+name: CI / Test / Editors
 'on':
   workflow_call: {}
 env:
@@ -21,9 +30,8 @@ permissions:
 jobs:
   test-zed:
     name: Zed Extension
-    # The Zed extension is a standalone Cargo workspace (it ships as
-    # wasm32-wasip1), so the root `cargo llvm-cov` run in ci-rust.yml cannot
-    # see it and it needs its own gate. Its unit tests build for the host.
+    # The root `cargo llvm-cov` run in ci-test-rust.yml cannot see this
+    # workspace, so it needs its own gate. Its unit tests build for the host.
     runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
@@ -43,6 +51,7 @@ jobs:
           node-version: '20'
       - name: Test + coverage gate (Zed)
         run: make _test-zed
+
   test-rider:
     name: Rider Plugin
     # RIDER_REQUIRED=1 turns "no JDK 21+ found" from a local convenience skip
@@ -74,11 +83,17 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             src/editors/rider/.intellijPlatform
-          key: "${{ runner.os }}-gradle-${{ hashFiles('src/editors/rider/build.gradle.kts', 'src/editors/rider/gradle.properties', 'src/editors/rider/gradle/**') }}"
+          key: >-
+            ${{ runner.os }}-gradle-${{ hashFiles('src/editors/rider/build.gradle.kts',
+            'src/editors/rider/gradle.properties', 'src/editors/rider/gradle/**') }}
           restore-keys: "${{ runner.os }}-gradle-"
       - name: Test + coverage gate (Rider)
         run: make _test-rider
       - name: Build plugin
-        # The plugin was never compiled on a PR before this job existed, so a
-        # Kotlin break in it could reach main behind a fully green pipeline.
+        # The shippable plugin zip. It stays here rather than in PHASE 2 because
+        # it reuses the Gradle daemon and the IntelliJ SDK this job has already
+        # resolved - building it on a separate PHASE 2 runner would compile the
+        # same Kotlin twice and re-download a multi-GB SDK to do it. Nothing
+        # downstream consumes the zip; this is the check that a Kotlin break
+        # cannot reach main behind a green pipeline.
         run: make _build-rider

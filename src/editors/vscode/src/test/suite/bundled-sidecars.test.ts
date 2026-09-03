@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { exeName } from '../../platform.js';
-import { COMMAND_MS } from './test-timeouts';
+import { COMMAND_MS, SETTLE_MS } from './test-timeouts';
 
 const extensionId = 'nimblesite.sharplsp';
 
@@ -63,7 +63,7 @@ suite('Bundled sidecar resolution', () => {
 
     for (const sidecar of ['sharplsp-sidecar-csharp', 'sharplsp-sidecar-fsharp']) {
       const binary = path.join(binAll, exeName(sidecar));
-      const result = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: COMMAND_MS });
+      const result = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: SETTLE_MS });
       const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
 
       assert.equal(

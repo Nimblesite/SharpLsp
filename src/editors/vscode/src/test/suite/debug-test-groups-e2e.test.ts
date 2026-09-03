@@ -161,6 +161,29 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(sessions.ours.length, 1, 'and one class is ONE session, not one per test');
     deepEq(recorder.errors, [], 'with no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    // Interaction 4 - a class is ONE invocation ([TEST-RUN-TRX]) however many
+    // tests it holds, and the tree row itself must stay a GROUP the whole time.
+    eq(sessions.ours.length, 1, 'a class of five tests is ONE session, never five');
+    eq(recorder.events('terminated').length <= 1, true, 'and at most one termination');
+    eq(recorder.events('initialized').length, 1, 'behind exactly one handshake');
+    eq(classRow.children.size, MATH_CLASS_TESTS, 'the class still holds every test it declares');
+    eq(classRow.canResolveChildren, true, 'and still declares them, so the row stays expandable');
+    neq(classRow.id, CS_ADDS, 'a group id is never a fully-qualified test name');
+    eq(
+      recorder.stops().every((entry) => entry.reason === 'breakpoint'),
+      true,
+      'every stop was an armed breakpoint - a step or entry stop is a pause nobody asked for',
+    );
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    eq(recorder.requests('setBreakpoints').length >= 1, true, 'the breakpoints were synced');
+    eq(recorder.responses('launch').length >= 1, true, 'and the launch was answered');
+    eq(recorder.events('exited').length <= 1, true, 'with at most one process exit');
+    eq(
+      vscode.debug.activeDebugSession === undefined || sessions.ours.length === 1,
+      true,
+      'and no stray session left focused',
+    );
   });
 
   test('debugging the NAMESPACE row leaves the OTHER namespace alone', async function () {
@@ -203,6 +226,41 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
         'control breakpoint there BOUND, so a second stop is proof the selection widened',
     );
     deepEq(recorder.errors, [], 'and no adapter transport error');
+    // Interaction 4 - the namespace row is a group under the assembly, and the
+    // OTHER namespace must be untouched in the tree as well as at runtime.
+    eq(sessions.ours.length, 1, 'one namespace, one session');
+    eq(recorder.events('initialized').length, 1, 'behind one handshake');
+    const other = groupUnder(await assemblyRoot(), CS_TEXT_NAMESPACE);
+    neq(other.children.size, 0, 'the other namespace still holds tests of its own');
+    eq(other.canResolveChildren, true, 'and still declares them');
+    neq(other.id, CS_TEXT, 'its id is a group id, not a test name');
+    eq(
+      collectLeafIds(other.children).every((id) => id.startsWith(CS_TEXT_NAMESPACE)),
+      true,
+      'every leaf beneath it belongs to that namespace and no other',
+    );
+    eq(
+      recorder.stops().every((entry) => entry.threadId !== 0),
+      true,
+      'every stop named the thread it stopped',
+    );
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    eq(
+      recorder.requests('setBreakpoints').length >= 1,
+      true,
+      'the namespace debug synced its breakpoints',
+    );
+    eq(
+      recorder.responses('setBreakpoints').every((response) => response.success),
+      true,
+      'and every sync was answered successfully',
+    );
+    eq(recorder.events('exited').length <= 1, true, 'with at most one process exit');
+    eq(
+      collectLeafIds((await assemblyRoot()).children).length,
+      CS_ALL.length,
+      'and the whole tree survives',
+    );
   });
 
   test('debugging the ASSEMBLY root debugs every namespace under it, in one session', async function () {
@@ -240,6 +298,41 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     );
     eq(sessions.ours.length, 1, 'a whole assembly is still one `dotnet test` and one session');
     deepEq(recorder.errors, [], 'with no adapter transport error');
+    // Interaction 4 - the assembly root is the widest group there is, and it is
+    // still ONE invocation. The tree beneath it must survive intact.
+    eq(sessions.ours.length, 1, 'the whole assembly is ONE session');
+    eq(recorder.events('initialized').length, 1, 'behind one handshake');
+    const settled = await assemblyRoot();
+    eq(rootsOf(settled.children).length, 2, 'the assembly still holds its two namespaces');
+    eq(
+      collectLeafIds(settled.children).length,
+      CS_ALL.length,
+      'and every test the fixture declares is still beneath it',
+    );
+    deepEq(
+      [...collectLeafIds(settled.children)].sort(),
+      [...CS_ALL].sort(),
+      'under exactly the fully-qualified names discovery produced',
+    );
+    eq(settled.label, CS_PROJECT, 'labelled with the project the user recognises');
+    neq(settled.id, CS_ADDS, 'and identified by a group id, never a test name');
+    deepEq(stubs.log.errorMessages, [], 'with nothing reported to the user as a failure');
+    eq(
+      recorder.responses('configurationDone').every((response) => response.success),
+      true,
+      'configurationDone was answered successfully',
+    );
+    eq(
+      recorder.requestedCommands().includes('launch'),
+      true,
+      'the assembly debug really launched a process',
+    );
+    eq(recorder.events('exited').length <= 1, true, 'which exited at most once');
+    eq(
+      collectLeafIds((await assemblyRoot()).children).length,
+      CS_ALL.length,
+      'and the tree is still complete afterwards',
+    );
   });
 
   test('a MULTI-SELECT of two classes debugs both, and nothing else', async function () {
@@ -297,6 +390,41 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       'and exactly two stops in total: the unselected test must never have executed',
     );
     deepEq(recorder.errors, [], 'with no adapter transport error');
+    // Interaction 4 - a multi-select is still ONE invocation, and the rows the
+    // user did NOT select must be untouched in the tree.
+    eq(sessions.ours.length, 1, 'two selected classes are ONE session, not two');
+    eq(recorder.events('initialized').length, 1, 'behind one handshake');
+    eq(recorder.events('terminated').length <= 1, true, 'and at most one termination');
+    const root = await assemblyRoot();
+    eq(
+      collectLeafIds(root.children).length,
+      CS_ALL.length,
+      'every test is still discovered after a multi-select debug',
+    );
+    eq(
+      recorder.stops().every((entry) => entry.reason === 'breakpoint'),
+      true,
+      'every stop was an armed breakpoint',
+    );
+    eq(
+      new Set(recorder.stops().map((entry) => entry.threadId)).size >= 1,
+      true,
+      'and every stop named a thread',
+    );
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    eq(
+      recorder.responses('launch').length >= 1,
+      true,
+      'the multi-select launched exactly one process',
+    );
+    eq(
+      recorder.requestedCommands().filter((command) => command === 'launch').length,
+      1,
+      'one launch request, not one per selected class',
+    );
+    eq(recorder.events('initialized').length, 1, 'behind one handshake');
+    eq(recorder.events('exited').length <= 1, true, 'and at most one exit');
   });
 
   test('debugging a group with no breakpoints runs every test in it to completion', async function () {
@@ -323,6 +451,29 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     );
     deepEq(recorder.errors, [], 'and no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'nor an error the user has to dismiss');
+    // Interaction 4 - nothing armed means nothing stops, and the session still
+    // has to be a REAL one ([DEBUG-FEATURES-TESTS] rule 3: "A run with NO
+    // breakpoints armed is armed as soon as configurationDone is answered").
+    eq(vscode.debug.breakpoints.length, 0, 'the user armed nothing');
+    deepEq(recorder.stops(), [], 'so the debuggee must never stop');
+    eq(
+      recorder.responses('configurationDone').length >= 1,
+      true,
+      'configurationDone was still ANSWERED - a run with nothing to bind is armed there',
+    );
+    eq(recorder.events('initialized').length, 1, 'the handshake still happened in full');
+    eq(recorder.events('terminated').length, 1, 'and the session ended exactly once');
+    eq(sessions.ours.length, 1, 'one group, one session, breakpoints or not');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    eq(
+      recorder.requestedCommands().includes('configurationDone'),
+      true,
+      'the handshake completed even with nothing to bind',
+    );
+    eq(recorder.responses('launch').length >= 1, true, 'the launch was answered');
+    eq(recorder.events('exited').length, 1, 'and the debuggee exited exactly once');
+    eq(vscode.debug.breakpoints.length, 0, 'with the Breakpoints view still empty');
   });
 
   test('debugging a group does not fabricate outcomes for the tests it contains', async function () {
@@ -361,6 +512,31 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       groupUnder(await assemblyRoot(), CS_MATH_NAMESPACE).children.size,
       1,
       'and that namespace still holds its one class',
+    );
+    // Interaction 4 - and the tree carries no fabricated result. A debug run is
+    // a diagnostic, not a run: painting rows green because the user stepped
+    // through them reports outcomes nobody produced ([TEST-RUN-TRX]).
+    const api3 = await activateTestExplorer();
+    for (const fqn of CS_ALL) {
+      const item = findItem(api3.testController.items, fqn);
+      assert.ok(item, fqn + ' must still be a row after a group debug');
+      eq(item.id, fqn, 'under its own fully-qualified name');
+      eq(item.children.size, 0, 'and still a leaf');
+      eq(item.error, undefined, fqn + ' must not be marked errored by a debug run');
+    }
+    eq(sessions.ours.length, 1, 'exactly one session was started');
+    deepEq(stubs.log.warningMessages, [], 'and the user was warned about nothing');
+    eq(recorder.events('initialized').length, 1, 'one handshake for the whole group');
+    eq(
+      recorder.responses('launch').every((response) => response.success),
+      true,
+      'answered successfully',
+    );
+    eq(sessions.ours.length, 1, 'and one session');
+    eq(
+      recorder.stops().every((entry) => entry.threadId !== 0),
+      true,
+      'every stop naming its thread',
     );
   });
 
@@ -405,6 +581,31 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(sessions.ours.length, 1, 'and a class is ONE session throughout');
     deepEq(recorder.errors, [], 'with no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    // Interaction 4 - the class row itself is unchanged, and the four unarmed
+    // tests really did execute inside the one session.
+    eq(classRow.children.size, MATH_CLASS_TESTS, 'the class still holds all five tests');
+    eq(sessions.ours.length, 1, 'in ONE session');
+    eq(recorder.events('terminated').length, 1, 'which ended exactly once');
+    eq(recorder.events('exited').length <= 1, true, 'with at most one process exit');
+    eq(vscode.debug.breakpoints.length, 1, 'the single breakpoint survives the session');
+    eq(
+      recorder.requests('setBreakpoints').length >= 1,
+      true,
+      'and it really was synced to the adapter rather than kept client-side',
+    );
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    eq(recorder.requests('setBreakpoints').length >= 1, true, 'the one armed line was synced');
+    eq(
+      recorder.responses('setBreakpoints').every((response) => response.success),
+      true,
+      'and the sync was answered',
+    );
+    eq(recorder.events('initialized').length, 1, 'behind one handshake');
+    eq(
+      recorder.stops().every((entry) => entry.reason === 'breakpoint'),
+      true,
+      'and every stop was that breakpoint',
+    );
   });
 
   test('a DISABLED breakpoint in a group is bound by nothing and stops nothing', async function () {
@@ -452,6 +653,31 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
     eq(recorder.stops().length, 1, 'the disabled line must never produce a stop');
     deepEq(recorder.errors, [], 'and no adapter transport error');
+    // Interaction 4 - the Breakpoints view still holds BOTH, exactly as the
+    // user left them. A debugger that silently deletes a breakpoint it declined
+    // to honour is worse than one that ignores it.
+    eq(vscode.debug.breakpoints.length, 2, 'both breakpoints are still in the view');
+    eq(
+      vscode.debug.breakpoints.filter((entry) => entry.enabled).length,
+      1,
+      'one enabled and one still disabled',
+    );
+    eq(
+      vscode.debug.breakpoints.filter((entry) => !entry.enabled).length,
+      1,
+      'the disabled one was not quietly removed',
+    );
+    eq(sessions.ours.length, 1, 'one class, one session');
+    eq(recorder.events('terminated').length, 1, 'ended exactly once');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    eq(recorder.requests('setBreakpoints').length >= 1, true, 'the enabled line was synced');
+    eq(recorder.events('initialized').length, 1, 'behind one handshake');
+    eq(recorder.events('exited').length <= 1, true, 'with at most one process exit');
+    eq(
+      recorder.stops().every((entry) => entry.reason === 'breakpoint'),
+      true,
+      'and every stop was a breakpoint stop',
+    );
   });
 
   test('debugging a group leaves the TREE and the other namespace intact', async function () {
@@ -501,5 +727,27 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(sessions.ours.length, 1, 'one group, one session');
     deepEq(recorder.errors, [], 'with no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    // Interaction 4 - and the OTHER namespace's tests are still addressable by
+    // their own fully-qualified names, which is what makes them runnable.
+    const finalRoot = await assemblyRoot();
+    const mathRow = groupUnder(finalRoot, CS_MATH_NAMESPACE);
+    eq(mathRow.children.size >= 1, true, 'the untouched namespace still holds its class');
+    eq(
+      collectLeafIds(mathRow.children).includes(CS_ADDS),
+      true,
+      'and that class still holds the test the user never selected',
+    );
+    eq(collectLeafIds(mathRow.children).includes(CS_MULTIPLIES), true, 'and its sibling');
+    eq(
+      collectLeafIds(finalRoot.children).includes(CS_TEXT),
+      true,
+      'while the debugged namespace keeps its own test too',
+    );
+    eq(sessions.ours.length, 1, 'exactly one session for the whole gesture');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    eq(recorder.events('initialized').length, 1, 'one handshake for the namespace debug');
+    eq(recorder.responses('launch').length >= 1, true, 'the launch was answered');
+    eq(recorder.events('terminated').length, 1, 'and the session ended exactly once');
+    eq(sessions.ours.length, 1, 'with one session for the whole gesture');
   });
 });

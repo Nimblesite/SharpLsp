@@ -232,6 +232,33 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       sorted(EXPECTED),
       'reading the REAL listing file must yield one bare id per test, rows collapsed',
     );
+    // Interaction 3 - the decoration is a SPACE then 40 hex digits, and the
+    // guard has to hold for EVERY line the adapter wrote, not for one of them.
+    for (const raw of rawListing) {
+      assert.strictEqual(raw.trim(), raw, `${raw} arrived without padding`);
+      assert.strictEqual(raw.length > 0, true, 'and no blank line is a listed test');
+      assert.strictEqual(
+        raw.startsWith(NAMESPACE),
+        true,
+        `${raw} must belong to the fixture namespace, decorated or not`,
+      );
+    }
+    assert.strictEqual(
+      rawListing.filter((raw) => carriesUniqueId(raw)).length,
+      rawListing.length,
+      'EVERY line this adapter wrote carries a unique ID - if even one did not, the suite ' +
+        'would be proving the stripper against a name that never needed stripping',
+    );
+    assert.strictEqual(
+      new Set(rawListing).size,
+      rawListing.length,
+      'each decorated line is distinct, because each carries its OWN unique ID',
+    );
+    assert.strictEqual(
+      new Set(rawListing.map((raw) => withoutAdapterUniqueId(raw))).size < rawListing.length,
+      true,
+      'and stripping COLLAPSES them - which is how a theory\u2019s rows become one test',
+    );
   });
 
   test('discovered ids are the BARE fully-qualified names, with no adapter suffix', function () {
@@ -284,6 +311,25 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
         `${id} must be <namespace>.<class>.<method> so the TRX key can be reconstructed`,
       );
     }
+    // Interaction 3 - a bare id is not merely "different from the raw line": it
+    // is the exact value `--filter FullyQualifiedName=` and the TRX report both
+    // key on, so it must round-trip through the stripper unchanged.
+    for (const id of discovered) {
+      assert.strictEqual(
+        withoutAdapterUniqueId(id),
+        id,
+        `${id} must already be bare - a second pass that changes it means the first left a ` +
+          'decoration behind',
+      );
+      assert.strictEqual(carriesUniqueId(id), false, `${id} carries no unique ID`);
+      assert.strictEqual(id.includes('  '), false, `${id} carries no doubled space`);
+      assert.strictEqual(id.endsWith(')') === id.includes('('), true, `${id} is balanced`);
+    }
+    assert.deepStrictEqual(
+      sorted(discovered),
+      sorted([...EXPECTED]),
+      'and the whole set is exactly what the fixture declares',
+    );
   });
 
   test('the tree renders Assembly → Namespace → Class → Test with readable labels', function () {
@@ -354,6 +400,22 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       everyId.length,
       `every node in the Testing view needs its own id; got ${everyId.join(' | ')}`,
     );
+    // Interaction 3 - a LABEL is what the user reads, and an id is what the CLI
+    // takes. Neither may carry the other's shape.
+    for (const id of EXPECTED) {
+      const leaf = findItem(api.testController.items, id);
+      assert.ok(leaf, `${id} must be a row in the tree`);
+      assert.strictEqual(leaf.label, methodOf(id), `${id} is labelled with its method name`);
+      assert.strictEqual(carriesUniqueId(leaf.label), false, `${id}: no hex blob in the label`);
+      assert.strictEqual(leaf.children.size, 0, `${id} is a leaf`);
+      assert.strictEqual(leaf.id, id, `${id} is identified by its bare fully-qualified name`);
+    }
+    assert.strictEqual(
+      collectItemIds(api.testController.items).some((id) => carriesUniqueId(id)),
+      false,
+      'and no GROUP id carries a decoration either - the assembly, namespace and class rows ' +
+        'are ids the run and the lens both address',
+    );
   });
 
   test('the --filter a run builds is the bare name, matching a real test', function () {
@@ -387,6 +449,34 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       RUNNABLE.map((id) => `FullyQualifiedName=${id}`),
       'the selection is OR-ed clause by clause, one per selected test',
     );
+    // Interaction 3 - the whole selection, as one filter. [TEST-FILTER-ESCAPE]
+    // OR-s escaped clauses with an unescaped pipe, and a decorated name would
+    // have escaped its parentheses and matched nothing at all.
+    const everyArg = buildFilterArgs(EXPECTED.map((id) => ({ id })));
+    assert.strictEqual(everyArg.length, 2, 'one --filter flag and one expression');
+    assert.strictEqual(
+      (everyArg[1] ?? '').split('FullyQualifiedName=').length - 1,
+      EXPECTED.length,
+      'one clause per selected test',
+    );
+    assert.strictEqual(
+      (everyArg[1] ?? '').includes('\\('),
+      false,
+      'and nothing escaped - a bare xUnit name contains no filter grammar at all, while a ' +
+        'decorated one would have escaped its brackets and matched nothing',
+    );
+    for (const id of EXPECTED) {
+      assert.strictEqual(
+        filterClause(id),
+        `FullyQualifiedName=${id}`,
+        `${id} produces a clause naming it exactly`,
+      );
+      assert.strictEqual(
+        (everyArg[1] ?? '').includes(filterClause(id)),
+        true,
+        `${id}'s clause is in the combined expression`,
+      );
+    }
   });
 
   test('the Run/Debug lens resolves a test by its method name', function () {
@@ -407,6 +497,24 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       findTestByMethodName(api.testController.items, 'Add'),
       undefined,
       'the private helper is not a test and must not carry a Run lens',
+    );
+    // Interaction 3 - the lens must resolve EVERY test by its method name, and
+    // must not resolve a name the fixture never declares.
+    for (const id of EXPECTED) {
+      const found = findTestByMethodName(api.testController.items, methodOf(id));
+      assert.ok(found, `the lens must resolve ${methodOf(id)} to a discovered test`);
+      assert.strictEqual(found.id, id, `and to the BARE id ${id}`);
+      assert.strictEqual(carriesUniqueId(found.id), false, 'with no decoration on it');
+    }
+    assert.strictEqual(
+      findTestByMethodName(api.testController.items, 'NoSuchMethodAnywhere'),
+      undefined,
+      'a method the fixture never declares must resolve to nothing rather than to a neighbour',
+    );
+    assert.strictEqual(
+      findTestByMethodName(api.testController.items, ''),
+      undefined,
+      'and an empty name resolves to nothing at all',
     );
   });
 
@@ -484,6 +592,39 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
         `the status-lens cache must be keyed by the bare id; ${id} was not found`,
       );
     }
+    // Interaction 4 - the lens title each outcome produces. [TEST-STATUS-LENS]
+    // pins the four titles, and a test whose id could not be reconciled with
+    // the TRX report renders as "Not run" forever.
+    const passedTitle = statusLensTitle(cachedFor(api, FIXTURE.passing));
+    assert.strictEqual(
+      passedTitle.startsWith('$(pass) Passed'),
+      true,
+      'the passing test renders as a pass',
+    );
+    assert.strictEqual(passedTitle.includes(NO_RESULT), false, 'and not as a missing result');
+    const failedTitle = statusLensTitle(cachedFor(api, FIXTURE.failing));
+    assert.strictEqual(
+      failedTitle.startsWith('$(error) Failed:'),
+      true,
+      'the failing test renders as a failure',
+    );
+    assert.strictEqual(
+      failedTitle.includes(NO_RESULT),
+      false,
+      'carrying its own assertion text, not the placeholder a missing TRX entry produces',
+    );
+    assert.strictEqual(
+      statusLensTitle(cachedFor(api, FIXTURE.skipped)),
+      '$(debug-step-over) Skipped',
+      'and the skipped test as a skip, never as a failure',
+    );
+    for (const id of RUNNABLE) {
+      assert.strictEqual(
+        statusLensTitle(cachedFor(api, id)).includes('$(circle-slash)'),
+        false,
+        `${id} was run, so its lens must not read "Not run"`,
+      );
+    }
   });
 
   test('▶ on the CLASS group runs every test it contains, theories included', async function () {
@@ -523,6 +664,26 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       );
     }
     assertPassed(cachedFor(api, FIXTURE.parameterized), FIXTURE.parameterized);
+    // Interaction 4 - and the class row itself is unchanged by the run.
+    const classRow = findItem(api.testController.items, `${NAMESPACE}.${CLASS}`);
+    assert.strictEqual(
+      classRow === undefined || classRow.children.size > 0,
+      true,
+      'a class row, if addressed by name, still holds its tests',
+    );
+    for (const id of EXPECTED) {
+      const leaf = findItem(api.testController.items, id);
+      assert.ok(leaf, `${id} must still be a row after the class run`);
+      assert.strictEqual(leaf.id, id, 'under its bare id');
+      assert.strictEqual(leaf.error, undefined, `${id} must not be marked errored`);
+      const message = cachedFor(api, id).message ?? '';
+      assert.strictEqual(
+        message.includes(NO_RESULT),
+        false,
+        `${id} must not report "${NO_RESULT}" - that is what a kept unique ID produces for ` +
+          'every test in the project',
+      );
+    }
   });
 
   test('▶ on the ASSEMBLY ROOT attributes every outcome, none of them missing', async function () {
@@ -587,6 +748,29 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       collectLeafIds(api.testController.items).filter((id) => carriesUniqueId(id)),
       [],
       'and every id is still bare afterwards',
+    );
+    // Interaction 4 - the assembly root is the widest selection there is, so a
+    // single unreconciled id would show up here as a whole project of missing
+    // results.
+    assert.strictEqual(rootsOf(api.testController.items).length, 1, 'exactly one assembly root');
+    for (const id of EXPECTED) {
+      const cached = cachedFor(api, id);
+      assert.notStrictEqual(cached.outcome, 'notRun', `${id} must report an outcome`);
+      assert.strictEqual(
+        (cached.message ?? '').includes(NO_RESULT),
+        false,
+        `${id} must not report "${NO_RESULT}"`,
+      );
+      assert.strictEqual(
+        cached.passed === (cached.outcome === 'passed'),
+        true,
+        `${id}: the passed flag agrees with the outcome`,
+      );
+    }
+    assert.strictEqual(
+      collectLeafIds(api.testController.items).length,
+      EXPECTED.length,
+      'and the tree still holds exactly the tests the fixture declares',
     );
   });
 
@@ -657,6 +841,37 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       sorted(EXPECTED),
       'and the tree still holds one leaf per theory',
     );
+    // Interaction 4 - the rows collapse because each carried its OWN unique ID
+    // and stripping removed all of them. That is the mechanism, and it has to
+    // be visible in the RAW listing this suite kept.
+    const theoryLines = rawListing.filter(
+      (raw) => withoutAdapterUniqueId(raw) === FIXTURE.parameterized,
+    );
+    assert.strictEqual(
+      theoryLines.length >= 2,
+      true,
+      'the adapter really did write one line PER ROW for the theory',
+    );
+    assert.strictEqual(
+      new Set(theoryLines).size,
+      theoryLines.length,
+      'each row line distinct, because each carries its own unique ID',
+    );
+    assert.strictEqual(
+      new Set(theoryLines.map((raw) => withoutAdapterUniqueId(raw))).size,
+      1,
+      'and all of them strip down to the ONE name the rows share',
+    );
+    assert.strictEqual(
+      collectLeafIds(api.testController.items).filter((id) => id === FIXTURE.parameterized).length,
+      1,
+      'so the tree holds exactly one leaf for the theory',
+    );
+    assert.strictEqual(
+      parseFullyQualifiedTestList(theoryLines.join('\n')).length,
+      1,
+      'and the listing reader agrees, on the same lines',
+    );
   });
 
   test('a multi-select of EVERY test builds one unescaped filter and attributes every result', async function () {
@@ -713,6 +928,28 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
         `${fqn} has just run, so its lens must not still read "Not run"`,
       );
     }
+    // Interaction 4 - a multi-select is ONE invocation for the whole selection
+    // ([TEST-RUN-TRX]), and every id in it stays bare on the way out.
+    for (const id of EXPECTED) {
+      assert.notStrictEqual(
+        cachedFor(api, id).outcome,
+        'notRun',
+        `${id} was selected, so it must report an outcome`,
+      );
+      const leaf = findItem(api.testController.items, id);
+      assert.ok(leaf, `${id} is still a row`);
+      assert.strictEqual(leaf.id, id, 'under its bare id');
+    }
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...EXPECTED]),
+      'and the tree is exactly what it was before the run',
+    );
+    assert.strictEqual(
+      itemsFor(api, [...EXPECTED]).length,
+      EXPECTED.length,
+      'every selected test resolved to a row of its own',
+    );
   });
 
   test('a REFRESH re-discovers the same BARE ids, without duplicating a row', async function () {
@@ -765,6 +1002,25 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       after.length,
       'no test is listed twice after a re-discovery',
     );
+    // Interaction 4 - a refresh re-runs the WHOLE discovery path, so the
+    // stripper runs again on a second listing. A stripper applied once leaves
+    // the tree correct until the user presses refresh.
+    const afterRefresh = collectLeafIds(api.testController.items);
+    assert.deepStrictEqual(sorted(afterRefresh), sorted([...EXPECTED]), 'the same bare ids');
+    assert.strictEqual(
+      afterRefresh.length,
+      new Set(afterRefresh).size,
+      'with nothing duplicated by the second sweep',
+    );
+    assert.strictEqual(
+      afterRefresh.some((id) => carriesUniqueId(id)),
+      false,
+      'and no decoration reintroduced',
+    );
+    assert.strictEqual(rootsOf(api.testController.items).length, 1, 'still ONE assembly root');
+    for (const id of EXPECTED) {
+      assert.ok(findItem(api.testController.items, id), `${id} survived the refresh`);
+    }
   });
 
   test('▶ on the NAMESPACE row reports every class beneath it, ids still bare', async function () {
@@ -823,6 +1079,29 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
         api.testController.getResult(`${fqn} (${'0'.repeat(40)})`),
         undefined,
         'and never by a decorated one',
+      );
+    }
+    // Interaction 4 - the namespace row is a group whose id is not a test name,
+    // and everything beneath it is still bare.
+    const namespaceLeaves = collectLeafIds(api.testController.items).filter((id) =>
+      id.startsWith(`${NAMESPACE}.`),
+    );
+    assert.strictEqual(
+      namespaceLeaves.length,
+      EXPECTED.length,
+      'every test the fixture declares lives under the one namespace',
+    );
+    for (const id of namespaceLeaves) {
+      assert.strictEqual(carriesUniqueId(id), false, `${id} is bare`);
+      assert.notStrictEqual(
+        cachedFor(api, id).outcome,
+        'notRun',
+        `${id} is under the namespace that was run and must report a result`,
+      );
+      assert.strictEqual(
+        (cachedFor(api, id).message ?? '').includes(NO_RESULT),
+        false,
+        `${id} must not report "${NO_RESULT}"`,
       );
     }
   });
@@ -884,6 +1163,32 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       '$(debug-step-over) Skipped',
       'the unselected skip keeps the LAST KNOWN result it already had',
     );
+    // Interaction 4 - running ONE test must leave every OTHER test's cached
+    // result alone. A run that blanked the rest would lose the failure the user
+    // was chasing, and one that repainted them would be confidently wrong.
+    for (const id of EXPECTED) {
+      const cached = cachedFor(api, id);
+      assert.strictEqual(
+        typeof cached.outcome,
+        'string',
+        `${id} still carries an outcome of some kind`,
+      );
+      assert.strictEqual(
+        (cached.message ?? '').includes(NO_RESULT),
+        false,
+        `${id} must never report "${NO_RESULT}"`,
+      );
+    }
+    assert.strictEqual(
+      itemsFor(api, [FIXTURE.passing]).length,
+      1,
+      'the test that ran is still exactly one row',
+    );
+    assert.strictEqual(
+      collectLeafIds(api.testController.items).length,
+      EXPECTED.length,
+      'and the tree still holds every test',
+    );
   });
 
   test('every leaf hangs off Assembly → Namespace → Class, each link bare', function () {
@@ -928,6 +1233,27 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
           `${node.label} must not render a hex blob to the user`,
         );
       }
+    }
+    // Interaction 4 - the parent chain is a chain of GROUPS, and a group id is
+    // never a test name. A tree that used the leaf's own id for its class row
+    // makes the class unrunnable and the leaf unfindable.
+    for (const id of EXPECTED) {
+      const leaf = findItem(api.testController.items, id);
+      assert.ok(leaf, `${id} must be a row`);
+      let node: vscode.TestItem | undefined = leaf.parent;
+      let links = 0;
+      while (node !== undefined) {
+        assert.strictEqual(carriesUniqueId(node.id), false, `${node.label} has a bare group id`);
+        assert.notStrictEqual(node.id, id, `${node.label} must not reuse the leaf's own id`);
+        assert.notStrictEqual(node.label, '', 'and must be labelled for the user to read');
+        links += 1;
+        node = node.parent;
+      }
+      assert.strictEqual(
+        links >= 3,
+        true,
+        `${id} must hang off Assembly \u2192 Namespace \u2192 Class; it had ${String(links)} link(s)`,
+      );
     }
   });
 
@@ -985,6 +1311,29 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       [],
       'and no node anywhere gained a decoration',
     );
+    // Interaction 4 - the second run must not have changed the SHAPE of the
+    // tree, only its results. Re-discovery between runs that produced a second
+    // copy of a row would leave the user pressing play on a stale one.
+    assert.strictEqual(rootsOf(api.testController.items).length, 1, 'still ONE assembly root');
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...EXPECTED]),
+      'and still exactly the tests the fixture declares',
+    );
+    for (const id of RUNNABLE) {
+      const cached = cachedFor(api, id);
+      assert.notStrictEqual(cached.outcome, 'notRun', `${id} reports an outcome after the re-run`);
+      assert.strictEqual(
+        (cached.message ?? '').includes(NO_RESULT),
+        false,
+        `${id} must not report "${NO_RESULT}" on the second run either`,
+      );
+    }
+    assert.strictEqual(
+      itemsFor(api, [...RUNNABLE]).length,
+      RUNNABLE.length,
+      'every re-run test resolved to a row of its own',
+    );
   });
 
   test('every line the adapter wrote maps onto exactly one discovered test', function () {
@@ -1035,6 +1384,34 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       sorted(parseFullyQualifiedTestList(rawListing.join('\n'))),
       sorted(leaves),
       'and the production reader agrees, over the REAL file the adapter wrote',
+    );
+    // Interaction 4 - and the mapping is TOTAL in both directions: no discovered
+    // test is missing from the listing, and no listed line maps to a test the
+    // tree does not hold.
+    const strippedLines = [...new Set(rawListing.map((raw) => withoutAdapterUniqueId(raw)))];
+    assert.deepStrictEqual(
+      sorted(strippedLines),
+      sorted([...EXPECTED]),
+      'the stripped listing and the fixture declare exactly the same set',
+    );
+    for (const id of discovered) {
+      assert.strictEqual(
+        strippedLines.includes(id),
+        true,
+        `${id} is in the tree, so some line of the adapter's listing must reduce to it`,
+      );
+    }
+    for (const line of strippedLines) {
+      assert.strictEqual(
+        discovered.includes(line),
+        true,
+        `${line} was listed by the adapter, so it must be a discovered test`,
+      );
+    }
+    assert.strictEqual(
+      rawListing.length >= EXPECTED.length,
+      true,
+      'the adapter wrote at least one line per test, and more for the theory rows',
     );
   });
 });

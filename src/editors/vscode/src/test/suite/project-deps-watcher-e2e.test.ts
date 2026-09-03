@@ -18,7 +18,7 @@ import {
   projectDependencies,
   resetForTests,
 } from '../../project-deps-store.js';
-import { COMMAND_MS } from './test-timeouts';
+import { COMMAND_MS, SETTLE_MS } from './test-timeouts';
 
 const CSPROJ = `<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
@@ -66,7 +66,7 @@ suite('Project-deps node watcher survives project dir deletion', () => {
     // raises it as an uncaught exception, which mocha attributes to this test.
     removeDirRecursive(dir);
 
-    const removed = await pollUntil(() => !projectDependencies.value.has(projectPath), COMMAND_MS);
+    const removed = await pollUntil(() => !projectDependencies.value.has(projectPath), SETTLE_MS);
     assert.ok(removed, 'deleted project must be dropped from projectDependencies');
     assert.ok(!fs.existsSync(projectPath), 'fixture tree really was deleted');
   });

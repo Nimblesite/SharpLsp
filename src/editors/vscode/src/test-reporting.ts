@@ -13,6 +13,7 @@ import { info } from './log';
 import { findCoberturaFiles, mergeCoberturaReports } from './test-coverage';
 import type { TestOutcome } from './test-run-output';
 import type { TrxTestResult } from './test-trx';
+import { singleLine } from './utils';
 
 /** Writes one result into the controller's status-lens cache. */
 export type CacheWriter = (testId: string, result: CachedTestResult) => void;
@@ -36,13 +37,23 @@ export interface CachedTestResult {
 /** Sub-directory of the solution folder where a coverage run drops artefacts. */
 export const COVERAGE_DIR = '.sharplsp-coverage';
 
-/** Translate a TRX result into the cache's shape. */
+/**
+ * Translate a TRX result into the cache's shape.
+ *
+ * The cached message is flattened onto ONE line, because the cache exists to
+ * feed the status LENS ([TEST-STATUS-LENS]) and a lens title is one line. The
+ * raw `TrxTestResult` is what the Testing view's failure pane is built from
+ * (see {@link reportOutcome}), so the expected/actual block keeps its layout
+ * exactly where there is room to render it.
+ */
 export function cachedFrom(result: TrxTestResult): CachedTestResult {
+  const failure = result.outcome === 'failed' ? 'Test failed' : undefined;
+  const message = result.message === undefined ? failure : singleLine(result.message);
   return {
     outcome: result.outcome,
     passed: result.outcome === 'passed',
     duration: result.durationMs,
-    message: result.message ?? (result.outcome === 'failed' ? 'Test failed' : undefined),
+    message,
   };
 }
 

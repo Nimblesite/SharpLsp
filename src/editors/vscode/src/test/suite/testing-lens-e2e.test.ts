@@ -92,7 +92,7 @@ function testLensCommands(lenses: vscode.CodeLens[]): vscode.CodeLens[] {
  * binding) and escaping one would corrupt the very names the spec's table says
  * must round-trip unchanged.
  */
-const FILTER_GRAMMAR: readonly string[] = ['\', '(', ')', '&', '|', '=', '!', '~'];
+const FILTER_GRAMMAR: readonly string[] = ['\\', '(', ')', '&', '|', '=', '!', '~'];
 
 /**
  * How many pipes in a filter expression are CLAUSE SEPARATORS, i.e. not
@@ -106,7 +106,7 @@ const FILTER_GRAMMAR: readonly string[] = ['\', '(', ')', '&', '|', '=', '!', '~
 function separatorPipes(expression: string): number {
   let count = 0;
   for (let index = 0; index < expression.length; index += 1) {
-    if (expression[index] === '|' && expression[index - 1] !== '\') {
+    if (expression[index] === '|' && expression[index - 1] !== '\\') {
       count += 1;
     }
   }
@@ -135,7 +135,9 @@ function plantReport(resultsDir: string, runId: string, xml: string): string {
 }
 
 /** A `CachedTestResult` literal, so the four lens titles can be driven directly. */
-function cached(result: Partial<CachedTestResult> & Pick<CachedTestResult, 'outcome'>): CachedTestResult {
+function cached(
+  result: Partial<CachedTestResult> & Pick<CachedTestResult, 'outcome'>,
+): CachedTestResult {
   return { passed: result.outcome === 'passed', ...result };
 }
 
@@ -225,6 +227,82 @@ const FSHARP_TESTS = [
   '    Assert.Equal(expected, a + b)',
   '',
 ].join('\n');
+
+// Every attribute shape [TEST-OVERVIEW] names ("xUnit, NUnit, MSTest, Expecto
+// and FsCheck, in BOTH C# and F#") over one class, plus three methods that are
+// NOT tests. A lens above a helper runs nothing; a missing lens above an
+// [TestMethod] leaves MSTest users with no Run button at all.
+const FRAMEWORK_TESTS = [
+  'using Xunit;',
+  'using NUnit.Framework;',
+  'using Microsoft.VisualStudio.TestTools.UnitTesting;',
+  '',
+  'namespace Sample.Frameworks',
+  '{',
+  '    public class MixedTests',
+  '    {',
+  '        [Fact]',
+  '        public void Mixed_XunitFact()',
+  '        {',
+  '        }',
+  '',
+  '        [Theory]',
+  '        [InlineData(1)]',
+  '        public void Mixed_XunitTheory(int a)',
+  '        {',
+  '        }',
+  '',
+  '        [Test]',
+  '        public void Mixed_NunitTest()',
+  '        {',
+  '        }',
+  '',
+  '        [TestCase(2, 2, 4)]',
+  '        public void Mixed_NunitCase(int a, int b, int expected)',
+  '        {',
+  '        }',
+  '',
+  '        [TestMethod]',
+  '        public void Mixed_MstestMethod()',
+  '        {',
+  '        }',
+  '',
+  '        [DataRow(1, 2)]',
+  '        [DataTestMethod]',
+  '        public void Mixed_MstestRow(int a, int b)',
+  '        {',
+  '        }',
+  '',
+  '        private void Mixed_Helper()',
+  '        {',
+  '        }',
+  '',
+  '        public int Mixed_Property { get; set; }',
+  '',
+  '        public void Mixed_PlainMethod()',
+  '        {',
+  '        }',
+  '    }',
+  '}',
+  '',
+].join('\n');
+
+/** The methods FRAMEWORK_TESTS decorates with a test attribute. */
+const FRAMEWORK_TEST_METHODS: readonly string[] = [
+  'Mixed_XunitFact',
+  'Mixed_XunitTheory',
+  'Mixed_NunitTest',
+  'Mixed_NunitCase',
+  'Mixed_MstestMethod',
+  'Mixed_MstestRow',
+];
+
+/** The members of FRAMEWORK_TESTS that no lens may ever offer to run. */
+const FRAMEWORK_NON_TESTS: readonly string[] = [
+  'Mixed_Helper',
+  'Mixed_Property',
+  'Mixed_PlainMethod',
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Testing module — run/debug commands + discovery & coverage helpers
@@ -1237,5 +1315,381 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     assert.strictEqual(passedTitle, '$(pass) Passed (1.5s)');
     const msTitle = `$(pass) Passed${formatDuration(42)}`;
     assert.strictEqual(msTitle, '$(pass) Passed (42ms)');
+  });
+
+  // Implements [TEST-STATUS-LENS] verbatim: "The status title reflects the
+  // Testing API's three states: `$(pass) Passed (<duration>)`,
+  // `$(debug-step-over) Skipped`, `$(circle-slash) Not run`, and
+  // `$(error) Failed: <assertion text>`."
+  test('the status title renders each of the four states with the spec icon', async function () {
+    this.timeout(FAST_MS);
+
+    // Interaction 1 - a pass, with and without a duration. The icon is what the
+    // user reads at a glance; a wrong one makes a green run look red.
+    eq(
+      statusLensTitle(cached({ outcome: 'passed', duration: 1500 })),
+      '$(pass) Passed (1.5s)',
+      'a pass over a second renders in seconds to one decimal',
+    );
+    eq(
+      statusLensTitle(cached({ outcome: 'passed', duration: 42 })),
+      '$(pass) Passed (42ms)',
+      'and under a second in whole milliseconds',
+    );
+    eq(
+      statusLensTitle(cached({ outcome: 'passed', duration: 0 })),
+      '$(pass) Passed (0ms)',
+      'a zero duration is a real measurement, not a missing one',
+    );
+    eq(
+      statusLensTitle(cached({ outcome: 'passed' })),
+      '$(pass) Passed',
+      'a pass with no recorded duration still says Passed, with no empty brackets',
+    );
+
+    // Interaction 2 - the two states that are NOT failures. [TEST-RUN-TRX] is
+    // explicit that "a skipped test MUST NOT be reported as a failure", and a
+    // never-run test is not a result at all.
+    const skipped = statusLensTitle(cached({ outcome: 'skipped' }));
+    eq(skipped, '$(debug-step-over) Skipped', 'a skip renders as the step-over icon');
+    eq(skipped.includes('$(error)'), false, 'and never as an error');
+    eq(skipped.includes('$(pass)'), false, 'nor as a pass');
+    const notRun = statusLensTitle(cached({ outcome: 'notRun' }));
+    eq(notRun, '$(circle-slash) Not run', 'a test that has never run says so');
+    eq(notRun.includes('$(error)'), false, 'a test nobody ran has not failed');
+    eq(
+      statusLensTitle(cached({ outcome: 'skipped', duration: 12 })),
+      '$(debug-step-over) Skipped',
+      'a skip carries no duration - it never executed, so there is nothing to time',
+    );
+
+    // Interaction 3 - a failure must carry the ASSERTION TEXT. [TEST-RUN-TRX]:
+    // "the assertion text and stack trace come from the TRX ErrorInfo, so a
+    // failure shows what actually went wrong instead of a generic 'Test failed'".
+    const message = 'Assert.Equal() Failure: Values differ';
+    const failed = statusLensTitle(cached({ outcome: 'failed', message }));
+    eq(failed.startsWith('$(error) Failed:'), true, 'a failure renders as the error icon');
+    eq(failed.includes(message), true, 'and shows the assertion the test actually tripped on');
+    eq(failed.includes('\n'), false, 'a CodeLens title is ONE line; a newline mangles the lens');
+    const multiline = statusLensTitle(
+      cached({ outcome: 'failed', message: message + '\nExpected: 4\nActual: 5' }),
+    );
+    eq(multiline.startsWith('$(error) Failed:'), true, 'a multi-line assertion still renders');
+    eq(multiline.includes('\n'), false, 'flattened onto the single line a lens can show');
+    eq(
+      statusLensTitle(cached({ outcome: 'failed' })).startsWith('$(error) Failed'),
+      true,
+      'a failure with no ErrorInfo at all still reads as a failure',
+    );
+    const titles = [statusLensTitle(cached({ outcome: 'passed' })), skipped, notRun, failed];
+    eq(new Set(titles).size, 4, 'the four states are four distinct titles the user can tell apart');
+    for (const title of titles) {
+      eq(title.startsWith('$('), true, 'every status title leads with its icon');
+    }
+  });
+
+  // Implements [TEST-STATUS-LENS] ("above every C# and F# test method") and
+  // [TEST-OVERVIEW] ("It supports xUnit, NUnit, MSTest, Expecto and FsCheck").
+  test('every framework attribute gets a lens pair, and no helper or property does', async function () {
+    this.timeout(LSP_RESPONSE_MS);
+    const { uri } = await openCSharpFile(tmpDir, 'Frameworks.cs', FRAMEWORK_TESTS);
+
+    // Interaction 1 - a Run action above every attributed method, whichever
+    // framework's attribute it carries. A framework that gets no lens is a
+    // framework whose users have no Run Test button.
+    const lenses = testLensCommands(await codeLensesFor(uri));
+    const runLenses = lenses.filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR);
+    const debugLenses = lenses.filter((lens) => lens.command?.command === CMD_TEST_DEBUG_AT_CURSOR);
+    const runTargets = runLenses
+      .map((lens) => lens.command?.arguments?.[1])
+      .filter((name): name is string => typeof name === 'string');
+    for (const method of FRAMEWORK_TEST_METHODS) {
+      eq(runTargets.includes(method), true, method + ' must be offered a Run action');
+      eq(
+        runTargets.filter((name) => name === method).length,
+        1,
+        method + ': ONE lens, not one per attribute - [DataRow] plus [DataTestMethod] is two',
+      );
+    }
+    eq(
+      runLenses.length,
+      FRAMEWORK_TEST_METHODS.length,
+      'exactly one Run lens per attributed method, and none over anything else',
+    );
+
+    // Interaction 2 - and nothing over a helper, a property or a plain public
+    // method. A lens there runs a "test" the adapter has never heard of.
+    for (const member of FRAMEWORK_NON_TESTS) {
+      eq(runTargets.includes(member), false, member + ' is not a test and gets no Run action');
+      eq(
+        debugLenses.some((lens) => lens.command?.arguments?.[1] === member),
+        false,
+        member + ' gets no Debug action either',
+      );
+    }
+
+    // Interaction 3 - Run and Debug are PAIRED on the same line for every one
+    // of them, which is what [TEST-STATUS-LENS] means by "plus Run and Debug
+    // actions".
+    eq(debugLenses.length, runLenses.length, 'the two actions are paired, one for one');
+    deepEq(
+      [...new Set(debugLenses.map((lens) => lens.command?.title))],
+      ['$(bug) Debug Test'],
+      'every Debug action renders as the Debug lens',
+    );
+    deepEq(
+      [...new Set(runLenses.map((lens) => lens.command?.title))],
+      ['$(play) Run Test'],
+      'and every Run action as the Run lens',
+    );
+    for (const method of FRAMEWORK_TEST_METHODS) {
+      const run = runLenses.find((lens) => lens.command?.arguments?.[1] === method);
+      const debug = debugLenses.find((lens) => lens.command?.arguments?.[1] === method);
+      assert.ok(run && debug, method + ' must carry both actions');
+      eq(run.range.isEqual(debug.range), true, method + ': both actions render on the same line');
+      eq(
+        run.command?.arguments?.[0]?.toString(),
+        uri.toString(),
+        method + ': the Run action points at the file the user has open',
+      );
+      eq(
+        debug.command?.arguments?.length,
+        2,
+        method + ': the at-cursor command takes (uri, methodName) - a short call is a no-op',
+      );
+    }
+  });
+
+  // The project's HARD RULE: "All screens MUST BE 100% reactive. If underlying
+  // data changes, the screen must be listening and update accordingly."
+  // A lens list computed once is a Run button over a method the user deleted.
+  test('editing the document adds and removes lenses without a reload', async function () {
+    this.timeout(LSP_RESPONSE_MS);
+    const { doc, uri } = await openCSharpFile(tmpDir, 'Reactive.cs', CSHARP_TESTS);
+
+    // Interaction 1 - the baseline the fixture declares.
+    const before = testLensCommands(await codeLensesFor(uri))
+      .filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR)
+      .map((lens) => lens.command?.arguments?.[1])
+      .filter((name): name is string => typeof name === 'string');
+    deepEq(
+      [...before].sort(),
+      ['Lens_AddsTheory', 'Lens_AddsTwoNumbers'],
+      'the fixture declares exactly two test methods',
+    );
+    eq(before.includes('NotATest'), false, 'and one plain method, which gets no lens');
+
+    // Interaction 2 - the user ADDS a test method. The new lens must appear
+    // against the edited buffer, with no save and no window reload.
+    const withExtra = doc
+      .getText()
+      .replace(
+        '        public void NotATest()',
+        '        [Fact]\n        public void Lens_AddedLater()\n        {\n        }\n\n' +
+          '        public void NotATest()',
+      );
+    eq(await replaceDocumentContent(doc, withExtra), true, 'the edit must apply');
+    const afterAdd = testLensCommands(await codeLensesFor(uri))
+      .filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR)
+      .map((lens) => lens.command?.arguments?.[1])
+      .filter((name): name is string => typeof name === 'string');
+    eq(
+      afterAdd.includes('Lens_AddedLater'),
+      true,
+      'a test method typed into the open buffer gets its lens immediately',
+    );
+    eq(afterAdd.length, before.length + 1, 'and exactly one new lens, not a duplicated set');
+    eq(afterAdd.includes('Lens_AddsTwoNumbers'), true, 'the existing lenses survive the edit');
+    eq(afterAdd.includes('NotATest'), false, 'the plain method still gets none');
+
+    // Interaction 3 - the user REMOVES every test. A lens left behind runs a
+    // method that no longer exists.
+    eq(
+      await replaceDocumentContent(
+        doc,
+        [
+          'namespace Sample.Tests',
+          '{',
+          '    public class CalculatorTests',
+          '    {',
+          '    }',
+          '}',
+          '',
+        ].join('\n'),
+      ),
+      true,
+      'the second edit must apply too',
+    );
+    const afterRemove = testLensCommands(await codeLensesFor(uri));
+    deepEq(afterRemove, [], 'a file with no test method carries no test lens at all');
+    eq(doc.isDirty, true, 'and all of this happened in the buffer, with nothing written to disk');
+  });
+
+  // Implements [TEST-STATUS-LENS]: "`sharplsp.testLens.enabled` (default true)".
+  // The setting governs BOTH languages - F# is not a second-class case
+  // ([TEST-OVERVIEW]) - and turning it off must remove the actions as well as
+  // the status.
+  test('the enable setting governs the lens in C# and F# alike, and restores cleanly', async function () {
+    this.timeout(SETTINGS_WRITE_MS);
+    const csharp = await openCSharpFile(tmpDir, 'ToggleBoth.cs', CSHARP_TESTS);
+    const fsharp = await openFSharpFile(tmpDir, 'ToggleBoth.fs', FSHARP_TESTS);
+
+    const section = vscode.workspace.getConfiguration(TEST_LENS_SECTION);
+    const saved = section.inspect<boolean>(TEST_LENS_KEY)?.workspaceValue;
+    try {
+      // Interaction 1 - the default. Both languages carry lenses before the
+      // user has touched the setting at all.
+      await vscode.workspace
+        .getConfiguration(TEST_LENS_SECTION)
+        .update(TEST_LENS_KEY, true, vscode.ConfigurationTarget.Workspace);
+      const csOn = testLensCommands(await codeLensesFor(csharp.uri));
+      const fsOn = testLensCommands(await codeLensesFor(fsharp.uri));
+      eq(csOn.length >= 4, true, 'C# carries a Run and a Debug lens per test method');
+      eq(fsOn.length >= 4, true, 'and F# carries them for its [<Fact>] and [<Theory>] bindings');
+      eq(
+        fsOn.some((lens) => lens.command?.command === CMD_TEST_DEBUG_AT_CURSOR),
+        true,
+        'F# gets the Debug action too - it is not a second-class case',
+      );
+      eq(
+        vscode.workspace.getConfiguration(TEST_LENS_SECTION).get<boolean>(TEST_LENS_KEY),
+        true,
+        'and the setting reads back as the user left it',
+      );
+
+      // Interaction 2 - switch it off. BOTH languages must go quiet, and the
+      // status half must go with the actions: a lens showing a stale "Passed"
+      // over a file whose lenses the user disabled is the worst of both.
+      await vscode.workspace
+        .getConfiguration(TEST_LENS_SECTION)
+        .update(TEST_LENS_KEY, false, vscode.ConfigurationTarget.Workspace);
+      const csOff = await codeLensesFor(csharp.uri);
+      const fsOff = await codeLensesFor(fsharp.uri);
+      deepEq(testLensCommands(csOff), [], 'no C# test lens survives the setting being off');
+      deepEq(testLensCommands(fsOff), [], 'and no F# one either');
+      deepEq(
+        csOff.filter((lens) => (lens.command?.title ?? '').startsWith('$(circle-slash)')),
+        [],
+        'nor a status lens - the setting governs the whole contribution',
+      );
+      deepEq(
+        fsOff.filter((lens) => (lens.command?.title ?? '').startsWith('$(circle-slash)')),
+        [],
+        'in F# as in C#',
+      );
+
+      // Interaction 3 - switch it back on. What comes back must be what left,
+      // for both languages, addressed by the same names.
+      await vscode.workspace
+        .getConfiguration(TEST_LENS_SECTION)
+        .update(TEST_LENS_KEY, true, vscode.ConfigurationTarget.Workspace);
+      const csBack = testLensCommands(await codeLensesFor(csharp.uri));
+      const fsBack = testLensCommands(await codeLensesFor(fsharp.uri));
+      eq(csBack.length, csOn.length, 're-enabling restores exactly the C# lenses that were there');
+      eq(fsBack.length, fsOn.length, 'and exactly the F# ones');
+      deepEq(
+        csBack
+          .map((lens) => lens.command?.arguments?.[1])
+          .filter((name): name is string => typeof name === 'string')
+          .sort(),
+        csOn
+          .map((lens) => lens.command?.arguments?.[1])
+          .filter((name): name is string => typeof name === 'string')
+          .sort(),
+        'addressing the same C# methods by the same names',
+      );
+      deepEq(
+        fsBack
+          .map((lens) => lens.command?.arguments?.[1])
+          .filter((name): name is string => typeof name === 'string')
+          .sort(),
+        fsOn
+          .map((lens) => lens.command?.arguments?.[1])
+          .filter((name): name is string => typeof name === 'string')
+          .sort(),
+        'and the same F# bindings',
+      );
+    } finally {
+      await vscode.workspace
+        .getConfiguration(TEST_LENS_SECTION)
+        .update(TEST_LENS_KEY, saved, vscode.ConfigurationTarget.Workspace);
+    }
+  });
+
+  // Implements [TEST-STATUS-LENS] - the SIGNATURE readers that decide which
+  // method name a lens carries. A reader that answers the wrong name puts a Run
+  // button over one test and runs another.
+  test('the signature readers agree with the fixtures on every shape and near miss', async function () {
+    this.timeout(FAST_MS);
+
+    // Interaction 1 - C# signatures, including the modifiers a real test class
+    // uses. Every name it returns must be a method the fixture declares.
+    const csharpCases: readonly (readonly [string, string | undefined])[] = [
+      ['        public void Lens_AddsTwoNumbers()', 'Lens_AddsTwoNumbers'],
+      ['        public void Lens_AddsTheory(int a, int b, int expected)', 'Lens_AddsTheory'],
+      ['    public async Task Runs_AsynchronouslyAsync()', 'Runs_AsynchronouslyAsync'],
+      ['        internal static void Helper_Method()', 'Helper_Method'],
+      ['        [Fact]', undefined],
+      ['        [InlineData(2, 2, 4)]', undefined],
+      ['if (x > 0)', undefined],
+      ['        public int Value { get; set; }', undefined],
+      ['', undefined],
+      ['        // public void Commented()', undefined],
+    ];
+    for (const [line, expected] of csharpCases) {
+      eq(
+        extractCSharpMethodName(line),
+        expected,
+        JSON.stringify(line) + ' reads as ' + String(expected),
+      );
+    }
+    for (const method of FRAMEWORK_TEST_METHODS) {
+      eq(
+        FRAMEWORK_TESTS.includes(method),
+        true,
+        method + ' must be a method the framework fixture really declares',
+      );
+    }
+
+    // Interaction 2 - F# signatures. The backtick binding is the one that
+    // matters most: its name carries SPACES, and a reader that stops at the
+    // first space addresses a test that does not exist.
+    const fsharpCases: readonly (readonly [string, string | undefined])[] = [
+      ['let addsTheory a b expected =', 'addsTheory'],
+      ['let addsTwoNumbers () =', 'addsTwoNumbers'],
+      ['member this.MyTest () =', 'MyTest'],
+      ['[<Fact>]', undefined],
+      ['[<Theory>]', undefined],
+      ['open Xunit', undefined],
+      ['module Sample.FSharpTests', undefined],
+      ['', undefined],
+    ];
+    for (const [line, expected] of fsharpCases) {
+      eq(
+        extractFSharpFunctionName(line),
+        expected,
+        JSON.stringify(line) + ' reads as ' + String(expected),
+      );
+    }
+
+    // Interaction 3 - the duration suffix the status title appends, across the
+    // ms/seconds boundary the spec's `(<duration>)` implies.
+    eq(formatDuration(undefined), '', 'no measurement renders no suffix at all');
+    eq(formatDuration(0), ' (0ms)', 'zero is a measurement');
+    eq(formatDuration(1), ' (1ms)', 'and so is one millisecond');
+    eq(formatDuration(999), ' (999ms)', 'the last value before the boundary stays in ms');
+    eq(formatDuration(1000), ' (1.0s)', 'the boundary itself flips to seconds');
+    eq(formatDuration(1500), ' (1.5s)', 'with one decimal place');
+    eq(formatDuration(60000), ' (60.0s)', 'a minute is still reported in seconds, not mangled');
+    eq(
+      '$(pass) Passed' + formatDuration(1500),
+      '$(pass) Passed (1.5s)',
+      'and composes into exactly the title [TEST-STATUS-LENS] specifies',
+    );
+    eq(
+      '$(pass) Passed' + formatDuration(undefined),
+      '$(pass) Passed',
+      'with no trailing space when there is nothing to report',
+    );
   });
 });

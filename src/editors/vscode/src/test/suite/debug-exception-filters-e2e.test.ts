@@ -36,7 +36,7 @@ import {
   startDebuggee,
   useDebuggee,
 } from './debug-suite-kit';
-import { deepEq, eq } from './test-helpers';
+import { deepEq, eq, neq } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
 
 /** A type the fixture never throws — the exclude half of every filter case. */
@@ -195,5 +195,147 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
       'the exception caught after the filter change',
     );
     assertCleanSession(debuggee(), 'a mid-session exception filter change');
+  });
+
+  // Implements [DEBUG-FEATURES-EXCEPTIONS] "Break on specific exception types
+  // (include/exclude filter) | P1" with MORE THAN ONE type selected. A filter
+  // list that only ever honours its first entry passes every single-type test
+  // and fails the user the moment they tick a second box.
+  test('two selected types both break, and a third still does not', async function () {
+    this.timeout(DEBUG_TEST_MS);
+    const { fixture, recorder } = debuggee();
+
+    // Interaction 1 — gate before any throw, in the mode that throws BOTH types.
+    armBreakpoints(fixture, 'main-mode');
+    const session = await startDebuggee(debuggee(), { mode: MODE.both });
+    const [gate] = await recorder.waitForStops(1);
+    assert.ok(gate, 'the debuggee must reach the gate breakpoint');
+    neq(CAUGHT_TYPE, UNHANDLED_TYPE, 'the fixture really throws two DIFFERENT types');
+
+    // Interaction 2 — select both thrown types AND one that is never thrown.
+    const before = recorder.requests('setExceptionBreakpoints').length;
+    await dap(session, 'setExceptionBreakpoints', {
+      filters: [],
+      exceptionOptions: [CAUGHT_TYPE, UNHANDLED_TYPE, NEVER_THROWN_TYPE].map((typeName) => ({
+        path: [{ names: [typeName], negate: false }],
+        breakMode: 'always',
+      })),
+    });
+    const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
+    deepEq(sent.args['filters'], [], 'the blanket filters stay OFF');
+    const options: unknown = sent.args['exceptionOptions'];
+    assert.ok(Array.isArray(options), 'the request carries exceptionOptions');
+    eq(options.length, 3, 'all three selections are sent, not just the first');
+
+    // Interaction 3 — the FIRST selected type stops.
+    const first = await stepToFrame(recorder, CMD_CONTINUE);
+    assertStopReason(first.stop, 'exception', 'the first selected type');
+    assertStoppedAt(
+      first.frame,
+      fixture,
+      'throw-caught',
+      'ThrowCaught',
+      'a list naming ' + CAUGHT_TYPE + ' must stop on the statement that throws it',
+    );
+    assertExceptionIs(
+      await exceptionInfoOf(session, first.stop.threadId),
+      CAUGHT_TYPE,
+      CAUGHT_MESSAGE,
+      'the first selected type',
+    );
+
+    // Interaction 4 — and so does the SECOND, which is the half a first-entry
+    // implementation gets wrong.
+    const second = await stepToFrame(recorder, CMD_CONTINUE);
+    assertStopReason(second.stop, 'exception', 'the second selected type');
+    assertStoppedAt(
+      second.frame,
+      fixture,
+      'throw-unhandled',
+      'ThrowUnhandled',
+      'the SECOND entry of the type list must arm too - honouring only the first is how a ' +
+        'multi-type filter silently degrades to a single-type one',
+    );
+    assertExceptionIs(
+      await exceptionInfoOf(session, second.stop.threadId),
+      UNHANDLED_TYPE,
+      UNHANDLED_MESSAGE,
+      'the second selected type',
+    );
+    eq(
+      recorder.stops().filter((stop) => stop.reason === 'exception').length,
+      2,
+      'exactly two exception stops: the fixture throws each selected type once, and the ' +
+        'third selection is never thrown at all',
+    );
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+  });
+
+  // Implements the EXCLUDE half of the same row through the DAP mechanism the
+  // section names: a `negate: true` path. "Break on everything except X" is the
+  // shape a user reaches for when one noisy exception type is drowning a run.
+  test('a negated type path breaks on everything except the type it names', async function () {
+    this.timeout(DEBUG_TEST_MS);
+    const { fixture, recorder } = debuggee();
+
+    // Interaction 1 — gate, in the mode that throws both types.
+    armBreakpoints(fixture, 'main-mode');
+    const session = await startDebuggee(debuggee(), { mode: MODE.both });
+    await recorder.waitForStops(1);
+    eq(
+      recorder.capabilities()['supportsExceptionOptions'],
+      true,
+      'a negated path travels in `exceptionOptions`, so the capability must be advertised',
+    );
+
+    // Interaction 2 — exclude the type the program throws FIRST.
+    const before = recorder.requests('setExceptionBreakpoints').length;
+    await dap(session, 'setExceptionBreakpoints', {
+      filters: [],
+      exceptionOptions: [{ path: [{ names: [CAUGHT_TYPE], negate: true }], breakMode: 'always' }],
+    });
+    const sent = await recorder.requestAfter('setExceptionBreakpoints', before);
+    const options: unknown = sent.args['exceptionOptions'];
+    assert.ok(Array.isArray(options), 'the request carries exceptionOptions');
+    eq(options.length, 1, 'one option, carrying one negated path');
+    const path: unknown = (options[0] as Record<string, any>)['path'];
+    assert.ok(Array.isArray(path), 'the option carries a path');
+    eq(
+      (path[0] as Record<string, any>)['negate'],
+      true,
+      'and the negate flag reaches the adapter - dropped, the filter INCLUDES what the user ' +
+        'asked to exclude, which is the exact opposite of the gesture',
+    );
+
+    // Interaction 3 — continue. The excluded type must pass straight through,
+    // and the run must reach the type that is NOT excluded.
+    const stop = await stepToFrame(recorder, CMD_CONTINUE);
+    assertStopReason(stop.stop, 'exception', 'the type the negated path does not exclude');
+    assertStoppedAt(
+      stop.frame,
+      fixture,
+      'throw-unhandled',
+      'ThrowUnhandled',
+      'excluding ' +
+        CAUGHT_TYPE +
+        ' must skip its throw entirely and come to rest on the ' +
+        'NEXT throw, which the exclusion does not name',
+    );
+    assertExceptionIs(
+      await exceptionInfoOf(session, stop.stop.threadId),
+      UNHANDLED_TYPE,
+      UNHANDLED_MESSAGE,
+      'the exception a negated path let through',
+    );
+    eq(
+      recorder.stops().filter((entry) => entry.reason === 'exception').length,
+      1,
+      'exactly ONE exception stop: the excluded throw produced none',
+    );
+    eq(
+      recorder.outputText().includes('handled ' + CAUGHT_MESSAGE),
+      true,
+      'and the excluded exception really was thrown and handled on the way past',
+    );
   });
 });

@@ -4,9 +4,14 @@
 # ICorDebug ApplyChanges implementation to its VS Code protocol.
 set -euo pipefail
 
-NETCOREDBG_COMMIT="9744e1f051866215611b8440c638042aa2aa2f72"
-CORECLR_COMMIT="ea346eaeda73d7ef1cc3b148939ac83729cc38dc"
-BUILD_ID="$NETCOREDBG_COMMIT:dap-hot-reload-v1"
+# [DIST-DEBUGGER-BUNDLE] The commits and the patch version live in
+# tools/netcoredbg/netcoredbg.lock.json, which is also what pins the SHA-256
+# of the published artifacts. Read them from there rather than keeping a
+# second copy here that can drift out of step with the pins.
+LOCK_READER="$(cd "$(dirname "${BASH_SOURCE[0]}")/../netcoredbg" && pwd)/read-lock.mjs"
+NETCOREDBG_COMMIT="$(node "$LOCK_READER" netcoredbgCommit)"
+CORECLR_COMMIT="$(node "$LOCK_READER" coreclrCommit)"
+BUILD_ID="$(node "$LOCK_READER" buildId)"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"

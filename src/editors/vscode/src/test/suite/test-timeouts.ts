@@ -182,6 +182,20 @@ export const REAL_REPO_MS = 480_000;
  */
 export const REAL_REPO_WARMUP_MS = 360_000;
 
+/**
+ * How long to wait for something that must EVENTUALLY happen but is not a
+ * command round trip: a file-system watcher firing, a `SIGKILL`ed process
+ * disappearing from the process table, a spawned CLI printing `--version`, the
+ * workbench clearing its active debug session after a `terminated` event.
+ *
+ * `COMMAND_MS` is a NORMAL operation and deliberately one second. None of the
+ * above is one: they are owned by the OS or by a debounced watcher, they cost
+ * nothing when they are prompt, and a one-second budget on them buys a flake
+ * rather than a faster suite. This is a POLL budget, so a healthy run never
+ * spends it.
+ */
+export const SETTLE_MS = 10_000;
+
 // ── Runner-level ceilings ────────────────────────────────────────
 
 /**

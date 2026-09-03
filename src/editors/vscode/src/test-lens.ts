@@ -12,12 +12,14 @@ import { type CachedTestResult, type SharpLspTestController } from './testing.js
 import { CMD_TEST_RUN_AT_CURSOR, CMD_TEST_DEBUG_AT_CURSOR } from './constants.js';
 import { info } from './log.js';
 import { forEachLeaf } from './test-tree.js';
-
-/** Attribute markers that identify a method as a test. */
-const CS_TEST_ATTRIBUTES = ['Fact', 'Theory', 'Test', 'TestMethod', 'TestCase'] as const;
-
-/** F# test attribute markers (angle-bracket form). */
-const FS_TEST_ATTRIBUTES = ['Fact', 'Theory', 'Test', 'TestMethod', 'TestCase'] as const;
+import { singleLine } from './utils.js';
+import {
+  CS_DECLARATION_SPAN,
+  declarationBelow,
+  FS_DECLARATION_SPAN,
+  hasCSharpTestAttribute,
+  hasFSharpTestAttribute,
+} from './test-lens-attributes.js';
 
 /**
  * Provides code lenses above test methods showing their last known result.
@@ -75,87 +77,44 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
   }
 
   private lensesForCSharp(document: vscode.TextDocument): vscode.CodeLens[] {
-    const lenses: vscode.CodeLens[] = [];
-    const text = document.getText();
-    const lines = text.split('\n');
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? '';
-      if (!this.hasTestAttribute(line, CS_TEST_ATTRIBUTES)) {
-        continue;
-      }
-      const methodName = this.findCSharpMethodName(lines, i);
-      if (methodName === undefined) {
-        continue;
-      }
-      const range = new vscode.Range(i, 0, i, line.length);
-      this.addLensesForTest(lenses, range, methodName, document.uri);
-    }
-
-    return lenses;
+    return this.lensesFor(document, hasCSharpTestAttribute, extractCSharpMethodName, {
+      span: CS_DECLARATION_SPAN,
+    });
   }
 
   private lensesForFSharp(document: vscode.TextDocument): vscode.CodeLens[] {
-    const lenses: vscode.CodeLens[] = [];
-    const text = document.getText();
-    const lines = text.split('\n');
+    return this.lensesFor(document, hasFSharpTestAttribute, extractFSharpFunctionName, {
+      span: FS_DECLARATION_SPAN,
+    });
+  }
 
+  /**
+   * One lens pair per attributed DECLARATION, whichever language the file is.
+   *
+   * Keyed on the declaration rather than on the attribute because a test may
+   * carry several: `[DataRow(1, 2)]` above `[DataTestMethod]`, or NUnit's
+   * `[Test]` above `[TestCase(2, 2, 4)]`. Emitting per attribute stacked two
+   * identical Run buttons over one method and made the status line read twice.
+   */
+  private lensesFor(
+    document: vscode.TextDocument,
+    isAttribute: (line: string) => boolean,
+    nameAt: (line: string) => string | undefined,
+    reach: { readonly span: number },
+  ): vscode.CodeLens[] {
+    const lenses: vscode.CodeLens[] = [];
+    const lines = document.getText().split('\n');
+    const claimed = new Set<number>();
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      if (!this.hasFSharpTestAttribute(line)) {
-        continue;
-      }
-      const methodName = this.findFSharpTestName(lines, i);
-      if (methodName === undefined) {
-        continue;
-      }
+      if (!isAttribute(line)) continue;
+      const declaration = declarationBelow(lines, i, reach.span, nameAt);
+      if (declaration === undefined || claimed.has(declaration.line)) continue;
+      claimed.add(declaration.line);
       const range = new vscode.Range(i, 0, i, line.length);
-      this.addLensesForTest(lenses, range, methodName, document.uri);
+      this.addLensesForTest(lenses, range, declaration.name, document.uri);
     }
-
     return lenses;
-  }
-
-  private hasTestAttribute(line: string, attributes: readonly string[]): boolean {
-    const trimmed = line.trim();
-    return attributes.some(
-      (attr) =>
-        trimmed.startsWith(`[${attr}]`) ||
-        trimmed.startsWith(`[${attr}(`) ||
-        trimmed.includes(`[${attr}]`) ||
-        trimmed.includes(`[${attr}(`),
-    );
-  }
-
-  private hasFSharpTestAttribute(line: string): boolean {
-    const trimmed = line.trim();
-    return FS_TEST_ATTRIBUTES.some(
-      (attr) => trimmed.includes(`[<${attr}>]`) || trimmed.includes(`[<${attr}(`),
-    );
-  }
-
-  private findCSharpMethodName(lines: string[], attrLine: number): string | undefined {
-    const limit = Math.min(attrLine + 6, lines.length);
-    for (let i = attrLine; i < limit; i++) {
-      const line = lines[i] ?? '';
-      const match = extractCSharpMethodName(line);
-      if (match !== undefined) {
-        return match;
-      }
-    }
-    return undefined;
-  }
-
-  private findFSharpTestName(lines: string[], attrLine: number): string | undefined {
-    const limit = Math.min(attrLine + 4, lines.length);
-    for (let i = attrLine; i < limit; i++) {
-      const line = lines[i] ?? '';
-      const match = extractFSharpFunctionName(line);
-      if (match !== undefined) {
-        return match;
-      }
-    }
-    return undefined;
   }
 
   private addLensesForTest(
@@ -355,9 +314,24 @@ export function statusLensTitle(result: CachedTestResult): string {
     return `$(debug-step-over) Skipped`;
   }
   if (result.outcome === 'notRun') {
-    return `$(circle-slash) Not run${result.message !== undefined ? `: ${result.message}` : ''}`;
+    return `$(circle-slash) Not run${detail(result.message)}`;
   }
-  return `$(error) Failed${result.message !== undefined ? `: ${result.message}` : ''}`;
+  return `$(error) Failed${detail(result.message)}`;
+}
+
+/**
+ * A message rendered as the tail of a lens title, flattened onto ONE line.
+ *
+ * `cachedFrom` already flattens what it stores, so for a result that came from
+ * a run this is the identity. It is applied again here because the lens takes a
+ * {@link CachedTestResult}, not a TRX result: nothing in the type says the
+ * message is single-line, and a lens is the one place that cannot render it if
+ * it is not.
+ */
+function detail(message: string | undefined): string {
+  if (message === undefined) return '';
+  const flattened = singleLine(message);
+  return flattened === '' ? '' : `: ${flattened}`;
 }
 
 /** Format a duration in ms for display. */

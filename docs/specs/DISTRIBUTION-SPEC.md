@@ -426,22 +426,58 @@ reporting success.
 
 ## [DIST-CI-LAYOUT] CI Workflow Layout
 
-The PR pipeline uses reusable workflows (`on: workflow_call`):
+The PR pipeline runs in FIVE STRICTLY ORDERED PHASES. Each phase is a reusable
+workflow (`on: workflow_call`) called by `ci.yml`:
 
-| Workflow | Leg |
-|---|---|
-| `ci.yml` | Orchestrator: `detect-changes`, dependency review, manifest validation, and one `uses:` job per leg |
-| `ci-lint.yml` | Rust / Zed / .NET / VS Code lint + format gates |
-| `ci-rust.yml` | Sharded Rust e2e suite ([DIST-CI-RUST-SHARDS]), the union coverage gate, the version contract |
-| `ci-dotnet.yml` | Sidecar tests (Ubuntu) + win32 named-pipe transport ([DIST-CI-WIN-TRANSPORT]) |
-| `ci-vsix.yml` | Sharded, instrumented VS Code suite + VSIX payload check (Ubuntu, [DIST-CI-VSIX-SHARDS]) |
-| `ci-vsix-coverage.yml` | THE VS Code coverage gate — one ratchet over every shard of both platforms ([DIST-CI-VSIX-COVERAGE]) |
-| `ci-vsix-windows.yml` | VS Code feature chunks on Windows ([DIST-CI-WIN-VSIX]) |
+```
+detect-changes -> ANALYSE -> FULL BUILD (linux || windows) -> TEST -> COVERAGE
+```
 
-Invariants:
+| Phase | Workflow | Leg |
+|---|---|---|
+| — | `ci.yml` | Orchestrator: `detect-changes` and one `uses:` job per phase |
+| 1 ANALYSE | `ci-analyse.yml` | Every Rust / Zed / .NET / VS Code lint, format and analysis gate |
+| 1 ANALYSE | (in `ci.yml`) | Dependency review ([DIST-CI-SECURITY]) and Shipwright manifest validation |
+| 2 BUILD + 3 CACHE | `ci-build.yml` | Both platforms in parallel: host, sidecars, netcoredbg, VS Code suite, VSIX — then published |
+| 4 TEST | `ci-test-rust.yml` | Sharded Rust e2e suite ([DIST-CI-RUST-SHARDS]), the version contract |
+| 4 TEST | `ci-test-dotnet.yml` | Sidecar tests (Ubuntu) + the win32 named-pipe arm ([DIST-CI-WIN-TRANSPORT]) |
+| 4 TEST | `ci-test-vsix.yml` | Instrumented VS Code feature chunks (Ubuntu, [DIST-CI-VSIX-SHARDS]) |
+| 4 TEST | `ci-test-vsix-windows.yml` | Instrumented VS Code feature chunks (Windows, [DIST-CI-WIN-VSIX]) |
+| 4 TEST | `ci-test-editors.yml` | Zed + Rider ([DIST-CI-EDITORS]) |
+| 4 TEST | `ci-test-tooling.yml` | The repo's own build tooling - how the netcoredbg adapter is obtained ([DIST-DEBUGGER-BUNDLE]) |
+| 5 COVERAGE | `ci-coverage.yml` | The two SHARDED ratchets — Rust, and VS Code over both platforms ([DIST-CI-VSIX-COVERAGE]) |
 
-- **`detect-changes` is the only gate.** Every leg is `needs: detect-changes` and guarded by `code_changed`; no leg `needs:` another. Lint and tests are independent required gates — serializing tests behind lint added ~3 minutes to every PR's critical path, and a lint failure still blocks the merge.
-- **Legs are called, never duplicated.** Shared VSIX shell logic lives in `tools/vsix/` (for example `purge-path-binaries.sh` and `vsix-test-chunks.mjs`) and shared build logic in the `Makefile`, so a step is written once and called from every workflow that needs it.
+Phase invariants:
+
+- **ANALYSE gates everything and builds nothing.** No later phase consumes an
+  artifact from phase 1. Lint used to share a job with the Ubuntu build, which
+  meant the Windows build waited on both.
+- **PHASE 2 builds every platform, once, in parallel.** `build-linux` and
+  `build-windows` are SIBLINGS — neither `needs:` the other, because neither
+  consumes the other's output. Gating Windows on the Ubuntu build put 6m45 of
+  idle Windows runner, and then 11m02 of duplicate Windows building, in front of
+  the slowest tests in the pipeline.
+- **PHASE 3 is the handoff boundary.** Everything phase 4 needs is uploaded at
+  the end of phase 2, and NO test leg may rebuild a shipping artifact. A leg
+  MAY compile instrumented test binaries — a coverage build is a different
+  profile than the release artifact, so no phase-2 build could have produced it.
+- **EACH ARROW IS THE ONLY DEPENDENCY.** Every phase-4 leg is
+  `needs: [detect-changes, build]` and guarded by `code_changed`. No test leg
+  `needs:` another test leg.
+- **EVERY TEST RUNS EXACTLY ONCE.** No suite may execute in two jobs. Where a
+  platform arm genuinely differs, only the platform-dependent classes run twice
+  — the Windows transport job runs `_test-dotnet-win-transport`, not the whole
+  Common test project.
+- **PHASE 5 gates only what phase 4 could not.** A ratchet needs a complete
+  tracefile. The sharded suites (Rust partitions, VS Code chunks) have none in
+  any single job, so they merge and gate in `ci-coverage.yml`; the unsharded
+  legs (.NET, Zed, Rider) gate inside their own test job.
+- **Legs are called, never duplicated.** Per-platform build logic lives in the
+  `build-platform` composite action, per-shard logic in `vsix-shard`, and shared
+  build logic in the `Makefile`, so a step is written once and called from every
+  workflow that needs it. The Ubuntu and Windows VS Code legs run the SAME
+  composite action and the SAME make target; they had already drifted apart
+  once, to the point where Windows ran its whole suite uninstrumented.
 
 ### [DIST-CI-SECURITY] Security Gates
 
@@ -492,7 +528,7 @@ Both listener flavors MUST restrict the endpoint to the current user: `0600` on 
 
 ## [DIST-CI-WIN-VSIX] Windows VS Code End-to-End Tests
 
-CI MUST run the VS Code end-to-end suite's whole feature surface on Windows runners through `ci-vsix-windows.yml` and `_test-vsix-shard` (the same target the Ubuntu leg runs): the release-built `sharplsp` host, Roslyn and FCS sidecars, actual VS Code extension host, and win32 named-pipe IPC. [DIST-CI-WIN-TRANSPORT] covers frames only, while Windows-specific executables (`netcoredbg.exe`, `dotnet-trace`, `dotnet test`, `dotnet new`) and paths require full feature coverage; a grep-selected smoke subset is insufficient.
+CI MUST run the VS Code end-to-end suite's whole feature surface on Windows runners through `ci-test-vsix-windows.yml` and `_test-vsix-shard` (the same target the Ubuntu leg runs): the release-built `sharplsp` host, Roslyn and FCS sidecars, actual VS Code extension host, and win32 named-pipe IPC. [DIST-CI-WIN-TRANSPORT] covers frames only, while Windows-specific executables (`netcoredbg.exe`, `dotnet-trace`, `dotnet test`, `dotnet new`) and paths require full feature coverage; a grep-selected smoke subset is insufficient.
 
 The suite is sliced into **feature chunks**, one CI job each on BOTH platform legs, run with `fail-fast: false` so one failing feature area never hides the state of the others. The manifest below is the single declaration; `linuxOnly` chunks are absent from the Windows matrix ([DIST-CI-VSIX-SHARDS]):
 
@@ -571,7 +607,7 @@ Invariants:
   do live in `.github/actions/`: `vsix-suite` (install, resolve the matrix,
   compile once, publish), `vsix-shard` (stage, run one instrumented chunk,
   publish its tracefile) and `vsix-payload` (pack the VSIX, assert the platform
-  binary is in it). `ci-vsix.yml` and `ci-vsix-windows.yml` supply only what
+  binary is in it). `ci-test-vsix.yml` and `ci-test-vsix-windows.yml` supply only what
   genuinely differs — artifact names, where the debugger unpacks, the platform
   tag, and whether the runner needs `xvfb`. Copying steps between the two YAMLs
   is how they drifted apart the first time.
@@ -617,7 +653,7 @@ Invariants:
 
 There is exactly ONE coverage gate for the extension, it runs at the END of the
 pipeline, and it ratchets the union of every instrumented shard on every
-platform (`ci-vsix-coverage.yml`, `needs: [vsix, vsix-windows]`).
+platform (`ci-coverage.yml`, PHASE 5, `needs: [test-rust, test-vsix, test-vsix-windows]`).
 
 Invariants:
 

@@ -157,6 +157,27 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     await gesture(CMD_CONTINUE);
     await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
     deepEq(stubs.log.errorMessages, [], 'a working F# test debug run reports no error');
+    // Interaction 4 - the DAP conversation behind that one gesture. F# is not
+    // a special case at the protocol layer either: the same handshake, the same
+    // capability table, the same single termination.
+    eq(recorder.events('initialized').length, 1, 'one `initialized` event for the F# session');
+    eq(recorder.events('terminated').length, 1, 'and exactly one termination');
+    eq(
+      recorder.responses('configurationDone').length >= 1,
+      true,
+      'configurationDone was ANSWERED before the gesture settled ([DEBUG-FEATURES-TESTS] rule 2)',
+    );
+    eq(
+      recorder.capabilities()['supportsConditionalBreakpoints'],
+      true,
+      'the capability table is language-agnostic and must hold for an F# test host',
+    );
+    eq(recorder.capabilities()['supportsSetVariable'], true, 'value editing included');
+    eq(sessions.ours.length, 1, 'one F# test, one session');
+    eq(recorder.stops().length, 1, 'and exactly one stop: the breakpoint the user armed');
+    eq(vscode.debug.breakpoints.length, 1, 'the breakpoint survives the session ending');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    deepEq(recorder.exits, [], 'and no adapter process exiting under the session');
   });
 
   test('an F# stack shows the module helper ABOVE the backtick test that called it', async function () {
@@ -211,6 +232,36 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
       'and on a real source line — a zero line is a frame with no PDB mapping',
     );
     deepEq(recorder.errors, [], 'with no adapter transport error');
+    // Interaction 4 - the whole F# stack, not only the two frames the walk
+    // touched. A test host runs the user's code under the xUnit runner, so the
+    // frames beneath must be there and must be distinguishable from the user's.
+    const wholeStack = await stackFrames(requireActive('the F# stack'), stop.threadId);
+    eq(wholeStack.length >= 2, true, 'an F# helper called from a test is at least two deep');
+    eq(
+      wholeStack.filter(
+        (entry) => comparablePath(entry.sourcePath) === comparablePath(fixture.sourceFile),
+      ).length >= 2,
+      true,
+      'both user frames resolve to the .fs file the user wrote',
+    );
+    eq(
+      new Set(wholeStack.map((entry) => entry.id)).size,
+      wholeStack.length,
+      'every frame carries its own handle, or selecting a caller reads the callee',
+    );
+    eq(
+      wholeStack.every((entry) => entry.line >= 0),
+      true,
+      'and a line the editor can point at',
+    );
+    eq(
+      wholeStack.length > 2,
+      true,
+      'the xUnit runner frames sit beneath both - a stack that stopped at the test method is ' +
+        'truncated, not filtered',
+    );
+    eq(sessions.ours.length, 1, 'all of it inside the ONE session the Debug press started');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
   });
 
   test('an F# [<Theory>] breaks once per row, each with its own arguments', async function () {
@@ -253,6 +304,25 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
       'each F# row carries its own [<InlineData>] arguments, once each',
     );
     eq(sessions.ours.length, 1, 'both rows ran in the ONE session the selection started');
+    // Interaction 4 - a theory is ONE test in the tree however many rows it
+    // runs, and one session however many times it stops ([TEST-RUN-TRX]).
+    const theoryRow = await rowFor(FS_ROWS);
+    eq(theoryRow.id, FS_ROWS, 'the theory is addressed by the single name its rows share');
+    eq(theoryRow.children.size, 0, 'and is a LEAF - one row per [<InlineData>] is two tests');
+    eq(recorder.stops().length, 2, 'two rows, two stops, and no third');
+    eq(
+      recorder.stops().every((entry) => entry.reason === 'breakpoint'),
+      true,
+      'each of them a breakpoint stop, never a step the user never asked for',
+    );
+    eq(
+      recorder.stops().every((entry) => entry.threadId !== 0),
+      true,
+      'each naming the thread it stopped',
+    );
+    eq(vscode.debug.breakpoints.length, 1, 'one breakpoint served both rows');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
   });
 
   test('Debug Test at the cursor debugs the F# binding the caret is in', async function () {
@@ -303,6 +373,19 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
       'a discovered test debugged at the cursor must not warn that it could not be found',
     );
     deepEq(stubs.log.errorMessages, [], 'nor report an error');
+    // Interaction 4 - the at-cursor gesture must reach the SAME machinery the
+    // Testing view does: one real session, a complete handshake, and a tree
+    // left exactly as it was.
+    assertHandshakeOrder(recorder, 'the at-cursor F# gesture');
+    assertBoundAtLines(recorder, [FS_SOURCE.dapLine('fs-call')], 'the at-cursor F# breakpoint');
+    eq(sessions.ours.length, 1, 'the editor gesture starts ONE session, exactly as the tree does');
+    eq(recorder.events('terminated').length <= 1, true, 'and terminates it at most once');
+    const api = await activateTestExplorer();
+    const stillThere = findItem(api.testController.items, FS_SPACED);
+    assert.ok(stillThere, 'the binding is still a row after being debugged from the editor');
+    eq(stillThere.id, FS_SPACED, 'under its own name, spaces preserved exactly');
+    eq(stillThere.children.size, 0, 'and still a leaf');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
   });
 
   test('debugging the F# MODULE row debugs every binding under it, in one session', async function () {
@@ -363,6 +446,20 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     eq(sessions.ours.length, 1, 'a module is ONE session, not one per binding');
     deepEq(recorder.errors, [], 'with no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+    // Interaction 4 - the module row is a GROUP, and a group is one invocation
+    // ([TEST-RUN-TRX]). Its id must never be a test name, and every binding
+    // under it must still be addressable afterwards.
+    eq(moduleRow.id.includes(FS_MODULE_TYPE), true, 'the group id names the module');
+    eq(FS_MODULE.startsWith(FS_MODULE_NAMESPACE), true, 'which sits under its own namespace');
+    eq(recorder.events('terminated').length <= 1, true, 'one group is at most one termination');
+    eq(sessions.ours.length, 1, 'and exactly one session throughout');
+    for (const fqn of FS_ALL) {
+      const item = findItem((await activateTestExplorer()).testController.items, fqn);
+      assert.ok(item, fqn + ' must still be a row after the module was debugged');
+      eq(item.id, fqn, 'under its own name');
+      eq(item.children.size, 0, 'and still a leaf');
+    }
+    deepEq(stubs.log.warningMessages, [], 'debugging a module warns about nothing');
   });
 
   test('debugging an F# selection of BOTH bindings runs both under one session', async function () {
@@ -417,6 +514,28 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     );
     eq(sessions.ours.length, 1, 'and a selection is ONE session, never one per test');
     deepEq(recorder.errors, [], 'with no adapter transport error');
+    // Interaction 4 - the filter the selection produced. [TEST-FILTER-ESCAPE]
+    // makes SPACES not grammar and the joining pipe UNESCAPED, and a
+    // multi-select of two F# bindings is where both rules meet.
+    eq(rows.length, 2, 'exactly the two bindings the fixture declares were selected');
+    eq(
+      rows.every((row) => row.children.size === 0),
+      true,
+      'both of them leaves',
+    );
+    eq(
+      rows.every((row) => row.id.startsWith(FS_MODULE)),
+      true,
+      'both under the module the fixture declares',
+    );
+    eq(sessions.ours.length, 1, 'a selection is ONE session, never one per test');
+    eq(recorder.events('terminated').length <= 1, true, 'and at most one termination');
+    eq(
+      recorder.stops().every((entry) => entry.reason === 'breakpoint'),
+      true,
+      'every stop was the armed helper breakpoint, not a step or an exception',
+    );
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
   });
 
   test('an F# debug run leaves the tree and the spaced ids exactly as they were', async function () {
@@ -462,5 +581,19 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
       eq(item.children.size, 0, 'and still a leaf');
     }
     eq(sessions.ours.length, 1, 'exactly one debug session was started');
+    // Interaction 4 - and the RESULT cache is untouched by a debug run. A debug
+    // session is a diagnostic, not a run: repainting the tree green because the
+    // user stepped through a test is a result nobody produced.
+    const api2 = await activateTestExplorer();
+    for (const fqn of FS_ALL) {
+      const item = findItem(api2.testController.items, fqn);
+      assert.ok(item, fqn + ' must still be a row');
+      neq(item.label, '', fqn + ' must still be labelled for the user to read');
+      eq(item.error, undefined, fqn + ' must not be marked errored by a debug run');
+    }
+    eq(recorder.events('terminated').length, 1, 'exactly one termination');
+    eq(recorder.stops().length, 0, 'and no stop, because nothing was armed');
+    eq(vscode.debug.breakpoints.length, 0, 'the Breakpoints view is still empty');
+    deepEq(stubs.log.warningMessages, [], 'a clean debug run warns about nothing');
   });
 });

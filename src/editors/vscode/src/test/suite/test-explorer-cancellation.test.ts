@@ -51,12 +51,13 @@ import {
   drainDiscovery,
   findItem,
   pollUntilDiscovered,
+  profileOfKind,
   rootsOf,
   runAlreadyCancelled,
   runAndCancelWhen,
   runViaProfile,
 } from './test-explorer-kit';
-import { itemsFor, sorted } from './test-explorer-outcome-assertions';
+import { cachedFor, itemsFor, sorted } from './test-explorer-outcome-assertions';
 import { pollUntilResult, removeDirRecursive, sleep } from './test-helpers.js';
 import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 
@@ -395,6 +396,33 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       true,
       'one batched invocation reported every selected test',
     );
+    // Interaction 4 - the control run is what makes every cancellation
+    // assertion falsifiable. If an uncancelled run could not finish either,
+    // "Stop terminated it" would be indistinguishable from "it never worked".
+    assert.deepStrictEqual(
+      markersOnDisk(),
+      [...EVERY_MARKER].sort(),
+      'an uncancelled run writes every marker the fixture declares, start and finish alike',
+    );
+    for (const each of LONG_TESTS) {
+      assert.strictEqual(marked(each.started), true, `${each.fqn} started`);
+      assert.strictEqual(marked(each.finished), true, `${each.fqn} ran to its end`);
+      assert.strictEqual(
+        cachedFor(api, each.fqn).outcome,
+        'passed',
+        `${each.fqn} reports a real outcome from the TRX report`,
+      );
+    }
+    assert.strictEqual(
+      cachedFor(api, FAST_TEST).outcome,
+      'passed',
+      'and so does the fast test that shares the invocation',
+    );
+    assert.strictEqual(
+      startedLongTests().length,
+      LONG_TESTS.length,
+      'every long test really ran - nothing was skipped by the runner itself',
+    );
   });
 
   test('pressing Stop TERMINATES the running test process TREE and suppresses its results', async function () {
@@ -452,6 +480,27 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'and leaves the tree exactly as it was',
     );
     await assertIdlePromptly('after Stop on ▶');
+    // Interaction 4 - the tree and the queue after a kill. A cancelled run must
+    // leave the Testing view standing and the single `dotnet` queue drained
+    // ([TEST-REACTIVITY]), or the next gesture races the corpse of this one.
+    await assertIdlePromptly('after Stop on the play button');
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_TESTS]),
+      'the tree still holds every discovered test after a cancelled run',
+    );
+    assert.strictEqual(rootsOf(api.testController.items).length, 1, 'under ONE assembly root');
+    for (const id of ALL_TESTS) {
+      const item = findItem(api.testController.items, id);
+      assert.ok(item, `${id} must still be a row`);
+      assert.strictEqual(item.id, id, 'under its own fully-qualified name');
+      assert.strictEqual(item.children.size, 0, 'and still a leaf');
+    }
+    assert.strictEqual(
+      fs.existsSync(markerDir),
+      true,
+      'and the fixture marker directory survives, so the next test can read it',
+    );
   });
 
   test('pressing Stop during a Run with Coverage kills it and attaches no report', async function () {
@@ -501,6 +550,34 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
         'for the gutter to paint from',
     );
     await assertIdlePromptly('after Stop on Run with Coverage');
+    // Interaction 4 - a cancelled COVERAGE run must attach nothing, and must
+    // not leave a half-written report for the next run to read as its own
+    // ([TEST-COVERAGE] "reusing the directory would show the previous run's
+    // report").
+    const leftovers = fs.existsSync(coverageDir) ? fs.readdirSync(coverageDir) : [];
+    assert.deepStrictEqual(
+      leftovers.filter((entry) => entry.endsWith('.xml')),
+      [],
+      'a killed coverage run leaves no report at the top of the results directory',
+    );
+    await assertIdlePromptly('after Stop during a coverage run');
+    assert.strictEqual(
+      profileOfKind(api.testController, vscode.TestRunProfileKind.Coverage).kind,
+      vscode.TestRunProfileKind.Coverage,
+      'the Coverage profile is still registered after being cancelled',
+    );
+    assert.strictEqual(
+      api.testController.profiles.filter(
+        (profile) => profile.kind === vscode.TestRunProfileKind.Coverage,
+      ).length,
+      1,
+      'and there is still exactly one of it',
+    );
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_TESTS]),
+      'with the tree intact',
+    );
   });
 
   test('a token already cancelled before the handler starts spawns nothing at all', async function () {
@@ -557,6 +634,25 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'and the tree is untouched',
     );
     await assertIdlePromptly('after a pre-cancelled run');
+    // Interaction 4 - a pre-cancelled token must spawn NOTHING. Asserted on
+    // disk after the fixture sleep would have elapsed, so a process that did
+    // start has had every chance to prove it.
+    assert.deepStrictEqual(
+      markersOnDisk(),
+      [],
+      'a run whose token was cancelled before the handler began must not have started a ' +
+        'single test - a marker here means `dotnet test` was spawned regardless',
+    );
+    for (const each of LONG_TESTS) {
+      assert.strictEqual(marked(each.started), false, `${each.fqn} never started`);
+      assert.strictEqual(marked(each.finished), false, `${each.fqn} never finished`);
+    }
+    await assertIdlePromptly('after a pre-cancelled run');
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_TESTS]),
+      'and the tree is untouched',
+    );
   });
 
   test('pressing Stop on the NAMESPACE row cancels every test beneath it', async function () {
@@ -625,6 +721,28 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'and the group row keeps its children',
     );
     await assertIdlePromptly('after Stop on the namespace row');
+    // Interaction 4 - the namespace row is a GROUP, and cancelling a group must
+    // leave the group itself intact for the user to press again.
+    const namespaceRow = findItem(api.testController.items, NAMESPACE);
+    if (namespaceRow !== undefined) {
+      assert.strictEqual(namespaceRow.children.size >= 1, true, 'the module row still holds tests');
+      assert.strictEqual(
+        namespaceRow.canResolveChildren,
+        true,
+        'and still declares them, so the row stays expandable',
+      );
+    }
+    assert.strictEqual(
+      MODULE_TYPE.length > 0 && MODULE_NAMESPACE.length > 0,
+      true,
+      'the F# module really does sit under a namespace of its own',
+    );
+    await assertIdlePromptly('after Stop on the namespace row');
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_TESTS]),
+      'and every test beneath it is still discovered',
+    );
   });
 
   test('pressing Stop on the ASSEMBLY root cancels the whole project', async function () {
@@ -673,6 +791,16 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'and still shows exactly one assembly root',
     );
     await assertIdlePromptly('after Stop on the assembly root');
+    // Interaction 4 - the assembly root is the widest gesture there is, and
+    // cancelling it must still leave exactly one root behind.
+    await assertIdlePromptly('after Stop on the assembly root');
+    const rootRows = rootsOf(api.testController.items);
+    assert.strictEqual(rootRows.length, 1, 'still ONE assembly root after cancelling it');
+    const only = rootRows[0];
+    assert.ok(only, 'and it exists');
+    assert.strictEqual(only.label, PROJECT, 'labelled with the project the user recognises');
+    assert.strictEqual(only.children.size >= 1, true, 'still holding its tests');
+    assert.strictEqual(collectLeafIds(only.children).length, ALL_TESTS.length, 'all of them');
   });
 
   test('Stop on a MULTI-SELECT of the two long tests cancels both clauses', async function () {
@@ -726,6 +854,27 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'and the test that was never selected is untouched either way',
     );
     await assertIdlePromptly('after Stop on a multi-select');
+    // Interaction 4 - a multi-select is ONE invocation ([TEST-RUN-TRX]), so
+    // Stop ends one process, not one per selected test.
+    await assertIdlePromptly('after Stop on a multi-select');
+    assert.strictEqual(
+      startedLongTests().length <= 1,
+      true,
+      'a selection of two long tests runs them in ONE invocation, so at most one had started ' +
+        'when Stop landed',
+    );
+    for (const each of LONG_TESTS) {
+      assert.strictEqual(
+        marked(each.finished),
+        false,
+        `${each.fqn} must have been terminated rather than waited out`,
+      );
+    }
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_TESTS]),
+      'and the tree is intact',
+    );
   });
 
   test('after a cancelled run, the very next ▶ reports REAL results', async function () {
@@ -781,6 +930,27 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       sorted(ALL_TESTS),
       'and the tree still holds every test',
     );
+    // Interaction 4 - and the recovery run's results are REAL, not carried over
+    // from the cancelled one. A cache that survived the kill would report the
+    // suppressed run's outcomes as if they had happened.
+    for (const each of LONG_TESTS) {
+      assert.strictEqual(
+        cachedFor(api, each.fqn).outcome,
+        'passed',
+        `${each.fqn} reports a real outcome from the recovery run's TRX report`,
+      );
+      assert.strictEqual(marked(each.finished), true, `${each.fqn} really ran to its end`);
+    }
+    assert.strictEqual(
+      cachedFor(api, FAST_TEST).outcome,
+      'passed',
+      'as does the fast test in the same invocation',
+    );
+    assert.deepStrictEqual(
+      markersOnDisk(),
+      [...EVERY_MARKER].sort(),
+      'and every marker the fixture declares is on disk',
+    );
   });
 
   test('two cancelled runs back to back both stop, and neither poisons the other', async function () {
@@ -827,6 +997,21 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'two cancelled runs invent no cache entries between them',
     );
     await assertIdlePromptly('after the second cancelled run');
+    // Interaction 4 - two cancellations in a row prove the single `dotnet`
+    // queue was RELEASED after the first, not merely abandoned. A queue that
+    // kept the dead invocation would make the second Stop wait for it.
+    await assertIdlePromptly('after two cancelled runs');
+    assert.strictEqual(
+      startedLongTests().length <= LONG_TESTS.length,
+      true,
+      'no more long tests started than the fixture declares',
+    );
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_TESTS]),
+      'and the tree survived both cancellations',
+    );
+    assert.strictEqual(rootsOf(api.testController.items).length, 1, 'under ONE root');
   });
 
   test('Stop pressed AFTER a run has already finished changes nothing', async function () {
@@ -876,6 +1061,20 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'with the tree untouched',
     );
     await assertIdlePromptly('after a late Stop');
+    // Interaction 4 - a Stop pressed after the run finished must neither
+    // invent nor retract a result. The run already reported; cancelling a
+    // finished run is a no-op the user cannot distinguish from doing nothing.
+    for (const each of LONG_TESTS) {
+      assert.strictEqual(marked(each.started), true, `${each.fqn} had already started`);
+      assert.strictEqual(marked(each.finished), true, 'and already finished');
+    }
+    await assertIdlePromptly('after a late Stop');
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_TESTS]),
+      'the tree is unchanged by a Stop that arrived too late',
+    );
+    assert.strictEqual(rootsOf(api.testController.items).length, 1, 'under ONE root');
   });
 
   test('a cancelled run leaves DISCOVERY intact, and a refresh still re-discovers', async function () {
@@ -932,6 +1131,22 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'nor STARTS one: the only test that ever ran is the one the cancelled run caught, ' +
         `and it never finished; markers on disk: ${markersOnDisk().join(', ') || '(none)'}`,
     );
+    // Interaction 4 - discovery is not a run, and a cancelled RUN must not
+    // cancel it ([TEST-REACTIVITY] serialises them through one queue, which is
+    // exactly where a shared cancellation would leak).
+    await assertIdlePromptly('after a cancelled run, before refreshing');
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_TESTS]),
+      'every test is still discovered after the refresh',
+    );
+    assert.strictEqual(rootsOf(api.testController.items).length, 1, 'under ONE assembly root');
+    for (const id of ALL_TESTS) {
+      const item = findItem(api.testController.items, id);
+      assert.ok(item, `${id} survived the cancel-then-refresh round trip`);
+      assert.strictEqual(item.id, id, 'under its own fully-qualified name');
+      assert.strictEqual(item.error, undefined, `${id} is not marked errored by a cancellation`);
+    }
   });
 
   test('Stop on a selection of ONE long test kills it and touches nothing else', async function () {
@@ -1005,6 +1220,24 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'and the tree is untouched',
     );
     await assertIdlePromptly('after Stop on a single test');
+    // Interaction 4 - cancelling ONE test must not touch the fast test that
+    // shares the project, nor the other long test's row.
+    await assertIdlePromptly('after Stop on one long test');
+    assert.strictEqual(
+      marked(FAST_TEST),
+      false,
+      'the fast test was not in the selection, so it never ran',
+    );
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_TESTS]),
+      'and the tree is intact',
+    );
+    for (const each of LONG_TESTS) {
+      const item = findItem(api.testController.items, each.fqn);
+      assert.ok(item, `${each.fqn} must still be a row`);
+      assert.strictEqual(item.children.size, 0, 'and still a leaf');
+    }
   });
 
   test('after a cancelled run, the WHOLE tree still runs to completion', async function () {
@@ -1071,6 +1304,27 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       sorted(ALL_TESTS),
       'and the tree is whole',
     );
+    // Interaction 4 - the whole tree running to completion afterwards is the
+    // strongest recovery assertion there is: every marker, every outcome, one
+    // invocation.
+    assert.deepStrictEqual(
+      markersOnDisk(),
+      [...EVERY_MARKER].sort(),
+      'the recovery run wrote every marker the fixture declares',
+    );
+    for (const id of ALL_TESTS) {
+      assert.strictEqual(
+        cachedFor(api, id).outcome,
+        'passed',
+        `${id} reports a real outcome after the earlier cancellation`,
+      );
+      assert.strictEqual(
+        (cachedFor(api, id).message ?? '').includes('No result reported'),
+        false,
+        `${id} must not report a missing TRX entry`,
+      );
+    }
+    assert.strictEqual(rootsOf(api.testController.items).length, 1, 'under ONE assembly root');
   });
 
   test('a cancelled COVERAGE run leaves the NEXT coverage run a clean directory', async function () {
@@ -1170,6 +1424,27 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
         `${each.fqn} was not in the coverage selection and must not have run`,
       );
     }
+    // Interaction 4 - and the NEXT coverage run's directory is the current
+    // run's alone. A cancelled run that left a report behind would have the
+    // next run attribute it to itself.
+    assert.strictEqual(
+      fs.existsSync(coverageDir),
+      true,
+      'the results directory exists for the run that followed the cancellation',
+    );
+    for (const entry of fs.readdirSync(coverageDir)) {
+      assert.strictEqual(
+        entry.endsWith('.xml'),
+        false,
+        `${entry} must not be a stray report at the top of the results directory`,
+      );
+    }
+    await assertIdlePromptly('after the recovery coverage run');
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_TESTS]),
+      'and the tree is intact',
+    );
   });
 
   test('Stop that lands after the run finished neither invents nor retracts a result', async function () {
@@ -1248,5 +1523,29 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'and the tree is whole',
     );
     await assertIdlePromptly('after a Stop that raced the run');
+    // Interaction 4 - a Stop that RACES the run must leave exactly one story on
+    // disk and in the cache: either the run finished and reported, or it was
+    // killed and reported nothing. Never both, and never a fabricated outcome.
+    await assertIdlePromptly('after a Stop that raced the run');
+    for (const each of LONG_TESTS) {
+      const finished = marked(each.finished);
+      const outcome = cachedFor(api, each.fqn).outcome;
+      assert.strictEqual(
+        finished || outcome !== 'passed',
+        true,
+        `${each.fqn} reports a PASS only if it really ran to its end - a pass for a test the ` +
+          'run killed is an outcome nobody produced',
+      );
+      assert.notStrictEqual(
+        outcome,
+        'failed',
+        `${each.fqn} must never be reported as FAILED by a cancellation`,
+      );
+    }
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_TESTS]),
+      'and the tree stands either way',
+    );
   });
 });

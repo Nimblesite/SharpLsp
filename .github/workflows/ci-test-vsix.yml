@@ -1,0 +1,67 @@
+# agent-pmo:0b21609
+---
+# PHASE 4 — TEST. The VS Code leg on Ubuntu. [DIST-CI-VSIX-SHARDS]
+#
+# Pure fan-out. This workflow contains no build job and no packaging job: the
+# compiled suite, the host, both sidecars, netcoredbg and the VSIX all come from
+# PHASE 2, and the chunk matrix is an INPUT resolved there rather than something
+# recomputed here.
+#
+# It used to open with a `Compile suite` job and carry a `VSIX Payload` job, both
+# of which had to re-install npm dependencies before doing anything. Compiling
+# the suite in PHASE 2 - where the machine that compiles it is the machine that
+# already has the toolchain hot - removed a job from the front of the fan-out,
+# and packing the VSIX beside the binaries it packages removed another.
+#
+# EVERY SHARD IS INSTRUMENTED and NONE of them gates: no chunk can meet the line
+# threshold alone, so the single ratcheted gate runs in PHASE 5 over the union of
+# both platforms ([DIST-CI-VSIX-COVERAGE], ci-coverage.yml).
+#
+# The Windows leg (ci-test-vsix-windows.yml) owns win32 coverage; the chunks
+# marked `linuxOnly` in the manifest - the real-world-repository stress suites -
+# run only here.
+name: CI / Test / VS Code
+'on':
+  workflow_call:
+    inputs:
+      chunks:
+        description: JSON array of feature chunks, resolved by the PHASE 2 Linux build.
+        required: true
+        type: string
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+permissions:
+  contents: read
+jobs:
+  test-vsix:
+    name: ${{ matrix.chunk }}
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    # A shard installs deps, downloads a compiled suite and prebuilt binaries,
+    # and runs its slice against real Roslyn/FCS sidecars. A shard approaching
+    # this ceiling is a bug to investigate, not a budget to grow: the per-test
+    # ceilings live in src/test/suite/test-timeouts.ts and none exceeds 2
+    # minutes.
+    timeout-minutes: 25
+    strategy:
+      # Every chunk is an independent feature area: one failure must not cancel
+      # the rest, or a single flake hides the state of the whole surface. The
+      # coverage gate still needs them all, so a failed chunk fails the leg.
+      fail-fast: false
+      matrix:
+        chunk: ${{ fromJSON(inputs.chunks) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Run the shard
+        uses: ./.github/actions/vsix-shard
+        with:
+          chunk: ${{ matrix.chunk }}
+          platform: linux
+          suite-artifact: vsix-suite-linux
+          binaries-artifact: linux-lsp-binaries
+          debugger-artifact: linux-netcoredbg
+          debugger-path: target/netcoredbg/linux-x64/netcoredbg
+          xvfb: 'true'
+          user-data-dir: ${{ runner.temp }}/vsx-${{ matrix.chunk }}

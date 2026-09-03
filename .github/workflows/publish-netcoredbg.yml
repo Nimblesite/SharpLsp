@@ -1,0 +1,121 @@
+# agent-pmo:0b21609
+---
+# [DIST-DEBUGGER-BUNDLE] Builds SharpLsp's patched netcoredbg ONCE per pinned
+# commit, attests its provenance, and publishes it so that every PR build, every
+# release and every developer machine DOWNLOADS a known artifact instead of
+# recompiling one.
+#
+# Why this exists. SharpLsp ships a patched netcoredbg - dap-hot-reload.patch
+# exposes netcoredbg's ICorDebug ApplyChanges over the DAP protocol, which is
+# what backs the shipped sharplsp.hotReload.* commands - so an upstream Samsung
+# release binary is not a substitute. But compiling it inside the release
+# pipeline meant the debugger users attach to their own processes was built from
+# two repositories cloned at release time, with no digest checked and no
+# provenance recorded. This workflow makes that artifact a deliberate, signed,
+# reviewable release input.
+#
+# HOW TO USE IT
+#   1. Run it (workflow_dispatch). It builds every supported platform from the
+#      commits in tools/netcoredbg/netcoredbg.lock.json.
+#   2. It publishes the archives to the release named by `tag` and attaches a
+#      build-provenance attestation to each.
+#   3. It prints a ready-made `platforms` block. Paste that into the lock file
+#      and open a PR.
+#
+# After step 3, tools/netcoredbg/provide.mjs downloads and SHA-256-verifies
+# instead of building, and refuses to proceed on any mismatch.
+name: Publish netcoredbg
+'on':
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish the archives under.
+        required: true
+        default: netcoredbg-dap-hot-reload-v1
+permissions:
+  contents: read
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-latest
+          - platform: win32-x64
+            runner: windows-latest
+          - platform: darwin-arm64
+            runner: macos-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 10.0.303
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      - name: Build the patched adapter from the pinned commits
+        shell: bash
+        run: bash tools/vsix/build-netcoredbg.sh ${{ matrix.platform }}
+      - name: Archive it
+        shell: bash
+        # --strip-components=1 on the consuming side expects exactly one leading
+        # directory, so archive the parent and name the member `netcoredbg`.
+        # Paths stay relative: GNU tar treats a colon in an argument as a remote
+        # host, which a Windows absolute path would trip over.
+        run: |-
+          set -euo pipefail
+          ( cd "target/netcoredbg/${{ matrix.platform }}" \
+            && tar -czf "netcoredbg-${{ matrix.platform }}.tar.gz" netcoredbg )
+          mv "target/netcoredbg/${{ matrix.platform }}/netcoredbg-${{ matrix.platform }}.tar.gz" .
+          node -e '
+            const {createHash}=require("node:crypto"), {readFileSync}=require("node:fs");
+            const f=process.argv[1];
+            console.log(createHash("sha256").update(readFileSync(f)).digest("hex"), f);
+          ' "netcoredbg-${{ matrix.platform }}.tar.gz"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: netcoredbg-${{ matrix.platform }}
+          path: netcoredbg-${{ matrix.platform }}.tar.gz
+
+  publish:
+    name: Attest and publish
+    needs: build
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      # Required to record who built these bytes, from which commit, in which
+      # workflow - the half of "chain of custody" a checksum cannot supply.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: netcoredbg-*
+          merge-multiple: true
+          path: archives
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: archives/*.tar.gz
+      - name: Publish the archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |-
+          set -euo pipefail
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "$TAG" \
+                 --notes "Patched netcoredbg for SharpLsp. See tools/netcoredbg/netcoredbg.lock.json."
+          gh release upload "$TAG" archives/*.tar.gz --clobber
+      - name: Print the lock-file block to paste
+        env:
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: node tools/netcoredbg/print-pins.mjs archives "$TAG"

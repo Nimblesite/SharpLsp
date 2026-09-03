@@ -290,6 +290,28 @@ export function conditionalBreakpointAt(
   );
 }
 
+/**
+ * A breakpoint that only stops on the Nth hit.
+ *
+ * [DEBUG-FEATURES-BREAKPOINTS] makes hit-count breakpoints a P1, native row and
+ * names the operators the adapter accepts: `>`, `>=`, `<`, `<=`, `==` and `%`.
+ * Against a `[Theory]` this is the gesture that selects a ROW without knowing
+ * anything about its arguments.
+ */
+export function hitCountBreakpointAt(
+  source: AnchoredSource,
+  uri: vscode.Uri,
+  anchor: string,
+  hitCondition: string,
+): vscode.SourceBreakpoint {
+  return new vscode.SourceBreakpoint(
+    new vscode.Location(uri, source.position(anchor)),
+    true,
+    undefined,
+    hitCondition,
+  );
+}
+
 /** Assert a debug session was started for the test run, and hand it back. */
 export function requireDebugSession(sessions: DebugSessionRecorder): ObservedSession {
   assert.ok(
