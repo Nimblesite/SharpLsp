@@ -17,7 +17,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { AnchoredSource } from './debug-anchors';
 import type { DapRecorder } from './debug-dap-kit';
-import { XUNIT_PACKAGES, createSolution, projectXml } from './dotnet-project-kit';
+import { XUNIT_PACKAGES, createSolution, dotnet, projectXml } from './dotnet-project-kit';
 import { isolateFromRepoMsbuild } from './run-debug-fixtures';
 import { DEBUG_TYPE_ID, type DebugSessionRecorder, type ObservedSession } from './run-debug-kit';
 import { deepEq, eq, requireAt, requireWorkspaceRoot } from './test-helpers';
@@ -207,11 +207,20 @@ export async function writeDebugTestFixture(
   );
   const sourceFile = path.join(projectDir, sourceName);
   fs.writeFileSync(sourceFile, (csharp ? CS_SOURCE : FS_SOURCE).text, 'utf8');
+  const solutionPath = await createSolution(scratchDir, `${project}Sln`, [projectDir]);
+  // BUILT HERE, not by whichever test happens to run first. Discovery and every
+  // debug run shell out to `dotnet test`, which RESTORES and COMPILES on its
+  // first invocation in a fresh scratch directory — for F# that is FSharp.Core
+  // plus a cold compiler start, well past the per-test DEBUG_TEST_MS budget on a
+  // CI runner. The first test then timed out mid-build and every later one timed
+  // out queued behind it, so a whole suite failed for a cost that is not the
+  // thing under test. `suiteSetup` owns FIXTURE_BUILD_MS; this is what it is for.
+  await dotnet(['build', solutionPath, '-c', 'Debug'], scratchDir);
   return {
     scratchDir,
     sourceFile,
     sourceUri: vscode.Uri.file(sourceFile),
-    solutionPath: await createSolution(scratchDir, `${project}Sln`, [projectDir]),
+    solutionPath,
   };
 }
 
