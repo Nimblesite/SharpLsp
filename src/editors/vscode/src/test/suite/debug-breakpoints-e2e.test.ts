@@ -384,7 +384,8 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       eq(
         recorder.capabilities()[flag],
         true,
-        flag + ' is a Phase 4 Yes; unadvertised, VS Code strips the field before sending and ' +
+        flag +
+          ' is a Phase 4 Yes; unadvertised, VS Code strips the field before sending and ' +
           'the breakpoint silently becomes a plain one',
       );
     }
@@ -414,9 +415,7 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
     );
     await vscode.commands.executeCommand(CMD_CONTINUE);
     eq(
-      recorder
-        .stops()
-        .every((entry) => entry.reason === 'breakpoint'),
+      recorder.stops().every((entry) => entry.reason === 'breakpoint'),
       true,
       'every stop in the run is a breakpoint stop; a step or entry stop means something ' +
         'other than the armed breakpoints paused the debuggee',

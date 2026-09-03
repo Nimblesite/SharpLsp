@@ -92,7 +92,11 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     // the reverse-request channel must stay silent and the session must end on
     // its own.
     deepEq(recorder.reverseRequests('runInTerminal'), [], 'no terminal was ever requested');
-    eq(recorder.events('output').length > 0, true, 'while the program output really arrived as events');
+    eq(
+      recorder.events('output').length > 0,
+      true,
+      'while the program output really arrived as events',
+    );
     eq(recorder.events('terminated').length, 1, 'and the session ended exactly once');
     eq(recorder.events('exited').length, 1, 'with the debuggee exiting once');
     deepEq(recorder.exits, [], 'and the adapter process alive until the session ended');
@@ -170,7 +174,11 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     // the handshake happens either way, and only the OUTPUT channel differs.
     eq(recorder.requestedCommands().includes('initialize'), true, 'the handshake happened');
     eq(recorder.requestedCommands().includes('launch'), true, 'and the launch was requested');
-    eq(recorder.responses('launch').every((response) => response.success), true, 'and answered successfully');
+    eq(
+      recorder.responses('launch').every((response) => response.success),
+      true,
+      'and answered successfully',
+    );
     eq(recorder.events('initialized').length, 1, 'behind exactly one initialized event');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });
@@ -238,7 +246,11 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     // complete handshake behind it.
     eq(recorder.requestedCommands().includes('initialize'), true, 'the handshake happened');
     eq(recorder.events('initialized').length, 1, 'exactly once');
-    eq(recorder.responses('launch').every((response) => response.success), true, 'and the launch was answered successfully');
+    eq(
+      recorder.responses('launch').every((response) => response.success),
+      true,
+      'and the launch was answered successfully',
+    );
     eq(recorder.reverseRequests('runInTerminal').length, 1, 'with exactly one terminal request');
     deepEq(recorder.errors, [], 'and no adapter transport error');
   });
@@ -386,8 +398,16 @@ suite('Debug output routing — internalConsole, integratedTerminal and stdin', 
     assertCleanSession(debuggee(), 'the default routing row');
     // Interaction 4 - whichever routing row was in force, the session itself
     // must have been complete.
-    eq(recorder.requestedCommands().includes('configurationDone'), true, 'configuration was finished');
-    eq(recorder.responses('configurationDone').every((response) => response.success), true, 'and answered successfully');
+    eq(
+      recorder.requestedCommands().includes('configurationDone'),
+      true,
+      'configuration was finished',
+    );
+    eq(
+      recorder.responses('configurationDone').every((response) => response.success),
+      true,
+      'and answered successfully',
+    );
     eq(recorder.events('initialized').length, 1, 'behind one initialized event');
     eq(recorder.events('terminated').length, 1, 'and one termination');
     deepEq(recorder.exits, [], 'with the adapter process alive until then');

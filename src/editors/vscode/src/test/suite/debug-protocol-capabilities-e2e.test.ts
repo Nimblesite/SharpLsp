@@ -111,10 +111,22 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     assertCleanSession(debuggee(), 'reading the Yes column');
     // Interaction 5 - the capability body must be a real object with real
     // flags, not an empty bag that trivially satisfies every "No" assertion.
-    eq(Object.keys(recorder.capabilities()).length >= 10, true, 'the initialize response carries a populated capability body');
+    eq(
+      Object.keys(recorder.capabilities()).length >= 10,
+      true,
+      'the initialize response carries a populated capability body',
+    );
     eq(recorder.responses('initialize').length, 1, 'answered exactly once');
-    eq(recorder.responses('initialize').every((response) => response.success), true, 'and successfully');
-    eq(recorder.events('initialized').length, 1, 'with one initialized event unlocking configuration');
+    eq(
+      recorder.responses('initialize').every((response) => response.success),
+      true,
+      'and successfully',
+    );
+    eq(
+      recorder.events('initialized').length,
+      1,
+      'with one initialized event unlocking configuration',
+    );
     deepEq(recorder.errors, [], 'and no adapter transport error');
   });
 
@@ -162,8 +174,16 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     assertCleanSession(debuggee(), 'reading the No column');
     // Interaction 4 - the No column is only meaningful against a populated Yes
     // column. An adapter advertising nothing satisfies every No row vacuously.
-    eq(PHASE_FOUR_YES.filter(({ flag }) => recorder.capabilities()[flag] === true).length, PHASE_FOUR_YES.length, 'every Yes row really is advertised');
-    eq(Object.keys(recorder.capabilities()).length >= 10, true, 'so the capability body is genuinely populated');
+    eq(
+      PHASE_FOUR_YES.filter(({ flag }) => recorder.capabilities()[flag] === true).length,
+      PHASE_FOUR_YES.length,
+      'every Yes row really is advertised',
+    );
+    eq(
+      Object.keys(recorder.capabilities()).length >= 10,
+      true,
+      'so the capability body is genuinely populated',
+    );
     eq(recorder.responses('initialize').length, 1, 'from one initialize response');
     eq(recorder.events('initialized').length, 1, 'and one initialized event');
     deepEq(recorder.errors, [], 'with no adapter transport error');
@@ -231,10 +251,26 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     assertCleanSession(debuggee(), 'the DAP handshake');
     // Interaction 5 - the handshake is a SEQUENCE, and every step of it was
     // answered. An unanswered step leaves the session half-configured.
-    eq(recorder.responses('initialize').every((response) => response.success), true, 'initialize was answered successfully');
-    eq(recorder.responses('launch').every((response) => response.success), true, 'and launch');
-    eq(recorder.responses('setBreakpoints').every((response) => response.success), true, 'and every breakpoint sync');
-    eq(recorder.responses('configurationDone').every((response) => response.success), true, 'and configurationDone');
+    eq(
+      recorder.responses('initialize').every((response) => response.success),
+      true,
+      'initialize was answered successfully',
+    );
+    eq(
+      recorder.responses('launch').every((response) => response.success),
+      true,
+      'and launch',
+    );
+    eq(
+      recorder.responses('setBreakpoints').every((response) => response.success),
+      true,
+      'and every breakpoint sync',
+    );
+    eq(
+      recorder.responses('configurationDone').every((response) => response.success),
+      true,
+      'and configurationDone',
+    );
     deepEq(recorder.exits, [], 'with the adapter process alive throughout');
   });
 
@@ -300,7 +336,11 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     // request, and the session that carried them was a complete one.
     eq(recorder.requests('launch').length, 1, 'exactly one launch request for one session');
     eq(recorder.events('initialized').length, 1, 'behind one initialized event');
-    eq(recorder.requestedCommands().includes('configurationDone'), true, 'with configuration finished');
+    eq(
+      recorder.requestedCommands().includes('configurationDone'),
+      true,
+      'with configuration finished',
+    );
     eq(recorder.stops().length >= 1, true, 'and the debuggee really reached the gate');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });
@@ -367,11 +407,31 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     assertCleanSession(debuggee(), 'the five panel requests');
     // Interaction 4 - the five panel requests were each answered, which is what
     // makes the panels render at all.
-    eq(recorder.responses('threads').every((response) => response.success), true, 'threads was answered');
-    eq(recorder.responses('stackTrace').every((response) => response.success), true, 'and stackTrace');
-    eq(recorder.responses('scopes').every((response) => response.success), true, 'and scopes');
-    eq(recorder.responses('variables').every((response) => response.success), true, 'and variables');
-    eq(recorder.responses('evaluate').every((response) => response.success), true, 'and evaluate');
+    eq(
+      recorder.responses('threads').every((response) => response.success),
+      true,
+      'threads was answered',
+    );
+    eq(
+      recorder.responses('stackTrace').every((response) => response.success),
+      true,
+      'and stackTrace',
+    );
+    eq(
+      recorder.responses('scopes').every((response) => response.success),
+      true,
+      'and scopes',
+    );
+    eq(
+      recorder.responses('variables').every((response) => response.success),
+      true,
+      'and variables',
+    );
+    eq(
+      recorder.responses('evaluate').every((response) => response.success),
+      true,
+      'and evaluate',
+    );
   });
 
   // Implements [DEBUG-PROTOCOL-CAPABILITIES] `supportsTerminateRequest` (Yes)
@@ -421,7 +481,11 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
     );
     // Interaction 4 - Stop is a request, not a kill, and the adapter answered
     // it before the session ended.
-    eq(recorder.responses('terminate').length + recorder.responses('disconnect').length >= 1, true, 'the stop request was answered');
+    eq(
+      recorder.responses('terminate').length + recorder.responses('disconnect').length >= 1,
+      true,
+      'the stop request was answered',
+    );
     eq(recorder.events('terminated').length, 1, 'and the session terminated once');
     eq(recorder.requestedCommands().includes('initialize'), true, 'behind a real handshake');
     eq(recorder.events('initialized').length, 1, 'with one initialized event');
@@ -454,20 +518,18 @@ suite('Debug protocol — the DAP 1.71.0 handshake and the capability table', ()
       eq(
         recorder.responses(command).length >= 1,
         true,
-        command + ' was sent and must be ANSWERED; an unanswered DAP request hangs the ' +
+        command +
+          ' was sent and must be ANSWERED; an unanswered DAP request hangs the ' +
           'workbench with no timeout of its own',
       );
     }
     for (const required of ['initialize', 'launch', 'setBreakpoints', 'configurationDone']) {
-      eq(
-        commands.includes(required),
-        true,
-        required + ' must appear in every launch conversation',
-      );
+      eq(commands.includes(required), true, required + ' must appear in every launch conversation');
       eq(
         recorder.responses(required).every((response) => response.success),
         true,
-        required + ' must be answered SUCCESSFULLY - a failed handshake step leaves the ' +
+        required +
+          ' must be answered SUCCESSFULLY - a failed handshake step leaves the ' +
           'session half-configured and the user with no diagnosis',
       );
     }

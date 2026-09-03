@@ -310,6 +310,34 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       'while the single-report reader answers with one of them - which is why taking only ' +
         'that one drops every other project',
     );
+    // Interaction 4 - "one directory down" is a LOCATION claim, not a count. A
+    // collector writing straight into the results directory, or two levels down,
+    // is found by neither reader, and the run reports full coverage of nothing
+    // ([TEST-COVERAGE] claim 2).
+    const placedDirs = reportDirsOf(coverageDir);
+    assert.strictEqual(placedDirs.length, TEST_PROJECTS, 'one run-id folder per test project');
+    for (const runId of placedDirs) {
+      assert.strictEqual(
+        fs.existsSync(path.join(coverageDir, runId, REPORT_NAME)),
+        true,
+        `${runId} holds its report at exactly one level down`,
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(coverageDir, runId, runId, REPORT_NAME)),
+        false,
+        `${runId} does not bury it a second level down`,
+      );
+    }
+    assert.strictEqual(
+      fs.existsSync(path.join(coverageDir, REPORT_NAME)),
+      false,
+      'and nothing was written straight into the results directory itself',
+    );
+    assert.strictEqual(
+      new Set(placedDirs).size,
+      placedDirs.length,
+      'with the two run-id folders distinct - a shared folder is one report overwriting the other',
+    );
   });
 
   test('EVERY report is parsed: the second project’s coverage is not dropped', async function () {
@@ -427,6 +455,29 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       true,
       'and than the second - which is exactly what a first-only reader would lose',
     );
+    // Interaction 4 - "every report" is falsifiable only if taking the FIRST
+    // gives a different answer than taking them all. That difference is the
+    // whole point of the split fixture ([TEST-COVERAGE] claim 3).
+    const everyReport = findCoberturaFiles(coverageDir);
+    const firstOnly = findCoberturaFile(coverageDir);
+    assert.strictEqual(everyReport.length, TEST_PROJECTS, 'both reports are visible to the reader');
+    assert.ok(firstOnly, 'and a first one exists to be wrongly taken alone');
+    assert.strictEqual(everyReport.includes(firstOnly), true, 'the first is one of them');
+    const mergedEvery = mergeCoberturaReports(everyReport);
+    const mergedLibrary = mergedEvery.find(
+      (file) => path.basename(file.uri.fsPath) === LIBRARY_FILE,
+    );
+    assert.ok(mergedLibrary, 'the merge carries the library');
+    assert.strictEqual(
+      executedLines(loadDetailedCoverage(mergedLibrary)).length > libraryLinesIn(firstOnly).length,
+      true,
+      'and merging every report covers strictly MORE than the first report alone',
+    );
+    assert.strictEqual(
+      libraryLinesIn(firstOnly).length >= 1,
+      true,
+      'while the first report on its own is not empty either - it is merely incomplete',
+    );
   });
 
   test('the reports cover the LIBRARY only — never the test assemblies themselves', async function () {
@@ -508,6 +559,31 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
         .includes(LIBRARY_FILE),
       true,
       'and the merged view carries the library too',
+    );
+    // Interaction 4 - `IncludeTestAssembly` is false by default, so a report
+    // naming a test source file means the collector was misconfigured and every
+    // percentage the user reads is diluted by the tests themselves
+    // ([TEST-COVERAGE] claim 4).
+    for (const report of findCoberturaFiles(coverageDir)) {
+      const files = parseCoberturaXml(report).map((file) => path.basename(file.uri.fsPath));
+      assert.strictEqual(
+        files.includes(CS_TESTS_FILE),
+        false,
+        `${path.basename(path.dirname(report))} does not report the C# test source`,
+      );
+      assert.strictEqual(
+        files.includes(FS_TESTS_FILE),
+        false,
+        `${path.basename(path.dirname(report))} does not report the F# test source`,
+      );
+      assert.strictEqual(files.length >= 1, true, 'while still reporting something');
+    }
+    assert.strictEqual(
+      mergeCoberturaReports(findCoberturaFiles(coverageDir)).every(
+        (file) => path.basename(file.uri.fsPath) !== CS_TESTS_FILE,
+      ),
+      true,
+      'and the merged view carries no test assembly either',
     );
   });
 
@@ -635,6 +711,30 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       true,
       'which can never exceed the total',
     );
+    // Interaction 5 - the merge is a UNION over line hits, so it can only grow:
+    // no line either report called may be missing from it, and no line neither
+    // called may appear in it ([TEST-COVERAGE] claim 3).
+    const perReportLines = findCoberturaFiles(coverageDir).map((report) => libraryLinesIn(report));
+    const unionOfReports = [...new Set(perReportLines.flat())].sort((a, b) => a - b);
+    const mergedFile = mergeCoberturaReports(findCoberturaFiles(coverageDir)).find(
+      (file) => path.basename(file.uri.fsPath) === LIBRARY_FILE,
+    );
+    assert.ok(mergedFile, 'the merged view carries the library');
+    assert.deepStrictEqual(
+      executedLines(loadDetailedCoverage(mergedFile)),
+      unionOfReports,
+      'the merged detail is exactly the union of the per-report details',
+    );
+    assert.strictEqual(
+      perReportLines.every((lines) => lines.every((line) => unionOfReports.includes(line))),
+      true,
+      'so no report lost a line it had reported on its own',
+    );
+    assert.strictEqual(
+      unionOfReports.length >= Math.max(...perReportLines.map((lines) => lines.length)),
+      true,
+      'and the union is never smaller than its largest member',
+    );
   });
 
   test('the covered lines are exactly the library functions the tests called', async function () {
@@ -726,6 +826,35 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       everyLine.size >= 2,
       true,
       'at least the two called functions are reported executed',
+    );
+    // Interaction 4 - a covered line is a CALLED function, and the negative half
+    // is what makes it a measurement: a function no test calls must not appear as
+    // executed, or the report is a list of every line in the file.
+    const calledLines = libraryLinesIn(findCoberturaFiles(coverageDir)[0] ?? '');
+    const unionLines = [
+      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
+    ];
+    for (const name of NEVER_COVERED) {
+      assert.strictEqual(
+        unionLines.includes(declarationLine(name)),
+        false,
+        `${name} is called by no test and must not read as executed`,
+      );
+    }
+    assert.strictEqual(
+      unionLines.includes(declarationLine(COVERED_BY_CSHARP)),
+      true,
+      `${COVERED_BY_CSHARP} is called by the C# test and must read as executed`,
+    );
+    assert.strictEqual(
+      unionLines.includes(declarationLine(COVERED_BY_FSHARP)),
+      true,
+      `${COVERED_BY_FSHARP} is called by the F# test and must read as executed`,
+    );
+    assert.strictEqual(
+      calledLines.length <= unionLines.length,
+      true,
+      'one report never exceeds the union',
     );
   });
 
@@ -861,6 +990,33 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       TEST_PROJECTS,
       'and the reader sees only them',
     );
+    // Interaction 4 - "freshly emptied" is what makes a percentage TRUSTWORTHY.
+    // A leftover run-id folder is a report from a build that no longer exists,
+    // merged into this run's numbers ([TEST-COVERAGE] claim 1).
+    const secondRunDirs = reportDirsOf(coverageDir);
+    assert.strictEqual(secondRunDirs.length, TEST_PROJECTS, 'exactly this run reports, no more');
+    assert.strictEqual(
+      fs.readdirSync(coverageDir).filter((entry) => entry.endsWith('.trx')).length,
+      0,
+      'and no stale TRX was left beside them',
+    );
+    for (const runId of secondRunDirs) {
+      assert.strictEqual(
+        fs.existsSync(path.join(coverageDir, runId, REPORT_NAME)),
+        true,
+        `${runId} carries a readable report`,
+      );
+    }
+    assert.strictEqual(
+      path.basename(coverageDir),
+      COVERAGE_DIR_NAME,
+      'and the directory is the one beside the solution the specification names',
+    );
+    assert.strictEqual(
+      path.dirname(coverageDir),
+      path.dirname(slnPath),
+      'beside the solution file itself',
+    );
   });
 
   test('the Coverage profile still attributes a pass, a failure and a SKIP per test', async function () {
@@ -942,6 +1098,29 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
         `${id} must not report "${NO_RESULT}" under the Coverage profile either`,
       );
     }
+    // Interaction 4 - Coverage is a RUN PROFILE, so [TEST-RUN-TRX] governs it
+    // exactly as it governs the plain one. A skip reported as a failure under
+    // Coverage is a red row the user cannot make green.
+    for (const id of PASSING) {
+      assertPassed(cachedFor(api, id), id);
+      assert.strictEqual(
+        statusLensTitle(cachedFor(api, id)).includes(NO_RESULT),
+        false,
+        `${id} was attributed, not left unreported`,
+      );
+    }
+    assertFailed(cachedFor(api, CS_FAILING), CS_FAILING);
+    assertSkipped(cachedFor(api, CS_SKIPPED), CS_SKIPPED);
+    assert.strictEqual(
+      cachedFor(api, CS_SKIPPED).passed,
+      false,
+      'a skip is not a pass, however the Coverage profile collected it',
+    );
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted([...ALL_COVERAGE_TESTS]),
+      'and the Coverage run reshaped no row of the tree',
+    );
   });
 
   test('the plain Run profile collects NO coverage at all', async function () {
@@ -1026,6 +1205,29 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
         `${id} still reports an outcome under the plain Run profile`,
       );
     }
+    // Interaction 4 - the plain profile must not even ASK for a collector. A Run
+    // that quietly collects coverage pays the instrumentation cost on every
+    // press of the play button ([TEST-COVERAGE]).
+    assert.deepStrictEqual(
+      findCoberturaFiles(coverageDir),
+      [],
+      'no report is readable after a plain Run',
+    );
+    assert.deepStrictEqual(reportDirsOf(coverageDir), [], 'and no run-id folder was written');
+    for (const id of PASSING) {
+      assertPassed(cachedFor(api, id), id);
+    }
+    assert.strictEqual(
+      api.testController.profiles.filter(
+        (profile) => profile.kind === vscode.TestRunProfileKind.Run,
+      ).length,
+      1,
+      'with exactly ONE plain Run profile behind the gesture',
+    );
+    assert.ok(
+      profileOfKind(api.testController, vscode.TestRunProfileKind.Coverage),
+      'while the Coverage profile still exists, unpressed',
+    );
   });
 
   test('coverage of a selection that loads nothing of the library reports nothing covered', async function () {
@@ -1104,6 +1306,29 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       true,
       'the merge always answers with a list',
     );
+    // Interaction 4 - "nothing covered" is not "nothing reported". The collector
+    // still runs, still writes its report, and the report still parses: it just
+    // says the library was never entered ([TEST-COVERAGE] claim 4).
+    const isolatedReports = findCoberturaFiles(coverageDir);
+    assert.strictEqual(isolatedReports.length >= 1, true, 'a report was still written');
+    for (const report of isolatedReports) {
+      assert.doesNotThrow(() => parseCoberturaXml(report), 'and it parses without throwing');
+      assert.strictEqual(
+        libraryLinesIn(report).includes(declarationLine(COVERED_BY_CSHARP)),
+        false,
+        'with the C#-covered function unexecuted',
+      );
+    }
+    assert.strictEqual(
+      cachedFor(api, FS_ISOLATED).outcome,
+      'passed',
+      'while the test that touched nothing still passed',
+    );
+    assert.strictEqual(
+      statusLensTitle(cachedFor(api, FS_ISOLATED)).includes(NO_RESULT),
+      false,
+      'and was attributed a real result',
+    );
   });
 
   test('Run with Coverage on the CLASS row covers every test beneath it', async function () {
@@ -1169,6 +1394,28 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       findCoberturaFiles(coverageDir).length >= 1,
       true,
       'and a class-row coverage run writes at least its own project\u2019s report',
+    );
+    // Interaction 4 - a CLASS row's Run with Coverage is one batched invocation
+    // over every leaf beneath it, so every one of those leaves must carry an
+    // outcome and the union must cover what they called.
+    const classLeaves = collectLeafIds(api.testController.items).filter((id) =>
+      id.startsWith(CS_COVERS.slice(0, CS_COVERS.lastIndexOf('.'))),
+    );
+    assert.strictEqual(classLeaves.length >= 2, true, 'the class holds more than one test');
+    for (const id of classLeaves) {
+      assert.notStrictEqual(cachedFor(api, id).outcome, 'notRun', `${id} beneath the class ran`);
+    }
+    assert.strictEqual(
+      [
+        ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
+      ].includes(declarationLine(COVERED_BY_CSHARP)),
+      true,
+      'and the function the class exercises reads as executed',
+    );
+    assert.strictEqual(
+      findCoberturaFiles(coverageDir).length >= 1,
+      true,
+      'behind at least one readable report',
     );
   });
 
@@ -1244,6 +1491,33 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       findCoberturaFiles(coverageDir).length >= 1,
       true,
       'and the run wrote a report',
+    );
+    // Interaction 4 - the backtick binding is the hard case for the FILTER, and
+    // the filter is what a coverage run is built on too. Its clause must escape
+    // the grammar characters and leave the spaces alone ([TEST-FILTER-ESCAPE]).
+    const spacedClause = filterClause(FS_COVERS);
+    assert.strictEqual(spacedClause.startsWith('FullyQualifiedName='), true, 'it is a name clause');
+    assert.strictEqual(
+      spacedClause.includes(' '),
+      true,
+      'the spaces in the binding survive verbatim',
+    );
+    assert.strictEqual(
+      spacedClause.includes('|'),
+      false,
+      'and one test is one clause, never a union',
+    );
+    assert.strictEqual(
+      cachedFor(api, FS_COVERS).outcome,
+      'passed',
+      'the spaced binding really ran and passed under Coverage',
+    );
+    assert.strictEqual(
+      [
+        ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
+      ].includes(declarationLine(COVERED_BY_FSHARP)),
+      true,
+      'and the function only it calls reads as executed',
     );
   });
 
@@ -1329,6 +1603,26 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       collectLeafIds(api.testController.items).length,
       ALL_COVERAGE_TESTS.length,
       'and every test the fixture declares',
+    );
+    // Interaction 4 - an assembly root is ONE project, so the other project's
+    // report must be absent rather than empty. An empty report from a project
+    // that never ran still dilutes the merged percentage.
+    const rootRunDirs = reportDirsOf(coverageDir);
+    assert.strictEqual(rootRunDirs.length, 1, 'exactly one project reported');
+    assert.strictEqual(
+      findCoberturaFiles(coverageDir).length,
+      1,
+      'and exactly one report is readable',
+    );
+    assert.strictEqual(
+      mergeCoberturaReports(findCoberturaFiles(coverageDir)).length >= 1,
+      true,
+      'the merge over one report is still a view of the library',
+    );
+    assert.strictEqual(
+      rootsOf(api.testController.items).length >= TEST_PROJECTS,
+      true,
+      'while the tree still shows BOTH assembly rows - running one hides neither',
     );
   });
 
@@ -1428,6 +1722,30 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       itemsFor(api, [...ALL_COVERAGE_TESTS]).length,
       ALL_COVERAGE_TESTS.length,
       'and every test is still a row of its own after two coverage runs',
+    );
+    // Interaction 4 - two selections that cover different functions must produce
+    // different reports. If the second run's numbers include the first run's
+    // lines, the results directory was never emptied ([TEST-COVERAGE] claim 1).
+    const secondSelectionLines = [
+      ...new Set(findCoberturaFiles(coverageDir).flatMap((report) => libraryLinesIn(report))),
+    ];
+    assert.strictEqual(secondSelectionLines.length >= 1, true, 'the second run covered something');
+    for (const name of NEVER_COVERED) {
+      assert.strictEqual(
+        secondSelectionLines.includes(declarationLine(name)),
+        false,
+        `${name} is called by neither selection and must stay uncovered`,
+      );
+    }
+    assert.strictEqual(
+      reportDirsOf(coverageDir).length >= 1,
+      true,
+      'with the second run writing its own run-id folder',
+    );
+    assert.strictEqual(
+      fs.existsSync(coverageDir),
+      true,
+      'and the results directory surviving between the two runs',
     );
   });
 
@@ -1544,5 +1862,30 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       assert.ok(item, `${id} must still be a row`);
       assert.strictEqual(item.id, id, 'under its own fully-qualified name');
     }
+    // Interaction 4 - Debug is a THIRD profile kind, and it collects nothing.
+    // Attaching a collector to a debug session would slow every breakpoint the
+    // user sets to inspect a failing test ([TEST-COVERAGE]).
+    assert.deepStrictEqual(
+      findCoberturaFiles(coverageDir),
+      [],
+      'the debug run wrote no readable report',
+    );
+    assert.deepStrictEqual(reportDirsOf(coverageDir), [], 'and no run-id folder at all');
+    assert.strictEqual(
+      api.testController.profiles.filter(
+        (profile) => profile.kind === vscode.TestRunProfileKind.Debug,
+      ).length,
+      1,
+      'exactly one Debug profile is registered',
+    );
+    assert.ok(
+      profileOfKind(api.testController, vscode.TestRunProfileKind.Coverage),
+      'and the Coverage profile is still there, separate and unpressed',
+    );
+    assert.strictEqual(
+      api.testController.profiles.length >= 3,
+      true,
+      'with Run, Debug and Coverage all offered to the user',
+    );
   });
 });

@@ -259,6 +259,54 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       true,
       'and stripping COLLAPSES them - which is how a theory\u2019s rows become one test',
     );
+    // Interaction 4 - the decoration is a SUFFIX, so every raw line must still
+    // START with the bare name it strips to. A stripper that rewrote the MIDDLE
+    // of a name satisfies every length check and still hands the tree a name no
+    // TRX report can be keyed on ([TEST-DISCOVERY-FQN]).
+    for (const line of rawListing) {
+      assert.ok(
+        line.startsWith(withoutAdapterUniqueId(line)),
+        `'${line}' must strip to a PREFIX of itself, never to a rewritten name`,
+      );
+      assert.strictEqual(
+        withoutAdapterUniqueId(line).trim(),
+        withoutAdapterUniqueId(line),
+        `'${line}' must not strip down to a name carrying edge whitespace`,
+      );
+    }
+    assert.deepStrictEqual(
+      sorted([...new Set(rawListing.map((line) => withoutAdapterUniqueId(line)))]),
+      sorted([...EXPECTED]),
+      'and the whole decorated listing strips down to exactly the fixture tests',
+    );
+    assert.strictEqual(
+      rawListing.every((line) => carriesUniqueId(line)),
+      true,
+      'with every single line decorated - one bare line would make this guard vacuous',
+    );
+    // Interaction 5 - the decoration's SHAPE is the thing that has to be
+    // recognised: a space, then forty hex digits in brackets, at the very end of
+    // the line. Anything looser also eats the NUnit `Adds_Case(2,2,4)` shape
+    // [TEST-DISCOVERY-FQN] requires to round-trip untouched.
+    for (const line of rawListing) {
+      const stripped = withoutAdapterUniqueId(line);
+      assert.strictEqual(
+        line.length - stripped.length,
+        43,
+        `'${line}' sheds exactly a space and forty hex digits in brackets`,
+      );
+      assert.strictEqual(line.endsWith(')'), true, `'${line}' ends at its decoration`);
+      assert.strictEqual(
+        line.charAt(stripped.length),
+        ' ',
+        `'${line}' separates name from decoration with a SPACE`,
+      );
+    }
+    assert.strictEqual(
+      withoutAdapterUniqueId('Ns.C.Adds_Case(2,2,4)'),
+      'Ns.C.Adds_Case(2,2,4)',
+      'while an NUnit parameterised name - no space, no hex - survives untouched',
+    );
   });
 
   test('discovered ids are the BARE fully-qualified names, with no adapter suffix', function () {
@@ -329,6 +377,22 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       sorted(discovered),
       sorted([...EXPECTED]),
       'and the whole set is exactly what the fixture declares',
+    );
+    // Interaction 4 - a bare id is bare under EVERY reading: stripping it again
+    // is a no-op, none of them carries the space-then-bracket shape the adapter
+    // appends, and none of them collides. Two rows sharing an id is one row the
+    // user can never select ([TEST-DISCOVERY-FQN]).
+    for (const id of discovered) {
+      assert.strictEqual(withoutAdapterUniqueId(id), id, `'${id}' is already bare`);
+      assert.strictEqual(carriesUniqueId(id), false, `'${id}' carries no decoration`);
+      assert.strictEqual(id.includes(' ('), false, `'${id}' has no space-bracket suffix`);
+      assert.strictEqual(id.startsWith(NAMESPACE), true, `'${id}' still names its namespace`);
+    }
+    assert.strictEqual(new Set(discovered).size, discovered.length, 'and no id is duplicated');
+    assert.deepStrictEqual(
+      sorted(discovered),
+      sorted([...EXPECTED]),
+      'with the discovered set exactly the fixture tests',
     );
   });
 
@@ -416,6 +480,31 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       'and no GROUP id carries a decoration either - the assembly, namespace and class rows ' +
         'are ids the run and the lens both address',
     );
+    // Interaction 4 - the four rows the user actually reads. A LABEL carrying a
+    // hex blob is the defect at its most visible, and a group row labelled with
+    // anything but its own name is a row whose play button lies about its scope
+    // ([TEST-EXPLORER]).
+    const shapeAssemblies = rootsOf(api.testController.items);
+    assert.strictEqual(shapeAssemblies.length, 1, 'one assembly row for one test project');
+    assert.strictEqual(
+      shapeAssemblies[0]?.label.includes(FIXTURE.projectName),
+      true,
+      'labelled with the project it was built from',
+    );
+    const shapeNamespace = onlyChild(shapeAssemblies[0], 'one namespace beneath the assembly');
+    assert.strictEqual(shapeNamespace.label, NAMESPACE, 'the namespace row reads as the namespace');
+    const shapeClass = onlyChild(shapeNamespace, 'one class beneath the namespace');
+    assert.strictEqual(shapeClass.label, CLASS, 'and the class row as the bare class name');
+    assert.strictEqual(
+      rootsOf(shapeClass.children).every((leaf) => leaf.label === methodOf(leaf.id)),
+      true,
+      'with every leaf reading as its own method name',
+    );
+    assert.strictEqual(
+      collectItemIds(api.testController.items).some((id) => carriesUniqueId(id)),
+      false,
+      'and not one row in the whole tree - group or leaf - carrying a decoration',
+    );
   });
 
   test('the --filter a run builds is the bare name, matching a real test', function () {
@@ -477,6 +566,50 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
         `${id}'s clause is in the combined expression`,
       );
     }
+    // Interaction 4 - one batched run is ONE `--filter` argument pair, and the
+    // clauses inside it are OR-ed with an UNESCAPED `|` ([TEST-FILTER-ESCAPE]).
+    // An escaped separator matches a test whose name contains a pipe, which is
+    // no test at all, so the run silently executes nothing.
+    const batchedArgs = buildFilterArgs(EXPECTED.map((id) => ({ id })));
+    assert.strictEqual(batchedArgs.length, 2, 'a filter is a flag and a value, nothing more');
+    assert.strictEqual(batchedArgs[0], '--filter', 'and the flag is --filter');
+    assert.strictEqual(
+      (batchedArgs[1] ?? '').split('|').length,
+      EXPECTED.length,
+      'with one clause per selected test, joined by an unescaped pipe',
+    );
+    for (const id of EXPECTED) {
+      assert.strictEqual(
+        (batchedArgs[1] ?? '').includes(filterClause(id)),
+        true,
+        `${id} has a clause of its own inside the batched expression`,
+      );
+      assert.strictEqual(filterClause(id).includes(' ('), false, `${id} filters on a bare name`);
+    }
+    assert.deepStrictEqual(
+      buildFilterArgs([]),
+      [],
+      'and an empty selection builds no filter at all',
+    );
+    // Interaction 5 - and this is WHY the id has to be bare. A clause built over
+    // a DECORATED name escapes the brackets the adapter appended, so the filter
+    // then names a test that does not exist and the run matches nothing at all
+    // ([TEST-FILTER-ESCAPE], [TEST-DISCOVERY-FQN]).
+    const decoratedClause = filterClause(
+      `${FIXTURE.passing} (0123456789abcdef0123456789abcdef01234567)`,
+    );
+    assert.strictEqual(decoratedClause.includes('\\('), true, 'the opening bracket gets escaped');
+    assert.strictEqual(decoratedClause.includes('\\)'), true, 'and so does the closing one');
+    assert.notStrictEqual(
+      decoratedClause,
+      filterClause(FIXTURE.passing),
+      'so a decorated id builds a DIFFERENT filter than the bare one - which is the whole defect',
+    );
+    assert.strictEqual(
+      filterClause(FIXTURE.passing).includes('\\'),
+      false,
+      'while the bare name needs no escaping whatsoever',
+    );
   });
 
   test('the Run/Debug lens resolves a test by its method name', function () {
@@ -516,6 +649,41 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       undefined,
       'and an empty name resolves to nothing at all',
     );
+    // Interaction 4 - the lens resolves by METHOD name, so a decorated method
+    // name must resolve to NOTHING: matching it would print a Run button on a
+    // row the subsequent run cannot find ([TEST-STATUS-LENS]).
+    for (const id of EXPECTED) {
+      const lensRow = findTestByMethodName(api.testController.items, methodOf(id));
+      assert.ok(lensRow, `${methodOf(id)} resolves to a row`);
+      assert.strictEqual(lensRow.id, id, 'and the row it resolves to carries the BARE id');
+      assert.strictEqual(lensRow.children.size, 0, 'a lens always resolves to a LEAF');
+    }
+    assert.strictEqual(
+      findTestByMethodName(
+        api.testController.items,
+        `${methodOf(FIXTURE.passing)} (0123456789abcdef0123456789abcdef01234567)`,
+      ),
+      undefined,
+      'while a DECORATED method name resolves to nothing at all',
+    );
+    assert.strictEqual(
+      findTestByMethodName(api.testController.items, CLASS),
+      undefined,
+      'and a class name is not a method name',
+    );
+    // Interaction 5 - the lens renders a TITLE, and a title built from a bare id
+    // reads as a STATE. "No result reported" is the text a broken id produces,
+    // and it is never one of the states ([TEST-STATUS-LENS]).
+    for (const id of EXPECTED) {
+      const rendered = statusLensTitle(cachedFor(api, id));
+      assert.strictEqual(
+        rendered.includes(NO_RESULT),
+        false,
+        `${id}'s lens title reads a state, not an absence`,
+      );
+      assert.notStrictEqual(rendered.trim(), '', `${id}'s lens title is never empty`);
+      assert.strictEqual(rendered.includes('\n'), false, `${id}'s lens title is ONE line`);
+    }
   });
 
   test('▶ reports a REAL outcome per test — never "No result reported"', async function () {
@@ -625,6 +793,57 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
         `${id} was run, so its lens must not read "Not run"`,
       );
     }
+    // Interaction 4 - "No result reported" is the exact text a broken id
+    // produces, so it must appear nowhere the user can read it: not in a cached
+    // message, not in a rendered lens title ([TEST-RUN-TRX], [TEST-STATUS-LENS]).
+    for (const id of RUNNABLE) {
+      const attributed = cachedFor(api, id);
+      assert.notStrictEqual(attributed.outcome, 'notRun', `${id} really ran`);
+      assert.strictEqual(
+        (attributed.message ?? '').includes(NO_RESULT),
+        false,
+        `${id} carries no "${NO_RESULT}" message`,
+      );
+      assert.strictEqual(
+        statusLensTitle(attributed).includes(NO_RESULT),
+        false,
+        `${id}'s lens never says it either`,
+      );
+      assert.strictEqual(
+        statusLensTitle(attributed).includes('\n'),
+        false,
+        'a lens title is ONE line',
+      );
+    }
+    // Interaction 5 - the group rows the batch was dispatched from are not tests,
+    // so no group id may collide with a leaf id. A group sharing an id with a
+    // test is a row whose play button silently runs one thing and reports
+    // another ([TEST-EXPLORER]).
+    const everyRowId = collectItemIds(api.testController.items);
+    const leafRowIds = collectLeafIds(api.testController.items);
+    const groupIds = everyRowId.filter((id) => !leafRowIds.includes(id));
+    assert.strictEqual(
+      groupIds.length,
+      3,
+      'three group rows above the leaves: assembly, namespace, class',
+    );
+    for (const groupId of groupIds) {
+      assert.strictEqual(
+        EXPECTED.includes(groupId),
+        false,
+        `${groupId} is a group, never a test id`,
+      );
+      assert.strictEqual(
+        carriesUniqueId(groupId),
+        false,
+        `${groupId} carries no decoration either`,
+      );
+    }
+    assert.strictEqual(
+      everyRowId.length,
+      groupIds.length + leafRowIds.length,
+      'and every row in the tree is either a group or a leaf, with nothing in between',
+    );
   });
 
   test('▶ on the CLASS group runs every test it contains, theories included', async function () {
@@ -684,6 +903,29 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
           'every test in the project',
       );
     }
+    // Interaction 4 - a group's play button is a BATCHED run, so the ids it
+    // dispatched are the bare leaf ids beneath it and every one came back
+    // attributed. One `dotnet test` per test would be correct output and the
+    // wrong shape entirely ([TEST-REACTIVITY]).
+    const classLeafIds = collectLeafIds(api.testController.items);
+    assert.deepStrictEqual(
+      sorted(classLeafIds),
+      sorted([...EXPECTED]),
+      'the class holds exactly the fixture tests',
+    );
+    for (const id of classLeafIds) {
+      assert.strictEqual(carriesUniqueId(id), false, `${id} was dispatched bare`);
+      assert.notStrictEqual(
+        cachedFor(api, id).outcome,
+        'notRun',
+        `${id} came back with a real outcome`,
+      );
+    }
+    assert.strictEqual(
+      buildFilterArgs(itemsFor(api, classLeafIds)).length,
+      2,
+      'and the whole group batched into ONE filter, not one invocation per test',
+    );
   });
 
   test('▶ on the ASSEMBLY ROOT attributes every outcome, none of them missing', async function () {
@@ -772,6 +1014,30 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       EXPECTED.length,
       'and the tree still holds exactly the tests the fixture declares',
     );
+    // Interaction 4 - the assembly root is the widest gesture there is, so
+    // nothing beneath it may be left unattributed, and running it must not have
+    // reshaped the tree it ran ([TEST-REACTIVITY]).
+    const afterRootRun = collectLeafIds(api.testController.items);
+    assert.deepStrictEqual(
+      sorted(afterRootRun),
+      sorted([...EXPECTED]),
+      'running the root added and removed no row',
+    );
+    assert.strictEqual(
+      rootsOf(api.testController.items).length,
+      1,
+      'and left exactly one assembly row',
+    );
+    for (const id of RUNNABLE) {
+      assert.strictEqual(
+        (cachedFor(api, id).message ?? '').includes(NO_RESULT),
+        false,
+        `${id} was attributed from the root run`,
+      );
+    }
+    assertPassed(cachedFor(api, FIXTURE.passing), FIXTURE.passing);
+    assertFailed(cachedFor(api, FIXTURE.failing), FIXTURE.failing);
+    assertSkipped(cachedFor(api, FIXTURE.skipped), FIXTURE.skipped);
   });
 
   test('a [Theory] whose rows each carried a unique ID reports as ONE test', async function () {
@@ -872,6 +1138,33 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       1,
       'and the listing reader agrees, on the same lines',
     );
+    // Interaction 4 - the theory is ONE row however many lines the adapter wrote
+    // for it: the unique ID decorates a test CASE, while an id names a test
+    // METHOD ([TEST-DISCOVERY-FQN]).
+    const theoryRows = itemsFor(api, [FIXTURE.parameterized]);
+    assert.strictEqual(theoryRows.length, 1, 'exactly one row for the theory');
+    assert.strictEqual(theoryRows[0]?.children.size, 0, 'and it is a leaf, not a folder of rows');
+    assert.strictEqual(
+      theoryRows[0]?.label,
+      methodOf(FIXTURE.parameterized),
+      'labelled with its method name, not with a row of arguments',
+    );
+    assert.strictEqual(
+      rawListing.filter((line) => withoutAdapterUniqueId(line) === FIXTURE.parameterized).length >=
+        1,
+      true,
+      'while the adapter listed it at least once',
+    );
+    assert.strictEqual(
+      collectLeafIds(api.testController.items).filter((id) => id === FIXTURE.parameterized).length,
+      1,
+      'and the tree holds it exactly once',
+    );
+    assert.notStrictEqual(
+      cachedFor(api, FIXTURE.parameterized).outcome,
+      'notRun',
+      'with a real outcome behind that single row',
+    );
   });
 
   test('a multi-select of EVERY test builds one unescaped filter and attributes every result', async function () {
@@ -950,6 +1243,29 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       EXPECTED.length,
       'every selected test resolved to a row of its own',
     );
+    // Interaction 4 - the batching rule stated as one claim: N selected tests is
+    // ONE invocation, and the separators between clauses are the only unescaped
+    // pipes in the expression ([TEST-FILTER-ESCAPE]).
+    const selectionArgs = buildFilterArgs(itemsFor(api, EXPECTED));
+    assert.strictEqual(selectionArgs.length, 2, 'one flag and one expression');
+    assert.strictEqual(
+      (selectionArgs[1] ?? '').split('|').length,
+      EXPECTED.length,
+      'one clause per selected test',
+    );
+    assert.strictEqual(
+      (selectionArgs[1] ?? '').includes('\\|'),
+      false,
+      'and no separator was escaped away into a literal pipe',
+    );
+    assert.strictEqual(
+      (selectionArgs[1] ?? '').includes(' ('),
+      false,
+      'with no clause carrying an adapter decoration',
+    );
+    for (const id of EXPECTED) {
+      assert.notStrictEqual(cachedFor(api, id).outcome, 'notRun', `${id} was attributed a result`);
+    }
   });
 
   test('a REFRESH re-discovers the same BARE ids, without duplicating a row', async function () {
@@ -1021,6 +1337,33 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     for (const id of EXPECTED) {
       assert.ok(findItem(api.testController.items, id), `${id} survived the refresh`);
     }
+    // Interaction 4 - a refresh is a RE-READ, not an append. A refresh that
+    // appends gives the user two play buttons for one test, and neither of them
+    // is wrong enough to be obviously broken ([TEST-REACTIVITY]).
+    const refreshedLeaves = collectLeafIds(api.testController.items);
+    assert.deepStrictEqual(
+      sorted(refreshedLeaves),
+      sorted([...EXPECTED]),
+      'the same tests came back, no more and no fewer',
+    );
+    assert.strictEqual(
+      new Set(refreshedLeaves).size,
+      refreshedLeaves.length,
+      'and not one of them duplicated',
+    );
+    assert.strictEqual(
+      rootsOf(api.testController.items).length,
+      1,
+      'still exactly one assembly row',
+    );
+    for (const id of refreshedLeaves) {
+      assert.strictEqual(carriesUniqueId(id), false, `${id} came back bare a second time`);
+    }
+    assert.strictEqual(
+      collectItemIds(api.testController.items).length,
+      new Set(collectItemIds(api.testController.items)).size,
+      'with no duplicated GROUP row either',
+    );
   });
 
   test('▶ on the NAMESPACE row reports every class beneath it, ids still bare', async function () {
@@ -1102,6 +1445,23 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
         (cachedFor(api, id).message ?? '').includes(NO_RESULT),
         false,
         `${id} must not report "${NO_RESULT}"`,
+      );
+    }
+    // Interaction 4 - a namespace row is a GROUP, and a group's id is never a
+    // test's id: selecting it would otherwise run one test while claiming to
+    // have run a namespace ([TEST-EXPLORER]).
+    const nsAssembly = rootsOf(api.testController.items)[0];
+    assert.ok(nsAssembly, 'the assembly row is still in the tree');
+    const nsRow = onlyChild(nsAssembly, 'one namespace beneath the assembly');
+    assert.strictEqual(nsRow.label, NAMESPACE, 'and it is the fixture namespace');
+    assert.strictEqual(EXPECTED.includes(nsRow.id), false, 'a group id is never a test id');
+    assert.strictEqual(carriesUniqueId(nsRow.id), false, 'and it is undecorated too');
+    assert.strictEqual(nsRow.children.size >= 1, true, 'with at least one class beneath it');
+    for (const id of collectLeafIds(nsRow.children)) {
+      assert.notStrictEqual(
+        cachedFor(api, id).outcome,
+        'notRun',
+        `${id} beneath the namespace was attributed`,
       );
     }
   });
@@ -1189,6 +1549,27 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       EXPECTED.length,
       'and the tree still holds every test',
     );
+    // Interaction 4 - a single-test run is a single CLAUSE. Running one test and
+    // reporting three is the same defect as running three and reporting one:
+    // the filter widened past what the user selected ([TEST-FILTER-ESCAPE]).
+    const oneArgs = buildFilterArgs(itemsFor(api, [FIXTURE.passing]));
+    assert.strictEqual(oneArgs.length, 2, 'one flag and one expression');
+    assert.strictEqual(
+      oneArgs[1],
+      filterClause(FIXTURE.passing),
+      'and the expression is that one test clause, alone',
+    );
+    assert.strictEqual(
+      (oneArgs[1] ?? '').includes('|'),
+      false,
+      'with no union operator in it at all',
+    );
+    assert.strictEqual(carriesUniqueId(FIXTURE.passing), false, 'the id it filtered on is bare');
+    assert.strictEqual(
+      itemsFor(api, [FIXTURE.passing])[0]?.children.size,
+      0,
+      'and the row it addressed is a leaf',
+    );
   });
 
   test('every leaf hangs off Assembly → Namespace → Class, each link bare', function () {
@@ -1255,6 +1636,21 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
         `${id} must hang off Assembly \u2192 Namespace \u2192 Class; it had ${String(links)} link(s)`,
       );
     }
+    // Interaction 4 - the DEPTH is the contract: exactly three groups above every
+    // leaf. A tree one level shallower has folded the namespace into the class
+    // row, and the user can no longer run a namespace at all ([TEST-EXPLORER]).
+    const leafDepths = rootsOf(api.testController.items).flatMap((row) => leavesWithDepth(row, 0));
+    assert.strictEqual(leafDepths.length, EXPECTED.length, 'one leaf per fixture test');
+    for (const leaf of leafDepths) {
+      assert.strictEqual(leaf.depth, 3, `${leaf.item.id} hangs three groups below the root`);
+      assert.strictEqual(leaf.item.children.size, 0, `${leaf.item.id} really is a leaf`);
+      assert.strictEqual(carriesUniqueId(leaf.item.id), false, `${leaf.item.id} is bare`);
+    }
+    assert.deepStrictEqual(
+      sorted(leafDepths.map((leaf) => leaf.item.id)),
+      sorted([...EXPECTED]),
+      'and the leaves are exactly the fixture tests',
+    );
   });
 
   test('running the same selection twice re-reports it under the SAME bare ids', async function () {
@@ -1334,6 +1730,28 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       RUNNABLE.length,
       'every re-run test resolved to a row of its own',
     );
+    // Interaction 4 - the second run reported under the SAME ids, so membership
+    // is unchanged and every outcome is still readable. A run that re-keys its
+    // results grows the tree by one row per test on every press.
+    const twiceLeaves = collectLeafIds(api.testController.items);
+    assert.deepStrictEqual(
+      sorted(twiceLeaves),
+      sorted([...EXPECTED]),
+      'the same rows survived a second run',
+    );
+    assert.strictEqual(new Set(twiceLeaves).size, twiceLeaves.length, 'none of them duplicated');
+    for (const id of RUNNABLE) {
+      assert.notStrictEqual(
+        cachedFor(api, id).outcome,
+        'notRun',
+        `${id} still carries a real outcome`,
+      );
+      assert.strictEqual(
+        statusLensTitle(cachedFor(api, id)).includes(NO_RESULT),
+        false,
+        `${id}'s lens reads a result, not an absence`,
+      );
+    }
   });
 
   test('every line the adapter wrote maps onto exactly one discovered test', function () {
@@ -1413,5 +1831,31 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
       true,
       'the adapter wrote at least one line per test, and more for the theory rows',
     );
+    // Interaction 4 - the mapping is total in BOTH directions: every discovered
+    // id is claimed by a line the adapter actually wrote, so no row in the tree
+    // was invented by the reader ([TEST-DISCOVERY-FQN]).
+    for (const id of discovered) {
+      assert.strictEqual(
+        rawListing.some((line) => withoutAdapterUniqueId(line) === id),
+        true,
+        `${id} came from a line the adapter actually wrote`,
+      );
+    }
+    assert.strictEqual(
+      new Set(rawListing.map((line) => withoutAdapterUniqueId(line))).size,
+      discovered.length,
+      'and the distinct stripped names are exactly as many as the discovered rows',
+    );
+    assert.deepStrictEqual(
+      sorted(parseFullyQualifiedTestList(rawListing.join('\n'))),
+      sorted(discovered),
+      'so re-reading the listing yields the same tree the discovery pass built',
+    );
+    assert.strictEqual(
+      rawListing.length >= discovered.length,
+      true,
+      'with at least one written line per discovered test',
+    );
+    assert.strictEqual(discovered.length, EXPECTED.length, 'and every fixture test in the tree');
   });
 });

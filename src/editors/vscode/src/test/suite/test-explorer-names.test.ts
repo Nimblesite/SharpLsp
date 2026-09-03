@@ -255,7 +255,7 @@ suite('Test Explorer — adapter decoration comes off, real names stay on', () =
       'and both reduce to no tests at all',
     );
     assert.deepStrictEqual(
-      parseFullyQualifiedTestList(`${CS.passing}`),
+      parseFullyQualifiedTestList(CS.passing),
       [CS.passing],
       'a file with no trailing newline still yields its one test',
     );

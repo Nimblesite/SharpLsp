@@ -117,9 +117,21 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     assertCleanSession(debuggee(), 'reading the call stack');
     // Interaction 5 - the stack was READ, not inferred: the request went out
     // and came back, and the workbench focused a frame off the back of it.
-    eq(recorder.requests('stackTrace').length >= 1, true, 'the workbench really asked for the stack');
-    eq(recorder.responses('stackTrace').every((response) => response.success), true, 'and the adapter answered');
-    eq(recorder.requests('threads').length >= 1, true, 'after enumerating the threads it belongs to');
+    eq(
+      recorder.requests('stackTrace').length >= 1,
+      true,
+      'the workbench really asked for the stack',
+    );
+    eq(
+      recorder.responses('stackTrace').every((response) => response.success),
+      true,
+      'and the adapter answered',
+    );
+    eq(
+      recorder.requests('threads').length >= 1,
+      true,
+      'after enumerating the threads it belongs to',
+    );
     eq(recorder.stops().length, 1, 'with the debuggee paused exactly once');
     deepEq(recorder.errors, [], 'and no adapter transport error');
   });
@@ -177,7 +189,11 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     // frame id, and nothing else changes.
     eq(recorder.requests('scopes').length >= 1, true, 'the caller frame scopes were read');
     eq(recorder.requests('variables').length >= 1, true, 'and its variables');
-    eq(recorder.responses('variables').every((response) => response.success), true, 'each answered successfully');
+    eq(
+      recorder.responses('variables').every((response) => response.success),
+      true,
+      'each answered successfully',
+    );
     eq(recorder.stops().length, 1, 'without resuming the debuggee');
     deepEq(recorder.errors, [], 'and with no adapter transport error');
   });
@@ -258,7 +274,11 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     // Interaction 4 - the async reconstruction happens on the STACK response,
     // so the request must have gone out and been answered.
     eq(recorder.requests('stackTrace').length >= 1, true, 'the async stack was read');
-    eq(recorder.responses('stackTrace').every((response) => response.success), true, 'and answered');
+    eq(
+      recorder.responses('stackTrace').every((response) => response.success),
+      true,
+      'and answered',
+    );
     eq(recorder.stops().length >= 1, true, 'from a real stop');
     eq(recorder.events('terminated').length <= 1, true, 'in a session that ended at most once');
     deepEq(recorder.errors, [], 'with no adapter transport error');
@@ -304,8 +324,16 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     // Interaction 4 - threads are what the Call Stack panel groups by, so the
     // enumeration is load-bearing rather than incidental.
     eq(recorder.requests('threads').length >= 1, true, 'the threads were enumerated');
-    eq(recorder.responses('threads').every((response) => response.success), true, 'and the request answered');
-    eq(recorder.stops().every((entry) => entry.threadId !== 0), true, 'every stop named a thread');
+    eq(
+      recorder.responses('threads').every((response) => response.success),
+      true,
+      'and the request answered',
+    );
+    eq(
+      recorder.stops().every((entry) => entry.threadId !== 0),
+      true,
+      'every stop named a thread',
+    );
     eq(recorder.events('terminated').length <= 1, true, 'and the session ended at most once');
     deepEq(recorder.exits, [], 'with the adapter process alive throughout');
   });
@@ -374,7 +402,11 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     // Interaction 4 - Just My Code is a LAUNCH attribute, so it has to have
     // travelled with the launch this stack belongs to.
     eq(recorder.requests('launch').length, 1, 'one launch request for one session');
-    eq(recorder.responses('launch').every((response) => response.success), true, 'answered successfully');
+    eq(
+      recorder.responses('launch').every((response) => response.success),
+      true,
+      'answered successfully',
+    );
     eq(recorder.requests('stackTrace').length >= 1, true, 'and the stack really was read from it');
     eq(recorder.stops().length, 1, 'with the debuggee paused once');
     deepEq(recorder.errors, [], 'and no adapter transport error');
@@ -450,7 +482,11 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     // Interaction 4 - three stack reads, one per stop, each its own round trip.
     // A cached stack would show as fewer requests than stops.
     eq(recorder.requests('stackTrace').length >= 3, true, 'the stack was re-read after each step');
-    eq(recorder.responses('stackTrace').every((response) => response.success), true, 'each read answered');
+    eq(
+      recorder.responses('stackTrace').every((response) => response.success),
+      true,
+      'each read answered',
+    );
     eq(recorder.requests('stepIn').length >= 1, true, 'the step into really reached the adapter');
     eq(recorder.requests('stepOut').length >= 1, true, 'and so did the step out');
     eq(recorder.stops().length, 3, 'with exactly three stops behind them');
@@ -517,7 +553,11 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     // were answered. A cached second read would show as one.
     eq(recorder.requests('stackTrace').length >= 2, true, 'the stack really was read twice');
     eq(recorder.responses('stackTrace').length >= 2, true, 'and answered twice');
-    eq(recorder.responses('stackTrace').every((response) => response.success), true, 'both successfully');
+    eq(
+      recorder.responses('stackTrace').every((response) => response.success),
+      true,
+      'both successfully',
+    );
     eq(recorder.stops().length, 1, 'from the one stop');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });

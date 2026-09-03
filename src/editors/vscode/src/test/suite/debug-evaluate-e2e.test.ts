@@ -111,9 +111,21 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     // Interaction 4 - the three contexts are one FEATURE. An expression that
     // answers in the Watch panel and not on hover teaches the user to distrust
     // the hover, which is the surface they reach for first.
-    eq(recorder.capabilities()['supportsEvaluateForHovers'], true, 'hover evaluation is advertised');
-    eq(recorder.requests('evaluate').length >= TIER_ONE.length, true, 'every expression really reached the adapter');
-    eq(recorder.responses('evaluate').every((response) => response.success), true, 'and every one of them was answered');
+    eq(
+      recorder.capabilities()['supportsEvaluateForHovers'],
+      true,
+      'hover evaluation is advertised',
+    );
+    eq(
+      recorder.requests('evaluate').length >= TIER_ONE.length,
+      true,
+      'every expression really reached the adapter',
+    );
+    eq(
+      recorder.responses('evaluate').every((response) => response.success),
+      true,
+      'and every one of them was answered',
+    );
     eq(recorder.stops().length, 1, 'evaluating never resumed or re-stopped the debuggee');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });
@@ -182,8 +194,16 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     assertCleanSession(debuggee(), 'editing a variable at runtime');
     // Interaction 4 - a write is a change to the RUNNING program, so the
     // adapter must have been asked to make it, and the session must survive.
-    eq(recorder.requests('setVariable').length >= 1, true, 'setVariable really reached the adapter');
-    eq(recorder.capabilities()['supportsSetVariable'], true, 'which is why the panel offers the edit at all');
+    eq(
+      recorder.requests('setVariable').length >= 1,
+      true,
+      'setVariable really reached the adapter',
+    );
+    eq(
+      recorder.capabilities()['supportsSetVariable'],
+      true,
+      'which is why the panel offers the edit at all',
+    );
     eq(recorder.stops().length >= 1, true, 'the debuggee was paused for the write');
     eq(recorder.events('terminated').length <= 1, true, 'and the session ended at most once');
     deepEq(recorder.errors, [], 'with no adapter transport error');
@@ -251,8 +271,16 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     // asks the C# sidecar to evaluate the format and replaces the default
     // `toString()`. A failure falls back to the raw class name, never to a
     // broken session.
-    eq(recorder.requests('variables').length >= 1, true, 'the Variables panel really asked the adapter');
-    eq(recorder.responses('variables').every((response) => response.success), true, 'and every read was answered');
+    eq(
+      recorder.requests('variables').length >= 1,
+      true,
+      'the Variables panel really asked the adapter',
+    );
+    eq(
+      recorder.responses('variables').every((response) => response.success),
+      true,
+      'and every read was answered',
+    );
     eq(recorder.stops().length, 1, 'reading variables never resumes the debuggee');
     eq(recorder.events('terminated').length <= 1, true, 'and the session ends at most once');
     deepEq(recorder.errors, [], 'with no adapter transport error');
@@ -341,9 +369,21 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     assertCleanSession(debuggee(), 'T2 method-call evaluation');
     // Interaction 4 - the whole T2 sweep happened inside ONE paused frame, and
     // the frame is still readable at the end of it.
-    eq(recorder.requests('evaluate').length >= 9, true, 'three expressions in three contexts is nine round trips');
-    eq(recorder.responses('evaluate').filter((response) => response.success).length >= 9, true, 'every one of them answered successfully');
-    eq(recorder.requests('stackTrace').length >= 1, true, 'the frame was resolved before anything was evaluated in it');
+    eq(
+      recorder.requests('evaluate').length >= 9,
+      true,
+      'three expressions in three contexts is nine round trips',
+    );
+    eq(
+      recorder.responses('evaluate').filter((response) => response.success).length >= 9,
+      true,
+      'every one of them answered successfully',
+    );
+    eq(
+      recorder.requests('stackTrace').length >= 1,
+      true,
+      'the frame was resolved before anything was evaluated in it',
+    );
     eq(recorder.events('terminated').length <= 1, true, 'and the session ended at most once');
     deepEq(recorder.exits, [], 'with the adapter process still alive throughout');
   });
@@ -417,8 +457,16 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     // Interaction 4 - a refusal is a RESPONSE, not a transport failure. The
     // distinction is what keeps the session alive after a typo in the Watch
     // panel.
-    eq(recorder.requests('evaluate').length >= 5, true, 'every refused expression really reached the adapter');
-    eq(recorder.responses('evaluate').some((response) => !response.success), true, 'and at least one came back as a FAILED response');
+    eq(
+      recorder.requests('evaluate').length >= 5,
+      true,
+      'every refused expression really reached the adapter',
+    );
+    eq(
+      recorder.responses('evaluate').some((response) => !response.success),
+      true,
+      'and at least one came back as a FAILED response',
+    );
     eq(recorder.events('terminated').length <= 1, true, 'the session ended at most once');
     deepEq(recorder.exits, [], 'and the adapter process never exited under it');
     eq(recorder.stops().length, 1, 'with the debuggee still parked where it was');
@@ -503,8 +551,16 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     // useful. Every read here addressed a specific frame id, and the adapter
     // answered each on its own terms.
     eq(recorder.requests('scopes').length >= 1, true, 'scopes were read for a specific frame');
-    eq(recorder.requests('evaluate').length >= 6, true, 'and several expressions evaluated against frame ids');
-    eq(recorder.responses('stackTrace').every((response) => response.success), true, 'every stack read was answered');
+    eq(
+      recorder.requests('evaluate').length >= 6,
+      true,
+      'and several expressions evaluated against frame ids',
+    );
+    eq(
+      recorder.responses('stackTrace').every((response) => response.success),
+      true,
+      'every stack read was answered',
+    );
     eq(recorder.stops().length, 1, 'without ever resuming the debuggee');
     deepEq(recorder.errors, [], 'and with no adapter transport error');
   });
@@ -598,9 +654,21 @@ suite('Debug evaluation — hover, watch, REPL, setVariable and DebuggerDisplay'
     assertCleanSession(debuggee(), 'setVariable at its boundaries');
     // Interaction 4 - and the write survived every refusal that followed it,
     // which is the whole claim: a refused edit changes nothing at all.
-    eq(recorder.requests('setVariable').length >= 4, true, 'one accepted write and three refusals reached the adapter');
-    eq(recorder.responses('setVariable').some((response) => response.success), true, 'at least one succeeded');
-    eq(recorder.responses('setVariable').some((response) => !response.success), true, 'and at least one was refused');
+    eq(
+      recorder.requests('setVariable').length >= 4,
+      true,
+      'one accepted write and three refusals reached the adapter',
+    );
+    eq(
+      recorder.responses('setVariable').some((response) => response.success),
+      true,
+      'at least one succeeded',
+    );
+    eq(
+      recorder.responses('setVariable').some((response) => !response.success),
+      true,
+      'and at least one was refused',
+    );
     eq(recorder.events('terminated').length <= 1, true, 'the session ended at most once');
     deepEq(recorder.exits, [], 'with the adapter process alive throughout');
   });

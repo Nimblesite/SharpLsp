@@ -103,8 +103,16 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
     // Interaction 4 - F9 in an F# editor is the manifest gate made observable,
     // and the session behind it is a complete one.
     eq(recorder.events('initialized').length, 1, 'one initialized event for the F# session');
-    eq(recorder.requests('setBreakpoints').length >= 1, true, 'the F9 line was synced to the adapter');
-    eq(recorder.responses('setBreakpoints').every((response) => response.success), true, 'and the sync answered');
+    eq(
+      recorder.requests('setBreakpoints').length >= 1,
+      true,
+      'the F9 line was synced to the adapter',
+    );
+    eq(
+      recorder.responses('setBreakpoints').every((response) => response.success),
+      true,
+      'and the sync answered',
+    );
     eq(recorder.responses('configurationDone').length >= 1, true, 'with configuration finished');
     deepEq(recorder.errors, [], 'and no adapter transport error');
   });
@@ -169,9 +177,20 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
     assertCleanSession(debuggee(), 'an F# stepping walk');
     // Interaction 4 - each F# gesture is its own request, so a walk of three is
     // three requests and three stops.
-    eq(recorder.requests('next').length + recorder.requests('stepIn').length + recorder.requests('stepOut').length >= 3, true, 'three stepping gestures reached the adapter');
+    eq(
+      recorder.requests('next').length +
+        recorder.requests('stepIn').length +
+        recorder.requests('stepOut').length >=
+        3,
+      true,
+      'three stepping gestures reached the adapter',
+    );
     eq(recorder.stops().length >= 3, true, 'and produced at least three stops');
-    eq(recorder.stops().every((entry) => entry.threadId !== 0), true, 'each naming its thread');
+    eq(
+      recorder.stops().every((entry) => entry.threadId !== 0),
+      true,
+      'each naming its thread',
+    );
     eq(recorder.events('terminated').length <= 1, true, 'in a session that ended at most once');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });
@@ -217,9 +236,21 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
     assertCleanSession(debuggee(), 'an F# exception stop');
     // Interaction 4 - an F# exception filter is the same DAP request as a C#
     // one, and must be answered the same way.
-    eq(recorder.requests('setExceptionBreakpoints').length >= 1, true, 'the filter reached the adapter');
-    eq(recorder.responses('setExceptionBreakpoints').every((response) => response.success), true, 'and was answered successfully');
-    eq(recorder.capabilities()['supportsExceptionOptions'], true, 'with the capability advertised for F# too');
+    eq(
+      recorder.requests('setExceptionBreakpoints').length >= 1,
+      true,
+      'the filter reached the adapter',
+    );
+    eq(
+      recorder.responses('setExceptionBreakpoints').every((response) => response.success),
+      true,
+      'and was answered successfully',
+    );
+    eq(
+      recorder.capabilities()['supportsExceptionOptions'],
+      true,
+      'with the capability advertised for F# too',
+    );
     eq(recorder.events('terminated').length <= 1, true, 'and the session ending at most once');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });
@@ -259,10 +290,18 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
     assertCleanSession(debuggee(), 'ignoring a handled F# exception');
     // Interaction 4 - the NEGATIVE half: an unarmed filter must leave the F#
     // program running, and the run must really have reached its end.
-    eq(recorder.requests('setExceptionBreakpoints').length >= 1, true, 'the filter change reached the adapter');
+    eq(
+      recorder.requests('setExceptionBreakpoints').length >= 1,
+      true,
+      'the filter change reached the adapter',
+    );
     eq(recorder.events('terminated').length, 1, 'the session ended exactly once');
     eq(recorder.events('exited').length, 1, 'with the debuggee exiting once');
-    eq(recorder.outputText().includes('done'), true, 'and the F# program printing its completion line');
+    eq(
+      recorder.outputText().includes('done'),
+      true,
+      'and the F# program printing its completion line',
+    );
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });
 
@@ -326,8 +365,16 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
     assertCleanSession(debuggee(), 'an F# conditional breakpoint');
     // Interaction 5 - the F# conditional breakpoint travelled as a CONDITION,
     // and the session behind it was complete.
-    eq(recorder.requests('setBreakpoints').length >= 1, true, 'the conditional breakpoint was synced');
-    eq(recorder.responses('setBreakpoints').every((response) => response.success), true, 'and the sync answered');
+    eq(
+      recorder.requests('setBreakpoints').length >= 1,
+      true,
+      'the conditional breakpoint was synced',
+    );
+    eq(
+      recorder.responses('setBreakpoints').every((response) => response.success),
+      true,
+      'and the sync answered',
+    );
     eq(recorder.events('initialized').length, 1, 'behind one initialized event');
     eq(recorder.events('terminated').length, 1, 'and one termination');
     deepEq(recorder.exits, [], 'with the adapter process alive throughout');
@@ -396,7 +443,11 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
     eq(recorder.requests('scopes').length >= 1, true, 'the F# frame scopes were read');
     eq(recorder.requests('variables').length >= 1, true, 'and its variables');
     eq(recorder.requests('evaluate').length >= 1, true, 'with a watch cross-checking them');
-    eq(recorder.responses('variables').every((response) => response.success), true, 'each answered successfully');
+    eq(
+      recorder.responses('variables').every((response) => response.success),
+      true,
+      'each answered successfully',
+    );
     eq(recorder.stops().length, 1, 'and the debuggee paused throughout');
   });
 
@@ -470,9 +521,21 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
     assertCleanSession(debuggee(), 'F# editor-scoped debug gestures');
     // Interaction 4 - run-to-cursor and a mid-session breakpoint are both
     // EDITOR gestures, and both had to reach the live adapter.
-    eq(recorder.requests('setBreakpoints').length >= 2, true, 'the breakpoints were synced more than once');
-    eq(recorder.responses('setBreakpoints').every((response) => response.success), true, 'each sync answered');
-    eq(recorder.stops().length, 3, 'three stops: the gate, the cursor target and the added breakpoint');
+    eq(
+      recorder.requests('setBreakpoints').length >= 2,
+      true,
+      'the breakpoints were synced more than once',
+    );
+    eq(
+      recorder.responses('setBreakpoints').every((response) => response.success),
+      true,
+      'each sync answered',
+    );
+    eq(
+      recorder.stops().length,
+      3,
+      'three stops: the gate, the cursor target and the added breakpoint',
+    );
     eq(recorder.events('terminated').length, 1, 'in one session that ended once');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });

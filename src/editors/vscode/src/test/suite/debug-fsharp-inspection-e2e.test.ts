@@ -109,8 +109,16 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
     // Interaction 4 - F# rendering is a REWRITE of the `variables` response, so
     // the response has to have happened and been answered.
     eq(recorder.requests('variables').length >= 1, true, 'the panel really read the F# frame');
-    eq(recorder.responses('variables').every((response) => response.success), true, 'and every read was answered');
-    eq(recorder.capabilities()['supportsVariableType'], true, 'with the type column advertised for F# too');
+    eq(
+      recorder.responses('variables').every((response) => response.success),
+      true,
+      'and every read was answered',
+    );
+    eq(
+      recorder.capabilities()['supportsVariableType'],
+      true,
+      'with the type column advertised for F# too',
+    );
     eq(recorder.stops().length, 1, 'reading variables never resumes an F# debuggee either');
     deepEq(recorder.errors, [], 'and with no adapter transport error');
   });
@@ -185,9 +193,17 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
     assertCleanSession(debuggee(), 'inspecting F# records, tuples and lists');
     // Interaction 4 - records, tuples and lists are all EXPANDABLE, which means
     // more than one `variables` round trip against nested handles.
-    eq(recorder.requests('variables').length >= 2, true, 'the panel expanded at least one F# value');
+    eq(
+      recorder.requests('variables').length >= 2,
+      true,
+      'the panel expanded at least one F# value',
+    );
     eq(recorder.requests('scopes').length >= 1, true, 'after resolving the frame scopes');
-    eq(recorder.responses('scopes').every((response) => response.success), true, 'each answered successfully');
+    eq(
+      recorder.responses('scopes').every((response) => response.success),
+      true,
+      'each answered successfully',
+    );
     eq(recorder.stops().length, 1, 'with the debuggee paused throughout');
     deepEq(recorder.errors, [], 'and no adapter transport error');
   });
@@ -241,7 +257,11 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
     // Interaction 4 - an F# `task {}` chain is a state machine, so the stack
     // read is where the logical reconstruction has to happen.
     eq(recorder.requests('stackTrace').length >= 1, true, 'the async stack was really read');
-    eq(recorder.responses('stackTrace').every((response) => response.success), true, 'and answered');
+    eq(
+      recorder.responses('stackTrace').every((response) => response.success),
+      true,
+      'and answered',
+    );
     eq(recorder.requests('threads').length >= 1, true, 'against a thread the adapter enumerated');
     eq(recorder.events('terminated').length <= 1, true, 'the session ended at most once');
     deepEq(recorder.errors, [], 'with no adapter transport error');
@@ -304,8 +324,16 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
     // Interaction 4 - "ONE F11, not two" is a claim about STEP requests: two
     // step requests for one gesture is the state-machine hop leaking through.
     eq(recorder.requests('stepIn').length >= 1, true, 'the step into really reached the adapter');
-    eq(recorder.responses('stepIn').every((response) => response.success), true, 'and was answered');
-    eq(recorder.stops().every((entry) => entry.threadId !== 0), true, 'every stop named its thread');
+    eq(
+      recorder.responses('stepIn').every((response) => response.success),
+      true,
+      'and was answered',
+    );
+    eq(
+      recorder.stops().every((entry) => entry.threadId !== 0),
+      true,
+      'every stop named its thread',
+    );
     eq(recorder.events('terminated').length <= 1, true, 'the session ended at most once');
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });
@@ -384,9 +412,21 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
     assertCleanSession(debuggee(), 'expanding F# values');
     // Interaction 5 - the whole expansion sweep happened against ONE paused F#
     // frame, and every nested read was answered.
-    eq(recorder.requests('variables').length >= 3, true, 'a record, a tuple and a list were each expanded');
-    eq(recorder.responses('variables').every((response) => response.success), true, 'and every expansion was answered');
-    eq(recorder.requests('evaluate').length >= 1, true, 'with at least one watch cross-checking the panel');
+    eq(
+      recorder.requests('variables').length >= 3,
+      true,
+      'a record, a tuple and a list were each expanded',
+    );
+    eq(
+      recorder.responses('variables').every((response) => response.success),
+      true,
+      'and every expansion was answered',
+    );
+    eq(
+      recorder.requests('evaluate').length >= 1,
+      true,
+      'with at least one watch cross-checking the panel',
+    );
     eq(recorder.stops().length, 1, 'and the debuggee paused throughout');
     deepEq(recorder.exits, [], 'with the adapter process alive');
   });
@@ -460,8 +500,16 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
     assertCleanSession(debuggee(), 'evaluating F# expressions');
     // Interaction 4 - twelve F# evaluations across three contexts, all against
     // one frame, none of them disturbing the session.
-    eq(recorder.requests('evaluate').length >= 12, true, 'four expressions in three contexts is twelve round trips');
-    eq(recorder.responses('evaluate').filter((response) => response.success).length >= 12, true, 'every one of them answered successfully');
+    eq(
+      recorder.requests('evaluate').length >= 12,
+      true,
+      'four expressions in three contexts is twelve round trips',
+    );
+    eq(
+      recorder.responses('evaluate').filter((response) => response.success).length >= 12,
+      true,
+      'every one of them answered successfully',
+    );
     eq(recorder.stops().length, 1, 'with the F# debuggee paused throughout');
     eq(recorder.events('terminated').length <= 1, true, 'and the session ending at most once');
     deepEq(recorder.exits, [], 'with the adapter process alive');
