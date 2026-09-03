@@ -20,7 +20,8 @@ import type { DapRecorder } from './debug-dap-kit';
 import { XUNIT_PACKAGES, createSolution, dotnet, projectXml } from './dotnet-project-kit';
 import { isolateFromRepoMsbuild } from './run-debug-fixtures';
 import { DEBUG_TYPE_ID, type DebugSessionRecorder, type ObservedSession } from './run-debug-kit';
-import { deepEq, eq, requireAt, requireWorkspaceRoot } from './test-helpers';
+import { activateTestExplorer } from './test-explorer-kit';
+import { deepEq, eq, removeDirRecursive, requireAt, requireWorkspaceRoot } from './test-helpers';
 
 /** The C# project the C# debug suites build. */
 export const CS_PROJECT = 'DebugTestTarget';
@@ -222,6 +223,25 @@ export async function writeDebugTestFixture(
     sourceUri: vscode.Uri.file(sourceFile),
     solutionPath,
   };
+}
+
+/**
+ * Drain the controller, THEN remove the fixture tree.
+ *
+ * A Debug gesture resolves at the ATTACH: the `dotnet test` it started keeps
+ * running until the debugged tests finish ([DEBUG-FEATURES-TESTS]), so a
+ * `suiteTeardown` that deletes the fixture outright RACES an invocation still
+ * writing its TRX in there. On a CI runner the delete wins by a fraction of a
+ * second, `dotnet test` is left pointed at a directory that no longer exists and
+ * never exits, and — because every invocation the controller makes is
+ * serialised — every test in every later suite of the run then times out queued
+ * behind it. Waiting for the queue to drain is what makes the teardown ordered
+ * rather than lucky.
+ */
+export async function disposeDebugTestFixture(fixture: TestDebugFixture): Promise<void> {
+  const api = await activateTestExplorer();
+  await api.testController.whenIdle();
+  removeDirRecursive(fixture.scratchDir);
 }
 
 /** A `SourceBreakpoint` on an anchored line of a fixture source. */

@@ -26,6 +26,7 @@ import {
   assertOneTestSession,
   breakpointAt,
   requireActive,
+  disposeDebugTestFixture,
   writeDebugTestFixture,
   type TestDebugFixture,
 } from './debug-test-kit';
@@ -37,7 +38,7 @@ import {
   rootsOf,
   runViaProfile,
 } from './test-explorer-kit';
-import { closeAllEditors, deepEq, eq, neq, removeDirRecursive, requireAt } from './test-helpers';
+import { closeAllEditors, deepEq, eq, neq, requireAt } from './test-helpers';
 import { DEBUG_SESSION_MS, DEBUG_TEST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
@@ -55,8 +56,9 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     fixture = await writeDebugTestFixture('debug-testgroups-', 'csharp');
   });
 
-  suiteTeardown(() => {
-    removeDirRecursive(fixture.scratchDir);
+  suiteTeardown(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    await disposeDebugTestFixture(fixture);
   });
 
   setup(() => {

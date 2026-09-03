@@ -45,6 +45,7 @@ import {
   disabledBreakpointAt,
   requireActive,
   requireDebugSession,
+  disposeDebugTestFixture,
   writeDebugTestFixture,
   type TestDebugFixture,
 } from './debug-test-kit';
@@ -62,7 +63,6 @@ import {
   deepEq,
   eq,
   neq,
-  removeDirRecursive,
   requireAt,
   requireWorkspaceRoot,
 } from './test-helpers';
@@ -80,8 +80,9 @@ suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints',
     fixture = await writeDebugTestFixture('debug-testrun-', 'csharp');
   });
 
-  suiteTeardown(() => {
-    removeDirRecursive(fixture.scratchDir);
+  suiteTeardown(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    await disposeDebugTestFixture(fixture);
   });
 
   setup(() => {

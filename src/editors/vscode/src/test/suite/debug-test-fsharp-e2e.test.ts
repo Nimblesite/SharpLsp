@@ -36,6 +36,7 @@ import {
   assertOneTestSession,
   breakpointAt,
   requireActive,
+  disposeDebugTestFixture,
   writeDebugTestFixture,
   type TestDebugFixture,
 } from './debug-test-kit';
@@ -52,7 +53,6 @@ import {
   deepEq,
   eq,
   neq,
-  removeDirRecursive,
   requireAt,
 } from './test-helpers';
 import { DEBUG_SESSION_MS, DEBUG_TEST_MS, FIXTURE_BUILD_MS } from './test-timeouts';
@@ -69,8 +69,9 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
     fixture = await writeDebugTestFixture('debug-testfs-', 'fsharp');
   });
 
-  suiteTeardown(() => {
-    removeDirRecursive(fixture.scratchDir);
+  suiteTeardown(async function () {
+    this.timeout(FIXTURE_BUILD_MS);
+    await disposeDebugTestFixture(fixture);
   });
 
   setup(() => {
