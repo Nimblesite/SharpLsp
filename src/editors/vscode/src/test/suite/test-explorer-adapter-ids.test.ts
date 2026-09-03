@@ -524,4 +524,246 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     }
     assertPassed(cachedFor(api, FIXTURE.parameterized), FIXTURE.parameterized);
   });
+
+  test('▶ on the ASSEMBLY ROOT attributes every outcome, none of them missing', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // Interaction 1 — the user presses ▶ on the top row of the Testing view.
+    const roots = rootsOf(api.testController.items);
+    assert.strictEqual(roots.length, 1, 'the fixture is one project, so one assembly root');
+    const assemblyNode = roots[0];
+    assert.ok(assemblyNode, 'the assembly root is readable');
+    assert.strictEqual(assemblyNode.label, FIXTURE.projectName, 'labelled for the project');
+    assert.strictEqual(
+      assemblyNode.id.startsWith('assembly:'),
+      true,
+      `an assembly root is a GROUP id, never an FQN; got ${assemblyNode.id}`,
+    );
+
+    // Interaction 2 — every test under it reports a real outcome. This is the
+    // whole-project shape of the defect: with decorated ids all 35 tests of the
+    // real project errored at once, and a root run is how the user hit it.
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, [assemblyNode]);
+    for (const fqn of EXPECTED) {
+      const result = api.testController.getResult(fqn);
+      assert.ok(result, `▶ on the root must report ${fqn}; nothing was cached for it`);
+      assert.strictEqual(
+        (result.message ?? '').includes(NO_RESULT),
+        false,
+        `${fqn} ran, so it must not report "${NO_RESULT}"`,
+      );
+      assert.strictEqual(
+        result.outcome === 'notRun',
+        false,
+        `${fqn} must not report notRun after a root run`,
+      );
+      assert.ok(Number(result.duration) >= 0, `${fqn} carries a measured duration`);
+    }
+
+    // Interaction 3 — the three kinds are still told apart, and the lens renders
+    // each of them the way the user reads it above the method
+    // ([TEST-STATUS-LENS]).
+    assertPassed(cachedFor(api, FIXTURE.passing), FIXTURE.passing);
+    assertFailed(cachedFor(api, FIXTURE.failing), FIXTURE.failing);
+    assertSkipped(cachedFor(api, FIXTURE.skipped), FIXTURE.skipped);
+    assert.strictEqual(
+      statusLensTitle(cachedFor(api, FIXTURE.skipped)),
+      '$(debug-step-over) Skipped',
+      'a skip is neither a pass nor a failure',
+    );
+    assert.strictEqual(
+      statusLensTitle(cachedFor(api, FIXTURE.failing)).startsWith('$(error) Failed'),
+      true,
+      'and a failure renders as one',
+    );
+
+    // Interaction 4 — running the root did not re-split or re-decorate the tree.
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted(EXPECTED),
+      'a root run leaves the tree exactly as it was',
+    );
+    assert.deepStrictEqual(
+      collectLeafIds(api.testController.items).filter((id) => carriesUniqueId(id)),
+      [],
+      'and every id is still bare afterwards',
+    );
+  });
+
+  test('a [Theory] whose rows each carried a unique ID reports as ONE test', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // Interaction 1 — select ONLY the theories. Each declares two [InlineData]
+    // rows, and the adapter gave every row its own unique ID, so a kept
+    // decoration turns two tests into four leaves and four filter clauses.
+    const theories = [
+      FIXTURE.parameterized,
+      ...(FIXTURE.mixedParameterized === undefined ? [] : [FIXTURE.mixedParameterized]),
+    ];
+    assert.ok(theories.length >= 1, 'the fixture declares at least one [Theory]');
+    const items = itemsFor(api, theories);
+    assert.strictEqual(items.length, theories.length, 'one row per theory, not one per ROW');
+    assert.deepStrictEqual(
+      items.map((item) => item.id),
+      theories,
+      'and each selected under the one name its rows share',
+    );
+    const args = buildFilterArgs(items);
+    assert.strictEqual(args[0], '--filter', 'a filtered run passes --filter first');
+    assert.deepStrictEqual(
+      (args[1] ?? '').split('|'),
+      theories.map((id) => `FullyQualifiedName=${id}`),
+      'one clause per THEORY — a per-row id would produce twice as many',
+    );
+
+    // Interaction 2 — running them caches exactly one result per theory, with a
+    // duration summed across the rows ([TEST-RUN-TRX]).
+    const before = api.testController.cachedResults.size;
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, items);
+    for (const fqn of theories) {
+      const result = cachedFor(api, fqn);
+      assert.strictEqual(
+        (result.message ?? '').includes(NO_RESULT),
+        false,
+        `${fqn} ran, so it must not report "${NO_RESULT}"`,
+      );
+      assert.ok(Number(result.duration) >= 0, `${fqn}'s rows contribute one summed duration`);
+    }
+    assert.ok(
+      api.testController.cachedResults.size >= before,
+      'a theory adds one cache entry, never one per row',
+    );
+    assert.strictEqual(
+      api.testController.getResult(`${FIXTURE.parameterized} (row 1)`),
+      undefined,
+      'no per-row id is ever cached alongside the test',
+    );
+
+    // Interaction 3 — the merged outcome is the WORST row's: a theory with one
+    // failing row is a failing test, reported once.
+    assertPassed(cachedFor(api, FIXTURE.parameterized), FIXTURE.parameterized);
+    if (FIXTURE.mixedParameterized !== undefined) {
+      const mixed = cachedFor(api, FIXTURE.mixedParameterized);
+      assert.strictEqual(mixed.outcome, 'failed', 'one failing row makes the theory fail');
+      assert.strictEqual(mixed.passed, false, 'and the pass flag agrees');
+      assert.strictEqual(
+        (mixed.message ?? '').includes('Assert.Equal'),
+        true,
+        "carrying the failing row's own assertion text",
+      );
+    }
+    assert.deepStrictEqual(
+      sorted(collectLeafIds(api.testController.items)),
+      sorted(EXPECTED),
+      'and the tree still holds one leaf per theory',
+    );
+  });
+
+  test('a multi-select of EVERY test builds one unescaped filter and attributes every result', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // Interaction 1 — the user ctrl-clicks every row and presses ▶. The filter
+    // is the clauses OR-ed with an UNESCAPED pipe ([TEST-FILTER-ESCAPE]).
+    const items = itemsFor(api, EXPECTED);
+    assert.strictEqual(items.length, EXPECTED.length, 'every test is in the selection');
+    const args = buildFilterArgs(items);
+    const expression = args[1] ?? '';
+    assert.strictEqual(args.length, 2, '--filter and exactly one expression');
+    assert.strictEqual(
+      expression.includes('\\'),
+      false,
+      `a bare C# FQN needs no escaping anywhere in the expression; got ${expression}`,
+    );
+    assert.strictEqual(
+      expression.split('|').length,
+      EXPECTED.length,
+      'one clause per selected test, OR-ed',
+    );
+    assert.deepStrictEqual(
+      expression.split('|'),
+      EXPECTED.map((id) => `FullyQualifiedName=${id}`),
+      'and in the order the rows were selected',
+    );
+
+    // Interaction 2 — every one of them comes back with its own outcome.
+    await runViaProfile(api.testController, vscode.TestRunProfileKind.Run, items);
+    for (const fqn of EXPECTED) {
+      const result = cachedFor(api, fqn);
+      assert.strictEqual(
+        (result.message ?? '').includes(NO_RESULT),
+        false,
+        `${fqn} was selected and run, so it must not report "${NO_RESULT}"`,
+      );
+      assert.strictEqual(
+        ['passed', 'failed', 'skipped'].includes(result.outcome),
+        true,
+        `${fqn} must land in one of the three Testing-API states; got ${result.outcome}`,
+      );
+    }
+
+    // Interaction 3 — and the lens can still find each of them by the method
+    // name it read out of the editor, now carrying a real status.
+    for (const fqn of EXPECTED) {
+      const found = findTestByMethodName(api.testController.items, methodOf(fqn));
+      assert.ok(found, `the lens above ${methodOf(fqn)} must resolve to a discovered test`);
+      assert.strictEqual(found.id, fqn, 'to THAT test');
+      assert.notStrictEqual(
+        statusLensTitle(cachedFor(api, fqn)),
+        '$(circle-slash) Not run',
+        `${fqn} has just run, so its lens must not still read "Not run"`,
+      );
+    }
+  });
+
+  test('a REFRESH re-discovers the same BARE ids, without duplicating a row', async function () {
+    this.timeout(DOTNET_CLI_MS);
+
+    // [TEST-REACTIVITY]: pressing refresh re-runs the whole two-pass discovery,
+    // which means the decorating adapter reports its decorated names again. A
+    // stripper applied only on the first sweep leaves the tree correct until the
+    // user presses refresh, and wrong from then on.
+    //
+    // Interaction 1 — the tree as it stands.
+    const before = sorted(collectLeafIds(api.testController.items));
+    const idsBefore = sorted(collectItemIds(api.testController.items));
+    assert.deepStrictEqual(before, sorted(EXPECTED), 'the settled tree is the fixture');
+
+    // Interaction 2 — press refresh and let the sweep land.
+    await drainDiscovery(() => {
+      void api.testController.activateAndDiscover();
+    }, api.testController);
+    const after = await pollForIds(
+      api.testController,
+      (ids) => ids.length >= EXPECTED.length,
+      DOTNET_CLI_MS,
+    );
+
+    // Interaction 3 — the same bare ids, the same nodes, nothing doubled.
+    assert.deepStrictEqual(sorted(after), before, 'refresh re-discovers exactly the same tests');
+    assert.deepStrictEqual(
+      after.filter((id) => carriesUniqueId(id)),
+      [],
+      'and strips the decoration on the SECOND sweep as well as the first',
+    );
+    assert.deepStrictEqual(
+      after.filter((id) => id.includes('(') || id.includes(')')),
+      [],
+      'with no parenthesis surviving into any id',
+    );
+    assert.deepStrictEqual(
+      sorted(collectItemIds(api.testController.items)),
+      idsBefore,
+      'every node in the view is the same node it was — refresh adds no second subtree',
+    );
+    assert.strictEqual(
+      rootsOf(api.testController.items).length,
+      1,
+      'and the project is still ONE assembly root',
+    );
+    assert.strictEqual(
+      new Set(after).size,
+      after.length,
+      'no test is listed twice after a re-discovery',
+    );
+  });
 });

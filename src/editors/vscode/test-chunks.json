@@ -159,20 +159,27 @@
       ]
     },
     "testexplorer": {
-      "description": "Discovery, the reactive tree, multi-targeted projects collapsing to one assembly root, Windows path handling, TRX/console result parsing and the testing lens.",
+      "description": "Discovery, the reactive tree, Windows path handling, TRX/console result parsing, the fully-qualified name reader (adapter decoration stripped, NUnit case names untouched) and the testing lens.",
       "files": [
         "test-explorer-e2e.test.js",
         "test-explorer-reactive.test.js",
         "test-explorer-multitarget.test.js",
         "test-explorer-windows.test.js",
         "test-explorer-parsers.test.js",
+        "test-explorer-names.test.js",
         "testing-lens-e2e.test.js"
       ]
     },
     "testexplorer-cancellation": {
-      "description": "Pressing Stop must terminate the whole `dotnet test` process TREE. Its own chunk: the suite builds a dedicated F# xUnit fixture whose long-running test deliberately sleeps, so it is both slow and the most likely place in the matrix to hang — isolating it keeps a hang from taking the rest of the Test Explorer surface with it.",
+      "description": "Pressing Stop must terminate the whole `dotnet test` process TREE, across every gesture that starts a run: Stop on the play button, on Run with Coverage, on a namespace row, on the assembly root, on a multi-select, a token already cancelled before the handler started, Stop pressed after the run already ended, two cancelled runs back to back, and a refresh after a cancellation. Its own chunk: the suite builds a dedicated F# xUnit fixture whose two long-running tests deliberately sleep, so it is both slow and the most likely place in the matrix to hang — isolating it keeps a hang from taking the rest of the Test Explorer surface with it.",
       "files": [
         "test-explorer-cancellation.test.js"
+      ]
+    },
+    "testexplorer-coverage": {
+      "description": "The Run-with-Coverage profile [TEST-COVERAGE] against a TWO-test-project solution over one library, each project exercising a different function of it: one Cobertura report per test project, EVERY one parsed and attached, a freshly emptied .sharplsp-coverage between runs, partial coverage for the functions nothing called, and the plain Run profile collecting nothing. Its own chunk because every test is a full `dotnet test --collect` round trip.",
+      "files": [
+        "test-explorer-coverage.test.js"
       ]
     },
     "testexplorer-frameworks": {
@@ -181,6 +188,12 @@
         "test-explorer-frameworks.test.js",
         "test-explorer-outcomes.test.js",
         "test-explorer-adapter-ids.test.js"
+      ]
+    },
+    "testexplorer-lens": {
+      "description": "The STATUS half of [TEST-STATUS-LENS], observed as a real CodeLens above a real test method: \"Not run\" before anything runs, the pass/fail/skip titles after a run with the failure carrying its assertion text, the row updating reactively with the editor left open, and the sharplsp.testLens.enabled setting removing the status as well as the actions. Its own chunk because it builds and runs a real C#/F# solution before it can look at a lens at all.",
+      "files": [
+        "testing-lens-status.test.js"
       ]
     },
     "profiler": {
