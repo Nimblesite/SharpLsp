@@ -44,7 +44,7 @@ import {
   writeProject,
   XUNIT_PACKAGES,
 } from './dotnet-project-kit';
-import { COVERAGE_DIR_NAME } from './test-coverage-fixtures';
+import { COVERAGE_DIR_NAME, COVERLET_PACKAGE, reportDirsOf } from './test-coverage-fixtures';
 import {
   activateTestExplorer,
   collectLeafIds,
@@ -67,7 +67,7 @@ import { DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
  * {@link STOP_BUDGET_MS}, and short enough that the control run — which waits
  * every sleep out — stays affordable.
  */
-const FIXTURE_SLEEP_SECONDS = 20;
+const FIXTURE_SLEEP_SECONDS = 12;
 const FIXTURE_SLEEP_MS = FIXTURE_SLEEP_SECONDS * 1_000;
 
 /**
@@ -76,13 +76,13 @@ const FIXTURE_SLEEP_MS = FIXTURE_SLEEP_SECONDS * 1_000;
  * Comfortably under {@link FIXTURE_SLEEP_MS}: a run that merely awaited the
  * batch instead of killing it could not return this early.
  */
-const STOP_BUDGET_MS = 12_000;
+const STOP_BUDGET_MS = 6_000;
 
 /** How fast a run must return when its token was cancelled before it began. */
-const PRE_CANCELLED_BUDGET_MS = 8_000;
+const PRE_CANCELLED_BUDGET_MS = 4_000;
 
 /** Extra time past the sleep before concluding the process is really gone. */
-const TERMINATION_GRACE_MS = 15_000;
+const TERMINATION_GRACE_MS = 8_000;
 
 /** The F# module every fixture test lives in — the tree's namespace row. */
 const NAMESPACE = 'Fs.Cancel.Fixtures';
@@ -118,8 +118,13 @@ const longTest = (binding: string, suffix: string): LongTest => ({
  *
  * A single one cannot distinguish "the run was cancelled" from "the one test
  * that was running was cancelled": a selection of two proves Stop ends the whole
- * BATCH, and xUnit runs both facts of one module sequentially, so the second
- * must never even start.
+ * BATCH, because xUnit runs both facts of one module sequentially, so whichever
+ * is second must never even start.
+ *
+ * WHICH is second is xUnit's choice, not this file's. `DefaultTestCaseOrderer`
+ * sorts the facts of a class by a hash of their names, so source order predicts
+ * nothing — every assertion below names the test Stop actually caught, and the
+ * ones queued behind it, rather than assuming an index.
  */
 const LONG_TESTS: readonly LongTest[] = [
   longTest('sleeps until stopped', 'one'),
@@ -189,34 +194,48 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     }
   };
 
+  /** Every long test that has announced itself, in the order they are declared. */
+  const startedLongTests = (): LongTest[] => LONG_TESTS.filter((each) => marked(each.started));
+
+  /** The long tests xUnit had QUEUED behind `running` when Stop landed. */
+  const queuedBehind = (running: LongTest): LongTest[] =>
+    LONG_TESTS.filter((each) => each.fqn !== running.fqn);
+
   /**
-   * Resolve once `name` appears, else after one CLI round trip.
+   * Resolve with the long test xUnit actually started FIRST — the "the run is
+   * under way" signal.
    *
-   * The marker lands a second or two into the `dotnet test` invocation, so the
-   * ceiling here is a round trip, not the whole fixture sleep.
+   * It polls for ANY long test's `started` marker rather than a named one on
+   * purpose. xUnit picks the order (see {@link LONG_TESTS}), so waiting on a
+   * named marker waits the OTHER test's entire sleep out first, and then presses
+   * Stop on a batch whose earlier test has already legitimately finished —
+   * indistinguishable, from the markers alone, from a cancellation that failed.
+   *
+   * The ceiling is one CLI round trip: the marker lands a second or two into the
+   * `dotnet test` invocation, not a whole fixture sleep later.
    */
-  const untilMarked = async (name: string): Promise<boolean> =>
+  const untilRunning = async (): Promise<LongTest | undefined> =>
     pollUntilResult(
-      () => Promise.resolve(marked(name)),
-      (seen) => seen,
+      () => Promise.resolve(startedLongTests()[0]),
+      (found) => found !== undefined,
       DOTNET_CLI_MS,
     );
 
-  /** The first long test's `started` marker — the "the run is under way" signal. */
-  const untilRunning = async (): Promise<boolean> => {
-    const first = LONG_TESTS[0];
-    assert.ok(first, 'the fixture declares at least one long-running test');
-    return untilMarked(first.started);
-  };
+  /** How fast one Stop gesture returned, and which long test it caught running. */
+  interface StopOutcome {
+    readonly afterStop: number;
+    readonly running: LongTest;
+  }
 
   /**
-   * Press ▶/coverage on `ids` and press ⏹ the moment the run is demonstrably
-   * under way, returning how long the handler took to return after Stop.
+   * Press ▶/coverage on `items` and press ⏹ the moment the run is demonstrably
+   * under way, reporting how long the handler took to return after Stop and
+   * which long test was executing when it did.
    */
   const runAndStop = async (
     kind: vscode.TestRunProfileKind,
     items: readonly vscode.TestItem[],
-  ): Promise<number> => {
+  ): Promise<StopOutcome> => {
     let stoppedAt = 0;
     const trigger = untilRunning().then((seen) => {
       stoppedAt = Date.now();
@@ -225,12 +244,42 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     await assert.doesNotReject(async () => {
       await runAndCancelWhen(api.testController, kind, items, trigger);
     }, 'a cancelled run must resolve, never reject — a rejected runHandler leaves the run spinning');
-    assert.strictEqual(
-      await trigger,
-      true,
-      'the long test must have started, or Stop cancelled nothing at all',
+    const running = await trigger;
+    assert.ok(running, 'a long test must have started, or Stop cancelled nothing at all');
+    return { afterStop: Date.now() - stoppedAt, running };
+  };
+
+  /**
+   * Assert Stop ended the whole batch: the test it caught was TERMINATED rather
+   * than waited out, and every test queued behind it never ran at all.
+   *
+   * Call it only after the fixture sleep has demonstrably elapsed, so a process
+   * that survived has had every chance to write its finish marker.
+   */
+  const assertBatchKilled = (running: LongTest, why: string): void => {
+    const markers = (): string => markersOnDisk().join(', ') || '(none)';
+    for (const each of LONG_TESTS) {
+      assert.strictEqual(
+        marked(each.finished),
+        false,
+        `${each.fqn} must be TERMINATED by Stop ${why} — it wrote its finish marker, so ` +
+          '`dotnet test` (or the testhost grandchild it spawns) outlived the cancellation; ' +
+          `markers on disk: ${markers()}`,
+      );
+    }
+    for (const queued of queuedBehind(running)) {
+      assert.strictEqual(
+        marked(queued.started),
+        false,
+        `Stop ends the whole BATCH ${why}: ${queued.fqn} was queued behind ${running.fqn} ` +
+          `and must never start; markers on disk: ${markers()}`,
+      );
+    }
+    assert.deepStrictEqual(
+      startedLongTests().map((each) => each.fqn),
+      [running.fqn],
+      `exactly the one test Stop caught ever ran ${why}; markers on disk: ${markers()}`,
     );
-    return Date.now() - stoppedAt;
   };
 
   /** Assert the controller's queue really drained, and how fast. */
@@ -254,7 +303,11 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     const projectDir = writeProject(
       path.join(root, PROJECT),
       `${PROJECT}.fsproj`,
-      projectXml(XUNIT_PACKAGES, 'Tests.fs'),
+      // `coverlet.collector` is what turns `--collect:"XPlat Code Coverage"`
+      // into a report on disk. Without it a coverage run writes NOTHING, and
+      // "the killed run left no report" holds for a reason that has nothing to
+      // do with cancellation — so does "the completed run left one", falsely.
+      projectXml([...XUNIT_PACKAGES, COVERLET_PACKAGE], 'Tests.fs'),
       'Tests.fs',
       fixtureSource(markerDir),
     );
@@ -362,8 +415,11 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
 
     // Interaction 2 — press ▶, then ⏹ the moment the first long test announces
     // itself. Stop must END the run, not wait it out.
-    const afterStop = await runAndStop(vscode.TestRunProfileKind.Run, itemsFor(api, ALL_TESTS));
-    assert.strictEqual(marked(LONG_TESTS[0]?.started ?? ''), true, 'the run really was under way');
+    const { afterStop, running } = await runAndStop(
+      vscode.TestRunProfileKind.Run,
+      itemsFor(api, ALL_TESTS),
+    );
+    assert.strictEqual(marked(running.started), true, 'the run really was under way');
     assert.ok(
       afterStop < STOP_BUDGET_MS,
       `Stop must END the run: returned ${String(afterStop)}ms after Stop, budget ` +
@@ -374,22 +430,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // written `finished`, no long test has finished and none of the ones queued
     // behind it ever started.
     await sleep(FIXTURE_SLEEP_MS + TERMINATION_GRACE_MS - afterStop);
-    for (const each of LONG_TESTS) {
-      assert.strictEqual(
-        marked(each.finished),
-        false,
-        `${each.fqn} must be TERMINATED by Stop — it wrote its finish marker, so ` +
-          '`dotnet test` (or the testhost grandchild it spawns) outlived the cancellation; ' +
-          `markers on disk: ${markersOnDisk().join(', ') || '(none)'}`,
-      );
-    }
-    const second = LONG_TESTS[1];
-    assert.ok(second, 'the fixture declares a second long test');
-    assert.strictEqual(
-      marked(second.started),
-      false,
-      'Stop ends the whole BATCH: a test queued behind the cancelled one must never start',
-    );
+    assertBatchKilled(running, 'on ▶');
 
     // Interaction 4 — every result is suppressed, the cache is untouched and the
     // tree is exactly as it was.
@@ -426,7 +467,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
 
     // Interaction 2 — Run with Coverage, then ⏹. The coverage profile spawns the
     // same batched `dotnet test`, so Stop has the same contract on it.
-    const afterStop = await runAndStop(
+    const { afterStop, running } = await runAndStop(
       vscode.TestRunProfileKind.Coverage,
       itemsFor(api, ALL_TESTS),
     );
@@ -437,14 +478,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
 
     // Interaction 3 — the process tree is dead, so no long test finished…
     await sleep(FIXTURE_SLEEP_MS + TERMINATION_GRACE_MS - afterStop);
-    for (const each of LONG_TESTS) {
-      assert.strictEqual(
-        marked(each.finished),
-        false,
-        `${each.fqn} must be terminated by Stop under the Coverage profile too; ` +
-          `markers on disk: ${markersOnDisk().join(', ') || '(none)'}`,
-      );
-    }
+    assertBatchKilled(running, 'under the Coverage profile too');
 
     // Interaction 4 — …and nothing from the killed run is reported: no outcome,
     // and no Cobertura report describing coverage that was never collected.
@@ -561,12 +595,19 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     const baseline = new Map(api.testController.cachedResults);
 
     // Interaction 2 — Stop, once the batch is demonstrably running.
-    const afterStop = await runAndStop(vscode.TestRunProfileKind.Run, [namespaceNode]);
+    const { afterStop, running } = await runAndStop(vscode.TestRunProfileKind.Run, [namespaceNode]);
     assert.ok(
       afterStop < STOP_BUDGET_MS,
       `Stop on a group row must end the run as promptly as on a leaf: ${String(afterStop)}ms`,
     );
-    assert.strictEqual(marked(LONG_TESTS[0]?.started ?? ''), true, 'the batch really was running');
+    assert.strictEqual(marked(running.started), true, 'the batch really was running');
+    for (const queued of queuedBehind(running)) {
+      assert.strictEqual(
+        marked(queued.started),
+        false,
+        `${queued.fqn} sits under the same group row and must never start once it is cancelled`,
+      );
+    }
 
     // Interaction 3 — every test beneath the row is suppressed, not just the one
     // that happened to be executing.
@@ -604,11 +645,12 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     const baseline = new Map(api.testController.cachedResults);
 
     // Interaction 2 — run everything from the root, then Stop.
-    const afterStop = await runAndStop(vscode.TestRunProfileKind.Run, [assemblyNode]);
+    const { afterStop, running } = await runAndStop(vscode.TestRunProfileKind.Run, [assemblyNode]);
     assert.ok(
       afterStop < STOP_BUDGET_MS,
       `Stop on the assembly root must end the run: ${String(afterStop)}ms`,
     );
+    assert.strictEqual(marked(running.started), true, 'the whole-project batch really was running');
 
     // Interaction 3 — nothing is attributed, and the whole tree survives. A
     // cancelled root run that cleared the tree would look like a failed
@@ -654,18 +696,23 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     const baseline = new Map(api.testController.cachedResults);
 
     // Interaction 2 — Stop while the first of them runs.
-    const afterStop = await runAndStop(vscode.TestRunProfileKind.Run, items);
+    const { afterStop, running } = await runAndStop(vscode.TestRunProfileKind.Run, items);
     assert.ok(afterStop < STOP_BUDGET_MS, `Stop ends the batch: ${String(afterStop)}ms`);
-    assert.strictEqual(marked(LONG_TESTS[0]?.started ?? ''), true, 'the first clause ran');
-
-    // Interaction 3 — the second clause never got its turn, and neither reports.
-    const second = LONG_TESTS[1];
-    assert.ok(second, 'the fixture declares a second long test');
+    assert.strictEqual(marked(running.started), true, 'one of the two clauses ran');
     assert.strictEqual(
-      marked(second.started),
-      false,
-      'the second selected test must never start once the batch is cancelled',
+      selection.includes(running.fqn),
+      true,
+      `${running.fqn} is one of the two clauses actually selected`,
     );
+
+    // Interaction 3 — the other clause never got its turn, and neither reports.
+    for (const queued of queuedBehind(running)) {
+      assert.strictEqual(
+        marked(queued.started),
+        false,
+        `${queued.fqn} is the OTHER selected clause and must never start once the batch is cancelled`,
+      );
+    }
     for (const fqn of selection) {
       assert.deepStrictEqual(
         api.testController.getResult(fqn),
@@ -691,7 +738,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     //
     // Interaction 1 — cancel a run of the whole fixture.
     clearMarkers();
-    const afterStop = await runAndStop(vscode.TestRunProfileKind.Run, itemsFor(api, ALL_TESTS));
+    const { afterStop } = await runAndStop(vscode.TestRunProfileKind.Run, itemsFor(api, ALL_TESTS));
     assert.ok(afterStop < STOP_BUDGET_MS, `the run was cancelled: ${String(afterStop)}ms`);
     await assertIdlePromptly('before re-running');
 
@@ -743,8 +790,11 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     clearMarkers();
     const baseline = new Map(api.testController.cachedResults);
     const first = await runAndStop(vscode.TestRunProfileKind.Run, itemsFor(api, ALL_TESTS));
-    assert.ok(first < STOP_BUDGET_MS, `the first Stop returned in ${String(first)}ms`);
-    assert.strictEqual(marked(LONG_TESTS[0]?.started ?? ''), true, 'the first run really started');
+    assert.ok(
+      first.afterStop < STOP_BUDGET_MS,
+      `the first Stop returned in ${String(first.afterStop)}ms`,
+    );
+    assert.strictEqual(marked(first.running.started), true, 'the first run really started');
     await assertIdlePromptly('between the two cancelled runs');
 
     // Interaction 2 — cancel again immediately. The second run must still get as
@@ -752,9 +802,12 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // invocation would never let it.
     clearMarkers();
     const second = await runAndStop(vscode.TestRunProfileKind.Run, itemsFor(api, ALL_TESTS));
-    assert.ok(second < STOP_BUDGET_MS, `the second Stop returned in ${String(second)}ms`);
+    assert.ok(
+      second.afterStop < STOP_BUDGET_MS,
+      `the second Stop returned in ${String(second.afterStop)}ms`,
+    );
     assert.strictEqual(
-      marked(LONG_TESTS[0]?.started ?? ''),
+      marked(second.running.started),
       true,
       'the SECOND run must reach the point of executing a test — proof the first ' +
         'cancellation released the queue rather than abandoning an invocation in it',
@@ -835,7 +888,10 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // Interaction 1 — cancel a run.
     clearMarkers();
     const before = sorted(collectLeafIds(api.testController.items));
-    const afterStop = await runAndStop(vscode.TestRunProfileKind.Run, itemsFor(api, ALL_TESTS));
+    const { afterStop, running } = await runAndStop(
+      vscode.TestRunProfileKind.Run,
+      itemsFor(api, ALL_TESTS),
+    );
     assert.ok(afterStop < STOP_BUDGET_MS, `the run was cancelled: ${String(afterStop)}ms`);
     assert.deepStrictEqual(
       sorted(collectLeafIds(api.testController.items)),
@@ -870,6 +926,12 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       [],
       'and re-discovery never EXECUTES a test — `--list-tests` builds, it does not run',
     );
+    assert.deepStrictEqual(
+      startedLongTests().map((each) => each.fqn),
+      [running.fqn],
+      'nor STARTS one: the only test that ever ran is the one the cancelled run caught, ' +
+        `and it never finished; markers on disk: ${markersOnDisk().join(', ') || '(none)'}`,
+    );
   });
 
   test('Stop on a selection of ONE long test kills it and touches nothing else', async function () {
@@ -896,8 +958,13 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     const baseline = new Map(api.testController.cachedResults);
 
     // Interaction 2 — Stop the moment it announces itself.
-    const afterStop = await runAndStop(vscode.TestRunProfileKind.Run, items);
+    const { afterStop, running } = await runAndStop(vscode.TestRunProfileKind.Run, items);
     assert.strictEqual(marked(first.started), true, 'the one selected test really started');
+    assert.strictEqual(
+      running.fqn,
+      first.fqn,
+      'and it is the one Stop caught — a selection of one leaves xUnit no ordering choice',
+    );
     assert.ok(
       afterStop < STOP_BUDGET_MS,
       `Stop must end a single-test run just as promptly: ${String(afterStop)}ms`,
@@ -951,9 +1018,12 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     //
     // Interaction 1 — cancel a run of everything.
     clearMarkers();
-    const afterStop = await runAndStop(vscode.TestRunProfileKind.Run, itemsFor(api, ALL_TESTS));
+    const { afterStop, running } = await runAndStop(
+      vscode.TestRunProfileKind.Run,
+      itemsFor(api, ALL_TESTS),
+    );
     assert.ok(afterStop < STOP_BUDGET_MS, `the run was cancelled: ${String(afterStop)}ms`);
-    assert.strictEqual(marked(LONG_TESTS[0]?.started ?? ''), true, 'having really started');
+    assert.strictEqual(marked(running.started), true, 'having really started');
     await assertIdlePromptly('before the recovery run');
 
     // Interaction 2 — run the whole tree again and let it finish. Every long
@@ -1014,7 +1084,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // Interaction 1 — cancel a coverage run, and see what it left behind.
     clearMarkers();
     removeDirRecursive(coverageDir);
-    const afterStop = await runAndStop(
+    const { afterStop } = await runAndStop(
       vscode.TestRunProfileKind.Coverage,
       itemsFor(api, ALL_TESTS),
     );
@@ -1024,6 +1094,8 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       [],
       'a run killed mid-flight collected nothing, so it attaches no report',
     );
+    // Whatever the kill DID leave behind is what the next run has to sweep.
+    const debris = fs.existsSync(coverageDir) ? fs.readdirSync(coverageDir).sort() : [];
     await assertIdlePromptly('after the cancelled coverage run');
 
     // Interaction 2 — now let a coverage run FINISH, over the fast test alone so
@@ -1042,9 +1114,16 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     const trx = entries.filter((entry) => entry.toLowerCase().endsWith('.trx'));
     assert.strictEqual(trx.length, 1, `one TRX for the one project: ${entries.join(' | ')}`);
     assert.strictEqual(
-      dirs.length,
+      reportDirsOf(coverageDir).length,
       1,
-      `and exactly ONE run-id folder — the killed run's debris must have been swept: ${entries.join(' | ')}`,
+      `and exactly ONE run-id folder holding a report — the collector writes one per test ` +
+        `project, and there is one: ${entries.join(' | ')}`,
+    );
+    assert.deepStrictEqual(
+      entries.filter((entry) => debris.includes(entry)),
+      [],
+      `the killed run's debris must have been SWEPT, not handed to the next run: it left ` +
+        `${debris.join(' | ') || '(nothing)'}, and the directory now holds ${entries.join(' | ')}`,
     );
     assert.deepStrictEqual(
       sorted([...trx, ...dirs]),

@@ -21,18 +21,38 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { buildFilterArgs, isExpectoTest, isFsCheckTest } from '../../testing.js';
-import { isDiscoveredTestLine } from '../../test-discovery.js';
-import { findCoberturaFile, parseCoberturaXml } from '../../test-coverage.js';
+import type { CachedTestResult } from '../../testing.js';
+import {
+  batchAssemblies,
+  isDiscoveredTestLine,
+  mergeMultiTargeted,
+  parseAnnouncedAssemblies,
+  parseTestList,
+  resolveAnnouncedAssembly,
+  unescapeMsBuildPath,
+} from '../../test-discovery.js';
+import {
+  findCoberturaFile,
+  findCoberturaFiles,
+  mergeCoberturaReports,
+  parseCoberturaXml,
+} from '../../test-coverage.js';
 import {
   extractCSharpMethodName,
   extractFSharpFunctionName,
   formatDuration,
+  statusLensTitle,
 } from '../../test-lens.js';
 import { CMD_TEST_RUN_AT_CURSOR, CMD_TEST_DEBUG_AT_CURSOR } from '../../constants.js';
 import {
   closeAllEditors,
+  deepEq,
+  eq,
+  neq,
   openCSharpFile,
   openFSharpFile,
+  replaceDocumentContent,
+  requireAt,
   setupLspTestSuite,
   teardownLspTestSuite,
 } from './test-helpers';
@@ -62,6 +82,61 @@ function testLensCommands(lenses: vscode.CodeLens[]): vscode.CodeLens[] {
       lens.command?.command === CMD_TEST_RUN_AT_CURSOR ||
       lens.command?.command === CMD_TEST_DEBUG_AT_CURSOR,
   );
+}
+
+/**
+ * The characters [TEST-FILTER-ESCAPE] calls grammar and requires escaping.
+ *
+ * `,`, `+`, `.` and SPACE are deliberately absent: they occur inside real
+ * fully-qualified names (`Adds_Case(2,2,4)`, a nested-type `+`, an F# backtick
+ * binding) and escaping one would corrupt the very names the spec's table says
+ * must round-trip unchanged.
+ */
+const FILTER_GRAMMAR: readonly string[] = ['\', '(', ')', '&', '|', '=', '!', '~'];
+
+/**
+ * How many pipes in a filter expression are CLAUSE SEPARATORS, i.e. not
+ * preceded by a backslash.
+ *
+ * Counting every `|` cannot tell an OR between two selected tests from a pipe
+ * that occurs INSIDE one test's name — and those two are exactly what
+ * [TEST-FILTER-ESCAPE] distinguishes ("OR'd with an UNESCAPED `|` between
+ * escaped clauses").
+ */
+function separatorPipes(expression: string): number {
+  let count = 0;
+  for (let index = 0; index < expression.length; index += 1) {
+    if (expression[index] === '|' && expression[index - 1] !== '\') {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/** A cobertura report over one file with the given per-line hit counts. */
+function coberturaFor(filename: string, hits: readonly number[]): string {
+  const lines = hits
+    .map((hit, index) => `<line number="${String(index + 1)}" hits="${String(hit)}"/>`)
+    .join('');
+  return (
+    '<?xml version="1.0"?><coverage><packages><package><classes>' +
+    `<class filename="${filename}"><lines>${lines}</lines></class>` +
+    '</classes></package></packages></coverage>'
+  );
+}
+
+/** Write `xml` into its own run-id folder one level below `resultsDir`. */
+function plantReport(resultsDir: string, runId: string, xml: string): string {
+  const runDir = path.join(resultsDir, runId);
+  fs.mkdirSync(runDir, { recursive: true });
+  const reportPath = path.join(runDir, 'coverage.cobertura.xml');
+  fs.writeFileSync(reportPath, xml, 'utf8');
+  return reportPath;
+}
+
+/** A `CachedTestResult` literal, so the four lens titles can be driven directly. */
+function cached(result: Partial<CachedTestResult> & Pick<CachedTestResult, 'outcome'>): CachedTestResult {
+  return { passed: result.outcome === 'passed', ...result };
 }
 
 /** A minimal but realistic cobertura report: one covered, one uncovered line. */
@@ -380,6 +455,501 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       'utf8',
     );
     assert.deepStrictEqual(parseCoberturaXml(emptyPath), []);
+  });
+
+  // Implements [TEST-FILTER-ESCAPE]: "`\`, `(`, `)`, `&`, `|`, `=`, `!` and `~`
+  // are grammar and MUST be backslash-escaped inside a fully-qualified name
+  // before substitution", and "Multiple selected tests are OR'd with an
+  // UNESCAPED `|` between escaped clauses".
+  test('buildFilterArgs escapes every grammar character and OR-s clauses with a bare pipe', async function () {
+    this.timeout(FAST_MS);
+
+    // Interaction 1 - each reserved character on its own. An unescaped NUnit
+    // `[TestCase]` name crashes the NUnit adapter in `VsTestFilter.get_IsEmpty()`,
+    // so the run dies instead of reporting a result: this is not cosmetic.
+    for (const char of FILTER_GRAMMAR) {
+      const args = buildFilterArgs([testItem('Ns.Class.Method' + char + 'Tail')]);
+      eq(args.length, 2, char + ': one --filter flag and one expression, never more');
+      eq(args[0], '--filter', char + ': the flag comes first');
+      eq(
+        args[1],
+        'FullyQualifiedName=Ns.Class.Method\\' + char + 'Tail',
+        char + ' is filter grammar and MUST be backslash-escaped inside the name',
+      );
+      eq(
+        (args[1] ?? '').startsWith('FullyQualifiedName='),
+        true,
+        char + ': the FullyQualifiedName= separator is the grammar, never escaped itself',
+      );
+      eq(separatorPipes(args[1] ?? ''), 0, char + ': one test is one clause, so no OR');
+    }
+
+    // Interaction 2 - the shapes [TEST-DISCOVERY-FQN]'s table says must
+    // round-trip unchanged. `,`, `+` and SPACE are not grammar: escaping one
+    // would corrupt the name it was meant to protect.
+    const nunit = buildFilterArgs([testItem('Cs.Nunit.Fixtures.CalculatorTests.Adds_Case(2,2,4)')]);
+    eq(
+      nunit[1],
+      'FullyQualifiedName=Cs.Nunit.Fixtures.CalculatorTests.Adds_Case\\(2,2,4\\)',
+      'the NUnit [TestCase] parentheses are escaped and its commas are left alone',
+    );
+    eq((nunit[1] ?? '').includes('\\,'), false, 'a comma is not filter grammar');
+    const fsharp = buildFilterArgs([testItem('Fs.Xunit.Fixtures.adds two numbers with spaces')]);
+    eq(
+      fsharp[1],
+      'FullyQualifiedName=Fs.Xunit.Fixtures.adds two numbers with spaces',
+      'an idiomatic F# backtick name carries SPACES and must survive verbatim',
+    );
+    eq((fsharp[1] ?? '').includes('\\ '), false, 'a space is not filter grammar');
+    const mstest = buildFilterArgs([testItem('Fs.Mstest.Fixtures+CalculatorTests.AddsTwoNumbers')]);
+    eq(
+      mstest[1],
+      'FullyQualifiedName=Fs.Mstest.Fixtures+CalculatorTests.AddsTwoNumbers',
+      'a CLR nested-type + is part of the name, not the filter grammar',
+    );
+    eq((mstest[1] ?? '').includes('\\+'), false, 'a plus is not filter grammar');
+
+    // Interaction 3 - a SELECTION. The joining pipe is unescaped; a pipe inside
+    // a name is not. Getting that backwards either merges two tests into one
+    // clause or splits one name in half, and both run the wrong tests.
+    deepEq(buildFilterArgs([]), [], 'no selection is no filter at all, not an empty expression');
+    const pair = buildFilterArgs([
+      testItem('Cs.Nunit.Fixtures.CalculatorTests.Adds_Case(2,2,4)'),
+      testItem('Fs.Xunit.Fixtures.adds two numbers with spaces'),
+    ]);
+    eq(pair.length, 2, 'a selection is still ONE --filter argument, never one per test');
+    eq(
+      pair[1],
+      'FullyQualifiedName=Cs.Nunit.Fixtures.CalculatorTests.Adds_Case\\(2,2,4\\)|' +
+        'FullyQualifiedName=Fs.Xunit.Fixtures.adds two numbers with spaces',
+      'two selected tests are OR-ed with an UNESCAPED pipe between escaped clauses',
+    );
+    eq(separatorPipes(pair[1] ?? ''), 1, 'exactly one separator for two clauses');
+    const hostile = buildFilterArgs([
+      testItem('Ns.Class.Has|Pipe'),
+      testItem('Ns.Class.Plain'),
+      testItem('Ns.Class.Also|Piped'),
+    ]);
+    eq(
+      separatorPipes(hostile[1] ?? ''),
+      2,
+      'three selected tests are two separators, however many pipes their NAMES carry',
+    );
+    eq(
+      (hostile[1] ?? '').includes('\\|Pipe'),
+      true,
+      'the pipe inside a name is escaped, so it can never be read as a clause break',
+    );
+    eq(
+      (hostile[1] ?? '').split('FullyQualifiedName=').length - 1,
+      3,
+      'one FullyQualifiedName= clause per selected test, in selection order',
+    );
+    eq(
+      (hostile[1] ?? '').indexOf('Ns.Class.Plain') > (hostile[1] ?? '').indexOf('Has'),
+      true,
+      'and the order the user selected them in is preserved',
+    );
+  });
+
+  // Implements [TEST-DISCOVERY-FQN] - the at-cursor commands address a test by
+  // the name the lens read off the signature, whatever characters it holds.
+  test('the at-cursor commands carry hostile method names through verbatim', async function () {
+    this.timeout(COMMAND_MS);
+    const uri = vscode.Uri.file(path.join(tmpDir, 'AtCursor.cs'));
+
+    // Interaction 1 - an F# backtick binding: the name carries SPACES, and the
+    // warning must show the user the name it actually looked for. A name that
+    // arrived trimmed or split is a name no discovered test can ever match.
+    const spaced = 'adds two numbers with spaces';
+    stubs.queueWarning(undefined);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, spaced);
+    });
+    eq(stubs.log.warningMessages.length, 1, 'an unresolvable at-cursor run warns exactly once');
+    const first = stubs.log.warningMessages[0] ?? '';
+    eq(first.includes(spaced), true, 'the warning names the binding, spaces and all');
+    eq(first.includes('discovery'), true, 'and points the user at discovery');
+    deepEq(stubs.log.errorMessages, [], 'a name it cannot resolve is not an ERROR');
+
+    // Interaction 2 - every remaining shape the spec's tables name, plus each
+    // filter-grammar character. None may reject, and each must be echoed back.
+    const names = [
+      'Adds_Case(2,2,4)',
+      'Fixtures+CalculatorTests.AddsTwoNumbers',
+      'Has|Pipe',
+      'Has&Amp',
+      'Has=Equals',
+      'Has!Bang',
+      'Has~Tilde',
+    ];
+    stubs.queueWarning(...names.map(() => undefined));
+    for (const name of names) {
+      await assert.doesNotReject(async () => {
+        await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, name);
+      }, name + ' must never make the at-cursor command reject');
+    }
+    eq(
+      stubs.log.warningMessages.length,
+      names.length + 1,
+      'one warning per invocation - a swallowed gesture is a Run Test that did nothing',
+    );
+    for (const name of names) {
+      eq(
+        stubs.log.warningMessages.some((message) => message.includes(name)),
+        true,
+        name + ' must be reported back verbatim, not escaped or truncated',
+      );
+    }
+
+    // Interaction 3 - the DEBUG half must behave identically. [TEST-STATUS-LENS]
+    // puts both actions on the lens, so a Debug that rejects where Run warns is
+    // a dead button on every test in the file.
+    const before = stubs.log.warningMessages.length;
+    stubs.queueWarning(undefined, undefined);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand(CMD_TEST_DEBUG_AT_CURSOR, uri, spaced);
+    });
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand(CMD_TEST_DEBUG_AT_CURSOR, uri, 'Adds_Case(2,2,4)');
+    });
+    eq(stubs.log.warningMessages.length, before + 2, 'Debug warns once per gesture as Run does');
+    eq(
+      (stubs.log.warningMessages[before] ?? '').includes(spaced),
+      true,
+      'and names the same binding the Run action would have run',
+    );
+    deepEq(stubs.log.errorMessages, [], 'still nothing reported to the user as a failure');
+  });
+
+  // Implements the [TEST-DISCOVERY-FQN] listing rules: every line is classified
+  // INDEPENDENTLY ("a banner-index slice is not admissible"), and the MSBuild
+  // `%XX` escaping in an announced assembly path is decoded before resolution.
+  test('the discovery parsers hold every line shape a real solution listing prints', async function () {
+    this.timeout(FAST_MS);
+
+    // Interaction 1 - a listing in which two projects' banners and names
+    // INTERLEAVE, which is what parallel project builds actually emit.
+    const listing = [
+      'Determining projects to restore...',
+      '  Restored /w/Cs.Xunit.Fixtures/Cs.Xunit.Fixtures.csproj (in 412 ms).',
+      'Cs.Xunit.Fixtures -> /w/bin/Debug/net10.0/Cs.Xunit.Fixtures.dll',
+      'Test run for /w/bin/Debug/net10.0/Cs.Xunit.Fixtures.dll (.NETCoreApp,Version=v10.0)',
+      'The following Tests are available:',
+      '    Cs.Xunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
+      'Test run for /w/bin/Debug/net10.0/Fs.Xunit.Fixtures.dll (.NETCoreApp,Version=v10.0)',
+      '    Fs.Xunit.Fixtures.adds two numbers with spaces',
+      '    Cs.Nunit.Fixtures.CalculatorTests.Adds_Case(2,2,4)',
+      '    Fs.Mstest.Fixtures+CalculatorTests.AddsTwoNumbers',
+      'Passed!  - Failed: 0, Passed: 4',
+    ].join('\n');
+    const names = parseTestList(listing);
+    eq(
+      names.includes('Fs.Xunit.Fixtures.adds two numbers with spaces'),
+      true,
+      'an F# backtick name printed AFTER a second banner is still a test name - every line ' +
+        'is classified independently, so a banner-index slice can never be the rule',
+    );
+    eq(
+      names.includes('Cs.Xunit.Fixtures.CalculatorTests.Adds_TwoNumbers'),
+      true,
+      'as is the C# one',
+    );
+    eq(
+      names.includes('Cs.Xunit.Fixtures -> /w/bin/Debug/net10.0/Cs.Xunit.Fixtures.dll'),
+      false,
+      'the MSBuild output mapping is dotted-identifier shaped and must still be rejected',
+    );
+    eq(names.includes('Passed!  - Failed: 0, Passed: 4'), false, 'nor is the summary a test');
+    eq(names.length, new Set(names).size, 'the listing is de-duplicated');
+
+    // Interaction 2 - the same predicate at its boundary, one line at a time.
+    const rejected = [
+      'The following Tests are available:',
+      'Build succeeded.',
+      'Determining projects to restore...',
+      'JustAnIdentifierNoDot',
+      'Ns.Class.Param(x: 1)',
+      'at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs',
+      'Proj -> C:\\out\\Proj.dll',
+      '',
+      '   ',
+    ];
+    for (const line of rejected) {
+      eq(isDiscoveredTestLine(line), false, JSON.stringify(line) + ' is never a test name');
+    }
+    for (const line of [
+      'Cs.Xunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
+      'Fs.Xunit.Fixtures.adds two numbers with spaces',
+      'Cs.Nunit.Fixtures.CalculatorTests.Adds_Case(2,2,4)',
+      'Fs.Mstest.Fixtures+CalculatorTests.AddsTwoNumbers',
+      'Cs.Mstest.Fixtures.CalculatorTests.Adds_Row',
+    ]) {
+      eq(isDiscoveredTestLine(line), true, line + ' is a shape the spec table requires');
+    }
+
+    // Interaction 3 - the announced assemblies, and the MSBuild `%XX` escaping
+    // a Windows path under "Program Files (x86)" really carries. Dropping the
+    // decode skips the fully-qualified pass and silently loses every NUnit
+    // test, every MSTest test and every theory.
+    const announced = parseAnnouncedAssemblies(listing);
+    eq(announced.length, 2, 'one banner per built test assembly');
+    eq(
+      announced.includes('/w/bin/Debug/net10.0/Fs.Xunit.Fixtures.dll'),
+      true,
+      'and the F# assembly is announced as well as the C# one',
+    );
+    const escaped = 'C:\\Program Files %28x86%29\\App\\bin\\Debug\\net10.0\\Cs.Xunit.Fixtures.dll';
+    eq(
+      unescapeMsBuildPath(escaped),
+      'C:\\Program Files (x86)\\App\\bin\\Debug\\net10.0\\Cs.Xunit.Fixtures.dll',
+      'MSBuild reserves ( and ) and encodes them as %28/%29; the path must be decoded',
+    );
+    eq(unescapeMsBuildPath('%25'), '%', 'a literal percent is itself escaped as %25');
+    eq(
+      unescapeMsBuildPath('/plain/path/App.dll'),
+      '/plain/path/App.dll',
+      'a path with nothing reserved in it is returned untouched',
+    );
+    eq(
+      resolveAnnouncedAssembly('/nowhere/that/exists/Ghost.dll'),
+      undefined,
+      'an announced assembly that is not on disk resolves to nothing, and must not throw',
+    );
+  });
+
+  // Implements [TEST-DISCOVERY-FQN]: assemblies are batched under the Windows
+  // 32 767-character command-line ceiling, and a MULTI-TARGETED project
+  // collapses to ONE group whose names are the UNION of the frameworks'.
+  test('assembly batching stays under the command-line ceiling and multi-targets merge', async function () {
+    this.timeout(FAST_MS);
+
+    // Interaction 1 - a solution with dozens of test projects. Handing them all
+    // to one `dotnet vstest` fails to SPAWN instead of enumerating, so the
+    // batcher must split - but never a batch that is empty or reordered.
+    const many = Array.from({ length: 40 }, (_, index) => {
+      return '/w/very/long/output/path/segment/Project' + String(index) + '/bin/Debug/Tests.dll';
+    });
+    const batches = batchAssemblies(many, 400);
+    eq(batches.length > 1, true, 'forty long paths cannot fit one 400-character command line');
+    deepEq(batches.flat(), many, 'every assembly appears exactly once, in listing order');
+    for (const batch of batches) {
+      eq(batch.length >= 1, true, 'an empty batch would spawn vstest with no assembly');
+      eq(batch.join(' ').length <= 400 + 3, true, 'each batch stays inside the ceiling');
+    }
+    deepEq(batchAssemblies([], 400), [], 'nothing to enumerate is no invocation at all');
+    deepEq(
+      batchAssemblies(['/w/a.dll'], 400),
+      [['/w/a.dll']],
+      'one assembly is one batch, never two',
+    );
+    const single = batchAssemblies([many[0] ?? '', many[1] ?? ''], 10);
+    eq(
+      single.length,
+      2,
+      'a path longer than the whole ceiling still goes out alone rather than being dropped',
+    );
+
+    // Interaction 2 - the same project built for two frameworks. Left apart,
+    // every namespace, class and test renders TWICE under two labels the user
+    // cannot tell apart.
+    const merged = mergeMultiTargeted([
+      {
+        name: 'Cs.Multi.Fixtures',
+        path: '/w/bin/Debug/net9.0/Cs.Multi.Fixtures.dll',
+        names: ['Ns.C.Shared', 'Ns.C.Only_On_NET9_0'],
+      },
+      {
+        name: 'Cs.Multi.Fixtures',
+        path: '/w/bin/Debug/net10.0/Cs.Multi.Fixtures.dll',
+        names: ['Ns.C.Shared', 'Ns.C.Only_On_NET10_0'],
+      },
+    ]);
+    eq(merged.length, 1, 'two banners for one project collapse to ONE assembly group');
+    const group = requireAt(merged, 0, 'the merged group');
+    eq(group.name, 'Cs.Multi.Fixtures', 'under the project name the user recognises');
+    deepEq(
+      [...group.names].sort(),
+      ['Ns.C.Only_On_NET10_0', 'Ns.C.Only_On_NET9_0', 'Ns.C.Shared'],
+      'the collapsed names are the UNION - a test behind #if exists in only one assembly, ' +
+        'and taking the first framework alone would trade a duplicated tree for a missing test',
+    );
+    eq(
+      group.names.filter((name) => name === 'Ns.C.Shared').length,
+      1,
+      'a test compiled into BOTH assemblies still appears exactly once',
+    );
+
+    // Interaction 3 - two genuinely different projects must NOT be merged, and
+    // a single-framework project must survive the same call untouched.
+    const distinct = mergeMultiTargeted([
+      { name: 'Cs.Fixtures', path: '/w/a/Cs.Fixtures.dll', names: ['Ns.A.One'] },
+      { name: 'Fs.Fixtures', path: '/w/b/Fs.Fixtures.dll', names: ['Ns.B.two names'] },
+    ]);
+    eq(distinct.length, 2, 'two different assemblies are two roots, not one');
+    deepEq(
+      distinct.map((entry) => entry.name).sort(),
+      ['Cs.Fixtures', 'Fs.Fixtures'],
+      'each keeps its own label, C# and F# alike',
+    );
+    deepEq(mergeMultiTargeted([]), [], 'no assemblies is no tree, and never a throw');
+    const lone = mergeMultiTargeted([
+      { name: 'Solo', path: '/w/Solo.dll', names: ['Ns.S.a test with spaces'] },
+    ]);
+    deepEq(
+      requireAt(lone, 0, 'the lone group').names,
+      ['Ns.S.a test with spaces'],
+      'and a single-framework project passes through with its F# spaces intact',
+    );
+  });
+
+  // Implements [TEST-COVERAGE]: "one Cobertura report per test project, each in
+  // its own run-id folder one level down, and EVERY one of them is parsed ...
+  // taking only the first drops every other project's coverage, and which one
+  // is 'first' is directory order".
+  test('every Cobertura report one level down is found and merged, not just the first', async function () {
+    this.timeout(FAST_MS);
+    const resultsDir = path.join(tmpDir, 'multi-coverage');
+
+    // Interaction 1 - the empty cases, which must answer rather than throw.
+    deepEq(findCoberturaFiles(resultsDir), [], 'a results directory that does not exist is empty');
+    fs.mkdirSync(resultsDir, { recursive: true });
+    deepEq(findCoberturaFiles(resultsDir), [], 'and so is one the collector never wrote to');
+    eq(findCoberturaFile(resultsDir), undefined, 'the single-report reader agrees');
+    deepEq(mergeCoberturaReports([]), [], 'merging no reports yields no coverage');
+
+    // Interaction 2 - TWO test projects, each covering a DIFFERENT library file.
+    // This is the case a first-only reader cannot be told apart from a correct
+    // one when the fixture has a single test project.
+    const alpha = plantReport(resultsDir, 'run-alpha', coberturaFor('/src/Alpha.cs', [3, 0, 1]));
+    const beta = plantReport(resultsDir, 'run-beta', coberturaFor('/src/Beta.cs', [0, 0, 7, 2]));
+    const found = findCoberturaFiles(resultsDir);
+    eq(found.length, 2, 'one report per test project, and BOTH must be found');
+    eq(found.includes(alpha), true, 'the first project report is in the list');
+    eq(found.includes(beta), true, 'and so is the second - directory order decides neither');
+    neq(
+      findCoberturaFile(resultsDir),
+      undefined,
+      'the single-report reader still answers, but it is only ever a subset',
+    );
+
+    const merged = mergeCoberturaReports(found);
+    const files = merged.map((entry) => entry.uri.fsPath).sort();
+    eq(merged.length, 2, 'two reports over two files produce two FileCoverage entries');
+    eq(
+      files.some((file) => file.endsWith('Alpha.cs')),
+      true,
+      'the first project file is covered',
+    );
+    eq(
+      files.some((file) => file.endsWith('Beta.cs')),
+      true,
+      'and so is the second - attaching only reports[0] paints it as dead code',
+    );
+
+    // Interaction 3 - the per-file totals must survive the merge, and depth
+    // must stay at ONE level: the collector writes `<run-id>/coverage.cobertura.xml`
+    // and nothing deeper.
+    const alphaCoverage = merged.find((entry) => entry.uri.fsPath.endsWith('Alpha.cs'));
+    assert.ok(alphaCoverage, 'Alpha.cs must appear in the merged coverage');
+    eq(alphaCoverage.statementCoverage.total, 3, 'Alpha.cs declares three lines');
+    eq(alphaCoverage.statementCoverage.covered, 2, 'two of them were executed');
+    const betaCoverage = merged.find((entry) => entry.uri.fsPath.endsWith('Beta.cs'));
+    assert.ok(betaCoverage, 'Beta.cs must appear too');
+    eq(betaCoverage.statementCoverage.total, 4, 'Beta.cs declares four lines');
+    eq(betaCoverage.statementCoverage.covered, 2, 'two of them were executed');
+
+    const deepDir = path.join(resultsDir, 'run-gamma', 'nested');
+    fs.mkdirSync(deepDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(deepDir, 'coverage.cobertura.xml'),
+      coberturaFor('/src/Gamma.cs', [1]),
+      'utf8',
+    );
+    eq(
+      findCoberturaFiles(resultsDir).length,
+      2,
+      'the collector writes exactly one level down, so a deeper file is not a run report',
+    );
+  });
+
+  // Implements [TEST-COVERAGE]: a coverage read must survive whatever the
+  // collector wrote - "a solution of nothing but test projects yields a valid,
+  // EMPTY report", and a report the run never finished must not take the run
+  // down with it.
+  test('the Cobertura reader survives empty, multi-class and malformed reports', async function () {
+    this.timeout(FAST_MS);
+    const dir = path.join(tmpDir, 'cobertura-shapes');
+    fs.mkdirSync(dir, { recursive: true });
+
+    // Interaction 1 - several classes in one report, which is one test project
+    // exercising several library files.
+    const multi = path.join(dir, 'multi.cobertura.xml');
+    fs.writeFileSync(
+      multi,
+      '<?xml version="1.0"?><coverage><packages><package><classes>' +
+        '<class filename="/src/One.cs"><lines><line number="1" hits="1"/></lines></class>' +
+        '<class filename="/src/Two.cs"><lines>' +
+        '<line number="4" hits="0"/><line number="5" hits="9"/></lines></class>' +
+        '</classes></package></packages></coverage>',
+      'utf8',
+    );
+    const parsed = parseCoberturaXml(multi);
+    eq(parsed.length, 2, 'one FileCoverage per class element');
+    const one = requireAt(parsed, 0, 'the first class');
+    const two = requireAt(parsed, 1, 'the second class');
+    eq(one.statementCoverage.total, 1, 'One.cs declares a single line');
+    eq(one.statementCoverage.covered, 1, 'and it ran');
+    eq(two.statementCoverage.total, 2, 'Two.cs declares two');
+    eq(two.statementCoverage.covered, 1, 'of which one ran');
+    eq(one.uri.scheme, 'file', 'a FileCoverage always addresses a file on disk');
+    neq(one.uri.toString(), two.uri.toString(), 'and the two classes are two different files');
+
+    // Interaction 2 - the valid-but-empty report [TEST-COVERAGE] names: a run
+    // that loaded no library assembly reports nothing, and that is not an error.
+    const empty = path.join(dir, 'empty.cobertura.xml');
+    fs.writeFileSync(
+      empty,
+      '<?xml version="1.0"?><coverage><packages></packages></coverage>',
+      'utf8',
+    );
+    deepEq(parseCoberturaXml(empty), [], 'no packages is no coverage, and never a throw');
+    const noLines = path.join(dir, 'nolines.cobertura.xml');
+    fs.writeFileSync(
+      noLines,
+      '<?xml version="1.0"?><coverage><packages><package><classes>' +
+        '<class filename="/src/Bare.cs"><lines></lines></class>' +
+        '</classes></package></packages></coverage>',
+      'utf8',
+    );
+    const bare = parseCoberturaXml(noLines);
+    eq(bare.length, 1, 'a class with no executable line is still a file the run loaded');
+    eq(requireAt(bare, 0, 'the bare class').statementCoverage.total, 0, 'with nothing to cover');
+    eq(requireAt(bare, 0, 'the bare class').statementCoverage.covered, 0, 'and nothing covered');
+
+    // Interaction 3 - a report truncated mid-write (the run was cancelled) and
+    // a path that is not a file at all. Coverage is a REPORTING step: it must
+    // never be the thing that fails a run whose tests all passed.
+    const truncated = path.join(dir, 'truncated.cobertura.xml');
+    fs.writeFileSync(truncated, '<?xml version="1.0"?><coverage><packages><package>', 'utf8');
+    assert.doesNotThrow(
+      () => parseCoberturaXml(truncated),
+      'a report truncated by a cancelled run must not throw out of the reporting step',
+    );
+    assert.doesNotThrow(
+      () => parseCoberturaXml(path.join(dir, 'does-not-exist.xml')),
+      'nor must a report the collector never wrote',
+    );
+    deepEq(
+      parseCoberturaXml(path.join(dir, 'does-not-exist.xml')),
+      [],
+      'a missing report is no coverage, reported as such',
+    );
+    deepEq(
+      mergeCoberturaReports([empty, multi]),
+      parseCoberturaXml(multi),
+      'merging an empty report with a populated one keeps exactly the populated one',
+    );
   });
 });
 

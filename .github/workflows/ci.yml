@@ -1,5 +1,12 @@
 # agent-pmo:0b21609
 ---
+# INVARIANT: This file is the orchestrator for the PR pipeline.
+# Phase 1 — ANALYSE. Lint, format checks, static analysis, every language. Nothing else runs until this is green. It builds nothing that later phases consume.
+# Phase 2 — FULL BUILD. Everything gets built, for every platform, once. Rust host, both .NET sidecars, netcoredbg, the VS Code suite, the VSIX. Gated on Phase 1 and nothing else. Platforms build in parallel with each other — Linux and Windows are siblings, not a chain.
+# Phase 3 — CACHE. Every artifact from Phase 2 is uploaded/cached. This is the handoff boundary: nothing downstream of here is ever permitted to compile anything.
+# Phase 4 — TEST. Every test job in the repo fans out in parallel, all gated on Phase 3 alone, each downloading from the cache. Every test runs exactly once — no test executes in two jobs. Every test job is instrumented and emits coverage.
+# Phase 5 — COVERAGE CHECK. Gated on Phase 4. Merges the tracefiles and applies the ratchet. This phase can be part of the test job itself. It doesn't need to be a separate job
+---
 # PR pipeline orchestrator. Three stages, strictly ordered:
 #
 #   detect-changes  ->  checks + build  ->  every test in parallel

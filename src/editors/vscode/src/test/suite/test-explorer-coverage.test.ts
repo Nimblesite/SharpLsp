@@ -645,16 +645,32 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       TEST_PROJECTS,
       'so the reader sees two reports, not five',
     );
+    // Not a COUNT of entries: VSTest names its TRX and the attachments folder
+    // beside it after the wall-clock SECOND the run started, so two projects
+    // that land in the same second share one folder and two that straddle a
+    // second boundary do not. What [TEST-COVERAGE] actually promises is that
+    // nothing SURVIVES — so that is what is asserted.
     const secondEntries = fs.readdirSync(coverageDir).sort();
-    assert.strictEqual(
-      secondEntries.length,
-      firstEntries.length,
-      `a second run leaves the same shape as the first: ${secondEntries.join(' | ')}`,
+    assert.deepStrictEqual(
+      secondEntries.filter((entry) => firstEntries.includes(entry)),
+      [],
+      'a freshly emptied directory shares not one entry with the run before it: first ' +
+        `${firstEntries.join(' | ')}, then ${secondEntries.join(' | ')}`,
     );
     assert.strictEqual(
       secondEntries.includes(path.basename(sentinel)),
       false,
       'with nothing of the previous contents surviving',
+    );
+    assert.strictEqual(
+      secondEntries.includes(path.basename(staleDir)),
+      false,
+      'and the planted run-id folder gone by NAME as well as by report',
+    );
+    assert.ok(
+      secondEntries.some((entry) => entry.toLowerCase().endsWith('.trx')),
+      `an emptied directory is still the run's own results directory, TRX and all: ` +
+        secondEntries.join(' | '),
     );
 
     // Interaction 4 — and the fresh reports still describe a real run.
