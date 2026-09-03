@@ -194,9 +194,7 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
 
   private findResultByMethodName(methodName: string): CachedTestResult | undefined {
     for (const [testId, result] of this.testController.cachedResults) {
-      const lastDot = testId.lastIndexOf('.');
-      const shortName = lastDot >= 0 ? testId.substring(lastDot + 1) : testId;
-      if (shortName === methodName) {
+      if (methodNameOf(testId) === methodName) {
         return result;
       }
     }
@@ -303,15 +301,40 @@ const CS_KEYWORDS = new Set([
 /** Extract an F# function name from a `let` or `member` binding. */
 export function extractFSharpFunctionName(line: string): string | undefined {
   const trimmed = line.trim();
-  const letMatch = /^let\s+(\w+)/.exec(trimmed);
-  if (letMatch?.[1] !== undefined) {
-    return letMatch[1];
-  }
-  const memberMatch = /^member\s+\w+\.(\w+)/.exec(trimmed);
-  if (memberMatch?.[1] !== undefined) {
-    return memberMatch[1];
-  }
-  return undefined;
+  return (
+    bindingName(/^let\s+(?:``([^`]+)``|(\w+))/, trimmed) ??
+    bindingName(/^member\s+\w+\.(?:``([^`]+)``|(\w+))/, trimmed)
+  );
+}
+
+/**
+ * The name `pattern` captured, whichever of its two alternatives matched.
+ *
+ * F# names a test by writing it the way it reads — ``let `` `adds two numbers`
+ * `` () =`` — and `\w+` cannot match a double-backtick binding, so every test
+ * named in the idiomatic style resolved to nothing and carried no lens at all:
+ * no status, no Run, no Debug. The backticks are F# syntax, not part of the
+ * name, so the INNER text is captured: that is what the test id carries.
+ */
+function bindingName(pattern: RegExp, line: string): string | undefined {
+  const match = pattern.exec(line);
+  return match?.[1] ?? match?.[2];
+}
+
+/**
+ * The bare method name a cached test id ends in.
+ *
+ * A data-driven test is listed one ROW per case — `Ns.Class.Adds(a: 2, b: 2)` —
+ * so a lens looking up `Adds` matched nothing and the method showed no status
+ * until a run replaced those ids with the merged bare name. Cutting at the
+ * first `(` resolves both forms, and must happen BEFORE the last dot is taken:
+ * an argument carrying a dot (`2.5`) would otherwise make the arguments look
+ * like the method name.
+ */
+function methodNameOf(testId: string): string {
+  const head = testId.split('(')[0] ?? testId;
+  const lastDot = head.lastIndexOf('.');
+  return lastDot >= 0 ? head.slice(lastDot + 1) : head;
 }
 
 /**
