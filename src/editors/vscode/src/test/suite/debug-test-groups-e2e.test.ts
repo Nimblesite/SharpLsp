@@ -263,10 +263,15 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     assertOneTestSession(sessions, 'debugging a multi-select');
     assertBoundAtLines(
       recorder,
+      // In LINE order, not the order they were armed in: VS Code's debug model
+      // sorts by uri then line (`sortAndDeDup`) before it sends them, and DAP
+      // requires the response array to correspond to the request array — so the
+      // adapter answers ascending, and asserting the arming order would be
+      // asserting something the workbench provably never sends.
       [
         CS_SOURCE.dapLine('adds-seed'),
-        CS_SOURCE.dapLine('text-seed'),
         CS_SOURCE.dapLine('multiplies-seed'),
+        CS_SOURCE.dapLine('text-seed'),
       ],
       'every armed breakpoint binds, whether or not its test was selected',
     );

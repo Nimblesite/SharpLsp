@@ -48,10 +48,14 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private transitioning = false;
   /** True once VS Code finished its breakpoint/configuration sequence. */
   private clientConfigured = false;
-  /** Resolver for {@link whenConfigured}; cleared once it has fired. */
-  private resolveConfigured: (() => void) | undefined;
-  private readonly configured = new Promise<void>((resolve) => {
-    this.resolveConfigured = resolve;
+  /** True once netcoredbg ANSWERED `configurationDone`; the request is not it. */
+  private configurationAnswered = false;
+  /** Breakpoint ids netcoredbg answered as PENDING, still awaiting their bind. */
+  private readonly unverified = new Set<number>();
+  /** Resolver for {@link whenArmed}; cleared once it has fired. */
+  private resolveArmed: (() => void) | undefined;
+  private readonly armed = new Promise<void>((resolve) => {
+    this.resolveArmed = resolve;
   });
   /**
    * Set once the debuggee is gone, so `threads` can be answered honestly.
@@ -240,7 +244,6 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         return false;
       case 'configurationDone':
         this.clientConfigured = true;
-        this.announceConfigured();
         return false;
       case 'threads':
         // DAP defines no failure case for `threads`: the honest answer to
@@ -405,6 +408,11 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     if (message.command === 'setBreakpoints') {
       this.breakpoints.record(this.pendingBreakpointArgs.get(requestSeq), message.body);
       this.pendingBreakpointArgs.delete(requestSeq);
+      this.noteBreakpointBinds(message.body);
+    }
+    if (message.command === 'configurationDone') {
+      this.configurationAnswered = true;
+      this.announceWhenArmed();
     }
     if (message.command === 'stackTrace') {
       // Frame display names feed the synthesized Statics scope
@@ -448,6 +456,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     } else if (name === 'breakpoint') {
       // Keep breakpoint EVENT ids in the session-scoped space the
       // setBreakpoints responses already promised VS Code.
+      const body = isRecord(message.body) ? message.body : {};
+      this.noteBreakpointBind(body.breakpoint);
+      this.announceWhenArmed();
       this.emit(this.handles.translateEvent(message));
       return;
     } else if (name === 'capabilities') {
@@ -491,25 +502,55 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   }
 
   /**
-   * Settles when the workbench has finished configuring THIS session, i.e. it
-   * has sent `configurationDone`.
+   * Settles once the session is ARMED: `configurationDone` has been ANSWERED
+   * and every breakpoint the adapter accepted has bound.
    *
    * `vscode.debug.startDebugging` resolves as soon as the session exists, which
    * is several DAP round trips before it can run anything: the breakpoints are
    * still being sent and `configurationDone` has not been issued. A caller that
    * treats "started" as "ready" hands the user a session that is not listening
-   * yet — the Debug press that ends in silence (issue #233). This is the signal
-   * that says otherwise, and it is the router's to give because the router is
-   * the adapter the workbench is configuring.
+   * yet — the Debug press that ends in silence (issue #233).
+   *
+   * Neither is the `configurationDone` REQUEST the moment: netcoredbg answers it
+   * dozens of milliseconds later and only finishes the attach as it does, and a
+   * breakpoint armed before its module is loaded comes back `verified: false`
+   * and binds later through a `breakpoint` event
+   * ([DEBUG-FEATURES-BREAKPOINTS-VERIFY]). A VSTEST host attached under
+   * `VSTEST_HOST_DEBUG` has not loaded the test assembly yet, so EVERY
+   * breakpoint in the user's own test starts out pending there — reporting the
+   * attach settled before they bind is reporting it before the debugger can stop
+   * anywhere. This is the signal that says otherwise, and it is the router's to
+   * give because the router is the adapter the workbench is configuring.
    */
-  public async whenConfigured(): Promise<void> {
-    await this.configured;
+  public async whenArmed(): Promise<void> {
+    await this.armed;
   }
 
-  /** Release everything awaiting {@link whenConfigured}. Idempotent. */
-  private announceConfigured(): void {
-    const resolve = this.resolveConfigured;
-    this.resolveConfigured = undefined;
+  /**
+   * Note one breakpoint's bind state, from a response entry or an event body.
+   *
+   * netcoredbg reports the SAME shape in both: `{id, verified, ...}`. A pending
+   * one gates {@link whenArmed} until the module carrying its line is loaded.
+   */
+  private noteBreakpointBind(entry: unknown): void {
+    if (!isRecord(entry)) return;
+    const id = Number(entry.id ?? Number.NaN);
+    if (!Number.isInteger(id)) return;
+    if (entry.verified === true) this.unverified.delete(id);
+    else this.unverified.add(id);
+  }
+
+  /** Note every breakpoint in one `setBreakpoints` response body. */
+  private noteBreakpointBinds(body: unknown): void {
+    const list = isRecord(body) && Array.isArray(body.breakpoints) ? body.breakpoints : [];
+    for (const entry of list) this.noteBreakpointBind(entry);
+  }
+
+  /** Release everything awaiting {@link whenArmed}, once. Idempotent. */
+  private announceWhenArmed(): void {
+    if (!this.configurationAnswered || this.unverified.size > 0) return;
+    const resolve = this.resolveArmed;
+    this.resolveArmed = undefined;
     resolve?.();
   }
 

@@ -663,6 +663,12 @@ SharpLsp creates the SSH tunnel; DapRouter connects to its local forwarded socke
 
 For test debugging, SharpLsp sets `VSTEST_HOST_DEBUG=1` and attaches to the waiting `testhost.exe`/`dotnet-testhost` child, not the parent `dotnet test` process.
 
+**Rules**
+
+1. The debugger MUST resume the `Debugger.Break()` a `VSTEST_HOST_DEBUG` test host issues the moment it observes an attach, so the first stop the user sees is their own breakpoint rather than VSTest's wait loop.
+2. The Debug gesture MUST NOT report the attach settled until the session is **armed**: `configurationDone` has been ANSWERED by the adapter and every breakpoint it accepted has bound. `startDebugging` resolving means the session EXISTS — breakpoints are still in flight — and even the `configurationDone` REQUEST precedes the adapter finishing the attach. A waiting test host has not loaded the test assembly when the attach lands, so every breakpoint in the user's own test starts out `verified: false` and binds later by a `breakpoint` event ([DEBUG-FEATURES-BREAKPOINTS-VERIFY]). Reporting "attached" before that is the Debug press that ends in silence.
+3. A run with NO breakpoints armed is armed as soon as `configurationDone` is answered; there is nothing to bind, and the run must still proceed to completion.
+
 ### Diagnostic Tools Integration `[DEBUG-FEATURES-DIAGNOSTICS]`
 
 SharpLsp exposes dotnet/diagnostics `9.0.661903+` tools through DAP custom messages:

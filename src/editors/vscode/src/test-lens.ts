@@ -385,10 +385,30 @@ async function runTestByMethodName(
     return;
   }
 
-  if (debug) {
-    await vscode.commands.executeCommand('testing.debugTests', matchedItem);
-  } else {
-    await vscode.commands.executeCommand('testing.runTests', matchedItem);
+  const kind = debug ? vscode.TestRunProfileKind.Debug : vscode.TestRunProfileKind.Run;
+  const profile = testController.profiles.find((candidate) => candidate.kind === kind);
+  if (profile === undefined) {
+    void vscode.window.showWarningMessage(`No ${debug ? 'Debug' : 'Run'} profile is registered.`);
+    return;
   }
   info(`Test ${debug ? 'debug' : 'run'} requested for: ${matchedItem.id}`);
+  await pressProfile(profile, matchedItem);
+}
+
+/**
+ * Press `profile` for one test, exactly as the Test Explorer's own button does.
+ *
+ * NOT `testing.runTests`/`testing.debugTests`: no such workbench commands exist,
+ * so the gesture died with "command not found" and the caret ran nothing. The
+ * profile the extension registered is the run, and invoking its handler is the
+ * same entry point VS Code uses — the run appears in the Testing view either
+ * way, and the Debug profile still attaches through [DEBUG-FEATURES-TESTS].
+ */
+async function pressProfile(profile: vscode.TestRunProfile, item: vscode.TestItem): Promise<void> {
+  const source = new vscode.CancellationTokenSource();
+  try {
+    await profile.runHandler(new vscode.TestRunRequest([item], undefined, profile), source.token);
+  } finally {
+    source.dispose();
+  }
 }

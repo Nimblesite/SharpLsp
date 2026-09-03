@@ -450,16 +450,16 @@ vscode.debug.onDidTerminateDebugSession((session) => {
 });
 
 /**
- * Settles once `session` has been configured, or immediately if it is not one
- * of ours.
+ * Settles once `session` is ARMED, or immediately if it is not one of ours.
  *
  * `startDebugging` resolving means the session EXISTS, not that it can run
  * anything: breakpoints are still in flight and `configurationDone` has not been
- * sent. Anything that reports "the debugger is attached" off the back of
- * `startDebugging` alone is reporting it several round trips early.
+ * sent, let alone answered or its breakpoints bound. Anything that reports "the
+ * debugger is attached" off the back of `startDebugging` alone is reporting it
+ * several round trips early.
  */
-export async function whenDebugSessionConfigured(session: vscode.DebugSession): Promise<void> {
-  await routersBySession.get(session.id)?.whenConfigured();
+export async function whenDebugSessionArmed(session: vscode.DebugSession): Promise<void> {
+  await routersBySession.get(session.id)?.whenArmed();
 }
 
 /** A project the Solution Explorer passed to a run/debug command. */

@@ -21,7 +21,7 @@
 // debugger that never comes would wedge the controller's queue forever.
 import * as vscode from 'vscode';
 import { DEBUG_TYPE } from './constants';
-import { whenDebugSessionConfigured } from './debug';
+import { whenDebugSessionArmed } from './debug';
 import { TEST_HOST_ATTACH_FLAG } from './dap-attach';
 import { error, info, warn } from './log';
 import { runTests, type TestRunOptions, type TestRunOutcome } from './test-execution';
@@ -334,7 +334,7 @@ class DebugRunFlow {
         // are attached under labels that differ only by the tests selected, and
         // the workbench is free to decorate a name it displays. The pid is the
         // identity this flow actually chose.
-        if (Number(candidate.configuration['processId']) !== pid) return;
+        if (Number(candidate.configuration.processId) !== pid) return;
         listener.dispose();
         resolve(candidate);
       });
@@ -348,23 +348,23 @@ class DebugRunFlow {
   }
 
   /**
-   * Wait for the workbench to finish CONFIGURING the session, not merely to
-   * have created it.
+   * Wait for the session to be ARMED, not merely to have been created.
    *
    * `startDebugging` resolves once the session exists — before the breakpoints
-   * it is about to send have been acknowledged and before `configurationDone`.
-   * Reporting the attach as settled there is what makes the Debug press look
-   * like it did nothing: the run hands control back while the debugger is still
-   * coming up, so the user's breakpoint is not armed when the waiting host
-   * resumes (issue #233). Spec: [DEBUG-FEATURES-TESTS].
+   * it is about to send have been acknowledged, before `configurationDone`, and
+   * long before the waiting host has loaded the test assembly those breakpoints
+   * bind into. Reporting the attach as settled there is what makes the Debug
+   * press look like it did nothing: the run hands control back while the
+   * debugger is still coming up, so the user's breakpoint is not armed when the
+   * host resumes (issue #233). Spec: [DEBUG-FEATURES-TESTS].
    */
   private async settleSession(
     session: vscode.DebugSession | undefined,
     pid: number,
   ): Promise<void> {
     if (session === undefined) return;
-    await whenDebugSessionConfigured(session);
-    info(`Test debug: session for pid ${String(pid)} is configured and running`);
+    await whenDebugSessionArmed(session);
+    info(`Test debug: session for pid ${String(pid)} is armed and running`);
   }
 
   /** The workspace folder the debug session is scoped to. */
