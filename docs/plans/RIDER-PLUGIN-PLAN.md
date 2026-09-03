@@ -194,18 +194,41 @@ only — Community editions are not supported.
 - [ ] Coverage target: 80 % line coverage on plugin code (excluding
       generated lsp4j glue)
 
+### Phase 0: De-fork the plugin (done)
+
+The plugin was scaffolded under the project's old `forge-lsp` name and never
+updated. It asked for a binary called `forge-lsp` and sent `forge/*` requests to
+a server that only answers `sharplsp/*`, so nothing in it could work no matter
+how it was installed — and CI built and coverage-gated it in that state.
+
+- [x] Plugin id `com.forgelsp.rider` → `com.sharplsp.rider` (done before the
+      first release, so no installed plugin is orphaned)
+- [x] `Forge*` classes → `SharpLsp*`; `com/forgelsp/` → `com/sharplsp/`
+- [x] All eight `@JsonRequest` method names `forge/*` → `sharplsp/*`, matched
+      against the host's dispatch table in `src/sharplsp/src/main.rs`
+- [x] Binary resolution `forge-lsp` → `sharplsp`; settings storage
+      `forge.xml` → `sharplsp.xml`; icon `forge.svg` → `sharplsp.svg`
+- [x] "Server not found" message points at the release archive and the
+      Homebrew/Scoop commands instead of `make install`
+
 ### Phase 9: CI
 
 - [ ] Add `build-rider` + `test-rider` to `.github/workflows/ci.yml`
       under a matrix job that requires JDK 17
-- [ ] Cache `~/.gradle/caches` and `~/.gradle/wrapper`
-- [ ] Verify the Rider plugin zip is uploaded as a build artifact on tag
-      releases alongside the VSIX
+- [x] Cache `~/.gradle/caches` and `~/.gradle/wrapper` (`ci-editors.yml`,
+      and the release `build-rider` job mirrors it)
+- [x] The Rider plugin zip is built and attached to tag releases alongside the
+      VSIXs — release.yml `build-rider`, `RIDER_REQUIRED=1` so a missing JDK
+      fails instead of silently shipping no plugin ([DIST-RIDER-RELEASE])
+- [x] `pluginVersion` is stamped from the tag by `make _stamp-version`; the job
+      asserts the versioned zip exists rather than trusting it
 
 ### Phase 10: Docs
 
 - [ ] `docs/specs/RIDER-PLUGIN-SPEC.md` — sibling (done in this change)
 - [ ] Add a row for Rider to the `CSDEVKIT-PARITY-PLAN.md` feature matrix
 - [ ] Update `docs/specs/SHARPLSP-SPEC.md` editor matrix with Rider
-- [ ] Add a troubleshooting note: "LSP API is paid-tier only — Community
-      editions are not supported"
+- [x] Add a troubleshooting note: "LSP API is paid-tier only — Community
+      editions are not supported" (README `Install → Rider`)
+- [x] README documents installing the plugin from disk and pairing it with a
+      standalone server archive

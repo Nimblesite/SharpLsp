@@ -142,7 +142,7 @@ export async function removeNuGetPackage(
   try {
     log.info(`Removing NuGet package ${packageName} from ${projectPath}`);
     // Use `dotnet package remove <name> --project <path>` (the .NET 10 verb-noun
-    // form). The legacy `dotnet remove <path> package <name>` silently ignores the
+    // form). The older `dotnet remove <path> package <name>` form silently ignores the
     // positional project and resolves against the *current working directory*
     // instead — which, for the extension host, is the workspace root, not the
     // project's folder — so every removal failed with "Could not find any project".

@@ -15,6 +15,7 @@
 // outcome attribution can be asserted per test rather than per run.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { AnchoredSource } from './debug-anchors';
 import {
   buildProjectXml,
   libraryProjectXml,
@@ -22,6 +23,7 @@ import {
   NUNIT_PACKAGES,
   projectXml,
   writeProject,
+  XUNIT_DECORATING_PACKAGES,
   XUNIT_PACKAGES,
   type PackageRef,
 } from './dotnet-project-kit';
@@ -272,6 +274,100 @@ export const FRAMEWORK_FIXTURES: readonly FrameworkFixture[] = [
     parameterized: 'Cs.Mstest.Fixtures.CalculatorTests.Adds_Row',
   },
 ];
+
+/**
+ * The name-decorating adapter fixture's source, ANCHORED.
+ *
+ * Multi-line bodies rather than the expression-bodied one-liners the modern
+ * xUnit fixture uses: a breakpoint needs a statement to bind to, and
+ * [DEBUG-FEATURES-TESTS] "Breakpoints inside test methods" has to be assertable
+ * against this adapter too (issue \#233). Anchors keep every line number out of
+ * the assertions.
+ *
+ * The class and method names match {@link FRAMEWORK_FIXTURES}' C# xUnit project
+ * exactly, so the two differ ONLY in namespace and adapter version.
+ */
+export const DECORATING_ADAPTER_SOURCE = new AnchoredSource(
+  `
+using Xunit;
+
+namespace Cs.XunitDecorated.Fixtures;
+
+public class CalculatorTests
+{
+    private static int Add(int left, int right)
+    {
+        var sum = left + right;                                        // @anchor:add-body
+        return sum;                                                    // @anchor:add-return
+    }
+
+    [Fact]
+    public void Adds_TwoNumbers()
+    {
+        var seed = 1;                                                  // @anchor:test-seed
+        var result = Add(seed, 2);                                     // @anchor:test-call
+        Assert.Equal(3, result);                                       // @anchor:test-assert
+    }
+
+    [Fact]
+    public void Fails_OnPurpose()
+    {
+        Assert.Equal(4, Add(1, 2));                                    // @anchor:fail-assert
+    }
+
+    [Fact(Skip = "fixture: deliberately skipped")]
+    public void Skipped_OnPurpose()
+    {
+    }
+
+    [Theory]
+    [InlineData(2, 2, 4)]
+    [InlineData(1, 1, 2)]
+    public void Adds_Theory(int a, int b, int expected)
+    {
+        Assert.Equal(expected, Add(a, b));                             // @anchor:theory-assert
+    }
+
+    [Theory]
+    [InlineData(2, 2, 4)]
+    [InlineData(1, 1, 99)]
+    public void Mixed_Theory(int a, int b, int expected)
+    {
+        Assert.Equal(expected, Add(a, b));                             // @anchor:mixed-assert
+    }
+}
+`
+    .trim()
+    .split('\n'),
+);
+
+/**
+ * The same C# xUnit project, built against the name-decorating 2.2.0 VSTest adapter.
+ *
+ * Deliberately NOT a member of {@link FRAMEWORK_FIXTURES}: the framework matrix
+ * asserts one project per framework/language pair, and this is a second build of
+ * a pair it already covers. What it adds is the adapter shape that matrix cannot
+ * see — 2.2.0 appends each test case's 40-hex unique ID to the
+ * `FullyQualifiedName` it reports, which is how a real-world project (issue
+ * \#232) ends up with `Method (4159b661…)` in the tree and a `--filter` that can
+ * never match. Its own namespace keeps its FQNs out of the shared result cache
+ * every other Test Explorer suite writes into.
+ */
+export const DECORATING_ADAPTER_FIXTURE: FrameworkFixture = {
+  key: 'xunit-decorating-csharp',
+  framework: 'xunit',
+  language: 'csharp',
+  packages: XUNIT_DECORATING_PACKAGES,
+  projectName: 'XunitDecoratedCs',
+  projectFileName: 'XunitDecoratedCs.csproj',
+  sourceFileName: 'Tests.cs',
+  source: DECORATING_ADAPTER_SOURCE.text,
+  passing: 'Cs.XunitDecorated.Fixtures.CalculatorTests.Adds_TwoNumbers',
+  failing: 'Cs.XunitDecorated.Fixtures.CalculatorTests.Fails_OnPurpose',
+  skipped: 'Cs.XunitDecorated.Fixtures.CalculatorTests.Skipped_OnPurpose',
+  parameterized: 'Cs.XunitDecorated.Fixtures.CalculatorTests.Adds_Theory',
+  mixedParameterized: 'Cs.XunitDecorated.Fixtures.CalculatorTests.Mixed_Theory',
+};
 
 /** Look a fixture up by key, failing loudly on a typo. */
 export function fixtureFor(key: string): FrameworkFixture {

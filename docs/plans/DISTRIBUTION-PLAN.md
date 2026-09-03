@@ -123,9 +123,30 @@ CLAUDE.md mandates hierarchical IDs (`[GROUP-TOPIC]`), uppercase, hyphen-separat
 
 ### Release workflow (`.github/workflows/release.yml`)
 
-- [x] Job: `build-sharplsp` — matrix build, single binary archives (no sidecars)
-- [x] Job: `pack-sidecars` — framework-dependent `dotnet pack`, 2 nupkgs
-- [x] Job: `release` — GitHub release, NuGet publish, Homebrew tap, Scoop bucket
+- [x] Job: `build-vsix` — matrix build; emits the per-platform VSIX AND the
+      standalone server archive ([DIST-ARCHIVE]) from one build
+- [x] Job: `build-rider` — `buildPlugin` on JDK 21, version-stamped zip
+      ([DIST-RIDER-RELEASE])
+- [x] Job: `release` — GitHub release with VSIXs + server archives + Rider zip,
+      `SHA256SUMS` over all of them, asset-count guard
+- [x] Verify the archive on every PR, not just on a tag (`ci-build.yml` runs
+      `tools/packaging/verify-archive.sh linux-x64`)
+- [ ] Job: `pack-sidecars` — framework-dependent `dotnet pack`, 2 nupkgs. NOT
+      BUILT. The `dotnet pack` smoke test in `ci-build.yml` proves the projects
+      pack; nothing publishes them to NuGet.
+- [ ] NuGet publish of the two sidecar tool packages. NOT BUILT.
+- [x] Job: `publish-homebrew` — renders `Formula/sharplsp.rb` from the published
+      archives and pushes to `Nimblesite/homebrew-tap` ([DIST-PATH-PUBLISH])
+- [x] Job: `publish-scoop` — renders `bucket/sharplsp.json` and pushes to
+      `Nimblesite/scoop-bucket`
+- [x] Both skipped on prerelease tags; both fail fast on a missing
+      `BREW_SCOOP_PAT`
+- [x] Renderer verified on every PR (`tools/packaging/verify-package-manifests.mjs`
+      in `ci-build.yml`), not only at tag time
+- [ ] Confirm `BREW_SCOOP_PAT` is granted to `Nimblesite/SharpLsp` — the secret
+      exists for Deslop; this repo's access has not been verified
+- [ ] First real tag: check `brew install nimblesite/tap/sharplsp` and
+      `scoop install nimblesite/sharplsp` end to end
 - [ ] Test with a `v*-rc*` tag on a fork
 
 ### CI smoke test

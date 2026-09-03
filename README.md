@@ -50,9 +50,34 @@ That split keeps the editor protocol fast and portable while letting the .NET co
 
 Install the SharpLsp extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nimblesite.sharplsp). The extension ships with the SharpLsp engine and both sidecars — no Rust toolchain or separate install required.
 
-### Other editors
+### Any other editor
 
-Rider, Zed, Neovim, Helix, and Emacs support is coming soon.
+Every [release](https://github.com/Nimblesite/sharplsp/releases) publishes a
+standalone server archive per platform — `sharplsp-<platform>.tar.gz` on
+Linux/macOS, `sharplsp-<platform>.zip` on Windows. Unpack it anywhere and point
+your editor's LSP client at the `sharplsp` binary inside; the C# and F# sidecars
+sit beside it and are found automatically. `SHA256SUMS` on the same release
+covers every asset.
+
+The archive needs the .NET 10 SDK on the machine. Only the VS Code extension
+acquires that for you.
+
+### Rider
+
+Download `sharplsp-rider.zip` from a
+[release](https://github.com/Nimblesite/sharplsp/releases) and install it with
+**Settings → Plugins → ⚙ → Install Plugin from Disk…**. The plugin does not
+bundle the language server, so install a standalone archive first (above) and
+either put `sharplsp` on your `PATH` or set **Settings → Tools → SharpLsp →
+Server path**.
+
+Rider's LSP API ships only in the paid IDEs — the plugin will not load on
+IntelliJ Community or Android Studio.
+
+### Zed, Neovim, Helix, Emacs
+
+Support is in progress. In the meantime the standalone archive above works with
+any editor that can launch an LSP server over stdio.
 
 ## Documentation
 

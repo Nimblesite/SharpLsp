@@ -280,10 +280,26 @@ export function assertBreakpointsBound(
   anchors: readonly string[],
   why: string,
 ): void {
+  assertBoundAtLines(
+    recorder,
+    anchors.map((anchor) => fixture.source.dapLine(anchor)),
+    why,
+  );
+}
+
+/**
+ * The same contract addressed by 1-based DAP LINE rather than by fixture anchor,
+ * for a source that is not a {@link DebugFixture} — a test project's own file, say.
+ */
+export function assertBoundAtLines(
+  recorder: DapRecorder,
+  lines: readonly number[],
+  why: string,
+): void {
   const responses = recorder.responses('setBreakpoints');
   assert.ok(responses.length > 0, `${why}: the workbench must send \`setBreakpoints\``);
   const bound = lastBoundBreakpoints(responses);
-  assert.strictEqual(bound.length, anchors.length, `${why}: one bound breakpoint per armed line`);
+  assert.strictEqual(bound.length, lines.length, `${why}: one bound breakpoint per armed line`);
 
   // [DEBUG-FEATURES-BREAKPOINTS-VERIFY]: a breakpoint armed before its module is
   // loaded answers `verified: false` and verifies later by a `breakpoint` event.
@@ -300,13 +316,13 @@ export function assertBreakpointsBound(
   );
   assert.deepStrictEqual(
     effective,
-    anchors.map(() => true),
+    lines.map(() => true),
     `${why}: every breakpoint must verify, in the response or by a later ` +
       `\`breakpoint\` event; unverified ones never stop the debuggee`,
   );
   assert.deepStrictEqual(
     bound.map((entry) => Number(entry['line'])),
-    anchors.map((anchor) => fixture.source.dapLine(anchor)),
+    [...lines],
     `${why}: a bound breakpoint must stay on the line the user set it on`,
   );
 }

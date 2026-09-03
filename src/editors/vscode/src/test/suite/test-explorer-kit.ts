@@ -36,6 +36,18 @@ export async function activateTestExplorer(): Promise<SharpLspExtensionApi> {
   return api;
 }
 
+/**
+ * The TOP-LEVEL items of a controller collection, in tree order.
+ *
+ * `TestItemCollection` only exposes `forEach`, so every suite asserting what the
+ * Testing view shows at its root has to materialise the level first.
+ */
+export function rootsOf(items: vscode.TestItemCollection): vscode.TestItem[] {
+  const roots: vscode.TestItem[] = [];
+  items.forEach((item) => roots.push(item));
+  return roots;
+}
+
 /** Recursively collect every TestItem id in a controller collection. */
 export function collectItemIds(items: vscode.TestItemCollection): string[] {
   const ids: string[] = [];

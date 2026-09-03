@@ -58,6 +58,20 @@ Name shapes that MUST round-trip unchanged:
 | MSTest `[DataRow]`, C# | `Cs.Mstest.Fixtures.CalculatorTests.Adds_Row` (no row data) |
 | MSTest, F# | `Fs.Mstest.Fixtures+CalculatorTests.AddsTwoNumbers` (nested-type `+`) |
 
+An adapter may DECORATE the name it reports. `xunit.runner.visualstudio` 2.2.0 — still
+pinned by real-world projects — reports
+`Ns.Class.Method (d87517d9ff18440615ea8de9ec508cb292e09385)`, appending the test case's
+`UniqueID` (a SHA-1, 40 hex digits) after a SPACE. That decoration MUST be stripped before the
+name becomes an id: kept, it labels the test with a hex blob, makes
+`--filter FullyQualifiedName=` escape the parentheses and match nothing, and cannot be
+reconciled with the TRX report, which keys on the bare `className.name` — so every test in
+the project errors with "No result reported". Each row of a theory carries its own unique ID,
+so stripping also collapses them onto the one name they share, as the table below requires.
+
+Stripping MUST NOT touch a name that legitimately ends in parentheses: the NUnit `[TestCase]`
+shape `Ns.Class.Adds_Case(2,2,4)` has no space before the `(` and no hex inside it, and both
+conditions are what distinguish the two.
+
 The assembly path in that banner comes through MSBuild, which reserves `%`, `*`, `?`, `@`,
 `$`, `(`, `)`, `;`, `'` and `,` and encodes them as `%XX`. A solution under
 `C:\Program Files (x86)\…` — the commonest Windows path with a reserved character — is
@@ -80,6 +94,15 @@ project failing to build must not hide the tests that did enumerate.
 Assemblies are handed to `dotnet vstest` in batches whose joined argument text stays under
 the Windows 32 767-character command-line ceiling; a solution with dozens of test projects
 otherwise fails to spawn instead of enumerating.
+
+A MULTI-TARGETED test project announces one banner per target framework, so
+`<TargetFrameworks>net8.0;net9.0</TargetFrameworks>` reports two assemblies sharing a file
+name under different `bin/<config>/<tfm>/` directories. They are ONE project and MUST
+collapse to one assembly group: left apart, every namespace, class and test of that project
+renders TWICE under two labels the user cannot tell apart. The collapsed group's names are
+the UNION of the frameworks' listings, never the first framework's alone — a test compiled
+behind `#if NET8_0` exists in only one assembly, and dropping it would trade a duplicated
+tree for a missing test.
 
 ## Filter Grammar `[TEST-FILTER-ESCAPE]`
 
@@ -185,7 +208,12 @@ the `dotnet` CLI built — never mocks and never a hand-authored `.sln`. The sui
 | `test-explorer-outcomes.test.ts` | run profiles, pass/fail/skip attribution, assertion messages, multi-row theories, coverage, debug, cancellation |
 | `test-explorer-windows.test.ts` | paths carrying spaces and parentheses, filter escaping, TRX and console parsing, CRLF, BOM, locale pinning |
 | `test-explorer-reactive.test.ts` | debounce, generation guard, edit-then-refresh round trips, adding and removing a project, tree preserved on failure |
-| `testing-lens-e2e.test.ts` | the at-cursor commands and the status CodeLens |
+| `testing-lens-e2e.test.ts` | the at-cursor commands and the status CodeLens, and that the Run and Debug actions resolve the same method by name |
+| `test-explorer-adapter-ids.test.ts` | an adapter that DECORATES the names it reports (`xunit.runner.visualstudio` 2.2.0): bare ids, readable labels, an unescaped filter, real TRX outcomes and a resolvable lens |
+| `test-explorer-multitarget.test.ts` | a `<TargetFrameworks>` project collapsing to ONE assembly root whose names are the UNION of the frameworks', and running from it |
+| `debug-test-debugging-e2e.test.ts` | the Debug run profile on ONE test: a real DAP session attached to the waiting test host, a breakpoint in the body and in a helper, a failing test, a skipped one, `[Theory]` rows, nothing armed, and disabled/conditional breakpoints |
+| `debug-test-groups-e2e.test.ts` | debugging a SELECTION: the class row, the namespace row, the assembly root, a multi-select across classes, and the unselected test that must not run |
+| `debug-test-fsharp-e2e.test.ts` | F# first: a backtick name carrying SPACES debugged, its module helper on the stack, `[<Theory>]` rows, and Debug Test at the cursor |
 
 Every suite is declared in `src/editors/vscode/test-chunks.json` so it runs in the Windows
 matrix ([DIST-CI-WIN-VSIX]).

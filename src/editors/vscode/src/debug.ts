@@ -425,8 +425,41 @@ export class SharpLspDebugAdapterFactory implements vscode.DebugAdapterDescripto
       );
       return undefined;
     }
+    routersBySession.set(_session.id, started.value);
     return new vscode.DebugAdapterInlineImplementation(started.value);
   }
+}
+
+/**
+ * The live router for each session, so a caller can await the point where the
+ * workbench has finished configuring one.
+ *
+ * Keyed by session id and dropped on termination; a router outlives neither.
+ */
+const routersBySession = new Map<string, DapRouter>();
+
+/**
+ * Drop each session's router when the workbench reports it gone.
+ *
+ * Registered once, at module load, rather than from `activate`: the map is
+ * module state, so its only correct lifetime is the module's. Without this a
+ * long-lived window accumulates one dead router per debug session ever started.
+ */
+vscode.debug.onDidTerminateDebugSession((session) => {
+  routersBySession.delete(session.id);
+});
+
+/**
+ * Settles once `session` is ARMED, or immediately if it is not one of ours.
+ *
+ * `startDebugging` resolving means the session EXISTS, not that it can run
+ * anything: breakpoints are still in flight and `configurationDone` has not been
+ * sent, let alone answered or its breakpoints bound. Anything that reports "the
+ * debugger is attached" off the back of `startDebugging` alone is reporting it
+ * several round trips early.
+ */
+export async function whenDebugSessionArmed(session: vscode.DebugSession): Promise<void> {
+  await routersBySession.get(session.id)?.whenArmed();
 }
 
 /** A project the Solution Explorer passed to a run/debug command. */

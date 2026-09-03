@@ -28,7 +28,7 @@ import {
   fakeFolder,
   focusDocument,
   invokeCommand,
-  legacyF5Config,
+  bareF5Config,
   stopAnyDebugSession,
 } from './run-debug-kit';
 import {
@@ -76,7 +76,7 @@ async function targetPathOf(project: ConsoleProject, tfm?: string): Promise<stri
 async function resolveFor(root: string): Promise<vscode.DebugConfiguration | undefined> {
   const provider = new SharpLspLaunchProvider();
   const resolved = await Promise.resolve(
-    provider.resolveDebugConfiguration(fakeFolder(root), legacyF5Config()),
+    provider.resolveDebugConfiguration(fakeFolder(root), bareF5Config()),
   );
   return resolved ?? undefined;
 }
@@ -213,7 +213,7 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
   let sessions: DebugSessionRecorder;
   let tasks: TaskRecorder;
 
-  let legacy7: ConsoleProject;
+  let net7Console: ConsoleProject;
   let renamedCs: ConsoleProject;
   let renamedFs: ConsoleProject;
   let customOut: ConsoleProject;
@@ -238,7 +238,9 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     const at = (name: string): string => path.join(tmpRoot, 'shared', name);
     const multi = { TargetFrameworks: 'net8.0;net10.0' };
     const cs = writeCSharpConsole;
-    legacy7 = cs(at('Legacy7'), 'Legacy7', { properties: { TargetFramework: 'net7.0' } });
+    net7Console = cs(at('Net7Console'), 'Net7Console', {
+      properties: { TargetFramework: 'net7.0' },
+    });
     renamedFs = writeFSharpConsole(at('OriginalFs'), 'OriginalFs', {
       properties: { AssemblyName: 'RenamedFs' },
     });
@@ -246,7 +248,8 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     customOut = cs(at('CustomOut'), 'CustomOut', { properties: { OutputPath: 'out/' } });
     multiBuilt = cs(at('MultiBuilt'), 'MultiBuilt', { properties: multi });
     multiUnbuilt = cs(at('MultiUnbuilt'), 'MultiUnbuilt', { properties: multi });
-    for (const project of [legacy7, renamedFs, renamedCs, customOut]) await buildProject(project);
+    for (const project of [net7Console, renamedFs, renamedCs, customOut])
+      await buildProject(project);
     // Only ONE of the two target frameworks is built, on purpose.
     await dotnet(['build', multiBuilt.projectFile, '-c', 'Debug', '-f', 'net8.0'], multiBuilt.dir);
   });
@@ -346,9 +349,17 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
 
     // 1 — a project whose ONLY target framework is outside the hardcoded list.
     // B29: a resolver restricted to net10.0/net9.0/net8.0 can never see it.
-    assertDirEntries(path.join(legacy7.dir, 'bin', 'Debug'), ['net7.0'], 'B29: net7.0 was built');
-    const legacy = await resolveFocused('net7.0', legacy7, 'bin/Debug/net7.0/Legacy7.dll'); // B29
-    const substituted = legacy.includes('net10.0');
+    assertDirEntries(
+      path.join(net7Console.dir, 'bin', 'Debug'),
+      ['net7.0'],
+      'B29: net7.0 was built',
+    );
+    const net7Program = await resolveFocused(
+      'net7.0',
+      net7Console,
+      'bin/Debug/net7.0/Net7Console.dll',
+    ); // B29
+    const substituted = net7Program.includes('net10.0');
     assert.strictEqual(substituted, false, 'B29: never substitute an untargeted framework');
 
     // 2 — F# FIRST: <AssemblyName> renames the output, the .fsproj name does not.
@@ -361,7 +372,7 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     assert.strictEqual(lang, 'fsharp', 'F# is a first-class launch target, resolved before C#');
     const ghost = path.join(renamedFs.dir, 'bin', 'Debug', 'net10.0', 'OriginalFs.dll');
     assert.strictEqual(fs.existsSync(ghost), false, 'B30: the project-file name names no file');
-    const moved = comparablePath(fsProgram) !== comparablePath(legacy);
+    const moved = comparablePath(fsProgram) !== comparablePath(net7Program);
     assert.strictEqual(moved, true, 'focusing another project must change the resolved target');
 
     // 3 — the same rule in C#, so neither language is special-cased.
@@ -375,11 +386,11 @@ suite('Run/Debug — output path and build resolution [DEBUG-FEATURES-LAUNCH-BUI
     assert.strictEqual(underBin, false, 'B32: probing bin/ finds nothing once OutputPath moves it');
 
     // 5 — four projects, four distinct real assemblies, nothing else happened.
-    const programs = [legacy, fsProgram, csProgram, outProgram];
+    const programs = [net7Program, fsProgram, csProgram, outProgram];
     const onDisk = programs.map((program) => fs.existsSync(program));
     assert.deepStrictEqual(onDisk, [true, true, true, true], 'all four programs are real files');
     const names = programs.map((program) => path.basename(program));
-    const expected = ['Legacy7.dll', 'RenamedFs.dll', 'RenamedCs.dll', 'CustomOut.dll'];
+    const expected = ['Net7Console.dll', 'RenamedFs.dll', 'RenamedCs.dll', 'CustomOut.dll'];
     assert.deepStrictEqual(names, expected, 'each focus resolved its OWN project, in order');
     assert.strictEqual(
       new Set(programs.map(comparablePath)).size,

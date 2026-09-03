@@ -195,7 +195,7 @@ function makeErrorHandler(statusBar: SharpLspStatusBar): {
  *   1. User-configured `sharplsp.lspPath`
  *   2. `SHARPLSP_EXECUTABLE_PATH` for test and development runs
  *   3. Bundled binary in `<extension>/bin/<platform>/`
- *   4. Legacy bundled binary in `<extension>/bin/`
+ *   4. Bundled binary in `<extension>/bin/`
  *   5. Binary name on `$PATH` (client resolves via shell)
  */
 function resolveServerPath(context: ExtensionContext): string | undefined {
@@ -217,9 +217,9 @@ function resolveServerPath(context: ExtensionContext): string | undefined {
     return bundled;
   }
 
-  const legacyBundled = path.join(context.extensionPath, 'bin', binaryName);
-  if (fs.existsSync(legacyBundled)) {
-    return legacyBundled;
+  const bundledBinary = path.join(context.extensionPath, 'bin', binaryName);
+  if (fs.existsSync(bundledBinary)) {
+    return bundledBinary;
   }
 
   // Dev fallback: look for a Cargo debug build three levels above the extension dir.

@@ -1137,6 +1137,46 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
       undefined,
       'a green parenthesised run leaves no failure message',
     );
+
+    // Interaction 3 — the F# name the NUnit adapter REFUSES. [TEST-FILTER-ESCAPE]:
+    // NUnit's own filter parser rejects any fully-qualified name containing a
+    // SPACE, which is every idiomatic F# backtick test, and TRX records that as
+    // a run-level RunInfo with outcome="Error". SharpLsp must re-run the
+    // selection ONCE without a filter and pick the outcome out by name — so a
+    // correctly ESCAPED filter is still not enough to make this test pass.
+    assert.strictEqual(
+      FS_NUNIT_CASE.includes(' '),
+      true,
+      'the F# [<TestCase>] name really does contain a space, or this proves nothing',
+    );
+    const refused = api.testController.getResult(FS_NUNIT_CASE);
+    assert.ok(refused, 'the refused-filter path must still cache a result for the F# case');
+    assert.notStrictEqual(
+      refused.outcome,
+      'notRun',
+      'an adapter that refuses the filter must NOT leave the user with "No result reported": ' +
+        'the unfiltered re-run is what turns that refusal back into an outcome',
+    );
+    assert.strictEqual(
+      (refused.duration ?? -1) >= 0,
+      true,
+      'and the outcome carries the duration TRX recorded, not a fabricated zero',
+    );
+    assert.strictEqual(
+      refused.passed,
+      true,
+      'the F# parenthesised, spaced case really passes in the fixture',
+    );
+    assert.notStrictEqual(
+      api.testController.getResult(fsNunit.failing)?.outcome,
+      'passed',
+      'the unfiltered re-run must attribute per test — it may not paint the project green',
+    );
+    assert.notStrictEqual(
+      api.testController.getResult(FS_NUNIT_CASE),
+      api.testController.getResult(CS_NUNIT_CASE),
+      'the F# and C# parenthesised cases hold their own distinct results',
+    );
   });
 
   test('a run of a name that does not exist reports notRun, names the test, and never reports a pass', async function () {

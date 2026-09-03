@@ -172,6 +172,68 @@ The extension's icon assets in `src/editors/vscode/icons/` are symlinks into `do
 3. The resolver MUST run automatically before packaging (`vscode:prepublish`) and before the e2e suite (`pretest`), so both the packaged VSIX and the extension-development host load real images. The e2e suite asserts the invariant (`bundled-binary.test.ts`).
 4. Resolved stubs modify the working tree and MUST NOT be committed — Git would record the binary content as the symlink's target text, corrupting the symlink for every other platform. Restore with `git restore src/editors/vscode/icons`.
 
+## [DIST-ARCHIVE] Standalone Server Archive
+
+The VSIX is how VS Code gets SharpLsp. It is not how anything else does. Rider,
+Zed, Neovim, Helix, Emacs, a CI job running the server headless, and the Homebrew
+and Scoop formulas in [DIST-PATH-INSTALL] all need the LSP host and both sidecars
+with no extension wrapped around them. That is the **standalone server archive**,
+published on every GitHub release alongside the VSIXs.
+
+One archive per built platform, named for it:
+
+| Platform | Asset |
+|---|---|
+| `linux-x64` | `sharplsp-linux-x64.tar.gz` |
+| `linux-arm64` | `sharplsp-linux-arm64.tar.gz` |
+| `darwin-arm64` | `sharplsp-darwin-arm64.tar.gz` |
+| `win32-x64` | `sharplsp-win32-x64.zip` |
+| `win32-arm64` | `sharplsp-win32-arm64.zip` |
+
+`.tar.gz` on Unix, `.zip` on Windows, produced by `tools/packaging/archive.sh`.
+
+### [DIST-ARCHIVE-LAYOUT] Archive Layout
+
+The layout is not a convention — it is dictated by the host's own sidecar
+resolution ([DIST-RESOLUTION], `installed_sidecar_exe` layout 1,
+`<exe_dir>/<subdir>/<name>`). Unpack anywhere and run `sharplsp`; the sidecars
+resolve with no environment variables, no PATH entries, and no configuration.
+
+```
+sharplsp-<platform>/
+  sharplsp[.exe]
+  sidecar-csharp/
+    SharpLsp.Sidecar.CSharp[.exe]      + managed assemblies
+  sidecar-fsharp/
+    SharpLsp.Sidecar.FSharp[.exe]      + managed assemblies
+```
+
+1. **Sidecar executables keep their published assembly names here.** The VSIX
+   renames them to `sharplsp-sidecar-*` because the extension hands the host
+   explicit paths through `SHARPLSP_*_SIDECAR_PATH`. The archive has no such
+   helper, so the names MUST be the ones the host looks for unaided.
+2. **The archive does NOT bundle netcoredbg.** Debugging is a VS Code extension
+   feature ([DIST-DEBUGGER-BUNDLE]); the archive ships the language server only.
+3. **The archive does NOT bundle a .NET runtime.** Like the VSIX, the sidecars are
+   framework-dependent and require the .NET 10 SDK ([DIST-RUNTIME-ACQUIRE]). An
+   archive consumer acquires it themselves — there is no .NET Install Tool outside
+   VS Code.
+
+### [DIST-ARCHIVE-VERIFY] Archive Verification
+
+`tools/packaging/verify-archive.sh <platform> [expected-version]` is the single
+verifier, run by both `ci-build.yml` (on every PR, `linux-x64`) and `release.yml`
+(on a tag, every platform). It makes two assertions, neither sufficient alone:
+
+1. **Layout.** The five paths above are present under `sharplsp-<platform>/`. A
+   rename or a moved directory breaks every non-VS-Code editor while every VSIX
+   check stays green.
+2. **Execution.** The archive is unpacked and all three binaries are run. A .NET
+   apphost separated from its managed assembly still EXISTS but cannot start —
+   the same failure `VERIFY_STAGED_SIDECARS` guards for the VSIX stage, and one
+   no listing can detect. `SKIP_RUN=1` reduces this to the layout check for a
+   cross-compiled target the runner cannot execute (`win32-arm64`).
+
 ## [DIST-RESOLUTION] Binary Resolution
 
 Resolution is driven by the `sources` array per component in `shipwright.json`. The `activateDeploymentToolkit` call verifies all three on activation. Failure to resolve any required component triggers [DIST-FAILURE-UX] (degraded mode + toast), not a host-crashing throw.
@@ -270,16 +332,97 @@ Users who want `sharplsp` on their system PATH outside VS Code may install via:
 - **macOS/Linux**: `brew install nimblesite/tap/sharplsp`
 - **Windows**: `scoop install nimblesite/sharplsp`
 
-This is entirely optional. The bundled VSIX binary is sufficient for VS Code users.
+Both draw from the [DIST-ARCHIVE] assets. This is entirely optional for VS Code
+users — the bundled VSIX binary is sufficient. It is NOT optional for anyone
+else: a Rider, Zed, Neovim or Helix user installs one of these or unpacks the
+archive by hand.
+
+### [DIST-PATH-PUBLISH] Tap and Bucket Publication
+
+`release.yml`'s `publish-homebrew` and `publish-scoop` jobs push
+`Formula/sharplsp.rb` to `Nimblesite/homebrew-tap` and `bucket/sharplsp.json` to
+`Nimblesite/scoop-bucket` after the GitHub release succeeds. Two jobs, not one:
+a tap outage must not block the bucket, the same independence
+`publish-marketplace` and `publish-openvsx` keep from each other.
+
+1. **Both files are generated whole, never edited in place.**
+   `tools/packaging/render-package-manifests.mjs` builds them from the release
+   archives it just downloaded — the Scoop manifest as an object serialized to
+   JSON, per the repo's structured-file rule. A rewrite-in-place is how a
+   sha256 survives a version bump.
+2. **Checksums come from the published bytes**, hashed from the `server-*`
+   artifacts. The renderer fails if any expected archive is absent, so a short
+   release cannot produce a formula pointing at a missing asset.
+3. **The install layout is dictated by [DIST-ARCHIVE-LAYOUT].** Homebrew puts
+   the host at `bin/sharplsp` and the sidecars at `lib/sharplsp/sidecar-*`
+   (resolution layout 2); Scoop's `extract_dir` strips the archive root so the
+   sidecars land beside `sharplsp.exe` (resolution layout 1). Shipping only the
+   binary would install a language server that starts and then answers nothing.
+   `tools/packaging/verify-package-manifests.mjs` asserts both, and runs on every PR
+   from `ci-build.yml` — the manifests themselves are only rendered on a tag, so
+   otherwise the first sign of a break is a user's failed `brew install`.
+4. **Prerelease tags are skipped.** Neither `brew install` nor `scoop install`
+   has a prerelease channel, so pushing an rc would hand every stable user a
+   prerelease on their next upgrade.
+5. **Neither formula declares a .NET dependency.** The sidecars target net10.0
+   and Homebrew's `dotnet` formula is not pinned to it, so both manifests carry
+   a note instead ([DIST-RUNTIME-ACQUIRE]).
+6. Push credentials are `BREW_SCOOP_PAT` ([DIST-SECRETS]). Both jobs fail on a
+   missing secret before checking anything out — the target repos are public, so
+   an absent token clones happily and only fails at `git push`, after the release
+   is already out.
+
+**macOS x86_64 is not covered.** No `darwin-x64` archive is published (that build
+hangs on GitHub's hosted `macos-13` runners), so the formula declares
+`depends_on arch: :arm64` under `on_macos` to give Intel Macs a clear
+architecture error instead of a 404 mid-download.
 
 ## [DIST-RELEASE] Release Workflow
 
 Tag-triggered (`v*`). Jobs:
 
-1. **`build-sharplsp`** — matrix: 6 targets (darwin-arm64, darwin-x64, linux-x64, linux-arm64, win32-x64, win32-arm64). Produces one native binary per platform.
-2. **`publish-sidecars`** — single ubuntu job. `dotnet publish --no-self-contained` both sidecars. Produces the `bin/all/` assemblies staged for VSIX inclusion.
-3. **`build-vsix`** — for each platform: stages `bin/<platform>/sharplsp[.exe]` + `bin/all/sharplsp-sidecar-*`, runs `vsce package --target <platform>`. Produces 6 per-platform `.vsix` files, each fully self-contained.
-4. **`release`** — creates GitHub release with all archives and VSIXs, updates Homebrew tap, updates Scoop bucket, publishes VSIXs to VS Code Marketplace.
+1. **`version`** — extracts the version from the tag and validates the shipwright
+   manifests. The tagged SHA is built verbatim; stamping is runner-local per job
+   ([DIST-VERSION-INVARIANT]).
+2. **`codeql`** — release gate. `release` needs it, so a High/Critical finding
+   blocks every downstream publish ([DIST-CI-SECURITY]).
+3. **`build-vsix`** — one job per platform (`linux-x64`, `linux-arm64`,
+   `darwin-arm64`, `win32-x64`, `win32-arm64`). Builds the Rust host and both
+   sidecars ONCE, then emits BOTH artifacts for that platform: the
+   platform-targeted `.vsix` and the standalone server archive ([DIST-ARCHIVE]).
+   Verifies each before upload.
+4. **`build-rider`** — `./gradlew buildPlugin` on JDK 21, producing
+   `sharplsp-rider.zip` ([DIST-RIDER-RELEASE]).
+5. **`release`** — creates the GitHub release with every VSIX, every server
+   archive, the Rider plugin zip, and a `SHA256SUMS` covering all of them. Fails
+   if the asset count does not match the platform matrix, so a release cannot
+   silently ship short.
+6. **`publish-marketplace`** / **`publish-openvsx`** — push the VSIXs only.
+   Independent of each other; neither gates the other.
+7. **`deploy-pages`** — deploys the tagged website revision.
+
+8. **`publish-homebrew`** / **`publish-scoop`** — push the rendered formula and
+   manifest to the tap and bucket ([DIST-PATH-PUBLISH]). Skipped for prerelease
+   tags.
+
+## [DIST-RIDER-RELEASE] Rider Plugin Release
+
+JetBrains users have no VSIX to install and no marketplace listing to pull from,
+so `sharplsp-rider.zip` on the GitHub release IS the distribution channel for
+Rider. `build-rider` therefore runs with `RIDER_REQUIRED=1`: a missing JDK is a
+hard failure, not the local convenience skip `tools/rider/gradle.sh` allows,
+because a silent skip would publish a release with no Rider plugin while
+reporting success.
+
+1. The plugin zip MUST carry the tag's version. `pluginVersion` in
+   `src/editors/rider/gradle.properties` is stamped by `make _stamp-version`
+   along with every other manifest ([DIST-VERSION-INVARIANT]); the job asserts
+   that `build/distributions/sharplsp-rider-<version>.zip` exists.
+2. The plugin does NOT bundle the LSP host. It resolves `sharplsp` from its
+   project setting, then `~/.local/bin`, then `PATH` — so a Rider user installs
+   a [DIST-ARCHIVE] asset or a [DIST-PATH-INSTALL] package first.
+3. The plugin id is `com.sharplsp.rider` and every custom request it issues uses
+   the `sharplsp/` method prefix the host answers on.
 
 ## [DIST-CI-LAYOUT] CI Workflow Layout
 
@@ -369,7 +512,8 @@ The suite is sliced into **feature chunks**, one CI job each on BOTH platform le
 | `debug-inspection` | Both | The Variables and Watch panels against a paused debuggee: locals, arguments, this, statics, collection/array/nullable expansion, hover/watch/REPL evaluation across the T1 and T2 tiers, setVariable changing what the program does next, and [DebuggerDisplay] rendering. Implements [DEBUG-FEATURES-VARIABLES]. |
 | `debug-fsharp` | Both | F# debugging at full density, never a reduced echo of the C# suites: F9 in an F# editor, stepping through F# functions, F# exceptions caught and ignored, discriminated unions/records/tuples/options rendered in F# syntax, and task {} logical stacks. Implements [DEBUG-FSHARP-UNIONS], [DEBUG-FSHARP-STEPPING] and [DEBUG-FSHARP-PDB]. |
 | `debug-session` | Both | The session and the protocol around it: the DAP 1.71.0 handshake and the whole [DEBUG-PROTOCOL-CAPABILITIES] table in both directions, stopAtEntry, args/env/cwd, run-without-debugging, restart, pause and stop, debuggee output routing, and two simultaneous sessions multiplexed by session id. |
-| `debug-advanced` | Both | Hot Reload during an active session (method body, added method, rude edit), attaching to an already-running process by pid and by name, and debugging a single unit test through the Test Explorer Debug profile. Each suite builds and then also RUNS a real .NET target outside the debugger. Implements [DEBUG-FEATURES-HOT-RELOAD], [DEBUG-FEATURES-LAUNCH] attach rows and [DEBUG-FEATURES-TESTS]. |
+| `debug-advanced` | Both | Hot Reload during an active session (method body, added method, rude edit) and attaching to an already-running process by pid and by name. Each suite builds and then also RUNS a real .NET target outside the debugger. Implements [DEBUG-FEATURES-HOT-RELOAD] and the [DEBUG-FEATURES-LAUNCH] attach rows. |
+| `debug-tests` | Both | Debugging a test through the Test Explorer Debug profile, at full density: one test at a time (plain, failing, skipped, `[Theory]` rows, nothing armed, disabled and conditional breakpoints), selections of tests (class, namespace, assembly root, multi-select, and the unselected test that must NOT run), and F# first — backtick names carrying spaces, module helpers, `[<Theory>]` rows and the at-cursor Debug gesture. Every test builds a fixture solution and attaches a real netcoredbg to the waiting test host. Split from `debug-advanced` because it is nineteen debug sessions. Implements [DEBUG-FEATURES-TESTS]. |
 | `rundebug` | Both | Launch-target resolution against real projects: the [SCRIPT-CONE] walk (.sln/.slnx, .git and workspace-root boundaries), active-document sensitivity across two projects, library rejection, and MSBuild output resolution for custom AssemblyName/OutputPath, non-listed and multi-targeted frameworks. Builds real C# and F# console projects. |
 | `rundebug-commands` | Both | The run/debug user gestures at the VSIX level: F5 and Ctrl/Cmd+F5 through workbench.action.debug.start / .run, sharplsp.runProgram and sharplsp.debugProgram against built projects, and single-file targets — C# file-based apps, .fsx scripts and the .csx/.fs refusals. Split from rundebug because every test restores and builds or executes a real .NET target. |
 | `testexplorer` | Both | Discovery, the reactive tree, Windows path handling, TRX/console result parsing and the testing lens. |

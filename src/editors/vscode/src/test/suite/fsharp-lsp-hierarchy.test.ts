@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { closeAllEditors, pollUntilResult } from './test-helpers';
+import { codeLensesFor } from './code-lens-kit';
 import { openFSharpFixture, positionOf } from './fsharp-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
@@ -20,11 +21,7 @@ suite('F# LSP — Code Lens', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     const library = await openFSharpFixture('Library.fs');
     const lenses = await pollUntilResult(
-      async () =>
-        (await vscode.commands.executeCommand<vscode.CodeLens[]>(
-          'vscode.executeCodeLensProvider',
-          library.uri,
-        )) ?? [],
+      async () => codeLensesFor(library.uri),
       (items) => items.length >= 1,
       LSP_RESPONSE_MS,
       2_000,

@@ -34,7 +34,7 @@ import {
   fakeFolder,
   focusDocument,
   invokeCommand,
-  legacyF5Config,
+  bareF5Config,
   undefinedF5Config,
 } from './run-debug-kit';
 import { closeAllEditors, comparablePath, pollUntilResult } from './test-helpers';
@@ -311,7 +311,7 @@ export async function assertNestedTarget(
   q: Quiet,
 ): Promise<string> {
   const at = 'B18 nested single project';
-  const outcome = await resolveTarget(root, legacyF5Config());
+  const outcome = await resolveTarget(root, bareF5Config());
   const dll = assertTargets(outcome, app, at);
   const nested = comparablePath(dll).includes(comparablePath(path.join('src', 'App')));
   assert.strictEqual(nested, true, `${at}: the program sits under src/App, the universal layout`);
@@ -352,7 +352,7 @@ export async function assertFocusFlips(
   await focusDocument(to.sourceFile);
   const active = comparablePath(vscode.window.activeTextEditor?.document.uri.fsPath ?? '');
   assert.strictEqual(active, comparablePath(to.sourceFile), `${at}: the document must be focused`);
-  const dll = assertTargets(await resolveTarget(root, legacyF5Config()), to, at);
+  const dll = assertTargets(await resolveTarget(root, bareF5Config()), to, at);
   assert.notStrictEqual(
     comparablePath(dll),
     comparablePath(fromDll),
@@ -377,7 +377,7 @@ export async function assertConeStops(layout: ConeLayout, q: Quiet, at: string):
   assertNoEscape(layout.repoSub, above, decoy, `${at} .git stop`);
   assert.strictEqual(findEntryProject(ws), undefined, `${at}: an empty cone has no entry project`);
   await clearFocus();
-  const refused = await resolveTarget(ws, legacyF5Config());
+  const refused = await resolveTarget(ws, bareF5Config());
   assert.strictEqual(refused.threw, '', `${at}: refusing a target must not throw`);
   assert.strictEqual(refused.config, undefined, `${at}: an unserviceable request returns nothing`);
   assert.strictEqual(refused.program, undefined, `${at}: nothing above the cone may be launched`);
@@ -396,7 +396,7 @@ export async function assertAmbiguityPrompts(
   const at = `B24 ${path.extname(winner.projectFile)}`;
   const seen = q.stubs.log.quickPickItems.length;
   q.stubs.queuePick(undefined);
-  const cancelled = await resolveTarget(dir, legacyF5Config());
+  const cancelled = await resolveTarget(dir, bareF5Config());
   assert.strictEqual(q.stubs.log.quickPickItems.length, seen + 1, `${at}: prompts exactly once`);
   assertOffered(q.stubs.log.quickPickItems[seen] ?? [], names, `${at} first prompt`);
   assert.strictEqual(cancelled.config, undefined, `${at}: cancelling resolves no configuration`);
@@ -422,7 +422,7 @@ async function assertPickDecides(
 ): Promise<void> {
   const chosenName = path.basename(winner.projectFile);
   q.stubs.queuePick(chooses(chosenName));
-  const chosen = await resolveTarget(dir, legacyF5Config());
+  const chosen = await resolveTarget(dir, bareF5Config());
   const prompts = q.stubs.log.quickPickItems.length;
   assert.strictEqual(prompts, seen + 2, `${at}: a cancelled choice must not be cached`);
   assertOffered(q.stubs.log.quickPickItems[seen + 1] ?? [], names, `${at} second prompt`);
@@ -439,14 +439,14 @@ export async function assertLibraryRefused(root: string, lang: LangKit, q: Quiet
   const at = `B27 ${lang.projectExt}`;
   const runner = lang.console(path.join(root, 'runner'), `${lang.tag}Runner`);
   await buildProject(runner);
-  const runnerDll = assertTargets(await resolveTarget(runner.dir, legacyF5Config()), runner, at);
+  const runnerDll = assertTargets(await resolveTarget(runner.dir, bareF5Config()), runner, at);
   assert.strictEqual(fs.existsSync(runnerDll), true, `${at}: a resolved program must exist`);
   const evidence = fs.existsSync(runtimeConfigFor(runnerDll));
   assert.strictEqual(evidence, true, `${at}: an executable assembly ships a runtimeconfig.json`);
   const lib = lang.library(path.join(root, 'lib'), `${lang.tag}Calc`);
   await buildProject(lib);
   const libDll = path.join(lib.dir, 'bin', 'Debug', TFM, `${lang.tag}Calc.dll`);
-  const refused = await resolveTarget(lib.dir, legacyF5Config());
+  const refused = await resolveTarget(lib.dir, bareF5Config());
   assertNotRunnable(refused, libDll, `${at} library`);
   const fell = comparablePath(String(refused.program));
   assert.notStrictEqual(fell, comparablePath(runnerDll), `${at}: no fallback to the last target`);

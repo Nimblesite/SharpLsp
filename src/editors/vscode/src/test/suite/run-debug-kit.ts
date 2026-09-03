@@ -73,8 +73,8 @@ export function undefinedF5Config(): vscode.DebugConfiguration {
   } as unknown as vscode.DebugConfiguration;
 }
 
-/** The legacy empty-string shape earlier code was written against. */
-export function legacyF5Config(): vscode.DebugConfiguration {
+/** The empty-string shape a bare F5 sends. */
+export function bareF5Config(): vscode.DebugConfiguration {
   return { type: '', request: '', name: '' };
 }
 

@@ -50,7 +50,7 @@ export function comparableText(text: string): string {
  * Priority:
  *   1. `SHARPLSP_EXECUTABLE_PATH` env var
  *   2. Bundled binary under `bin/<platform>/`
- *   3. Legacy bundled binary under `bin/`
+ *   3. Bundled binary under `bin/`
  */
 export function findSharpLspBinary(): string | undefined {
   const envPath = process.env['SHARPLSP_EXECUTABLE_PATH'];
@@ -69,9 +69,9 @@ export function findSharpLspBinary(): string | undefined {
     return bundled;
   }
 
-  const legacyBundled = path.join(extensionRoot, 'bin', binaryName);
-  if (fs.existsSync(legacyBundled)) {
-    return legacyBundled;
+  const bundledBinary = path.join(extensionRoot, 'bin', binaryName);
+  if (fs.existsSync(bundledBinary)) {
+    return bundledBinary;
   }
 
   return undefined;

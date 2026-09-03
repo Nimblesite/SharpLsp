@@ -26,7 +26,7 @@ import {
   emptyF5Config,
   fakeFolder,
   focusDocument,
-  legacyF5Config,
+  bareF5Config,
   stopAnyDebugSession,
   undefinedF5Config,
 } from './run-debug-kit';
@@ -260,11 +260,15 @@ suite('Run and Debug: launch profiles', () => {
     assertF5Shape(fromUndefined, 'F5 on {type:undefined,...}');
     assertArgv(fromUndefined, ['--mode', 'fast'], 'the undefined-valued F5 shape');
     assertEnv(fromUndefined, env, 'the undefined-valued F5 shape');
-    const fromLegacy = await resolveVia(root, legacyF5Config());
-    assertF5Shape(fromLegacy, 'F5 on the empty-string shape');
-    assertEnv(fromLegacy, env, 'the empty-string F5 shape');
-    assert.deepStrictEqual(fromLegacy.args, fromUndefined.args, 'every F5 shape yields one argv');
-    assert.deepStrictEqual(fromLegacy.env, resolved.env, 'every F5 shape yields the same env');
+    const fromEmptyType = await resolveVia(root, bareF5Config());
+    assertF5Shape(fromEmptyType, 'F5 on the empty-string shape');
+    assertEnv(fromEmptyType, env, 'the empty-string F5 shape');
+    assert.deepStrictEqual(
+      fromEmptyType.args,
+      fromUndefined.args,
+      'every F5 shape yields one argv',
+    );
+    assert.deepStrictEqual(fromEmptyType.env, resolved.env, 'every F5 shape yields the same env');
     // Interaction 5 — a user who chose a console in launch.json keeps it. B51
     const kept = await resolveVia(root, launchConfig({ console: 'internalConsole' }));
     assert.strictEqual(kept.console, 'internalConsole', 'a chosen console is never overwritten');

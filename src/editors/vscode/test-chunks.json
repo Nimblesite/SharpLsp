@@ -67,7 +67,7 @@
       ]
     },
     "fsharp-rename": {
-      "description": "F# rename, including the cross-language case where an F# origin renames C# references and back \u2014 the single slowest suite in the whole VS Code matrix, because each test rebuilds both languages.",
+      "description": "F# rename, including the cross-language case where an F# origin renames C# references and back — the single slowest suite in the whole VS Code matrix, because each test rebuilds both languages.",
       "files": [
         "fsharp-lsp-rename-symbols.test.js",
         "fsharp-lsp-rename-edge.test.js",
@@ -130,11 +130,18 @@
       ]
     },
     "debug-advanced": {
-      "description": "Hot Reload during an active session (method body, added method, rude edit), attaching to an already-running process by pid and by name, and debugging a single unit test through the Test Explorer Debug profile. Each suite builds and then also RUNS a real .NET target outside the debugger. Implements [DEBUG-FEATURES-HOT-RELOAD], [DEBUG-FEATURES-LAUNCH] attach rows and [DEBUG-FEATURES-TESTS].",
+      "description": "Hot Reload during an active session (method body, added method, rude edit) and attaching to an already-running process by pid and by name. Each suite builds and then also RUNS a real .NET target outside the debugger. Implements [DEBUG-FEATURES-HOT-RELOAD] and the [DEBUG-FEATURES-LAUNCH] attach rows.",
       "files": [
         "debug-hot-reload-e2e.test.js",
-        "debug-attach-e2e.test.js",
-        "debug-test-debugging-e2e.test.js"
+        "debug-attach-e2e.test.js"
+      ]
+    },
+    "debug-tests": {
+      "description": "Debugging a test through the Test Explorer Debug profile: one test at a time (plain, failing, skipped, [Theory] rows, nothing armed, disabled and conditional breakpoints), selections of tests (class, namespace, assembly root, multi-select) and the F# suite (backtick names carrying SPACES, module helpers, [<Theory>] rows and the at-cursor Debug gesture). Every test builds a fixture solution and starts a real netcoredbg session against the waiting test host. Implements [DEBUG-FEATURES-TESTS].",
+      "files": [
+        "debug-test-fsharp-e2e.test.js",
+        "debug-test-debugging-e2e.test.js",
+        "debug-test-groups-e2e.test.js"
       ]
     },
     "rundebug": {
@@ -145,33 +152,35 @@
       ]
     },
     "rundebug-commands": {
-      "description": "The run/debug user gestures at the VSIX level: F5 and Ctrl/Cmd+F5 through workbench.action.debug.start / .run, sharplsp.runProgram and sharplsp.debugProgram against built projects, and single-file targets \u2014 C# file-based apps, .fsx scripts and the .csx/.fs refusals. Split from rundebug because every test restores and builds or executes a real .NET target.",
+      "description": "The run/debug user gestures at the VSIX level: F5 and Ctrl/Cmd+F5 through workbench.action.debug.start / .run, sharplsp.runProgram and sharplsp.debugProgram against built projects, and single-file targets — C# file-based apps, .fsx scripts and the .csx/.fs refusals. Split from rundebug because every test restores and builds or executes a real .NET target.",
       "files": [
         "run-debug-commands.test.js",
         "run-debug-scripts.test.js"
       ]
     },
     "testexplorer": {
-      "description": "Discovery, the reactive tree, Windows path handling, TRX/console result parsing and the testing lens.",
+      "description": "Discovery, the reactive tree, multi-targeted projects collapsing to one assembly root, Windows path handling, TRX/console result parsing and the testing lens.",
       "files": [
         "test-explorer-e2e.test.js",
         "test-explorer-reactive.test.js",
+        "test-explorer-multitarget.test.js",
         "test-explorer-windows.test.js",
         "test-explorer-parsers.test.js",
         "testing-lens-e2e.test.js"
       ]
     },
     "testexplorer-cancellation": {
-      "description": "Pressing Stop must terminate the whole `dotnet test` process TREE. Its own chunk: the suite builds a dedicated F# xUnit fixture whose long-running test deliberately sleeps, so it is both slow and the most likely place in the matrix to hang \u2014 isolating it keeps a hang from taking the rest of the Test Explorer surface with it.",
+      "description": "Pressing Stop must terminate the whole `dotnet test` process TREE. Its own chunk: the suite builds a dedicated F# xUnit fixture whose long-running test deliberately sleeps, so it is both slow and the most likely place in the matrix to hang — isolating it keeps a hang from taking the rest of the Test Explorer surface with it.",
       "files": [
         "test-explorer-cancellation.test.js"
       ]
     },
     "testexplorer-frameworks": {
-      "description": "Test Explorer framework matrix and run semantics: xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles. Split from the testexplorer chunk because it restores and builds six test projects.",
+      "description": "Test Explorer framework matrix and run semantics: xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles, and the pinned 2.2.0 VSTest adapter that decorates the names it reports. Split from the testexplorer chunk because it restores and builds seven test projects.",
       "files": [
         "test-explorer-frameworks.test.js",
-        "test-explorer-outcomes.test.js"
+        "test-explorer-outcomes.test.js",
+        "test-explorer-adapter-ids.test.js"
       ]
     },
     "profiler": {
@@ -203,21 +212,21 @@
     },
     "realrepo-serilog": {
       "linuxOnly": true,
-      "description": "Cold-loading the pinned real-world repository serilog/serilog: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only \u2014 the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
+      "description": "Cold-loading the pinned real-world repository serilog/serilog: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
       "files": [
         "real-repo-serilog.test.js"
       ]
     },
     "realrepo-fluentvalidation": {
       "linuxOnly": true,
-      "description": "Cold-loading the pinned real-world repository FluentValidation: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only \u2014 the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
+      "description": "Cold-loading the pinned real-world repository FluentValidation: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
       "files": [
         "real-repo-fluentvalidation.test.js"
       ]
     },
     "realrepo-fstoolkit": {
       "linuxOnly": true,
-      "description": "Cold-loading the pinned real-world repository FsToolkit.ErrorHandling: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only \u2014 the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
+      "description": "Cold-loading the pinned real-world repository FsToolkit.ErrorHandling: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
       "files": [
         "real-repo-fstoolkit.test.js"
       ]

@@ -11,10 +11,11 @@
  *
  * So the listing pass is used only to BUILD the projects and to learn which test
  * assemblies they produced; the names themselves come from
- * `dotnet vstest ... --ListFullyQualifiedTests`, which writes
- * `TestCase.FullyQualifiedName` verbatim — identical in shape for xUnit, NUnit
- * and MSTest, in both C# and F#, including idiomatic F# backtick names whose FQN
- * contains SPACES (e.g. `Ns.Module.adds two numbers`).
+ * `dotnet vstest ... --ListFullyQualifiedTests`, which reports
+ * `TestCase.FullyQualifiedName` — identical in shape for xUnit, NUnit and MSTest,
+ * in both C# and F#, including idiomatic F# backtick names whose FQN contains
+ * SPACES (e.g. `Ns.Module.adds two numbers`). Reading that listing back into ids
+ * — including stripping the unique ID some adapters append — is `test-names.ts`.
  *
  * Nothing here throws: a listing that could not be produced comes back as an
  * empty name list plus warnings, so a discovery sweep can decide whether to
@@ -27,6 +28,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DOTNET_TIMEOUT_MS, runDotnet, type DotnetRun } from './dotnet-process.js';
+import { dedupeLines, HEX_DIGITS, parseFullyQualifiedTestList } from './test-names.js';
+
+export { parseFullyQualifiedTestList, withoutAdapterUniqueId } from './test-names.js';
 
 /** Lower-cased prefixes of VSTest/MSBuild output lines that are never tests. */
 const NOISE_PREFIXES = [
@@ -59,9 +63,6 @@ const ASSEMBLY_BANNER = 'Test run for ';
  * MSBuild console path on every host, independent of whether stdout is a TTY.
  */
 const VSTEST_LISTING_OUTPUT = '-p:VsTestUseMSBuildOutput=false';
-
-/** Byte-order mark VSTest may prepend to the fully-qualified test listing. */
-const BOM = '﻿';
 
 /**
  * Ceiling on the assembly arguments handed to a single `dotnet vstest`.
@@ -111,7 +112,7 @@ const STACK_FRAME_PREFIX = 'at ';
  * `at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, …)` —
  * are all excluded. A stack frame slipping through would make a crashed
  * `dotnet test` look like a successful enumeration to `salvageable`. Used only
- * by the legacy fallback listing.
+ * by the stdout fallback listing.
  */
 export function isDiscoveredTestLine(line: string): boolean {
   if (!line.includes('.')) return false;
@@ -125,29 +126,6 @@ export function isDiscoveredTestLine(line: string): boolean {
 /** Parse `dotnet test --list-tests` output into a de-duplicated list of names. */
 export function parseTestList(output: string): string[] {
   return dedupeLines(output, isDiscoveredTestLine);
-}
-
-/**
- * Parse the file `--ListTestsTargetPath` wrote: one `TestCase.FullyQualifiedName`
- * per line, verbatim. Names may contain spaces, so no shape filter is applied —
- * only blank lines and a leading BOM are dropped.
- */
-export function parseFullyQualifiedTestList(content: string): string[] {
-  const body = content.startsWith(BOM) ? content.slice(BOM.length) : content;
-  return dedupeLines(body, () => true);
-}
-
-/** Trim, drop blanks, keep `accept`ed lines, preserve order, de-duplicate. */
-function dedupeLines(text: string, accept: (line: string) => boolean): string[] {
-  const seen = new Set<string>();
-  const lines: string[] = [];
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (line.length === 0 || seen.has(line) || !accept(line)) continue;
-    seen.add(line);
-    lines.push(line);
-  }
-  return lines;
 }
 
 /**
@@ -213,8 +191,6 @@ function isHexPair(candidate: string): boolean {
   if (candidate.length !== 2) return false;
   return HEX_DIGITS.has(candidate[0] ?? '') && HEX_DIGITS.has(candidate[1] ?? '');
 }
-
-const HEX_DIGITS = new Set('0123456789abcdefABCDEF'.split(''));
 
 /** The on-disk spelling of an announced assembly, escaped or not. */
 export function resolveAnnouncedAssembly(announced: string): string | undefined {
@@ -331,6 +307,43 @@ function listFailure(run: DotnetRun): string {
     : `dotnet test --list-tests failed: ${cause}${detail}`;
 }
 
+/**
+ * Collapse the assemblies ONE multi-targeted project produced into one listing.
+ *
+ * `dotnet test --list-tests` announces a `Test run for …` banner per TARGET
+ * FRAMEWORK, so a project declaring `<TargetFrameworks>net8.0;net9.0</…>` reports
+ * two assemblies carrying the same file name under different
+ * `bin/<config>/<tfm>/` directories. That is one project, and so one root of the
+ * Assembly → Namespace → Class → Test tree: keeping them apart rendered every
+ * namespace, class and test of that project TWICE, under two labels the user
+ * cannot tell apart.
+ *
+ * Names are UNIONED, never taken from whichever framework was announced first: a
+ * test compiled behind `#if NET8_0` exists in only one of the assemblies, and
+ * dropping it would trade a duplicated tree for a missing test. The surviving
+ * path is the lexicographically smallest, so the group ids the tree builds from
+ * it stay put across sweeps however the build ordered its banners.
+ */
+export function mergeMultiTargeted(
+  listings: readonly TestAssemblyListing[],
+): TestAssemblyListing[] {
+  const merged = new Map<string, { path: string; names: string[] }>();
+  for (const listing of listings) {
+    const existing = merged.get(listing.name);
+    if (existing === undefined) {
+      merged.set(listing.name, { path: listing.path, names: [...listing.names] });
+      continue;
+    }
+    existing.names.push(...listing.names);
+    if (listing.path < existing.path) existing.path = listing.path;
+  }
+  return [...merged].map(([name, entry]) => ({
+    name,
+    path: entry.path,
+    names: [...new Set(entry.names)],
+  }));
+}
+
 /** Prefer VSTest's fully-qualified names; fall back to the display listing. */
 async function namesFrom(output: string, cwd: string, timeoutMs: number): Promise<TestListing> {
   const announced = parseAnnouncedAssemblies(output);
@@ -356,7 +369,9 @@ async function namesFrom(output: string, cwd: string, timeoutMs: number): Promis
       });
     }
     const names = [...new Set(all)];
-    if (names.length > 0) return { names, ok: true, warnings, byAssembly };
+    if (names.length > 0) {
+      return { names, ok: true, warnings, byAssembly: mergeMultiTargeted(byAssembly) };
+    }
   }
 
   // Fallback: no assembly reported a test case (a Microsoft.Testing.Platform

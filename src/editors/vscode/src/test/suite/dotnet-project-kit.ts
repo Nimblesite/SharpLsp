@@ -29,6 +29,22 @@ export const XUNIT_PACKAGES: readonly PackageRef[] = [
   { id: 'Microsoft.NET.Test.Sdk', version: '17.11.1' },
 ];
 
+/**
+ * xUnit on its 2.2.0 VSTest adapter — the version real-world projects still pin
+ * (FluentValidation among them).
+ *
+ * This adapter does NOT write a bare `TestCase.FullyQualifiedName`: it appends
+ * the test case's 40-hex unique ID, so `--ListFullyQualifiedTests` emits
+ * `Ns.Class.Method (d87517d9…)`. Modern adapters do not, which is why every
+ * fixture built on {@link XUNIT_PACKAGES} is blind to the whole class of defect
+ * that suffix causes. Pinned deliberately; do NOT "upgrade" it.
+ */
+export const XUNIT_DECORATING_PACKAGES: readonly PackageRef[] = [
+  { id: 'xunit', version: '2.2.0' },
+  { id: 'xunit.runner.visualstudio', version: '2.2.0' },
+  { id: 'Microsoft.NET.Test.Sdk', version: '17.11.1' },
+];
+
 /** NUnit. Its `[TestCase]` names carry parentheses — the filter-escaping case. */
 export const NUNIT_PACKAGES: readonly PackageRef[] = [
   { id: 'NUnit', version: '4.2.2' },
@@ -234,4 +250,50 @@ export async function createSolution(
 /** Warm the FULL VSTest discovery path (restore + build + adapter JIT) once. */
 export async function warmDiscovery(solutionPath: string, cwd: string): Promise<string> {
   return dotnet(['test', solutionPath, '--list-tests', '--nologo', '--verbosity', 'quiet'], cwd);
+}
+
+/** The shared framework whose installed runtimes decide what a test host can run. */
+const NETCORE_APP = 'Microsoft.NETCore.App';
+
+/**
+ * The MAJOR version of a `Microsoft.NETCore.App <version> [<path>]` line, or
+ * `undefined` for any other line `dotnet --list-runtimes` prints (ASP.NET Core
+ * and the Windows Desktop pack announce themselves the same way).
+ */
+function netCoreAppMajor(line: string): number | undefined {
+  if (!line.startsWith(`${NETCORE_APP} `)) return undefined;
+  const version = line.slice(NETCORE_APP.length + 1).split(' ')[0] ?? '';
+  const major = Number.parseInt(version.split('.')[0] ?? '', 10);
+  return Number.isNaN(major) ? undefined : major;
+}
+
+/**
+ * The two NEWEST target-framework monikers this agent can actually RUN, oldest
+ * first — the `<TargetFrameworks>` a multi-targeted fixture must declare.
+ *
+ * Pinning the pair does not work: a fixture whose second framework has no
+ * installed runtime never gets a test host, so VSTest never announces its
+ * assembly and the project silently degrades to a single target — which would
+ * make a multi-targeting regression suite pass vacuously. Agents disagree about
+ * which runtimes they carry (a developer box and a CI runner rarely match), so
+ * the pair is READ off the machine. The two NEWEST are taken rather than the
+ * oldest and the newest because an out-of-support moniker makes the SDK
+ * complain about the fixture instead of building it.
+ */
+export async function installedFrameworkPair(cwd: string): Promise<string[]> {
+  const output = await dotnet(['--list-runtimes'], cwd);
+  const majors = new Set<number>();
+  for (const raw of output.split('\n')) {
+    const major = netCoreAppMajor(raw.trim());
+    if (major !== undefined) majors.add(major);
+  }
+  const newest = [...majors].sort((left, right) => right - left).slice(0, 2);
+  if (newest.length < 2) {
+    throw new Error(
+      `multi-targeting needs two runnable ${NETCORE_APP} runtimes; this agent has: ${
+        [...majors].join(', ') || '(none)'
+      }`,
+    );
+  }
+  return newest.sort((left, right) => left - right).map((major) => `net${String(major)}.0`);
 }

@@ -36,7 +36,15 @@ import {
   setupLspTestSuite,
   teardownLspTestSuite,
 } from './test-helpers';
-import { ACTIVATION_MS, COMMAND_MS, FAST_MS } from './test-timeouts';
+import { codeLensesFor, warmCodeLensPath } from './code-lens-kit';
+import {
+  ACTIVATION_MS,
+  COMMAND_MS,
+  FAST_MS,
+  LSP_RESPONSE_MS,
+  SETTINGS_WRITE_MS,
+  SIDECAR_COLD_MS,
+} from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 
 const TEST_LENS_SECTION = 'sharplsp.testLens';
@@ -54,15 +62,6 @@ function testLensCommands(lenses: vscode.CodeLens[]): vscode.CodeLens[] {
       lens.command?.command === CMD_TEST_RUN_AT_CURSOR ||
       lens.command?.command === CMD_TEST_DEBUG_AT_CURSOR,
   );
-}
-
-/** Request CodeLenses from every provider registered for `uri`. */
-async function lensesFor(uri: vscode.Uri): Promise<vscode.CodeLens[]> {
-  const result = await vscode.commands.executeCommand<vscode.CodeLens[]>(
-    'vscode.executeCodeLensProvider',
-    uri,
-  );
-  return result ?? [];
 }
 
 /** A minimal but realistic cobertura report: one covered, one uncovered line. */
@@ -393,8 +392,25 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
   let stubs: UiStubs;
 
   suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
+    // A cold sidecar, not just activation: the warm-up below is the FIRST
+    // `textDocument/codeLens` this process sends for each language, so this hook
+    // pays both engines' project-cracking cost. `SIDECAR_COLD_MS` is the tier
+    // written for exactly that, and it is the larger of the two costs this hook
+    // carries.
+    this.timeout(SIDECAR_COLD_MS);
     ({ tmpDir } = await setupLspTestSuite('test-lens-e2e-'));
+
+    // Every test below asks VS Code for the lenses on a C# or F# file, and that
+    // request FANS OUT to the LSP client's server-backed provider as well as
+    // this extension's own (see `code-lens-kit.ts`). Paying each sidecar's cold
+    // start HERE is what makes `LSP_RESPONSE_MS` — "one semantic request
+    // answered by a WARM sidecar" — an honest ceiling for the tests that
+    // follow. Left in a test body it is a cold start measured against a warm
+    // budget, which is the flake this suite hit on the Windows runner.
+    const warmCSharp = await openCSharpFile(tmpDir, 'Warmup.cs', CSHARP_TESTS);
+    const warmFSharp = await openFSharpFile(tmpDir, 'Warmup.fs', FSHARP_TESTS);
+    await warmCodeLensPath(warmCSharp.uri, warmFSharp.uri);
+    await closeAllEditors();
   });
 
   suiteTeardown(() => {
@@ -411,10 +427,12 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
   });
 
   test('a C# test file exposes Run + Debug test lenses wired to the at-cursor commands', async function () {
-    this.timeout(COMMAND_MS);
+    // `codeLensesFor` awaits the LSP client's server-backed provider too, so
+    // this is a SEMANTIC request, not the editor round trip `COMMAND_MS` names.
+    this.timeout(LSP_RESPONSE_MS);
     const { uri } = await openCSharpFile(tmpDir, 'LensTargets.cs', CSHARP_TESTS);
 
-    const all = await lensesFor(uri);
+    const all = await codeLensesFor(uri);
     const lenses = testLensCommands(all);
     assert.ok(
       lenses.length >= 4,
@@ -439,13 +457,65 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     assert.ok(firstRun !== undefined);
     assert.strictEqual(firstRun.command?.title, '$(play) Run Test');
     assert.strictEqual(firstRun.command?.arguments?.[0]?.toString(), uri.toString());
+
+    // Interaction 2 — the DEBUG half of [TEST-STATUS-LENS]'s "plus Run and Debug
+    // actions". A Debug lens that reached the wrong method, or carried no
+    // method at all, is how "Debug Test does nothing" presents to the user.
+    const debugTargets = debugLenses
+      .map((lens) => lens.command?.arguments?.[1])
+      .filter((name): name is string => typeof name === 'string');
+    assert.deepStrictEqual(
+      [...debugTargets].sort(),
+      [...runTargets].sort(),
+      'every method offering Run must offer Debug, and for the SAME method name',
+    );
+    assert.deepStrictEqual(
+      [...new Set(debugLenses.map((lens) => lens.command?.title))],
+      ['$(bug) Debug Test'],
+      'and every one of them renders as the Debug action',
+    );
+    assert.deepStrictEqual(
+      debugLenses.filter((lens) => lens.command?.arguments?.length !== 2),
+      [],
+      'the at-cursor command takes (uri, methodName) — a missing argument makes it a no-op',
+    );
+    assert.deepStrictEqual(
+      [...new Set(debugLenses.map((lens) => lens.command?.arguments?.[0]?.toString() ?? ''))],
+      [uri.toString()],
+      'and every Debug lens points at the file the user is looking at',
+    );
+
+    // Interaction 3 — the pair sits on ONE method: Run and Debug for a given
+    // method share the range, so the user sees them side by side above it.
+    for (const target of runTargets) {
+      const run = runLenses.find((lens) => lens.command?.arguments?.[1] === target);
+      const debug = debugLenses.find((lens) => lens.command?.arguments?.[1] === target);
+      assert.ok(run && debug, `${target} must have both a Run and a Debug lens`);
+      assert.strictEqual(
+        run.range.isEqual(debug.range),
+        true,
+        `${target}: the Run and Debug actions must render on the same line`,
+      );
+      assert.strictEqual(
+        runLenses.filter((lens) => lens.command?.arguments?.[1] === target).length,
+        1,
+        `${target}: one Run lens, not one per attribute`,
+      );
+      assert.strictEqual(
+        debugLenses.filter((lens) => lens.command?.arguments?.[1] === target).length,
+        1,
+        `${target}: one Debug lens either`,
+      );
+    }
   });
 
   test('an F# test file exposes Run + Debug lenses for [<Fact>]/[<Theory>] bindings', async function () {
-    this.timeout(COMMAND_MS);
+    // As above, and F# is the slower of the two engines: measured at 1967ms
+    // cold against 96ms for a warm C# call in the same process.
+    this.timeout(LSP_RESPONSE_MS);
     const { uri } = await openFSharpFile(tmpDir, 'LensTargets.fs', FSHARP_TESTS);
 
-    const lenses = testLensCommands(await lensesFor(uri));
+    const lenses = testLensCommands(await codeLensesFor(uri));
     const runTargets = lenses
       .filter((l) => l.command?.command === CMD_TEST_RUN_AT_CURSOR)
       .map((l) => l.command?.arguments?.[1])
@@ -463,10 +533,51 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       lenses.some((l) => l.command?.command === CMD_TEST_DEBUG_AT_CURSOR),
       'F# tests also get a Debug lens',
     );
+
+    // Interaction 2 — F# is not a second-class case here ([TEST-OVERVIEW]): the
+    // Debug action must reach every binding the Run action does, addressed by
+    // the same name, and carrying the same (uri, methodName) pair.
+    const fsDebug = lenses.filter((l) => l.command?.command === CMD_TEST_DEBUG_AT_CURSOR);
+    const fsDebugTargets = fsDebug
+      .map((lens) => lens.command?.arguments?.[1])
+      .filter((name): name is string => typeof name === 'string');
+    assert.deepStrictEqual(
+      [...fsDebugTargets].sort(),
+      [...runTargets].sort(),
+      'every F# binding offering Run offers Debug, for the same binding',
+    );
+    assert.strictEqual(
+      fsDebugTargets.includes('addsTwoNumbers'),
+      true,
+      'the [<Fact>] binding is a DEBUG target too, not only a run target',
+    );
+    assert.deepStrictEqual(
+      [...new Set(fsDebug.map((lens) => lens.command?.title))],
+      ['$(bug) Debug Test'],
+      'and it renders as the Debug action above the binding',
+    );
+    assert.deepStrictEqual(
+      [...new Set(fsDebug.map((lens) => lens.command?.arguments?.[0]?.toString() ?? ''))],
+      [uri.toString()],
+      'pointing at the .fs file the user has open',
+    );
+
+    // Interaction 3 — no lens targets a name the F# file does not declare: a
+    // lens over the wrong binding runs the wrong test.
+    for (const target of [...runTargets, ...fsDebugTargets]) {
+      assert.strictEqual(
+        FSHARP_TESTS.includes(target),
+        true,
+        `${target} must be a binding this fixture actually declares`,
+      );
+    }
   });
 
   test('disabling sharplsp.testLens.enabled removes the test lenses; re-enabling restores them', async function () {
-    this.timeout(COMMAND_MS);
+    // FOUR scoped configuration writes AND four semantic lens round trips.
+    // `SETTINGS_WRITE_MS` is the tier for repeated settings writes and is the
+    // larger of the two costs; `COMMAND_MS` covered neither.
+    this.timeout(SETTINGS_WRITE_MS);
     const { uri } = await openCSharpFile(tmpDir, 'Toggle.cs', CSHARP_TESTS);
 
     const cfg = vscode.workspace.getConfiguration(TEST_LENS_SECTION);
@@ -475,21 +586,21 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     try {
       // Baseline: lenses present while enabled (default true).
       await cfg.update(TEST_LENS_KEY, true, vscode.ConfigurationTarget.Workspace);
-      const enabledLenses = testLensCommands(await lensesFor(uri));
+      const enabledLenses = testLensCommands(await codeLensesFor(uri));
       assert.ok(enabledLenses.length >= 2, 'lenses present while enabled');
 
       // Disable → the provider returns an empty array, so no test lenses remain.
       await vscode.workspace
         .getConfiguration(TEST_LENS_SECTION)
         .update(TEST_LENS_KEY, false, vscode.ConfigurationTarget.Workspace);
-      const disabledLenses = testLensCommands(await lensesFor(uri));
+      const disabledLenses = testLensCommands(await codeLensesFor(uri));
       assert.strictEqual(disabledLenses.length, 0, 'disabling testLens removes the lenses');
 
       // Re-enable → lenses come back.
       await vscode.workspace
         .getConfiguration(TEST_LENS_SECTION)
         .update(TEST_LENS_KEY, true, vscode.ConfigurationTarget.Workspace);
-      const reEnabledLenses = testLensCommands(await lensesFor(uri));
+      const reEnabledLenses = testLensCommands(await codeLensesFor(uri));
       assert.ok(reEnabledLenses.length >= 2, 're-enabling restores the lenses');
     } finally {
       // Restore the exact prior workspace value (undefined when unset) so the
@@ -501,7 +612,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
   });
 
   test('a non-test C# file produces no test lenses, and the signature parsers agree with discovery', async function () {
-    this.timeout(COMMAND_MS);
+    this.timeout(LSP_RESPONSE_MS);
     const plain = [
       'namespace Sample',
       '{',
@@ -513,7 +624,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       '',
     ].join('\n');
     const { uri } = await openCSharpFile(tmpDir, 'Plain.cs', plain);
-    const lenses = testLensCommands(await lensesFor(uri));
+    const lenses = testLensCommands(await codeLensesFor(uri));
     assert.strictEqual(lenses.length, 0, 'a class with no [Fact]/[Test] yields no test lenses');
 
     // The exported signature parsers drive which method names the lenses target;
