@@ -204,11 +204,54 @@ export class TestStatusLensProvider implements vscode.CodeLensProvider {
   }
 }
 
+/**
+ * `line` with any LEADING attribute groups removed, so a signature sharing a
+ * line with its attributes is still a signature.
+ *
+ * `[Fact] public void Adds()` is idiomatic C# and the shape most xUnit one-line
+ * tests are written in. Rejecting every line that opens with `[` — which is how
+ * a bare `[InlineData(2, 2, 4)]` was kept from reading as a method called
+ * `InlineData` — silently dropped the whole lens for those methods: no status,
+ * no Run, no Debug. Stripping the groups instead keeps the bare attribute line
+ * rejected (nothing is left of it) while letting the combined form through.
+ *
+ * Brackets are counted, not searched for, so an attribute carrying its own
+ * indexer or array type closes where it really closes; a `]` inside a string
+ * argument (`[Fact(Skip = "a]b")]`) is not a bracket at all.
+ */
+function withoutLeadingAttributes(line: string): string {
+  let rest = line.trim();
+  while (rest.startsWith('[')) {
+    const end = attributeGroupEnd(rest);
+    if (end === undefined) return '';
+    rest = rest.slice(end + 1).trim();
+  }
+  return rest;
+}
+
+/** The index of the `]` closing the attribute group `text` opens with. */
+function attributeGroupEnd(text: string): number | undefined {
+  let depth = 0;
+  let quote: string | undefined;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i] ?? '';
+    if (quote !== undefined) {
+      if (ch === '\\') i += 1;
+      else if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '[') depth += 1;
+    else if (ch === ']' && --depth === 0) return i;
+  }
+  return undefined;
+}
+
 /** Extract a C# method name from a line containing a method signature. */
 export function extractCSharpMethodName(line: string): string | undefined {
-  const trimmed = line.trim();
+  const trimmed = withoutLeadingAttributes(line);
   if (
-    trimmed.startsWith('[') ||
+    trimmed === '' ||
     trimmed.startsWith('//') ||
     trimmed.startsWith('/*') ||
     trimmed.startsWith('*') ||
