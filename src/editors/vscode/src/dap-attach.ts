@@ -13,7 +13,20 @@
 // first stop the user sees is their own breakpoint).
 import { isRecord, type DapMessage } from './dap-emulate';
 
-const RETRY_DELAYS_MS: readonly number[] = [500, 1_000, 2_000, 4_000, 8_000, 15_000];
+/**
+ * Backoff for netcoredbg's transient `0x80070057`, PER COMMAND.
+ *
+ * No response reaches VS Code until the ladder is exhausted, so its total is a
+ * hard floor under how long the client can be left waiting. An attach must fit
+ * inside [DEBUG-PERFORMANCE] "Attach to running process | <3s", which is also
+ * the policy DEBUGGING-PLAN 4.3 states (three retries, 500 ms). A watch
+ * expression that answers late is an annoyance; an attach that answers late is
+ * a dead session, so the two no longer share one ladder.
+ */
+const RETRY_DELAYS_MS: Readonly<Record<'attach' | 'evaluate', readonly number[]>> = {
+  attach: [250, 500, 1_000],
+  evaluate: [500, 1_000, 2_000, 4_000],
+};
 
 /**
  * Attach-configuration marker a Test Explorer debug run sets so the router
@@ -58,7 +71,7 @@ class InvalidArgumentRetrier {
   private async run(clientRequest: DapMessage, args: Record<string, unknown>): Promise<void> {
     for (let attempt = 0; !this.host.isClosed(); attempt += 1) {
       const response = await this.host.request(this.command, args);
-      const wait = RETRY_DELAYS_MS[attempt];
+      const wait = RETRY_DELAYS_MS[this.command][attempt];
       if (!isTransientInvalidArgument(response) || wait === undefined) {
         this.deliver(clientRequest, response);
         return;

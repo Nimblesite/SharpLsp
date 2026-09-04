@@ -3,6 +3,7 @@ import type * as cp from 'node:child_process';
 import * as vscode from 'vscode';
 import { retarget } from './dap-exceptions';
 import { isRecord, sourcePathOf, type DapMessage } from './dap-emulate';
+import { isFSharpSource, withClrConditions } from './dap-fsharp-conditions';
 import { BreakpointEmulator } from './dap-breakpoints';
 import { AttachRetrier, type RetryHost } from './dap-attach';
 import { EvaluateEmulator } from './dap-evaluate';
@@ -195,9 +196,8 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         `[dap->] ${String(message.command ?? message.type)} ${JSON.stringify(message.arguments ?? message.body ?? {}).slice(0, 100)}`,
       );
     }
-    const msg: DapMessage = message;
     if (message.type === 'response') {
-      this.onClientResponse(msg);
+      this.onClientResponse(message);
       return;
     }
     const command = typeof message.command === 'string' ? message.command : '';
@@ -206,13 +206,21 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       traceInfo(`[dap->] ${command} ${JSON.stringify(args ?? {}).slice(0, 90)}`);
     }
     const breakpointPath = command === 'setBreakpoints' ? sourcePathOf(args ?? {}) : undefined;
+    // An F# condition is spelled in F#; netcoredbg only evaluates C#. Translate
+    // BEFORE anything records the message, so the replayer re-arms the same
+    // translated breakpoint and the pending-args map holds what was sent.
+    const msg: DapMessage =
+      breakpointPath !== undefined && isFSharpSource(breakpointPath)
+        ? withClrConditions(message)
+        : message;
     this.replayer.observe(msg, breakpointPath);
     if (command === 'setFunctionBreakpoints') this.breakpoints.recordFunctions(args);
     if (command === 'launch' && this.replayer.wantsTerminal()) {
       this.replayer.startTerminalLaunch();
       return;
     }
-    if (this.interceptCommand(msg, command, args, breakpointPath)) return;
+    const sentArgs = isRecord(msg.arguments) ? msg.arguments : undefined;
+    if (this.interceptCommand(msg, command, sentArgs, breakpointPath)) return;
     if (STEP_COMMANDS.includes(command)) {
       this.stepper.begin(msg, command, Number(args?.threadId ?? 0));
       return;
@@ -418,6 +426,15 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       // Frame display names feed the synthesized Statics scope
       // ([DEBUG-FEATURES-VARIABLES] "Static fields | variables | P1").
       this.variables.observeStackTrace(message);
+      // Only a SUCCESSFUL read describes a stack. The correlator resolves a
+      // failed response rather than rejecting, so handing one to StackDelivery
+      // would present a refusal as "this thread has no frames" and send it into
+      // the empty-stack recovery. A refusal is the client's to see.
+      if (message.success === false) {
+        this.pendingStackArgs.delete(requestSeq);
+        this.emit(this.handles.translateResponseBody(message));
+        return;
+      }
       this.stacks.deliver(message, this.pendingStackArgs.get(requestSeq));
       this.pendingStackArgs.delete(requestSeq);
       return;

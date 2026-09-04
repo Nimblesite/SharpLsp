@@ -55,9 +55,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** A configuration field read as a positive integer, or undefined. */
 function positiveInteger(value: unknown): number | undefined {
-  const parsed = typeof value === 'string' ? Number.parseInt(value, 10) : value;
+  const parsed = typeof value === 'string' ? wholeNumber(value.trim()) : value;
   if (typeof parsed !== 'number' || !Number.isInteger(parsed) || parsed <= 0) return undefined;
   return parsed;
+}
+
+/**
+ * A pid spelling is DIGITS ONLY, checked by round-tripping through the same
+ * parser rather than by pattern-matching the text.
+ *
+ * `Number.parseInt` stops at the first non-digit, so '12abc' reads as 12 - and
+ * because a system-owned pid answers EPERM, which counts as alive, a mistyped
+ * or truncated pid resolved to a real attach against an unrelated process.
+ */
+function wholeNumber(text: string): number {
+  const parsed = Number.parseInt(text, 10);
+  return String(parsed) === text ? parsed : Number.NaN;
 }
 
 /** Run a command and resolve with its stdout, or with '' when it fails. */

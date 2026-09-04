@@ -34,14 +34,14 @@ import { error } from './log';
 /** Synthetic frame ids live far above netcoredbg's per-stop counters. */
 const SYNTHETIC_BASE = 0x0f00_0000;
 
-/** How long an empty-stack refetch waits out the attach-pause suspend race. */
-const EMPTY_STACK_REFETCH_MS = 15_000;
-
-/** How many resume-and-repause recovery cycles one empty stack may spend. */
-const MAX_EMPTY_STACK_REPAUSES = 3;
-
-/** Refetch-loop polls spent before each resume-and-repause recovery cycle. */
-const EMPTY_STACK_REPAUSE_POLLS = 8;
+/**
+ * How long an empty-stack refetch waits out the attach-pause suspend race.
+ *
+ * The client gets no `stackTrace` answer until this elapses, so it is bounded
+ * by the race it absorbs - [DEBUG-PERFORMANCE] budgets a whole attach at <3s -
+ * and not by the patience of whoever is waiting.
+ */
+const EMPTY_STACK_REFETCH_MS = 3_000;
 
 /** The poll interval inside that window. */
 const EMPTY_STACK_POLL_MS = 250;
@@ -232,32 +232,18 @@ export class StackDelivery {
         // report an empty stack for a stopped thread before its frames are
         // walkable. One delayed refetch settles the race; a genuinely frameless
         // thread stays empty.
+        // The refetch is PASSIVE: re-probe `threads` so netcoredbg refreshes
+        // its per-thread walk state, then read again. The adapter must never
+        // resume the debuggee to make one of its own reads succeed - a thread
+        // parked in native runtime code stays frameless, and `stackFrames: []`
+        // is the honest answer for it.
         let assembled = await this.logicalStack(threadId);
-        let attempt = 0;
-        let repauses = 0;
         const deadline = Date.now() + EMPTY_STACK_REFETCH_MS;
         while (assembled.length === 0 && Date.now() < deadline) {
           await sleep(EMPTY_STACK_POLL_MS);
-          // netcoredbg refreshes its per-thread walk state on a `threads`
-          // probe; without one it can keep answering an empty stackTrace for
-          // a freshly paused attached thread.
           await this.fetchThreads();
           this.cache.delete(threadId);
           assembled = await this.logicalStack(threadId);
-          attempt += 1;
-          // A pause that lands while the thread is inside native runtime code
-          // (e.g. Thread.Sleep) can leave the stack unwalkable indefinitely.
-          // Bounded resume-and-repause cycles give the runtime further chances
-          // to park the thread somewhere walkable.
-          if (
-            assembled.length === 0 &&
-            repauses < MAX_EMPTY_STACK_REPAUSES &&
-            attempt >= EMPTY_STACK_REPAUSE_POLLS * (repauses + 1)
-          ) {
-            repauses += 1;
-            await this.safeResumePause(threadId);
-            continue;
-          }
         }
         this.emitStack(message, body, args, assembled);
       } catch (cause) {
@@ -265,26 +251,6 @@ export class StackDelivery {
         this.host.emit(this.handles.translateResponseBody(message));
       }
     });
-  }
-
-  /**
-   * One `continue` immediately followed by one `pause`, for the empty-stack
-   * recovery loop. Best-effort in both directions: a thread that exits or
-   * refuses either request simply keeps its current stop.
-   */
-  private async safeResumePause(threadId: number): Promise<void> {
-    try {
-      this.cache.delete(threadId);
-      const resumed = await this.host.request('continue', { threadId });
-      if (resumed.success === false) return;
-      await sleep(EMPTY_STACK_POLL_MS);
-      await this.host.request('pause', { threadId });
-      // Give the adapter a moment to deliver and settle the fresh stop before
-      // the next stack probe.
-      await sleep(EMPTY_STACK_POLL_MS);
-    } catch {
-      // The next poll retries anyway.
-    }
   }
 
   /** One `threads` probe, for the empty-stack refetch loop. */
