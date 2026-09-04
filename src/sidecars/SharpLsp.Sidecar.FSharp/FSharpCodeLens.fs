@@ -43,8 +43,12 @@ let private referenceCount (projResults: FSharpCheckProjectResults) (symbol: FSh
 /// constructions of it, together.
 let private lensesByAnchor (projResults: FSharpCheckProjectResults) (definitions: FSharpSymbolUse[]) =
     definitions
-    |> Array.filter (fun su -> su.Range.FileName <> "")
-    |> Array.groupBy (fun su -> (su.Range.StartLine, su.Range.StartColumn))
+    |> Array.filter (fun su ->
+        let anchor = su.Range
+        anchor.FileName <> "")
+    |> Array.groupBy (fun su ->
+        let anchor = su.Range
+        (anchor.StartLine, anchor.StartColumn))
     |> Array.map (fun ((line, column), group) ->
         { Line = line - 1
           Character = column
