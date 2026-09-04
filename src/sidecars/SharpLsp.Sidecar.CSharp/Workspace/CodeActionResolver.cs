@@ -265,8 +265,28 @@ internal sealed class CodeActionResolver
         foreach (var provider in CachedRefactoringProviders.Value)
         {
             ct.ThrowIfCancellationRequested();
-            await TryRegisterRefactoringAsync(provider, document, span, items, ct)
-                .ConfigureAwait(false);
+            foreach (var query in QuerySpans(span))
+            {
+                await TryRegisterRefactoringAsync(provider, document, query, items, ct)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>The spans one Ctrl-. asks every provider about.</summary>
+    /// <remarks>
+    /// Roslyn finds a refactoring's target with `TryGetRelevantNode`, which needs
+    /// the span to sit inside ONE node, so a selection over an invocation's method
+    /// name resolves to the identifier rather than to the invocation. The
+    /// collapsed caret is asked as well, second, so where both answer the user's
+    /// own selection is the one that survives deduplication.
+    /// </remarks>
+    private static IEnumerable<TextSpan> QuerySpans(TextSpan span)
+    {
+        yield return span;
+        if (!span.IsEmpty)
+        {
+            yield return new TextSpan(span.Start, 0);
         }
     }
 
