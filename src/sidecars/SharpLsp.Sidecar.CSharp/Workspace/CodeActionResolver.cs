@@ -229,7 +229,7 @@ internal sealed class CodeActionResolver
         return new CodeFixContext(
             document,
             diagnostic,
-            (action, _) => CacheAndAdd(action, FixKind(diagnostic.Id), items),
+            (action, _) => CacheAndAdd(action, FixKind(diagnostic.Id), items, null),
             ct
         );
     }
@@ -246,7 +246,7 @@ internal sealed class CodeActionResolver
             .ConfigureAwait(false);
         if (action is not null)
         {
-            CacheAndAdd(action, "refactor.rewrite", items);
+            CacheAndAdd(action, "refactor.rewrite", items, null);
         }
     }
 
@@ -311,7 +311,7 @@ internal sealed class CodeActionResolver
         return new CodeRefactoringContext(
             document,
             span,
-            action => CacheAndAdd(action, RefactoringKind(provider, action), items),
+            action => CacheAndAdd(action, RefactoringKind(provider, action), items, null),
             ct
         );
     }
@@ -341,17 +341,28 @@ internal sealed class CodeActionResolver
             || providerName.Contains("IntroduceField", StringComparison.OrdinalIgnoreCase);
     }
 
-    private void CacheAndAdd(CodeAction action, string kind, List<CodeActionItem> items)
+    private void CacheAndAdd(
+        CodeAction action,
+        string kind,
+        List<CodeActionItem> items,
+        string? parentTitle
+    )
     {
-        if (CacheNestedActions(action, kind, items) || IsDuplicate(action, kind, items))
+        var title = Qualified(parentTitle, action.Title);
+        if (CacheNestedActions(action, kind, items, title) || IsDuplicate(title, kind, items))
         {
             return;
         }
 
-        items.Add(CacheAction(action, kind));
+        items.Add(CacheAction(action, kind, title));
     }
 
-    private bool CacheNestedActions(CodeAction action, string kind, List<CodeActionItem> items)
+    private bool CacheNestedActions(
+        CodeAction action,
+        string kind,
+        List<CodeActionItem> items,
+        string title
+    )
     {
         if (action.NestedActions.IsEmpty)
         {
@@ -360,25 +371,44 @@ internal sealed class CodeActionResolver
 
         foreach (var nested in action.NestedActions)
         {
-            CacheAndAdd(nested, kind, items);
+            CacheAndAdd(nested, kind, items, title);
         }
 
         return true;
     }
 
-    private static bool IsDuplicate(CodeAction action, string kind, List<CodeActionItem> items)
+    /// <summary>
+    /// A flattened child's title, carrying the container it came from.
+    /// </summary>
+    /// <remarks>
+    /// LSP has no submenus, so a nested action arrives in the same flat list as
+    /// every other and its title is all the user reads before choosing. Roslyn
+    /// writes those children as continuations of the parent - "and update call
+    /// sites directly" - which say nothing on their own. A child that already
+    /// names itself is left as it is rather than made to stutter.
+    /// </remarks>
+    private static string Qualified(string? parentTitle, string title)
     {
-        return items.Any(item => item.Title == action.Title && item.Kind == kind);
+        return
+            string.IsNullOrEmpty(parentTitle)
+            || title.StartsWith(parentTitle, StringComparison.Ordinal)
+            ? title
+            : parentTitle + ": " + title;
     }
 
-    private CodeActionItem CacheAction(CodeAction action, string kind)
+    private static bool IsDuplicate(string title, string kind, List<CodeActionItem> items)
+    {
+        return items.Any(item => item.Title == title && item.Kind == kind);
+    }
+
+    private CodeActionItem CacheAction(CodeAction action, string kind, string title)
     {
         var id = Interlocked.Increment(ref _nextId);
         _pendingActions[id] = action;
         return new CodeActionItem
         {
             Id = id,
-            Title = action.Title,
+            Title = title,
             Kind = kind,
             IsPreferred = action.Priority == CodeActionPriority.High,
         };
