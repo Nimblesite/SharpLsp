@@ -219,6 +219,30 @@ type HierarchyItemResult =
       [<Key(5)>] EndLine: int
       [<Key(6)>] EndCharacter: int }
 
+/// One range at which a call appears, inside the item that reports it.
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type CallSiteResult =
+    { [<Key(0)>] Line: int
+      [<Key(1)>] Character: int
+      [<Key(2)>] EndLine: int
+      [<Key(3)>] EndCharacter: int }
+
+/// A hierarchy item plus LSP 3.17's `fromRanges`. Separate from
+/// `HierarchyItemResult` because `prepare` and type hierarchy answer with a bare
+/// item and the MessagePack encoding is positional.
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type CallHierarchyCallResult =
+    { [<Key(0)>] Name: string
+      [<Key(1)>] Kind: string
+      [<Key(2)>] FilePath: string
+      [<Key(3)>] Line: int
+      [<Key(4)>] Character: int
+      [<Key(5)>] EndLine: int
+      [<Key(6)>] EndCharacter: int
+      [<Key(7)>] FromRanges: CallSiteResult array }
+
 // ── Document Symbol Types (nested; wire-compatible with the Rust host) ──
 
 [<MessagePackObject(AllowPrivate = true)>]
@@ -348,6 +372,24 @@ module internal Helpers =
           Character = item.Character
           EndLine = item.EndLine
           EndCharacter = item.EndCharacter }
+
+    /// Map one call-hierarchy call - the item plus its sites - to its wire shape.
+    let toHierCall (call: FSharpHierarchy.HierCall) : CallHierarchyCallResult =
+        { Name = call.Item.Name
+          Kind = call.Item.Kind
+          FilePath = call.Item.FilePath
+          Line = call.Item.Line
+          Character = call.Item.Character
+          EndLine = call.Item.EndLine
+          EndCharacter = call.Item.EndCharacter
+          FromRanges =
+            call.Sites
+            |> List.map (fun s ->
+                { Line = s.Line
+                  Character = s.Character
+                  EndLine = s.EndLine
+                  EndCharacter = s.EndCharacter })
+            |> Array.ofList }
 
     /// Map a document-symbol domain item (and its children) to its wire shape.
     let rec toDocumentSymbol (item: FSharpSymbols.SymbolItem) : DocumentSymbolResult =

@@ -25,6 +25,60 @@ pub struct SidecarHierarchyItem {
     pub end_character: u32,
 }
 
+/// One range at which a call appears, as the sidecars report it.
+#[derive(serde::Deserialize)]
+pub struct SidecarCallSite {
+    /// Start line of the call site.
+    pub line: u32,
+    /// Start character offset within the start line.
+    pub character: u32,
+    /// End line of the call site.
+    pub end_line: u32,
+    /// End character offset within the end line.
+    pub end_character: u32,
+}
+
+/// A caller or callee, together with every range at which the call appears.
+///
+/// Distinct from [`SidecarHierarchyItem`] because only the call-hierarchy
+/// incoming/outgoing replies carry sites; `prepare` and type hierarchy answer
+/// with a bare item, and the `MessagePack` encoding is positional.
+#[derive(serde::Deserialize)]
+pub struct SidecarCallHierarchyCall {
+    /// Display name of the symbol.
+    pub name: String,
+    /// Symbol kind string (e.g. "Function", "Class").
+    pub kind: String,
+    /// Absolute path to the file containing this symbol.
+    pub file_path: String,
+    /// Start line of the symbol range.
+    pub line: u32,
+    /// Start character offset within the start line.
+    pub character: u32,
+    /// End line of the symbol range.
+    pub end_line: u32,
+    /// End character offset within the end line.
+    pub end_character: u32,
+    /// Every range at which the call appears inside this symbol.
+    pub from_ranges: Vec<SidecarCallSite>,
+}
+
+impl SidecarCallHierarchyCall {
+    /// The bare item, for the mapping shared with `prepare` and type hierarchy.
+    #[must_use]
+    pub fn item(&self) -> SidecarHierarchyItem {
+        SidecarHierarchyItem {
+            name: self.name.clone(),
+            kind: self.kind.clone(),
+            file_path: self.file_path.clone(),
+            line: self.line,
+            character: self.character,
+            end_line: self.end_line,
+            end_character: self.end_character,
+        }
+    }
+}
+
 /// Compute the LSP location triple `(uri, range, selection_range)` shared by
 /// call-hierarchy and type-hierarchy item mapping.
 ///
