@@ -14,6 +14,7 @@
 // session against nothing. Both are resolved HERE, before a session is created,
 // so the workbench's `startDebugging` result is the honest answer.
 import { execFile } from 'node:child_process';
+import { delay } from './utils';
 import * as path from 'node:path';
 
 /** How long a process listing may take before the attach is refused. */
@@ -235,13 +236,35 @@ function ambiguousName(name: string, pids: readonly number[]): AttachOutcome {
   };
 }
 
+/**
+ * How long a just-started process is given to appear in the OS process table.
+ *
+ * The same shape as the attach request's own ladder in dap-attach.ts: a short
+ * first look so the common case stays instant, then widening waits.
+ */
+const NAME_RESOLVE_DELAYS_MS: readonly number[] = [0, 250, 500, 1_000];
+
 /** Resolve a `processName` to the single live process it names. */
 async function resolveByName(name: string): Promise<AttachOutcome> {
-  const matched = (await listProcesses(name)).filter(
-    (row) => row.pid !== process.pid && matchesProcessName(row, name),
-  );
-  const pids = matched.map((row) => row.pid);
-  if (pids.length === 0) return noSuchName(name);
+  for (const wait of NAME_RESOLVE_DELAYS_MS) {
+    if (wait > 0) await delay(wait);
+    const outcome = await matchOnce(name);
+    if (outcome !== undefined) return outcome;
+  }
+  return noSuchName(name);
+}
+
+/**
+ * One look at the process table: an answer, or `undefined` for "not yet".
+ *
+ * Ambiguity is an ANSWER and returns immediately — a second match will not
+ * become a single one by waiting, and the user needs telling now.
+ */
+async function matchOnce(name: string): Promise<AttachOutcome | undefined> {
+  const pids = (await listProcesses(name))
+    .filter((row) => row.pid !== process.pid && matchesProcessName(row, name))
+    .map((row) => row.pid);
+  if (pids.length === 0) return undefined;
   const only = pids[0];
   if (pids.length > 1 || only === undefined) return ambiguousName(name, pids);
   return { kind: 'attach', processId: only };

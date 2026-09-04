@@ -12,6 +12,13 @@ export function getErrorMessage(err: unknown): string {
  * part before joining also disposes of the `\r` half of a CRLF, so the result
  * is the same on either platform.
  */
+/** Resolve after `ms` milliseconds — the one delay every poller waits on. */
+export async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export function singleLine(text: string): string {
   return text
     .split('\n')

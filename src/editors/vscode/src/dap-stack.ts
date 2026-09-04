@@ -25,6 +25,7 @@ import {
   type RawFrame,
 } from './dap-frames';
 import { armAsyncDebugging, readAsyncChain, topFrameId, type AsyncChain } from './dap-async-chain';
+import { delay } from './utils';
 import { resolveMethodSource } from './dap-frame-sources';
 import { belongsToUserCode } from './dap-statement';
 import { isRecord, recordList, type DapMessage } from './dap-emulate';
@@ -45,13 +46,6 @@ const EMPTY_STACK_REFETCH_MS = 3_000;
 
 /** The poll interval inside that window. */
 const EMPTY_STACK_POLL_MS = 250;
-
-/** One delayed step, for the empty-stack refetch. */
-async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
 
 /** How deep the full-stack refetch reads. */
 const FULL_STACK_LEVELS = 1_000;
@@ -240,7 +234,7 @@ export class StackDelivery {
         let assembled = await this.logicalStack(threadId);
         const deadline = Date.now() + EMPTY_STACK_REFETCH_MS;
         while (assembled.length === 0 && Date.now() < deadline) {
-          await sleep(EMPTY_STACK_POLL_MS);
+          await delay(EMPTY_STACK_POLL_MS);
           await this.fetchThreads();
           this.cache.delete(threadId);
           assembled = await this.logicalStack(threadId);
