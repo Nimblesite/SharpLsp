@@ -140,7 +140,7 @@ function isVerbatimQuote(text: string, index: number): boolean {
  * strings (`@"..."`, `$@"..."`, `@$"..."`) treat backslash as literal text and
  * `""` as the one quote escape; every other literal escapes with backslash.
  */
-function skipLiteral(text: string, index: number): number {
+export function skipLiteral(text: string, index: number): number {
   const quote = text[index];
   const verbatim = isVerbatimQuote(text, index);
   for (let scan = index + 1; scan < text.length; scan += 1) {
