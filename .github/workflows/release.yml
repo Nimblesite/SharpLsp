@@ -166,7 +166,7 @@ jobs:
         shell: bash
         run: |
           # A cross-compiled target the runner cannot execute gets the layout
-          # check only. Set in shell, not a `${{ }}` env expression: GitHub's
+          # check only. Set in shell, not a templated `env:` value: GitHub's
           # `a && '' || '1'` treats the empty string as falsy and yields '1' for
           # BOTH branches, which would skip the smoke test everywhere.
           if [ "${{ matrix.can_execute }}" != "true" ]; then
