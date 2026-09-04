@@ -177,7 +177,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     deepEq(recorder.errors, [], 'with no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
     eq(recorder.requests('setBreakpoints').length >= 1, true, 'the breakpoints were synced');
-    eq(recorder.responses('launch').length >= 1, true, 'and the launch was answered');
+    eq(recorder.responses('attach').length >= 1, true, 'and the attach was answered');
     eq(recorder.events('exited').length <= 1, true, 'with at most one process exit');
     eq(
       vscode.debug.activeDebugSession === undefined || sessions.ours.length === 1,
@@ -323,9 +323,9 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       'configurationDone was answered successfully',
     );
     eq(
-      recorder.requestedCommands().includes('launch'),
+      recorder.requestedCommands().includes('attach'),
       true,
-      'the assembly debug really launched a process',
+      'the assembly debug really attached to a test host',
     );
     eq(recorder.events('exited').length <= 1, true, 'which exited at most once');
     eq(
@@ -414,14 +414,14 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     deepEq(recorder.errors, [], 'with no adapter transport error');
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
     eq(
-      recorder.responses('launch').length >= 1,
+      recorder.responses('attach').length >= 1,
       true,
-      'the multi-select launched exactly one process',
+      'the multi-select attached to exactly one test host',
     );
     eq(
-      recorder.requestedCommands().filter((command) => command === 'launch').length,
+      recorder.requestedCommands().filter((command) => command === 'attach').length,
       1,
-      'one launch request, not one per selected class',
+      'one attach request, not one per selected class',
     );
     eq(recorder.events('initialized').length, 1, 'behind one handshake');
     eq(recorder.events('exited').length <= 1, true, 'and at most one exit');
@@ -471,7 +471,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
       true,
       'the handshake completed even with nothing to bind',
     );
-    eq(recorder.responses('launch').length >= 1, true, 'the launch was answered');
+    eq(recorder.responses('attach').length >= 1, true, 'the attach was answered');
     eq(recorder.events('exited').length, 1, 'and the debuggee exited exactly once');
     eq(vscode.debug.breakpoints.length, 0, 'with the Breakpoints view still empty');
   });
@@ -528,7 +528,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     deepEq(stubs.log.warningMessages, [], 'and the user was warned about nothing');
     eq(recorder.events('initialized').length, 1, 'one handshake for the whole group');
     eq(
-      recorder.responses('launch').every((response) => response.success),
+      recorder.responses('attach').every((response) => response.success),
       true,
       'answered successfully',
     );
@@ -746,7 +746,7 @@ suite('Debug a SELECTION — class, namespace, assembly and multi-select', () =>
     eq(sessions.ours.length, 1, 'exactly one session for the whole gesture');
     deepEq(recorder.errors, [], 'with no adapter transport error');
     eq(recorder.events('initialized').length, 1, 'one handshake for the namespace debug');
-    eq(recorder.responses('launch').length >= 1, true, 'the launch was answered');
+    eq(recorder.responses('attach').length >= 1, true, 'the attach was answered');
     eq(recorder.events('terminated').length, 1, 'and the session ended exactly once');
     eq(sessions.ours.length, 1, 'with one session for the whole gesture');
   });

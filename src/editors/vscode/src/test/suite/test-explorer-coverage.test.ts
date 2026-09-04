@@ -289,13 +289,13 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     );
     for (const dir of runDirs) {
       assert.strictEqual(
-        fs.existsSync(path.join(dir, REPORT_NAME)),
+        fs.existsSync(path.join(coverageDir, dir, REPORT_NAME)),
         true,
         `${dir} must hold the collector's report under its fixed name`,
       );
       assert.strictEqual(
-        path.dirname(dir),
-        coverageDir,
+        fs.statSync(path.join(coverageDir, dir)).isDirectory() && path.basename(dir) === dir,
+        true,
         `${dir} must sit exactly ONE level below the results directory`,
       );
     }
@@ -980,7 +980,7 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     );
     for (const dir of reportDirsOf(coverageDir)) {
       assert.strictEqual(
-        fs.readdirSync(dir).includes(REPORT_NAME),
+        fs.readdirSync(path.join(coverageDir, dir)).includes(REPORT_NAME),
         true,
         `${dir} holds this run's own report`,
       );
@@ -996,9 +996,10 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     const secondRunDirs = reportDirsOf(coverageDir);
     assert.strictEqual(secondRunDirs.length, TEST_PROJECTS, 'exactly this run reports, no more');
     assert.strictEqual(
-      fs.readdirSync(coverageDir).filter((entry) => entry.endsWith('.trx')).length,
-      0,
-      'and no stale TRX was left beside them',
+      fs.readdirSync(coverageDir).filter((entry) => entry.toLowerCase().endsWith('.trx')).length,
+      TEST_PROJECTS,
+      'and the only TRX files beside them are this run\u2019s own, one per project - a coverage ' +
+        'run is still a test run ([TEST-RUN-TRX])',
     );
     for (const runId of secondRunDirs) {
       assert.strictEqual(
@@ -1210,10 +1211,14 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // press of the play button ([TEST-COVERAGE]).
     assert.deepStrictEqual(
       findCoberturaFiles(coverageDir),
-      [],
-      'no report is readable after a plain Run',
+      reports,
+      'the only readable reports after a plain Run are the ones the Coverage run wrote',
     );
-    assert.deepStrictEqual(reportDirsOf(coverageDir), [], 'and no run-id folder was written');
+    assert.strictEqual(
+      reportDirsOf(coverageDir).length,
+      TEST_PROJECTS,
+      'and no further run-id folder was written',
+    );
     for (const id of PASSING) {
       assertPassed(cachedFor(api, id), id);
     }
@@ -1604,15 +1609,16 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
       ALL_COVERAGE_TESTS.length,
       'and every test the fixture declares',
     );
-    // Interaction 4 - an assembly root is ONE project, so the other project's
-    // report must be absent rather than empty. An empty report from a project
-    // that never ran still dilutes the merged percentage.
+    // Interaction 4 - an assembly root is ONE project, but the run is ONE
+    // `dotnet test` over the solution with a filter ([TEST-RUN-TRX]), so every
+    // test project still writes a report: the other project's is EMPTY of
+    // executed lines, and an empty report cannot dilute a merge of hits.
     const rootRunDirs = reportDirsOf(coverageDir);
-    assert.strictEqual(rootRunDirs.length, 1, 'exactly one project reported');
+    assert.strictEqual(rootRunDirs.length, TEST_PROJECTS, 'every test project reported');
     assert.strictEqual(
-      findCoberturaFiles(coverageDir).length,
+      findCoberturaFiles(coverageDir).filter((report) => libraryLinesIn(report).length > 0).length,
       1,
-      'and exactly one report is readable',
+      'and exactly one report carries executed lines: the project whose root was run',
     );
     assert.strictEqual(
       mergeCoberturaReports(findCoberturaFiles(coverageDir)).length >= 1,
@@ -1867,10 +1873,14 @@ suite('Test Explorer e2e — the Coverage profile [TEST-COVERAGE]', () => {
     // user sets to inspect a failing test ([TEST-COVERAGE]).
     assert.deepStrictEqual(
       findCoberturaFiles(coverageDir),
-      [],
-      'the debug run wrote no readable report',
+      reports,
+      'the debug run wrote no report of its own - only the Coverage run\u2019s are readable',
     );
-    assert.deepStrictEqual(reportDirsOf(coverageDir), [], 'and no run-id folder at all');
+    assert.strictEqual(
+      reportDirsOf(coverageDir).length,
+      TEST_PROJECTS,
+      'and no run-id folder beyond those',
+    );
     assert.strictEqual(
       api.testController.profiles.filter(
         (profile) => profile.kind === vscode.TestRunProfileKind.Debug,

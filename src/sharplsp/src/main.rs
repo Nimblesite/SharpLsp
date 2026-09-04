@@ -677,7 +677,7 @@ fn main_loop(
 const SHUTDOWN_ANSWERED: &str = "sharplsp/shutdownAnswered";
 
 /// Answer `shutdown` the moment it arrives, ahead of whatever the loop is
-/// busy with.
+/// busy with. Implements [SHARPLSP-ARCHITECTURE-TIERS].
 ///
 /// The loop dispatches one message at a time and a semantic request holds it
 /// for the sidecar's whole round trip, so a `shutdown` queued behind one waited

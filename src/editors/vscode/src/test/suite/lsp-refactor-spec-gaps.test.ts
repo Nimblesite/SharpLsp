@@ -130,7 +130,7 @@ const GENERATE_CASES: readonly ActionLifecycleCase[] = [
     snippet: 'public int Value;',
     focus: 'Value',
     title: "Encapsulate field: 'Value' (and use property)",
-    kind: 'refactor',
+    kind: 'refactor.rewrite',
     caretOnly: true,
     presentAfter: ['encapsulate-field-sentinel'],
     absentAfter: ['public int Value;'],

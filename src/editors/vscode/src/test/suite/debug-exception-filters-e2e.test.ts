@@ -13,6 +13,7 @@
 // types, and both the hit and the miss are asserted.
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
+import { filterOptionsFrom } from '../../dap-exceptions.js';
 import { dap } from './debug-dap-kit';
 import {
   CAUGHT_MESSAGE,
@@ -117,6 +118,7 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
     armBreakpoints(fixture, 'main-mode');
     const session = await startDebuggee(debuggee(), { mode: MODE.caught });
     await recorder.waitForStops(1);
+    const beforeFilter = recorder.requests('setExceptionBreakpoints').length;
     await dap(session, 'setExceptionBreakpoints', onlyType(NEVER_THROWN_TYPE));
     const baseline = recorder.stops().length;
 
@@ -151,9 +153,15 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
     // A `setExceptionBreakpoints` whose type list is dropped on the way to the
     // adapter produces exactly this test's passing result for the wrong reason:
     // no filter at all also breaks on nothing.
-    const applied = onlyType(NEVER_THROWN_TYPE);
-    assert.ok(Array.isArray(applied.filterOptions), 'the request carries filterOptions');
-    eq(applied.filterOptions?.length, 1, 'naming exactly one filter');
+    const sent = await recorder.requestAfter('setExceptionBreakpoints', beforeFilter);
+    assert.ok(
+      Array.isArray(sent.args['exceptionOptions']),
+      'the request carries the per-type selection VS Code spells as exceptionOptions',
+    );
+    // The router rewrites that selection into the `filterOptions` netcoredbg
+    // applies; the translation decides which type the adapter is told about.
+    const applied = filterOptionsFrom(sent.args['exceptionOptions']);
+    eq(applied.length, 1, 'naming exactly one filter');
     assert.ok(
       JSON.stringify(applied).includes(NEVER_THROWN_TYPE),
       `the request names ${NEVER_THROWN_TYPE}`,

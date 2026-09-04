@@ -359,9 +359,13 @@ suite('C# real LSP - Ctrl-. adds the missing using [SHARPLSP-FEATURES-REFACTORIN
     await replaceDocumentText(fixture.document, UNKNOWN_TYPE);
 
     // Interaction 1 - an unresolvable name still reports CS0246; the import fix
-    // must not invent a namespace for a type no assembly contains.
+    // must not invent a namespace for a type no assembly contains. The wait
+    // names the type: the previous scenario's CS0246 can still be published
+    // for the text this one replaced.
     const diagnostics = await waitForMatchingDiagnostics(fixture.uri, (items) =>
-      items.some((item) => codeOf(item) === UNRESOLVED),
+      items.some(
+        (item) => codeOf(item) === UNRESOLVED && item.message.includes('NoSuchTypeAnywhere'),
+      ),
     );
     assert.ok(diagnostics.length >= 1, 'the unresolvable type is reported');
     assert.ok(

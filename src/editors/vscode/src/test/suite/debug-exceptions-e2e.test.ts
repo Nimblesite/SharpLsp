@@ -417,9 +417,10 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
   });
 
   // Implements [DEBUG-FEATURES-EXCEPTIONS] with the reactivity every screen in
-  // this project owes: unticking "All Exceptions" mid-session must take effect
-  // on the NEXT throw, not on the next launch.
-  test('unticking every exception filter mid-session silences the next throw', async function () {
+  // this project owes: unticking "All Exceptions" mid-session must reach the
+  // LIVE adapter, not wait for the next launch - and no filter can silence an
+  // UNHANDLED throw, because there is nothing after it to continue to.
+  test('unticking every exception filter mid-session reaches the adapter, and only the crash still stops', async function () {
     this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
@@ -444,21 +445,28 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
       'and it must be sent, not merely remembered',
     );
 
-    // Interaction 3 — continue. The SECOND throw must pass straight through,
-    // and the program must run to its end.
+    // Interaction 3 — continue. The handled throw is behind us and runs to its
+    // catch; the UNHANDLED throw that follows stops whatever the filters say,
+    // and it must be the ONLY further stop.
     const exceptionsSoFar = recorder.stops().filter((entry) => entry.reason === 'exception').length;
-    await vscode.commands.executeCommand(CMD_CONTINUE);
-    await assertRanToCompletion(recorder, 0, 'a session whose exception filters were unticked');
+    const crash = await stepToFrame(recorder, CMD_CONTINUE);
+    assertStopReason(crash.stop, 'exception', 'the crash after every filter was unticked');
+    assertStoppedAt(
+      crash.frame,
+      fixture,
+      'throw-unhandled',
+      'ThrowUnhandled',
+      'the only stop after unticking is the unhandled throw itself',
+    );
     eq(
       recorder.stops().filter((entry) => entry.reason === 'exception').length,
-      exceptionsSoFar,
-      'with every filter unticked, no further throw may stop the debuggee - a filter change ' +
-        'that only takes effect at the next launch is a checkbox that does nothing',
+      exceptionsSoFar + 1,
+      'nothing but the crash may stop the debuggee once every filter is unticked',
     );
     eq(
       recorder.outputText().includes('handled ' + CAUGHT_MESSAGE),
       true,
-      'and the program really did carry on running past the throw',
+      'and the program really did carry on running past the handled throw',
     );
     deepEq(recorder.errors, [], 'with no adapter transport error');
   });

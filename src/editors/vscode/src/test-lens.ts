@@ -26,7 +26,7 @@ import {
  * Each lens also offers "Run Test" and "Debug Test" actions.
  */
 /** What a test's status reads before anything in this session has run it. */
-const NEVER_RUN: CachedTestResult = { outcome: 'notRun', passed: false };
+export const NEVER_RUN: CachedTestResult = { outcome: 'notRun', passed: false };
 
 export class TestStatusLensProvider implements vscode.CodeLensProvider {
   private readonly changeEmitter = new vscode.EventEmitter<void>();

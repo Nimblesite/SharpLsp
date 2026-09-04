@@ -347,8 +347,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
     this.timeout(DEBUG_TEST_MS);
     const { fixture, recorder } = debuggee();
 
-    // Interaction 1 — stop three user frames deep, so there are runtime frames
-    // under them.
+    // Interaction 1 — stop three user frames deep.
     armBreakpoints(fixture, 'add-body');
     const session = await startDebuggee(debuggee(), { mode: MODE.plain, justMyCode: true });
     const [stop] = await recorder.waitForStops(1);
@@ -390,13 +389,20 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       frames.length,
       'every frame in the whole stack carries a DISTINCT handle, or selecting one reads another',
     );
+    // A console app's managed stack bottoms out at Main - netcoredbg reports no
+    // frame beneath it - so "distinguishable" means the walk really reaches
+    // Main and no user frame is presented as runtime code.
+    const bottom = frames[frames.length - 1];
+    assert.ok(bottom, 'the stack has a bottom frame');
     eq(
-      frames.filter((frame) => {
-        return comparablePath(frame.sourcePath) !== comparablePath(fixture.sourceFile);
-      }).length >= 1,
+      methodOf(bottom),
+      'Main',
+      'the walk reaches the entry point - a stack short of Main is truncated',
+    );
+    eq(
+      userFrames.every((frame) => frame.presentationHint !== 'subtle'),
       true,
-      'and the runtime frames really are present beneath them - a stack that stopped at Main ' +
-        'is a truncated stack, not a filtered one',
+      'and no user frame is presented as subtle runtime code',
     );
     assertCleanSession(debuggee(), 'distinguishing user frames');
     // Interaction 4 - Just My Code is a LAUNCH attribute, so it has to have

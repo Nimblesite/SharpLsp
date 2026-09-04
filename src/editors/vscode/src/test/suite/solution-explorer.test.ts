@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  flattenSymbolNames,
   openCSharpFile,
   openSharpLspPanel,
   pollUntilResult,
@@ -1200,10 +1201,10 @@ public class EventSource
             'vscode.executeDocumentSymbolProvider',
             doc.uri,
           )) ?? [],
-        (found) => JSON.stringify(found).includes('NewMethod'),
+        (found) => flattenSymbolNames(found).includes('NewMethod'),
         5_000,
       );
-      const names = JSON.stringify(after);
+      const names = flattenSymbolNames(after);
       assert.ok(names.includes('NewMethod'), 'the renamed member is visible after the refresh');
       assert.strictEqual(names.includes('OldMethod'), false, 'and the old name is gone');
       assert.ok(after.length > 0, 'the outline is not merely empty');
@@ -1558,7 +1559,7 @@ public class EventSource
     const opened = await waitForDocumentSymbols(doc.uri);
     assert.ok(opened.length > 0, 'the source the tree will read really has symbols');
     assert.ok(
-      JSON.stringify(opened).includes('Alpha'),
+      flattenSymbolNames(opened).includes('Alpha'),
       'and the outline names Alpha before the tree is asked',
     );
     assert.strictEqual(doc.isDirty, false, 'the file starts clean on disk');

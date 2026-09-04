@@ -232,10 +232,11 @@ suite('Debug an F# test — backtick names, modules and the at-cursor gesture', 
       'and on a real source line — a zero line is a frame with no PDB mapping',
     );
     deepEq(recorder.errors, [], 'with no adapter transport error');
-    // Interaction 4 - the whole F# stack, not only the two frames the walk
-    // touched. A test host runs the user's code under the xUnit runner, so the
-    // frames beneath must be there and must be distinguishable from the user's.
-    const wholeStack = await stackFrames(requireActive('the F# stack'), stop.threadId);
+    // Interaction 4 - the whole F# stack AT THE HELPER STOP, not only the two
+    // frames the walk touched. A test host runs the user's code under the xUnit
+    // runner, so the frames beneath must be there and must be distinguishable
+    // from the user's. After the step-out the helper frame is gone by design.
+    const wholeStack = frames;
     eq(wholeStack.length >= 2, true, 'an F# helper called from a test is at least two deep');
     eq(
       wholeStack.filter(

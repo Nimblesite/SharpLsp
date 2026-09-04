@@ -16,6 +16,7 @@ import {
   RevealOutputChannelOn,
 } from 'vscode-languageclient/node';
 import { EXTENSION_ID, EXTENSION_NAME, SERVER_BINARY, SERVER_BINARY_WIN } from './constants.js';
+import { getErrorMessage } from './utils.js';
 import * as config from './config.js';
 import * as log from './log.js';
 import { createAnsiStrippingChannel } from './output-filter.js';
@@ -265,4 +266,26 @@ function expandPath(raw: string): string {
   if (!raw.includes('${workspaceFolder}')) return raw;
   const folder = workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
   return raw.replace('${workspaceFolder}', folder);
+}
+
+/** How long a graceful `shutdown` may take before the restart respawns anyway. */
+const RESTART_STOP_TIMEOUT_MS = 10_000;
+
+/**
+ * Restart the server on the user's behalf. Implements [DIST-FAILURE-UX] rule 6.
+ *
+ * `LanguageClient.restart()` is `stop()` then `start()`, and the library's
+ * `stop()` gives `shutdown` two seconds before it throws WITHOUT starting
+ * anything - which turns the recovery command into a way to kill the client.
+ * A hung server is the very reason a user reaches for Restart, so the stop
+ * gets a real budget and the start happens whether or not the old process
+ * bowed out in time.
+ */
+export async function restart(lspClient: LanguageClient): Promise<void> {
+  try {
+    await lspClient.stop(RESTART_STOP_TIMEOUT_MS);
+  } catch (err: unknown) {
+    log.warn(`Graceful stop failed; starting a fresh server anyway: ${getErrorMessage(err)}`);
+  }
+  await lspClient.start();
 }

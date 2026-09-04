@@ -341,7 +341,7 @@ function registerCommands(context: ExtensionContext): void {
       log.info('Restarting server…');
       statusBar.setState(ServerState.Starting);
       try {
-        await lspClient?.restart();
+        if (lspClient !== undefined) await client.restart(lspClient);
         log.info('Server restarted.');
       } catch (err: unknown) {
         const msg = getErrorMessage(err);

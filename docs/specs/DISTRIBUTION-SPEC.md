@@ -104,7 +104,7 @@ Whenever activation cannot deliver a working language server — for any reason,
 3. **Every failure surfaces a non-modal `vscode.window.showErrorMessage(…)`** with at minimum a `[Show Log]` button that calls `log.output().show()`. Where applicable, additional informational links MAY be added (`[Open dot.net]`, `[Retry]`, `[Reinstall]`). Buttons are convenience links, never required actions.
 4. **The status bar MUST move to `ServerState.Error`** so the persistent indicator reflects the degraded state.
 5. **The error message MUST name the failure mode in plain language** ("required binaries are missing or version-mismatched", ".NET 10 install failed", "language server crashed during startup") — never just dump a stack trace into the toast. The full diagnostic text goes to the output channel reachable via `[Show Log]`.
-6. **Recovery commands MUST be registered** so the user can re-attempt without uninstalling. Examples: `sharplsp.retryDotnetAcquisition`, `sharplsp.restartServer`. These appear in the command palette under the `SharpLsp:` category.
+6. **Recovery commands MUST be registered** so the user can re-attempt without uninstalling. Examples: `sharplsp.retryDotnetAcquisition`, `sharplsp.restartServer`. These appear in the command palette under the `SharpLsp:` category. `sharplsp.restartServer` MUST start a fresh server even when the old one does not answer `shutdown` in time — a hung server is exactly when a user reaches for it.
 
 **Implementation reference:**
 - `src/editors/vscode/src/result.ts` — `Result<T, E>`, `ok`, `err`.

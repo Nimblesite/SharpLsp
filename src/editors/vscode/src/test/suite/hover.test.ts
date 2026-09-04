@@ -288,8 +288,10 @@ suite('Hover / Quick Info', () => {
     // "position is whitespace or comment" as one row, and the tree-sitter
     // pre-validation of [HOVER-ROUTING] is what makes it a sub-millisecond
     // rejection instead of a sidecar round trip on every mouse move.
+    // Line 4 is the empty line before the namespace; 7:2 is inside the
+    // indentation of the class line. Line 5 is the `namespace` keyword itself.
     const document = await vscode.workspace.openTextDocument(uri);
-    for (const blank of [new vscode.Position(4, 0), new vscode.Position(5, 0)]) {
+    for (const blank of [new vscode.Position(4, 0), new vscode.Position(7, 2)]) {
       const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
         'vscode.executeHoverProvider',
         uri,
@@ -297,7 +299,7 @@ suite('Hover / Quick Info', () => {
       );
       assert.ok(
         hovers === undefined || hovers.length === 0,
-        `a blank line ${blank.line} must produce no hover`,
+        `whitespace at ${blank.line}:${blank.character} must produce no hover`,
       );
     }
 

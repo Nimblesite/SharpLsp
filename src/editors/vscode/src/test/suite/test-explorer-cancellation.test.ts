@@ -1029,6 +1029,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     const { afterStop } = await runAndStop(vscode.TestRunProfileKind.Run, itemsFor(api, ALL_TESTS));
     assert.ok(afterStop < STOP_BUDGET_MS, `the run was cancelled: ${String(afterStop)}ms`);
     await assertIdlePromptly('before re-running');
+    const baseline = new Map(api.testController.cachedResults);
 
     // Interaction 2 — press ▶ again, on the fast test alone. It must actually
     // run, and promptly.
@@ -1070,15 +1071,20 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'and the tree still holds every test',
     );
     // Interaction 4 - and the recovery run's results are REAL, not carried over
-    // from the cancelled one. A cache that survived the kill would report the
-    // suppressed run's outcomes as if they had happened.
+    // from the cancelled one. The long tests were not selected, so the kill
+    // must not have left them an outcome and ▶ must not have touched them.
     for (const each of LONG_TESTS) {
-      assert.strictEqual(
-        cachedFor(api, each.fqn).outcome,
-        'passed',
-        `${each.fqn} reports a real outcome from the recovery run's TRX report`,
+      assert.deepStrictEqual(
+        api.testController.getResult(each.fqn),
+        baseline.get(each.fqn),
+        `${each.fqn} was not selected, so the recovery run leaves its entry exactly as it was`,
       );
-      assert.strictEqual(marked(each.finished), true, `${each.fqn} really ran to its end`);
+      assert.notStrictEqual(
+        api.testController.getResult(each.fqn)?.outcome,
+        'failed',
+        `${each.fqn} must not be reported FAILED by a run that was killed`,
+      );
+      assert.strictEqual(marked(each.finished), false, `${each.fqn} never ran to its end`);
     }
     assert.strictEqual(
       cachedFor(api, FAST_TEST).outcome,
@@ -1240,8 +1246,16 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // invent nor retract a result. The run already reported; cancelling a
     // finished run is a no-op the user cannot distinguish from doing nothing.
     for (const each of LONG_TESTS) {
-      assert.strictEqual(marked(each.started), true, `${each.fqn} had already started`);
-      assert.strictEqual(marked(each.finished), true, 'and already finished');
+      assert.strictEqual(
+        marked(each.started),
+        false,
+        `${each.fqn} was never selected, so a late Stop has nothing of it to retract`,
+      );
+      assert.deepStrictEqual(
+        api.testController.getResult(each.fqn),
+        baseline.get(each.fqn),
+        `and ${each.fqn}'s entry is exactly as it was before the run`,
+      );
     }
     await assertIdlePromptly('after a late Stop');
     assert.deepStrictEqual(
@@ -1788,13 +1802,16 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     // killed and reported nothing. Never both, and never a fabricated outcome.
     await assertIdlePromptly('after a Stop that raced the run');
     for (const each of LONG_TESTS) {
-      const finished = marked(each.finished);
-      const outcome = cachedFor(api, each.fqn).outcome;
+      const outcome = api.testController.getResult(each.fqn)?.outcome;
       assert.strictEqual(
-        finished || outcome !== 'passed',
-        true,
-        `${each.fqn} reports a PASS only if it really ran to its end - a pass for a test the ` +
-          'run killed is an outcome nobody produced',
+        marked(each.finished),
+        false,
+        `${each.fqn} was not selected, so neither landing of the race ran it to its end`,
+      );
+      assert.deepStrictEqual(
+        api.testController.getResult(each.fqn),
+        baseline.get(each.fqn),
+        `${each.fqn}'s last known result is exactly what it was before the race`,
       );
       assert.notStrictEqual(
         outcome,

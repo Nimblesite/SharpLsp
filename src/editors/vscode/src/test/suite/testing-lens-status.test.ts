@@ -38,7 +38,12 @@ import type { SharpLspExtensionApi } from '../../extension.js';
 import { formatDuration } from '../../test-lens.js';
 import { createSolution, warmDiscovery } from './dotnet-project-kit';
 import { codeLensesFor, warmCodeLensPath } from './code-lens-kit';
-import { fixtureFor, LIBRARY_TEST, writeCoverageFixture } from './test-explorer-fixtures';
+import {
+  fixtureFor,
+  LIBRARY_TEST,
+  LIBRARY_TESTS_FILE,
+  writeCoverageFixture,
+} from './test-explorer-fixtures';
 import {
   activateTestExplorer,
   drainDiscovery,
@@ -146,6 +151,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
   let root: string;
   let csFile: vscode.Uri;
   let fsFile: vscode.Uri;
+  let libraryTestsFile: vscode.Uri;
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
@@ -154,6 +160,7 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     const slnPath = await createSolution(root, 'LensStatus', writeCoverageFixture(root));
     csFile = vscode.Uri.file(path.join(root, CS.projectName, CS.sourceFileName));
     fsFile = vscode.Uri.file(path.join(root, FSX.projectName, FSX.sourceFileName));
+    libraryTestsFile = vscode.Uri.file(path.join(root, CS.projectName, LIBRARY_TESTS_FILE));
     assert.strictEqual(fs.existsSync(csFile.fsPath), true, 'the C# fixture source is on disk');
     assert.strictEqual(fs.existsSync(fsFile.fsPath), true, 'the F# fixture source is on disk');
 
@@ -1231,8 +1238,9 @@ suite('Test Status Lens e2e — the last known result, above the method', () => 
     );
 
     // Interaction 2 — every discovered C# test has a lens, addressed by the
-    // method name the tree's id ends in.
-    const csLenses = await codeLensesFor(csFile);
+    // method name the tree's id ends in. The C# project declares its tests in
+    // TWO files, and a lens lives above the method in the file that declares it.
+    const csLenses = [...(await codeLensesFor(csFile)), ...(await codeLensesFor(libraryTestsFile))];
     const csMethods = lensedMethods(csLenses);
     for (const id of csIds) {
       eq(

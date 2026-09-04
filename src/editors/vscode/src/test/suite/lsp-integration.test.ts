@@ -606,7 +606,6 @@ suite('LSP Integration — Selection Ranges', () => {
 
     // Interaction 2 — the innermost level is the class NAME, and expanding
     // reaches the class declaration itself.
-    assert.strictEqual(doc.getText(chain.range), 'MyClass', 'the first level selects the name');
     const texts: string[] = [];
     for (
       let current: vscode.SelectionRange | undefined = chain;
@@ -615,9 +614,19 @@ suite('LSP Integration — Selection Ranges', () => {
     ) {
       texts.push(doc.getText(current.range));
     }
+    // VS Code merges its own word and bracket providers into the chain, so the
+    // innermost level may be a word part; the identifier is a level of its own.
+    assert.ok(
+      texts.includes('MyClass'),
+      `one level selects the name alone; got ${JSON.stringify(texts)}`,
+    );
     assert.ok(
       texts.some((text) => text.includes('void M()')),
       'expanding must reach the whole class body',
+    );
+    assert.ok(
+      texts.indexOf('MyClass') < texts.findIndex((text) => text.includes('void M()')),
+      'and the name comes before the declaration that contains it',
     );
     assert.ok(depth >= 3, `name, class, namespace at least; got ${depth} levels`);
 

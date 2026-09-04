@@ -15,6 +15,7 @@ import * as vscode from 'vscode';
 import {
   EXTENSION_ID,
   closeAllEditors,
+  flattenSymbolNames,
   loadFixtureSolution,
   openCSharpFile,
   openSharpLspPanel,
@@ -38,7 +39,9 @@ import {
   languageEntries,
   languageNamed,
   manifestVersion,
+  nlsResolved,
   sharpLspExtension,
+  viewIds,
 } from './extension-manifest-kit';
 import {
   ACTIVATION_MS,
@@ -78,7 +81,12 @@ suite('Extension Activation & Configuration', () => {
       `exactly one ${EXTENSION_ID} in the host, not ${listed.length}`,
     );
     const ext = sharpLspExtension();
-    assert.strictEqual(listed[0], ext, 'getExtension must hand back the object the host lists');
+    assert.strictEqual(
+      listed[0]?.id,
+      ext.id,
+      'getExtension must hand back the extension the host lists',
+    );
+    assert.strictEqual(listed[0]?.extensionPath, ext.extensionPath, 'installed at the same path');
     assert.strictEqual(ext.id, EXTENSION_ID, 'the resolved extension carries the id we asked for');
 
     // Interaction 2 — the id is publisher.name, and both halves come from the manifest.
@@ -173,8 +181,15 @@ suite('Extension Activation & Configuration', () => {
     // Interaction 3 — no sharplsp command is registered without being declared,
     // which is how a command becomes invisible in the palette.
     const declared = new Set(commandEntries().map((command) => command.command));
+    // VS Code itself registers `<view>.focus`, `.open`, `.toggleVisibility` and
+    // friends for every contributed view; those are the host's, not ours.
+    const hostOwned = (id: string): boolean => viewIds().some((view) => id.startsWith(`${view}.`));
     const undeclared = palette.filter(
-      (id) => id.startsWith('sharplsp.') && !declared.has(id) && !id.startsWith('sharplsp._'),
+      (id) =>
+        id.startsWith('sharplsp.') &&
+        !declared.has(id) &&
+        !id.startsWith('sharplsp._') &&
+        !hostOwned(id),
     );
     assert.deepStrictEqual(undeclared, [], 'every registered sharplsp command must be declared');
     assert.ok(declared.has('sharplsp.restartServer'), 'restartServer is among the declared set');
@@ -343,9 +358,9 @@ suite('Extension Activation & Configuration', () => {
     const manifest = packageJson();
     assert.strictEqual(manifest.displayName, 'SharpLsp', "Display name should be 'SharpLsp'");
     assert.strictEqual(
+      nlsResolved(authoredPackageJson().displayName),
       manifest.displayName,
-      authoredPackageJson().displayName,
-      'the loaded manifest and the authored one must agree on the display name',
+      'the authored manifest names it through package.nls.json, and resolves to the loaded name',
     );
 
     // Interaction 2 — it carries the marketplace copy that goes with the name.
@@ -385,7 +400,7 @@ suite('Extension Activation & Configuration', () => {
     const symbols = await waitForDocumentSymbols(csUri);
     assert.ok(symbols.length > 0, 'the csharp language must be served, not merely declared');
     assert.ok(
-      JSON.stringify(symbols).includes('Calculator'),
+      flattenSymbolNames(symbols).includes('Calculator'),
       'and the served symbols must describe THIS document',
     );
 
@@ -903,9 +918,9 @@ suite('Extension Activation & Configuration', () => {
     );
     for (const command of authored) {
       assert.strictEqual(
-        command.category,
+        nlsResolved(command.category),
         'SharpLsp',
-        `${command.command} must be AUTHORED under the SharpLsp category`,
+        `${command.command} must be AUTHORED under the SharpLsp category, via package.nls.json`,
       );
     }
     assert.deepStrictEqual(

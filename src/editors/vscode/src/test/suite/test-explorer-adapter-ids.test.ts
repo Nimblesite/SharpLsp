@@ -39,7 +39,7 @@ import {
 } from '../../test-discovery.js';
 import { buildFilterArgs } from '../../test-execution.js';
 import { filterClause } from '../../test-filter.js';
-import { findTestByMethodName, statusLensTitle } from '../../test-lens.js';
+import { NEVER_RUN, findTestByMethodName, statusLensTitle } from '../../test-lens.js';
 import {
   createSolution,
   dotnet,
@@ -675,7 +675,17 @@ suite('Test Explorer — adapter-decorated names become BARE test ids', () => {
     // reads as a STATE. "No result reported" is the text a broken id produces,
     // and it is never one of the states ([TEST-STATUS-LENS]).
     for (const id of EXPECTED) {
-      const rendered = statusLensTitle(cachedFor(api, id));
+      assert.strictEqual(
+        api.testController.getResult(id),
+        undefined,
+        `${id} has not run in this session, so nothing is cached for it yet`,
+      );
+      const rendered = statusLensTitle(api.testController.getResult(id) ?? NEVER_RUN);
+      assert.strictEqual(
+        rendered,
+        '$(circle-slash) Not run',
+        `${id} reads as never run, the state the provider renders before any run`,
+      );
       assert.strictEqual(
         rendered.includes(NO_RESULT),
         false,

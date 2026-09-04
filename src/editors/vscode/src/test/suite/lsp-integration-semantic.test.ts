@@ -324,16 +324,30 @@ suite('LSP Integration — Real Semantic LSP', () => {
     // in argument order, and are tagged as Parameter hints so the editor can
     // style and toggle them independently of type hints.
     const onCall = hints.filter((hint) => hint.position.line === ADD_CALL.line);
-    assert.ok(onCall.length >= 2, `the two-argument call takes two hints, got ${onCall.length}`);
-    const columns = onCall.map((hint) => hint.position.character);
+    const parameters = onCall.filter((hint) => hint.kind === vscode.InlayHintKind.Parameter);
+    assert.ok(
+      parameters.length >= 2,
+      `the two-argument call takes two parameter hints, got ${parameters.length}`,
+    );
+    const columns = parameters.map((hint) => hint.position.character);
     assert.deepStrictEqual(
       [...columns].sort((l, r) => l - r),
       columns,
       'hints arrive in argument order',
     );
     assert.ok(
-      onCall.every((hint) => hint.kind === vscode.InlayHintKind.Parameter),
-      'a parameter-name hint must be tagged Parameter, not Type',
+      parameters.every((hint) => inlayHintLabelText(hint).trimEnd().endsWith(':')),
+      'a parameter-name hint renders as `name:`',
+    );
+    // `var total` earns an inferred-TYPE hint on the same line; that is the
+    // only other kind allowed there, and it must be tagged so it can be toggled
+    // independently of the parameter names.
+    assert.ok(
+      onCall.every(
+        (hint) =>
+          hint.kind === vscode.InlayHintKind.Parameter || hint.kind === vscode.InlayHintKind.Type,
+      ),
+      'every hint on the call line is a Parameter or the `var` Type hint, never untagged',
     );
   });
 });
@@ -386,7 +400,7 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
     // Interaction 2 — Ctrl-. over the identifier offers actions. An empty list
     // is the "lightbulb never appears" defect [SHARPLSP-FEATURES-REFACTORING]
     // makes a P0.
-    const range = new vscode.Range(new vscode.Position(6, 12), new vscode.Position(6, 18));
+    const range = new vscode.Range(new vscode.Position(6, 19), new vscode.Position(6, 25));
     const actions = await pollUntilResult(
       async () =>
         (await vscode.commands.executeCommand<vscode.CodeAction[]>(

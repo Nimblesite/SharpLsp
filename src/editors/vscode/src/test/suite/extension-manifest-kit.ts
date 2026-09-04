@@ -146,7 +146,7 @@ export function assertReachableCommand(id: string, palette: readonly string[]): 
 
 /**
  * A setting is CONTRIBUTED: inspectable, documented, typed, defaulted to the
- * spec's value, and unset at rest so the default is what a fresh install sees.
+ * spec's value, and at rest reading as that default - what a fresh install sees.
  */
 export function assertContributedSetting(key: string, expectedDefault: unknown): ConfigProperty {
   const section = key.slice(0, key.lastIndexOf('.'));
@@ -159,10 +159,12 @@ export function assertContributedSetting(key: string, expectedDefault: unknown):
     undefined,
     `${key} must be unset at user scope at rest`,
   );
-  assert.strictEqual(
-    inspected.workspaceValue,
-    undefined,
-    `${key} must be unset at workspace scope at rest`,
+  // The fixture workspace pins a few settings to their own defaults so a stale
+  // user profile cannot drift them; to the extension that is the same as unset.
+  assert.deepStrictEqual(
+    inspected.workspaceValue ?? expectedDefault,
+    expectedDefault,
+    `${key} must be unset at workspace scope at rest, or pinned to its default`,
   );
   assert.deepStrictEqual(
     vscode.workspace.getConfiguration(section).get(leaf),
@@ -250,4 +252,31 @@ export function manifestVersion(): string {
   assert.match(version, /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/, 'version must be semver');
   assert.ok(!version.startsWith('v'), 'the stamped version carries no leading v');
   return version;
+}
+
+/** The ids of every contributed view, across every container. */
+export function viewIds(): string[] {
+  const views: Record<string, { id: string }[]> = contributes().views ?? {};
+  return Object.values(views)
+    .flat()
+    .map((view) => view.id);
+}
+
+/** The strings the authored manifest refers to as `%key%`. */
+function nlsStrings(): Record<string, string> {
+  const nls = path.resolve(__dirname, '../../..', 'package.nls.json');
+  assert.ok(fs.existsSync(nls), `the authored manifest's strings must exist at ${nls}`);
+  return JSON.parse(fs.readFileSync(nls, 'utf-8'));
+}
+
+/**
+ * An authored manifest value with its `%key%` resolved through package.nls.json
+ * the way VS Code resolves it at load time; any other value passes through.
+ */
+export function nlsResolved(value: unknown): unknown {
+  if (typeof value !== 'string' || !value.startsWith('%') || !value.endsWith('%')) return value;
+  const key = value.slice(1, -1);
+  const resolved = nlsStrings()[key];
+  assert.ok(resolved !== undefined, `package.nls.json must define ${key}`);
+  return resolved;
 }
