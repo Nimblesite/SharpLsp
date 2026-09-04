@@ -437,6 +437,24 @@ pub fn is_comment_at_position(tree: &Tree, position: Position) -> bool {
         .is_some_and(|node| node.kind() == "comment")
 }
 
+/// Whether a position has no symbol under it at all: whitespace, or a comment.
+///
+/// [HOVER-ERRORS] names "position is whitespace or comment" as one refusal, and
+/// [HOVER-ROUTING] makes it a tree-sitter pre-validation so it costs a syntax
+/// lookup rather than a sidecar round trip on every mouse move. Only the
+/// comment half was implemented, so hovering blank space paid the full trip and
+/// could pop a tooltip over nothing.
+///
+/// Whitespace is read off the tree rather than the text: the smallest node
+/// containing a point inside a TOKEN is that token, a leaf, while a point
+/// between tokens resolves to the enclosing construct, which has children.
+pub fn has_no_symbol_at_position(tree: &Tree, position: Position) -> bool {
+    let point = lsp_pos_to_ts_point(position);
+    tree.root_node()
+        .descendant_for_point_range(point, point)
+        .is_some_and(|node| node.kind() == "comment" || node.child_count() > 0)
+}
+
 /// Check if a position is on a string literal node (tree-sitter pre-validation).
 ///
 /// Returns `true` when the position falls inside a string literal, allowing

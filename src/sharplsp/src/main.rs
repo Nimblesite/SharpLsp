@@ -734,8 +734,8 @@ fn handle_request(
             semantic::handle_completion_resolve(req, runtime, sidecar)
         }
         HoverRequest::METHOD => {
-            if handlers::is_hover_on_comment(&req, trees) {
-                info!("Hover: skipped (comment position)");
+            if handlers::hover_has_no_symbol(&req, trees) {
+                info!("Hover: skipped (whitespace or comment position)");
                 Ok(serde_json::Value::Null)
             } else {
                 let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);
