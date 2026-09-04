@@ -93,7 +93,15 @@ export class AdapterWire {
       this.queued.push(message);
       return;
     }
-    if (this.child.stdin.destroyed || !this.child.stdin.writable) return;
+    if (this.child.stdin.destroyed || !this.child.stdin.writable) {
+      // Same death as the throw below, and it must be reported the same way:
+      // returning quietly drops the frame with no response and no `terminated`,
+      // and a dropped `disconnect` is a session the user cannot close.
+      // `onGone` is guarded to fire once, so a clean exit that already reported
+      // itself passes through here as a no-op.
+      this.host.onGone('stdin closed before the frame could be written');
+      return;
+    }
     const body = JSON.stringify(message);
     const frame = `${CONTENT_LENGTH}${String(Buffer.byteLength(body))}${HEADER_END}${body}`;
     // `write` can also throw SYNCHRONOUSLY once the stream has been destroyed.
