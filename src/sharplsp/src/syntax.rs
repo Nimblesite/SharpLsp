@@ -127,26 +127,7 @@ fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<DocumentSymbol> {
 /// without nesting subsequent type declarations as children — they appear
 /// as siblings at the root level. Detect this and move them inside.
 fn reparent_file_scoped_members(symbols: Vec<DocumentSymbol>) -> Vec<DocumentSymbol> {
-    let ns_count = symbols
-        .iter()
-        .filter(|s| s.kind == SymbolKind::NAMESPACE)
-        .count();
-    let has_root_types = symbols.iter().any(|s| s.kind != SymbolKind::NAMESPACE);
-
-    if ns_count != 1 || !has_root_types {
-        return symbols;
-    }
-
-    let ns_has_types = symbols
-        .iter()
-        .find(|s| s.kind == SymbolKind::NAMESPACE)
-        .is_some_and(|ns| {
-            ns.children
-                .as_ref()
-                .is_some_and(|c| c.iter().any(|child| child.kind != SymbolKind::NAMESPACE))
-        });
-
-    if ns_has_types {
+    if !is_file_scoped_shape(&symbols) {
         return symbols;
     }
 
@@ -155,11 +136,49 @@ fn reparent_file_scoped_members(symbols: Vec<DocumentSymbol>) -> Vec<DocumentSym
         .partition(|s| s.kind == SymbolKind::NAMESPACE);
 
     if let Some(ns) = namespaces.first_mut() {
-        let children = ns.children.get_or_insert_with(Vec::new);
-        children.extend(types);
+        adopt_members(ns, types);
     }
 
     namespaces
+}
+
+/// Whether the outline has the file-scoped shape: exactly one namespace, which
+/// holds no type of its own, with type declarations stranded beside it.
+fn is_file_scoped_shape(symbols: &[DocumentSymbol]) -> bool {
+    let ns_count = symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::NAMESPACE)
+        .count();
+    let has_root_types = symbols.iter().any(|s| s.kind != SymbolKind::NAMESPACE);
+    ns_count == 1 && has_root_types && !namespace_holds_a_type(symbols)
+}
+
+/// Whether the single namespace already nests a type, meaning the grammar
+/// produced the block-scoped shape and nothing needs moving.
+fn namespace_holds_a_type(symbols: &[DocumentSymbol]) -> bool {
+    symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::NAMESPACE)
+        .and_then(|ns| ns.children.as_ref())
+        .is_some_and(|c| c.iter().any(|child| child.kind != SymbolKind::NAMESPACE))
+}
+
+/// Move the stranded types under the namespace, WIDENING it to enclose them.
+///
+/// The `file_scoped_namespace_declaration` node spans `namespace X;` and
+/// nothing more, so every adopted type starts after its end. LSP 3.17 defines
+/// `range` as "the range enclosing this symbol", and clients turn that into a
+/// containment test - the breadcrumb and "reveal in outline" both ask which
+/// symbol contains the cursor - so a parent that adopts children has to grow to
+/// cover them. `selection_range` still names the identifier and remains inside.
+fn adopt_members(namespace: &mut DocumentSymbol, types: Vec<DocumentSymbol>) {
+    if let Some(end) = types.iter().map(|t| t.range.end).max() {
+        namespace.range.end = namespace.range.end.max(end);
+    }
+    namespace
+        .children
+        .get_or_insert_with(Vec::new)
+        .extend(types);
 }
 
 // ── Folding Ranges ────────────────────────────────────────────────

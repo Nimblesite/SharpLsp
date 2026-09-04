@@ -28,6 +28,29 @@ let private isLensable (su: FSharpSymbolUse) : bool =
         | :? FSharpMemberOrFunctionOrValue as mfv -> mfv.IsModuleValueOrMember
         | _ -> false)
 
+/// References to one definition symbol, excluding the definition itself.
+let private referenceCount (projResults: FSharpCheckProjectResults) (symbol: FSharpSymbol) : int =
+    projResults.GetUsesOfSymbol(symbol)
+    |> Array.filter (fun u -> not u.IsFromDefinition)
+    |> Array.length
+
+/// One lens per ANCHOR, summing the counts of every definition that shares it.
+///
+/// `type Greeter(greeting: string)` is two definitions at one range — the
+/// entity and its primary constructor — and emitting a lens for each stacked
+/// "0 references | 1 reference" above a single declaration. Summing them is
+/// what Roslyn's count for a class already is: uses of the name and
+/// constructions of it, together.
+let private lensesByAnchor (projResults: FSharpCheckProjectResults) (definitions: FSharpSymbolUse[]) =
+    definitions
+    |> Array.filter (fun su -> su.Range.FileName <> "")
+    |> Array.groupBy (fun su -> (su.Range.StartLine, su.Range.StartColumn))
+    |> Array.map (fun ((line, column), group) ->
+        { Line = line - 1
+          Character = column
+          Title = group |> Array.sumBy (fun su -> referenceCount projResults su.Symbol) |> formatTitle })
+    |> Array.toList
+
 /// Get reference-count lenses for every top-level definition in a file.
 let getCodeLenses (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: string) =
     task {
@@ -40,26 +63,11 @@ let getCodeLenses (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: strin
                 match proj with
                 | None -> return []
                 | Some projResults ->
-                    let definitions =
+                    return
                         checkResults.GetAllUsesOfAllSymbolsInFile()
                         |> Seq.filter isLensable
                         |> Seq.toArray
-                    return
-                        definitions
-                        |> Array.choose (fun (su: FSharpSymbolUse) ->
-                            let r = su.Range
-                            if r.FileName = "" then
-                                None
-                            else
-                                let refCount =
-                                    projResults.GetUsesOfSymbol(su.Symbol)
-                                    |> Array.filter (fun u -> not u.IsFromDefinition)
-                                    |> Array.length
-                                Some
-                                    { Line = r.StartLine - 1
-                                      Character = r.StartColumn
-                                      Title = formatTitle refCount })
-                        |> Array.toList
+                        |> lensesByAnchor projResults
         with ex ->
             Log.Debug(ex, "[F# CodeLens] failed")
             return []

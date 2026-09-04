@@ -28,6 +28,13 @@ pub struct SidecarHierarchyItem {
 /// Compute the LSP location triple `(uri, range, selection_range)` shared by
 /// call-hierarchy and type-hierarchy item mapping.
 ///
+/// Both sidecars report a symbol's DECLARATION location — Roslyn's
+/// `ISymbol.Locations` and FCS's `DeclarationLocation` are the identifier
+/// span, not the whole declaration — so that one span is both the item's
+/// `range` and the `selectionRange` LSP 3.17 says "should be selected and
+/// revealed when this symbol is being picked, e.g. the name of a function".
+/// A zero-width selection at the start column selected nothing at all.
+///
 /// Returns `None` when the sidecar's file path cannot be parsed into a URI.
 pub fn hierarchy_item_location(item: &SidecarHierarchyItem) -> Option<(Uri, Range, Range)> {
     let parsed_uri = path_to_lsp_uri(&item.file_path).ok()?;
@@ -35,11 +42,7 @@ pub fn hierarchy_item_location(item: &SidecarHierarchyItem) -> Option<(Uri, Rang
         Position::new(item.line, item.character),
         Position::new(item.end_line, item.end_character),
     );
-    let selection_range = Range::new(
-        Position::new(item.line, item.character),
-        Position::new(item.line, item.character),
-    );
-    Some((parsed_uri, range, selection_range))
+    Some((parsed_uri, range, range))
 }
 
 /// Request identifying a position in a file, sent to a sidecar. Serialized as a

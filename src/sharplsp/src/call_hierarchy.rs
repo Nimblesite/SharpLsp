@@ -236,8 +236,10 @@ mod tests {
         assert_eq!(mapped.uri.as_str(), NATIVE_FILE_URI);
         assert_eq!(mapped.range.start, Position::new(10, 4));
         assert_eq!(mapped.range.end, Position::new(10, 14));
-        assert_eq!(mapped.selection_range.start, Position::new(10, 4));
-        assert_eq!(mapped.selection_range.end, Position::new(10, 4));
+        // The sidecar's span IS the identifier, so the selection covers it in
+        // full rather than collapsing to a caret at its start.
+        assert_eq!(mapped.selection_range, mapped.range);
+        assert_eq!(mapped.selection_range.end, Position::new(10, 14));
     }
 
     #[test]
