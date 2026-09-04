@@ -27,6 +27,17 @@ import { err, ok, type Result } from './result';
 export const INTERPRETER_ARGS: readonly string[] = ['--interpreter=vscode'];
 
 /**
+ * How much of a DAP payload one trace line carries.
+ *
+ * The trace exists to answer "what did we send, and what came back". Four
+ * different truncations, the widest at 100 characters, cut a `setBreakpoints`
+ * off inside its `source.path` — so the one request whose payload is the whole
+ * question logged everything except the breakpoints. One budget, wide enough to
+ * carry an armed breakpoint list, and only ever paid under SHARPLSP_DAP_TRACE.
+ */
+const TRACE_PAYLOAD_CHARS = 600;
+
+/**
  * A refusal the panel cannot show is a refusal the user cannot act on.
  *
  * netcoredbg answers some requests it cannot serve with `success: false` and an
@@ -211,7 +222,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     if (!isRecord(message)) return;
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
-        `[dap->] ${String(message.command ?? message.type)} ${JSON.stringify(message.arguments ?? message.body ?? {}).slice(0, 100)}`,
+        `[dap->] ${String(message.command ?? message.type)} ${JSON.stringify(message.arguments ?? message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
       );
     }
     if (message.type === 'response') {
@@ -221,7 +232,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     const command = typeof message.command === 'string' ? message.command : '';
     const args = isRecord(message.arguments) ? message.arguments : undefined;
     if (process.env.SHARPLSP_DAP_TRACE === '1' && command !== '') {
-      traceInfo(`[dap->] ${command} ${JSON.stringify(args ?? {}).slice(0, 90)}`);
+      traceInfo(`[dap->] ${command} ${JSON.stringify(args ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`);
     }
     const breakpointPath = command === 'setBreakpoints' ? sourcePathOf(args ?? {}) : undefined;
     // An F# condition is spelled in F#; netcoredbg only evaluates C#. Translate
@@ -381,12 +392,25 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   public fire(message: Record<string, unknown> & { seq?: unknown }): void {
     if (this.disposed) return;
     const seq = typeof message.seq === 'number' ? message.seq : this.correlator.nextSequence();
-    const framed: DapMessage = { ...message, seq };
-    this.emitter.fire(framed);
+    this.emitOutbound({ ...message, seq });
   }
 
   /** Emit one message towards VS Code exactly as the adapter framed it. */
   public emit(message: DapMessage): void {
+    this.emitOutbound(message);
+  }
+
+  /**
+   * The ONE door out to VS Code.
+   *
+   * `fire` used to reach the emitter directly, so everything the router
+   * synthesizes or forwards asynchronously — a located stop, a synthesized
+   * `terminated`, an emulated output event — left without passing the trace or
+   * the refusal-reason rule. A trace that claims to show what the client
+   * received while silently omitting half of it is worse than no trace: it
+   * reads as proof that a message was never sent.
+   */
+  private emitOutbound(message: DapMessage): void {
     const outbound = withRefusalReason(message);
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
@@ -412,7 +436,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     if (this.disposed) return;
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
-        `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')} ${JSON.stringify(message.body ?? {}).slice(0, 80)}`,
+        `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
       );
     }
     if (message.type === 'response') {
@@ -464,10 +488,14 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private onChildEvent(message: DapMessage): void {
     const name = typeof message.event === 'string' ? message.event : '';
     if (['stopped', 'continued'].includes(name)) {
-      traceInfo(`[stop] ${name} ${JSON.stringify(message.body ?? {}).slice(0, 90)}`);
+      traceInfo(
+        `[stop] ${name} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
+      );
     }
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
-      traceInfo(`[dap<-event] ${name} ${JSON.stringify(message.body ?? {}).slice(0, 80)}`);
+      traceInfo(
+        `[dap<-event] ${name} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
+      );
     }
     if (name === 'stopped') {
       if (this.stacks.interceptStop(message)) return;
