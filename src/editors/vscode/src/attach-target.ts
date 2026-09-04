@@ -199,8 +199,22 @@ export function commandTokens(commandLine: string): string[] {
 export function matchesProcessName(row: ProcessRow, name: string): boolean {
   const wanted = MANAGED_SUFFIXES.map((suffix) => `${name}${suffix}`.toLowerCase());
   return commandTokens(row.commandLine).some((token) =>
-    wanted.includes(path.basename(token).toLowerCase()),
+    wanted.includes(fileNameOf(token).toLowerCase()),
   );
+}
+
+/**
+ * The file name of `token`, whichever platform's separators the token uses.
+ *
+ * `path.basename` only knows the HOST's separator, so a Windows-shaped path in
+ * a command line — `"C:\a b\StepTarget.dll"` — came back whole when the
+ * listing was read on Linux, and a process the user named by assembly matched
+ * nothing. A command line is text from another process, not a host path: it can
+ * carry either separator wherever it is read.
+ */
+function fileNameOf(token: string): string {
+  const cut = Math.max(token.lastIndexOf('/'), token.lastIndexOf('\\'));
+  return cut === -1 ? token : token.slice(cut + 1);
 }
 
 /** The refusal a name that matched nothing produces. */

@@ -27,6 +27,24 @@ import { err, ok, type Result } from './result';
 export const INTERPRETER_ARGS: readonly string[] = ['--interpreter=vscode'];
 
 /**
+ * A refusal the panel cannot show is a refusal the user cannot act on.
+ *
+ * netcoredbg answers some requests it cannot serve with `success: false` and an
+ * EMPTY `message` — a `setVariable` addressed through `variablesReference: 0`,
+ * which DAP defines as naming no container at all, is one. VS Code renders a
+ * response's `message` and has nothing else to show, so the edit visibly fails
+ * with no reason attached and the user is left guessing which of the name, the
+ * value or the target was wrong. Naming the request is the least a client can
+ * put in front of them.
+ */
+function withRefusalReason(message: DapMessage): DapMessage {
+  if (message.type !== 'response' || message.success !== false) return message;
+  if (typeof message.message === 'string' && message.message !== '') return message;
+  const command = typeof message.command === 'string' ? message.command : 'request';
+  return { ...message, message: `The debug adapter refused the ${command} request.` };
+}
+
+/**
  * Proxies DAP between VS Code and a netcoredbg child process, enriching and
  * emulating the messages the spec requires the router to serve.
  */
@@ -369,12 +387,13 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
 
   /** Emit one message towards VS Code exactly as the adapter framed it. */
   public emit(message: DapMessage): void {
+    const outbound = withRefusalReason(message);
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
-        `[dap=>] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')}`,
+        `[dap=>] ${String(outbound.command ?? outbound.event ?? outbound.type)} seq=${String(outbound.seq)} rs=${String(outbound.request_seq)} ok=${String(outbound.success)} msg=${JSON.stringify(outbound.message ?? '')}`,
       );
     }
-    this.emitter.fire(message);
+    this.emitter.fire(outbound);
   }
 
   /** Respond to a client request on the router's behalf. */
