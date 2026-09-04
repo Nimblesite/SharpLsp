@@ -9,6 +9,7 @@ import {
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
+  settleForScreenshot,
   takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
@@ -128,7 +129,7 @@ suite('Hover / Quick Info', () => {
     );
     await vscode.commands.executeCommand('editor.action.triggerSuggest');
     // Wait for widget to appear — no other commands that could dismiss it.
-    await new Promise((r) => setTimeout(r, 2500));
+    await settleForScreenshot(2500);
     // No openSharpLspPanel() — the completion dropdown IS the feature; keep editor visible.
     await takeScreenshot('vscode-completions-page.png');
 
@@ -163,9 +164,9 @@ suite('Hover / Quick Info', () => {
       goToEditor.selection.active.isEqual(definitionPosition),
       'Definition cursor must be on Add',
     );
-    await new Promise((r) => setTimeout(r, 300));
+    await settleForScreenshot(300);
     await vscode.commands.executeCommand('editor.action.peekDefinition');
-    await new Promise((r) => setTimeout(r, 3000));
+    await settleForScreenshot(3000);
     await takeScreenshot('vscode-go-to-definition-page.png');
   });
 
@@ -351,7 +352,7 @@ suite('Hover / Quick Info', () => {
     editor.selection = new vscode.Selection(new vscode.Position(7, 21), new vscode.Position(7, 21));
     await vscode.commands.executeCommand('editor.action.showHover');
     // Wait for the hover widget to render in the DOM before screenshotting.
-    await new Promise((r) => setTimeout(r, 2000));
+    await settleForScreenshot(2000);
     // Screenshot with hover tooltip visible — sidecar waits for .monaco-hover to appear.
     await takeScreenshot('vscode-hover-page.png');
   });

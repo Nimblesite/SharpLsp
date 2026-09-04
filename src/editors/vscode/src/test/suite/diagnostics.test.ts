@@ -7,6 +7,7 @@ import {
   openSharpLspPanel,
   replaceDocumentContent,
   setupLspTestSuite,
+  settleForScreenshot,
   takeScreenshot,
   teardownLspTestSuite,
   waitForDiagnostics,
@@ -125,7 +126,7 @@ suite('Diagnostics / Problems Panel', () => {
     }
     // Open Problems panel so diagnostics are visible in the screenshot.
     await vscode.commands.executeCommand('workbench.actions.view.problems');
-    await new Promise((r) => setTimeout(r, 1000));
+    await settleForScreenshot(1000);
     await openSharpLspPanel();
     await takeScreenshot('vscode-diagnostics-page.png');
   });

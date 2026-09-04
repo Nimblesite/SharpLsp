@@ -7,6 +7,7 @@ import {
   openSharpLspPanel,
   pollUntilResult,
   setupLspTestSuite,
+  settleForScreenshot,
   takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
@@ -432,7 +433,7 @@ suite('LSP Integration — Fixture Files', () => {
     // Keep the editor focused so the folded regions are clearly visible.
     // Close the bottom panel to maximise the editor view in the screenshot.
     await vscode.commands.executeCommand('workbench.action.closePanel');
-    await new Promise((r) => setTimeout(r, 500));
+    await settleForScreenshot(500);
     await takeScreenshot('code-folding.png');
   });
 
@@ -453,7 +454,7 @@ suite('LSP Integration — Fixture Files', () => {
     // Keep editor focused so nested class structure is visible.
     // Close the bottom panel to maximise the editor view.
     await vscode.commands.executeCommand('workbench.action.closePanel');
-    await new Promise((r) => setTimeout(r, 500));
+    await settleForScreenshot(500);
     await takeScreenshot('nested-classes.png');
   });
 
@@ -746,7 +747,7 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
     editor.selection = new vscode.Selection(new vscode.Position(6, 18), new vscode.Position(6, 18));
     editor.revealRange(new vscode.Range(new vscode.Position(6, 18), new vscode.Position(6, 18)));
     await vscode.commands.executeCommand('editor.action.quickFix');
-    await new Promise((r) => setTimeout(r, 2000));
+    await settleForScreenshot(2000);
     await takeScreenshot('vscode-refactoring.png');
   });
 });

@@ -461,6 +461,26 @@ export async function takeScreenshot(filename: string): Promise<void> {
 
 // ── Utilities ────────────────────────────────────────────────────
 
+/**
+ * Pause for the workbench to RENDER, but only when a screenshot will actually
+ * be taken.
+ *
+ * {@link takeScreenshot} and {@link openSharpLspPanel} both return immediately
+ * unless `SHARPLSP_SCREENSHOTS` is set, so a bare `sleep` before one of them is
+ * time CI spends waiting for a picture it is never going to capture. Every such
+ * pause goes through here instead.
+ *
+ * This is deliberately a SLEEP and not a poll: what it waits for is the
+ * compositor painting a widget that is already open, which nothing in the
+ * extension API reports. That is also why it must never be load-bearing for an
+ * assertion - a test that needs a condition to hold polls for the condition
+ * with {@link pollUntilResult}, which fails loudly when it never does.
+ */
+export async function settleForScreenshot(ms: number): Promise<void> {
+  if (!process.env['SHARPLSP_SCREENSHOTS']) return;
+  await sleep(ms);
+}
+
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

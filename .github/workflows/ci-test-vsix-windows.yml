@@ -9,6 +9,13 @@
 # Roslyn and FCS sidecars - inside the real VS Code extension host. Ubuntu's leg
 # cannot exercise any of that on win32.
 #
+# A chunk is a GROUP of feature areas, not one area per job. Every job repeats
+# the same multi-minute preamble - setup-dotnet, node_modules, three artifact
+# downloads, the VS Code host cache - so a matrix of 26 single-area jobs bought
+# its parallelism by paying that preamble 26 times, and produced a check list
+# too long to read. Nine grouped jobs pay it nine times and each still finishes
+# well inside the ceiling below.
+#
 # THIS FILE NO LONGER BUILDS ANYTHING, and that is the single largest fix in the
 # pipeline. It used to open with a `Build host + sidecars + suite` job that was
 # gated on the Ubuntu build - which it consumed nothing from - and then compiled
@@ -47,13 +54,20 @@ jobs:
     runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
     # A chunk installs deps, downloads a compiled suite and prebuilt binaries,
     # then runs its slice against real Roslyn/FCS sidecars loading real
-    # solutions. A chunk approaching this ceiling is a bug to investigate, not a
-    # budget to grow: the per-test ceilings live in
-    # src/test/suite/test-timeouts.ts and none exceeds 2 minutes.
-    timeout-minutes: 25
+    # solutions. That preamble is FIXED COST paid once per job — several minutes
+    # of it — which is why a chunk is a GROUP of feature areas and not a single
+    # one: at 26 jobs the matrix spent more runner time on preamble than on
+    # tests, and read as a wall of 26 rows nobody could scan.
+    #
+    # The ceiling is per JOB, so it scales with membership; it is not a budget
+    # for one feature area to grow into. The per-test ceilings still live in
+    # src/test/suite/test-timeouts.ts and none exceeds 2 minutes, so a job
+    # approaching this is a hang, not a slow suite.
+    timeout-minutes: 40
     strategy:
-      # Every chunk is an independent feature area: one failure must not cancel
-      # the rest, or a single flake hides the state of the whole surface.
+      # Every chunk is an independent GROUP of feature areas: one failure must
+      # not cancel the rest, or a single flake hides the state of the whole
+      # surface.
       fail-fast: false
       matrix:
         chunk: ${{ fromJSON(inputs.chunks) }}

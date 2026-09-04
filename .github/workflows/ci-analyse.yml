@@ -46,15 +46,10 @@ jobs:
             ${{ runner.os }}-nuget-${{ hashFiles('src/sidecars/**/*.csproj',
             'src/sidecars/Directory.Build.props') }}
           restore-keys: "${{ runner.os }}-nuget-"
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: src/editors/vscode/package-lock.json
-      - name: Install dependencies
-        run: |
-          dotnet tool restore
-          npm ci --prefix src/editors/vscode
+      - name: Install VS Code extension deps
+        uses: ./.github/actions/vsix-node-deps
+      - name: Restore the .NET tool manifest
+        run: dotnet tool restore
 
       # ── Rust ───────────────────────────────────────────────────────
       - name: Format + lint (Rust)

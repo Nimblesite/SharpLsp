@@ -1,5 +1,5 @@
 {
-  "description": "Feature chunks of the VS Code end-to-end suite ([DIST-CI-WIN-VSIX], [DIST-CI-VSIX-SHARDS]). Each chunk is one CI job running a slice of the SAME suite through the real LSP inside the real extension host, and BOTH platform legs fan out over this one list: Windows proves the win32 named-pipe editor experience, Ubuntu adds the linuxOnly repo-ingestion stress suites. Every shard on both platforms is instrumented, and one gate at the end of the pipeline ratchets the union ([DIST-CI-VSIX-COVERAGE]). Single source of truth: the Makefile (_test-vsix-shard), both CI matrices, and the completeness guard all read this file. Consumed via tools/vsix/vsix-test-chunks.mjs. A chunk carrying \"linuxOnly\": true is skipped by the Windows matrix and run by the Ubuntu one.",
+  "description": "Feature chunks of the VS Code end-to-end suite ([DIST-CI-WIN-VSIX], [DIST-CI-VSIX-SHARDS]). Each chunk is one CI job running a GROUP of related feature areas from the SAME suite through the real LSP inside the real extension host. A chunk is a group and not a single area because every job repays a multi-minute preamble (setup-dotnet, node_modules, three artifact downloads, the VS Code host cache): each leg MUST fan out over roughly 6-10 jobs, and a chunk projected past ~15 minutes MUST be split again ([DIST-CI-WIN-VSIX]). and BOTH platform legs fan out over this one list: Windows proves the win32 named-pipe editor experience, Ubuntu adds the linuxOnly repo-ingestion stress suites. Every shard on both platforms is instrumented, and one gate at the end of the pipeline ratchets the union ([DIST-CI-VSIX-COVERAGE]). Single source of truth: the Makefile (_test-vsix-shard), both CI matrices, and the completeness guard all read this file. Consumed via tools/vsix/vsix-test-chunks.mjs. A chunk carrying \"linuxOnly\": true is skipped by the Windows matrix and run by the Ubuntu one.",
   "shared": {
     "description": "Prepended to every chunk. Asserts the bundled host + sidecars were staged before the extension host started, so a staging regression fails as itself instead of as a wall of LSP timeouts.",
     "files": [
@@ -7,47 +7,29 @@
     ]
   },
   "chunks": {
-    "lifecycle": {
-      "description": "Activation, configuration, bundled binary/sidecar resolution, client lifecycle and restart, cross-cutting command workflows.",
-      "files": [
-        "bundled-binary.test.js",
-        "bundled-sidecars.test.js",
-        "extension.test.js",
-        "lifecycle-e2e.test.js",
-        "coverage-extension-workflows.test.js"
-      ]
-    },
     "lsp": {
-      "description": "C# language intelligence over the real LSP: completion, hover, diagnostics, document symbols, folding, selection ranges, document sync and client lifecycle.",
+      "description": "The C# language surface over the real LSP, end to end: completion, hover, diagnostics, document symbols, folding, selection ranges and document sync; the refactoring catalogue (quick fixes including the Ctrl-. missing-using import, organize imports, the rewrite matrix, rename across symbols and edge cases); and file-based programs (`#:package`, `#:property`), whose every test shells out to a real `dotnet restore`.",
       "files": [
         "completions-visible.test.js",
         "hover.test.js",
         "diagnostics.test.js",
         "lsp-integration.test.js",
         "lsp-document-sync.test.js",
-        "lsp-lifecycle.test.js"
-      ]
-    },
-    "lsp-refactor": {
-      "description": "The C# refactoring surface: quick fixes, organize imports, the rewrite matrix, and rename across symbols and edge cases. Split from `lsp` so neither slice carries the other's wall clock ([DIST-CI-VSIX-SHARDS]).",
-      "files": [
+        "lsp-lifecycle.test.js",
         "lsp-refactor-quickfixes.test.js",
+        "lsp-codeaction-add-using.test.js",
         "lsp-refactor-organize-imports.test.js",
         "lsp-refactor-core.test.js",
         "lsp-refactor-rewrite-matrix.test.js",
+        "lsp-refactor-spec-gaps.test.js",
         "lsp-rename-symbols.test.js",
-        "lsp-rename-edge.test.js"
-      ]
-    },
-    "lsp-filebased": {
-      "description": "File-based programs (`#:package`, `#:property`): restore, reload, isolation and configuration-cone parity. Its own chunk because every test shells out to a real `dotnet restore`.",
-      "files": [
+        "lsp-rename-edge.test.js",
         "filebased-package-e2e.test.js",
         "filebased-package-config-e2e.test.js"
       ]
     },
     "fsharp": {
-      "description": "F# is a first-class citizen, so its whole LSP surface is gated: navigation, intelligence, syntax, diagnostics, hierarchy and workspace symbol. Suites are enumerated rather than globbed so a NEW F# suite fails the chunk guard and forces a deliberate placement instead of silently inflating one job.",
+      "description": "F# is a first-class citizen, so its WHOLE LSP surface is gated in one job: navigation, intelligence, syntax, diagnostics, hierarchy and workspace symbol; the code-fix catalogue (basics, type conversions, generation); and rename, including the cross-language case where an F# origin renames C# references and back — the slowest suite in the matrix, because each of its tests rebuilds both languages. Suites are enumerated rather than globbed so a NEW F# suite fails the chunk guard and forces a deliberate placement.",
       "files": [
         "fsharp-lsp-navigation.test.js",
         "fsharp-lsp-intelligence.test.js",
@@ -55,111 +37,66 @@
         "fsharp-lsp-diagnostics.test.js",
         "fsharp-lsp-hierarchy.test.js",
         "fsharp-lsp-workspace-symbol.test.js",
-        "fsharp-lsp-codefixes.test.js"
-      ]
-    },
-    "fsharp-codefix": {
-      "description": "The F# code-fix catalogue: basics, type conversions and generation. The slowest third of the F# surface, split out so it runs beside the rest instead of after it.",
-      "files": [
+        "fsharp-lsp-codefixes.test.js",
         "fsharp-lsp-codefix-basics.test.js",
         "fsharp-lsp-codefix-conversions.test.js",
-        "fsharp-lsp-codefix-generation.test.js"
-      ]
-    },
-    "fsharp-rename": {
-      "description": "F# rename, including the cross-language case where an F# origin renames C# references and back — the single slowest suite in the whole VS Code matrix, because each test rebuilds both languages.",
-      "files": [
+        "fsharp-lsp-codefix-generation.test.js",
         "fsharp-lsp-rename-symbols.test.js",
         "fsharp-lsp-rename-edge.test.js",
         "fsharp-lsp-cross-language-rename.test.js"
       ]
     },
     "debug": {
-      "description": "Debugging and the launch surface, WITHOUT shelling out to dotnet: the F5 / no-launch.json resolve contract, launchSettings.json + <app>.run.json profile parsing, the netcoredbg adapter factory, and manifest conformance for the debugger, breakpoint, task-definition, command and menu contributions.",
+      "description": "Getting a program to START, and nothing about what happens once it has: the F5 / no-launch.json resolve contract, launchSettings.json + <app>.run.json profile parsing, the netcoredbg adapter factory, manifest conformance for the debugger, breakpoint, task-definition, command and menu contributions, the [SCRIPT-CONE] launch-target walk with MSBuild output resolution, and the F5 / Ctrl+F5 / sharplsp.runProgram gestures over real projects, C# file-based apps and .fsx scripts.",
       "files": [
         "debug-e2e.test.js",
         "debug-adapter-e2e.test.js",
         "debug-adapter-startup.test.js",
         "run-debug-profiles.test.js",
-        "run-debug-contributions.test.js"
-      ]
-    },
-    "debug-stepping": {
-      "description": "Step through debugging over a live netcoredbg session on a real built assembly: F10/F11/Shift+F11 walks asserted line by line and frame by frame, Just My Code, run to cursor, continue between breakpoints, breakpoints encountered mid-step, stepping off the end of a method and of the program, and the physical/async call stack. Implements [DEBUG-FEATURES-STEPPING] and [DEBUG-FEATURES-STACK].",
-      "files": [
-        "debug-stepping-e2e.test.js",
-        "debug-stepping-boundaries-e2e.test.js",
-        "debug-callstack-e2e.test.js"
+        "run-debug-contributions.test.js",
+        "run-debug-target.test.js",
+        "run-debug-build.test.js",
+        "run-debug-commands.test.js",
+        "run-debug-scripts.test.js"
       ]
     },
     "debug-breakpoints": {
-      "description": "Breakpoints as a user sets them: F9 through the editor (the canSetBreakpointsIn gate the addBreakpoints API bypasses), binding and verification, mid-session add/remove/disable, function breakpoints, conditions, hit counts and logpoints. Implements [DEBUG-FEATURES-BREAKPOINTS] and the runtime half of [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION].",
+      "description": "Where a live session STOPS, and why. Breakpoints as a user sets them (F9 through the editor, binding and verification, mid-session add/remove/disable, function breakpoints, conditions, hit counts, logpoints); stepping F10/F11/Shift+F11 asserted line by line and frame by frame, Just My Code, run to cursor, stepping off the end of a method and of the program, and the physical/async call stack; and the exception filters — break-on-all catching a handled throw, unhandled-only ignoring one, the info panel and the inner-exception chain. Implements [DEBUG-FEATURES-BREAKPOINTS], [DEBUG-FEATURES-STEPPING], [DEBUG-FEATURES-STACK] and [DEBUG-FEATURES-EXCEPTIONS].",
       "files": [
         "debug-breakpoints-e2e.test.js",
-        "debug-breakpoint-conditions-e2e.test.js"
-      ]
-    },
-    "debug-exceptions": {
-      "description": "Catching exceptions and ignoring them: the advertised exception filters, break-on-all catching a handled throw, the unhandled-only filter ignoring one, the exception info panel and inner-exception chain, and per-type include/exclude filters changed mid-session. Implements [DEBUG-FEATURES-EXCEPTIONS].",
-      "files": [
+        "debug-breakpoint-conditions-e2e.test.js",
+        "debug-stepping-e2e.test.js",
+        "debug-stepping-boundaries-e2e.test.js",
+        "debug-callstack-e2e.test.js",
         "debug-exceptions-e2e.test.js",
         "debug-exception-filters-e2e.test.js"
       ]
     },
     "debug-inspection": {
-      "description": "The Variables and Watch panels against a paused debuggee: locals, arguments, this, statics, collection/array/nullable expansion, hover/watch/REPL evaluation across the T1 and T2 tiers, setVariable changing what the program does next, and [DebuggerDisplay] rendering. Implements [DEBUG-FEATURES-VARIABLES].",
+      "description": "What the debuggee SHOWS while it is paused, plus the two gestures that change a running process. Variables and Watch (locals, arguments, this, statics, collection/array/nullable expansion, hover/watch/REPL evaluation across the T1 and T2 tiers, setVariable changing what the program does next, and [DebuggerDisplay] rendering); F# debugging at full density, never a reduced echo of the C# suites (F9 in an F# editor, stepping through F# functions, discriminated unions/records/tuples/options rendered in F# syntax, task {} logical stacks); and Hot Reload plus attach by pid and by name. Implements [DEBUG-FEATURES-VARIABLES], [DEBUG-FSHARP-UNIONS], [DEBUG-FSHARP-STEPPING], [DEBUG-FSHARP-PDB], [DEBUG-FEATURES-HOT-RELOAD] and the [DEBUG-FEATURES-LAUNCH] attach rows.",
       "files": [
         "debug-variables-e2e.test.js",
-        "debug-evaluate-e2e.test.js"
-      ]
-    },
-    "debug-fsharp": {
-      "description": "F# debugging at full density, never a reduced echo of the C# suites: F9 in an F# editor, stepping through F# functions, F# exceptions caught and ignored, discriminated unions/records/tuples/options rendered in F# syntax, and task {} logical stacks. Implements [DEBUG-FSHARP-UNIONS], [DEBUG-FSHARP-STEPPING] and [DEBUG-FSHARP-PDB].",
-      "files": [
+        "debug-evaluate-e2e.test.js",
         "debug-fsharp-stepping-e2e.test.js",
-        "debug-fsharp-inspection-e2e.test.js"
+        "debug-fsharp-inspection-e2e.test.js",
+        "debug-hot-reload-e2e.test.js",
+        "debug-attach-e2e.test.js"
       ]
     },
-    "debug-session": {
-      "description": "The session and the protocol around it: the DAP 1.71.0 handshake and the whole [DEBUG-PROTOCOL-CAPABILITIES] table in both directions, stopAtEntry, args/env/cwd, run-without-debugging, restart, pause and stop, debuggee output routing, and two simultaneous sessions multiplexed by session id.",
+    "debug-tests": {
+      "description": "The session and the protocol around it, and the hardest consumer of both. The DAP 1.71.0 handshake and the whole [DEBUG-PROTOCOL-CAPABILITIES] table in both directions, stopAtEntry, args/env/cwd, run-without-debugging, restart, pause and stop, debuggee output routing, and two simultaneous sessions multiplexed by session id — then debugging a TEST through the Test Explorer Debug profile, which re-attaches to successive test hosts inside one session. Grouped because a test-debugging failure is a session-lifecycle failure. Implements [DEBUG-FEATURES-TESTS].",
       "files": [
+        "debug-test-fsharp-e2e.test.js",
+        "debug-test-debugging-e2e.test.js",
+        "debug-test-groups-e2e.test.js",
         "debug-protocol-capabilities-e2e.test.js",
         "debug-session-lifecycle-e2e.test.js",
         "debug-output-routing-e2e.test.js",
         "debug-multisession-e2e.test.js"
       ]
     },
-    "debug-advanced": {
-      "description": "Hot Reload during an active session (method body, added method, rude edit) and attaching to an already-running process by pid and by name. Each suite builds and then also RUNS a real .NET target outside the debugger. Implements [DEBUG-FEATURES-HOT-RELOAD] and the [DEBUG-FEATURES-LAUNCH] attach rows.",
-      "files": [
-        "debug-hot-reload-e2e.test.js",
-        "debug-attach-e2e.test.js"
-      ]
-    },
-    "debug-tests": {
-      "description": "Debugging a test through the Test Explorer Debug profile: one test at a time (plain, failing, skipped, [Theory] rows, nothing armed, disabled and conditional breakpoints), selections of tests (class, namespace, assembly root, multi-select) and the F# suite (backtick names carrying SPACES, module helpers, [<Theory>] rows and the at-cursor Debug gesture). Every test builds a fixture solution and starts a real netcoredbg session against the waiting test host. Implements [DEBUG-FEATURES-TESTS].",
-      "files": [
-        "debug-test-fsharp-e2e.test.js",
-        "debug-test-debugging-e2e.test.js",
-        "debug-test-groups-e2e.test.js"
-      ]
-    },
-    "rundebug": {
-      "description": "Launch-target resolution against real projects: the [SCRIPT-CONE] walk (.sln/.slnx, .git and workspace-root boundaries), active-document sensitivity across two projects, library rejection, and MSBuild output resolution for custom AssemblyName/OutputPath, non-listed and multi-targeted frameworks. Builds real C# and F# console projects.",
-      "files": [
-        "run-debug-target.test.js",
-        "run-debug-build.test.js"
-      ]
-    },
-    "rundebug-commands": {
-      "description": "The run/debug user gestures at the VSIX level: F5 and Ctrl/Cmd+F5 through workbench.action.debug.start / .run, sharplsp.runProgram and sharplsp.debugProgram against built projects, and single-file targets — C# file-based apps, .fsx scripts and the .csx/.fs refusals. Split from rundebug because every test restores and builds or executes a real .NET target.",
-      "files": [
-        "run-debug-commands.test.js",
-        "run-debug-scripts.test.js"
-      ]
-    },
     "testexplorer": {
-      "description": "Discovery, the reactive tree, Windows path handling, TRX/console result parsing, the fully-qualified name reader (adapter decoration stripped, NUnit case names untouched) and the testing lens.",
+      "description": "The Test Explorer a user READS: discovery, the reactive tree, Windows path handling, TRX/console result parsing, the fully-qualified name reader (adapter decoration stripped, NUnit case names untouched), the testing lens actions, the STATUS half of [TEST-STATUS-LENS] observed as a real CodeLens above a real test method, and the Run-with-Coverage profile against a two-test-project solution over one library — one Cobertura report per test project, every one parsed and attached, a freshly emptied `.sharplsp-coverage` between runs, and the plain Run profile collecting nothing. Implements [TEST-STATUS-LENS] and [TEST-COVERAGE].",
       "files": [
         "test-explorer-e2e.test.js",
         "test-explorer-reactive.test.js",
@@ -167,80 +104,48 @@
         "test-explorer-windows.test.js",
         "test-explorer-parsers.test.js",
         "test-explorer-names.test.js",
-        "testing-lens-e2e.test.js"
-      ]
-    },
-    "testexplorer-cancellation": {
-      "description": "Pressing Stop must terminate the whole `dotnet test` process TREE, across every gesture that starts a run: Stop on the play button, on Run with Coverage, on a namespace row, on the assembly root, on a multi-select, a token already cancelled before the handler started, Stop pressed after the run already ended, two cancelled runs back to back, and a refresh after a cancellation. Its own chunk: the suite builds a dedicated F# xUnit fixture whose two long-running tests deliberately sleep, so it is both slow and the most likely place in the matrix to hang — isolating it keeps a hang from taking the rest of the Test Explorer surface with it.",
-      "files": [
-        "test-explorer-cancellation.test.js"
-      ]
-    },
-    "testexplorer-coverage": {
-      "description": "The Run-with-Coverage profile [TEST-COVERAGE] against a TWO-test-project solution over one library, each project exercising a different function of it: one Cobertura report per test project, EVERY one parsed and attached, a freshly emptied .sharplsp-coverage between runs, partial coverage for the functions nothing called, and the plain Run profile collecting nothing. Its own chunk because every test is a full `dotnet test --collect` round trip.",
-      "files": [
+        "testing-lens-e2e.test.js",
+        "testing-lens-status.test.js",
         "test-explorer-coverage.test.js"
       ]
     },
     "testexplorer-frameworks": {
-      "description": "Test Explorer framework matrix and run semantics: xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles, and the pinned 2.2.0 VSTest adapter that decorates the names it reports. Split from the testexplorer chunk because it restores and builds seven test projects.",
+      "description": "The Test Explorer RUNNING things, over the widest fixture surface in the matrix: the framework matrix (xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles, and the pinned 2.2.0 VSTest adapter that decorates the names it reports), and Stop terminating the whole `dotnet test` process TREE across every gesture that starts a run. Kept apart from `testexplorer` because between them they restore and build eight test projects, and because the sleeping-fixture cancellation suite is the likeliest place in the matrix to hang — a hang here must not take the Test Explorer's read surface with it.",
       "files": [
         "test-explorer-frameworks.test.js",
         "test-explorer-outcomes.test.js",
-        "test-explorer-adapter-ids.test.js"
+        "test-explorer-adapter-ids.test.js",
+        "test-explorer-cancellation.test.js"
       ]
     },
-    "testexplorer-lens": {
-      "description": "The STATUS half of [TEST-STATUS-LENS], observed as a real CodeLens above a real test method: \"Not run\" before anything runs, the pass/fail/skip titles after a run with the failure carrying its assertion text, the row updating reactively with the editor left open, and the sharplsp.testLens.enabled setting removing the status as well as the actions. Its own chunk because it builds and runs a real C#/F# solution before it can look at a lens at all.",
+    "workspace": {
+      "description": "The IDE surface that is not a language service: activation, configuration, bundled binary/sidecar resolution, client lifecycle and restart, and the cross-cutting command workflows; the Solution Explorer tree with its reactive sort/state signals, tooltips, reveal, full context-menu surface and project-dependency watcher; scaffolding and the NuGet surface down to real .csproj dependency edits; and profiling end to end (dotnet-trace sessions, live counters, memory dumps, .nettrace conversion, profiler webviews) plus FSI and build-output filtering.",
       "files": [
-        "testing-lens-status.test.js"
-      ]
-    },
-    "profiler": {
-      "description": "Profiling end to end (dotnet-trace sessions, live counters, memory dumps, .nettrace conversion, profiler webviews) plus FSI, build, output filtering and hot reload.",
-      "files": [
+        "bundled-binary.test.js",
+        "bundled-sidecars.test.js",
+        "extension.test.js",
+        "lifecycle-e2e.test.js",
+        "coverage-extension-workflows.test.js",
+        "solution-explorer.test.js",
+        "tree-config-e2e.test.js",
+        "context-menus.test.js",
+        "project-deps-watcher-e2e.test.js",
+        "sort-members-command-e2e.test.js",
+        "scaffolding.test.js",
+        "scaffolding-e2e.test.js",
+        "nuget-browser.test.js",
+        "nuget-deps-e2e.test.js",
         "profiler.test.js",
         "profiler-e2e.test.js",
         "fsi-build-output-e2e.test.js"
       ]
     },
-    "explorer": {
-      "description": "Solution Explorer tree, reactive sort/state signals, tooltips and reveal, the full context-menu surface, and the project-dependency watcher.",
-      "files": [
-        "solution-explorer.test.js",
-        "tree-config-e2e.test.js",
-        "context-menus.test.js",
-        "project-deps-watcher-e2e.test.js",
-        "sort-members-command-e2e.test.js"
-      ]
-    },
-    "packages": {
-      "description": "Scaffolding (create solution/project) and the NuGet surface: browser panel, search/add/update/restore commands, and real .csproj dependency edits.",
-      "files": [
-        "scaffolding.test.js",
-        "scaffolding-e2e.test.js",
-        "nuget-browser.test.js",
-        "nuget-deps-e2e.test.js"
-      ]
-    },
-    "realrepo-serilog": {
+    "realrepo": {
       "linuxOnly": true,
-      "description": "Cold-loading the pinned real-world repository serilog/serilog: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
+      "description": "Cold-loading the three pinned real-world repositories — serilog/serilog, FluentValidation and FsToolkit.ErrorHandling: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
       "files": [
-        "real-repo-serilog.test.js"
-      ]
-    },
-    "realrepo-fluentvalidation": {
-      "linuxOnly": true,
-      "description": "Cold-loading the pinned real-world repository FluentValidation: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
-      "files": [
-        "real-repo-fluentvalidation.test.js"
-      ]
-    },
-    "realrepo-fstoolkit": {
-      "linuxOnly": true,
-      "description": "Cold-loading the pinned real-world repository FsToolkit.ErrorHandling: clone, restore, then drive the LSP over third-party code the fixtures cannot imitate. Linux-only — the Windows gate proves the feature surface, not third-party repo ingestion, and a Windows clone+restore would double the matrix's slowest job for no new signal.",
-      "files": [
+        "real-repo-serilog.test.js",
+        "real-repo-fluentvalidation.test.js",
         "real-repo-fstoolkit.test.js"
       ]
     }

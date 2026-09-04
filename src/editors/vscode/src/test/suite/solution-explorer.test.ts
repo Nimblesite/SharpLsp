@@ -10,6 +10,7 @@ import {
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
+  settleForScreenshot,
   takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
@@ -244,7 +245,7 @@ EndGlobal`,
     await openSharpLspPanel();
     // Refresh the tree view so the UI renders the loaded solution before screenshotting.
     await vscode.commands.executeCommand('sharplsp.refreshExplorer');
-    await new Promise((r) => setTimeout(r, 2000));
+    await settleForScreenshot(2000);
     await takeScreenshot('solution-explorer.png');
 
     api.explorerProvider.getChildren; // keep reference

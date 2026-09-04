@@ -1,0 +1,47 @@
+# agent-pmo:0b21609
+---
+# ONE way to put the VS Code extension's `node_modules` on a runner.
+#
+# `npm ci` for this package takes 3m16 on Ubuntu and 4m31 on Windows even with a
+# warm `~/.npm`, because the cost is not the download - it is unpacking 524
+# packages and running their install scripts. PHASE 4 pays that once per shard
+# across ~30 shards, plus once per platform in PHASE 2 and once in PHASE 1, and
+# every one of those minutes is on the critical path of the job that pays it.
+#
+# So cache the RESULT rather than the inputs. `~/.npm` (what `setup-node`'s
+# `cache: npm` restores) only makes the download free; a `node_modules` cache
+# makes the whole install free. `npm ci` still runs on a miss, and `setup-node`
+# still primes `~/.npm` so that miss is as cheap as it can be.
+#
+# The key carries the lockfile hash, the OS and the runner architecture, because
+# the tree contains platform-specific optional dependencies (esbuild's native
+# binary among them) that must never cross between runners. There is
+# deliberately NO `restore-keys`: a partial `node_modules` from a different
+# lockfile is worse than no cache at all - `npm ci` would be skipped and the
+# tree would be silently wrong.
+name: Install VS Code extension dependencies
+description: >-
+  Sets up Node and restores src/editors/vscode/node_modules from cache, running
+  `npm ci` only when the cache misses.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: '20'
+        cache: npm
+        cache-dependency-path: src/editors/vscode/package-lock.json
+    - name: Restore the installed dependency tree
+      id: node-modules
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: src/editors/vscode/node_modules
+        key: >-
+          vsix-node-modules-${{ runner.os }}-${{ runner.arch }}-node20-${{
+          hashFiles('src/editors/vscode/package-lock.json') }}
+    - name: Install VS Code extension deps
+      # Only on a miss. On a hit the tree is already exactly what this lockfile
+      # resolves to, and `npm ci` would delete it and rebuild it from scratch.
+      if: steps.node-modules.outputs.cache-hit != 'true'
+      shell: bash
+      run: npm ci --prefix src/editors/vscode

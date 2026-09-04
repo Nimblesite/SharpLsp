@@ -279,7 +279,13 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
   });
 
   test('sharplsp.nuget.update prompts for a package name after a project is resolved', async function () {
-    this.timeout(COMMAND_MS);
+    // This queues a package name, so `nuget.update` does NOT return early the way
+    // the blank-name test above it does: it resolves the project and then shells
+    // out to the real `dotnet` CLI, which on an offline agent pays NuGet's own
+    // connect timeout before reporting the handled failure this asserts on. That
+    // is CLI work, not a command round trip, which is why the two sibling tests
+    // that also reach `dotnet` declare `DOTNET_CLI_MS`.
+    this.timeout(DOTNET_CLI_MS);
     // Single project in this temp tree → pickProjectFile returns it without a pick,
     // BUT findFiles searches the real workspace; queue a project pick by substring
     // in case multiple projects are present, then the package-name input box.

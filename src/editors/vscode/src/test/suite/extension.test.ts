@@ -6,11 +6,12 @@ import {
   openCSharpFile,
   openSharpLspPanel,
   setupLspTestSuite,
+  settleForScreenshot,
   takeScreenshot,
   teardownLspTestSuite,
   waitForDocumentSymbols,
 } from './test-helpers';
-import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
+import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS, SETTLE_MS } from './test-timeouts';
 
 suite('Extension Activation & Configuration', () => {
   let tmpDir: string;
@@ -89,14 +90,24 @@ suite('Extension Activation & Configuration', () => {
   // ── Configuration ────────────────────────────────────────────
 
   test('sharplsp.lspPath setting is contributed', async function () {
-    this.timeout(COMMAND_MS);
+    // The ASSERTIONS here are instant - `config.inspect` reads a contribution
+    // point out of the extension manifest - and on CI so is the rest: the
+    // documentation screenshot and its render settle are both no-ops unless
+    // SHARPLSP_SCREENSHOTS is set, leaving one command round trip.
+    //
+    // The budget has to cover the SCREENSHOT run as well, though, and there the
+    // workbench must paint the filtered Settings list before the capture is worth
+    // anything. That settle is longer than `COMMAND_MS` on its own, so this asks
+    // for one round trip plus one settle - the same reason the two sibling
+    // screenshot tests in this suite declare `LSP_RESPONSE_MS` and `ACTIVATION_MS`.
+    this.timeout(COMMAND_MS + SETTLE_MS);
     const config = vscode.workspace.getConfiguration('sharplsp');
     const inspect = config.inspect<string>('lspPath');
     assert.ok(inspect, 'lspPath setting should be inspectable');
     assert.strictEqual(inspect.defaultValue, '', 'Default lspPath should be empty string');
     // Open Settings UI filtered to sharplsp so the screenshot shows real config options.
     await vscode.commands.executeCommand('workbench.action.openSettings', 'sharplsp');
-    await new Promise((r) => setTimeout(r, 1500));
+    await settleForScreenshot(1500);
     await takeScreenshot('vscode-configuration-page.png');
     await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
   });
@@ -245,7 +256,7 @@ suite('Extension Activation & Configuration', () => {
     // Close any bottom panel, open SharpLsp sidebar — shows Rust host + Roslyn sidecar in action.
     await vscode.commands.executeCommand('workbench.action.closePanel');
     await openSharpLspPanel();
-    await new Promise((r) => setTimeout(r, 1_000));
+    await settleForScreenshot(1_000);
     await takeScreenshot('vscode-architecture-page.png');
   });
 

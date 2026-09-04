@@ -518,7 +518,12 @@ suite('Profiler — command bodies, webviews & workflows (e2e)', () => {
   // ───────────────────────────────────────────────────────────────
 
   test('per-process commands are safe no-ops without a PID and do not throw with one', async function () {
-    this.timeout(COMMAND_MS);
+    // Every other test in this suite drives ONE command, which is what `COMMAND_MS`
+    // budgets. This one drives five: three no-arg early-return commands, then
+    // traceProcess and countersProcess against a PID that does not exist - and
+    // those two reach the live LSP host and wait for it to answer that the process
+    // is gone. Five round trips cost five round trips, so it declares them.
+    this.timeout(5 * COMMAND_MS);
     stubs = installUiStubs();
     const provider = getProvider();
 
