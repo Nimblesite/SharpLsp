@@ -16,6 +16,7 @@ import {
   RevealOutputChannelOn,
 } from 'vscode-languageclient/node';
 import { EXTENSION_ID, EXTENSION_NAME, SERVER_BINARY, SERVER_BINARY_WIN } from './constants.js';
+import { getErrorMessage } from './utils.js';
 import * as config from './config.js';
 import * as log from './log.js';
 import { createAnsiStrippingChannel } from './output-filter.js';
@@ -142,13 +143,21 @@ function wireStatusBar(
  *   - Suppresses the modal error dialog on close (uses `handled: true`)
  *   - Allows up to MAX_RESTARTS automatic restarts
  *   - After MAX_RESTARTS, stops and shows one actionable message
+ *   - Never lets a connection ERROR end the session while restarts remain,
+ *     because `ErrorAction.Shutdown` is the one decision `closed()` can never
+ *     recover from
  */
 function makeErrorHandler(statusBar: SharpLspStatusBar): {
   error(error: Error, message: Message | undefined, count: number | undefined): ErrorHandlerResult;
   closed(): CloseHandlerResult;
 } {
   const MAX_RESTARTS = 5;
+  // Two crashes further apart than this are unrelated, not a loop. Without it
+  // the budget is a lifetime allowance: a server that dies once every couple of
+  // hours exhausts it in a working day and then never restarts again.
+  const CRASH_WINDOW_MS = 3 * 60 * 1_000;
   let restartCount = 0;
+  let lastClosedAt = 0;
 
   return {
     error(
@@ -159,10 +168,21 @@ function makeErrorHandler(statusBar: SharpLspStatusBar): {
       if ((count ?? 0) <= 3) {
         return { action: ErrorAction.Continue };
       }
+      // `Shutdown` stops the client outright, and a stopped client never calls
+      // `closed()` — so escalating here would forfeit every restart below. A
+      // dead transport closes on its own; recovery belongs to `closed()`.
+      if (restartCount < MAX_RESTARTS) {
+        return { action: ErrorAction.Continue };
+      }
       return { action: ErrorAction.Shutdown };
     },
 
     closed(): CloseHandlerResult {
+      const now = Date.now();
+      if (now - lastClosedAt > CRASH_WINDOW_MS) {
+        restartCount = 0;
+      }
+      lastClosedAt = now;
       restartCount += 1;
       if (restartCount <= MAX_RESTARTS) {
         log.info(
@@ -246,4 +266,26 @@ function expandPath(raw: string): string {
   if (!raw.includes('${workspaceFolder}')) return raw;
   const folder = workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
   return raw.replace('${workspaceFolder}', folder);
+}
+
+/** How long a graceful `shutdown` may take before the restart respawns anyway. */
+const RESTART_STOP_TIMEOUT_MS = 10_000;
+
+/**
+ * Restart the server on the user's behalf. Implements [DIST-FAILURE-UX] rule 6.
+ *
+ * `LanguageClient.restart()` is `stop()` then `start()`, and the library's
+ * `stop()` gives `shutdown` two seconds before it throws WITHOUT starting
+ * anything - which turns the recovery command into a way to kill the client.
+ * A hung server is the very reason a user reaches for Restart, so the stop
+ * gets a real budget and the start happens whether or not the old process
+ * bowed out in time.
+ */
+export async function restart(lspClient: LanguageClient): Promise<void> {
+  try {
+    await lspClient.stop(RESTART_STOP_TIMEOUT_MS);
+  } catch (err: unknown) {
+    log.warn(`Graceful stop failed; starting a fresh server anyway: ${getErrorMessage(err)}`);
+  }
+  await lspClient.start();
 }

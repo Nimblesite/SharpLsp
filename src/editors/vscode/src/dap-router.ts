@@ -3,6 +3,7 @@ import type * as cp from 'node:child_process';
 import * as vscode from 'vscode';
 import { retarget } from './dap-exceptions';
 import { isRecord, sourcePathOf, type DapMessage } from './dap-emulate';
+import { isFSharpSource, withClrConditions } from './dap-fsharp-conditions';
 import { BreakpointEmulator } from './dap-breakpoints';
 import { AttachRetrier, type RetryHost } from './dap-attach';
 import { EvaluateEmulator } from './dap-evaluate';
@@ -24,6 +25,35 @@ import { err, ok, type Result } from './result';
 
 /** The DAP dialect netcoredbg speaks; without it there is no DAP at all. */
 export const INTERPRETER_ARGS: readonly string[] = ['--interpreter=vscode'];
+
+/**
+ * How much of a DAP payload one trace line carries.
+ *
+ * The trace exists to answer "what did we send, and what came back". Four
+ * different truncations, the widest at 100 characters, cut a `setBreakpoints`
+ * off inside its `source.path` — so the one request whose payload is the whole
+ * question logged everything except the breakpoints. One budget, wide enough to
+ * carry an armed breakpoint list, and only ever paid under SHARPLSP_DAP_TRACE.
+ */
+const TRACE_PAYLOAD_CHARS = 600;
+
+/**
+ * A refusal the panel cannot show is a refusal the user cannot act on.
+ *
+ * netcoredbg answers some requests it cannot serve with `success: false` and an
+ * EMPTY `message` — a `setVariable` addressed through `variablesReference: 0`,
+ * which DAP defines as naming no container at all, is one. VS Code renders a
+ * response's `message` and has nothing else to show, so the edit visibly fails
+ * with no reason attached and the user is left guessing which of the name, the
+ * value or the target was wrong. Naming the request is the least a client can
+ * put in front of them.
+ */
+function withRefusalReason(message: DapMessage): DapMessage {
+  if (message.type !== 'response' || message.success !== false) return message;
+  if (typeof message.message === 'string' && message.message !== '') return message;
+  const command = typeof message.command === 'string' ? message.command : 'request';
+  return { ...message, message: `The debug adapter refused the ${command} request.` };
+}
 
 /**
  * Proxies DAP between VS Code and a netcoredbg child process, enriching and
@@ -147,6 +177,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       onGone: (why) => {
         this.onChildGone(why);
       },
+      onUndeliverable: (frame) => {
+        this.answerUndeliverable(frame);
+      },
       announcedTerminated: () => this.childAnnouncedTerminated,
       isClosed: () => this.closed,
       isDisposed: () => this.disposed,
@@ -182,9 +215,23 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         output: `SharpLsp: netcoredbg ${why}. Ending the debug session.\n`,
       },
     });
-    if (!this.childAnnouncedTerminated) {
+    if (this.endsSessionOnce('terminated')) {
       this.fire({ type: 'event', event: 'terminated', body: {} });
     }
+  }
+
+  /**
+   * Settle a request the adapter can no longer hear.
+   *
+   * Only a REQUEST needs settling — an event or a response expects no reply, so
+   * dropping one costs nothing. `disconnect` succeeds because an adapter that
+   * is gone IS the disconnected state, and refusing it would leave the session
+   * in the debug toolbar with no way to close it.
+   */
+  private answerUndeliverable(message: DapMessage): void {
+    if (message.type !== 'request') return;
+    const command = typeof message.command === 'string' ? message.command : '';
+    this.respondTo(message, command === 'disconnect', {});
   }
 
   /** VS Code -> netcoredbg, with the router's intercepts. */
@@ -192,27 +239,34 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     if (!isRecord(message)) return;
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
-        `[dap->] ${String(message.command ?? message.type)} ${JSON.stringify(message.arguments ?? message.body ?? {}).slice(0, 100)}`,
+        `[dap->] ${String(message.command ?? message.type)} ${JSON.stringify(message.arguments ?? message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
       );
     }
-    const msg: DapMessage = message;
     if (message.type === 'response') {
-      this.onClientResponse(msg);
+      this.onClientResponse(message);
       return;
     }
     const command = typeof message.command === 'string' ? message.command : '';
     const args = isRecord(message.arguments) ? message.arguments : undefined;
     if (process.env.SHARPLSP_DAP_TRACE === '1' && command !== '') {
-      traceInfo(`[dap->] ${command} ${JSON.stringify(args ?? {}).slice(0, 90)}`);
+      traceInfo(`[dap->] ${command} ${JSON.stringify(args ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`);
     }
     const breakpointPath = command === 'setBreakpoints' ? sourcePathOf(args ?? {}) : undefined;
+    // An F# condition is spelled in F#; netcoredbg only evaluates C#. Translate
+    // BEFORE anything records the message, so the replayer re-arms the same
+    // translated breakpoint and the pending-args map holds what was sent.
+    const msg: DapMessage =
+      breakpointPath !== undefined && isFSharpSource(breakpointPath)
+        ? withClrConditions(message)
+        : message;
     this.replayer.observe(msg, breakpointPath);
     if (command === 'setFunctionBreakpoints') this.breakpoints.recordFunctions(args);
     if (command === 'launch' && this.replayer.wantsTerminal()) {
       this.replayer.startTerminalLaunch();
       return;
     }
-    if (this.interceptCommand(msg, command, args, breakpointPath)) return;
+    const sentArgs = isRecord(msg.arguments) ? msg.arguments : undefined;
+    if (this.interceptCommand(msg, command, sentArgs, breakpointPath)) return;
     if (STEP_COMMANDS.includes(command)) {
       this.stepper.begin(msg, command, Number(args?.threadId ?? 0));
       return;
@@ -269,14 +323,14 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         this.goto.onGoto(message);
         return true;
       case 'launch':
-        // A fresh debuggee is starting; any previous exit is history.
-        this.debuggeeExited = false;
+        // A fresh debuggee is starting; any previous end is history.
+        this.armSession();
         this.rememberLaunchOptions(args);
         if (args !== undefined) this.stacks.onLaunch(args);
         this.hotReload.prepareLaunch(args);
         return false;
       case 'attach':
-        this.debuggeeExited = false;
+        this.armSession();
         this.rememberLaunchOptions(args);
         this.attaches.start(message, args ?? {});
         return true;
@@ -355,18 +409,32 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   public fire(message: Record<string, unknown> & { seq?: unknown }): void {
     if (this.disposed) return;
     const seq = typeof message.seq === 'number' ? message.seq : this.correlator.nextSequence();
-    const framed: DapMessage = { ...message, seq };
-    this.emitter.fire(framed);
+    this.emitOutbound({ ...message, seq });
   }
 
   /** Emit one message towards VS Code exactly as the adapter framed it. */
   public emit(message: DapMessage): void {
+    this.emitOutbound(message);
+  }
+
+  /**
+   * The ONE door out to VS Code.
+   *
+   * `fire` used to reach the emitter directly, so everything the router
+   * synthesizes or forwards asynchronously — a located stop, a synthesized
+   * `terminated`, an emulated output event — left without passing the trace or
+   * the refusal-reason rule. A trace that claims to show what the client
+   * received while silently omitting half of it is worse than no trace: it
+   * reads as proof that a message was never sent.
+   */
+  private emitOutbound(message: DapMessage): void {
+    const outbound = withRefusalReason(message);
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
-        `[dap=>] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')}`,
+        `[dap=>] ${String(outbound.command ?? outbound.event ?? outbound.type)} seq=${String(outbound.seq)} rs=${String(outbound.request_seq)} ok=${String(outbound.success)} msg=${JSON.stringify(outbound.message ?? '')}`,
       );
     }
-    this.emitter.fire(message);
+    this.emitter.fire(outbound);
   }
 
   /** Respond to a client request on the router's behalf. */
@@ -385,7 +453,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     if (this.disposed) return;
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
       traceInfo(
-        `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')} ${JSON.stringify(message.body ?? {}).slice(0, 80)}`,
+        `[dap<-] ${String(message.command ?? message.event ?? message.type)} seq=${String(message.seq)} rs=${String(message.request_seq)} ok=${String(message.success)} msg=${JSON.stringify(message.message ?? '')} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
       );
     }
     if (message.type === 'response') {
@@ -418,6 +486,15 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       // Frame display names feed the synthesized Statics scope
       // ([DEBUG-FEATURES-VARIABLES] "Static fields | variables | P1").
       this.variables.observeStackTrace(message);
+      // Only a SUCCESSFUL read describes a stack. The correlator resolves a
+      // failed response rather than rejecting, so handing one to StackDelivery
+      // would present a refusal as "this thread has no frames" and send it into
+      // the empty-stack recovery. A refusal is the client's to see.
+      if (message.success === false) {
+        this.pendingStackArgs.delete(requestSeq);
+        this.emit(this.handles.translateResponseBody(message));
+        return;
+      }
       this.stacks.deliver(message, this.pendingStackArgs.get(requestSeq));
       this.pendingStackArgs.delete(requestSeq);
       return;
@@ -428,10 +505,14 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private onChildEvent(message: DapMessage): void {
     const name = typeof message.event === 'string' ? message.event : '';
     if (['stopped', 'continued'].includes(name)) {
-      traceInfo(`[stop] ${name} ${JSON.stringify(message.body ?? {}).slice(0, 90)}`);
+      traceInfo(
+        `[stop] ${name} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
+      );
     }
     if (process.env.SHARPLSP_DAP_TRACE === '1') {
-      traceInfo(`[dap<-event] ${name} ${JSON.stringify(message.body ?? {}).slice(0, 80)}`);
+      traceInfo(
+        `[dap<-event] ${name} ${JSON.stringify(message.body ?? {}).slice(0, TRACE_PAYLOAD_CHARS)}`,
+      );
     }
     if (name === 'stopped') {
       if (this.stacks.interceptStop(message)) return;
@@ -450,9 +531,12 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         return;
       }
     } else if (name === 'exited' || name === 'terminated') {
-      this.debuggeeExited = true;
-      if (name === 'terminated') this.childAnnouncedTerminated = true;
+      // A respawn's teardown noise is not the session ending, and must not be
+      // RECORDED as one: the adapter being killed for a restart announces an
+      // end that is swallowed here, and a guard that counted it would leave the
+      // replacement debuggee unable to announce its own.
       if (this.transitioning) return;
+      if (!this.endsSessionOnce(name)) return;
     } else if (name === 'breakpoint') {
       // Keep breakpoint EVENT ids in the session-scoped space the
       // setBreakpoints responses already promised VS Code.
@@ -481,12 +565,41 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     this.latestChildCaps = { ...this.latestChildCaps, ...advertised };
     this.emit(withEventCapabilities(message));
   }
+  /**
+   * Record an end-of-session announcement, and report whether it is the FIRST.
+   *
+   * DAP lets an adapter announce the end more than once and netcoredbg does:
+   * once when the debuggee exits, again when the client disconnects in reply.
+   * A session ends once, so only the first announcement of each kind reaches
+   * VS Code - a repeat is a duplicate of an event the client already acted on.
+   * `launch`, `attach` and `onRestart` re-arm both flags, so a respawned
+   * session can announce its own end.
+   */
+  private endsSessionOnce(name: 'exited' | 'terminated'): boolean {
+    if (name === 'terminated') {
+      if (this.childAnnouncedTerminated) return false;
+      this.childAnnouncedTerminated = true;
+      this.debuggeeExited = true;
+      return true;
+    }
+    if (this.debuggeeExited) return false;
+    this.debuggeeExited = true;
+    return true;
+  }
+
+  /** Re-arm the end-of-session guards for a debuggee that is about to start. */
+  private armSession(): void {
+    this.debuggeeExited = false;
+    this.childAnnouncedTerminated = false;
+  }
+
   /** Restart: respawn through the replayer and swallow the teardown noise. */
   private onRestart(): void {
     this.transitioning = true;
     // The NEXT debuggee has not exited. Leaving this set would make the
-    // restarted session answer `threads` with an empty list forever.
-    this.debuggeeExited = false;
+    // restarted session answer `threads` with an empty list forever, and leave
+    // it unable to announce its own termination.
+    this.armSession();
     this.breakpoints.reset();
     this.stepper.reset();
     this.replayer.restart();

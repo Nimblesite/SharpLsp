@@ -515,6 +515,16 @@ fn publish(
         diagnostics,
         version: None,
     };
+    info!(
+        uri = params.uri.as_str(),
+        count = params.diagnostics.len(),
+        codes = ?params
+            .diagnostics
+            .iter()
+            .filter_map(|diagnostic| diagnostic.code.as_ref())
+            .collect::<Vec<_>>(),
+        "Publishing diagnostics"
+    );
     let notification = Notification {
         method: "textDocument/publishDiagnostics".to_string(),
         params: serde_json::to_value(params).context("serialize diagnostics params")?,

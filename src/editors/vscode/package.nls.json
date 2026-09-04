@@ -82,6 +82,7 @@
   "cmd.rebuild": "Rebuild",
   "cmd.clean": "Clean",
   "cmd.nuget.add": "Add NuGet Package",
+  "cmd.nuget.addFromExplorer": "Add NuGet Package to Selected Project",
   "cmd.nuget.update": "Update NuGet Package",
   "cmd.newSolution": "New Solution",
   "cmd.newProject": "New Project",

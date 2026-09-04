@@ -308,5 +308,8 @@ export function resetForTests(): void {
   projectMtimes.clear();
   for (const timer of pending.values()) clearTimeout(timer);
   pending.clear();
-  projectDependencies.value = new Map();
+  // A signal publishes on every assignment of a NEW Map, so an already-empty
+  // store is left holding the map it has rather than waking every observer
+  // for a change that changes nothing ([VSCODE-REACTIVITY]).
+  if (projectDependencies.value.size > 0) projectDependencies.value = new Map();
 }

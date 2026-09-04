@@ -99,15 +99,17 @@ pub fn handle_linked_editing_range(
 
 // ── Tree-sitter pre-validation ───────────────────────────────────
 
-/// Return `true` if hover position is a comment.
+/// Return `true` if the hover position holds no symbol: whitespace, or a
+/// comment. Both are [HOVER-ERRORS] refusals, answered from the syntax tree so
+/// neither costs a sidecar round trip ([HOVER-ROUTING]).
 #[expect(
     clippy::mutable_key_type,
     reason = "lsp_types::Uri Hash/Eq use string repr only"
 )]
-pub fn is_hover_on_comment(req: &Request, trees: &HashMap<Uri, Tree>) -> bool {
+pub fn hover_has_no_symbol(req: &Request, trees: &HashMap<Uri, Tree>) -> bool {
     extract_position::<HoverParams>(req)
         .and_then(|(uri, pos)| trees.get(&uri).map(|tree| (tree, pos)))
-        .is_some_and(|(tree, pos)| syntax::is_comment_at_position(tree, pos))
+        .is_some_and(|(tree, pos)| syntax::has_no_symbol_at_position(tree, pos))
 }
 
 /// Return `true` if position is a comment or string literal.

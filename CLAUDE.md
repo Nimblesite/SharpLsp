@@ -1,10 +1,8 @@
 # CLAUDE.md
 
 ⚠️ Never kill VS Code processes — not desktop, not browser. They belong to the user. ⚠️
-
 ⚠️ Don't ask the user questions — use your judgment. ⚠️
 
-⚠️ Don't perform Git version-control operations (commits, branches, merges, rebases, tags, or pushes) or add yourself as coauthor. GitHub issues are allowed and encouraged via `gh`. ⚠️
 
 SharpLsp is an open-source, editor-agnostic .NET LSP (C# + F#) built in Rust. One LSP server = complete .NET development experience across every editor.
 
@@ -18,19 +16,14 @@ F# ahead of C# when building new features. F# never takes the backseat.
 
 ## Principles
 
-Write review-ready, maintainable code with no duplication.
-
-- Logging is critical. Use structured logging: `tracing` crate in Rust, `ILogger` + Serilog in .NET. No raw `println!`/`Console.WriteLine`/`console.log` for diagnostics
-- Every feature requires coarse end-to-end tests; do not add unit tests
-
-## Hard Rules
+## Invariants (Hard Rules)
 
 - There is no SharpLsp "legacy" code. If you find code that does not match the specs, delete it
-- All screens MUST BE 100% reactive. If underlying data changes, the screen must be listening and update accordingly
-- Zero duplication. Apply DRY rigorously. Check for existing code before writing new code — highest priority
-- Any function that can throw/panic must return Result<T,E> (outcome package in .NET)
-- Avoid RegEx and string matching. Always use ACTUAL parsers and traverse the AST/CST
-- **Never hand-manipulate structured files.** Load XML, JSON, TOML, YAML, and solution files into a proper DOM/AST, mutate the model, and serialize it with a trivia-preserving parser where needed. Do not use line splicing, regex replacement, or string concatenation. Prefer Microsoft.Build.Construction for MSBuild, XDocument or quick-xml for XML, and serde_json with preserve_order for JSON.
+- ***All screens MUST BE 100% reactive*** If underlying data changes, the screen must be listening and update accordingly. Use Signals to manage state in the VSIX and other extensions
+- ***Zero code duplication*** Use Deslop (https://deslop.live/docs/for-ai/ - MCP or CLI) routinely before adding code and after editing.
+- ***Functional Programming Style (All languages)*** `Result<T,E>` and `Option<T>` everywhere, expressions over statements — `match`, `if let`, iterator chains, pure functions, minimize side effects. Early returns with `?`. C#/F#'s nullability is fine instead of Option<T>
+- Any function that can throw/panic must return Result<T,E> (outcome package in .NET - use the exhaustion analyzer)
+- ***Never use RegEx or string matching on code*** Always use the actual AST/CST. Do not use line splicing, regex replacement, or string concatenation.
 - `allow(clippy::` is not permitted without a strong, documented reason. **Aggressively remove** existing allows.
 - All code files < 500 LOC. Functions < 20 LOC
 - Aggressively move shared code to shared crates/modules
@@ -40,11 +33,12 @@ Write review-ready, maintainable code with no duplication.
 
 ## Testing
 
-100% test coverage and high mutation score. Focus on assertions, not just coverage.
-
-- Never delete failing tests or remove/weaken assertions to make tests pass
-- Add failing tests for broken or missing functionality
-- Tests must not be skipped or ignored
+- ***Never delete failing tests or remove/weaken assertions*** to make tests pass
+- ***100% test coverage and high mutation score***
+- ***Go heavy on spec derived assertions, not just coverage*** 
+- ***Many user interactions per test, many assertions per user interaction*** aim for 2-3 user interactions with 3+ assertions for interaction
+- ***Add failing tests for broken or missing functionality***
+- Tests may ONLY be ignored if the functionality is missing entirely and you add GitHub issue specifying this
 - Test against real .sln/.csproj/.fsproj files, not mocks
 
 ## Rust Quality Standards
@@ -63,19 +57,15 @@ Write review-ready, maintainable code with no duplication.
 - MessagePack serialization must be AOT-compatible
 - Sidecar crash must never take down the Rust host
 
-## Functional Programming Style
+# Git
 
-- `Result<T,E>` and `Option<T>` everywhere
-- Expressions over statements — `match`, `if let`, iterator chains
-- Pure functions, minimize side effects. Early returns with `?`
+- Default to never performing write operations unless the user explicitly requests
+- Log BUG type GitHub issues when you encounter bugs in release
+- Never use worktrees or more than one feature branch at a time
 
-## Duplication — Deslop
+## Duplication — [Deslop - MCP or CLI](https://deslop.live/docs/for-ai/) 
 
-Code duplication is debt. SharpLsp is Rust + C# + F# — all Deslop-supported. The
-ratcheted duplication ceiling lives in `.deslop.toml` (`[threshold].max_duplication_percent`)
-and is the committed source of truth — **never** a hardcoded number in CI YAML or an
-env var. Ratchet **down only**; raising it requires written PR justification. (See
-[CI-DESLOP].)
+***CI MUST ratchet down duplication score*** Never increase the threshold
 
 Use the Deslop MCP tools to prevent duplication, not just measure it:
 
@@ -87,8 +77,6 @@ Use the Deslop MCP tools to prevent duplication, not just measure it:
   and `cluster-by-id` (full member list for a cluster you plan to merge). Use
   `report-for-file` / `report-for-range` for a specific file or selection. Call
   `schema-doc` once per session to learn the report shape.
-- **NEVER silence findings** by widening the threshold, marking code `hidden`, or
-  splitting it into trivially different shapes.
 
 # Multi-Agent Coordination (too-many-cooks)
 
@@ -101,10 +89,6 @@ All agents MUST use tmc to coordinate. No exceptions.
 5. **Check messages frequently** — call `mcp__too-many-cooks__message` (action: `get`) regularly.
 6. **Release locks immediately** after editing. Don't hoard locks.
 7. **Signal completion** — broadcast when you finish so other agents can proceed.
-
-```
-register -> broadcast intent -> acquire locks -> update plan -> do work -> release locks -> broadcast completion
-```
 
 # Documentation Structure
 

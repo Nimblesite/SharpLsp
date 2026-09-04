@@ -37,14 +37,8 @@ runs:
         dotnet-version: |
           9.0.x
           10.0.303
-    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-      with:
-        node-version: '20'
-        cache: npm
-        cache-dependency-path: src/editors/vscode/package-lock.json
     - name: Install VS Code extension deps
-      shell: bash
-      run: npm ci --prefix src/editors/vscode
+      uses: ./.github/actions/vsix-node-deps
     - name: Resolve the feature chunk matrix
       id: chunks
       shell: bash

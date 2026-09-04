@@ -24,7 +24,7 @@ Primary implementations: [main.rs](../../src/sharplsp/src/main.rs), [handlers.rs
 
 **Tier 1 — Rust LSP Host**
 
-- Owns the LSP connection ([JSON-RPC](https://www.jsonrpc.org/specification) over stdio)
+- Owns the LSP connection ([JSON-RPC](https://www.jsonrpc.org/specification) over stdio); answers `shutdown` the moment it arrives, ahead of any request in flight, so an editor's stop timeout never strands a restart
 - Maintains the authoritative Virtual File System (VFS) with document state
 - Runs [tree-sitter](https://tree-sitter.github.io/tree-sitter/) incremental parsing for both C# and F# (sub-millisecond re-parses)
 - Hosts the [salsa](https://salsa-rs.github.io/salsa/) incremental computation database for caching and dependency tracking

@@ -17,7 +17,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { DapRecorder } from './debug-dap-kit';
-import { COMMAND_MS, DEBUG_SESSION_MS, FIXTURE_BUILD_MS } from './test-timeouts';
+import { DEBUG_SESSION_MS, FIXTURE_BUILD_MS, SETTLE_MS } from './test-timeouts';
 import {
   MODE,
   writeCSharpStepTarget,
@@ -190,12 +190,13 @@ async function waitForSession(): Promise<vscode.DebugSession> {
 export async function stopDebuggee(): Promise<void> {
   await stopAnyDebugSession();
   // Only reached once the terminate event has already fired, so the workbench
-  // clears the active session in milliseconds. A command-scale budget keeps
+  // clears the active session in milliseconds. `SETTLE_MS` is the tier for a
+  // wait the workbench owns rather than a command round trip, and it keeps
   // this pair of waits inside the teardown ceiling above.
   await pollUntilResult(
     async () => vscode.debug.activeDebugSession,
     (session) => session === undefined,
-    COMMAND_MS,
+    SETTLE_MS,
     50,
   );
 }

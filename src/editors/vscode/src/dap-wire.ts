@@ -42,6 +42,12 @@ export interface WireHost {
    * `terminated` — which needs no ceremony.
    */
   onGone(why: string | undefined): void;
+  /**
+   * A frame the adapter can no longer hear.
+   *
+   * The host settles it so nothing is left waiting on a process that is gone.
+   */
+  onUndeliverable(message: DapMessage): void;
   /** True once the child itself sent the DAP `terminated` event. */
   announcedTerminated(): boolean;
   /** True once the death has been settled; nothing more may be parsed. */
@@ -63,7 +69,17 @@ export class AdapterWire {
    * could hear, plus a spurious `terminated` telling VS Code the session was
    * already over.
    */
-  private replaced?: cp.ChildProcessWithoutNullStreams;
+  private replaced: cp.ChildProcessWithoutNullStreams | undefined;
+
+  /**
+   * Frames written while a respawn is in flight.
+   *
+   * The replacement child does not exist yet and the outgoing one is dying, so
+   * these have nowhere to go for up to a second. Holding them is what keeps a
+   * `disconnect` sent mid-respawn from vanishing and leaving VS Code with a
+   * session it can never close.
+   */
+  private queued: DapMessage[] = [];
 
   constructor(
     private readonly adapterPath: string,
@@ -76,7 +92,22 @@ export class AdapterWire {
 
   /** Serialise one message to the child using DAP's framing. */
   public write(message: DapMessage): void {
-    if (this.host.isDisposed() || this.child.stdin.destroyed || !this.child.stdin.writable) return;
+    if (this.host.isDisposed()) return;
+    if (this.replaced !== undefined) {
+      // Mid-respawn: the outgoing child's stdin is already unwritable and the
+      // replacement has not been spawned. Hold the frame rather than drop it.
+      this.queued.push(message);
+      return;
+    }
+    if (this.child.stdin.destroyed || !this.child.stdin.writable) {
+      // The adapter cannot hear this frame. Dropping it silently is what left a
+      // `disconnect` unanswered and the session unclosable, so the host answers
+      // it locally instead. NOT `onGone`: netcoredbg closes its stdin during a
+      // normal teardown while the process still lives, and ending the session
+      // on every late write turns a routine shutdown into a reported death.
+      this.host.onUndeliverable(message);
+      return;
+    }
     const body = JSON.stringify(message);
     const frame = `${CONTENT_LENGTH}${String(Buffer.byteLength(body))}${HEADER_END}${body}`;
     // `write` can also throw SYNCHRONOUSLY once the stream has been destroyed.
@@ -108,8 +139,21 @@ export class AdapterWire {
     old.once('exit', () => {
       clearTimeout(escalate);
       this.child = this.spawn(attachArgs);
+      this.replaced = undefined;
+      // `onReady` replays the handshake, so it must reach the replacement
+      // BEFORE the client frames that were waiting on it.
       onReady?.();
+      this.flushQueued();
     });
+  }
+
+  /** Send everything held during the respawn, in the order it was written. */
+  private flushQueued(): void {
+    const held = this.queued;
+    this.queued = [];
+    for (const message of held) {
+      this.write(message);
+    }
   }
 
   /**

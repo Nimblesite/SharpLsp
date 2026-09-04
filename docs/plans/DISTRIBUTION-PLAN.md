@@ -202,7 +202,15 @@ Two further failure classes were investigated and turned out **not** to be defec
 
 ### CI workflow layout ([DIST-CI-LAYOUT])
 
-- [x] Split `ci.yml` into reusable workflows: `ci-lint`, `ci-rust`, `ci-dotnet`, `ci-vsix`, `ci-vsix-windows`
+- [x] Split `ci.yml` into reusable workflows, one per phase: `ci-analyse`,
+      `ci-build`, `ci-test-rust`, `ci-test-dotnet`, `ci-test-vsix`,
+      `ci-test-vsix-windows`, `ci-test-editors`, `ci-coverage`
+      ([DIST-CI-LAYOUT])
+- [x] Order those workflows into five strict phases: ANALYSE -> FULL BUILD
+      (both platforms in parallel) -> CACHE -> TEST (every suite exactly
+      once) -> COVERAGE CHECK. The Windows build used to sit in the test
+      phase gated on the Ubuntu build it consumes nothing from, which put
+      18 minutes of serialised building in front of the slowest tests
 - [x] De-duplicate the PATH-purge step into `tools/vsix/purge-path-binaries.sh` (was inline in three jobs)
 - [x] De-duplicate the test-host env scrubbing into the `VSIX_TEST_ENV` Make variable
 - [x] Fix the Rust test job's NuGet cache step (was `actions/setup-node` with `actions/cache` inputs, so it never cached)

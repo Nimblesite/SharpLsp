@@ -19,16 +19,21 @@ import * as vscode from 'vscode';
 import { DapRecorder } from './debug-dap-kit';
 import {
   CMD_CONTINUE,
+  CMD_STEP_INTO,
   CMD_STEP_OUT,
+  CMD_STEP_OVER,
   assertStopReason,
   evaluate,
   gesture,
   localsOf,
   methodOf,
+  scopesOf,
   stackFrames,
   stepToFrame,
   topFrame,
+  trace,
   variableNamed,
+  variablesOf,
 } from './debug-drive-kit';
 import { assertBoundAtLines, clearAllBreakpoints, stopDebuggee } from './debug-suite-kit';
 import {
@@ -43,6 +48,7 @@ import {
   breakpointAt,
   conditionalBreakpointAt,
   disabledBreakpointAt,
+  hitCountBreakpointAt,
   requireActive,
   requireDebugSession,
   disposeDebugTestFixture,
@@ -542,5 +548,383 @@ suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints',
       CS_ADDS,
       'the debugged test is still exactly where it was',
     );
+  });
+
+  // Implements [DEBUG-FEATURES-STEPPING] "Step over | next | P1",
+  // "Step into | stepIn | P1" and "Step out | stepOut | P1", inside a TEST.
+  // Stepping is the whole point of debugging a test rather than running it.
+  test('the user can step over, into and out of a helper from inside a test', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // Interaction 1 — stop on the first statement of the test body.
+    const item = await rowFor(CS_ADDS);
+    vscode.debug.addBreakpoints([breakpointAt(CS_SOURCE, fixture.sourceUri, 'adds-seed')]);
+    eq(vscode.debug.breakpoints.length, 1, 'one breakpoint, on the test body first line');
+    await debugRun([item]);
+    assertOneTestSession(sessions, 'stepping inside a test');
+    assertBoundAtLines(recorder, [CS_SOURCE.dapLine('adds-seed')], 'the stepping start line');
+    const first = requireAt(await recorder.waitForStops(1), 0, 'the initial stop');
+    assertStopReason(first, 'breakpoint', 'the stepping start');
+    const startFrame = await topFrame(requireActive('the stepping start'), first.threadId);
+    eq(methodOf(startFrame), 'Adds_Two_Numbers', 'stopped in the test method');
+    eq(startFrame.line, CS_SOURCE.dapLine('adds-seed'), 'on the line the user armed');
+
+    // Interaction 2 — STEP OVER the assignment. The debuggee must advance
+    // exactly one line and stay in the same method: a step that leaves the
+    // frame is a step INTO wearing the wrong label.
+    const over = await stepToFrame(recorder, CMD_STEP_OVER);
+    assertStopReason(over.stop, 'step', 'a step over inside a test');
+    eq(methodOf(over.frame), 'Adds_Two_Numbers', 'step over stays in the test method');
+    eq(over.frame.line, CS_SOURCE.dapLine('adds-call'), 'and lands on the next statement');
+    eq(
+      comparablePath(over.frame.sourcePath),
+      comparablePath(fixture.sourceFile),
+      'in the file the user is looking at',
+    );
+    eq(
+      variableNamed(await localsOf(requireActive('after step over'), over.frame.id), 'seed').value,
+      '20',
+      'and the assignment the step went over really executed',
+    );
+
+    // Interaction 3 — STEP INTO the helper, then STEP OUT back to the test.
+    // Just My Code ([DEBUG-FEATURES-TESTS] P1) is what keeps the step into the
+    // user's own `Add`, rather than into xUnit's invocation machinery.
+    const into = await stepToFrame(recorder, CMD_STEP_INTO);
+    assertStopReason(into.stop, 'step', 'a step into a helper called from a test');
+    eq(methodOf(into.frame), 'Add', 'step into lands in the helper the test called');
+    eq(into.frame.line, CS_SOURCE.dapLine('add-body'), 'on the helper first statement');
+    const insideStack = await stackFrames(requireActive('inside the helper'), into.stop.threadId);
+    eq(
+      trace(insideStack).includes('Adds_Two_Numbers'),
+      true,
+      'and the TEST is still on the stack below it — the helper was reached FROM the test',
+    );
+    eq(
+      variableNamed(await localsOf(requireActive('inside the helper'), into.frame.id), 'left')
+        .value,
+      '20',
+      'with the argument the test passed it',
+    );
+    const out = await stepToFrame(recorder, CMD_STEP_OUT);
+    assertStopReason(out.stop, 'step', 'a step out of the helper');
+    eq(methodOf(out.frame), 'Adds_Two_Numbers', 'step out returns to the test method');
+    eq(
+      out.frame.line >= CS_SOURCE.dapLine('adds-call'),
+      true,
+      'at or past the call it stepped out of, never before it',
+    );
+    eq(recorder.stops().length, 4, 'four stops: the breakpoint and three steps');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+  });
+
+  // Implements [DEBUG-FEATURES-STACK] "Call stack display | stackTrace | P1"
+  // and "Navigate to source from frame | source | P1", in a TEST HOST — the
+  // process whose stack has the adapter's own runner frames under the user's.
+  test('the call stack of a stopped test carries the user frames with source', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // Interaction 1 — stop deep: inside the helper, called from the test.
+    const item = await rowFor(CS_ADDS);
+    vscode.debug.addBreakpoints([breakpointAt(CS_SOURCE, fixture.sourceUri, 'add-body')]);
+    await debugRun([item]);
+    assertOneTestSession(sessions, 'inspecting a test call stack');
+    assertBoundAtLines(recorder, [CS_SOURCE.dapLine('add-body')], 'the helper body');
+    const stop = requireAt(await recorder.waitForStops(1), 0, 'the stop inside the helper');
+    assertStopReason(stop, 'breakpoint', 'a helper called from a test');
+
+    // Interaction 2 — the stack must hold BOTH user frames, innermost first.
+    const active = requireActive('a test call stack');
+    const frames = await stackFrames(active, stop.threadId);
+    const names = trace(frames);
+    eq(frames.length >= 2, true, 'a helper called from a test is at least two frames deep');
+    eq(names[0]?.includes('Add'), true, 'the innermost frame is the helper');
+    eq(
+      names.some((name) => name.includes('Adds_Two_Numbers')),
+      true,
+      'and the test method that called it is below — without it the user cannot see WHY ' +
+        'the helper ran',
+    );
+    eq(
+      names.indexOf(names.find((name) => name.includes('Adds_Two_Numbers')) ?? '') > 0,
+      true,
+      'the caller is BELOW the callee, not above it',
+    );
+    eq(
+      frames.length > 2,
+      true,
+      'and the test host runner frames are under both — this is a test host, not a console app',
+    );
+
+    // Interaction 3 — the user's own frames must be NAVIGABLE. A frame with no
+    // source is a call stack the user cannot click, which is a debugger with no
+    // symbols for their own code.
+    const userFrames = frames.filter((frame) => {
+      return comparablePath(frame.sourcePath ?? '') === comparablePath(fixture.sourceFile);
+    });
+    eq(userFrames.length >= 2, true, 'both user frames resolve to the fixture source file');
+    for (const frame of userFrames) {
+      eq(frame.line > 0, true, frame.name + ' must carry a 1-based line to navigate to');
+      neq(frame.id, undefined, frame.name + ' must carry a frame id scopes can be read from');
+      const scopes = await scopesOf(active, frame.id);
+      eq(scopes.length >= 1, true, frame.name + ' must expose at least a Locals scope');
+      eq(
+        scopes.some((scope) => scope.name.toLowerCase().includes('local')),
+        true,
+        frame.name + ': the Variables panel needs a locals scope to render',
+      );
+    }
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+  });
+
+  // Implements [DEBUG-FEATURES-VARIABLES] "Local variables | variables | P1",
+  // "Function arguments | variables | P1" and "Modify variable value at runtime
+  // | setVariable | P1", inside a test.
+  test('a test frame exposes its locals and arguments, and a watch evaluates in it', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // Interaction 1 — stop on the theory body, where the frame carries the row
+    // ARGUMENTS as well as the locals.
+    const item = await rowFor(CS_ROWS);
+    vscode.debug.addBreakpoints([breakpointAt(CS_SOURCE, fixture.sourceUri, 'rows-assert')]);
+    await debugRun([item]);
+    assertOneTestSession(sessions, 'inspecting theory row variables');
+    const stop = requireAt(await recorder.waitForStops(1), 0, 'the first row stop');
+    assertStopReason(stop, 'breakpoint', 'a theory row body');
+    const active = requireActive('a theory row stop');
+    const frame = await topFrame(active, stop.threadId);
+    eq(methodOf(frame), 'Adds_Rows', 'stopped in the theory method');
+
+    // Interaction 2 — the row's arguments and the body's local are all readable
+    // from the ONE frame. A theory whose arguments are invisible is a theory
+    // the user cannot debug at all.
+    const locals = await localsOf(active, frame.id);
+    const named = locals.map((variable) => variable.name);
+    for (const argument of ['left', 'right', 'expected']) {
+      eq(named.includes(argument), true, 'the row argument ' + argument + ' must be visible');
+      neq(
+        variableNamed(locals, argument).value,
+        '',
+        argument + ' must carry the value the row supplied, not an empty placeholder',
+      );
+    }
+    eq(named.includes('sum'), true, 'and the body local computed from them');
+    eq(
+      variableNamed(locals, 'sum').value,
+      variableNamed(locals, 'expected').value,
+      'which, for a passing row, equals what the row expects',
+    );
+    const scopes = await scopesOf(active, frame.id);
+    eq(scopes.length >= 1, true, 'the Variables panel has at least one scope to render');
+    const localsScope = scopes.find((scope) => scope.name.toLowerCase().includes('local'));
+    assert.ok(localsScope, 'a stopped frame must expose a Locals scope');
+    eq(
+      (await variablesOf(active, localsScope.reference)).length,
+      locals.length,
+      'and reading that scope directly gives the same variables',
+    );
+
+    // Interaction 3 — WATCH expressions evaluate in the test frame, over the
+    // row's own arguments. T1 of the evaluation tiers — "simple field/property
+    // access", "arithmetic" — is specified to work in Phase 4.
+    eq(
+      (await evaluate(active, 'left + right', frame.id, 'watch')).value,
+      variableNamed(locals, 'expected').value,
+      'arithmetic over the row arguments evaluates in the ROW frame',
+    );
+    eq(
+      (await evaluate(active, 'sum == expected', frame.id, 'watch')).value.toLowerCase(),
+      'true',
+      'and so does a comparison of two of its locals',
+    );
+    eq(
+      (await evaluate(active, 'expected', frame.id, 'hover')).value,
+      variableNamed(locals, 'expected').value,
+      'a HOVER evaluation answers the same as the Variables panel — a hover that ' +
+        'disagreed with the panel is worse than no hover',
+    );
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+  });
+
+  // Implements [DEBUG-FEATURES-BREAKPOINTS] "Hit-count breakpoints |
+  // setBreakpoints (hitCondition) | P1 | Native". Against a `[Theory]` this is
+  // how the user reaches the SECOND row without touching the first.
+  test('a HIT-COUNT breakpoint skips the first theory row and stops on the second', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // Interaction 1 — arm the theory body to stop only on its second hit.
+    const item = await rowFor(CS_ROWS);
+    vscode.debug.addBreakpoints([
+      hitCountBreakpointAt(CS_SOURCE, fixture.sourceUri, 'rows-body', '2'),
+    ]);
+    eq(vscode.debug.breakpoints.length, 1, 'one breakpoint is armed');
+    const armed = requireAt(vscode.debug.breakpoints, 0, 'the hit-count breakpoint');
+    assert.ok(armed instanceof vscode.SourceBreakpoint, 'armed as a source breakpoint');
+    eq(armed.hitCondition, '2', 'carrying the hit condition the user typed');
+    eq(armed.enabled, true, 'and enabled');
+    eq(armed.condition, undefined, 'a hit count is not an expression condition');
+
+    // Interaction 2 — the condition must reach the ADAPTER. A hit count the
+    // workbench evaluates locally would stop the debuggee on every row and
+    // resume it, which is visible as a stutter and wrong on any real loop.
+    await debugRun([item]);
+    assertOneTestSession(sessions, 'a hit-count breakpoint on a theory');
+    const requests = recorder.requests('setBreakpoints');
+    eq(requests.length >= 1, true, 'the workbench must sync the breakpoint');
+    const sent: unknown = requests[requests.length - 1]?.args['breakpoints'];
+    assert.ok(Array.isArray(sent), 'setBreakpoints carries a breakpoints array');
+    eq(sent.length, 1, 'one breakpoint was sent');
+    eq(
+      String((sent[0] as Record<string, any>)['hitCondition'] ?? ''),
+      '2',
+      'and its hitCondition went to the adapter verbatim',
+    );
+    eq(
+      recorder.capabilities()['supportsHitConditionalBreakpoints'],
+      true,
+      '[DEBUG-PROTOCOL-CAPABILITIES] makes supportsHitConditionalBreakpoints a Phase 4 Yes',
+    );
+
+    // Interaction 3 — the stop that happens is the SECOND row's, and only one
+    // stop happens at all.
+    const stop = requireAt(await recorder.waitForStops(1), 0, 'the hit-count stop');
+    assertStopReason(stop, 'breakpoint', 'a hit-count breakpoint');
+    const active = requireActive('the hit-count stop');
+    const frame = await topFrame(active, stop.threadId);
+    eq(methodOf(frame), 'Adds_Rows', 'stopped in the theory body');
+    const locals = await localsOf(active, frame.id);
+    eq(
+      variableNamed(locals, 'left').value,
+      '10',
+      'on the SECOND [InlineData] row — a hit count of 2 must skip the first',
+    );
+    eq(variableNamed(locals, 'right').value, '20', 'with that row own second argument');
+    eq(variableNamed(locals, 'expected').value, '30', 'and its own expectation');
+    await gesture(CMD_CONTINUE);
+    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    eq(recorder.stops().length, 1, 'and no other row stopped, before or after it');
+  });
+
+  // Implements [DEBUG-FEATURES-TESTS] rules 2 and 3 verbatim: "The Debug
+  // gesture MUST NOT report the attach settled until the session is ARMED:
+  // `configurationDone` has been ANSWERED by the adapter and every breakpoint
+  // it accepted has bound", and "A run with NO breakpoints armed is armed as
+  // soon as `configurationDone` is answered".
+  test('the Debug gesture does not settle until configurationDone is ANSWERED', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // Interaction 1 — arm two breakpoints in two different methods, so more
+    // than one must bind before the gesture may settle.
+    const item = await rowFor(CS_ADDS);
+    vscode.debug.addBreakpoints([
+      breakpointAt(CS_SOURCE, fixture.sourceUri, 'adds-seed'),
+      breakpointAt(CS_SOURCE, fixture.sourceUri, 'add-body'),
+    ]);
+    eq(vscode.debug.breakpoints.length, 2, 'two breakpoints are armed before the gesture');
+    eq(
+      vscode.debug.breakpoints.every((breakpoint) => breakpoint.enabled),
+      true,
+      'both of them enabled, so both must bind',
+    );
+
+    // Interaction 2 — press Debug. By the time the gesture RESOLVES, the
+    // handshake must already be complete. `startDebugging` resolving only means
+    // the session EXISTS; breakpoints are still in flight, and reporting
+    // "attached" there is the Debug press that ends in silence.
+    await debugRun([item]);
+    eq(
+      recorder.responses('configurationDone').length >= 1,
+      true,
+      'configurationDone must have been ANSWERED by the adapter before the gesture settled — ' +
+        'even the REQUEST precedes the adapter finishing the attach',
+    );
+    eq(
+      requireAt(recorder.responses('configurationDone'), 0, 'the configurationDone response')
+        .success,
+      true,
+      'and answered successfully',
+    );
+    assertHandshakeOrder(recorder, 'a settled Debug gesture');
+    assertBoundAtLines(
+      recorder,
+      [CS_SOURCE.dapLine('adds-seed'), CS_SOURCE.dapLine('add-body')],
+      'both armed lines of a settled Debug gesture',
+    );
+
+    // Interaction 3 — the first stop the user sees is their OWN breakpoint,
+    // never VSTest's `Debugger.Break()` wait loop (rule 1). A stop with any
+    // other reason means the resume never happened and the user is parked in
+    // machinery they did not write.
+    const stop = requireAt(await recorder.waitForStops(1), 0, 'the first stop of the session');
+    assertStopReason(stop, 'breakpoint', 'the FIRST stop a test debug shows the user');
+    neq(stop.hitBreakpointIds.length, 0, 'and it names the breakpoint that caused it');
+    const frame = await topFrame(requireActive('the first stop'), stop.threadId);
+    eq(
+      comparablePath(frame.sourcePath ?? ''),
+      comparablePath(fixture.sourceFile),
+      'in the user own file, not in VSTest wait-loop machinery',
+    );
+    eq(methodOf(frame), 'Adds_Two_Numbers', 'and in the test the user pressed Debug on');
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+  });
+
+  // Implements [DEBUG-FEATURES-TESTS] — a debug session is not a one-shot. The
+  // second press must behave exactly like the first, or the user reloads the
+  // window every time they want another look.
+  test('debugging the same test twice in a row gives two clean, separate sessions', async function () {
+    this.timeout(DEBUG_TEST_MS);
+
+    // Interaction 1 — the first session, armed and stopped.
+    const item = await rowFor(CS_ADDS);
+    vscode.debug.addBreakpoints([breakpointAt(CS_SOURCE, fixture.sourceUri, 'adds-call')]);
+    await debugRun([item]);
+    assertOneTestSession(sessions, 'the first debug of a test');
+    const firstStop = requireAt(await recorder.waitForStops(1), 0, 'the first session stop');
+    assertStopReason(firstStop, 'breakpoint', 'the first session');
+    eq(
+      methodOf(await topFrame(requireActive('the first session'), firstStop.threadId)),
+      'Adds_Two_Numbers',
+      'in the test the user pressed Debug on',
+    );
+
+    // Interaction 2 — let it finish, and prove it really ended. A session left
+    // running holds the test host, and the second press then attaches to
+    // nothing.
+    await gesture(CMD_CONTINUE);
+    await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
+    eq(sessions.ours.length, 1, 'exactly one session so far');
+    eq(vscode.debug.breakpoints.length, 1, 'and the breakpoint survives the session ending');
+
+    // Interaction 3 — press Debug again on the same row. A SECOND session, its
+    // own handshake, its own binding, its own stop.
+    const stopsBefore = recorder.stops().length;
+    await debugRun([item]);
+    eq(sessions.ours.length, 2, 'the second press starts a SECOND session, not a resumed one');
+    neq(
+      requireAt(sessions.ours, 1, 'the second session').id,
+      requireAt(sessions.ours, 0, 'the first session').id,
+      'and it is a different session, with its own id',
+    );
+    assertBoundAtLines(
+      recorder,
+      [CS_SOURCE.dapLine('adds-call')],
+      'the same breakpoint, bound again by the second session',
+    );
+    const second = requireAt(
+      await recorder.waitForStops(stopsBefore + 1),
+      stopsBefore,
+      'the second session stop',
+    );
+    assertStopReason(second, 'breakpoint', 'the second session');
+    eq(
+      methodOf(await topFrame(requireActive('the second session'), second.threadId)),
+      'Adds_Two_Numbers',
+      'stopping in the same test, at the same place, as the first',
+    );
+    deepEq(recorder.errors, [], 'with no adapter transport error across either session');
+    deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
   });
 });

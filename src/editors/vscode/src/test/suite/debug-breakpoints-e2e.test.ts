@@ -304,4 +304,122 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
     eq(recorder.stops().length, 3, 'Accumulate calls Add exactly three times, so three stops');
     assertCleanSession(debuggee(), 'a function breakpoint hit three times');
   });
+
+  // Implements [DEBUG-FEATURES-BREAKPOINTS] as a TABLE: every breakpoint field
+  // the section names — `condition`, `hitCondition`, `logMessage`, and the
+  // enabled flag — must reach the adapter on the breakpoint it belongs to, and
+  // on no other. A sync that flattens the fields arms four breakpoints that all
+  // behave like the first.
+  test('every breakpoint field reaches the adapter on its OWN breakpoint', async function () {
+    this.timeout(DEBUG_TEST_MS);
+    const { fixture, recorder } = debuggee();
+
+    // Interaction 1 — four breakpoints, each carrying a different field, plus
+    // one that is disabled and must not be sent at all.
+    const plain = breakpointAt(fixture, 'main-accumulate');
+    const conditional = breakpointAt(fixture, 'accumulate-call', { condition: 'index == 3' });
+    const counted = breakpointAt(fixture, 'add-body', { hitCondition: '2' });
+    const disabled = breakpointAt(fixture, 'main-inspect', { enabled: false });
+    vscode.debug.addBreakpoints([plain, conditional, counted, disabled]);
+    eq(vscode.debug.breakpoints.length, 4, 'four breakpoints sit in the Breakpoints view');
+    eq(
+      vscode.debug.breakpoints.filter((entry) => entry.enabled).length,
+      3,
+      'three of them are enabled and one is not',
+    );
+    deepEq(
+      armedLines(),
+      [
+        fixture.source.line('main-accumulate'),
+        fixture.source.line('accumulate-call'),
+        fixture.source.line('add-body'),
+        fixture.source.line('main-inspect'),
+      ].sort((left, right) => left - right),
+      'and the view holds them all, disabled included',
+    );
+
+    // Interaction 2 — the sync. Only the enabled three are sent, each carrying
+    // its own field and nothing else.
+    const session = await startDebuggee(debuggee(), { mode: MODE.plain });
+    await recorder.waitForStops(1);
+    const requested = recorder.requests('setBreakpoints');
+    eq(requested.length >= 1, true, 'the launch synced the armed breakpoints');
+    const sent = requested
+      .flatMap((request) => {
+        const list: unknown = request.args['breakpoints'];
+        return Array.isArray(list) ? (list as Record<string, any>[]) : [];
+      })
+      .filter((entry) => typeof entry['line'] === 'number');
+    eq(
+      sent.some((entry) => Number(entry['line']) === fixture.source.dapLine('main-inspect')),
+      false,
+      'a DISABLED breakpoint must never be sent - the view greys it out precisely because it ' +
+        'is inert',
+    );
+    const conditionsSent = sent.filter((entry) => String(entry['condition'] ?? '') !== '');
+    eq(conditionsSent.length >= 1, true, 'the conditional breakpoint carried its condition');
+    eq(
+      conditionsSent.every(
+        (entry) => Number(entry['line']) === fixture.source.dapLine('accumulate-call'),
+      ),
+      true,
+      'and ONLY the breakpoint the user typed it on - a condition that leaked onto the plain ' +
+        'breakpoint silences a breakpoint the user set unconditionally',
+    );
+    const countsSent = sent.filter((entry) => String(entry['hitCondition'] ?? '') !== '');
+    eq(countsSent.length >= 1, true, 'the hit-count breakpoint carried its hit condition');
+    eq(
+      countsSent.every((entry) => Number(entry['line']) === fixture.source.dapLine('add-body')),
+      true,
+      'and only that one',
+    );
+
+    // Interaction 3 — the capabilities that let each field be sent at all, and
+    // the stop the plain breakpoint produces.
+    for (const flag of [
+      'supportsConditionalBreakpoints',
+      'supportsHitConditionalBreakpoints',
+      'supportsLogPoints',
+    ]) {
+      eq(
+        recorder.capabilities()[flag],
+        true,
+        flag +
+          ' is a Phase 4 Yes; unadvertised, VS Code strips the field before sending and ' +
+          'the breakpoint silently becomes a plain one',
+      );
+    }
+    const stop = requireAt(recorder.stops(), 0, 'the first stop');
+    assertStopReason(stop, 'breakpoint', 'the plain breakpoint');
+    assertStoppedAt(
+      await topFrame(session, stop.threadId),
+      fixture,
+      'main-accumulate',
+      'Main',
+      'the plain breakpoint is reached FIRST, before the conditional and counted ones',
+    );
+
+    // Interaction 4 — walk the rest of the run. Each remaining breakpoint must
+    // fire exactly on the visit its own field selects.
+    const conditionalHit = await stepToFrame(recorder, CMD_CONTINUE);
+    assertStopReason(conditionalHit.stop, 'breakpoint', 'the counted or conditional breakpoint');
+    eq(
+      ['Add', 'Accumulate'].includes(methodOf(conditionalHit.frame)),
+      true,
+      'the next stop is one of the two remaining breakpoints, never the disabled one',
+    );
+    eq(
+      methodOf(conditionalHit.frame) === 'Main',
+      false,
+      'and never the disabled breakpoint in Main, whose line was not even sent',
+    );
+    await vscode.commands.executeCommand(CMD_CONTINUE);
+    eq(
+      recorder.stops().every((entry) => entry.reason === 'breakpoint'),
+      true,
+      'every stop in the run is a breakpoint stop; a step or entry stop means something ' +
+        'other than the armed breakpoints paused the debuggee',
+    );
+    deepEq(recorder.errors, [], 'with no adapter transport error');
+  });
 });

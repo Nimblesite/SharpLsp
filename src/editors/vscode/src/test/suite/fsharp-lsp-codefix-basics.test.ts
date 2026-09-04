@@ -9,6 +9,7 @@ import {
   type CodeFixScenario,
 } from './fsharp-refactor-fixtures';
 import {
+  activateWarmFSharp,
   applyAction,
   assertInsertion,
   assertNoAction,
@@ -25,9 +26,9 @@ import {
   undoAction,
   uniqueAction,
 } from './fsharp-refactor-test-kit';
-import { activateRealSharpLsp, revertDocument } from './refactor-test-helpers';
+import { revertDocument } from './refactor-test-helpers';
 import { closeAllEditors } from './test-helpers';
-import { LSP_RESPONSE_MS } from './test-timeouts';
+import { LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
 
 // Full real-LSP lifecycle coverage for [ANALYZERS-FSAC-PARITY]. No mocked providers.
 const TARGET_FILE = 'fsharp/DiagnosticsTarget.fs';
@@ -57,7 +58,12 @@ interface BasicFixSpec extends CodeFixScenario {
 suite('F# real LSP — diagnostic quick fixes', defineBasicFixSuite);
 
 function defineBasicFixSuite(): void {
-  suiteSetup(activateRealSharpLsp);
+  suiteSetup(async function () {
+    this.timeout(SIDECAR_COLD_MS);
+    const first = OPEN_SCENARIOS[0];
+    assert.ok(first, 'the open-directive scenarios must not be empty');
+    await activateWarmFSharp(TARGET_FILE, first.source, first.diagnostic);
+  });
   teardown(closeAllEditors);
   suiteTeardown(closeAllEditors);
   registerOpenTests();

@@ -611,8 +611,9 @@ fn main_loop(
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
     let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
+    let inbound = spawn_shutdown_fast_path(connection);
 
-    for msg in &connection.receiver {
+    for msg in &inbound {
         match msg {
             Message::Request(req) => {
                 if shutdown_requested {
@@ -621,14 +622,6 @@ fn main_loop(
                         error_code_i32(lsp_server::ErrorCode::InvalidRequest),
                         "server is shutting down".to_string(),
                     );
-                    connection.sender.send(Message::Response(resp))?;
-                    continue;
-                }
-
-                if req.method == Shutdown::METHOD {
-                    info!("Shutdown request received");
-                    shutdown_requested = true;
-                    let resp = Response::new_ok(req.id, serde_json::Value::Null);
                     connection.sender.send(Message::Response(resp))?;
                     continue;
                 }
@@ -646,6 +639,10 @@ fn main_loop(
                 )?;
             }
             Message::Notification(notif) => {
+                if notif.method == SHUTDOWN_ANSWERED {
+                    shutdown_requested = true;
+                    continue;
+                }
                 if notif.method == "exit" {
                     info!("Exit notification received");
                     return Ok(());
@@ -673,6 +670,52 @@ fn main_loop(
     }
 
     Ok(())
+}
+
+/// The loop-internal marker that stands in for a `shutdown` the fast path
+/// has already answered.
+const SHUTDOWN_ANSWERED: &str = "sharplsp/shutdownAnswered";
+
+/// Answer `shutdown` the moment it arrives, ahead of whatever the loop is
+/// busy with. Implements [SHARPLSP-ARCHITECTURE-TIERS].
+///
+/// The loop dispatches one message at a time and a semantic request holds it
+/// for the sidecar's whole round trip, so a `shutdown` queued behind one waited
+/// that long. vscode-languageclient gives a server two seconds to answer before
+/// it declares the stop failed and abandons the restart the user asked for —
+/// on a Windows agent an F# check ran past that and left the client dead.
+/// LSP 3.17 asks the server to answer `shutdown` and accept no further work;
+/// the answer does not have to wait for work already in flight. This thread
+/// reads the client stream ahead of the loop, answers `shutdown` itself, and
+/// hands the loop [`SHUTDOWN_ANSWERED`] in its place so the loop still refuses
+/// everything that follows.
+fn spawn_shutdown_fast_path(connection: &Connection) -> crossbeam_channel::Receiver<Message> {
+    let (to_loop, from_client) = crossbeam_channel::unbounded();
+    let inbound = connection.receiver.clone();
+    let outbound = connection.sender.clone();
+    // The thread ends with the client stream; nothing waits on it.
+    drop(std::thread::spawn(move || {
+        for msg in &inbound {
+            let forwarded = match msg {
+                Message::Request(req) if req.method == Shutdown::METHOD => {
+                    info!("Shutdown request received");
+                    let resp = Response::new_ok(req.id, serde_json::Value::Null);
+                    if outbound.send(Message::Response(resp)).is_err() {
+                        break;
+                    }
+                    Message::Notification(Notification::new(
+                        SHUTDOWN_ANSWERED.to_string(),
+                        serde_json::Value::Null,
+                    ))
+                }
+                other => other,
+            };
+            if to_loop.send(forwarded).is_err() {
+                break;
+            }
+        }
+    }));
+    from_client
 }
 
 // ── Request Handling ──────────────────────────────────────────────
@@ -734,8 +777,8 @@ fn handle_request(
             semantic::handle_completion_resolve(req, runtime, sidecar)
         }
         HoverRequest::METHOD => {
-            if handlers::is_hover_on_comment(&req, trees) {
-                info!("Hover: skipped (comment position)");
+            if handlers::hover_has_no_symbol(&req, trees) {
+                info!("Hover: skipped (whitespace or comment position)");
                 Ok(serde_json::Value::Null)
             } else {
                 let sidecar = pick_sidecar(&req, csharp_sidecar, fsharp_sidecar);

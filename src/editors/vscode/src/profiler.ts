@@ -795,15 +795,31 @@ export function registerCommands(
     }),
   );
 
+  /**
+   * The output file a profiler row points at, or `undefined` once the user has
+   * been told why nothing happened.
+   *
+   * The Command Palette invokes these row commands with NO argument, and a notice
+   * about a session's trace file says nothing to a user who selected no session -
+   * so an absent row is a silent no-op, and only a real row whose trace has not
+   * been written yet earns the message.
+   */
+  function outputPathOf(item: ProfilerTreeItem | undefined): string | undefined {
+    if (item === undefined) return undefined;
+    const path = item.outputPath;
+    if (path === undefined || path.length === 0) {
+      void vscode.window.showInformationMessage('Session has no output file yet.');
+      return undefined;
+    }
+    return path;
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD_PROFILER_COPY_OUTPUT_PATH,
       async (item?: ProfilerTreeItem) => {
-        const path = item?.outputPath;
-        if (path === undefined || path.length === 0) {
-          void vscode.window.showInformationMessage('Session has no output file yet.');
-          return;
-        }
+        const path = outputPathOf(item);
+        if (path === undefined) return;
         await vscode.env.clipboard.writeText(path);
         void vscode.window.showInformationMessage(`Copied: ${path}`);
       },
@@ -812,11 +828,8 @@ export function registerCommands(
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD_PROFILER_REVEAL_OUTPUT, async (item?: ProfilerTreeItem) => {
-      const path = item?.outputPath;
-      if (path === undefined || path.length === 0) {
-        void vscode.window.showInformationMessage('Session has no output file yet.');
-        return;
-      }
+      const path = outputPathOf(item);
+      if (path === undefined) return;
       await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(path));
     }),
   );

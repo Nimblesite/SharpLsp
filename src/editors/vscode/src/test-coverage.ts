@@ -10,6 +10,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { XMLParser } from 'fast-xml-parser';
+import { info } from './log.js';
+import { getErrorMessage } from './utils.js';
 
 interface CoberturaLine {
   readonly '@_number': string;
@@ -18,7 +20,13 @@ interface CoberturaLine {
 }
 
 interface CoberturaClass {
-  readonly '@_filename': string;
+  /**
+   * Optional because the PARSER decides, not the schema: a `<class>` element
+   * written without the attribute — which a report truncated mid-write is full
+   * of — yields `undefined`, and `Uri.file(undefined)` throws out of a step
+   * whose whole contract is that it never fails a run.
+   */
+  readonly '@_filename'?: string;
   readonly lines?: { line?: CoberturaLine | CoberturaLine[] };
 }
 
@@ -61,11 +69,20 @@ export function findCoberturaFile(resultsDir: string): string | undefined {
   return findCoberturaFiles(resultsDir)[0];
 }
 
-/** Parse a cobertura XML report into VS Code FileCoverage entries. */
+/**
+ * Parse a cobertura XML report into VS Code FileCoverage entries.
+ *
+ * Attaching coverage is a REPORTING step: it runs after a `dotnet test` whose
+ * tests have already passed or failed on their own terms, and it must never be
+ * the thing that fails the run. A report the collector never wrote (the run was
+ * cancelled before it got that far, or `coverlet.collector` is not referenced
+ * at all) made `readFileSync` throw ENOENT straight out of the run handler,
+ * which VS Code surfaces as "An error occurred attempting to run tests" over a
+ * run that actually completed. No report is no coverage, reported as such.
+ */
 export function parseCoberturaXml(filePath: string): vscode.FileCoverage[] {
-  const xml = fs.readFileSync(filePath, 'utf-8');
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- fast-xml-parser returns untyped output; CoberturaReport mirrors the known schema
-  const doc: CoberturaReport = coberturaParser.parse(xml);
+  const doc = readReport(filePath);
+  if (doc === undefined) return [];
   const packages = doc.coverage?.packages?.package;
   if (packages === undefined) return [];
 
@@ -86,11 +103,34 @@ export function parseCoberturaXml(filePath: string): vscode.FileCoverage[] {
   return result;
 }
 
+/**
+ * Read and parse one report, or report why it could not be read.
+ *
+ * Both halves can fail on a report a cancelled run left half-written: the file
+ * may not be there at all, and what IS there may be truncated mid-element.
+ */
+function readReport(filePath: string): CoberturaReport | undefined {
+  try {
+    const xml = fs.readFileSync(filePath, 'utf-8');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- fast-xml-parser returns untyped output; CoberturaReport mirrors the known schema
+    return coberturaParser.parse(xml);
+  } catch (error: unknown) {
+    info(`No usable coverage report at ${filePath}: ${getErrorMessage(error)}`);
+    return undefined;
+  }
+}
+
 /** Build a FileCoverage (and stash its per-line details) for one cobertura class. */
 function fileCoverageForClass(cls: CoberturaClass): vscode.FileCoverage | undefined {
+  const filename = cls['@_filename'];
+  if (filename === undefined || filename === '') return undefined;
+  // A class with an EMPTY `<lines>` element is still a file the run loaded —
+  // an interface, a record with only generated members, a file whose every
+  // statement the compiler elided. Dropping it made the gutter say nothing
+  // about a file the coverage run had demonstrably seen, which reads as "not
+  // instrumented" rather than "nothing here to cover".
   const lines = cls.lines?.line;
-  if (lines === undefined) return undefined;
-  const lineList = Array.isArray(lines) ? lines : [lines];
+  const lineList = lines === undefined ? [] : Array.isArray(lines) ? lines : [lines];
 
   let covered = 0;
   const details: vscode.StatementCoverage[] = [];
@@ -101,7 +141,7 @@ function fileCoverageForClass(cls: CoberturaClass): vscode.FileCoverage | undefi
     details.push(new vscode.StatementCoverage(hits, new vscode.Position(lineNo, 0)));
   }
 
-  const uri = vscode.Uri.file(cls['@_filename']);
+  const uri = vscode.Uri.file(filename);
   const fc = new vscode.FileCoverage(uri, new vscode.TestCoverageCount(covered, lineList.length));
   coverageDetails.set(uri.toString(), details);
   return fc;
@@ -115,4 +155,49 @@ export function loadDetailedCoverage(
   fileCoverage: vscode.FileCoverage,
 ): vscode.FileCoverageDetail[] {
   return coverageDetails.get(fileCoverage.uri.toString()) ?? [];
+}
+
+/**
+ * Every report merged: ONE {@link vscode.FileCoverage} per source file, whose
+ * detail is the UNION of every report that measured it.
+ *
+ * [TEST-COVERAGE] warns that "taking only the first drops every other project's
+ * coverage". Attaching each report's entry separately loses it just as surely
+ * at the other end: two test projects covering one library produce two entries
+ * for the SAME file, and the detail behind them is stashed by file URI, so the
+ * last report parsed overwrites the first. VS Code then resolves that one
+ * report's lines for both entries, and a function the other project executed is
+ * painted as dead code — a wrong red gutter on a line that just ran.
+ *
+ * Hits are taken per line as the MAXIMUM across reports, because a line one
+ * project never executed is not evidence that another did not.
+ */
+export function mergeCoberturaReports(reports: readonly string[]): vscode.FileCoverage[] {
+  const hitsByFile = new Map<string, Map<number, number>>();
+  for (const report of reports) {
+    for (const file of parseCoberturaXml(report)) {
+      const key = file.uri.toString();
+      const lines = hitsByFile.get(key) ?? new Map<number, number>();
+      for (const detail of coverageDetails.get(key) ?? []) {
+        const at = detail.location;
+        const line = at instanceof vscode.Range ? at.start.line : at.line;
+        lines.set(line, Math.max(lines.get(line) ?? 0, Number(detail.executed)));
+      }
+      hitsByFile.set(key, lines);
+    }
+  }
+  return [...hitsByFile].map(([uri, lines]) => mergedFileCoverage(vscode.Uri.parse(uri), lines));
+}
+
+/** Rebuild one file's coverage from the union of its per-line hit counts. */
+function mergedFileCoverage(
+  uri: vscode.Uri,
+  lines: ReadonlyMap<number, number>,
+): vscode.FileCoverage {
+  const details = [...lines]
+    .sort(([a], [b]) => a - b)
+    .map(([line, hits]) => new vscode.StatementCoverage(hits, new vscode.Position(line, 0)));
+  const covered = details.filter((detail) => Number(detail.executed) > 0).length;
+  coverageDetails.set(uri.toString(), details);
+  return new vscode.FileCoverage(uri, new vscode.TestCoverageCount(covered, details.length));
 }
