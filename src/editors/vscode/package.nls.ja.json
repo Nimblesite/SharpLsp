@@ -85,6 +85,7 @@
   "cmd.rebuild": "リビルド",
   "cmd.clean": "クリーン",
   "cmd.nuget.add": "NuGet パッケージを追加",
+  "cmd.nuget.addFromExplorer": "選択したプロジェクトに NuGet パッケージを追加",
   "cmd.nuget.update": "NuGet パッケージを更新",
   "cmd.newSolution": "新しいソリューション",
   "cmd.newProject": "新しいプロジェクト",

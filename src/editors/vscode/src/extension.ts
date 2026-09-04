@@ -454,59 +454,82 @@ function browseNuGetPackages(node: ExplorerNode | undefined, context: ExtensionC
   NuGetBrowserPanel.open(context, node.projectFilePath, projectName, () => lspClient);
 }
 
+/** Tell the user why a context-menu command invoked with no row did nothing. */
+function warnNoSelection(): void {
+  void window.showWarningMessage('Select an item in the Solution Explorer first.');
+}
+
 function registerContextMenuCommands(context: ExtensionContext): void {
   context.subscriptions.push(
-    commands.registerCommand(CMD_COPY_QUALIFIED_NAME, async (node: ExplorerNode) => {
+    commands.registerCommand(CMD_COPY_QUALIFIED_NAME, async (node?: ExplorerNode) => {
+      if (node === undefined) {
+        warnNoSelection();
+        return;
+      }
       const name = buildQualifiedName(node);
       await vscode.env.clipboard.writeText(name);
       void window.showInformationMessage(`Copied: ${name}`);
     }),
-    commands.registerCommand(CMD_COPY_NAME, async (node: ExplorerNode) => {
+    commands.registerCommand(CMD_COPY_NAME, async (node?: ExplorerNode) => {
+      if (node === undefined) {
+        warnNoSelection();
+        return;
+      }
       await vscode.env.clipboard.writeText(node.sortName);
       void window.showInformationMessage(`Copied: ${node.sortName}`);
     }),
-    commands.registerCommand(CMD_REVEAL_IN_EXPLORER, (node: ExplorerNode) => {
-      if (node.symbolUri === undefined) return;
+    commands.registerCommand(CMD_REVEAL_IN_EXPLORER, (node?: ExplorerNode) => {
+      if (node?.symbolUri === undefined) return;
       const uri = vscode.Uri.parse(node.symbolUri);
       void commands.executeCommand('revealInExplorer', uri);
     }),
-    commands.registerCommand(CMD_SORT_MEMBERS, async (node: ExplorerNode) => {
+    commands.registerCommand(CMD_SORT_MEMBERS, async (node?: ExplorerNode) => {
       await sortMembers(node);
     }),
-    commands.registerCommand(CMD_OPEN_PROJECT_FILE, async (node: ExplorerNode) => {
+    commands.registerCommand(CMD_OPEN_PROJECT_FILE, async (node?: ExplorerNode) => {
       await openProjectFile(node);
     }),
-    commands.registerCommand(CMD_ADD_PROJECT_REFERENCE, async (node: ExplorerNode) => {
+    commands.registerCommand(CMD_ADD_PROJECT_REFERENCE, async (node?: ExplorerNode) => {
       await addProjectReference(node);
     }),
-    commands.registerCommand(CMD_NUGET_ADD_FROM_EXPLORER, async (node: ExplorerNode) => {
-      if (node.projectFilePath === undefined) {
-        void window.showWarningMessage('No project file path available.');
-        return;
-      }
-      await addNuGetPackageToProject(node.projectFilePath);
+    commands.registerCommand(CMD_NUGET_ADD_FROM_EXPLORER, async (node?: ExplorerNode) => {
+      const projectFilePath = projectPathOf(node);
+      if (projectFilePath === undefined) return;
+      await addNuGetPackageToProject(projectFilePath);
     }),
   );
 }
 
-async function openProjectFile(node: ExplorerNode): Promise<void> {
-  if (node.projectFilePath === undefined) {
+/**
+ * The project file a Solution Explorer command was invoked on, or `undefined`
+ * once the user has been told why nothing happened.
+ *
+ * The Command Palette invokes these commands with no argument at all
+ * ([SE-CONTEXT-VALUES]), so the node is genuinely optional and reading through
+ * it unguarded threw rather than explaining itself.
+ */
+function projectPathOf(node: ExplorerNode | undefined): string | undefined {
+  if (node?.projectFilePath === undefined) {
     void window.showWarningMessage('No project file path available.');
-    return;
+    return undefined;
   }
-  const uri = vscode.Uri.file(node.projectFilePath);
-  const doc = await workspace.openTextDocument(uri);
-  await window.showTextDocument(doc);
-  log.info(`Opened project file: ${node.projectFilePath}`);
+  return node.projectFilePath;
 }
 
-async function addProjectReference(node: ExplorerNode): Promise<void> {
-  if (node.projectFilePath === undefined) {
-    void window.showWarningMessage('No project file path available.');
-    return;
-  }
+async function openProjectFile(node: ExplorerNode | undefined): Promise<void> {
+  const projectFilePath = projectPathOf(node);
+  if (projectFilePath === undefined) return;
+  const uri = vscode.Uri.file(projectFilePath);
+  const doc = await workspace.openTextDocument(uri);
+  await window.showTextDocument(doc);
+  log.info(`Opened project file: ${projectFilePath}`);
+}
+
+async function addProjectReference(node: ExplorerNode | undefined): Promise<void> {
+  const projectFilePath = projectPathOf(node);
+  if (projectFilePath === undefined) return;
   const projectFiles = await workspace.findFiles('**/*.{csproj,fsproj}', '**/node_modules/**');
-  const candidates = projectFiles.filter((f) => f.fsPath !== node.projectFilePath);
+  const candidates = projectFiles.filter((f) => f.fsPath !== projectFilePath);
   if (candidates.length === 0) {
     void window.showWarningMessage('No other project files found to reference.');
     return;
@@ -519,7 +542,7 @@ async function addProjectReference(node: ExplorerNode): Promise<void> {
     { placeHolder: 'Select project to reference' },
   );
   if (pick === undefined) return;
-  const error = await deps.addProjectReference(node.projectFilePath, pick.uri.fsPath);
+  const error = await deps.addProjectReference(projectFilePath, pick.uri.fsPath);
   if (error !== undefined) {
     void window.showErrorMessage(`Failed to add project reference: ${error}`);
     return;
@@ -528,8 +551,8 @@ async function addProjectReference(node: ExplorerNode): Promise<void> {
   await explorerProvider?.refresh();
 }
 
-async function sortMembers(node: ExplorerNode): Promise<void> {
-  if (node.symbolUri === undefined || node.symbolRange === undefined) {
+async function sortMembers(node: ExplorerNode | undefined): Promise<void> {
+  if (node?.symbolUri === undefined || node.symbolRange === undefined) {
     void window.showWarningMessage('No symbol location available.');
     return;
   }
