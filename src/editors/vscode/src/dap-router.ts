@@ -542,6 +542,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       // setBreakpoints responses already promised VS Code.
       const body = isRecord(message.body) ? message.body : {};
       this.noteBreakpointBind(body.breakpoint);
+      // The emulator indexes by the line the adapter BOUND, and a lazily bound
+      // breakpoint only learns it here ([DEBUG-FEATURES-BREAKPOINTS-VERIFY]).
+      this.breakpoints.rebind(body.breakpoint);
       this.announceWhenArmed();
       this.emit(this.handles.translateEvent(message));
       return;

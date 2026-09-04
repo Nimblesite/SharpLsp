@@ -321,9 +321,15 @@ export function assertBoundAtLines(
     `${why}: every breakpoint must verify, in the response or by a later ` +
       `\`breakpoint\` event; unverified ones never stop the debuggee`,
   );
+  // Compared as a SET. DAP answers `setBreakpoints` in the order of the
+  // request, and the request is the WORKBENCH's breakpoint list — which it
+  // keeps sorted by line, not in the order a caller happened to arm them. The
+  // claim here is that every armed line came back bound to itself, and nothing
+  // drifted to a neighbouring line.
+  const ascending = (left: number, right: number): number => left - right;
   assert.deepStrictEqual(
-    bound.map((entry) => Number(entry['line'])),
-    [...lines],
+    bound.map((entry) => Number(entry['line'])).sort(ascending),
+    [...lines].sort(ascending),
     `${why}: a bound breakpoint must stay on the line the user set it on`,
   );
 }

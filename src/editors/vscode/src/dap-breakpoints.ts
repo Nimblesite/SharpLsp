@@ -291,6 +291,49 @@ export class BreakpointEmulator {
     };
   }
 
+  /**
+   * Re-key one breakpoint to the line the adapter actually bound it to.
+   *
+   * A breakpoint armed before its module is loaded — which is EVERY breakpoint
+   * of a test-host attach — is answered by `setBreakpoints` with no line of its
+   * own, so the location index holds the line the user typed. The real bind
+   * arrives later as a `breakpoint` event
+   * ([DEBUG-FEATURES-BREAKPOINTS-VERIFY]), and a stop reports the BOUND line.
+   * Without this the index misses, the stop is judged unknown and forwarded,
+   * and the hit count or logpoint the user attached is silently ignored.
+   */
+  public rebind(entry: unknown): void {
+    if (!isRecord(entry)) return;
+    const id = Number(entry.id ?? Number.NaN);
+    const line = Number(entry.line ?? Number.NaN);
+    if (!Number.isInteger(id) || !Number.isInteger(line)) return;
+    const placed = this.locate(id);
+    if (placed === undefined || placed.line === line) return;
+    this.moveLine(placed.source, placed.line, line, { ...placed.meta, line });
+  }
+
+  /** Where `id` currently sits in the location index. */
+  private locate(id: number): { source: string; line: number; meta: BreakpointMeta } | undefined {
+    for (const [source, lines] of this.byLocation) {
+      for (const [line, meta] of lines) {
+        if (meta.id === id) return { source, line, meta };
+      }
+    }
+    return undefined;
+  }
+
+  /** Move one armed line, carrying its visit count across with it. */
+  private moveLine(source: string, from: number, to: number, meta: BreakpointMeta): void {
+    const lines = this.byLocation.get(source);
+    if (lines === undefined) return;
+    lines.delete(from);
+    lines.set(to, meta);
+    if (meta.id !== undefined) this.meta.set(meta.id, meta);
+    const visited = this.counts.get(locationKey(source, from));
+    this.counts.delete(locationKey(source, from));
+    if (visited !== undefined) this.counts.set(locationKey(source, to), visited);
+  }
+
   /** True once any breakpoint with emulated attributes is armed. */
   public hasEmulatedAttributes(): boolean {
     return this.byLocation.size > 0 || this.meta.size > 0;

@@ -1017,7 +1017,9 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
   });
 
   test('after a cancelled run, the very next ▶ reports REAL results', async function () {
-    this.timeout(DOTNET_CLI_MS);
+    // Three `dotnet test` invocations: the cancelled one, the fast-only
+    // recovery, and the full uncancelled run interaction 5 measures.
+    this.timeout(FIXTURE_BUILD_MS);
 
     // Every `dotnet` invocation is serialized through one queue
     // ([TEST-REACTIVITY]). A cancelled run that left its invocation in the queue
@@ -1091,14 +1093,36 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
       'passed',
       'as does the fast test in the same invocation',
     );
+    // Interaction 4 - the fast-only run touched NOTHING else. A long test
+    // writes its markers only by running, so an EMPTY marker directory is the
+    // proof that the queue rebuilt the filter rather than replaying the
+    // cancelled selection.
     assert.deepStrictEqual(
       markersOnDisk(),
-      [...EVERY_MARKER].sort(),
-      'and every marker the fixture declares is on disk',
+      [],
+      'a run of the fast test alone may not write one long-test marker',
     );
-    // Interaction 4 - recovery is the whole point. The run AFTER a cancellation
-    // has to be indistinguishable from one that follows a clean run, or the user
-    // learns to reload the window every time they press Stop.
+    assert.strictEqual(
+      cachedFor(api, FAST_TEST).passed,
+      cachedFor(api, FAST_TEST).outcome === 'passed',
+      "the fast test's passed flag agrees with its outcome",
+    );
+
+    // Interaction 5 - recovery is the whole point. A run after a cancellation
+    // has to be indistinguishable from one that follows a clean run, or the
+    // user learns to reload the window every time they press Stop. So run the
+    // WHOLE fixture, uncancelled, and require every long test to reach its end.
+    clearMarkers();
+    await runViaProfile(
+      api.testController,
+      vscode.TestRunProfileKind.Run,
+      itemsFor(api, ALL_TESTS),
+    );
+    assert.deepStrictEqual(
+      markersOnDisk(),
+      sorted(EVERY_MARKER),
+      'every marker the fixture declares is on disk after the recovery run',
+    );
     for (const each of LONG_TESTS) {
       assert.strictEqual(marked(each.finished), true, `${each.fqn} ran to completion this time`);
       assert.notStrictEqual(
@@ -1209,6 +1233,7 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     assert.ok(settled, 'the completed run cached a result');
     assert.strictEqual(settled.outcome, 'passed', 'a real pass');
     const baseline = new Map(api.testController.cachedResults);
+    const markersAfterRun = markersOnDisk();
 
     // Interaction 2 — press ⏹ long after the handler returned. Cancelling a
     // token nothing is listening to must be inert, not a crash and not an
@@ -1266,14 +1291,19 @@ suite('Test Explorer e2e — pressing Stop kills the run', () => {
     assert.strictEqual(rootsOf(api.testController.items).length, 1, 'under ONE root');
     // Interaction 4 - a late Stop is a no-op, and "nothing" includes the marker
     // directory: it must not retroactively delete the evidence the finished run
-    // wrote on its way out.
+    // wrote on its way out, nor add to it. The run under test selected the fast
+    // test alone, so the directory it left is the whole of that evidence.
     assert.deepStrictEqual(
       sorted(markersOnDisk()),
-      sorted([...EVERY_MARKER]),
-      'every marker the finished run wrote is still on disk',
+      sorted(markersAfterRun),
+      'the marker directory is exactly as the finished run left it',
     );
     for (const each of LONG_TESTS) {
-      assert.strictEqual(marked(each.finished), true, `${each.fqn} still reads as finished`);
+      assert.strictEqual(
+        marked(each.started),
+        false,
+        `${each.fqn} was never selected, so no late Stop can invent evidence of it`,
+      );
     }
     assert.strictEqual(
       cachedFor(api, FAST_TEST).outcome,
