@@ -398,22 +398,33 @@ internal sealed class CodeActionResolver
     }
 
     /// <summary>
-    /// A flattened child's title, carrying the container it came from.
+    /// A flattened child's title, carrying the container it came from when it
+    /// cannot stand without it.
     /// </summary>
     /// <remarks>
     /// LSP has no submenus, so a nested action arrives in the same flat list as
     /// every other and its title is all the user reads before choosing. Roslyn
-    /// writes those children as continuations of the parent - "and update call
-    /// sites directly" - which say nothing on their own. A child that already
-    /// names itself is left as it is rather than made to stutter.
+    /// writes children in two shapes: sentences that name themselves ("Inline
+    /// and keep 'X'", "Convert to binary") and continuations of the PARENT's
+    /// sentence ("and update call sites directly", "into new overload") that say
+    /// nothing alone. Only the continuations are joined, and with a space, so
+    /// the result reads as the sentence Roslyn actually wrote. Renaming the
+    /// self-contained ones would only make them stutter.
     /// </remarks>
     private static string Qualified(string? parentTitle, string title)
     {
-        return
-            string.IsNullOrEmpty(parentTitle)
-            || title.StartsWith(parentTitle, StringComparison.Ordinal)
+        return string.IsNullOrEmpty(parentTitle) || !IsContinuation(title)
             ? title
-            : parentTitle + ": " + title;
+            : parentTitle + " " + title;
+    }
+
+    /// <summary>
+    /// Whether a child's title continues its parent's sentence instead of
+    /// naming itself. Roslyn writes those in lower case, and only those.
+    /// </summary>
+    private static bool IsContinuation(string title)
+    {
+        return title.Length > 0 && char.IsLower(title[0]);
     }
 
     private static bool IsDuplicate(string title, string kind, List<CodeActionItem> items)
