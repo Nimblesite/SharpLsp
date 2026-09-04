@@ -265,29 +265,51 @@ internal sealed class CodeActionResolver
         foreach (var provider in CachedRefactoringProviders.Value)
         {
             ct.ThrowIfCancellationRequested();
-            foreach (var query in QuerySpans(span))
+            var before = items.Count;
+            await TryRegisterRefactoringAsync(provider, document, span, items, ct)
+                .ConfigureAwait(false);
+            if (items.Count == before)
             {
-                await TryRegisterRefactoringAsync(provider, document, query, items, ct)
-                    .ConfigureAwait(false);
+                await AskAboutCaretAsync(provider, document, span, items, ct).ConfigureAwait(false);
             }
         }
     }
 
-    /// <summary>The spans one Ctrl-. asks every provider about.</summary>
+    /// <summary>
+    /// Ask one provider about the collapsed caret, after it answered nothing
+    /// about the selection.
+    /// </summary>
     /// <remarks>
     /// Roslyn finds a refactoring's target with `TryGetRelevantNode`, which needs
-    /// the span to sit inside ONE node, so a selection over an invocation's method
-    /// name resolves to the identifier rather than to the invocation. The
-    /// collapsed caret is asked as well, second, so where both answer the user's
-    /// own selection is the one that survives deduplication.
+    /// the span to sit inside ONE node — so a selection over an invocation's
+    /// method name resolves to the identifier, not the invocation, and
+    /// `Inline 'X'` was offered for a caret on a word and withheld the moment the
+    /// user double-clicked it. Asking about the caret UNCONDITIONALLY would drag
+    /// in whatever sub-expression it lands inside: selecting `1 + 2` would offer
+    /// constants for `1` as well. A provider that answered the selection has said
+    /// what it has to say about it.
     /// </remarks>
-    private static IEnumerable<TextSpan> QuerySpans(TextSpan span)
+    private async Task AskAboutCaretAsync(
+        CodeRefactoringProvider provider,
+        Document document,
+        TextSpan span,
+        List<CodeActionItem> items,
+        CancellationToken ct
+    )
     {
-        yield return span;
-        if (!span.IsEmpty)
+        if (span.IsEmpty)
         {
-            yield return new TextSpan(span.Start, 0);
+            return;
         }
+
+        await TryRegisterRefactoringAsync(
+                provider,
+                document,
+                new TextSpan(span.Start, 0),
+                items,
+                ct
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task TryRegisterRefactoringAsync(
