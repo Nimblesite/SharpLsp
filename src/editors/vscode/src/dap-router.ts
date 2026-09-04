@@ -486,8 +486,12 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         return;
       }
     } else if (name === 'exited' || name === 'terminated') {
-      if (!this.endsSessionOnce(name)) return;
+      // A respawn's teardown noise is not the session ending, and must not be
+      // RECORDED as one: the adapter being killed for a restart announces an
+      // end that is swallowed here, and a guard that counted it would leave the
+      // replacement debuggee unable to announce its own.
       if (this.transitioning) return;
+      if (!this.endsSessionOnce(name)) return;
     } else if (name === 'breakpoint') {
       // Keep breakpoint EVENT ids in the session-scoped space the
       // setBreakpoints responses already promised VS Code.
