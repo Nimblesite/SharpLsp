@@ -177,6 +177,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       onGone: (why) => {
         this.onChildGone(why);
       },
+      onUndeliverable: (frame) => {
+        this.answerUndeliverable(frame);
+      },
       announcedTerminated: () => this.childAnnouncedTerminated,
       isClosed: () => this.closed,
       isDisposed: () => this.disposed,
@@ -215,6 +218,20 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     if (this.endsSessionOnce('terminated')) {
       this.fire({ type: 'event', event: 'terminated', body: {} });
     }
+  }
+
+  /**
+   * Settle a request the adapter can no longer hear.
+   *
+   * Only a REQUEST needs settling — an event or a response expects no reply, so
+   * dropping one costs nothing. `disconnect` succeeds because an adapter that
+   * is gone IS the disconnected state, and refusing it would leave the session
+   * in the debug toolbar with no way to close it.
+   */
+  private answerUndeliverable(message: DapMessage): void {
+    if (message.type !== 'request') return;
+    const command = typeof message.command === 'string' ? message.command : '';
+    this.respondTo(message, command === 'disconnect', {});
   }
 
   /** VS Code -> netcoredbg, with the router's intercepts. */

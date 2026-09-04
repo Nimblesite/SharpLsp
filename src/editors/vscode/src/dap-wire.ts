@@ -42,6 +42,12 @@ export interface WireHost {
    * `terminated` — which needs no ceremony.
    */
   onGone(why: string | undefined): void;
+  /**
+   * A frame the adapter can no longer hear.
+   *
+   * The host settles it so nothing is left waiting on a process that is gone.
+   */
+  onUndeliverable(message: DapMessage): void;
   /** True once the child itself sent the DAP `terminated` event. */
   announcedTerminated(): boolean;
   /** True once the death has been settled; nothing more may be parsed. */
@@ -94,12 +100,12 @@ export class AdapterWire {
       return;
     }
     if (this.child.stdin.destroyed || !this.child.stdin.writable) {
-      // Same death as the throw below, and it must be reported the same way:
-      // returning quietly drops the frame with no response and no `terminated`,
-      // and a dropped `disconnect` is a session the user cannot close.
-      // `onGone` is guarded to fire once, so a clean exit that already reported
-      // itself passes through here as a no-op.
-      this.host.onGone('stdin closed before the frame could be written');
+      // The adapter cannot hear this frame. Dropping it silently is what left a
+      // `disconnect` unanswered and the session unclosable, so the host answers
+      // it locally instead. NOT `onGone`: netcoredbg closes its stdin during a
+      // normal teardown while the process still lives, and ending the session
+      // on every late write turns a routine shutdown into a reported death.
+      this.host.onUndeliverable(message);
       return;
     }
     const body = JSON.stringify(message);
