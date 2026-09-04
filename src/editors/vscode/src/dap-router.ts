@@ -182,7 +182,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         output: `SharpLsp: netcoredbg ${why}. Ending the debug session.\n`,
       },
     });
-    if (!this.childAnnouncedTerminated) {
+    if (this.endsSessionOnce('terminated')) {
       this.fire({ type: 'event', event: 'terminated', body: {} });
     }
   }
@@ -269,14 +269,14 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         this.goto.onGoto(message);
         return true;
       case 'launch':
-        // A fresh debuggee is starting; any previous exit is history.
-        this.debuggeeExited = false;
+        // A fresh debuggee is starting; any previous end is history.
+        this.armSession();
         this.rememberLaunchOptions(args);
         if (args !== undefined) this.stacks.onLaunch(args);
         this.hotReload.prepareLaunch(args);
         return false;
       case 'attach':
-        this.debuggeeExited = false;
+        this.armSession();
         this.rememberLaunchOptions(args);
         this.attaches.start(message, args ?? {});
         return true;
@@ -450,8 +450,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         return;
       }
     } else if (name === 'exited' || name === 'terminated') {
-      this.debuggeeExited = true;
-      if (name === 'terminated') this.childAnnouncedTerminated = true;
+      if (!this.endsSessionOnce(name)) return;
       if (this.transitioning) return;
     } else if (name === 'breakpoint') {
       // Keep breakpoint EVENT ids in the session-scoped space the
@@ -481,12 +480,41 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     this.latestChildCaps = { ...this.latestChildCaps, ...advertised };
     this.emit(withEventCapabilities(message));
   }
+  /**
+   * Record an end-of-session announcement, and report whether it is the FIRST.
+   *
+   * DAP lets an adapter announce the end more than once and netcoredbg does:
+   * once when the debuggee exits, again when the client disconnects in reply.
+   * A session ends once, so only the first announcement of each kind reaches
+   * VS Code - a repeat is a duplicate of an event the client already acted on.
+   * `launch`, `attach` and `onRestart` re-arm both flags, so a respawned
+   * session can announce its own end.
+   */
+  private endsSessionOnce(name: 'exited' | 'terminated'): boolean {
+    if (name === 'terminated') {
+      if (this.childAnnouncedTerminated) return false;
+      this.childAnnouncedTerminated = true;
+      this.debuggeeExited = true;
+      return true;
+    }
+    if (this.debuggeeExited) return false;
+    this.debuggeeExited = true;
+    return true;
+  }
+
+  /** Re-arm the end-of-session guards for a debuggee that is about to start. */
+  private armSession(): void {
+    this.debuggeeExited = false;
+    this.childAnnouncedTerminated = false;
+  }
+
   /** Restart: respawn through the replayer and swallow the teardown noise. */
   private onRestart(): void {
     this.transitioning = true;
     // The NEXT debuggee has not exited. Leaving this set would make the
-    // restarted session answer `threads` with an empty list forever.
-    this.debuggeeExited = false;
+    // restarted session answer `threads` with an empty list forever, and leave
+    // it unable to announce its own termination.
+    this.armSession();
     this.breakpoints.reset();
     this.stepper.reset();
     this.replayer.restart();
