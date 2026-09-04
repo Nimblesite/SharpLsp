@@ -14,6 +14,7 @@
         "hover.test.js",
         "diagnostics.test.js",
         "lsp-integration.test.js",
+        "lsp-integration-semantic.test.js",
         "lsp-document-sync.test.js",
         "lsp-lifecycle.test.js",
         "lsp-refactor-quickfixes.test.js",

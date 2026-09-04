@@ -136,6 +136,34 @@ suite('Debug exceptions — per-type include and exclude filters', () => {
         'on all", which [DEBUG-FEATURES-EXCEPTIONS] lists as a SEPARATE row',
     );
     await recorder.waitForOutput('done caught 45');
+
+    // Interaction 3 — the program really RAN. A filter that silences a stop by
+    // killing the session would satisfy "no stops" while proving the opposite
+    // of what this test is about.
+    eq(recorder.stops().length, baseline, 'no stop was added by the excluded type');
+    assert.ok(
+      recorder.outputText().includes(`handled ${CAUGHT_MESSAGE}`),
+      'the debuggee handled the exception itself, which is why the filter had to ignore it',
+    );
+    assert.ok(recorder.outputText().includes('done caught 45'), 'and ran through to its own end');
+
+    // Interaction 4 — the filter that WAS set is the one that was asked for.
+    // A `setExceptionBreakpoints` whose type list is dropped on the way to the
+    // adapter produces exactly this test's passing result for the wrong reason:
+    // no filter at all also breaks on nothing.
+    const applied = onlyType(NEVER_THROWN_TYPE);
+    assert.ok(Array.isArray(applied.filterOptions), 'the request carries filterOptions');
+    eq(applied.filterOptions?.length, 1, 'naming exactly one filter');
+    assert.ok(
+      JSON.stringify(applied).includes(NEVER_THROWN_TYPE),
+      `the request names ${NEVER_THROWN_TYPE}`,
+    );
+    eq(
+      JSON.stringify(applied).includes(CAUGHT_TYPE),
+      false,
+      `and must not name ${CAUGHT_TYPE}, which the program does throw`,
+    );
+
     assertCleanSession(debuggee(), 'an exclude-type exception filter');
   });
 

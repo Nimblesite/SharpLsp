@@ -247,6 +247,32 @@ suite('Debug exceptions — breaking on them, and ignoring them', () => {
         'that uses exceptions for control flow',
     );
     await recorder.waitForOutput('done caught 45');
+
+    // Interaction 4 - the program RAN, and ran to its own end. "No stops" is
+    // also what a session that died on launch produces, so the negative above
+    // only means something beside the positive evidence that the debuggee got
+    // all the way through the catch block and past it.
+    assert.ok(
+      recorder.outputText().includes(`handled ${CAUGHT_MESSAGE}`),
+      'the debuggee caught the exception itself',
+    );
+    assert.ok(recorder.outputText().includes('done caught 45'), 'and finished its own work');
+    eq(recorder.stops().length, baseline, 'with no stop added after the gate');
+
+    // Interaction 5 - the SELECTION is still the one that was asked for. A
+    // later `setExceptionBreakpoints` that quietly re-adds `all` would produce
+    // this test's result only until the next continue, and nothing else can see
+    // it ([DEBUG-FEATURES-EXCEPTIONS]).
+    const requests = recorder.requests('setExceptionBreakpoints');
+    const last = requests[requests.length - 1];
+    assert.ok(last, 'at least one setExceptionBreakpoints reached the adapter');
+    deepEq(last.args['filters'], [unhandled], 'and the last one still names only that filter');
+    eq(
+      JSON.stringify(last.args['filters']).includes('"all"'),
+      false,
+      'with `all` never smuggled back in alongside it',
+    );
+
     assertCleanSession(debuggee(), 'ignoring a handled exception');
   });
 

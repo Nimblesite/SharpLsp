@@ -360,6 +360,43 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     const warning = stubs.log.warningMessages[0] ?? '';
     assert.ok(warning.includes('Lens_AddsTwoNumbers'), 'warning names the missing test method');
     assert.ok(warning.includes('discovery'), 'warning points the user at discovery');
+
+    // Interaction 3 - "not discovered yet" is a WARNING, not an error and not a
+    // silent no-op. The user pressed Run and something must answer: a silent
+    // return leaves them pressing it again ([TEST-EXPLORER]).
+    assert.deepEqual(stubs.log.errorMessages, [], 'an undiscovered test is not an error');
+    assert.deepEqual(stubs.log.infoMessages, [], 'and nothing claims the test ran');
+    assert.notStrictEqual(stubs.log.warningOptions[0]?.modal, true, 'and it does not block');
+
+    // Interaction 4 - the caret really was on the [Fact] method, so the warning
+    // is about discovery rather than about a caret that resolved to nothing.
+    assert.strictEqual(
+      editor.selection.active.line,
+      factLine,
+      'the caret sat on the [Fact] method',
+    );
+    assert.ok(
+      doc.lineAt(factLine).text.includes('Lens_AddsTwoNumbers'),
+      'and that line really declares the method the command was given',
+    );
+    assert.ok(
+      doc.getText().includes('[Fact]'),
+      'the fixture carries the attribute that makes it a test at all',
+    );
+
+    // Interaction 5 - running the SAME method again warns again. A command that
+    // remembers it already complained goes silent on the second press, which is
+    // exactly when the user is most likely to press it.
+    stubs.queueWarning(undefined);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, 'Lens_AddsTwoNumbers');
+    });
+    assert.strictEqual(stubs.log.warningMessages.length, 2, 'the second press warns again');
+    assert.strictEqual(
+      stubs.log.warningMessages[1],
+      warning,
+      'with the same message, naming the same method',
+    );
   });
 
   test('debugAtCursor on a method resolves and warns for an undiscovered test', async function () {
@@ -384,7 +421,43 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     });
 
     assert.strictEqual(stubs.log.warningMessages.length, 1);
-    assert.ok((stubs.log.warningMessages[0] ?? '').includes('Lens_AddsTheory'));
+    const debugWarning = stubs.log.warningMessages[0] ?? '';
+    assert.ok(debugWarning.includes('Lens_AddsTheory'), 'the warning names the theory method');
+    assert.ok(debugWarning.includes('discovery'), 'and points the user at discovery');
+
+    // Interaction 2 - a debug that cannot start must not START ANYTHING. A
+    // half-launched session with no test to run leaves the debug toolbar on
+    // screen with nothing behind it ([TEST-EXPLORER]).
+    assert.strictEqual(
+      vscode.debug.activeDebugSession,
+      undefined,
+      'an undiscovered test starts no debug session',
+    );
+    assert.deepEqual(stubs.log.errorMessages, [], 'and reports no error');
+    assert.deepEqual(stubs.log.infoMessages, [], 'and claims no run');
+
+    // Interaction 3 - the caret sat on the [Theory] declaration, so the warning
+    // is about discovery and not about an unresolvable caret.
+    assert.strictEqual(editor?.selection.active.line, theoryLine, 'the caret sat on the theory');
+    assert.ok(
+      doc.lineAt(theoryLine).text.includes('Lens_AddsTheory'),
+      'and that line declares the method the command was given',
+    );
+    assert.ok(doc.getText().includes('[Theory]'), 'the fixture really declares a theory');
+
+    // Interaction 4 - the DEBUG path warns for the same reason the RUN path
+    // does. Two commands that disagree about whether a test exists send the
+    // user hunting for a difference that is not there.
+    stubs.queueWarning(undefined);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, 'Lens_AddsTheory');
+    });
+    assert.strictEqual(stubs.log.warningMessages.length, 2, 'the run path warns as well');
+    assert.strictEqual(
+      stubs.log.warningMessages[1],
+      debugWarning,
+      'with the very same message for the very same method',
+    );
   });
 
   test('both at-cursor commands are registered and stay registered', async function () {
@@ -409,6 +482,28 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       await vscode.commands.executeCommand(CMD_TEST_DEBUG_AT_CURSOR, uri, 'Phantom');
     });
     assert.strictEqual(stubs.log.warningMessages.length, 2);
+
+    // Interaction 3 - the two are DISTINCT commands. A lens pair backed by one
+    // id renders two buttons that do the same thing, which is the defect the
+    // Run/Debug pair exists to avoid.
+    assert.notStrictEqual(CMD_TEST_RUN_AT_CURSOR, CMD_TEST_DEBUG_AT_CURSOR, 'two ids, not one');
+    assert.ok(CMD_TEST_RUN_AT_CURSOR.startsWith('sharplsp.'), 'both live in our namespace');
+    assert.ok(CMD_TEST_DEBUG_AT_CURSOR.startsWith('sharplsp.'), 'both of them');
+
+    // Interaction 4 - they STAY registered after being driven. A command that
+    // disposes itself on a failed run works exactly once per window.
+    const after = await vscode.commands.getCommands(true);
+    assert.ok(after.includes(CMD_TEST_RUN_AT_CURSOR), 'runAtCursor survives being run');
+    assert.ok(after.includes(CMD_TEST_DEBUG_AT_CURSOR), 'and so does debugAtCursor');
+
+    // Interaction 5 - a phantom file warns rather than throwing, and warns for
+    // BOTH commands: the two warnings above came one from each.
+    assert.deepEqual(stubs.log.errorMessages, [], 'a phantom file is not an error');
+    assert.strictEqual(
+      stubs.log.warningMessages.every((message) => message.includes('Phantom')),
+      true,
+      `both warnings name the phantom method: ${stubs.log.warningMessages.join(' | ')}`,
+    );
   });
 
   test('discovery predicates classify a real test project listing', async function () {
@@ -496,6 +591,37 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     assert.ok(
       (many[1] ?? '').startsWith('FullyQualifiedName=Sample.Tests.CalculatorTests.Adds_Two'),
     );
+
+    // Interaction 2 - EVERY selected test reaches the clause. A filter that
+    // drops one runs fewer tests than the user selected and reports the missing
+    // ones as never run ([TEST-FILTER-ESCAPE]).
+    const three = buildFilterArgs([
+      testItem('Sample.Tests.CalculatorTests.A'),
+      testItem('Sample.Tests.CalculatorTests.B'),
+      testItem('Sample.Tests.CalculatorTests.C'),
+    ]);
+    assert.strictEqual(three.length, 2, 'three tests still make one --filter pair');
+    assert.strictEqual((three[1] ?? '').split('|').length, 3, 'with three OR-ed clauses');
+    for (const name of ['.A', '.B', '.C']) {
+      assert.ok((three[1] ?? '').includes(name), `${name} must reach the clause`);
+    }
+
+    // Interaction 3 - the flag is always `--filter`, exactly once. A clause
+    // emitted as two flags makes `dotnet test` use the last one and silently
+    // run a subset.
+    assert.strictEqual(three.filter((argument) => argument === '--filter').length, 1, 'one flag');
+    assert.strictEqual(three[0], '--filter', 'and it comes first');
+    assert.strictEqual(
+      single.filter((argument) => argument === '--filter').length,
+      1,
+      'for one too',
+    );
+
+    // Interaction 4 - an empty selection produces NO flag at all. A bare
+    // `--filter` with an empty value matches nothing, so the run reports zero
+    // tests instead of running everything.
+    assert.deepStrictEqual(buildFilterArgs([]), [], 'no selection, no filter');
+    assert.strictEqual(buildFilterArgs([]).length, 0, 'not even the flag');
   });
 
   test('coverage helpers find and parse a real cobertura report on disk', async function () {
@@ -1219,6 +1345,45 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
         `${target} must be a binding this fixture actually declares`,
       );
     }
+
+    // Interaction 4 - one Run lens and one Debug lens PER BINDING. Two lenses
+    // over the same `let` render two identical buttons, and the user cannot
+    // tell which of them is about to run.
+    for (const target of runTargets) {
+      assert.strictEqual(
+        runTargets.filter((name) => name === target).length,
+        1,
+        `${target}: one Run lens, not one per attribute`,
+      );
+      assert.strictEqual(
+        fsDebugTargets.filter((name) => name === target).length,
+        1,
+        `${target}: one Debug lens either`,
+      );
+    }
+
+    // Interaction 5 - every lens is anchored inside the file, and the Run
+    // lenses render as the Run action. A lens with no title renders a blank
+    // clickable line above the binding.
+    const document = await vscode.workspace.openTextDocument(uri);
+    for (const lens of lenses) {
+      assert.ok(
+        lens.range.end.line < document.lineCount,
+        `a lens at line ${lens.range.start.line} must sit inside the file`,
+      );
+      assert.ok((lens.command?.title ?? '').length > 0, 'and carry a visible title');
+    }
+    assert.deepStrictEqual(
+      [
+        ...new Set(
+          lenses
+            .filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR)
+            .map((lens) => lens.command?.title),
+        ),
+      ],
+      ['$(play) Run Test'],
+      'and the Run half renders as the Run action',
+    );
   });
 
   test('disabling sharplsp.testLens.enabled removes the test lenses; re-enabling restores them', async function () {
@@ -1250,6 +1415,56 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
         .update(TEST_LENS_KEY, true, vscode.ConfigurationTarget.Workspace);
       const reEnabledLenses = testLensCommands(await codeLensesFor(uri));
       assert.ok(reEnabledLenses.length >= 2, 're-enabling restores the lenses');
+
+      // Interaction 4 - the setting really flipped at each step, so the lens
+      // counts above are a statement about the provider and not about a write
+      // that never landed.
+      const read = () =>
+        vscode.workspace.getConfiguration(TEST_LENS_SECTION).get<boolean>(TEST_LENS_KEY);
+      assert.strictEqual(read(), true, 'the setting reads back as enabled');
+      assert.strictEqual(
+        vscode.workspace.getConfiguration(TEST_LENS_SECTION).inspect<boolean>(TEST_LENS_KEY)
+          ?.workspaceValue,
+        true,
+        'and is recorded at the workspace scope it was written to',
+      );
+
+      // Interaction 5 - restoring is EXACT, not approximate. The re-enabled
+      // set must name the same targets as the baseline, or "restored" means
+      // "some lenses came back".
+      assert.deepStrictEqual(
+        reEnabledLenses.map((lens) => lens.command?.arguments?.[1]).sort(),
+        enabledLenses.map((lens) => lens.command?.arguments?.[1]).sort(),
+        'the restored lenses target exactly the baseline methods',
+      );
+      assert.strictEqual(
+        reEnabledLenses.length,
+        enabledLenses.length,
+        'and there are exactly as many of them',
+      );
+
+      // Interaction 6 - disabling removes the TEST lenses only. The setting is
+      // scoped to the test lens; taking the reference-count lenses with it
+      // would make one toggle silently disable an unrelated feature.
+      await vscode.workspace
+        .getConfiguration(TEST_LENS_SECTION)
+        .update(TEST_LENS_KEY, false, vscode.ConfigurationTarget.Workspace);
+      const allWhileDisabled = await codeLensesFor(uri);
+      assert.strictEqual(
+        testLensCommands(allWhileDisabled).length,
+        0,
+        'no test lens survives the disable',
+      );
+      assert.strictEqual(read(), false, 'and the setting reads back as disabled');
+      assert.ok(
+        Array.isArray(allWhileDisabled),
+        'the provider still answers while disabled, with an empty test-lens set',
+      );
+      assert.strictEqual(
+        allWhileDisabled.every((lens) => lens.command?.command !== CMD_TEST_RUN_AT_CURSOR),
+        true,
+        'and no Run-Test lens is among whatever it did return',
+      );
     } finally {
       // Restore the exact prior workspace value (undefined when unset) so the
       // key is removed rather than persisted into the fixture settings.
@@ -1315,6 +1530,44 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     assert.strictEqual(passedTitle, '$(pass) Passed (1.5s)');
     const msTitle = `$(pass) Passed${formatDuration(42)}`;
     assert.strictEqual(msTitle, '$(pass) Passed (42ms)');
+
+    // Interaction 2 - the BOUNDARY is exact and one-sided. 999ms must stay in
+    // milliseconds and 1000ms must become seconds; an off-by-one there prints
+    // "(1000ms)" on one run and "(1.0s)" on the next for the same test.
+    assert.strictEqual(formatDuration(998), ' (998ms)', 'just below the boundary');
+    assert.strictEqual(formatDuration(1001), ' (1.0s)', 'just above it');
+    assert.strictEqual(
+      formatDuration(999).includes('s)') && !formatDuration(999).includes('ms)'),
+      false,
+      '999ms must not be rendered as seconds',
+    );
+
+    // Interaction 3 - seconds carry ONE decimal place, always. A bare "1s" and
+    // a "1.53333s" in the same column make the lens unreadable at a glance
+    // ([TEST-STATUS-LENS] fixes the suffix shape).
+    for (const [milliseconds, expected] of [
+      [1000, ' (1.0s)'],
+      [1050, ' (1.1s)'],
+      [2500, ' (2.5s)'],
+      [12_300, ' (12.3s)'],
+    ] as const) {
+      assert.strictEqual(
+        formatDuration(milliseconds),
+        expected,
+        `${milliseconds}ms renders as ${expected}`,
+      );
+    }
+
+    // Interaction 4 - a missing duration renders NOTHING, so the title is
+    // "$(pass) Passed" with no dangling parenthesis. An undiscovered duration
+    // is not a zero-length run.
+    assert.strictEqual(formatDuration(undefined), '', 'no duration, no suffix');
+    assert.strictEqual(`$(pass) Passed${formatDuration(undefined)}`, '$(pass) Passed');
+    assert.notStrictEqual(
+      formatDuration(undefined),
+      formatDuration(0),
+      'and it is not the same as 0ms',
+    );
   });
 
   // Implements [TEST-STATUS-LENS] verbatim: "The status title reflects the

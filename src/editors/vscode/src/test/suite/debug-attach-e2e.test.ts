@@ -356,6 +356,34 @@ suite('Debug attach — taking control of a process that is already running', ()
       [],
       'and starts no session at all',
     );
+
+    // Interaction 5 — the message NAMES the pid. A refusal that says only
+    // "attach failed" leaves the user unable to tell a dead pid from a
+    // permissions problem, and the fix for the two is entirely different.
+    assert.ok(
+      message.includes(String(ghost)),
+      `the refusal must name the pid it could not attach to; got: ${message}`,
+    );
+    eq(message.includes('undefined'), false, 'and must not leak an undefined into the text');
+    assert.ok(message.length > 10, 'a refusal is a sentence, not a token');
+
+    // Interaction 6 — the refusal is RECOVERABLE. A dead pid must not poison
+    // the resolver: the very next attach attempt has to be evaluated on its own
+    // merits, or one typo ends the debugging session for good.
+    const secondGhost = ghost - 1;
+    eq(isAlive(secondGhost), false, 'the second ghost pid is also dead');
+    const retried = await vscode.debug.startDebugging(
+      folder,
+      attachConfig({ processId: secondGhost }),
+    );
+    eq(retried, false, 'a second dead pid is refused the same way');
+    await sleep(QUIET_MS);
+    eq(
+      [...stubs.log.errorMessages, ...stubs.log.warningMessages].length,
+      2,
+      'two refused attaches, two messages — one per attempt, never a silent second failure',
+    );
+    eq(vscode.debug.activeDebugSession, undefined, 'and still no session');
   });
 
   // Implements [DEBUG-FEATURES-LAUNCH-OUTPUT] rule 4 — "`processId` is a
