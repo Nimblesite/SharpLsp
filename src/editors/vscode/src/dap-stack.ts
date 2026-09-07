@@ -318,11 +318,7 @@ export class StackDelivery {
     const chain = await this.recoverChain(raw);
     const present = new Set(enriched.map((frame) => nameKey(frame.name)));
     const injected = await this.injectedFrames(chain, present, enriched);
-    // A tail CONTINUES a chain. No chain was recovered means there is nothing
-    // to continue, and another thread's frames spliced onto this stack would
-    // be a caller the debuggee never had.
-    const cut = chain.frames.length > 0 && !chain.complete;
-    const tail = cut ? await this.stitchedTail(threadId, present, injected) : [];
+    const tail = chain.complete ? [] : await this.stitchedTail(threadId, present, injected);
     const insertAfter = findLastRenamed(enriched, renamedKeys);
     return [
       ...enriched.slice(0, insertAfter + 1),
