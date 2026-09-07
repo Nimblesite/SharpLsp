@@ -750,6 +750,12 @@ suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints',
     deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
   });
 
+  /** The two `[InlineData]` rows `Adds_Rows` declares, as the debugger renders them. */
+  const CS_ROWS_ARGUMENTS: readonly (readonly string[])[] = [
+    ['1', '2', '3'],
+    ['10', '20', '30'],
+  ];
+
   // Implements [DEBUG-FEATURES-BREAKPOINTS] "Hit-count breakpoints |
   // setBreakpoints (hitCondition) | P1 | Native". Against a `[Theory]` this is
   // how the user reaches the SECOND row without touching the first.
@@ -797,13 +803,30 @@ suite('Debug ONE test — the Test Explorer Debug profile and test breakpoints',
     const frame = await topFrame(active, stop.threadId);
     eq(methodOf(frame), 'Adds_Rows', 'stopped in the theory body');
     const locals = await localsOf(active, frame.id);
-    eq(
+    // The row is whichever one xUnit ran SECOND. `DefaultTestCaseOrderer` sorts
+    // a class's cases by a hash of their unique ids, so declaration order is not
+    // the execution order and is not the same for two methods: this fixture's
+    // C# theory runs (10, 20, 30) first and its F# twin runs (1, 2, 3) first.
+    // What a hit count of 2 promises is that ONE hit was skipped and the stop is
+    // the second — asserted by the single stop this test ends on — and that the
+    // frame the user lands in belongs to ONE row, not a blend of both.
+    const stopped = [
       variableNamed(locals, 'left').value,
-      '10',
-      'on the SECOND [InlineData] row — a hit count of 2 must skip the first',
+      variableNamed(locals, 'right').value,
+      variableNamed(locals, 'expected').value,
+    ];
+    const declared = CS_ROWS_ARGUMENTS.find((row) => row[0] === stopped[0]);
+    assert.ok(
+      declared,
+      `the stop must land in a row the theory declares; its left was ${String(stopped[0])}, ` +
+        `and the rows are ${CS_ROWS_ARGUMENTS.map((row) => row.join(',')).join(' | ')}`,
     );
-    eq(variableNamed(locals, 'right').value, '20', 'with that row own second argument');
-    eq(variableNamed(locals, 'expected').value, '30', 'and its own expectation');
+    deepEq(
+      stopped,
+      [...declared],
+      'and it carries that row WHOLE — a frame answering left from one row and expected ' +
+        'from the other is a debugger showing the user a state that never existed',
+    );
     await gesture(CMD_CONTINUE);
     await recorder.waitForEvents('terminated', 1, DEBUG_SESSION_MS);
     eq(recorder.stops().length, 1, 'and no other row stopped, before or after it');
