@@ -961,10 +961,18 @@ suite('Extension Activation & Configuration', () => {
     // ships. A title core normalised on load hides an unreadable manifest.
     const authored: { command: string; title?: string }[] =
       authoredPackageJson().contributes?.commands ?? [];
+    // Resolved through package.nls.json, the way VS Code resolves them at load
+    // time: the manifest authors a title as `%cmd.restartServer%`, and the
+    // bundle is where the human-readable string it stands for actually lives.
     assert.deepStrictEqual(
-      authored.map((command) => command.title),
+      authored.map((command) => nlsResolved(command.title)),
       titles,
-      'the authored titles and the loaded titles must agree exactly',
+      'every authored title must resolve to the title the host loaded',
+    );
+    assert.deepStrictEqual(
+      authored.map((command) => command.command),
+      commandEntries().map((entry) => entry.command),
+      'and both lists must name the same commands in the same order',
     );
     for (const command of commandEntries()) {
       assert.strictEqual(

@@ -306,7 +306,9 @@ export class BreakpointEmulator {
     if (!isRecord(entry)) return;
     const id = Number(entry.id ?? Number.NaN);
     const line = Number(entry.line ?? Number.NaN);
-    if (!Number.isInteger(id) || !Number.isInteger(line)) return;
+    // DAP lines are 1-based, so a 0 or absent line describes no location and
+    // must not move an entry that is already keyed correctly.
+    if (!Number.isInteger(id) || !Number.isInteger(line) || line <= 0) return;
     const placed = this.locate(id);
     if (placed === undefined || placed.line === line) return;
     this.moveLine(placed.source, placed.line, line, { ...placed.meta, line });

@@ -100,11 +100,13 @@ const GENERATE_CASES: readonly ActionLifecycleCase[] = [
   {
     label: 'generate constructor seeds every readonly field',
     source: GENERATE_CONSTRUCTOR_SOURCE,
-    snippet: 'class GenerateConstructorTarget',
-    focus: 'GenerateConstructorTarget',
+    // Selected across BOTH fields. Roslyn seeds the constructor from the
+    // members the selection covers; a caret on the type name asks a different
+    // provider, which offers the parameterless one and seeds nothing.
+    snippet: 'private readonly int _count;\n    private readonly string _label;',
+    focus: 'private readonly int _count;\n    private readonly string _label;',
     title: "Generate constructor 'GenerateConstructorTarget(int, string)'",
     kind: 'refactor',
-    caretOnly: true,
     presentAfter: ['generate-constructor-sentinel'],
     absentAfter: [],
     patternsAfter: [
@@ -118,7 +120,7 @@ const GENERATE_CASES: readonly ActionLifecycleCase[] = [
     source: INLINE_METHOD_SOURCE,
     snippet: 'return Doubled(seed) + 1;',
     focus: 'Doubled',
-    title: "Inline 'Doubled'",
+    title: "Inline 'Doubled(int value)'",
     kind: 'refactor.inline',
     presentAfter: ['inline-method-sentinel'],
     absentAfter: ['Doubled(seed)'],
@@ -146,8 +148,8 @@ const SIGNATURE_CASES: readonly ActionLifecycleCase[] = [
     source: INTRODUCE_PARAMETER_SOURCE,
     snippet: 'return seed * 2;',
     focus: 'seed * 2',
-    title: "Introduce parameter for 'seed * 2'",
-    kind: 'refactor.extract',
+    title: "Introduce parameter for 'seed * 2' and update call sites directly",
+    kind: 'refactor.rewrite',
     presentAfter: ['introduce-parameter-sentinel'],
     absentAfter: ['return seed * 2;'],
     patternsAfter: [/Compute\(int seed, int \w+\)/],
@@ -157,7 +159,7 @@ const SIGNATURE_CASES: readonly ActionLifecycleCase[] = [
     source: METHOD_TO_PROPERTY_SOURCE,
     snippet: 'public int GetValue() => 42;',
     focus: 'GetValue',
-    title: 'Convert to property',
+    title: "Replace 'GetValue' with property",
     kind: 'refactor.rewrite',
     caretOnly: true,
     presentAfter: ['method-to-property-sentinel'],

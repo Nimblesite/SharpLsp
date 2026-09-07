@@ -416,8 +416,33 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
     assert.strictEqual(doc.getText(range), 'unused', 'the range really covers the identifier');
 
     // Interaction 3 — every offered action is USABLE: titled, kinded, and
-    // carrying either an edit or a command. An action with neither is a
-    // lightbulb entry that does nothing when clicked.
+    // resolving to an edit or a command. An action that resolves to neither is
+    // a lightbulb entry that does nothing when clicked.
+    //
+    // The edit is asked for SEPARATELY because the server advertises
+    // `codeAction/resolve` ([SHARPLSP-FEATURES-REFACTORING]): LSP 3.17 lets it
+    // list actions without edits and fill them in when the user picks one, so
+    // an unresolved action having no `edit` is the contract working. VS Code
+    // resolves only as many as `itemResolveCount` asks it to.
+    const resolved =
+      (await vscode.commands.executeCommand<vscode.CodeAction[]>(
+        'vscode.executeCodeActionProvider',
+        uri,
+        range,
+        undefined,
+        actions.length,
+      )) ?? [];
+    assert.strictEqual(
+      resolved.length,
+      actions.length,
+      'resolving must not change WHICH actions are offered',
+    );
+    for (const action of resolved) {
+      assert.ok(
+        action.edit !== undefined || action.command !== undefined,
+        `'${action.title}' must RESOLVE to an edit or a command, or clicking it does nothing`,
+      );
+    }
     const titles = actions.map((action) => action.title);
     assert.ok(
       titles.every((title) => title.trim().length > 0),
@@ -426,10 +451,6 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
     assert.deepStrictEqual([...new Set(titles)], titles, 'and no title may be offered twice');
     for (const action of actions) {
       assert.ok(action.kind, `'${action.title}' must declare a CodeActionKind`);
-      assert.ok(
-        action.edit !== undefined || action.command !== undefined,
-        `'${action.title}' must carry an edit or a command, or clicking it does nothing`,
-      );
     }
 
     // Interaction 4 — one of them removes the unused local. That is the fix

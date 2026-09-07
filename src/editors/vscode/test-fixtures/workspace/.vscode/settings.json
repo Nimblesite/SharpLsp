@@ -1,6 +1,1 @@
-{
-    "sharplsp.lspPath": "",
-    "sharplsp.server.extraArgs": [],
-    "sharplsp.logging.level": "info",
-    "sharplsp.nuget.includePrerelease": false
-}
+{}

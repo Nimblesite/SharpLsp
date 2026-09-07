@@ -159,12 +159,14 @@ export function assertContributedSetting(key: string, expectedDefault: unknown):
     undefined,
     `${key} must be unset at user scope at rest`,
   );
-  // The fixture workspace pins a few settings to their own defaults so a stale
-  // user profile cannot drift them; to the extension that is the same as unset.
+  // Unset, or set to the very value the manifest defaults to — the fixture
+  // workspace used to pin four settings to their own defaults, which changed
+  // nothing except the SCOPE a write lands in, and made a global-scope write
+  // unreadable behind a workspace value of equal worth.
   assert.deepStrictEqual(
     inspected.workspaceValue ?? expectedDefault,
     expectedDefault,
-    `${key} must be unset at workspace scope at rest, or pinned to its default`,
+    `${key} must be unset at workspace scope at rest, never overridden`,
   );
   assert.deepStrictEqual(
     vscode.workspace.getConfiguration(section).get(leaf),
