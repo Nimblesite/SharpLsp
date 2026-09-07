@@ -105,7 +105,10 @@ const GENERATE_CASES: readonly ActionLifecycleCase[] = [
     // provider, which offers the parameterless one and seeds nothing.
     snippet: 'private readonly int _count;\n    private readonly string _label;',
     focus: 'private readonly int _count;\n    private readonly string _label;',
-    title: "Generate constructor 'GenerateConstructorTarget(int, string)'",
+    // Roslyn names the PARAMETERS in the title, not their types, and derives each
+    // from the field it seeds — `_count` -> `count`, `_label` -> `label`.
+    // (Measured against the real provider in GenerateConstructorFromMembersTests.)
+    title: "Generate constructor 'GenerateConstructorTarget(int count, string label)'",
     kind: 'refactor',
     presentAfter: ['generate-constructor-sentinel'],
     absentAfter: [],
@@ -122,6 +125,12 @@ const GENERATE_CASES: readonly ActionLifecycleCase[] = [
     focus: 'Doubled',
     title: "Inline 'Doubled(int value)'",
     kind: 'refactor.inline',
+    // Inlining deletes the declaration ABOVE the call, so the call moves up a
+    // line: the requery must find it again rather than ask about the line the
+    // call used to be on. And with `Doubled` gone there is nothing to inline.
+    postApplySnippet: 'return seed * 2 + 1;',
+    postApplyFocus: 'seed * 2',
+    mustDisappear: true,
     presentAfter: ['inline-method-sentinel'],
     absentAfter: ['Doubled(seed)'],
     patternsAfter: [/seed \* 2/],

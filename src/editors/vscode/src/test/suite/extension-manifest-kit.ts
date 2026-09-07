@@ -159,13 +159,11 @@ export function assertContributedSetting(key: string, expectedDefault: unknown):
     undefined,
     `${key} must be unset at user scope at rest`,
   );
-  // Unset, or set to the very value the manifest defaults to — the fixture
-  // workspace used to pin four settings to their own defaults, which changed
-  // nothing except the SCOPE a write lands in, and made a global-scope write
-  // unreadable behind a workspace value of equal worth.
-  assert.deepStrictEqual(
-    inspected.workspaceValue ?? expectedDefault,
-    expectedDefault,
+  // The fixture workspace pins nothing: a workspace value, even one equal to
+  // the default, hides every user-scope write behind it.
+  assert.strictEqual(
+    inspected.workspaceValue,
+    undefined,
     `${key} must be unset at workspace scope at rest, never overridden`,
   );
   assert.deepStrictEqual(
