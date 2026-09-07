@@ -113,6 +113,19 @@ export class StackDelivery {
   private launchRoot: string | undefined;
   /** Entry-stop arming for the current launch; undefined for attach/noDebug. */
   private arming: Arming | undefined;
+  /**
+   * Whether the runtime's async-task registry was armed for this session.
+   *
+   * `s_currentActiveTasks` only exists once `s_asyncDebuggingEnabled` has been
+   * set, and only a LAUNCH gets the entry stop that sets it. Without it every
+   * heap walk can only answer `null`, so asking costs a func-eval -- MEASURED
+   * at 113ms per stop against a test host -- for an answer already known. That
+   * delay is not merely slow: the client's own `stackTrace` waits behind it,
+   * and the workbench focuses the stopped thread only once that answer lands,
+   * so a step made first is dispatched at whichever thread happens to be first
+   * in the list and netcoredbg refuses it ([DEBUG-ARCHITECTURE-ROUTER]).
+   */
+  private asyncRegistryArmed = false;
   /** Whether one source path is the user's own code, for frame filtering. */
   private readonly isUserPath = (path: string): boolean =>
     belongsToUserCode({ path, line: 0, column: 0 }, this.launchRoot);
@@ -143,6 +156,7 @@ export class StackDelivery {
    */
   public onLaunch(args: Record<string, unknown>): void {
     this.arming = undefined;
+    this.asyncRegistryArmed = false;
     if (typeof args.cwd === 'string') this.launchRoot = args.cwd;
     if (args.noDebug === true) return;
     const userWantedEntry = args.stopAtEntry === true;
@@ -174,7 +188,10 @@ export class StackDelivery {
   /** Enable the async-task registry at a paused moment; optionally resume. */
   private async armAtStop(threadId: number, resume: boolean): Promise<void> {
     try {
-      await armAsyncDebugging(this.host, await topFrameId(this.host, threadId));
+      this.asyncRegistryArmed = await armAsyncDebugging(
+        this.host,
+        await topFrameId(this.host, threadId),
+      );
     } catch (cause) {
       error(`async-debug arming failed: ${String(cause)}`);
     }
@@ -302,6 +319,7 @@ export class StackDelivery {
 
   /** Walk the heap for the awaiting callers of the paused async method. */
   private async recoverChain(raw: RawFrame[]): Promise<AsyncChain> {
+    if (!this.asyncRegistryArmed) return { frames: [], complete: false };
     const pausedSmType = raw
       .map((frame) => frameStateMachineType(frame.name))
       .find((smType) => smType !== undefined);
@@ -363,7 +381,19 @@ export class StackDelivery {
     return tail.slice(start);
   }
 
-  /** The enriched stacks of other threads that carry async frames. */
+  /**
+   * The enriched stacks of other threads that carry async frames.
+   *
+   * The probes are issued TOGETHER. A test host parks a dozen runtime and
+   * thread-pool threads, and walking them one after another turned a
+   * `stackTrace` netcoredbg answered in 2ms into one the client waited 149ms
+   * for -- on every stop. VS Code focuses the stopped thread only once that
+   * response lands, and a step gesture made before it does is dispatched
+   * against the FIRST thread in the list instead: netcoredbg then refuses
+   * `next` on a thread that never stopped (`0x80004005`), and the user's F10
+   * reads as a broken gesture. The adapter answers each probe independently,
+   * so nothing about the result changes -- only how long the client waits.
+   */
   private async asyncThreadStacks(pausedThreadId: number): Promise<RawFrame[][]> {
     const response = await this.host.request('threads', {});
     const body = isRecord(response.body) ? response.body : {};
@@ -371,13 +401,10 @@ export class StackDelivery {
       .map((thread) => Number(thread.id ?? 0))
       .filter((id) => id > 0 && id !== pausedThreadId)
       .slice(0, MAX_STITCH_THREADS);
-    const stacks: RawFrame[][] = [];
-    for (const id of ids) {
-      const raw = await this.fetchFrames(id);
-      if (!raw.some((frame) => logicalFrameName(frame.name) !== frame.name)) continue;
-      stacks.push(enrichAsyncFrames(raw, this.justMyCode, this.isUserPath));
-    }
-    return stacks;
+    const walked = await Promise.all(ids.map(async (id) => await this.fetchFrames(id)));
+    return walked
+      .filter((raw) => raw.some((frame) => logicalFrameName(frame.name) !== frame.name))
+      .map((raw) => enrichAsyncFrames(raw, this.justMyCode, this.isUserPath));
   }
 
   /** Emit one enriched stack, windowed and handle-translated as promised. */
