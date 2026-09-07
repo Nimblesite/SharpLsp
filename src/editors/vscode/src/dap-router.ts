@@ -26,6 +26,20 @@ import { err, ok, type Result } from './result';
 /** The DAP dialect netcoredbg speaks; without it there is no DAP at all. */
 export const INTERPRETER_ARGS: readonly string[] = ['--interpreter=vscode'];
 
+/** True when a refusal names an HRESULT that describes the thread, not the step. */
+function refusedWrongThread(message: DapMessage): boolean {
+  const detail = typeof message.message === 'string' ? message.message : '';
+  return WRONG_THREAD_HRESULTS.some((code) => detail.includes(code));
+}
+
+/**
+ * The HRESULTs netcoredbg answers a step it will not perform on that thread.
+ *
+ * `0x80004005` is E_FAIL and `0x80131309` is CORDBG_E_BAD_THREAD_STATE; the
+ * adapter uses them interchangeably for the same refusal, so both are matched.
+ */
+const WRONG_THREAD_HRESULTS: readonly string[] = ['0x80004005', '0x80131309'];
+
 /**
  * How much of a DAP payload one trace line carries.
  *
@@ -106,6 +120,13 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
   private readonly evaluations: EvaluateEmulator;
   private readonly variables: VariableExpander;
   private readonly hotReload: DapHotReload;
+  /**
+   * The thread the adapter last announced stopped, and the only one it will
+   * step. netcoredbg keeps ONE current thread; a step aimed anywhere else is
+   * refused outright ([DEBUG-ADAPTER-GAPS]).
+   */
+  private stoppedThread: number | undefined;
+
   /** True once the child itself sent the DAP `terminated` event. */
   private childAnnouncedTerminated = false;
   private justMyCode = true;
@@ -499,7 +520,36 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       this.pendingStackArgs.delete(requestSeq);
       return;
     }
+    if (this.retriedOnStoppedThread(message)) return;
     this.emit(this.handles.translateResponseBody(enrichResponse(message, this.latestChildCaps)));
+  }
+
+  /**
+   * Re-issue a refused step against the thread the adapter actually stopped.
+   *
+   * The workbench steps `viewModel.focusedThread`, and it focuses the stopped
+   * thread only once `fetchCallStack()` has resolved. A step made before that
+   * -- pressing F10 the instant a breakpoint hits -- is dispatched at
+   * `getAllThreads()[0]` instead, which in a test host is a runtime or
+   * thread-pool thread that never stopped. netcoredbg keeps ONE current thread
+   * and refuses the rest, so the user's gesture surfaces as a raw HRESULT.
+   *
+   * A refusal is rescued, never pre-empted: a step the adapter performs is
+   * forwarded untouched, so a user who deliberately selected another stopped
+   * thread is unaffected. E_FAIL means no step happened, so re-issuing cannot
+   * double-step. Same shape as the `0x80070057` attach retry next door.
+   * Implements [DEBUG-ADAPTER-GAPS] for the stepping rows.
+   */
+  private retriedOnStoppedThread(message: DapMessage): boolean {
+    const command = typeof message.command === 'string' ? message.command : '';
+    const threadId = this.stoppedThread;
+    if (message.success !== false || !STEP_COMMANDS.includes(command)) return false;
+    if (threadId === undefined || !refusedWrongThread(message)) return false;
+    const seq = Number(message.request_seq ?? -1);
+    void this.request(command, { threadId }).then((retry) => {
+      this.emit({ ...retry, request_seq: seq, command });
+    });
+    return true;
   }
   /** Events that carry emulation state, not just data. */
   private onChildEvent(message: DapMessage): void {
@@ -515,6 +565,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
       );
     }
     if (name === 'stopped') {
+      const stoppedBody = isRecord(message.body) ? message.body : {};
+      const stoppedThread = Number(stoppedBody.threadId ?? Number.NaN);
+      if (Number.isInteger(stoppedThread)) this.stoppedThread = stoppedThread;
       if (this.stacks.interceptStop(message)) return;
       // A VSTest host's own attach break is resumed, never surfaced
       // ([DEBUG-FEATURES-TESTS]); dap-attach.ts owns that judgement.
